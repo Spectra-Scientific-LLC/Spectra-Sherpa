@@ -10,6 +10,7 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib.adapters.scp_extractors import LinearRegressionExtract, PCRExtract, SVRExtract
 from spectra_sherpa.app.lib.sherpa_dataset import (
     EvaluationResult,
 )
@@ -65,8 +66,8 @@ class PCRNode(Node):
     metadata = NodeMetadata(
         node_type="model.pcr",
         category="regression",
-        label="PCR",
-        description="Principal Component Regression for calibration",
+        label="Train PCR Regression",
+        description="Train a Principal Component Regression model for calibration",
         parameters=[
             NodeParameter(
                 name="n_components",
@@ -74,7 +75,6 @@ class PCRNode(Node):
                 param_type="number",
                 default=3,
                 min_value=1,
-                max_value=20,
                 step=1,
                 description="Number of PCA components for regression",
                 required=True,
@@ -95,10 +95,11 @@ class PCRNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Spectra (X)",
-                description="Spectral data matrix (n_samples × n_wavenumbers)",
+                label="Data Matrix (X)",
+                description="Spectral data or multivariate feature table (n_samples × n_variables)",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="y",
@@ -113,8 +114,8 @@ class PCRNode(Node):
                 name="model",
                 type_ref="spectrasherpa://types/RegressionModel/1.0",
                 required=True,
-                label="PCR Model",
-                description="Trained PCR model object",
+                label="Fitted PCR Regression Model",
+                description="Fitted PCR regression model produced by this training node",
             ),
             PortMetadata(
                 name="scores",
@@ -386,12 +387,22 @@ class PCRNode(Node):
 
         logger.debug("[PCR Node] Scores shape: %s, Loadings shape: %s", scores_dataset.shape, loadings_dataset.shape)
 
+        from ._artifact_builder import build_model_artifact
+
+        artifact = build_model_artifact(
+            PCRExtract.from_sklearn(model),
+            X_ds,
+            node_id=self.node_id,
+            metrics={"r2": float(r2), "rmse": rmse},
+        )
+
         return NodeResult(
             outputs={
                 "default": scores_dataset,  # NDDataset: scores + sample labels (y) + PC coords (x)
                 "scores": scores_dataset,  # Alias of default for the declared scores port
                 "loadings": loadings_dataset,  # NDDataset: loadings + wavenumbers (x) + PC coords (y)
                 "model": model,  # Model port for downstream use
+                "_model_artifact": artifact,
             },
             diagnostics={
                 "r2": float(r2),
@@ -449,9 +460,17 @@ def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
     r2 = float(model.score(X_data, y_array)) if y_array is not None else None
     rmse = float(np.sqrt(np.mean((y_array - y_pred) ** 2))) if y_array is not None else None
 
+    from ._artifact_builder import build_model_artifact
+
     return {
         "support_vectors": svr.support_vectors_.tolist(),
         "data": [[float(yt), float(yh)] for yt, yh in zip(y_array, y_pred)],
+        "_model_artifact": build_model_artifact(
+            SVRExtract.from_sklearn(model),
+            X_ds,
+            node_id=node_id,
+            metrics={"r2": float(r2) if r2 is not None else None, "rmse": rmse},
+        ),
         "metadata": {
             "type": "SVR",
             "output_type": "regression",
@@ -491,8 +510,8 @@ class SVRNode(EstimatorSpecNode):
     metadata = NodeMetadata(
         node_type="model.svr",
         category="regression",
-        label="SVR",
-        description="Support Vector Regression for calibration",
+        label="Train SVR Regression",
+        description="Train a Support Vector Regression model for calibration",
         parameters=[
             NodeParameter(
                 name="kernel",
@@ -510,7 +529,6 @@ class SVRNode(EstimatorSpecNode):
                 param_type="number",
                 default=1.0,
                 min_value=0.01,
-                max_value=1000.0,
                 step=0.1,
                 description="Regularization parameter",
                 required=True,
@@ -522,7 +540,6 @@ class SVRNode(EstimatorSpecNode):
                 param_type="number",
                 default=0.1,
                 min_value=0.0,
-                max_value=1.0,
                 step=0.01,
                 description="Epsilon-tube width",
                 required=False,
@@ -544,7 +561,6 @@ class SVRNode(EstimatorSpecNode):
                 param_type="number",
                 default=3,
                 min_value=1,
-                max_value=6,
                 step=1,
                 description="Degree for polynomial kernel",
                 required=False,
@@ -556,7 +572,6 @@ class SVRNode(EstimatorSpecNode):
                 param_type="number",
                 default=0.0,
                 min_value=-1.0,
-                max_value=1.0,
                 step=0.1,
                 description="Independent term for poly/sigmoid kernels",
                 required=False,
@@ -577,10 +592,11 @@ class SVRNode(EstimatorSpecNode):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Spectra (X)",
-                description="Spectral data matrix (n_samples × n_wavenumbers)",
+                label="Data Matrix (X)",
+                description="Spectral data or multivariate feature table (n_samples × n_variables)",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="y",
@@ -595,8 +611,8 @@ class SVRNode(EstimatorSpecNode):
                 name="model",
                 type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=True,
-                label="SVR Model",
-                description="Trained SVR model object",
+                label="Fitted SVR Regression Model",
+                description="Fitted SVR regression model produced by this training node",
             ),
             PortMetadata(
                 name="predictions",
@@ -626,10 +642,18 @@ class SVRNode(EstimatorSpecNode):
 
 def _lr_post_fit(model, X_data, y_array, X_ds, params, node_id):
     fit_intercept = params.get("fit_intercept", True)
+    from ._artifact_builder import build_model_artifact
+
     return {
         "coef": model.coef_.tolist(),
         "intercept": model.intercept_ if fit_intercept else 0,
         "score": model.score(X_data, y_array),
+        "_model_artifact": build_model_artifact(
+            LinearRegressionExtract.from_sklearn(model),
+            X_ds,
+            node_id=node_id,
+            metrics={"r2": float(model.score(X_data, y_array))},
+        ),
     }
 
 
@@ -644,8 +668,8 @@ class LinearRegressionNode(EstimatorSpecNode):
     metadata = NodeMetadata(
         node_type="model.linear_regression",
         category="regression",
-        label="Linear Regression",
-        description="Simple linear regression for calibration",
+        label="Train Linear Regression",
+        description="Train a linear regression model for calibration",
         parameters=[
             NodeParameter(
                 name="fit_intercept",
@@ -662,10 +686,11 @@ class LinearRegressionNode(EstimatorSpecNode):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Features (X)",
                 description="Feature matrix (predictors)",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="y",
@@ -680,8 +705,8 @@ class LinearRegressionNode(EstimatorSpecNode):
                 name="model",
                 type_ref="spectrasherpa://types/RegressionModel/1.0",
                 required=True,
-                label="Linear Model",
-                description="Trained Linear Regression model",
+                label="Fitted Linear Regression Model",
+                description="Fitted Linear Regression model produced by this training node",
             ),
             PortMetadata(
                 name="predictions",

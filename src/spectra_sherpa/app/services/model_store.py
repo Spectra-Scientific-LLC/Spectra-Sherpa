@@ -336,6 +336,9 @@ async def persist_model_artifact_records(
     workflow_id: int | None = None,
     workflow_version_id: int | None = None,
     project_id: int | None = None,
+    source_run_id: int | None = None,
+    training_dataset_id: int | None = None,
+    run_name: str | None = None,
 ) -> list[Any]:
     """Create ModelArtifact DB rows for artifacts saved during DAG execution.
 
@@ -351,6 +354,12 @@ async def persist_model_artifact_records(
         Owner of the artifacts.
     workflow_id, workflow_version_id, project_id:
         Optional context to associate with the artifacts.
+    source_run_id, training_dataset_id:
+        Optional lineage links. ``source_run_id`` may be attached later by
+        ``_auto_persist_run`` because workflow execution saves artifacts before
+        the run row exists.
+    run_name:
+        Optional human name used to seed display_name.
 
     Returns
     -------
@@ -379,15 +388,25 @@ async def persist_model_artifact_records(
         if artifact_uid in existing_uids:
             logger.info("ModelArtifact %s already exists — skipping", artifact_uid)
             continue
+        default_name = f"{model_type.upper()} — {artifact_uid[:8]}"
+        display_name = art.get("display_name")
+        if not display_name and run_name:
+            node_label = art.get("node_label") or art.get("node_id", "")
+            suffix = f" — {node_label}" if node_label else ""
+            display_name = f"{model_type.upper()} — {run_name}{suffix}"
+        display_name = display_name or default_name
         row = ModelArtifact(
             artifact_uid=artifact_uid,
             user_id=user_id,
             project_id=project_id,
             workflow_id=workflow_id,
             workflow_version_id=workflow_version_id,
+            source_run_id=source_run_id,
+            training_dataset_id=training_dataset_id,
             node_id=art.get("node_id", ""),
             model_type=model_type,
-            name=f"{model_type.upper()} — {artifact_uid[:8]}",
+            name=default_name,
+            display_name=display_name,
             artifact_dir=art.get("artifact_dir", ""),
             integrity_hash=art.get("integrity_hash", ""),
             n_features=art.get("n_features", 0),
@@ -396,6 +415,9 @@ async def persist_model_artifact_records(
             feature_axis_json=art.get("feature_axis_json"),
             metrics_json=art.get("metrics_json"),
             preprocessing_summary=art.get("preprocessing_summary"),
+            training_data_hash=art.get("training_data_hash"),
+            tags=list(art.get("tags") or []),
+            is_deploy_ready=bool(art.get("is_deploy_ready", False)),
         )
         session.add(row)
         rows.append(row)
@@ -423,8 +445,11 @@ async def persist_model_artifact_records(
                 "workflow_id": workflow_id,
                 "workflow_version_id": workflow_version_id,
                 "project_id": project_id,
+                "source_run_id": source_run_id,
+                "training_dataset_id": training_dataset_id,
                 "user_id": user_id,
                 "node_id": art.get("node_id"),
+                "display_name": display_name,
                 "n_features": art.get("n_features"),
                 "n_components": art.get("n_components"),
                 "integrity_hash": art.get("integrity_hash"),
@@ -470,7 +495,8 @@ async def reconcile_orphan_artifacts(
     if not models_dir.exists():
         return []
 
-    db_uids = set((await session.execute(sa_select(ModelArtifact.artifact_uid))).scalars().all())
+    db_rows = (await session.execute(sa_select(ModelArtifact.artifact_uid, ModelArtifact.is_active))).all()
+    db_active_by_uid = {artifact_uid: bool(is_active) for artifact_uid, is_active in db_rows}
     now = time.time()
     removed: list[str] = []
     recovered: list[str] = []
@@ -520,7 +546,14 @@ async def reconcile_orphan_artifacts(
             shutil.rmtree(child, ignore_errors=True)
             removed.append(name)
             continue
-        if name in db_uids:
+        if name in db_active_by_uid and db_active_by_uid[name]:
+            continue
+        if name in db_active_by_uid and not db_active_by_uid[name]:
+            try:
+                store.delete(name)
+                removed.append(name)
+            except Exception as exc:  # pragma: no cover - best-effort janitor
+                logger.warning("Inactive artifact reconcile could not delete %s: %s", name, exc)
             continue
         # Real-looking artifact dir with no DB row → orphan.
         try:

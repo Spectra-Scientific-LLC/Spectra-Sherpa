@@ -30,6 +30,18 @@ from .core_utils import (
 logger = logging.getLogger(__name__)
 
 
+def _nonnegative_peak_param(value: Any, *, name: str, zero_disables: bool = False) -> float | None:
+    """Normalize optional nonnegative peak-finding parameters."""
+    if value is None or value == "":
+        return None
+    normalized = float(value)
+    if normalized < 0:
+        raise ValueError(f"{name} must be >= 0")
+    if zero_disables and normalized == 0:
+        return None
+    return normalized
+
+
 @register_node
 class PeakFindingNode(Node):
     """
@@ -53,7 +65,6 @@ class PeakFindingNode(Node):
                 param_type="number",
                 default=None,
                 min_value=0.0,
-                max_value=100.0,
                 step=0.01,
                 description="Minimum peak height (leave empty for auto)",
                 required=False,
@@ -64,7 +75,6 @@ class PeakFindingNode(Node):
                 param_type="number",
                 default=None,
                 min_value=0.0,
-                max_value=10.0,
                 step=0.01,
                 description="Minimum vertical distance to neighbors",
                 required=False,
@@ -74,10 +84,9 @@ class PeakFindingNode(Node):
                 label="Minimum Distance",
                 param_type="number",
                 default=10,
-                min_value=1,
-                max_value=100,
+                min_value=0,
                 step=1,
-                description="Minimum horizontal distance between peaks (in points)",
+                description="Minimum horizontal distance between peaks in points (0 disables)",
                 required=False,
             ),
             NodeParameter(
@@ -86,7 +95,6 @@ class PeakFindingNode(Node):
                 param_type="number",
                 default=None,
                 min_value=0.0,
-                max_value=10.0,
                 step=0.01,
                 description="Peak prominence threshold",
                 required=False,
@@ -96,10 +104,9 @@ class PeakFindingNode(Node):
                 label="Expected Width",
                 param_type="number",
                 default=None,
-                min_value=1,
-                max_value=100,
+                min_value=0,
                 step=1,
-                description="Expected peak width (in points)",
+                description="Expected peak width in points (0 disables)",
                 required=False,
             ),
         ],
@@ -155,6 +162,8 @@ class PeakFindingNode(Node):
     def _bin_consensus_peaks(
         all_positions: list[float],
         all_heights: list[float],
+        all_fwhm: list[float],
+        all_areas: list[float],
         tolerance: float,
         n_samples: int,
     ) -> list[dict[str, Any]]:
@@ -170,6 +179,8 @@ class PeakFindingNode(Node):
         order = np.argsort(all_positions)
         sorted_pos = np.array(all_positions, dtype=np.float64)[order]
         sorted_h = np.array(all_heights, dtype=np.float64)[order]
+        sorted_w = np.array(all_fwhm, dtype=np.float64)[order] if all_fwhm else np.zeros_like(sorted_h)
+        sorted_a = np.array(all_areas, dtype=np.float64)[order] if all_areas else np.zeros_like(sorted_h)
 
         # Greedy sweep: start a new bin whenever the gap exceeds tolerance
         bins: list[list[int]] = [[0]]
@@ -183,8 +194,12 @@ class PeakFindingNode(Node):
         for indices in bins:
             pos_arr = sorted_pos[indices]
             h_arr = sorted_h[indices]
+            w_arr = sorted_w[indices]
+            a_arr = sorted_a[indices]
             count = len(indices)
             q1_h, med_h, q3_h = np.percentile(h_arr, [25, 50, 75]).tolist()
+            q1_w, med_w, q3_w = np.percentile(w_arr, [25, 50, 75]).tolist()
+            q1_a, med_a, q3_a = np.percentile(a_arr, [25, 50, 75]).tolist()
             rows.append(
                 {
                     "median_pos": float(np.median(pos_arr)),
@@ -197,6 +212,12 @@ class PeakFindingNode(Node):
                     "median_height": med_h,
                     "q1_height": q1_h,
                     "q3_height": q3_h,
+                    "median_fwhm": med_w,
+                    "q1_fwhm": q1_w,
+                    "q3_fwhm": q3_w,
+                    "median_area": med_a,
+                    "q1_area": q1_a,
+                    "q3_area": q3_a,
                 }
             )
 
@@ -235,6 +256,12 @@ class PeakFindingNode(Node):
 
         # Build peak kwargs
         lines.append(f"{indent}_pf_kwargs = {{}}")
+        height = _nonnegative_peak_param(height, name="height")
+        threshold = _nonnegative_peak_param(threshold, name="threshold")
+        distance = _nonnegative_peak_param(distance, name="distance", zero_disables=True)
+        prominence = _nonnegative_peak_param(prominence, name="prominence")
+        width = _nonnegative_peak_param(width, name="width", zero_disables=True)
+
         if height is not None:
             lines.append(f"{indent}_pf_kwargs['height'] = {height!r}")
         if threshold is not None:
@@ -275,6 +302,7 @@ class PeakFindingNode(Node):
             Dict containing peak positions, heights, widths, and areas
         """
         from scipy.signal import find_peaks as scipy_find_peaks
+        from scipy.signal import peak_widths as scipy_peak_widths
 
         input_ds = bind_X(
             input_data,
@@ -290,6 +318,12 @@ class PeakFindingNode(Node):
         prominence = self.parameters.get("prominence")
         width = self.parameters.get("width")
 
+        height = _nonnegative_peak_param(height, name="height")
+        threshold = _nonnegative_peak_param(threshold, name="threshold")
+        normalized_distance = _nonnegative_peak_param(distance, name="distance", zero_disables=True)
+        prominence = _nonnegative_peak_param(prominence, name="prominence")
+        width = _nonnegative_peak_param(width, name="width", zero_disables=True)
+
         # Convert to numpy array (always 2D: n_samples × n_features)
         data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
         n_samples = data.shape[0]
@@ -300,8 +334,8 @@ class PeakFindingNode(Node):
             peak_kwargs["height"] = height
         if threshold is not None:
             peak_kwargs["threshold"] = threshold
-        if distance is not None:
-            peak_kwargs["distance"] = distance
+        if normalized_distance is not None:
+            peak_kwargs["distance"] = normalized_distance
         if prominence is not None:
             peak_kwargs["prominence"] = prominence
         if width is not None:
@@ -350,6 +384,8 @@ class PeakFindingNode(Node):
         # ---- Run peak finding on every spectrum ----
         all_positions: list[float] = []
         all_heights: list[float] = []
+        all_fwhm: list[float] = []
+        all_areas: list[float] = []
         all_spectra = data.tolist()
 
         # Plotly traces: spectrum lines + peak markers
@@ -371,24 +407,38 @@ class PeakFindingNode(Node):
             label = sample_labels[sample_idx]
             color = self._COLORS[sample_idx % len(self._COLORS)]
 
-            indices, props = scipy_find_peaks(spectrum, **peak_kwargs)
+            indices, _ = scipy_find_peaks(spectrum, **peak_kwargs)
             positions = x_axis[indices].tolist()
             heights = spectrum[indices].tolist()
-            widths = props.get("widths", np.zeros(len(indices))).tolist()
+            if len(indices):
+                _, _, left_ips, right_ips = scipy_peak_widths(spectrum, indices, rel_height=0.5)
+                point_grid = np.arange(len(x_axis), dtype=np.float64)
+                left_x = np.interp(left_ips, point_grid, x_axis)
+                right_x = np.interp(right_ips, point_grid, x_axis)
+                fwhm = np.abs(right_x - left_x).astype(np.float64)
+            else:
+                left_ips = np.array([], dtype=np.float64)
+                right_ips = np.array([], dtype=np.float64)
+                fwhm = np.array([], dtype=np.float64)
 
             # Estimate peak areas
             areas: list[float] = []
-            for idx, w in zip(indices, widths):
+            for peak_idx, (idx, w) in enumerate(zip(indices, fwhm)):
                 if w > 0:
-                    left = max(0, int(idx - w / 2))
-                    right = min(len(spectrum), int(idx + w / 2))
-                    areas.append(float(np.trapz(spectrum[left:right])))
+                    left = int(max(0, np.floor(left_ips[peak_idx])))
+                    right = int(min(len(spectrum), np.ceil(right_ips[peak_idx]) + 1))
+                    if right - left >= 2:
+                        areas.append(float(abs(np.trapz(spectrum[left:right], x_axis[left:right]))))
+                    else:
+                        areas.append(float(abs(spectrum[idx])))
                 else:
-                    areas.append(float(spectrum[idx]))
+                    areas.append(float(abs(spectrum[idx])))
 
             total_peaks += len(indices)
             all_positions.extend(positions)
             all_heights.extend(heights)
+            all_fwhm.extend(fwhm.tolist())
+            all_areas.extend(areas)
 
             # -- Plotly: spectrum line trace --
             plotly_traces.append(
@@ -444,11 +494,14 @@ class PeakFindingNode(Node):
             mean_spacing = abs(x_axis_list[-1] - x_axis_list[0]) / (len(x_axis_list) - 1)
         else:
             mean_spacing = 1.0
-        bin_tolerance = (distance or 10) * mean_spacing
+        bin_distance = normalized_distance if normalized_distance is not None else 10
+        bin_tolerance = bin_distance * mean_spacing
 
         consensus_rows = self._bin_consensus_peaks(
             all_positions,
             all_heights,
+            all_fwhm,
+            all_areas,
             bin_tolerance,
             n_samples,
         )

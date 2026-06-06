@@ -9,7 +9,7 @@ from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.lib.adapters.scp_extractors import _safe_getattr
+from spectra_sherpa.app.lib.adapters.scp_extractors import PLSDAExtract, PLSExtract, _safe_getattr
 from spectra_sherpa.app.lib.scp_compat import scp
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
@@ -26,6 +26,12 @@ from ...io_contracts import (
 from ...node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
 from ..modeling import create_spectral_dataset
 from ..visualization import generate_confusion_matrix_heatmap
+from .core_utils import (
+    classification_metrics_contract as _classification_metrics_contract,
+)
+from .core_utils import (
+    classification_scalar_metrics as _classification_scalar_metrics,
+)
 from .core_utils import (
     coerce_numeric_array as _coerce_numeric_array,
 )
@@ -163,9 +169,9 @@ class PLSDANode(Node):
     metadata = NodeMetadata(
         node_type="classification.plsda",
         category="classification",
-        label="PLS-DA",
+        label="Train PLS-DA Classifier",
         description=(
-            "Partial Least Squares Discriminant Analysis for classification. "
+            "Train a Partial Least Squares Discriminant Analysis classifier. "
             "⚠ Class probabilities are derived via softmax on raw PLS regression outputs "
             "and are NOT calibrated — they indicate relative confidence only. "
             "For reliable probability estimates apply Platt scaling or isotonic regression "
@@ -178,7 +184,6 @@ class PLSDANode(Node):
                 param_type="number",
                 default=2,
                 min_value=1,
-                max_value=20,
                 step=1,
                 description="Number of PLS components (latent variables)",
                 required=True,
@@ -208,7 +213,6 @@ class PLSDANode(Node):
                 param_type="number",
                 default=5,
                 min_value=2,
-                max_value=20,
                 step=1,
                 description="Number of folds for cross-validation (must be ≤ smallest class count)",
                 required=False,
@@ -258,10 +262,11 @@ class PLSDANode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Spectra (X)",
-                description="Spectral data matrix (n_samples × n_wavenumbers)",
+                label="Data Matrix (X)",
+                description="Spectral data, PCA scores, or multivariate feature table",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="y",
@@ -273,11 +278,39 @@ class PLSDANode(Node):
         ],
         output_ports=[
             PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/ScoreMatrix/1.0",
+                required=True,
+                label="X Scores",
+                description="PLS-DA latent X scores (samples × latent variables)",
+            ),
+            PortMetadata(
+                name="X_scores",
+                type_ref="spectrasherpa://types/ScoreMatrix/1.0",
+                required=True,
+                label="X Scores",
+                description="Alias of default: PLS-DA latent X scores",
+            ),
+            PortMetadata(
+                name="X_loadings",
+                type_ref="spectrasherpa://types/LoadingMatrix/1.0",
+                required=True,
+                label="X Loadings",
+                description="PLS-DA X loadings (latent variables × input features)",
+            ),
+            PortMetadata(
+                name="loadings",
+                type_ref="spectrasherpa://types/LoadingMatrix/1.0",
+                required=True,
+                label="Loadings",
+                description="Alias of X_loadings for plot/table nodes",
+            ),
+            PortMetadata(
                 name="model",
                 type_ref="spectrasherpa://types/ClassificationModel/1.0",
                 required=True,
-                label="PLS-DA Model",
-                description="Trained PLS-DA classifier",
+                label="Fitted PLS-DA Classifier",
+                description="Fitted PLS-DA classifier produced by this training node",
             ),
             PortMetadata(
                 name="predictions",
@@ -292,6 +325,20 @@ class PLSDANode(Node):
                 required=True,
                 label="Class Probabilities",
                 description="Cross-validated class probabilities",
+            ),
+            PortMetadata(
+                name="class_probabilities",
+                type_ref="spectrasherpa://types/Array2D/1.0",
+                required=True,
+                label="Class Probabilities",
+                description="Alias of probabilities for direct model comparison",
+            ),
+            PortMetadata(
+                name="metrics",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=False,
+                label="Classification Metrics",
+                description="Canonical train/CV/test classification metrics for run history, comparison, and guidance",
             ),
         ],
         requires_scp=True,
@@ -315,6 +362,7 @@ class PLSDANode(Node):
         params = self._resolve_params()
         n_components = params.get("n_components", 2)
         scale = params.get("scale", False)
+        cv_folds = params.get("cv_folds", 5)
         probability_method = params.get("probability_method", "softmax")
         if probability_method not in ("softmax", "mahalanobis"):
             probability_method = "softmax"
@@ -348,6 +396,12 @@ class PLSDANode(Node):
         lines.append(f"{indent}_class_map = {{c: i for i, c in enumerate(_classes)}}")
         lines.append(f"{indent}_y_idx = np.array([_class_map[c] for c in _y_labels.tolist()])")
         lines.append(f"{indent}_Y_dummy = np.eye(len(_classes))[_y_idx]")
+        lines.append(f"{indent}from sklearn.metrics import confusion_matrix")
+        lines.append(f"{indent}from sklearn.model_selection import StratifiedKFold")
+        lines.append(f"{indent}from spectra_sherpa.app.services.dag.nodes.classification.core_utils import (")
+        lines.append(f"{indent}    classification_metrics_contract,")
+        lines.append(f"{indent}    classification_scalar_metrics,")
+        lines.append(f"{indent})")
         lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")
         lines.append(f"{indent}_Y_ndd = scp.NDDataset(_Y_dummy)")
         lines.append(f"{indent}_pls = scp.PLSRegression(n_components={n_components}, scale={scale_str})")
@@ -389,7 +443,7 @@ class PLSDANode(Node):
         lines.append(f"{indent}    _probs = _probs / _probs.sum(axis=1, keepdims=True)")
         lines.append(
             f"{indent}    _mahalanobis_state = {{'class_score_means': _means, "
-            "'score_covariance_inverse': _cov_inv, 'class_priors': _priors}}"
+            f"'score_covariance_inverse': _cov_inv, 'class_priors': _priors}}"
         )
         lines.append(f"{indent}else:")
         lines.append(f"{indent}    # Softmax to probabilities")
@@ -398,6 +452,138 @@ class PLSDANode(Node):
         lines.append(f"{indent}_pred_idx = np.argmax(_probs, axis=1)")
         lines.append(f"{indent}_pred_labels = np.array([_classes[i] for i in _pred_idx])")
         lines.append(f"{indent}_accuracy = np.mean(_pred_labels == _y_labels)")
+        lines.append(f"{indent}_class_counts = np.array([np.sum(_y_labels == _cls) for _cls in _classes])")
+        lines.append(f"{indent}_cv_folds = int({cv_folds})")
+        lines.append(f"{indent}if _cv_folds > int(_class_counts.min()):")
+        lines.append(
+            f"{indent}    raise ValueError(f'cv_folds must be <= smallest class count "
+            f"({{int(_class_counts.min())}}). Got {{_cv_folds}}.')"
+        )
+        lines.append(f"{indent}_y_pred_cv = np.empty(_y_labels.shape, dtype=_y_labels.dtype)")
+        lines.append(f"{indent}_y_prob_cv = np.zeros((_X_data.shape[0], len(_classes)), dtype=np.float64)")
+        lines.append(f"{indent}_cv = StratifiedKFold(n_splits=_cv_folds, shuffle=True, random_state=42)")
+        lines.append(f"{indent}for _train_idx, _test_idx in _cv.split(_X_data, _y_labels):")
+        lines.append(f"{indent}    _X_fold = scp.NDDataset(_X_data[_train_idx])")
+        lines.append(f"{indent}    _y_fold_idx = np.array([_class_map[c] for c in _y_labels[_train_idx].tolist()])")
+        lines.append(f"{indent}    _Y_fold = scp.NDDataset(np.eye(len(_classes))[_y_fold_idx])")
+        lines.append(
+            f"{indent}    _fold_components = min({n_components}, _X_data.shape[1], max(1, len(_train_idx) - 1))"
+        )
+        lines.append(f"{indent}    _pls_fold = scp.PLSRegression(n_components=_fold_components, scale={scale_str})")
+        lines.append(f"{indent}    _pls_fold.fit(_X_fold, _Y_fold)")
+        lines.append(f"{indent}    _X_test_fold = scp.NDDataset(_X_data[_test_idx])")
+        lines.append(f"{indent}    if _probability_method == 'mahalanobis':")
+        lines.append(f"{indent}        _train_scores_raw = getattr(_pls_fold, 'x_scores', None)")
+        lines.append(f"{indent}        if _train_scores_raw is None:")
+        lines.append(f"{indent}            _train_scores_raw = getattr(_pls_fold, '_x_scores', None)")
+        lines.append(f"{indent}        if _train_scores_raw is None:")
+        lines.append(f"{indent}            _train_scores_raw = _pls_fold.transform(_X_fold)")
+        lines.append(
+            f"{indent}        _train_scores = np.asarray("
+            f"_train_scores_raw.data if hasattr(_train_scores_raw, 'data') else _train_scores_raw, "
+            f"dtype=np.float64)"
+        )
+        lines.append(f"{indent}        _test_scores_raw = _pls_fold.transform(_X_test_fold)")
+        lines.append(
+            f"{indent}        _test_scores = np.asarray("
+            f"_test_scores_raw.data if hasattr(_test_scores_raw, 'data') else _test_scores_raw, "
+            f"dtype=np.float64)"
+        )
+        lines.append(f"{indent}        if _train_scores.ndim == 1:")
+        lines.append(f"{indent}            _train_scores = _train_scores.reshape(-1, 1)")
+        lines.append(f"{indent}        if _test_scores.ndim == 1:")
+        lines.append(f"{indent}            _test_scores = _test_scores.reshape(-1, 1)")
+        lines.append(
+            f"{indent}        _means_fold = np.zeros((len(_classes), _train_scores.shape[1]), dtype=np.float64)"
+        )
+        lines.append(f"{indent}        _counts_fold = np.zeros(len(_classes), dtype=np.int64)")
+        lines.append(f"{indent}        _dev_fold = np.zeros_like(_train_scores)")
+        lines.append(f"{indent}        for _k, _cls in enumerate(_classes):")
+        lines.append(f"{indent}            _mask_fold = _y_labels[_train_idx] == _cls")
+        lines.append(f"{indent}            _counts_fold[_k] = int(_mask_fold.sum())")
+        lines.append(f"{indent}            if _counts_fold[_k]:")
+        lines.append(f"{indent}                _means_fold[_k] = _train_scores[_mask_fold].mean(axis=0)")
+        lines.append(f"{indent}                _dev_fold[_mask_fold] = _train_scores[_mask_fold] - _means_fold[_k]")
+        lines.append(f"{indent}        _denom_fold = max(1, _train_scores.shape[0] - len(_classes))")
+        lines.append(f"{indent}        _cov_fold = (_dev_fold.T @ _dev_fold) / float(_denom_fold)")
+        lines.append(f"{indent}        try:")
+        lines.append(
+            f"{indent}            _cov_inv_fold = np.linalg.inv(" f"_cov_fold + 1e-10 * np.eye(_train_scores.shape[1]))"
+        )
+        lines.append(f"{indent}        except np.linalg.LinAlgError:")
+        lines.append(f"{indent}            _diag_fold = np.diag(_cov_fold)")
+        lines.append(
+            f"{indent}            _cov_inv_fold = np.diag(1.0 / np.where(_diag_fold > 1e-12, _diag_fold, 1.0))"
+        )
+        lines.append(f"{indent}        _priors_fold = np.maximum(_counts_fold / max(1, _train_scores.shape[0]), 1e-12)")
+        lines.append(f"{indent}        _priors_fold = _priors_fold / _priors_fold.sum()")
+        lines.append(
+            f"{indent}        _log_post_fold = np.empty((_test_scores.shape[0], len(_classes)), dtype=np.float64)"
+        )
+        lines.append(f"{indent}        for _k in range(len(_classes)):")
+        lines.append(f"{indent}            _diff_fold = _test_scores - _means_fold[_k]")
+        lines.append(
+            f"{indent}            _d2_fold = np.einsum('ij,jk,ik->i', " f"_diff_fold, _cov_inv_fold, _diff_fold)"
+        )
+        lines.append(f"{indent}            _log_post_fold[:, _k] = -0.5 * _d2_fold + np.log(_priors_fold[_k])")
+        lines.append(f"{indent}        _log_post_fold -= _log_post_fold.max(axis=1, keepdims=True)")
+        lines.append(f"{indent}        _prob_fold = np.exp(_log_post_fold)")
+        lines.append(f"{indent}        _prob_fold = _prob_fold / _prob_fold.sum(axis=1, keepdims=True)")
+        lines.append(f"{indent}    else:")
+        lines.append(f"{indent}        _raw_fold = np.asarray(")
+        lines.append(f"{indent}            _pls_fold.predict(_X_test_fold).data,")
+        lines.append(f"{indent}            dtype=np.float64,")
+        lines.append(f"{indent}        )")
+        lines.append(f"{indent}        if _raw_fold.ndim == 1:")
+        lines.append(f"{indent}            _raw_fold = _raw_fold.reshape(-1, len(_classes))")
+        lines.append(f"{indent}        _exp_fold = np.exp(_raw_fold - _raw_fold.max(axis=1, keepdims=True))")
+        lines.append(f"{indent}        _prob_fold = _exp_fold / _exp_fold.sum(axis=1, keepdims=True)")
+        lines.append(f"{indent}    _idx_fold = np.argmax(_prob_fold, axis=1)")
+        lines.append(f"{indent}    _y_pred_cv[_test_idx] = np.array([_classes[i] for i in _idx_fold])")
+        lines.append(f"{indent}    _y_prob_cv[_test_idx] = _prob_fold")
+        lines.append(
+            f"{indent}_train_metrics = classification_scalar_metrics("
+            "_y_labels, _pred_labels, _classes, prefix='train_')"
+        )
+        lines.append(
+            f"{indent}_cv_metrics = classification_scalar_metrics(_y_labels, _y_pred_cv, _classes, prefix='cv_')"
+        )
+        lines.append(f"{indent}_cm_train = confusion_matrix(_y_labels, _pred_labels, labels=_classes)")
+        lines.append(f"{indent}_cm_cv = confusion_matrix(_y_labels, _y_pred_cv, labels=_classes)")
+        lines.append(f"{indent}_classification_metrics = classification_metrics_contract(")
+        lines.append(f"{indent}    classes=_classes,")
+        lines.append(f"{indent}    train_metrics=_train_metrics,")
+        lines.append(f"{indent}    cv_metrics=_cv_metrics,")
+        lines.append(f"{indent}    primary_split='cv',")
+        lines.append(f"{indent}    method='plsda',")
+        lines.append(f"{indent}    confusion_matrices={{'train': _cm_train.tolist(), 'cv': _cm_cv.tolist()}},")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}_cm_labels = [str(c) for c in _classes]")
+        lines.append(f"{indent}_cm_train_plot = {{")
+        lines.append(
+            f"{indent}    'data': [{{'type': 'heatmap', 'z': _cm_train.tolist(), " "'x': _cm_labels, 'y': _cm_labels}],"
+        )
+        lines.append(f"{indent}    'layout': {{'title': 'Confusion Matrix (Training)'}},")
+        lines.append(f"{indent}}}")
+        lines.append(f"{indent}_cm_cv_plot = {{")
+        lines.append(
+            f"{indent}    'data': [{{'type': 'heatmap', 'z': _cm_cv.tolist(), " "'x': _cm_labels, 'y': _cm_labels}],"
+        )
+        lines.append(f"{indent}    'layout': {{'title': 'Confusion Matrix (Cross-Validation)'}},")
+        lines.append(f"{indent}}}")
+        lines.append(f"{indent}_scores_raw = getattr(_pls, 'x_scores', None)")
+        lines.append(f"{indent}if _scores_raw is None:")
+        lines.append(f"{indent}    _scores_raw = getattr(_pls, '_x_scores', None)")
+        lines.append(f"{indent}if _scores_raw is None:")
+        lines.append(f"{indent}    _scores_raw = _pls.transform(_X_ndd)")
+        lines.append(f"{indent}_scores = np.asarray(_scores_raw.data if hasattr(_scores_raw, 'data') else _scores_raw)")
+        lines.append(f"{indent}_loadings_raw = getattr(_pls, 'x_loadings', None)")
+        lines.append(f"{indent}if _loadings_raw is None:")
+        lines.append(f"{indent}    _loadings_raw = getattr(_pls, '_x_loadings', None)")
+        lines.append(f"{indent}_loadings = (")
+        lines.append(f"{indent}    np.asarray(_loadings_raw.data if hasattr(_loadings_raw, 'data') else _loadings_raw)")
+        lines.append(f"{indent}    if _loadings_raw is not None else np.empty((0, _X_data.shape[1]))")
+        lines.append(f"{indent})")
         lines.append(
             f'{indent}print(f"  PLS-DA ({n_components} LVs): accuracy={{_accuracy:.4f}} ({{len(_classes)}} classes)")'
         )
@@ -405,14 +591,40 @@ class PLSDANode(Node):
         # Store result
         lines.append(
             f"{indent}_model_payload = {{'model': _pls, 'classes': _classes, "
-            "'type': 'plsda', 'probability_method': _probability_method}}"
+            f"'type': 'plsda', 'probability_method': _probability_method}}"
         )
         lines.append(f"{indent}if _mahalanobis_state is not None:")
         lines.append(f"{indent}    _model_payload.update(_mahalanobis_state)")
         lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'default': _scores,")
+        lines.append(f"{indent}    'X_scores': _scores,")
+        lines.append(f"{indent}    'loadings': _loadings,")
+        lines.append(f"{indent}    'X_loadings': _loadings,")
         lines.append(f"{indent}    'model': _model_payload,")
         lines.append(f"{indent}    'predictions': _pred_labels,")
         lines.append(f"{indent}    'probabilities': _probs,")
+        lines.append(f"{indent}    'class_probabilities': _probs,")
+        lines.append(f"{indent}    'y_prob': _y_prob_cv,")
+        lines.append(f"{indent}    'train_accuracy': float(_accuracy),")
+        lines.append(f"{indent}    'cv_accuracy': float(")
+        lines.append(f"{indent}        _cv_metrics.get('cv_accuracy', np.mean(_y_pred_cv == _y_labels))")
+        lines.append(f"{indent}    ),")
+        lines.append(f"{indent}    'confusion_matrix': _cm_cv,")
+        lines.append(f"{indent}    'confusion_matrix_train': _cm_train,")
+        lines.append(f"{indent}    'confusion_matrix_cv': _cm_cv,")
+        lines.append(f"{indent}    'metrics': {{")
+        lines.append(f"{indent}        **_train_metrics,")
+        lines.append(f"{indent}        **_cv_metrics,")
+        lines.append(f"{indent}        'classification_metrics': _classification_metrics,")
+        lines.append(f"{indent}    }},")
+        lines.append(
+            f"{indent}    'metadata': {{'y_true': _y_labels.tolist(), 'y_pred': _pred_labels.tolist(), "
+            f"'y_pred_cv': _y_pred_cv.tolist(), 'label_categories': [str(c) for c in _classes]}},"
+        )
+        lines.append(
+            f"{indent}    'plots': {{'confusion_matrix_train': _cm_train_plot, "
+            f"'confusion_matrix_cv': _cm_cv_plot}},"
+        )
         lines.append(f"{indent}}}")
 
         return lines
@@ -428,13 +640,7 @@ class PLSDANode(Node):
         Returns:
             PLS-DA model with classification results
         """
-        from sklearn.metrics import (
-            accuracy_score,
-            balanced_accuracy_score,
-            classification_report,
-            confusion_matrix,
-            f1_score,
-        )
+        from sklearn.metrics import classification_report, confusion_matrix
 
         X_ds = bind_X(
             X,
@@ -615,13 +821,33 @@ class PLSDANode(Node):
 
         y_pred_train = classes[np.argmax(Y_pred_prob, axis=1)]
 
-        # Calculate metrics
-        train_accuracy = accuracy_score(y_array, y_pred_train)
-        cv_accuracy = accuracy_score(y_array, y_pred_cv)
+        # Calculate metrics using the shared classification contract.
+        train_metrics = _classification_scalar_metrics(y_array, y_pred_train, classes, prefix="train_")
+        cv_metrics = _classification_scalar_metrics(y_array, y_pred_cv, classes, prefix="cv_")
+        train_accuracy = train_metrics["train_accuracy"]
+        cv_accuracy = cv_metrics["cv_accuracy"]
 
         # Confusion matrices
         cm_train = confusion_matrix(y_array, y_pred_train, labels=classes)
         cm_cv = confusion_matrix(y_array, y_pred_cv, labels=classes)
+        classification_metrics = _classification_metrics_contract(
+            classes=classes,
+            train_metrics=train_metrics,
+            cv_metrics=cv_metrics,
+            primary_split="cv",
+            method="plsda",
+            confusion_matrices={
+                "train": cm_train.tolist(),
+                "cv": cm_cv.tolist(),
+            },
+            extra={
+                "cv_method": f"stratified-k-fold (k={cv_folds})",
+                "n_components": int(n_components),
+                "requested_n_components": requested_n_components,
+                "effective_n_components": int(n_components),
+                "probability_method": probability_method,
+            },
+        )
 
         # Classification report
         class_report = classification_report(
@@ -629,8 +855,8 @@ class PLSDANode(Node):
         )
 
         # Classification-appropriate metrics
-        cv_balanced_accuracy = balanced_accuracy_score(y_array, y_pred_cv)
-        cv_f1_macro = f1_score(y_array, y_pred_cv, average="macro")
+        cv_balanced_accuracy = cv_metrics["cv_balanced_accuracy"]
+        cv_f1_macro = cv_metrics["cv_f1_macro"]
 
         # Get PLS scores for visualization (extract numpy arrays from SpectroChemPy model)
         # Use _safe_getattr for version-resilient attribute access (SCP 0.8.1+)
@@ -716,6 +942,7 @@ class PLSDANode(Node):
             y_coord=_y_coord,  # Preserve sample labels from input
             units="score",
             title="PLS-DA Scores",
+            data_role="X_features",
         )
 
         # Loadings: shape (n_components, n_features)
@@ -776,12 +1003,23 @@ class PLSDANode(Node):
                 ),
                 "label_categories": label_categories,
                 "lv_labels": lv_labels,
-                "accuracy": cv_accuracy,
                 "train_accuracy": train_accuracy,
+                "cv_accuracy": cv_accuracy,
+                "train_balanced_accuracy": train_metrics["train_balanced_accuracy"],
                 "cv_balanced_accuracy": cv_balanced_accuracy,
-                "f1_score": cv_f1_macro,
+                "train_f1_macro": train_metrics["train_f1_macro"],
+                "cv_f1_macro": cv_metrics["cv_f1_macro"],
+                "train_precision_macro": train_metrics["train_precision_macro"],
+                "cv_precision_macro": cv_metrics["cv_precision_macro"],
+                "train_recall_macro": train_metrics["train_recall_macro"],
+                "cv_recall_macro": cv_metrics["cv_recall_macro"],
+                "train_sensitivity_macro": train_metrics["train_sensitivity_macro"],
+                "cv_sensitivity_macro": cv_metrics["cv_sensitivity_macro"],
+                "train_specificity_macro": train_metrics["train_specificity_macro"],
+                "cv_specificity_macro": cv_metrics["cv_specificity_macro"],
                 "confusion_matrix_train": cm_train.tolist(),
                 "confusion_matrix_cv": cm_cv.tolist(),
+                "metrics": classification_metrics,
                 "classification_report": class_report,
                 "y_true": y_array.tolist(),
                 "y_pred": y_pred_train.tolist(),
@@ -790,15 +1028,19 @@ class PLSDANode(Node):
                 "vip_error": vip_error,
                 "plot_error": plot_error,
                 "quality_summary": {
-                    "accuracy": float(cv_accuracy),
                     "n_components": int(n_components),
                     "requested_n_components": requested_n_components,
                     "effective_n_components": int(n_components),
                     "n_classes": int(len(classes)),
                     "cv_method": f"k-fold (k={cv_folds})",
-                    "f1": float(cv_f1_macro),
                     "train_accuracy": float(train_accuracy),
-                    "balanced_accuracy": float(cv_balanced_accuracy),
+                    "cv_accuracy": float(cv_accuracy),
+                    "cv_balanced_accuracy": float(cv_balanced_accuracy),
+                    "cv_f1_macro": float(cv_f1_macro),
+                    "cv_precision_macro": float(cv_metrics["cv_precision_macro"]),
+                    "cv_recall_macro": float(cv_metrics["cv_recall_macro"]),
+                    "cv_sensitivity_macro": float(cv_metrics["cv_sensitivity_macro"]),
+                    "cv_specificity_macro": float(cv_metrics["cv_specificity_macro"]),
                     "probability_method": probability_method,
                 },
             }
@@ -819,19 +1061,75 @@ class PLSDANode(Node):
                 }
             )
 
+        from ..modeling._artifact_builder import build_model_artifact
+
+        extracted = PLSExtract.from_scp(pls, X_ndd, Y_ndd=Y_dummy_dataset)
+        if extracted.coef is None or extracted.x_mean is None or extracted.y_mean is None:
+            raise RuntimeError("Could not extract PLS-DA coefficients for model artifact persistence")
+        plsda_extract = PLSDAExtract(
+            coef=extracted.coef,
+            x_mean=extracted.x_mean,
+            y_mean=extracted.y_mean,
+            classes=label_categories,
+            x_loadings=extracted.x_loadings,
+            y_loadings=extracted.y_loadings,
+            n_components=int(n_components),
+        )
+        artifact = build_model_artifact(
+            plsda_extract,
+            X_ds,
+            node_id=self.node_id,
+            metrics={
+                "train_accuracy": float(train_accuracy),
+                "cv_accuracy": float(cv_accuracy),
+                "train_balanced_accuracy": float(train_metrics["train_balanced_accuracy"]),
+                "cv_balanced_accuracy": float(cv_balanced_accuracy),
+                "train_f1_macro": float(train_metrics["train_f1_macro"]),
+                "cv_f1_macro": float(cv_f1_macro),
+                "train_precision_macro": float(train_metrics["train_precision_macro"]),
+                "cv_precision_macro": float(cv_metrics["cv_precision_macro"]),
+                "train_recall_macro": float(train_metrics["train_recall_macro"]),
+                "cv_recall_macro": float(cv_metrics["cv_recall_macro"]),
+                "train_sensitivity_macro": float(train_metrics["train_sensitivity_macro"]),
+                "cv_sensitivity_macro": float(cv_metrics["cv_sensitivity_macro"]),
+                "train_specificity_macro": float(train_metrics["train_specificity_macro"]),
+                "cv_specificity_macro": float(cv_metrics["cv_specificity_macro"]),
+                "classification_metrics": classification_metrics,
+                "probability_method": probability_method,
+            },
+        )
+        artifact["metadata"]["probability_method"] = probability_method
+        if probability_method != "softmax":
+            artifact["metadata"]["prediction_note"] = (
+                "Persisted PLS-DA artifacts currently replay the softmax PLS regression rule. "
+                f"The training node used probability_method={probability_method!r} for diagnostics."
+            )
+
         # SherpaDataset-only return: one serialization boundary at API layer
         return NodeResult(
             outputs={
                 "default": scores_dataset,  # SherpaDataset: scores (n_samples, n_components)
+                "X_scores": scores_dataset,  # Alias of default for the declared X_scores port
                 "loadings": loadings_dataset,  # SherpaDataset: loadings (n_components, n_features)
+                "X_loadings": loadings_dataset,  # Alias for direct port wiring
                 "model": model_payload,  # Wrapped model dict for ClassifierPredictNode
+                "predictions": y_pred_cv.tolist(),
+                "probabilities": Y_pred_cv_prob.tolist(),
+                "class_probabilities": Y_pred_cv_prob.tolist(),
+                "metrics": classification_metrics,
                 "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
+                "_model_artifact": artifact,
             },
             diagnostics={
-                "accuracy": cv_accuracy,
                 "train_accuracy": train_accuracy,
+                "cv_accuracy": cv_accuracy,
                 "cv_balanced_accuracy": cv_balanced_accuracy,
-                "f1_score": cv_f1_macro,
+                "cv_f1_macro": cv_f1_macro,
+                "cv_precision_macro": cv_metrics["cv_precision_macro"],
+                "cv_recall_macro": cv_metrics["cv_recall_macro"],
+                "cv_sensitivity_macro": cv_metrics["cv_sensitivity_macro"],
+                "cv_specificity_macro": cv_metrics["cv_specificity_macro"],
+                "metrics": classification_metrics,
                 "n_components": n_components,
                 "requested_n_components": requested_n_components,
                 "effective_n_components": int(n_components),

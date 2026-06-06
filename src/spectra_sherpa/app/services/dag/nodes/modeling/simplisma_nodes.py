@@ -58,8 +58,8 @@ class SIMPLISMANode(Node):
     metadata = NodeMetadata(
         node_type="model.simplisma",
         category="exploratory",
-        label="SIMPLISMA",
-        description="Self-modeling mixture analysis using purity maximization",
+        label="Fit SIMPLISMA Pure Components",
+        description="Fit self-modeling mixture components using purity maximization",
         parameters=[
             NodeParameter(
                 name="n_components",
@@ -67,7 +67,6 @@ class SIMPLISMANode(Node):
                 param_type="number",
                 default=3,
                 min_value=2,
-                max_value=20,
                 step=1,
                 description="Number of pure components to resolve",
                 required=True,
@@ -79,7 +78,6 @@ class SIMPLISMANode(Node):
                 param_type="number",
                 default=0.1,
                 min_value=0.001,
-                max_value=1.0,
                 step=0.01,
                 description="Convergence tolerance",
                 required=False,
@@ -91,7 +89,6 @@ class SIMPLISMANode(Node):
                 param_type="number",
                 default=3.0,
                 min_value=0.0,
-                max_value=10.0,
                 step=0.1,
                 description="Noise level for purity calculation",
                 required=False,
@@ -114,7 +111,7 @@ class SIMPLISMANode(Node):
                 name="model",
                 type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
-                label="SIMPLISMA Model",
+                label="Fitted SIMPLISMA Pure Components",
                 description="Fitted SIMPLISMA model object",
             ),
             PortMetadata(

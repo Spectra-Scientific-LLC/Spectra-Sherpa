@@ -12,9 +12,9 @@ import numpy as np
 
 from spectra_sherpa.app.lib.sherpa_dataset import (
     DomainContext,
+    FeatureAxis,
     SampleAxis,
     SherpaDataset,
-    SpectralAxis,
     TargetContext,
 )
 
@@ -35,10 +35,10 @@ def from_sklearn(bunch: Any, name: str = "") -> SherpaDataset:
     feature_names = list(getattr(bunch, "feature_names", []))
     target_names = [str(n) for n in getattr(bunch, "target_names", [])]
 
-    feature_axis = SpectralAxis(
+    feature_axis = FeatureAxis(
         values=np.arange(n_features, dtype=np.float64),
         labels=feature_names or None,
-        title="features",
+        title="Feature",
     )
 
     sample_axis = SampleAxis(
@@ -82,12 +82,13 @@ def from_sklearn(bunch: Any, name: str = "") -> SherpaDataset:
         target=target,
         target_context=target_context,
         domain=DomainContext(
-            technique="generic",
+            technique="feature_table",
             sample_type=name or None,
         ),
         backend="sklearn",
         title=name or None,
         extra=extra,
+        data_role="X_features",
     )
 
 

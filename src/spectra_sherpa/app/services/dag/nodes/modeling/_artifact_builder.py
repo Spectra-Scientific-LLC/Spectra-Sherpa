@@ -47,6 +47,9 @@ def build_model_artifact(
     # --- Preprocessing chain ---
     _enrich_with_preprocessing(metadata, input_dataset)
 
+    # --- Training data identity ---
+    _enrich_with_training_data_hash(metadata, input_dataset)
+
     # --- Metrics ---
     if metrics:
         metadata["metrics"] = metrics
@@ -70,6 +73,11 @@ def _enrich_with_feature_info(metadata: dict, dataset: Any) -> None:
 
         fa = getattr(dataset, "feature_axis", None)
         if fa is not None:
+            if getattr(fa, "units", None) is not None:
+                metadata["feature_axis_units"] = fa.units
+            if getattr(fa, "title", None) is not None:
+                metadata["feature_axis_title"] = fa.title
+            metadata["feature_axis_class"] = type(fa).__name__
             # Store full feature axis values for axis identity validation
             vals = getattr(fa, "values", None)
             if vals is not None:
@@ -163,3 +171,28 @@ def _enrich_with_preprocessing(metadata: dict, dataset: Any) -> None:
 
     if chain:
         metadata["preprocessing_chain"] = chain
+
+
+def _enrich_with_training_data_hash(metadata: dict, dataset: Any) -> None:
+    """Store a stable hash of the training matrix used by the model."""
+    import hashlib
+
+    data = None
+    if hasattr(dataset, "X"):
+        data = getattr(dataset, "X")
+    elif hasattr(dataset, "data"):
+        data = getattr(dataset, "data")
+    elif isinstance(dataset, np.ndarray):
+        data = dataset
+
+    if data is None:
+        return
+
+    try:
+        arr = np.asarray(data, dtype=np.float64)
+        h = hashlib.sha256()
+        h.update(str(arr.shape).encode("utf-8"))
+        h.update(arr.tobytes(order="C"))
+        metadata["training_data_hash"] = h.hexdigest()
+    except Exception:
+        logger.debug("Could not compute training_data_hash", exc_info=True)

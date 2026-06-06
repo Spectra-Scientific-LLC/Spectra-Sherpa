@@ -48,23 +48,23 @@ class ClassifierPredictNode(Node):
     metadata = NodeMetadata(
         node_type="classification.predict",
         category="classification",
-        label="Apply Classifier",
-        description="Apply a trained classification model (PLS-DA, KNN, or SIMCA) to new data",
+        label="Apply Classification Model",
+        description="Apply a fitted classification model (PLS-DA, KNN, or SIMCA) to inference data",
         parameters=[],
         input_ports=[
             PortMetadata(
                 name="X_new",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
-                label="New Spectra",
-                description="New spectral data to classify",
+                label="Inference Spectra",
+                description="Spectral data to classify; must match the fitted model contract",
             ),
             PortMetadata(
                 name="model",
                 type_ref="spectrasherpa://types/ClassificationModel/1.0",
                 required=True,
-                label="Trained Model",
-                description="Trained classification model from a training node",
+                label="Fitted Classification Model",
+                description="Fitted classification model from a training node",
             ),
         ],
         output_ports=[
@@ -98,7 +98,7 @@ class ClassifierPredictNode(Node):
         model_expr = inputs.get("model", "model")
 
         lines: list[str] = []
-        lines.append(f"{indent}# --- Apply Classifier ({self.node_id}) ---")
+        lines.append(f"{indent}# --- Apply Classification Model ({self.node_id}) ---")
 
         # Extract X
         lines.append(f"{indent}_X_input = {X_expr}")
@@ -167,8 +167,10 @@ class ClassifierPredictNode(Node):
         lines.append(f"{indent}    _T2_lim = _model_dict.get('T2_limits', {{}})")
         lines.append(f"{indent}    _Q_lim = _model_dict.get('Q_limits', {{}})")
         lines.append(f"{indent}    _y_pred, _y_prob = [], []")
+        lines.append(f"{indent}    _accepted_classes, _membership_matrix = [], []")
         lines.append(f"{indent}    for _i in range(len(_X_data)):")
         lines.append(f"{indent}        _dists = {{}}")
+        lines.append(f"{indent}        _accepted, _members = [], []")
         lines.append(f"{indent}        for _cls in _classes:")
         lines.append(f"{indent}            _m = _cm[_cls]")
         lines.append(f"{indent}            _loadings = np.array(_m['loadings'])")
@@ -195,9 +197,15 @@ class ClassifierPredictNode(Node):
         lines.append(f"{indent}            _Q = np.sum(_resid**2)")
         lines.append(f"{indent}            _t2l = float(_T2_lim.get(_cls, 1.0))")
         lines.append(f"{indent}            _ql = float(_Q_lim.get(_cls, 1.0))")
+        lines.append(f"{indent}            _is_member = bool(_T2 <= _t2l and _Q <= _ql)")
         lines.append(f"{indent}            _dists[_cls] = _T2 / max(_t2l, 1e-10) + _Q / max(_ql, 1e-10)")
-        lines.append(f"{indent}        _y_pred.append(min(_dists, key=_dists.get))")
+        lines.append(f"{indent}            _members.append(_is_member)")
+        lines.append(f"{indent}            if _is_member:")
+        lines.append(f"{indent}                _accepted.append(str(_cls))")
+        lines.append(f"{indent}        _y_pred.append(min(_accepted, key=_dists.get) if _accepted else 'unassigned')")
         lines.append(f"{indent}        _y_prob.append(_dists)")
+        lines.append(f"{indent}        _accepted_classes.append(_accepted)")
+        lines.append(f"{indent}        _membership_matrix.append(_members)")
         lines.append(f"{indent}    _y_pred = np.array(_y_pred)")
         lines.append(f"{indent}else:")
         lines.append(f"{indent}    # Fallback: bare estimator with predict()")
@@ -222,6 +230,14 @@ class ClassifierPredictNode(Node):
             f"{indent}    'y_prob': _y_prob if isinstance(_y_prob, list)"
             f" else (_y_prob.tolist() if _y_prob is not None"
             f" and hasattr(_y_prob, 'tolist') else _y_prob),"
+        )
+        lines.append(f"{indent}    'accepted_classes': _accepted_classes if '_accepted_classes' in locals() else None,")
+        lines.append(
+            f"{indent}    'membership_matrix': _membership_matrix if '_membership_matrix' in locals() else None,"
+        )
+        lines.append(
+            f"{indent}    'n_rejected': int(np.sum(_y_pred == 'unassigned')) "
+            "if '_accepted_classes' in locals() else 0,"
         )
         lines.append(f"{indent}}}")
 
@@ -370,10 +386,14 @@ class ClassifierPredictNode(Node):
         n_samples = X_array.shape[0]
         predictions = []
         all_distances = []
+        all_accepted_classes: list[list[str]] = []
+        all_memberships: list[list[bool]] = []
 
         for i in range(n_samples):
             sample = X_array[i]
             sample_distances = {}
+            sample_accepted: list[str] = []
+            sample_membership: list[bool] = []
 
             for cls in classes:
                 cls_str = str(cls)
@@ -426,10 +446,18 @@ class ClassifierPredictNode(Node):
 
                 distance = (T2 / T2_limit) + (Q / Q_limit)
                 sample_distances[cls_str] = distance
+                accepted = bool(T2 <= T2_limit and Q <= Q_limit)
+                sample_membership.append(accepted)
+                if accepted:
+                    sample_accepted.append(cls_str)
 
-            closest_class = min(sample_distances, key=lambda k: sample_distances[k])
-            predictions.append(closest_class)
+            if sample_accepted:
+                predictions.append(min(sample_accepted, key=lambda k: sample_distances[k]))
+            else:
+                predictions.append("unassigned")
             all_distances.append(sample_distances)
+            all_accepted_classes.append(sample_accepted)
+            all_memberships.append(sample_membership)
 
         logger.debug("Classified %d samples into %d classes", n_samples, len(set(predictions)))
 
@@ -445,11 +473,15 @@ class ClassifierPredictNode(Node):
             outputs={
                 "y_pred": predictions,
                 "y_prob": all_distances,
+                "accepted_classes": all_accepted_classes,
+                "membership_matrix": all_memberships,
+                "n_rejected": int(sum(pred == "unassigned" for pred in predictions)),
             },
             diagnostics={
                 "method": "simca",
                 "n_predicted": int(len(predictions)),
                 "n_classes": int(len(set(predictions))),
                 "mean_min_distance": mean_min_distance,
+                "n_rejected": int(sum(pred == "unassigned" for pred in predictions)),
             },
         )

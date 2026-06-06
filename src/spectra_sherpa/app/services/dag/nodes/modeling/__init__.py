@@ -19,10 +19,12 @@ from . import (  # noqa: F401
     clustering_nodes,
     decomposition_nodes,
     efa_nodes,
+    library_compare_node,
     load_apply_node,
     mcr_nodes,
     pca_nodes,
     peak_finding_nodes,
+    peak_id_node,
     pls_nodes,
     regression_nodes,
     simplisma_nodes,
@@ -38,12 +40,14 @@ from .core_utils import (
 )
 from .decomposition_nodes import FastICANode, NMFNode
 from .efa_nodes import EFANode
+from .library_compare_node import CompareVsLibraryNode
 from .load_apply_node import LoadApplyModelNode
 from .mcr_nodes import MCRNode
 
 # Re-export node classes for backward compatibility
 from .pca_nodes import PCANode, PCATransformNode
 from .peak_finding_nodes import PeakFindingNode
+from .peak_id_node import PeakIDNode
 from .pls_nodes import PLSNode, PLSPredictNode
 from .regression_nodes import LinearRegressionNode, PCRNode, SVRNode
 from .simplisma_nodes import SIMPLISMANode
@@ -68,8 +72,10 @@ __all__ = [
     "KMeansNode",
     "DBSCANNode",
     "PeakFindingNode",
+    "PeakIDNode",
     "SIMPLISMANode",
     "NMFNode",
     "FastICANode",
     "LoadApplyModelNode",
+    "CompareVsLibraryNode",
 ]

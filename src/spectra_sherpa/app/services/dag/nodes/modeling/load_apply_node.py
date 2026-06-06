@@ -1,7 +1,7 @@
 """
-Load & Apply Model node — generic model loading and inference.
+Apply Saved Model Artifact node — generic model-artifact loading and inference.
 
-Loads a persisted model artifact (manifest + arrays) and applies it to new data.
+Loads a persisted model artifact (manifest + arrays) and applies it to inference data.
 Works with all model types: PCA, PLS, MCR, SIMPLISMA, PLSDA, KNN, SIMCA.
 """
 
@@ -27,9 +27,9 @@ from ...node_base import (
 logger = logging.getLogger(__name__)
 
 # Model types that support prediction (classification/regression)
-_PREDICT_TYPES = {"pls", "plsda", "knn", "simca"}
+_PREDICT_TYPES = {"pls", "pcr", "linear_regression", "svr", "plsda", "knn", "simca"}
 # Model types that support transform (decomposition)
-_TRANSFORM_TYPES = {"pca", "mcr", "simplisma"}
+_TRANSFORM_TYPES = {"pca", "mcr", "simplisma", "nmf", "fastica"}
 # Model types that are diagnostic only (no prediction/transform on new data)
 _DIAGNOSTIC_TYPES = {"efa"}
 
@@ -37,7 +37,12 @@ _DIAGNOSTIC_TYPES = {"efa"}
 _OUTPUT_TYPE_MAP = {
     "pca": "decomposition",
     "pls": "regression",
+    "pcr": "regression",
+    "linear_regression": "regression",
+    "svr": "regression",
     "mcr": "decomposition",
+    "nmf": "decomposition",
+    "fastica": "decomposition",
     "simplisma": "decomposition",
     "plsda": "classification",
     "knn": "classification",
@@ -63,14 +68,14 @@ class LoadApplyModelNode(Node):
     metadata = NodeMetadata(
         node_type="model.load_apply",
         category="regression",
-        label="Load & Apply Model",
-        description="Load a saved model artifact and apply it to new data",
+        label="Apply Saved Model Artifact",
+        description="Load a saved model artifact and apply it to inference data",
         parameters=[
             NodeParameter(
                 name="model_id",
-                label="Model",
+                label="Artifact",
                 param_type="model_select",
-                description="Saved model to load and apply",
+                description="Saved model artifact to load and apply",
                 required=False,
             ),
         ],
@@ -79,15 +84,15 @@ class LoadApplyModelNode(Node):
                 name="X_new",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
-                label="New Data",
-                description="Spectral data to apply the model to",
+                label="Inference Data",
+                description="Spectral data to apply the saved artifact to",
             ),
             PortMetadata(
                 name="model_ref",
                 type_ref="spectrasherpa://types/ModelReference/1.0",
                 required=False,
-                label="Model Reference",
-                description="Model ID from training node (overrides parameter)",
+                label="Artifact Reference",
+                description="Artifact ID from a training node or saved model artifact (overrides parameter)",
             ),
         ],
         output_ports=[
@@ -95,7 +100,7 @@ class LoadApplyModelNode(Node):
                 name="result",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
-                label="Result",
+                label="Predictions",
                 description="Transformed or predicted output",
             ),
             PortMetadata(
@@ -109,7 +114,7 @@ class LoadApplyModelNode(Node):
                 name="model_id",
                 type_ref="spectrasherpa://types/ModelReference/1.0",
                 required=True,
-                label="Model ID",
+                label="Artifact ID",
                 description="Artifact UID of the loaded model (for provenance tracing)",
             ),
         ],
@@ -132,7 +137,7 @@ class LoadApplyModelNode(Node):
         model_id = self.parameters.get("model_id", "")
 
         lines: list[str] = []
-        lines.append(f"{indent}# --- Load & Apply Model ({self.node_id}) ---")
+        lines.append(f"{indent}# --- Apply Saved Model Artifact ({self.node_id}) ---")
         lines.append(f"{indent}# >>> EDIT: provide path to model artifact directory <<<")
         lines.append(f"{indent}# Original model_id: {model_id!r}")
         lines.append(f"{indent}import json")
@@ -152,19 +157,44 @@ class LoadApplyModelNode(Node):
         lines.append(f"{indent})")
         lines.append(f"{indent}if _X_data.ndim == 1:")
         lines.append(f"{indent}    _X_data = _X_data.reshape(1, -1)")
+        lines.append(f"{indent}from spectra_sherpa.app.services.model_application import (")
+        lines.append(f"{indent}    _apply_feature_mask as _sherpa_apply_feature_mask,")
+        lines.append(f"{indent}    _applicability_diagnostics as _sherpa_applicability_diagnostics,")
+        lines.append(f"{indent}    _prepare_X_for_artifact as _sherpa_prepare_X_for_artifact,")
+        lines.append(f"{indent}    validate_feature_contract as _sherpa_validate_feature_contract,")
+        lines.append(f"{indent}    validate_prepared_feature_contract as _sherpa_validate_prepared_feature_contract,")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}_sherpa_validate_feature_contract(_X_data, _X_input, _manifest)")
+        lines.append(
+            f"{indent}_X_data, _, _, _sherpa_replay_warnings = "
+            f"_sherpa_prepare_X_for_artifact(_X_data, None, _manifest, scope='all')"
+        )
+        lines.append(
+            f"{indent}_X_data, _sherpa_feature_warnings = " f"_sherpa_apply_feature_mask(_X_data, _X_input, _manifest)"
+        )
+        lines.append(f"{indent}for _warning in _sherpa_replay_warnings + _sherpa_feature_warnings:")
+        lines.append(f"{indent}    print(f'  Load & Apply warning: {{_warning}}')")
+        lines.append(f"{indent}_sherpa_validate_prepared_feature_contract(_X_data, _manifest)")
 
         # Dispatch by model type using Extract classes
         lines.append(f"{indent}_labels = None  # Only set for classification models")
+        lines.append(f"{indent}_applicability = None")
         lines.append(f"{indent}if _model_type == 'pca':")
         lines.append(f"{indent}    _loadings = _arrays['loadings']")
         lines.append(f"{indent}    _mean = _arrays.get('mean')")
+        lines.append(f"{indent}    _scale = _arrays.get('scale')")
         lines.append(f"{indent}    _centered = _X_data - _mean if _mean is not None else _X_data")
+        lines.append(f"{indent}    if _scale is not None:")
+        lines.append(f"{indent}        _scale = np.where(np.abs(_scale) > 1e-12, _scale, 1.0)")
+        lines.append(f"{indent}        _centered = _centered / _scale")
         lines.append(f"{indent}    _result = _centered @ _loadings.T")
         lines.append(f"{indent}elif _model_type == 'pls':")
-        lines.append(f"{indent}    _coef = _arrays['coef']")
-        lines.append(f"{indent}    _x_mean = _arrays.get('x_mean', np.zeros(_X_data.shape[1]))")
-        lines.append(f"{indent}    _y_mean = _arrays.get('y_mean', np.zeros(_coef.shape[1]))")
-        lines.append(f"{indent}    _result = (_X_data - _x_mean) @ _coef + _y_mean")
+        lines.append(f"{indent}    from spectra_sherpa.app.lib.adapters.scp_extractors import (")
+        lines.append(f"{indent}        PLSExtract as _PLSExtract,")
+        lines.append(f"{indent}    )")
+        lines.append(f"{indent}    _extract = _PLSExtract.from_artifact(_manifest, _arrays)")
+        lines.append(f"{indent}    _result = _extract.predict(_X_data)")
+        lines.append(f"{indent}    _applicability = _sherpa_applicability_diagnostics(_extract, _X_data)")
         lines.append(f"{indent}elif _model_type in ('mcr', 'simplisma'):")
         lines.append(f"{indent}    _St = _arrays['St']")
         lines.append(f"{indent}    _result = _X_data @ np.linalg.pinv(_St)")
@@ -190,6 +220,7 @@ class LoadApplyModelNode(Node):
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'result': _result,")
         lines.append(f"{indent}    'labels': _labels,")
+        lines.append(f"{indent}    'applicability': _applicability,")
         lines.append(f"{indent}    'model_id': {model_id!r},")
         lines.append(f"{indent}}}")
 
@@ -238,52 +269,29 @@ class LoadApplyModelNode(Node):
         if X_data.ndim == 1:
             X_data = X_data.reshape(1, -1)
 
-        # --- Apply feature mask before validating feature count ---
-        # When a model was trained on selected features, it stores:
-        #   - feature_mask: boolean mask over the full spectrum
-        #   - selected_features: the actual axis values of selected features
-        #   - n_features: count of *selected* features the model expects
-        # We must apply the mask FIRST so n_features validation passes.
-        selected_features = manifest.get("selected_features")
-        feature_mask = manifest.get("feature_mask")
-        if feature_mask is not None and isinstance(X_new, SherpaDataset):
-            mask = np.asarray(feature_mask, dtype=bool)
-            fa = getattr(X_new, "feature_axis", None)
-            if fa is not None and fa.values is not None:
-                actual_wn = np.asarray(fa.values, dtype=np.float64)
-                # Apply mask only when new data is full-spectrum
-                if len(mask) == len(actual_wn) and X_data.shape[1] == len(actual_wn):
-                    X_data = X_data[:, mask]
-                    logger.info(f"Applied saved feature mask: {len(actual_wn)} -> {X_data.shape[1]} features")
+        # Replay stored preprocessing and feature-selection state. This keeps
+        # workflow Load & Apply aligned with the Models API and the persisted
+        # My Dataset comparison path.
+        from spectra_sherpa.app.services.model_application import (
+            _applicability_diagnostics,
+            _apply_feature_mask,
+            _prepare_X_for_artifact,
+            validate_feature_contract,
+            validate_prepared_feature_contract,
+        )
 
-        # --- Validate feature count ---
-        n_features = manifest.get("n_features")
-        if n_features is not None and X_data.shape[1] != n_features:
-            raise ValueError(f"Feature count mismatch: model expects {n_features} features, " f"got {X_data.shape[1]}")
+        # Feature-axis validation lives in the shared Models API helper. For
+        # artifacts trained after non-contiguous variable selection, it compares
+        # the selected wavelength coordinates as actual_wn[mask], not a prefix.
+        validate_feature_contract(X_data, X_new, manifest)
+        X_data, _, _, replay_warnings = _prepare_X_for_artifact(X_data, None, manifest, scope="all")
+        # Applied saved feature mask before final feature-count validation.
+        X_data, feature_warnings = _apply_feature_mask(X_data, X_new, manifest)
+        for warning in replay_warnings + feature_warnings:
+            logger.warning("Load & Apply %s: %s", model_id, warning)
 
-        # --- Validate axis identity when selection was applied ---
-        if selected_features is not None and isinstance(X_new, SherpaDataset):
-            expected_wn = np.asarray(selected_features, dtype=np.float64)
-            fa = getattr(X_new, "feature_axis", None)
-            if fa is not None and fa.values is not None:
-                actual_wn = np.asarray(fa.values, dtype=np.float64)
-                # Compare masked axis values for non-contiguous selections
-                if X_data.shape[1] == len(expected_wn):
-                    if feature_mask is not None:
-                        mask = np.asarray(feature_mask, dtype=bool)
-                        if len(mask) == len(actual_wn):
-                            compare_wn = actual_wn[mask]
-                        else:
-                            compare_wn = actual_wn[: len(expected_wn)]
-                    else:
-                        compare_wn = actual_wn[: len(expected_wn)]
-                    if not np.allclose(compare_wn, expected_wn, atol=0.5):
-                        logger.warning(
-                            "Feature axis values differ from model training axis. "
-                            f"Expected range [{expected_wn[0]:.1f}, {expected_wn[-1]:.1f}], "
-                            f"got [{compare_wn[0]:.1f}, {compare_wn[-1]:.1f}]. "
-                            "Predictions may be unreliable."
-                        )
+        # Feature count mismatch is checked after preprocessing and selection replay.
+        validate_prepared_feature_contract(X_data, manifest)
 
         # --- Reconstruct extract and apply ---
         extract = extract_cls.from_artifact(manifest, arrays)  # type: ignore[attr-defined]
@@ -297,11 +305,21 @@ class LoadApplyModelNode(Node):
         if model_type in _TRANSFORM_TYPES:
             transformed = extract.transform(X_data)
             result["result"] = transformed
+            result["transformed"] = transformed
 
-        elif model_type == "pls":
+        elif model_type in {"pls", "pcr", "linear_regression", "svr"}:
             predicted = extract.predict(X_data)
             result["result"] = predicted
             result["y_pred"] = predicted
+            result["predictions"] = predicted
+            applicability = _applicability_diagnostics(extract, X_data)
+            if applicability is not None:
+                result["applicability"] = applicability
+                n_out = int(applicability.get("n_out_of_domain", 0) or 0)
+                if n_out:
+                    meta["applicability_warning"] = (
+                        f"{n_out} sample{'s' if n_out != 1 else ''} outside saved model applicability domain"
+                    )
 
         elif model_type in _PREDICT_TYPES:
             # Classification: predict returns (labels, probabilities)

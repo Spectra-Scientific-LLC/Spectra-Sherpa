@@ -19,6 +19,7 @@ import numpy as np
 
 from spectra_sherpa.app.lib.sherpa_dataset import (
     AxisInfo,
+    FeatureAxis,
     SampleAxis,
     SherpaDataset,
     SpectralAxis,
@@ -161,6 +162,7 @@ def create_spectral_dataset(
     units: Optional[str] = None,
     title: Optional[str] = None,
     meta: Optional[dict] = None,
+    data_role: Optional[str] = None,
 ) -> SherpaDataset:
     """Create a SherpaDataset with proper coordinate preservation.
 
@@ -189,6 +191,8 @@ def create_spectral_dataset(
         units: Data-value units (e.g., "absorbance", "score", "loading")
         title: Dataset title
         meta: Metadata dictionary to attach to dataset.meta
+        data_role: Optional canonical role. Use ``X_features`` for latent
+            score/embedding outputs that should not be treated as ordered spectra.
 
     Returns:
         SherpaDataset with coordinates properly attached
@@ -212,10 +216,21 @@ def create_spectral_dataset(
     x_axis_info = make_safe_coord(x_coord) if x_coord is not None else None
     y_axis_info = make_safe_coord(y_coord) if y_coord is not None else None
 
+    output_data_role = data_role
     feature_axis = None
     if x_axis_info is not None:
         if isinstance(x_axis_info, SpectralAxis):
             feature_axis = x_axis_info
+        elif isinstance(x_axis_info, FeatureAxis):
+            feature_axis = x_axis_info
+            output_data_role = output_data_role or "X_features"
+        elif output_data_role == "X_features":
+            feature_axis = FeatureAxis(
+                values=x_axis_info.values,
+                labels=x_axis_info.labels,
+                units=x_axis_info.units,
+                title=x_axis_info.title,
+            )
         else:
             feature_axis = SpectralAxis(
                 values=x_axis_info.values,
@@ -243,6 +258,7 @@ def create_spectral_dataset(
         units=units,
         title=title,
         extra=meta.copy() if meta is not None else None,
+        data_role=output_data_role,
     )
 
 

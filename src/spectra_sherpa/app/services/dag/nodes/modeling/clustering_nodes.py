@@ -25,6 +25,54 @@ from ...node_base import (
 logger = logging.getLogger(__name__)
 
 
+def _scipy_distance_metric(metric: str) -> str:
+    """Map UI/sklearn-style metric aliases to scipy distance metric names."""
+    aliases = {
+        "manhattan": "cityblock",
+        "l1": "cityblock",
+        "l2": "euclidean",
+    }
+    return aliases.get(str(metric), str(metric))
+
+
+def _cluster_summary_rows(labels: np.ndarray, source_labels: list[Any] | None = None) -> list[dict[str, Any]]:
+    """Return scientist-facing cluster counts and optional member previews."""
+    rows: list[dict[str, Any]] = []
+    for label in sorted(set(labels.tolist())):
+        indices = np.where(labels == label)[0]
+        row: dict[str, Any] = {
+            "cluster": int(label),
+            "count": int(indices.size),
+            "fraction": float(indices.size / labels.size) if labels.size else 0.0,
+        }
+        if source_labels:
+            preview = [str(source_labels[i]) for i in indices[:10] if i < len(source_labels)]
+            row["sample_preview"] = preview
+            row["preview_truncated"] = bool(indices.size > len(preview))
+        rows.append(row)
+    return rows
+
+
+def _cluster_quality_metrics(X_data: np.ndarray, labels: np.ndarray) -> dict[str, float | None]:
+    """Compute optional cluster quality metrics when label structure permits them."""
+    metrics: dict[str, float | None] = {"silhouette_score": None, "davies_bouldin_score": None}
+    unique = set(labels.tolist())
+    if -1 in unique:
+        # DBSCAN noise labels are not a cluster; report counts but avoid a
+        # misleading global compactness score when noise dominates.
+        unique = {label for label in unique if label != -1}
+    if len(unique) < 2 or len(unique) >= len(labels):
+        return metrics
+    try:
+        from sklearn.metrics import davies_bouldin_score, silhouette_score
+
+        metrics["silhouette_score"] = float(silhouette_score(X_data, labels))
+        metrics["davies_bouldin_score"] = float(davies_bouldin_score(X_data, labels))
+    except Exception:
+        logger.debug("Could not compute clustering quality metrics", exc_info=True)
+    return metrics
+
+
 @register_node
 class HCANode(Node):
     """
@@ -36,8 +84,8 @@ class HCANode(Node):
     metadata = NodeMetadata(
         node_type="model.hca",
         category="clustering",
-        label="HCA",
-        description="Hierarchical clustering (agglomerative) for unsupervised grouping",
+        label="Fit HCA Clustering",
+        description="Fit hierarchical clustering (agglomerative) for unsupervised grouping",
         parameters=[
             NodeParameter(
                 name="n_clusters",
@@ -45,7 +93,6 @@ class HCANode(Node):
                 param_type="number",
                 default=3,
                 min_value=2,
-                max_value=50,
                 step=1,
                 description="Number of clusters to form",
                 required=True,
@@ -87,19 +134,27 @@ class HCANode(Node):
         input_ports=[
             PortMetadata(
                 name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Input Spectra",
-                description="Spectral data to process",
+                label="Input Data Matrix",
+                description="Spectral dataset, PCA scores, or multivariate feature table to cluster",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
         ],
         output_type="dict",
         output_ports=[
             PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/Array1D/1.0",
+                required=True,
+                label="Cluster Labels",
+                description="Primary cluster-label output for direct node replacement",
+            ),
+            PortMetadata(
                 name="model",
                 type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=True,
-                label="HCA Model",
+                label="Fitted HCA Clustering",
                 description="Cluster hierarchy (Linkage Matrix)",
             ),
             PortMetadata(
@@ -110,11 +165,32 @@ class HCANode(Node):
                 description="Assigned cluster labels for each sample",
             ),
             PortMetadata(
+                name="cluster_assignment",
+                type_ref="spectrasherpa://types/Array1D/1.0",
+                required=True,
+                label="Cluster Assignment",
+                description="Alias of labels for direct downstream comparison",
+            ),
+            PortMetadata(
+                name="cluster_summary",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Cluster Summary",
+                description="Cluster counts, fractions, and sample previews",
+            ),
+            PortMetadata(
                 name="linkage_matrix",
                 type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Linkage Matrix",
                 description="SciPy linkage matrix (Z)",
+            ),
+            PortMetadata(
+                name="dendrogram_data",
+                type_ref="spectrasherpa://types/Visualization/1.0",
+                required=True,
+                label="Dendrogram Data",
+                description="Plotly dendrogram payload derived from the linkage matrix",
             ),
             PortMetadata(
                 name="embedding",
@@ -148,17 +224,32 @@ class HCANode(Node):
         lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
         lines.append(f"{indent}    dtype=np.float64,")
         lines.append(f"{indent})")
-        lines.append(f"{indent}_Z = linkage(_X_data, method='{linkage_method}', metric='{metric}')")
+        lines.append(f"{indent}if _X_data.ndim == 1:")
+        lines.append(f"{indent}    _X_data = _X_data.reshape(-1, 1)")
+        lines.append(f"{indent}if _X_data.shape[1] == 1:")
+        lines.append(f"{indent}    _embedding = np.column_stack([_X_data[:, 0], np.zeros(_X_data.shape[0])])")
+        lines.append(f"{indent}else:")
+        lines.append(f"{indent}    _embedding = _X_data[:, :2]")
+        lines.append(f"{indent}_metric = {_scipy_distance_metric(str(metric))!r}")
+        lines.append(f"{indent}_Z = linkage(_X_data, method='{linkage_method}', metric=_metric)")
         lines.append(f"{indent}_labels = fcluster(_Z, t={n_clusters}, criterion='maxclust')")
+        lines.append(
+            f"{indent}_dendrogram_data = {{'type': 'dendrogram', 'linkage_matrix': _Z.tolist(),"
+            f" 'labels': _labels.tolist()}}"
+        )
         lines.append(
             f'{indent}print(f"  HCA ({n_clusters} clusters,'
             f" {linkage_method} linkage, {metric}):"
             f' {{len(set(_labels))}} clusters found")'
         )
         lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'default': _labels.tolist(),")
         lines.append(f"{indent}    'labels': _labels.tolist(),")
+        lines.append(f"{indent}    'cluster_assignment': _labels.tolist(),")
         lines.append(f"{indent}    'model': None,")
         lines.append(f"{indent}    'linkage_matrix': _Z.tolist(),")
+        lines.append(f"{indent}    'embedding': _embedding.tolist(),")
+        lines.append(f"{indent}    'dendrogram_data': _dendrogram_data,")
         lines.append(f"{indent}}}")
 
         return lines
@@ -188,6 +279,7 @@ class HCANode(Node):
         n_clusters = self.parameters.get("n_clusters", 3)
         linkage_method = self.parameters.get("linkage", "ward")
         metric = self.parameters.get("metric", "euclidean")
+        scipy_metric = _scipy_distance_metric(str(metric))
 
         if linkage_method == "ward" and metric != "euclidean":
             raise ValueError("Ward linkage requires euclidean metric")
@@ -204,7 +296,7 @@ class HCANode(Node):
             Z = linkage(X_data, method=linkage_method, metric="euclidean")
         else:
             # Compute pairwise distances
-            distances = pdist(X_data, metric=metric)
+            distances = pdist(X_data, metric=scipy_metric)
             Z = linkage(distances, method=linkage_method)
 
         # 2. Extract Cluster Labels
@@ -237,14 +329,20 @@ class HCANode(Node):
 
         # Generate dendrogram plot using pre-computed linkage Z
         dendrogram_plot = self._generate_dendrogram(Z, linkage_method, source_labels, X_data.shape[0])
+        cluster_summary = _cluster_summary_rows(labels, source_labels)
+        quality_metrics = _cluster_quality_metrics(X_data, labels)
 
         return NodeResult(
             outputs={
+                "default": label_list,
                 "model": None,  # Scikit-learn model not used
                 "linkage_matrix": Z.tolist(),
                 "labels": label_list,
+                "cluster_assignment": label_list,
+                "cluster_summary": cluster_summary,
                 "n_clusters": int(n_clusters),
                 "embedding": embedding.tolist(),  # 2D projection for cluster scatter
+                "dendrogram_data": dendrogram_plot,
                 "plots": {
                     "dendrogram": dendrogram_plot,
                     "default": dendrogram_plot,  # Hint for Quick Plot to use this
@@ -263,6 +361,8 @@ class HCANode(Node):
                         "n_clusters": int(n_clusters),
                         "linkage": str(linkage_method),
                         "metric": str(metric),
+                        "silhouette_score": quality_metrics["silhouette_score"],
+                        "davies_bouldin_score": quality_metrics["davies_bouldin_score"],
                     },
                 },
             },
@@ -270,6 +370,8 @@ class HCANode(Node):
                 "n_clusters": int(n_clusters),
                 "linkage": linkage_method,
                 "metric": metric,
+                "silhouette_score": quality_metrics["silhouette_score"],
+                "davies_bouldin_score": quality_metrics["davies_bouldin_score"],
                 "n_samples": int(X_data.shape[0]),
             },
         )
@@ -400,8 +502,8 @@ class KMeansNode(Node):
     metadata = NodeMetadata(
         node_type="model.kmeans",
         category="clustering",
-        label="KMeans",
-        description="K-Means clustering for unsupervised grouping",
+        label="Fit K-Means Clustering",
+        description="Fit K-Means clustering for unsupervised grouping",
         parameters=[
             NodeParameter(
                 name="n_clusters",
@@ -409,7 +511,6 @@ class KMeansNode(Node):
                 param_type="number",
                 default=3,
                 min_value=2,
-                max_value=50,
                 step=1,
                 description="Number of clusters to form",
                 required=True,
@@ -421,7 +522,6 @@ class KMeansNode(Node):
                 param_type="number",
                 default=10,
                 min_value=1,
-                max_value=50,
                 step=1,
                 description="Number of k-means initializations",
                 required=False,
@@ -433,7 +533,6 @@ class KMeansNode(Node):
                 param_type="number",
                 default=300,
                 min_value=50,
-                max_value=1000,
                 step=50,
                 description="Maximum iterations per initialization",
                 required=False,
@@ -445,7 +544,6 @@ class KMeansNode(Node):
                 param_type="number",
                 default=42,
                 min_value=0,
-                max_value=9999,
                 step=1,
                 description="Random seed for reproducibility",
                 required=False,
@@ -456,19 +554,27 @@ class KMeansNode(Node):
         input_ports=[
             PortMetadata(
                 name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Input Spectra",
-                description="Spectral data to process",
+                label="Input Data Matrix",
+                description="Spectral dataset, PCA scores, or multivariate feature table to cluster",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
         ],
         output_type="dict",
         output_ports=[
             PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/Array1D/1.0",
+                required=True,
+                label="Cluster Labels",
+                description="Primary cluster-label output for direct node replacement",
+            ),
+            PortMetadata(
                 name="model",
                 type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=True,
-                label="KMeans Model",
+                label="Fitted K-Means Clustering",
                 description="Fitted KMeans model object",
             ),
             PortMetadata(
@@ -477,6 +583,20 @@ class KMeansNode(Node):
                 required=True,
                 label="Cluster Labels",
                 description="Assigned cluster labels",
+            ),
+            PortMetadata(
+                name="cluster_assignment",
+                type_ref="spectrasherpa://types/Array1D/1.0",
+                required=True,
+                label="Cluster Assignment",
+                description="Alias of labels for direct downstream comparison",
+            ),
+            PortMetadata(
+                name="cluster_summary",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Cluster Summary",
+                description="Cluster counts, fractions, and sample previews",
             ),
             PortMetadata(
                 name="centroids",
@@ -518,6 +638,12 @@ class KMeansNode(Node):
         lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
         lines.append(f"{indent}    dtype=np.float64,")
         lines.append(f"{indent})")
+        lines.append(f"{indent}if _X_data.ndim == 1:")
+        lines.append(f"{indent}    _X_data = _X_data.reshape(-1, 1)")
+        lines.append(f"{indent}if _X_data.shape[1] == 1:")
+        lines.append(f"{indent}    _embedding = np.column_stack([_X_data[:, 0], np.zeros(_X_data.shape[0])])")
+        lines.append(f"{indent}else:")
+        lines.append(f"{indent}    _embedding = _X_data[:, :2]")
         lines.append(
             f"{indent}_km = KMeans(n_clusters={n_clusters},"
             f" n_init={n_init}, max_iter={max_iter},"
@@ -527,9 +653,12 @@ class KMeansNode(Node):
         lines.append(f"{indent}_centroids = _km.cluster_centers_")
         lines.append(f'{indent}print(f"  KMeans ({n_clusters} clusters): inertia={{_km.inertia_:.4f}}")')
         lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'default': _labels.tolist(),")
         lines.append(f"{indent}    'labels': _labels.tolist(),")
+        lines.append(f"{indent}    'cluster_assignment': _labels.tolist(),")
         lines.append(f"{indent}    'model': _km,")
         lines.append(f"{indent}    'centroids': _centroids.tolist(),")
+        lines.append(f"{indent}    'embedding': _embedding.tolist(),")
         lines.append(f"{indent}}}")
 
         return lines
@@ -598,20 +727,16 @@ class KMeansNode(Node):
                 data_values = _y_coord.data
                 source_labels = data_values.tolist() if hasattr(data_values, "tolist") else list(data_values)
 
-        # Compute silhouette score when meaningful (>1 cluster, >1 unique label)
-        sil_score = None
-        if n_clusters > 1 and len(set(label_list)) > 1:
-            try:
-                from sklearn.metrics import silhouette_score
-
-                sil_score = float(silhouette_score(X_data, labels))
-            except Exception:
-                pass
+        quality_metrics = _cluster_quality_metrics(X_data, labels)
+        cluster_summary = _cluster_summary_rows(labels, source_labels)
 
         return NodeResult(
             outputs={
+                "default": label_list,
                 "model": model,
                 "labels": label_list,
+                "cluster_assignment": label_list,
+                "cluster_summary": cluster_summary,
                 "centroids": model.cluster_centers_.tolist(),
                 "inertia": float(model.inertia_),
                 "n_clusters": int(n_clusters),
@@ -626,14 +751,16 @@ class KMeansNode(Node):
                     "source_labels": source_labels,
                     "quality_summary": {
                         "n_clusters": int(n_clusters),
-                        "silhouette_score": float(sil_score) if sil_score is not None else None,
+                        "silhouette_score": quality_metrics["silhouette_score"],
+                        "davies_bouldin_score": quality_metrics["davies_bouldin_score"],
                         "inertia": float(model.inertia_),
                     },
                 },
             },
             diagnostics={
                 "n_clusters": int(n_clusters),
-                "silhouette_score": sil_score,
+                "silhouette_score": quality_metrics["silhouette_score"],
+                "davies_bouldin_score": quality_metrics["davies_bouldin_score"],
                 "inertia": float(model.inertia_),
             },
         )
@@ -650,8 +777,8 @@ class DBSCANNode(Node):
     metadata = NodeMetadata(
         node_type="model.dbscan",
         category="clustering",
-        label="DBSCAN",
-        description="Density-based clustering for unsupervised grouping",
+        label="Fit DBSCAN Clustering",
+        description="Fit density-based clustering for unsupervised grouping",
         parameters=[
             NodeParameter(
                 name="eps",
@@ -659,7 +786,6 @@ class DBSCANNode(Node):
                 param_type="number",
                 default=0.5,
                 min_value=0.01,
-                max_value=10.0,
                 step=0.01,
                 description="Neighborhood radius",
                 required=True,
@@ -671,7 +797,6 @@ class DBSCANNode(Node):
                 param_type="number",
                 default=5,
                 min_value=2,
-                max_value=50,
                 step=1,
                 description="Minimum samples per cluster",
                 required=True,
@@ -692,19 +817,27 @@ class DBSCANNode(Node):
         input_ports=[
             PortMetadata(
                 name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Input Spectra",
-                description="Spectral data to process",
+                label="Input Data Matrix",
+                description="Spectral dataset, PCA scores, or multivariate feature table to cluster",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
         ],
         output_type="dict",
         output_ports=[
             PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/Array1D/1.0",
+                required=True,
+                label="Cluster Labels",
+                description="Primary cluster-label output for direct node replacement",
+            ),
+            PortMetadata(
                 name="model",
                 type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=True,
-                label="DBSCAN Model",
+                label="Fitted DBSCAN Clustering",
                 description="Fitted DBSCAN model object",
             ),
             PortMetadata(
@@ -713,6 +846,20 @@ class DBSCANNode(Node):
                 required=True,
                 label="Cluster Labels",
                 description="Assigned cluster labels (noise=-1)",
+            ),
+            PortMetadata(
+                name="cluster_assignment",
+                type_ref="spectrasherpa://types/Array1D/1.0",
+                required=True,
+                label="Cluster Assignment",
+                description="Alias of labels for direct downstream comparison",
+            ),
+            PortMetadata(
+                name="cluster_summary",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Cluster Summary",
+                description="Cluster counts, fractions, and sample previews",
             ),
             PortMetadata(
                 name="embedding",
@@ -746,6 +893,12 @@ class DBSCANNode(Node):
         lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
         lines.append(f"{indent}    dtype=np.float64,")
         lines.append(f"{indent})")
+        lines.append(f"{indent}if _X_data.ndim == 1:")
+        lines.append(f"{indent}    _X_data = _X_data.reshape(-1, 1)")
+        lines.append(f"{indent}if _X_data.shape[1] == 1:")
+        lines.append(f"{indent}    _embedding = np.column_stack([_X_data[:, 0], np.zeros(_X_data.shape[0])])")
+        lines.append(f"{indent}else:")
+        lines.append(f"{indent}    _embedding = _X_data[:, :2]")
         lines.append(f"{indent}_db = DBSCAN(eps={eps}, min_samples={min_samples}, metric='{metric}')")
         lines.append(f"{indent}_labels = _db.fit_predict(_X_data)")
         lines.append(
@@ -755,8 +908,11 @@ class DBSCANNode(Node):
             f' {{(_labels == -1).sum()}} noise points")'
         )
         lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'default': _labels.tolist(),")
         lines.append(f"{indent}    'labels': _labels.tolist(),")
+        lines.append(f"{indent}    'cluster_assignment': _labels.tolist(),")
         lines.append(f"{indent}    'model': _db,")
+        lines.append(f"{indent}    'embedding': _embedding.tolist(),")
         lines.append(f"{indent}}}")
 
         return lines
@@ -823,11 +979,16 @@ class DBSCANNode(Node):
         n_samples_total = int(X_data.shape[0])
         n_noise = int(np.sum(labels == -1))
         noise_fraction = float(n_noise / n_samples_total) if n_samples_total > 0 else 0.0
+        quality_metrics = _cluster_quality_metrics(X_data, labels)
+        cluster_summary = _cluster_summary_rows(labels, source_labels)
 
         return NodeResult(
             outputs={
+                "default": label_list,
                 "model": model,
                 "labels": label_list,
+                "cluster_assignment": label_list,
+                "cluster_summary": cluster_summary,
                 "n_clusters": int(n_clusters),
                 "embedding": embedding.tolist(),
                 "metadata": {
@@ -841,6 +1002,12 @@ class DBSCANNode(Node):
                     "sample_labels": sample_labels,
                     "label_categories": label_categories,
                     "source_labels": source_labels,
+                    "quality_summary": {
+                        "n_clusters": int(n_clusters),
+                        "noise_fraction": noise_fraction,
+                        "silhouette_score": quality_metrics["silhouette_score"],
+                        "davies_bouldin_score": quality_metrics["davies_bouldin_score"],
+                    },
                 },
             },
             diagnostics={
@@ -848,6 +1015,8 @@ class DBSCANNode(Node):
                 "eps": float(eps),
                 "min_samples": int(min_samples),
                 "noise_fraction": noise_fraction,
+                "silhouette_score": quality_metrics["silhouette_score"],
+                "davies_bouldin_score": quality_metrics["davies_bouldin_score"],
                 "metric": metric,
             },
         )

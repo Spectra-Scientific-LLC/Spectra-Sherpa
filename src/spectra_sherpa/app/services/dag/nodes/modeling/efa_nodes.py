@@ -52,8 +52,8 @@ class EFANode(Node):
     metadata = NodeMetadata(
         node_type="model.efa",
         category="exploratory",
-        label="EFA",
-        description="Evolving Factor Analysis for rank determination",
+        label="Fit EFA Decomposition",
+        description="Fit Evolving Factor Analysis for rank determination",
         parameters=[
             NodeParameter(
                 name="n_components",
@@ -61,7 +61,6 @@ class EFANode(Node):
                 param_type="number",
                 default=10,
                 min_value=1,
-                max_value=50,
                 step=1,
                 description="Number of components to compute",
                 required=False,
@@ -83,7 +82,7 @@ class EFANode(Node):
                 name="model",
                 type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=True,
-                label="EFA Model",
+                label="Fitted EFA Decomposition",
                 description="EFA model object",
             ),
             PortMetadata(
@@ -258,6 +257,14 @@ class EFANode(Node):
                     },
                 }
             )
+        for efa_dataset in (forward_ev_dataset, backward_ev_dataset):
+            if efa_dataset is not None:
+                efa_dataset.meta.update(
+                    {
+                        "type": "EFA",
+                        "n_components": n_components,
+                    }
+                )
 
         efa_diagnostics: dict[str, Any] = {"n_components": int(n_components)}
         if forward_ev is not None:
@@ -265,12 +272,26 @@ class EFANode(Node):
         if backward_ev is not None:
             efa_diagnostics["n_eigenvalues_backward"] = int(backward_ev.shape[1])
 
+        from ._artifact_builder import build_model_artifact
+
+        artifact = build_model_artifact(
+            EFAExtract(
+                forward_ev=forward_ev,
+                backward_ev=backward_ev,
+                n_components=int(n_components),
+            ),
+            input_ds,
+            node_id=self.node_id,
+            metrics=efa_diagnostics,
+        )
+
         return NodeResult(
             outputs={
                 "default": default_dataset,  # SherpaDataset: forward eigenvalues (primary output)
                 "forward_eigenvalues": forward_ev_dataset,  # SherpaDataset: (n_samples, n_components)
                 "backward_eigenvalues": backward_ev_dataset,  # SherpaDataset: backward eigenvalues
                 "model": efa,  # Model port
+                "_model_artifact": artifact,
             },
             diagnostics=efa_diagnostics,
         )

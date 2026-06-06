@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib.adapters.scp_extractors import KNNExtract
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
@@ -24,6 +25,12 @@ from ...io_contracts import (
 from ...node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
 from ..modeling import create_spectral_dataset
 from ..visualization import generate_confusion_matrix_heatmap
+from .core_utils import (
+    classification_metrics_contract as _classification_metrics_contract,
+)
+from .core_utils import (
+    classification_scalar_metrics as _classification_scalar_metrics,
+)
 from .core_utils import (
     make_labeled_coord as _make_labeled_coord,
 )
@@ -48,8 +55,8 @@ class KNNNode(Node):
     metadata = NodeMetadata(
         node_type="classification.knn",
         category="classification",
-        label="KNN Classifier",
-        description="K-Nearest Neighbors classification",
+        label="Train KNN Classifier",
+        description="Train a K-Nearest Neighbors classifier",
         parameters=[
             NodeParameter(
                 name="n_neighbors",
@@ -57,7 +64,6 @@ class KNNNode(Node):
                 param_type="number",
                 default=5,
                 min_value=1,
-                max_value=50,
                 step=1,
                 description="Number of neighbors to consider",
                 required=True,
@@ -81,12 +87,22 @@ class KNNNode(Node):
                 required=False,
             ),
             NodeParameter(
+                name="scale",
+                label="Autoscale Features",
+                param_type="boolean",
+                default=True,
+                description=(
+                    "Standardize variables before distance calculations. Disable only when upstream scores "
+                    "or features are already on the intended scale."
+                ),
+                required=False,
+            ),
+            NodeParameter(
                 name="cv_folds",
                 label="Cross-Validation Folds",
                 param_type="number",
                 default=5,
                 min_value=2,
-                max_value=20,
                 step=1,
                 description="Number of folds for cross-validation",
                 required=False,
@@ -97,10 +113,11 @@ class KNNNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Features (X)",
                 description="Feature matrix (spectral data or scores)",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="y",
@@ -112,11 +129,18 @@ class KNNNode(Node):
         ],
         output_ports=[
             PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/ScoreMatrix/1.0",
+                required=True,
+                label="Sample Coordinates",
+                description="Original feature coordinates or PCA-reduced sample coordinates for plotting",
+            ),
+            PortMetadata(
                 name="model",
                 type_ref="spectrasherpa://types/ClassificationModel/1.0",
                 required=True,
-                label="KNN Model",
-                description="Trained K-Nearest Neighbors classifier",
+                label="Fitted KNN Classifier",
+                description="Fitted K-Nearest Neighbors classifier produced by this training node",
             ),
             PortMetadata(
                 name="predictions",
@@ -131,6 +155,48 @@ class KNNNode(Node):
                 required=True,
                 label="Class Probabilities",
                 description="Class probabilities (if weights=distance)",
+            ),
+            PortMetadata(
+                name="class_probabilities",
+                type_ref="spectrasherpa://types/Array2D/1.0",
+                required=True,
+                label="Class Probabilities",
+                description="Alias of probabilities for direct model comparison",
+            ),
+            PortMetadata(
+                name="metrics",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=False,
+                label="Classification Metrics",
+                description="Canonical train/CV/test classification metrics for run history, comparison, and guidance",
+            ),
+            PortMetadata(
+                name="distances",
+                type_ref="spectrasherpa://types/Array2D/1.0",
+                required=True,
+                label="Neighbor Distances",
+                description="Nearest-neighbor distances for each training sample",
+            ),
+            PortMetadata(
+                name="neighbor_indices",
+                type_ref="spectrasherpa://types/Array2D/1.0",
+                required=True,
+                label="Neighbor Indices",
+                description="Nearest-neighbor sample indices for each training sample",
+            ),
+            PortMetadata(
+                name="train_accuracy",
+                type_ref="spectrasherpa://types/Scalar/1.0",
+                required=False,
+                label="Training Accuracy",
+                description="Classification accuracy on the training set",
+            ),
+            PortMetadata(
+                name="cv_accuracy",
+                type_ref="spectrasherpa://types/Scalar/1.0",
+                required=False,
+                label="CV Accuracy",
+                description="Mean cross-validation accuracy",
             ),
             PortMetadata(
                 name="plots",
@@ -153,6 +219,8 @@ class KNNNode(Node):
         n_neighbors = params.get("n_neighbors", 5)
         weights = params.get("weights", "uniform")
         metric = params.get("metric", "euclidean")
+        scale = bool(params.get("scale", True))
+        cv_folds = params.get("cv_folds", 5)
 
         X_expr = inputs.get("X", inputs.get("default", "input_data"))
         y_expr = inputs.get("y")
@@ -178,22 +246,113 @@ class KNNNode(Node):
             lines.append(f"{indent}).ravel()")
 
         # KNN uses sklearn regardless of use_scp
+        lines.append(f"{indent}from sklearn.metrics import confusion_matrix")
+        lines.append(f"{indent}from sklearn.model_selection import StratifiedKFold, cross_val_predict, cross_val_score")
         lines.append(f"{indent}from sklearn.neighbors import KNeighborsClassifier")
+        lines.append(f"{indent}from sklearn.pipeline import Pipeline")
+        lines.append(f"{indent}from sklearn.preprocessing import StandardScaler")
+        lines.append(f"{indent}from spectra_sherpa.app.services.dag.nodes.classification.core_utils import (")
+        lines.append(f"{indent}    classification_metrics_contract,")
+        lines.append(f"{indent}    classification_scalar_metrics,")
+        lines.append(f"{indent})")
         lines.append(
-            f"{indent}_knn = KNeighborsClassifier(n_neighbors={n_neighbors}, weights='{weights}', metric='{metric}')"
+            f"{indent}_knn_estimator = KNeighborsClassifier("
+            f"n_neighbors={n_neighbors}, weights='{weights}', metric='{metric}')"
         )
+        if scale:
+            lines.append(f"{indent}_knn = Pipeline([('scale', StandardScaler()), ('knn', _knn_estimator)])")
+        else:
+            lines.append(f"{indent}_knn = _knn_estimator")
         lines.append(f"{indent}_knn.fit(_X_data, _y_labels)")
         lines.append(f"{indent}_pred = _knn.predict(_X_data)")
         lines.append(f"{indent}_probs = _knn.predict_proba(_X_data)")
+        if scale:
+            lines.append(f"{indent}_knn_query = _knn.named_steps['scale'].transform(_X_data)")
+            lines.append(
+                f"{indent}_distances, _neighbor_indices = "
+                "_knn.named_steps['knn'].kneighbors(_knn_query, return_distance=True)"
+            )
+        else:
+            lines.append(f"{indent}_distances, _neighbor_indices = _knn.kneighbors(_X_data, return_distance=True)")
+        lines.append(f"{indent}_sample_coordinates = _X_data")
         lines.append(f"{indent}_accuracy = np.mean(_pred == _y_labels)")
+        if scale:
+            lines.append(f"{indent}_classes = list(_knn.named_steps['knn'].classes_)")
+        else:
+            lines.append(f"{indent}_classes = list(_knn.classes_)")
+        lines.append(f"{indent}_class_counts = np.array([np.sum(_y_labels == _cls) for _cls in _classes])")
+        lines.append(f"{indent}_cv_folds = int({cv_folds})")
+        lines.append(f"{indent}if _cv_folds > int(_class_counts.min()):")
+        lines.append(
+            f"{indent}    raise ValueError(f'cv_folds must be <= smallest class count "
+            f"({{int(_class_counts.min())}}). Got {{_cv_folds}}.')"
+        )
+        lines.append(f"{indent}_cv = StratifiedKFold(n_splits=_cv_folds, shuffle=True, random_state=42)")
+        lines.append(f"{indent}_y_pred_cv = cross_val_predict(_knn, _X_data, _y_labels, cv=_cv)")
+        lines.append(
+            f"{indent}_y_prob_cv = cross_val_predict(" "_knn, _X_data, _y_labels, cv=_cv, method='predict_proba')"
+        )
+        lines.append(f"{indent}_cv_scores = cross_val_score(_knn, _X_data, _y_labels, cv=_cv)")
+        lines.append(
+            f"{indent}_train_metrics = classification_scalar_metrics(_y_labels, _pred, _classes, prefix='train_')"
+        )
+        lines.append(
+            f"{indent}_cv_metrics = classification_scalar_metrics(_y_labels, _y_pred_cv, _classes, prefix='cv_')"
+        )
+        lines.append(f"{indent}_cv_metrics['cv_accuracy'] = float(_cv_scores.mean())")
+        lines.append(f"{indent}_cm_train = confusion_matrix(_y_labels, _pred, labels=_classes)")
+        lines.append(f"{indent}_cm_cv = confusion_matrix(_y_labels, _y_pred_cv, labels=_classes)")
+        lines.append(f"{indent}_classification_metrics = classification_metrics_contract(")
+        lines.append(f"{indent}    classes=_classes,")
+        lines.append(f"{indent}    train_metrics=_train_metrics,")
+        lines.append(f"{indent}    cv_metrics=_cv_metrics,")
+        lines.append(f"{indent}    primary_split='cv',")
+        lines.append(f"{indent}    method='knn',")
+        lines.append(f"{indent}    confusion_matrices={{'train': _cm_train.tolist(), 'cv': _cm_cv.tolist()}},")
+        lines.append(f"{indent})")
+        lines.append(f"{indent}_cm_labels = [str(c) for c in _classes]")
+        lines.append(f"{indent}_cm_train_plot = {{")
+        lines.append(
+            f"{indent}    'data': [{{'type': 'heatmap', 'z': _cm_train.tolist(), " "'x': _cm_labels, 'y': _cm_labels}],"
+        )
+        lines.append(f"{indent}    'layout': {{'title': 'Confusion Matrix (Training)'}},")
+        lines.append(f"{indent}}}")
+        lines.append(f"{indent}_cm_cv_plot = {{")
+        lines.append(
+            f"{indent}    'data': [{{'type': 'heatmap', 'z': _cm_cv.tolist(), " "'x': _cm_labels, 'y': _cm_labels}],"
+        )
+        lines.append(f"{indent}    'layout': {{'title': 'Confusion Matrix (Cross-Validation)'}},")
+        lines.append(f"{indent}}}")
         lines.append(f'{indent}print(f"  KNN (k={n_neighbors}, weights={weights}): accuracy={{_accuracy:.4f}}")')
 
         # Store result
         lines.append(f"{indent}results['{self.node_id}'] = {{")
+        lines.append(f"{indent}    'default': _sample_coordinates,")
         lines.append(f"{indent}    'model': {{'model': _knn, 'type': 'knn'}},")
         lines.append(f"{indent}    'predictions': _pred,")
         lines.append(f"{indent}    'probabilities': _probs,")
-        lines.append(f"{indent}    'plots': {{}},")
+        lines.append(f"{indent}    'class_probabilities': _probs,")
+        lines.append(f"{indent}    'y_prob': _y_prob_cv,")
+        lines.append(f"{indent}    'distances': _distances,")
+        lines.append(f"{indent}    'neighbor_indices': _neighbor_indices,")
+        lines.append(f"{indent}    'train_accuracy': float(_accuracy),")
+        lines.append(f"{indent}    'cv_accuracy': float(_cv_scores.mean()),")
+        lines.append(f"{indent}    'confusion_matrix': _cm_cv,")
+        lines.append(f"{indent}    'confusion_matrix_train': _cm_train,")
+        lines.append(f"{indent}    'confusion_matrix_cv': _cm_cv,")
+        lines.append(f"{indent}    'metrics': {{")
+        lines.append(f"{indent}        **_train_metrics,")
+        lines.append(f"{indent}        **_cv_metrics,")
+        lines.append(f"{indent}        'classification_metrics': _classification_metrics,")
+        lines.append(f"{indent}    }},")
+        lines.append(
+            f"{indent}    'metadata': {{'y_true': _y_labels.tolist(), 'y_pred': _pred.tolist(), "
+            f"'y_pred_cv': _y_pred_cv.tolist(), 'label_categories': [str(c) for c in _classes]}},"
+        )
+        lines.append(
+            f"{indent}    'plots': {{'confusion_matrix_train': _cm_train_plot, "
+            f"'confusion_matrix_cv': _cm_cv_plot}},"
+        )
         lines.append(f"{indent}}}")
 
         return lines
@@ -209,9 +368,11 @@ class KNNNode(Node):
         Returns:
             KNN model with classification results
         """
-        from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+        from sklearn.metrics import classification_report, confusion_matrix
         from sklearn.model_selection import cross_val_predict, cross_val_score
         from sklearn.neighbors import KNeighborsClassifier
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import StandardScaler
 
         X = bind_X(
             X,
@@ -242,6 +403,7 @@ class KNNNode(Node):
         n_neighbors = self.parameters.get("n_neighbors", 5)
         weights = self.parameters.get("weights", "uniform")
         metric = self.parameters.get("metric", "euclidean")
+        scale = bool(self.parameters.get("scale", True))
         cv_folds = self.parameters.get("cv_folds", 5)
 
         # Get unique classes
@@ -252,12 +414,21 @@ class KNNNode(Node):
             raise ValueError(f"Need at least 2 classes, got {n_classes}")
 
         # Fit KNN model
-        knn = KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights, metric=metric, algorithm="auto")
+        knn_estimator = KNeighborsClassifier(n_neighbors=n_neighbors, weights=weights, metric=metric, algorithm="auto")
+        knn = Pipeline([("scale", StandardScaler()), ("knn", knn_estimator)]) if scale else knn_estimator
         knn.fit(X_data, y_array)
 
         # Make predictions on training data
         y_pred_train = knn.predict(X_data)
         _y_pred_prob_train = knn.predict_proba(X_data)
+        if scale:
+            X_model_space = knn.named_steps["scale"].transform(X_data)
+            neighbor_distances, neighbor_indices = knn.named_steps["knn"].kneighbors(
+                X_model_space, n_neighbors=n_neighbors, return_distance=True
+            )
+        else:
+            X_model_space = X_data
+            neighbor_distances, neighbor_indices = knn.kneighbors(X_data, n_neighbors=n_neighbors, return_distance=True)
 
         # Cross-validation predictions with stratified folds
         from sklearn.model_selection import StratifiedKFold
@@ -269,12 +440,33 @@ class KNNNode(Node):
         cv_scores = cross_val_score(knn, X_data, y_array, cv=cv_splitter)
 
         # Calculate metrics
-        train_accuracy = accuracy_score(y_array, y_pred_train)
-        cv_accuracy = cv_scores.mean()
+        train_metrics = _classification_scalar_metrics(y_array, y_pred_train, classes, prefix="train_")
+        cv_metrics = _classification_scalar_metrics(y_array, y_pred_cv, classes, prefix="cv_")
+        train_accuracy = train_metrics["train_accuracy"]
+        cv_accuracy = float(cv_scores.mean())
+        cv_metrics["cv_accuracy"] = cv_accuracy
 
         # Confusion matrices
         cm_train = confusion_matrix(y_array, y_pred_train, labels=classes)
         cm_cv = confusion_matrix(y_array, y_pred_cv, labels=classes)
+        classification_metrics = _classification_metrics_contract(
+            classes=classes,
+            train_metrics=train_metrics,
+            cv_metrics=cv_metrics,
+            primary_split="cv",
+            method="knn",
+            confusion_matrices={
+                "train": cm_train.tolist(),
+                "cv": cm_cv.tolist(),
+            },
+            extra={
+                "cv_method": f"stratified-k-fold (k={cv_folds})",
+                "n_neighbors": int(n_neighbors),
+                "distance_metric": str(metric),
+                "weights": str(weights),
+                "scale": bool(scale),
+            },
+        )
 
         # Classification report
         class_report = classification_report(
@@ -320,7 +512,7 @@ class KNNNode(Node):
 
         # --- K-Value Optimization ---
         # Run a quick search for optimal K to guide the user
-        k_tuning_results = self._optimize_k(X_data, y_array, max_k=20, folds=cv_folds)
+        k_tuning_results = self._optimize_k(X_data, y_array, max_k=20, folds=cv_folds, scale=scale)
 
         # --- Generate Plots ---
         plots = {}
@@ -362,7 +554,8 @@ class KNNNode(Node):
             x_coord=_make_labeled_coord(viz_labels, title="Feature"),
             y_coord=_y_coord,  # Preserve sample labels from input
             units="score",
-            title="KNN Visualization Scores",
+            title="KNN Sample Coordinates",
+            data_role="X_features",
         )
 
         # Add processing history
@@ -387,10 +580,23 @@ class KNNNode(Node):
                 "n_neighbors": n_neighbors,
                 "label_categories": label_categories,
                 "pc_labels": viz_labels,
-                "accuracy": cv_accuracy,
                 "train_accuracy": train_accuracy,
+                "cv_accuracy": cv_accuracy,
+                "train_balanced_accuracy": train_metrics["train_balanced_accuracy"],
+                "cv_balanced_accuracy": cv_metrics["cv_balanced_accuracy"],
+                "train_f1_macro": train_metrics["train_f1_macro"],
+                "cv_f1_macro": cv_metrics["cv_f1_macro"],
+                "train_precision_macro": train_metrics["train_precision_macro"],
+                "cv_precision_macro": cv_metrics["cv_precision_macro"],
+                "train_recall_macro": train_metrics["train_recall_macro"],
+                "cv_recall_macro": cv_metrics["cv_recall_macro"],
+                "train_sensitivity_macro": train_metrics["train_sensitivity_macro"],
+                "cv_sensitivity_macro": cv_metrics["cv_sensitivity_macro"],
+                "train_specificity_macro": train_metrics["train_specificity_macro"],
+                "cv_specificity_macro": cv_metrics["cv_specificity_macro"],
                 "confusion_matrix_train": cm_train.tolist(),
                 "confusion_matrix_cv": cm_cv.tolist(),
+                "metrics": classification_metrics,
                 "classification_report": class_report,
                 "y_true": y_array.tolist(),
                 "y_pred": y_pred_train.tolist(),
@@ -399,13 +605,69 @@ class KNNNode(Node):
                 "quality_summary": {
                     "train_accuracy": float(train_accuracy),
                     "cv_accuracy": float(cv_accuracy),
+                    "cv_balanced_accuracy": float(cv_metrics["cv_balanced_accuracy"]),
+                    "cv_f1_macro": float(cv_metrics["cv_f1_macro"]),
+                    "cv_precision_macro": float(cv_metrics["cv_precision_macro"]),
+                    "cv_recall_macro": float(cv_metrics["cv_recall_macro"]),
+                    "cv_sensitivity_macro": float(cv_metrics["cv_sensitivity_macro"]),
+                    "cv_specificity_macro": float(cv_metrics["cv_specificity_macro"]),
                     "n_neighbors": int(n_neighbors),
                     "metric": str(metric),
+                    "scale": bool(scale),
                 },
             }
         )
 
         logger.debug("Train accuracy: %.3f, CV accuracy: %.3f", train_accuracy, cv_accuracy)
+
+        class_to_index = {cls: i for i, cls in enumerate(classes)}
+        y_train_encoded = np.asarray([class_to_index[label] for label in y_array], dtype=np.int64)
+
+        from ..modeling._artifact_builder import build_model_artifact
+
+        artifact = build_model_artifact(
+            KNNExtract(
+                X_train=X_model_space,
+                y_train_encoded=y_train_encoded,
+                classes=label_categories,
+                k=int(n_neighbors),
+                metric=str(metric),
+                weights=str(weights),
+                x_mean=(
+                    np.asarray(knn.named_steps["scale"].mean_, dtype=np.float64)
+                    if scale
+                    else np.zeros(X_data.shape[1], dtype=np.float64)
+                ),
+                x_scale=(
+                    np.asarray(knn.named_steps["scale"].scale_, dtype=np.float64)
+                    if scale
+                    else np.ones(X_data.shape[1], dtype=np.float64)
+                ),
+            ),
+            X,
+            node_id=self.node_id,
+            metrics={
+                "train_accuracy": float(train_accuracy),
+                "cv_accuracy": float(cv_accuracy),
+                "train_balanced_accuracy": float(train_metrics["train_balanced_accuracy"]),
+                "cv_balanced_accuracy": float(cv_metrics["cv_balanced_accuracy"]),
+                "train_f1_macro": float(train_metrics["train_f1_macro"]),
+                "cv_f1_macro": float(cv_metrics["cv_f1_macro"]),
+                "train_precision_macro": float(train_metrics["train_precision_macro"]),
+                "cv_precision_macro": float(cv_metrics["cv_precision_macro"]),
+                "train_recall_macro": float(train_metrics["train_recall_macro"]),
+                "cv_recall_macro": float(cv_metrics["cv_recall_macro"]),
+                "train_sensitivity_macro": float(train_metrics["train_sensitivity_macro"]),
+                "cv_sensitivity_macro": float(cv_metrics["cv_sensitivity_macro"]),
+                "train_specificity_macro": float(train_metrics["train_specificity_macro"]),
+                "cv_specificity_macro": float(cv_metrics["cv_specificity_macro"]),
+                "classification_metrics": classification_metrics,
+                "n_neighbors": int(n_neighbors),
+                "metric": str(metric),
+                "weights": str(weights),
+                "scale": bool(scale),
+            },
+        )
 
         # NDDataset-only return: one serialization boundary at API layer
         return NodeResult(
@@ -415,22 +677,46 @@ class KNNNode(Node):
                     "model": knn,
                     "type": "knn",
                 },
+                "predictions": y_pred_cv.tolist(),
+                "probabilities": _y_pred_prob_cv.tolist(),
+                "class_probabilities": _y_pred_prob_cv.tolist(),
+                "distances": neighbor_distances.tolist(),
+                "neighbor_indices": neighbor_indices.tolist(),
+                "metrics": classification_metrics,
+                "train_accuracy": float(train_accuracy),
+                "cv_accuracy": float(cv_accuracy),
+                "cv_balanced_accuracy": float(cv_metrics["cv_balanced_accuracy"]),
+                "cv_f1_macro": float(cv_metrics["cv_f1_macro"]),
+                "cv_precision_macro": float(cv_metrics["cv_precision_macro"]),
+                "cv_recall_macro": float(cv_metrics["cv_recall_macro"]),
+                "cv_sensitivity_macro": float(cv_metrics["cv_sensitivity_macro"]),
+                "cv_specificity_macro": float(cv_metrics["cv_specificity_macro"]),
                 "plots": plots,  # Pre-built Plotly traces (legitimate visualization output)
+                "_model_artifact": artifact,
             },
             diagnostics={
                 "train_accuracy": train_accuracy,
                 "cv_accuracy": cv_accuracy,
+                "cv_balanced_accuracy": cv_metrics["cv_balanced_accuracy"],
+                "cv_f1_macro": cv_metrics["cv_f1_macro"],
+                "cv_precision_macro": cv_metrics["cv_precision_macro"],
+                "cv_recall_macro": cv_metrics["cv_recall_macro"],
+                "cv_sensitivity_macro": cv_metrics["cv_sensitivity_macro"],
+                "cv_specificity_macro": cv_metrics["cv_specificity_macro"],
+                "metrics": classification_metrics,
                 "optimal_k": k_tuning_results.get("best_k") if k_tuning_results else None,
                 "n_classes": len(classes),
             },
         )
 
-    def _optimize_k(self, X, y, max_k=20, folds=5) -> dict:
+    def _optimize_k(self, X, y, max_k=20, folds=5, scale: bool = True) -> dict:
         """
         Search for optimal K value using cross-validation.
         """
         from sklearn.model_selection import StratifiedKFold, cross_val_score
         from sklearn.neighbors import KNeighborsClassifier
+        from sklearn.pipeline import Pipeline
+        from sklearn.preprocessing import StandardScaler
 
         n_samples = len(y)
         limit_k = min(max_k, int(n_samples * 0.8) - 1, 50)  # Ensure K isn't too large for dataset
@@ -446,7 +732,8 @@ class KNNNode(Node):
         best_score = -1.0
 
         for k in range(1, limit_k + 1):
-            knn = KNeighborsClassifier(n_neighbors=k)
+            estimator = KNeighborsClassifier(n_neighbors=k)
+            knn = Pipeline([("scale", StandardScaler()), ("knn", estimator)]) if scale else estimator
             scores = cross_val_score(knn, X, y, cv=cv, scoring="accuracy")
             mean_score = scores.mean()
 

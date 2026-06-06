@@ -9,6 +9,7 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib.adapters.scp_extractors import FastICAExtract, NMFExtract
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
@@ -56,7 +57,7 @@ class NMFNode(Node):
     metadata = NodeMetadata(
         node_type="model.nmf",
         category="exploratory",
-        label="NMF",
+        label="Fit NMF Decomposition",
         description=(
             "Decomposes a spectral dataset into W (concentration profiles) × H (pure spectra) "
             "with non-negativity constraints, making components physically interpretable as "
@@ -73,7 +74,6 @@ class NMFNode(Node):
                 param_type="number",
                 default=3,
                 min_value=2,
-                max_value=20,
                 step=1,
                 description="Number of components to extract",
                 required=True,
@@ -95,7 +95,6 @@ class NMFNode(Node):
                 param_type="number",
                 default=200,
                 min_value=50,
-                max_value=1000,
                 step=50,
                 description="Maximum number of iterations",
                 required=False,
@@ -107,7 +106,6 @@ class NMFNode(Node):
                 param_type="number",
                 default=0.0001,
                 min_value=0.00001,
-                max_value=0.01,
                 step=0.0001,
                 description="Convergence tolerance",
                 required=False,
@@ -130,7 +128,7 @@ class NMFNode(Node):
                 name="model",
                 type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
-                label="NMF Model",
+                label="Fitted NMF Decomposition",
                 description="Fitted NMF model object",
             ),
             PortMetadata(
@@ -383,6 +381,15 @@ class NMFNode(Node):
             except Exception:
                 pass
 
+        from ._artifact_builder import build_model_artifact
+
+        artifact = build_model_artifact(
+            NMFExtract(H=H_data.astype(np.float64), n_components=int(n_components)),
+            input_ds,
+            node_id=self.node_id,
+            metrics=nmf_diagnostics,
+        )
+
         return NodeResult(
             outputs={
                 "default": W_dataset,  # NDDataset: concentration profiles + sample labels (y) + component coords (x)
@@ -391,6 +398,7 @@ class NMFNode(Node):
                 "W": W_dataset,  # Alias for concentrations
                 "H": H_dataset,  # Alias for spectra
                 "model": nmf,  # Model port
+                "_model_artifact": artifact,
             },
             diagnostics=nmf_diagnostics,
         )
@@ -411,8 +419,8 @@ class FastICANode(Node):
     metadata = NodeMetadata(
         node_type="model.ica",
         category="exploratory",
-        label="FastICA",
-        description="Independent Component Analysis for blind source separation",
+        label="Fit FastICA Decomposition",
+        description="Fit an Independent Component Analysis decomposition for blind source separation",
         parameters=[
             NodeParameter(
                 name="n_components",
@@ -420,7 +428,6 @@ class FastICANode(Node):
                 param_type="number",
                 default=3,
                 min_value=2,
-                max_value=20,
                 step=1,
                 description="Number of independent components to extract",
                 required=True,
@@ -452,7 +459,6 @@ class FastICANode(Node):
                 param_type="number",
                 default=200,
                 min_value=50,
-                max_value=1000,
                 step=50,
                 description="Maximum number of iterations",
                 required=False,
@@ -464,7 +470,6 @@ class FastICANode(Node):
                 param_type="number",
                 default=0.0001,
                 min_value=0.00001,
-                max_value=0.01,
                 step=0.0001,
                 description="Convergence tolerance",
                 required=False,
@@ -487,7 +492,7 @@ class FastICANode(Node):
                 name="model",
                 type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
-                label="ICA Model",
+                label="Fitted FastICA Decomposition",
                 description="Fitted FastICA model object",
             ),
             PortMetadata(
@@ -781,6 +786,28 @@ class FastICANode(Node):
             except Exception:
                 pass
 
+        from ._artifact_builder import build_model_artifact
+
+        artifact = build_model_artifact(
+            FastICAExtract(
+                components=np.asarray(ica.components_, dtype=np.float64),
+                mean=(
+                    np.asarray(getattr(ica, "mean_", None), dtype=np.float64)
+                    if getattr(ica, "mean_", None) is not None
+                    else None
+                ),
+                mixing=(
+                    np.asarray(getattr(ica, "mixing_", None), dtype=np.float64)
+                    if getattr(ica, "mixing_", None) is not None
+                    else None
+                ),
+                n_components=int(n_components),
+            ),
+            input_ds,
+            node_id=self.node_id,
+            metrics=ica_diagnostics,
+        )
+
         return NodeResult(
             outputs={
                 "default": S_dataset,  # NDDataset: source signals + sample labels (y) + IC coords (x)
@@ -788,6 +815,7 @@ class FastICANode(Node):
                 "components": St_dataset,  # NDDataset: spectral profiles + wavenumbers (x) + IC coords (y)
                 "mixing_matrix": A_dataset,  # NDDataset: mixing matrix
                 "model": ica,  # Model port
+                "_model_artifact": artifact,
             },
             diagnostics=ica_diagnostics,
         )

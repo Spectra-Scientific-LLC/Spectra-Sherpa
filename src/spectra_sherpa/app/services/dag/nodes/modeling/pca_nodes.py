@@ -134,7 +134,7 @@ def run_pca_runtime(
         warnings.filterwarnings("ignore", message="invalid value encountered in matmul", category=RuntimeWarning)
         pca = scp.PCA(n_components=n_components_parsed, standardized=standardized, scaled=scaled)
         pca.fit(input_ndd)
-        extracted = PCAExtract.from_scp(pca, input_ndd)
+        extracted = PCAExtract.from_scp(pca, input_ndd, standardized=standardized, scaled=scaled)
         scores_dataset = pca.transform()
         loadings_dataset = pca.components
 
@@ -178,7 +178,7 @@ class PCANode(Node):
     metadata = NodeMetadata(
         node_type="model.pca",
         category="exploratory",
-        label="PCA",
+        label="Fit PCA Transform",
         description=(
             "Reduces spectral data to a small set of orthogonal principal components that capture "
             "the most variance, enabling visualisation, outlier detection, and feature compression. "
@@ -221,13 +221,14 @@ class PCANode(Node):
             ),
             NodeParameter(
                 name="scaled",
-                label="Unit Variance Only (No Mean Centering)",
+                label="Min-Max Scale + Center",
                 param_type="boolean",
                 default=False,
                 description=(
-                    "Divide each variable by its standard deviation WITHOUT subtracting the mean. "
-                    "Rarely appropriate for spectral data — prefer 'Mean Center + Unit Variance' "
-                    "or leave both off to use mean-centering only (the spectroscopy default)."
+                    "Apply SpectroChemPy's min-max scaling, (X - column minimum) / column range, "
+                    "then center the scaled variables before PCA. Rarely appropriate for spectral data — "
+                    "prefer 'Mean Center + Unit Variance' or leave both off to use mean-centering only "
+                    "(the spectroscopy default)."
                 ),
                 required=False,
                 category="advanced",
@@ -238,19 +239,27 @@ class PCANode(Node):
         input_ports=[
             PortMetadata(
                 name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Input Spectra",
-                description="Input spectral dataset for PCA decomposition",
+                label="Input Data Matrix",
+                description="Spectral dataset or multivariate feature table for PCA decomposition",
+                accepted_data_roles=["X_spectra", "X_features"],
             )
         ],
         output_ports=[
             PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/ScoreMatrix/1.0",
+                required=True,
+                label="Scores",
+                description="Alias of scores: PCA latent scores (samples × components)",
+            ),
+            PortMetadata(
                 name="model",
                 type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
-                label="PCA Model",
-                description="Trained PCA model object",
+                label="Fitted PCA Transform",
+                description="Fitted PCA transform object",
             ),
             PortMetadata(
                 name="scores",
@@ -260,11 +269,25 @@ class PCANode(Node):
                 description="Transformed scores (n_samples × n_components) with sample labels",
             ),
             PortMetadata(
+                name="X_scores",
+                type_ref="spectrasherpa://types/ScoreMatrix/1.0",
+                required=True,
+                label="X Scores",
+                description="Alias of scores for cross-technique wiring",
+            ),
+            PortMetadata(
                 name="loadings",
                 type_ref="spectrasherpa://types/LoadingMatrix/1.0",
                 required=True,
                 label="Loadings",
                 description="Principal component loadings (n_components × n_features) with wavenumber axis",
+            ),
+            PortMetadata(
+                name="X_loadings",
+                type_ref="spectrasherpa://types/LoadingMatrix/1.0",
+                required=True,
+                label="X Loadings",
+                description="Alias of loadings for cross-technique wiring",
             ),
             PortMetadata(
                 name="explained_variance",
@@ -350,7 +373,9 @@ class PCANode(Node):
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'default': _scores,")
         lines.append(f"{indent}    'scores': _scores,")
+        lines.append(f"{indent}    'X_scores': _scores,")
         lines.append(f"{indent}    'loadings': _loadings,")
+        lines.append(f"{indent}    'X_loadings': _loadings,")
         lines.append(f"{indent}    'model': _pca,")
         lines.append(f"{indent}    'explained_variance': _evr,")
         lines.append(f"{indent}}}")
@@ -556,6 +581,10 @@ class PCANode(Node):
         # Convert NDDataset outputs to SherpaDataset for DAG uniformity
         scores_dataset = from_nddataset(scores_dataset)
         loadings_dataset = from_nddataset(loadings_dataset)
+        # PCA scores are a latent feature table, not an ordered spectrum.
+        # This keeps spectrum-only preprocessing from accepting them while
+        # still allowing scores to feed KNN/PLS-DA/HCA as X_features.
+        scores_dataset.data_role = "X_features"
 
         # PCA goes through SCP datasets before returning SherpaDataset, so
         # explicit re-attach is required after from_nddataset(). Two helpers:
@@ -648,7 +677,9 @@ class PCANode(Node):
             outputs={
                 "default": scores_dataset,  # Backwards-compatible default port
                 "scores": scores_dataset,
+                "X_scores": scores_dataset,
                 "loadings": loadings_dataset,
+                "X_loadings": loadings_dataset,
                 "model": pca,
                 "explained_variance": evr_ratio.tolist(),
                 "_internal": {
@@ -674,22 +705,22 @@ class PCATransformNode(Node):
         node_type="model.pca_transform",
         category="exploratory",
         label="Apply PCA Transform",
-        description="Transform new data using trained PCA model (project to PC space)",
+        description="Transform inference data using a fitted PCA transform (project to PC space)",
         parameters=[],
         input_ports=[
             PortMetadata(
                 name="X_new",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
-                label="New Spectra",
+                label="Inference Spectra",
                 description="Spectral data to transform",
             ),
             PortMetadata(
                 name="model",
                 type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
-                label="PCA Model",
-                description="Trained PCA model from PCA training node",
+                label="Fitted PCA Transform",
+                description="Fitted PCA transform from a Fit PCA Transform node",
             ),
         ],
         output_ports=[

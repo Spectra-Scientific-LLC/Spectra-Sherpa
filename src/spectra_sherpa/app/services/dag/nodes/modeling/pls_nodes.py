@@ -41,6 +41,7 @@ from .._chemometric_diagnostics import (
     pomerantsev_dd_limit,
     q_residuals_per_sample,
 )
+from ..selection._vip import extract_vip_from_pls_model
 from .core_utils import (
     create_spectral_dataset as _create_spectral_dataset,
 )
@@ -59,6 +60,31 @@ logger = logging.getLogger(__name__)
 from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
 from spectra_sherpa.app.lib.scp_compat import scp, to_nddataset
 
+_FIT_DEPENDENT_PREPROCESSING = (
+    "preprocess.snv",
+    "preprocess.msc",
+    "preprocess.scale",
+    "preprocess.normalize",
+    "preprocess.osc",
+    "baseline.",
+)
+
+
+def _cv_preprocessing_leakage_warning(dataset: Any) -> str | None:
+    history = []
+    meta = getattr(dataset, "meta", None)
+    if isinstance(meta, dict):
+        history = meta.get("processing_history") or []
+    op_ids = [str(item.get("op_id", "")) for item in history if isinstance(item, dict)]
+    leaking_ops = [op for op in op_ids if op.startswith(_FIT_DEPENDENT_PREPROCESSING)]
+    if not leaking_ops:
+        return None
+    return (
+        "PLS cross-validation is being computed after fit-dependent preprocessing has already been applied "
+        f"to the full matrix ({', '.join(leaking_ops)}). Treat RMSECV/R2CV as post-preprocessing CV, not "
+        "fold-replayed pipeline CV; use Nested CV for leakage-safe model selection."
+    )
+
 
 @register_node
 class PLSNode(Node):
@@ -71,8 +97,8 @@ class PLSNode(Node):
     metadata = NodeMetadata(
         node_type="model.pls",
         category="regression",
-        label="PLS",
-        description="Partial Least Squares regression for calibration",
+        label="Train PLS Regression",
+        description="Train a Partial Least Squares regression model for calibration",
         parameters=[
             NodeParameter(
                 name="n_components",
@@ -80,7 +106,6 @@ class PLSNode(Node):
                 param_type="number",
                 default=3,
                 min_value=1,
-                max_value=20,
                 step=1,
                 description="Number of PLS components",
                 required=True,
@@ -109,10 +134,10 @@ class PLSNode(Node):
                 label="Cross-Validation",
                 param_type="select",
                 default="k-fold",
-                options=["none", "k-fold", "leave-one-out"],
+                options=["none", "k-fold", "venetian-blinds", "blocked", "leave-one-out"],
                 description=(
-                    "Internal cross-validation strategy for reporting "
-                    "R²_cv / RMSECV alongside the in-sample calibration fit"
+                    "Internal cross-validation strategy for reporting R²_cv / RMSECV. "
+                    "Use venetian-blinds or blocked CV when adjacent or replicate spectra may leak across random folds."
                 ),
                 required=False,
                 category="basic",
@@ -123,7 +148,6 @@ class PLSNode(Node):
                 param_type="number",
                 default=5,
                 min_value=2,
-                max_value=20,
                 step=1,
                 description="Number of folds when cv_method='k-fold'",
                 required=False,
@@ -136,10 +160,11 @@ class PLSNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Spectra (X)",
-                description="Spectral data matrix (n_samples × n_wavenumbers)",
+                label="Data Matrix (X)",
+                description="Spectral data or multivariate feature table (n_samples × n_variables)",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="y",
@@ -154,8 +179,8 @@ class PLSNode(Node):
                 name="model",
                 type_ref="spectrasherpa://types/RegressionModel/1.0",
                 required=True,
-                label="PLS Model",
-                description="Trained PLS regression model",
+                label="Fitted PLS Regression Model",
+                description="Fitted PLS regression model produced by this training node",
             ),
             PortMetadata(
                 name="X_scores",
@@ -184,6 +209,41 @@ class PLSNode(Node):
                 required=True,
                 label="Y Loadings",
                 description="Loadings for Y block (targets × components)",
+            ),
+            PortMetadata(
+                name="y_pred",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
+                required=False,
+                label="Training Predictions",
+                description="In-sample training predictions for calibration diagnostics",
+            ),
+            PortMetadata(
+                name="y_true",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
+                required=False,
+                label="Training Targets",
+                description="Training target values aligned with y_pred",
+            ),
+            PortMetadata(
+                name="y_pred_cv",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
+                required=False,
+                label="Cross-Validation Predictions",
+                description="Out-of-fold predictions aligned with y_true for CV predicted-vs-measured plots",
+            ),
+            PortMetadata(
+                name="vip",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=False,
+                label="VIP Scores",
+                description="Variable Importance in Projection scores by wavelength/feature",
+            ),
+            PortMetadata(
+                name="coefficients",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=False,
+                label="Regression Coefficients",
+                description="Regression coefficients by wavelength/feature",
             ),
         ],
         requires_scp=True,
@@ -394,18 +454,23 @@ class PLSNode(Node):
         pls_r2 = None
         pls_rmse = None
         regression_meta: dict | None = None
+        y_pred_train: np.ndarray | None = None
         try:
             y_pred_raw = pls.predict(X_ndd)
             y_pred = np.asarray(
                 y_pred_raw.data if hasattr(y_pred_raw, "data") else y_pred_raw,
                 dtype=np.float64,
             )
-            if y_pred.ndim > 1 and y_2d.shape[1] == 1:
-                y_pred = y_pred.ravel()
+            if y_pred.ndim == 1:
+                y_pred_train = y_pred.reshape(-1, 1)
+            elif y_pred.ndim > 1 and y_2d.shape[1] == 1:
+                y_pred_train = y_pred.reshape(-1, 1)
+            else:
+                y_pred_train = y_pred
             if y_2d.shape[1] == 1:
                 # Single-target: flatten for metrics
                 y_flat = y_2d.ravel()
-                y_pred_flat = y_pred.ravel() if y_pred.ndim > 1 else y_pred
+                y_pred_flat = y_pred_train.ravel()
                 residual = y_flat - y_pred_flat
                 ss_res = float(np.sum(residual**2))
                 ss_tot = float(np.sum((y_flat - np.mean(y_flat)) ** 2))
@@ -420,9 +485,9 @@ class PLSNode(Node):
                 }
             else:
                 # Multi-target: per-target R2, then average
-                if y_pred.ndim == 1:
-                    y_pred = y_pred.reshape(-1, n_targets)
-                residual = y_2d - y_pred
+                if y_pred_train.ndim == 1:
+                    y_pred_train = y_pred_train.reshape(-1, n_targets)
+                residual = y_2d - y_pred_train
                 ss_res = np.sum(residual**2, axis=0)
                 ss_tot = np.sum((y_2d - np.mean(y_2d, axis=0)) ** 2, axis=0)
                 r2_per_target = np.where(ss_tot > 0, 1.0 - ss_res / ss_tot, np.nan)
@@ -431,7 +496,7 @@ class PLSNode(Node):
                 rmse_per_target = [float(np.sqrt(np.mean(residual[:, j] ** 2))) for j in range(n_targets)]
                 regression_meta = {
                     "y_true": y_2d.tolist(),
-                    "y_pred": y_pred.tolist(),
+                    "y_pred": y_pred_train.tolist(),
                     "r2_per_target": [float(v) for v in r2_per_target],
                     "rmse_per_target": rmse_per_target,
                 }
@@ -452,9 +517,13 @@ class PLSNode(Node):
         # metrics practitioners expect to see next to RMSEC / R²_cal.
         cv_method = self.parameters.get("cv_method", "k-fold")
         cv_folds_param = int(self.parameters.get("cv_folds", 5))
+        cv_warning = _cv_preprocessing_leakage_warning(X_ds)
+        cv_scope = "post_preprocessing_matrix" if cv_warning else "fold_model_only"
+        cv_is_pipeline_safe = cv_warning is None
         pls_r2_cv: float | None = None
         pls_rmsecv: float | None = None
         cv_meta: dict | None = None
+        y_pred_cv: np.ndarray | None = None
         if cv_method and cv_method != "none":
             try:
                 from sklearn.cross_decomposition import PLSRegression as SKPLSRegression
@@ -467,6 +536,25 @@ class PLSNode(Node):
                 if cv_method == "leave-one-out":
                     splitter = LeaveOneOut()
                     effective_folds = n_cv_samples
+                    split_iter = splitter.split(X_cv)
+                elif cv_method == "blocked":
+                    effective_folds = min(cv_folds_param, n_cv_samples)
+                    if effective_folds < 2:
+                        raise ValueError(f"blocked CV needs at least 2 samples, got {n_cv_samples}")
+                    test_blocks = np.array_split(np.arange(n_cv_samples), effective_folds)
+                    split_iter = (
+                        (np.setdiff1d(np.arange(n_cv_samples), test_idx, assume_unique=True), test_idx)
+                        for test_idx in test_blocks
+                    )
+                elif cv_method == "venetian-blinds":
+                    effective_folds = min(cv_folds_param, n_cv_samples)
+                    if effective_folds < 2:
+                        raise ValueError(f"venetian-blinds CV needs at least 2 samples, got {n_cv_samples}")
+                    indices = np.arange(n_cv_samples)
+                    split_iter = (
+                        (indices[indices % effective_folds != fold], indices[indices % effective_folds == fold])
+                        for fold in range(effective_folds)
+                    )
                 else:  # "k-fold"
                     effective_folds = min(cv_folds_param, n_cv_samples)
                     if effective_folds < 2:
@@ -476,9 +564,10 @@ class PLSNode(Node):
                         shuffle=True,
                         random_state=42,
                     )
+                    split_iter = splitter.split(X_cv)
 
                 y_pred_cv = np.full_like(y_cv, np.nan, dtype=np.float64)
-                for train_idx, test_idx in splitter.split(X_cv):
+                for train_idx, test_idx in split_iter:
                     # Skip folds where the train partition is smaller than
                     # n_components — sklearn raises before that but we
                     # want a graceful per-fold fallback for LOO on tiny sets.
@@ -512,8 +601,14 @@ class PLSNode(Node):
                         "rmsecv": pls_rmsecv,
                         "r2_cv_per_target": [float(v) for v in r2_cv_per_target],
                         "rmsecv_per_target": [float(v) for v in rmsecv_per_target],
+                        "y_true": y_cv.tolist(),
+                        "y_pred_cv": y_pred_cv.tolist(),
                         "n_cv_samples": int(finite_mask.sum()),
+                        "cv_scope": cv_scope,
+                        "cv_is_pipeline_safe": cv_is_pipeline_safe,
                     }
+                    if cv_warning:
+                        cv_meta["warning"] = cv_warning
                     if _resolved_target_names:
                         cv_meta["target_names"] = _resolved_target_names
                     logger.info(
@@ -534,6 +629,13 @@ class PLSNode(Node):
         logger.debug("[PLS Node] PLS model fitted successfully")
         logger.debug("  - X_scores shape: %s", X_scores_data.shape if X_scores_data is not None else "N/A")
         logger.debug("  - Coefficients shape: %s", coef_data.shape if coef_data is not None else "N/A")
+
+        vip_data: np.ndarray | None = None
+        try:
+            vip_data = extract_vip_from_pls_model(pls, X_ds.shape[1])
+        except Exception:
+            logger.debug("[PLS Node] Failed to compute VIP scores", exc_info=True)
+            vip_data = None
 
         # -----------------------------------------------------------------
         # Per-sample Hotelling T² and Q-residuals (chemometric diagnostics)
@@ -634,6 +736,7 @@ class PLSNode(Node):
                 y_coord=_y_coord,  # Preserve sample labels from input
                 units="score",
                 title="PLS X Scores",
+                data_role="X_features",
             )
 
         # Y_scores: shape (n_samples, n_components)
@@ -645,6 +748,7 @@ class PLSNode(Node):
                 y_coord=_y_coord,  # Preserve sample labels from input
                 units="score",
                 title="PLS Y Scores",
+                data_role="X_features",
             )
 
         # X_loadings: canonical (n_components, n_features) with y=LV labels, x=wavenumbers
@@ -685,6 +789,37 @@ class PLSNode(Node):
                 title="PLS Y Loadings",
             )
 
+        vip_dataset = None
+        if vip_data is not None and vip_data.size == X_ds.shape[1]:
+            vip_dataset = _create_spectral_dataset(
+                data=vip_data.reshape(1, -1),
+                x_coord=_x_coord,
+                y_coord=_make_safe_coord(["VIP"], title="Metric"),
+                units="VIP",
+                title="PLS VIP Scores",
+            )
+
+        coefficients_dataset = None
+        if coef_data is not None:
+            coef_matrix = np.asarray(coef_data, dtype=np.float64)
+            if coef_matrix.ndim == 1:
+                coef_matrix = coef_matrix.reshape(-1, 1)
+            if coef_matrix.shape[0] == X_ds.shape[1]:
+                coef_plot = coef_matrix.T
+                if _resolved_target_names and len(_resolved_target_names) == coef_plot.shape[0]:
+                    coef_y_coord = _make_safe_coord(_resolved_target_names, title="Target")
+                else:
+                    coef_y_coord = _make_safe_coord(
+                        [f"Target {i + 1}" for i in range(coef_plot.shape[0])], title="Target"
+                    )
+                coefficients_dataset = _create_spectral_dataset(
+                    data=coef_plot,
+                    x_coord=_x_coord,
+                    y_coord=coef_y_coord,
+                    units="coefficient",
+                    title="PLS Regression Coefficients",
+                )
+
         # Add processing history to SherpaDataset outputs
         if X_scores_dataset is not None:
             copy_processing_history(X_ds, X_scores_dataset)
@@ -721,6 +856,17 @@ class PLSNode(Node):
                 {"n_components": n_components},
                 node_id=self.node_id,
             )
+        if vip_dataset is not None:
+            copy_processing_history(X_ds, vip_dataset)
+            add_processing_step(vip_dataset, "model.pls.vip", {"n_components": n_components}, node_id=self.node_id)
+        if coefficients_dataset is not None:
+            copy_processing_history(X_ds, coefficients_dataset)
+            add_processing_step(
+                coefficients_dataset,
+                "model.pls.coefficients",
+                {"n_components": n_components},
+                node_id=self.node_id,
+            )
 
         # Propagate dataset-level flags. Scores rows are samples (preserve
         # is_time_series); loadings rows are latent variables / targets
@@ -735,6 +881,10 @@ class PLSNode(Node):
             inherit_origin_flags(X_ds, X_loadings_dataset)
         if Y_loadings_dataset is not None:
             inherit_origin_flags(X_ds, Y_loadings_dataset)
+        if vip_dataset is not None:
+            inherit_origin_flags(X_ds, vip_dataset)
+        if coefficients_dataset is not None:
+            inherit_origin_flags(X_ds, coefficients_dataset)
 
         # Store scientific metadata in X_scores SherpaDataset meta.  The
         # "r2"/"rmse" keys remain calibration (in-sample) for backward
@@ -758,6 +908,8 @@ class PLSNode(Node):
                 meta_dict.update(regression_meta)
             if cv_meta is not None:
                 meta_dict["cv"] = cv_meta
+            if y_pred_cv is not None:
+                meta_dict["y_pred_cv"] = y_pred_cv.tolist()
             if t2_values is not None and q_values is not None:
                 # Per-sample T² + Q with DD-based 95% limits.  Stored on
                 # the X scores dataset (which is the canonical "per-sample"
@@ -786,6 +938,11 @@ class PLSNode(Node):
                 quality_summary["rmsecv"] = float(pls_rmsecv)
             if cv_method is not None:
                 quality_summary["cv_method"] = str(cv_method)
+                quality_summary["cv_scope"] = cv_scope
+                quality_summary["cv_is_pipeline_safe"] = cv_is_pipeline_safe
+            if cv_warning:
+                meta_dict["cv_warning"] = cv_warning
+                quality_summary["cv_warning"] = cv_warning
             meta_dict["quality_summary"] = quality_summary
             X_scores_dataset.meta.update(meta_dict)
             attach_evaluation(
@@ -811,8 +968,57 @@ class PLSNode(Node):
             artifact_metrics["rmse_cal"] = pls_rmse
         if pls_r2_cv is not None:
             artifact_metrics["r2_cv"] = pls_r2_cv
+            artifact_metrics["r2_cv_scope"] = cv_scope
         if pls_rmsecv is not None:
             artifact_metrics["rmsecv"] = pls_rmsecv
+            artifact_metrics["rmsecv_scope"] = cv_scope
+        if t2_limit is not None:
+            artifact_metrics["t2_limit"] = float(t2_limit)
+        if q_limit is not None:
+            artifact_metrics["q_limit"] = float(q_limit)
+        if t2_dof is not None and np.isfinite(t2_dof):
+            artifact_metrics["t2_dof"] = float(t2_dof)
+        if q_dof is not None and np.isfinite(q_dof):
+            artifact_metrics["q_dof"] = float(q_dof)
+        if t2_values is not None and q_values is not None:
+            artifact_metrics["t2_q_method"] = "pomerantsev_dd_moments"
+            artifact_metrics["t2_q_confidence"] = 0.95
+            artifact_metrics["n_t2_outliers"] = int(np.sum(t2_values > t2_limit)) if t2_limit is not None else None
+            artifact_metrics["n_q_outliers"] = int(np.sum(q_values > q_limit)) if q_limit is not None else None
+
+        cv_prediction_plot = None
+        if y_pred_cv is not None:
+            if y_2d.shape[1] == 1:
+                cv_prediction_plot = {
+                    "type": "predicted_vs_actual",
+                    "data": np.column_stack([y_2d.ravel(), y_pred_cv.ravel()]).tolist(),
+                    "metadata": {
+                        "r2_test": pls_r2_cv,
+                        "rmse_test": pls_rmsecv,
+                        "split": "cross_validation",
+                        "cv_method": cv_method,
+                    },
+                }
+            else:
+                target_names = _resolved_target_names or [f"Target {i + 1}" for i in range(y_2d.shape[1])]
+                cv_prediction_plot = {
+                    "type": "predicted_vs_actual",
+                    "series": [
+                        {
+                            "name": str(target_names[j]),
+                            "actual": y_2d[:, j].tolist(),
+                            "predicted": y_pred_cv[:, j].tolist(),
+                        }
+                        for j in range(y_2d.shape[1])
+                    ],
+                    "metadata": {
+                        "target_names": target_names,
+                        "r2_test": pls_r2_cv,
+                        "rmse_test": pls_rmsecv,
+                        "split": "cross_validation",
+                        "cv_method": cv_method,
+                    },
+                }
 
         return NodeResult(
             outputs={
@@ -821,8 +1027,14 @@ class PLSNode(Node):
                 "X_loadings": X_loadings_dataset,  # SherpaDataset: loadings (n_components, n_features)
                 "Y_scores": Y_scores_dataset,  # SherpaDataset: Y scores (n_samples, n_components)
                 "Y_loadings": Y_loadings_dataset,  # SherpaDataset: Y loadings (n_targets, n_components)
-                "model": pls,  # SCP PLSRegression for Apply PLS Model
+                "model": pls,  # SCP PLSRegression for Apply PLS Regression Model
                 "coef": coef_data,  # ndarray: regression coefficients (n_features, n_targets)
+                "coefficients": coefficients_dataset,
+                "vip": vip_dataset,
+                "y_pred": y_pred_train,
+                "y_true": y_2d,
+                "y_pred_cv": y_pred_cv,
+                "cv_predictions": cv_prediction_plot,
                 "_model_artifact": build_model_artifact(
                     extracted,
                     X_ds,
@@ -838,6 +1050,9 @@ class PLSNode(Node):
                 "r2_cv": pls_r2_cv,
                 "rmsecv": pls_rmsecv,
                 "cv_method": cv_method if pls_r2_cv is not None else "none",
+                "cv_scope": cv_scope if pls_r2_cv is not None else "none",
+                "cv_is_pipeline_safe": cv_is_pipeline_safe if pls_r2_cv is not None else None,
+                "cv_warning": cv_warning,
                 "n_components": n_components,
                 "t2_limit": float(t2_limit) if t2_limit is not None else None,
                 "q_limit": float(q_limit) if q_limit is not None else None,
@@ -863,23 +1078,23 @@ class PLSPredictNode(Node):
     metadata = NodeMetadata(
         node_type="model.pls_predict",
         category="regression",
-        label="Apply PLS Model",
-        description="Apply trained PLS model to predict concentrations for new spectra",
+        label="Apply PLS Regression Model",
+        description="Apply a fitted PLS regression model to predict concentrations for inference spectra",
         parameters=[],
         input_ports=[
             PortMetadata(
                 name="X_new",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
-                label="New Spectra",
-                description="Spectral data to predict (preprocessed same as training data)",
+                label="Inference Spectra",
+                description="Spectral data to predict; must match the fitted model contract",
             ),
             PortMetadata(
                 name="model",
                 type_ref="spectrasherpa://types/RegressionModel/1.0",
                 required=True,
-                label="PLS Model",
-                description="Trained PLS model from PLS training node",
+                label="Fitted PLS Regression Model",
+                description="Fitted PLS model from a Train PLS Regression node",
             ),
         ],
         output_ports=[

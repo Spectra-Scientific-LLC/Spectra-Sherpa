@@ -17,6 +17,12 @@ from spectra_sherpa.app.lib.sherpa_dataset import EvaluationResult, SherpaDatase
 
 from ..io_contracts import to_numpy_1d, to_numpy_2d
 from ..node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
+from .classification.core_utils import (
+    classification_metrics_contract as _classification_metrics_contract,
+)
+from .classification.core_utils import (
+    classification_scalar_metrics as _classification_scalar_metrics,
+)
 
 
 def _unwrap_data(value: Any) -> Any:
@@ -48,7 +54,7 @@ class OutlierDetectionNode(Node):
     metadata = NodeMetadata(
         node_type="diagnostics.outliers",
         category="validation",
-        label="Outlier Detection",
+        label="Detect Outliers",
         description=(
             "Identifies samples that deviate from the PCA model using Hotelling T² (distance within "
             "model space) and Q/SPE residuals (distance to model). "
@@ -63,7 +69,6 @@ class OutlierDetectionNode(Node):
                 param_type="number",
                 default=0.95,
                 min_value=0.80,
-                max_value=0.99,
                 step=0.01,
                 description="Confidence level for control limits (e.g., 0.95 = 95%)",
                 required=True,
@@ -350,7 +355,7 @@ class CrossValidationNode(Node):
     metadata = NodeMetadata(
         node_type="diagnostics.cross_validation",
         category="validation",
-        label="Cross-Validation",
+        label="Evaluate by Cross-Validation",
         description=(
             "Computes RMSECV, Q², R², SEP, RER, and bias from cross-validated predictions. "
             "For NIR calibration reporting: SEP (bias-corrected RMSECV) and RER ≥ 10 are the key "
@@ -365,7 +370,6 @@ class CrossValidationNode(Node):
                 param_type="number",
                 default=5,
                 min_value=2,
-                max_value=20,
                 step=1,
                 description="Number of cross-validation folds (ignored when cv_method is 'loocv' or 'auto')",
                 required=True,
@@ -416,8 +420,8 @@ class CrossValidationNode(Node):
                 name="model",
                 type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=False,
-                label="CV Model",
-                description="CV Model (optional)",
+                label="Cross-Validation Model",
+                description="Cross-validation model object (optional)",
             ),
             PortMetadata(
                 name="cv_metrics",
@@ -489,7 +493,7 @@ class CrossValidationNode(Node):
         lines.append(f"{indent}    results['{self.node_id}'] = {{")
         lines.append(f"{indent}        'model': None,")
         lines.append(
-            f"{indent}        'cv_metrics': {{'accuracy': _acc, 'n_classes': len(_unique), "
+            f"{indent}        'cv_metrics': {{'cv_accuracy': _acc, 'n_classes': len(_unique), "
             f"'n_samples': len(_y_true), 'task_type': 'classification'}},"
         )
         lines.append(f"{indent}        'predictions': _y_pred,")
@@ -502,10 +506,18 @@ class CrossValidationNode(Node):
         lines.append(f"{indent}    _ss_tot = np.sum((_y_true - np.mean(_y_true)) ** 2)")
         lines.append(f"{indent}    _r2 = 1.0 - (_ss_res / _ss_tot) if _ss_tot > 0 else np.nan")
         lines.append(f"{indent}    _rmse = np.sqrt(np.mean((_y_true - _y_pred) ** 2))")
+        lines.append(f"{indent}    _bias = np.mean(_y_true - _y_pred)")
+        lines.append(f"{indent}    _sep = np.sqrt(max(0.0, float(_rmse**2 - _bias**2)))")
+        lines.append(f"{indent}    _range = np.ptp(_y_true)")
+        lines.append(f"{indent}    _rer = (_range / _rmse) if _rmse > 1e-12 else np.inf")
         lines.append(f'{indent}    print(f"  CV Metrics (folds={cv_folds}): R²={{_r2:.6f}}  RMSE={{_rmse:.6f}}")')
         lines.append(f"{indent}    results['{self.node_id}'] = {{")
         lines.append(f"{indent}        'model': None,")
-        lines.append(f"{indent}        'cv_metrics': {{'r2': _r2, 'rmse': _rmse, 'n_samples': len(_y_true)}},")
+        lines.append(
+            f"{indent}        'cv_metrics': {{'r2_cv': _r2, 'q2': _r2, 'rmsecv': _rmse, "
+            f"'bias': _bias, 'sep': _sep, 'rer': _rer, 'n_samples': len(_y_true), "
+            f"'task_type': 'regression'}},"
+        )
         lines.append(f"{indent}        'predictions': _y_pred,")
         lines.append(f"{indent}        'plots': {{'true_vs_pred': list(zip(_y_true.tolist(), _y_pred.tolist()))}},")
         lines.append(f"{indent}    }}")
@@ -524,10 +536,8 @@ class CrossValidationNode(Node):
             Dict containing CV metrics
         """
         from sklearn.metrics import (
-            accuracy_score,
             classification_report,
             confusion_matrix,
-            f1_score,
             mean_absolute_error,
             mean_squared_error,
             r2_score,
@@ -579,9 +589,17 @@ class CrossValidationNode(Node):
 
         if is_classification:
             # Classification metrics
-            accuracy = accuracy_score(y_true, y_pred)
             cm = confusion_matrix(y_true, y_pred)
             unique_classes = np.unique(np.concatenate([y_true, y_pred]))
+            cv_split_metrics = _classification_scalar_metrics(y_true, y_pred, unique_classes, prefix="cv_")
+            classification_metrics = _classification_metrics_contract(
+                classes=unique_classes,
+                cv_metrics=cv_split_metrics,
+                primary_split="cv",
+                method="cross_validation",
+                confusion_matrices={"cv": cm.tolist()},
+                extra={"cv_method": effective_cv, "cv_folds_used": int(effective_folds)},
+            )
 
             class_report = classification_report(
                 y_true,
@@ -612,22 +630,30 @@ class CrossValidationNode(Node):
 
             result.update(
                 {
-                    "accuracy": accuracy,
+                    "cv_accuracy": cv_split_metrics["cv_accuracy"],
+                    "cv_balanced_accuracy": cv_split_metrics["cv_balanced_accuracy"],
+                    "cv_f1_macro": cv_split_metrics["cv_f1_macro"],
+                    "cv_precision_macro": cv_split_metrics["cv_precision_macro"],
+                    "cv_recall_macro": cv_split_metrics["cv_recall_macro"],
+                    "cv_sensitivity_macro": cv_split_metrics["cv_sensitivity_macro"],
+                    "cv_specificity_macro": cv_split_metrics["cv_specificity_macro"],
                     "confusion_matrix": cm.tolist(),
                     "classification_report": class_report,
                     "n_classes": len(unique_classes),
                     "classes": unique_classes.tolist(),
                     "task_type": "classification",
                     "per_class": cv_per_class,
+                    "metrics": classification_metrics,
                     "metadata": {
                         "type": "ClassificationCV",
-                        "accuracy": accuracy,
+                        "cv_accuracy": cv_split_metrics["cv_accuracy"],
+                        "cv_balanced_accuracy": cv_split_metrics["cv_balanced_accuracy"],
                         "n_classes": len(unique_classes),
                     },
                 }
             )
 
-            logger.debug(f"[Cross-Validation] Classification accuracy: {accuracy:.3f}")
+            logger.debug("[Cross-Validation] Classification CV accuracy: %.3f", cv_split_metrics["cv_accuracy"])
 
         else:
             # Regression metrics
@@ -655,25 +681,24 @@ class CrossValidationNode(Node):
 
             result.update(
                 {
-                    "RMSE": rmse,
-                    "RMSECV": rmse,  # Same as RMSE for CV predictions
-                    "MAE": mae,
-                    "R2": r2,
-                    "Q2": Q2,
+                    "rmsecv": rmse,
+                    "mae": mae,
+                    "r2_cv": r2,
+                    "q2": Q2,
                     "PRESS": PRESS,
                     "bias": bias,
-                    "SEP": sep,
-                    "RER": rer,
+                    "sep": sep,
+                    "rer": rer,
                     "residuals": (y_true - y_pred).tolist(),
                     "task_type": "regression",
                     "metadata": {
                         "type": "RegressionCV",
-                        "RMSECV": rmse,
-                        "SEP": sep,
-                        "RER": rer,
+                        "rmsecv": rmse,
+                        "sep": sep,
+                        "rer": rer,
                         "bias": bias,
-                        "Q2": Q2,
-                        "R2": r2,
+                        "q2": Q2,
+                        "r2_cv": r2,
                     },
                 }
             )
@@ -690,12 +715,12 @@ class CrossValidationNode(Node):
             "evaluation_id": str(uuid.uuid4()),
         }
         if is_classification:
-            eval_kwargs["accuracy"] = result["accuracy"]
+            eval_kwargs["accuracy"] = result["cv_accuracy"]
             eval_kwargs["confusion_matrix"] = result["confusion_matrix"]
         else:
-            eval_kwargs["r2"] = result["R2"]
-            eval_kwargs["rmse"] = result["RMSE"]
-            eval_kwargs["mae"] = result["MAE"]
+            eval_kwargs["r2"] = result["r2_cv"]
+            eval_kwargs["rmse"] = result["rmsecv"]
+            eval_kwargs["mae"] = result["mae"]
         result["evaluation"] = EvaluationResult(**eval_kwargs)
 
         # Add visualization data
@@ -712,16 +737,24 @@ class CrossValidationNode(Node):
         if is_classification:
             result["plots"] = {"confusion_matrix": result["confusion_matrix"]}
             cv_diagnostics = {
-                "accuracy": result["accuracy"],
-                "f1_score": float(f1_score(y_true, y_pred, average="macro")),
+                "metrics": result["metrics"],
+                "cv_accuracy": result["cv_accuracy"],
+                "cv_balanced_accuracy": result["cv_balanced_accuracy"],
+                "cv_f1_macro": result["cv_f1_macro"],
+                "cv_precision_macro": result["cv_precision_macro"],
+                "cv_recall_macro": result["cv_recall_macro"],
+                "cv_sensitivity_macro": result["cv_sensitivity_macro"],
+                "cv_specificity_macro": result["cv_specificity_macro"],
             }
         else:
             result["plots"] = {"true_vs_pred": result["data"]}
             cv_diagnostics = {
-                "rmsecv": result["RMSECV"],
-                "q2": result["Q2"],
-                "sep": result["SEP"],
-                "rer": result["RER"],
+                "r2_cv": result["r2_cv"],
+                "rmsecv": result["rmsecv"],
+                "mae": result["mae"],
+                "q2": result["q2"],
+                "sep": result["sep"],
+                "rer": result["rer"],
                 "bias": result["bias"],
             }
 
@@ -741,7 +774,7 @@ class HoldoutEvaluationNode(Node):
     metadata = NodeMetadata(
         node_type="diagnostics.holdout_evaluation",
         category="validation",
-        label="Holdout Evaluation",
+        label="Evaluate Holdout Set",
         description=(
             "Compute test-set performance metrics from held-out predictions. "
             "Regression mode reports RMSEP, R², MAE, bias, SEP, and RER. "
@@ -786,6 +819,20 @@ class HoldoutEvaluationNode(Node):
                     "predicted-vs-actual plot labels use real reference "
                     "property names (Moisture, Oil, ...) instead of Target_1..N."
                 ),
+            ),
+            PortMetadata(
+                name="y_train_true",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=False,
+                label="Training True Values",
+                description="Optional training targets for plotting calibration and holdout samples together",
+            ),
+            PortMetadata(
+                name="y_train_pred",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=False,
+                label="Training Predicted Values",
+                description="Optional training predictions for plotting calibration and holdout samples together",
             ),
         ],
         output_ports=[
@@ -870,7 +917,7 @@ class HoldoutEvaluationNode(Node):
             lines.append(f"{indent}results['{self.node_id}'] = {{")
             lines.append(
                 f"{indent}    'metrics': {{"
-                f"'accuracy': _acc, 'n_classes': len(_classes), 'classes': _classes.tolist(), "
+                f"'test_accuracy': _acc, 'n_classes': len(_classes), 'classes': _classes.tolist(), "
                 f"'n_samples': len(_y_true), 'task_type': 'classification', "
                 f"'classification_report': _class_report"
                 f"}},"
@@ -880,7 +927,7 @@ class HoldoutEvaluationNode(Node):
                 f"{indent}    'visualization': {{"
                 f"'data': _cm.tolist(), 'type': 'confusion_matrix', "
                 f"'metadata': {{"
-                f"'type': 'ClassificationTest', 'accuracy': _acc, 'n_classes': len(_classes), "
+                f"'type': 'ClassificationTest', 'test_accuracy': _acc, 'n_classes': len(_classes), "
                 f"'classes': _classes.tolist(), 'n_samples': len(_y_true), 'task_type': 'classification'"
                 f"}}"
                 f"}},"
@@ -926,7 +973,7 @@ class HoldoutEvaluationNode(Node):
             lines.append(f"{indent}results['{self.node_id}'] = {{")
             lines.append(
                 f"{indent}    'metrics': {{"
-                f"'RMSEP': _rmsep, 'R2': _r2, 'MAE': _mae, 'bias': _bias, 'SEP': _sep, 'RER': _rer, "
+                f"'rmse_test': _rmsep, 'r2_test': _r2, 'mae': _mae, 'bias': _bias, 'sep': _sep, 'rer': _rer, "
                 f"'n_samples': len(_y_true), 'n_valid_samples': len(_y_true_valid), "
                 f"'n_invalid_predictions': _n_invalid, 'status': _status, 'task_type': 'regression'"
                 f"}},"
@@ -937,8 +984,8 @@ class HoldoutEvaluationNode(Node):
                 f"'data': list(zip(_y_true_valid.tolist(), _y_pred_valid.tolist())), "
                 f"'type': 'predicted_vs_actual', "
                 f"'metadata': {{"
-                f"'type': 'RegressionTest', 'RMSEP': _rmsep, 'R2': _r2, 'MAE': _mae, 'bias': _bias, "
-                f"'SEP': _sep, 'RER': _rer, 'n_samples': len(_y_true), 'n_valid_samples': len(_y_true_valid), "
+                f"'type': 'RegressionTest', 'rmse_test': _rmsep, 'r2_test': _r2, 'mae': _mae, 'bias': _bias, "
+                f"'sep': _sep, 'rer': _rer, 'n_samples': len(_y_true), 'n_valid_samples': len(_y_true_valid), "
                 f"'n_invalid_predictions': _n_invalid, 'status': _status, 'task_type': 'regression'"
                 f"}}"
                 f"}},"
@@ -947,7 +994,14 @@ class HoldoutEvaluationNode(Node):
 
         return lines
 
-    async def execute(self, y_true: Any = None, y_pred: Any = None, **kwargs: Any) -> Any:
+    async def execute(
+        self,
+        y_true: Any = None,
+        y_pred: Any = None,
+        y_train_true: Any = None,
+        y_train_pred: Any = None,
+        **kwargs: Any,
+    ) -> Any:
         """Compute held-out test-set metrics."""
         if y_true is None or y_pred is None:
             raise ValueError("Missing required inputs: y_true and y_pred")
@@ -978,6 +1032,27 @@ class HoldoutEvaluationNode(Node):
                 y_pred_arr = y_pred_arr.reshape(-1, 1)
             if y_true_arr.shape != y_pred_arr.shape:
                 raise ValueError(f"y_true shape {y_true_arr.shape} does not match " f"y_pred shape {y_pred_arr.shape}")
+            y_train_true_arr: np.ndarray | None = None
+            y_train_pred_arr: np.ndarray | None = None
+            if y_train_true is not None or y_train_pred is not None:
+                if y_train_true is None or y_train_pred is None:
+                    raise ValueError("Both y_train_true and y_train_pred are required when either is provided")
+                y_train_true_arr = np.asarray(_unwrap_data(y_train_true), dtype=np.float64)
+                y_train_pred_arr = np.asarray(_unwrap_data(y_train_pred), dtype=np.float64)
+                if y_train_true_arr.ndim == 1:
+                    y_train_true_arr = y_train_true_arr.reshape(-1, 1)
+                if y_train_pred_arr.ndim == 1:
+                    y_train_pred_arr = y_train_pred_arr.reshape(-1, 1)
+                if y_train_true_arr.shape != y_train_pred_arr.shape:
+                    raise ValueError(
+                        f"y_train_true shape {y_train_true_arr.shape} does not match "
+                        f"y_train_pred shape {y_train_pred_arr.shape}"
+                    )
+                if y_train_true_arr.shape[1] != y_true_arr.shape[1]:
+                    raise ValueError(
+                        "Training and test targets must have the same number of columns: "
+                        f"train={y_train_true_arr.shape[1]}, test={y_true_arr.shape[1]}"
+                    )
 
             # Target name resolution order:
             #   1. explicit ``target_names`` kwarg (programmatic callers)
@@ -1000,7 +1075,14 @@ class HoldoutEvaluationNode(Node):
                             "[HoldoutEvaluation] Failed to resolve target names from context",
                             exc_info=True,
                         )
-            return self._evaluate_regression(y_true_arr, y_pred_arr, uuid, target_names=target_names)
+            return self._evaluate_regression(
+                y_true_arr,
+                y_pred_arr,
+                uuid,
+                target_names=target_names,
+                y_train_true=y_train_true_arr,
+                y_train_pred=y_train_pred_arr,
+            )
 
         # Classification path: stay 1D (multi-label classification is out of
         # scope for this node), and keep the original dtype-coercion logic.
@@ -1025,6 +1107,8 @@ class HoldoutEvaluationNode(Node):
         uuid: Any,
         *,
         target_names: list[str] | None = None,
+        y_train_true: np.ndarray | None = None,
+        y_train_pred: np.ndarray | None = None,
     ) -> NodeResult:
         """Compute holdout regression metrics for 1D or 2D targets.
 
@@ -1040,6 +1124,7 @@ class HoldoutEvaluationNode(Node):
         assert y_true.ndim == 2 and y_pred.ndim == 2, "execute() must pass 2D arrays"
         n_samples, n_targets = y_true.shape
         is_multi_target = n_targets > 1
+        has_train_split = y_train_true is not None and y_train_pred is not None
 
         def _score_column(col_true: np.ndarray, col_pred: np.ndarray) -> tuple[dict, int, int, str]:
             """Return (metrics_dict, n_valid, n_invalid, status) for one target."""
@@ -1086,16 +1171,39 @@ class HoldoutEvaluationNode(Node):
 
         # Per-target scoring.
         per_target_rows: list[dict] = []
+        per_target_train_rows: list[dict] = []
         per_target_valid: list[int] = []
         per_target_invalid: list[int] = []
         per_target_status: list[str] = []
         for j in range(n_targets):
             row, nv, ni, st = _score_column(y_true[:, j], y_pred[:, j])
             labelled = {"target": target_labels[j], **row}
-            per_target_rows.append(labelled)
             per_target_valid.append(nv)
             per_target_invalid.append(ni)
             per_target_status.append(st)
+            if has_train_split:
+                train_row, train_nv, train_ni, train_st = _score_column(
+                    y_train_true[:, j],
+                    y_train_pred[:, j],
+                )
+                labelled.update(
+                    {
+                        "R2_test": row["R2"],
+                        "RMSE_test": row["RMSEP"],
+                        "R2_train": train_row["R2"],
+                        "RMSE_train": train_row["RMSEP"],
+                    }
+                )
+                per_target_train_rows.append(
+                    {
+                        "target": target_labels[j],
+                        **train_row,
+                        "n_valid_samples": train_nv,
+                        "n_invalid_predictions": train_ni,
+                        "status": train_st,
+                    }
+                )
+            per_target_rows.append(labelled)
 
         total_invalid = int(sum(per_target_invalid))
         if total_invalid:
@@ -1118,6 +1226,24 @@ class HoldoutEvaluationNode(Node):
             "SEP": _nanmean([r["SEP"] for r in per_target_rows]),
             "RER": _nanmean([r["RER"] for r in per_target_rows]),
         }
+        train_agg = None
+        if has_train_split:
+            train_agg = {
+                "RMSE": _nanmean([r["RMSEP"] for r in per_target_train_rows]),
+                "R2": _nanmean([r["R2"] for r in per_target_train_rows]),
+                "MAE": _nanmean([r["MAE"] for r in per_target_train_rows]),
+                "bias": _nanmean([r["bias"] for r in per_target_train_rows]),
+                "SEP": _nanmean([r["SEP"] for r in per_target_train_rows]),
+                "RER": _nanmean([r["RER"] for r in per_target_train_rows]),
+            }
+        comparable_metrics = {
+            "rmse_test": agg["RMSEP"],
+            "r2_test": agg["R2"],
+            "mae": agg["MAE"],
+            "bias": agg["bias"],
+            "sep": agg["SEP"],
+            "rer": agg["RER"],
+        }
 
         if is_multi_target:
             metrics: dict = {
@@ -1132,12 +1258,19 @@ class HoldoutEvaluationNode(Node):
                 },
                 "per_target": per_target_rows,
                 "mean_across_targets": agg,
+                **comparable_metrics,
                 "n_samples": int(n_samples),
                 "n_targets": int(n_targets),
                 "n_valid_samples": int(min(per_target_valid)) if per_target_valid else 0,
                 "n_invalid_predictions": total_invalid,
                 "task_type": "regression",
             }
+            if has_train_split:
+                metrics["per_target_train"] = per_target_train_rows
+                metrics["mean_train"] = train_agg
+                metrics["rmse_train"] = train_agg["RMSE"]
+                metrics["r2_train"] = train_agg["R2"]
+                metrics["n_train_samples"] = int(y_train_true.shape[0])
         else:
             flat = {k: v for k, v in per_target_rows[0].items() if k != "target"}
             metrics = {
@@ -1147,13 +1280,18 @@ class HoldoutEvaluationNode(Node):
                     "n_samples": int(n_samples),
                     "status": per_target_status[0],
                 },
-                **flat,
+                **comparable_metrics,
                 "n_samples": int(n_samples),
                 "n_valid_samples": per_target_valid[0],
                 "n_invalid_predictions": per_target_invalid[0],
                 "status": per_target_status[0],
                 "task_type": "regression",
             }
+            if has_train_split:
+                metrics["train"] = per_target_train_rows[0]
+                metrics["rmse_train"] = per_target_train_rows[0]["RMSEP"]
+                metrics["r2_train"] = per_target_train_rows[0]["R2"]
+                metrics["n_train_samples"] = int(y_train_true.shape[0])
 
         # EvaluationResult stores the headline single pair.  For multi-target
         # we record the cross-target mean so the model-list dashboards still
@@ -1174,25 +1312,68 @@ class HoldoutEvaluationNode(Node):
             series = []
             for j, label in enumerate(target_labels):
                 finite = np.isfinite(y_true[:, j]) & np.isfinite(y_pred[:, j])
-                series.append(
-                    {
-                        "name": label,
-                        "actual": y_true[finite, j].tolist(),
-                        "predicted": y_pred[finite, j].tolist(),
+                split_metrics: dict[str, Any] = {
+                    "test": {
+                        "R2": per_target_rows[j]["R2"],
+                        "RMSE": per_target_rows[j]["RMSEP"],
+                        "n": per_target_valid[j],
                     }
-                )
+                }
+                series_item: dict[str, Any] = {
+                    "name": label,
+                    "actual": y_true[finite, j].tolist(),
+                    "predicted": y_pred[finite, j].tolist(),
+                    "metrics": split_metrics,
+                }
+                if has_train_split:
+                    train_finite = np.isfinite(y_train_true[:, j]) & np.isfinite(y_train_pred[:, j])
+                    split_metrics["train"] = {
+                        "R2": per_target_train_rows[j]["R2"],
+                        "RMSE": per_target_train_rows[j]["RMSEP"],
+                        "n": per_target_train_rows[j]["n_valid_samples"],
+                    }
+                    series_item["train_actual"] = y_train_true[train_finite, j].tolist()
+                    series_item["train_predicted"] = y_train_pred[train_finite, j].tolist()
+                series.append(series_item)
             viz_payload = {
                 "series": series,
                 "type": "predicted_vs_actual",
-                "metadata": {"type": "RegressionTest", "target_names": target_labels, **metrics},
+                "metadata": {
+                    "type": "RegressionTest",
+                    "target_names": target_labels,
+                    "splits": ["train", "test"] if has_train_split else ["test"],
+                    **metrics,
+                },
             }
         else:
             finite = np.isfinite(y_true[:, 0]) & np.isfinite(y_pred[:, 0])
             viz_data = [[float(y_true[i, 0]), float(y_pred[i, 0])] for i in range(n_samples) if finite[i]]
+            metadata = {
+                "type": "RegressionTest",
+                "splits": ["train", "test"] if has_train_split else ["test"],
+                "test": {
+                    "R2": per_target_rows[0]["R2"],
+                    "RMSE": per_target_rows[0]["RMSEP"],
+                    "n": per_target_valid[0],
+                },
+                **metrics,
+            }
+            if has_train_split:
+                train_finite = np.isfinite(y_train_true[:, 0]) & np.isfinite(y_train_pred[:, 0])
+                metadata["train"] = {
+                    "R2": per_target_train_rows[0]["R2"],
+                    "RMSE": per_target_train_rows[0]["RMSEP"],
+                    "n": per_target_train_rows[0]["n_valid_samples"],
+                    "data": [
+                        [float(y_train_true[i, 0]), float(y_train_pred[i, 0])]
+                        for i in range(y_train_true.shape[0])
+                        if train_finite[i]
+                    ],
+                }
             viz_payload = {
                 "data": viz_data,
                 "type": "predicted_vs_actual",
-                "metadata": {"type": "RegressionTest", **metrics},
+                "metadata": metadata,
             }
 
         if is_multi_target:
@@ -1238,12 +1419,22 @@ class HoldoutEvaluationNode(Node):
         )
 
         accuracy = float(accuracy_score(y_true, y_pred))
-        cm = confusion_matrix(y_true, y_pred)
-        unique_classes = np.unique(np.concatenate([y_true, y_pred]))
+        unique_classes = np.unique(y_true)
+        cm = confusion_matrix(y_true, y_pred, labels=unique_classes)
+        test_split_metrics = _classification_scalar_metrics(y_true, y_pred, unique_classes, prefix="test_")
+        classification_metrics = _classification_metrics_contract(
+            classes=unique_classes,
+            test_metrics=test_split_metrics,
+            primary_split="test",
+            method="holdout_evaluation",
+            confusion_matrices={"test": cm.tolist()},
+            extra={"n_samples": int(n_samples)},
+        )
 
         class_report = classification_report(
             y_true,
             y_pred,
+            labels=unique_classes,
             target_names=[str(c) for c in unique_classes],
             output_dict=True,
             zero_division=0,
@@ -1272,17 +1463,23 @@ class HoldoutEvaluationNode(Node):
             "data": per_class_metrics,
             "metadata": {
                 "type": "ClassificationTest",
-                "accuracy": accuracy,
                 "n_classes": len(unique_classes),
                 "n_samples": n_samples,
             },
-            "accuracy": accuracy,
+            "test_accuracy": test_split_metrics["test_accuracy"],
+            "test_balanced_accuracy": test_split_metrics["test_balanced_accuracy"],
+            "test_f1_macro": test_split_metrics["test_f1_macro"],
+            "test_precision_macro": test_split_metrics["test_precision_macro"],
+            "test_recall_macro": test_split_metrics["test_recall_macro"],
+            "test_sensitivity_macro": test_split_metrics["test_sensitivity_macro"],
+            "test_specificity_macro": test_split_metrics["test_specificity_macro"],
             "n_classes": len(unique_classes),
             "classes": unique_classes.tolist(),
             "n_samples": n_samples,
             "task_type": "classification",
             "classification_report": class_report,
             "per_class": per_class_metrics,
+            "metrics": classification_metrics,
         }
 
         evaluation = EvaluationResult(
@@ -1313,11 +1510,18 @@ class HoldoutEvaluationNode(Node):
                 "evaluation": evaluation,
             },
             diagnostics={
-                "accuracy": accuracy,
+                "test_accuracy": test_split_metrics["test_accuracy"],
+                "test_balanced_accuracy": test_split_metrics["test_balanced_accuracy"],
+                "test_f1_macro": test_split_metrics["test_f1_macro"],
+                "test_precision_macro": test_split_metrics["test_precision_macro"],
+                "test_recall_macro": test_split_metrics["test_recall_macro"],
+                "test_sensitivity_macro": test_split_metrics["test_sensitivity_macro"],
+                "test_specificity_macro": test_split_metrics["test_specificity_macro"],
                 "n_classes": len(unique_classes),
                 "classes": unique_classes.tolist(),
                 "n_samples": n_samples,
                 "confusion_matrix": cm.tolist(),
                 "per_class": per_class_metrics,
+                "metrics": classification_metrics,
             },
         )

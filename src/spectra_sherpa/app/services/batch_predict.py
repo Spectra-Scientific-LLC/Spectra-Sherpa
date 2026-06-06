@@ -27,18 +27,18 @@ logger = logging.getLogger(__name__)
 def validate_folder_path(folder_path: str) -> Path:
     """Resolve and validate a user-supplied folder path.
 
-    In enterprise/SaaS mode, the resolved path must be under
+    In multi-user modes (enterprise/hybrid/demo), the resolved path must be under
     ``settings.data_dir`` to prevent arbitrary filesystem traversal.
-    In local and hybrid modes, any accessible path is allowed (desktop app).
+    In local mode, any accessible path is allowed (desktop app).
 
     Returns the resolved Path on success; raises ValueError otherwise.
     """
     from spectra_sherpa.app.core.config import settings
-    from spectra_sherpa.app.core.mode_policy import is_enterprise
+    from spectra_sherpa.app.core.mode_policy import is_multi_user
 
     resolved = Path(folder_path).expanduser().resolve()
 
-    if is_enterprise():
+    if is_multi_user():
         allowed_root = Path(settings.data_dir).resolve()
         try:
             resolved.relative_to(allowed_root)
@@ -203,11 +203,33 @@ async def run_batch_prediction(
     """
     from spectra_sherpa.app.services.job_manager import job_manager
     from spectra_sherpa.app.services.serialization import serialize_result
+    from spectra_sherpa.app.services.workflow_access import validate_workflow_execution_access
 
     total = len(files)
     success_count = 0
     error_count = 0
     all_model_ids: set[str] = set()
+
+    try:
+        await validate_workflow_execution_access(
+            workflow.nodes,
+            None,
+            run.user_id,
+            workflow.project_id,
+            session,
+        )
+    except Exception as exc:
+        run.status = "error"
+        run.error = str(exc)
+        run.results_summary = {
+            "__batch__": {
+                "total_files": total,
+                "success_count": 0,
+                "error_count": total,
+            }
+        }
+        await session.commit()
+        raise
 
     for idx, file_path in enumerate(files):
         start_ms = time.monotonic()
@@ -234,7 +256,7 @@ async def run_batch_prediction(
             for node_id in exit_nodes:
                 if node_id in results:
                     try:
-                        serialized[node_id] = serialize_result(results[node_id])
+                        serialized[node_id] = serialize_result(results[node_id], owner_user_id=run.user_id)
                     except Exception:
                         serialized[node_id] = {"error": "serialization_failed"}
 
@@ -250,6 +272,7 @@ async def run_batch_prediction(
                     user_id=run.user_id,
                     workflow_id=workflow.id,
                     project_id=getattr(workflow, "project_id", None),
+                    source_run_id=run.id,
                 )
                 file_model_id = executor.saved_artifacts[-1]["artifact_uid"]
                 all_model_ids.update(a["artifact_uid"] for a in executor.saved_artifacts)
@@ -293,6 +316,7 @@ async def run_batch_prediction(
                         user_id=run.user_id,
                         workflow_id=workflow.id,
                         project_id=getattr(workflow, "project_id", None),
+                        source_run_id=run.id,
                     )
                     all_model_ids.update(a["artifact_uid"] for a in executor.saved_artifacts)
                 except Exception as art_err:
@@ -350,6 +374,7 @@ async def run_batch_prediction(
     }
     if all_model_ids:
         run.model_ids = sorted(all_model_ids)
+        run.applied_artifact_uids = sorted(all_model_ids)
     await session.commit()
     logger.info(
         "Batch prediction complete: %d/%d succeeded for run %d",

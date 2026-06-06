@@ -80,6 +80,16 @@ def _to_numpy_1d(value: Any, name: str = "value") -> np.ndarray:
     return arr.reshape(-1).astype(np.float64)
 
 
+def _as_optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    return out if np.isfinite(out) else None
+
+
 # ---------------------------------------------------------------------------
 # PCAExtract
 # ---------------------------------------------------------------------------
@@ -96,6 +106,10 @@ class PCAExtract:
         explained_variance: Eigenvalues (n_components,)
         n_components: Actual number of fitted components
         mean: Training data mean for centering (n_features,)
+        scale: Training data divisor for standardized/min-max scaled PCA (n_features,)
+        offset: Training data offset for min-max scaled PCA (n_features,)
+        center: Training data center after min-max scaling (n_features,)
+        scale_mode: "standard" for std scaling, "minmax" for SCP scaled=True, or None
     """
 
     scores: np.ndarray  # 2D float64
@@ -104,9 +118,20 @@ class PCAExtract:
     explained_variance: np.ndarray  # 1D float64
     n_components: int
     mean: np.ndarray | None = None  # 1D float64
+    scale: np.ndarray | None = None  # 1D float64
+    offset: np.ndarray | None = None  # 1D float64
+    center: np.ndarray | None = None  # 1D float64
+    scale_mode: str | None = None
 
     @classmethod
-    def from_scp(cls, pca_model: Any, input_ndd: Any) -> PCAExtract:
+    def from_scp(
+        cls,
+        pca_model: Any,
+        input_ndd: Any,
+        *,
+        standardized: bool = False,
+        scaled: bool = False,
+    ) -> PCAExtract:
         """Extract from fitted SCP PCA model.
 
         All hasattr/try-except logic lives HERE. When SCP changes its API,
@@ -174,13 +199,42 @@ class PCAExtract:
                 eigenvalues, (0, n_components - len(eigenvalues)), mode="constant", constant_values=1e-12
             )
 
-        # Compute training data mean for centering
+        # Compute training data preprocessing state for deploy-time transform.
+        #
+        # SCP's default PCA path mean-centers. standardized=True centers and
+        # divides by per-feature std. scaled=True first min-max scales each
+        # variable as (X - min) / ptp and then centers the scaled matrix
+        # before SVD. Persist those raw-space and scaled-space parameters
+        # because load_apply has only raw inference data and loadings in PCA
+        # space.
         mean = None
+        scale = None
+        offset = None
+        center = None
+        scale_mode = None
         try:
-            mean = np.mean(_unwrap_to_numpy(input_ndd, "input_ndd"), axis=0).astype(np.float64)
-            mean = mean.reshape(-1)
+            input_array = _unwrap_to_numpy(input_ndd, "input_ndd")
+            raw_mean = np.mean(input_array, axis=0).astype(np.float64).reshape(-1)
+            raw_std = np.std(input_array, axis=0).astype(np.float64).reshape(-1)
+            raw_std[(raw_std == 0) | ~np.isfinite(raw_std)] = 1.0
+            raw_min = np.min(input_array, axis=0).astype(np.float64).reshape(-1)
+            raw_ptp = np.ptp(input_array, axis=0).astype(np.float64).reshape(-1)
+            raw_ptp[(raw_ptp == 0) | ~np.isfinite(raw_ptp)] = 1.0
+            if standardized:
+                mean = raw_mean
+                scale = raw_std
+                scale_mode = "standard"
+            elif scaled:
+                offset = raw_min
+                scale = raw_ptp
+                scaled_array = (input_array - raw_min) / raw_ptp
+                center = np.mean(scaled_array, axis=0).astype(np.float64).reshape(-1)
+                center[~np.isfinite(center)] = 0.0
+                scale_mode = "minmax"
+            else:
+                mean = raw_mean
         except Exception as e:
-            logger.warning("[PCAExtract] Could not compute training mean: %s", e)
+            logger.warning("[PCAExtract] Could not compute training preprocessing state: %s", e)
 
         return cls(
             scores=scores,
@@ -189,6 +243,10 @@ class PCAExtract:
             explained_variance=eigenvalues[:n_components],
             n_components=n_components,
             mean=mean,
+            scale=scale,
+            offset=offset,
+            center=center,
+            scale_mode=scale_mode,
         )
 
     def to_artifact(self) -> tuple[dict, dict[str, np.ndarray]]:
@@ -196,6 +254,9 @@ class PCAExtract:
         metadata = {
             "model_type": "pca",
             "n_components": self.n_components,
+            "standardized": self.scale_mode == "standard" or bool(self.mean is not None and self.scale is not None),
+            "scaled": self.scale_mode == "minmax" or bool(self.mean is None and self.scale is not None),
+            "scale_mode": self.scale_mode,
         }
         arrays: dict[str, np.ndarray] = {
             "loadings": self.loadings,
@@ -204,6 +265,12 @@ class PCAExtract:
         }
         if self.mean is not None:
             arrays["mean"] = self.mean
+        if self.scale is not None:
+            arrays["scale"] = self.scale
+        if self.offset is not None:
+            arrays["offset"] = self.offset
+        if self.center is not None:
+            arrays["center"] = self.center
         if self.scores is not None and self.scores.size > 0:
             arrays["scores"] = self.scores
         return metadata, arrays
@@ -213,6 +280,11 @@ class PCAExtract:
         """Reconstruct from ModelStore.load() output."""
         loadings = arrays["loadings"]
         n_components = metadata.get("n_components", loadings.shape[0])
+        scale_mode = metadata.get("scale_mode")
+        if scale_mode is None and metadata.get("standardized") and "scale" in arrays:
+            scale_mode = "standard"
+        elif scale_mode is None and metadata.get("scaled") and "scale" in arrays:
+            scale_mode = "minmax" if "offset" in arrays and "center" in arrays else "minmax_incomplete"
         return cls(
             scores=arrays.get("scores", np.empty((0, n_components))),
             loadings=loadings,
@@ -220,15 +292,34 @@ class PCAExtract:
             explained_variance=arrays.get("explained_variance", np.zeros(n_components)),
             n_components=n_components,
             mean=arrays.get("mean"),
+            scale=arrays.get("scale"),
+            offset=arrays.get("offset"),
+            center=arrays.get("center"),
+            scale_mode=scale_mode,
         )
 
     def transform(self, X: np.ndarray) -> np.ndarray:
-        """Project new data into PC space: scores = (X - mean) @ loadings.T"""
+        """Project new data into PC space, replaying persisted PCA preprocessing."""
         X = np.asarray(X, dtype=np.float64)
         if X.ndim == 1:
             X = X.reshape(1, -1)
+        if self.scale_mode == "minmax_incomplete" or (
+            self.scale_mode == "minmax" and (self.offset is None or self.scale is None or self.center is None)
+        ):
+            raise ValueError(
+                "PCA artifact was created with scaled=True but does not include the training min-max "
+                "offset, range, and post-scale center needed to replay SpectroChemPy's transform."
+            )
         if self.mean is not None:
             X = X - self.mean
+        if self.offset is not None:
+            X = X - self.offset
+        if self.scale is not None:
+            scale = np.asarray(self.scale, dtype=np.float64)
+            scale = np.where(np.abs(scale) > 1e-12, scale, 1.0)
+            X = X / scale
+        if self.center is not None:
+            X = X - self.center
         return X @ self.loadings.T
 
 
@@ -250,6 +341,9 @@ class PLSExtract:
         n_components: Number of components
         x_mean: Training X mean for centering (n_features,)
         y_mean: Training Y mean for centering (n_targets,)
+        x_scale: Training X scale for latent-space diagnostics (n_features,)
+        t2_limit: Hotelling T² critical limit from the training set
+        q_limit: Q-residual critical limit from the training set
     """
 
     x_scores: np.ndarray | None  # 2D float64
@@ -260,6 +354,10 @@ class PLSExtract:
     n_components: int
     x_mean: np.ndarray | None = None  # 1D float64
     y_mean: np.ndarray | None = None  # 1D float64
+    x_scale: np.ndarray | None = None  # 1D float64, diagnostics only
+    t2_limit: float | None = None
+    q_limit: float | None = None
+    t2_q_method: str | None = None
 
     @classmethod
     def from_scp(cls, pls_model: Any, X_ndd: Any, *, Y_ndd: Any = None) -> PLSExtract:
@@ -338,10 +436,31 @@ class PLSExtract:
 
         # Compute X mean from training data
         x_mean = None
+        x_scale = None
+        x_train = None
         try:
-            x_mean = np.mean(_unwrap_to_numpy(X_ndd, "X_ndd"), axis=0).astype(np.float64).reshape(-1)
+            x_train = np.asarray(_unwrap_to_numpy(X_ndd, "X_ndd"), dtype=np.float64)
+            x_mean = np.mean(x_train, axis=0).astype(np.float64).reshape(-1)
         except Exception as e:
             logger.warning("[PLSExtract] Could not compute x_mean: %s", e)
+
+        scale_enabled = False
+        scale_attr = _safe_getattr(pls_model, ("scale", "_scale"))
+        if scale_attr is not None:
+            try:
+                scale_enabled = bool(np.asarray(scale_attr).item())
+            except Exception:
+                scale_enabled = bool(scale_attr)
+        if scale_enabled and x_train is not None:
+            try:
+                # SpectroChemPy's internal PLS coefficients are already in
+                # native feature units for prediction replay. Persist the scale
+                # only so saved-model applicability diagnostics can reconstruct
+                # the same centered/scaled X space used by training diagnostics.
+                x_scale = np.std(x_train, axis=0, ddof=0).astype(np.float64).reshape(-1)
+                x_scale = np.where(np.abs(x_scale) > 1e-12, x_scale, 1.0)
+            except Exception as e:
+                logger.warning("[PLSExtract] Could not compute x_scale: %s", e)
 
         # Compute Y mean from training data (if provided)
         y_mean = None
@@ -360,6 +479,7 @@ class PLSExtract:
             n_components=n_components,
             x_mean=x_mean,
             y_mean=y_mean,
+            x_scale=x_scale,
         )
 
     def to_artifact(self) -> tuple[dict, dict[str, np.ndarray]]:
@@ -368,6 +488,12 @@ class PLSExtract:
             "model_type": "pls",
             "n_components": self.n_components,
         }
+        if self.t2_limit is not None:
+            metadata["t2_limit"] = float(self.t2_limit)
+        if self.q_limit is not None:
+            metadata["q_limit"] = float(self.q_limit)
+        if self.t2_q_method is not None:
+            metadata["t2_q_method"] = self.t2_q_method
         arrays: dict[str, np.ndarray] = {}
         if self.coef is not None:
             arrays["coef"] = np.asarray(self.coef, dtype=np.float64)
@@ -375,6 +501,9 @@ class PLSExtract:
             arrays["x_mean"] = self.x_mean
         if self.y_mean is not None:
             arrays["y_mean"] = self.y_mean
+        if self.x_scale is not None:
+            metadata["scaled"] = True
+            arrays["x_scale"] = self.x_scale
         if self.x_loadings is not None:
             arrays["x_loadings"] = self.x_loadings
         if self.y_loadings is not None:
@@ -389,6 +518,7 @@ class PLSExtract:
     def from_artifact(cls, metadata: dict, arrays: dict[str, np.ndarray]) -> PLSExtract:
         """Reconstruct from ModelStore.load() output."""
         n_components = metadata.get("n_components", 1)
+        metrics = metadata.get("metrics") if isinstance(metadata.get("metrics"), dict) else {}
         return cls(
             x_scores=arrays.get("x_scores"),
             y_scores=arrays.get("y_scores"),
@@ -398,6 +528,10 @@ class PLSExtract:
             n_components=n_components,
             x_mean=arrays.get("x_mean"),
             y_mean=arrays.get("y_mean"),
+            x_scale=arrays.get("x_scale"),
+            t2_limit=_as_optional_float(metadata.get("t2_limit", metrics.get("t2_limit"))),
+            q_limit=_as_optional_float(metadata.get("q_limit", metrics.get("q_limit"))),
+            t2_q_method=metadata.get("t2_q_method", metrics.get("t2_q_method")),
         )
 
     def predict(self, X: np.ndarray) -> np.ndarray:
@@ -416,6 +550,303 @@ class PLSExtract:
         if self.y_mean is not None:
             y_pred = y_pred + self.y_mean
         return y_pred
+
+    def applicability_diagnostics(self, X: np.ndarray) -> dict[str, Any] | None:
+        """Estimate PLS T²/Q diagnostics for new samples from stored state.
+
+        The saved coefficient matrix replays prediction in native feature units.
+        For applicability diagnostics we reconstruct the latent-variable
+        preprocessing space, project onto stored X loadings by least squares,
+        then compare T² and Q against the training-set limits when present.
+        """
+        if self.x_loadings is None or self.x_scores is None:
+            return None
+        X_pre = self._center_scale_for_diagnostics(X)
+        P = np.asarray(self.x_loadings, dtype=np.float64)
+        if P.ndim != 2:
+            return None
+        if P.shape[1] == X_pre.shape[1]:
+            p_components_features = P
+        elif P.shape[0] == X_pre.shape[1]:
+            p_components_features = P.T
+        else:
+            return None
+
+        try:
+            scores = X_pre @ np.linalg.pinv(p_components_features)
+            reconstructed = scores @ p_components_features
+            residual = X_pre - reconstructed
+            q_residuals = np.sum(residual**2, axis=1)
+
+            train_scores = np.asarray(self.x_scores, dtype=np.float64)
+            if train_scores.ndim != 2 or train_scores.shape[1] != scores.shape[1] or train_scores.shape[0] < 2:
+                t2 = np.full(scores.shape[0], np.nan, dtype=np.float64)
+            else:
+                score_cov = (train_scores.T @ train_scores) / float(train_scores.shape[0] - 1)
+                inv_cov = np.linalg.pinv(score_cov)
+                t2 = np.einsum("ij,jk,ik->i", scores, inv_cov, scores)
+        except Exception:
+            logger.debug("[PLSExtract] Could not compute applicability diagnostics", exc_info=True)
+            return None
+
+        t2_outlier = (
+            (np.asarray(t2, dtype=np.float64) > float(self.t2_limit)).tolist()
+            if self.t2_limit is not None
+            else [False] * int(scores.shape[0])
+        )
+        q_outlier = (
+            (np.asarray(q_residuals, dtype=np.float64) > float(self.q_limit)).tolist()
+            if self.q_limit is not None
+            else [False] * int(scores.shape[0])
+        )
+        out_of_domain = [bool(a or b) for a, b in zip(t2_outlier, q_outlier, strict=False)]
+        return {
+            "type": "pls_applicability",
+            "method": self.t2_q_method or "pls_loadings_projection",
+            "hotelling_t2": np.asarray(t2, dtype=np.float64).tolist(),
+            "q_residuals": np.asarray(q_residuals, dtype=np.float64).tolist(),
+            "t2_limit": self.t2_limit,
+            "q_limit": self.q_limit,
+            "t2_outlier": t2_outlier,
+            "q_outlier": q_outlier,
+            "out_of_domain": out_of_domain,
+            "n_out_of_domain": int(sum(out_of_domain)),
+        }
+
+    def _center_scale_for_diagnostics(self, X: np.ndarray) -> np.ndarray:
+        X_arr = np.asarray(X, dtype=np.float64)
+        if X_arr.ndim == 1:
+            X_arr = X_arr.reshape(1, -1)
+        if self.x_mean is not None:
+            X_arr = X_arr - np.asarray(self.x_mean, dtype=np.float64)
+        if self.x_scale is not None:
+            scale = np.asarray(self.x_scale, dtype=np.float64)
+            scale = np.where(np.abs(scale) > 1e-12, scale, 1.0)
+            X_arr = X_arr / scale
+        return X_arr
+
+
+# ---------------------------------------------------------------------------
+# PCRExtract
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PCRExtract:
+    """Pure-numpy Principal Component Regression artifact."""
+
+    pca_components: np.ndarray
+    pca_mean: np.ndarray
+    reg_coef: np.ndarray
+    reg_intercept: np.ndarray
+    n_components: int
+    scaler_mean: np.ndarray | None = None
+    scaler_scale: np.ndarray | None = None
+
+    @classmethod
+    def from_sklearn(cls, model: Any) -> PCRExtract:
+        """Extract replayable state from the PCR sklearn pipeline."""
+        pca = model.named_steps["pca"]
+        regressor = model.named_steps["regressor"]
+        scaler = model.named_steps.get("scaler") if hasattr(model, "named_steps") else None
+        return cls(
+            pca_components=np.asarray(pca.components_, dtype=np.float64),
+            pca_mean=np.asarray(getattr(pca, "mean_", np.zeros(pca.components_.shape[1])), dtype=np.float64),
+            reg_coef=np.asarray(regressor.coef_, dtype=np.float64),
+            reg_intercept=np.asarray(regressor.intercept_, dtype=np.float64).reshape(-1),
+            n_components=int(pca.components_.shape[0]),
+            scaler_mean=(
+                np.asarray(getattr(scaler, "mean_", None), dtype=np.float64)
+                if scaler is not None and getattr(scaler, "mean_", None) is not None
+                else None
+            ),
+            scaler_scale=(
+                np.asarray(getattr(scaler, "scale_", None), dtype=np.float64)
+                if scaler is not None and getattr(scaler, "scale_", None) is not None
+                else None
+            ),
+        )
+
+    def to_artifact(self) -> tuple[dict, dict[str, np.ndarray]]:
+        metadata = {
+            "model_type": "pcr",
+            "n_components": self.n_components,
+        }
+        arrays: dict[str, np.ndarray] = {
+            "pca_components": self.pca_components,
+            "pca_mean": self.pca_mean,
+            "reg_coef": self.reg_coef,
+            "reg_intercept": self.reg_intercept,
+        }
+        if self.scaler_mean is not None:
+            arrays["scaler_mean"] = self.scaler_mean
+        if self.scaler_scale is not None:
+            arrays["scaler_scale"] = self.scaler_scale
+        return metadata, arrays
+
+    @classmethod
+    def from_artifact(cls, metadata: dict, arrays: dict[str, np.ndarray]) -> PCRExtract:
+        return cls(
+            pca_components=arrays["pca_components"],
+            pca_mean=arrays["pca_mean"],
+            reg_coef=arrays["reg_coef"],
+            reg_intercept=arrays["reg_intercept"],
+            n_components=metadata.get("n_components", arrays["pca_components"].shape[0]),
+            scaler_mean=arrays.get("scaler_mean"),
+            scaler_scale=arrays.get("scaler_scale"),
+        )
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        X = np.asarray(X, dtype=np.float64)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        if self.scaler_mean is not None and self.scaler_scale is not None:
+            scale = np.where(np.abs(self.scaler_scale) > 1e-12, self.scaler_scale, 1.0)
+            X = (X - self.scaler_mean) / scale
+        scores = (X - self.pca_mean) @ self.pca_components.T
+        coef = np.asarray(self.reg_coef, dtype=np.float64)
+        if coef.ndim == 1:
+            return (scores @ coef + float(self.reg_intercept[0])).reshape(-1, 1)
+        return scores @ coef.T + self.reg_intercept
+
+
+# ---------------------------------------------------------------------------
+# LinearRegressionExtract
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class LinearRegressionExtract:
+    """Pure-numpy sklearn LinearRegression artifact."""
+
+    coef: np.ndarray
+    intercept: np.ndarray
+
+    @classmethod
+    def from_sklearn(cls, model: Any) -> LinearRegressionExtract:
+        return cls(
+            coef=np.asarray(model.coef_, dtype=np.float64),
+            intercept=np.asarray(model.intercept_, dtype=np.float64).reshape(-1),
+        )
+
+    def to_artifact(self) -> tuple[dict, dict[str, np.ndarray]]:
+        return {"model_type": "linear_regression"}, {"coef": self.coef, "intercept": self.intercept}
+
+    @classmethod
+    def from_artifact(cls, metadata: dict, arrays: dict[str, np.ndarray]) -> LinearRegressionExtract:
+        return cls(coef=arrays["coef"], intercept=arrays["intercept"])
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        X = np.asarray(X, dtype=np.float64)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        coef = np.asarray(self.coef, dtype=np.float64)
+        if coef.ndim == 1:
+            return (X @ coef + float(self.intercept[0])).reshape(-1, 1)
+        return X @ coef.T + self.intercept
+
+
+# ---------------------------------------------------------------------------
+# SVRExtract
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class SVRExtract:
+    """Pure-numpy sklearn SVR artifact for single-target regression."""
+
+    support_vectors: np.ndarray
+    dual_coef: np.ndarray
+    intercept: float
+    kernel: str
+    gamma: float
+    degree: int
+    coef0: float
+    scaler_mean: np.ndarray | None = None
+    scaler_scale: np.ndarray | None = None
+
+    @classmethod
+    def from_sklearn(cls, model: Any) -> SVRExtract:
+        if hasattr(model, "named_steps"):
+            svr = model.named_steps["estimator"]
+            scaler = model.named_steps.get("scaler")
+        else:
+            svr = model
+            scaler = None
+        return cls(
+            support_vectors=np.asarray(svr.support_vectors_, dtype=np.float64),
+            dual_coef=np.asarray(svr.dual_coef_, dtype=np.float64).reshape(-1),
+            intercept=float(np.asarray(svr.intercept_, dtype=np.float64).reshape(-1)[0]),
+            kernel=str(svr.kernel),
+            gamma=float(getattr(svr, "_gamma", 1.0)),
+            degree=int(svr.degree),
+            coef0=float(svr.coef0),
+            scaler_mean=(
+                np.asarray(getattr(scaler, "mean_", None), dtype=np.float64)
+                if scaler is not None and getattr(scaler, "mean_", None) is not None
+                else None
+            ),
+            scaler_scale=(
+                np.asarray(getattr(scaler, "scale_", None), dtype=np.float64)
+                if scaler is not None and getattr(scaler, "scale_", None) is not None
+                else None
+            ),
+        )
+
+    def to_artifact(self) -> tuple[dict, dict[str, np.ndarray]]:
+        metadata = {
+            "model_type": "svr",
+            "kernel": self.kernel,
+            "gamma": self.gamma,
+            "degree": self.degree,
+            "coef0": self.coef0,
+        }
+        arrays: dict[str, np.ndarray] = {
+            "support_vectors": self.support_vectors,
+            "dual_coef": self.dual_coef,
+            "intercept": np.asarray([self.intercept], dtype=np.float64),
+        }
+        if self.scaler_mean is not None:
+            arrays["scaler_mean"] = self.scaler_mean
+        if self.scaler_scale is not None:
+            arrays["scaler_scale"] = self.scaler_scale
+        return metadata, arrays
+
+    @classmethod
+    def from_artifact(cls, metadata: dict, arrays: dict[str, np.ndarray]) -> SVRExtract:
+        return cls(
+            support_vectors=arrays["support_vectors"],
+            dual_coef=arrays["dual_coef"],
+            intercept=float(arrays["intercept"][0]),
+            kernel=metadata.get("kernel", "rbf"),
+            gamma=float(metadata.get("gamma", 1.0)),
+            degree=int(metadata.get("degree", 3)),
+            coef0=float(metadata.get("coef0", 0.0)),
+            scaler_mean=arrays.get("scaler_mean"),
+            scaler_scale=arrays.get("scaler_scale"),
+        )
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        X = np.asarray(X, dtype=np.float64)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        if self.scaler_mean is not None and self.scaler_scale is not None:
+            scale = np.where(np.abs(self.scaler_scale) > 1e-12, self.scaler_scale, 1.0)
+            X = (X - self.scaler_mean) / scale
+        K = self._kernel_matrix(X, self.support_vectors)
+        return (K @ self.dual_coef + self.intercept).reshape(-1, 1)
+
+    def _kernel_matrix(self, X: np.ndarray, Y: np.ndarray) -> np.ndarray:
+        if self.kernel == "linear":
+            return X @ Y.T
+        if self.kernel == "poly":
+            return (self.gamma * (X @ Y.T) + self.coef0) ** self.degree
+        if self.kernel == "sigmoid":
+            return np.tanh(self.gamma * (X @ Y.T) + self.coef0)
+        # rbf/default
+        x2 = np.sum(X**2, axis=1, keepdims=True)
+        y2 = np.sum(Y**2, axis=1, keepdims=True).T
+        return np.exp(-self.gamma * np.maximum(x2 + y2 - 2 * (X @ Y.T), 0.0))
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +928,88 @@ class MCRExtract:
         if X.ndim == 1:
             X = X.reshape(1, -1)
         return X @ np.linalg.pinv(self.St)
+
+
+# ---------------------------------------------------------------------------
+# NMFExtract
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class NMFExtract:
+    """Replayable NMF basis spectra with sklearn-style transform."""
+
+    H: np.ndarray
+    n_components: int
+
+    def to_artifact(self) -> tuple[dict, dict[str, np.ndarray]]:
+        return {
+            "model_type": "nmf",
+            "n_components": self.n_components,
+        }, {"H": self.H}
+
+    @classmethod
+    def from_artifact(cls, metadata: dict, arrays: dict[str, np.ndarray]) -> NMFExtract:
+        H = arrays["H"]
+        return cls(H=H, n_components=metadata.get("n_components", H.shape[0]))
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        """Estimate non-negative concentrations for new spectra against H."""
+        X = np.asarray(X, dtype=np.float64)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        try:
+            from scipy.optimize import nnls
+
+            return np.vstack([nnls(self.H.T, row)[0] for row in X])
+        except Exception:
+            coefs = X @ np.linalg.pinv(self.H)
+            return np.maximum(coefs, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# FastICAExtract
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FastICAExtract:
+    """Replayable FastICA unmixing state with sklearn-style transform."""
+
+    components: np.ndarray
+    mean: np.ndarray | None
+    mixing: np.ndarray | None
+    n_components: int
+
+    def to_artifact(self) -> tuple[dict, dict[str, np.ndarray]]:
+        metadata = {
+            "model_type": "fastica",
+            "n_components": self.n_components,
+        }
+        arrays: dict[str, np.ndarray] = {"components": self.components}
+        if self.mean is not None:
+            arrays["mean"] = self.mean
+        if self.mixing is not None:
+            arrays["mixing"] = self.mixing
+        return metadata, arrays
+
+    @classmethod
+    def from_artifact(cls, metadata: dict, arrays: dict[str, np.ndarray]) -> FastICAExtract:
+        components = arrays["components"]
+        return cls(
+            components=components,
+            mean=arrays.get("mean"),
+            mixing=arrays.get("mixing"),
+            n_components=metadata.get("n_components", components.shape[0]),
+        )
+
+    def transform(self, X: np.ndarray) -> np.ndarray:
+        X = np.asarray(X, dtype=np.float64)
+        if X.ndim == 1:
+            X = X.reshape(1, -1)
+        if self.mean is not None:
+            X = X - self.mean
+        return X @ self.components.T
 
 
 # ---------------------------------------------------------------------------
@@ -782,6 +1295,8 @@ class KNNExtract:
     k: int = 5
     metric: str = "euclidean"
     weights: str = "uniform"
+    x_mean: np.ndarray | None = None
+    x_scale: np.ndarray | None = None
 
     def to_artifact(self) -> tuple[dict, dict[str, np.ndarray]]:
         """Serialize to (metadata, named_arrays) for ModelStore.save()."""
@@ -806,6 +1321,10 @@ class KNNExtract:
             "X_train": self.X_train,
             "y_train_encoded": self.y_train_encoded.astype(np.int64),
         }
+        if self.x_mean is not None:
+            arrays["x_mean"] = self.x_mean
+        if self.x_scale is not None:
+            arrays["x_scale"] = self.x_scale
         return metadata, arrays
 
     @classmethod
@@ -818,6 +1337,8 @@ class KNNExtract:
             k=metadata.get("k", 5),
             metric=metadata.get("metric", "euclidean"),
             weights=metadata.get("weights", "uniform"),
+            x_mean=arrays.get("x_mean"),
+            x_scale=arrays.get("x_scale"),
         )
 
     def predict(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -832,6 +1353,9 @@ class KNNExtract:
         X = np.asarray(X, dtype=np.float64)
         if X.ndim == 1:
             X = X.reshape(1, -1)
+        if self.x_mean is not None and self.x_scale is not None:
+            safe_scale = np.where(np.abs(self.x_scale) > 1e-12, self.x_scale, 1.0)
+            X = (X - self.x_mean) / safe_scale
 
         n_samples = X.shape[0]
         n_classes = len(self.classes)
@@ -901,6 +1425,8 @@ class SIMCAExtract:
     classes: list[str]
     T2_limits: dict[str, float]
     Q_limits: dict[str, float]
+    class_scales: dict[str, np.ndarray] | None = None
+    pca_means: dict[str, np.ndarray] | None = None
     n_components: int = 3
 
     def to_artifact(self) -> tuple[dict, dict[str, np.ndarray]]:
@@ -924,6 +1450,10 @@ class SIMCAExtract:
                 arrays[f"class_{idx}_eigenvalues"] = self.class_eigenvalues[label]
             if label in self.class_means:
                 arrays[f"class_{idx}_mean"] = self.class_means[label]
+            if self.class_scales and label in self.class_scales:
+                arrays[f"class_{idx}_scale"] = self.class_scales[label]
+            if self.pca_means and label in self.pca_means:
+                arrays[f"class_{idx}_pca_mean"] = self.pca_means[label]
         return metadata, arrays
 
     @classmethod
@@ -933,17 +1463,25 @@ class SIMCAExtract:
         class_loadings: dict[str, np.ndarray] = {}
         class_eigenvalues: dict[str, np.ndarray] = {}
         class_means: dict[str, np.ndarray] = {}
+        class_scales: dict[str, np.ndarray] = {}
+        pca_means: dict[str, np.ndarray] = {}
 
         for idx, label in enumerate(classes):
             key_load = f"class_{idx}_loadings"
             key_ev = f"class_{idx}_eigenvalues"
             key_mean = f"class_{idx}_mean"
+            key_scale = f"class_{idx}_scale"
+            key_pca_mean = f"class_{idx}_pca_mean"
             if key_load in arrays:
                 class_loadings[label] = arrays[key_load]
             if key_ev in arrays:
                 class_eigenvalues[label] = arrays[key_ev]
             if key_mean in arrays:
                 class_means[label] = arrays[key_mean]
+            if key_scale in arrays:
+                class_scales[label] = arrays[key_scale]
+            if key_pca_mean in arrays:
+                pca_means[label] = arrays[key_pca_mean]
 
         return cls(
             class_loadings=class_loadings,
@@ -952,6 +1490,8 @@ class SIMCAExtract:
             classes=classes,
             T2_limits=metadata.get("T2_limits", {}),
             Q_limits=metadata.get("Q_limits", {}),
+            class_scales=class_scales or None,
+            pca_means=pca_means or None,
             n_components=metadata.get("n_components", 3),
         )
 
@@ -987,13 +1527,22 @@ class SIMCAExtract:
                 loadings = self.class_loadings[label]
                 eigenvalues = self.class_eigenvalues[label]
                 class_mean = self.class_means[label]
+                class_scale = self.class_scales.get(label) if self.class_scales else None
+                pca_mean = self.pca_means.get(label) if self.pca_means else None
                 T2_lim = self.T2_limits.get(label, 1.0)
                 Q_lim = self.Q_limits.get(label, 1.0)
 
-                centered = sample - class_mean
+                if class_scale is not None:
+                    safe_scale = np.maximum(class_scale, 1e-12)
+                    working = (sample - class_mean) / safe_scale
+                    pca_center = pca_mean if pca_mean is not None else np.zeros_like(working)
+                    centered = working - pca_center
+                else:
+                    centered = sample - class_mean
+                    pca_center = np.zeros_like(centered)
                 scores = centered @ loadings.T  # (n_comp,)
-                reconstructed = scores @ loadings  # (n_feat,)
-                residual = centered - reconstructed
+                reconstructed = scores @ loadings + pca_center  # (n_feat,)
+                residual = (working if class_scale is not None else sample - class_mean) - reconstructed
 
                 # T² statistic
                 safe_ev = np.maximum(eigenvalues, 1e-12)
@@ -1006,8 +1555,36 @@ class SIMCAExtract:
                 combined = t2 / max(T2_lim, 1e-12) + q / max(Q_lim, 1e-12)
                 dist_matrix[i, j] = combined
 
-            # Assign to nearest class (minimum distance)
-            labels[i] = self.classes[int(np.argmin(dist_matrix[i]))]
+            accepted = []
+            for j, label in enumerate(self.classes):
+                t2_limit = max(float(self.T2_limits.get(label, 1.0)), 1e-12)
+                q_limit = max(float(self.Q_limits.get(label, 1.0)), 1e-12)
+                loadings = self.class_loadings[label]
+                class_mean = self.class_means[label]
+                class_scale = self.class_scales.get(label) if self.class_scales else None
+                pca_mean = self.pca_means.get(label) if self.pca_means else None
+                if class_scale is not None:
+                    safe_scale = np.maximum(class_scale, 1e-12)
+                    working = (sample - class_mean) / safe_scale
+                    pca_center = pca_mean if pca_mean is not None else np.zeros_like(working)
+                    centered = working - pca_center
+                    scores = centered @ loadings.T
+                    reconstructed = scores @ loadings + pca_center
+                    residual = working - reconstructed
+                else:
+                    centered = sample - class_mean
+                    scores = centered @ loadings.T
+                    residual = centered - scores @ loadings
+                safe_ev = np.maximum(self.class_eigenvalues[label], 1e-12)
+                t2 = float(np.sum((scores**2) / safe_ev))
+                q = float(np.sum(residual**2))
+                if t2 <= t2_limit and q <= q_limit:
+                    accepted.append((label, dist_matrix[i, j]))
+
+            if accepted:
+                labels[i] = min(accepted, key=lambda item: item[1])[0]
+            else:
+                labels[i] = "unassigned"
 
         # Convert distances to probabilities: inverse distance, normalized
         inv_dist = 1.0 / (dist_matrix + 1e-12)
@@ -1024,7 +1601,12 @@ class SIMCAExtract:
 EXTRACT_REGISTRY: dict[str, type] = {
     "pca": PCAExtract,
     "pls": PLSExtract,
+    "pcr": PCRExtract,
+    "linear_regression": LinearRegressionExtract,
+    "svr": SVRExtract,
     "mcr": MCRExtract,
+    "nmf": NMFExtract,
+    "fastica": FastICAExtract,
     "efa": EFAExtract,
     "simplisma": SIMPLISMAExtract,
     "plsda": PLSDAExtract,
@@ -1036,7 +1618,12 @@ EXTRACT_REGISTRY: dict[str, type] = {
 __all__ = [
     "PCAExtract",
     "PLSExtract",
+    "PCRExtract",
+    "LinearRegressionExtract",
+    "SVRExtract",
     "MCRExtract",
+    "NMFExtract",
+    "FastICAExtract",
     "EFAExtract",
     "SIMPLISMAExtract",
     "PLSDAExtract",
