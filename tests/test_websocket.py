@@ -49,6 +49,7 @@ def _policy_violation_on_receive(ws) -> None:
 def test_ws_local_mode_allows_anonymous_and_maps_jobs_alias(ws_client, monkeypatch):
     app_config.mode = "local"
     _install_noop_async_session(monkeypatch)
+    monkeypatch.setattr(app_main, "get_client_host", lambda _request_or_ws: "127.0.0.1")
 
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         return SimpleNamespace(id=42, is_superuser=False, is_active=True)
@@ -268,6 +269,7 @@ def test_ws_data_import_action_is_no_longer_supported(ws_client, monkeypatch):
 def test_ws_unregistered_sherpa_action_returns_unknown_action(ws_client, monkeypatch):
     app_config.mode = "local"
     _install_noop_async_session(monkeypatch)
+    monkeypatch.setattr(app_main, "get_client_host", lambda _request_or_ws: "127.0.0.1")
 
     async def _resolve_user(_session, api_key=None, token=None, client_host=None):
         return SimpleNamespace(id=1, is_superuser=False, is_active=True)

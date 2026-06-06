@@ -1,12 +1,13 @@
 schema_version: 1
 name: KNN Classification
 slug: knn_classification
-description: K-Nearest Neighbors classification. Stratified train/test split is
-  performed before mean centering to prevent information leakage, and the test
-  set reuses centering parameters fitted on the training set. Performance is
-  evaluated with accuracy and confusion matrix on the held-out test set.
+description: K-Nearest Neighbors classification with stratified train/test split. Reports
+  accuracy and confusion matrix on a held-out test set.
 category: classification
 is_active: true
+data_modalities:
+- spectra
+- features
 template_data:
   nodes:
   - node_id: data_1
@@ -25,23 +26,9 @@ template_data:
       test_size: 0.25
     position_x: 175
     position_y: 250
-  - node_id: preprocess_train
-    node_type: preprocess.scale
-    label: Scale (Train)
-    parameters:
-      method: mean_center
-    position_x: 175
-    position_y: 450
-  - node_id: preprocess_test
-    node_type: preprocess.scale
-    label: Scale (Test)
-    parameters:
-      method: mean_center
-    position_x: 500
-    position_y: 450
   - node_id: model_1
     node_type: classification.knn
-    label: KNN Classifier
+    label: Train KNN Classifier
     parameters:
       n_neighbors: 5
       metric: euclidean
@@ -78,21 +65,11 @@ template_data:
     to_node_id: partition_1
     to_input: X
   - from_node_id: partition_1
-    to_node_id: preprocess_train
     from_output: X_train
-    to_input: default
-  - from_node_id: partition_1
-    to_node_id: preprocess_test
-    from_output: X_test
-    to_input: default
-  - from_node_id: partition_1
-    to_node_id: preprocess_test
-    from_output: X_train
-    to_input: reference
-  - from_node_id: preprocess_train
     to_node_id: model_1
     to_input: X
-  - from_node_id: preprocess_test
+  - from_node_id: partition_1
+    from_output: X_test
     to_node_id: predict_1
     to_input: X_new
   - from_node_id: model_1
@@ -124,6 +101,9 @@ template_data:
       required: true
       binding_mode: embedded
       description: Feature data with class labels for classification
+      accepted_data_roles:
+      - X_spectra
+      - X_features
       accepted_techniques:
       - FTIR
       - NIR

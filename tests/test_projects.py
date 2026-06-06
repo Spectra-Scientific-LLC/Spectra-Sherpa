@@ -33,6 +33,7 @@ from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.project import Project
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.services.experiments import metadata_path_for, relative_to_data_dir, write_metadata
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
@@ -353,6 +354,47 @@ class TestLinkUnlink:
         assert data["experiment_count"] == 1
         assert len(data["experiments"]) == 1
         assert data["experiments"][0]["name"] == "Test Experiment"
+
+    @pytest.mark.anyio
+    async def test_template_example_experiment_summary_uses_dataset_content(
+        self,
+        auth_client: AsyncClient,
+        test_session: AsyncSession,
+        test_user: User,
+    ):
+        exp = Experiment(
+            user_id=test_user.id,
+            name="Example - PLS Regression Calibration",
+            description="Bundled example data materialized from template 'PLS Regression Calibration'",
+            metadata_path="",
+        )
+        test_session.add(exp)
+        await test_session.flush()
+
+        metadata_file = metadata_path_for(exp.id)
+        write_metadata(
+            metadata_file,
+            {
+                "template_slug": "pls_calibration",
+                "launch_mode": "example",
+                "example_source": "eigenvector",
+                "example_dataset": "corn_m5",
+            },
+        )
+        exp.metadata_path = relative_to_data_dir(metadata_file)
+        await test_session.commit()
+        await test_session.refresh(exp)
+
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "Template Data Summary"})
+        proj_id = proj_resp.json()["id"]
+
+        resp = await auth_client.post(f"/api/v1/projects/{proj_id}/experiments/{exp.id}")
+        assert resp.status_code == 200
+        experiment = resp.json()["experiments"][0]
+        assert experiment["name"] == "Example - PLS Regression Calibration"
+        assert experiment["description"].startswith("Corn M5 NIR")
+        assert "80 samples of corn" in experiment["description"]
+        assert experiment["facts"] == ["NIR", "80 samples", "700 channels", "4 targets"]
 
     @pytest.mark.anyio
     async def test_unlink_experiment(self, auth_client: AsyncClient, sample_experiment: Experiment):

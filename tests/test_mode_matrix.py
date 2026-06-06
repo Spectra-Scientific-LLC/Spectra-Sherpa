@@ -137,8 +137,8 @@ class TestUnifiedAuditBlock:
       * exportAudited  — mirrors localQuery in OSS today.
 
     These tests pin the keys + their OSS-base values. Server overlay
-    elevation of fullPipeline / reportPack is covered separately on
-    the spectra-server side (TestSubscriptionConfig).
+    elevation of fullPipeline / reportPack is covered separately by
+    the managed deployment overlay tests.
     """
 
     def test_audit_block_present_with_all_keys(self):

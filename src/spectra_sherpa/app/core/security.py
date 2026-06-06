@@ -11,8 +11,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.mode_policy import (
     api_key_always_valid,
+    blocks_local_network_client,
     export_always_allowed,
-    is_hybrid,
     is_local,
     requires_http_auth,
     system_api_key_always_accepted,
@@ -44,8 +44,7 @@ def llm_egress_defaults_enabled() -> bool:
     # Mode portion routed through ``is_local()``. The ``site_profile``
     # check stays as a literal — there's only one caller for the
     # combined "dev or demo" concept; factoring a shared helper would
-    # be premature. See ``docs/dev/_diagnostics/mode-policy-helpers.md``
-    # Cluster C.
+    # be premature.
     return app_config.site_profile == "demo" or is_local()
 
 
@@ -67,8 +66,9 @@ def _hash_api_key(api_key: str) -> str:
     - The hash is consulted on every authenticated request.  Switching
       to a slow KDF would add tens of milliseconds per call without any
       attacker-relevant security gain.
-    - Equality checks against the cached hash use ``hmac.compare_digest``
-      at the caller (constant time), preventing timing oracles.
+    - The cache stores only this digest, never the raw API key. The digest
+      is used only as an in-process lookup key after a real authenticator has
+      accepted the presented token.
 
     CodeQL's ``py/weak-sensitive-data-hashing`` rule flags any
     ``sha256(...)`` of a parameter named like a secret.  That rule's
@@ -330,6 +330,25 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     public_paths = get_public_paths()
 
     path = request.url.path
+    client_host = get_client_host(request)
+
+    # Local mode is intentionally passwordless for a single desktop user.
+    # If the process is accidentally bound to 0.0.0.0, that implicit user
+    # would otherwise be granted to any LAN client. Block before public-path
+    # and SPA bypasses so the UI itself is not exposed remotely.
+    if blocks_local_network_client(client_host):
+        if path not in {"/health", "/api/health", "/api/ready", "/api/v1/health", "/api/v1/version"}:
+            logger.warning("Blocked non-loopback local-mode request path=%s client_host=%r", path, client_host)
+            return JSONResponse(
+                status_code=status.HTTP_403_FORBIDDEN,
+                content={
+                    "detail": (
+                        "Local mode only accepts loopback clients. Set "
+                        "SPECTRA_SHERPA_ALLOW_LOCAL_NETWORK=true only behind "
+                        "a trusted access-control layer."
+                    )
+                },
+            )
 
     # Allow static frontend and SPA routes through without auth.
     # The SPA catchall serves index.html for any non-API path — these
@@ -339,7 +358,7 @@ async def api_key_middleware(request: Request, call_next) -> Response:
         return await call_next(request)  # type: ignore[no-any-return]
 
     # Mode-based auth bypass: local always passes, hybrid loopback passes.
-    if not requires_http_auth(get_client_host(request)):
+    if not requires_http_auth(client_host):
         return await call_next(request)  # type: ignore[no-any-return]
 
     # Server-backed Sherpa routes authenticate with X-Deployment-Key at the
@@ -352,11 +371,10 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     ):
         return await call_next(request)  # type: ignore[no-any-return]
 
-    # JWT handoff: if an earlier middleware (spectra-server's
-    # EnterpriseEnforcementMiddleware) already validated a Bearer token and
-    # stamped ``request.state.authenticated``, pass through. After Phase 2,
-    # OSS neither issues nor validates JWTs — managed-auth modes rely
-    # entirely on this handoff.
+    # JWT handoff: if an earlier managed-auth middleware already validated a
+    # Bearer token and stamped ``request.state.authenticated``, pass through.
+    # OSS neither issues nor validates JWTs; managed-auth modes rely on this
+    # handoff contract.
     if getattr(request.state, "authenticated", False):
         return await call_next(request)  # type: ignore[no-any-return]
 
@@ -392,7 +410,7 @@ def is_egress_enabled() -> bool:
         True if egress is allowed, False otherwise
     """
     # Check if we're in degraded mode (hybrid fallback to local)
-    if is_hybrid():
+    if app_config.mode == "hybrid":
         try:
             from spectra_sherpa.app.services.network_health import get_network_health_service
 
@@ -425,6 +443,7 @@ async def check_egress_permission(
             - "allow_llm_chat": Can call AI chat features at all
             - "allow_llm_context": Can send data to LLM providers
             - "allow_nist_queries": Can query NIST WebBook
+            - "allow_hitran_queries": Can query HITRAN/HAPI
             - "allow_spectrasherpa_sync": Can sync to SpectraSherpa cloud
             - "allow_export": Can export data to external files
         data_type: Optional fine-grained data type (e.g. "spectra", "models")
@@ -517,6 +536,7 @@ async def check_egress_permission(
         "allow_llm_chat": _llm_default,  # On by default in local & demo
         "allow_llm_context": _llm_default,  # On by default in local & demo
         "allow_nist_queries": False,  # Explicit opt-in required
+        "allow_hitran_queries": False,  # Explicit opt-in required
         "allow_export": False,  # Explicit opt-in required
         "allow_spectrasherpa_sync": False,  # Set via DB row; demo startup forces it on
     }

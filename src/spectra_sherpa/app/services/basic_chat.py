@@ -94,6 +94,14 @@ def _is_safe_outbound_url(url: str) -> tuple[bool, str]:
     return True, ""
 
 
+def validate_endpoint_url(endpoint_url: str) -> tuple[bool, str]:
+    """Validate the configured OpenAI-compatible endpoint base URL."""
+    base_url = endpoint_url.strip().rstrip("/")
+    if not base_url:
+        return False, "API base URL is required."
+    return _is_safe_outbound_url(base_url + "/chat/completions")
+
+
 def get_config() -> ChatEndpointConfig:
     """Read BYO chat configuration at request time.
 
@@ -138,6 +146,10 @@ async def stream_chat(
 
     config = get_config()
     url = config.url.rstrip("/") + "/chat/completions"
+    ok, reason = _is_safe_outbound_url(url)
+    if not ok:
+        raise ValueError(reason)
+
     headers = {
         "Authorization": f"Bearer {config.key}",
         "Content-Type": "application/json",
@@ -157,7 +169,7 @@ async def stream_chat(
         "stream": True,
     }
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
         async with client.stream("POST", url, json=body, headers=headers) as response:
             if response.status_code != 200:
                 text = await response.aread()
@@ -197,7 +209,7 @@ async def test_connection(
     if not key:
         return False, "API key is required."
 
-    ok, reason = _is_safe_outbound_url(url)
+    ok, reason = validate_endpoint_url(endpoint_url)
     if not ok:
         return False, reason
 
@@ -213,7 +225,7 @@ async def test_connection(
     }
 
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
             response = await client.post(url, json=body, headers=headers)
     except httpx.TimeoutException:
         return False, "Connection timed out."

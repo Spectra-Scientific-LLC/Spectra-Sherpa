@@ -1,13 +1,13 @@
 schema_version: 1
 name: SIMCA Classification
 slug: simca_classification
-description: Soft Independent Modelling of Class Analogy. Stratified train/test split
-  is performed before autoscaling to prevent information leakage, and the test
-  set reuses scaling parameters fitted on the training set. Per-class PCA models
-  are built on the training set, then samples are classified by residual distance
-  and evaluated on the held-out test set.
+description: Soft Independent Modelling of Class Analogy. Per-class PCA models classify
+  samples by residual distance on a held-out test set.
 category: classification
 is_active: true
+data_modalities:
+- spectra
+- features
 template_data:
   nodes:
   - node_id: data_1
@@ -42,7 +42,7 @@ template_data:
     position_y: 450
   - node_id: model_1
     node_type: classification.simca
-    label: SIMCA
+    label: Train SIMCA Classifier
     parameters:
       n_components: 3
       alpha: 0.05
@@ -73,6 +73,14 @@ template_data:
     parameters:
       plot_type: heatmap
     position_x: 500
+    position_y: 1050
+  - node_id: viz_2
+    node_type: output.plot
+    label: SIMCA Acceptance Plot
+    parameters:
+      plot_type: scatter
+      plot_key: simca_acceptance
+    position_x: 825
     position_y: 1050
   edges:
   - from_node_id: data_1
@@ -114,6 +122,9 @@ template_data:
   - from_node_id: eval_1
     to_node_id: viz_1
     from_output: visualization
+  - from_node_id: model_1
+    to_node_id: viz_2
+    from_output: plots
   canvas_state:
     zoom: 0.85
     pan_x: 0
@@ -125,6 +136,9 @@ template_data:
       required: true
       binding_mode: embedded
       description: Reference class samples for training
+      accepted_data_roles:
+      - X_spectra
+      - X_features
       accepted_techniques:
       - NIR
       - FTIR

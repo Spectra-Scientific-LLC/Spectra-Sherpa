@@ -23,6 +23,7 @@ from spectra_sherpa.app.services.batch_predict import (
     load_single_file,
     load_workflow_with_graph,
 )
+from spectra_sherpa.app.services.run_params import build_effective_params_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,11 @@ class FolderWatchService:
 
     async def start(self) -> None:
         """Start the folder watch polling loop."""
+        from spectra_sherpa.app.core.config import app_config
+
+        if app_config.site_profile == "demo":
+            logger.info("Folder watch service disabled for SITE_PROFILE=demo")
+            return
         if self._running:
             return
         self._running = True
@@ -176,20 +182,26 @@ class FolderWatchService:
                 # Load workflow with graph
                 try:
                     workflow = await load_workflow_with_graph(session, watch.workflow_id, watch.user_id)
-                except ValueError as exc:
+                    from spectra_sherpa.app.services.workflow_access import validate_workflow_execution_access
+
+                    await validate_workflow_execution_access(
+                        workflow.nodes,
+                        None,
+                        watch.user_id,
+                        workflow.project_id,
+                        session,
+                    )
+                except Exception as exc:
                     watch.last_error = str(exc)
                     watch.last_poll_at = datetime.now(timezone.utc)
                     await session.commit()
                     return
 
-                # Build params snapshot
-                params_snapshot: dict = {}
-                for node in workflow.nodes:
-                    if node.parameters:
-                        params_snapshot[node.node_id] = node.parameters
+                params_snapshot = build_effective_params_snapshot(workflow.nodes)
 
                 # Create ExecutionRun for this batch
                 run = ExecutionRun(
+                    project_id=workflow.project_id,
                     workflow_id=watch.workflow_id,
                     user_id=watch.user_id,
                     name=f"Watch: {watch.name} ({len(files)} files)",
@@ -237,7 +249,7 @@ class FolderWatchService:
                         for node_id in exit_nodes:
                             if node_id in results:
                                 try:
-                                    serialized[node_id] = serialize_result(results[node_id])
+                                    serialized[node_id] = serialize_result(results[node_id], owner_user_id=run.user_id)
                                 except Exception:
                                     serialized[node_id] = {"error": "serialization_failed"}
 

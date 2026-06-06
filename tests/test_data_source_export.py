@@ -1,7 +1,7 @@
 """Tests for DataSourceNode.generate_python() — Python export of standard data loaders.
 
 Covers:
-- sklearn datasets: iris, wine, breast_cancer, digits
+- sklearn datasets: iris, wine, breast_cancer
 - Eigenvector datasets: corn_m5, diesel_nir (with/without properties)
 - SpectroChemPy example datasets: irdata (SCP mode), numpy mode fallback
 - Multi-port output (default + target)
@@ -40,15 +40,14 @@ def _gen(node, *, multi_port: bool = False, use_scp: bool = True) -> str:
 
 
 class TestSupportsExport:
-    """DataSourceNode.supports_python_export() returns True only for
-    sklearn / eigenvector / spectrochempy sources."""
+    """DataSourceNode.supports_python_export() returns True for bundled/reference sources."""
 
-    @pytest.mark.parametrize("source", ["sklearn", "eigenvector", "spectrochempy"])
+    @pytest.mark.parametrize("source", ["sklearn", "eigenvector", "spectrochempy", "synthetic"])
     def test_supported_sources(self, source):
         node = _create_source(source)
         assert node.supports_python_export() is True
 
-    @pytest.mark.parametrize("source", ["file", "experiment", "library", "synthetic", ""])
+    @pytest.mark.parametrize("source", ["file", "experiment", "library", ""])
     def test_unsupported_sources(self, source):
         node = _create_source(source)
         assert node.supports_python_export() is False
@@ -79,7 +78,7 @@ class TestSklearnExport:
         code = _gen(_create_source("sklearn", sklearn_dataset="iris"))
         assert "from spectra_sherpa.app.lib.sherpa_dataset import" in code
         assert "SherpaDataset" in code
-        assert "SpectralAxis" in code
+        assert "FeatureAxis" in code
         assert "SampleAxis" in code
         assert "TargetContext" in code
 
@@ -87,9 +86,10 @@ class TestSklearnExport:
         code = _gen(_create_source("sklearn", sklearn_dataset="iris"))
         assert "_ds = SherpaDataset(" in code
         assert "_bunch.data," in code
-        assert "feature_axis=SpectralAxis(" in code
+        assert "feature_axis=FeatureAxis(" in code
         assert "sample_axis=SampleAxis(" in code
         assert "target=_bunch.target," in code
+        assert "data_role='X_features'" in code
 
     def test_target_context_categorical(self):
         code = _gen(_create_source("sklearn", sklearn_dataset="iris"))
@@ -118,6 +118,28 @@ class TestSklearnExport:
         code = _gen(_create_source("sklearn"), use_scp=False)
         assert "scp." not in code
         assert "SherpaDataset" in code
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Synthetic references
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+class TestSyntheticReferenceExport:
+    """Synthetic first-party references emit the packaged benchmark loader."""
+
+    def test_synthetic_reference_import(self):
+        code = _gen(_create_source("synthetic", synthetic_dataset="Synthetic_atmospheric-6"))
+        assert "from spectra_sherpa.app.lib.synthetic_references import load_synthetic_reference_as_sherpa" in code
+
+    def test_synthetic_reference_loader_uses_selected_dataset(self):
+        code = _gen(_create_source("synthetic", synthetic_dataset="Library_atmospheric-9"))
+        assert "_ds = load_synthetic_reference_as_sherpa('Library_atmospheric-9')" in code
+        assert "Data Source (synthetic.Library_atmospheric-9)" in code
+
+    def test_synthetic_reference_multi_port_output(self):
+        code = _gen(_create_source("synthetic", synthetic_dataset="Synthetic_atmospheric-6"), multi_port=True)
+        assert "results['src_1'] = {'default': _ds, 'target': _ds.target}" in code
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -474,13 +496,17 @@ def test_simca_to_classifier_predict_export_uses_model_port():
 
 
 def test_knn_export_emits_plots_port():
-    """KNN export should emit every declared output port, including plots."""
+    """KNN export should emit declared plot outputs, not a placeholder."""
     import spectra_sherpa.app.services.dag.nodes.classification.knn_nodes  # noqa: F401
 
     node = node_registry.create_node("classification.knn", "knn_1", {})
     code = "\n".join(node.generate_python({}, indent="    ", use_scp=True))
 
-    assert "'plots': {}" in code
+    assert "_cm_train_plot" in code
+    assert "_cm_cv_plot" in code
+    assert "'confusion_matrix_train': _cm_train" in code
+    assert "'confusion_matrix_cv': _cm_cv" in code
+    assert "'plots': {'confusion_matrix_train': _cm_train_plot, 'confusion_matrix_cv': _cm_cv_plot}" in code
 
 
 @pytest.mark.asyncio

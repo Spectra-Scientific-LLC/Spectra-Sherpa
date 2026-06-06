@@ -1,0 +1,216 @@
+{
+  "version": 1,
+  "entries": [
+    {
+      "name": "irdata",
+      "aliases": ["irdata/carroucell_samp"],
+      "label": "FTIR Carousel Zeolite Samples",
+      "technique": "FTIR",
+      "category": "irdata",
+      "description": "Curated SpectroChemPy FTIR bundle from the carroucell sample folder. Files share one wavenumber axis and are loaded as samples in one matrix.",
+      "entry_type": "bundle",
+      "folder": "irdata/carroucell_samp",
+      "patterns": ["*.SPA"],
+      "x_title": "Wavenumbers",
+      "x_units": "cm-1",
+      "axis_policy": "shared"
+    },
+    {
+      "name": "irdata/OPUS",
+      "label": "FTIR OPUS Test Spectra",
+      "technique": "FTIR",
+      "category": "irdata",
+      "description": "Four OPUS test spectra with a common wavenumber axis.",
+      "entry_type": "bundle",
+      "files": [
+        "irdata/OPUS/test.0000",
+        "irdata/OPUS/test.0001",
+        "irdata/OPUS/test.0002",
+        "irdata/OPUS/test.0003"
+      ],
+      "x_title": "Wavenumber",
+      "x_units": "cm-1",
+      "axis_policy": "shared"
+    },
+    {
+      "name": "irdata/subdir",
+      "label": "FTIR Pd/CZ Catalyst Series",
+      "technique": "FTIR",
+      "category": "irdata",
+      "description": "Four Pd/CZ catalyst SPA spectra with a shared wavenumber axis.",
+      "entry_type": "bundle",
+      "folder": "irdata/subdir",
+      "patterns": ["7_CZ0-100_Pd_*.SPA"],
+      "x_title": "Wavenumbers",
+      "x_units": "cm-1",
+      "axis_policy": "shared"
+    },
+    {
+      "name": "irdata/nh4y-activation.spg",
+      "label": "NH4Y Zeolite Activation",
+      "technique": "FTIR",
+      "category": "irdata",
+      "description": "SpectroChemPy NH4Y zeolite activation FTIR data.",
+      "entry_type": "single",
+      "files": ["irdata/nh4y-activation.spg"],
+      "x_title": "Wavenumbers",
+      "x_units": "cm-1"
+    },
+    {
+      "name": "irdata/CO@Mo_Al2O3.SPG",
+      "label": "CO on Mo/Al2O3 Catalyst",
+      "technique": "FTIR",
+      "category": "irdata",
+      "description": "SpectroChemPy FTIR catalyst example.",
+      "entry_type": "single",
+      "files": ["irdata/CO@Mo_Al2O3.SPG"],
+      "x_title": "Wavenumbers",
+      "x_units": "cm-1"
+    },
+    {
+      "name": "irdata/IR.CSV",
+      "label": "IR Spectrum CSV",
+      "technique": "FTIR",
+      "category": "irdata",
+      "description": "SpectroChemPy IR CSV example.",
+      "entry_type": "single",
+      "files": ["irdata/IR.CSV"],
+      "x_title": "Wavenumbers",
+      "x_units": "cm-1"
+    },
+    {
+      "name": "irdata/omnic_series/GC_Demo.srs",
+      "label": "OMNIC GC Demo Time Series",
+      "technique": "FTIR",
+      "category": "irdata",
+      "description": "SpectroChemPy OMNIC GC time-series file.",
+      "entry_type": "single",
+      "files": ["irdata/omnic_series/GC_Demo.srs"],
+      "x_title": "Wavenumbers",
+      "x_units": "cm-1"
+    },
+    {
+      "name": "irdata/omnic_series/TGA_demo.srs",
+      "label": "OMNIC TGA Demo Time Series",
+      "technique": "FTIR",
+      "category": "irdata",
+      "description": "SpectroChemPy OMNIC TGA time-series file.",
+      "entry_type": "single",
+      "files": ["irdata/omnic_series/TGA_demo.srs"],
+      "x_title": "Wavenumbers",
+      "x_units": "cm-1"
+    },
+    {
+      "name": "irdata/omnic_series/high_speed.srs",
+      "label": "OMNIC High-Speed Time Series",
+      "technique": "FTIR",
+      "category": "irdata",
+      "description": "SpectroChemPy OMNIC high-speed time-series file.",
+      "entry_type": "single",
+      "files": ["irdata/omnic_series/high_speed.srs"],
+      "x_title": "Wavenumbers",
+      "x_units": "cm-1"
+    },
+    {
+      "name": "irdata/omnic_series/rapid_scan.srs",
+      "label": "OMNIC Rapid Scan Time Series",
+      "technique": "FTIR",
+      "category": "irdata",
+      "description": "SpectroChemPy OMNIC rapid-scan time-series file.",
+      "entry_type": "single",
+      "files": ["irdata/omnic_series/rapid_scan.srs"],
+      "x_title": "Wavenumbers",
+      "x_units": "cm-1"
+    },
+    {
+      "name": "irdata/omnic_series/rapid_scan_reprocessed.srs",
+      "label": "OMNIC Rapid Scan Reprocessed",
+      "technique": "FTIR",
+      "category": "irdata",
+      "description": "SpectroChemPy OMNIC rapid-scan reprocessed file.",
+      "entry_type": "single",
+      "files": ["irdata/omnic_series/rapid_scan_reprocessed.srs"],
+      "x_title": "Wavenumbers",
+      "x_units": "cm-1"
+    },
+    {
+      "name": "ramandata",
+      "aliases": ["ramandata/labspec"],
+      "label": "LabSpec Raman Compatible Spectra",
+      "technique": "Raman",
+      "category": "ramandata",
+      "description": "LabSpec Raman bundle with compatible Raman-shift axes, loaded as one matrix.",
+      "entry_type": "bundle",
+      "files": [
+        "ramandata/labspec/serie190214-1.txt",
+        "ramandata/labspec/SMC1-Initial_RT.txt"
+      ],
+      "x_title": "Raman shift",
+      "x_units": "cm-1",
+      "axis_policy": "shared"
+    },
+    {
+      "name": "ramandata/labspec/Activation.txt",
+      "label": "LabSpec Raman Activation Series",
+      "technique": "Raman",
+      "category": "ramandata",
+      "description": "LabSpec Raman activation series from SpectroChemPy testdata.",
+      "entry_type": "single",
+      "files": ["ramandata/labspec/Activation.txt"],
+      "x_title": "Raman shift",
+      "x_units": "cm-1"
+    },
+    {
+      "name": "ramandata/labspec/532nm-191216-Si_200mu.txt",
+      "label": "LabSpec Silicon 532 nm",
+      "technique": "Raman",
+      "category": "ramandata",
+      "description": "Single LabSpec Raman silicon spectrum.",
+      "entry_type": "single",
+      "files": ["ramandata/labspec/532nm-191216-Si_200mu.txt"],
+      "x_title": "Raman shift",
+      "x_units": "cm-1"
+    },
+    {
+      "name": "ramandata/labspec/lasertest1.txt",
+      "label": "LabSpec Laser Test",
+      "technique": "Raman",
+      "category": "ramandata",
+      "description": "LabSpec Raman laser test series.",
+      "entry_type": "single",
+      "files": ["ramandata/labspec/lasertest1.txt"],
+      "x_title": "Raman shift",
+      "x_units": "cm-1"
+    },
+    {
+      "name": "matlabdata/als2004dataset.MAT",
+      "label": "ALS-2004 MCR-ALS Mixture",
+      "technique": "FTIR",
+      "category": "matlabdata",
+      "description": "de Juan and Tauler MCR-ALS mixture dataset packaged with SpectroChemPy.",
+      "entry_type": "single",
+      "files": ["matlabdata/als2004dataset.MAT"],
+      "x_title": "Wavenumbers",
+      "x_units": "cm-1"
+    },
+    {
+      "name": "msdata/ion_currents.asc",
+      "label": "Ion Currents",
+      "technique": "MS",
+      "category": "msdata",
+      "description": "Mass-spectrometry ion-current example from SpectroChemPy testdata.",
+      "entry_type": "single",
+      "files": ["msdata/ion_currents.asc"]
+    },
+    {
+      "name": "dscdata/AEM_210311.txt",
+      "label": "AEM DSC Trace",
+      "technique": "DSC",
+      "category": "dscdata",
+      "description": "Differential scanning calorimetry example from SpectroChemPy testdata.",
+      "entry_type": "single",
+      "importable": false,
+      "files": ["dscdata/AEM_210311.txt"]
+    }
+  ]
+}

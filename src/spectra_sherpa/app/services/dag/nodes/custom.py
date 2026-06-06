@@ -62,7 +62,6 @@ class LinearCalibrationNode(Node):
                 param_type="number",
                 default=1.8,
                 min_value=0.1,
-                max_value=10.0,
                 description="Maximum absorbance cap (prevents unphysical extrapolation)",
             ),
             NodeParameter(
@@ -437,7 +436,6 @@ class SystemSaturationNode(Node):
                 param_type="number",
                 default=2.0,
                 min_value=0.1,
-                max_value=10.0,
                 description="Maximum absorbance the detector can measure",
             ),
             NodeParameter(
@@ -446,7 +444,6 @@ class SystemSaturationNode(Node):
                 param_type="number",
                 default=1.0,
                 min_value=0.1,
-                max_value=5.0,
                 description="Shape exponent controlling transition sharpness",
             ),
         ],
@@ -525,7 +522,6 @@ class CatmullRomCurveNode(Node):
                 param_type="number",
                 default=100,
                 min_value=10,
-                max_value=1000,
                 description="Number of points in the output curve",
             ),
             NodeParameter(
@@ -568,10 +564,7 @@ class CatmullRomCurveNode(Node):
         if not control_points:
             control_points = initial_curve_points(11)
 
-        # Evaluate spline
-        curve = evaluate_catmull_rom(control_points, n_points)
-
-        return curve * max_conc
+        return float(max_conc) * evaluate_catmull_rom(control_points, n_points)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -609,7 +602,6 @@ class HybridSelectorNode(Node):
                 param_type="number",
                 default=0.5,
                 min_value=0.0,
-                max_value=2.0,
                 description="Absorbance threshold above which to use saturation model",
             ),
         ],
@@ -747,7 +739,6 @@ class ConcentrationCurveNode(Node):
                 param_type="number",
                 default=100,
                 min_value=10,
-                max_value=1000,
                 description="Number of time points",
             ),
             NodeParameter(
@@ -764,7 +755,6 @@ class ConcentrationCurveNode(Node):
                 param_type="number",
                 default=0.5,
                 min_value=0.0,
-                max_value=1.0,
                 description="Center position for sigmoid/gaussian (0-1)",
             ),
             NodeParameter(
@@ -773,7 +763,6 @@ class ConcentrationCurveNode(Node):
                 param_type="number",
                 default=0.1,
                 min_value=0.01,
-                max_value=1.0,
                 description="Width parameter for sigmoid/gaussian",
             ),
         ],
@@ -839,7 +828,6 @@ class GoldenGridAlignNode(Node):
                 param_type="number",
                 default=0.05,
                 min_value=0.001,
-                max_value=1.0,
                 description="Tolerance for merging near-duplicate wavenumbers",
             ),
         ],
@@ -949,7 +937,6 @@ class NoiseInjectionNode(TransformSpecNode):
                 param_type="number",
                 default=0.01,
                 min_value=0.0,
-                max_value=0.5,
                 step=0.001,
                 description="Noise as fraction of signal (0.01 = 1%)",
             ),

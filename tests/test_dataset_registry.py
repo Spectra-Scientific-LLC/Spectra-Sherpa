@@ -28,6 +28,20 @@ def test_get_enforces_owner():
         registry.get(dataset_id, user_id=12)
 
 
+def test_get_denies_ownerless_records_for_authenticated_users():
+    registry = DatasetRegistry(ttl_seconds=3600, max_entries=10)
+    dataset_id = registry.register(_make_dataset())
+    with pytest.raises(PermissionError):
+        registry.get(dataset_id, user_id=12)
+
+
+def test_get_allows_ownerless_records_without_user_context():
+    registry = DatasetRegistry(ttl_seconds=3600, max_entries=10)
+    dataset_id = registry.register(_make_dataset())
+    fetched = registry.get(dataset_id)
+    assert fetched.dataset_id == dataset_id
+
+
 def test_branch_creates_new_handle():
     registry = DatasetRegistry(ttl_seconds=3600, max_entries=10)
     parent = _make_dataset()

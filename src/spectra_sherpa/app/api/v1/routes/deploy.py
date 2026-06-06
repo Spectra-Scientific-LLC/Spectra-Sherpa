@@ -17,7 +17,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
 from spectra_sherpa.app.models.background_job import BackgroundJob
 from spectra_sherpa.app.models.batch_prediction import BatchPrediction
 from spectra_sherpa.app.models.execution_run import ExecutionRun
@@ -35,6 +35,7 @@ from spectra_sherpa.app.schemas.deploy import (
 )
 from spectra_sherpa.app.schemas.execution_runs import ExecutionRunList, ExecutionRunOut
 from spectra_sherpa.app.services.job_manager import job_manager
+from spectra_sherpa.app.services.run_params import build_effective_params_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,15 @@ async def batch_predict(
     )
 
     workflow = await load_workflow_with_graph(session, workflow_id, current_user.id)
+    from spectra_sherpa.app.services.workflow_access import validate_workflow_execution_access
+
+    await validate_workflow_execution_access(
+        workflow.nodes,
+        None,
+        current_user.id,
+        getattr(workflow, "project_id", None),
+        session,
+    )
 
     # Discover files
     try:
@@ -120,11 +130,7 @@ async def batch_predict(
 
     enforce_demo_execution_quota(current_user.id)
 
-    # Build params snapshot from workflow nodes
-    params_snapshot: dict = {}
-    for node in workflow.nodes:
-        if node.parameters:
-            params_snapshot[node.node_id] = node.parameters
+    params_snapshot = build_effective_params_snapshot(workflow.nodes)
 
     # Get latest version
     latest_version_id = workflow.versions[0].id if workflow.versions else None
@@ -132,6 +138,7 @@ async def batch_predict(
     # Create ExecutionRun
     run_name = payload.run_name or f"Batch: {payload.folder_path}"
     run = ExecutionRun(
+        project_id=workflow.project_id,
         workflow_id=workflow_id,
         workflow_version_id=latest_version_id,
         user_id=current_user.id,
@@ -141,6 +148,7 @@ async def batch_predict(
         results_summary={},
         executed_at=datetime.now(timezone.utc),
         source_type="batch",
+        run_kind="batch_inference",
         source_metadata={
             "folder_path": payload.folder_path,
             "file_pattern": payload.file_pattern,
@@ -250,6 +258,7 @@ async def get_prediction(
 @router.post("/watches", response_model=FolderWatchOut, status_code=201)
 async def create_watch(
     payload: FolderWatchCreate,
+    _dg: None = Depends(demo_guard("folder_watch")),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> FolderWatchOut:
@@ -316,11 +325,20 @@ async def get_watch(
 async def update_watch(
     watch_id: int,
     payload: FolderWatchUpdate,
+    _dg: None = Depends(demo_guard("folder_watch")),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> FolderWatchOut:
     """Update a folder watch configuration."""
+    from spectra_sherpa.app.services.batch_predict import validate_folder_path
+
     watch = await _get_user_watch(session, watch_id, current_user.id)
+
+    if payload.folder_path is not None:
+        try:
+            validate_folder_path(payload.folder_path)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc))
 
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -335,6 +353,7 @@ async def update_watch(
 @router.delete("/watches/{watch_id}", status_code=204, response_class=Response)
 async def delete_watch(
     watch_id: int,
+    _dg: None = Depends(demo_guard("folder_watch")),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> Response:
@@ -349,6 +368,7 @@ async def delete_watch(
 @router.post("/watches/{watch_id}/enable", response_model=FolderWatchOut)
 async def enable_watch(
     watch_id: int,
+    _dg: None = Depends(demo_guard("folder_watch")),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> FolderWatchOut:
@@ -365,6 +385,7 @@ async def enable_watch(
 @router.post("/watches/{watch_id}/disable", response_model=FolderWatchOut)
 async def disable_watch(
     watch_id: int,
+    _dg: None = Depends(demo_guard("folder_watch")),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> FolderWatchOut:

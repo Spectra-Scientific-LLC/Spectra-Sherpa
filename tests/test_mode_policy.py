@@ -1,12 +1,10 @@
 """Unit tests for the ``mode_policy`` helpers.
 
-The week-3 design note ([`docs/dev/_diagnostics/mode-policy-helpers.md`](
-../../../../docs/dev/_diagnostics/mode-policy-helpers.md)) concluded
-that no new helpers are needed for the 10 OSS bypass migrations — 9 of
-10 sites map to existing helpers, and the 10th stays as-is. This file
-backfills explicit unit-test coverage for the helpers the bulk
-migrations will rely on, so each migration PR can simply assert
-"behavior matches the helper" without re-deriving truth tables.
+The mode-policy compatibility review concluded that no new helpers are
+needed for the OSS bypass migrations: most sites map to existing helpers,
+and the remaining case stays as-is. This file backfills explicit unit-test
+coverage for the helpers the migrations rely on, so each migration PR can
+assert "behavior matches the helper" without re-deriving truth tables.
 
 Coverage shape: each helper is exercised across all three documented
 modes (``local``, ``hybrid``, ``enterprise``). Helpers that depend on
@@ -121,6 +119,28 @@ def test_requires_http_auth_local_never(set_mode) -> None:
     set_mode("local")
     assert mode_policy.requires_http_auth("127.0.0.1") is False
     assert mode_policy.requires_http_auth("10.0.0.1") is False
+
+
+def test_blocks_local_network_client_default(set_mode, monkeypatch: pytest.MonkeyPatch) -> None:
+    set_mode("local")
+    monkeypatch.delenv("SPECTRA_SHERPA_ALLOW_LOCAL_NETWORK", raising=False)
+    monkeypatch.delenv("SPECTRASHERPA_ALLOW_LOCAL_NETWORK", raising=False)
+    assert mode_policy.blocks_local_network_client("127.0.0.1") is False
+    assert mode_policy.blocks_local_network_client("::1") is False
+    assert mode_policy.blocks_local_network_client("10.0.0.1") is True
+    assert mode_policy.blocks_local_network_client(None) is True
+
+
+def test_blocks_local_network_client_allows_explicit_opt_in(set_mode, monkeypatch: pytest.MonkeyPatch) -> None:
+    set_mode("local")
+    monkeypatch.setenv("SPECTRA_SHERPA_ALLOW_LOCAL_NETWORK", "true")
+    assert mode_policy.blocks_local_network_client("10.0.0.1") is False
+
+
+@pytest.mark.parametrize("mode", ["hybrid", "enterprise"])
+def test_blocks_local_network_client_only_applies_to_local(set_mode, mode: str) -> None:
+    set_mode(mode)
+    assert mode_policy.blocks_local_network_client("10.0.0.1") is False
 
 
 def test_requires_http_auth_hybrid_loopback_exempt(set_mode) -> None:

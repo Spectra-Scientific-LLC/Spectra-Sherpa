@@ -77,6 +77,7 @@ def check_reference_applied(dataset: "NDDataset", operation: str) -> bool:
 def ensure_absorbance(
     dataset: "NDDataset",
     validate_reference: bool = True,
+    allow_unknown_absorbance_like: bool = False,
 ) -> "NDDataset":
     """
     Convert dataset to absorbance if needed, with warning.
@@ -90,6 +91,10 @@ def ensure_absorbance(
         Input dataset in any spectral unit
     validate_reference : bool
         If True, warn when reference spectrum status is unknown
+    allow_unknown_absorbance_like : bool
+        If True, preserve the legacy behavior of treating unknown units as
+        absorbance-like. The default is False because relabeling counts or
+        intensity as absorbance silently corrupts quantitative workflows.
 
     Returns
     -------
@@ -120,11 +125,37 @@ def ensure_absorbance(
         )
         return reflectance_to_kubelka_munk(dataset)
 
-    # Dimensionless or unknown - assume already absorbance-like
-    logger.warning(f"Unknown unit '{dataset.units}' - treating as absorbance without conversion.")
+    if not allow_unknown_absorbance_like:
+        raise ValueError(
+            f"Cannot auto-convert unknown spectral units {dataset.units!r} to absorbance. "
+            "Set units to absorbance, transmittance/%T, or reflectance/%R before combining spectra."
+        )
+
+    logger.warning(f"Unknown unit '{dataset.units}' - treating as absorbance-like without conversion.")
     result = dataset.copy()
     result.units = SpectralUnit.ABSORBANCE.value
     return result
+
+
+def _declares_percent_units(units: object) -> bool:
+    unit_text = str(units or "").strip().lower()
+    return "%" in unit_text or "percent" in unit_text
+
+
+def _validate_ratio_domain(data: np.ndarray, *, quantity: str, units: object) -> np.ndarray:
+    finite = data[np.isfinite(data)]
+    if finite.size == 0:
+        return data
+    tolerance = 1e-9
+    min_value = float(np.nanmin(finite))
+    max_value = float(np.nanmax(finite))
+    if min_value < -tolerance or max_value > 1.0 + tolerance:
+        raise ValueError(
+            f"{quantity} units {units!r} imply fractional values in [0, 1], "
+            f"but observed range is [{min_value:.6g}, {max_value:.6g}]. "
+            f"Declare percent units (for example %T or %R) before conversion if the data are percentages."
+        )
+    return np.clip(data, 1e-10, 1.0)
 
 
 def transmittance_to_absorbance(
@@ -162,15 +193,11 @@ def transmittance_to_absorbance(
 
     result = dataset.copy()
 
-    # Handle both 0-1 and 0-100 scales
     data = dataset.data.copy()
-    if np.nanmax(data) > 1.5:
-        # Likely percentage, convert to fraction
+    if _declares_percent_units(dataset.units):
         data = data / 100.0
         add_provenance(result, "scale_correction", {"from": "percent", "to": "fraction"})
-
-    # Clip to avoid log(0) and log(negative)
-    data = np.clip(data, 1e-10, 1.0)
+    data = _validate_ratio_domain(data, quantity="Transmittance", units=dataset.units)
     result.data = -np.log10(data)
     result.units = SpectralUnit.ABSORBANCE.value
 
@@ -227,13 +254,12 @@ def reflectance_to_kubelka_munk(dataset: "NDDataset") -> "NDDataset":
     """
     result = dataset.copy()
 
-    # Handle both 0-1 and 0-100 scales
     R = dataset.data.copy()
-    if np.nanmax(R) > 1.5:
+    if _declares_percent_units(dataset.units):
         R = R / 100.0
+        add_provenance(result, "scale_correction", {"from": "percent", "to": "fraction"})
 
-    # Clip to avoid division by zero
-    R = np.clip(R, 1e-10, 1.0)
+    R = _validate_ratio_domain(R, quantity="Reflectance", units=dataset.units)
     result.data = ((1 - R) ** 2) / (2 * R)
     result.units = SpectralUnit.KUBELKA_MUNK.value
 

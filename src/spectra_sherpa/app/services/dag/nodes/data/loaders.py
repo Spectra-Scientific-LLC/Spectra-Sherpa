@@ -8,6 +8,7 @@ Contains:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -16,15 +17,16 @@ from pathlib import Path
 from typing import Any, Optional
 
 import numpy as np
+import pandas as pd
 
+from spectra_sherpa.app.lib.sample_labels import clean_sample_labels
 from spectra_sherpa.app.lib.scp_compat import (
     NDDataset,
     from_nddataset,
     get_scp_datadirs,
-    require_scp,
     scp,
 )
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
+from spectra_sherpa.app.lib.sherpa_dataset import FeatureAxis, SampleAxis, SherpaDataset, TargetContext
 from spectra_sherpa.app.models.spectra_meta import (
     DataProvenance,
     SourceType,
@@ -32,6 +34,11 @@ from spectra_sherpa.app.models.spectra_meta import (
     set_spectra_meta,
 )
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, safe_get_coord
+from spectra_sherpa.app.services.prepared_data import (
+    apply_dataset_prepared_data_overrides,
+    load_prepared_data_overrides,
+    merge_prepared_data_overrides,
+)
 
 from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 from ._utils import extract_dataset_from_result, remove_index_columns
@@ -41,10 +48,18 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class _LoadedDataset:
-    dataset: NDDataset
+    dataset: Any
     file_name: str
+    file_path: str | None = None
     embedded_target_names: list[str] | None = None
     embedded_target_data: np.ndarray | None = None
+    embedded_target_units: str | None = None
+    ground_truth_spectra: np.ndarray | None = None
+    ground_truth_spectra_names: list[str] | None = None
+    ground_truth_spectra_units: list[str] | str | None = None
+    ground_truth_spectra_x: np.ndarray | None = None
+    ground_truth_spectra_x_title: str | None = None
+    ground_truth_spectra_x_units: str | None = None
 
 
 # ============================================================================
@@ -101,7 +116,6 @@ class FileLoadNode(Node):
 
     async def execute(self, *args) -> Any:
         """Load data from a specific experiment file."""
-        require_scp("File loading")
         from sqlalchemy import select
 
         from spectra_sherpa.app.core.config import settings
@@ -163,19 +177,37 @@ class FileLoadNode(Node):
                     node_id=self.node_id,
                 )
                 # Convert to SherpaDataset for uniform DAG contract
-                return from_nddataset(dataset)
+                return from_nddataset(dataset) if isinstance(dataset, NDDataset) else dataset
         except Exception as e:
             raise ValueError(f"Error loading file: {e}")
 
-    def _load_file(self, file_path: str) -> NDDataset:
+    def _load_file(self, file_path: str) -> Any:
         """Load data from a file using SpectroChemPy with index column detection."""
 
         if not os.path.exists(file_path):
             raise ValueError(f"File not found: {file_path}")
 
-        ext = os.path.splitext(file_path)[1]
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == ".csv":
+            from spectra_sherpa.app.lib.io import load_csv_as_sherpa
+
+            return load_csv_as_sherpa(file_path)
+        if ext == ".npz":
+            from spectra_sherpa.app.services.synthesis import is_synthetic_npz
+
+            if is_synthetic_npz(file_path):
+                return _load_synthesis_npz_as_nddataset(file_path)
+        if ext in {".jdx", ".dx", ".npy", ".npz"}:
+            from spectra_sherpa.app.lib.io import load_open_spectral_file_as_sherpa
+
+            open_dataset = load_open_spectral_file_as_sherpa(file_path)
+            if open_dataset is not None:
+                return open_dataset
 
         try:
+            from spectra_sherpa.app.lib.data_formats import ensure_reader_available
+
+            ensure_reader_available(ext)
             # Use centralized reader mapping
             from spectra_sherpa.app.core.config import get_reader_for_extension
 
@@ -249,7 +281,6 @@ class MyDatasetNode(Node):
 
     async def execute(self, *args) -> Any:
         """Load all files, group by compatible x-axis, stack each group."""
-        require_scp("My Dataset loading")
         from sqlalchemy import select as sa_select
 
         from spectra_sherpa.app.core.config import settings
@@ -278,6 +309,17 @@ class MyDatasetNode(Node):
             )
             result = await session.execute(query)
             file_records = list(result.scalars().all())
+            if not file_records:
+                synthetic_query = (
+                    sa_select(EF)
+                    .where(
+                        EF.experiment_id == dataset_id,
+                        EF.stage == "synthetic",
+                    )
+                    .order_by(EF.id)
+                )
+                result = await session.execute(synthetic_query)
+                file_records = list(result.scalars().all())
 
         if not file_records:
             raise ValueError(f"No files found in dataset '{exp_name}'.")
@@ -296,6 +338,17 @@ class MyDatasetNode(Node):
 
         if not loaded:
             raise ValueError(f"All files in dataset '{exp_name}' failed to load.")
+
+        if all(isinstance(item.dataset, SherpaDataset) and item.dataset.data_role == "X_features" for item in loaded):
+            feature_dataset = self._concatenate_feature_tables(loaded, exp_name)
+            feature_dataset = self._apply_loaded_overrides(feature_dataset, loaded)
+            add_processing_step(
+                feature_dataset,
+                "data.my_dataset",
+                {"dataset_id": dataset_id, "file_count": len(loaded)},
+                node_id=self.node_id,
+            )
+            return {"default": feature_dataset, "target": feature_dataset.target}
 
         # Group files by compatible x-axis
         groups = self._group_by_x_axis(loaded)
@@ -349,27 +402,40 @@ class MyDatasetNode(Node):
         # Convert to SherpaDataset for uniform DAG contract
         spectra_out = from_nddataset(spectra) if isinstance(spectra, NDDataset) else spectra
         target_out = from_nddataset(target) if isinstance(target, NDDataset) else target
+        spectra_out = self._apply_loaded_overrides(spectra_out, spectra_group)
+        self._attach_ground_truth_spectra(spectra_out, spectra_group)
 
         # Embed target into default output for single-wire use (parity with DataSourceNode)
         # Priority 1: CSV property columns embedded alongside the spectra
         if embedded_target is not None:
-            embedded_target_data, embedded_target_names = embedded_target
+            embedded_target_data, embedded_target_names, embedded_target_units = embedded_target
             spectra_out.target = embedded_target_data
             spectra_out.target_context = TargetContext(
                 target_type="continuous",
+                target_name="synthetic concentration" if embedded_target_units == "ppm" else None,
                 target_names=embedded_target_names,
+                target_units=embedded_target_units,
             )
             if target_out is None:
                 from spectra_sherpa.app.lib.axes import FeatureAxis
 
                 target_out = SherpaDataset(
                     X=embedded_target_data,
-                    feature_axis=FeatureAxis(labels=embedded_target_names, title="Property"),
+                    feature_axis=FeatureAxis(
+                        labels=embedded_target_names,
+                        title="Concentration" if embedded_target_units == "ppm" else "Property",
+                        units=embedded_target_units,
+                    ),
                     sample_axis=spectra_out.sample_axis,
-                    title=f"{exp_name} properties",
+                    title=(
+                        f"{exp_name} synthetic concentrations"
+                        if embedded_target_units == "ppm"
+                        else f"{exp_name} properties"
+                    ),
                 )
         # Priority 2: Multi-file property groups
         elif target_out is not None:
+            self._validate_target_alignment(spectra_out, target_out, exp_name)
             target_data = np.asarray(target_out.data, dtype=np.float64)
             spectra_out.target = target_data
             t_names = None
@@ -384,12 +450,105 @@ class MyDatasetNode(Node):
         return {"default": spectra_out, "target": target_out}
 
     @staticmethod
+    def _sample_labels(dataset: Any) -> list[str] | None:
+        axis = getattr(dataset, "sample_axis", None)
+        if axis is not None and getattr(axis, "labels", None):
+            return [str(item) for item in axis.labels]
+        if not isinstance(dataset, SherpaDataset):
+            coord = safe_get_coord(dataset, "y")
+            labels = getattr(coord, "labels", None) if coord is not None else None
+            if labels:
+                return [str(item) for item in labels]
+        return None
+
+    def _validate_target_alignment(self, spectra: SherpaDataset, target: Any, exp_name: str) -> None:
+        spectra_rows = int(np.asarray(spectra.data).shape[0])
+        target_data = np.asarray(target.data)
+        target_rows = int(target_data.shape[0]) if target_data.ndim > 0 else 1
+        if spectra_rows != target_rows:
+            raise ValueError(
+                f"Cannot attach reference values for '{exp_name}': spectra have {spectra_rows} sample rows "
+                f"but the target/property file has {target_rows} rows."
+            )
+
+        spectra_labels = self._sample_labels(spectra)
+        target_labels = self._sample_labels(target)
+        if spectra_labels and target_labels and spectra_labels != target_labels:
+            mismatch = next(
+                (
+                    i
+                    for i, (spectra_label, target_label) in enumerate(zip(spectra_labels, target_labels))
+                    if spectra_label != target_label
+                ),
+                0,
+            )
+            raise ValueError(
+                f"Cannot attach reference values for '{exp_name}': sample labels differ at row {mismatch + 1} "
+                f"({spectra_labels[mismatch]!r} vs {target_labels[mismatch]!r}). "
+                "Use matching sample IDs or embed the reference values in the spectral file."
+            )
+
+        if spectra_labels and not target_labels:
+            warning = (
+                "Reference values came from a separate property file without sample labels; rows were attached "
+                "by file order. Verify the property file order matches the spectra before trusting calibration metrics."
+            )
+            logger.warning("[MY_DATASET] %s", warning)
+            spectra.meta.setdefault("warnings", []).append(warning)
+
+    @staticmethod
+    def _attach_ground_truth_spectra(dataset: SherpaDataset, loaded: list[_LoadedDataset]) -> None:
+        candidates = [item for item in loaded if item.ground_truth_spectra is not None]
+        if not candidates:
+            return
+        if len(candidates) > 1:
+            logger.debug("Skipping synthetic ground-truth spectra attachment for multi-file stack.")
+            return
+
+        item = candidates[0]
+        spectra = np.asarray(item.ground_truth_spectra, dtype=np.float64)
+        if spectra.ndim != 2 or spectra.size == 0:
+            return
+        if spectra.shape[1] != dataset.n_features:
+            logger.debug(
+                "Skipping synthetic ground-truth spectra attachment: S has %s features but dataset has %s.",
+                spectra.shape[1],
+                dataset.n_features,
+            )
+            return
+
+        dataset.set_extra("ground_truth.spectra", spectra.tolist())
+        dataset.set_extra("ground_truth.spectra_names", item.ground_truth_spectra_names or [])
+        dataset.set_extra("ground_truth.spectra_units", item.ground_truth_spectra_units)
+        if item.ground_truth_spectra_x is not None:
+            dataset.set_extra("ground_truth.spectra_x", np.asarray(item.ground_truth_spectra_x, dtype=float).tolist())
+        dataset.set_extra("ground_truth.spectra_x_title", item.ground_truth_spectra_x_title or "Wavenumber")
+        dataset.set_extra("ground_truth.spectra_x_units", item.ground_truth_spectra_x_units or "cm^-1")
+
+    @staticmethod
+    def _apply_loaded_overrides(dataset: SherpaDataset, loaded: list[_LoadedDataset]) -> SherpaDataset:
+        overrides = [
+            load_prepared_data_overrides(file_path=str(Path(item.file_path).resolve()))
+            for item in loaded
+            if item.file_path
+        ]
+        if not overrides:
+            return dataset
+        merged = merge_prepared_data_overrides(overrides)
+        if merged.is_empty():
+            return dataset
+        return apply_dataset_prepared_data_overrides(dataset, merged)
+
+    @staticmethod
     def _x_length(ds: NDDataset) -> int:
         """Return number of x-axis points (0 if no x-axis).
 
         Operates on raw NDDataset instances loaded by ``_load_file()``
         before the SherpaDataset conversion step.
         """
+        if isinstance(ds, SherpaDataset):
+            axis = ds.feature_axis
+            return int(axis.length) if axis is not None else int(ds.shape[-1])
         coord = safe_get_coord(ds, "x")
         return len(np.array(coord.data)) if coord is not None else 0
 
@@ -405,13 +564,19 @@ class MyDatasetNode(Node):
 
         for item in loaded:
             ds = item.dataset
-            coord = safe_get_coord(ds, "x")
-            if coord is not None:
-                x = np.array(coord.data)
-                length = len(x)
+            if isinstance(ds, SherpaDataset):
+                axis = ds.get_feature_axis()
+                values = getattr(axis, "values", None) if axis is not None else None
+                x = np.asarray(values, dtype=float) if values is not None else None
+                length = int(ds.shape[-1])
             else:
-                x = None
-                length = 0
+                coord = safe_get_coord(ds, "x")
+                if coord is not None:
+                    x = np.array(coord.data)
+                    length = len(x)
+                else:
+                    x = None
+                    length = 0
 
             matched = False
             for i, (glen, gx) in enumerate(group_keys):
@@ -437,16 +602,14 @@ class MyDatasetNode(Node):
         if len(datasets) < 2:
             return
         ref = datasets[0]
-        ref_x_coord = safe_get_coord(ref, "x")
-        if ref_x_coord is None:
+        ref_x = self._feature_values(ref)
+        if ref_x is None:
             return  # no x-axis to compare
-        ref_x = np.array(ref_x_coord.data)
 
         for i, (ds, fname) in enumerate(zip(datasets[1:], file_names[1:]), 2):
-            ds_x_coord = safe_get_coord(ds, "x")
-            if ds_x_coord is None:
+            ds_x = self._feature_values(ds)
+            if ds_x is None:
                 raise ValueError(f"Cannot merge: '{fname}' has no x-axis but " f"'{file_names[0]}' does.")
-            ds_x = np.array(ds_x_coord.data)
             if ds_x.shape != ref_x.shape:
                 raise ValueError(
                     f"Cannot merge: x-axis length mismatch.\n"
@@ -462,6 +625,15 @@ class MyDatasetNode(Node):
                     f"  '{fname}': {ds_x[idx]:.6f}\n"
                     f"All files in the dataset must share the same x-axis."
                 )
+
+    @staticmethod
+    def _feature_values(ds: Any) -> np.ndarray | None:
+        if isinstance(ds, SherpaDataset):
+            axis = ds.get_feature_axis()
+            values = getattr(axis, "values", None) if axis is not None else None
+            return np.asarray(values, dtype=float) if values is not None else None
+        coord = safe_get_coord(ds, "x")
+        return np.asarray(coord.data, dtype=float) if coord is not None else None
 
     def _concatenate(self, datasets: list[NDDataset], file_names: list[str]) -> NDDataset:
         """Validate x-axes match then concatenate along the sample axis."""
@@ -481,14 +653,49 @@ class MyDatasetNode(Node):
         concatenated_data = np.concatenate(data_arrays_2d, axis=0)
 
         y_labels = []
-        for arr, fname in zip(data_arrays_2d, file_names):
+        for ds, arr, fname in zip(datasets, data_arrays_2d, file_names):
             label = Path(fname).name
             n = arr.shape[0]
-            if n == 1:
+            source_labels: list[str] = []
+            if isinstance(ds, SherpaDataset) and ds.sample_axis is not None and ds.sample_axis.labels:
+                source_labels = [str(item) for item in ds.sample_axis.labels]
+            if len(source_labels) == n:
+                y_labels.extend(
+                    clean_sample_labels(
+                        source_labels,
+                        n,
+                        fallback_prefix=label if n == 1 else "Sample",
+                        source_name=label,
+                    )
+                )
+            elif n == 1:
                 y_labels.append(label)
             else:
-                for j in range(n):
-                    y_labels.append(f"{label}_{j+1}")
+                y_labels.extend(clean_sample_labels(None, n, fallback_prefix="Sample"))
+
+        if all(isinstance(ds, SherpaDataset) for ds in datasets):
+            first = datasets[0]
+            assert isinstance(first, SherpaDataset)
+            feature_axis = first.get_feature_axis()
+            sample_axis = SampleAxis(labels=y_labels, title="Sample")
+            target_chunks = [
+                np.asarray(ds.target) for ds in datasets if isinstance(ds, SherpaDataset) and ds.target is not None
+            ]
+            target = None
+            if target_chunks and sum(chunk.shape[0] for chunk in target_chunks) == concatenated_data.shape[0]:
+                target = np.concatenate(target_chunks, axis=0)
+            return SherpaDataset(
+                X=concatenated_data,
+                feature_axis=feature_axis,
+                sample_axis=sample_axis,
+                target=target,
+                target_context=first.target_context.model_copy(deep=True) if target is not None else None,
+                domain=first.domain.model_copy(deep=True),
+                backend=first.backend,
+                title="Stacked Dataset",
+                units=first.units,
+                data_role=first.data_role,
+            )
 
         merged = scp.NDDataset(concatenated_data)
 
@@ -525,9 +732,12 @@ class MyDatasetNode(Node):
             return 1
         return int(data.shape[0])
 
-    def _combine_embedded_targets(self, loaded: list[_LoadedDataset]) -> tuple[np.ndarray, list[str]] | None:
+    def _combine_embedded_targets(
+        self, loaded: list[_LoadedDataset]
+    ) -> tuple[np.ndarray, list[str], str | None] | None:
         """Concatenate embedded property blocks from the spectra group in file order."""
         target_names: list[str] | None = None
+        target_units: str | None = None
         target_chunks: list[np.ndarray] = []
         saw_embedded_target = False
 
@@ -550,6 +760,12 @@ class MyDatasetNode(Node):
                 raise ValueError(
                     f"Embedded property columns in '{item.file_name}' do not match the other spectral files."
                 )
+            if target_units is None:
+                target_units = item.embedded_target_units
+            elif item.embedded_target_units and item.embedded_target_units != target_units:
+                raise ValueError(
+                    f"Embedded property units in '{item.file_name}' do not match the other spectral files."
+                )
 
             if target_data.shape[0] != self._sample_count(item.dataset):
                 raise ValueError(
@@ -562,7 +778,7 @@ class MyDatasetNode(Node):
         if not target_chunks:
             return None
 
-        return np.concatenate(target_chunks, axis=0), target_names or []
+        return np.concatenate(target_chunks, axis=0), target_names or [], target_units
 
     def _load_file(self, file_path: str, *, file_name: str | None = None) -> _LoadedDataset:
         """Load data from a file, with pandas fallback for CSVs that SCP can't read."""
@@ -571,6 +787,20 @@ class MyDatasetNode(Node):
 
         ext = os.path.splitext(file_path)[1].lower()
         resolved_file_name = file_name or Path(file_path).name
+        if ext == ".csv":
+            dataset, embedded_target_names, embedded_target_data = self._load_csv_pandas(file_path)
+            return _LoadedDataset(
+                dataset=dataset,
+                file_name=resolved_file_name,
+                file_path=file_path,
+                embedded_target_names=embedded_target_names,
+                embedded_target_data=embedded_target_data,
+            )
+        if ext == ".npz":
+            from spectra_sherpa.app.services.synthesis import is_synthetic_npz
+
+            if is_synthetic_npz(file_path):
+                return _load_synthesis_npz_as_loaded_dataset(file_path, file_name=resolved_file_name)
 
         # Try SpectroChemPy first
         try:
@@ -584,35 +814,34 @@ class MyDatasetNode(Node):
                 if ext == ".mat":
                     dataset = extract_dataset_from_result(dataset, file_path)
                     dataset = remove_index_columns(dataset)
-                elif ext == ".csv":
-                    dataset = remove_index_columns(dataset)
-                return _LoadedDataset(dataset=dataset, file_name=resolved_file_name)
+                return _LoadedDataset(dataset=dataset, file_name=resolved_file_name, file_path=file_path)
         except Exception:
             pass  # fall through to pandas fallback
 
-        # Pandas fallback for CSV files SCP can't parse
-        if ext == ".csv":
-            dataset, embedded_target_names, embedded_target_data = self._load_csv_pandas(file_path)
-            return _LoadedDataset(
-                dataset=dataset,
-                file_name=resolved_file_name,
-                embedded_target_names=embedded_target_names,
-                embedded_target_data=embedded_target_data,
-            )
-
         raise ValueError(f"Failed to load {file_path} (format: {ext or 'unknown'})")
 
-    def _load_csv_pandas(self, file_path: str) -> tuple[NDDataset, list[str] | None, np.ndarray | None]:
+    def _load_csv_pandas(self, file_path: str) -> tuple[Any, list[str] | None, np.ndarray | None]:
         """Load a CSV via pandas -- handles headers, mixed types, etc.
 
         Splits columns by whether the *header name* parses as a float:
         - Float-named columns -> spectral data, header values become x-axis
         - String-named columns -> label / ID columns (first used as y-labels)
         """
-        import pandas as pd
+        from spectra_sherpa.app.lib.io import load_csv_as_sherpa
+
+        dataset = load_csv_as_sherpa(file_path)
+        if isinstance(dataset, SherpaDataset) and dataset.get_extra("csv.layout") == "axis_column_conditions":
+            return dataset, None, None
+        if isinstance(dataset, SherpaDataset) and dataset.data_role == "X_features":
+            names = None
+            if dataset.target_context is not None:
+                if dataset.target_context.target_names:
+                    names = dataset.target_context.target_names
+                elif dataset.target_context.target_name:
+                    names = [dataset.target_context.target_name]
+            return dataset, names, dataset.target
 
         df = pd.read_csv(file_path)
-
         # Partition columns: float-named headers vs string-named headers
         spectral_cols: list[str] = []
         x_vals: list[float] = []
@@ -661,6 +890,149 @@ class MyDatasetNode(Node):
                 return dataset, prop_cols, df[prop_cols].values.astype(np.float64)
 
         return dataset, None, None
+
+    def _concatenate_feature_tables(self, loaded: list[_LoadedDataset], exp_name: str) -> SherpaDataset:
+        """Stack compatible X_features tables while preserving embedded targets."""
+        first = loaded[0].dataset
+        assert isinstance(first, SherpaDataset)
+        first_axis = first.feature_axis
+        first_labels = list(first_axis.labels or []) if first_axis is not None else []
+        chunks: list[np.ndarray] = []
+        targets: list[np.ndarray] = []
+        sample_labels: list[str] = []
+
+        for item in loaded:
+            ds = item.dataset
+            if not isinstance(ds, SherpaDataset):
+                raise ValueError(f"Cannot merge feature table with spectral file '{item.file_name}'.")
+            axis = ds.feature_axis
+            labels = list(axis.labels or []) if axis is not None else []
+            if first_labels and labels and labels != first_labels:
+                raise ValueError(f"Feature columns in '{item.file_name}' do not match the first feature-table file.")
+            data = np.asarray(ds.data, dtype=np.float64)
+            chunks.append(data if data.ndim == 2 else data.reshape(1, -1))
+            if ds.target is not None:
+                targets.append(np.asarray(ds.target))
+            n = chunks[-1].shape[0]
+            source_axis = ds.sample_axis
+            source_labels = list(source_axis.labels or []) if source_axis is not None else []
+            sample_labels.extend(
+                clean_sample_labels(
+                    source_labels if len(source_labels) == n else None,
+                    n,
+                    fallback_prefix=item.file_name if n == 1 else "Sample",
+                    source_name=item.file_name,
+                )
+            )
+
+        X = np.vstack(chunks)
+        target = np.concatenate(targets, axis=0) if targets and sum(len(t) for t in targets) == X.shape[0] else None
+        target_context = (
+            first.target_context.model_copy(deep=True) if target is not None and first.target_context else None
+        )
+        return SherpaDataset(
+            X=X,
+            feature_axis=FeatureAxis(
+                values=np.arange(X.shape[1], dtype=float),
+                labels=first_labels or None,
+                title=getattr(first_axis, "title", None) or "Feature",
+            ),
+            sample_axis=SampleAxis(labels=sample_labels, title="Sample"),
+            target=target,
+            target_context=target_context,
+            domain=first.domain.model_copy(deep=True),
+            backend="pandas",
+            title=f"{exp_name} ({len(loaded)} feature file{'s' if len(loaded) != 1 else ''})",
+            data_role="X_features",
+        )
+
+
+def _load_synthesis_npz_as_nddataset(file_path: str) -> NDDataset:
+    from spectra_sherpa.app.services.synthesis import load_synthetic_npz
+
+    payload = load_synthetic_npz(file_path)
+    return _synthesis_npz_payload_to_nddataset(file_path, payload)
+
+
+def _load_synthesis_npz_as_loaded_dataset(file_path: str, *, file_name: str | None = None) -> _LoadedDataset:
+    from spectra_sherpa.app.services.synthesis import load_synthetic_npz
+
+    payload = load_synthetic_npz(file_path)
+    target_names = _synthesis_target_names(payload)
+    ground_truth = _synthesis_ground_truth(payload)
+    return _LoadedDataset(
+        dataset=_synthesis_npz_payload_to_nddataset(file_path, payload),
+        file_name=file_name or Path(file_path).name,
+        file_path=file_path,
+        embedded_target_names=target_names,
+        embedded_target_data=np.asarray(payload["C"], dtype=np.float64),
+        embedded_target_units=str(payload.get("concentration_units") or "ppm"),
+        ground_truth_spectra=np.asarray(payload["S"], dtype=np.float64),
+        ground_truth_spectra_names=target_names,
+        ground_truth_spectra_units=ground_truth.get("S_units"),
+        ground_truth_spectra_x=np.asarray(payload["wavenumber"], dtype=np.float64),
+        ground_truth_spectra_x_title=str(payload.get("metadata", {}).get("x_title") or "Wavenumber"),
+        ground_truth_spectra_x_units=str(payload.get("feature_units") or "cm^-1"),
+    )
+
+
+def _synthesis_npz_payload_to_nddataset(file_path: str, payload: dict[str, Any]) -> NDDataset:
+    data = np.asarray(payload["X"], dtype=np.float64)
+    embedded_meta = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+    dataset = scp.NDDataset(data)
+    dataset.title = str(embedded_meta.get("title") or Path(file_path).stem)
+    value_units = embedded_meta.get("value_units") or payload.get("units") or "absorbance"
+    dataset.units = value_units
+    labels = payload.get("sample_labels") or [f"sample_{i + 1:03d}" for i in range(data.shape[0])]
+    dataset.set_coordset(
+        y=scp.Coord(np.arange(data.shape[0]), title=str(embedded_meta.get("y_title") or "Sample"), labels=labels),
+        x=scp.Coord(
+            np.asarray(payload["wavenumber"], dtype=np.float64),
+            title=str(embedded_meta.get("x_title") or "Wavenumber"),
+            units=embedded_meta.get("x_units") or payload.get("feature_units") or "cm^-1",
+        ),
+    )
+    dataset.meta["data_role"] = embedded_meta.get("data_role") or "X_spectra"
+    dataset.meta["data_quantity"] = embedded_meta.get("data_quantity") or "Absorbance"
+    dataset.meta["value_units_label"] = str(value_units)
+    dataset.meta["is_time_series"] = bool(embedded_meta.get("is_time_series", False))
+    meta = SpectraMeta(
+        provenance=DataProvenance(
+            source_type=SourceType.SYNTHETIC,
+            original_file_path=str(file_path),
+            original_file_format="npz",
+            created_datetime=datetime.utcnow().isoformat(),
+        ),
+        processing_steps=["load", "synthetic"],
+        custom={
+            "synthesis_recipe": payload.get("recipe_json"),
+            "synthesis_ground_truth": payload.get("ground_truth_json"),
+        },
+    )
+    set_spectra_meta(dataset, meta)
+    return dataset
+
+
+def _synthesis_target_names(payload: dict[str, Any]) -> list[str]:
+    ground_truth = _synthesis_ground_truth(payload)
+    names = ground_truth.get("component_names")
+    if isinstance(names, list) and names:
+        return [str(name) for name in names]
+
+    c = np.asarray(payload["C"])
+    return [f"component_{index + 1}" for index in range(c.shape[1] if c.ndim == 2 else 1)]
+
+
+def _synthesis_ground_truth(payload: dict[str, Any]) -> dict[str, Any]:
+    raw_ground_truth = payload.get("ground_truth_json")
+    if raw_ground_truth:
+        try:
+            parsed = json.loads(str(raw_ground_truth))
+            if isinstance(parsed, dict):
+                return parsed
+        except (TypeError, ValueError):
+            logger.debug("Could not parse synthesis ground-truth metadata", exc_info=True)
+    return {}
 
 
 @register_node

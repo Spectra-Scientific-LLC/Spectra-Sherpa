@@ -7,6 +7,7 @@ from fastapi.routing import APIRoute
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from spectra_sherpa.app.api.v1.routes import api_keys
 from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.main import app
 from spectra_sherpa.app.models.user import User
@@ -63,6 +64,26 @@ class TestDemoGuardCoverage:
         for path in open_paths:
             route = _find_route(path, "POST")
             assert not _has_demo_guard(route), f"Unexpected demo_guard on {path}"
+
+    def test_demo_allows_hitran_key_but_blocks_llm_byok(self, demo_profile: None) -> None:
+        api_keys._require_api_key_capability("hitran")
+
+        with pytest.raises(Exception) as exc_info:
+            api_keys._require_api_key_capability("openai")
+
+        assert getattr(exc_info.value, "status_code", None) == 403
+
+    def test_folder_watch_mutations_have_demo_guard(self) -> None:
+        guarded_paths = [
+            ("/api/v1/deploy/watches", "POST"),
+            ("/api/v1/deploy/watches/{watch_id}", "PATCH"),
+            ("/api/v1/deploy/watches/{watch_id}", "DELETE"),
+            ("/api/v1/deploy/watches/{watch_id}/enable", "POST"),
+            ("/api/v1/deploy/watches/{watch_id}/disable", "POST"),
+        ]
+        for path, method in guarded_paths:
+            route = _find_route(path, method)
+            assert _has_demo_guard(route), f"Expected demo_guard dependency on {method} {path}"
 
     @pytest.mark.anyio
     async def test_demo_allows_initial_data_for_reference_datasets(

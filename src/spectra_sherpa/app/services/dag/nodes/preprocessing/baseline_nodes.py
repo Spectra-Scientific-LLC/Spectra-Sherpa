@@ -74,7 +74,6 @@ class BaselinePenalizedLSNode(TransformSpecNode):
                 param_type="number",
                 default=1e5,
                 min_value=1e2,
-                max_value=1e9,
                 description=(
                     "Smoothness penalty \u2014 larger values produce a smoother (flatter) baseline. "
                     "When left at the default (1\u00d710\u2075), the value is auto-selected by technique "
@@ -95,7 +94,6 @@ class BaselinePenalizedLSNode(TransformSpecNode):
                 param_type="number",
                 default=0.001,
                 min_value=0.0001,
-                max_value=0.1,
                 step=0.0001,
                 description="Asymmetry parameter (smaller = more asymmetric)",
                 required=False,
@@ -108,7 +106,6 @@ class BaselinePenalizedLSNode(TransformSpecNode):
                 param_type="number",
                 default=50,
                 min_value=5,
-                max_value=500,
                 step=5,
                 description="Maximum number of iterations",
                 required=False,
@@ -120,7 +117,6 @@ class BaselinePenalizedLSNode(TransformSpecNode):
                 param_type="number",
                 default=1e-6,
                 min_value=1e-10,
-                max_value=1e-2,
                 description="Convergence tolerance on weight change",
                 required=False,
                 category="advanced",

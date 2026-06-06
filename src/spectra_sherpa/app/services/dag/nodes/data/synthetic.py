@@ -40,7 +40,7 @@ class SyntheticCurveNode(Node):
 
     metadata = NodeMetadata(
         node_type="data.synthetic_curve",
-        category="data",
+        category="synthesis",
         label="Synthetic Curve",
         description="Generate synthetic concentration curves",
         parameters=[
@@ -59,7 +59,6 @@ class SyntheticCurveNode(Node):
                 param_type="number",
                 default=100,
                 min_value=10,
-                max_value=1000,
                 description="Number of time points",
                 required=True,
             ),
@@ -69,7 +68,6 @@ class SyntheticCurveNode(Node):
                 param_type="number",
                 default=1.0,
                 min_value=0.0,
-                max_value=100.0,
                 description="Maximum concentration value",
                 required=True,
             ),
@@ -79,7 +77,6 @@ class SyntheticCurveNode(Node):
                 param_type="number",
                 default=0.5,
                 min_value=0.0,
-                max_value=1.0,
                 step=0.1,
                 description="Center of sigmoid/gaussian (0-1)",
                 required=False,
@@ -90,7 +87,6 @@ class SyntheticCurveNode(Node):
                 param_type="number",
                 default=0.1,
                 min_value=0.01,
-                max_value=1.0,
                 step=0.01,
                 description="Width of sigmoid/gaussian",
                 required=False,

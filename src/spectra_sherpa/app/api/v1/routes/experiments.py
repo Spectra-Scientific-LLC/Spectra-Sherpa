@@ -7,8 +7,17 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
+from spectra_sherpa.app.api.deps import (
+    consume_reserved_demo_upload_quota_if_needed,
+    demo_guard,
+    get_current_user,
+    get_session,
+    release_demo_upload_quota_reservation_if_needed,
+    require_project,
+    reserve_demo_upload_quota_or_429,
+)
 from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.lib.data_formats import ensure_reader_available
 from spectra_sherpa.app.models.exp_version import ExpVersion
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.user import User
@@ -42,6 +51,7 @@ from spectra_sherpa.app.services.experiments import (
     update_experiment,
 )
 from spectra_sherpa.app.services.file_storage import FileValidationError, save_upload_file
+from spectra_sherpa.app.services.prepared_data import PreparedDataOverrides, save_prepared_data_overrides
 from spectra_sherpa.app.services.version_storage import ContentAddressableStorage
 
 logger = logging.getLogger(__name__)
@@ -57,17 +67,82 @@ async def _require_experiment(session: AsyncSession, experiment_id: int, user_id
     return experiment
 
 
+def _experiment_file_summary(experiment_id: int, file_record: ExperimentFile) -> dict[str, object]:
+    """Return parser-derived dimensions for files where cheap inspection is available."""
+    file_type = (file_record.file_type or "").lower()
+    full_path = experiment_dir(experiment_id) / file_record.file_path
+
+    if file_type == "npz" or file_record.file_path.lower().endswith(".npz"):
+        try:
+            from spectra_sherpa.app.services.synthesis import is_synthetic_npz, load_synthetic_npz
+
+            if not is_synthetic_npz(full_path):
+                return {}
+            payload = load_synthetic_npz(full_path)
+            X = payload["X"]
+            metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+            return {
+                "shape": [int(X.shape[0]), int(X.shape[1])],
+                "n_samples": int(X.shape[0]),
+                "n_features": int(X.shape[1]),
+                "data_role": str(metadata.get("data_role") or "X_spectra"),
+                "x_title": str(metadata.get("x_title") or "Wavenumber"),
+                "x_units": str(metadata.get("x_units") or payload.get("feature_units") or "cm^-1"),
+                "is_spectra": True,
+            }
+        except Exception:
+            logger.debug("Could not summarize synthetic experiment file %s", file_record.id, exc_info=True)
+            return {}
+
+    if file_type != "csv" and not file_record.file_path.lower().endswith(".csv"):
+        return {}
+
+    try:
+        from spectra_sherpa.app.lib.io import load_csv_as_sherpa
+
+        dataset = load_csv_as_sherpa(full_path)
+        feature_axis = getattr(dataset, "feature_axis", None)
+        return {
+            "shape": list(dataset.shape),
+            "n_samples": dataset.n_samples,
+            "n_features": dataset.n_features,
+            "data_role": dataset.data_role,
+            "x_title": getattr(feature_axis, "title", None),
+            "x_units": getattr(feature_axis, "units", None),
+            "is_spectra": dataset.data_role == "X_spectra",
+        }
+    except Exception:
+        logger.debug("Could not summarize experiment file %s", file_record.id, exc_info=True)
+        return {}
+
+
+def _experiment_file_out(file_record: ExperimentFile) -> ExperimentFileOut:
+    base = ExperimentFileOut.model_validate(file_record)
+    summary = _experiment_file_summary(file_record.experiment_id, file_record)
+    return base.model_copy(update=summary) if summary else base
+
+
 @router.get("", response_model=list[ExperimentSummary])
 async def list_experiments_endpoint(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    project_id: int | None = Query(None),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> list[ExperimentSummary]:
     from sqlalchemy import func
 
+    if project_id is not None:
+        await require_project(project_id, current_user.id, session)
+
     # Filter experiments by authenticated user
-    experiments = await list_experiments(session, user_id=current_user.id, limit=limit, offset=offset)
+    experiments = await list_experiments(
+        session,
+        user_id=current_user.id,
+        limit=limit,
+        offset=offset,
+        project_id=project_id,
+    )
 
     # Get file counts for all experiments in one query
     exp_ids = [exp.id for exp in experiments]
@@ -92,6 +167,7 @@ async def list_experiments_endpoint(
             description=exp.description,
             created_at=exp.created_at,
             file_count=file_counts.get(exp.id, 0),
+            project_id=exp.project_id,
         )
         for exp in experiments
     ]
@@ -103,6 +179,8 @@ async def create_experiment_endpoint(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> ExperimentDetail:
+    if payload.project_id is not None:
+        await require_project(payload.project_id, current_user.id, session)
     experiment = await create_experiment(
         session,
         user_id=current_user.id,
@@ -136,6 +214,8 @@ async def update_experiment_endpoint(
     current_user: User = Depends(get_current_user),
 ) -> ExperimentDetail:
     experiment = await _require_experiment(session, experiment_id, current_user.id)
+    if payload.project_id is not None:
+        await require_project(payload.project_id, current_user.id, session)
     updated = await update_experiment(
         session,
         experiment=experiment,
@@ -170,31 +250,56 @@ async def delete_experiment_endpoint(
 async def upload_experiment_file(
     experiment_id: int,
     stage: str = Form(...),
+    data_role: str | None = Form(None),
+    target_column: str | None = Form(None),
+    target_type: str | None = Form(None),
     file: UploadFile = File(...),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> ExperimentFileOut:
-    await _require_experiment(session, experiment_id, current_user.id)
+    user_id = current_user.id
+    await _require_experiment(session, experiment_id, user_id)
     if stage not in ALLOWED_STAGES:
         raise HTTPException(status_code=400, detail="Invalid stage")
 
-    exp_dir = experiment_dir(experiment_id)
-    destination_dir = exp_dir / stage
-
     try:
-        saved_path = await save_upload_file(
-            file,
-            destination_dir=destination_dir,
-            max_file_size_mb=settings.max_file_size_mb,
-        )
-    except FileValidationError as exc:
+        ensure_reader_available(file.filename or "")
+    except (ImportError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    rel_path = saved_path.relative_to(exp_dir).as_posix()
-    file_size = saved_path.stat().st_size
-    file_type = saved_path.suffix.lstrip(".") or None
+    upload_reserved = reserve_demo_upload_quota_or_429(user_id)
+    exp_dir = experiment_dir(experiment_id)
+    destination_dir = exp_dir / stage
+    saved_path = None
+    persisted = False
 
     try:
+        try:
+            saved_path = await save_upload_file(
+                file,
+                destination_dir=destination_dir,
+                max_file_size_mb=settings.max_file_size_mb,
+            )
+        except FileValidationError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        rel_path = saved_path.relative_to(exp_dir).as_posix()
+        file_size = saved_path.stat().st_size
+        file_type = saved_path.suffix.lstrip(".") or None
+
+        try:
+            prepared = PreparedDataOverrides.from_mapping(
+                {
+                    "data_role": data_role,
+                    "target_column": target_column,
+                    "target_type": target_type,
+                }
+            )
+            if not prepared.is_empty():
+                save_prepared_data_overrides(prepared, file_path=str(saved_path))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         experiment_file = await add_experiment_file(
             session=session,
             experiment_id=experiment_id,
@@ -203,12 +308,17 @@ async def upload_experiment_file(
             file_size_bytes=file_size,
             file_type=file_type,
         )
-    except Exception:
-        if saved_path.exists():
+        persisted = True
+    except BaseException:
+        if not persisted and saved_path is not None and saved_path.exists():
             saved_path.unlink()
         raise
-
-    return ExperimentFileOut.model_validate(experiment_file)
+    finally:
+        if persisted:
+            consume_reserved_demo_upload_quota_if_needed(user_id, upload_reserved)
+        else:
+            release_demo_upload_quota_reservation_if_needed(user_id, upload_reserved)
+    return _experiment_file_out(experiment_file)
 
 
 @router.post(
@@ -237,6 +347,10 @@ async def import_reference_datasets_endpoint(
     try:
         for ds in payload.datasets:
             files = await import_reference_dataset(session, experiment_id, ds.source, ds.name)
+            prepared = PreparedDataOverrides.from_mapping(ds.overrides)
+            if not prepared.is_empty():
+                for file_record in files:
+                    save_prepared_data_overrides(prepared, file_path=str(exp_dir / file_record.file_path))
             all_files.extend(files)
         # Commit all DB rows atomically
         await session.commit()
@@ -260,7 +374,7 @@ async def import_reference_datasets_endpoint(
 
     return ReferenceDatasetImportResponse(
         imported=len(all_files),
-        files=[ExperimentFileOut.model_validate(f) for f in all_files],
+        files=[_experiment_file_out(f) for f in all_files],
     )
 
 
@@ -276,7 +390,7 @@ async def list_experiment_files_endpoint(
         raise HTTPException(status_code=400, detail="Invalid stage")
 
     files = await list_experiment_files(session, experiment_id, stage=stage)
-    return [ExperimentFileOut.model_validate(file) for file in files]
+    return [_experiment_file_out(file) for file in files]
 
 
 @router.delete("/{experiment_id}/files/{file_id}")

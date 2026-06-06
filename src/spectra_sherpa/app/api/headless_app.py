@@ -3,11 +3,12 @@ Headless Prediction Server API.
 
 A specialized, ultra-lightweight FastAPI application designed solely for
 running predictions against a pre-defined (or frozen) workflow. It lacks
-the UI, authentication, and standard exploratory routes of the main app.
+the UI and standard exploratory routes of the main app.
 """
 
 from __future__ import annotations
 
+import hmac
 import json
 import logging
 import os
@@ -16,6 +17,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import PlainTextResponse, Response
 
+from spectra_sherpa.app.core.mode_policy import is_loopback
+from spectra_sherpa.app.core.security import get_client_host
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.services.batch_predict import build_executor_from_workflow
 from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
@@ -26,6 +29,56 @@ logger = logging.getLogger(__name__)
 _executor = None
 _executor_workflow_id: int | None = None
 _executor_workflow_user_id: int | None = None
+
+
+def _env_truthy(*names: str) -> bool:
+    for name in names:
+        value = os.getenv(name, "").strip().lower()
+        if value in {"1", "true", "yes", "on"}:
+            return True
+    return False
+
+
+def _allow_unauthenticated_headless() -> bool:
+    return _env_truthy(
+        "SPECTRA_SHERPA_ALLOW_UNAUTHENTICATED_HEADLESS",
+        "SPECTRASHERPA_ALLOW_UNAUTHENTICATED_HEADLESS",
+    )
+
+
+def _configured_headless_api_key() -> str | None:
+    key = os.getenv("HEADLESS_API_KEY", "").strip()
+    return key or None
+
+
+def _require_headless_access(request: Request) -> None:
+    """Gate prediction requests for deployed headless workflows.
+
+    Loopback remains convenient for local testing. Network-exposed headless
+    servers require HEADLESS_API_KEY unless the operator makes an explicit
+    unsafe opt-in for an externally protected environment.
+    """
+
+    expected_key = _configured_headless_api_key()
+    presented_key = request.headers.get("X-API-Key", "")
+    client_host = get_client_host(request)
+
+    if expected_key:
+        if not hmac.compare_digest(presented_key, expected_key):
+            raise HTTPException(status_code=401, detail="Authentication required")
+        return
+
+    if is_loopback(client_host) or _allow_unauthenticated_headless():
+        return
+
+    logger.warning("Blocked unauthenticated non-loopback headless prediction client_host=%r", client_host)
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "Headless prediction requires HEADLESS_API_KEY for non-loopback clients. "
+            "Set SPECTRA_SHERPA_ALLOW_UNAUTHENTICATED_HEADLESS=true only behind a trusted access-control layer."
+        ),
+    )
 
 
 @asynccontextmanager
@@ -71,6 +124,15 @@ async def lifespan(app: FastAPI):
         if not workflow:
             raise RuntimeError(f"Workflow {workflow_id} not found in database.")
 
+        from spectra_sherpa.app.services.workflow_access import validate_workflow_execution_access
+
+        await validate_workflow_execution_access(
+            workflow.nodes,
+            None,
+            workflow.user_id,
+            workflow.project_id,
+            session,
+        )
         logger.info(f"Loading '{workflow.name}' (ID: {workflow_id}) for headless prediction...")
         _executor = build_executor_from_workflow(workflow)
         _executor_workflow_id = workflow_id
@@ -106,6 +168,8 @@ async def predict(request: Request) -> Response:
     of the `deploy.input` nodes in the workflow.
     """
     global _executor
+    _require_headless_access(request)
+
     if not _executor:
         raise HTTPException(status_code=500, detail="Model executor not initialized.")
 

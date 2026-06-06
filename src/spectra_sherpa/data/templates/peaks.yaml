@@ -1,8 +1,8 @@
 schema_version: 1
 name: Peak Detection & Fitting
 slug: peaks
-description: Automated peak detection with Gaussian/Lorentzian fitting, FWHM, and
-  area quantification.
+description: Automated peak detection with prominence, FWHM-like width, and area
+  estimates.
 category: spectroscopy
 is_active: true
 status: ready
@@ -81,7 +81,6 @@ template_data:
       - NIR
       - Raman
       - UV-Vis
-      - NMR
   certified_datasets:
   - source: spectrochempy
     name: irdata

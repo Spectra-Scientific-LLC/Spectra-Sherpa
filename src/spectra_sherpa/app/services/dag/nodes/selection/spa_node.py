@@ -113,7 +113,6 @@ class SPANode(Node):
                 param_type="number",
                 default=20,
                 min_value=2,
-                max_value=500,
                 step=1,
                 description="Number of variables to select",
             ),
@@ -121,9 +120,11 @@ class SPANode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Spectral Data",
+                label="Input Data Matrix",
+                description="Spectral dataset or multivariate feature table",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="y",
@@ -218,6 +219,6 @@ class SPANode(Node):
         logger.info(f"SPA: {n_actual}/{n_features} variables, cond={cond_number:.1f}")
 
         return NodeResult(
-            outputs={"X_selected": X_selected, "mask": mask, "scores": scores},
+            outputs={"default": X_selected, "X_selected": X_selected, "mask": mask, "scores": scores},
             diagnostics={"n_selected": n_actual, "n_total": n_features, "condition_number": cond_number},
         )

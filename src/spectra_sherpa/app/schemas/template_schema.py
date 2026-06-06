@@ -12,7 +12,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from spectra_sherpa.app.lib.data_roles import normalize_modalities
 
 # ---------------------------------------------------------------------------
 # Enums as Literal unions (kept inline for single-file clarity)
@@ -20,6 +22,8 @@ from pydantic import BaseModel, Field
 
 DataRoleType = Literal[
     "X_spectra",
+    "X_features",
+    "X_hsi",
     "Y_reference",
     "class_labels",
     "wavelength_axis",
@@ -35,6 +39,7 @@ BindingMode = Literal[
 ]
 
 TargetType = Literal["continuous", "categorical"]
+DataModalityType = Literal["spectra", "features", "hsi"]
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +62,7 @@ class TemplateDataRole(BaseModel):
     connects_to_port: str | None = Field(None, description="Specific input port name (e.g. 'y', 'X')")
     description: str = ""
     accepted_techniques: list[str] | None = None
+    accepted_data_roles: list[DataRoleType] | None = None
     is_time_series: bool | None = None
 
 
@@ -83,7 +89,7 @@ class TemplateEdge(BaseModel):
 class CertifiedDataset(BaseModel):
     """A (source, name) pair that has been end-to-end tested for this template."""
 
-    source: str = Field(..., description="Dataset source: eigenvector | sklearn | spectrochempy | oes")
+    source: str = Field(..., description="Dataset source: synthetic | eigenvector | sklearn | spectrochempy | oes")
     name: str = Field(..., description="Dataset name within that source catalog")
 
 
@@ -121,7 +127,13 @@ class TemplateFile(BaseModel):
     category: str
     is_active: bool = True
     status: TemplateStatus = "ready"
+    data_modalities: list[DataModalityType] = Field(default_factory=lambda: ["spectra"])
     template_data: TemplateData
+
+    @field_validator("data_modalities", mode="before")
+    @classmethod
+    def _normalize_data_modalities(cls, value: Any) -> list[DataModalityType]:
+        return normalize_modalities(value)  # type: ignore[return-value]
 
 
 class TemplateCategoryEntry(BaseModel):

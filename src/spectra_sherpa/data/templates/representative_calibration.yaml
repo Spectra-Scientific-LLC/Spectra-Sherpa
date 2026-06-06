@@ -1,9 +1,8 @@
 schema_version: 1
 name: Representative Calibration (Kennard-Stone)
 slug: representative_calibration
-description: Build a PLS calibration with Kennard-Stone sample partitioning for
-  representative X-space coverage. Savitzky-Golay smoothing before splitting
-  (stateless operation). Test-set prediction reports RMSEP and R².
+description: PLS calibration with Kennard-Stone partitioning for representative X-space
+  coverage. Reports RMSEP and R² on a held-out test set.
 category: selection_design
 is_active: true
 template_data:
@@ -37,7 +36,7 @@ template_data:
     position_y: 450
   - node_id: model_1
     node_type: model.pls
-    label: PLS Regression
+    label: Train PLS Regression
     parameters:
       n_components: 4
       scale: false
@@ -95,6 +94,14 @@ template_data:
     to_node_id: eval_1
     from_output: y_test
     to_input: y_true
+  - from_node_id: model_1
+    to_node_id: eval_1
+    from_output: y_pred
+    to_input: y_train_pred
+  - from_node_id: model_1
+    to_node_id: eval_1
+    from_output: y_true
+    to_input: y_train_true
   - from_node_id: eval_1
     to_node_id: table_1
     from_output: metrics

@@ -1,12 +1,13 @@
 schema_version: 1
 name: Classification (PLS-DA)
 slug: classification_plsda
-description: Supervised classification with PLS-DA. Stratified train/test split is
-  performed before autoscaling to prevent information leakage, and the test set
-  reuses scaling parameters fitted on the training set. Performance is evaluated
-  with accuracy and confusion matrix on the held-out test set.
+description: Supervised PLS-DA classification with stratified train/test split. Reports
+  accuracy and confusion matrix on a held-out test set.
 category: classification
 is_active: true
+data_modalities:
+- spectra
+- features
 template_data:
   nodes:
   - node_id: data_1
@@ -41,7 +42,7 @@ template_data:
     position_y: 450
   - node_id: model_1
     node_type: classification.plsda
-    label: PLS-DA
+    label: Train PLS-DA Classifier
     parameters:
       n_components: 5
       scale: false
@@ -124,6 +125,9 @@ template_data:
       required: true
       binding_mode: embedded
       description: Spectral data with class labels
+      accepted_data_roles:
+      - X_spectra
+      - X_features
       accepted_techniques:
       - FTIR
       - NIR

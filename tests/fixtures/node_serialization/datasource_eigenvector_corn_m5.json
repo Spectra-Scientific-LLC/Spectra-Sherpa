@@ -24,6 +24,8 @@
       "title": "Corn M5 NIR (80 samples, 700 channels)",
       "units": null,
       "backend": "scp",
+      "data_role": "X_spectra",
+      "data_modality": "spectra",
       "target": {
         "__array_summary__": true,
         "shape": [
@@ -87,7 +89,9 @@
           ],
           "last_modified": "<last_modified>",
           "last_operation": "data.source"
-        }
+        },
+        "sherpa.data_role": "X_spectra",
+        "sherpa.data_modality": "spectra"
       },
       "is_time_series": false,
       "metadata": {
@@ -117,6 +121,8 @@
           }
         ],
         "data_type": "spectra",
+        "data_role": "X_spectra",
+        "data_modality": "spectra",
         "is_spectra": true,
         "is_time_series": false,
         "spectral_technique": "NIR",
@@ -138,7 +144,9 @@
             "data.source"
           ],
           "last_modified": "<last_modified>"
-        }
+        },
+        "sherpa.data_role": "X_spectra",
+        "sherpa.data_modality": "spectra"
       },
       "manifest": {
         "dataset_id": "<dataset_id>",

@@ -94,9 +94,12 @@ async def test_plot_spectra_caps_traces_at_50() -> None:
     node = PlotNode(node_id="p3", parameters={"plot_type": "spectra"})
 
     result = await node.execute(ds)
-    traces = result["visualization"]["data"]
+    vis = result["visualization"]
+    traces = vis["data"]
 
     assert len(traces) <= 50
+    assert vis["metadata"]["subsampled"] is True
+    assert "Showing 50 evenly spaced traces" in vis["metadata"]["warning"]
 
 
 @pytest.mark.anyio
@@ -106,6 +109,8 @@ async def test_plot_spectra_keeps_all_traces_when_under_cap() -> None:
     node = PlotNode(node_id="p4", parameters={"plot_type": "spectra"})
 
     result = await node.execute(ds)
-    traces = result["visualization"]["data"]
+    vis = result["visualization"]
+    traces = vis["data"]
 
     assert len(traces) == 10
+    assert "warning" not in vis["metadata"]

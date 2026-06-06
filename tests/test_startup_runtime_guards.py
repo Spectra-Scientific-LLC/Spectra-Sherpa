@@ -10,12 +10,14 @@ from cryptography.fernet import Fernet
 import spectra_sherpa.app.core.startup as startup
 from spectra_sherpa.app.services.encryption import get_master_key
 
+_STRONG_SECRET = "-".join(("secure", "test", "runtime", "entropy", "123456"))
+
 
 def _patch_runtime(
     monkeypatch: pytest.MonkeyPatch,
     *,
     mode: str,
-    secret_key: str = "safe-secret",
+    secret_key: str = _STRONG_SECRET,
     api_key: str = "safe-api-key",
     database_url: str = "sqlite+aiosqlite:///:memory:",
 ) -> None:
@@ -102,7 +104,7 @@ def test_hybrid_security_rejects_default_api_key_when_system_auth_enabled(
     _patch_runtime(
         monkeypatch,
         mode="hybrid",
-        secret_key="safe-secret",
+        secret_key=_STRONG_SECRET,
         api_key=startup.DEFAULT_API_KEY,
     )
     monkeypatch.setenv("ALLOW_SYSTEM_API_KEY_AUTH", "true")
@@ -120,7 +122,7 @@ def test_hybrid_security_rejects_short_master_encryption_key(monkeypatch: pytest
     _patch_runtime(
         monkeypatch,
         mode="hybrid",
-        secret_key="safe-secret",
+        secret_key=_STRONG_SECRET,
         api_key="safe-api-key",
     )
     monkeypatch.setenv("MASTER_ENCRYPTION_KEY", "too-short")
@@ -177,6 +179,49 @@ def test_enterprise_security_rejects_default_secret(monkeypatch: pytest.MonkeyPa
         startup.validate_security_settings()
 
     assert exc_info.value.code == 1
+
+
+def test_enterprise_security_rejects_missing_master_encryption_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_runtime(monkeypatch, mode="enterprise", secret_key=_STRONG_SECRET, api_key="safe-api-key")
+    monkeypatch.delenv("MASTER_ENCRYPTION_KEY", raising=False)
+    monkeypatch.delenv("ALLOW_SYSTEM_API_KEY_AUTH", raising=False)
+    monkeypatch.delenv("TRUST_PROXY", raising=False)
+
+    with pytest.raises(SystemExit) as exc_info:
+        startup.validate_security_settings()
+
+    assert exc_info.value.code == 1
+
+
+def test_enterprise_security_rejects_trust_proxy_without_trusted_cidrs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_runtime(monkeypatch, mode="enterprise", secret_key=_STRONG_SECRET, api_key="safe-api-key")
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", "x" * 32)
+    monkeypatch.setenv("TRUST_PROXY", "true")
+    monkeypatch.delenv("TRUSTED_PROXY_CIDRS", raising=False)
+
+    with pytest.raises(SystemExit) as exc_info:
+        startup.validate_security_settings()
+
+    assert exc_info.value.code == 1
+
+
+def test_hybrid_security_warns_trust_proxy_without_trusted_cidrs(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _patch_runtime(monkeypatch, mode="hybrid", secret_key=_STRONG_SECRET, api_key="safe-api-key")
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", "x" * 32)
+    monkeypatch.setenv("TRUST_PROXY", "true")
+    monkeypatch.delenv("TRUSTED_PROXY_CIDRS", raising=False)
+
+    with caplog.at_level("WARNING"):
+        startup.validate_security_settings()
+
+    assert "TRUST_PROXY is enabled but TRUSTED_PROXY_CIDRS is not set" in caplog.text
 
 
 # ===========================================================================

@@ -24,6 +24,7 @@ exceptions are caught and turned into error messages.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Any, Awaitable, Callable
@@ -52,6 +53,49 @@ def _ws_is_connected(ws: WebSocket) -> bool:
     return state is None or state == WebSocketState.CONNECTED
 
 
+def _optional_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+async def _owned_project_id(user: Any, value: Any) -> int | None:
+    """Return a client-supplied project id only when it belongs to ``user``."""
+    project_id = _optional_int(value)
+    user_id = getattr(user, "id", None)
+    if project_id is None or user_id is None:
+        return None
+
+    from sqlalchemy import select
+
+    from spectra_sherpa.app.models.project import Project
+
+    async with async_session() as session:
+        result = await session.execute(select(Project.id).where(Project.id == project_id, Project.user_id == user_id))
+        return result.scalar_one_or_none()
+
+
+def _ws_send_lock(ws: WebSocket) -> asyncio.Lock:
+    """Per-connection send lock.
+
+    Every WS write funnels through ``_safe_ws_send_json``.  Serializing
+    writes per connection lets background tasks (e.g. offloaded
+    guidance evaluation) send safely alongside the main receive loop
+    without interleaving WebSocket frames on the same socket.
+    """
+    lock = getattr(ws, "_spectra_ws_send_lock", None)
+    if lock is None:
+        lock = asyncio.Lock()
+        try:
+            setattr(ws, "_spectra_ws_send_lock", lock)
+        except Exception:
+            return lock
+    return lock
+
+
 async def _safe_ws_send_json(ws: WebSocket, payload: dict[str, Any]) -> bool:
     if not _ws_is_connected(ws):
         return False
@@ -61,7 +105,10 @@ async def _safe_ws_send_json(ws: WebSocket, payload: dict[str, Any]) -> bool:
         except _SchemaValidationError:
             logger.warning("WS schema validation failed for %s", payload.get("type"), exc_info=True)
     try:
-        await ws.send_json(payload)
+        async with _ws_send_lock(ws):
+            if not _ws_is_connected(ws):
+                return False
+            await ws.send_json(payload)
         return True
     except Exception:
         logger.debug("WebSocket send failed; client likely disconnected", exc_info=True)
@@ -136,6 +183,10 @@ async def _proxy_server_chat(
 
     workflow_context = metadata.get("workflow_context") if metadata else None
     user_id = user.id if user else None
+    project_id = await _owned_project_id(user, metadata.get("project_id") if metadata else None)
+    if metadata and metadata.get("project_id") is not None and project_id is None:
+        await _safe_ws_send_json(ws, {"type": "error", "detail": "Project not found"})
+        return
 
     try:
         started = False
@@ -145,7 +196,7 @@ async def _proxy_server_chat(
             conversation_id=conversation_id,
             workflow_context=workflow_context,
             local_user_id=user_id,
-            project_id=metadata.get("project_id") if metadata else None,
+            project_id=project_id,
         )
         try:
             async for event in event_stream:

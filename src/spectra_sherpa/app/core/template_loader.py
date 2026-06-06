@@ -236,6 +236,7 @@ class TemplateLoader:
         """
         td = template.template_data.model_dump(exclude_none=True)
         td["status"] = template.status
+        td["data_modalities"] = list(template.data_modalities)
         return {
             "name": template.name,
             "slug": template.slug,

@@ -20,6 +20,7 @@ from typing import Any, Dict
 import numpy as np
 
 from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
+from spectra_sherpa.app.lib.sample_labels import clean_sample_labels
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
@@ -284,7 +285,7 @@ def _serialize_sherpa_dataset(
         metadata["y_title"] = y_ax.get("title") or "Sample"
         metadata["y_units"] = y_units
         if y_ax.get("labels"):
-            formatted = [_format_sample_label(v) for v in y_ax["labels"]]
+            formatted = clean_sample_labels(y_ax["labels"], len(y_ax["labels"]), fallback_prefix="Sample")
             metadata["sample_labels"] = formatted
             metadata["labels"] = formatted
 

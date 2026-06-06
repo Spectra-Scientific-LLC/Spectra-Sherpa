@@ -40,6 +40,7 @@ def _safe_identifier(node_id: str) -> str:
 
 _TYPE_TO_VARNAME: dict[str, str] = {
     "data.source": "data",
+    "data.my_dataset": "data",
     "data.transform": "transformed",
     "preprocess.normalize": "normalized",
     "preprocess.smooth": "smoothed",

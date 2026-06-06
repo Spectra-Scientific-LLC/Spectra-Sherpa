@@ -4,9 +4,14 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from httpx import AsyncClient
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from spectra_sherpa.app.api.deps import get_current_user
+from spectra_sherpa.app.api.v1.routes import builder as builder_routes
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.project import Project
@@ -17,6 +22,13 @@ from spectra_sherpa.app.services.experiments import metadata_path_for, relative_
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _builder_client() -> TestClient:
+    app = FastAPI()
+    app.include_router(builder_routes.router)
+    app.dependency_overrides[get_current_user] = lambda: object()
+    return TestClient(app)
 
 
 def _make_template_data(**overrides: Any) -> dict:
@@ -475,6 +487,28 @@ class TestTemplateLoaderValidation:
         errors = loader.validate_all()
         assert errors == [], "Production templates have validation errors:\n" + "\n".join(errors)
 
+    def test_pca_templates_are_safe_for_iris_feature_tables(self) -> None:
+        """PCA templates that advertise Iris must not request more PCs than Iris has features."""
+        from spectra_sherpa.app.core.template_loader import TemplateLoader
+
+        templates = {
+            template["slug"]: template
+            for template in TemplateLoader().load_all()
+            if template["slug"] in {"pca", "pca_exploratory"}
+        }
+        assert set(templates) == {"pca", "pca_exploratory"}
+
+        for slug, template in templates.items():
+            certified = template["template_data"].get("certified_datasets") or []
+            advertises_iris = any(
+                entry.get("source") == "sklearn" and entry.get("name") == "iris" for entry in certified
+            )
+            assert advertises_iris, f"{slug} no longer advertises sklearn Iris; update this regression test"
+
+            model_node = next(node for node in template["template_data"]["nodes"] if node["node_type"] == "model.pca")
+            n_components = int(model_node["parameters"]["n_components"])
+            assert n_components <= 4, f"{slug} requests {n_components} PCs but Iris has only 4 features"
+
 
 # ---------------------------------------------------------------------------
 # 5. Instantiation integration (existing test, updated for data_roles)
@@ -511,6 +545,48 @@ async def test_list_templates_excludes_wip_by_default(
     names = {template["name"] for template in payload["templates"]}
     assert "Ready Template" in names
     assert "WIP Template" not in names
+
+
+@pytest.mark.asyncio
+async def test_demo_categories_match_featured_template_filter(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from spectra_sherpa.app.contracts import demo_policy as demo_policy_mod
+    from spectra_sherpa.app.contracts.demo_policy import DemoPolicy
+    from spectra_sherpa.app.core.config import app_config
+
+    featured = WorkflowTemplate(
+        slug="featured_demo_template",
+        name="Featured Demo Template",
+        description="Visible in demo",
+        category="exploratory",
+        template_data={**_make_template_data(), "status": "ready"},
+        is_active=True,
+    )
+    hidden = WorkflowTemplate(
+        slug="hidden_demo_template",
+        name="Hidden Demo Template",
+        description="Not featured in demo",
+        category="calibration",
+        template_data={**_make_template_data(), "status": "ready"},
+        is_active=True,
+    )
+    test_session.add_all([featured, hidden])
+    await test_session.commit()
+
+    monkeypatch.setattr(app_config, "site_profile", "demo")
+    monkeypatch.setattr(
+        demo_policy_mod,
+        "_demo_policy_provider",
+        lambda: DemoPolicy(featured_templates=("featured_demo_template",)),
+    )
+
+    response = await auth_client.get("/api/v1/workflow-templates/categories")
+
+    assert response.status_code == 200
+    assert response.json() == ["exploratory"]
 
 
 @pytest.mark.asyncio
@@ -635,12 +711,11 @@ async def test_instantiate_example_mode_materializes_project_visible_example_dat
             },
         )
 
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
     data = response.json()
     nodes_by_id = {node["node_id"]: node for node in data["nodes"]}
-    assert nodes_by_id["data_1"]["parameters"]["source"] == "experiment"
-    assert nodes_by_id["data_1"]["parameters"]["experiment_id"] == created_experiment.id
-    assert nodes_by_id["data_1"]["parameters"]["file_id"] == imported_file.id
+    assert nodes_by_id["data_1"]["node_type"] == "data.my_dataset"
+    assert nodes_by_id["data_1"]["parameters"]["dataset_id"] == created_experiment.id
 
 
 @pytest.mark.asyncio
@@ -759,7 +834,7 @@ async def test_instantiate_example_mode_honors_selected_example_dataset(
             },
         )
 
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
     mock_import_ref.assert_awaited_once()
     args = mock_import_ref.await_args.args
     assert args[2] == "sklearn"
@@ -1168,11 +1243,11 @@ async def test_instantiate_example_mode_reuses_existing_project_example_experime
             },
         )
 
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
     data = response.json()
     nodes_by_id = {node["node_id"]: node for node in data["nodes"]}
-    assert nodes_by_id["data_1"]["parameters"]["experiment_id"] == experiment.id
-    assert nodes_by_id["data_1"]["parameters"]["file_id"] == existing_file.id
+    assert nodes_by_id["data_1"]["node_type"] == "data.my_dataset"
+    assert nodes_by_id["data_1"]["parameters"]["dataset_id"] == experiment.id
 
 
 @pytest.mark.asyncio
@@ -1278,14 +1353,15 @@ async def test_instantiate_single_source_supervised_template_with_separate_targe
         },
     )
 
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
     data = response.json()
 
     nodes_by_id = {node["node_id"]: node for node in data["nodes"]}
     assert "data_1" in nodes_by_id
     assert "data_1__target_source" in nodes_by_id
     assert "data_1__attach_target" in nodes_by_id
-    assert nodes_by_id["data_1"]["parameters"]["file_id"] == spectra_file.id
+    assert nodes_by_id["data_1"]["node_type"] == "data.my_dataset"
+    assert nodes_by_id["data_1"]["parameters"]["dataset_id"] == experiment.id
     assert nodes_by_id["data_1__target_source"]["parameters"]["file_id"] == target_file.id
     assert nodes_by_id["data_1__attach_target"]["node_type"] == "data.attach_target"
     assert nodes_by_id["data_1__attach_target"]["parameters"]["target_type"] == "continuous"
@@ -1338,3 +1414,210 @@ def test_compute_dataset_matches_surfaces_oes_examples() -> None:
     assert matches["X_spectra"]
     assert matches["X_spectra"][0]["name"] == "metal_etch_oes"
     assert matches["X_spectra"][0]["technique"] == "OES"
+
+
+def test_matching_catalog_includes_synthetic_atmospheric_gas_benchmark() -> None:
+    from spectra_sherpa.app.api.v1.routes.workflow_templates import _build_flat_catalog
+
+    catalog = _build_flat_catalog()
+    benchmark = next(
+        entry for entry in catalog if entry["source"] == "synthetic" and entry["name"] == "Synthetic_atmospheric-6"
+    )
+
+    assert benchmark["label"] == "Synthetic_atmospheric-6"
+    assert benchmark["data_role"] == "X_spectra"
+    assert benchmark["technique"] == "FTIR"
+    assert benchmark["has_embedded_target"] is True
+    assert benchmark["target_type"] == "continuous"
+
+
+def test_synthetic_benchmark_analysis_starter_is_available() -> None:
+    from spectra_sherpa.app.api.v1.routes.workflow_templates import (
+        _build_flat_catalog,
+        _compute_dataset_matches,
+        _extract_example_reference,
+    )
+    from spectra_sherpa.app.core.template_loader import TemplateLoader
+
+    templates = {template["slug"]: template for template in TemplateLoader().load_all()}
+    template = templates["synthetic_ftir_benchmark"]
+
+    assert template["name"] == "Spectra Scientific Synthetic Benchmark"
+    assert template["category"] == "curve_resolution"
+    assert template["template_data"]["status"] == "ready"
+
+    certified = template["template_data"]["certified_datasets"]
+    assert certified == [
+        {"source": "synthetic", "name": "Synthetic_atmospheric-6"},
+        {"source": "synthetic", "name": "Library_atmospheric-9"},
+    ]
+
+    source_node = next(node for node in template["template_data"]["nodes"] if node["node_id"] == "data_1")
+    assert _extract_example_reference(source_node) == ("synthetic", "Synthetic_atmospheric-6")
+    library_node = next(node for node in template["template_data"]["nodes"] if node["node_id"] == "data_2")
+    assert _extract_example_reference(library_node) == ("synthetic", "Library_atmospheric-9")
+
+    nodes_by_id = {node["node_id"]: node for node in template["template_data"]["nodes"]}
+    assert nodes_by_id["model_1"]["parameters"]["n_components"] == 6
+    assert nodes_by_id["model_1"]["parameters"]["validation_target_index"] == 3
+    assert nodes_by_id["compare_1"]["node_type"] == "analysis.compare_library"
+    assert nodes_by_id["compare_1"]["parameters"]["hqi_mode"] == "band_limited"
+    assert nodes_by_id["compare_1"]["parameters"]["diagnostic_band_threshold"] == 0.2
+    edges = {
+        (
+            edge["from_node_id"],
+            edge["to_node_id"],
+            edge.get("from_output", "default"),
+            edge.get("to_input", "default"),
+        )
+        for edge in template["template_data"]["edges"]
+    }
+    assert ("data_1", "compare_1", "default", "sample") in edges
+    assert ("data_2", "compare_1", "default", "library") in edges
+    assert ("compare_1", "table_1", "hqi_report", "default") in edges
+
+    matches = _compute_dataset_matches(
+        template["template_data"]["data_roles"],
+        _build_flat_catalog(),
+        certified_datasets=certified,
+    )
+    assert matches["X_spectra"][0]["source"] == "synthetic"
+    assert matches["X_spectra"][0]["name"] == "Synthetic_atmospheric-6"
+
+
+@pytest.mark.asyncio
+async def test_instantiate_synthetic_benchmark_materializes_mixture_and_library(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+    test_user: User,
+):
+    from spectra_sherpa.app.core.template_loader import TemplateLoader
+
+    template_def = {template["slug"]: template for template in TemplateLoader().load_all()}["synthetic_ftir_benchmark"]
+    template = WorkflowTemplate(
+        slug=template_def["slug"],
+        name=template_def["name"],
+        description=template_def["description"],
+        category=template_def["category"],
+        template_data={**template_def["template_data"], "status": "ready"},
+        is_active=True,
+    )
+    project = Project(user_id=test_user.id, name="Synthetic Benchmark Project", description="")
+    test_session.add_all([template, project])
+    await test_session.commit()
+    await test_session.refresh(template)
+    await test_session.refresh(project)
+
+    response = await auth_client.post(
+        f"/api/v1/workflow-templates/{template.id}/instantiate",
+        json={
+            "workflow_name": "Synthetic Benchmark Workflow",
+            "project_id": project.id,
+            "launch_mode": "example",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    data = response.json()
+    nodes_by_id = {node["node_id"]: node for node in data["nodes"]}
+    assert nodes_by_id["data_1"]["node_type"] == "data.my_dataset"
+    assert nodes_by_id["data_2"]["node_type"] == "data.my_dataset"
+    assert nodes_by_id["data_1"]["parameters"]["dataset_id"] != nodes_by_id["data_2"]["parameters"]["dataset_id"]
+    assert nodes_by_id["compare_1"]["node_type"] == "analysis.compare_library"
+
+    mixture_id = nodes_by_id["data_1"]["parameters"]["dataset_id"]
+    library_id = nodes_by_id["data_2"]["parameters"]["dataset_id"]
+    file_result = await test_session.execute(
+        select(ExperimentFile).where(ExperimentFile.experiment_id.in_([mixture_id, library_id]))
+    )
+    files = list(file_result.scalars().all())
+    assert sorted(file.stage for file in files) == ["synthetic", "synthetic"]
+    assert any(file.file_path.endswith("Synthetic_atmospheric-6.npz") for file in files)
+    assert any(file.file_path.endswith("Library_atmospheric-9.npz") for file in files)
+
+    experiment_result = await test_session.execute(
+        select(Experiment.name).where(Experiment.id.in_([mixture_id, library_id]))
+    )
+    experiment_names = set(experiment_result.scalars().all())
+    assert experiment_names == {
+        "Example - Spectra Scientific Synthetic Benchmark - Synthetic_atmospheric-6",
+        "Example - Spectra Scientific Synthetic Benchmark - Library_atmospheric-9",
+    }
+
+
+def test_compute_dataset_matches_surfaces_feature_tables_for_dual_mode_template() -> None:
+    """Dual-mode templates (PCA, PLS-DA, KNN, …) that accept both X_spectra
+    and X_features must surface feature-table sources like sklearn:wine in
+    the wizard dropdown — even when the template only lists spectroscopy
+    techniques (FTIR/NIR/Raman/…) in `accepted_techniques`.
+
+    Regression for the matching-datasets scoring bug: without a baseline
+    role-match score, sklearn:wine got 0 (technique "ML/Statistics" doesn't
+    match any spectroscopy acronym) and was silently filtered out even
+    though the template accepts X_features.
+    """
+    from spectra_sherpa.app.api.v1.routes.workflow_templates import _compute_dataset_matches
+
+    data_roles = {
+        "data_in": {
+            "role_type": "X_spectra",
+            "accepted_data_roles": ["X_spectra", "X_features"],
+            "accepted_techniques": ["FTIR", "NIR", "Raman"],
+        }
+    }
+    catalog = [
+        {
+            "name": "wine",
+            "source": "sklearn",
+            "label": "Wine — feature table",
+            "technique": "ML/Statistics",
+            "data_role": "X_features",
+            "has_embedded_target": True,
+            "target_type": "categorical",
+        },
+        {
+            "name": "corn_m5",
+            "source": "eigenvector",
+            "label": "Corn M5 NIR",
+            "technique": "NIR",
+            "data_role": "X_spectra",
+            "has_embedded_target": True,
+            "target_type": "continuous",
+        },
+    ]
+
+    matches = _compute_dataset_matches(data_roles, catalog)
+
+    names = [m["name"] for m in matches["data_in"]]
+    assert "wine" in names, f"sklearn:wine missing from feature-table matches: {names}"
+    assert "corn_m5" in names
+    # Spectra match still wins on ranking thanks to the +10 technique bonus.
+    assert matches["data_in"][0]["name"] == "corn_m5"
+
+
+@pytest.mark.parametrize(
+    ("source", "name", "patch_target"),
+    [
+        ("eigenvector", "corn_m5", "spectra_sherpa.app.lib.eigenvector.get_dataset_info"),
+        ("sklearn", "iris", "spectra_sherpa.app.lib.sklearn_info.get_sklearn_dataset_info"),
+        ("oes", "metal_etch_oes", "spectra_sherpa.app.lib.oes_datasets.get_oes_dataset_info"),
+    ],
+)
+def test_reference_dataset_info_missing_bundled_file_returns_404(
+    monkeypatch: pytest.MonkeyPatch,
+    source: str,
+    name: str,
+    patch_target: str,
+) -> None:
+    """Corrupt/partial bundled-data installs should not leak as API 500s."""
+
+    def _missing(_name: str) -> dict[str, Any]:
+        raise FileNotFoundError(_name)
+
+    monkeypatch.setattr(patch_target, _missing)
+
+    with _builder_client() as client:
+        response = client.get(f"/builder/reference-datasets/{source}/{name}")
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == f"Dataset '{name}' not found"

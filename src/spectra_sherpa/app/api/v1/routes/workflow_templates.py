@@ -20,6 +20,7 @@ from spectra_sherpa.app.api.deps import (
     require_experiment,
     require_project,
 )
+from spectra_sherpa.app.lib.data_roles import normalize_modalities
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.user import User
@@ -50,13 +51,23 @@ logger = logging.getLogger(__name__)
 TemplateStatus = Literal["ready", "wip"]
 TargetType = Literal["continuous", "categorical"]
 LaunchMode = Literal["example", "user"]
-ExampleSource = Literal["eigenvector", "sklearn", "spectrochempy", "oes"]
+ExampleSource = Literal["eigenvector", "sklearn", "spectrochempy", "oes", "synthetic"]
+DataModality = Literal["spectra", "features", "hsi"]
 
 
 def _template_status(template: WorkflowTemplate) -> TemplateStatus:
     template_data = template.template_data if isinstance(template.template_data, dict) else {}
     raw_status = template_data.get("status")
     return "wip" if raw_status == "wip" else "ready"
+
+
+def _template_modalities(template: WorkflowTemplate) -> list[DataModality]:
+    template_data = template.template_data if isinstance(template.template_data, dict) else {}
+    try:
+        return normalize_modalities(template_data.get("data_modalities"))  # type: ignore[return-value]
+    except ValueError:
+        logger.warning("Template %s has invalid data_modalities; defaulting to spectra", template.id)
+        return ["spectra"]
 
 
 def _template_to_out(template: WorkflowTemplate) -> "WorkflowTemplateOut":
@@ -67,6 +78,7 @@ def _template_to_out(template: WorkflowTemplate) -> "WorkflowTemplateOut":
         description=template.description,
         category=template.category,
         status=_template_status(template),
+        data_modalities=_template_modalities(template),
         template_data=template.template_data,
         is_active=template.is_active,
         created_at=template.created_at,
@@ -155,6 +167,18 @@ def _binding_to_source_params(binding: "DataBindingSpec") -> dict[str, object]:
     }
 
 
+def _binding_to_my_dataset_params(binding: "DataBindingSpec") -> dict[str, object]:
+    return {"dataset_id": binding.experiment_id}
+
+
+def _apply_binding_to_template_source(node: dict, binding: "DataBindingSpec") -> None:
+    node_type = node.get("node_type")
+    if node_type not in {"data.source", "data.my_dataset"}:
+        raise ValueError(f"Cannot apply dataset binding to node type '{node_type}'")
+    node["node_type"] = "data.my_dataset"
+    node["parameters"] = _binding_to_my_dataset_params(binding)
+
+
 def _extract_example_reference(source_node: dict) -> tuple[str, str] | None:
     parameters = source_node.get("parameters", {}) if isinstance(source_node, dict) else {}
     if not isinstance(parameters, dict):
@@ -171,6 +195,8 @@ def _extract_example_reference(source_node: dict) -> tuple[str, str] | None:
             return ("spectrochempy", dataset_name)
     if source == "oes" and isinstance(parameters.get("oes_dataset"), str):
         return ("oes", parameters["oes_dataset"])
+    if source == "synthetic" and isinstance(parameters.get("synthetic_dataset"), str):
+        return ("synthetic", parameters["synthetic_dataset"])
     return None
 
 
@@ -347,7 +373,7 @@ async def _materialize_example_bindings(
             cached_bindings[example_ref] = DataBindingSpec(
                 source="experiment",
                 experiment_id=experiment.id,
-                stage="raw",
+                stage=files[0].stage,
                 file_id=files[0].id if len(files) == 1 else None,
             )
 
@@ -399,7 +425,7 @@ async def _find_existing_example_binding(
             select(ExperimentFile)
             .where(
                 ExperimentFile.experiment_id == experiment.id,
-                ExperimentFile.stage == "raw",
+                ExperimentFile.stage.in_(("raw", "synthetic")),
             )
             .order_by(ExperimentFile.created_at, ExperimentFile.id)
         )
@@ -411,7 +437,7 @@ async def _find_existing_example_binding(
         return DataBindingSpec(
             source="experiment",
             experiment_id=experiment.id,
-            stage="raw",
+            stage=files[0].stage,
             file_id=files[0].id if len(files) == 1 else None,
         )
 
@@ -528,6 +554,7 @@ class WorkflowTemplateOut(BaseModel):
     description: str
     category: str
     status: TemplateStatus = "ready"
+    data_modalities: list[DataModality] = Field(default_factory=lambda: ["spectra"])
     template_data: dict
     is_active: bool
     created_at: datetime
@@ -632,11 +659,18 @@ async def list_template_categories(
     session: AsyncSession = Depends(get_session),
 ) -> list[str]:
     """Get template categories from the active template set."""
+    from spectra_sherpa.app.core.config import app_config
 
     result = await session.execute(
         select(WorkflowTemplate).where(WorkflowTemplate.is_active.is_(True)).order_by(WorkflowTemplate.category)
     )
     templates = list(result.scalars().all())
+    if app_config.site_profile == "demo":
+        from spectra_sherpa.app.contracts.demo_policy import get_demo_policy
+
+        featured_slugs = set(get_demo_policy().featured_templates)
+        if featured_slugs:
+            templates = [template for template in templates if template.slug in featured_slugs]
     if not include_wip:
         templates = [template for template in templates if _template_status(template) == "ready"]
 
@@ -681,12 +715,23 @@ def _compute_dataset_matches(
 
     for role_key, role in data_roles.items():
         accepted = {t.upper() for t in (role.get("accepted_techniques") or [])}
+        accepted_roles = set(role.get("accepted_data_roles") or [])
         scored: list[dict[str, Any]] = []
 
         for ds in catalog:
-            # Certified datasets always pass the score > 0 gate regardless of
-            # technique match — they have been end-to-end tested for this template.
-            score = 1 if certified_datasets else 0
+            ds_role = ds.get("data_role")
+            if accepted_roles and ds_role not in accepted_roles:
+                continue
+            # Baseline of 1 when the dataset's data_role matches the template's
+            # accepted_data_roles, OR when certified_datasets are in play. The
+            # three-shape role match alone makes a dataset eligible — without
+            # this, feature-table sources (sklearn:wine/iris, technique
+            # "ML/Statistics") get score=0 against spectroscopy templates whose
+            # accepted_techniques only list FTIR/NIR/Raman/etc., and they
+            # silently disappear from the wizard dropdown even though the
+            # template accepts X_features. Technique-match still adds +10 below
+            # so spectra → spectra templates rank ahead of feature-tables.
+            score = 1 if (accepted_roles or certified_datasets) else 0
             tech = (ds.get("technique") or "").upper()
 
             # Technique match (primary signal)
@@ -723,8 +768,25 @@ def _build_flat_catalog() -> list[dict[str, Any]]:
     from spectra_sherpa.app.lib.oes_datasets import OES_CATALOG
     from spectra_sherpa.app.lib.scp_catalog import build_scp_catalog
     from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG
+    from spectra_sherpa.app.lib.synthetic_references import SYNTHETIC_REFERENCE_CATALOG
 
     flat: list[dict[str, Any]] = []
+
+    for k, v in SYNTHETIC_REFERENCE_CATALOG.items():
+        flat.append(
+            {
+                "name": k,
+                "source": "synthetic",
+                "label": v["label"],
+                "technique": v["technique"],
+                "data_role": "X_spectra",
+                "data_modality": "spectra",
+                "description": v["description"],
+                "featured": v.get("featured", False),
+                "has_embedded_target": True,
+                "target_type": v.get("target_type") or "continuous",
+            }
+        )
 
     for k, v in DATASET_CATALOG.items():
         flat.append(
@@ -733,6 +795,8 @@ def _build_flat_catalog() -> list[dict[str, Any]]:
                 "source": "eigenvector",
                 "label": v["label"],
                 "technique": v["technique"],
+                "data_role": "X_spectra",
+                "data_modality": "spectra",
                 "description": v["description"],
                 "featured": v.get("featured", False),
                 "has_embedded_target": bool(v.get("prop_names")),
@@ -747,6 +811,8 @@ def _build_flat_catalog() -> list[dict[str, Any]]:
                 "source": "oes",
                 "label": v["label"],
                 "technique": v["technique"],
+                "data_role": "X_spectra",
+                "data_modality": "spectra",
                 "description": v["description"],
                 "featured": v.get("featured", False),
                 "has_embedded_target": False,
@@ -761,6 +827,8 @@ def _build_flat_catalog() -> list[dict[str, Any]]:
                 "source": "sklearn",
                 "label": v["label"],
                 "technique": "ML/Statistics",
+                "data_role": "X_features",
+                "data_modality": "features",
                 "description": f"Scikit-learn {k} dataset",
                 "has_embedded_target": True,
                 "target_type": ("categorical" if v.get("task_type") == "classification" else "continuous"),
@@ -775,38 +843,13 @@ def _build_flat_catalog() -> list[dict[str, Any]]:
                 "source": "spectrochempy",
                 "label": entry["label"],
                 "technique": entry["technique"],
+                "data_role": "X_spectra",
+                "data_modality": "spectra",
                 "description": entry["description"],
                 "has_embedded_target": False,
                 "target_type": None,
             }
         )
-
-    # Add top-level SCP dataset directory entries (e.g. "irdata", "ramandata").
-    # These are the names used by the data source node's example_dataset parameter
-    # and by certified_datasets in template YAMLs.
-    from spectra_sherpa.app.lib.scp_catalog import _CATEGORY_META
-
-    _SCP_TOP_LEVEL_LABELS = {
-        "irdata": "IR Spectra (irdata)",
-        "ramandata": "Raman Spectra (ramandata)",
-        "nmrdata": "NMR Data (nmrdata)",
-        "agirdata": "Agilent IR (agirdata)",
-    }
-    existing_names = {(e["source"], e["name"]) for e in flat}
-    for ds_name, meta in _CATEGORY_META.items():
-        key = ("spectrochempy", ds_name)
-        if key not in existing_names:
-            flat.append(
-                {
-                    "name": ds_name,
-                    "source": "spectrochempy",
-                    "label": _SCP_TOP_LEVEL_LABELS.get(ds_name, ds_name),
-                    "technique": meta["technique"],
-                    "description": meta["technique_label"],
-                    "has_embedded_target": False,
-                    "target_type": None,
-                }
-            )
 
     return flat
 
@@ -956,10 +999,10 @@ async def instantiate_template(
                     status_code=400,
                     detail=f"Template '{template.name}' has no source node '{node_id}'",
                 )
-            if node.get("node_type") != "data.source":
+            if node.get("node_type") not in {"data.source", "data.my_dataset"}:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Binding '{binding_key}' targets node '{node_id}', which is not a data.source node",
+                    detail=f"Binding '{binding_key}' targets node '{node_id}', which is not a data source node",
                 )
 
             binding_identity = _binding_identity(normalized_binding)
@@ -974,7 +1017,10 @@ async def instantiate_template(
                 )
             applied_bindings[node_id] = binding_identity
 
-            node["parameters"] = _binding_to_source_params(normalized_binding)
+            try:
+                _apply_binding_to_template_source(node, normalized_binding)
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
 
             if normalized_binding.target_binding is not None:
                 if node_id in injected_targets:
@@ -1007,7 +1053,7 @@ async def instantiate_template(
                 ),
             )
 
-        # Propagate is_time_series from template data_roles → data.source node params
+        # Propagate is_time_series from template data_roles to the bound data node.
         for role in data_roles.values():
             if isinstance(role, dict) and role.get("is_time_series"):
                 bound_node_id = str(role.get("node_binding", ""))

@@ -34,7 +34,7 @@ class TestValidateFolderPath:
         """In local mode, any accessible path is allowed."""
         from spectra_sherpa.app.services.batch_predict import validate_folder_path
 
-        with patch("spectra_sherpa.app.core.mode_policy.is_enterprise", return_value=False):
+        with patch("spectra_sherpa.app.core.mode_policy.is_multi_user", return_value=False):
             result = validate_folder_path(str(tmp_path))
             assert result == tmp_path.resolve()
 
@@ -49,7 +49,7 @@ class TestValidateFolderPath:
         data_dir.mkdir()
 
         with (
-            patch("spectra_sherpa.app.core.mode_policy.is_enterprise", return_value=True),
+            patch("spectra_sherpa.app.core.mode_policy.is_multi_user", return_value=True),
             patch("spectra_sherpa.app.core.config.settings") as mock_settings,
         ):
             mock_settings.data_dir = data_dir
@@ -65,7 +65,7 @@ class TestValidateFolderPath:
         sub.mkdir(parents=True)
 
         with (
-            patch("spectra_sherpa.app.core.mode_policy.is_enterprise", return_value=True),
+            patch("spectra_sherpa.app.core.mode_policy.is_multi_user", return_value=True),
             patch("spectra_sherpa.app.core.config.settings") as mock_settings,
         ):
             mock_settings.data_dir = data_dir
@@ -82,7 +82,7 @@ class TestValidateFolderPath:
         traversal_path = str(data_dir / ".." / ".." / "etc")
 
         with (
-            patch("spectra_sherpa.app.core.mode_policy.is_enterprise", return_value=True),
+            patch("spectra_sherpa.app.core.mode_policy.is_multi_user", return_value=True),
             patch("spectra_sherpa.app.core.config.settings") as mock_settings,
         ):
             mock_settings.data_dir = data_dir

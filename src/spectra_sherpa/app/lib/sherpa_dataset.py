@@ -42,6 +42,7 @@ from spectra_sherpa.app.lib.axes import (
     SpectralAxis,
     TimeAxis,
 )
+from spectra_sherpa.app.lib.data_roles import DataRole, data_role_to_modality, normalize_data_role
 from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
 
 # ---------------------------------------------------------------------------
@@ -622,6 +623,7 @@ class SherpaDataset:
         extra: dict[str, Any] | None = None,
         dataset_id: str | None = None,
         is_time_series: bool = False,
+        data_role: DataRole | str | None = None,
     ) -> None:
         # Core data — accept nD arrays (dim 0 = samples, dim -1 = features)
         arr = np.asarray(X, dtype=np.float64)
@@ -735,6 +737,11 @@ class SherpaDataset:
 
         # Extra metadata (namespaced) — deep-copy to isolate from caller
         self._extra: dict[str, Any] = copy.deepcopy(extra) if extra is not None else {}
+        self._data_role: DataRole = normalize_data_role(
+            data_role or self._extra.get("sherpa.data_role") or self._extra.get("scp.sherpa.data_role")
+        )
+        self._extra["sherpa.data_role"] = self._data_role
+        self._extra["sherpa.data_modality"] = data_role_to_modality(self._data_role)
 
         # Branching
         self._branch: BranchInfo | None = None
@@ -1047,6 +1054,20 @@ class SherpaDataset:
         return self._extra
 
     @property
+    def data_role(self) -> DataRole:
+        return self._data_role
+
+    @data_role.setter
+    def data_role(self, value: DataRole | str) -> None:
+        self._data_role = normalize_data_role(value)
+        self._extra["sherpa.data_role"] = self._data_role
+        self._extra["sherpa.data_modality"] = data_role_to_modality(self._data_role)
+
+    @property
+    def data_modality(self) -> str:
+        return data_role_to_modality(self._data_role)
+
+    @property
     def meta(self) -> dict[str, Any]:
         """Dict-style access to extra metadata for internal node use.
 
@@ -1163,6 +1184,7 @@ class SherpaDataset:
             units=self.units,
             extra=copy.deepcopy(self._extra),
             is_time_series=self.is_time_series,
+            data_role=self._data_role,
         )
 
         if dim0_ax is not None and not isinstance(dim0_ax, SampleAxis):
@@ -1218,6 +1240,7 @@ class SherpaDataset:
             units=self.units,
             extra=copy.deepcopy(self._extra),
             is_time_series=self.is_time_series,
+            data_role=self._data_role,
         )
 
         # Preserve non-SampleAxis at dim 0 if applicable
@@ -1381,6 +1404,7 @@ class SherpaDataset:
             title=self.title,
             units=self.units,
             extra=copy.deepcopy(self._extra),
+            data_role=self._data_role,
         )
 
     # ── Branching ──────────────────────────────────────────────────
@@ -1442,6 +1466,8 @@ class SherpaDataset:
             "title": self.title,
             "units": self.units,
             "backend": self.backend,
+            "data_role": self._data_role,
+            "data_modality": self.data_modality,
         }
 
         fa = self.get_feature_axis()
@@ -1488,6 +1514,8 @@ class SherpaDataset:
         result["metadata"] = {
             "processing_history": self._provenance.to_list(),
             "data_type": self._domain.technique or "generic",
+            "data_role": self._data_role,
+            "data_modality": self.data_modality,
             "is_spectra": is_spectra,
             "is_time_series": self.is_time_series,
         }
@@ -1542,6 +1570,7 @@ class SherpaDataset:
             extra=d.get("extra", {}),
             dataset_id=d.get("dataset_id"),
             is_time_series=bool(d.get("is_time_series", False)),
+            data_role=d.get("data_role") or (d.get("metadata") or {}).get("data_role"),
         )
 
         if d.get("branch"):

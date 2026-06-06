@@ -190,6 +190,7 @@ def interpolate_to_grid(
     method: str = "pchip",
     warn_undersampling: bool = True,
     expected_peak_width: float = 1.0,
+    allow_extrapolation: bool = False,
 ) -> "NDDataset":
     """
     Interpolate dataset onto target wavenumber grid.
@@ -206,6 +207,10 @@ def interpolate_to_grid(
         If True, warn when target grid is too coarse for sharp peaks
     expected_peak_width : float
         Expected minimum peak width in cm^-1 (for undersampling warning)
+    allow_extrapolation : bool
+        If False, reject target grids outside the measured axis range. This
+        prevents narrower deployment spectra from receiving fabricated zero
+        absorbance blocks.
 
     Returns
     -------
@@ -263,11 +268,23 @@ def interpolate_to_grid(
 
     n_samples = data.shape[0]
     n_target = len(target_grid)
-    interpolated = np.zeros((n_samples, n_target), dtype=float)
+    interpolated = np.full((n_samples, n_target), np.nan, dtype=float)
 
     # Find points within the native range
     within = (target_grid >= wavenumber.min()) & (target_grid <= wavenumber.max())
-    target_within = target_grid[within]
+    if not bool(np.all(within)) and not allow_extrapolation:
+        source_min = float(wavenumber.min())
+        source_max = float(wavenumber.max())
+        target_min = float(np.nanmin(target_grid))
+        target_max = float(np.nanmax(target_grid))
+        raise ValueError(
+            "Target interpolation grid extends outside the source spectral coverage "
+            f"([{target_min:.6g}, {target_max:.6g}] requested vs "
+            f"[{source_min:.6g}, {source_max:.6g}] available). "
+            "Clip to the shared axis range or enable explicit extrapolation."
+        )
+    target_mask = np.ones_like(within, dtype=bool) if allow_extrapolation else within
+    target_eval = target_grid[target_mask]
 
     for i in range(n_samples):
         spectrum = data[i]
@@ -279,20 +296,27 @@ def interpolate_to_grid(
         unique_wn, unique_idx = np.unique(wn_sorted, return_index=True)
         spec_unique = spec_sorted[unique_idx]
 
-        if target_within.size == 0:
+        if target_eval.size == 0:
             continue
 
         if method == "sinc":
-            interpolated[i, within] = _sinc_interpolate(unique_wn, spec_unique, target_within)
+            if allow_extrapolation:
+                raise ValueError("Sinc interpolation does not support extrapolation")
+            interpolated[i, target_mask] = _sinc_interpolate(unique_wn, spec_unique, target_eval)
         elif method == "pchip":
             if len(unique_wn) < 2:
                 continue
-            interp = PchipInterpolator(unique_wn, spec_unique, extrapolate=False)
-            result = interp(target_within)
-            interpolated[i, within] = np.nan_to_num(result, nan=0.0)
+            interp = PchipInterpolator(unique_wn, spec_unique, extrapolate=allow_extrapolation)
+            interpolated[i, target_mask] = interp(target_eval)
         elif method == "linear":
-            interp = interp1d(unique_wn, spec_unique, kind="linear", bounds_error=False, fill_value=0.0)
-            interpolated[i, within] = interp(target_within)
+            interp = interp1d(
+                unique_wn,
+                spec_unique,
+                kind="linear",
+                bounds_error=not allow_extrapolation,
+                fill_value="extrapolate" if allow_extrapolation else np.nan,
+            )
+            interpolated[i, target_mask] = interp(target_eval)
 
     # Create result dataset
     if was_1d:
@@ -330,6 +354,7 @@ def interpolate_to_grid(
             "n_points": len(target_grid),
             "original_spacing": original_spacing,
             "target_spacing": target_spacing,
+            "allow_extrapolation": allow_extrapolation,
         },
     )
 
@@ -908,6 +933,7 @@ def norris_williams(
     gap: int = 5,
     segment: int = 5,
     deriv: int = 1,
+    delta: float = 1.0,
 ) -> np.ndarray:
     """
     Norris-Williams gap-segment derivative.
@@ -925,6 +951,9 @@ def norris_williams(
         Segment size (number of points to average)
     deriv : int
         Derivative order (1 or 2)
+    delta : float
+        Physical spacing between adjacent feature-axis points. The first
+        derivative is scaled by the distance between the two segment centers.
 
     Returns
     -------
@@ -938,6 +967,9 @@ def norris_williams(
         was_1d = False
 
     n_samples, n_features = data.shape
+    segment_center_spacing = (2 * int(gap) + int(segment) - 1) * float(delta)
+    if abs(segment_center_spacing) <= 1e-12:
+        raise ValueError("Norris-Williams derivative requires a non-zero feature-axis spacing")
 
     def _first_deriv(y):
         result = np.zeros(n_features)
@@ -946,7 +978,7 @@ def norris_williams(
             left_end = i - gap + 1
             right_start = i + gap
             right_end = i + gap + segment
-            result[i] = np.mean(y[right_start:right_end]) - np.mean(y[left_start:left_end])
+            result[i] = (np.mean(y[right_start:right_end]) - np.mean(y[left_start:left_end])) / segment_center_spacing
         return result
 
     def _compute_row(row):

@@ -16,7 +16,7 @@ class DataEgressPermissionBase(BaseModel):
     data_type: str = Field(
         ..., description="Type of data: spectra, models, metadata, workflows, experiments, audit_logs"
     )
-    destination: str = Field(..., description="Destination: spectrasherpa, llm_context, export, nist")
+    destination: str = Field(..., description="Destination: spectrasherpa, llm_context, export, nist, hitran")
     allowed: bool = Field(..., description="Whether this data type can be sent to this destination")
 
 
@@ -51,6 +51,7 @@ class UserEgressDefaultsBase(BaseModel):
     allow_llm_context: bool = Field(default=False, description="Allow sending data as context to LLM providers")
     allow_export: bool = Field(default=False, description="Allow exporting data to files")
     allow_nist_queries: bool = Field(default=False, description="Allow NIST WebBook queries")
+    allow_hitran_queries: bool = Field(default=False, description="Allow HITRAN/HAPI queries")
 
 
 class UserEgressDefaultsCreate(UserEgressDefaultsBase):
@@ -67,6 +68,7 @@ class UserEgressDefaultsUpdate(BaseModel):
     allow_llm_context: Optional[bool] = None
     allow_export: Optional[bool] = None
     allow_nist_queries: Optional[bool] = None
+    allow_hitran_queries: Optional[bool] = None
 
 
 class UserEgressDefaults(UserEgressDefaultsBase):

@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 # Label regex: ##KEY= value (case-insensitive keys)
 _LDR_RE = re.compile(r"^##([^=]+)=\s*(.*)")
+_ADJACENT_NUMBER_RE = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][+-]?\d+)?")
 
 # JCAMP-DX SQZ (squeeze) digit encoding used in (X++(Y..Y)) format.
 # Characters encode sign+digit: @=0, A-I=+1..+9, a-i=-1..-9,
@@ -41,22 +42,40 @@ for _i, _c in enumerate("@ABCDEFGHI"):
 for _i, _c in enumerate("@abcdefghi"):
     _SQZ_MAP[_c] = f"-{_i}"
 
+_DIF_MAP: dict[str, str] = {"%": "+0"}
+for _i, _c in enumerate("JKLMNOPQR"):
+    _DIF_MAP[_c] = f"+{_i}"
+for _i, _c in enumerate("jklmnopqr"):
+    _DIF_MAP[_c] = f"-{_i}"
+
+_DUP_MAP: dict[str, int] = {}
+for _i, _c in enumerate("STUVWXYZ", start=1):
+    _DUP_MAP[_c] = _i
+for _i, _c in enumerate("stuvwxyz", start=1):
+    _DUP_MAP[_c] = _i
+
+_PACKED_PREFIXES = set(_SQZ_MAP) | set(_DIF_MAP) | set(_DUP_MAP)
+
 
 def _tokenize_data_line(line: str) -> list[float]:
     """Parse a data line that may contain SQZ-encoded or plain numeric values."""
     # Fast path: most NIST data is plain space/comma-separated numbers
     parts = line.replace(",", " ").split()
     values: list[float] = []
-    for part in parts:
+    for part in _expand_packed_parts(parts):
         try:
             values.append(float(part))
         except ValueError:
-            # Attempt SQZ decode for packed formats
-            decoded = _decode_sqz_token(part)
-            if decoded is not None:
+            kind, decoded = _decode_packed_token(part)
+            if kind == "absolute":
                 values.append(decoded)
+            elif kind in {"diff", "dup"}:
+                raise ValueError(
+                    "DIF/DUP JCAMP tokens require stateful XYDATA decoding; "
+                    f"token {part!r} cannot be parsed as an independent value"
+                )
             else:
-                logger.debug("Skipping unparseable JCAMP token: %s", part)
+                raise ValueError(f"Unparseable JCAMP token: {part!r}")
     return values
 
 
@@ -73,6 +92,67 @@ def _decode_sqz_token(token: str) -> float | None:
         except ValueError:
             return None
     return None
+
+
+def _expand_packed_parts(parts: list[str]) -> list[str]:
+    """Split adjacent packed JCAMP tokens while leaving plain numbers intact."""
+    expanded: list[str] = []
+    for part in parts:
+        try:
+            float(part)
+            expanded.append(part)
+            continue
+        except ValueError:
+            pass
+        adjacent_numbers = _split_adjacent_numeric_tokens(part)
+        if adjacent_numbers is not None:
+            expanded.extend(adjacent_numbers)
+            continue
+        starts = [i for i, char in enumerate(part) if char in _PACKED_PREFIXES]
+        if not starts or starts[0] != 0:
+            expanded.append(part)
+            continue
+        starts.append(len(part))
+        expanded.extend(part[starts[i] : starts[i + 1]] for i in range(len(starts) - 1))
+    return expanded
+
+
+def _split_adjacent_numeric_tokens(part: str) -> list[str] | None:
+    """Split compact signed numeric runs such as ``6556-17677-43270``."""
+    matches = list(_ADJACENT_NUMBER_RE.finditer(part))
+    if len(matches) < 2:
+        return None
+    tokens: list[str] = []
+    pos = 0
+    for match in matches:
+        if match.start() != pos:
+            return None
+        tokens.append(match.group())
+        pos = match.end()
+    if pos != len(part):
+        return None
+    return tokens
+
+
+def _decode_packed_token(token: str) -> tuple[str, float]:
+    """Decode one JCAMP packed token into (absolute|diff|dup, value)."""
+    if not token:
+        raise ValueError("Empty JCAMP token")
+    try:
+        return "absolute", float(token)
+    except ValueError:
+        pass
+    first = token[0]
+    rest = token[1:]
+    if first in _SQZ_MAP:
+        return "absolute", float(_SQZ_MAP[first] + rest)
+    if first in _DIF_MAP:
+        return "diff", float(_DIF_MAP[first] + rest)
+    if first in _DUP_MAP:
+        if rest:
+            raise ValueError(f"Malformed JCAMP DUP token: {token!r}")
+        return "dup", float(_DUP_MAP[first])
+    raise ValueError(f"Unparseable JCAMP token: {token!r}")
 
 
 class JCAMPData:
@@ -220,28 +300,82 @@ def _parse_xydata(
     npoints = _safe_int(headers.get("NPOINTS"), None)
     deltax = _safe_float(headers.get("DELTAX"), None)
 
-    # Collect all Y values; rebuild X from FIRSTX/DELTAX
+    # Collect all Y values. DIF tokens encode deltas from the previous Y value
+    # and DUP tokens repeat the last delta, so decoding must carry state across
+    # the whole XYDATA block. X values are derived from each line checkpoint
+    # rather than only FIRSTX/DELTAX; NIST WebBook JCAMP files occasionally
+    # include checkpoint spacing/rounding that does not agree exactly with a
+    # single global FIRSTX + n*DELTAX sequence.
+    all_x: list[float] = []
     all_y: list[float] = []
+    previous_y: float | None = None
+    last_diff: float | None = None
+    checkpoint_mismatch_count = 0
 
     for line in lines:
-        values = _tokenize_data_line(line)
-        if len(values) < 2:
+        parts = _expand_packed_parts(line.replace(",", " ").split())
+        if len(parts) < 2:
             continue
-        # First value is X checkpoint (for verification), rest are Y values
-        y_vals = values[1:]
-        for yv in y_vals:
-            all_y.append(yv * yfactor)
+        kind, line_x = _decode_packed_token(parts[0])
+        if kind != "absolute":
+            raise ValueError(f"JCAMP XYDATA line checkpoint must be absolute, got {parts[0]!r}")
+        expected_x = firstx + len(all_y) * deltax if firstx is not None and deltax is not None else None
+        if expected_x is not None and not np.isclose(line_x, expected_x, rtol=1e-5, atol=1e-8):
+            checkpoint_mismatch_count += 1
+            logger.debug(
+                "JCAMP XYDATA checkpoint mismatch: expected %g, got %g; using explicit line checkpoint",
+                expected_x,
+                line_x,
+            )
 
-    # Trim to NPOINTS if specified
-    if npoints is not None and len(all_y) > npoints:
-        all_y = all_y[:npoints]
+        line_y: list[float] = []
+        for part in parts[1:]:
+            token_kind, token_value = _decode_packed_token(part)
+            if token_kind == "absolute":
+                current_y = token_value
+                if previous_y is not None:
+                    last_diff = current_y - previous_y
+                previous_y = current_y
+                line_y.append(current_y * yfactor)
+            elif token_kind == "diff":
+                if previous_y is None:
+                    raise ValueError("JCAMP DIF token encountered before any absolute Y value")
+                current_y = previous_y + token_value
+                last_diff = token_value
+                previous_y = current_y
+                line_y.append(current_y * yfactor)
+            elif token_kind == "dup":
+                if previous_y is None or last_diff is None:
+                    raise ValueError("JCAMP DUP token encountered before a repeatable Y increment")
+                for _ in range(int(token_value)):
+                    current_y = previous_y + last_diff
+                    previous_y = current_y
+                    line_y.append(current_y * yfactor)
+        all_y.extend(line_y)
+        if deltax is not None:
+            all_x.extend((line_x + i * deltax) * xfactor for i in range(len(line_y)))
+
+    if checkpoint_mismatch_count:
+        logger.info(
+            "JCAMP XYDATA used explicit line checkpoints for %d line(s) because header FIRSTX/DELTAX "
+            "does not match the data line checkpoints.",
+            checkpoint_mismatch_count,
+        )
+
+    if npoints is not None and len(all_y) != npoints:
+        raise ValueError(
+            f"JCAMP XYDATA point-count mismatch: header NPOINTS={npoints}, decoded {len(all_y)}. "
+            "Refusing to return a truncated or shifted spectrum."
+        )
 
     n = len(all_y)
     if n == 0:
         raise ValueError("No data points parsed from XYDATA block")
 
     # Build X axis
-    if firstx is not None and deltax is not None:
+    if len(all_x) == n:
+        x = np.array(all_x, dtype=np.float64)
+    elif firstx is not None and deltax is not None:
         x = np.array([firstx * xfactor + i * deltax * xfactor for i in range(n)])
     elif firstx is not None and lastx is not None and n > 1:
         x = np.linspace(firstx * xfactor, lastx * xfactor, n)

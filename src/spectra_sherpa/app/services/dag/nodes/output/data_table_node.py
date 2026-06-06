@@ -15,6 +15,28 @@ from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
 from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
 
 
+def _is_numeric_array(arr: np.ndarray) -> bool:
+    """Return True when an array can be safely emitted as numeric rows."""
+    return np.issubdtype(arr.dtype, np.number) or np.issubdtype(arr.dtype, np.bool_)
+
+
+def _copy_scientific_metadata(meta: Dict[str, Any], source: Dict[str, Any]) -> None:
+    """Preserve high-value provenance fields when converting data to a table."""
+    for key in (
+        "data_role",
+        "sherpa.data_role",
+        "data_modality",
+        "sherpa.data_modality",
+        "processing_history",
+        "provenance",
+        "quality_summary",
+        "target_context",
+        "selection_provenance",
+    ):
+        if key in source:
+            meta[key] = source[key]
+
+
 @register_node
 class DataTableNode(Node):
     """
@@ -35,11 +57,10 @@ class DataTableNode(Node):
                 name="max_rows",
                 label="Max Rows",
                 param_type="number",
-                default=100,
+                default=100000,
                 min_value=10,
-                max_value=1000,
                 step=10,
-                description="Maximum number of rows to display",
+                description="Maximum number of rows to display before truncating the table preview",
                 required=False,
             ),
             NodeParameter(
@@ -100,7 +121,7 @@ class DataTableNode(Node):
         which was why the Metrics Table panel looked empty even when the
         backend produced valid metrics.
         """
-        max_rows = self.parameters.get("max_rows", 100)
+        max_rows = self.parameters.get("max_rows", 100000)
         transpose = self.parameters.get("transpose", False)
         show_index = self.parameters.get("show_index", True)
 
@@ -113,6 +134,26 @@ class DataTableNode(Node):
             table_data = self._table_from_dataset(input_data, max_rows, transpose, show_index)
         elif isinstance(input_data, dict):
             table_data = self._table_from_dict(input_data, max_rows, transpose, show_index)
+        elif isinstance(input_data, list) and input_data and isinstance(input_data[0], dict):
+            rows = input_data[:max_rows]
+            columns: list[str] = []
+            seen: set[str] = set()
+            for row in rows:
+                for key in row.keys():
+                    if key not in seen:
+                        seen.add(key)
+                        columns.append(str(key))
+            table_data = {
+                "data": rows,
+                "metadata": {
+                    "type": "records",
+                    "n_rows": len(rows),
+                    "n_cols": len(columns),
+                    "truncated": len(input_data) > max_rows,
+                    "show_index": show_index,
+                    "column_names": columns,
+                },
+            }
         elif isinstance(input_data, (list, np.ndarray)):
             table_data = self._table_from_array(input_data, max_rows, transpose, show_index)
         else:
@@ -144,13 +185,14 @@ class DataTableNode(Node):
         if n_rows > max_rows:
             data = data[:max_rows]
             truncated = True
+            n_rows = data.shape[0]
         else:
             truncated = False
 
         # Transpose if requested
         if transpose:
             data = data.T
-            n_rows, n_cols = n_cols, n_rows
+            n_rows, n_cols = data.shape
 
         # Build column headers.  Prefer the feature axis' categorical
         # ``labels`` when present (e.g. PLS "LV1", "LV2" …) — otherwise
@@ -203,6 +245,9 @@ class DataTableNode(Node):
             "show_index": show_index,
             "column_names": columns,
         }
+        _copy_scientific_metadata(meta, getattr(dataset, "meta", {}) or {})
+        if getattr(dataset, "data_role", None):
+            meta["data_role"] = dataset.data_role
         if sample_labels:
             meta["sample_labels"] = sample_labels
 
@@ -230,6 +275,9 @@ class DataTableNode(Node):
         # Metrics payloads: list of row dicts from HoldoutEvaluation /
         # classification reports.  Forward straight through so the frontend
         # preview machinery can use the dict keys as column headers.
+        if isinstance(data.get("default"), SherpaDataset):
+            return self._table_from_dataset(data["default"], max_rows, transpose, show_index)
+
         if "data" in data and isinstance(data["data"], list) and data["data"] and isinstance(data["data"][0], dict):
             rows_in = data["data"][:max_rows]
             # Column order: union of keys seen across rows, first-seen wins.
@@ -257,10 +305,18 @@ class DataTableNode(Node):
 
         # Numeric payloads from PCA/MCR: forward the array to the numeric path.
         if "data" in data and isinstance(data["data"], (list, np.ndarray)):
-            return self._table_from_array(data["data"], max_rows, transpose, show_index)
+            table = self._table_from_array(data["data"], max_rows, transpose, show_index)
+            source_metadata = data.get("metadata")
+            if isinstance(source_metadata, dict):
+                table["metadata"]["source_metadata"] = source_metadata
+                _copy_scientific_metadata(table["metadata"], source_metadata)
+            return table
 
-        if "scores" in data:
-            scores = np.array(data["scores"])
+        if "scores" in data or "X_scores" in data:
+            score_payload = data["scores"] if data.get("scores") is not None else data.get("X_scores")
+            if isinstance(score_payload, SherpaDataset):
+                return self._table_from_dataset(score_payload, max_rows, transpose, show_index)
+            scores = np.array(score_payload)
             if scores.ndim == 1:
                 scores = scores.reshape(-1, 1)
             n_rows = min(scores.shape[0], max_rows)
@@ -277,6 +333,51 @@ class DataTableNode(Node):
                     "column_names": columns,
                 },
             }
+
+        if isinstance(data.get("cluster_summary"), list) and data["cluster_summary"]:
+            rows_in = data["cluster_summary"][:max_rows]
+            if isinstance(rows_in[0], dict):
+                columns: list[str] = []
+                seen: set[str] = set()
+                for row in rows_in:
+                    for key in row.keys():
+                        if key not in seen:
+                            seen.add(key)
+                            columns.append(str(key))
+                return {
+                    "data": rows_in,
+                    "metadata": {
+                        "type": "cluster_summary",
+                        "n_rows": len(rows_in),
+                        "n_cols": len(columns),
+                        "truncated": len(data["cluster_summary"]) > max_rows,
+                        "show_index": show_index,
+                        "column_names": columns,
+                        "source_metadata": data.get("metadata"),
+                    },
+                }
+
+        for key in (
+            "transformed",
+            "result",
+            "predictions",
+            "labels",
+            "cluster_assignment",
+            "y_pred",
+            "probabilities",
+            "class_probabilities",
+            "distances",
+            "neighbor_indices",
+            "class_distance_matrix",
+        ):
+            if key in data and data[key] is not None:
+                table = self._table_from_array(data[key], max_rows, transpose, show_index)
+                table["metadata"]["source_key"] = key
+                source_metadata = data.get("metadata")
+                if isinstance(source_metadata, dict):
+                    table["metadata"]["source_metadata"] = source_metadata
+                    _copy_scientific_metadata(table["metadata"], source_metadata)
+                return table
 
         # Fallback: flatten a scalar dict into a two-column key/value table.
         # Use a distinct variable name from the numeric-rows branch above so
@@ -303,7 +404,7 @@ class DataTableNode(Node):
         in ``metadata.column_names`` so a caller can override them via a
         higher-level wrapper if needed.
         """
-        arr = np.asarray(data, dtype=np.float64)
+        arr = np.asarray(data)
 
         if arr.ndim == 1:
             arr = arr.reshape(-1, 1)
@@ -313,20 +414,31 @@ class DataTableNode(Node):
         if n_rows > max_rows:
             arr = arr[:max_rows]
             truncated = True
+            n_rows = arr.shape[0]
         else:
             truncated = False
 
         if transpose:
             arr = arr.T
-            n_rows, n_cols = n_cols, n_rows
+            n_rows, n_cols = arr.shape
 
-        columns = [f"Col_{i+1}" for i in range(n_cols)]
-        rows = [list(map(float, arr[i].tolist())) for i in range(n_rows)]
+        if n_cols == 1:
+            columns = ["Value"]
+        else:
+            columns = [f"Col_{i+1}" for i in range(n_cols)]
+
+        if _is_numeric_array(arr):
+            rows: list[list[Any]] = [list(map(float, arr[i].tolist())) for i in range(n_rows)]
+            value_type = "numeric"
+        else:
+            rows = [[str(v) for v in np.asarray(arr[i], dtype=object).tolist()] for i in range(n_rows)]
+            value_type = "categorical"
 
         return {
             "data": rows,
             "metadata": {
                 "type": "array",
+                "value_type": value_type,
                 "shape": list(arr.shape),
                 "n_rows": n_rows,
                 "n_cols": n_cols,

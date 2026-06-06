@@ -73,7 +73,6 @@ template_data:
       - NIR
       - Raman
       - UV-Vis
-      - NMR
       - OES
   certified_datasets:
   - source: spectrochempy

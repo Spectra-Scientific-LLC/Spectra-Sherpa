@@ -52,6 +52,7 @@ class ExperimentBrief(BaseModel):
     name: str
     description: str | None = None
     file_count: int = 0
+    facts: list[str] = Field(default_factory=list)
 
 
 class WorkflowBrief(BaseModel):
@@ -146,10 +147,15 @@ class ModelBrief(BaseModel):
 
     artifact_uid: str
     name: str
+    display_name: str | None = None
     model_type: str
     n_features: int
     n_components: int | None = None
     metrics: dict[str, Any] | None = None
+    source_run_id: int | None = None
+    training_dataset_id: int | None = None
+    is_deploy_ready: bool = False
+    tags: list[str] = Field(default_factory=list)
     created_at: datetime
 
 

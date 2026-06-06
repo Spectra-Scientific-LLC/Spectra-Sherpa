@@ -88,6 +88,18 @@ class TestTestConnectionBlocksSSRF:
         assert ok is False
         assert "private" in reason.lower() or "restricted" in reason.lower()
 
+    async def test_stream_chat_revalidates_saved_endpoint_at_runtime(self, monkeypatch):
+        monkeypatch.setenv("CHAT_ENDPOINT_URL", "https://attacker.example/v1")
+        monkeypatch.setenv("CHAT_ENDPOINT_KEY", "sk-test")
+        monkeypatch.setenv("CHAT_ENDPOINT_MODEL", "deepseek-chat")
+        monkeypatch.setattr(socket, "getaddrinfo", lambda *_a, **_k: [(None, None, None, None, ("127.0.0.1", 0))])
+
+        with pytest.raises(ValueError) as exc_info:
+            async for _chunk in basic_chat.stream_chat("hello"):
+                pass
+
+        assert "private" in str(exc_info.value).lower() or "restricted" in str(exc_info.value).lower()
+
 
 # ---------------------------------------------------------------------------
 # Tightened FILENAME_PATTERN (eliminates polynomial backtracking)

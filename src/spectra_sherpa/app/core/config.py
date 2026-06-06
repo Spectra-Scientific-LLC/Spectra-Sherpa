@@ -47,7 +47,7 @@ DATA_DIR = get_default_data_dir()
 APP_DATA_PATHS = get_app_data_paths(DATA_DIR)
 
 DATABASE_URL = os.getenv("DATABASE_URL") or f"sqlite+aiosqlite:///{APP_DATA_PATHS.database}"
-APP_API_KEY = os.getenv("APP_API_KEY", "default-local-key")
+APP_API_KEY = os.getenv("APP_API_KEY", "local-key")
 
 _PREVIOUS_SETTINGS: Settings | None = globals().get("settings")
 _PREVIOUS_APP_CONFIG: AppConfig | None = globals().get("app_config")
@@ -65,7 +65,7 @@ class Settings:
     api_key: str = APP_API_KEY
 
     # JWT Authentication
-    secret_key: str = os.getenv("SECRET_KEY", "your-super-secret-key-change-in-production")
+    secret_key: str = os.getenv("SECRET_KEY", "local-dev-key")
     algorithm: str = "HS256"
     # Token lifetime: 60 min default for all modes.  Local mode bypasses JWT
     # entirely (implicit user identity), so this only matters for hybrid/enterprise.
@@ -105,6 +105,8 @@ class Settings:
         ".dat",  # Kept for backward compatibility (will warn if no explicit reader)
         ".opus",
         ".mat",
+        ".npy",
+        ".npz",
     )
 
 
@@ -165,11 +167,14 @@ def get_reader_for_extension(ext: str) -> str:
             ".spc",
             ".spa",
             ".spg",
+            ".srs",
             ".txt",
             ".wdf",
             ".dat",
             ".opus",
             ".mat",
+            ".npy",
+            ".npz",
         )
 
         if ext_lower in allowed_extensions_tuple:
@@ -276,7 +281,8 @@ class AppConfig(BaseModel):
     # Integration fields for commercial server extensions (enterprise/hybrid/demo).
     # These are None in OSS mode but can be injected by an extension package.
     site_profile: Optional[str] = Field(
-        default=None, description="Site profile (e.g., 'demo', 'internal') - used by server extensions"
+        default=None,
+        description="Product profile (demo, pro, hybrid_server, org) used by server extensions",
     )
     rate_limit_executions: Optional[int] = Field(
         default=None,
@@ -301,15 +307,11 @@ class AppConfig(BaseModel):
 
         Reads APP_MODE to determine operational mode (local, hybrid, enterprise).
         """
-        import logging
-
-        logger = logging.getLogger(__name__)
-
         # Determine app mode from environment
         raw_mode = os.getenv("APP_MODE", "local").strip().lower()
         if raw_mode not in AppMode.values():
-            logger.warning("Unknown APP_MODE=%r — falling back to 'local'", raw_mode)
-            raw_mode = AppMode.LOCAL.value
+            allowed = ", ".join(AppMode.values())
+            raise ValueError(f"Unsupported APP_MODE={raw_mode!r}. Expected one of: {allowed}.")
 
         mode = raw_mode
 
@@ -418,6 +420,7 @@ class AppConfig(BaseModel):
             registration_requires_code as _registration_requires_code_flag,
         )
         from spectra_sherpa.app.core.mode_policy import allows_registration
+        from spectra_sherpa.app.lib.data_formats import client_data_formats
 
         # ``allows_registration()`` layers the multi-user mode check on
         # top of the server-registered flag.
@@ -493,6 +496,7 @@ class AppConfig(BaseModel):
                 for name, llm in live_llms.items()
             },
             "limits": limits,
+            "dataFormats": client_data_formats(),
         }
 
         # Demo metadata is injected by server overlay, not OSS.

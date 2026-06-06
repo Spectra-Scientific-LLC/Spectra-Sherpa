@@ -164,10 +164,24 @@ def _msc_export(params, inp, node_id, indent, use_scp):
     return lines
 
 
-def _savgol_deriv(data: np.ndarray, size: int = 11, order: int = 2, deriv: int = 1) -> np.ndarray:
+def _savgol_deriv(
+    data: np.ndarray,
+    size: int = 11,
+    order: int = 2,
+    deriv: int = 1,
+    delta: float = 1.0,
+) -> np.ndarray:
     from scipy.signal import savgol_filter
 
-    return np.apply_along_axis(savgol_filter, -1, data, window_length=int(size), polyorder=int(order), deriv=int(deriv))
+    return np.apply_along_axis(
+        savgol_filter,
+        -1,
+        data,
+        window_length=int(size),
+        polyorder=int(order),
+        deriv=int(deriv),
+        delta=float(delta),
+    )
 
 
 def _deriv_export(label, deriv_order, params, inp, node_id, indent, use_scp):
@@ -183,11 +197,25 @@ def _deriv_export(label, deriv_order, params, inp, node_id, indent, use_scp):
     lines = [header_line(label, node_id, indent)]
     lines += extract_data_lines(inp, indent)
     lines += [
+        f"{indent}_delta = 1.0",
+        f"{indent}_axis = getattr({inp}, 'feature_axis', None)",
+        f"{indent}if _axis is not None and getattr(_axis, 'values', None) is not None:",
+        f"{indent}    _x = np.asarray(_axis.values, dtype=np.float64).reshape(-1)",
+        f"{indent}    if _x.size >= 2:",
+        f"{indent}        _diffs = np.diff(_x)",
+        f"{indent}        _finite = _diffs[np.isfinite(_diffs)]",
+        f"{indent}        if _finite.size:",
+        f"{indent}            _delta = float(np.median(_finite))",
+        f"{indent}            if abs(_delta) <= 1e-12:",
+        f"{indent}                raise ValueError('Derivative requires a non-zero feature-axis spacing')",
+        f"{indent}            if not np.allclose(_finite, _delta, rtol=1e-4, atol=max(abs(_delta) * 1e-6, 1e-12)):",
+        f"{indent}                raise ValueError('Derivative requires an evenly spaced feature axis')",
         f"{indent}if _data.ndim >= 2:",
         f"{indent}    _data = np.apply_along_axis("
-        f"savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv={deriv_order})",
+        f"savgol_filter, -1, _data, window_length={size}, polyorder={order}, deriv={deriv_order}, delta=_delta)",
         f"{indent}else:",
-        f"{indent}    _data = savgol_filter(" f"_data, window_length={size}, polyorder={order}, deriv={deriv_order})",
+        f"{indent}    _data = savgol_filter("
+        f"_data, window_length={size}, polyorder={order}, deriv={deriv_order}, delta=_delta)",
     ]
     lines += _wrap_result_lines(node_id, "_data", inp, indent, use_scp)
     return lines
@@ -241,16 +269,25 @@ def _cosmic_ray_export(params, inp, node_id, indent, use_scp):
     zscore = params.get("zscore", 3.0)
     return [
         f"{indent}# --- Cosmic Ray Removal ({node_id}) ---",
-        f"{indent}from scipy.ndimage import median_filter",
         f"{indent}def _remove_cosmic_rays(spectrum, window={window}, zscore={zscore}):",
-        f"{indent}    med = median_filter(spectrum, size=window)",
-        f"{indent}    diff = np.abs(spectrum - med)",
-        f"{indent}    mad = np.median(diff)",
-        f"{indent}    threshold = zscore * mad / 0.6745 if mad > 0 else np.inf",
         f"{indent}    cleaned = spectrum.copy()",
-        f"{indent}    cleaned[diff > threshold] = med[diff > threshold]",
+        f"{indent}    window = int(window)",
+        f"{indent}    if window % 2 == 0:",
+        f"{indent}        window += 1",
+        f"{indent}    half_window = window // 2",
+        f"{indent}    for _j in range(cleaned.shape[0]):",
+        f"{indent}        _start = max(0, _j - half_window)",
+        f"{indent}        _end = min(cleaned.shape[0], _j + half_window + 1)",
+        f"{indent}        _win = cleaned[_start:_end]",
+        f"{indent}        _median = float(np.median(_win))",
+        f"{indent}        _mad = float(np.median(np.abs(_win - _median)))",
+        f"{indent}        if _mad < 1e-10:",
+        f"{indent}            continue",
+        f"{indent}        _z = (cleaned[_j] - _median) / (_mad * 1.4826)",
+        f"{indent}        if abs(_z) > zscore:",
+        f"{indent}            cleaned[_j] = _median",
         f"{indent}    return cleaned",
-        f"{indent}_data = np.array({inp}.data)",
+        f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
         f"{indent}if _data.ndim == 1:",
         f"{indent}    _data = _remove_cosmic_rays(_data)",
         f"{indent}else:",
@@ -365,11 +402,17 @@ def _autoscale_export(params, inp, node_id, indent, use_scp, reference_expr=None
     return lines
 
 
-def _sg_deriv_transform(data: np.ndarray, size: int = 11, order: int = 2, deriv: str = "1") -> np.ndarray:
+def _sg_deriv_transform(
+    data: np.ndarray,
+    size: int = 11,
+    order: int = 2,
+    deriv: str = "1",
+    delta: float = 1.0,
+) -> np.ndarray:
     size = int(size)
     if size % 2 == 0:
         size += 1
-    return _savgol_deriv(data, size=size, order=int(order), deriv=int(deriv))
+    return _savgol_deriv(data, size=size, order=int(order), deriv=int(deriv), delta=float(delta))
 
 
 def _sg_deriv_export(params, inp, node_id, indent, use_scp):

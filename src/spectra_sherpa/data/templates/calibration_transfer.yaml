@@ -1,11 +1,8 @@
 schema_version: 1
 name: Calibration Transfer (PDS)
 slug: calibration_transfer
-description: Transfer a calibration model between instruments using Piecewise Direct
-  Standardization (PDS). Connect paired transfer samples measured on both instruments
-  to fit the transfer function, then apply it to standardize new secondary spectra.
-  Includes transfer quality diagnostics (RMSE, per-feature error) without implying
-  a supervised calibration target that the workflow does not actually define.
+description: Piecewise Direct Standardization (PDS) to transfer a calibration between
+  instruments, with per-feature RMSE diagnostics.
 category: preprocessing
 is_active: true
 template_data:
@@ -13,19 +10,25 @@ template_data:
   - node_id: primary_1
     node_type: data.source
     label: Primary Transfer Samples
-    parameters: {}
+    parameters:
+      source: eigenvector
+      eigenvector_dataset: corn_m5
     position_x: 100
     position_y: 50
   - node_id: secondary_1
     node_type: data.source
     label: Secondary Transfer Samples
-    parameters: {}
+    parameters:
+      source: eigenvector
+      eigenvector_dataset: corn_mp5
     position_x: 400
     position_y: 50
   - node_id: new_data_1
     node_type: data.source
     label: New Secondary Spectra
-    parameters: {}
+    parameters:
+      source: eigenvector
+      eigenvector_dataset: corn_mp6
     position_x: 700
     position_y: 50
   - node_id: transfer_1
@@ -40,7 +43,7 @@ template_data:
     node_type: output.plot
     label: Transfer Diagnostics
     parameters:
-      plot_type: spectra
+      plot_type: scatter
     position_x: 700
     position_y: 350
   edges:

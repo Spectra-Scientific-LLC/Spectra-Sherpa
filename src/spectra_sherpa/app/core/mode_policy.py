@@ -27,6 +27,8 @@ Mode summary for developers:
 
 from __future__ import annotations
 
+import os
+
 from spectra_sherpa.app.core.config import app_config
 
 
@@ -39,6 +41,32 @@ def is_loopback(host: str | None) -> bool:
     if not host:
         return False
     return host in ("127.0.0.1", "::1") or host.startswith("::ffff:127.")
+
+
+def _env_truthy(*names: str) -> bool:
+    for name in names:
+        value = os.getenv(name, "").strip().lower()
+        if value in {"1", "true", "yes", "on"}:
+            return True
+    return False
+
+
+def local_network_access_allowed() -> bool:
+    """Whether local mode may accept non-loopback clients.
+
+    Local mode intentionally has no login barrier and grants the implicit
+    desktop user to callers. That is safe only for loopback access. Operators
+    who deliberately run local mode behind another trusted access-control layer
+    can opt in explicitly with either env spelling.
+    """
+
+    return _env_truthy("SPECTRA_SHERPA_ALLOW_LOCAL_NETWORK", "SPECTRASHERPA_ALLOW_LOCAL_NETWORK")
+
+
+def blocks_local_network_client(client_host: str | None) -> bool:
+    """Return True when a local-mode request must be rejected at the edge."""
+
+    return app_config.mode == "local" and not is_loopback(client_host) and not local_network_access_allowed()
 
 
 # ── Identity shortcuts ───────────────────────────────────────────

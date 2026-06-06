@@ -29,6 +29,8 @@ async def init_db() -> None:
     """
     from sqlalchemy import inspect as sa_inspect
 
+    await _ensure_postgres_database_exists()
+
     async with engine.connect() as conn:
         table_names = await conn.run_sync(lambda sync_conn: sa_inspect(sync_conn).get_table_names())
 
@@ -56,6 +58,55 @@ async def init_db() -> None:
             exc_info=True,
         )
         raise RuntimeError("Database migration failed; startup aborted.") from exc
+
+
+async def _ensure_postgres_database_exists() -> None:
+    """Create the target Postgres database if it doesn't exist yet.
+
+    Postgres only honours ``POSTGRES_DB`` when initialising a fresh data dir;
+    renaming the target DB on an existing volume otherwise hard-fails with
+    ``InvalidCatalogNameError`` at first connect. We defensively connect to
+    the ``postgres`` admin DB and issue ``CREATE DATABASE`` when the target
+    is missing. Idempotent and a no-op for SQLite.
+    """
+    url = engine.url
+    backend_name = url.get_backend_name()
+    if backend_name != "postgresql":
+        return
+    target_db = url.database
+    if not target_db or target_db == "postgres":
+        return
+
+    try:
+        import asyncpg  # type: ignore[import-not-found]
+    except ImportError:
+        logger.warning("asyncpg not installed; cannot pre-create Postgres database %r", target_db)
+        return
+
+    try:
+        admin_conn = await asyncpg.connect(
+            host=url.host,
+            port=url.port or 5432,
+            user=url.username,
+            password=url.password,
+            database="postgres",
+        )
+    except Exception as exc:
+        logger.warning("Could not connect to Postgres admin DB to verify %r exists: %s", target_db, exc)
+        return
+
+    try:
+        exists = await admin_conn.fetchval("SELECT 1 FROM pg_database WHERE datname = $1", target_db)
+        if exists:
+            return
+        logger.warning("Target Postgres database %r does not exist; creating now.", target_db)
+        # asyncpg disallows parameterised CREATE DATABASE; quote the identifier to
+        # block injection on a name we sourced ourselves from the configured URL.
+        quoted = '"' + target_db.replace('"', '""') + '"'
+        await admin_conn.execute(f"CREATE DATABASE {quoted}")
+        logger.info("Created Postgres database %r.", target_db)
+    finally:
+        await admin_conn.close()
 
 
 async def _run_alembic(cmd: str, revision: str) -> None:

@@ -39,6 +39,14 @@ def callback():
     return AsyncMock()
 
 
+def _spectral_source_node() -> WorkflowNode:
+    return WorkflowNode(
+        node_id="src1",
+        node_type="data.source",
+        parameters={"source": "eigenvector", "eigenvector_dataset": "diesel_nir"},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -49,13 +57,7 @@ class TestStatusCallback:
     async def test_callback_receives_queued_running_completed(self, callback):
         """Basic pipeline: data.source → snv. Callback gets full lifecycle."""
         executor = DAGExecutor(process_pool=None)
-        executor.add_node(
-            WorkflowNode(
-                node_id="src1",
-                node_type="data.source",
-                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
-            )
-        )
+        executor.add_node(_spectral_source_node())
         executor.add_node(WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}))
         executor.add_edge(WorkflowEdge(from_node="src1", to_node="snv1"))
 
@@ -137,13 +139,7 @@ class TestStatusCallback:
     async def test_callback_order_queued_before_running(self, callback):
         """All queued events should come before any running events."""
         executor = DAGExecutor(process_pool=None)
-        executor.add_node(
-            WorkflowNode(
-                node_id="src1",
-                node_type="data.source",
-                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
-            )
-        )
+        executor.add_node(_spectral_source_node())
         executor.add_node(WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}))
         executor.add_edge(WorkflowEdge(from_node="src1", to_node="snv1"))
 

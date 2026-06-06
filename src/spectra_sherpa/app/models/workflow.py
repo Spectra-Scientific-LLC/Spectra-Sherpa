@@ -96,7 +96,6 @@ class Workflow(Base):
     runs = relationship(
         "ExecutionRun",
         back_populates="workflow",
-        cascade="all, delete-orphan",
         order_by="ExecutionRun.created_at.desc()",
     )
     tags = relationship(

@@ -1,10 +1,13 @@
 schema_version: 1
-name: PCA Exploration (Detailed)
+name: PCA with Outlier Diagnostics
 slug: pca
-description: 'Exploratory data analysis with PCA: scores, loadings, scree plots, and
-  outlier detection (Hotelling T-squared, Q residuals).'
+description: 'Detailed PCA workflow with scores, loadings, scree plots, Hotelling
+  T-squared, and Q residuals for outlier diagnostics.'
 category: exploratory
 is_active: true
+data_modalities:
+- spectra
+- features
 template_data:
   nodes:
   - node_id: data_1
@@ -24,16 +27,16 @@ template_data:
     position_y: 300
   - node_id: model_1
     node_type: model.pca
-    label: PCA
+    label: Fit PCA Transform
     parameters:
-      n_components: '5'
+      n_components: 2
     position_x: 175
     position_y: 550
   - node_id: viz_1
     node_type: output.plot
     label: Scores
     parameters:
-      plot_type: spectra
+      plot_type: scores
     position_x: 50
     position_y: 800
   - node_id: viz_2
@@ -84,12 +87,14 @@ template_data:
       required: true
       binding_mode: embedded
       description: Spectral data matrix
+      accepted_data_roles:
+      - X_spectra
+      - X_features
       accepted_techniques:
       - FTIR
       - NIR
       - Raman
       - UV-Vis
-      - NMR
       - OES
   certified_datasets:
   - source: spectrochempy
@@ -122,5 +127,7 @@ template_data:
     name: nir_shootout_test2
   - source: sklearn
     name: wine
+  - source: sklearn
+    name: iris
   - source: oes
     name: uvspectra10

@@ -1,11 +1,8 @@
 schema_version: 1
 name: Peak-Guided PLS
 slug: peak_guided_pls
-description: Use peak detection to identify chemically meaningful spectral regions,
-  then build a PLS model on those regions only. The derivative is applied before
-  splitting (stateless per-spectrum operation), then the peak mask is learned on
-  the training set only and reused on the held-out test set. Kennard-Stone
-  partitioning uses PCA-reduced distance calculation.
+description: Peak detection identifies informative spectral regions, then a PLS model
+  is built on those regions only.
 category: selection_design
 is_active: true
 template_data:
@@ -125,6 +122,14 @@ template_data:
     to_node_id: eval_1
     from_output: y_test
     to_input: y_true
+  - from_node_id: model_1
+    to_node_id: eval_1
+    from_output: y_pred
+    to_input: y_train_pred
+  - from_node_id: model_1
+    to_node_id: eval_1
+    from_output: y_true
+    to_input: y_train_true
   - from_node_id: eval_1
     to_node_id: table_1
     from_output: metrics

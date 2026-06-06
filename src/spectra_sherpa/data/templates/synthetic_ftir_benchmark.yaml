@@ -1,0 +1,124 @@
+schema_version: 1
+name: Spectra Scientific Synthetic Benchmark
+slug: synthetic_ftir_benchmark
+description: Synthetic FTIR atmospheric gas mixture benchmark with 50 spectra,
+  6 known concentration profiles, pure spectra for MCR-ALS recovery, and a
+  9-species HITRAN reference library.
+category: curve_resolution
+is_active: true
+status: ready
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.source
+    label: Synthetic_atmospheric-6
+    parameters:
+      source: synthetic
+      synthetic_dataset: Synthetic_atmospheric-6
+    position_x: 175
+    position_y: 50
+  - node_id: data_2
+    node_type: data.source
+    label: Library_atmospheric-9
+    parameters:
+      source: synthetic
+      synthetic_dataset: Library_atmospheric-9
+    position_x: 575
+    position_y: 50
+  - node_id: model_1
+    node_type: model.mcr_als
+    label: Fit MCR-ALS Decomposition
+    parameters:
+      n_components: 6
+      max_iter: 200
+      tol: 0.00001
+      normSpec: euclid
+      non_negative_C: true
+      non_negative_St: true
+      validation_target_index: 3
+      validation_component_index: 1
+    position_x: 425
+    position_y: 300
+  - node_id: compare_1
+    node_type: analysis.compare_library
+    label: Compare Mixtures vs. Library
+    parameters:
+      top_n: 9
+      hqi_mode: band_limited
+      diagnostic_band_threshold: 0.2
+      hqi_accept_threshold: 750
+      hqi_reject_threshold: 500
+      min_overlap_coverage: 0.5
+      min_overlap_points: 20
+    position_x: 825
+    position_y: 300
+  - node_id: viz_1
+    node_type: output.plot
+    label: Resolved Pure Spectra
+    parameters:
+      plot_type: spectra
+    position_x: 175
+    position_y: 550
+  - node_id: viz_2
+    node_type: output.plot
+    label: Recovered Concentrations
+    parameters:
+      plot_type: spectra
+    position_x: 575
+    position_y: 550
+  - node_id: table_1
+    node_type: output.data_table
+    label: HQI Ranking Table
+    parameters:
+      max_rows: 100000
+    position_x: 900
+    position_y: 550
+  edges:
+  - from_node_id: data_1
+    to_node_id: model_1
+    to_input: default
+  - from_node_id: data_1
+    to_node_id: compare_1
+    to_input: sample
+  - from_node_id: data_2
+    to_node_id: compare_1
+    to_input: library
+  - from_node_id: model_1
+    to_node_id: viz_1
+    from_output: St
+  - from_node_id: model_1
+    to_node_id: viz_2
+    from_output: C
+  - from_node_id: compare_1
+    to_node_id: table_1
+    from_output: hqi_report
+  canvas_state:
+    zoom: 0.9
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Synthetic FTIR mixture spectra (50 samples x 5401 wavenumbers)
+      accepted_data_roles:
+      - X_spectra
+      accepted_techniques:
+      - FTIR
+    Library:
+      role_type: X_spectra
+      node_binding: data_2
+      required: true
+      binding_mode: embedded
+      description: Pure component FTIR library signatures for HQI comparison
+      accepted_data_roles:
+      - X_spectra
+      accepted_techniques:
+      - FTIR
+  certified_datasets:
+  - source: synthetic
+    name: Synthetic_atmospheric-6
+  - source: synthetic
+    name: Library_atmospheric-9

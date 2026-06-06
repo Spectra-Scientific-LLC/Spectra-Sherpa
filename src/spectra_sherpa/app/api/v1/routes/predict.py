@@ -28,6 +28,7 @@ from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.services.workflow_access import validate_workflow_execution_access
 
 router = APIRouter(prefix="/workflows")
 logger = logging.getLogger(__name__)
@@ -125,6 +126,14 @@ async def predict(
     if not workflow.nodes:
         raise HTTPException(status_code=422, detail="Workflow has no nodes")
 
+    await validate_workflow_execution_access(
+        workflow.nodes,
+        None,
+        current_user.id,
+        workflow.project_id,
+        session,
+    )
+
     # --- 2. Validate payload ---------------------------------------------
     data_array = np.array(payload.data, dtype=np.float64)
     if data_array.ndim == 1:
@@ -220,7 +229,7 @@ async def predict(
     for node_id in exit_nodes:
         if node_id in results:
             try:
-                serialized[node_id] = serialize_result(results[node_id])
+                serialized[node_id] = serialize_result(results[node_id], owner_user_id=current_user.id)
             except Exception as ser_err:
                 serialized[node_id] = {
                     "error": f"Serialization failed: {ser_err}",

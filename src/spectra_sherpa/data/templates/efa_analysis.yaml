@@ -25,7 +25,7 @@ template_data:
     position_y: 300
   - node_id: model_1
     node_type: model.efa
-    label: EFA
+    label: Fit EFA Decomposition
     parameters:
       n_components: 10
     position_x: 175

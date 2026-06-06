@@ -24,7 +24,7 @@ template_data:
     position_y: 300
   - node_id: model_1
     node_type: model.simplisma
-    label: SIMPLISMA
+    label: Fit SIMPLISMA Pure Components
     parameters:
       n_components: 3
       noise: 3
@@ -34,7 +34,7 @@ template_data:
     node_type: output.plot
     label: Purity Plot
     parameters:
-      plot_type: spectra
+      plot_type: scatter
     position_x: 50
     position_y: 800
   - node_id: viz_2
@@ -60,7 +60,7 @@ template_data:
     to_node_id: model_1
   - from_node_id: model_1
     to_node_id: viz_1
-    from_output: concentrations
+    from_output: purity_values
   - from_node_id: model_1
     to_node_id: viz_2
     from_output: spectra

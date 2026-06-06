@@ -173,7 +173,37 @@ class ExportNode(Node):
             shape = input_data.shape
             n_points = np.prod(shape)
         elif isinstance(input_data, dict):
-            n_points = len(input_data)
+            payload = None
+            if isinstance(input_data.get("default"), SherpaDataset):
+                payload = input_data["default"].data
+            for key in (
+                "data",
+                "scores",
+                "X_scores",
+                "transformed",
+                "result",
+                "predictions",
+                "labels",
+                "cluster_assignment",
+                "y_pred",
+                "probabilities",
+                "class_probabilities",
+                "distances",
+                "neighbor_indices",
+                "class_distance_matrix",
+            ):
+                if payload is None and key in input_data and input_data[key] is not None:
+                    payload = input_data[key]
+                    break
+            if payload is not None:
+                if isinstance(payload, SherpaDataset):
+                    n_points = int(np.prod(payload.shape))
+                else:
+                    n_points = int(np.asarray(payload, dtype=object).size)
+            else:
+                n_points = len(input_data)
+        elif isinstance(input_data, (list, tuple, np.ndarray)):
+            n_points = int(np.asarray(input_data, dtype=object).size)
         else:
             n_points = 0
 

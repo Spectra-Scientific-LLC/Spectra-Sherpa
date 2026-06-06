@@ -1,9 +1,8 @@
 schema_version: 1
 name: VIP-Assisted PLS
 slug: vip_assisted_pls
-description: Two-stage PLS regression where a full-spectrum model identifies important
-  wavelengths via VIP scores, then a reduced model is built on selected variables only.
-  Demonstrates iterative variable selection for parsimonious calibration.
+description: Two-stage PLS — a full-spectrum model identifies important wavelengths
+  via VIP scores, then a reduced model is built on those variables.
 category: selection_design
 is_active: true
 template_data:
@@ -71,7 +70,7 @@ template_data:
     to_node_id: pls_reduced
     from_output: X_selected
     to_input: X
-  - from_node_id: pls_full
+  - from_node_id: pls_reduced
     to_node_id: viz_1
   canvas_state:
     zoom: 0.85

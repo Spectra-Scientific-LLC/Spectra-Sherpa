@@ -105,15 +105,24 @@ class NISTLibraryNode(Node):
                 else:
                     data_quantity = jcamp.yunits
 
+                xunits = jcamp.xunits or None
+                xunits_lower = (xunits or "").lower()
+                if technique == "Raman":
+                    axis_title = "Raman Shift"
+                elif "nm" in xunits_lower or "micrometer" in xunits_lower or "um" in xunits_lower:
+                    axis_title = "Wavelength"
+                else:
+                    axis_title = "Wavenumber"
+
                 # Build SherpaDataset directly
                 dataset = SherpaDataset(
                     jcamp.y.reshape(1, -1),
-                    feature_axis=SpectralAxis(values=jcamp.x, label=jcamp.xunits),
+                    feature_axis=SpectralAxis(values=jcamp.x, units=xunits, title=axis_title),
                     sample_axis=SampleAxis(labels=[entry.compound_name]),
                     domain=DomainContext(
                         technique=technique,
                         data_quantity=data_quantity,
-                        expected_units=jcamp.xunits,
+                        expected_units=xunits,
                     ),
                     title=entry.compound_name,
                     units=data_quantity,

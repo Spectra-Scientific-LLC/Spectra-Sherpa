@@ -84,7 +84,7 @@ async def test_workflow_run_completed_emits_audit_event(async_session, alice_con
         model_ids=["uid-pca-001"],
         params_snapshot={"baseline_correction": "snv"},
     )
-    assert persisted is True
+    assert persisted is not None
 
     rows = (await async_session.execute(select(AuditEvent))).scalars().all()
     assert len(rows) == 1

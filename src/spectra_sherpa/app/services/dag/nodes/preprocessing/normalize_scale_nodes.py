@@ -54,6 +54,37 @@ def _normalize_dispatch(
     raise ValueError(f"Unknown normalization method: {method}")
 
 
+def _msc_reference_spectrum(data: np.ndarray, reference: str = "mean") -> np.ndarray:
+    if reference == "mean":
+        return np.mean(data, axis=0)
+    if reference == "median":
+        return np.median(data, axis=0)
+    return data[0]
+
+
+def _normalize_transform_state(data: np.ndarray, params: dict[str, Any]) -> dict[str, Any] | None:
+    """Return replayable normalization state for model-application provenance."""
+    method = params.get("method", "snv")
+    if method in ("max", "area", "minmax"):
+        method = "scale"
+    if method == "msc":
+        reference = params.get("reference", "mean")
+        return {
+            "method": "msc",
+            "reference": reference,
+            "reference_spectrum": _msc_reference_spectrum(np.asarray(data, dtype=np.float64), reference).tolist(),
+        }
+    if method == "snv":
+        return {"method": "snv", "replay": "sample_local"}
+    if method == "scale":
+        return {
+            "method": "scale",
+            "scale_method": params.get("scale_method", "max"),
+            "replay": "sample_local",
+        }
+    return None
+
+
 @register_node
 class NormalizeNode(Node):
     """Unified normalization node with method selection."""
@@ -107,10 +138,14 @@ class NormalizeNode(Node):
         input_ports=[
             PortMetadata(
                 name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Input Spectra",
-                description="Spectral data to process",
+                label="Input Data Matrix",
+                description=(
+                    "Spectral data or feature table. SNV/MSC require spectra; "
+                    "scale methods also support feature tables."
+                ),
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
         ],
         output_type="NDDataset",
@@ -150,10 +185,15 @@ class NormalizeNode(Node):
             effects = [EFFECT_SCALED]
             result.units = "normalized"
 
+        step_params = dict(params)
+        transform_state = _normalize_transform_state(data, step_params)
+        if transform_state is not None:
+            step_params["transform_state"] = transform_state
+
         add_processing_step(
             result,
             "preprocess.normalize",
-            params,
+            step_params,
             node_id=self.node_id,
             state_effects=effects,
         )
@@ -222,6 +262,48 @@ def _scale_dispatch(
     raise ValueError(f"Unknown scaling method: {method}")
 
 
+def _scale_transform_state(
+    data: np.ndarray,
+    *,
+    method: str,
+    center: bool = True,
+    target_max: float = 1.0,
+) -> dict[str, Any] | None:
+    """Return replayable scale state for model-application provenance."""
+    ref = np.asarray(data, dtype=np.float64)
+    if method == "mean_center":
+        return {
+            "method": method,
+            "mean": np.mean(ref, axis=0).astype(np.float64).tolist(),
+        }
+    if method == "autoscale":
+        std = np.std(ref, axis=0)
+        std[(std == 0) | ~np.isfinite(std)] = 1.0
+        return {
+            "method": method,
+            "center": bool(center),
+            "mean": np.mean(ref, axis=0).astype(np.float64).tolist() if center else None,
+            "scale": std.astype(np.float64).tolist(),
+        }
+    if method == "pareto":
+        std = np.std(ref, axis=0)
+        sf = np.sqrt(np.maximum(std, 0))
+        sf[(sf == 0) | ~np.isfinite(sf)] = 1.0
+        return {
+            "method": method,
+            "center": bool(center),
+            "mean": np.mean(ref, axis=0).astype(np.float64).tolist() if center else None,
+            "scale": sf.astype(np.float64).tolist(),
+        }
+    if method == "scale_max":
+        return {
+            "method": method,
+            "target_max": float(target_max),
+            "replay": "sample_local",
+        }
+    return None
+
+
 @register_node
 class ScaleNode(Node):
     """Unified scaling/centering node with method selection."""
@@ -263,7 +345,6 @@ class ScaleNode(Node):
                 param_type="number",
                 default=1.0,
                 min_value=0.01,
-                max_value=100.0,
                 step=0.1,
                 description="Target max value",
                 required=False,
@@ -275,17 +356,19 @@ class ScaleNode(Node):
         input_ports=[
             PortMetadata(
                 name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Input Spectra",
-                description="Spectral data to process",
+                label="Input Data Matrix",
+                description="Spectral data or multivariate feature table to scale or center",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="reference",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=False,
-                label="Reference Spectra",
-                description="Optional dataset used to fit centering/scaling parameters",
+                label="Reference Data",
+                description="Optional spectral or feature-table dataset used to fit centering/scaling parameters",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
         ],
         output_type="NDDataset",
@@ -319,10 +402,21 @@ class ScaleNode(Node):
             result.units = "normalized"
 
         effects = [EFFECT_SCALED] if method != "mean_center" else []
+        step_params = dict(params)
+        transform_state = _scale_transform_state(
+            ref_data if ref_data is not None else data,
+            method=method,
+            center=bool(params.get("center", True)),
+            target_max=float(params.get("target_max", 1.0)),
+        )
+        if transform_state is not None:
+            step_params["transform_state"] = transform_state
+            step_params["state_scope"] = "reference" if ref_data is not None else "input"
+
         add_processing_step(
             result,
             "preprocess.scale",
-            params,
+            step_params,
             node_id=self.node_id,
             state_effects=effects,
         )

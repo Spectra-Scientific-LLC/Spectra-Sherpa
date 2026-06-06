@@ -86,7 +86,6 @@ class SmoothNode(Node):
                 param_type="number",
                 default=11,
                 min_value=3,
-                max_value=21,
                 step=2,
                 description="Window size (must be odd)",
                 required=False,
@@ -99,7 +98,6 @@ class SmoothNode(Node):
                 param_type="number",
                 default=2,
                 min_value=1,
-                max_value=6,
                 step=1,
                 description="Polynomial order",
                 required=False,
@@ -113,7 +111,6 @@ class SmoothNode(Node):
                 param_type="number",
                 default=1e2,
                 min_value=1,
-                max_value=1e8,
                 description="Smoothness penalty",
                 required=False,
                 category="basic",
@@ -137,7 +134,6 @@ class SmoothNode(Node):
                 param_type="number",
                 default=2.0,
                 min_value=0.1,
-                max_value=50.0,
                 step=0.1,
                 description="Gaussian kernel width",
                 required=False,
@@ -231,16 +227,44 @@ def _derivative_dispatch(
     order: int = 2,
     gap: int = 5,
     segment: int = 5,
+    delta: float = 1.0,
 ) -> np.ndarray:
     deriv_order = int(deriv)
     if method == "savitzky_golay":
         sz = int(size)
         if sz % 2 == 0:
             sz += 1
-        return _savgol_deriv(data, size=sz, order=int(order), deriv=deriv_order)
+        return _savgol_deriv(data, size=sz, order=int(order), deriv=deriv_order, delta=float(delta))
     elif method == "norris_williams":
-        return norris_williams(data, gap=int(gap), segment=int(segment), deriv=deriv_order)
+        return norris_williams(data, gap=int(gap), segment=int(segment), deriv=deriv_order, delta=float(delta))
     raise ValueError(f"Unknown derivative method: {method}")
+
+
+def _feature_axis_delta(input_ds: Any) -> float:
+    axis = (
+        input_ds.get_feature_axis()
+        if hasattr(input_ds, "get_feature_axis")
+        else getattr(input_ds, "feature_axis", None)
+    )
+    values = getattr(axis, "values", None)
+    if values is None:
+        return 1.0
+    x = np.asarray(values, dtype=np.float64).reshape(-1)
+    if x.size < 2:
+        return 1.0
+    diffs = np.diff(x)
+    finite = diffs[np.isfinite(diffs)]
+    if finite.size == 0:
+        return 1.0
+    delta = float(np.median(finite))
+    if abs(delta) <= 1e-12:
+        raise ValueError("Derivative requires a non-zero feature-axis spacing")
+    if not np.allclose(finite, delta, rtol=1e-4, atol=max(abs(delta) * 1e-6, 1e-12)):
+        raise ValueError(
+            "Derivative requires an evenly spaced feature axis. Resample or align the spectra before "
+            "requesting physical derivative units."
+        )
+    return delta
 
 
 @register_node
@@ -283,7 +307,6 @@ class DerivativeNode(Node):
                 param_type="number",
                 default=11,
                 min_value=3,
-                max_value=51,
                 step=2,
                 description="Window size",
                 required=False,
@@ -296,7 +319,6 @@ class DerivativeNode(Node):
                 param_type="number",
                 default=2,
                 min_value=1,
-                max_value=5,
                 step=1,
                 description="Polynomial order",
                 required=False,
@@ -310,7 +332,6 @@ class DerivativeNode(Node):
                 param_type="number",
                 default=5,
                 min_value=1,
-                max_value=50,
                 step=1,
                 description="Gap size",
                 required=False,
@@ -323,7 +344,6 @@ class DerivativeNode(Node):
                 param_type="number",
                 default=5,
                 min_value=1,
-                max_value=50,
                 step=1,
                 description="Segment size",
                 required=False,
@@ -351,6 +371,7 @@ class DerivativeNode(Node):
         )
         params = self._resolve_params()
         data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
+        params["delta"] = _feature_axis_delta(input_ds)
         transformed = _derivative_dispatch(data, **params)
         result = build_dataset_like(transformed, input_ds)
 
@@ -385,7 +406,14 @@ class DerivativeNode(Node):
             lines = [
                 f"{indent}# --- Norris-Williams Derivative ({self.node_id}) ---",
                 f"{indent}_data = np.array({inp}.data, dtype=np.float64)",
-                f"{indent}_derived = norris_williams(_data, gap={gap}, segment={segment}, deriv={deriv_order})",
+                f"{indent}_delta = 1.0",
+                f"{indent}_axis = getattr({inp}, 'feature_axis', None)",
+                f"{indent}if _axis is not None and getattr(_axis, 'values', None) is not None:",
+                f"{indent}    _x = np.asarray(_axis.values, dtype=np.float64).reshape(-1)",
+                f"{indent}    if _x.size >= 2:",
+                f"{indent}        _delta = float(np.median(np.diff(_x)))",
+                f"{indent}_derived = norris_williams(_data, gap={gap}, segment={segment}, "
+                f"deriv={deriv_order}, delta=_delta)",
             ]
             lines += _wrap_result_lines(self.node_id, "_derived", inp, indent, use_scp)
             return lines

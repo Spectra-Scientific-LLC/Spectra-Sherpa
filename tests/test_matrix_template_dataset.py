@@ -292,6 +292,15 @@ async def test_template_x_dataset(slug: str, label: str, data_params: dict):
             _RESULTS[key] = f"xfail:{exc_caught}"
             pytest.xfail(f"Expected — no class labels in eigenvector dataset: {exc_caught}")
 
+        # Expected-fail: sklearn feature tables routed through spectra-only
+        # templates after sklearn:wine/iris became honest X_features.
+        is_role_mismatch = (
+            "requires x_spectra" in msg and "received x_features" in msg and data_params.get("source") == "sklearn"
+        )
+        if is_role_mismatch:
+            _RESULTS[key] = f"xfail:{exc_caught}"
+            pytest.xfail(f"Expected — feature table rejected by spectra-only template: {exc_caught}")
+
         # Tolerated: only output-only nodes failed, core pipeline succeeded
         if core_ok:
             _RESULTS[key] = "pass(output_err)"

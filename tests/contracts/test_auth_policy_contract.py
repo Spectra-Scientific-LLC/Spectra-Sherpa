@@ -92,7 +92,8 @@ class TestPublicSurface:
                 drift.append(f"{name}: expected params {expected_params}, got {actual_params}")
         assert not drift, (
             "auth_policy public-function signatures drifted. "
-            "Update docs/dev/boundaries.md and EXPECTED_FUNCTIONS together:\n" + "\n".join(f"  {d}" for d in drift)
+            "Update the developer contract documentation and EXPECTED_FUNCTIONS together:\n"
+            + "\n".join(f"  {d}" for d in drift)
         )
 
     def test_functions_re_exported_from_contracts_package(self) -> None:

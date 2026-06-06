@@ -10,7 +10,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.core import config as config_mod
+from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.user import User
@@ -19,33 +21,36 @@ from spectra_sherpa.app.services.experiments import import_reference_dataset
 
 
 @pytest.mark.asyncio
-async def test_import_reference_dataset_recurses_scp_directories(
+async def test_import_reference_dataset_materializes_scp_bundle_as_one_csv(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     test_session: AsyncSession,
     test_user: User,
 ) -> None:
-    source_root = tmp_path / "scp-source" / "ramandata"
-    (source_root / "wire").mkdir(parents=True)
-    (source_root / "wire" / "sample_a.spc").write_text("a", encoding="ascii")
-    (source_root / "wire" / "nested").mkdir()
-    (source_root / "wire" / "nested" / "sample_b.txt").write_text("b", encoding="ascii")
-    (source_root / "_hidden").mkdir()
-    (source_root / "_hidden" / "skip.me").write_text("hidden", encoding="ascii")
-
     data_dir = tmp_path / "app-data"
     monkeypatch.setattr(
         "spectra_sherpa.app.services.experiments.settings",
         SimpleNamespace(data_dir=data_dir),
     )
+
+    dataset = SherpaDataset(
+        np.array([[1.0, 1.1, 1.2], [2.0, 2.1, 2.2]]),
+        feature_axis=SpectralAxis(values=np.array([1000.0, 1001.0, 1002.0]), title="Wavenumber", units="cm-1"),
+        sample_axis=SampleAxis(labels=["sample_a", "sample_b"]),
+        data_role="X_spectra",
+    )
     monkeypatch.setattr(
-        "spectra_sherpa.app.services.experiments._resolve_scp_path",
-        lambda name: source_root,
+        "spectra_sherpa.app.lib.scp_catalog.get_scp_catalog_entry",
+        lambda name: {"name": name, "label": "Mock SCP Bundle", "x_title": "Wavenumber", "x_units": "cm-1"},
+    )
+    monkeypatch.setattr(
+        "spectra_sherpa.app.lib.scp_catalog.load_scp_reference_as_sherpa",
+        lambda name: dataset,
     )
 
     experiment = Experiment(
         user_id=test_user.id,
-        name="Recursive SCP Import",
+        name="SCP Bundle Import",
         description="",
         metadata_path="{}",
     )
@@ -54,13 +59,15 @@ async def test_import_reference_dataset_recurses_scp_directories(
 
     files = await import_reference_dataset(test_session, experiment.id, "spectrochempy", "ramandata")
 
-    imported_paths = sorted(file.file_path for file in files)
-    assert imported_paths == [
-        "raw/scp_ramandata/wire/nested/sample_b.txt",
-        "raw/scp_ramandata/wire/sample_a.spc",
+    assert [file.file_path for file in files] == ["raw/scp_ramandata.csv"]
+    csv_path = data_dir / "experiments" / f"exp_{experiment.id:03d}" / "raw" / "scp_ramandata.csv"
+    assert csv_path.exists()
+    assert csv_path.read_text(encoding="utf-8").splitlines() == [
+        "Wavenumber (cm-1),sample_a,sample_b",
+        "1000.0,1.0,2.0",
+        "1001.0,1.1,2.1",
+        "1002.0,1.2,2.2",
     ]
-    for rel_path in imported_paths:
-        assert (data_dir / "experiments" / f"exp_{experiment.id:03d}" / rel_path).exists()
 
 
 @pytest.mark.skipif(not HAS_SCP, reason="SpectroChemPy is required for experiment-backed multi-file loading")

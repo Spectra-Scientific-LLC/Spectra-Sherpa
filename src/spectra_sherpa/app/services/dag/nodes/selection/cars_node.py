@@ -50,6 +50,8 @@ def _cars_run(
     surviving_history: list[np.ndarray] = []
     rmsecv_trace: list[float] = []
     importance = np.zeros(n_features, dtype=np.float64)
+    cv = KFold(n_splits=min(cv_folds, n_samples), shuffle=True, random_state=seed)
+    cv_splits = list(cv.split(X))
 
     for iteration in range(n_iterations):
         active_idx = np.where(surviving)[0]
@@ -68,10 +70,10 @@ def _cars_run(
         except Exception:
             break
 
-        # Cross-validate
-        kf = KFold(n_splits=min(cv_folds, n_samples), shuffle=True, random_state=rng.randint(0, 2**31))
+        # Cross-validate on fixed folds so RMSECV values are comparable across
+        # the exponentially shrinking variable subsets.
         cv_errors = []
-        for train_ix, val_ix in kf.split(X_sub):
+        for train_ix, val_ix in cv_splits:
             try:
                 pls_cv = PLSRegression(n_components=n_comp, scale=False)
                 pls_cv.fit(X_sub[train_ix], y[train_ix])
@@ -86,17 +88,25 @@ def _cars_run(
         # Accumulate importance
         importance[active_idx] += coef / max(coef.max(), 1e-12)
 
-        # Determine how many variables to keep
+        # Exponentially Decreasing Function (EDF): first keep the highest
+        # absolute-coefficient variables, then apply Adaptive Reweighted
+        # Sampling (ARS) within that ranked subset.
         n_keep = max(int(np.round(n_features * ratio[iteration])), max(2, n_components + 1))
         n_keep = min(n_keep, n_active)
+        ranked_local = np.argsort(coef)[::-1]
+        edf_local = ranked_local[:n_keep]
 
-        # Adaptive reweighted sampling: probability proportional to |coef|
-        weights = coef / coef.sum() if coef.sum() > 0 else np.ones(n_active) / n_active
+        edf_coef = coef[edf_local]
+        weights = edf_coef / edf_coef.sum() if edf_coef.sum() > 0 else np.ones(len(edf_local)) / len(edf_local)
         try:
-            keep_local = rng.choice(n_active, size=n_keep, replace=False, p=weights)
+            sampled = rng.choice(len(edf_local), size=n_keep, replace=True, p=weights)
+            keep_local = np.unique(edf_local[sampled])
+            if keep_local.size < max(2, n_components + 1):
+                fill = [idx for idx in edf_local if idx not in set(keep_local)]
+                needed = max(2, n_components + 1) - keep_local.size
+                keep_local = np.unique(np.concatenate([keep_local, np.asarray(fill[:needed], dtype=int)]))
         except ValueError:
-            # Fallback: keep top-n by coefficient
-            keep_local = np.argsort(coef)[-n_keep:]
+            keep_local = edf_local
 
         new_surviving = np.zeros(n_features, dtype=bool)
         new_surviving[active_idx[keep_local]] = True
@@ -134,7 +144,6 @@ class CARSNode(Node):
                 param_type="number",
                 default=50,
                 min_value=10,
-                max_value=200,
                 step=5,
                 description="Number of sampling iterations",
             ),
@@ -144,7 +153,6 @@ class CARSNode(Node):
                 param_type="number",
                 default=5,
                 min_value=1,
-                max_value=20,
                 step=1,
                 description="Number of PLS latent variables",
             ),
@@ -154,7 +162,6 @@ class CARSNode(Node):
                 param_type="number",
                 default=5,
                 min_value=2,
-                max_value=20,
                 step=1,
                 description="Cross-validation folds",
             ),
@@ -162,9 +169,11 @@ class CARSNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Spectral Data",
+                label="Input Data Matrix",
+                description="Spectral dataset or multivariate feature table",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="y",
@@ -259,7 +268,7 @@ class CARSNode(Node):
         logger.info(f"CARS: {n_selected}/{n_features} variables, best RMSECV={best_rmsecv:.4f}")
 
         return NodeResult(
-            outputs={"X_selected": X_selected, "mask": mask, "scores": scores},
+            outputs={"default": X_selected, "X_selected": X_selected, "mask": mask, "scores": scores},
             diagnostics={
                 "n_selected": n_selected,
                 "n_total": n_features,

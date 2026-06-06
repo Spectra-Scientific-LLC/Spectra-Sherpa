@@ -1,10 +1,13 @@
 schema_version: 1
 name: PCA Exploratory Analysis
 slug: pca_exploratory
-description: Load spectral data, apply preprocessing, and perform PCA for exploratory
-  data analysis. Visualize scores and loadings to identify patterns and outliers.
+description: Lightweight PCA starting point for exploratory analysis. Visualize
+  scores and loadings to identify patterns before moving to the diagnostic PCA workflow.
 category: exploratory
 is_active: true
+data_modalities:
+- spectra
+- features
 template_data:
   nodes:
   - node_id: data_1
@@ -16,24 +19,24 @@ template_data:
     position_x: 175
     position_y: 50
   - node_id: preprocess_1
-    node_type: preprocess.normalize
-    label: Normalize
+    node_type: preprocess.scale
+    label: Autoscale
     parameters:
-      method: snv
+      method: autoscale
     position_x: 425
     position_y: 300
   - node_id: model_1
     node_type: model.pca
-    label: PCA
+    label: Fit PCA Transform
     parameters:
-      n_components: '5'
+      n_components: 2
     position_x: 175
     position_y: 550
   - node_id: viz_1
     node_type: output.plot
     label: Scores Plot
     parameters:
-      plot_type: spectra
+      plot_type: scores
     position_x: 50
     position_y: 800
   - node_id: viz_2
@@ -65,6 +68,9 @@ template_data:
       required: true
       binding_mode: embedded
       description: Spectral data matrix (samples x wavenumbers/wavelengths)
+      accepted_data_roles:
+      - X_spectra
+      - X_features
       accepted_techniques:
       - FTIR
       - NIR
@@ -102,5 +108,7 @@ template_data:
     name: nir_shootout_test2
   - source: sklearn
     name: wine
+  - source: sklearn
+    name: iris
   - source: oes
     name: uvspectra10

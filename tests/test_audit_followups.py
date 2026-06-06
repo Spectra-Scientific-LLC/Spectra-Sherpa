@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -106,6 +107,27 @@ def reset_quota_provider():
     dp._demo_execution_quota_provider = saved
 
 
+@pytest.fixture()
+def reset_demo_policy_providers():
+    import spectra_sherpa.app.contracts.demo_policy as dp
+
+    saved_policy = dp._demo_policy_provider
+    saved_quota = dp._demo_execution_quota_provider
+    saved_upload = (
+        dp._demo_upload_reserve_provider,
+        dp._demo_upload_consume_provider,
+        dp._demo_upload_release_provider,
+    )
+    yield dp
+    dp._demo_policy_provider = saved_policy
+    dp._demo_execution_quota_provider = saved_quota
+    (
+        dp._demo_upload_reserve_provider,
+        dp._demo_upload_consume_provider,
+        dp._demo_upload_release_provider,
+    ) = saved_upload
+
+
 def test_quota_unlimited_when_no_provider(reset_quota_provider):
     dp = reset_quota_provider
     dp._demo_execution_quota_provider = None
@@ -133,7 +155,13 @@ def test_enforce_helper_raises_429_when_exhausted(reset_quota_provider):
     with pytest.raises(HTTPException) as ei:
         enforce_demo_execution_quota(7)
     assert ei.value.status_code == 429
-    assert "demo execution limit" in ei.value.detail.lower()
+    # The 429 detail is the structured payload emitted by
+    # ``demo_limit_error_detail`` (limit_type, remaining, message, ...);
+    # `.message` carries the human-readable summary.
+    detail = ei.value.detail
+    assert isinstance(detail, dict)
+    assert detail["limit_type"] == "execution"
+    assert "rate limit" in detail["message"].lower()
 
 
 def test_enforce_helper_noop_when_allowed(reset_quota_provider):
@@ -145,6 +173,114 @@ def test_enforce_helper_noop_when_allowed(reset_quota_provider):
 
     dp._demo_execution_quota_provider = None
     enforce_demo_execution_quota(7)  # unlimited path, must not raise
+
+
+async def test_doe_upload_quota_reservation_released_on_cancellation(monkeypatch, reset_demo_policy_providers):
+    """CancelledError is a BaseException; upload routes must still release reservations."""
+    from spectra_sherpa.app.api.v1.routes import doe
+
+    calls: list[tuple[str, int | None]] = []
+    dp = reset_demo_policy_providers
+    dp.set_demo_upload_quota_providers(
+        reserve=lambda uid: (calls.append(("reserve", uid)) or (True, 0)),
+        consume_reserved=lambda uid: calls.append(("consume", uid)) or 0,
+        release=lambda uid: calls.append(("release", uid)),
+    )
+
+    async def _verify(*_args, **_kwargs):
+        return None
+
+    async def _cancel(*_args, **_kwargs):
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(doe, "_verify", _verify)
+    monkeypatch.setattr(doe.doe_service, "import_samples", _cancel)
+
+    with pytest.raises(asyncio.CancelledError):
+        await doe.import_samples(
+            11,
+            SimpleNamespace(csv_data="sample_id,label\ns1,A\n"),
+            session=SimpleNamespace(),
+            current_user=SimpleNamespace(id=7),
+        )
+
+    assert calls == [("reserve", 7), ("release", 7)]
+
+
+async def test_trial_execute_rejects_demo_hidden_node_before_dag(monkeypatch, reset_demo_policy_providers):
+    import spectra_sherpa.app.api.v1.routes.workflows.execute as execute_mod
+    import spectra_sherpa.app.core.config as cfg
+    from spectra_sherpa.app.contracts.demo_policy import DemoPolicy
+    from spectra_sherpa.app.schemas.workflows import TrialExecuteRequest
+
+    dp = reset_demo_policy_providers
+    monkeypatch.setattr(cfg.app_config, "site_profile", "demo")
+    dp.set_demo_policy_provider(lambda: DemoPolicy(hidden_node_types=frozenset({"data.file_load"})))
+    dp.set_demo_execution_quota_provider(lambda _uid: pytest.fail("hidden node must not consume quota"))
+    monkeypatch.setattr(
+        execute_mod,
+        "DAGExecutor",
+        lambda: pytest.fail("hidden node must be rejected before DAGExecutor construction"),
+    )
+
+    payload = TrialExecuteRequest(
+        target_node_id="blocked",
+        trial_params={},
+        nodes=[{"node_id": "blocked", "node_type": "data.file_load", "parameters": {}}],
+        edges=[],
+        initial_data=None,
+    )
+
+    with pytest.raises(HTTPException) as ei:
+        await execute_mod.execute_trial(
+            payload,
+            session=SimpleNamespace(),
+            current_user=SimpleNamespace(id=7),
+        )
+
+    assert ei.value.status_code == 403
+    assert "data.file_load" in ei.value.detail
+
+
+async def test_trial_execute_enforces_demo_quota_before_dag(monkeypatch, reset_demo_policy_providers):
+    import spectra_sherpa.app.api.v1.routes.workflows.execute as execute_mod
+    import spectra_sherpa.app.core.config as cfg
+    from spectra_sherpa.app.contracts.demo_policy import DemoPolicy
+    from spectra_sherpa.app.schemas.workflows import TrialExecuteRequest
+
+    dp = reset_demo_policy_providers
+    quota_calls = []
+    monkeypatch.setattr(cfg.app_config, "site_profile", "demo")
+    dp.set_demo_policy_provider(lambda: DemoPolicy())
+
+    def _deny_quota(user_id):
+        quota_calls.append(user_id)
+        return (False, 0)
+
+    dp.set_demo_execution_quota_provider(_deny_quota)
+    monkeypatch.setattr(
+        execute_mod,
+        "DAGExecutor",
+        lambda: pytest.fail("quota must be enforced before DAGExecutor construction"),
+    )
+
+    payload = TrialExecuteRequest(
+        target_node_id="source",
+        trial_params={},
+        nodes=[{"node_id": "source", "node_type": "data.source", "parameters": {}}],
+        edges=[],
+        initial_data=None,
+    )
+
+    with pytest.raises(HTTPException) as ei:
+        await execute_mod.execute_trial(
+            payload,
+            session=SimpleNamespace(),
+            current_user=SimpleNamespace(id=7),
+        )
+
+    assert ei.value.status_code == 429
+    assert quota_calls == [7]
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +331,7 @@ def batch_predict_env(monkeypatch, reset_quota_provider):
     reset_quota_provider.set_demo_execution_quota_provider(lambda uid: (calls.append(uid) or (True, 3)))
 
     async def _load_wf(_s, _wid, _uid):
-        return SimpleNamespace(nodes=[], versions=[])
+        return SimpleNamespace(nodes=[], versions=[], project_id=1)
 
     monkeypatch.setattr(bp, "load_workflow_with_graph", _load_wf)
 

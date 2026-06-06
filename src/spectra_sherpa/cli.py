@@ -11,6 +11,8 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import asyncio
+import getpass
 import os
 import shutil
 import signal
@@ -18,11 +20,36 @@ import subprocess
 import threading
 import time
 import webbrowser
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit, urlunsplit
+from urllib.request import urlopen
 
 
-def _open_browser(url: str, delay: float = 2.0) -> None:
-    """Open the browser after a short delay (daemon thread)."""
-    time.sleep(delay)
+def _health_url(url: str) -> str:
+    parsed = urlsplit(url)
+    return urlunsplit((parsed.scheme, parsed.netloc, "/api/v1/health", "", ""))
+
+
+def _wait_for_server_ready(url: str, *, timeout: float = 120.0, interval: float = 0.5) -> bool:
+    """Wait until the local HTTP server is accepting requests."""
+    deadline = time.monotonic() + max(0.0, timeout)
+    probe_url = _health_url(url)
+    while time.monotonic() <= deadline:
+        try:
+            with urlopen(probe_url, timeout=min(2.0, max(0.1, interval))) as response:  # nosec B310
+                return 200 <= getattr(response, "status", 200) < 500
+        except HTTPError as exc:
+            return 200 <= exc.code < 500
+        except (OSError, URLError):
+            time.sleep(interval)
+    return False
+
+
+def _open_browser(url: str, delay: float = 0.0) -> None:
+    """Open the browser after the server is ready, with a bounded fallback."""
+    if delay > 0:
+        time.sleep(delay)
+    _wait_for_server_ready(url)
     webbrowser.open(url)
 
 
@@ -150,6 +177,62 @@ def _clear_port(
     return True
 
 
+async def _prewarm_hitran_synthesis_library(args: argparse.Namespace) -> None:
+    from spectra_sherpa.app.core.config import settings
+    from spectra_sherpa.app.services.synthesis import (
+        default_hitran_component_ids,
+        prewarm_hitran_default_library,
+    )
+
+    api_key = args.api_key or os.getenv("HITRAN_API_KEY")
+    if not api_key:
+        api_key = getpass.getpass("HITRAN API key: ")
+
+    component_ids = list(args.component or [])
+    if not component_ids:
+        component_ids = default_hitran_component_ids()
+    if args.limit is not None:
+        component_ids = component_ids[: max(0, args.limit)]
+
+    print("Prewarming local HITRAN synthesis library")
+    print(f"  Cache:       {settings.data_dir / 'synthesis_cache' / 'hitran' / 'spectra'}")
+    print(f"  Components:  {len(component_ids)}")
+    print(f"  Wavenumber:  {args.wavenumber_min:g}-{args.wavenumber_max:g} cm^-1")
+    print(f"  Resolution:  {args.resolution_cm1:g} cm^-1")
+    print(f"  Temperature: {args.temperature_k:g} K")
+    print(f"  Pressure:    {args.pressure_atm:g} atm")
+    print("")
+
+    def report(row: dict[str, object]) -> None:
+        status = str(row.get("status", "unknown")).upper()
+        prefix = f"[{row.get('index')}/{row.get('total')}] {status:9s}"
+        message = f"{prefix} {row.get('component_id')} {row.get('name')}"
+        if row.get("n_points") is not None:
+            message += f" ({row.get('n_points')} points)"
+        if row.get("error"):
+            message += f" - {row.get('error')}"
+        print(message, flush=True)
+
+    results = await prewarm_hitran_default_library(
+        api_key,
+        component_ids=component_ids,
+        temperature_k=args.temperature_k,
+        pressure_atm=args.pressure_atm,
+        resolution_cm1=args.resolution_cm1,
+        wavenumber_min=args.wavenumber_min,
+        wavenumber_max=args.wavenumber_max,
+        force=args.force,
+        progress=report,
+    )
+    generated = sum(1 for row in results if row.get("status") == "generated")
+    cached = sum(1 for row in results if row.get("status") == "cached")
+    failed = [row for row in results if row.get("status") == "failed"]
+    print("")
+    print(f"Done. generated={generated}, cached={cached}, failed={len(failed)}")
+    if failed:
+        raise SystemExit(2)
+
+
 def main(argv: list[str] | None = None) -> None:
     from spectra_sherpa import __version__
 
@@ -198,6 +281,27 @@ def main(argv: list[str] | None = None) -> None:
     serve_parser.add_argument(
         "--port", type=int, default=8001, help="Port number for the headless server (default: 8001)"
     )
+    prewarm_parser = subparsers.add_parser(
+        "prewarm-hitran-synthesis",
+        help="Populate the local default HITRAN synthesis spectrum cache",
+    )
+    prewarm_parser.add_argument(
+        "--api-key",
+        default=None,
+        help="HITRAN API key. If omitted, reads HITRAN_API_KEY or prompts without echo.",
+    )
+    prewarm_parser.add_argument(
+        "--component",
+        action="append",
+        help="HITRAN component to prewarm, e.g. hitran:2, 2, CO2, or Carbon dioxide. Repeatable.",
+    )
+    prewarm_parser.add_argument("--limit", type=int, default=None, help="Limit the number of components to prewarm")
+    prewarm_parser.add_argument("--force", action="store_true", help="Regenerate spectra even when cached")
+    prewarm_parser.add_argument("--resolution-cm1", type=float, default=1.0, help="Wavenumber step in cm^-1")
+    prewarm_parser.add_argument("--wavenumber-min", type=float, default=400.0, help="Minimum wavenumber in cm^-1")
+    prewarm_parser.add_argument("--wavenumber-max", type=float, default=4000.0, help="Maximum wavenumber in cm^-1")
+    prewarm_parser.add_argument("--temperature-k", type=float, default=293.0, help="Temperature in K")
+    prewarm_parser.add_argument("--pressure-atm", type=float, default=1.0, help="Pressure in atm")
 
     args = parser.parse_args(argv)
 
@@ -231,6 +335,10 @@ def main(argv: list[str] | None = None) -> None:
     # Limit threads for single-user local mode
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "4")
     os.environ.setdefault("MKL_NUM_THREADS", "4")
+
+    if getattr(args, "command", None) == "prewarm-hitran-synthesis":
+        asyncio.run(_prewarm_hitran_synthesis_library(args))
+        return
 
     # Check for headless mode BEFORE browser launch to avoid unnecessary GUI on servers
     is_headless = getattr(args, "command", None) == "serve-model"

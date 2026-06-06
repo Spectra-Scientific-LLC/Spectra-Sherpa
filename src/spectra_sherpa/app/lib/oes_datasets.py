@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
+from spectra_sherpa.app.lib.eigenvector import build_catalog_preview
 
 OES_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "oes"
 
@@ -105,5 +106,11 @@ def get_oes_dataset_info(
         info["wavelength_min"] = float(wavelengths.min())
         info["wavelength_max"] = float(wavelengths.max())
         info["wavelength_step"] = float(np.mean(np.diff(wavelengths)))
+
+    preview = build_catalog_preview(spectra, wavelengths)
+    if preview is not None:
+        info["preview_spectra"] = preview["spectra"]
+        if "wavelengths" in preview:
+            info["wavelengths"] = preview["wavelengths"]
 
     return info

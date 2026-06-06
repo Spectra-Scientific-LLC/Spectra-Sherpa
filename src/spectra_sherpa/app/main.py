@@ -465,7 +465,12 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     )
 
     # Determine if auth is required for this connection (mode-dependent).
-    from spectra_sherpa.app.core.mode_policy import requires_ws_auth as _requires_ws_auth
+    from spectra_sherpa.app.core.mode_policy import (
+        blocks_local_network_client,
+    )
+    from spectra_sherpa.app.core.mode_policy import (
+        requires_ws_auth as _requires_ws_auth,
+    )
     from spectra_sherpa.app.core.request_id import mint_request_id, use_request_id
     from spectra_sherpa.app.services.ws_auth import (
         authenticate_ws_message,
@@ -476,6 +481,12 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     from spectra_sherpa.app.services.ws_handlers import handle_subscribe, handle_unsubscribe
 
     ws_client_host = get_client_host(websocket)
+    if blocks_local_network_client(ws_client_host):
+        logger.warning("Blocked non-loopback local-mode websocket client_host=%r", ws_client_host)
+        await websocket.accept()
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
     requires_ws_auth = _requires_ws_auth(ws_client_host)
 
     # ── Phase 1: resolve implicit local identity only ──

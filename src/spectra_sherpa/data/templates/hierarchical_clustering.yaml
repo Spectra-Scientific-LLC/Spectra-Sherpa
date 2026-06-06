@@ -5,6 +5,9 @@ description: Unsupervised clustering workflow using hierarchical clustering to g
   similar spectra.
 category: clustering
 is_active: true
+data_modalities:
+- spectra
+- features
 template_data:
   nodes:
   - node_id: data_1
@@ -16,10 +19,10 @@ template_data:
     position_x: 175
     position_y: 50
   - node_id: preprocess_1
-    node_type: preprocess.normalize
-    label: Normalize
+    node_type: preprocess.scale
+    label: Autoscale
     parameters:
-      method: snv
+      method: autoscale
     position_x: 425
     position_y: 300
   - node_id: model_1
@@ -34,7 +37,7 @@ template_data:
     node_type: output.plot
     label: Dendrogram
     parameters:
-      plot_type: spectra
+      plot_type: dendrogram
     position_x: 425
     position_y: 800
   edges:
@@ -44,7 +47,7 @@ template_data:
     to_node_id: model_1
   - from_node_id: model_1
     to_node_id: viz_1
-    from_output: linkage_matrix
+    from_output: dendrogram_data
   canvas_state:
     zoom: 1.0
     pan_x: 0
@@ -56,6 +59,9 @@ template_data:
       required: true
       binding_mode: embedded
       description: Spectral or multivariate data for clustering
+      accepted_data_roles:
+      - X_spectra
+      - X_features
       accepted_techniques:
       - FTIR
       - NIR
@@ -64,6 +70,8 @@ template_data:
   certified_datasets:
   - source: sklearn
     name: wine
+  - source: sklearn
+    name: iris
   - source: eigenvector
     name: diesel_nir
   - source: eigenvector

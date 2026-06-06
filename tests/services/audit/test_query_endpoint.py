@@ -81,10 +81,10 @@ async def admin_auth_client(test_session, test_user):
     """Auth client whose user passes the server admin-resolver check.
 
     The OSS ``User`` model intentionally has no ``is_superuser``
-    column (per v0.4.1 monorepo split — the flag lives on
-    ManagedUserAccount in spectra-server). The audit route must use
+    column (per v0.4.1 split — the flag lives on the managed-account
+    model in server-backed deployments). The audit route must use
     the OSS admin-resolver contract that the server injects at startup;
-    otherwise real server admins silently fail closed and see only
+    otherwise real managed admins silently fail closed and see only
     their own audit rows.
     """
     from httpx import ASGITransport, AsyncClient

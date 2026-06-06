@@ -39,6 +39,39 @@ EIGENVECTOR_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / 
 
 FEATURED_DATASETS = {"diesel_nir", "corn_m5", "nir_shootout_cal1", "nir_shootout_test1", "metal_etch_oes"}
 
+# Max traces sent in catalog `preview_spectra`. Mirrors the cap the upload
+# path applies in `get_file_info` so the Inspect chart looks identical
+# whether the user explores a reference catalog entry or a file they
+# uploaded.
+CATALOG_PREVIEW_MAX_TRACES = 20
+
+
+def build_catalog_preview(
+    spectra: np.ndarray,
+    wavelengths: np.ndarray | None,
+    *,
+    max_traces: int = CATALOG_PREVIEW_MAX_TRACES,
+) -> dict[str, Any] | None:
+    """Build a JSON-safe `{spectra, wavelengths}` preview from a 2D array.
+
+    Returns None when there is nothing meaningful to plot — caller can
+    just skip setting the field on the info dict.
+
+    Complex-valued arrays (e.g. raw NMR FIDs) are rejected rather than
+    coerced; `complex` is not JSON-serialisable and silently shipping
+    the real part would mis-render the spectrum.
+    """
+    if spectra is None or spectra.ndim != 2 or spectra.shape[0] == 0 or spectra.shape[1] == 0:
+        return None
+    if np.issubdtype(spectra.dtype, np.complexfloating):
+        return None
+    preview = spectra[:max_traces]
+    safe = np.where(np.isfinite(preview), preview, None).tolist()
+    payload: dict[str, Any] = {"spectra": safe}
+    if wavelengths is not None and len(wavelengths) == spectra.shape[1]:
+        payload["wavelengths"] = np.asarray(wavelengths, dtype=float).tolist()
+    return payload
+
 
 # ---------------------------------------------------------------------------
 # Axis validation
@@ -782,5 +815,11 @@ def get_dataset_info(
                 }
             )
         info["property_stats"] = prop_stats
+
+    preview = build_catalog_preview(spectra, wavelengths)
+    if preview is not None:
+        info["preview_spectra"] = preview["spectra"]
+        if "wavelengths" in preview:
+            info["wavelengths"] = preview["wavelengths"]
 
     return info

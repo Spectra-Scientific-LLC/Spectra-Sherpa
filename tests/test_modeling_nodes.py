@@ -135,6 +135,7 @@ async def test_hca_node_clusters():
 
     assert outputs["n_clusters"] == 2
     assert len(outputs["labels"]) == dataset.shape[0]
+    assert outputs["default"] == outputs["labels"]
 
 
 @pytest.mark.asyncio
@@ -151,6 +152,7 @@ async def test_kmeans_node_clusters():
 
     assert outputs["n_clusters"] == 2
     assert len(outputs["labels"]) == dataset.shape[0]
+    assert outputs["default"] == outputs["labels"]
     assert len(outputs["centroids"]) == 2
 
 
@@ -168,6 +170,7 @@ async def test_dbscan_node_clusters():
 
     assert outputs["n_clusters"] == 2
     assert len(outputs["labels"]) == dataset.shape[0]
+    assert outputs["default"] == outputs["labels"]
 
 
 @pytest.mark.asyncio

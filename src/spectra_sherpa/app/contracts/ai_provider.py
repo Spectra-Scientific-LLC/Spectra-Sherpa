@@ -50,7 +50,13 @@ class AIServiceProvider(Protocol):
 
     # ── Unary request/response methods ───────────────────────────────
 
-    async def sync_workflow(self, sync_msg: Any, *, tier: Any) -> list[Any]:
+    async def sync_workflow(
+        self,
+        sync_msg: Any,
+        *,
+        tier: Any,
+        local_user_id: int | None = None,
+    ) -> list[Any]:
         """Proxy workflow sync and return recommendations."""
         ...
 

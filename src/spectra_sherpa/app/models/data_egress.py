@@ -47,8 +47,9 @@ class EgressDestination:
     LLM_CONTEXT = "llm_context"  # Send to LLM providers
     EXPORT = "export"  # Export to external files
     NIST = "nist"  # NIST WebBook queries
+    HITRAN = "hitran"  # HITRAN/HAPI queries
 
-    ALL = [SPECTRASHERPA, LLM_CONTEXT, EXPORT, NIST]
+    ALL = [SPECTRASHERPA, LLM_CONTEXT, EXPORT, NIST, HITRAN]
 
 
 class DataEgressPermission(Base):
@@ -101,6 +102,7 @@ class UserEgressDefaults(Base):
     allow_llm_context = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
     allow_export = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
     allow_nist_queries = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
+    allow_hitran_queries = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -118,5 +120,6 @@ class UserEgressDefaults(Base):
             EgressDestination.LLM_CONTEXT: bool(self.allow_llm_context),
             EgressDestination.EXPORT: bool(self.allow_export),
             EgressDestination.NIST: bool(self.allow_nist_queries),
+            EgressDestination.HITRAN: bool(self.allow_hitran_queries),
         }
         return mapping.get(destination, True)

@@ -37,9 +37,23 @@ from spectra_sherpa.app.services.experiments import (
 
 logger = logging.getLogger(__name__)
 
-# Default secret key that should NOT be used in production
-DEFAULT_SECRET_KEY = "your-super-secret-key-change-in-production"
-DEFAULT_API_KEY = "default-local-key"
+# Default local-mode sentinel that should NOT be used in production.
+DEFAULT_SECRET_KEY = "local-dev-key"
+DEFAULT_API_KEY = "local-key"
+MIN_SECRET_KEY_LENGTH = 32
+MIN_SECRET_KEY_UNIQUE_CHARS = 8
+INSECURE_SECRET_KEY_PLACEHOLDERS = {
+    "",
+    DEFAULT_SECRET_KEY,
+    "your-super-secret-key-change-in-production",
+    "change-me",
+    "changeme",
+    "secret",
+    "password",
+    "default",
+    "<generate-new-key>",
+    "<paste your generated secret key>",
+}
 
 # Filename where the auto-generated local secret key is persisted
 _LOCAL_KEY_FILENAME = ".secret_key"
@@ -93,6 +107,23 @@ def _ensure_local_secret_key() -> None:
     )
 
 
+def secret_key_security_issue(secret_key: str | None) -> str | None:
+    """Return a startup-blocking issue for weak network-deployment secrets."""
+    value = (secret_key or "").strip()
+    normalized = value.lower()
+    if normalized in INSECURE_SECRET_KEY_PLACEHOLDERS or (normalized.startswith("<") and normalized.endswith(">")):
+        return (
+            "Cannot start with a placeholder/default SECRET_KEY. "
+            "Generate a stable random value with: "
+            'python -c "import secrets; print(secrets.token_urlsafe(32))"'
+        )
+    if len(value) < MIN_SECRET_KEY_LENGTH:
+        return f"SECRET_KEY must be at least {MIN_SECRET_KEY_LENGTH} characters for network-exposed modes."
+    if len(set(value)) < MIN_SECRET_KEY_UNIQUE_CHARS:
+        return "SECRET_KEY appears too low-entropy. Generate a fresh random value."
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Unified config validation
 # ---------------------------------------------------------------------------
@@ -140,16 +171,39 @@ def _validate_security() -> list[ConfigIssue]:
                     "This is acceptable for development but not recommended.",
                 )
             )
+        from spectra_sherpa.app.core.mode_policy import is_loopback, local_network_access_allowed
+
+        bind_host = os.getenv("HOST") or os.getenv("UVICORN_HOST") or "127.0.0.1"
+        if not is_loopback(bind_host):
+            if local_network_access_allowed():
+                issues.append(
+                    ConfigIssue(
+                        "warning",
+                        "security",
+                        f"Local mode is bound to '{bind_host}' and local network access is explicitly allowed. "
+                        "Only use this behind a trusted access-control layer.",
+                    )
+                )
+            else:
+                issues.append(
+                    ConfigIssue(
+                        "error",
+                        "security",
+                        f"Local mode is bound to non-loopback host '{bind_host}'. Local mode has no login barrier; "
+                        "bind to 127.0.0.1 or set SPECTRA_SHERPA_ALLOW_LOCAL_NETWORK=true only behind a trusted "
+                        "access-control layer.",
+                    )
+                )
         return issues
 
     # Non-local modes: strict security validation
-    if settings.secret_key == DEFAULT_SECRET_KEY:
+    secret_key_issue = secret_key_security_issue(settings.secret_key)
+    if secret_key_issue:
         issues.append(
             ConfigIssue(
                 "error",
                 "security",
-                f"Cannot start in '{app_config.mode}' mode with default SECRET_KEY. "
-                f"Set a secure SECRET_KEY environment variable.",
+                f"Cannot start in '{app_config.mode}' mode. {secret_key_issue}",
             )
         )
 
@@ -177,9 +231,10 @@ def _validate_security() -> list[ConfigIssue]:
     if os.getenv("TRUST_PROXY", "").strip().lower() in {"1", "true", "yes"}:
         trusted_proxy_cidrs = os.getenv("TRUSTED_PROXY_CIDRS", "").strip()
         if not trusted_proxy_cidrs:
+            level = "error" if app_config.mode == "enterprise" else "warning"
             issues.append(
                 ConfigIssue(
-                    "warning",
+                    level,
                     "security",
                     "TRUST_PROXY is enabled but TRUSTED_PROXY_CIDRS is not set. "
                     "Only loopback proxy peers are trusted by default.",
@@ -187,9 +242,10 @@ def _validate_security() -> list[ConfigIssue]:
             )
 
     if not os.getenv("MASTER_ENCRYPTION_KEY") and app_config.mode != "local":
+        level = "error" if app_config.mode == "enterprise" else "warning"
         issues.append(
             ConfigIssue(
-                "warning",
+                level,
                 "security",
                 "MASTER_ENCRYPTION_KEY not set — auto-generating. Stored API keys "
                 "will be lost on container restart. Set this env var explicitly.",
@@ -258,17 +314,26 @@ def _validate_database_mode() -> list[ConfigIssue]:
 
 
 def _validate_site_profile() -> list[ConfigIssue]:
-    """site_profile=demo requires enterprise mode."""
+    """Validate profile-specific deployment requirements."""
     issues: list[ConfigIssue] = []
 
-    if app_config.site_profile == "demo" and app_config.mode != "enterprise":
-        issues.append(
-            ConfigIssue(
-                "error",
-                "mode",
-                f"site_profile=demo requires APP_MODE=enterprise, " f"but current mode is '{app_config.mode}'.",
+    if app_config.site_profile == "demo":
+        if app_config.mode != "enterprise":
+            issues.append(
+                ConfigIssue(
+                    "error",
+                    "mode",
+                    f"site_profile=demo requires APP_MODE=enterprise, " f"but current mode is '{app_config.mode}'.",
+                )
             )
-        )
+        if not os.getenv("ENTERPRISE_PASSWORD", "").strip():
+            issues.append(
+                ConfigIssue(
+                    "error",
+                    "mode",
+                    "site_profile=demo requires ENTERPRISE_PASSWORD so public signup remains access-code gated.",
+                )
+            )
 
     return issues
 
@@ -447,20 +512,24 @@ async def ensure_egress_defaults() -> None:
         async with async_session() as session:
             force_llm_defaults = llm_egress_defaults_forced()
             enable_llm_defaults = llm_egress_defaults_enabled()
+            force_demo_data_defaults = app_config.site_profile == "demo"
             result = await session.execute(
                 select(User).outerjoin(UserEgressDefaults).where(UserEgressDefaults.user_id.is_(None))
             )
             users_missing = cast(list[User], result.scalars().all())
 
-            # Local & demo: LLM chat/context on by default so users can use
-            # their own API keys immediately.  Data egress stays off.
+            # Local & demo: LLM chat/context on by default. Demo also enables
+            # NIST/HITRAN/export because the hosted onboarding flow needs
+            # managed Sherpa plus user-managed HITRAN without exposing the
+            # generic BYOK settings surface.
             for user in users_missing:
                 session.add(
                     UserEgressDefaults(
                         user_id=user.id,
                         allow_llm_chat=enable_llm_defaults,  # On by default in local & demo
-                        allow_export=False,  # Local file export disabled by default
-                        allow_nist_queries=False,  # NIST queries disabled by default
+                        allow_export=force_demo_data_defaults,
+                        allow_nist_queries=force_demo_data_defaults,
+                        allow_hitran_queries=force_demo_data_defaults,
                         allow_llm_context=enable_llm_defaults,  # On by default in local & demo
                         allow_spectrasherpa_sync=force_llm_defaults,  # On in demo mode
                     )
@@ -475,6 +544,9 @@ async def ensure_egress_defaults() -> None:
                 mutable_defaults = cast(object, defaults)
                 allow_llm_chat = bool(getattr(mutable_defaults, "allow_llm_chat"))
                 allow_llm_context = bool(getattr(mutable_defaults, "allow_llm_context"))
+                allow_export = bool(getattr(mutable_defaults, "allow_export", False))
+                allow_nist = bool(getattr(mutable_defaults, "allow_nist_queries", False))
+                allow_hitran = bool(getattr(mutable_defaults, "allow_hitran_queries", False))
                 created_at = getattr(mutable_defaults, "created_at", None)
                 updated_at = getattr(mutable_defaults, "updated_at", None)
                 untouched_row = created_at is not None and updated_at == created_at
@@ -484,6 +556,11 @@ async def ensure_egress_defaults() -> None:
                         setattr(mutable_defaults, "allow_llm_chat", True)
                         setattr(mutable_defaults, "allow_llm_context", True)
                         setattr(mutable_defaults, "allow_spectrasherpa_sync", True)
+                        normalized_users += 1
+                    if force_demo_data_defaults and (not allow_export or not allow_nist or not allow_hitran):
+                        setattr(mutable_defaults, "allow_export", True)
+                        setattr(mutable_defaults, "allow_nist_queries", True)
+                        setattr(mutable_defaults, "allow_hitran_queries", True)
                         normalized_users += 1
                 elif enable_llm_defaults and untouched_row and not allow_llm_chat and not allow_llm_context:
                     setattr(mutable_defaults, "allow_llm_chat", True)

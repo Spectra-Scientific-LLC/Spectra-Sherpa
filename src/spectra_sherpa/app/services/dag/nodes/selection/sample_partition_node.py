@@ -62,7 +62,6 @@ class SamplePartitionNode(Node):
                 param_type="number",
                 default=0.2,
                 min_value=0.01,
-                max_value=0.99,
                 step=0.05,
                 description="Fraction of data to use for testing (0.2 = 20%)",
                 required=True,
@@ -84,7 +83,6 @@ class SamplePartitionNode(Node):
                 param_type="number",
                 default=0,
                 min_value=0,
-                max_value=50,
                 step=1,
                 description="Reduce to N PCA components before distance calc (0 = no reduction)",
                 required=False,
@@ -105,10 +103,11 @@ class SamplePartitionNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Input Data",
-                description="Full dataset to partition",
+                description="Spectral dataset or multivariate feature table to partition",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="y",
@@ -366,8 +365,17 @@ class SamplePartitionNode(Node):
             X_train_ds.sample_axis = slice_axis_for_indices(src_sample_axis, train_idx)  # type: ignore[assignment]
             X_test_ds.sample_axis = slice_axis_for_indices(src_sample_axis, test_idx)  # type: ignore[assignment]
 
-        # Provenance
-        step_params = {"method": method, "test_size": test_size}
+        # Provenance. Store the exact partition so persisted model artifacts
+        # can later replay/compare train, test, or all sample scopes against
+        # the original dataset without relying on random-state reconstruction.
+        step_params = {
+            "method": method,
+            "test_size": test_size,
+            "train_indices": train_idx.tolist(),
+            "test_indices": test_idx.tolist(),
+            "n_samples": int(n_samples),
+            "random_seed": int(random_seed) if random_seed is not None else None,
+        }
         if method in ("kennard_stone", "duplex", "spxy"):
             step_params["metric"] = metric
             if n_pcs:

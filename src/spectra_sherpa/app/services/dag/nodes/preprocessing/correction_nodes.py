@@ -4,6 +4,8 @@ Correction nodes: EMSCNode (and autoscale helpers).
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
 from ._shared import (
@@ -56,7 +58,6 @@ class EMSCNode(Node):
                 param_type="number",
                 default=2,
                 min_value=0,
-                max_value=5,
                 step=1,
                 description="Order of polynomial baseline (0=no baseline correction)",
                 required=False,
@@ -163,6 +164,7 @@ class EMSCNode(Node):
         X_design.append(reference)
 
         n_constituents = 0
+        const_data = None
         if constituents is not None:
             if isinstance(constituents, SherpaDataset):
                 const_data = np.asarray(constituents.data, dtype=np.float64)
@@ -204,10 +206,23 @@ class EMSCNode(Node):
                     corrected_data[i] = spectrum
 
         result = build_dataset_like(corrected_data, input_ds)
+        transform_state: dict[str, Any] = {
+            "method": "emsc",
+            "reference": reference_type,
+            "reference_spectrum": np.asarray(reference, dtype=np.float64).tolist(),
+            "poly_order": int(poly_order),
+        }
+        if const_data is not None:
+            transform_state["constituents"] = np.asarray(const_data, dtype=np.float64).tolist()
         add_processing_step(
             result,
             "preprocess.emsc",
-            {"reference": reference_type, "poly_order": poly_order, "n_constituents": n_constituents},
+            {
+                "reference": reference_type,
+                "poly_order": poly_order,
+                "n_constituents": n_constituents,
+                "transform_state": transform_state,
+            },
             node_id=self.node_id,
             state_effects=[EFFECT_SCATTER_CORRECTED],
         )

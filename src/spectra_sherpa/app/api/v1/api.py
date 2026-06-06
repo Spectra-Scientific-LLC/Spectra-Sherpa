@@ -27,6 +27,8 @@ from spectra_sherpa.app.api.v1.routes import (
     predict,
     project_scripts,
     projects,
+    runs,
+    synthesis,
     workflow_export,
     workflow_organization,
     workflow_templates,
@@ -81,6 +83,7 @@ def build_api_router(
     router.include_router(doe_config.router, prefix="/doe-configs", tags=["doe-configs"])
     router.include_router(workflows.router, tags=["workflows"])
     router.include_router(execution_runs.router, tags=["execution-runs"])
+    router.include_router(runs.router, tags=["runs"])
     router.include_router(workflow_organization.router, prefix="/workflows", tags=["workflow-organization"])
     router.include_router(workflow_templates.router, tags=["workflow-templates"])
     router.include_router(workflow_export.router, tags=["workflow-export"])
@@ -88,6 +91,7 @@ def build_api_router(
     router.include_router(builder.router, tags=["builder"])
     router.include_router(compute.router, prefix="/compute", tags=["compute"])
     router.include_router(datasets.router, tags=["datasets"])
+    router.include_router(synthesis.router, tags=["synthesis"])
     router.include_router(jobs.router, tags=["jobs"])
     router.include_router(egress.router, tags=["egress"])
     router.include_router(deploy.router, tags=["deploy"])

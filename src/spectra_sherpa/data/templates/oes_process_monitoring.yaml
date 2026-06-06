@@ -24,9 +24,9 @@ template_data:
     position_y: 300
   - node_id: model_1
     node_type: model.pca
-    label: PCA
+    label: Fit PCA Transform
     parameters:
-      n_components: '3'
+      n_components: 3
     position_x: 175
     position_y: 550
   - node_id: stats_1
@@ -47,11 +47,11 @@ template_data:
     to_node_id: preprocess_1
   - from_node_id: preprocess_1
     to_node_id: model_1
-  - from_node_id: preprocess_1
+  - from_node_id: model_1
     to_node_id: stats_1
+    from_output: scores
   - from_node_id: model_1
     to_node_id: viz_1
-    from_output: scores
     from_output: scores
   canvas_state:
     zoom: 1.0
@@ -78,8 +78,6 @@ template_data:
     name: corn_mp5
   - source: eigenvector
     name: corn_mp6
-  - source: sklearn
-    name: wine
   - source: spectrochempy
     name: irdata
   - source: oes

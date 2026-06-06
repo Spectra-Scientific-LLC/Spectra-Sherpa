@@ -62,18 +62,26 @@ def test_from_env_hybrid_allows_explicit_egress_override(monkeypatch: pytest.Mon
     assert cfg.egress_enabled is False
 
 
+def test_from_env_rejects_unsupported_app_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    _clear_mode_env(monkeypatch)
+    monkeypatch.setenv("APP_MODE", "demo")
+
+    with pytest.raises(ValueError, match="Unsupported APP_MODE"):
+        AppConfig.from_env()
+
+
 def test_from_env_hybrid_accepts_site_profile_without_changing_runtime_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _clear_mode_env(monkeypatch)
     monkeypatch.setenv("APP_MODE", "hybrid")
-    monkeypatch.setenv("SITE_PROFILE", "internal")
+    monkeypatch.setenv("SITE_PROFILE", "hybrid_server")
 
     cfg = AppConfig.from_env()
     safe = cfg.to_client_safe()
 
     assert cfg.mode == "hybrid"
-    assert cfg.site_profile == "internal"
+    assert cfg.site_profile == "hybrid_server"
     assert safe["mode"] == "hybrid"
-    assert safe["siteProfile"] == "internal"
+    assert safe["siteProfile"] == "hybrid_server"
     assert safe["demo"] is None  # Not a demo profile

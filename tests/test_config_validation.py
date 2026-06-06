@@ -50,15 +50,21 @@ class _FakeLLM:
 
 class _FakeSettings:
     def __init__(
-        self, secret_key="secure-key", api_key="secure-api-key", database_url="sqlite+aiosqlite:///data/test.db"
+        self,
+        secret_key=None,
+        api_key="secure-api-key",
+        database_url="sqlite+aiosqlite:///data/test.db",
     ):
-        self.secret_key = secret_key
+        self.secret_key = secret_key or _STRONG_SECRET
         self.api_key = api_key
         self.database_url = database_url
 
 
-_DEFAULT_SECRET = "your-super-secret-key-change-in-production"
-_DEFAULT_API_KEY = "default-local-key"
+_DEFAULT_SECRET = "local-dev-key"
+_DEFAULT_API_KEY = "local-key"
+_STRONG_SECRET = "-".join(("secure", "test", "runtime", "entropy", "123456"))
+_PUBLISHED_SECRET_PLACEHOLDER = "-".join(("your", "super", "secret", "key", "change", "in", "production"))
+_SHORT_SECRET = "-".join(("short", "but", "not", "default"))
 
 
 # ---------------------------------------------------------------------------
@@ -116,15 +122,31 @@ class TestSiteProfile:
         cfg = _FakeAppConfig(mode="local", site_profile="demo")
         with patch("spectra_sherpa.app.core.startup.app_config", cfg):
             issues = _validate_site_profile()
-        assert len(issues) == 1
-        assert issues[0].level == "error"
-        assert "enterprise" in issues[0].message.lower()
+        errors = [issue for issue in issues if issue.level == "error"]
+        assert any("enterprise" in issue.message.lower() for issue in errors)
 
     def test_demo_enterprise_ok(self):
         cfg = _FakeAppConfig(mode="enterprise", site_profile="demo")
-        with patch("spectra_sherpa.app.core.startup.app_config", cfg):
+        with (
+            patch("spectra_sherpa.app.core.startup.app_config", cfg),
+            patch.dict("os.environ", {"ENTERPRISE_PASSWORD": "welcome_to_spectra_sherpa"}),
+        ):
             issues = _validate_site_profile()
         assert len(issues) == 0
+
+    def test_demo_enterprise_requires_access_code(self):
+        cfg = _FakeAppConfig(mode="enterprise", site_profile="demo")
+        with (
+            patch("spectra_sherpa.app.core.startup.app_config", cfg),
+            patch.dict("os.environ", {}, clear=False),
+        ):
+            import os
+
+            os.environ.pop("ENTERPRISE_PASSWORD", None)
+            issues = _validate_site_profile()
+        assert len(issues) == 1
+        assert issues[0].level == "error"
+        assert "ENTERPRISE_PASSWORD" in issues[0].message
 
     def test_no_profile_ok(self):
         cfg = _FakeAppConfig(mode="local", site_profile=None)
@@ -214,10 +236,44 @@ class TestSecurity:
         with (
             patch("spectra_sherpa.app.core.startup.app_config", cfg),
             patch("spectra_sherpa.app.core.startup.settings", stg),
+            patch.dict("os.environ", {}, clear=False),
         ):
+            import os
+
+            os.environ.pop("HOST", None)
+            os.environ.pop("UVICORN_HOST", None)
+            os.environ.pop("SPECTRA_SHERPA_ALLOW_LOCAL_NETWORK", None)
+            os.environ.pop("SPECTRASHERPA_ALLOW_LOCAL_NETWORK", None)
             issues = _validate_security()
         assert len(issues) == 1
         assert issues[0].level == "warning"
+
+    def test_local_non_loopback_bind_is_error_without_opt_in(self):
+        cfg = _FakeAppConfig(mode="local")
+        stg = _FakeSettings(secret_key=_STRONG_SECRET)
+        with (
+            patch("spectra_sherpa.app.core.startup.app_config", cfg),
+            patch("spectra_sherpa.app.core.startup.settings", stg),
+            patch.dict("os.environ", {"HOST": "0.0.0.0"}, clear=False),
+        ):
+            issues = _validate_security()
+        errors = [i for i in issues if i.level == "error"]
+        assert len(errors) == 1
+        assert "Local mode is bound to non-loopback" in errors[0].message
+
+    def test_local_non_loopback_bind_can_be_explicitly_allowed(self):
+        cfg = _FakeAppConfig(mode="local")
+        stg = _FakeSettings(secret_key=_STRONG_SECRET)
+        with (
+            patch("spectra_sherpa.app.core.startup.app_config", cfg),
+            patch("spectra_sherpa.app.core.startup.settings", stg),
+            patch.dict("os.environ", {"HOST": "0.0.0.0", "SPECTRA_SHERPA_ALLOW_LOCAL_NETWORK": "true"}),
+        ):
+            issues = _validate_security()
+        assert not [i for i in issues if i.level == "error"]
+        warnings = [i for i in issues if i.level == "warning"]
+        assert len(warnings) == 1
+        assert "local network access is explicitly allowed" in warnings[0].message
 
     def test_enterprise_default_key_error(self):
         cfg = _FakeAppConfig(mode="enterprise")
@@ -230,6 +286,28 @@ class TestSecurity:
         errors = [i for i in issues if i.level == "error"]
         assert len(errors) >= 1
         assert "SECRET_KEY" in errors[0].message
+
+    def test_enterprise_rejects_published_placeholder_secret(self):
+        cfg = _FakeAppConfig(mode="enterprise")
+        stg = _FakeSettings(secret_key=_PUBLISHED_SECRET_PLACEHOLDER)
+        with (
+            patch("spectra_sherpa.app.core.startup.app_config", cfg),
+            patch("spectra_sherpa.app.core.startup.settings", stg),
+        ):
+            issues = _validate_security()
+        errors = [i for i in issues if i.level == "error"]
+        assert any("SECRET_KEY" in error.message for error in errors)
+
+    def test_enterprise_rejects_short_secret(self):
+        cfg = _FakeAppConfig(mode="enterprise")
+        stg = _FakeSettings(secret_key=_SHORT_SECRET)
+        with (
+            patch("spectra_sherpa.app.core.startup.app_config", cfg),
+            patch("spectra_sherpa.app.core.startup.settings", stg),
+        ):
+            issues = _validate_security()
+        errors = [i for i in issues if i.level == "error"]
+        assert any("at least" in error.message for error in errors)
 
 
 # ---------------------------------------------------------------------------
@@ -269,13 +347,17 @@ class TestValidateConfig:
         """Local mode with all defaults should produce no errors."""
         cfg = _FakeAppConfig(mode="local")
         stg = _FakeSettings(
-            secret_key="safe-key",
+            secret_key=_STRONG_SECRET,
             database_url="sqlite+aiosqlite:///data/test.db",
         )
         with (
             patch("spectra_sherpa.app.core.startup.app_config", cfg),
             patch("spectra_sherpa.app.core.startup.settings", stg),
+            patch.dict("os.environ", {}, clear=False),
         ):
+            import os
+
+            os.environ.pop("ENTERPRISE_PASSWORD", None)
             result = validate_config()
         assert isinstance(result, ConfigValidationResult)
         assert not result.has_errors

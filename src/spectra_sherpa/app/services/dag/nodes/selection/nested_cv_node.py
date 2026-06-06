@@ -5,8 +5,9 @@ Registered as ``selection.nested_cv``.
 Performs variable selection *inside* each CV fold to prevent information
 leakage.  For each outer fold:
   1. Select variables on the training set only
-  2. Fit PLS on the selected training variables
-  3. Predict the held-out set using only selected variables
+  2. Tune the PLS latent-variable count by inner CV on selected training variables
+  3. Fit PLS on the selected training variables
+  4. Predict the held-out set using only selected variables
 
 Reports honest (unbiased) RMSECV, R², Q² and per-fold selection stability.
 
@@ -122,23 +123,65 @@ def _select_variables_inner(
         return np.ones(n_features, dtype=bool)
 
 
+def _choose_pls_components_inner_cv(
+    X_train: np.ndarray,
+    y_train: np.ndarray,
+    *,
+    max_components: int,
+    inner_folds: int = 3,
+) -> int:
+    """Choose PLS latent variables by inner CV inside one outer training fold."""
+    n_samples, n_features = X_train.shape
+    max_valid = max(1, min(int(max_components), n_features, n_samples - 1))
+    if max_valid == 1 or n_samples < 4:
+        return 1
+
+    n_splits = min(int(inner_folds), n_samples)
+    if n_splits < 2:
+        return 1
+
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=17)
+    best_components = 1
+    best_mse = float("inf")
+
+    for n_comp in range(1, max_valid + 1):
+        fold_errors: list[float] = []
+        for inner_train_idx, inner_val_idx in kf.split(X_train):
+            n_comp_fit = min(n_comp, len(inner_train_idx) - 1, X_train.shape[1])
+            if n_comp_fit < 1:
+                continue
+            pls = PLSRegression(n_components=n_comp_fit, scale=False)
+            pls.fit(X_train[inner_train_idx], y_train[inner_train_idx])
+            y_hat = pls.predict(X_train[inner_val_idx]).reshape(-1)
+            fold_errors.append(float(np.mean((y_train[inner_val_idx] - y_hat) ** 2)))
+        if not fold_errors:
+            continue
+        mse = float(np.mean(fold_errors))
+        if mse < best_mse:
+            best_mse = mse
+            best_components = n_comp
+
+    return int(best_components)
+
+
 @register_node
 class NestedCVNode(Node):
     """Leakage-safe Nested CV — variable selection inside each fold.
 
     For each outer CV fold:
     1. Select variables on training data only (VIP, CARS, UVE, SPA, or |coef|)
-    2. Fit PLS on selected training variables
-    3. Predict held-out samples with selected variables only
+    2. Tune the latent-variable count by inner CV
+    3. Fit PLS on selected training variables
+    4. Predict held-out samples with selected variables only
 
-    Reports honest RMSECV, R², Q² that are unbiased by selection.
+    Reports honest RMSECV, R², Q² that are unbiased by selection or LV tuning.
     Also reports per-fold selection stability (Jaccard between folds).
     """
 
     metadata = NodeMetadata(
         node_type="selection.nested_cv",
         category="selection",
-        label="Nested CV (Leakage-safe)",
+        label="Evaluate Nested CV Selection",
         description="Variable selection inside CV folds — honest, unbiased performance estimates",
         parameters=[
             NodeParameter(
@@ -158,12 +201,12 @@ class NestedCVNode(Node):
             ),
             NodeParameter(
                 name="n_components",
-                label="PLS Components",
+                label="Max PLS Components",
                 param_type="number",
                 default=5,
                 min_value=1,
-                max_value=20,
                 step=1,
+                description="Maximum latent variables considered by the inner CV loop",
             ),
             NodeParameter(
                 name="cv_folds",
@@ -171,7 +214,6 @@ class NestedCVNode(Node):
                 param_type="number",
                 default=5,
                 min_value=2,
-                max_value=20,
                 step=1,
                 description="Number of outer cross-validation folds",
             ),
@@ -181,19 +223,31 @@ class NestedCVNode(Node):
                 param_type="number",
                 default=1.0,
                 min_value=0.1,
-                max_value=5.0,
                 step=0.1,
                 description="VIP threshold (for VIP method)",
                 category="advanced",
                 visible_when={"selection_method": ["vip"]},
             ),
+            NodeParameter(
+                name="coef_threshold",
+                label="Coefficient Threshold",
+                param_type="number",
+                default=0.01,
+                min_value=0.0,
+                step=0.001,
+                description="Absolute PLS coefficient threshold (for |Coefficient| method)",
+                category="advanced",
+                visible_when={"selection_method": ["coef_abs"]},
+            ),
         ],
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Spectral Data",
+                label="Input Data Matrix",
+                description="Spectral dataset or multivariate feature table",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="y",
@@ -224,7 +278,7 @@ class NestedCVNode(Node):
         ],
         input_types=["NDDataset"],
         output_type="dict",
-        diagnostics=["rmsecv", "r2", "q2", "mean_n_selected", "selection_stability"],
+        diagnostics=["rmsecv", "r2_cv", "q2", "mean_n_selected", "selection_stability"],
     )
 
     def generate_python(
@@ -242,6 +296,7 @@ class NestedCVNode(Node):
         n_components = int(params.get("n_components", 5))
         cv_folds = int(params.get("cv_folds", 5))
         vip_threshold = float(params.get("vip_threshold", 1.0))
+        coef_threshold = float(params.get("coef_threshold", 0.01))
 
         lines: list[str] = []
         lines.append(f"{indent}# --- Nested CV / Leakage-safe ({self.node_id}) ---")
@@ -265,6 +320,7 @@ class NestedCVNode(Node):
         lines.append(f"{indent}_y_pred_all = np.full(_n_samples, np.nan)")
         lines.append(f"{indent}_fold_masks = []")
         lines.append(f"{indent}_fold_n_selected = []")
+        lines.append(f"{indent}_fold_n_components = []")
         lines.append("")
         lines.append(f"{indent}for _fold_i, (_train_idx, _test_idx) in enumerate(_kf.split(_X_ncv)):")
         lines.append(f"{indent}    _X_train, _X_test = _X_ncv[_train_idx], _X_ncv[_test_idx]")
@@ -296,10 +352,12 @@ class NestedCVNode(Node):
             lines.append(f"{indent}    _pls_sel = _PLSRegression(n_components=max(_nc, 1), scale=False)")
             lines.append(f"{indent}    _pls_sel.fit(_X_train, _y_train)")
             lines.append(f"{indent}    _coefs = np.abs(_pls_sel.coef_.ravel())")
-            lines.append(f"{indent}    _thresh = np.median(_coefs)")
+            lines.append(f"{indent}    _thresh = {coef_threshold}")
             lines.append(f"{indent}    _mask = _coefs >= _thresh")
             lines.append(f"{indent}    if np.sum(_mask) == 0:")
-            lines.append(f"{indent}        _mask = np.ones(_n_features, dtype=bool)")
+            lines.append(f"{indent}        _top_n = max(int(0.1 * _n_features), 1)")
+            lines.append(f"{indent}        _mask = np.zeros(_n_features, dtype=bool)")
+            lines.append(f"{indent}        _mask[np.argsort(_coefs)[-_top_n:]] = True")
         else:
             # "none" or other — use all variables
             lines.append(f"{indent}    # No variable selection — use all variables")
@@ -311,10 +369,30 @@ class NestedCVNode(Node):
         lines.append(f"{indent}    if _n_sel == 0:")
         lines.append(f"{indent}        _mask = np.ones(_n_features, dtype=bool)")
         lines.append(f"{indent}        _n_sel = _n_features")
-        lines.append(f"{indent}    _nc_fit = min({n_components}, _n_sel - 1, len(_train_idx) - 1)")
-        lines.append(f"{indent}    _nc_fit = max(_nc_fit, 1)")
+        lines.append(f"{indent}    _X_train_sel = _X_train[:, _mask]")
+        lines.append(f"{indent}    _max_comp = max(1, min({n_components}, _n_sel, len(_train_idx) - 1))")
+        lines.append(f"{indent}    _best_comp, _best_mse = 1, float('inf')")
+        lines.append(f"{indent}    if len(_train_idx) >= 4 and _max_comp > 1:")
+        lines.append(
+            f"{indent}        _inner = _KFold(" f"n_splits=min(3, len(_train_idx)), shuffle=True, random_state=17)"
+        )
+        lines.append(f"{indent}        for _nc_try in range(1, _max_comp + 1):")
+        lines.append(f"{indent}            _errs = []")
+        lines.append(f"{indent}            for _itr, _ival in _inner.split(_X_train_sel):")
+        lines.append(f"{indent}                _nc_inner = min(_nc_try, len(_itr) - 1, _X_train_sel.shape[1])")
+        lines.append(f"{indent}                if _nc_inner < 1:")
+        lines.append(f"{indent}                    continue")
+        lines.append(f"{indent}                _pls_inner = _PLSRegression(n_components=_nc_inner, scale=False)")
+        lines.append(f"{indent}                _pls_inner.fit(_X_train_sel[_itr], _y_train[_itr])")
+        lines.append(f"{indent}                _pred_inner = _pls_inner.predict(_X_train_sel[_ival]).ravel()")
+        lines.append(f"{indent}                _errs.append(float(np.mean((_y_train[_ival] - _pred_inner) ** 2)))")
+        lines.append(f"{indent}            if _errs and float(np.mean(_errs)) < _best_mse:")
+        lines.append(f"{indent}                _best_mse = float(np.mean(_errs))")
+        lines.append(f"{indent}                _best_comp = _nc_try")
+        lines.append(f"{indent}    _nc_fit = _best_comp")
+        lines.append(f"{indent}    _fold_n_components.append(_nc_fit)")
         lines.append(f"{indent}    _pls_fold = _PLSRegression(n_components=_nc_fit, scale=False)")
-        lines.append(f"{indent}    _pls_fold.fit(_X_train[:, _mask], _y_train)")
+        lines.append(f"{indent}    _pls_fold.fit(_X_train_sel, _y_train)")
         lines.append(f"{indent}    _y_pred_all[_test_idx] = _pls_fold.predict(_X_test[:, _mask]).flatten()")
         lines.append("")
 
@@ -340,7 +418,10 @@ class NestedCVNode(Node):
 
         lines.append(f"{indent}results['{self.node_id}'] = {{")
         lines.append(f"{indent}    'cv_metrics': {{'rmsecv': _rmsecv, 'r2': _r2, 'q2': _q2, 'bias': _bias,")
-        lines.append(f"{indent}        'selection_method': {selection_method!r}, 'n_folds': _cv_folds}},")
+        lines.append(
+            f"{indent}        'selection_method': {selection_method!r}, 'n_folds': _cv_folds,"
+            f" 'component_selection': 'inner_cv', 'per_fold_n_components': _fold_n_components}},"
+        )
         lines.append(f"{indent}    'y_pred': _y_pred_all,")
         lines.append(
             f"{indent}    'stability': {{'mean_jaccard': _mean_jaccard,"
@@ -376,6 +457,7 @@ class NestedCVNode(Node):
 
         fold_masks: list[np.ndarray] = []
         fold_n_selected: list[int] = []
+        fold_n_components: list[int] = []
         fold_errors: list[float] = []
 
         method_kwargs = {
@@ -397,14 +479,21 @@ class NestedCVNode(Node):
                 mask = np.ones(n_features, dtype=bool)
                 n_sel = n_features
 
-            # Step 2: Fit PLS on selected training variables
-            n_comp = min(n_components, n_sel - 1, len(train_idx) - 1)
+            # Step 2: Tune PLS latent-variable count by inner CV.
+            X_train_sel = X_train[:, mask]
+            n_comp = _choose_pls_components_inner_cv(
+                X_train_sel,
+                y_train,
+                max_components=min(n_components, n_sel, len(train_idx) - 1),
+                inner_folds=min(3, len(train_idx)),
+            )
             if n_comp < 1:
                 n_comp = 1
+            fold_n_components.append(n_comp)
 
             try:
                 pls = PLSRegression(n_components=n_comp, scale=False)
-                pls.fit(X_train[:, mask], y_train)
+                pls.fit(X_train_sel, y_train)
 
                 # Step 3: Predict held-out set with SAME selected variables
                 y_hat = pls.predict(X_test[:, mask]).flatten()
@@ -449,7 +538,9 @@ class NestedCVNode(Node):
             freq = np.ones(n_features)
 
         cv_metrics = {
+            "metadata": {"type": "RegressionCV"},
             "rmsecv": rmsecv,
+            "r2_cv": r2,
             "r2": r2,
             "q2": q2,
             "bias": bias,
@@ -457,7 +548,9 @@ class NestedCVNode(Node):
             "rer": rer,
             "n_folds": cv_folds,
             "selection_method": selection_method,
+            "component_selection": "inner_cv",
             "per_fold_n_selected": fold_n_selected,
+            "per_fold_n_components": fold_n_components,
             "per_fold_mse": fold_errors,
         }
 
@@ -481,7 +574,9 @@ class NestedCVNode(Node):
                 "stability": stability_report,
             },
             diagnostics={
+                "metadata": {"type": "RegressionCV"},
                 "rmsecv": rmsecv,
+                "r2_cv": r2,
                 "r2": r2,
                 "q2": q2,
                 "sep": sep,
@@ -490,5 +585,7 @@ class NestedCVNode(Node):
                 "mean_n_selected": float(np.mean(fold_n_selected)),
                 "selection_stability": mean_jaccard,
                 "selection_method": selection_method,
+                "mean_n_components": float(np.mean(fold_n_components)) if fold_n_components else None,
+                "component_selection": "inner_cv",
             },
         )

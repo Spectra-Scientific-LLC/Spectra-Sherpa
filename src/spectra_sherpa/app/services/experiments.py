@@ -106,11 +106,17 @@ async def get_experiment(session: AsyncSession, experiment_id: int) -> Experimen
 
 
 async def list_experiments(
-    session: AsyncSession, user_id: int | None = None, limit: int = 50, offset: int = 0
+    session: AsyncSession,
+    user_id: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    project_id: int | None = None,
 ) -> list[Experiment]:
     query = select(Experiment).order_by(Experiment.created_at.desc())
     if user_id is not None:
         query = query.where(Experiment.user_id == user_id)
+    if project_id is not None:
+        query = query.where(Experiment.project_id == project_id)
     query = query.limit(limit).offset(offset)
     result = await session.execute(query)
     return list(result.scalars())
@@ -312,6 +318,7 @@ async def import_reference_dataset(
 ) -> list[ExperimentFile]:
     """Import a reference dataset into an experiment as raw files.
 
+    For synthetic: copies first-party NPZ artifacts into the synthetic stage.
     For eigenvector: exports spectra (+ properties) as CSV.
     For sklearn: exports as CSV.
     For spectrochempy: copies the actual file(s) from testdata.
@@ -319,8 +326,6 @@ async def import_reference_dataset(
     All DB writes use flush_only=True so the caller can commit the full
     batch atomically.  On error, written files are cleaned up.
     """
-    import shutil
-
     import pandas as pd
 
     exp_dir = experiment_dir(experiment_id)
@@ -331,7 +336,49 @@ async def import_reference_dataset(
     written_files: list[Path] = []  # track for rollback
 
     try:
-        if source == "eigenvector":
+        if source == "synthetic":
+            from spectra_sherpa.app.lib.synthetic_references import (
+                SYNTHETIC_REFERENCE_CATALOG,
+                synthetic_reference_path,
+            )
+
+            if name not in SYNTHETIC_REFERENCE_CATALOG:
+                raise ValueError(f"Unknown synthetic reference dataset: {name}")
+
+            source_path = synthetic_reference_path(name)
+            if not source_path.exists():
+                raise FileNotFoundError(f"Synthetic reference dataset not found: {source_path.name}")
+            synthetic_dir = exp_dir / "synthetic"
+            synthetic_dir.mkdir(parents=True, exist_ok=True)
+            target_name = source_path.name
+            target_path = synthetic_dir / target_name
+            rel = target_path.relative_to(exp_dir).as_posix()
+            if target_path.exists():
+                existing_result = await session.execute(
+                    select(ExperimentFile).where(
+                        ExperimentFile.experiment_id == experiment_id,
+                        ExperimentFile.stage == "synthetic",
+                        ExperimentFile.file_path == rel,
+                    )
+                )
+                existing_file = existing_result.scalar_one_or_none()
+                if existing_file is not None:
+                    return [existing_file]
+            target_path.write_bytes(source_path.read_bytes())
+            written_files.append(target_path)
+            created.append(
+                await add_experiment_file(
+                    session,
+                    experiment_id,
+                    "synthetic",
+                    rel,
+                    target_path.stat().st_size,
+                    "npz",
+                    flush_only=True,
+                )
+            )
+
+        elif source == "eigenvector":
             from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG, load_eigenvector_dataset
 
             if name not in DATASET_CATALOG:
@@ -402,54 +449,54 @@ async def import_reference_dataset(
             )
 
         elif source == "spectrochempy":
-            resolved = _resolve_scp_path(name)
-            # Namespace imported SCP artifacts under a dataset-specific folder
-            # so nested example directories remain launchable after materialization.
-            scp_root = raw_dir / ("scp_" + name.replace("/", "_"))
+            from spectra_sherpa.app.lib.scp_catalog import get_scp_catalog_entry, load_scp_reference_as_sherpa
 
-            if resolved.is_file():
-                dest = scp_root / resolved.name
-                if dest.exists():
-                    raise ValueError(f"File already exists: {dest.relative_to(raw_dir).as_posix()}")
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(resolved, dest)
-                written_files.append(dest)
-                rel = dest.relative_to(exp_dir).as_posix()
-                created.append(
-                    await add_experiment_file(
-                        session,
-                        experiment_id,
-                        "raw",
-                        rel,
-                        dest.stat().st_size,
-                        dest.suffix.lstrip(".") or None,
-                        flush_only=True,
-                    )
+            entry = get_scp_catalog_entry(name)
+            dataset = load_scp_reference_as_sherpa(name)
+            X = dataset.X.reshape(dataset.n_samples, dataset.n_features)
+            feature_axis = dataset.get_feature_axis()
+            axis_values = getattr(feature_axis, "values", None) if feature_axis is not None else None
+            axis_labels = getattr(feature_axis, "labels", None) if feature_axis is not None else None
+            if axis_values is not None:
+                axis = [str(value) for value in axis_values]
+            elif axis_labels is not None:
+                axis = [str(value) for value in axis_labels]
+            else:
+                axis = [str(idx) for idx in range(dataset.n_features)]
+
+            sample_axis = dataset.sample_axis
+            sample_labels = list(sample_axis.labels) if sample_axis is not None and sample_axis.labels else []
+            if len(sample_labels) != dataset.n_samples:
+                sample_labels = [f"sample_{idx + 1}" for idx in range(dataset.n_samples)]
+
+            x_title = getattr(feature_axis, "title", None) if feature_axis is not None else None
+            x_units = getattr(feature_axis, "units", None) if feature_axis is not None else None
+            axis_header = str(entry.get("x_title") or x_title or "Feature")
+            if entry.get("x_units") or x_units:
+                axis_header = f"{axis_header} ({entry.get('x_units') or x_units})"
+
+            df = pd.DataFrame({axis_header: axis})
+            for row, label in zip(X, sample_labels, strict=True):
+                df[str(label)] = row
+
+            csv_name = f"scp_{name.replace('/', '_')}.csv"
+            csv_path = raw_dir / csv_name
+            if csv_path.exists():
+                raise ValueError(f"File already exists: {csv_name}")
+            df.to_csv(csv_path, index=False)
+            written_files.append(csv_path)
+            rel = csv_path.relative_to(exp_dir).as_posix()
+            created.append(
+                await add_experiment_file(
+                    session,
+                    experiment_id,
+                    "raw",
+                    rel,
+                    csv_path.stat().st_size,
+                    "csv",
+                    flush_only=True,
                 )
-            elif resolved.is_dir():
-                for child in sorted(resolved.rglob("*")):
-                    if not child.is_file():
-                        continue
-                    if any(part.startswith((".", "_")) for part in child.relative_to(resolved).parts):
-                        continue
-                    dest = scp_root / child.relative_to(resolved)
-                    if dest.exists():
-                        raise ValueError(f"File already exists: {dest.relative_to(raw_dir).as_posix()}")
-                    dest.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(child, dest)
-                    written_files.append(dest)
-                    rel = dest.relative_to(exp_dir).as_posix()
-                    created.append(
-                        await add_experiment_file(
-                            session,
-                            experiment_id,
-                            "raw",
-                            rel,
-                            dest.stat().st_size,
-                            child.suffix.lstrip(".") or None,
-                            flush_only=True,
-                        )
-                    )
+            )
         elif source == "oes":
             from spectra_sherpa.app.lib.oes_datasets import OES_CATALOG, load_oes_dataset
 

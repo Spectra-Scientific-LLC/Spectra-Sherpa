@@ -99,6 +99,9 @@ async def update_egress_defaults(
             allow_nist_queries=(
                 defaults_update.allow_nist_queries if defaults_update.allow_nist_queries is not None else False
             ),
+            allow_hitran_queries=(
+                defaults_update.allow_hitran_queries if defaults_update.allow_hitran_queries is not None else False
+            ),
         )
         session.add(defaults)
     else:
@@ -119,6 +122,8 @@ async def update_egress_defaults(
             defaults.allow_export = defaults_update.allow_export
         if defaults_update.allow_nist_queries is not None:
             defaults.allow_nist_queries = defaults_update.allow_nist_queries
+        if defaults_update.allow_hitran_queries is not None:
+            defaults.allow_hitran_queries = defaults_update.allow_hitran_queries
 
     await session.commit()
     await session.refresh(defaults)

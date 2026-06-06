@@ -6,9 +6,8 @@ logging filters and route code can read.
 
 Why a contextvar?
 - Threading the ID as an explicit parameter would change
-  ``WebSocketActionHandler`` (a stable contract surface — see
-  ``docs/dev/boundaries.md``) and break every server-extension-
-  registered handler.
+  ``WebSocketActionHandler`` (a stable contract surface) and break every
+  server-extension-registered handler.
 - Logging filters cannot reach explicit handler parameters anyway —
   they operate on ``LogRecord``, not call frames. A contextvar is
   the only mechanism the filter sees.

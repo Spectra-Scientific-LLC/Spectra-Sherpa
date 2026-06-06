@@ -88,7 +88,6 @@ class VariableSelectNode(Node):
                 param_type="number",
                 default=0.1,
                 min_value=0.001,
-                max_value=10.0,
                 step=0.01,
                 description="Minimum prominence for peak detection",
                 required=False,
@@ -100,7 +99,6 @@ class VariableSelectNode(Node):
                 param_type="number",
                 default=10,
                 min_value=1,
-                max_value=200,
                 step=1,
                 description="Number of points on each side of a detected peak to include",
                 required=False,
@@ -123,7 +121,6 @@ class VariableSelectNode(Node):
                 param_type="number",
                 default=1.0,
                 min_value=0.0,
-                max_value=100.0,
                 step=0.1,
                 description="Selection threshold (VIP > 1.0 convention; coef/SR: top fraction or absolute)",
                 required=False,
@@ -143,10 +140,11 @@ class VariableSelectNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Input Data",
-                description="Spectral dataset to select variables from",
+                description="Spectral dataset or multivariate feature table to select variables from",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="model",
@@ -466,6 +464,7 @@ class VariableSelectNode(Node):
         add_processing_step(X_selected_ds, "selection.variable_select", step_params, self.node_id)
 
         outputs: dict[str, Any] = {
+            "default": X_selected_ds,
             "X_selected": X_selected_ds,
             "mask": mask,
         }

@@ -14,7 +14,7 @@ Three tables:
 
 OSS deployments write to ``audit_event`` only. The chain tables exist in
 the schema so the contract is published, but they are written exclusively
-by the proprietary chainer process in ``spectra-server``.
+by a managed-deployment audit chainer.
 
 See ``the audit-subsystem design specification`` for the
 locked design decisions.

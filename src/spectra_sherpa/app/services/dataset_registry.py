@@ -63,8 +63,9 @@ class DatasetRegistry:
             record = self._entries.get(dataset_id)
             if record is None:
                 raise KeyError(dataset_id)
-            if record.owner_user_id is not None and user_id is not None and record.owner_user_id != user_id:
-                raise PermissionError(dataset_id)
+            if user_id is not None:
+                if record.owner_user_id is None or record.owner_user_id != user_id:
+                    raise PermissionError(dataset_id)
             record.last_accessed_at = now
             self._entries.move_to_end(dataset_id)
             # Return a defensive copy so callers cannot mutate registry state.

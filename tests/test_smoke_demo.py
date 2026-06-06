@@ -122,7 +122,7 @@ async def auth_client(smoke_session: AsyncSession, smoke_user: User) -> AsyncCli
 @pytest.fixture
 def ws_client():
     """Sync TestClient for WebSocket tests."""
-    client = TestClient(app)
+    client = TestClient(app, client=("127.0.0.1", 50000))
     try:
         yield client
     finally:

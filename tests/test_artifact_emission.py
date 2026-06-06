@@ -204,6 +204,112 @@ class TestPLSArtifactEmission:
 
 
 # ---------------------------------------------------------------------------
+# Regression artifact emission
+# ---------------------------------------------------------------------------
+
+
+class TestRegressionArtifactEmission:
+    def test_pcr_emits_artifact(self, sherpa_dataset):
+        from spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes import PCRNode
+
+        node = PCRNode(node_id="pcr_1", parameters={"n_components": 3, "scale": True})
+        result = _run(node.execute(X=sherpa_dataset, y=sherpa_dataset.target))
+        artifact = result.outputs["_model_artifact"]
+        assert artifact["metadata"]["model_type"] == "pcr"
+        assert artifact["metadata"]["n_features"] == 50
+        assert {"pca_components", "pca_mean", "reg_coef", "reg_intercept"}.issubset(artifact["arrays"])
+
+    def test_svr_emits_artifact(self, sherpa_dataset):
+        from spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes import SVRNode
+
+        node = SVRNode(node_id="svr_1", parameters={"kernel": "linear", "scale": True})
+        result = _run(node.execute(X=sherpa_dataset, y=sherpa_dataset.target))
+        artifact = result["_model_artifact"]
+        assert artifact["metadata"]["model_type"] == "svr"
+        assert artifact["metadata"]["n_features"] == 50
+        assert {"support_vectors", "dual_coef", "intercept"}.issubset(artifact["arrays"])
+
+    def test_linear_regression_emits_artifact(self, sherpa_dataset):
+        from spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes import LinearRegressionNode
+
+        node = LinearRegressionNode(node_id="linear_1", parameters={"fit_intercept": True})
+        result = _run(node.execute(X=sherpa_dataset, y=sherpa_dataset.target))
+        artifact = result["_model_artifact"]
+        assert artifact["metadata"]["model_type"] == "linear_regression"
+        assert artifact["metadata"]["n_features"] == 50
+        assert {"coef", "intercept"}.issubset(artifact["arrays"])
+
+
+# ---------------------------------------------------------------------------
+# Classification artifact emission
+# ---------------------------------------------------------------------------
+
+
+class TestClassificationArtifactEmission:
+    @pytest.fixture()
+    def classification_dataset(self):
+        from spectra_sherpa.app.lib.axes import FeatureAxis
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
+
+        rng = np.random.RandomState(123)
+        X = np.vstack(
+            [
+                rng.normal(loc=-1.0, scale=0.2, size=(12, 20)),
+                rng.normal(loc=1.0, scale=0.2, size=(12, 20)),
+                rng.normal(loc=3.0, scale=0.2, size=(12, 20)),
+            ]
+        )
+        y = np.array(["A"] * 12 + ["B"] * 12 + ["C"] * 12)
+        return SherpaDataset(
+            X=X,
+            feature_axis=FeatureAxis(values=np.linspace(4000, 400, 20), units="cm-1", title="Wavenumber"),
+            target=y,
+            target_context=TargetContext(target_type="categorical", target_name="class"),
+        )
+
+    def test_plsda_emits_artifact(self, classification_dataset):
+        from spectra_sherpa.app.services.dag.nodes.classification.plsda_nodes import PLSDANode
+
+        node = PLSDANode(node_id="plsda_1", parameters={"n_components": 2, "cv_folds": 3})
+        result = _run(node.execute(X=classification_dataset, y=classification_dataset.target))
+        assert "_model_artifact" in result.outputs
+        artifact = result.outputs["_model_artifact"]
+        meta = artifact["metadata"]
+        assert meta["model_type"] == "plsda"
+        assert meta["classes"] == ["A", "B", "C"]
+        assert meta["n_features"] == 20
+        assert "training_data_hash" in meta
+        assert {"coef", "x_mean", "y_mean"}.issubset(artifact["arrays"])
+
+    def test_knn_emits_artifact(self, classification_dataset):
+        from spectra_sherpa.app.services.dag.nodes.classification.knn_nodes import KNNNode
+
+        node = KNNNode(node_id="knn_1", parameters={"n_neighbors": 3, "cv_folds": 3})
+        result = _run(node.execute(X=classification_dataset, y=classification_dataset.target))
+        assert "_model_artifact" in result.outputs
+        artifact = result.outputs["_model_artifact"]
+        meta = artifact["metadata"]
+        assert meta["model_type"] == "knn"
+        assert meta["classes"] == ["A", "B", "C"]
+        assert meta["n_features"] == 20
+        assert "training_data_hash" in meta
+        assert {"X_train", "y_train_encoded"}.issubset(artifact["arrays"])
+
+    def test_simca_emits_artifact(self, classification_dataset):
+        from spectra_sherpa.app.services.dag.nodes.classification.simca_nodes import SIMCANode
+
+        node = SIMCANode(node_id="simca_1", parameters={"n_components": 2})
+        result = _run(node.execute(X=classification_dataset, y=classification_dataset.target))
+        artifact = result.outputs["_model_artifact"]
+        meta = artifact["metadata"]
+        arrays = artifact["arrays"]
+        assert meta["model_type"] == "simca"
+        assert meta["classes"] == ["A", "B", "C"]
+        assert meta["n_features"] == 20
+        assert {"class_0_loadings", "class_0_mean", "class_0_scale", "class_0_pca_mean"}.issubset(arrays)
+
+
+# ---------------------------------------------------------------------------
 # PCA artifact emission
 # ---------------------------------------------------------------------------
 
@@ -227,6 +333,39 @@ class TestPCAArtifactEmission:
         result = _run(node.execute(input_data=sherpa_dataset))
         meta = result.outputs["_model_artifact"]["metadata"]
         assert meta["n_features"] == 50
+
+
+# ---------------------------------------------------------------------------
+# Decomposition artifact emission
+# ---------------------------------------------------------------------------
+
+
+class TestDecompositionArtifactEmission:
+    def test_nmf_emits_artifact(self, sherpa_dataset):
+        from spectra_sherpa.app.lib.axes import FeatureAxis
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+        from spectra_sherpa.app.services.dag.nodes.modeling.decomposition_nodes import NMFNode
+
+        nonnegative = SherpaDataset(
+            X=np.abs(sherpa_dataset.X),
+            feature_axis=FeatureAxis(values=np.linspace(4000, 400, 50), units="cm-1", title="Wavenumber"),
+        )
+        node = NMFNode(node_id="nmf_1", parameters={"n_components": 3, "max_iter": 50})
+        result = _run(node.execute(input_data=nonnegative))
+        artifact = result.outputs["_model_artifact"]
+        assert artifact["metadata"]["model_type"] == "nmf"
+        assert artifact["metadata"]["n_features"] == 50
+        assert "H" in artifact["arrays"]
+
+    def test_fastica_emits_artifact(self, sherpa_dataset):
+        from spectra_sherpa.app.services.dag.nodes.modeling.decomposition_nodes import FastICANode
+
+        node = FastICANode(node_id="ica_1", parameters={"n_components": 3, "max_iter": 100})
+        result = _run(node.execute(input_data=sherpa_dataset))
+        artifact = result.outputs["_model_artifact"]
+        assert artifact["metadata"]["model_type"] == "fastica"
+        assert artifact["metadata"]["n_features"] == 50
+        assert "components" in artifact["arrays"]
 
 
 # ---------------------------------------------------------------------------

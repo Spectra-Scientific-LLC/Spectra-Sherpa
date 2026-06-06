@@ -33,7 +33,7 @@ def _make_snv_workflow(executor: DAGExecutor) -> str:
         WorkflowNode(
             node_id="src",
             node_type="data.source",
-            parameters={"source": "sklearn", "dataset_name": "iris"},
+            parameters={"source": "eigenvector", "eigenvector_dataset": "diesel_nir"},
         )
     )
     executor.add_node(

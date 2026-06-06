@@ -128,6 +128,7 @@ class PortMetadata:
     label: str = ""  # Display label (e.g., "Training Spectra")
     description: Optional[str] = None
     variadic: bool = False  # True = always receives a list, even for single edge
+    accepted_data_roles: Optional[List[str]] = None  # e.g. ["X_spectra"], ["X_spectra", "X_features"]
 
     def __post_init__(self):
         """Set label to name if not provided."""

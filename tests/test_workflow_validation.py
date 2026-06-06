@@ -215,7 +215,7 @@ class TestParameterValidation:
             WorkflowNode(
                 node_id="src1",
                 node_type="data.source",
-                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
+                parameters={"source": "eigenvector", "eigenvector_dataset": "corn_m5"},
             ),
             WorkflowNode(
                 node_id="test_node",

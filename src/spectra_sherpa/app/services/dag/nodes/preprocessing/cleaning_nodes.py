@@ -45,7 +45,6 @@ class CosmicRayRemovalNode(TransformSpecNode):
                 param_type="number",
                 default=7,
                 min_value=3,
-                max_value=31,
                 step=2,
                 description="Window size for local statistics (must be odd)",
                 required=True,
@@ -56,7 +55,6 @@ class CosmicRayRemovalNode(TransformSpecNode):
                 param_type="number",
                 default=3.0,
                 min_value=1.5,
-                max_value=10.0,
                 step=0.5,
                 description="Z-score threshold for spike detection",
                 required=True,
@@ -78,7 +76,7 @@ class CosmicRayRemovalNode(TransformSpecNode):
     spec = TransformSpec(
         transform_fn=_cosmic_ray_transform,
         export_lines_fn=_cosmic_ray_export,
-        extra_imports=["import numpy as np", "from scipy.ndimage import median_filter"],
+        extra_imports=["import numpy as np"],
     )
 
 
@@ -102,7 +100,6 @@ class ClipRangeNode(Node):
                 param_type="number",
                 default=400,
                 min_value=0,
-                max_value=10000,
                 description="Minimum wavenumber to keep (lower bound)",
                 required=False,
             ),
@@ -112,7 +109,6 @@ class ClipRangeNode(Node):
                 param_type="number",
                 default=4000,
                 min_value=0,
-                max_value=10000,
                 description="Maximum wavenumber to keep (upper bound)",
                 required=False,
             ),
@@ -264,7 +260,6 @@ class ClipFloorNode(TransformSpecNode):
                 param_type="number",
                 default=0.0,
                 min_value=-10.0,
-                max_value=10.0,
                 step=0.001,
                 description="Minimum value; all values below will be set to this",
                 required=True,
@@ -319,7 +314,6 @@ class WavenumberAlignNode(Node):
                 param_type="number",
                 default=0.5,
                 min_value=0.01,
-                max_value=10.0,
                 step=0.1,
                 description="Tolerance for merging near-duplicate grid points",
                 required=False,

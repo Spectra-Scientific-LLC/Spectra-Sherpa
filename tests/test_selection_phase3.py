@@ -60,7 +60,10 @@ class TestNestedCVNode:
         assert "r2" in metrics
         assert "q2" in metrics
         assert metrics["selection_method"] == "vip"
+        assert metrics["component_selection"] == "inner_cv"
         assert len(metrics["per_fold_n_selected"]) == 3
+        assert len(metrics["per_fold_n_components"]) == 3
+        assert all(1 <= n <= 3 for n in metrics["per_fold_n_components"])
 
     @pytest.mark.asyncio
     async def test_nested_cv_no_selection(self, spectral_dataset):
@@ -99,6 +102,25 @@ class TestNestedCVNode:
 
         assert result.diagnostics["rmsecv"] > 0
         assert result.diagnostics["selection_stability"] >= 0
+
+    def test_nested_cv_coef_abs_export_uses_runtime_threshold(self):
+        from spectra_sherpa.app.services.dag.nodes.selection.nested_cv_node import NestedCVNode
+
+        node = NestedCVNode(
+            "test_ncv_coef_export",
+            {
+                "selection_method": "coef_abs",
+                "n_components": 3,
+                "cv_folds": 3,
+                "coef_threshold": 0.123,
+            },
+        )
+
+        code = "\n".join(node.generate_python({"X": "X", "y": "y"}, indent=""))
+
+        assert "_thresh = 0.123" in code
+        assert "np.median(_coefs)" not in code
+        assert "_mask[np.argsort(_coefs)[-_top_n:]] = True" in code
 
     @pytest.mark.asyncio
     async def test_nested_cv_stability_report(self, spectral_dataset):

@@ -26,6 +26,7 @@ class ExperimentSummary(BaseModel):
     description: Optional[str] = None
     created_at: datetime
     file_count: int = 0
+    project_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -41,13 +42,24 @@ class ExperimentFileOut(BaseModel):
     stage: str
     file_size_bytes: Optional[int]
     created_at: datetime
+    shape: list[int] | None = None
+    n_samples: int | None = None
+    n_features: int | None = None
+    data_role: str | None = None
+    x_title: str | None = None
+    x_units: str | None = None
+    is_spectra: bool | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class ReferenceDatasetImportItem(BaseModel):
-    source: str = Field(..., description="One of: eigenvector, sklearn, spectrochempy")
+    source: str = Field(..., description="One of: synthetic, eigenvector, sklearn, spectrochempy, oes")
     name: str = Field(..., min_length=1)
+    overrides: dict[str, Any] | None = Field(
+        default=None,
+        description="Prepared-data metadata overrides applied only to the imported experiment files",
+    )
 
 
 class ReferenceDatasetImportRequest(BaseModel):

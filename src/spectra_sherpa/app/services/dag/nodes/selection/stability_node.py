@@ -141,7 +141,6 @@ class StabilitySelectionNode(Node):
                 param_type="number",
                 default=1.0,
                 min_value=0.01,
-                max_value=10.0,
                 step=0.1,
                 description="Threshold for the base method (e.g. VIP >= 1.0)",
             ),
@@ -151,7 +150,6 @@ class StabilitySelectionNode(Node):
                 param_type="number",
                 default=0.6,
                 min_value=0.1,
-                max_value=1.0,
                 step=0.05,
                 description="Fraction of resamples a variable must be selected in to survive",
             ),
@@ -161,7 +159,6 @@ class StabilitySelectionNode(Node):
                 param_type="number",
                 default=100,
                 min_value=20,
-                max_value=500,
                 step=10,
                 description="Number of bootstrap iterations",
             ),
@@ -171,7 +168,6 @@ class StabilitySelectionNode(Node):
                 param_type="number",
                 default=5,
                 min_value=1,
-                max_value=20,
                 step=1,
             ),
             NodeParameter(
@@ -180,7 +176,6 @@ class StabilitySelectionNode(Node):
                 param_type="number",
                 default=0.5,
                 min_value=0.2,
-                max_value=0.9,
                 step=0.05,
                 description="Fraction of samples used in each bootstrap",
                 category="advanced",
@@ -189,9 +184,11 @@ class StabilitySelectionNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Spectral Data",
+                label="Input Data Matrix",
+                description="Spectral dataset or multivariate feature table",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="y",
@@ -301,7 +298,7 @@ class StabilitySelectionNode(Node):
         )
 
         return NodeResult(
-            outputs={"X_selected": X_selected, "mask": mask, "scores": scores},
+            outputs={"default": X_selected, "X_selected": X_selected, "mask": mask, "scores": scores},
             diagnostics={
                 "n_selected": n_selected,
                 "n_total": n_features,

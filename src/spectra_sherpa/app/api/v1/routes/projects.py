@@ -7,6 +7,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import re
 import zipfile
 from typing import Any
 
@@ -16,7 +17,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session, require_project
+from spectra_sherpa.app.api.deps import (
+    consume_reserved_demo_upload_quota_if_needed,
+    demo_guard,
+    get_current_user,
+    get_session,
+    release_demo_upload_quota_reservation_if_needed,
+    require_project,
+    reserve_demo_upload_quota_or_429,
+)
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.models.advisor_channel import AdvisorChannel
 from spectra_sherpa.app.models.experiment import Experiment
@@ -45,6 +54,7 @@ from spectra_sherpa.app.schemas.projects import (
     ScriptBrief,
     WorkflowBrief,
 )
+from spectra_sherpa.app.services.experiments import read_metadata, resolve_data_path
 from spectra_sherpa.app.services.project_data_sources import (
     effective_workflow_tab_color,
     ensure_project_advisor_channel,
@@ -66,6 +76,185 @@ def _safe_parse_metrics(metrics_json: str | None) -> dict | None:
         return json.loads(metrics_json)
     except (json.JSONDecodeError, TypeError):
         return None
+
+
+_GENERIC_TEMPLATE_DATA_DESCRIPTION = "Bundled example data materialized from template"
+
+
+def _first_sentence(text: str | None) -> str | None:
+    """Return a compact first sentence for project record summaries."""
+    if not text:
+        return None
+    cleaned = " ".join(text.split())
+    if not cleaned:
+        return None
+    for marker in (". ", "! ", "? "):
+        if marker in cleaned:
+            return cleaned.split(marker, 1)[0] + marker.strip()
+    return cleaned
+
+
+def _humanize_dataset_name(name: str) -> str:
+    return name.replace("_", " ").replace("-", " ").strip().title()
+
+
+def _append_fact(facts: list[str], value: str | None) -> None:
+    if value and value not in facts:
+        facts.append(value)
+
+
+def _count_from_label(label: str, noun: str) -> int | None:
+    match = re.search(rf"(\d+)\s+{noun}", label, flags=re.IGNORECASE)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
+def _reference_dataset_summary(source: str | None, dataset_name: str | None) -> str | None:
+    """User-facing one-liner for template materialized datasets."""
+    if not source or not dataset_name:
+        return None
+
+    if source == "eigenvector":
+        try:
+            from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
+
+            entry = DATASET_CATALOG.get(dataset_name, {})
+            label = str(entry.get("label") or _humanize_dataset_name(dataset_name))
+            first_sentence = _first_sentence(str(entry.get("description") or ""))
+            return f"{label} — {first_sentence}" if first_sentence else label
+        except Exception:
+            logger.debug("Could not resolve Eigenvector dataset summary for %s", dataset_name, exc_info=True)
+
+    if source == "sklearn":
+        try:
+            from spectra_sherpa.app.lib.sklearn_info import SKLEARN_CATALOG
+
+            entry = SKLEARN_CATALOG.get(dataset_name, {})
+            return str(entry.get("label") or _humanize_dataset_name(dataset_name))
+        except Exception:
+            logger.debug("Could not resolve sklearn dataset summary for %s", dataset_name, exc_info=True)
+
+    if source == "spectrochempy":
+        return f"SpectroChemPy example dataset: {_humanize_dataset_name(dataset_name)}"
+
+    if source == "oes":
+        return f"OES example dataset: {_humanize_dataset_name(dataset_name)}"
+
+    return f"{source}: {_humanize_dataset_name(dataset_name)}"
+
+
+def _reference_dataset_facts(source: str | None, dataset_name: str | None) -> list[str]:
+    """Compact facts for Data cards: samples, features/channels, classes/targets."""
+    if not source or not dataset_name:
+        return []
+
+    facts: list[str] = []
+
+    if source == "eigenvector":
+        try:
+            from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
+
+            entry = DATASET_CATALOG.get(dataset_name, {})
+            label = str(entry.get("label") or "")
+            _append_fact(facts, str(entry.get("technique") or "") or None)
+
+            sample_count = _count_from_label(label, "samples")
+            if sample_count is not None:
+                _append_fact(facts, f"{sample_count} samples")
+
+            for noun in ("channels", "wavelengths", "features"):
+                feature_count = _count_from_label(label, noun)
+                if feature_count is not None:
+                    _append_fact(facts, f"{feature_count} {noun}")
+                    break
+
+            prop_names = entry.get("prop_names")
+            if isinstance(prop_names, list) and prop_names:
+                _append_fact(facts, f"{len(prop_names)} targets")
+        except Exception:
+            logger.debug("Could not resolve Eigenvector dataset facts for %s", dataset_name, exc_info=True)
+
+    elif source == "sklearn":
+        try:
+            from spectra_sherpa.app.lib.sklearn_info import get_sklearn_dataset_info
+
+            info = get_sklearn_dataset_info(dataset_name)
+            _append_fact(facts, str(info.get("technique") or "") or None)
+            n_samples = info.get("n_samples")
+            if isinstance(n_samples, int):
+                _append_fact(facts, f"{n_samples} samples")
+            n_features = info.get("n_features")
+            if isinstance(n_features, int):
+                _append_fact(facts, f"{n_features} features")
+            target_names = info.get("target_names")
+            if isinstance(target_names, list) and target_names:
+                _append_fact(facts, f"{len(target_names)} classes")
+        except Exception:
+            logger.debug("Could not resolve sklearn dataset facts for %s", dataset_name, exc_info=True)
+
+    else:
+        _append_fact(facts, source)
+
+    return facts
+
+
+def _experiment_metadata_summary(metadata: dict[str, Any]) -> str | None:
+    source = metadata.get("example_source")
+    dataset_name = metadata.get("example_dataset")
+    if isinstance(source, str) and isinstance(dataset_name, str):
+        return _reference_dataset_summary(source, dataset_name)
+
+    if metadata.get("source") == "synthesis":
+        synthesis_source = metadata.get("synthesis_source")
+        if isinstance(synthesis_source, str) and synthesis_source:
+            return f"Synthetic FTIR dataset generated from {synthesis_source.replace('_', ' ')} component spectra"
+        return "Synthetic FTIR dataset generated from component spectra"
+
+    return None
+
+
+def _experiment_metadata_facts(metadata: dict[str, Any]) -> list[str]:
+    source = metadata.get("example_source")
+    dataset_name = metadata.get("example_dataset")
+    if isinstance(source, str) and isinstance(dataset_name, str):
+        return _reference_dataset_facts(source, dataset_name)
+
+    if metadata.get("source") == "synthesis":
+        facts = ["Synthetic"]
+        synthesis_source = metadata.get("synthesis_source")
+        if isinstance(synthesis_source, str) and synthesis_source:
+            facts.append(synthesis_source.replace("_", " "))
+        return facts
+
+    return []
+
+
+def _experiment_brief_description(experiment: Experiment) -> str | None:
+    """Prefer content summaries over generic template plumbing descriptions."""
+    metadata: dict[str, Any] = {}
+    if experiment.metadata_path:
+        try:
+            metadata = read_metadata(resolve_data_path(experiment.metadata_path))
+        except Exception:
+            logger.debug("Could not read experiment metadata for project summary", exc_info=True)
+
+    metadata_summary = _experiment_metadata_summary(metadata)
+    description = experiment.description
+    if metadata_summary and (not description or description.startswith(_GENERIC_TEMPLATE_DATA_DESCRIPTION)):
+        return metadata_summary
+    return description or metadata_summary
+
+
+def _experiment_brief_facts(experiment: Experiment) -> list[str]:
+    if not experiment.metadata_path:
+        return []
+    try:
+        metadata = read_metadata(resolve_data_path(experiment.metadata_path))
+    except Exception:
+        logger.debug("Could not read experiment metadata for project facts", exc_info=True)
+        return []
+    return _experiment_metadata_facts(metadata)
 
 
 async def _read_upload_with_limit(file: UploadFile, *, max_bytes: int, chunk_size: int = 1024 * 1024) -> bytes:
@@ -133,8 +322,9 @@ async def _project_to_detail(project: Project, session: AsyncSession) -> Project
         ExperimentBrief(
             id=e.id,
             name=e.name,
-            description=e.description,
+            description=_experiment_brief_description(e),
             file_count=len(e.files),
+            facts=_experiment_brief_facts(e),
         )
         for e in exp_result.scalars().all()
     ]
@@ -234,10 +424,15 @@ async def _project_to_detail(project: Project, session: AsyncSession) -> Project
             ModelBrief(
                 artifact_uid=m.artifact_uid,
                 name=m.name,
+                display_name=m.display_name or m.name,
                 model_type=m.model_type,
                 n_features=m.n_features,
                 n_components=m.n_components,
                 metrics=metrics,
+                source_run_id=m.source_run_id,
+                training_dataset_id=m.training_dataset_id,
+                is_deploy_ready=m.is_deploy_ready,
+                tags=list(m.tags or []),
                 created_at=m.created_at,
             )
         )
@@ -1218,24 +1413,27 @@ async def import_project(
             f"Maximum is {settings.max_file_size_mb} MB.",
         )
 
-    upload_bytes = await _read_upload_with_limit(file, max_bytes=max_bytes)
-    upload_size = len(upload_bytes)
-
-    # Enforce upload size limit (same as experiment uploads) before reading ZIP content.
-    if upload_size > max_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Archive too large ({upload_size / (1024*1024):.1f} MB). "
-            f"Maximum is {settings.max_file_size_mb} MB.",
-        )
-
+    user_id = current_user.id
+    upload_reserved = reserve_demo_upload_quota_or_429(user_id)
     project: Project | None = None
     models_imported = 0
     # Artifacts written to disk during this import; purged if the
     # transaction rolls back so a failed import leaves no orphans (DATA-4).
     imported_artifact_uids: list[str] = []
+    committed = False
 
     try:
+        upload_bytes = await _read_upload_with_limit(file, max_bytes=max_bytes)
+        upload_size = len(upload_bytes)
+
+        # Enforce upload size limit (same as experiment uploads) before reading ZIP content.
+        if upload_size > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Archive too large ({upload_size / (1024*1024):.1f} MB). "
+                f"Maximum is {settings.max_file_size_mb} MB.",
+            )
+
         upload_stream = io.BytesIO(upload_bytes)
         with zipfile.ZipFile(upload_stream, "r") as zf:
             project_json = json.loads(zf.read("project.json"))
@@ -1335,7 +1533,7 @@ async def import_project(
 
             # Create root project from snapshot
             project = Project(
-                user_id=current_user.id,
+                user_id=user_id,
                 name=project_json.get("name", "Imported Project"),
                 description=project_json.get("description"),
                 metadata_=project_json.get("metadata", {}),
@@ -1349,7 +1547,7 @@ async def import_project(
             for s_data in project_json.get("scripts", []):
                 script = ProjectScript(
                     project_id=project.id,
-                    user_id=current_user.id,
+                    user_id=user_id,
                     name=s_data.get("name", "Imported Script"),
                     description=s_data.get("description"),
                     language=s_data.get("language", "python"),
@@ -1406,7 +1604,7 @@ async def import_project(
                     # Create DB record
                     model_row = ModelArtifact(
                         artifact_uid=target_uid,
-                        user_id=current_user.id,
+                        user_id=user_id,
                         project_id=project.id,
                         node_id=m_data.get("node_id", "imported"),
                         model_type=m_data.get("model_type", "unknown"),
@@ -1431,13 +1629,14 @@ async def import_project(
             version = ProjectVersion(
                 project_id=project.id,
                 version_number=1,
-                created_by=current_user.id,
+                created_by=user_id,
                 change_description="Imported from .spectrapy archive",
                 snapshot=project_json,
                 include_raw_data=False,
             )
             session.add(version)
             await session.commit()
+            committed = True
     except HTTPException:
         await session.rollback()
         _purge_artifacts(imported_artifact_uids)
@@ -1453,6 +1652,15 @@ async def import_project(
         await session.rollback()
         _purge_artifacts(imported_artifact_uids)
         raise
+    except BaseException:
+        await session.rollback()
+        _purge_artifacts(imported_artifact_uids)
+        raise
+    finally:
+        if committed:
+            consume_reserved_demo_upload_quota_if_needed(user_id, upload_reserved)
+        else:
+            release_demo_upload_quota_reservation_if_needed(user_id, upload_reserved)
 
     if project is None:
         raise HTTPException(status_code=500, detail="Project import failed")

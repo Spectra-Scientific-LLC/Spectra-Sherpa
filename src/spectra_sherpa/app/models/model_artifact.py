@@ -15,12 +15,14 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from spectra_sherpa.app.db.base import Base
 
 if TYPE_CHECKING:
+    from spectra_sherpa.app.models.execution_run import ExecutionRun
+    from spectra_sherpa.app.models.experiment import Experiment
     from spectra_sherpa.app.models.project import Project
     from spectra_sherpa.app.models.user import User
     from spectra_sherpa.app.models.workflow import Workflow
@@ -50,11 +52,18 @@ class ModelArtifact(Base):
     workflow_version_id: Mapped[int | None] = mapped_column(
         ForeignKey("workflow_version.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    source_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("execution_run.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    training_dataset_id: Mapped[int | None] = mapped_column(
+        ForeignKey("experiment.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     node_id: Mapped[str] = mapped_column(String(255), nullable=False)
     model_type: Mapped[str] = mapped_column(
         String(50), nullable=False, index=True
     )  # pca, pls, plsda, knn, simca, mcr, efa, simplisma, pcr, svr, ica, nmf
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Storage
@@ -74,6 +83,8 @@ class ModelArtifact(Base):
 
     # Lifecycle
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=sa.true(), nullable=False)
+    is_deploy_ready: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa.false(), nullable=False)
+    tags: Mapped[list | None] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -84,6 +95,8 @@ class ModelArtifact(Base):
     project: Mapped[Project | None] = relationship("Project", back_populates="models")
     workflow: Mapped[Workflow | None] = relationship("Workflow")
     workflow_version: Mapped[WorkflowVersion | None] = relationship("WorkflowVersion")
+    source_run: Mapped[ExecutionRun | None] = relationship("ExecutionRun", foreign_keys=[source_run_id])
+    training_dataset: Mapped[Experiment | None] = relationship("Experiment", foreign_keys=[training_dataset_id])
 
     def __repr__(self) -> str:
         return f"<ModelArtifact(uid={self.artifact_uid!r}, " f"type={self.model_type!r}, name={self.name!r})>"

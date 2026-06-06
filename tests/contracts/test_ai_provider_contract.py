@@ -51,7 +51,13 @@ class MockPremiumProvider:
     def has_feature(self, feature: str) -> bool:
         return True
 
-    async def sync_workflow(self, sync_msg: Any, *, tier: Any) -> list[Any]:
+    async def sync_workflow(
+        self,
+        sync_msg: Any,
+        *,
+        tier: Any,
+        local_user_id: int | None = None,
+    ) -> list[Any]:
         return []
 
     async def send_decision(self, decision: Any) -> bool:
@@ -246,7 +252,7 @@ def test_protocol_method_set_is_documented() -> None:
     assert actual == expected, (
         f"AIServiceProvider surface drifted. "
         f"Added: {sorted(actual - expected)}, removed: {sorted(expected - actual)}. "
-        f"Update docs/dev/boundaries.md and this test together."
+        f"Update the developer contract documentation and this test together."
     )
 
 

@@ -71,7 +71,7 @@ async def _assert_node_result(
     parameters: dict,
     kwargs: dict,
     required_diagnostic_keys: set[str],
-) -> None:
+) -> NodeResult:
     node = node_registry.create_node(
         node_type=node_type,
         node_id=f"test_{node_type.replace('.', '_')}",
@@ -94,6 +94,31 @@ async def _assert_node_result(
         f"{node_type} diagnostics is missing required keys: {missing}. "
         f"Emitted keys: {sorted(result.diagnostics.keys())}"
     )
+    return result
+
+
+def _assert_classification_metrics_contract(result: NodeResult, *, method: str) -> None:
+    metrics = result.outputs.get("metrics")
+    assert isinstance(metrics, dict)
+    assert metrics["task_type"] == "classification"
+    assert metrics["method"] == method
+    assert metrics["primary_split"] == "cv"
+    assert metrics["primary_metric"] == "balanced_accuracy"
+    assert set(metrics["splits"]) >= {"train", "cv"}
+    for split in ("train", "cv"):
+        split_metrics = metrics["splits"][split]
+        assert set(split_metrics) >= {
+            "accuracy",
+            "balanced_accuracy",
+            "f1_macro",
+            "precision_macro",
+            "recall_macro",
+            "sensitivity_macro",
+            "specificity_macro",
+        }
+    assert "train" in metrics["confusion_matrices"]
+    assert "cv" in metrics["confusion_matrices"]
+    assert result.diagnostics["metrics"] == metrics
 
 
 # ---------------------------------------------------------------------------
@@ -108,17 +133,18 @@ class TestClassificationNodesEmitDiagnostics:
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
         X, y = _make_classification_data()
-        await _assert_node_result(
+        result = await _assert_node_result(
             node_type="classification.plsda",
             parameters={"n_components": 2, "cv_folds": 3},
             kwargs={"X": SherpaDataset(X=X), "y": y},
             required_diagnostic_keys={
-                "accuracy",
-                "f1_score",
+                "cv_accuracy",
+                "cv_f1_macro",
                 "n_components",
                 "n_classes",
             },
         )
+        _assert_classification_metrics_contract(result, method="plsda")
 
     @_requires_scp
     @pytest.mark.asyncio
@@ -156,12 +182,13 @@ class TestClassificationNodesEmitDiagnostics:
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
         X, y = _make_classification_data()
-        await _assert_node_result(
+        result = await _assert_node_result(
             node_type="classification.knn",
             parameters={"n_neighbors": 3, "cv_folds": 3},
             kwargs={"X": SherpaDataset(X=X), "y": y},
             required_diagnostic_keys={"cv_accuracy", "n_classes"},
         )
+        _assert_classification_metrics_contract(result, method="knn")
 
     @_requires_scp
     @pytest.mark.asyncio
@@ -169,12 +196,13 @@ class TestClassificationNodesEmitDiagnostics:
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
         X, y = _make_classification_data()
-        await _assert_node_result(
+        result = await _assert_node_result(
             node_type="classification.simca",
-            parameters={"n_components": 2},
+            parameters={"n_components": 2, "cv_folds": 3},
             kwargs={"X": SherpaDataset(X=X), "y": y},
-            required_diagnostic_keys={"accuracy", "n_classes"},
+            required_diagnostic_keys={"cv_accuracy", "n_classes"},
         )
+        _assert_classification_metrics_contract(result, method="simca")
 
 
 class TestRegressionNodesEmitDiagnostics:
@@ -239,7 +267,7 @@ class TestDiagnosticsNodesEmitDiagnostics:
 
         assert isinstance(result, NodeResult)
         assert result.diagnostics
-        assert "accuracy" in result.diagnostics
+        assert "test_accuracy" in result.diagnostics
         assert "confusion_matrix" in result.diagnostics
         assert "per_class" in result.diagnostics
 
@@ -252,12 +280,26 @@ class TestDiagnosticsNodesEmitDiagnostics:
         )
         y_true = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         y_pred = np.array([1.1, 1.9, 3.2, 3.8, 5.1])
-        result = await node.execute(y_true=y_true, y_pred=y_pred)
+        y_train_true = np.array([1.0, 2.0, 3.0, 4.0])
+        y_train_pred = np.array([1.0, 2.1, 2.9, 4.0])
+        result = await node.execute(
+            y_true=y_true,
+            y_pred=y_pred,
+            y_train_true=y_train_true,
+            y_train_pred=y_train_pred,
+        )
 
         assert isinstance(result, NodeResult)
         assert result.diagnostics
-        for key in ("RMSEP", "R2"):
+        for key in ("rmse_test", "r2_test"):
             assert key in result.diagnostics
+        metrics = result.outputs["metrics"]
+        assert "rmse_train" in metrics
+        assert "r2_train" in metrics
+        assert metrics["data"][0]["RMSE_train"] == metrics["rmse_train"]
+        viz = result.outputs["visualization"]
+        assert viz["metadata"]["splits"] == ["train", "test"]
+        assert len(viz["metadata"]["train"]["data"]) == 4
 
 
 class TestClusteringNodesEmitDiagnostics:
@@ -453,6 +495,72 @@ class TestPredictionNodesEmitDiagnostics:
             node_type="analysis.peak_finding",
             parameters={"distance": 5},
             kwargs={"input_data": SherpaDataset(X=spectra)},
+            required_diagnostic_keys={
+                "n_consensus_peaks",
+                "n_peaks",
+                "method",
+                "n_features",
+                "detection_rate_min",
+                "detection_rate_max",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_peak_finding_peak_table_includes_fwhm_and_area(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        x = np.linspace(0, 100, 401)
+        spectra = np.vstack(
+            [
+                np.exp(-((x - 45.0) ** 2) / 20.0),
+                0.8 * np.exp(-((x - 45.5) ** 2) / 24.0),
+            ]
+        )
+        result = await _assert_node_result(
+            node_type="analysis.peak_finding",
+            parameters={"distance": 20, "prominence": 0.1},
+            kwargs={"input_data": SherpaDataset(X=spectra)},
+            required_diagnostic_keys={
+                "n_consensus_peaks",
+                "n_peaks",
+                "method",
+                "n_features",
+                "detection_rate_min",
+                "detection_rate_max",
+            },
+        )
+
+        rows = result.outputs["peaks"]["data"]
+        assert rows
+        assert rows[0]["median_fwhm"] > 0
+        assert rows[0]["median_area"] > 0
+
+    def test_peak_finding_numeric_parameters_are_not_artificially_capped(self):
+        metadata = node_registry.get_metadata("analysis.peak_finding")
+        by_name = {param.name: param for param in metadata.parameters}
+
+        for name in ("height", "threshold", "distance", "prominence", "width"):
+            assert by_name[name].max_value is None
+
+        assert by_name["height"].min_value == 0.0
+        assert by_name["threshold"].min_value == 0.0
+        assert by_name["prominence"].min_value == 0.0
+        assert by_name["distance"].min_value == 0
+        assert by_name["width"].min_value == 0
+
+    @pytest.mark.asyncio
+    async def test_peak_finding_treats_zero_distance_and_width_as_disabled(self):
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+        x = np.linspace(0, 100, 200)
+        spectrum = (
+            np.exp(-((x - 25.0) ** 2) / 10.0) + np.exp(-((x - 55.0) ** 2) / 10.0) + np.exp(-((x - 80.0) ** 2) / 10.0)
+        )
+
+        await _assert_node_result(
+            node_type="analysis.peak_finding",
+            parameters={"distance": 0, "width": 0, "height": 1000.0, "prominence": 0.0},
+            kwargs={"input_data": SherpaDataset(X=spectrum.reshape(1, -1))},
             required_diagnostic_keys={
                 "n_consensus_peaks",
                 "n_peaks",

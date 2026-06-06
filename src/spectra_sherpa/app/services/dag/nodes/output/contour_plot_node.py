@@ -126,6 +126,19 @@ class ContourPlotNode(Node):
                 data, x_data, y_data, colorscale, plot_type, reverse_x, transpose
             )
             return {"visualization": plot_data}
+        if isinstance(input_data, dict):
+            for key in ("transformed", "result", "predictions", "probabilities"):
+                if key in input_data and input_data[key] is not None:
+                    return self._create_from_array_like(
+                        input_data[key],
+                        colorscale,
+                        plot_type,
+                        reverse_x,
+                        transpose,
+                        title=key.replace("_", " ").title(),
+                    )
+        if isinstance(input_data, (list, tuple, np.ndarray)):
+            return self._create_from_array_like(input_data, colorscale, plot_type, reverse_x, transpose)
 
         # Fallback
         # Fallback
@@ -135,6 +148,37 @@ class ContourPlotNode(Node):
             "layout": {"title": "No 2D data to plot"},
         }
         return {"visualization": result}
+
+    def _create_from_array_like(
+        self,
+        input_data: Any,
+        colorscale: str,
+        plot_type: str,
+        reverse_x: bool,
+        transpose: bool,
+        title: str = "Array Output",
+    ) -> Dict[str, Any]:
+        """Create a contour/heatmap from numeric array-like model outputs."""
+        data = np.asarray(input_data, dtype=np.float64)
+        if data.ndim == 0:
+            data = data.reshape(1, 1)
+        elif data.ndim == 1:
+            data = data.reshape(-1, 1)
+        else:
+            data = np.atleast_2d(data)
+        plot_data = self._create_contour_from_arrays(
+            data,
+            list(range(data.shape[1])),
+            list(range(data.shape[0])),
+            colorscale,
+            plot_type,
+            reverse_x,
+            transpose,
+            x_title="Feature",
+            y_title="Sample",
+            z_title=title,
+        )
+        return {"visualization": plot_data}
 
     def _create_contour(
         self, dataset: Any, colorscale: str, plot_type: str, reverse_x: bool, transpose: bool

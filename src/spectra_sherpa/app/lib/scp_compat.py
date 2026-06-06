@@ -145,6 +145,8 @@ def is_scp_testdata_file(path: Path) -> bool:
         ".0",
     }:
         return True
+    if suffix.lstrip(".").isdigit():
+        return True
     return not suffix and path.name.isdigit()
 
 

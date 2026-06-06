@@ -56,14 +56,14 @@ async def build_workflow_export_context(workflow: Workflow, session: AsyncSessio
     specs: dict[str, SourceExportSpec] = {}
 
     for node in workflow.nodes:
-        if node.node_type != "data.source":
+        if node.node_type not in {"data.source", "data.my_dataset"}:
             continue
 
-        source = str((node.parameters or {}).get("source") or "")
-        bundle_files = await _resolve_bundle_files(node.node_id, node.parameters or {}, session)
+        source, parameters = _source_export_parameters(node.node_type, node.parameters or {})
+        bundle_files = await _resolve_bundle_files(node.node_id, parameters, session)
         overrides = load_prepared_data_overrides_for_source(
             source=source,
-            parameters=node.parameters or {},
+            parameters=parameters,
             resolved_file_paths=[bundle.source_relative_path for bundle in bundle_files],
         )
 
@@ -81,6 +81,19 @@ async def build_workflow_export_context(workflow: Workflow, session: AsyncSessio
         )
 
     return WorkflowExportContext(source_specs=specs)
+
+
+def _source_export_parameters(node_type: str, parameters: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    if node_type == "data.my_dataset":
+        dataset_id = parameters.get("dataset_id")
+        source_parameters: dict[str, Any] = {
+            "source": "experiment",
+            "stage": parameters.get("stage") or "raw",
+        }
+        if dataset_id is not None:
+            source_parameters["experiment_id"] = dataset_id
+        return "experiment", source_parameters
+    return str(parameters.get("source") or ""), parameters
 
 
 async def _resolve_bundle_files(

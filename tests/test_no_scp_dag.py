@@ -764,6 +764,9 @@ class TestGeneratePythonNoScp:
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
         assert "with_data(" in code
+        assert "median_filter" not in code
+        assert "half_window = window // 2" in code
+        assert "_mad * 1.4826" in code
 
     def test_clip_floor_no_scp(self):
         node = self._make_node("preprocess.clip_floor", {"floor": 0.0})

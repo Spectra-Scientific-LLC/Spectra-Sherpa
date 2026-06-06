@@ -42,8 +42,12 @@ def _uve_mc(
     n_samples, n_features = X.shape
     rng = np.random.RandomState(seed)
 
-    # Add noise variables (same scale as X)
-    noise = rng.randn(n_samples, n_features) * np.std(X, axis=0, keepdims=True) * 0.01
+    # Add artificial noise variables on the same scale as each measured
+    # variable. MC-UVE uses their reliability as the null cutoff; shrinking
+    # them makes the cutoff artificially permissive.
+    noise_scale = np.std(X, axis=0, ddof=1, keepdims=True)
+    noise_scale = np.where(np.isfinite(noise_scale) & (noise_scale > 0), noise_scale, 1.0)
+    noise = rng.randn(n_samples, n_features) * noise_scale
     X_aug = np.hstack([X, noise])  # (n_samples, 2*n_features)
     n_aug = X_aug.shape[1]
 
@@ -99,7 +103,6 @@ class UVENode(Node):
                 param_type="number",
                 default=5,
                 min_value=1,
-                max_value=20,
                 step=1,
             ),
             NodeParameter(
@@ -108,7 +111,6 @@ class UVENode(Node):
                 param_type="number",
                 default=100,
                 min_value=20,
-                max_value=500,
                 step=10,
                 description="Number of Monte Carlo resampling iterations",
             ),
@@ -118,29 +120,19 @@ class UVENode(Node):
                 param_type="number",
                 default=0.2,
                 min_value=0.05,
-                max_value=0.5,
                 step=0.05,
                 description="Fraction of samples held out in each MC iteration",
-                category="advanced",
-            ),
-            NodeParameter(
-                name="cutoff_percentile",
-                label="Noise Cutoff Percentile",
-                param_type="number",
-                default=95.0,
-                min_value=50.0,
-                max_value=99.9,
-                step=0.5,
-                description="Percentile of noise reliability used as threshold (higher = more conservative)",
                 category="advanced",
             ),
         ],
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Spectral Data",
+                label="Input Data Matrix",
+                description="Spectral dataset or multivariate feature table",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="y",
@@ -179,7 +171,6 @@ class UVENode(Node):
         n_components = int(params.get("n_components", 5))
         n_resamples = int(params.get("n_resamples", 100))
         test_fraction = float(params.get("test_fraction", 0.2))
-        cutoff_pct = float(params.get("cutoff_percentile", 95.0))
 
         X_ds = bind_X(X, missing_message="UVE requires X", allow_array=True)
         y_val = bind_y(y, X=X_ds, required=True, infer_from_X=True, dataset_as_data=False)
@@ -198,16 +189,18 @@ class UVENode(Node):
             test_fraction,
         )
 
-        # Threshold: percentile of noise reliability
-        noise_threshold = float(np.percentile(noise_reliability, cutoff_pct))
-        mask = real_reliability > noise_threshold
+        # Classic MC-UVE retains variables whose absolute reliability exceeds
+        # the strongest artificial noise variable.
+        noise_threshold = float(np.max(np.abs(noise_reliability)))
+        threshold_tol = max(noise_threshold * 1e-12, 1e-12)
+        mask = np.abs(real_reliability) >= (noise_threshold - threshold_tol)
         scores = real_reliability
 
         n_selected = int(np.sum(mask))
         if n_selected == 0:
             raise ValueError(
                 f"UVE eliminated all variables (threshold={noise_threshold:.3f}). "
-                "Try lowering cutoff_percentile or increasing n_resamples."
+                "Try increasing n_resamples or reducing the number of PLS components."
             )
 
         X_selected = build_dataset_like(X_array[:, mask], X_ds)
@@ -243,7 +236,7 @@ class UVENode(Node):
         logger.info(f"UVE: {n_selected}/{n_features} variables survive " f"(noise threshold={noise_threshold:.3f})")
 
         return NodeResult(
-            outputs={"X_selected": X_selected, "mask": mask, "scores": scores},
+            outputs={"default": X_selected, "X_selected": X_selected, "mask": mask, "scores": scores},
             diagnostics={
                 "n_selected": n_selected,
                 "n_total": n_features,

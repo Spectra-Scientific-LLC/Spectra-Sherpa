@@ -3,14 +3,22 @@ Pydantic schemas for execution run API requests/responses.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+RunKind = Literal["training", "batch_inference", "data", "other"]
 
 
 class SaveRunRequest(BaseModel):
     """Schema for saving an execution run."""
 
+    run_id: int | None = Field(
+        None,
+        description=(
+            "Existing auto-persisted run to name. When omitted, the latest auto run is named for compatibility."
+        ),
+    )
     name: str = Field(..., min_length=1, max_length=255, description="Run label")
     notes: str | None = Field(None, description="Optional notes about this run")
     status: str = Field(..., description="Execution status: completed, partial, error")
@@ -22,6 +30,14 @@ class SaveRunRequest(BaseModel):
     executed_at: str = Field(..., description="ISO timestamp of execution")
     labels: list[str] | None = Field(None, description="Optional labels for tagging")
     model_ids: list[str] | None = Field(None, description="Model artifact IDs used/produced in this run")
+    run_kind: RunKind | None = Field(
+        None,
+        description="Run kind: training, batch_inference, data, or other",
+    )
+    applied_artifact_uids: list[str] | None = Field(
+        None,
+        description="Model artifact IDs applied by this run",
+    )
 
 
 class ExecutionRunOut(BaseModel):
@@ -30,7 +46,8 @@ class ExecutionRunOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    workflow_id: int
+    project_id: int | None = None
+    workflow_id: int | None
     workflow_version_id: int | None
     user_id: int
     name: str
@@ -48,6 +65,8 @@ class ExecutionRunOut(BaseModel):
     source_type: str | None = None
     source_metadata: dict[str, Any] | None = None
     model_ids: list[str] | None = None
+    run_kind: RunKind = "training"
+    applied_artifact_uids: list[str] | None = None
 
 
 class ExecutionRunList(BaseModel):

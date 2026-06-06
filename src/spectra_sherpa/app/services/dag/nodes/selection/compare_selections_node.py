@@ -49,7 +49,7 @@ class CompareSelectionsNode(Node):
     metadata = NodeMetadata(
         node_type="selection.compare",
         category="selection",
-        label="Compare Selections",
+        label="Compare Feature Selections",
         description="Compare multiple variable selection masks and build consensus",
         parameters=[
             NodeParameter(
@@ -58,7 +58,6 @@ class CompareSelectionsNode(Node):
                 param_type="number",
                 default=0.5,
                 min_value=0.0,
-                max_value=1.0,
                 step=0.1,
                 description="Fraction of methods that must agree for consensus (0.5 = majority vote)",
             ),
@@ -66,10 +65,11 @@ class CompareSelectionsNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
-                label="Spectral Data",
-                description="Original full dataset (before selection)",
+                label="Input Data Matrix",
+                description="Original spectral dataset or feature table before selection",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
                 name="mask_1",

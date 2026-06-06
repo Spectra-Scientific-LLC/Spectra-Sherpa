@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -12,37 +12,58 @@ import numpy as np
 from spectra_sherpa.app.core.config import settings
 
 logger = logging.getLogger(__name__)
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis
+from spectra_sherpa.app.lib.data_roles import normalize_data_role
+from spectra_sherpa.app.lib.sherpa_dataset import FeatureAxis, SherpaDataset, SpectralAxis
 
 
 @dataclass(frozen=True)
 class PreparedDataOverrides:
+    title: str | None = None
     x_title: str | None = None
     x_units: str | None = None
     y_title: str | None = None
+    y_units: str | None = None
     is_time_series: bool | None = None
+    data_role: str | None = None
+    target_column: str | None = None
+    target_type: str | None = None
 
     @classmethod
     def from_mapping(cls, overrides: Mapping[str, Any] | None) -> "PreparedDataOverrides":
         if not overrides:
             return cls()
         return cls(
+            title=_normalize_text(overrides.get("title")),
             x_title=_normalize_text(overrides.get("x_title")),
             x_units=_normalize_text(overrides.get("x_units"), allow_empty=True),
             y_title=_normalize_text(overrides.get("y_title")),
+            y_units=_normalize_text(overrides.get("y_units"), allow_empty=True),
             is_time_series=_normalize_bool(overrides.get("is_time_series")),
+            data_role=_normalize_data_role_value(overrides.get("data_role")),
+            target_column=_normalize_text(overrides.get("target_column")),
+            target_type=_normalize_target_type(overrides.get("target_type")),
         )
 
     def to_sidecar_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {}
+        if self.title is not None:
+            payload["title"] = self.title
         if self.x_title is not None:
             payload["x_title"] = self.x_title
         if self.x_units is not None:
             payload["x_units"] = self.x_units
         if self.y_title is not None:
             payload["y_title"] = self.y_title
+        if self.y_units is not None:
+            payload["y_units"] = self.y_units
         if self.is_time_series is not None:
             payload["is_time_series"] = self.is_time_series
+        if self.data_role is not None:
+            payload["data_role"] = self.data_role
+        if self.target_column is not None:
+            payload["target_column"] = self.target_column
+        if self.target_type is not None:
+            payload["target_type"] = self.target_type
         return payload
 
     def to_prompt_dict(self) -> dict[str, Any]:
@@ -52,7 +73,20 @@ class PreparedDataOverrides:
         return payload
 
     def is_empty(self) -> bool:
-        return not any(value is not None for value in (self.x_title, self.x_units, self.y_title, self.is_time_series))
+        return not any(
+            value is not None
+            for value in (
+                self.x_title,
+                self.title,
+                self.x_units,
+                self.y_title,
+                self.y_units,
+                self.is_time_series,
+                self.data_role,
+                self.target_column,
+                self.target_type,
+            )
+        )
 
 
 _OVERRIDES_DIR = Path(settings.data_dir) / ".metadata_overrides"
@@ -71,6 +105,23 @@ def _normalize_bool(value: Any) -> bool | None:
     if value is None:
         return None
     return bool(value)
+
+
+def _normalize_data_role_value(value: Any) -> str | None:
+    if value is None or value == "":
+        return None
+    return normalize_data_role(value)
+
+
+def _normalize_target_type(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text or text == "auto":
+        return None
+    if text not in {"continuous", "categorical"}:
+        raise ValueError("target_type must be continuous, categorical, or auto")
+    return text
 
 
 def normalize_relative_data_path(file_path: str) -> str:
@@ -165,6 +216,8 @@ def apply_serialized_prepared_data_overrides(
     if prepared.is_empty():
         return result
 
+    if prepared.title is not None:
+        result["title"] = prepared.title
     meta = result.setdefault("metadata", {})
     if prepared.x_title is not None:
         meta["x_title"] = prepared.x_title
@@ -178,9 +231,18 @@ def apply_serialized_prepared_data_overrides(
             axis["units"] = prepared.x_units
     if prepared.y_title is not None:
         meta["data_quantity"] = prepared.y_title
+    if prepared.y_units is not None:
+        meta["value_units"] = prepared.y_units
     if prepared.is_time_series is not None:
         meta["is_time_series"] = prepared.is_time_series
         result["is_time_series"] = prepared.is_time_series
+    if prepared.data_role is not None:
+        meta["data_role"] = prepared.data_role
+        result["data_role"] = prepared.data_role
+    if prepared.target_column is not None:
+        meta["target_column"] = prepared.target_column
+    if prepared.target_type is not None:
+        meta["target_type"] = prepared.target_type
     return result
 
 
@@ -198,6 +260,11 @@ def apply_dataset_prepared_data_overrides(
     )
     if prepared.is_empty():
         return dataset
+    if dataset.get_extra("csv.layout") == "axis_column_conditions" and prepared.data_role == "X_features":
+        prepared = replace(prepared, data_role=None)
+
+    if prepared.title is not None:
+        dataset.title = prepared.title
 
     feature_axis = dataset.feature_axis
     if (
@@ -205,8 +272,12 @@ def apply_dataset_prepared_data_overrides(
         and dataset.data.ndim >= 1
         and (prepared.x_title is not None or prepared.x_units is not None)
     ):
-        feature_axis = SpectralAxis(values=np.arange(dataset.data.shape[-1], dtype=float), title="Feature")
+        axis_cls = FeatureAxis if prepared.data_role == "X_features" else SpectralAxis
+        feature_axis = axis_cls(values=np.arange(dataset.data.shape[-1], dtype=float), title="Feature")
         dataset.feature_axis = feature_axis
+
+    if prepared.data_role is not None:
+        dataset.data_role = prepared.data_role
 
     if feature_axis is not None and (prepared.x_title is not None or prepared.x_units is not None):
         updated_axis = feature_axis.copy()
@@ -222,6 +293,8 @@ def apply_dataset_prepared_data_overrides(
     if allow_y_title and prepared.y_title is not None:
         domain.data_quantity = prepared.y_title
     dataset.domain = domain
+    if prepared.y_units is not None:
+        dataset.units = prepared.y_units or None
 
     if allow_x_title and prepared.x_title is not None:
         dataset.meta["x_title"] = prepared.x_title
@@ -229,9 +302,16 @@ def apply_dataset_prepared_data_overrides(
         dataset.meta["x_units"] = prepared.x_units
     if allow_y_title and prepared.y_title is not None:
         dataset.meta["data_quantity"] = prepared.y_title
+    if prepared.y_units is not None:
+        dataset.meta["value_units"] = prepared.y_units or None
+        dataset.set_extra("scp.value_units_label", prepared.y_units or None)
     if allow_is_time_series and prepared.is_time_series is not None:
         dataset.is_time_series = prepared.is_time_series
         dataset.meta["is_time_series"] = prepared.is_time_series
+    if prepared.target_column is not None:
+        dataset.meta["csv.target_column"] = prepared.target_column
+    if prepared.target_type is not None:
+        dataset.meta["csv.target_type"] = prepared.target_type
 
     return dataset
 
@@ -239,34 +319,22 @@ def apply_dataset_prepared_data_overrides(
 def merge_prepared_data_overrides(overrides: list[PreparedDataOverrides]) -> PreparedDataOverrides:
     merged = PreparedDataOverrides()
     for current in overrides:
+        if current.title is not None and merged.title is None:
+            merged = replace(merged, title=current.title)
         if current.x_title is not None and merged.x_title is None:
-            merged = PreparedDataOverrides(
-                x_title=current.x_title,
-                x_units=merged.x_units,
-                y_title=merged.y_title,
-                is_time_series=merged.is_time_series,
-            )
+            merged = replace(merged, x_title=current.x_title)
         if current.x_units is not None and merged.x_units is None:
-            merged = PreparedDataOverrides(
-                x_title=merged.x_title,
-                x_units=current.x_units,
-                y_title=merged.y_title,
-                is_time_series=merged.is_time_series,
-            )
+            merged = replace(merged, x_units=current.x_units)
         if current.y_title is not None and merged.y_title is None:
-            merged = PreparedDataOverrides(
-                x_title=merged.x_title,
-                x_units=merged.x_units,
-                y_title=current.y_title,
-                is_time_series=merged.is_time_series,
-            )
+            merged = replace(merged, y_title=current.y_title)
         if current.is_time_series is not None and merged.is_time_series is None:
-            merged = PreparedDataOverrides(
-                x_title=merged.x_title,
-                x_units=merged.x_units,
-                y_title=merged.y_title,
-                is_time_series=current.is_time_series,
-            )
+            merged = replace(merged, is_time_series=current.is_time_series)
+        if current.data_role is not None and merged.data_role is None:
+            merged = replace(merged, data_role=current.data_role)
+        if current.target_column is not None and merged.target_column is None:
+            merged = replace(merged, target_column=current.target_column)
+        if current.target_type is not None and merged.target_type is None:
+            merged = replace(merged, target_type=current.target_type)
     return merged
 
 

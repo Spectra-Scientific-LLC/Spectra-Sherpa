@@ -267,6 +267,7 @@ class WorkflowExecuteResponse(BaseModel):
     """Schema for workflow execution response."""
 
     workflow_id: int
+    run_id: int | None = Field(None, description="Auto-persisted execution run id, when persistence succeeded")
     status: str = Field(..., description="Execution status")
     results: dict[str, Any] = Field(default_factory=dict, description="Node results (node_id -> result)")
     diagnostics: dict[str, dict[str, Any]] = Field(
@@ -276,6 +277,14 @@ class WorkflowExecuteResponse(BaseModel):
     executed_at: datetime
     error: str | None = Field(None, description="Error message if execution failed")
     integrity_hash: str | None = Field(None, description="SHA-256 integrity hash of executed workflow")
+    results_truncated: bool = Field(
+        False,
+        description="True when replayed results are the compact run-history summary rather than the live payload",
+    )
+    diagnostics_truncated: bool = Field(
+        False,
+        description="True when replayed diagnostics are the compact run-history summary rather than the live payload",
+    )
 
 
 class WorkflowPythonExportResponse(BaseModel):
@@ -315,6 +324,10 @@ class NodePortInfo(BaseModel):
     label: str = Field(..., description="Display label for UI")
     description: str | None = Field(None, description="Port description")
     variadic: bool = Field(False, description="True if port accepts multiple edges (list input)")
+    accepted_data_roles: list[str] | None = Field(
+        None,
+        description="Accepted dataset roles for this port, e.g. X_spectra or X_features",
+    )
 
 
 class NodeMetadataInfo(BaseModel):
@@ -375,6 +388,7 @@ class TrialExecuteRequest(BaseModel):
     nodes: list[TrialNodeDefinition] = Field(..., description="All workflow nodes")
     edges: list[TrialEdgeDefinition] = Field(default_factory=list, description="Workflow edges")
     initial_data: dict[str, Any] | None = Field(None, description="Initial data for source nodes (node_id -> data)")
+    project_id: int | None = Field(None, description="Project scope for experiment-backed trial data")
 
 
 class TrialExecuteResponse(BaseModel):

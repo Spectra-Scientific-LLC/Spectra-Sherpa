@@ -48,6 +48,139 @@ FILENAME_PATTERN = re.compile(
     re.IGNORECASE,
 )
 CONC_PATTERN = re.compile(r"\(([^()]*?)ppm", re.IGNORECASE)
+_CSV_AXIS_UNITS_PATTERN = re.compile(r"\((?P<units>[^)]*)\)")
+
+
+def _spectral_axis_info_from_header(header: str) -> tuple[str, str | None] | None:
+    """Return spectral axis title/units for scientist-style CSV axis columns."""
+    cleaned = str(header).strip()
+    lower = cleaned.lower()
+    if "raman" in lower and "shift" in lower:
+        title = "Raman Shift"
+    elif "wavenumber" in lower or "wave number" in lower:
+        title = "Wavenumber"
+    elif "wavelength" in lower or "wave length" in lower:
+        title = "Wavelength"
+    elif "chemical shift" in lower:
+        title = "Chemical Shift"
+    elif lower in {"m/z", "mz"} or "mass-to-charge" in lower or "mass to charge" in lower:
+        title = "m/z"
+    else:
+        return None
+
+    units_match = _CSV_AXIS_UNITS_PATTERN.search(cleaned)
+    units = units_match.group("units").strip() if units_match else None
+    if units in {"cm^-1", "cm⁻¹"}:
+        units = "cm-1"
+    return title, units or None
+
+
+def _normalize_axis_units(units: str | None) -> str | None:
+    if units is None:
+        return None
+    cleaned = str(units).strip()
+    if not cleaned:
+        return None
+    if cleaned in {"cm^-1", "cm⁻¹"}:
+        return "cm-1"
+    return cleaned
+
+
+def _infer_numeric_spectral_axis(
+    filepath: Union[str, Path],
+    x_values: np.ndarray,
+    overrides: Any | None,
+) -> tuple[str, str | None]:
+    """Infer metadata for matrix-style spectral CSVs with numeric column headers.
+
+    Numeric headers alone cannot prove whether the axis is wavenumber, Raman
+    shift, wavelength, or an arbitrary feature coordinate. Prefer explicit
+    prepared-data metadata, then weak file-name hints, and otherwise keep the
+    title generic instead of laundering unknown axes into wavenumber.
+    """
+    if overrides is not None:
+        override_title = getattr(overrides, "x_title", None)
+        override_units = _normalize_axis_units(getattr(overrides, "x_units", None))
+        if override_title or override_units:
+            return override_title or "Spectral Axis", override_units
+
+    stem = Path(filepath).stem.lower()
+    if "raman" in stem or "shift" in stem:
+        return "Raman Shift", "cm-1"
+    if "wavenumber" in stem or "wave_number" in stem or "ftir" in stem:
+        return "Wavenumber", "cm-1"
+    if "wavelength" in stem or "wave_length" in stem:
+        return "Wavelength", "nm"
+    if "nir" in stem or "near_ir" in stem or "near-infrared" in stem:
+        return "Wavelength", "nm"
+    if x_values.size and np.nanmin(x_values) >= 4000 and np.nanmax(x_values) <= 12000:
+        return "Wavenumber", "cm-1"
+    return "Spectral Axis", None
+
+
+def _load_axis_column_spectral_csv(
+    df: pd.DataFrame,
+    filepath: Union[str, Path],
+    *,
+    data_role: str | None = None,
+) -> "SherpaDataset | None":
+    """Load wide CSVs with one shared spectral axis column and condition columns.
+
+    Example:
+        Wavenumber (cm-1),Condition A,Condition B
+        200,2139,9549
+        201,2159,9538
+
+    The scientist intent is two spectra sharing the same x-axis, not 1801
+    samples with three generic features.
+    """
+    if len(df.columns) < 2:
+        return None
+
+    axis_col = df.columns[0]
+    axis_info = _spectral_axis_info_from_header(str(axis_col))
+    if axis_info is None:
+        return None
+
+    x_values = pd.to_numeric(df[axis_col], errors="coerce")
+    if x_values.isna().any() or len(x_values) < 2:
+        return None
+
+    x_array = x_values.to_numpy(dtype=np.float64)
+    diffs = np.diff(x_array)
+    if not (bool(np.all(diffs > 0)) or bool(np.all(diffs < 0))):
+        return None
+
+    condition_cols = list(df.columns[1:])
+    intensity_df = df[condition_cols].apply(pd.to_numeric, errors="coerce")
+    if intensity_df.isna().any().any():
+        return None
+
+    from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
+    from spectra_sherpa.app.lib.sherpa_dataset import DomainContext, SherpaDataset
+
+    axis_title, units = axis_info
+    path = Path(filepath)
+    technique = "raman" if "raman" in path.stem.lower() or "raman" in str(axis_col).lower() else None
+
+    return SherpaDataset(
+        X=intensity_df.to_numpy(dtype=np.float64).T,
+        feature_axis=SpectralAxis(values=x_array, title=axis_title, units=units),
+        sample_axis=SampleAxis(labels=[str(col) for col in condition_cols], title="Condition"),
+        domain=DomainContext(
+            technique=technique,
+            sample_type=path.stem,
+            expected_units=units,
+            data_quantity="Intensity",
+        ),
+        extra={
+            "csv.layout": "axis_column_conditions",
+            "csv.axis_column": str(axis_col),
+            "csv.condition_columns": [str(col) for col in condition_cols],
+        },
+        title=path.stem,
+        data_role="X_spectra",
+    )
 
 
 def _normalise_label(value: str) -> str:
@@ -452,7 +585,7 @@ def read_spectral_file(filepath: Path) -> "NDDataset":
     """
     Read spectral files using SpectroChemPy.
 
-    Supports: .jdx, .dx, .spc, .spa, .spg, .opus
+    Supports: .spc, .spa, .spg, .opus
 
     Parameters
     ----------
@@ -469,9 +602,7 @@ def read_spectral_file(filepath: Path) -> "NDDataset":
     ext = filepath.suffix.lower()
     label = _extract_label_from_filename(filepath.name)
 
-    if ext in [".jdx", ".dx"]:
-        dataset = scp.read_jcamp(str(filepath))
-    elif ext == ".spc":
+    if ext == ".spc":
         dataset = scp.read_spc(str(filepath))
     elif ext in [".spa", ".spg", ".srs"]:
         dataset = scp.read_omnic(str(filepath))
@@ -489,6 +620,164 @@ def read_spectral_file(filepath: Path) -> "NDDataset":
     return dataset
 
 
+def _axis_title_from_jcamp_units(units: str | None) -> str:
+    text = (units or "").lower()
+    if "nm" in text or "micrometer" in text or "um" in text or "µm" in text:
+        return "Wavelength"
+    if "raman" in text:
+        return "Raman Shift"
+    return "Wavenumber"
+
+
+def _intensity_title_from_units(units: str | None) -> str:
+    text = (units or "").lower()
+    if "transmit" in text:
+        return "Transmittance"
+    if "absorb" in text:
+        return "Absorbance"
+    return units or "Intensity"
+
+
+def load_jcamp_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
+    """Load JCAMP-DX with the dependency-free bundled reader."""
+    from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
+    from spectra_sherpa.app.lib.jcamp_reader import read_jcamp
+    from spectra_sherpa.app.lib.sherpa_dataset import DomainContext, SherpaDataset
+
+    path = Path(filepath)
+    jcamp = read_jcamp(path)
+    y = np.asarray(jcamp.y, dtype=np.float64)
+    x = np.asarray(jcamp.x, dtype=np.float64)
+    if x.ndim != 1 or y.ndim != 1:
+        raise ValueError(f"JCAMP file must contain one-dimensional x/y arrays: {path.name}")
+    if len(x) != len(y):
+        raise ValueError(f"JCAMP x/y length mismatch in {path.name}: {len(x)} vs {len(y)}")
+
+    axis_units = _normalize_axis_units(jcamp.xunits) or None
+    y_title = _intensity_title_from_units(jcamp.yunits)
+    title = jcamp.title or path.stem
+    return SherpaDataset(
+        X=y.reshape(1, -1),
+        feature_axis=SpectralAxis(
+            values=x,
+            title=_axis_title_from_jcamp_units(axis_units),
+            units=axis_units,
+        ),
+        sample_axis=SampleAxis(labels=[title], title="Samples"),
+        domain=DomainContext(expected_units=axis_units, data_quantity=y_title),
+        title=title,
+        units=jcamp.yunits or None,
+        extra={
+            "source_file": str(path),
+            "source_type": path.suffix.lower().lstrip("."),
+            "jcamp.data_type": jcamp.data_type,
+            "jcamp.headers": dict(jcamp.headers),
+        },
+        data_role="X_spectra",
+    )
+
+
+def _numeric_array(name: str, value: Any) -> np.ndarray:
+    arr = np.asarray(value)
+    if not np.issubdtype(arr.dtype, np.number):
+        raise ValueError(f"NumPy array {name!r} must be numeric, got {arr.dtype}")
+    if arr.ndim == 0 or arr.ndim > 2:
+        raise ValueError(f"NumPy array {name!r} must be one- or two-dimensional, got {arr.ndim}D")
+    return arr.astype(np.float64, copy=False)
+
+
+def _load_npz_arrays(path: Path) -> tuple[np.ndarray, np.ndarray | None, list[str] | None, str]:
+    with np.load(path, allow_pickle=False) as payload:
+        keys = list(payload.files)
+        if not keys:
+            raise ValueError(f"Empty NumPy archive: {path.name}")
+
+        data_key: str | None = None
+        for candidate in ("X", "data", "spectra", "y", "intensity", "absorbance"):
+            if candidate in payload:
+                data_key = candidate
+                break
+        if data_key is None:
+            numeric_keys: list[str] = []
+            for key in keys:
+                try:
+                    arr = np.asarray(payload[key])
+                except ValueError:
+                    continue
+                if np.issubdtype(arr.dtype, np.number) and 1 <= arr.ndim <= 2:
+                    numeric_keys.append(key)
+            if len(numeric_keys) != 1:
+                raise ValueError("NumPy .npz files must contain an X array or exactly one numeric data array")
+            data_key = numeric_keys[0]
+
+        X = _numeric_array(data_key, payload[data_key])
+        feature_values = None
+        for axis_key in ("x", "wavenumber", "wavenumbers", "wavelength", "wavelengths"):
+            if axis_key in payload:
+                axis = np.asarray(payload[axis_key], dtype=np.float64)
+                if axis.ndim == 1 and len(axis) == (X.shape[-1] if X.ndim > 1 else X.shape[0]):
+                    feature_values = axis
+                    break
+
+        labels = None
+        if "sample_labels" in payload:
+            raw_labels = np.asarray(payload["sample_labels"])
+            if raw_labels.ndim == 1:
+                labels = [str(label) for label in raw_labels.tolist()]
+        return X, feature_values, labels, data_key
+
+
+def load_numpy_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
+    """Load simple numeric .npy/.npz payloads without SpectroChemPy."""
+    from spectra_sherpa.app.lib.axes import FeatureAxis, SampleAxis, SpectralAxis
+    from spectra_sherpa.app.lib.sherpa_dataset import DomainContext, SherpaDataset
+
+    path = Path(filepath)
+    if path.suffix.lower() == ".npy":
+        X = _numeric_array("array", np.load(path, allow_pickle=False))
+        feature_values = None
+        labels = None
+        data_key = "array"
+    else:
+        X, feature_values, labels, data_key = _load_npz_arrays(path)
+
+    if X.ndim == 1:
+        X = X.reshape(1, -1)
+    n_samples, n_features = X.shape[0], X.shape[-1]
+    if labels is not None and len(labels) != n_samples:
+        labels = None
+
+    feature_axis = (
+        SpectralAxis(values=feature_values, title="Spectral Axis", units=None)
+        if feature_values is not None
+        else FeatureAxis(labels=[str(i) for i in range(n_features)], title="Features")
+    )
+    return SherpaDataset(
+        X=X,
+        feature_axis=feature_axis,
+        sample_axis=SampleAxis(labels=labels, title="Samples") if labels else None,
+        domain=DomainContext(data_quantity="Intensity"),
+        title=path.stem,
+        extra={
+            "source_file": str(path),
+            "source_type": path.suffix.lower().lstrip("."),
+            "numpy.data_key": data_key,
+        },
+        data_role="X_spectra" if feature_values is not None else "X_features",
+    )
+
+
+def load_open_spectral_file_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset | None":
+    """Load base-install formats that do not require SpectroChemPy."""
+    path = Path(filepath)
+    ext = path.suffix.lower()
+    if ext in {".jdx", ".dx"}:
+        return load_jcamp_as_sherpa(path)
+    if ext in {".npy", ".npz"}:
+        return load_numpy_as_sherpa(path)
+    return None
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # UNIFIED LOADER
 # ─────────────────────────────────────────────────────────────────────────────
@@ -504,7 +793,9 @@ def load_spectrum(filepath: Union[str, Path]) -> "NDDataset":
     - .csv - Two-column wavenumber/absorbance
     - .json - Calibration signature files
     - .mat - MATLAB files
-    - .jdx, .dx, .spc, .spa, .spg, .srs, .opus - SpectroChemPy native formats
+    - .jdx, .dx - JCAMP-DX via bundled reader
+    - .npy, .npz - NumPy numeric arrays
+    - .spc, .spa, .spg, .srs, .opus - SpectroChemPy native formats
 
     Parameters
     ----------
@@ -529,7 +820,9 @@ def load_spectrum(filepath: Union[str, Path]) -> "NDDataset":
             return datasets[0]
         # Stack multiple spectra
         return stack_datasets(datasets)
-    elif ext in [".jdx", ".dx", ".spc", ".spa", ".spg", ".srs", ".opus"]:
+    elif ext in [".jdx", ".dx", ".npy", ".npz"]:
+        return load_open_spectral_file_as_sherpa(filepath)
+    elif ext in [".spc", ".spa", ".spg", ".srs", ".opus"]:
         return read_spectral_file(filepath)
     else:
         raise ValueError(f"Unsupported file format: {ext}")
@@ -606,7 +899,13 @@ def stack_datasets(datasets: List["NDDataset"]) -> "NDDataset":
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
+def load_csv_as_sherpa(
+    filepath: Union[str, Path],
+    *,
+    data_role: str | None = None,
+    target_column: str | None = None,
+    target_type: str | None = None,
+) -> "SherpaDataset":
     """Read any CSV into a SherpaDataset.
 
     Handles two layouts:
@@ -630,9 +929,30 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
 
     filepath = Path(filepath)
     df = pd.read_csv(filepath)
+    overrides = None
+    try:
+        from spectra_sherpa.app.services.prepared_data import load_prepared_data_overrides
+
+        overrides = load_prepared_data_overrides(file_path=str(filepath.resolve()))
+        data_role = data_role or overrides.data_role
+        target_column = target_column or overrides.target_column
+        target_type = target_type or overrides.target_type
+    except Exception:
+        # CSV loading is used in lightweight contexts where the application
+        # settings module may not be fully initialised. Explicit arguments
+        # still work in those contexts.
+        pass
 
     if df.empty:
         raise ValueError(f"Empty CSV file: {filepath}")
+
+    axis_column_dataset = _load_axis_column_spectral_csv(df, filepath, data_role=data_role)
+    if axis_column_dataset is not None:
+        if overrides is not None:
+            from spectra_sherpa.app.services.prepared_data import apply_dataset_prepared_data_overrides
+
+            axis_column_dataset = apply_dataset_prepared_data_overrides(axis_column_dataset, overrides)
+        return axis_column_dataset
 
     # Partition columns: float-parseable headers vs string headers.
     # Pandas mangles duplicate column names by appending ".N" suffixes
@@ -658,6 +978,11 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
             except (ValueError, TypeError):
                 label_cols.append(col)
 
+    if data_role == "X_features":
+        spectral_cols = []
+        x_vals = []
+        label_cols = list(df.columns)
+
     # Extract sample labels from the first string column (if any)
     sample_labels: list[str] | None = None
     if label_cols:
@@ -669,6 +994,7 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
         # ── Spectral matrix path ──
         data = df[spectral_cols].values.astype(np.float64)
         wavelengths = np.array(x_vals, dtype=np.float64)
+        axis_title, axis_units = _infer_numeric_spectral_axis(filepath, wavelengths, overrides)
 
         # Detect string-named numeric columns as reference properties
         extra: dict[str, Any] | None = None
@@ -704,23 +1030,27 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
 
         return SherpaDataset(
             X=data,
-            feature_axis=SpectralAxis(values=wavelengths, title="Wavenumber"),
+            feature_axis=SpectralAxis(values=wavelengths, title=axis_title, units=axis_units),
             sample_axis=SampleAxis(labels=sample_labels) if sample_labels else None,
+            domain=DomainContext(expected_units=axis_units, data_quantity="Intensity"),
             extra=extra,
             title=title,
+            data_role="X_spectra",
         )
 
     # ── Tabular / properties path ──
     # Named-column tables are generic multivariate data, not spectra.
     # Preserve numeric columns as features and keep a single non-numeric
     # column as an embedded categorical target when present.
-    numeric_df = df.select_dtypes(include="number")
+    target_col = target_column if target_column in df.columns else None
+    numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c]) and c != target_col]
+    numeric_df = df[numeric_cols]
     if numeric_df.empty:
         raise ValueError(f"No numeric columns in {filepath.name}")
 
     data = numeric_df.values.astype(np.float64)
     col_names = list(numeric_df.columns)
-    non_numeric_cols = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])]
+    non_numeric_cols = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c]) and c != target_col]
 
     target = None
     target_context = None
@@ -728,16 +1058,22 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
         "csv.feature_names": col_names,
     }
 
-    if len(non_numeric_cols) == 1:
-        target_col = non_numeric_cols[0]
-        target = df[target_col].astype(str).to_numpy()
-        target_context = TargetContext(
-            target_type="categorical",
-            target_name=target_col,
-            n_classes=len(np.unique(target)),
-            class_names=sorted({str(label) for label in target}),
+    inferred_target_col = target_col or (non_numeric_cols[0] if len(non_numeric_cols) == 1 else None)
+    if inferred_target_col is not None:
+        target = df[inferred_target_col].to_numpy()
+        target_is_categorical = (
+            target_type == "categorical"
+            or target.dtype.kind in ("O", "S", "U")
+            or (target_type is None and np.issubdtype(target.dtype, np.integer) and len(np.unique(target)) <= 30)
         )
-        extra2["csv.target_column"] = target_col
+        target_context = TargetContext(
+            target_type="categorical" if target_is_categorical else "continuous",
+            target_name=inferred_target_col,
+            n_classes=len(np.unique(target)) if target_is_categorical else None,
+            class_names=sorted({str(label) for label in target}) if target_is_categorical else None,
+        )
+        extra2["csv.target_column"] = inferred_target_col
+        extra2["csv.target_type"] = "categorical" if target_is_categorical else "continuous"
 
     return SherpaDataset(
         X=data,
@@ -752,6 +1088,7 @@ def load_csv_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
         extra=extra2,
         backend="pandas",
         title=title,
+        data_role="X_features",
     )
 
 

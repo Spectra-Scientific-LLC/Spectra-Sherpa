@@ -25,7 +25,12 @@ def test_headless_mode_no_browser_launch():
 
 def test_normal_mode_launches_browser():
     """Test that normal mode launches browser."""
-    with patch("uvicorn.run") as mock_uvicorn, patch("spectra_sherpa.cli.threading.Thread") as mock_thread:
+    with (
+        patch("uvicorn.run") as mock_uvicorn,
+        patch("spectra_sherpa.cli.threading.Thread") as mock_thread,
+        patch("spectra_sherpa.cli._find_listening_pids", return_value=[]),
+        patch("spectra_sherpa.cli.os.environ", {}),
+    ):
         main(["--port", "8000"])
         mock_thread.assert_called_once()
         assert "main:app" in str(mock_uvicorn.call_args)

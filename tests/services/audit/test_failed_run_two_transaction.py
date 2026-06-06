@@ -116,7 +116,7 @@ async def test_failed_run_event_survives_workflow_rollback(async_session, alice_
         model_ids=None,
         params_snapshot=None,
     )
-    assert persisted is True
+    assert persisted is not None
 
     # The failure record must exist after both phases.
     rows_after_failure_record = (await async_session.execute(select(AuditEvent))).scalars().all()

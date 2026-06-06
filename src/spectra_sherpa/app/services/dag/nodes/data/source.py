@@ -1,8 +1,8 @@
 """DataSourceNode — primary data source for loading spectral data.
 
 Registered as ``data.source``.  Handles SpectroChemPy examples, sklearn
-datasets, Eigenvector benchmarks, experiment files, library entries,
-and synthetic generation.
+datasets, Eigenvector benchmarks, first-party synthetic references,
+experiment files, and library entries.
 """
 
 from __future__ import annotations
@@ -30,11 +30,13 @@ from spectra_sherpa.app.lib.scp_compat import (
 )
 from spectra_sherpa.app.lib.sherpa_dataset import (
     DomainContext,
+    FeatureAxis,
     SampleAxis,
     SherpaDataset,
     SpectralAxis,
     TargetContext,
 )
+from spectra_sherpa.app.lib.synthetic_references import SYNTHETIC_REFERENCE_CATALOG, load_synthetic_reference_as_sherpa
 from spectra_sherpa.app.models.spectra_meta import (
     AcquisitionParams,
     DataProvenance,
@@ -48,6 +50,7 @@ from spectra_sherpa.app.models.spectra_meta import (
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, safe_get_coord
 from spectra_sherpa.app.services.prepared_data import (
     apply_dataset_prepared_data_overrides,
+    load_prepared_data_overrides,
     load_prepared_data_overrides_for_source,
     normalize_relative_data_path,
 )
@@ -99,7 +102,6 @@ class DataSourceNode(Node):
                 options=[
                     {"label": "IR Spectroscopy", "value": "irdata"},
                     {"label": "Raman Spectroscopy", "value": "ramandata"},
-                    {"label": "NMR (Bruker TopSpin)", "value": "nmrdata"},
                     {"label": "Galactic SPC Files", "value": "galacticdata"},
                     {"label": "Agilent IR (AGIR)", "value": "agirdata"},
                     {"label": "MATLAB Datasets", "value": "matlabdata"},
@@ -119,7 +121,7 @@ class DataSourceNode(Node):
                     {"label": "Wine (3 classes, 13 features, 178 samples)", "value": "wine"},
                     {"label": "Breast Cancer (2 classes, 30 features, 569 samples)", "value": "breast_cancer"},
                 ],
-                description="Scikit-learn dataset to load via SpectroChemPy (for testing PCA, classification, etc.)",
+                description="Scikit-learn feature-table dataset for dual-mode PCA, classification, clustering, etc.",
                 required=False,
                 category="basic",
             ),
@@ -130,6 +132,18 @@ class DataSourceNode(Node):
                 default="diesel_nir",
                 options=[{"label": v["label"], "value": k} for k, v in DATASET_CATALOG.items()],
                 description="Eigenvector Research public dataset (bundled reference data with properties)",
+                required=False,
+                category="basic",
+            ),
+            NodeParameter(
+                name="synthetic_dataset",
+                label="Synthetic Dataset",
+                param_type="select",
+                default="Synthetic_atmospheric-6",
+                options=[
+                    {"label": str(value["label"]), "value": key} for key, value in SYNTHETIC_REFERENCE_CATALOG.items()
+                ],
+                description="First-party Spectra Scientific synthetic benchmark dataset",
                 required=False,
                 category="basic",
             ),
@@ -269,9 +283,9 @@ class DataSourceNode(Node):
     )
 
     def supports_python_export(self) -> bool:
-        """Standard data sources (sklearn, eigenvector, spectrochempy) support export."""
+        """First-party/reference data sources support Python export."""
         source = self.parameters.get("source", "")
-        return source in ("sklearn", "eigenvector", "spectrochempy")
+        return source in ("sklearn", "eigenvector", "spectrochempy", "synthetic")
 
     def generate_python(
         self,
@@ -293,7 +307,23 @@ class DataSourceNode(Node):
             return self._gen_eigenvector(indent, is_multi)
         elif source == "spectrochempy":
             return self._gen_spectrochempy(indent, is_multi, use_scp)
+        elif source == "synthetic":
+            return self._gen_synthetic_reference(indent, is_multi)
         return []
+
+    def _gen_synthetic_reference(self, indent: str, is_multi: bool) -> list[str]:
+        ds_name = self.parameters.get("synthetic_dataset", "Synthetic_atmospheric-6")
+
+        lines: list[str] = []
+        lines.append(f"{indent}# --- Data Source ({self.node_id}) — synthetic.{ds_name} ---")
+        lines.append(
+            f"{indent}from spectra_sherpa.app.lib.synthetic_references import load_synthetic_reference_as_sherpa"
+        )
+        lines.append(f"{indent}")
+        lines.append(f"{indent}_ds = load_synthetic_reference_as_sherpa({ds_name!r})")
+        lines.append(f'{indent}print(f"  Data Source (synthetic.{ds_name}): {{_ds.shape}}")')
+        self._emit_result(lines, indent, is_multi)
+        return lines
 
     def _gen_sklearn(self, indent: str, is_multi: bool) -> list[str]:
         ds_name = self.parameters.get("sklearn_dataset", "iris")
@@ -308,13 +338,13 @@ class DataSourceNode(Node):
         lines.append(f"{indent}# --- Data Source ({self.node_id}) — sklearn.{ds_name} ---")
         lines.append(f"{indent}from sklearn.datasets import {loader}")
         lines.append(f"{indent}from spectra_sherpa.app.lib.sherpa_dataset import (")
-        lines.append(f"{indent}    SherpaDataset, SpectralAxis, SampleAxis, TargetContext,")
+        lines.append(f"{indent}    SherpaDataset, FeatureAxis, SampleAxis, TargetContext,")
         lines.append(f"{indent})")
         lines.append(f"{indent}")
         lines.append(f"{indent}_bunch = {loader}()")
         lines.append(f"{indent}_ds = SherpaDataset(")
         lines.append(f"{indent}    _bunch.data,")
-        lines.append(f"{indent}    feature_axis=SpectralAxis(")
+        lines.append(f"{indent}    feature_axis=FeatureAxis(")
         lines.append(f"{indent}        values=np.arange(_bunch.data.shape[1]),")
         lines.append(f"{indent}        title='Feature',")
         lines.append(f"{indent}    ),")
@@ -328,6 +358,7 @@ class DataSourceNode(Node):
         lines.append(f"{indent}        target_names=list(_bunch.target_names),")
         lines.append(f"{indent}    ),")
         lines.append(f"{indent}    title={ds_name!r},")
+        lines.append(f"{indent}    data_role='X_features',")
         lines.append(f"{indent})")
         lines.append(f'{indent}print(f"  Data Source (sklearn.{ds_name}): {{_ds.shape}}")')
         self._emit_result(lines, indent, is_multi)
@@ -432,6 +463,7 @@ class DataSourceNode(Node):
         sklearn_dataset = self.parameters.get("sklearn_dataset", "iris")
         self._embedded_target_data = None
         self._embedded_target_names = None
+        self._embedded_target_units = None
         self._resolved_source_file_paths: list[str] = []
 
         # Load data based on source
@@ -459,16 +491,17 @@ class DataSourceNode(Node):
             eigenvector_dataset = self.parameters.get("eigenvector_dataset", "diesel_nir")
             dataset = self._load_eigenvector_dataset(eigenvector_dataset)
         elif source == "experiment" and experiment_id:
-            require_scp("Spectral file reading")
             dataset = await self._load_from_experiment(experiment_id, file_id, stage)
         elif source == "library" and library_id:
             require_scp("Spectral file reading")
             dataset = await self._load_from_library(library_id)
         elif source == "file" and file_path:
-            require_scp("Spectral file reading")
             dataset = self._load_from_file(file_path)
         elif source == "synthetic":
-            dataset = self._generate_synthetic()
+            synthetic_dataset = self.parameters.get("synthetic_dataset", "Synthetic_atmospheric-6")
+            if not isinstance(synthetic_dataset, str) or not synthetic_dataset:
+                raise ValueError("synthetic_dataset is required when source='synthetic'.")
+            dataset = load_synthetic_reference_as_sherpa(synthetic_dataset)
         else:
             raise ValueError(
                 "Invalid or incomplete data source configuration. "
@@ -561,6 +594,7 @@ class DataSourceNode(Node):
                     dataset.target_context = TargetContext(
                         target_type="continuous",
                         target_names=self._embedded_target_names or None,
+                        target_units=getattr(self, "_embedded_target_units", None),
                     )
             elif source == "sklearn":
                 # SCP path: infer target context from extracted values
@@ -647,11 +681,10 @@ class DataSourceNode(Node):
             if x_units and not domain.expected_units:
                 domain.expected_units = str(x_units)
         elif source == "sklearn":
-            # sklearn datasets are tabular (non-spectroscopic).  Mark them
-            # explicitly so downstream nodes can surface warnings.
+            # sklearn datasets are honest feature tables, not spectra.
             from spectra_sherpa.app.lib.sklearn_info import _SKLEARN_NON_SPECTROSCOPIC_WARNING, SKLEARN_CATALOG
 
-            domain.technique = "non-spectroscopic"
+            domain.technique = "feature_table"
             if sklearn_dataset:
                 domain.sample_type = sklearn_dataset
             catalog_entry = SKLEARN_CATALOG.get(sklearn_dataset or "", {})
@@ -659,10 +692,10 @@ class DataSourceNode(Node):
                 # Inject the warning into dataset.meta so the Inspector and
                 # result serialiser can surface it to the user.
                 if isinstance(dataset.meta, dict):
-                    dataset.meta["non_spectroscopic_warning"] = _SKLEARN_NON_SPECTROSCOPIC_WARNING
+                    dataset.meta["feature_table_warning"] = _SKLEARN_NON_SPECTROSCOPIC_WARNING
                 else:
                     try:
-                        dataset.meta["non_spectroscopic_warning"] = _SKLEARN_NON_SPECTROSCOPIC_WARNING
+                        dataset.meta["feature_table_warning"] = _SKLEARN_NON_SPECTROSCOPIC_WARNING
                     except Exception:
                         pass
 
@@ -778,6 +811,7 @@ class DataSourceNode(Node):
                     title=dataset.title,
                     units=dataset.units,
                     extra=dict(dataset.meta),
+                    data_role=dataset.data_role,
                 )
             else:
                 dataset = dataset.T
@@ -822,7 +856,10 @@ class DataSourceNode(Node):
                         new_x.title = x_title
                         dataset.feature_axis = new_x
                 else:
-                    dataset.feature_axis = SpectralAxis(values=np.arange(dataset.shape[1], dtype=float), title=x_title)
+                    axis_cls = (
+                        FeatureAxis if getattr(dataset, "data_role", "X_spectra") == "X_features" else SpectralAxis
+                    )
+                    dataset.feature_axis = axis_cls(values=np.arange(dataset.shape[1], dtype=float), title=x_title)
             else:
                 # NDDataset: use SCP Coord + set_coordset
                 if current_y is not None:
@@ -864,7 +901,10 @@ class DataSourceNode(Node):
                         new_x.title = x_title
                         dataset.feature_axis = new_x
                 else:
-                    dataset.feature_axis = SpectralAxis(values=np.arange(dataset.shape[0], dtype=float), title=x_title)
+                    axis_cls = (
+                        FeatureAxis if getattr(dataset, "data_role", "X_spectra") == "X_features" else SpectralAxis
+                    )
+                    dataset.feature_axis = axis_cls(values=np.arange(dataset.shape[0], dtype=float), title=x_title)
             else:
                 if aac_1d_x_coord is not None:
                     if aac_1d_x_coord.title != x_title:
@@ -878,15 +918,14 @@ class DataSourceNode(Node):
         """
         Load a scikit-learn benchmark dataset.
 
-        When SpectroChemPy is available, uses its wrappers which return
-        NDDataset objects with rich metadata.  When absent, loads directly
-        from scikit-learn and returns a numpy array.
+        Always loads directly from scikit-learn so the result is an honest
+        X_features table instead of a synthetic spectral axis.
 
         Args:
             dataset_name: Name of sklearn dataset (iris, wine, breast_cancer)
 
         Returns:
-            NDDataset (with SCP) or numpy array (without SCP)
+            numpy array; the sklearn Bunch is stored for conversion to SherpaDataset
 
         Raises:
             ValueError: If dataset_name is not supported
@@ -904,27 +943,6 @@ class DataSourceNode(Node):
                 f"Unsupported sklearn dataset: {dataset_name}\n" f"Supported datasets: {', '.join(_loaders)}"
             )
 
-        if HAS_SCP:
-            # Rich path: SpectroChemPy wrappers return NDDataset with metadata
-            logger.debug("[DATA] Loading sklearn dataset via SpectroChemPy: %s", dataset_name)
-            try:
-                scp_loader = getattr(scp, f"load_{dataset_name}", None)
-                if scp_loader is None:
-                    raise AttributeError(f"scp.load_{dataset_name} not found")
-                dataset = scp_loader()
-                if dataset is None:
-                    raise ValueError(f"SpectroChemPy returned None for {dataset_name}")
-                logger.debug("[DATA] Loaded %s: %s", dataset_name, dataset.shape)
-                return dataset
-            except (AttributeError, Exception) as e:
-                logger.warning(
-                    "[DATA] SCP loader failed for %s, falling back to sklearn: %s",
-                    dataset_name,
-                    e,
-                )
-                # Fall through to direct sklearn path
-
-        # Direct sklearn path -- no SCP required
         logger.debug("[DATA] Loading sklearn dataset directly: %s", dataset_name)
         bunch = _loaders[dataset_name]()
         # Store target on the instance so _extract_target_labels_sklearn can get it
@@ -1625,6 +1643,11 @@ class DataSourceNode(Node):
                     "Please verify the imported example files are valid."
                 )
 
+            if all(
+                isinstance(item.dataset, SherpaDataset) and item.dataset.data_role == "X_features" for item in loaded
+            ):
+                return helper._concatenate_feature_tables(loaded, f"Experiment {experiment_id}")
+
             groups = helper._group_by_x_axis(loaded)
             groups.sort(key=lambda group: helper._x_length(group[0].dataset), reverse=True)
             spectra_group = groups[0]
@@ -1641,7 +1664,7 @@ class DataSourceNode(Node):
             dataset.title = f"Experiment {experiment_id} ({len(spectra_datasets)} files)"
 
             if embedded_target is not None:
-                self._embedded_target_data, self._embedded_target_names = embedded_target
+                self._embedded_target_data, self._embedded_target_names, self._embedded_target_units = embedded_target
             elif prop_groups:
                 prop_datasets = []
                 prop_names = []
@@ -1706,7 +1729,13 @@ class DataSourceNode(Node):
 
         self._record_resolved_file_path(file_path)
 
-        ext = os.path.splitext(file_path)[1]
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext == ".npz":
+            from spectra_sherpa.app.services.dag.nodes.data.loaders import _load_synthesis_npz_as_nddataset
+            from spectra_sherpa.app.services.synthesis import is_synthetic_npz
+
+            if is_synthetic_npz(file_path):
+                return _load_synthesis_npz_as_nddataset(file_path)
 
         try:
             # For CSV files, prefer pandas loader which correctly handles
@@ -1792,6 +1821,10 @@ class DataSourceNode(Node):
     def _load_csv_pandas(self, file_path: str) -> NDDataset | SherpaDataset:
         """Load CSV files via pandas, preserving embedded target/property columns."""
         df = pd.read_csv(file_path)
+        overrides = load_prepared_data_overrides(file_path=normalize_relative_data_path(str(Path(file_path).resolve())))
+        requested_role = overrides.data_role
+        target_column = overrides.target_column
+        target_type = overrides.target_type
 
         spectral_cols: list[str] = []
         x_vals: list[float] = []
@@ -1803,21 +1836,42 @@ class DataSourceNode(Node):
             except (ValueError, TypeError):
                 label_cols.append(col)
 
+        from spectra_sherpa.app.lib.io import _load_axis_column_spectral_csv
+
+        axis_column_dataset = _load_axis_column_spectral_csv(df, file_path, data_role=requested_role)
+        if axis_column_dataset is not None:
+            return axis_column_dataset
+
+        if requested_role == "X_features":
+            spectral_cols = []
+            x_vals = []
+            label_cols = list(df.columns)
+
         if not spectral_cols:
             # Named-column CSV (e.g., sklearn datasets with feature names like
             # "alcohol", "malic_acid", ..., "target").  Separate numeric feature
             # columns from non-numeric label/target columns.
-            numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c])]
-            non_numeric_cols = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c])]
+            target_col = target_column if target_column in df.columns else None
+            numeric_cols = [c for c in df.columns if pd.api.types.is_numeric_dtype(df[c]) and c != target_col]
+            non_numeric_cols = [c for c in df.columns if not pd.api.types.is_numeric_dtype(df[c]) and c != target_col]
             if not numeric_cols:
                 raise ValueError(f"No numeric columns in {file_path}")
             data = df[numeric_cols].values.astype(np.float64)
-            y_labels = df[non_numeric_cols[0]].astype(str).tolist() if non_numeric_cols else None
-            target = np.array(y_labels) if y_labels is not None else None
+            inferred_target_col = target_col or (non_numeric_cols[0] if non_numeric_cols else None)
+            target = df[inferred_target_col].to_numpy() if inferred_target_col else None
+            target_is_categorical = False
+            if target is not None:
+                target_is_categorical = (
+                    target_type == "categorical"
+                    or target.dtype.kind in ("O", "S", "U")
+                    or (
+                        target_type is None and np.issubdtype(target.dtype, np.integer) and len(np.unique(target)) <= 30
+                    )
+                )
 
             return SherpaDataset(
                 X=data,
-                feature_axis=SpectralAxis(
+                feature_axis=FeatureAxis(
                     values=np.arange(len(numeric_cols), dtype=np.float64),
                     labels=list(numeric_cols),
                     title="Feature",
@@ -1829,10 +1883,10 @@ class DataSourceNode(Node):
                 target=target,
                 target_context=(
                     TargetContext(
-                        target_type="categorical",
-                        target_name=non_numeric_cols[0],
-                        n_classes=len(np.unique(target)),
-                        class_names=sorted({str(label) for label in target}),
+                        target_type="categorical" if target_is_categorical else "continuous",
+                        target_name=inferred_target_col,
+                        n_classes=len(np.unique(target)) if target_is_categorical else None,
+                        class_names=sorted({str(label) for label in target}) if target_is_categorical else None,
                     )
                     if target is not None
                     else None
@@ -1843,9 +1897,13 @@ class DataSourceNode(Node):
                 ),
                 backend="pandas",
                 title=Path(file_path).stem,
+                data_role="X_features",
                 extra={
                     "csv.feature_names": list(numeric_cols),
-                    "csv.label_column": non_numeric_cols[0] if non_numeric_cols else None,
+                    "csv.target_column": inferred_target_col,
+                    "csv.target_type": (
+                        "categorical" if target_is_categorical else ("continuous" if target is not None else None)
+                    ),
                 },
             )
 
@@ -1867,6 +1925,8 @@ class DataSourceNode(Node):
         )
 
         prop_label_cols = label_cols[1:] if y_labels is not None else label_cols
+        if target_column in label_cols:
+            prop_label_cols = [target_column]
         if prop_label_cols:
             prop_cols = [c for c in prop_label_cols if pd.api.types.is_numeric_dtype(df[c])]
             if prop_cols:
@@ -1875,78 +1935,6 @@ class DataSourceNode(Node):
 
         if not hasattr(dataset, "meta") or dataset.meta is None:
             dataset.meta = {}
-
-        return dataset
-
-    def _generate_synthetic(self):
-        """Generate synthetic spectral data for testing.
-
-        Returns NDDataset when SCP is available, numpy array otherwise.
-        """
-        n_samples = 50
-        n_wavenumbers = 1000
-
-        # Wavenumber axis (4000 to 400 cm-1)
-        wavenumbers = np.linspace(4000, 400, n_wavenumbers)
-
-        # Generate synthetic spectra with some peaks
-        spectra = np.zeros((n_samples, n_wavenumbers))
-        for i in range(n_samples):
-            base = np.random.rand() * 0.1
-            noise = np.random.randn(n_wavenumbers) * 0.01
-
-            for peak_pos in [3400, 2900, 1700, 1500, 1000]:
-                peak_height = np.random.rand() * 0.5 + 0.2
-                peak_width = np.random.rand() * 50 + 30
-                peak = peak_height * np.exp(-((wavenumbers - peak_pos) ** 2) / (2 * peak_width**2))
-                spectra[i] += peak
-
-            spectra[i] += base + noise
-
-        if not HAS_SCP:
-            return SherpaDataset(
-                X=spectra,
-                feature_axis=SpectralAxis(values=wavenumbers, title="Wavenumber", units="cm^-1"),
-                sample_axis=SampleAxis(values=np.arange(n_samples), title="Sample"),
-                domain=DomainContext(
-                    technique="IR",
-                    data_quantity="Absorbance",
-                    expected_units="cm^-1",
-                ),
-                backend="numpy",
-                title="Synthetic Spectra",
-                units="absorbance",
-            )
-
-        # Create NDDataset with rich metadata
-        dataset = scp.NDDataset(spectra)
-        dataset.set_coordset(
-            y=scp.Coord(np.arange(n_samples), title="Sample"),
-            x=scp.Coord(wavenumbers, title="Wavenumber", units="cm^-1"),
-        )
-        dataset.title = "Synthetic Spectra"
-        dataset.units = "absorbance"
-
-        meta = SpectraMeta(
-            acquisition=AcquisitionParams(
-                wavenumber_min=400.0,
-                wavenumber_max=4000.0,
-                n_points=n_wavenumbers,
-            ),
-            provenance=DataProvenance(
-                source_type=SourceType.SYNTHETIC,
-                created_datetime=datetime.utcnow().isoformat(),
-            ),
-            is_ground_truth=True,
-            processing_steps=["synthetic_generation"],
-            custom={
-                "synthetic_params": {
-                    "type": "generic_ftir",
-                    "n_samples": n_samples,
-                    "peak_positions_cm": [3400, 2900, 1700, 1500, 1000],
-                }
-            },
-        )
-        set_spectra_meta(dataset, meta)
+        dataset.meta["sherpa.data_role"] = "X_spectra"
 
         return dataset

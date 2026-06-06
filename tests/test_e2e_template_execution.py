@@ -222,17 +222,16 @@ async def test_cross_validation_reports_sep_rer_bias():
     result = await node.execute(y_true=y_true, y_pred=y_pred)
 
     metrics = result.outputs.get("cv_metrics", {})
-    # Keys are uppercase in the node output (SEP, RER, bias)
-    assert "SEP" in metrics, f"SEP missing from CV metrics (fix #5). Keys: {list(metrics)}"
-    assert "RER" in metrics, f"RER missing from CV metrics (fix #5). Keys: {list(metrics)}"
+    assert "sep" in metrics, f"SEP missing from CV metrics (fix #5). Keys: {list(metrics)}"
+    assert "rer" in metrics, f"RER missing from CV metrics (fix #5). Keys: {list(metrics)}"
     assert "bias" in metrics, f"bias missing from CV metrics (fix #5). Keys: {list(metrics)}"
 
     # Sanity-check numeric reasonableness
-    assert metrics["SEP"] >= 0
-    assert metrics["RER"] > 0
+    assert metrics["sep"] >= 0
+    assert metrics["rer"] > 0
     assert isinstance(metrics["bias"], float)
     # RER ≥ 10 is the ASTM E1655 minimum for a useful calibration
-    assert metrics["RER"] >= 5, f"RER={metrics['RER']:.1f} seems very low — is the formula correct?"
+    assert metrics["rer"] >= 5, f"RER={metrics['rer']:.1f} seems very low — is the formula correct?"
 
 
 @pytest.mark.asyncio
@@ -257,8 +256,8 @@ async def test_cross_validation_loocv_applied_for_small_n():
         metrics.get("cv_method") == "loocv"
     ), f"Expected 'loocv' for n={n} ≤ 50, got '{metrics.get('cv_method')}'. Fix #6 may be broken."
     assert metrics.get("cv_folds_used") == n
-    assert "RMSE" in metrics
-    assert "R2" in metrics
+    assert "rmsecv" in metrics
+    assert "r2_cv" in metrics
 
 
 @pytest.mark.asyncio
@@ -277,7 +276,7 @@ async def test_cross_validation_honors_explicit_classification_task_type():
 
     metrics = result.outputs.get("cv_metrics", {})
     assert metrics.get("task_type") == "classification"
-    assert metrics.get("accuracy") == pytest.approx(0.75)
+    assert metrics.get("cv_accuracy") == pytest.approx(0.75)
     assert metrics.get("n_classes") == 2
 
 
@@ -306,11 +305,11 @@ async def test_holdout_evaluation_tolerates_non_finite_regression_predictions():
     assert metrics["n_valid_samples"] == 2
     assert metrics["n_invalid_predictions"] == 2
     assert metrics["status"] == "contains_non_finite_predictions"
-    assert np.isfinite(metrics["RMSEP"])
+    assert np.isfinite(metrics["rmse_test"])
     assert len(outputs["visualization"]["data"]) == 2
 
     # Diagnostics should mirror the key metrics
-    assert result.diagnostics["RMSEP"] == metrics["RMSEP"]
+    assert result.diagnostics["rmse_test"] == metrics["rmse_test"]
 
 
 def test_holdout_evaluation_generate_python_matches_runtime_payload_shape():

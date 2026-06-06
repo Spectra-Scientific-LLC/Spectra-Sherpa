@@ -2,8 +2,7 @@ schema_version: 1
 name: Variable Selection + PLS Calibration
 slug: variable_selection_pls
 description: PLS calibration with VIP-based variable selection to identify the most
-  informative spectral regions. Kennard-Stone partitioning ensures representative
-  calibration and test sets. VIP scores highlight wavelengths driving the model.
+  informative spectral regions.
 category: selection_design
 is_active: true
 template_data:
@@ -87,7 +86,7 @@ template_data:
     to_node_id: model_selected
     from_output: X_selected
     to_input: X
-  - from_node_id: model_full
+  - from_node_id: model_selected
     to_node_id: viz_1
   canvas_state:
     zoom: 0.85

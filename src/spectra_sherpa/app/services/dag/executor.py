@@ -13,9 +13,10 @@ import hashlib
 import json
 import logging
 import uuid
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.lib.data_roles import is_spectrum_only_node, require_data_role
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
 
 from .executor_pool import _run_node_in_worker, get_default_pool, set_default_pool  # noqa: F401
@@ -150,6 +151,7 @@ class DAGExecutor:
                         "preprocessing_summary": (
                             json.dumps(metadata["preprocessing_chain"]) if "preprocessing_chain" in metadata else None
                         ),  # noqa: E501
+                        "training_data_hash": metadata.get("training_data_hash"),
                         "integrity_hash": integrity_hash,
                         "artifact_dir": str(store._artifact_dir(artifact_uid)),
                     }
@@ -246,6 +248,42 @@ class DAGExecutor:
             if edge.from_node == node_id:
                 self.invalidate_node(edge.to_node)
 
+    def _transitive_descendants(self, node_id: str) -> Set[str]:
+        """Return every node id reachable downstream of ``node_id``.
+
+        Used after a node failure to mark all dependents as ``ERROR`` so
+        ``get_status()`` reflects what actually happened (rather than
+        leaving them in ``PENDING``, which reads as "didn't run yet" in
+        the UI and misleads users about a failed workflow).
+        """
+        descendants: Set[str] = set()
+        stack: list[str] = [node_id]
+        while stack:
+            current = stack.pop()
+            for edge in self.edges:
+                if edge.from_node == current and edge.to_node not in descendants:
+                    descendants.add(edge.to_node)
+                    stack.append(edge.to_node)
+        return descendants
+
+    def _mark_descendants_failed(self, failed_node_id: str) -> None:
+        """Mark every transitive downstream of ``failed_node_id`` as ERROR.
+
+        Skips nodes that already have a terminal status so a node that
+        errored on its own (and brought down its descendants) doesn't
+        get its message overwritten.
+        """
+        descendants = self._transitive_descendants(failed_node_id)
+        reason = f"Skipped: upstream node '{failed_node_id}' failed"
+        for dep_id in descendants:
+            dep_node = self.nodes.get(dep_id)
+            if dep_node is None:
+                continue
+            if dep_node.status in (NodeStatus.COMPLETED, NodeStatus.ERROR):
+                continue
+            dep_node.status = NodeStatus.ERROR
+            dep_node.error_message = reason
+
     def inject_result(self, node_id: str, result: Any) -> None:
         """
         Inject a pre-computed result for a node (used by prediction API).
@@ -325,6 +363,9 @@ class DAGExecutor:
 
         # 5. Port type compatibility between connected nodes
         issues.extend(self._validate_port_types())
+
+        # 6. Static data-role compatibility where a source role can be inferred
+        issues.extend(self._validate_static_data_roles())
 
         return ValidationResult(issues)
 
@@ -522,6 +563,90 @@ class DAGExecutor:
                     )
         return issues
 
+    def _validate_static_data_roles(self) -> List[ValidationIssue]:
+        """Catch clear X_features → spectrum-only mistakes before execution."""
+        issues: List[ValidationIssue] = []
+        inferred_roles: dict[tuple[str, str], str | None] = {}
+
+        def infer_role(node_id: str, output_name: str = "default", seen: set[str] | None = None) -> str | None:
+            key = (node_id, output_name)
+            if key in inferred_roles:
+                return inferred_roles[key]
+            if seen is None:
+                seen = set()
+            if node_id in seen:
+                return None
+            seen.add(node_id)
+
+            node = self.nodes.get(node_id)
+            if node is None or node.metadata is None:
+                inferred_roles[key] = None
+                return None
+
+            role = self._infer_node_output_role(node, output_name)
+            if role is None:
+                incoming = [edge for edge in self.edges if edge.to_node == node_id]
+                for edge in incoming:
+                    role = infer_role(edge.from_node, edge.from_output, seen)
+                    if role is not None:
+                        break
+
+            inferred_roles[key] = role
+            return role
+
+        for edge in self.edges:
+            target_node = self.nodes.get(edge.to_node)
+            if target_node is None or target_node.metadata is None:
+                continue
+
+            role = infer_role(edge.from_node, edge.from_output)
+            if role is None:
+                continue
+
+            accepted = None
+            for port in target_node.metadata.input_ports or []:
+                if port.name == edge.to_input:
+                    accepted = port.accepted_data_roles
+                    break
+
+            allowed_roles = accepted or (
+                ["X_spectra"] if is_spectrum_only_node(target_node.metadata.node_type, target_node.parameters) else None
+            )
+            if allowed_roles and role not in allowed_roles:
+                label = target_node.metadata.label or target_node.metadata.node_type
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        edge.to_node,
+                        edge.to_input,
+                        f"{label} requires {', '.join(allowed_roles)} input; received {role}. "
+                        "Feature-table data has no ordered spectral axis for this operation.",
+                    )
+                )
+        return issues
+
+    def _infer_node_output_role(self, node: Node, output_name: str) -> str | None:
+        """Infer a node's output data role from parameters and known role-changing ports."""
+        if output_name in {"scores", "X_scores", "T", "visualization", "cluster_assignment", "predictions"}:
+            return "X_features"
+
+        explicit_role = node.parameters.get("data_role")
+        if isinstance(explicit_role, str) and explicit_role in {"X_spectra", "X_features", "X_hsi"}:
+            return explicit_role
+
+        node_type = node.metadata.node_type if node.metadata is not None else ""
+        if node_type == "data.source":
+            source = node.parameters.get("source")
+            if source == "sklearn":
+                return "X_features"
+            if source in {"spectrochempy", "eigenvector", "library", "nist", "hitran"}:
+                return "X_spectra"
+
+        if node_type in {"data.synthetic_curve", "data.nist_library"}:
+            return "X_spectra"
+
+        return None
+
     def add_node(self, workflow_node: WorkflowNode) -> None:
         """
         Add a node to the workflow.
@@ -672,6 +797,48 @@ class DAGExecutor:
             return await asyncio.wait_for(node.run(**named_inputs), timeout=timeout)
         else:
             return await asyncio.wait_for(node.run(*positional_inputs), timeout=timeout)
+
+    def _validate_runtime_data_roles(
+        self,
+        node: Node,
+        positional_inputs: List[Any],
+        named_inputs: Dict[str, Any],
+    ) -> None:
+        """Reject feature tables at spectrum-only nodes before execution."""
+        if node.metadata is None:
+            return
+
+        port_roles = {
+            port.name: port.accepted_data_roles
+            for port in (node.metadata.input_ports or [])
+            if port.accepted_data_roles
+        }
+        spectrum_only_roles = ["X_spectra"] if is_spectrum_only_node(node.metadata.node_type, node.parameters) else None
+
+        def _iter_values(value: Any):
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    yield from _iter_values(item)
+            else:
+                yield value
+
+        def _validate(value: Any, accepted: list[str] | None, port_name: str | None) -> None:
+            roles = accepted or spectrum_only_roles
+            if not roles:
+                return
+            label = node.metadata.label or node.metadata.node_type
+            context = f"{label} input '{port_name}'" if port_name else label
+            for item in _iter_values(value):
+                require_data_role(item, roles, context=context)
+
+        for port_name, value in named_inputs.items():
+            _validate(value, port_roles.get(port_name), port_name)
+
+        if positional_inputs:
+            ports = node.metadata.input_ports or []
+            for idx, value in enumerate(positional_inputs):
+                port_name = ports[idx].name if idx < len(ports) else None
+                _validate(value, port_roles.get(port_name or ""), port_name)
 
     def _get_node_inputs(self, node_id: str, validate_types: bool = True) -> Tuple[List[Any], Dict[str, Any]]:
         """
@@ -940,6 +1107,7 @@ class DAGExecutor:
 
                 # Get inputs from upstream nodes (positional or named)
                 positional_inputs, named_inputs = self._get_node_inputs(node_id)
+                self._validate_runtime_data_roles(node, positional_inputs, named_inputs)
 
                 # Execute node (offloaded to process pool when available)
                 node_timeout = settings.max_job_duration_sec
@@ -957,6 +1125,9 @@ class DAGExecutor:
                     node.status = NodeStatus.ERROR
                     node.error_message = err_msg
                     await _emit(node_id, "error", err_msg)
+                    # Cascade ERROR to downstream so get_status() doesn't
+                    # leave them in PENDING — see _mark_descendants_failed.
+                    self._mark_descendants_failed(node_id)
                     raise ValueError(err_msg)
                 except Exception as exc:
                     # Pool or in-process execution failure — status on the worker
@@ -965,6 +1136,7 @@ class DAGExecutor:
                     node.status = NodeStatus.ERROR
                     node.error_message = str(exc)
                     await _emit(node_id, "error", str(exc))
+                    self._mark_descendants_failed(node_id)
                     raise
 
                 # Unpack NodeResult: store outputs for downstream, diagnostics separately
@@ -1002,7 +1174,12 @@ class DAGExecutor:
                 ) from e
             raise ValueError(f"Workflow execution failed: {str(e)}") from e
 
-    async def execute_node(self, node_id: str, initial_data: Optional[Dict[str, Any]] = None) -> Any:
+    async def execute_node(
+        self,
+        node_id: str,
+        initial_data: Optional[Dict[str, Any]] = None,
+        status_callback: Optional[Callable[[str, str, Optional[str]], Any]] = None,
+    ) -> Any:
         """
         Execute a single node (and its dependencies if needed).
 
@@ -1011,6 +1188,13 @@ class DAGExecutor:
             initial_data: Optional dict of node_id -> config for source nodes.
                          This is used to configure DATA nodes with experiment IDs,
                          file paths, etc.
+            status_callback: Optional ``async (node_id, status, error_msg) -> None``
+                         hook for real-time progress updates. Mirrors the
+                         signature accepted by ``execute()`` so the route can
+                         forward WS broadcasts identically for single-node
+                         trial runs. Failures inside the callback are
+                         swallowed so a broken broadcast never aborts
+                         execution.
 
         Returns:
             Result of node execution
@@ -1020,6 +1204,14 @@ class DAGExecutor:
         """
         if node_id not in self.nodes:
             raise ValueError(f"Node {node_id} not found in workflow")
+
+        async def _emit(nid: str, st: str, err: str | None = None) -> None:
+            if status_callback is None:
+                return
+            try:
+                await status_callback(nid, st, err)
+            except Exception:
+                pass  # never let broadcast failure affect execution
 
         # Inject initial_data as parameters into DATA nodes
         if initial_data:
@@ -1048,6 +1240,7 @@ class DAGExecutor:
                 # cache hit as COMPLETED so get_status() doesn't report
                 # stale "pending" for reused upstream dependencies.
                 node.status = NodeStatus.COMPLETED
+                await _emit(dep_node_id, "completed")
                 if dep_node_id not in executed_in_this_run:
                     executed_in_this_run.append(dep_node_id)
                 continue
@@ -1057,6 +1250,7 @@ class DAGExecutor:
             node_timeout = settings.max_job_duration_sec
             logger.debug("Executing node: %s (%s)", dep_node_id, node.metadata.label if node.metadata else dep_node_id)
             node.status = NodeStatus.RUNNING
+            await _emit(dep_node_id, "running")
             try:
                 result = await self._run_one_node(node, positional_inputs, named_inputs, node_timeout)
             except asyncio.TimeoutError:
@@ -1066,12 +1260,16 @@ class DAGExecutor:
                 )
                 node.status = NodeStatus.ERROR
                 node.error_message = err_msg
+                await _emit(dep_node_id, "error", err_msg)
+                self._mark_descendants_failed(dep_node_id)
                 raise ValueError(err_msg)
             except Exception as exc:
                 # Pool workers mutate a separate node instance; record the
                 # error on the main-process copy so get_status() is truthful.
                 node.status = NodeStatus.ERROR
                 node.error_message = str(exc)
+                await _emit(dep_node_id, "error", str(exc))
+                self._mark_descendants_failed(dep_node_id)
                 raise
 
             # Unpack NodeResult
@@ -1091,6 +1289,7 @@ class DAGExecutor:
             node.status = NodeStatus.COMPLETED
             executed_in_this_run.append(dep_node_id)
             logger.debug("Completed: %s (status: %s)", dep_node_id, node.status.value)
+            await _emit(dep_node_id, "completed")
 
         # Return all results from this execution (target + dependencies)
         return {nid: self.results[nid] for nid in executed_in_this_run}

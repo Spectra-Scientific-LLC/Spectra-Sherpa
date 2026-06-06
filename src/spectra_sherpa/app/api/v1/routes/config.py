@@ -10,6 +10,7 @@ Returns client-safe configuration including:
 
 import logging
 import os
+import socket
 from ipaddress import ip_address
 from typing import Any
 
@@ -158,9 +159,7 @@ async def get_config(
         if provider_id in config["llms"]:
             config["llms"][provider_id]["enabled"] = is_available
 
-    from spectra_sherpa.app.core.mode_policy import is_local
-
-    if is_local():
+    if app_config.mode == "local":
         # In OSS local mode, the chat surface is the BYO endpoint proxy only.
         # Legacy provider-key presence no longer enables the chat assistant.
         from spectra_sherpa.app.services.basic_chat import is_configured as byo_chat_configured
@@ -369,8 +368,16 @@ def _is_allowed_url(url: str) -> bool:
         try:
             ip = ip_address(host)
         except ValueError:
-            # Public DNS hostnames are accepted for remote SpectraSherpa.
-            return host != "localhost" and "." in host
+            if host == "localhost" or "." not in host:
+                return False
+            try:
+                infos = socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)
+            except socket.gaierror:
+                return False
+            resolved: list[str] = [info[4][0] for info in infos]
+            if not resolved:
+                return False
+            return all(ip_address(addr).is_global for addr in resolved)
 
         return ip.is_global
     except Exception:
@@ -441,14 +448,23 @@ async def get_spectrasherpa_config():
 
 
 @router.post("/spectrasherpa/test")
-async def test_spectrasherpa_connection(request: SpectraSherpaTestRequest):
+async def test_spectrasherpa_connection(request: SpectraSherpaTestRequest, http_request: Request):
     """
     Test a SpectraSherpa connection before saving.
     Returns user info and available managed keys if successful.
 
     SECURITY:
-    - Only allows requests to allowlisted SpectraSherpa hosts (SSRF protection)
+    - Only accepts requests from local config clients
+    - Only allows requests to allowlisted/public SpectraSherpa hosts (SSRF protection)
     """
+    from spectra_sherpa.app.core.mode_policy import is_enterprise, is_loopback
+    from spectra_sherpa.app.core.security import get_client_host
+
+    if is_enterprise():
+        raise HTTPException(status_code=403, detail="Mode switching is disabled in enterprise mode.")
+    if not is_loopback(get_client_host(http_request)):
+        raise HTTPException(status_code=403, detail="Mode switching is only available from localhost.")
+
     # SSRF Protection: Only allow requests to known SpectraSherpa hosts
     if not _is_allowed_url(request.server_url):
         return {
@@ -460,7 +476,7 @@ async def test_spectrasherpa_connection(request: SpectraSherpaTestRequest):
         # Normalize URL to ensure /api/v1 is included
         base_url = _normalize_spectrasherpa_url(request.server_url)
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
             # Validate deployment key
             response = await client.post(
                 f"{base_url}/keys/deployment/validate", headers={"X-Deployment-Key": request.api_key}
@@ -609,7 +625,7 @@ async def activate_hybrid(request: ActivateHybridRequest, http_request: Request)
     # The key is a deployment key (not a user API key).  This endpoint
     # resolves against the DeploymentKey model and returns plan/entitlements.
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
             response = await client.post(
                 f"{base_url}/keys/deployment/validate",
                 headers={"X-Deployment-Key": request.api_key},
@@ -822,6 +838,7 @@ async def save_byo_chat_config(
     from dotenv import set_key as dotenv_set_key
 
     from spectra_sherpa.app.core.mode_policy import is_local
+    from spectra_sherpa.app.services import basic_chat
 
     if not is_local():
         raise HTTPException(status_code=404, detail="Not found.")
@@ -838,6 +855,9 @@ async def save_byo_chat_config(
     url = request.endpoint_url.strip().rstrip("/")
     if not url:
         raise HTTPException(status_code=400, detail="endpoint_url is required.")
+    ok, reason = basic_chat.validate_endpoint_url(url)
+    if not ok:
+        raise HTTPException(status_code=400, detail=reason)
     endpoint_key = request.endpoint_key.strip()
     existing_key = os.getenv("CHAT_ENDPOINT_KEY", "")
     if not endpoint_key and not existing_key:

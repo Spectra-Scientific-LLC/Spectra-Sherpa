@@ -64,6 +64,11 @@ def _reset_plugin_failures():
 # ---------------------------------------------------------------------------
 
 
+async def test_resolve_user_rejects_non_loopback_local_client(test_session):
+    user = await deps._resolve_user(test_session, client_host="10.0.0.8")
+    assert user is None
+
+
 class TestLocalModeE2E:
     """Full HTTP round-trip in local mode — no auth, no rate limits."""
 
@@ -188,7 +193,7 @@ class TestLocalModeE2E:
         wf_id = resp.json()["id"]
 
         async def _persist_failure(*args, **kwargs):
-            return False
+            return None
 
         monkeypatch.setattr(workflow_execute, "_auto_persist_run", _persist_failure)
 

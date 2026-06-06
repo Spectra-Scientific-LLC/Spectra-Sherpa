@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.core import security
 from spectra_sherpa.app.core.config import app_config, settings
-from spectra_sherpa.app.core.mode_policy import is_hybrid, is_local, is_loopback
+from spectra_sherpa.app.core.mode_policy import blocks_local_network_client, is_hybrid, is_local, is_loopback
 
 logger = __import__("logging").getLogger(__name__)
 from spectra_sherpa.app.contracts.actors import CurrentActor  # noqa: F401 — re-export for new code
@@ -84,6 +84,12 @@ async def _resolve_user(
     """
     # 0. Local mode: implicit user identity (single-user, no login needed)
     if is_local():
+        if blocks_local_network_client(client_host):
+            logger.warning(
+                "Local mode: rejected implicit-user request from non-loopback host %r",
+                client_host,
+            )
+            return None
         return await _get_or_create_local_user(session)
 
     # If system-key auth is disabled, ignore APP_API_KEY for dependency auth.
@@ -237,10 +243,53 @@ def enforce_demo_execution_quota(user_id: int | None) -> None:
 
     allowed, remaining = consume_demo_execution_quota(user_id)
     if not allowed:
+        # Use the structured shape the server-side gate emits so the SPA's
+        # 429 handler can refresh the banner with rolling-window limits
+        # (limit_per_hour / limit_per_day) instead of the old
+        # single-counter ``{remaining, limit}`` shape.
+        from spectra_sherpa.app.contracts.demo_policy import demo_limit_error_detail
+
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=("Demo execution limit reached for this session. " "Sign up or upgrade to run more workflows."),
+            detail=demo_limit_error_detail("execution", remaining),
         )
+
+
+def reserve_demo_upload_quota_or_429(user_id: int | None) -> bool:
+    """Reserve one demo upload slot; return True when a reservation exists.
+
+    This remains a no-op in OSS/non-demo modes because the default contract
+    provider allows unlimited uploads and returns a negative sentinel.
+    """
+    from spectra_sherpa.app.contracts.demo_policy import reserve_demo_upload_quota
+
+    allowed, remaining = reserve_demo_upload_quota(user_id)
+    if not allowed:
+        from spectra_sherpa.app.contracts.demo_policy import demo_limit_error_detail
+
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=demo_limit_error_detail("upload", remaining),
+        )
+    return 0 <= remaining < 999999
+
+
+def consume_reserved_demo_upload_quota_if_needed(user_id: int | None, reserved: bool) -> None:
+    """Count a successful upload against a previously reserved slot."""
+    if not reserved:
+        return
+    from spectra_sherpa.app.contracts.demo_policy import consume_reserved_demo_upload_quota
+
+    consume_reserved_demo_upload_quota(user_id)
+
+
+def release_demo_upload_quota_reservation_if_needed(user_id: int | None, reserved: bool) -> None:
+    """Release a reserved upload slot after failed validation/transaction."""
+    if not reserved:
+        return
+    from spectra_sherpa.app.contracts.demo_policy import release_demo_upload_quota_reservation
+
+    release_demo_upload_quota_reservation(user_id)
 
 
 def check_demo_capability(capability: str) -> None:

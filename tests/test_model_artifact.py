@@ -200,9 +200,12 @@ class TestModelArtifactModel:
             "project_id",
             "workflow_id",
             "workflow_version_id",
+            "source_run_id",
+            "training_dataset_id",
             "node_id",
             "model_type",
             "name",
+            "display_name",
             "description",
             "artifact_dir",
             "integrity_hash",
@@ -214,6 +217,8 @@ class TestModelArtifactModel:
             "training_data_hash",
             "preprocessing_summary",
             "is_active",
+            "is_deploy_ready",
+            "tags",
             "created_at",
             "updated_at",
         }
@@ -340,6 +345,101 @@ class TestPCAExtractArtifact:
         sk_scores = sk_pca.transform(X_test)
         np.testing.assert_allclose(our_scores, sk_scores, atol=1e-12)
 
+    def test_transform_replays_saved_scaling_state(self):
+        """PCAExtract.transform() must replay raw-space standardization state before projection."""
+        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+
+        loadings = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+        extract = PCAExtract(
+            scores=np.empty((0, 2), dtype=np.float64),
+            loadings=loadings,
+            explained_variance_ratio=np.array([0.6, 0.4], dtype=np.float64),
+            explained_variance=np.array([1.0, 0.5], dtype=np.float64),
+            n_components=2,
+            mean=np.array([10.0, 20.0], dtype=np.float64),
+            scale=np.array([2.0, 5.0], dtype=np.float64),
+            scale_mode="standard",
+        )
+
+        metadata, arrays = extract.to_artifact()
+        restored = PCAExtract.from_artifact(metadata, arrays)
+        scores = restored.transform(np.array([[12.0, 30.0]], dtype=np.float64))
+        np.testing.assert_allclose(scores, np.array([[1.0, 2.0]], dtype=np.float64))
+
+    def test_transform_replays_saved_minmax_scaled_state(self):
+        """SCP PCA scaled=True must replay centered min-max data before projection."""
+        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+
+        loadings = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
+        extract = PCAExtract(
+            scores=np.empty((0, 2), dtype=np.float64),
+            loadings=loadings,
+            explained_variance_ratio=np.array([0.6, 0.4], dtype=np.float64),
+            explained_variance=np.array([1.0, 0.5], dtype=np.float64),
+            n_components=2,
+            offset=np.array([10.0, 20.0], dtype=np.float64),
+            scale=np.array([2.0, 5.0], dtype=np.float64),
+            center=np.array([0.25, 0.5], dtype=np.float64),
+            scale_mode="minmax",
+        )
+
+        metadata, arrays = extract.to_artifact()
+        assert metadata["scaled"] is True
+        assert metadata["standardized"] is False
+        assert metadata["scale_mode"] == "minmax"
+        restored = PCAExtract.from_artifact(metadata, arrays)
+        scores = restored.transform(np.array([[12.0, 30.0]], dtype=np.float64))
+        np.testing.assert_allclose(scores, np.array([[0.75, 1.5]], dtype=np.float64))
+
+    def test_from_scp_scaled_persists_minmax_state(self, monkeypatch):
+        """Extractor must persist SCP scaled=True as min/range plus scaled-space center."""
+        from spectra_sherpa.app.lib.adapters import scp_extractors
+        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+
+        monkeypatch.setattr(scp_extractors, "require_scp", lambda _reason: None)
+
+        class FakePCA:
+            components = np.eye(2, 3, dtype=np.float64)
+            explained_variance_ratio = np.array([0.7, 0.2], dtype=np.float64)
+            explained_variance = np.array([2.0, 1.0], dtype=np.float64)
+
+            def transform(self):
+                return np.zeros((3, 2), dtype=np.float64)
+
+        X_train = np.array(
+            [
+                [10.0, 20.0, 1.0],
+                [12.0, 25.0, 1.0],
+                [14.0, 30.0, 1.0],
+            ],
+            dtype=np.float64,
+        )
+
+        extract = PCAExtract.from_scp(FakePCA(), X_train, scaled=True)
+
+        np.testing.assert_allclose(extract.offset, np.array([10.0, 20.0, 1.0], dtype=np.float64))
+        np.testing.assert_allclose(extract.scale, np.array([4.0, 10.0, 1.0], dtype=np.float64))
+        np.testing.assert_allclose(extract.center, np.array([0.5, 0.5, 0.0], dtype=np.float64))
+        assert extract.mean is None
+        assert extract.scale_mode == "minmax"
+        scores = extract.transform(np.array([[12.0, 25.0, 1.0]], dtype=np.float64))
+        np.testing.assert_allclose(scores, np.array([[0.0, 0.0]], dtype=np.float64))
+
+    def test_scaled_artifact_without_center_fails_loudly(self):
+        """Legacy scaled PCA artifacts without post-scale center cannot be replayed safely."""
+        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+
+        extract = PCAExtract.from_artifact(
+            {"model_type": "pca", "n_components": 2, "scaled": True},
+            {
+                "loadings": np.eye(2, 2, dtype=np.float64),
+                "scale": np.array([2.0, 5.0], dtype=np.float64),
+                "offset": np.array([10.0, 20.0], dtype=np.float64),
+            },
+        )
+        with pytest.raises(ValueError, match="post-scale center"):
+            extract.transform(np.array([[12.0, 30.0]], dtype=np.float64))
+
     def test_modelstore_integration(self, tmp_path, pca_extract):
         """Full pipeline: to_artifact → ModelStore.save → load → from_artifact."""
         from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
@@ -380,6 +480,10 @@ class TestPLSExtractArtifact:
             n_components=n_components,
             x_mean=rng.standard_normal(n_features),
             y_mean=rng.standard_normal(n_targets),
+            x_scale=np.abs(rng.standard_normal(n_features)) + 0.1,
+            t2_limit=4.5,
+            q_limit=2.5,
+            t2_q_method="pomerantsev_dd_moments",
         )
 
     def test_roundtrip(self, pls_extract):
@@ -389,9 +493,13 @@ class TestPLSExtractArtifact:
         restored = PLSExtract.from_artifact(metadata, arrays)
 
         assert restored.n_components == pls_extract.n_components
+        assert restored.t2_limit == pls_extract.t2_limit
+        assert restored.q_limit == pls_extract.q_limit
+        assert restored.t2_q_method == pls_extract.t2_q_method
         np.testing.assert_array_equal(restored.coef, pls_extract.coef)
         np.testing.assert_array_equal(restored.x_mean, pls_extract.x_mean)
         np.testing.assert_array_equal(restored.y_mean, pls_extract.y_mean)
+        np.testing.assert_array_equal(restored.x_scale, pls_extract.x_scale)
         np.testing.assert_array_equal(restored.x_loadings, pls_extract.x_loadings)
         np.testing.assert_array_equal(restored.y_loadings, pls_extract.y_loadings)
 
@@ -403,6 +511,32 @@ class TestPLSExtractArtifact:
         assert y_pred.shape == (5, 1)
         expected = (X_new - pls_extract.x_mean) @ pls_extract.coef + pls_extract.y_mean
         np.testing.assert_allclose(y_pred, expected)
+
+    def test_applicability_diagnostics_flags_out_of_domain_samples(self):
+        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
+
+        extract = PLSExtract(
+            x_scores=np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [-1.0, 0.0], [0.0, -1.0]]),
+            y_scores=None,
+            x_loadings=np.eye(2),
+            y_loadings=None,
+            coef=np.ones((2, 1)),
+            n_components=2,
+            x_mean=np.zeros(2),
+            y_mean=np.zeros(1),
+            x_scale=np.ones(2),
+            t2_limit=2.0,
+            q_limit=0.1,
+            t2_q_method="pomerantsev_dd_moments",
+        )
+
+        diagnostics = extract.applicability_diagnostics(np.array([[0.1, 0.1], [4.0, 0.0]], dtype=np.float64))
+
+        assert diagnostics is not None
+        assert diagnostics["type"] == "pls_applicability"
+        assert diagnostics["out_of_domain"] == [False, True]
+        assert diagnostics["n_out_of_domain"] == 1
+        assert diagnostics["t2_limit"] == 2.0
 
     def test_predict_no_coef_raises(self):
         from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
@@ -450,6 +584,31 @@ class TestPLSExtractArtifact:
         our_pred = extract.predict(X_test)
         sk_pred = sk_pls.predict(X_test)
         np.testing.assert_allclose(our_pred, sk_pred, atol=1e-10)
+
+    def test_from_scp_predict_matches_scaled_scp_model(self):
+        from spectra_sherpa.app.lib.scp_compat import HAS_SCP, scp
+
+        if not HAS_SCP:
+            pytest.skip("SpectroChemPy is optional")
+
+        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
+
+        rng = np.random.default_rng(1234)
+        X_train = rng.standard_normal((40, 12)) * np.linspace(1.0, 4.0, 12)
+        y_train = rng.standard_normal((40, 1))
+        X_test = rng.standard_normal((6, 12)) * np.linspace(1.0, 4.0, 12)
+
+        X_ndd = scp.NDDataset(X_train)
+        y_ndd = scp.NDDataset(y_train)
+        pls = scp.PLSRegression(n_components=3, scale=True)
+        pls.fit(X_ndd, y_ndd)
+
+        extract = PLSExtract.from_scp(pls, X_ndd, Y_ndd=y_ndd)
+        our_pred = extract.predict(X_test)
+        scp_pred = np.asarray(pls.predict(scp.NDDataset(X_test)).data).reshape(our_pred.shape)
+
+        assert extract.x_scale is not None
+        np.testing.assert_allclose(our_pred, scp_pred, atol=1e-10)
 
 
 class TestMCRExtractArtifact:
@@ -783,7 +942,7 @@ class TestSIMCAExtractArtifact:
 
         assert labels.shape == (5,)
         assert probs.shape == (5, 2)  # 2 classes
-        assert all(label in ["red", "blue"] for label in labels)
+        assert all(label in ["red", "blue", "unassigned"] for label in labels)
         # Probabilities should sum to 1 per sample
         np.testing.assert_allclose(probs.sum(axis=1), 1.0, atol=1e-10)
         # All probabilities should be non-negative
@@ -850,7 +1009,21 @@ class TestExtractRegistry:
     def test_registry_contains_all_types(self):
         from spectra_sherpa.app.lib.adapters.scp_extractors import EXTRACT_REGISTRY
 
-        expected = {"pca", "pls", "mcr", "efa", "simplisma", "plsda", "knn", "simca"}
+        expected = {
+            "pca",
+            "pls",
+            "pcr",
+            "linear_regression",
+            "svr",
+            "mcr",
+            "nmf",
+            "fastica",
+            "efa",
+            "simplisma",
+            "plsda",
+            "knn",
+            "simca",
+        }
         assert set(EXTRACT_REGISTRY.keys()) == expected
 
     def test_registry_classes_have_from_artifact(self):
@@ -1093,7 +1266,7 @@ class TestLoadApplyModelNode:
 
         assert "labels" in result
         assert result["metadata"]["type"] == "SIMCA"
-        assert all(label in ["red", "blue"] for label in result["labels"])
+        assert all(label in ["red", "blue", "unassigned"] for label in result["labels"])
 
     @pytest.mark.asyncio
     async def test_mcr_transform(self, mcr_uid):
@@ -1368,6 +1541,22 @@ class TestModelStoreDurability:
                 n_features=2,
             )
         )
+        # Soft-deleted artifact (inactive DB row) — its files are no longer
+        # user-visible and should be reaped after the grace window.
+        store.save("uid-inactive", {"model_type": "pls"}, {"a": np.ones(2)})
+        test_session.add(
+            ModelArtifact(
+                artifact_uid="uid-inactive",
+                user_id=test_user.id,
+                node_id="n",
+                model_type="pls",
+                name="inactive",
+                artifact_dir=str(store._artifact_dir("uid-inactive")),
+                integrity_hash="x",
+                n_features=2,
+                is_active=False,
+            )
+        )
         await test_session.commit()
 
         # Old orphan (no DB row) — must be reaped.
@@ -1382,15 +1571,16 @@ class TestModelStoreDurability:
         (store.models_dir / "uid-stale.old-deadbeef").mkdir()
 
         old = time.time() - 7200
-        for name in ("uid-orphan-old", ".staging-uid-x-abcd", "uid-stale.old-deadbeef"):
+        for name in ("uid-inactive", "uid-orphan-old", ".staging-uid-x-abcd", "uid-stale.old-deadbeef"):
             os.utime(store.models_dir / name, (old, old))
 
         removed = await reconcile_orphan_artifacts(test_session, store=store, grace_seconds=3600)
 
-        assert set(removed) == {"uid-orphan-old", ".staging-uid-x-abcd", "uid-stale.old-deadbeef"}
+        assert set(removed) == {"uid-inactive", "uid-orphan-old", ".staging-uid-x-abcd", "uid-stale.old-deadbeef"}
         assert store._artifact_dir("uid-referenced").exists()
         assert store._artifact_dir("uid-orphan-new").exists()
         assert store._artifact_dir("uid-stale").exists()
+        assert not store._artifact_dir("uid-inactive").exists()
         assert not store._artifact_dir("uid-orphan-old").exists()
 
     async def test_reconcile_recovers_artifact_from_interrupted_resave(self, store, manifest, arrays, test_session):

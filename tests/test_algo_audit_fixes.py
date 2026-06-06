@@ -174,6 +174,7 @@ class TestMcrDefaults:
         params_dict = {p.name: p.default for p in node.metadata.parameters}
         assert params_dict["tol"] == pytest.approx(1e-5)
         assert params_dict["max_iter"] == 200
+        assert params_dict["normSpec"] == "euclid"
 
     @_skip_no_scp
     @pytest.mark.asyncio
@@ -185,6 +186,19 @@ class TestMcrDefaults:
         assert any(
             "loose" in rec.message.lower() and "mcr-als" in rec.message.lower() for rec in caplog.records
         ), "Expected a loose-tolerance warning when MCR-ALS runs with tol > 1e-3"
+
+    @_skip_no_scp
+    @pytest.mark.asyncio
+    async def test_default_norm_spec_is_euclid_at_runtime(self, make_node):
+        ds = _make_spectral_dataset(n_samples=15, n_features=40)
+        node = make_node("model.mcr_als", {"n_components": 2, "max_iter": 20})
+        result = await node.execute(input_data=ds)
+        assert result.diagnostics["normSpec"] == "euclid"
+        St = np.asarray(result.outputs["St"].data, dtype=np.float64)
+        assert np.linalg.norm(St, axis=1) == pytest.approx(np.ones(St.shape[0]), rel=1e-6, abs=1e-6)
+        assert result.outputs["C"].meta["normSpec"] == "euclid"
+        assert result.outputs["C"].meta["mcr_spectra_y_units"] == "euclidean-normalized response"
+        assert result.outputs["St"].meta["normSpec"] == "euclid"
 
 
 # ---------------------------------------------------------------------------
@@ -218,6 +232,81 @@ class TestPlsScaleDefault:
                         missing.append(f"{path.name}:{node.get('node_id')}")
 
         assert missing == []
+
+
+class TestChemometricTemplatePresentationWiring:
+    def _template(self, slug: str) -> dict:
+        path = Path(__file__).resolve().parents[1] / f"src/spectra_sherpa/data/templates/{slug}.yaml"
+        return yaml.safe_load(path.read_text())
+
+    def _nodes(self, slug: str) -> dict[str, dict]:
+        doc = self._template(slug)
+        nodes = (doc.get("template_data") or {}).get("nodes") or []
+        return {str(node["node_id"]): node for node in nodes}
+
+    def _edges(self, slug: str) -> list[dict]:
+        doc = self._template(slug)
+        return (doc.get("template_data") or {}).get("edges") or []
+
+    def test_simca_templates_surface_acceptance_plot(self):
+        qc_nodes = self._nodes("simca_qc")
+        assert qc_nodes["viz_1"]["parameters"]["plot_key"] == "simca_acceptance"
+        assert any(
+            edge.get("from_node_id") == "model_1"
+            and edge.get("to_node_id") == "viz_1"
+            and edge.get("from_output") == "plots"
+            for edge in self._edges("simca_qc")
+        )
+
+        cls_nodes = self._nodes("simca_classification")
+        assert cls_nodes["viz_2"]["parameters"]["plot_key"] == "simca_acceptance"
+        assert any(
+            edge.get("from_node_id") == "model_1"
+            and edge.get("to_node_id") == "viz_2"
+            and edge.get("from_output") == "plots"
+            for edge in self._edges("simca_classification")
+        )
+
+    def test_calibration_transfer_template_is_bound_and_plots_transfer_error(self):
+        nodes = self._nodes("calibration_transfer")
+        assert nodes["primary_1"]["parameters"] == {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}
+        assert nodes["secondary_1"]["parameters"] == {"source": "eigenvector", "eigenvector_dataset": "corn_mp5"}
+        assert nodes["new_data_1"]["parameters"] == {"source": "eigenvector", "eigenvector_dataset": "corn_mp6"}
+        assert any(
+            edge.get("from_node_id") == "transfer_1"
+            and edge.get("to_node_id") == "viz_1"
+            and edge.get("from_output") == "transfer_error"
+            for edge in self._edges("calibration_transfer")
+        )
+
+    def test_oes_stats_are_wired_to_pca_scores(self):
+        assert any(
+            edge.get("from_node_id") == "model_1"
+            and edge.get("to_node_id") == "stats_1"
+            and edge.get("from_output") == "scores"
+            for edge in self._edges("oes_process_monitoring")
+        )
+
+    def test_simplisma_purity_plot_uses_purity_values(self):
+        nodes = self._nodes("simplisma")
+        assert nodes["viz_1"]["parameters"]["plot_type"] == "scatter"
+        assert any(
+            edge.get("from_node_id") == "model_1"
+            and edge.get("to_node_id") == "viz_1"
+            and edge.get("from_output") == "purity_values"
+            for edge in self._edges("simplisma")
+        )
+
+    @pytest.mark.parametrize("slug", ["mcr_als", "mcr_als_kinetics"])
+    def test_mcr_templates_surface_fit_diagnostics(self, slug):
+        nodes = self._nodes(slug)
+        assert nodes["stats_1"]["node_type"] == "stats.summary"
+        assert any(
+            edge.get("from_node_id") == "model_1"
+            and edge.get("to_node_id") == "stats_1"
+            and edge.get("from_output") == "C"
+            for edge in self._edges(slug)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +345,26 @@ class TestPlsT2QEmission:
         assert diagnostics.get("q_limit") is not None
         assert diagnostics.get("n_t2_outliers") is not None
         assert diagnostics.get("n_q_outliers") is not None
+
+    @_skip_no_scp
+    @pytest.mark.asyncio
+    async def test_pls_emits_vip_coefficients_and_cv_predictions(self, make_node):
+        ds = _make_spectral_dataset(n_samples=32, n_features=45, n_targets=1)
+        node = make_node("model.pls", {"n_components": 2, "cv_method": "venetian-blinds", "cv_folds": 4})
+        result = await node.execute(X=ds)
+        outputs = result.outputs if hasattr(result, "outputs") else result
+
+        y_pred_cv = np.asarray(outputs["y_pred_cv"], dtype=np.float64)
+        assert y_pred_cv.shape == (ds.X.shape[0], 1)
+        assert outputs["cv_predictions"]["type"] == "predicted_vs_actual"
+        assert outputs["cv_predictions"]["metadata"]["cv_method"] == "venetian-blinds"
+
+        vip = outputs["vip"]
+        coefs = outputs["coefficients"]
+        assert vip.shape == (1, ds.X.shape[1])
+        assert vip.title == "PLS VIP Scores"
+        assert coefs.shape == (1, ds.X.shape[1])
+        assert coefs.title == "PLS Regression Coefficients"
 
 
 # ---------------------------------------------------------------------------
@@ -365,6 +474,26 @@ class TestSimcaCriticalLimits:
             assert np.isfinite(t2_limit) and t2_limit > 0, f"Bad T² limit for class {cls_key}"
         for cls_key, q_limit in stats["Q_limits"].items():
             assert np.isfinite(q_limit) and q_limit > 0, f"Bad Q limit for class {cls_key}"
+
+    @_skip_no_scp
+    @pytest.mark.asyncio
+    async def test_simca_emits_acceptance_plot_and_t2_q_matrices(self, make_node):
+        ds = _make_spectral_dataset(n_samples=30, n_features=40, n_targets=1, target_type="categorical")
+        node = make_node("classification.simca", {"n_components": 2})
+        result = await node.execute(X=ds, y=ds.target)
+        outputs = result.outputs if hasattr(result, "outputs") else result
+
+        assert "simca_acceptance" in outputs["plots"]
+        plot = outputs["plots"]["simca_acceptance"]
+        assert plot["metadata"]["type"] == "simca_acceptance"
+        assert plot["layout"]["xaxis"]["title"].startswith("Hotelling T")
+        assert plot["layout"]["yaxis"]["title"].startswith("Q residual")
+
+        t2 = np.asarray(outputs["t2_matrix"], dtype=np.float64)
+        q = np.asarray(outputs["q_matrix"], dtype=np.float64)
+        assert t2.shape == q.shape == (ds.X.shape[0], len(np.unique(ds.target)))
+        assert np.all(t2 >= 0)
+        assert np.all(q >= 0)
 
     @_skip_no_scp
     @pytest.mark.asyncio

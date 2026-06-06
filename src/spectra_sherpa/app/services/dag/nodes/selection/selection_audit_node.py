@@ -56,7 +56,7 @@ class SelectionAuditNode(Node):
     metadata = NodeMetadata(
         node_type="selection.audit",
         category="selection",
-        label="Selection Audit",
+        label="Audit Feature Selection",
         description="Inspect and document all variable selection decisions in the pipeline",
         parameters=[
             NodeParameter(
@@ -70,10 +70,11 @@ class SelectionAuditNode(Node):
         input_ports=[
             PortMetadata(
                 name="X",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Input Data",
                 description="Dataset with selection provenance to audit",
+                accepted_data_roles=["X_spectra", "X_features"],
             ),
         ],
         output_ports=[

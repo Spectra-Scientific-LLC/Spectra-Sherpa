@@ -6,10 +6,12 @@ Tests Issue #1: Headless API must support executor deepcopy for concurrent reque
 from __future__ import annotations
 
 import copy
+import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from unittest.mock import MagicMock, patch
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 # Import node modules to trigger @register_node decorators
 import spectra_sherpa.app.services.dag.nodes.data  # noqa: F401
@@ -20,6 +22,17 @@ from spectra_sherpa.app.services.dag.executor import (
     WorkflowNode,
     set_default_pool,
 )
+
+
+def _create_process_pool(max_workers: int = 2) -> ProcessPoolExecutor:
+    """Create a real process pool or skip when the runtime blocks semaphores."""
+    try:
+        return ProcessPoolExecutor(
+            max_workers=max_workers,
+            mp_context=multiprocessing.get_context("spawn"),
+        )
+    except (NotImplementedError, PermissionError, OSError) as exc:
+        pytest.skip(f"ProcessPoolExecutor unavailable in this environment: {exc}")
 
 
 def _make_simple_workflow(executor: DAGExecutor) -> None:
@@ -66,7 +79,7 @@ def test_executor_pickle_with_pool():
     This is the critical fix for Issue #1: headless API HTTP 500 errors.
     """
     # Create a process pool (simulating app startup)
-    pool = ProcessPoolExecutor(max_workers=2)
+    pool = _create_process_pool(max_workers=2)
 
     try:
         # Create executor with pool (as happens in production)
@@ -95,7 +108,7 @@ def test_executor_pickle_with_global_pool():
     The headless API relies on sharing a global pool across all cloned executors.
     """
     # Set global pool (as happens at app startup)
-    global_pool = ProcessPoolExecutor(max_workers=2)
+    global_pool = _create_process_pool(max_workers=2)
     set_default_pool(global_pool)
 
     try:
@@ -163,7 +176,7 @@ async def test_headless_api_concurrent_requests_simulation():
     This is the production scenario that was failing before the fix.
     """
     # Global executor (loaded at startup)
-    global_pool = ProcessPoolExecutor(max_workers=2)
+    global_pool = _create_process_pool(max_workers=2)
     set_default_pool(global_pool)
 
     try:
@@ -191,7 +204,7 @@ async def test_headless_api_concurrent_requests_simulation():
 
 def test_executor_getstate_setstate():
     """Test the pickle protocol methods directly."""
-    pool = ProcessPoolExecutor(max_workers=2)
+    pool = _create_process_pool(max_workers=2)
 
     try:
         executor = DAGExecutor(process_pool=pool)
@@ -222,7 +235,7 @@ def test_client():
 
     from spectra_sherpa.app.api.headless_app import app
 
-    return TestClient(app)
+    return TestClient(app, client=("127.0.0.1", 50000))
 
 
 def test_predict_with_array_payload(test_client):
@@ -262,3 +275,46 @@ def test_predict_with_array_payload(test_client):
         # Verify JSON response contains the array data via the mock executor pass-through
         data = response.json()
         assert data == payload["sample"]
+
+
+@pytest.mark.asyncio
+async def test_headless_predict_blocks_non_loopback_without_key(monkeypatch: pytest.MonkeyPatch):
+    from spectra_sherpa.app.api.headless_app import app
+
+    monkeypatch.delenv("HEADLESS_API_KEY", raising=False)
+    monkeypatch.delenv("SPECTRA_SHERPA_ALLOW_UNAUTHENTICATED_HEADLESS", raising=False)
+    monkeypatch.delenv("SPECTRASHERPA_ALLOW_UNAUTHENTICATED_HEADLESS", raising=False)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app, client=("10.0.0.8", 50000)),
+        base_url="http://test",
+    ) as ac:
+        response = await ac.post("/predict", json={"sample": [[1.0, 2.0]]})
+
+    assert response.status_code == 403
+    assert "HEADLESS_API_KEY" in response.text
+
+
+@pytest.mark.asyncio
+async def test_headless_predict_requires_configured_api_key(monkeypatch: pytest.MonkeyPatch):
+    from spectra_sherpa.app.api.headless_app import app
+
+    monkeypatch.setenv("HEADLESS_API_KEY", "test-headless-key")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app, client=("10.0.0.8", 50000)),
+        base_url="http://test",
+    ) as ac:
+        missing = await ac.post("/predict", json={"sample": [[1.0, 2.0]]})
+        bad = await ac.post("/predict", json={"sample": [[1.0, 2.0]]}, headers={"X-API-Key": "wrong"})
+        accepted = await ac.post(
+            "/predict",
+            json={"sample": [[1.0, 2.0]]},
+            headers={"X-API-Key": "test-headless-key"},
+        )
+
+    assert missing.status_code == 401
+    assert bad.status_code == 401
+    # Auth succeeded; the fixture app has no loaded executor in this test.
+    assert accepted.status_code == 500
+    assert "Model executor not initialized" in accepted.text

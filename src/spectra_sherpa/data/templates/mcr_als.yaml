@@ -17,11 +17,14 @@ template_data:
     position_y: 50
   - node_id: model_1
     node_type: model.mcr_als
-    label: MCR-ALS
+    label: Fit MCR-ALS Decomposition
     parameters:
       n_components: 3
-      max_iter: 50
-      tol: 0.1
+      max_iter: 200
+      tol: 0.00001
+      normSpec: euclid
+      non_negative_C: true
+      non_negative_St: true
     position_x: 425
     position_y: 300
   - node_id: viz_1
@@ -38,6 +41,12 @@ template_data:
       plot_type: spectra
     position_x: 625
     position_y: 550
+  - node_id: stats_1
+    node_type: stats.summary
+    label: MCR Fit Diagnostics
+    parameters: {}
+    position_x: 425
+    position_y: 800
   edges:
   - from_node_id: data_1
     to_node_id: model_1
@@ -46,6 +55,9 @@ template_data:
     from_output: St
   - from_node_id: model_1
     to_node_id: viz_2
+    from_output: C
+  - from_node_id: model_1
+    to_node_id: stats_1
     from_output: C
   canvas_state:
     zoom: 1.0

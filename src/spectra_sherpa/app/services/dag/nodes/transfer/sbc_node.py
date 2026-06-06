@@ -135,7 +135,6 @@ class SBCNode(Node):
                 param_type="number",
                 default=1e-4,
                 min_value=1e-8,
-                max_value=1.0,
                 step=0.0001,
                 description="Ridge regularization for DS (ignored for SBC)",
                 category="advanced",

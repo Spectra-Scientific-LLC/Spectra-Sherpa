@@ -89,6 +89,10 @@ AUDITED_MODELS: tuple[AuditedModel, ...] = (
                 "workflow.run.completed",
                 "workflow.run.partial",
                 "workflow.run.failed",
+                # batch_failed records a 207 batch-apply where no artifact
+                # produced a successful run — no ExecutionRun row is
+                # persisted, so target_id is the literal "unpersisted".
+                "workflow.run.batch_failed",
             }
         ),
     ),
@@ -97,7 +101,7 @@ AUDITED_MODELS: tuple[AuditedModel, ...] = (
         target_type="ModelArtifact",
         # project_linked / project_unlinked cover the project-membership
         # mutation paths POST/DELETE /projects/{pid}/models/{uid}.
-        actions=frozenset({"created", "deleted", "project_linked", "project_unlinked"}),
+        actions=frozenset({"created", "updated", "deleted", "project_linked", "project_unlinked"}),
     ),
     AuditedModel(
         model_dotted_path="spectra_sherpa.app.models.project.Project",

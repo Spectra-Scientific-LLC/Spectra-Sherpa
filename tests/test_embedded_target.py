@@ -279,6 +279,32 @@ class TestAttachTarget:
 
 class TestMyDatasetEmbeddedCsvTargets:
     @_skip_no_scp
+    def test_axis_column_csv_loads_shared_x_axis_as_two_spectra(self, make_node, tmp_path: Path):
+        """MyDataset must not treat a shared wavenumber column as an intensity column."""
+        node = make_node("data.my_dataset", {"dataset_id": 1})
+
+        csv_path = tmp_path / "axis_column.csv"
+        csv_path.write_text(
+            "Wavenumber (cm-1),Condition A,Condition B\n" "200,1.0,10.0\n" "201,2.0,20.0\n" "202,3.0,30.0\n",
+            encoding="ascii",
+        )
+
+        loaded = node._load_file(str(csv_path), file_name="axis_column.csv")
+        dataset = loaded.dataset
+
+        assert isinstance(dataset, SherpaDataset)
+        assert dataset.shape == (2, 3)
+        assert dataset.data_role == "X_spectra"
+        assert dataset.get_extra("csv.layout") == "axis_column_conditions"
+        assert loaded.embedded_target_names is None
+        assert loaded.embedded_target_data is None
+        assert dataset.feature_axis.title == "Wavenumber"
+        assert dataset.feature_axis.units == "cm-1"
+        assert dataset.sample_axis.labels == ["Condition A", "Condition B"]
+        np.testing.assert_allclose(dataset.feature_axis.values, np.array([200.0, 201.0, 202.0]))
+        np.testing.assert_allclose(dataset.X, np.array([[1.0, 2.0, 3.0], [10.0, 20.0, 30.0]]))
+
+    @_skip_no_scp
     def test_embedded_csv_targets_concatenate_in_file_order(self, make_node, tmp_path: Path):
         """MyDataset should concatenate embedded CSV property blocks across spectral files."""
         node = make_node("data.my_dataset", {"dataset_id": 1})
@@ -301,8 +327,9 @@ class TestMyDatasetEmbeddedCsvTargets:
 
         embedded = node._combine_embedded_targets(loaded)
         assert embedded is not None
-        target_data, target_names = embedded
+        target_data, target_names, target_units = embedded
         assert target_names == ["Moisture", "Oil"]
+        assert target_units is None
         np.testing.assert_allclose(
             target_data,
             np.array(

@@ -246,6 +246,8 @@ class TestNumericalRoundtrip:
 
         code = generate_python_code(wf)
         ast.parse(code)
+        assert "# SCP may squeeze single-target predictions to 1D; reshape to match _y_data" in code
+        assert "if _y_pred.ndim == 1:" in code
 
         ns: dict = {}
         exec(code, ns)
@@ -328,6 +330,7 @@ class TestNumericalRoundtrip:
         if preds is not None:
             pred_data = np.asarray(preds)
             assert pred_data.shape[0] == 150
+        assert "cv_accuracy" in plsda_result.get("metrics", {})
 
     def test_stats_summary_roundtrip(self):
         """Stats summary: must produce statistics dict."""

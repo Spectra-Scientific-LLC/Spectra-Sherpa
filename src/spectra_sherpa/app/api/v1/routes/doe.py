@@ -4,7 +4,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
+from spectra_sherpa.app.api.deps import (
+    consume_reserved_demo_upload_quota_if_needed,
+    demo_guard,
+    get_current_user,
+    get_session,
+    release_demo_upload_quota_reservation_if_needed,
+    reserve_demo_upload_quota_or_429,
+)
 from spectra_sherpa.app.core.security import check_export_allowed
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.doe import (
@@ -61,10 +68,19 @@ async def import_samples(
 ) -> list[SampleSchema]:
     """Import samples from CSV (metadata only)"""
     await _verify(experiment_id, session, current_user)
+    user_id = current_user.id
+    upload_reserved = reserve_demo_upload_quota_or_429(user_id)
+    imported = False
     try:
         samples = await doe_service.import_samples(session, experiment_id, payload.csv_data)
+        imported = True
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        if imported:
+            consume_reserved_demo_upload_quota_if_needed(user_id, upload_reserved)
+        else:
+            release_demo_upload_quota_reservation_if_needed(user_id, upload_reserved)
     return [SampleSchema.model_validate(s) for s in samples]
 
 

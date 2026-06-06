@@ -142,6 +142,55 @@ def evaluate_catmull_rom(
     return np.clip(y_out, 0.0, 1.0)
 
 
+def evaluate_catmull_rom_samples(points: List[tuple[float, float]], *, n_samples: int) -> np.ndarray:
+    """Evaluate a Catmull-Rom trace on the integer sample-index grid.
+
+    Unlike :func:`evaluate_catmull_rom` (normalized 0-100 x, output clipped to
+    ``[0, 1]`` for *shape* editing), this works directly in the sample-index
+    domain ``0..n_samples-1`` and clips only at zero, so it carries absolute
+    magnitudes (e.g. ppm). It is the single source of truth for the Data-tab
+    synthesis concentration trace; ``services.synthesis`` wraps it to translate
+    ``ValueError`` into the public ``SynthesisError`` contract.
+
+    Endpoints are padded flat to span the full sample grid so a trace defined
+    only over an inner window holds its boundary value outside it.
+    """
+    if n_samples < 2:
+        raise ValueError("n_samples must be at least 2")
+    if len(points) < 2:
+        raise ValueError("At least two control points are required")
+    sorted_points = sorted((float(x), float(y)) for x, y in points)
+    xs = np.asarray([p[0] for p in sorted_points], dtype=float)
+    ys = np.asarray([p[1] for p in sorted_points], dtype=float)
+    if np.any(np.diff(xs) <= 0):
+        raise ValueError("Control point x values must be strictly increasing")
+    if xs[0] > 0 or xs[-1] < n_samples - 1:
+        xs = np.concatenate(([0.0], xs, [float(n_samples - 1)]))
+        ys = np.concatenate(([ys[0]], ys, [ys[-1]]))
+    sample_x = np.arange(n_samples, dtype=float)
+    curve = np.empty(n_samples, dtype=float)
+    for out_idx, x in enumerate(sample_x):
+        seg_idx = int(np.searchsorted(xs, x, side="right") - 1)
+        seg_idx = max(0, min(seg_idx, len(xs) - 2))
+        x1 = xs[seg_idx]
+        x2 = xs[seg_idx + 1]
+        if x2 <= x1:
+            curve[out_idx] = ys[seg_idx]
+            continue
+        p0 = ys[max(0, seg_idx - 1)]
+        p1 = ys[seg_idx]
+        p2 = ys[seg_idx + 1]
+        p3 = ys[min(len(ys) - 1, seg_idx + 2)]
+        t = (x - x1) / (x2 - x1)
+        curve[out_idx] = 0.5 * (
+            (2.0 * p1)
+            + (-p0 + p2) * t
+            + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t**2
+            + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t**3
+        )
+    return np.clip(curve, 0.0, None)
+
+
 def generate_concentration_curve(
     curve_type: str,
     n_points: int,
@@ -193,6 +242,7 @@ def generate_concentration_curve(
 
 __all__ = [
     "initial_curve_points",
+    "evaluate_catmull_rom_samples",
     "catmull_rom_coefficients",
     "curve_segments",
     "evaluate_catmull_rom",

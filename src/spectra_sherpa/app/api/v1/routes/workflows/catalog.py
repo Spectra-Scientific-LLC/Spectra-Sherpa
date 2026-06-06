@@ -22,6 +22,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workflows")
 
+ADVISOR_ONLY_NODE_TYPES = {"analysis.peak_id"}
+
+
+def filter_unavailable_node_types(nodes):
+    """Hide node types whose required service is not available in this deployment."""
+    from spectra_sherpa.app.contracts.ai_provider_registry import get_sherpa_advisor
+
+    if getattr(get_sherpa_advisor(), "is_available", False):
+        return nodes
+    return [node for node in nodes if node.node_type not in ADVISOR_ONLY_NODE_TYPES]
+
 
 # IMPORTANT: This route must be defined BEFORE /{workflow_id} routes
 # to avoid "spectrochempy-examples" being parsed as a workflow_id
@@ -96,7 +107,7 @@ async def get_node_library(
     """
     from spectra_sherpa.app.core.config import settings
 
-    nodes = list(node_registry.list_nodes())
+    nodes = filter_unavailable_node_types(list(node_registry.list_nodes()))
 
     # In demo mode, hide nodes associated with disabled capabilities.
     from spectra_sherpa.app.core.config import app_config
@@ -138,6 +149,8 @@ async def get_node_library(
                     required=port.required,
                     label=port.label,
                     description=port.description,
+                    variadic=port.variadic,
+                    accepted_data_roles=port.accepted_data_roles,
                 )
                 for port in node_meta.input_ports
             ]
@@ -152,6 +165,8 @@ async def get_node_library(
                     required=port.required,
                     label=port.label,
                     description=port.description,
+                    variadic=port.variadic,
+                    accepted_data_roles=port.accepted_data_roles,
                 )
                 for port in node_meta.output_ports
             ]

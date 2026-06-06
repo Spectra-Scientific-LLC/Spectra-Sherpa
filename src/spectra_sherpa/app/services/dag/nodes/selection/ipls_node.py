@@ -73,7 +73,6 @@ class IPLSNode(Node):
                 param_type="number",
                 default=20,
                 min_value=3,
-                max_value=200,
                 step=1,
                 description="Number of equal-width intervals to divide the spectrum into",
             ),
@@ -83,7 +82,6 @@ class IPLSNode(Node):
                 param_type="number",
                 default=5,
                 min_value=1,
-                max_value=20,
                 step=1,
                 description="Maximum number of PLS latent variables",
             ),
@@ -93,7 +91,6 @@ class IPLSNode(Node):
                 param_type="number",
                 default=5,
                 min_value=2,
-                max_value=20,
                 step=1,
                 description="Number of cross-validation folds",
             ),
@@ -103,7 +100,6 @@ class IPLSNode(Node):
                 param_type="number",
                 default=1,
                 min_value=1,
-                max_value=10,
                 step=1,
                 description="Number of top intervals to combine (1 = single best, >1 = synergy iPLS)",
                 category="advanced",
@@ -233,12 +229,23 @@ class IPLSNode(Node):
         )
 
         best_k = int(ranked[0])
+        best_rmsecv = float(rmsecv_per_interval[best_k])
+        beats_global = bool(np.isfinite(best_rmsecv) and best_rmsecv < float(global_rmsecv))
+        comparison_warning = None
+        if not beats_global:
+            comparison_warning = (
+                "Best interval did not improve RMSECV over the global model. Treat the interval selection as "
+                "exploratory; using the full spectrum may be more defensible."
+            )
         diagnostics = {
             "n_intervals": n_intervals,
             "best_interval": best_k,
             "best_interval_range": list(intervals[best_k]),
-            "best_rmsecv": float(rmsecv_per_interval[best_k]),
+            "best_rmsecv": best_rmsecv,
             "global_rmsecv": float(global_rmsecv),
+            "beats_global_rmsecv": beats_global,
+            "rmsecv_improvement": float(global_rmsecv - best_rmsecv),
+            "comparison_warning": comparison_warning,
             "n_selected": n_selected,
             "rmsecv_per_interval": rmsecv_per_interval.tolist(),
         }
@@ -249,6 +256,6 @@ class IPLSNode(Node):
         )
 
         return NodeResult(
-            outputs={"X_selected": X_selected, "mask": mask, "scores": scores},
+            outputs={"default": X_selected, "X_selected": X_selected, "mask": mask, "scores": scores},
             diagnostics=diagnostics,
         )

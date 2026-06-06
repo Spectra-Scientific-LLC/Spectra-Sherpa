@@ -11,8 +11,10 @@ import numpy as np
 from spectra_sherpa.app.lib.sherpa_dataset import (
     DomainContext,
     EvaluationResult,
+    SampleAxis,
     SherpaDataset,
     SpectralAxis,
+    TargetContext,
 )
 from spectra_sherpa.app.services.dataset_registry import dataset_registry
 
@@ -35,6 +37,13 @@ class TestDatasetTools:
         from spectra_sherpa.app.services.tools.registry import tool_registry
 
         assert "get_dataset_quality" in tool_registry
+
+    def test_compute_dataset_statistics_registered(self):
+        """compute_dataset_statistics tool is in the global registry."""
+        import spectra_sherpa.app.services.tools.builtin  # noqa: F401
+        from spectra_sherpa.app.services.tools.registry import tool_registry
+
+        assert "compute_dataset_statistics" in tool_registry
 
     def test_describe_dataset_returns_summary(self):
         """describe_dataset returns both summary and structured."""
@@ -93,6 +102,274 @@ class TestDatasetTools:
         assert result["latest"]["model_type"] == "PLS"
         assert result["latest"]["r2"] == 0.95
 
+    def test_compute_dataset_statistics_feature_medians(self):
+        """compute_dataset_statistics computes requested per-feature values from raw data."""
+        from spectra_sherpa.app.services.tools.builtin.datasets import compute_dataset_statistics
+
+        ds = SherpaDataset(
+            X=np.array(
+                [
+                    [5.1, 3.5, 1.4, 0.2],
+                    [4.9, 3.0, 1.4, 0.2],
+                    [6.2, 3.4, 5.4, 2.3],
+                ]
+            ),
+            feature_axis=SpectralAxis(
+                labels=[
+                    "sepal length (cm)",
+                    "sepal width (cm)",
+                    "petal length (cm)",
+                    "petal width (cm)",
+                ]
+            ),
+            title="Iris subset",
+        )
+        dataset_id = dataset_registry.register(ds)
+
+        result = compute_dataset_statistics(
+            dataset_id=dataset_id,
+            statistics=["median"],
+            axis="features",
+        )
+
+        assert result["dataset_id"] == dataset_id
+        assert result["shape"] == [3, 4]
+        assert result["truncated"] is False
+        assert result["features"] == [
+            {"index": 0, "label": "sepal length (cm)", "median": 5.1},
+            {"index": 1, "label": "sepal width (cm)", "median": 3.4},
+            {"index": 2, "label": "petal length (cm)", "median": 1.4},
+            {"index": 3, "label": "petal width (cm)", "median": 0.2},
+        ]
+
+        scalar_stat_result = compute_dataset_statistics(
+            dataset_id=dataset_id,
+            statistics="median",
+            axis="FEATURES",
+        )
+        assert scalar_stat_result["features"][0]["median"] == 5.1
+        assert scalar_stat_result["feature_axis"]["n_points"] == 4
+        assert scalar_stat_result["data_values"]["title"] == "value"
+
+    def test_compute_dataset_statistics_samples_overall_limit_and_nan(self):
+        """compute_dataset_statistics supports sample/overall axes, truncation, and NaNs."""
+        from spectra_sherpa.app.services.tools.builtin.datasets import compute_dataset_statistics
+
+        ds = SherpaDataset(
+            X=np.array(
+                [
+                    [1.0, np.nan, 3.0],
+                    [4.0, 5.0, 6.0],
+                    [7.0, 8.0, 9.0],
+                ]
+            ),
+            sample_axis=SampleAxis(labels=["a", "b", "c"], classes=["low", "mid", "high"]),
+            units="absorbance",
+        )
+        dataset_id = dataset_registry.register(ds)
+
+        sample_result = compute_dataset_statistics(
+            dataset_id=dataset_id,
+            statistics=["mean", "std", "min", "max", "q1", "q3"],
+            axis="samples",
+            limit=2,
+        )
+        assert sample_result["truncated"] is True
+        assert sample_result["data_values"]["units"] == "absorbance"
+        assert sample_result["samples"][0]["label"] == "a"
+        assert sample_result["samples"][0]["class"] == "low"
+        assert sample_result["samples"][0]["mean"] == 2.0
+        assert sample_result["samples"][0]["min"] == 1.0
+        assert sample_result["samples"][0]["max"] == 3.0
+
+        overall_result = compute_dataset_statistics(
+            dataset_id=dataset_id,
+            statistics=["median"],
+            axis="overall",
+        )
+        assert overall_result["statistics"]["median"] == 5.5
+
+    def test_compute_dataset_statistics_feature_selectors(self):
+        """Feature selectors let Sherpa compute stats for named or coordinate-selected features."""
+        from spectra_sherpa.app.services.tools.builtin.datasets import compute_dataset_statistics
+
+        ds = SherpaDataset(
+            X=np.array(
+                [
+                    [1.0, 10.0, 100.0, 1000.0],
+                    [2.0, 20.0, 200.0, 2000.0],
+                    [3.0, 30.0, 300.0, 3000.0],
+                ]
+            ),
+            feature_axis=SpectralAxis(
+                values=np.array([1100.0, 1722.0, 2850.0, 3401.0]),
+                labels=["baseline", "carbonyl band", "alkyl band", "hydroxyl band"],
+                units="cm-1",
+            ),
+        )
+        dataset_id = dataset_registry.register(ds)
+
+        result = compute_dataset_statistics(
+            dataset_id=dataset_id,
+            statistics=["median"],
+            axis="features",
+            feature_selectors=[
+                {"label": "carbonyl"},
+                {"coordinate": 3400.0},
+                0,
+            ],
+        )
+
+        assert result["truncated"] is False
+        assert result["selection"]["unresolved"] == []
+        assert [row["index"] for row in result["features"]] == [1, 3, 0]
+        assert [row["median"] for row in result["features"]] == [20.0, 2000.0, 2.0]
+        assert result["features"][1]["coordinate"] == 3401.0
+        assert result["selection"]["resolved"][1]["matched_by"] == "coordinate"
+
+    def test_compute_dataset_statistics_sample_selectors_and_unresolved_items(self):
+        """Sample selectors support labels while reporting unmatched selectors."""
+        from spectra_sherpa.app.services.tools.builtin.datasets import compute_dataset_statistics
+
+        ds = SherpaDataset(
+            X=np.array(
+                [
+                    [1.0, 2.0],
+                    [10.0, 20.0],
+                    [100.0, 200.0],
+                ]
+            ),
+            sample_axis=SampleAxis(labels=["blank", "standard A", "unknown"], classes=["qc", "cal", "test"]),
+        )
+        dataset_id = dataset_registry.register(ds)
+
+        result = compute_dataset_statistics(
+            dataset_id=dataset_id,
+            statistics=["mean"],
+            axis="samples",
+            sample_selectors=["standard", "missing"],
+        )
+
+        assert result["samples"] == [{"index": 1, "label": "standard A", "class": "cal", "mean": 15.0}]
+        assert result["selection"]["unresolved"] == ["missing"]
+
+        try:
+            compute_dataset_statistics(
+                dataset_id=dataset_id,
+                statistics=["mean"],
+                axis="samples",
+                sample_selectors=["not present"],
+            )
+        except ValueError as exc:
+            assert "No samples selectors matched" in str(exc)
+        else:
+            raise AssertionError("expected ValueError for unmatched sample selector")
+
+    def test_compute_dataset_statistics_selector_cap_and_label_normalization(self):
+        """Oversized selector lists are bounded; label matching still
+        resolves via the precomputed normalized labels."""
+        from spectra_sherpa.app.services.tools.builtin.datasets import MAX_SELECTOR_ITEMS, compute_dataset_statistics
+
+        ds = SherpaDataset(
+            X=np.array([[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]),
+            feature_axis=SpectralAxis(labels=["Sepal Length", "Sepal Width", "Petal Length", "Petal Width"]),
+        )
+        dataset_id = dataset_registry.register(ds)
+
+        # One resolvable selector followed by far more than the cap of
+        # unresolvable ones: resolution, the echoed ``requested`` list,
+        # and ``unresolved`` are all bounded; ``selectors_truncated`` set.
+        oversized = [{"label": "Sepal Length"}] + [f"nope_{i}" for i in range(MAX_SELECTOR_ITEMS + 60)]
+        result = compute_dataset_statistics(
+            dataset_id=dataset_id,
+            statistics=["mean"],
+            axis="features",
+            feature_selectors=oversized,
+        )
+        selection = result["selection"]
+        assert selection["selectors_truncated"] is True
+        assert len(selection["requested"]) == MAX_SELECTOR_ITEMS
+        assert len(selection["unresolved"]) == MAX_SELECTOR_ITEMS - 1
+        assert [row["index"] for row in result["features"]] == [0]
+
+        # Exact (case-insensitive) and partial label matches still work
+        # against the once-normalized label list.
+        normalized = compute_dataset_statistics(
+            dataset_id=dataset_id,
+            statistics=["mean"],
+            axis="features",
+            feature_selectors=[{"label": "sepal length"}, "petal"],
+        )
+        assert [row["index"] for row in normalized["features"]] == [0, 2]
+
+    def test_compute_dataset_statistics_target_numeric_and_categorical(self):
+        """compute_dataset_statistics exposes target/Y summaries for numeric and categorical targets."""
+        from spectra_sherpa.app.services.tools.builtin.datasets import compute_dataset_statistics
+
+        numeric = SherpaDataset(
+            X=np.ones((4, 2)),
+            target=np.array([1.0, 2.0, 4.0, 8.0]),
+            target_context=TargetContext(
+                target_type="continuous",
+                target_name="concentration",
+                target_units="mg/L",
+            ),
+        )
+        numeric_id = dataset_registry.register(numeric)
+        numeric_result = compute_dataset_statistics(numeric_id, statistics=["median"], axis="target")
+        numeric_target = numeric_result["target_summary"]["targets"][0]
+        assert numeric_result["target_summary"]["target_units"] == "mg/L"
+        assert numeric_target["kind"] == "numeric"
+        assert numeric_target["statistics"]["median"] == 3.0
+
+        categorical = SherpaDataset(
+            X=np.ones((4, 2)),
+            target=np.array(["setosa", "virginica", "setosa", "versicolor"]),
+            target_context=TargetContext(target_type="categorical", target_name="species"),
+        )
+        categorical_id = dataset_registry.register(categorical)
+        categorical_result = compute_dataset_statistics(categorical_id, axis="target")
+        categorical_target = categorical_result["target_summary"]["targets"][0]
+        assert categorical_target["kind"] == "categorical"
+        assert categorical_target["counts"][0] == {"value": "setosa", "count": 2}
+
+    def test_compute_dataset_statistics_error_paths(self):
+        """compute_dataset_statistics reports invalid handles and unsupported stats clearly."""
+        from spectra_sherpa.app.services.tools.builtin.datasets import compute_dataset_statistics
+
+        ds = SherpaDataset(X=np.ones((2, 2)))
+        dataset_id = dataset_registry.register(ds)
+
+        try:
+            compute_dataset_statistics(dataset_id=dataset_id, statistics=["variance"])
+        except ValueError as exc:
+            assert "No supported statistics" in str(exc)
+        else:
+            raise AssertionError("expected ValueError for unsupported statistics")
+
+        try:
+            compute_dataset_statistics(dataset_id="missing-dataset")
+        except ValueError as exc:
+            assert "Unknown dataset_id" in str(exc)
+        else:
+            raise AssertionError("expected ValueError for missing dataset")
+
+    def test_compute_dataset_statistics_uses_bounded_sampling_for_large_overall(self, monkeypatch):
+        """Large overall reductions are sampled instead of computed over every cell."""
+        from spectra_sherpa.app.services.tools.builtin import datasets
+        from spectra_sherpa.app.services.tools.builtin.datasets import compute_dataset_statistics
+
+        monkeypatch.setattr(datasets, "MAX_EXACT_STAT_CELLS", 10)
+        monkeypatch.setattr(datasets, "MAX_OVERALL_SAMPLE_CELLS", 5)
+
+        ds = SherpaDataset(X=np.arange(100, dtype=float).reshape(10, 10))
+        dataset_id = dataset_registry.register(ds)
+        result = compute_dataset_statistics(dataset_id=dataset_id, statistics=["mean"], axis="overall")
+
+        assert result["approximate"] is True
+        assert result["sampled"] is True
+        assert result["sample_plan"]["source_cells"] == 100
+
     def test_tools_have_data_category(self):
         """Both tools are in the data category."""
         import spectra_sherpa.app.services.tools.builtin  # noqa: F401
@@ -100,8 +377,10 @@ class TestDatasetTools:
 
         defn1, _ = tool_registry.get("describe_dataset")
         defn2, _ = tool_registry.get("get_dataset_quality")
+        defn3, _ = tool_registry.get("compute_dataset_statistics")
         assert defn1.category.value == "data"
         assert defn2.category.value == "data"
+        assert defn3.category.value == "data"
 
 
 # ---------------------------------------------------------------------------

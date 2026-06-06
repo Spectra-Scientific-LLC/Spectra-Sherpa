@@ -7,6 +7,7 @@ from unittest.mock import patch
 import pytest
 from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 import spectra_sherpa.app.main as app_main
 from spectra_sherpa.app.api.v1 import api as api_v1
@@ -180,6 +181,67 @@ def test_version_endpoint_is_public_when_http_auth_required(monkeypatch: pytest.
 
     assert response.status_code == 200
     assert "backend_version" in response.json()
+
+
+def test_local_mode_blocks_non_loopback_frontend_and_public_api(monkeypatch: pytest.MonkeyPatch):
+    from spectra_sherpa.app.core.config import app_config
+
+    monkeypatch.setattr(app_config, "mode", "local")
+    monkeypatch.delenv("SPECTRA_SHERPA_ALLOW_LOCAL_NETWORK", raising=False)
+    monkeypatch.delenv("SPECTRASHERPA_ALLOW_LOCAL_NETWORK", raising=False)
+
+    app = app_main.create_app(include_server_routers=False)
+    client = TestClient(app, client=("10.0.0.8", 50000))
+
+    config_response = client.get("/api/v1/config")
+    assert config_response.status_code == 403
+    assert "Local mode only accepts loopback clients" in config_response.text
+
+    frontend_response = client.get("/")
+    assert frontend_response.status_code == 403
+
+    health_response = client.get("/api/v1/health")
+    assert health_response.status_code == 200
+
+
+def test_local_mode_network_exposure_requires_explicit_opt_in(monkeypatch: pytest.MonkeyPatch):
+    from spectra_sherpa.app.core.config import app_config
+
+    monkeypatch.setattr(app_config, "mode", "local")
+    monkeypatch.setenv("SPECTRA_SHERPA_ALLOW_LOCAL_NETWORK", "true")
+
+    probe = APIRouter()
+
+    @probe.get("/local-network-probe")
+    async def _local_network_probe() -> dict[str, bool]:
+        return {"ok": True}
+
+    app = app_main.create_app(
+        include_server_routers=False,
+        extra_routers=[(probe, {})],
+    )
+    client = TestClient(app, client=("10.0.0.8", 50000))
+
+    response = client.get("/local-network-probe")
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+
+
+def test_local_mode_blocks_non_loopback_websocket(monkeypatch: pytest.MonkeyPatch):
+    from spectra_sherpa.app.core.config import app_config
+
+    monkeypatch.setattr(app_config, "mode", "local")
+    monkeypatch.delenv("SPECTRA_SHERPA_ALLOW_LOCAL_NETWORK", raising=False)
+    monkeypatch.delenv("SPECTRASHERPA_ALLOW_LOCAL_NETWORK", raising=False)
+
+    app = app_main.create_app(include_server_routers=False)
+    client = TestClient(app, client=("10.0.0.8", 50000))
+
+    with client.websocket_connect("/ws") as websocket:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            websocket.receive_json()
+
+    assert exc_info.value.code == 1008
 
 
 def test_create_app_rejects_invalid_extra_router_config():
