@@ -26,6 +26,8 @@ pandas>=2.2.2,<3.0.0
 scikit-learn>=1.5.0,<2.0.0
 beautifulsoup4>=4.12.3,<5.0.0
 pypdf>=6.9.2,<7.0.0
+jsonschema>=4.20.0,<5.0.0
+greenlet>=3.0.0,<4.0.0
 
 # NOTE: PyJWT and bcrypt were removed from OSS in v0.4.1 Phase 2.
 # OSS no longer issues, validates, or hashes credentials — that's the

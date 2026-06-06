@@ -1,14 +1,12 @@
 name: Publish to PyPI
 
-# Automatic PyPI release.
+# Manual PyPI release.
 #
-# Triggered ONLY by the curated release tag that the maintainer-gated OSS
-# publish pushes to this repository (spectra-sherpa-v<version>). By the
-# time this runs, the artifact has already been reviewed and approved
-# upstream; this job rebuilds the package FROM THAT EXACT TAG and uploads
-# it to PyPI via Trusted Publishing (OIDC — no API token is stored
-# anywhere). What lands on PyPI is therefore byte-identical to the
-# reviewed, published source (`git clone` of this repo at the tag).
+# Run this only after the maintainer has reviewed the public tag and wants a
+# stable PyPI release. The job rebuilds the package FROM THAT EXACT TAG and
+# uploads it to PyPI via Trusted Publishing (OIDC — no API token is stored
+# anywhere). What lands on PyPI is therefore byte-identical to the reviewed
+# public source (`git clone` of this repo at the tag).
 #
 # ONE-TIME SETUP (PyPI side — required, or this fails closed and nothing
 # is published):
@@ -19,9 +17,16 @@ name: Publish to PyPI
 #     Environment: (leave blank)
 
 on:
-  push:
-    tags:
-      - "spectra-sherpa-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Public release tag to publish, e.g. spectra-sherpa-v0.5.2"
+        required: true
+        type: string
+      confirm:
+        description: "Type publish to release to PyPI"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -34,9 +39,20 @@ jobs:
       contents: read
       id-token: write # required for PyPI Trusted Publishing (OIDC)
     steps:
+      - name: Confirm manual PyPI publish
+        run: |
+          if [ "${{ inputs.confirm }}" != "publish" ]; then
+            echo "::error::Set confirm=publish to publish to PyPI."
+            exit 1
+          fi
+          if ! printf '%s' "${{ inputs.tag }}" | grep -Eq '^spectra-sherpa-v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)?$'; then
+            echo "::error::Tag must look like spectra-sherpa-v0.5.2."
+            exit 1
+          fi
+
       - uses: actions/checkout@v5
         with:
-          ref: ${{ github.ref }} # the exact spectra-sherpa-v* tag
+          ref: ${{ inputs.tag }} # the exact spectra-sherpa-v* tag
           persist-credentials: false
 
       - name: Set up Python
@@ -46,7 +62,8 @@ jobs:
 
       - name: Verify tag matches package version (fail closed on mismatch)
         run: |
-          TAG="${GITHUB_REF_NAME#spectra-sherpa-v}"
+          TAG="${{ inputs.tag }}"
+          TAG="${TAG#spectra-sherpa-v}"
           PKG=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['tool']['poetry']['version'])")
           echo "tag=${TAG}  pyproject=${PKG}"
           if [ "$TAG" != "$PKG" ]; then
