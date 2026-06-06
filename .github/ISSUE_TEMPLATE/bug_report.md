@@ -27,7 +27,7 @@ What actually happened. Include error messages or screenshots if available.
 - **Python version**:
 - **OS**:
 - **Browser**:
-- **APP_MODE** (oss / hybrid / enterprise):
+- **APP_MODE** (usually `local` for OSS):
 - **SpectraSherpa version**:
 
 ## Logs / Screenshots

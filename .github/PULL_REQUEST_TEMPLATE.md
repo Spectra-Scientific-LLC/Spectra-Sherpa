@@ -18,4 +18,4 @@ How were these changes tested?
 - [ ] Build passes (`npm run build`)
 - [ ] Tests pass (`pytest`)
 - [ ] Docs updated (if applicable)
-- [ ] CLA signed ([Individual](CLA.md) or [Entity](CLA-entity.md) — the bot will prompt you)
+- [ ] CLA signed ([Individual](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/blob/main/CLA.md) or [Entity](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/blob/main/CLA-entity.md) — the bot will prompt you)

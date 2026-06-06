@@ -1,0 +1,72 @@
+name: Publish to PyPI
+
+# Automatic PyPI release.
+#
+# Triggered ONLY by the curated release tag that the maintainer-gated OSS
+# publish pushes to this repository (spectra-sherpa-v<version>). By the
+# time this runs, the artifact has already been reviewed and approved
+# upstream; this job rebuilds the package FROM THAT EXACT TAG and uploads
+# it to PyPI via Trusted Publishing (OIDC — no API token is stored
+# anywhere). What lands on PyPI is therefore byte-identical to the
+# reviewed, published source (`git clone` of this repo at the tag).
+#
+# ONE-TIME SETUP (PyPI side — required, or this fails closed and nothing
+# is published):
+#   PyPI -> project "spectra-sherpa" -> Publishing -> add a Trusted Publisher
+#     Owner:       Spectra-Scientific-LLC
+#     Repository:  Spectra-Sherpa
+#     Workflow:    pypi-release.yml
+#     Environment: (leave blank)
+
+on:
+  push:
+    tags:
+      - "spectra-sherpa-v*"
+
+permissions:
+  contents: read
+
+jobs:
+  pypi:
+    name: Build and publish to PyPI
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for PyPI Trusted Publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.ref }} # the exact spectra-sherpa-v* tag
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Verify tag matches package version (fail closed on mismatch)
+        run: |
+          TAG="${GITHUB_REF_NAME#spectra-sherpa-v}"
+          PKG=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['tool']['poetry']['version'])")
+          echo "tag=${TAG}  pyproject=${PKG}"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::Tag (${TAG}) does not match pyproject version (${PKG}). Refusing to publish to PyPI."
+            exit 1
+          fi
+
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Validate artifacts
+        run: |
+          python -m pip install --upgrade twine
+          python -m twine check dist/*
+
+      - name: Publish to PyPI (Trusted Publishing / OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # Re-runs (transient failure / re-dispatch) must not hard-fail
+          # once a version is already on PyPI.
+          skip-existing: true

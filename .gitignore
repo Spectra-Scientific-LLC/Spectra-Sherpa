@@ -115,6 +115,11 @@ spectrasherpa-server/
 # SpectroChemPy runtime data (downloaded at runtime, not part of source)
 .spectrochempy/
 
+# HITRAN/HAPI2 runtime state (created by local imports/downloads)
+.provenance/
+config.json
+local
+
 # Internal planning docs (top-level only, not src/spectra_sherpa/app/contracts/)
 /contracts/
 
