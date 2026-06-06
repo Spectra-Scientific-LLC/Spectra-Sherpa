@@ -4,6 +4,16 @@ import numpy as np
 import pytest
 
 
+def test_read_jcamp_rejects_unexpected_extension(tmp_path):
+    from spectra_sherpa.app.lib.jcamp_reader import read_jcamp
+
+    path = tmp_path / "not_jcamp.txt"
+    path.write_text("##TITLE=Nope\n##END=", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Unsupported JCAMP-DX extension"):
+        read_jcamp(path)
+
+
 def test_jcamp_xydata_decodes_sqz_dif_and_dup_tokens():
     from spectra_sherpa.app.lib.jcamp_reader import parse_jcamp
 

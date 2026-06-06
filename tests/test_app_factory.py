@@ -328,6 +328,13 @@ def _cors_kwargs(app: FastAPI) -> dict:
     raise AssertionError("CORSMiddleware not registered")
 
 
+def _middleware_kwargs(app: FastAPI, middleware_name: str) -> dict:
+    for mw in app.user_middleware:
+        if getattr(mw.cls, "__name__", "") == middleware_name:
+            return dict(getattr(mw, "kwargs", None) or getattr(mw, "options", {}))
+    raise AssertionError(f"{middleware_name} not registered")
+
+
 def test_wildcard_cors_disables_credentials(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(app_main, "get_cors_origins", lambda: ["*"])
     app = app_main.create_app(include_server_routers=False)
@@ -347,3 +354,28 @@ def test_explicit_cors_keeps_credentials(monkeypatch: pytest.MonkeyPatch):
     assert kw["allow_credentials"] is True
     assert kw["allow_origins"] == ["https://app.example.com"]
     assert kw.get("allow_origin_regex") is None
+
+
+def test_trusted_hosts_derive_from_env_and_cors(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("TRUSTED_HOSTS", raising=False)
+    monkeypatch.setenv("DOMAIN", "demo.example.com")
+    monkeypatch.setattr(app_main, "get_cors_origins", lambda: ["https://app.example.com"])
+
+    app = app_main.create_app(include_server_routers=False)
+    kw = _middleware_kwargs(app, "TrustedHostMiddleware")
+
+    assert "demo.example.com" in kw["allowed_hosts"]
+    assert "app.example.com" in kw["allowed_hosts"]
+
+
+def test_trusted_hosts_reject_unlisted_host(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("TRUSTED_HOSTS", "https://good.example.com,testserver")
+    monkeypatch.setattr(app_main, "get_cors_origins", lambda: ["https://good.example.com"])
+
+    app = app_main.create_app(include_server_routers=False)
+    kw = _middleware_kwargs(app, "TrustedHostMiddleware")
+    client = TestClient(app, base_url="https://good.example.com")
+
+    assert "good.example.com" in kw["allowed_hosts"]
+    assert client.get("/api/health").status_code == 200
+    assert client.get("/api/health", headers={"Host": "evil.example.com"}).status_code == 400

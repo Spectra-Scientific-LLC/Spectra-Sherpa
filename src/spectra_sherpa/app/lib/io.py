@@ -927,13 +927,20 @@ def load_csv_as_sherpa(
     from spectra_sherpa.app.lib.axes import FeatureAxis, SampleAxis, SpectralAxis
     from spectra_sherpa.app.lib.sherpa_dataset import DomainContext, SherpaDataset, TargetContext
 
-    filepath = Path(filepath)
+    try:
+        filepath = Path(filepath).expanduser().resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"CSV file does not exist: {filepath}") from exc
+    if not filepath.is_file():
+        raise ValueError(f"CSV path is not a file: {filepath}")
+    if filepath.suffix.lower() != ".csv":
+        raise ValueError(f"Unsupported CSV extension: {filepath.suffix or '<none>'}")
     df = pd.read_csv(filepath)
     overrides = None
     try:
         from spectra_sherpa.app.services.prepared_data import load_prepared_data_overrides
 
-        overrides = load_prepared_data_overrides(file_path=str(filepath.resolve()))
+        overrides = load_prepared_data_overrides(file_path=str(filepath))
         data_role = data_role or overrides.data_role
         target_column = target_column or overrides.target_column
         target_type = target_type or overrides.target_type

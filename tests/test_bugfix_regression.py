@@ -78,8 +78,10 @@ class TestValidateFolderPath:
 
         data_dir = tmp_path / "data"
         data_dir.mkdir()
+        outside = tmp_path / "outside"
+        outside.mkdir()
 
-        traversal_path = str(data_dir / ".." / ".." / "etc")
+        traversal_path = str(data_dir / ".." / "outside")
 
         with (
             patch("spectra_sherpa.app.core.mode_policy.is_multi_user", return_value=True),
@@ -88,6 +90,16 @@ class TestValidateFolderPath:
             mock_settings.data_dir = data_dir
             with pytest.raises(ValueError, match="must be under the data directory"):
                 validate_folder_path(traversal_path)
+
+    def test_missing_folder_rejected_before_use(self, tmp_path: Path):
+        """Missing paths fail before any folder iteration or watch setup."""
+        from spectra_sherpa.app.services.batch_predict import validate_folder_path
+
+        missing = tmp_path / "missing"
+
+        with patch("spectra_sherpa.app.core.mode_policy.is_multi_user", return_value=False):
+            with pytest.raises(ValueError, match="does not exist"):
+                validate_folder_path(str(missing))
 
 
 # ---------------------------------------------------------------------------

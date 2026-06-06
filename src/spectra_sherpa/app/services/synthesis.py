@@ -767,6 +767,27 @@ def _write_synthesis_npz(path: Path, result: SynthesisResult, *, title: str | No
     )
 
 
+def _resolve_synthetic_npz_path(path: str | Path) -> Path:
+    try:
+        resolved = Path(path).expanduser().resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"Synthetic NPZ file does not exist: {path}") from exc
+    if not resolved.is_file():
+        raise ValueError(f"Synthetic NPZ path is not a file: {resolved}")
+    if resolved.suffix.lower() != ".npz":
+        raise ValueError(f"Synthetic metadata edits require a .npz file, got: {resolved.suffix or '<none>'}")
+
+    from spectra_sherpa.app.core.mode_policy import is_multi_user
+
+    if is_multi_user():
+        allowed_root = settings.data_dir.resolve(strict=False)
+        try:
+            resolved.relative_to(allowed_root)
+        except ValueError as exc:
+            raise ValueError(f"Synthetic NPZ path must be under the data directory ({allowed_root}).") from exc
+    return resolved
+
+
 def update_synthetic_npz_metadata(path: str | Path, updates: dict[str, Any]) -> None:
     """Merge user-facing metadata edits into a synthetic npz artifact.
 
@@ -775,7 +796,7 @@ def update_synthetic_npz_metadata(path: str | Path, updates: dict[str, Any]) -> 
     directly in the archive to make the file self-describing when it is loaded
     later by the workflow My Dataset node or moved with a project export.
     """
-    path = Path(path)
+    path = _resolve_synthetic_npz_path(path)
     with np.load(path, allow_pickle=False) as data:
         if not _npz_has_synthesis_signature(data):
             raise ValueError("NPZ file is not a SpectraSherpa synthetic dataset")
@@ -789,11 +810,13 @@ def update_synthetic_npz_metadata(path: str | Path, updates: dict[str, Any]) -> 
     if updates.get("y_title") is not None:
         metadata["data_quantity"] = updates["y_title"]
 
-    tmp_path = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    tmp_path = path.parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
     np.savez_compressed(tmp_path, **arrays, metadata_json=np.asarray(json.dumps(metadata)))
     tmp_npz = tmp_path.with_suffix(tmp_path.suffix + ".npz")
     if tmp_npz.exists():
         tmp_path = tmp_npz
+    if tmp_path.parent != path.parent:
+        raise ValueError("Synthetic NPZ temporary file resolved outside the artifact directory")
     os.replace(tmp_path, path)
 
 

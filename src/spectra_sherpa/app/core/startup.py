@@ -76,34 +76,26 @@ def _ensure_local_secret_key() -> None:
 
     from spectra_sherpa._paths import get_default_data_dir
 
-    # ``secret_key_storage_path`` holds the *filesystem location* of the
-    # persisted SECRET_KEY, not the secret itself.  Naming the variable
-    # explicitly (rather than reusing ``secret_key`` from the
-    # ``AppDataPaths`` attribute) keeps CodeQL's data-flow analysis from
-    # tagging the log statements below as "logs sensitive data" — they
-    # only ever interpolate the path, never the contents.
-    secret_key_storage_path = get_app_data_paths(get_default_data_dir()).secret_key
-    if secret_key_storage_path.exists():
-        persisted = secret_key_storage_path.read_text(encoding="ascii").strip()
+    local_key_file = get_app_data_paths(get_default_data_dir()).secret_key
+    if local_key_file.exists():
+        persisted = local_key_file.read_text(encoding="ascii").strip()
         if persisted:
             object.__setattr__(settings, "secret_key", persisted)
-            logger.debug("Loaded persisted local SECRET_KEY from %s", secret_key_storage_path)
+            logger.debug("Loaded persisted local auth secret from app data storage")
             return
 
     new_key = secrets.token_hex(32)
-    secret_key_storage_path.parent.mkdir(parents=True, exist_ok=True)
-    secret_key_storage_path.write_text(new_key, encoding="ascii")
+    local_key_file.parent.mkdir(parents=True, exist_ok=True)
+    local_key_file.write_text(new_key, encoding="ascii")
     # Restrict read permissions to owner only
     try:
-        secret_key_storage_path.chmod(0o600)
+        local_key_file.chmod(0o600)
     except OSError:
         pass  # Windows; best-effort
     object.__setattr__(settings, "secret_key", new_key)
     logger.info(
-        "Generated a new local SECRET_KEY and saved to %s. "
-        "For network-exposed deployments, set the SECRET_KEY environment variable "
-        "to a stable secret managed outside the data directory.",
-        secret_key_storage_path,
+        "Generated and persisted a new local auth secret. "
+        "For network-exposed deployments, configure a stable externally managed auth secret.",
     )
 
 

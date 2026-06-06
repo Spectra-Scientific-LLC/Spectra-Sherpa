@@ -6,6 +6,7 @@ import os
 from collections.abc import Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
 from typing import Any, TypeAlias
+from urllib.parse import urlparse
 
 # Force non-interactive matplotlib backend before SpectroChemPy imports it.
 # The macOS backend requires the main thread, but FastAPI runs handlers
@@ -23,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from spectra_sherpa.app.api.v1.api import build_api_router
 from spectra_sherpa.app.core.app_paths import get_app_data_paths
@@ -101,6 +103,51 @@ def get_cors_origins() -> list[str]:
         default_origins.append(app_config.api_base_url)
 
     return default_origins
+
+
+def _host_from_url(value: str) -> str | None:
+    parsed = urlparse(value)
+    if parsed.hostname:
+        return parsed.hostname
+    if "://" not in value:
+        parsed = urlparse(f"//{value}")
+        return parsed.hostname
+    return None
+
+
+def get_trusted_hosts(origins: list[str] | None = None) -> list[str]:
+    """Build the Host-header allowlist used by Starlette.
+
+    ``TRUSTED_HOSTS`` is the operator override.  Otherwise we derive a
+    conservative list from local development defaults, ``DOMAIN``,
+    ``API_BASE_URL``, and the configured CORS origins.  This mitigates
+    Host-header poisoning in Starlette while keeping local OSS use simple.
+    """
+    hosts_env = os.getenv("TRUSTED_HOSTS", "").strip()
+    if hosts_env:
+        hosts = []
+        for value in hosts_env.split(","):
+            value = value.strip()
+            if not value:
+                continue
+            hosts.append(value if value == "*" else (_host_from_url(value) or value))
+        return hosts
+
+    hosts = {"localhost", "127.0.0.1", "0.0.0.0", "test", "testserver"}
+    for value in (
+        os.getenv("DOMAIN", ""),
+        os.getenv("API_BASE_URL", ""),
+        app_config.api_base_url,
+        *(origins or []),
+    ):
+        value = value.strip()
+        if not value or value == "*":
+            continue
+        host = _host_from_url(value)
+        if host:
+            hosts.add(host)
+
+    return sorted(hosts)
 
 
 def _try_leader_lock() -> bool:
@@ -687,6 +734,7 @@ def create_app(
     for mw in extra_middleware or []:
         mw(_app)
     _app.add_middleware(RequestIDMiddleware)
+    _app.add_middleware(TrustedHostMiddleware, allowed_hosts=get_trusted_hosts(origins))
     if _allow_all:
         # Audit SEC-3: a reflected/wildcard origin combined with
         # ``allow_credentials=True`` lets ANY site issue credentialed
