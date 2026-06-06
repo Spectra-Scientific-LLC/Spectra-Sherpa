@@ -8,6 +8,8 @@ pip install "spectra-sherpa[hitran]"
 
 HITRAN live synthesis requires a HITRAN API key and network egress permission.
 
+SpectraSherpa also ships two synthetic FTIR benchmark files, `Synthetic_atmospheric-6.npz` and `Library_atmospheric-9.npz`, whose spectral signatures are derived from HITRAN data. Treat these as HITRAN-derived scientific artifacts: cite HITRAN/HAPI and follow HITRAN terms when using them in reports, validation records, publications, or customer-facing work.
+
 ## Supported Versions
 
 The current SpectraSherpa package supports [hitran-api](https://pypi.org/project/hitran-api/) `>=1.3.0.0,<2` and [hitran-api2](https://pypi.org/project/hitran-api2/) `>=0.2.2,<1`. The current lockfile pins `hitran-api 1.3.0.0` and `hitran-api2 0.2.2`. See the official [HITRAN HAPI page](https://hitran.org/hapi/) and [HAPI manual](https://hitran.org/static/hapi/hapi_manual.pdf) for upstream API details.

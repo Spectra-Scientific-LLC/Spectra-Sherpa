@@ -17,6 +17,7 @@ Key capabilities built today:
 - **Model and validation outputs** where PLS, classification, SIMCA, PCA, and MCR workflows surface interpretable plots, metrics, and saved artifacts.
 - **Report and export path** for carrying exploratory analyses into shareable scientific records and portable outputs.
 - **Reference and synthesis workflows** around NIST data and optional HITRAN/HAPI line-by-line synthesis.
+- **Recommended Eigenvector Research example catalogs** for realistic NIR and OES chemometrics workflows, with runtime/local download rather than redistribution in the wheel.
 - **SpectroChemPy extra support** for Thermo OMNIC/OMNICxi `.spa`, `.spg`, `.srs`, Bruker `.opus`, Galactic `.spc`, Renishaw `.wdf`, vendor `.txt`/`.dat`, example datasets, and coordinate-aware algorithms.
 - **Cloud Advisor and Ambient Guidance** for onboarding, interpretation drafts, scientific review, and contextual next-step suggestions.
 - **Extension surfaces** for OSS users and developers to add nodes, providers, export behavior, and deployment-specific policy without rewriting the workbench.
@@ -57,6 +58,7 @@ The public docs cover the following current capabilities:
 - SIMCA-style acceptance/QC concepts
 - MCR-ALS and self-modeling curve-resolution workflows
 - peak finding with positions, prominence, FWHM-like widths, areas, and consensus across spectra; Peak ID assistance; and library comparison with HQI/cosine similarity scores
+- Eigenvector Research NIR/OES example catalog support via user-local runtime download/cache
 - NIST reference workflows and synthetic FTIR examples
 - HITRAN/HAPI synthesis when the optional extra and API key are configured
 - workflow templates, model artifacts, reports, and exports

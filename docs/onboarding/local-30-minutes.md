@@ -31,6 +31,15 @@ spectra-sherpa
 
 You still need a HITRAN API key and egress enabled in application settings. For exact versions and format notes, use [Supported File Types](../introduction/file-types.md).
 
+For Eigenvector Research example datasets, enable the local runtime downloader:
+
+```bash
+export SPECTRASHERPA_EIGENVECTOR_DOWNLOADS=true
+spectra-sherpa
+```
+
+These datasets are highly recommended for learning NIR/OES chemometrics in SpectraSherpa. They include corn instrument-transfer data, diesel NIR calibration data, IDRC shootout data, CGL NIR data, and metal-etch OES/process examples. SpectraSherpa catalogs them but does not redistribute the raw files; downloads come from [Eigenvector Research](https://eigenvector.com/resources/data-sets/) and are cached on your machine.
+
 ## Optional: Add a Chat Endpoint for Advisor
 
 Local Advisor is optional. Scientific workflows still run without AI. To enable Advisor, configure a bring-your-own-key, OpenAI-compatible `/chat/completions` endpoint before launching. For OpenAI:
@@ -46,7 +55,7 @@ spectra-sherpa
 
 ## Run an Example PCA with New Analysis
 
-Open **New Analysis** and choose a **PCA** starter. It comes wired to an example dataset, so you can run it immediately. Review the scores, loadings, explained variance, and Node Detail view.
+Open **New Analysis** and choose a **PCA** starter. If you choose an Eigenvector-backed starter, keep `SPECTRASHERPA_EIGENVECTOR_DOWNLOADS=true` enabled for the first run so the upstream example files can be cached locally. Review the scores, loadings, explained variance, and Node Detail view.
 
 !!! tip "Ask Advisor along the way"
     With a chat endpoint configured, Advisor can answer questions at any step: "What does this score plot suggest?", "Which preprocessing should I try next?", "Are these samples outliers?". Use it as an interpretation aid, not a replacement for scientific judgment.

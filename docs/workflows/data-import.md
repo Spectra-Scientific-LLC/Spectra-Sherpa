@@ -9,8 +9,8 @@ The Data tab has five areas. Four of them bring data in; the fifth is where ever
 | Area | What it does |
 | --- | --- |
 | **Upload** | Bring in your own files (CSV, JCAMP-DX, NumPy, MAT, and vendor formats with the optional extra). |
-| **Import** | Add bundled reference and example datasets from curated catalogs. |
-| **Synthesis** | Generate first-party synthetic spectra (Beer–Lambert mixtures from NIST or HITRAN). |
+| **Import** | Add reference and example datasets from curated catalogs. |
+| **Synthesis** | Generate synthetic spectra, including Beer-Lambert mixtures derived from NIST or HITRAN references. |
 | **Library** | Search and import NIST and HITRAN reference spectra. |
 | **My Dataset** | The reusable store of everything you have brought into the current project. |
 
@@ -46,8 +46,8 @@ After upload, always open the inspection panels (below) to confirm the file read
 
 **Data > Import** lists curated catalogs you can add with a click — ideal for learning a workflow before using your own data:
 
-- **Spectra Scientific Synthetic Benchmarks** — first-party synthetic FTIR and atmospheric-gas sets with known ground truth.
-- **Eigenvector Research (NIR)** — well-known NIR calibration benchmarks (for example, corn).
+- **Spectra Scientific Synthetic Benchmarks** — synthetic FTIR and atmospheric-gas sets with known ground truth, including HITRAN-derived component spectra.
+- **Eigenvector Research (NIR/OES)** — strongly recommended chemometrics examples such as corn, diesel NIR, IDRC shootout, CGL, and metal-etch OES. SpectraSherpa catalogs these datasets but does not redistribute the raw files; enable runtime downloads with `SPECTRASHERPA_EIGENVECTOR_DOWNLOADS=true` or download them from [Eigenvector Research](https://eigenvector.com/resources/data-sets/) and place them in the local cache shown by the app.
 - **OES Datasets** — optical-emission process-monitoring data.
 - **SpectroChemPy Datasets** — example spectra bundled with the optional extra, organized by category.
 - **Scikit-learn Datasets** — tabular feature-table datasets for non-spectroscopic examples.

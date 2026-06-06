@@ -61,6 +61,7 @@ nav:
   - Attributions:
       - Scientific and Software Attributions: attributions/index.md
       - SpectroChemPy: attributions/spectrochempy.md
+      - Eigenvector Research: attributions/eigenvector.md
       - NIST: attributions/nist.md
       - HITRAN and HAPI: attributions/hitran.md
 theme:

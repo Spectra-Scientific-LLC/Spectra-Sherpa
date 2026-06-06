@@ -12,7 +12,8 @@ SpectraSherpa builds on open-source scientific software and public scientific da
 
 - NIST Chemistry WebBook and NIST Quantitative Infrared data for reference and synthetic infrared workflows
 - HITRAN and HAPI for line-by-line gas-phase synthesis when the optional extra and API key are configured
+- Eigenvector Research example datasets for recommended NIR/OES chemometrics onboarding and validation examples when users download or cache the upstream files locally
 
 ## Practical Rule
 
-When generated, downloaded, or reference spectra are used in a report, validation record, publication, or customer-facing analysis, cite the upstream scientific data source. When optional software such as SpectroChemPy materially affects import, preprocessing, or modeling, cite that project too.
+When generated, downloaded, or reference spectra are used in a report, validation record, publication, or customer-facing analysis, cite the upstream scientific data source. This includes HITRAN-derived synthetic benchmark files and user-downloaded Eigenvector Research datasets. When optional software such as SpectroChemPy materially affects import, preprocessing, or modeling, cite that project too.

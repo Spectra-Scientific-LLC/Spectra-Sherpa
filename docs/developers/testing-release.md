@@ -9,7 +9,14 @@ Release documentation should match shipped behavior.
 - build docs with MkDocs strict mode
 - verify templates that appear in onboarding
 - ensure changelog entries reflect shipped features
+- verify OSS mirror tags before publishing to PyPI
 - remove stale branches after merge
+
+## PyPI Policy
+
+Publishing the public OSS mirror is not the same as publishing to PyPI. The mirror workflow creates the public `spectra-sherpa-vX.Y.Z` tag, then maintainers verify the public repository, CI, documentation, and release notes.
+
+Only after that verification should a maintainer manually run the public **Publish to PyPI** workflow with the exact tag and `confirm=publish`. Do not treat every OSS mirror tag as PyPI-ready.
 
 ## Documentation Rule
 

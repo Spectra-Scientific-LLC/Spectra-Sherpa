@@ -48,3 +48,5 @@ Confirm sample count, variable count, spectral axis units, sample IDs, and targe
 ## Import Boundary
 
 Base file support and SpectroChemPy-backed vendor support are documented in [Supported File Types](../introduction/file-types.md). With `spectra-sherpa[scp]`, supported vendor formats include Thermo OMNIC/OMNICxi `.spa`, `.spg`, `.srs`, Bruker `.opus`, Galactic `.spc`, Renishaw `.wdf`, and vendor `.txt`/`.dat`.
+
+Eigenvector Research examples are cataloged for `data.source`, but their raw data files are not redistributed in the OSS wheel. Enable `SPECTRASHERPA_EIGENVECTOR_DOWNLOADS=true` for runtime caching, or download the files from [Eigenvector Research](https://eigenvector.com/resources/data-sets/) and place them in the cache path reported by the app.

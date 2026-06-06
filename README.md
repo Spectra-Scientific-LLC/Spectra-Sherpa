@@ -85,7 +85,7 @@ Everything lives inside a **Project**. Five objects make up a complete analysis 
 | Object | What it is |
 |--------|------------|
 | **Project** | The durable container grouping your datasets, workflows, runs, reports, scripts, and trained models — with versioned snapshots and provenance. |
-| **Data** | The spectra or feature tables you work on. Import instrument files into *My Dataset*, pull from bundled reference datasets, or synthesize FTIR time series. |
+| **Data** | The spectra or feature tables you work on. Import instrument files into *My Dataset*, pull from reference/example datasets, or synthesize FTIR time series. |
 | **Workflow** | The analysis recipe: a drag-and-drop graph (DAG) of nodes, versioned on every save so any result traces back to the exact recipe that produced it. |
 | **Run** | One execution of a workflow — an immutable record of parameters, node status, diagnostics, and any model **Artifacts** (frozen PCA/PLS/MCR/PLS-DA/KNN/SIMCA models) it produced. |
 | **Report** | A shareable summary assembled from a workflow and its runs. Toggle sections, then export to PDF, HTML, Markdown, or JSON for publication, hand-off, or validation packages. |
@@ -104,6 +104,7 @@ SpectraSherpa stands on established open science, and keeps citation guidance cl
 
 - **[SpectroChemPy](https://www.spectrochempy.fr/)** — spectroscopic algorithms and instrument-file readers, by Arnaud Travert and Christian Fernandez at the Laboratoire Catalyse et Spectrochimie (LCS), ENSICAEN / Université de Caen / CNRS. Licensed [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) (BSD-compatible).
 - **[HITRAN](https://hitran.org/) / HAPI** — the high-resolution molecular spectroscopic database used by Data → Synthesis to build physically grounded FTIR line tables.
+- **[Eigenvector Research data sets](https://eigenvector.com/resources/data-sets/)** — recommended NIR/OES chemometrics teaching and validation datasets. SpectraSherpa catalogs these datasets and can download them at runtime when egress is enabled; it does not redistribute the raw Eigenvector data in the wheel.
 - **[NIST Chemistry WebBook](https://webbook.nist.gov/) (SRD 69)** and the **NIST Quantitative Infrared Database (SRD 79)** — reference IR spectra for synthesis.
 
 These databases are not owned by Spectra Scientific. Cite NIST, HITRAN, and HAPI in any report, publication, or validation package that uses synthetic datasets — [Reference Libraries and Synthesis](docs/workflows/references-synthesis.md) and the [Attributions](docs/attributions/index.md) page list the recommended attributions.

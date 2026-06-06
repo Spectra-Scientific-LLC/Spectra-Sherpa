@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-06-06
+
+## [0.5.2] - 2026-06-06
+
+### Security and licensing
+
+- Removed redistributed Eigenvector Research raw datasets from the OSS package
+  and test fixtures. Eigenvector examples are now cataloged for runtime/local
+  download instead of being bundled in the wheel or source distribution.
+- Added runtime download/cache support for Eigenvector example datasets, gated by
+  `EGRESS_ENABLED=true` or `SPECTRASHERPA_EIGENVECTOR_DOWNLOADS=true`, with clear
+  errors when users need to download or supply the upstream files themselves.
+- Added a publish guard that blocks `src/spectra_sherpa/data/eigenvector/**`
+  from re-entering future OSS releases.
+- Clarified `NOTICE.md` and documentation attribution for Eigenvector Research
+  datasets and for bundled HITRAN-derived synthetic FTIR benchmark files.
+
+### Packaging and release
+
+- Bumped SpectraSherpa to `0.5.2` because `0.5.0` and `0.5.1` were already
+  published to PyPI.
+- Added `greenlet` and `jsonschema` to `requirements.txt` so source installs
+  using the documented requirements path match the base wheel dependencies.
+- Changed the public PyPI workflow to manual dispatch with an explicit
+  `confirm=publish` input. OSS mirror tags no longer automatically publish to
+  PyPI.
+
+### Documentation
+
+- Added explicit guidance recommending Eigenvector Research datasets for local
+  chemometrics onboarding, regression testing, and realistic NIR/OES workflow
+  examples, while directing users to download them from Eigenvector.
+
 ## [0.5.1] - 2026-06-06
 
 ### Security

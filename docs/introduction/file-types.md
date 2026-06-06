@@ -10,7 +10,7 @@ These formats are handled without SpectroChemPy:
 | --- | --- | --- |
 | `.csv` | tabular spectra or feature matrices | Best default for known data. Keep sample IDs and target columns explicit. |
 | `.jdx`, `.dx` | JCAMP-DX spectra | Open spectroscopy interchange format. |
-| `.npy`, `.npz` | NumPy arrays or SpectraSherpa synthetic datasets | `.npz` is also used for first-party synthetic datasets. |
+| `.npy`, `.npz` | NumPy arrays or SpectraSherpa synthetic datasets | `.npz` is also used for SpectraSherpa synthetic benchmark datasets. |
 | `.mat` | MATLAB-style matrices | Supported for matrix-style imports; confirm axis and target metadata after loading. |
 
 ## Optional SpectroChemPy Extra

@@ -28,13 +28,13 @@ The compiled frontend ships as part of the Python wheel so that `pip install spe
 
 ---
 
-## Bundled example datasets (under `src/spectra_sherpa/data/`)
+## Example and reference datasets
 
-The wheel includes a curated set of public-domain or permissively-licensed example spectra so that exported workflows and tutorial notebooks run standalone.
+The wheel includes a small curated set of public-domain or permissively licensed example spectra so that exported workflows and tutorial notebooks run standalone. Other third-party reference datasets are cataloged but downloaded or supplied by the user at runtime.
 
-### Eigenvector Research example data — `src/spectra_sherpa/data/eigenvector/`
+### Eigenvector Research example data
 
-The following datasets originate from Eigenvector Research, Inc.'s freely-published example data collection and are distributed by SpectraSherpa for educational and demonstration use:
+SpectraSherpa catalogs the following Eigenvector Research, Inc. example datasets, but does **not** redistribute their raw data files in the wheel or source distribution. Users can download them from Eigenvector Research at runtime or place the files in the local SpectraSherpa reference cache:
 
 - `corn_mat/` — Cargill NIR Corn dataset
 - `cgl_nir_mat/` — CGL NIR dataset
@@ -42,11 +42,12 @@ The following datasets originate from Eigenvector Research, Inc.'s freely-publis
 - `metal_etch/` — Metal etching plasma OES dataset
 - `nir_shootout_mat/` — IDRC 2002 NIR Shootout dataset
 
-Original data is courtesy of the respective contributors (Cargill, SwRI, IDRC participants).  SpectraSherpa redistributes the data unmodified for use as workflow examples.  If you publish results derived from these datasets, please cite the original source per Eigenvector Research's published guidance: <https://eigenvector.com/resources/data/>.
+Original data is courtesy of the respective contributors (including Cargill, Southwest Research Institute, IDRC participants, SEMATECH, Texas Instruments, and the contributors named by Eigenvector for each dataset). If you publish results derived from these datasets, please cite the original source per Eigenvector Research's published guidance: <https://eigenvector.com/resources/data-sets/>.
 
-### Other bundled samples
+### Bundled samples
 
 - `oes/UVSpectra10.csv` — Optical emission spectra; example data prepared by Spectra Scientific LLC.
+- `synthetic/Synthetic_atmospheric-6.npz` and `synthetic/Library_atmospheric-9.npz` — SpectraSherpa synthetic FTIR benchmark files derived from HITRAN spectra. Cite HITRAN/HAPI and follow HITRAN terms when using these datasets in reports, publications, validation records, or customer-facing work.
 - `templates/` — Workflow templates authored by Spectra Scientific LLC.
 
 ---
