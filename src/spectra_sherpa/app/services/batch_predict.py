@@ -36,10 +36,19 @@ def validate_folder_path(folder_path: str) -> Path:
     from spectra_sherpa.app.core.config import settings
     from spectra_sherpa.app.core.mode_policy import is_multi_user
 
-    resolved = Path(folder_path).expanduser().resolve()
+    if not str(folder_path).strip():
+        raise ValueError("Folder path is required.")
+
+    try:
+        resolved = Path(folder_path).expanduser().resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"Folder path does not exist: {folder_path}") from exc
+
+    if not resolved.is_dir():
+        raise ValueError(f"Path is not a directory: {resolved}")
 
     if is_multi_user():
-        allowed_root = Path(settings.data_dir).resolve()
+        allowed_root = Path(settings.data_dir).resolve(strict=False)
         try:
             resolved.relative_to(allowed_root)
         except ValueError:
