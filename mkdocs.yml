@@ -4,75 +4,102 @@ repo_url: https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa
 repo_name: Spectra-Scientific-LLC/Spectra-Sherpa
 edit_uri: edit/main/docs/
 nav:
-  - Home: index.md
-  - User Guide:
-      - Installation: user/installation.md
-      - Configuration: user/configuration.md
-      - App Data Directory: user/data-directory.md
-      - Quickstart: user/quickstart.md
-      - Applications: user/applications.md
-      - Experiments: user/experiments.md
-      - Library (NIST): user/library.md
-      - DOE (96-Well): user/doe.md
-      - Synthesis Builder: user/synthesis.md
-      - Workflow Builder: user/workflow.md
-      - Reproduction Study:
-          - PCA (Side-by-Side): user/case_study_pca.md
-          - Methodology: user/reproduction_methodology.md
-      - User Manual: user/manual.md
-  - Contributing:
-      - Scientist Guide: contributing/scientist-guide.md
-      - Developer Guide: contributing/developer-guide.md
-  - Developer Reference:
-      - Setup: dev/setup.md
-      - Architecture: dev/architecture.md
-      - AI / LLM Extension: dev/llm-feature-contract.md
-      - Your First Node: dev/first_plugin.md
-      - Node Scaffold Generator: dev/node_scaffold_generator.md
-  - Examples:
-      - 00. Case Study Notebook: user/examples/00_case_study_notebook.ipynb
-      - 01. Loading Data: user/examples/01_loading_data.md
-      - 02. Manipulation: user/examples/02_dataset_manipulation.md
-      - 03. Plotting: user/examples/03_plotting.md
-      - 04. Smoothing: user/examples/04_preprocessing_smoothing.md
-      - 05. Baseline: user/examples/05_preprocessing_baseline.md
-      - 06. Peak Finding: user/examples/06_peak_finding.md
-      - 07. Integration: user/examples/07_peak_fitting.md
-      - 08. PCA: user/examples/08_pca.md
-      - 09. MCR-ALS: user/examples/09_mcr_als.md
-      - 10. PLS: user/examples/10_pls_regression.md
-      - 11. Chromatography (HPLC): user/examples/11_chromatography.md
-      - 12. Mass Spectrometry (LC-MS): user/examples/12_mass_spectrometry.md
-      - 13. Electrochemistry (CV): user/examples/13_electrochemistry.md
-  - API Reference:
-      - SherpaDataset: user/api/sherpa_dataset.md
-      - Axis Types: user/api/axes.md
-  - Reference:
-      - Node Library: user/reference/nodes.md
+  - Introduction:
+      - What SpectraSherpa Is: index.md
+      - Cloud vs Local OSS: introduction/cloud-vs-local.md
+      - Current Capabilities: introduction/capabilities.md
+      - Supported File Types: introduction/file-types.md
+      - License: introduction/license.md
+  - Onboarding:
+      - 30 Minutes to Local Compute: onboarding/local-30-minutes.md
+      - Import Your First Dataset: onboarding/import-first-dataset.md
+  - Data Workflows:
+      - Data Import: workflows/data-import.md
+      - Projects, Datasets, and Runs: workflows/projects-datasets-runs.md
+      - Preprocessing Spectra: workflows/preprocessing.md
+      - Reports and Exports: workflows/reports-exports.md
+      - Reference Libraries and Synthesis: workflows/references-synthesis.md
+  - Chemometrics:
+      - Overview: chemometrics/index.md
+      - PCA and Exploratory Analysis: chemometrics/pca.md
+      - PLS Calibration: chemometrics/pls.md
+      - Classification: chemometrics/classification.md
+      - SIMCA QC: chemometrics/simca.md
+      - MCR-ALS and Curve Resolution: chemometrics/mcr-als.md
+      - Peak Finding and Library Comparison: chemometrics/peaks-library.md
+      - Validation and Model Application: chemometrics/validation-application.md
+  - Node Library:
+      - Overview: nodes/index.md
+      - Data Nodes: nodes/data.md
+      - Preprocessing Nodes: nodes/preprocessing.md
+      - Exploratory Nodes: nodes/exploratory.md
+      - Regression Nodes: nodes/regression.md
+      - Classification Nodes: nodes/classification.md
+      - Selection and Validation Nodes: nodes/selection-validation.md
+      - Output Nodes: nodes/output.md
+      - Optional SpectroChemPy Nodes: nodes/spectrochempy.md
+  - Templates:
+      - Templates: workflow-templates/index.md
+      - PCA Starter: workflow-templates/pca.md
+      - PLS Calibration Starter: workflow-templates/pls-calibration.md
+      - Classification Starters: workflow-templates/classification.md
+      - MCR-ALS Starter: workflow-templates/mcr-als.md
+      - Peak ID and Library Comparison: workflow-templates/peaks-library.md
+  - Architecture:
+      - System Overview: architecture/index.md
+      - SherpaDataset Foundation: architecture/sherpa-dataset.md
+      - Workflow Execution: architecture/workflows.md
+      - Model Artifacts: architecture/model-artifacts.md
+      - Plugins and Extension Points: architecture/plugins.md
+      - Export Design: architecture/export.md
+  - OSS Developers:
+      - Developer Setup: developers/setup.md
+      - Contributing: developers/contributing.md
+      - Writing a Plugin Node: developers/plugin-node.md
+      - LLM Provider Extension: developers/llm-provider.md
+      - Testing and Release Hygiene: developers/testing-release.md
+  - Attributions:
+      - Scientific and Software Attributions: attributions/index.md
+      - SpectroChemPy: attributions/spectrochempy.md
+      - NIST: attributions/nist.md
+      - HITRAN and HAPI: attributions/hitran.md
 theme:
   name: material
   logo: assets/ss-logo.png
   favicon: assets/ss-logo.png
   palette:
-    - scheme: default
-      primary: indigo
-      accent: indigo
-      toggle:
-        icon: material/brightness-7
-        name: Switch to dark mode
     - scheme: slate
       primary: indigo
       accent: indigo
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
   features:
-    - navigation.sections
-    - navigation.expand
+    - navigation.indexes
+    - navigation.top
     - search.highlight
+    - search.suggest
     - content.action.edit
+extra_css:
+  - styles/site.css
 plugins:
   - search
   - mkdocs-jupyter
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
 copyright: Copyright &copy; 2026 Spectra Scientific LLC
 dev_addr: "127.0.0.1:8100"

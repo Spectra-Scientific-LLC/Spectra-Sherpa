@@ -7,19 +7,207 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-06
+
+## [0.5.0] - 2026-06-05
+
+The 0.5.0 release reorganizes Spectra Sherpa around three durable nouns —
+**Workflow** (the recipe), **Run** (one execution), **Artifact** (the
+trained model). It also introduces the **three-data-role** model so the
+same workflow templates work on spectra, feature-tables, and (soon)
+hyperspectral images. Below: what's new from a chemometrician's seat.
+
+### Added — reference previews & node visuals
+
+- **Reference-dataset preview charts in Data → Inspect.** Exploring a bundled
+  catalog dataset (Eigenvector, OES, sklearn, or SpectroChemPy sources) now
+  renders a capped spectra overlay — or a feature box-plot for tabular sets —
+  matching the uploaded-file Inspect view instead of showing metadata only.
+- **Files subpanel in Data → Import / Inspect.** Imported and curated datasets
+  now expose original file names and extensions in the right-side detail panel,
+  with Files, Metadata, and Data Matrix collapsed by default so the spectrum
+  remains the first visual object users see.
+- **Feature-response plots in the Node Detail view** for statistics-summary
+  outputs.
+- **Peak tables now carry quantitative band metrics.** Peak-finding consensus
+  rows preserve median/IQR FWHM-like width and integrated area estimates from
+  per-spectrum detections, so the Peak, IR, and related templates no longer
+  hide the band metrics they compute.
+
+### Added — data loading and optional scientific dependencies
+
+- **SpectroChemPy is now an optional `[scp]` extra.** Base installs disclose the
+  boundary in the UI and fail early at upload time for SCP-only instrument
+  formats, while JCAMP-DX and NumPy data load without SpectroChemPy.
+- **Thermo FTIR/Raman file-family visibility.** The loader/UI contract now
+  clearly surfaces SCP-backed support for OMNIC/OMNIC Paradigm/OMNICxi-family
+  formats when `spectra-sherpa[scp]` is installed, including OPUS/OMNIC/SPC/WDF
+  style file extensions exposed through the upload and file panels.
+
+### Changed — comparison metrics
+
+- **Run comparison metrics are normalized across classification and
+  regression**, so side-by-side run and artifact comparisons use consistent
+  metric contracts.
+- **Compare vs Library overlay scaling is more robust.** Library traces now use
+  a hardened median-ratio scale over meaningful non-zero peak regions instead
+  of trusting a single maximum wavenumber that may be interfered or clipped.
+- **KNN starter avoids double scaling.** The KNN template leaves distance-space
+  scaling to the KNN node itself instead of mean-centering train/test data and
+  then autoscaling inside the classifier.
+
+### Fixed — Data Inspect
+
+- **Data → Inspect:** corrected the metadata-panel overlap in the Inspector
+  Data View.
+- **Data → Inspect:** the magnifier on a reference-catalog row now switches to
+  the Inspect tab immediately, rather than only after the dataset finishes
+  loading.
+
+### Workflows you can now run that you couldn't before
+
+- **Feature-table sources on dual-mode templates.** The same PCA, PLS-DA,
+  KNN, SIMCA, Hierarchical Clustering, and Spectral Decomposition templates
+  now accept either ordered spectra (FTIR/NIR/Raman/…) or feature tables
+  (sklearn iris/wine/digits, your own CSV). Templates declare an
+  `accepted_data_roles: [X_spectra, X_features]` contract; the wizard
+  surfaces the right datasets and the plot/statistics nodes adapt
+  automatically (line plot for spectra, feature-bar for feature tables).
+- **Two-stage chemometrics.** Latent outputs (PCA scores, PLS X-scores,
+  PLS-DA scores, …) are first-class named output ports and are tagged
+  `X_features`, so you can chain PCA → KNN, PCA → PLS-DA, MCR → clustering,
+  etc., without manual unfolding.
+- **PCA with Outlier Diagnostics.** The PCA template is renamed and ships
+  with Hotelling T² and Q-residuals out of the box; the old "PCA
+  Exploration" name and the unsupported high-component default are gone.
+- **HSI reserved.** `X_hsi` is in the role vocabulary with the modality
+  filter chip in the template gallery; hyperspectral pipelines land next.
+
+### Artifacts as first-class objects
+
+- **Every successful training run auto-persists a Model Artifact** with a
+  stable UUID, the training dataset's fingerprint, headline metric, and
+  preprocessing chain. The Saved Model Artifact section in Node Detail
+  shows it inline with click-through to its source run and training dataset.
+- **Apply nodes pick artifacts from a typed dropdown.** `model.load_apply`
+  shows `display_name`, type, n_features, headline metric. Feature-contract
+  validation hard-fails on `n_features` / feature-axis / preprocessing-chain
+  mismatch before the run starts.
+- **Artifacts tab** with search across name / tags / type, multi-select,
+  bulk Batch Run / Compare / Mark Deploy-Ready.
+
+### Train, batch-predict, compare
+
+- **`POST /runs/batch`** is keyed by `artifact_uids: list[str]` (one or
+  many), creating an `ExecutionRun` of kind `batch_inference`.
+- **Compare tab** supports both modes: training comparison (run-vs-run)
+  and side-by-side prediction comparison (artifact-vs-artifact on a chosen
+  dataset).
+
+### Reliability — your workflow runs no longer surprise you
+
+- **Idempotent execution.** Double-clicking Run, network retries, or
+  reloads during a long run no longer create duplicate `ExecutionRun`
+  rows. A workflow-fingerprint check makes the replay safe across
+  identical re-execution attempts.
+- **Cancellable runs persist `cancelled` status** — they don't orphan or
+  show as "running forever."
+- **Trial sheets cascade-delete** with their source workflow.
+- **Switching projects no longer leaks per-tab state across projects.**
+- **Auto-create Postgres database on boot if missing** — the
+  `InvalidCatalogNameError` trap when `POSTGRES_DB` lags `pyproject.toml`
+  is gone.
+- **Enterprise/demo startup now rejects unsafe signing secrets.** Hybrid and
+  enterprise modes refuse blank, published-placeholder, short, or very
+  low-entropy `SECRET_KEY` values; the public demo profile also refuses to
+  start without `ENTERPRISE_PASSWORD` so signup remains access-code gated.
+- **Idempotency migration is safe on populated databases.** The partial unique
+  idempotency index now deduplicates legacy rows before creating the unique
+  constraint, avoiding upgrade failures on databases that saw earlier
+  non-unique retries.
+- **Chemometrics template rendering hardening.** PCA scores, dendrograms,
+  SIMCA acceptance plots, nested-CV metrics, MCR summaries, and other
+  port-selected scientific outputs now route by plot semantics instead of
+  falling through to generic spectra/array rendering.
+
+### UI consistency pass (Zen)
+
+- **Single tab-header pattern across every tab.** h1 only, no subtitles,
+  uniform left margin, hairline rule at the same depth. Title color
+  pinned across Dashboard / Project / Data / Workflows / Runs / Deploy /
+  Report / Audit / Settings / Logs / Documentation / Memory Map.
+- **Workflow node ports are top-down.** Inputs hug the top edge, outputs
+  the bottom edge — easier to read top-to-bottom pipelines.
+- **Inspector quick-view buttons** (Run Node, Delete, Open trial, X) use a
+  single blue-outlined dark style instead of mixed filled colors.
+- **Topbar icons are bare** (no circle / no rectangle on hover).
+- **Per-tab sub-tabs (Data, Deploy, Models)** share a single transparent
+  hairline-underline style.
+
+### Nomenclature
+
+- **Frontend canonical terms:** *Data* (tab + atomic), *Dataset*
+  (combined), *Workflow* (sheet + DAG), *Runs* (+ run_kind), *Artifact*
+  (frontend label for trained models), *Extract* (SCP-only), *Port*,
+  *Project*. Retires *Experiment*, *Pipeline*, *Workspace*, *Model* (as
+  a user-facing frontend term).
+- **Data tab:** *Models / Model* column headers on Deploy → *Artifacts /
+  Artifact*. Report's *Pipeline* toggle → *Workflow*. Memory Map's
+  *Experiments* bucket label → *Runs*.
+
+### Distribution
+
+- **Automatic PyPI release.** Tagging a curated release builds the package
+  from that exact tag and publishes via Trusted Publishing (OIDC, no
+  stored token). `pip install spectra-sherpa` tracks the GitHub release
+  instead of lagging.
+
+### Migration notes
+
+- Run `alembic upgrade head` after deploy. New columns on `model_artifact`
+  (`source_run_id`, `training_dataset_id`, `display_name`,
+  `is_deploy_ready`, `tags`) and `execution_run` (`run_kind`,
+  `applied_artifact_uids`, `idempotency_key`, `source_metadata`).
+- The old workflow-keyed batch endpoint is replaced by `POST /runs/batch`
+  keyed by `artifact_uids: list[str]`. Frontend is migrated; external
+  integrations need to update.
+- `/llm-chat?tab=sherpa` is gone (Sherpa Center page removed). Bookmarks
+  redirect to `/llm-chat` (BYO Chat only).
+- Internal node `type` IDs are unchanged — saved workflows load without
+  migration, only display labels changed (Train/Fit/Apply taxonomy).
+
+### Removed
+- **Sherpa Center page + sidebar entry**. The Sherpa Advisor tab inside the side-mounted ChatPanel is unchanged.
+- **"Open in new tab" affordance on the Sherpa Advisor tab** — `/llm-chat` is BYO Chat only; the Sherpa tab's external-link button is hidden because there is no longer a standalone Sherpa route to open.
+- **NMR processing starter template.** The previous NMR template overclaimed
+  phase correction, polynomial baseline, CWT peak picking, and Lorentzian
+  fitting. It is removed from the production template catalog until there is a
+  verified NMR user story and workflow implementation.
+
+### Migration
+- Run `alembic upgrade head` after deploy. Adds 5 columns to `model_artifact` and 2 to `execution_run`.
+- Old workflow-keyed batch endpoint replaced by `POST /runs/batch` keyed by `artifact_uids: list[str]`. The frontend is updated; external integrations need to migrate.
+- `/llm-chat?tab=sherpa` route removed. Any bookmarks redirect cleanly to `/llm-chat` (BYO Chat).
+
 ## [0.4.4] - 2026-05-17
 
 ### Added
 - **Public SDK import surface** — `from spectra_sherpa.sdk import …` now also re-exports the dataset/axis primitives (`SherpaDataset`, `SpectralAxis`, `FeatureAxis`, `SampleAxis`, `TimeAxis`, `MZAxis`, …) plus `coerce_to_sherpa` / `build_dataset_like`. Plugins and custom nodes can import everything they need from one stable module instead of internal paths.
-- **AI / LLM extension guide** — `docs/dev/llm-feature-contract.md` documents the OSS-owned AI boundary (provider Protocol, registry seam, capability vocabulary, BYO chat proxy) and includes a complete, generic recipe for implementing and registering your own provider. Linked from the documentation navigation.
-- **Injectable LLM provider catalog** — new `spectra_sherpa.app.contracts.llm_catalog` (`LLMProviderMeta`, `get_llm_provider_catalog` / `set_llm_provider_catalog`) supersedes the previously duplicated, hard-coded provider tables. The OSS default is unchanged; a deployment can supply its own provider catalog without editing source, and `/api/v1/config` reflects it at request time.
-- **`AppMode` enum** — a canonical, string-compatible identifier for `local` / `hybrid` / `enterprise`, giving deployment-mode checks a single source of truth.
-- **`CONTRIBUTORS.md`** — append-only contributor credits.
+- **AI / LLM extension guide** — the developer documentation describes the OSS-owned AI boundary (provider Protocol, registry seam, capability vocabulary, BYO chat proxy) and includes a complete, generic recipe for implementing and registering your own provider. Linked from the documentation navigation.
 
 ### Changed
 - **OSS scope documentation consolidated** — `OSS_SCOPE.md` is now the single source of truth for what the OSS package owns and the extension seams it exposes; redundant boundary documents were removed.
 - **Node scaffold generator corrected** — `scripts/scaffold_node.py` now uses the real toolbar categories and writes generated nodes, tests, and docs into the correct source-package locations; generated files are written as UTF-8 so generation works on all platforms.
 - **README positioning** — clarified the open-source, local-first scope and removed subscription/tier marketing from the OSS README.
+
+## [0.4.3] - 2026-05-17
+
+### Added
+- **Injectable LLM provider catalog** — new `spectra_sherpa.app.contracts.llm_catalog` (`LLMProviderMeta`, `get_llm_provider_catalog` / `set_llm_provider_catalog`) supersedes the previously duplicated, hard-coded provider tables. The OSS default is unchanged; a deployment can supply its own provider catalog without editing source, and `/api/v1/config` reflects it at request time.
+- **`AppMode` enum** — a canonical, string-compatible identifier for `local` / `hybrid` / `enterprise`, giving deployment-mode checks a single source of truth.
+- **`CONTRIBUTORS.md`** — append-only contributor credits.
+
+### Changed
 - **Documented `AIServiceProvider` exception contract** — the advisor protocol now specifies the exceptions an implementation must raise (`SherpaAdvisorUnavailable`, `SherpaAuthorizationError`, `SubscriptionRequiredError`) so error handling stays stable across implementations.
 - **`/api/v1/config` provider metadata sourced from the catalog contract** — output is byte-identical for local installs.
 
@@ -144,12 +332,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Initial open-source release.
 
 ### Added
-- **Workflow Builder** — Visual DAG editor with over 60 nodes for preprocessing, modeling, classification, diagnostics, and DOE
+- **Workflow Builder** — Visual DAG editor with over 60 nodes for preprocessing, modeling, classification, diagnostics, and experiment design
 - **Model Artifacts** — Train, persist, and reload PCA, PLS, MCR, PLSDA, KNN, SIMCA models
 - **Type System** — URI-based port typing with registry-driven connection validation
 - **Python & Notebook Export** — Generate reproducible scripts or Jupyter notebooks from any workflow
 - **Project Management** — Experiments, workflows, scripts, and models with versioned snapshots
-- **Experiment Tracking** — DOE support with 96-well plate layouts, samples, and mixtures
+- **Experiment Tracking** — project-level experiment metadata, samples, and mixtures
 - **Deploy** — Batch prediction, folder watching, execution run tracking with provenance
 - **LLM Chat** — Bring-your-own-key AI assistant for spectral analysis
 - **Plugin System** — Extend via Python entry points or drop-in modules
