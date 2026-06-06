@@ -2,7 +2,7 @@
 End-to-end execution tests for the key workflow templates.
 
 Verifies that the recently-audited nodes execute correctly with the
-``diesel_nir`` reference dataset (NIR, 784 samples, 401 channels).
+``diesel_nir``-shaped generated data (NIR, 784 samples, 401 channels).
 
 Covered fixes (from the chemometrician audit):
   #1  PLS-DA calibrated probability flag in metadata
@@ -12,7 +12,7 @@ Covered fixes (from the chemometrician audit):
   #5  CrossValidation reports SEP, RER, bias
   #6  CrossValidation applies LOOCV automatically when n ≤ 50
 
-The ``diesel_nir`` dataset is also confirmed to be first in DATASET_CATALOG
+The ``diesel_nir`` catalog entry is also confirmed to be first in DATASET_CATALOG
 (so it appears at the top of the Inspector dropdown without any frontend change).
 """
 
@@ -22,13 +22,14 @@ import numpy as np
 import pytest
 from sklearn.decomposition import PCA
 
-from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG, load_eigenvector_dataset
+from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
 from spectra_sherpa.app.lib.sherpa_dataset import (
     DomainContext,
     SherpaDataset,
     SpectralAxis,
 )
 from spectra_sherpa.app.services.dag.node_base import node_registry
+from tests.eigenvector_test_fixtures import generated_eigenvector_result
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -37,8 +38,8 @@ from spectra_sherpa.app.services.dag.node_base import node_registry
 
 @pytest.fixture(scope="module")
 def diesel_nir_dataset() -> SherpaDataset:
-    """Load the diesel_nir dataset and wrap it in a SherpaDataset with NIR domain."""
-    result = load_eigenvector_dataset("diesel_nir")
+    """Create a diesel_nir-shaped SherpaDataset with NIR domain."""
+    result = generated_eigenvector_result("diesel_nir")
     wl = result["wavelengths"]
     spectra = result["spectra"]
 

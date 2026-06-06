@@ -792,9 +792,10 @@ def update_synthetic_npz_metadata(path: str | Path, updates: dict[str, Any]) -> 
     """Merge user-facing metadata edits into a synthetic npz artifact.
 
     Prepared-data sidecars are still written for every file type.  Synthetic
-    npz files are first-party artifacts, so we also embed the edited metadata
-    directly in the archive to make the file self-describing when it is loaded
-    later by the workflow My Dataset node or moved with a project export.
+    npz files are SpectraSherpa-authored artifacts, so we also embed the edited
+    metadata directly in the archive to make the file self-describing when it
+    is loaded later by the workflow My Dataset node or moved with a project
+    export.
     """
     path = _resolve_synthetic_npz_path(path)
     with np.load(path, allow_pickle=False) as data:
@@ -868,7 +869,7 @@ def is_hitran_cross_section_units(value: Any) -> bool:
 
 
 def _normalize_synthetic_npz_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Patch legacy first-party synthetic-library metadata on read.
+    """Patch legacy synthetic-library metadata on read.
 
     The atmospheric benchmark stores mixture absorbance in X. Its paired
     component-library file stores HITRAN pure-component absorption cross

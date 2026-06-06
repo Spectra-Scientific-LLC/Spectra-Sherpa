@@ -185,7 +185,7 @@ class TestPoolExecution:
         yield p
         p.shutdown(wait=True)
 
-    async def test_workflow_with_pool_matches_in_process(self, pool):
+    async def test_workflow_with_pool_matches_in_process(self, pool, patch_eigenvector_loader):
         """Results from pool execution must match in-process execution."""
         # In-process run
         exec_ip = DAGExecutor(process_pool=None)
@@ -224,14 +224,14 @@ class TestPoolExecution:
         results = await executor.execute()
         assert "src" in results
 
-    async def test_execute_node_uses_pool(self, pool):
+    async def test_execute_node_uses_pool(self, pool, patch_eigenvector_loader):
         """execute_node() should also offload to the pool."""
         executor = DAGExecutor(process_pool=pool)
         _make_snv_workflow(executor)
         results = await executor.execute_node("snv")
         assert "snv" in results
 
-    async def test_pool_fallback_on_broken_pool(self):
+    async def test_pool_fallback_on_broken_pool(self, patch_eigenvector_loader):
         """If the pool breaks, execution falls back to in-process."""
         # Use a pool that's already been shut down (simulates broken pool)
         broken = self._create_pool(max_workers=1)

@@ -113,7 +113,7 @@ class TestTargetContext:
 
 class TestDataSourceEmbeddedTarget:
     @pytest.mark.asyncio
-    async def test_eigenvector_corn_m5_embedded(self, make_node):
+    async def test_eigenvector_corn_m5_embedded(self, make_node, patch_eigenvector_loader):
         """Corn M5: dataset.target should be (80, 4) with target_names."""
         node = make_node("data.source", {"source": "eigenvector", "eigenvector_dataset": "corn_m5"})
         result = await node.execute()
@@ -138,7 +138,7 @@ class TestDataSourceEmbeddedTarget:
         assert dataset.target_context.target_type == "categorical"
 
     @pytest.mark.asyncio
-    async def test_target_port_matches_embedded(self, make_node):
+    async def test_target_port_matches_embedded(self, make_node, patch_eigenvector_loader):
         """Target output port should be exactly dataset.target."""
         node = make_node("data.source", {"source": "eigenvector", "eigenvector_dataset": "diesel_nir"})
         result = await node.execute()

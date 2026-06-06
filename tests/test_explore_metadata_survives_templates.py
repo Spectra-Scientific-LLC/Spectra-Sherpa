@@ -214,7 +214,10 @@ def _iter_terminal_datasets(executor: DAGExecutor, node_types: dict[str, str]) -
 # Sanity baseline — proves the monkeypatch itself works before we start
 # chasing propagation through downstream nodes.
 # ────────────────────────────────────────────────────────────────────────────
-async def test_baseline_data_source_receives_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_baseline_data_source_receives_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+    patch_eigenvector_loader,
+) -> None:
     """Run the ``data_1`` node only and verify the monkeypatched overrides
     actually reach the dataset.  If this fails, every downstream assertion
     in the parametrized tests is suspect."""
@@ -271,7 +274,12 @@ async def test_baseline_data_source_receives_overrides(monkeypatch: pytest.Monke
         for slug, requires_scp, override in TEMPLATES
     ],
 )
-async def test_explore_metadata_survives_template(slug: str, override: dict, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_explore_metadata_survives_template(
+    slug: str,
+    override: dict,
+    monkeypatch: pytest.MonkeyPatch,
+    patch_eigenvector_loader,
+) -> None:
     _install_overrides_patch(monkeypatch)
     td = _load_template(slug)
     executor, node_types = _build_executor(td, {"data_1": override})

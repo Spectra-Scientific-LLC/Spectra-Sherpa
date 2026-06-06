@@ -378,7 +378,7 @@ class TestCodeExecutability:
         assert ds.target is not None
         assert len(ds.target) == 150
 
-    def test_eigenvector_executes(self):
+    def test_eigenvector_executes(self, patch_eigenvector_loader):
         """Eigenvector export actually runs and produces a SherpaDataset."""
         node = _create_source("eigenvector", eigenvector_dataset="corn_m5")
         code = _gen(node, use_scp=False)
@@ -435,7 +435,7 @@ def _make_workflow(name: str, nodes: list, edges: list) -> SimpleNamespace:
 
 
 @pytest.mark.skipif(not HAS_SCP, reason="SCP required for export execution")
-def test_preprocess_normalize_then_pls_export_preserves_embedded_targets():
+def test_preprocess_normalize_then_pls_export_preserves_embedded_targets(patch_eigenvector_loader):
     """Preprocessing export should preserve embedded targets for downstream PLS."""
     import spectra_sherpa.app.services.dag.nodes.data.source  # noqa: F401
     import spectra_sherpa.app.services.dag.nodes.modeling.pls_nodes  # noqa: F401

@@ -252,7 +252,7 @@ _RESULTS: dict[tuple[str, str], str] = {}  # (slug, label) → "pass" | "fail:ms
     ids=[f"{s}::{l}" for s, l, p in MATRIX],
 )
 @pytest.mark.asyncio
-async def test_template_x_dataset(slug: str, label: str, data_params: dict):
+async def test_template_x_dataset(slug: str, label: str, data_params: dict, patch_eigenvector_loader):
     """Execute a template end-to-end with a given dataset and assert no core node errors."""
     td = _load_template(slug)
     data_node_id = _find_data_node(td)

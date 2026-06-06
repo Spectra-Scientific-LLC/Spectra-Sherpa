@@ -6,8 +6,9 @@ visit, exercising the full vertical slice from auth through DAG execution
 and LLM chat. It uses the standard test fixtures (in-memory SQLite, auth
 bypass) and monkeypatches only the LLM provider.
 
-The workflow uses built-in eigenvector reference data (corn_m5) which is
-always available without file uploads.
+The workflow uses an Eigenvector catalog source and patches the loader to a
+generated Eigenvector-shaped fixture so the user journey does not depend on
+redistributed upstream raw data.
 """
 
 from __future__ import annotations
@@ -24,10 +25,10 @@ from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
 
 
 def _make_preprocessing_template() -> dict[str, Any]:
-    """Minimal preprocessing template using built-in eigenvector data.
+    """Minimal preprocessing template using an Eigenvector catalog source.
 
-    Uses eigenvector corn_m5 as the data source — this is a bundled
-    reference dataset that loads without any experiment/file records.
+    The test patches eigenvector corn_m5 to generated fixture data; production
+    loads this source from a user-local cache or runtime download.
     """
     return {
         "status": "ready",
@@ -68,6 +69,7 @@ async def test_first_time_user_journey(
     auth_client: AsyncClient,
     test_session: AsyncSession,
     test_user: User,
+    patch_eigenvector_loader,
 ):
     """Simulate: new user → list templates → create workflow from template
     → execute workflow → ask Sherpa a question → get a reply."""

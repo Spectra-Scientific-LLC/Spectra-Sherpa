@@ -1,8 +1,8 @@
 """DataSourceNode — primary data source for loading spectral data.
 
 Registered as ``data.source``.  Handles SpectroChemPy examples, sklearn
-datasets, Eigenvector benchmarks, first-party synthetic references,
-experiment files, and library entries.
+datasets, Eigenvector benchmarks, synthetic references, experiment files, and
+library entries.
 """
 
 from __future__ import annotations
@@ -131,7 +131,7 @@ class DataSourceNode(Node):
                 param_type="select",
                 default="diesel_nir",
                 options=[{"label": v["label"], "value": k} for k, v in DATASET_CATALOG.items()],
-                description="Eigenvector Research public dataset (bundled reference data with properties)",
+                description="Eigenvector Research public dataset (downloaded or user-cached data with properties)",
                 required=False,
                 category="basic",
             ),
@@ -143,7 +143,7 @@ class DataSourceNode(Node):
                 options=[
                     {"label": str(value["label"]), "value": key} for key, value in SYNTHETIC_REFERENCE_CATALOG.items()
                 ],
-                description="First-party Spectra Scientific synthetic benchmark dataset",
+                description="SpectraSherpa synthetic benchmark dataset with documented scientific attribution",
                 required=False,
                 category="basic",
             ),

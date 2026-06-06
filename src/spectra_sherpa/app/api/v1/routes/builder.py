@@ -1346,6 +1346,8 @@ async def list_reference_datasets() -> dict[str, list[dict[str, Any]]]:
                 "featured": v.get("featured", False),
                 "file_path": (_files[0] if (_files := _catalog_source_files(v)) else None),
                 "files": _files,
+                "requires_runtime_download": True,
+                "download_page": "https://eigenvector.com/resources/data-sets/",
                 "has_embedded_target": bool(v.get("prop_names")),
                 "target_type": "continuous" if v.get("prop_names") else None,
             }

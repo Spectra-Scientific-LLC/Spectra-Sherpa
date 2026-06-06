@@ -318,7 +318,7 @@ async def import_reference_dataset(
 ) -> list[ExperimentFile]:
     """Import a reference dataset into an experiment as raw files.
 
-    For synthetic: copies first-party NPZ artifacts into the synthetic stage.
+    For synthetic: copies SpectraSherpa synthetic NPZ artifacts into the synthetic stage.
     For eigenvector: exports spectra (+ properties) as CSV.
     For sklearn: exports as CSV.
     For spectrochempy: copies the actual file(s) from testdata.

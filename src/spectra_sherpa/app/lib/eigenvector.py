@@ -17,8 +17,13 @@ Usage::
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
+import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import numpy as np
 import pandas as pd
@@ -28,10 +33,16 @@ from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Data directory (bundled with the package)
+# Data directories.
+#
+# Eigenvector Research datasets are cataloged here, but raw upstream data is
+# not redistributed in the AGPL package. If enabled, missing datasets are
+# downloaded at runtime into the user-local app data directory.
 # ---------------------------------------------------------------------------
 
 EIGENVECTOR_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "eigenvector"
+EIGENVECTOR_UPSTREAM_PAGE = "https://eigenvector.com/resources/data-sets/"
+EIGENVECTOR_RUNTIME_DOWNLOAD_ENV = "SPECTRASHERPA_EIGENVECTOR_DOWNLOADS"
 
 # ---------------------------------------------------------------------------
 # Dataset catalog
@@ -115,6 +126,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "label": "Diesel NIR (784 samples, 401 wavelengths, 750-1550 nm)",
         "featured": True,
         "format": "csv",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2019/06/SWRI_Diesel_NIR_CSV.zip",
         "spec_file": "diesel_csv/diesel_spec.csv",
         "prop_file": "diesel_csv/diesel_prop.csv",
         "spec_has_axisscale": True,
@@ -134,6 +146,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
     "diesel_nir_mat": {
         "label": "Diesel NIR .mat (784 samples, 401 wavelengths, 750-1550 nm)",
         "format": "mat",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2019/06/SWRI_Diesel_NIR.zip",
         "mat_file": "diesel_nir_mat/SWRI_Diesel_NIR.mat",
         "spec_key": "diesel_spec",
         "prop_key": "diesel_prop",
@@ -154,6 +167,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "label": "Corn M5 NIR (80 samples, 700 channels)",
         "featured": True,
         "format": "mat",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2019/06/corn.mat_.zip",
         "mat_file": "corn_mat/corn.mat",
         "spec_key": "m5spec",
         "prop_key": "propvals",
@@ -172,6 +186,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
     "corn_mp5": {
         "label": "Corn MP5 NIR (80 samples, 700 channels)",
         "format": "mat",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2019/06/corn.mat_.zip",
         "mat_file": "corn_mat/corn.mat",
         "spec_key": "mp5spec",
         "prop_key": "propvals",
@@ -190,6 +205,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
     "corn_mp6": {
         "label": "Corn MP6 NIR (80 samples, 700 channels)",
         "format": "mat",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2019/06/corn.mat_.zip",
         "mat_file": "corn_mat/corn.mat",
         "spec_key": "mp6spec",
         "prop_key": "propvals",
@@ -209,6 +225,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
     "cgl_nir": {
         "label": "CGL NIR (231 samples, 117 wavelengths, 1104-2496 nm)",
         "format": "mat",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2021/04/CGL_nir.mat_.zip",
         "mat_file": "cgl_nir_mat/CGL_nir.mat",
         "spec_key": "Spectra",
         "prop_key": "PropVals",
@@ -228,6 +245,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "label": "NIR Shootout 2002 Cal Inst.1 (155 samples, 650 wl, 600-1898 nm)",
         "featured": True,
         "format": "mat",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2019/06/nir_shootout_2002.mat_.zip",
         "mat_file": "nir_shootout_mat/nir_shootout_2002.mat",
         "spec_key": "calibrate_1",
         "prop_key": "calibrate_Y",
@@ -246,6 +264,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
     "nir_shootout_cal2": {
         "label": "NIR Shootout 2002 Cal Inst.2 (155 samples, 650 wl, 600-1898 nm)",
         "format": "mat",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2019/06/nir_shootout_2002.mat_.zip",
         "mat_file": "nir_shootout_mat/nir_shootout_2002.mat",
         "spec_key": "calibrate_2",
         "prop_key": "calibrate_Y",
@@ -265,6 +284,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "label": "NIR Shootout 2002 Test Inst.1 (460 samples, 650 wl, 600-1898 nm)",
         "featured": True,
         "format": "mat",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2019/06/nir_shootout_2002.mat_.zip",
         "mat_file": "nir_shootout_mat/nir_shootout_2002.mat",
         "spec_key": "test_1",
         "prop_key": "test_Y",
@@ -283,6 +303,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
     "nir_shootout_test2": {
         "label": "NIR Shootout 2002 Test Inst.2 (460 samples, 650 wl, 600-1898 nm)",
         "format": "mat",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2019/06/nir_shootout_2002.mat_.zip",
         "mat_file": "nir_shootout_mat/nir_shootout_2002.mat",
         "spec_key": "test_2",
         "prop_key": "test_Y",
@@ -303,6 +324,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         "label": "Metal Etch OES (126 wafers, 129 wavelengths, 250-792 nm)",
         "featured": True,
         "format": "metal_etch",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2019/06/OES_DATA.mat_.zip",
         "mat_file": "metal_etch/OES_DATA.mat",
         "struct_key": "OESDATA",
         "axis_key": "wave_axis",
@@ -322,6 +344,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
     "metal_etch_machine": {
         "label": "Metal Etch Machine (129 wafers, 21 sensor variables)",
         "format": "metal_etch",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2019/06/MACHINE_Data.mat_.zip",
         "mat_file": "metal_etch/MACHINE_Data.mat",
         "struct_key": "LAMDATA",
         "axis_key": "variables",
@@ -340,6 +363,7 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
     "metal_etch_rfm": {
         "label": "Metal Etch RFM (126 wafers, 19 RF variables)",
         "format": "metal_etch",
+        "archive_url": "https://eigenvector.com/wp-content/uploads/2019/06/RFM_DATA.mat_.zip",
         "mat_file": "metal_etch/RFM_DATA.mat",
         "struct_key": "RFMDATA",
         "axis_key": "variables",
@@ -356,6 +380,150 @@ DATASET_CATALOG: dict[str, dict[str, Any]] = {
         ),
     },
 }
+
+
+# ---------------------------------------------------------------------------
+# Runtime data download/cache
+# ---------------------------------------------------------------------------
+
+
+def _required_catalog_files(catalog: dict[str, Any]) -> list[str]:
+    files: list[str] = []
+    for key in ("spec_file", "prop_file", "mat_file"):
+        value = catalog.get(key)
+        if isinstance(value, str) and value:
+            files.append(value)
+    return files
+
+
+def _missing_catalog_files(base_dir: Path, catalog: dict[str, Any]) -> list[str]:
+    return [rel for rel in _required_catalog_files(catalog) if not (base_dir / rel).exists()]
+
+
+def _runtime_data_dir() -> Path:
+    from spectra_sherpa.app.core.config import settings
+
+    return settings.data_dir / "reference_cache" / "eigenvector"
+
+
+def _runtime_downloads_enabled() -> bool:
+    value = os.getenv(EIGENVECTOR_RUNTIME_DOWNLOAD_ENV)
+    if value is not None:
+        return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+    from spectra_sherpa.app.core.config import app_config
+
+    return bool(app_config.egress_enabled)
+
+
+def _download_error(name: str, catalog: dict[str, Any], base_dir: Path, reason: str) -> FileNotFoundError:
+    files = ", ".join(_required_catalog_files(catalog))
+    return FileNotFoundError(
+        "Eigenvector Research example data is no longer bundled with SpectraSherpa. "
+        f"Dataset {name!r} requires these upstream files: {files}. "
+        f"Place them under {base_dir} or enable runtime download with "
+        f"EGRESS_ENABLED=true or {EIGENVECTOR_RUNTIME_DOWNLOAD_ENV}=true. "
+        f"Source page: {EIGENVECTOR_UPSTREAM_PAGE}. Detail: {reason}"
+    )
+
+
+def _archive_cache_path(url: str) -> Path:
+    safe = "".join(ch if ch.isalnum() or ch in {".", "-", "_"} else "_" for ch in Path(url).name)
+    if not safe.lower().endswith(".zip"):
+        safe = f"{safe}.zip"
+    return _runtime_data_dir() / "_archives" / safe
+
+
+def _replace_if_missing(tmp_path: Path, destination: Path) -> None:
+    if destination.exists():
+        tmp_path.unlink(missing_ok=True)
+        return
+    try:
+        tmp_path.replace(destination)
+    except PermissionError:
+        if destination.exists():
+            tmp_path.unlink(missing_ok=True)
+            return
+        raise
+
+
+def _download_archive(url: str, destination: Path) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    request = Request(url, headers={"User-Agent": "SpectraSherpa OSS runtime dataset downloader"})
+    fd, tmp_name = tempfile.mkstemp(dir=destination.parent, prefix=f".{destination.name}.")
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "wb") as tmp:
+            with urlopen(request, timeout=60) as response:  # noqa: S310 - fixed upstream HTTPS catalog URLs.
+                while True:
+                    chunk = response.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    tmp.write(chunk)
+        _replace_if_missing(tmp_path, destination)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
+def _extract_required_files(archive_path: Path, base_dir: Path, catalog: dict[str, Any]) -> None:
+    required = _required_catalog_files(catalog)
+    base_dir.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(archive_path) as archive:
+        names = [name for name in archive.namelist() if not name.endswith("/") and "__MACOSX/" not in name]
+        for rel in required:
+            basename = Path(rel).name
+            candidates = [name for name in names if Path(name).name == basename]
+            if not candidates:
+                raise FileNotFoundError(f"Archive {archive_path.name} does not contain {basename}")
+            target = base_dir / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            fd, tmp_name = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.")
+            tmp_path = Path(tmp_name)
+            try:
+                with archive.open(candidates[0]) as source, os.fdopen(fd, "wb") as tmp:
+                    while True:
+                        chunk = source.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        tmp.write(chunk)
+                _replace_if_missing(tmp_path, target)
+            except Exception:
+                tmp_path.unlink(missing_ok=True)
+                raise
+
+
+def _ensure_runtime_data(name: str, catalog: dict[str, Any], base_dir: Path) -> None:
+    missing = _missing_catalog_files(base_dir, catalog)
+    if not missing:
+        return
+    url = str(catalog.get("archive_url") or "")
+    if not url:
+        raise _download_error(name, catalog, base_dir, "no upstream archive is configured")
+    if not _runtime_downloads_enabled():
+        raise _download_error(name, catalog, base_dir, "runtime downloads are disabled")
+
+    archive_path = _archive_cache_path(url)
+    try:
+        if not archive_path.exists():
+            _download_archive(url, archive_path)
+        _extract_required_files(archive_path, base_dir, catalog)
+    except (HTTPError, URLError, TimeoutError, zipfile.BadZipFile, OSError, FileNotFoundError) as exc:
+        raise _download_error(name, catalog, base_dir, str(exc)) from exc
+
+    still_missing = _missing_catalog_files(base_dir, catalog)
+    if still_missing:
+        raise _download_error(name, catalog, base_dir, f"missing after extraction: {', '.join(still_missing)}")
+
+
+def _resolve_dataset_dir(name: str, catalog: dict[str, Any], data_dir: Path | None) -> Path:
+    if data_dir is not None:
+        return data_dir
+    if not _missing_catalog_files(EIGENVECTOR_DATA_DIR, catalog):
+        return EIGENVECTOR_DATA_DIR
+    runtime_dir = _runtime_data_dir()
+    _ensure_runtime_data(name, catalog, runtime_dir)
+    return runtime_dir
 
 
 # ---------------------------------------------------------------------------
@@ -651,8 +819,9 @@ def load_eigenvector_dataset(
 
     Args:
         name: Dataset name from DATASET_CATALOG.
-        data_dir: Override data directory (for testing). Defaults to
-            the bundled data directory.
+        data_dir: Override data directory (for testing or locally supplied
+            upstream data). Defaults to the package data directory when present,
+            otherwise the user-local runtime cache.
 
     Returns:
         Dict with keys:
@@ -673,13 +842,14 @@ def load_eigenvector_dataset(
         )
 
     catalog = DATASET_CATALOG[name]
-    base_dir = data_dir or EIGENVECTOR_DATA_DIR
+    base_dir = _resolve_dataset_dir(name, catalog, data_dir)
 
     if catalog["format"] == "csv":
         spec_path = base_dir / catalog["spec_file"]
         if not spec_path.exists():
             raise FileNotFoundError(
-                f"Eigenvector data file not found: {spec_path}\n" f"Expected bundled data at: {base_dir}"
+                f"Eigenvector data file not found: {spec_path}\n"
+                f"Download the dataset from {EIGENVECTOR_UPSTREAM_PAGE} and place it under {base_dir}."
             )
 
         spectra, sample_ids, wavelengths = parse_eigenvector_csv(
@@ -708,7 +878,8 @@ def load_eigenvector_dataset(
         mat_path = base_dir / catalog["mat_file"]
         if not mat_path.exists():
             raise FileNotFoundError(
-                f"Eigenvector data file not found: {mat_path}\n" f"Expected bundled data at: {base_dir}"
+                f"Eigenvector data file not found: {mat_path}\n"
+                f"Download the dataset from {EIGENVECTOR_UPSTREAM_PAGE} and place it under {base_dir}."
             )
 
         spectra, wavelengths, properties, file_metadata = parse_eigenvector_mat(
@@ -731,7 +902,8 @@ def load_eigenvector_dataset(
         mat_path = base_dir / catalog["mat_file"]
         if not mat_path.exists():
             raise FileNotFoundError(
-                f"Eigenvector data file not found: {mat_path}\n" f"Expected bundled data at: {base_dir}"
+                f"Eigenvector data file not found: {mat_path}\n"
+                f"Download the dataset from {EIGENVECTOR_UPSTREAM_PAGE} and place it under {base_dir}."
             )
 
         spectra, wavelengths, fault_labels, info_meta = parse_metal_etch_mat(

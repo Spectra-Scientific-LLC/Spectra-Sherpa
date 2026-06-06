@@ -80,7 +80,11 @@ def _build_executor(td: dict, overrides: dict[str, dict]) -> tuple[DAGExecutor, 
     ],
 )
 @pytest.mark.asyncio
-async def test_regression_templates_execute_end_to_end(slug: str, overrides: dict[str, dict]) -> None:
+async def test_regression_templates_execute_end_to_end(
+    slug: str,
+    overrides: dict[str, dict],
+    patch_eigenvector_loader,
+) -> None:
     td = _load_template(slug)
     executor, node_types = _build_executor(td, overrides)
 

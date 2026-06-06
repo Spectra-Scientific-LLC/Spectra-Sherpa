@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 
 from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
-from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG, get_dataset_info
+from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
 from spectra_sherpa.app.lib.sample_labels import clean_sample_labels
 from spectra_sherpa.app.lib.scp_catalog import (
     SCP_CATALOG,
@@ -92,7 +92,7 @@ class TestSklearnInfo:
 
 
 class TestSyntheticReferences:
-    """Test first-party synthetic benchmark dataset packaging."""
+    """Test HITRAN-derived synthetic benchmark dataset packaging."""
 
     def test_catalog_contains_atmospheric_gas_benchmark(self):
         assert "Synthetic_atmospheric-6" in SYNTHETIC_REFERENCE_CATALOG
@@ -452,24 +452,28 @@ class TestScpCatalog:
 
 
 class TestEigenvectorInfoCrossCheck:
-    """Additional cross-checks for eigenvector get_dataset_info."""
+    """Additional cross-checks for Eigenvector runtime-download catalog entries."""
 
-    def test_all_datasets_produce_info(self):
-        """All catalog entries should produce valid info dicts."""
-        for name in DATASET_CATALOG:
-            info = get_dataset_info(name)
-            assert info["name"] == name
-            assert info["source"] == "eigenvector"
-            assert info["n_samples"] > 0
-            assert info["n_features"] > 0
-            assert "spectra_min" in info
-            assert "spectra_max" in info
+    def test_all_catalog_entries_declare_download_source(self):
+        """All Eigenvector examples should remain cataloged without bundled raw data."""
+        for name, entry in DATASET_CATALOG.items():
+            assert entry["archive_url"].startswith("https://eigenvector.com/"), name
+            assert entry["format"] in {"csv", "mat", "metal_etch"}
+            assert entry["technique"]
+            assert entry["description"]
 
-    def test_info_spectra_stats_sensible(self):
-        info = get_dataset_info("diesel_nir")
-        assert info["spectra_min"] < info["spectra_max"]
-        assert info["spectra_mean"] > info["spectra_min"]
-        assert info["spectra_mean"] < info["spectra_max"]
+    def test_default_info_reports_download_boundary_when_data_absent(self, monkeypatch, tmp_path):
+        """Default Eigenvector info should fail clearly when no local/cache data exists."""
+        import spectra_sherpa.app.lib.eigenvector as ev
+
+        empty_package_data = tmp_path / "empty-package-data"
+        empty_package_data.mkdir()
+        monkeypatch.setattr(ev, "EIGENVECTOR_DATA_DIR", empty_package_data)
+        monkeypatch.setattr(ev, "_runtime_data_dir", lambda: tmp_path / "runtime-cache")
+        monkeypatch.setenv(ev.EIGENVECTOR_RUNTIME_DOWNLOAD_ENV, "false")
+
+        with pytest.raises(FileNotFoundError, match="no longer bundled"):
+            ev.get_dataset_info("diesel_nir")
 
 
 @pytest.mark.anyio
@@ -481,6 +485,8 @@ async def test_reference_dataset_catalog_exposes_known_source_filenames():
     diesel = next(entry for entry in catalog["eigenvector"] if entry["name"] == "diesel_nir")
     assert diesel["file_path"] == "diesel_csv/diesel_spec.csv"
     assert diesel["files"] == ["diesel_csv/diesel_spec.csv", "diesel_csv/diesel_prop.csv"]
+    assert diesel["requires_runtime_download"] is True
+    assert diesel["download_page"] == "https://eigenvector.com/resources/data-sets/"
 
     corn = next(entry for entry in catalog["eigenvector"] if entry["name"] == "corn_m5")
     assert corn["files"] == ["corn_mat/corn.mat"]

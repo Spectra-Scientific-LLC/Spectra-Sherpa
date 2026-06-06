@@ -1,4 +1,4 @@
-"""First-party synthetic reference datasets bundled with SpectraSherpa."""
+"""Synthetic reference datasets bundled with SpectraSherpa."""
 
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ SYNTHETIC_REFERENCE_CATALOG: dict[str, dict[str, Any]] = {
         "filename": "Synthetic_atmospheric-6.npz",
         "technique": "FTIR",
         "description": (
-            "First-party Spectra Scientific synthetic FTIR gas-mixture benchmark generated from HITRAN spectra. "
+            "Spectra Scientific synthetic FTIR gas-mixture benchmark derived from HITRAN spectra. "
             "Includes 50 mixture spectra plus ground-truth concentration profiles and pure signatures for "
             "MCR-ALS recovery and library-comparison stability checks."
         ),
@@ -36,7 +36,7 @@ SYNTHETIC_REFERENCE_CATALOG: dict[str, dict[str, Any]] = {
         "filename": "Library_atmospheric-9.npz",
         "technique": "FTIR",
         "description": (
-            "Pure HITRAN component FTIR signatures as molar absorption coefficients for the Spectra Scientific "
+            "HITRAN-derived component FTIR signatures as molar absorption coefficients for the Spectra Scientific "
             "atmospheric gas benchmark. "
             "Use this as the reference library for HQI and Compare vs. Library analysis."
         ),

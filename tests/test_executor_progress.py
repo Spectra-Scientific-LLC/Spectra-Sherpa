@@ -54,7 +54,7 @@ def _spectral_source_node() -> WorkflowNode:
 
 class TestStatusCallback:
     @pytest.mark.asyncio
-    async def test_callback_receives_queued_running_completed(self, callback):
+    async def test_callback_receives_queued_running_completed(self, callback, patch_eigenvector_loader):
         """Basic pipeline: data.source → snv. Callback gets full lifecycle."""
         executor = DAGExecutor(process_pool=None)
         executor.add_node(_spectral_source_node())
@@ -136,7 +136,7 @@ class TestStatusCallback:
         assert "src1" in results
 
     @pytest.mark.asyncio
-    async def test_callback_order_queued_before_running(self, callback):
+    async def test_callback_order_queued_before_running(self, callback, patch_eigenvector_loader):
         """All queued events should come before any running events."""
         executor = DAGExecutor(process_pool=None)
         executor.add_node(_spectral_source_node())
