@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-06-06
+## [0.5.1] - 2026-06-06
+
+### Security
+
+- Added Host-header validation with `TrustedHostMiddleware`, deriving trusted
+  hosts from `TRUSTED_HOSTS`, `DOMAIN`, `API_BASE_URL`, and configured CORS
+  origins. This mitigates the Starlette Host-header advisory while FastAPI
+  still constrains Starlette below the patched 1.x line.
+- Raised the `idna` dependency floor to `>=3.15` and added a frontend
+  `js-cookie` override to `>=3.0.7` to address public dependency alerts.
+- Hardened user-supplied file path handling for folder prediction, CSV import,
+  JCAMP-DX import, and synthetic NPZ metadata updates.
+- Removed local auth-secret storage paths from startup logs and cleaned a
+  frontend no-op diagnostic label transform flagged by CodeQL.
+- Removed tracked frontend `.env.production` and `.env.e2e.example` files from
+  the OSS tree and kept the publish guard strict: only the root `.env.example`
+  is allowed in the public package.
 
 ## [0.5.0] - 2026-06-05
 
