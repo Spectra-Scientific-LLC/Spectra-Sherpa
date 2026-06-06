@@ -5,9 +5,7 @@
 # Environment files (contain secrets - NEVER commit)
 .env
 .env.local
-.env.*.local
-.env.*.example
-!frontend/e2e/.env.e2e.example
+.env.*
 *.env
 !.env.example
 .envrc

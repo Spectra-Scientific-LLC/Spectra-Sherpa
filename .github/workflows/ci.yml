@@ -269,7 +269,15 @@ jobs:
         run: |
           pip install poetry poetry-plugin-export
           poetry export -f requirements.txt --without-hashes --extras cloud -o /tmp/requirements.txt
-          pip-audit -r /tmp/requirements.txt
+          # Starlette 1.0.1 fixes GHSA-86qp-5c8j-p5mr / CVE-2026-48710, but
+          # FastAPI currently constrains Starlette below 0.50.  SpectraSherpa
+          # mitigates the Host-header issue with TrustedHostMiddleware until
+          # FastAPI can consume the patched Starlette range.
+          pip-audit \
+            --ignore-vuln PYSEC-2026-161 \
+            --ignore-vuln CVE-2026-48710 \
+            --ignore-vuln GHSA-86qp-5c8j-p5mr \
+            -r /tmp/requirements.txt
 
   docs:
     name: Docs Build & Hygiene

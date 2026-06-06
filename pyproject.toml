@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "spectra-sherpa"
-version = "0.5.0"
+version = "0.5.1"
 description = "SpectraSherpa — local-first spectroscopy platform for chemometricians"
 authors = ["Spectra Scientific LLC <info@spectrascientific.ai>"]
 readme = "README.md"
@@ -66,6 +66,7 @@ python-dotenv = "^1.2.2"
 cryptography = "^46.0.6"
 httpx = "^0.27.0"
 urllib3 = ">=2.7.0,<3"
+idna = ">=3.15,<4"
 numpy = "^1.26.4"
 scipy = "^1.13.1"
 pandas = "^2.2.2"
