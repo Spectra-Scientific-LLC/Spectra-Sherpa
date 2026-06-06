@@ -16,6 +16,16 @@ export interface NodeOutput {
   plots?: UnknownRecord;
   ports?: Record<string, PortOutput>;
   primary_port?: string;
+  /**
+   * Artifact UID lifted onto the node output by the executor's
+   * `_process_model_artifact` hook (executor.py sets `result["model_id"]`).
+   * Present only for training-node runs that produced a saved artifact;
+   * surfaces as the OutputPanel's "Saved Model Artifact" section. Must
+   * be hoisted to the top level here (rather than buried inside `ports`)
+   * because consumers like the WorkflowInspector packaging path and the
+   * NodeDetailView shell read it directly.
+   */
+  model_id?: string | null;
 }
 
 const isRecord = (value: unknown): value is UnknownRecord => {
@@ -143,6 +153,14 @@ export const buildNodeOutput = (
   }
 
   const resultRecord = result as UnknownRecord;
+  // `model_id` is lifted onto every training-node result by the executor
+  // (executor.py:135). Pull it off the result here — both code paths below
+  // need to hoist it to the top of NodeOutput so the UI can render the
+  // Saved Model Artifact section without spelunking through `ports`.
+  const rawModelId = resultRecord.model_id;
+  const liftedModelId =
+    typeof rawModelId === "string" && rawModelId.length > 0 ? rawModelId : null;
+
   const outputPortNames = outputPorts ? outputPorts.map((port) => port.name) : [];
   const hasDefault = Object.prototype.hasOwnProperty.call(resultRecord, "default");
   const hasPortKeys = outputPortNames.some((name) =>
@@ -165,6 +183,7 @@ export const buildNodeOutput = (
       data: single.data || [],
       metadata: single.metadata || {},
       plots: single.plots,
+      model_id: liftedModelId,
     };
   }
 
@@ -176,6 +195,12 @@ export const buildNodeOutput = (
       if (isRecord(value)) {
         topLevelPlots = value;
       }
+      continue;
+    }
+    // `model_id` is a lift-key from the executor (already hoisted above),
+    // not a port — don't include it in the port map or it'll show up as a
+    // junk "model_id" port in the Output Ports section.
+    if (key === "model_id") {
       continue;
     }
     if (key.startsWith("__") || key === "_internal") {
@@ -204,5 +229,6 @@ export const buildNodeOutput = (
     plots: primary.plots || topLevelPlots,
     ports: Object.keys(ports).length > 0 ? ports : undefined,
     primary_port: primaryPort,
+    model_id: liftedModelId,
   };
 };

@@ -9,6 +9,7 @@ import type { NodeExecutionState, ExperimentStage } from "@/types";
 
 export type ParamsMap = Record<string, unknown>;
 export type UnknownRecord = Record<string, unknown>;
+export type DataModality = "spectra" | "features" | "hsi";
 
 export interface TemplateDataRole {
   role_type: string;
@@ -19,6 +20,7 @@ export interface TemplateDataRole {
   connects_to_port?: string | null;
   description?: string;
   accepted_techniques?: string[] | null;
+  accepted_data_roles?: string[] | null;
 }
 
 export interface TemplateDataBinding {
@@ -65,11 +67,13 @@ export interface WorkflowTemplate {
   description: string;
   category: string;
   status: string;
+  data_modalities?: DataModality[];
   template_data: {
     nodes: BackendWorkflowNode[];
     edges: BackendWorkflowEdge[];
     canvas_state?: UnknownRecord;
     data_roles?: Record<string, TemplateDataRole>;
+    data_modalities?: DataModality[];
     status?: string;
   };
   is_active: boolean;
@@ -84,15 +88,19 @@ export interface WorkflowTemplateCatalog {
 
 export interface ReferenceDatasetOption {
   name: string;
-  source: "eigenvector" | "sklearn" | "spectrochempy" | "oes";
+  source: "synthetic" | "eigenvector" | "sklearn" | "spectrochempy" | "oes";
   label: string;
   technique?: string | null;
+  data_role?: string | null;
+  data_modality?: DataModality | null;
   description?: string | null;
   featured?: boolean;
   has_embedded_target?: boolean;
   target_type?: string | null;
   task_type?: string | null;
   category?: string | null;
+  file_path?: string | null;
+  files?: string[] | null;
   file_count?: number | null;
   entry_type?: string | null;
 }
@@ -144,6 +152,7 @@ export interface WorkflowCreatePayload {
 
 export interface WorkflowExecuteResponse {
   workflow_id: number;
+  run_id?: number | null;
   status: string;
   results: UnknownRecord;
   diagnostics?: Record<string, UnknownRecord>;
@@ -167,12 +176,20 @@ export interface DatasetFile {
   file_path: string;
   file_type: string | null;
   file_size_bytes: number;
+  shape?: number[] | null;
+  n_samples?: number | null;
+  n_features?: number | null;
+  data_role?: string | null;
+  x_title?: string | null;
+  x_units?: string | null;
+  is_spectra?: boolean | null;
 }
 
 export interface ExperimentDataset {
   id: number;
   name: string;
   description: string | null;
+  project_id?: number | null;
   stages: {
     raw: DatasetFile[];
     preprocessed: DatasetFile[];

@@ -74,6 +74,28 @@ function resolvePortPayload(port: any): any {
   return "value" in port ? port.value : port;
 }
 
+function formatHoldoutMetric(value: unknown, digits = 3): string {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(digits) : "n/a";
+}
+
+function holdoutSplitSummary(viz: Record<string, unknown>): string {
+  const metadata = (viz.metadata as Record<string, any> | undefined) ?? {};
+  const train = metadata.train ?? {};
+  const test = metadata.test ?? {};
+  const r2Train = metadata.r2_train ?? train.R2;
+  const rmseTrain = metadata.rmse_train ?? train.RMSE;
+  const r2Test = metadata.r2_test ?? test.R2;
+  const rmseTest = metadata.rmse_test ?? test.RMSE;
+  if (r2Train === undefined && rmseTrain === undefined) {
+    return `Test R²=${formatHoldoutMetric(r2Test)} · RMSE=${formatHoldoutMetric(rmseTest)}`;
+  }
+  return [
+    `Train R²=${formatHoldoutMetric(r2Train)} · RMSE=${formatHoldoutMetric(rmseTrain)}`,
+    `Test R²=${formatHoldoutMetric(r2Test)} · RMSE=${formatHoldoutMetric(rmseTest)}`,
+  ].join("    ");
+}
+
 // ============================================================================
 // Axis helpers
 // ============================================================================
@@ -91,11 +113,28 @@ function resolveXValues(
 }
 
 function shouldReverseX(metadata: any, portPayload?: any): boolean {
+  const dataRole =
+    metadata?.["sherpa.data_role"] ||
+    metadata?.data_role ||
+    portPayload?.metadata?.["sherpa.data_role"] ||
+    portPayload?.metadata?.data_role ||
+    portPayload?.data_role;
+  if (dataRole === "X_features") return false;
   const portTitle = portPayload?.x_axis?.title;
   if (portTitle) return portTitle.toLowerCase().includes("wavenumber");
   const xTitle = (metadata.x_title || "").toLowerCase();
   const xUnits = (metadata.x_units || "").toLowerCase();
   return xUnits.includes("cm") || xTitle.includes("wavenumber") || xTitle.includes("raman");
+}
+
+function isFeatureRole(metadata: any, portPayload?: any): boolean {
+  const dataRole =
+    metadata?.["sherpa.data_role"] ||
+    metadata?.data_role ||
+    portPayload?.metadata?.["sherpa.data_role"] ||
+    portPayload?.metadata?.data_role ||
+    portPayload?.data_role;
+  return dataRole === "X_features";
 }
 
 function xAxisLabel(metadata: any, portPayload?: any): string {
@@ -709,8 +748,8 @@ function mcrSpectraLayout(metadata: any): Record<string, any> {
   const xTitle = hasRealWn ? (metadata.spectral_x_title || metadata.x_title || "") : "";
   const xUnits = hasRealWn ? (metadata.spectral_x_units || metadata.x_units || "") : "";
   const xLabel = xUnits ? `${xTitle} (${xUnits})` : (xTitle || "Feature Index");
-  const yLabel = getYAxisLabel(metadata) || "Response";
-  const reverse = hasRealWn && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
+  const yLabel = metadata.mcr_spectra_y_units || getYAxisLabel(metadata) || "Response";
+  const reverse = !isFeatureRole(metadata) && hasRealWn && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
 
   return {
     ...BASE_PLOT_LAYOUT,
@@ -740,7 +779,7 @@ function getMCRContourAxes(output: any): { x: number[]; y: number[]; xLabel: str
     x,
     y,
     xLabel: xUnits ? `${xTitle} (${xUnits})` : (xTitle || "Feature Index"),
-    shouldReverse: hasReal && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber")),
+    shouldReverse: !isFeatureRole(metadata) && hasReal && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber")),
   };
 }
 
@@ -827,6 +866,11 @@ function prebuiltPlot(output: any, plotKey: string): { data: any[]; layout: Reco
   };
 }
 
+function hasPrebuiltPlotData(output: any, plotKey: string): boolean {
+  const data = output?.plots?.[plotKey]?.data;
+  return Array.isArray(data) && data.length > 0;
+}
+
 // ============================================================================
 // Regression: Predicted vs Actual
 // ============================================================================
@@ -894,7 +938,7 @@ function regressionLayout(metadata: any, targetIdx: number): Record<string, any>
 
 function buildClassificationAccuracyTraces(metadata: any): any[] {
   const yTrue = metadata.y_true;
-  const yPred = metadata.y_pred;
+  const yPred = Array.isArray(metadata.y_pred_cv) ? metadata.y_pred_cv : metadata.y_pred;
   const categories = metadata.label_categories;
   if (!Array.isArray(yTrue) || !Array.isArray(yPred) || !Array.isArray(categories)) return [];
 
@@ -932,10 +976,11 @@ function buildClassificationAccuracyTraces(metadata: any): any[] {
   ];
 }
 
-function classificationAccuracyLayout(): Record<string, any> {
+function classificationAccuracyLayout(metadata: any = {}): Record<string, any> {
+  const splitLabel = Array.isArray(metadata.y_pred_cv) ? "Cross-Validation" : "Training";
   return {
     ...BASE_PLOT_LAYOUT,
-    title: { text: "Per-Class Accuracy", font: { size: 14, color: "#f8fafc" } },
+    title: { text: `Per-Class Accuracy (${splitLabel})`, font: { size: 14, color: "#f8fafc" } },
     xaxis: { ...BASE_PLOT_LAYOUT.xaxis, title: "Class" },
     yaxis: { ...BASE_PLOT_LAYOUT.yaxis, title: "Accuracy (%)", range: [0, 105] },
     showlegend: true,
@@ -959,9 +1004,29 @@ function getHoldoutMetricsDict(output: any): Record<string, unknown> | null {
   const metricsValue = ports?.metrics?.value;
   if (metricsValue && typeof metricsValue === "object") {
     // The metrics port value is the flat dict — scalar keys (accuracy,
-    // RMSEP, R2, ...) sit at the top level alongside the table wrapper.
+    // test_accuracy/rmse_test/r2_test, plus legacy aliases) sit at the top
+    // level alongside the table wrapper. Prefer this named port before the
+    // top-level wrapper, whose metadata may also look like ClassificationTest.
     return metricsValue as Record<string, unknown>;
   }
+
+  if (output && typeof output === "object") {
+    const direct = output as Record<string, unknown>;
+    const directMeta = direct.metadata as Record<string, unknown> | undefined;
+    const directType = directMeta?.type;
+    if (
+      direct.task_type === "classification" ||
+      direct.task_type === "regression" ||
+      directType === "ClassificationTest" ||
+      directType === "RegressionTest" ||
+      "test_accuracy" in direct ||
+      "rmse_test" in direct ||
+      "r2_test" in direct
+    ) {
+      return direct;
+    }
+  }
+
   const defaultValue = ports?.default?.value;
   if (defaultValue && typeof defaultValue === "object") {
     const bundled = (defaultValue as Record<string, unknown>).metrics;
@@ -970,6 +1035,26 @@ function getHoldoutMetricsDict(output: any): Record<string, unknown> | null {
     }
   }
   return null;
+}
+
+function getHoldoutPerClassRows(metrics: Record<string, unknown> | null): Array<Record<string, unknown>> {
+  if (!metrics) return [];
+  const direct = metrics.per_class;
+  if (Array.isArray(direct)) {
+    return direct.filter((row): row is Record<string, unknown> => !!row && typeof row === "object" && !Array.isArray(row));
+  }
+  const tableData = metrics.data;
+  if (Array.isArray(tableData)) {
+    return tableData.filter((row): row is Record<string, unknown> => !!row && typeof row === "object" && !Array.isArray(row));
+  }
+  const nestedMetrics = metrics.metrics;
+  if (nestedMetrics && typeof nestedMetrics === "object" && !Array.isArray(nestedMetrics)) {
+    const nestedPerClass = (nestedMetrics as Record<string, unknown>).per_class;
+    if (Array.isArray(nestedPerClass)) {
+      return nestedPerClass.filter((row): row is Record<string, unknown> => !!row && typeof row === "object" && !Array.isArray(row));
+    }
+  }
+  return [];
 }
 
 /** Format a numeric metric for display in the metrics table. */
@@ -1010,7 +1095,7 @@ function spectraOverlayLayout(metadata: any): Record<string, any> {
   const xTitle = metadata.x_title || "Feature";
   const xUnits = metadata.x_units || "";
   const xLabel = xUnits ? `${xTitle} (${xUnits})` : xTitle;
-  const reverse = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
+  const reverse = !isFeatureRole(metadata) && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
   const yLabel = getYAxisLabel(metadata) || "Response";
 
   return {
@@ -1045,7 +1130,7 @@ function heatmapLayout(metadata: any): Record<string, any> {
   const xTitle = metadata.x_title || "Feature";
   const xUnits = metadata.x_units || "";
   const xLabel = xUnits ? `${xTitle} (${xUnits})` : xTitle;
-  const reverse = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
+  const reverse = !isFeatureRole(metadata) && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
 
   return {
     ...BASE_PLOT_LAYOUT,
@@ -1220,8 +1305,8 @@ function statsDistributionLayout(): Record<string, any> {
 
 function buildStatsMeanStdTraces(output: any): any[] {
   const plots = output.plots || {};
-  const meanSpec = plots.mean_spectrum;
-  const stdSpec = plots.std_spectrum;
+  const meanSpec = plots.mean_spectrum ?? plots.mean_feature_response;
+  const stdSpec = plots.std_spectrum ?? plots.std_feature_response;
   if (!meanSpec?.x?.length || !meanSpec?.y?.length) return [];
 
   const x: number[] = meanSpec.x;
@@ -1345,7 +1430,7 @@ function beforeAfterLayout(inputMeta: any, outputMeta: any): Record<string, any>
   const xTitle = meta.x_title || "Feature";
   const xUnits = meta.x_units || "";
   const xLabel = xUnits ? `${xTitle} (${xUnits})` : xTitle;
-  const reverse = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
+  const reverse = !isFeatureRole(meta) && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
   const yLabel = getYAxisLabel(meta) || "Response";
 
   return {
@@ -1590,15 +1675,29 @@ export function usePlotData(
     }
 
     if (isPLSDA.value) {
-      plots.push(
-        { key: "plsda_scores", label: "Scores Plot (with ellipses)" },
-        { key: "plsda_loadings", label: "Loadings (Lines)" },
-        { key: "plsda_loadings_biplot", label: "Loadings (Biplot)" },
-        { key: "plsda_vip", label: "VIP Scores" },
-        { key: "plsda_cm_train", label: "Confusion Matrix (Training)" },
-        { key: "plsda_cm_cv", label: "Confusion Matrix (CV)" },
-        { key: "classification_accuracy", label: "Class Accuracy" },
-      );
+      const output = nodeOutput.value;
+      if (hasPrebuiltPlotData(output, "scores")) {
+        plots.push({ key: "plsda_scores", label: "Scores Plot" });
+      }
+      if (
+        hasPrebuiltPlotData(output, "loadings_lines") ||
+        hasPrebuiltPlotData(output, "loadings") ||
+        hasPrebuiltPlotData(output, "loadings_biplot")
+      ) {
+        plots.push({ key: "plsda_loadings", label: "Loadings Plot" });
+      }
+      if (hasPrebuiltPlotData(output, "vip")) {
+        plots.push({ key: "plsda_vip", label: "VIP Scores" });
+      }
+      if (hasPrebuiltPlotData(output, "confusion_matrix_train")) {
+        plots.push({ key: "plsda_cm_train", label: "Confusion Matrix (Training)" });
+      }
+      if (hasPrebuiltPlotData(output, "confusion_matrix_cv")) {
+        plots.push({ key: "plsda_cm_cv", label: "Confusion Matrix (Cross-Validation)" });
+      }
+      if (buildClassificationAccuracyTraces(output?.metadata || {}).length > 0) {
+        plots.push({ key: "classification_accuracy", label: "Per-Class Accuracy" });
+      }
       return plots;
     }
 
@@ -1606,6 +1705,8 @@ export function usePlotData(
       // SIMCA, KNN
       plots.push(
         { key: "classification_scores", label: "Scores Plot" },
+        { key: "classification_cm_train", label: "Confusion Matrix (Training)" },
+        { key: "classification_cm_cv", label: "Confusion Matrix (CV)" },
         { key: "classification_accuracy", label: "Class Accuracy" },
       );
       return plots;
@@ -1623,8 +1724,8 @@ export function usePlotData(
 
     if (nt === "stats.summary") {
       const statsPlots = (nodeOutput.value as any)?.plots;
-      if (statsPlots?.mean_spectrum) {
-        plots.push({ key: "stats_mean_std", label: "Mean & Std Spectrum" });
+      if (statsPlots?.mean_spectrum || statsPlots?.mean_feature_response) {
+        plots.push({ key: "stats_mean_std", label: isGenericDataset.value ? "Mean & Std Feature Response" : "Mean & Std Spectrum" });
       } else {
         plots.push({ key: "stats_distribution", label: "Distribution Plot" });
       }
@@ -1636,10 +1737,17 @@ export function usePlotData(
       return plots;
     }
 
+    if (nt === "analysis.compare_library") {
+      plots.push({ key: "library_compare", label: "Library Overlay" });
+      return plots;
+    }
+
     if (nt === "output.plot" || nt === "output.contour") {
       plots.push({ key: "plot_visualization", label: "Visualization" });
       return plots;
     }
+
+    if (nt === "output.data_table") return plots;
 
     if (nt === "diagnostics.holdout_evaluation" || nt === "diagnostics.cross_validation") {
       // HoldoutEvaluationNode declares its output ports with `visualization`
@@ -1653,17 +1761,9 @@ export function usePlotData(
           | Record<string, unknown>
           | undefined);
       if (vizObj?.type === "confusion_matrix") {
-        // Classification: confusion matrix (normalized), per-class metrics,
-        // predictions scatter, and metrics table.
-        plots.push({ key: "holdout_confusion", label: "Confusion Matrix" });
-        plots.push({ key: "holdout_per_class", label: "Per-Class Metrics" });
-        plots.push({ key: "holdout_predictions", label: "Predictions Scatter" });
-        plots.push({ key: "holdout_metrics_table", label: "Metrics Table" });
-      } else {
-        // Regression: predicted-vs-actual, residuals, and metrics table.
-        plots.push({ key: "holdout_regression", label: "Predicted vs Actual" });
-        plots.push({ key: "holdout_residuals", label: "Residuals" });
-        plots.push({ key: "holdout_metrics_table", label: "Metrics Table" });
+        plots.push({ key: "holdout_confusion", label: "Evaluation Results" });
+      } else if (vizObj?.type === "predicted_vs_actual") {
+        plots.push({ key: "holdout_regression", label: "Evaluation Results" });
       }
       return plots;
     }
@@ -1700,6 +1800,8 @@ export function usePlotData(
     (plots) => {
       if (plots.length > 0 && !plots.some((p) => p.key === selectedPlotKey.value)) {
         selectedPlotKey.value = plots[0].key;
+      } else if (plots.length === 0) {
+        selectedPlotKey.value = "";
       }
     },
     { immediate: true },
@@ -1803,8 +1905,10 @@ export function usePlotData(
       case "plsda_vip":
         return prebuiltPlot(output, "vip");
       case "plsda_cm_train":
+      case "classification_cm_train":
         return prebuiltPlot(output, "confusion_matrix_train");
       case "plsda_cm_cv":
+      case "classification_cm_cv":
         return prebuiltPlot(output, "confusion_matrix_cv");
 
       // Classification (SIMCA, KNN, or PLS-DA fallback)
@@ -1819,7 +1923,7 @@ export function usePlotData(
         };
       }
       case "classification_accuracy":
-        return { data: buildClassificationAccuracyTraces(metadata), layout: classificationAccuracyLayout() };
+        return { data: buildClassificationAccuracyTraces(metadata), layout: classificationAccuracyLayout(metadata) };
 
       // HCA
       case "hca_dendrogram":
@@ -1828,6 +1932,10 @@ export function usePlotData(
       // Peak finding
       case "peak_finding":
         return prebuiltPlot(output, "peak_finding");
+
+      // Compare vs. Library
+      case "library_compare":
+        return prebuiltPlot(output, "library_compare");
 
       // Plot/Contour nodes (server-rendered)
       case "plot_visualization": {
@@ -1874,25 +1982,43 @@ export function usePlotData(
           && !targetNames.every((n) => /^Target_\d+$/.test(n));
 
         const series = vizObj.series as
-          | Array<{ name?: string; actual?: number[]; predicted?: number[] }>
+          | Array<{ name?: string; actual?: number[]; predicted?: number[]; train_actual?: number[]; train_predicted?: number[] }>
           | undefined;
         if (Array.isArray(series) && series.length > 0) {
           const traces: Array<Record<string, unknown>> = [];
           const allActual: number[] = [];
           const allPredicted: number[] = [];
-          for (const s of series) {
+          for (const [idx, s] of series.entries()) {
             const sActual = Array.isArray(s.actual) ? s.actual.map(Number) : [];
             const sPredicted = Array.isArray(s.predicted) ? s.predicted.map(Number) : [];
-            if (!sActual.length || !sPredicted.length) continue;
-            traces.push({
-              x: sActual,
-              y: sPredicted,
-              mode: "markers",
-              type: "scatter",
-              name: String(s.name || "Target"),
-            });
-            allActual.push(...sActual);
-            allPredicted.push(...sPredicted);
+            const trainActual = Array.isArray(s.train_actual) ? s.train_actual.map(Number) : [];
+            const trainPredicted = Array.isArray(s.train_predicted) ? s.train_predicted.map(Number) : [];
+            const color = CATEGORY_COLORS[idx % CATEGORY_COLORS.length];
+            const name = String(s.name || "Target");
+            if (trainActual.length && trainPredicted.length) {
+              traces.push({
+                x: trainActual,
+                y: trainPredicted,
+                mode: "markers",
+                type: "scatter",
+                name: `${name} train`,
+                marker: { color, size: 7, symbol: "circle-open" },
+              });
+              allActual.push(...trainActual);
+              allPredicted.push(...trainPredicted);
+            }
+            if (sActual.length && sPredicted.length) {
+              traces.push({
+                x: sActual,
+                y: sPredicted,
+                mode: "markers",
+                type: "scatter",
+                name: `${name} test`,
+                marker: { color, size: 8, symbol: "circle" },
+              });
+              allActual.push(...sActual);
+              allPredicted.push(...sPredicted);
+            }
           }
           if (traces.length === 0) return { data: [], layout: BASE_PLOT_LAYOUT };
           const minVal = Math.min(...allActual, ...allPredicted);
@@ -1914,7 +2040,8 @@ export function usePlotData(
             data: traces,
             layout: {
               ...BASE_PLOT_LAYOUT,
-              title: { text: titleText, font: { color: "#e2e8f0", size: 14 } },
+              title: { text: `${titleText}<br><sup>${holdoutSplitSummary(vizObj)}</sup>`, font: { color: "#e2e8f0", size: 14 } },
+              margin: { ...BASE_PLOT_LAYOUT.margin, t: 66 },
               xaxis: { title: "Actual", color: "#94a3b8" },
               yaxis: { title: yTitle, color: "#94a3b8" },
               showlegend: true,
@@ -1925,26 +2052,41 @@ export function usePlotData(
         // Legacy single-target path.
         const pairs = (vizObj.data as number[][]) || [];
         if (!pairs.length) return { data: [], layout: BASE_PLOT_LAYOUT };
+        const trainPairs = ((vizObj.metadata as Record<string, any> | undefined)?.train?.data as number[][] | undefined) || [];
         const actual = pairs.map((p: number[]) => p[0]);
         const predicted = pairs.map((p: number[]) => p[1]);
-        const minVal = Math.min(...actual, ...predicted);
-        const maxVal = Math.max(...actual, ...predicted);
+        const trainActual = trainPairs.map((p: number[]) => p[0]);
+        const trainPredicted = trainPairs.map((p: number[]) => p[1]);
+        const minVal = Math.min(...actual, ...predicted, ...trainActual, ...trainPredicted);
+        const maxVal = Math.max(...actual, ...predicted, ...trainActual, ...trainPredicted);
         const singleName = hasRealNames ? targetNames[0] : "";
         const titleText = singleName
           ? `Predicted vs Actual \u2014 ${singleName}`
           : "Predicted vs Actual";
         const yTitle = singleName ? `Predicted ${singleName}` : "Predicted";
+        const traces = [
+          ...(trainPairs.length
+            ? [{
+                x: trainActual,
+                y: trainPredicted,
+                mode: "markers",
+                type: "scatter",
+                name: "Train",
+                marker: { color: "#3b82f6", size: 7, symbol: "circle-open" },
+              }]
+            : []),
+          { x: actual, y: predicted, mode: "markers", type: "scatter", name: "Test", marker: { color: "#3b82f6", size: 8, symbol: "circle" } },
+          { x: [minVal, maxVal], y: [minVal, maxVal], mode: "lines", type: "scatter", name: "1:1 Line", line: { dash: "dash", color: "#94a3b8" } },
+        ];
         return {
-          data: [
-            { x: actual, y: predicted, mode: "markers", type: "scatter", name: "Samples", marker: { color: "#3b82f6" } },
-            { x: [minVal, maxVal], y: [minVal, maxVal], mode: "lines", type: "scatter", name: "1:1 Line", line: { dash: "dash", color: "#94a3b8" } },
-          ],
+          data: traces,
           layout: {
             ...BASE_PLOT_LAYOUT,
-            title: { text: titleText, font: { color: "#e2e8f0", size: 14 } },
+            title: { text: `${titleText}<br><sup>${holdoutSplitSummary(vizObj)}</sup>`, font: { color: "#e2e8f0", size: 14 } },
+            margin: { ...BASE_PLOT_LAYOUT.margin, t: 66 },
             xaxis: { title: "Actual", color: "#94a3b8" },
             yaxis: { title: yTitle, color: "#94a3b8" },
-            showlegend: false,
+            showlegend: trainPairs.length > 0,
           },
         };
       }
@@ -1992,7 +2134,7 @@ export function usePlotData(
         // Small multiples: one subplot per metric (sensitivity, specificity,
         // precision, F1), each a bar chart over classes.
         const metrics = getHoldoutMetricsDict(output);
-        const perClass = (metrics?.per_class as Array<Record<string, unknown>> | undefined) ?? [];
+        const perClass = getHoldoutPerClassRows(metrics);
         if (!perClass.length) return { data: [], layout: BASE_PLOT_LAYOUT };
         const classNames = perClass.map((e) => String(e.class ?? ""));
         const metricKeys: Array<{ key: string; label: string }> = [
@@ -2218,19 +2360,25 @@ export function usePlotData(
         const metrics = getHoldoutMetricsDict(output);
         if (!metrics) return { data: [], layout: BASE_PLOT_LAYOUT };
         const taskType = String(metrics.task_type ?? "");
-        const displayKeys: Array<{ key: string; label: string }> = taskType === "classification"
+        const displayKeys: Array<{ key: string; legacyKey?: string; label: string }> = taskType === "classification"
           ? [
-              { key: "accuracy", label: "Accuracy" },
+              { key: "test_accuracy", legacyKey: "accuracy", label: "Accuracy" },
+              { key: "test_balanced_accuracy", label: "Balanced Accuracy" },
+              { key: "test_f1_macro", label: "F1 Macro" },
+              { key: "test_precision_macro", label: "Precision Macro" },
+              { key: "test_recall_macro", label: "Recall Macro" },
+              { key: "test_sensitivity_macro", label: "Sensitivity Macro" },
+              { key: "test_specificity_macro", label: "Specificity Macro" },
               { key: "n_classes", label: "Number of Classes" },
               { key: "n_samples", label: "Number of Samples" },
             ]
           : [
-              { key: "RMSEP", label: "RMSEP" },
-              { key: "R2", label: "R²" },
-              { key: "MAE", label: "MAE" },
+              { key: "rmse_test", legacyKey: "RMSEP", label: "RMSEP" },
+              { key: "r2_test", legacyKey: "R2", label: "R²" },
+              { key: "mae", legacyKey: "MAE", label: "MAE" },
               { key: "bias", label: "Bias" },
-              { key: "SEP", label: "SEP" },
-              { key: "RER", label: "RER" },
+              { key: "sep", legacyKey: "SEP", label: "SEP" },
+              { key: "rer", legacyKey: "RER", label: "RER" },
               { key: "n_samples", label: "Number of Samples" },
               { key: "n_valid_samples", label: "Valid Samples" },
               { key: "n_invalid_predictions", label: "Invalid Predictions" },
@@ -2238,8 +2386,8 @@ export function usePlotData(
             ];
         const names: string[] = [];
         const values: string[] = [];
-        for (const { key, label } of displayKeys) {
-          const v = metrics[key];
+        for (const { key, legacyKey, label } of displayKeys) {
+          const v = metrics[key] ?? (legacyKey ? metrics[legacyKey] : undefined);
           if (v === undefined || v === null) continue;
           names.push(label);
           values.push(typeof v === "number" ? formatMetricValue(v) : String(v));

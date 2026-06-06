@@ -6,10 +6,11 @@
 // the generic "Guidance" string in the function below.
 const GUIDANCE_RULE_LABELS: Record<string, string> = {
   empty_project_import: "Project setup",
-  imported_no_preprocess: "Data preparation",
+  imported_no_preprocess: "Analysis setup",
   workflow_saved_never_run: "Workflow run",
   correction_caveat_ignored: "Data caveat",
   idle_on_results: "Results review",
+  data_idle_no_dataset_synthesis: "FTIR synthesis",
   // PR5 — deploy + report rules.
   deploy_runs_no_automation: "Automation",
   report_idle_with_runs: "Reporting",

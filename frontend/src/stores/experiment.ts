@@ -2,6 +2,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";
+import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import type {
   ExperimentDetail,
   ExperimentFile,
@@ -25,10 +26,22 @@ export const useExperimentStore = defineStore("experiment", () => {
 
   const currentExperimentId = computed(() => currentExperiment.value?.id ?? null);
 
-  const fetchExperiments = async () => {
+  function resetProjectScope(): void {
+    experiments.value = [];
+    currentExperiment.value = null;
+    files.value = [];
+    versions.value = [];
+    loading.value = false;
+    error.value = null;
+  }
+  registerProjectScopeReset(resetProjectScope);
+
+  const fetchExperiments = async (projectId?: number | null) => {
     loading.value = true;
     try {
-      const response = await api.get<ExperimentSummary[]>("/experiments");
+      const response = await api.get<ExperimentSummary[]>("/experiments", {
+        params: projectId == null ? undefined : { project_id: projectId },
+      });
       experiments.value = response.data;
     } catch (err: any) {
       error.value = err?.message || "Failed to load experiments";
@@ -178,5 +191,6 @@ export const useExperimentStore = defineStore("experiment", () => {
     restoreVersion,
     fetchFiles,
     fetchVersions,
+    resetProjectScope,
   };
 });

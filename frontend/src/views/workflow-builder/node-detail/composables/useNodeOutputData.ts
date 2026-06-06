@@ -29,6 +29,9 @@ const META_TOOLTIPS: Record<string, string> = {
   t2_p95: "95th percentile of Hotelling's T²; common control limit for outliers.",
   spe_mean: "Mean Squared Prediction Error (SPE/Q residuals) across samples.",
   spe_p95: "95th percentile of SPE; common control limit for residual outliers.",
+  data_role: "Canonical dataset role: X_spectra has an ordered spectral axis; X_features is a multivariate feature table.",
+  "sherpa.data_role": "Canonical dataset role: X_spectra has an ordered spectral axis; X_features is a multivariate feature table.",
+  finite_fraction: "Fraction of numeric matrix cells that are finite and usable for numerical methods.",
 };
 
 interface UseNodeOutputDataDeps {
@@ -53,6 +56,36 @@ export function useNodeOutputData({
   regressionTargetIdx,
   previewRowLimit,
 }: UseNodeOutputDataDeps) {
+  const metadataCandidates = computed<Record<string, any>[]>(() => {
+    const output = nodeOutput.value;
+    if (!output) return [];
+    const candidates: Record<string, any>[] = [];
+    if (output.metadata && Object.keys(output.metadata).length > 0) {
+      candidates.push(output.metadata as Record<string, any>);
+    }
+    for (const port of Object.values(output.ports || {})) {
+      const meta = (port as any)?.metadata;
+      if (meta && typeof meta === "object" && Object.keys(meta).length > 0) {
+        candidates.push(meta as Record<string, any>);
+      }
+      const valueMeta = (port as any)?.value?.metadata;
+      if (valueMeta && typeof valueMeta === "object" && Object.keys(valueMeta).length > 0) {
+        candidates.push(valueMeta as Record<string, any>);
+      }
+    }
+    return candidates;
+  });
+
+  const firstMetadataValue = (keys: string[]) => {
+    for (const meta of metadataCandidates.value) {
+      for (const key of keys) {
+        const value = meta[key];
+        if (value !== undefined && value !== null && value !== "") return value;
+      }
+    }
+    return undefined;
+  };
+
   const hasInput = computed(() => {
     return !!(nodeData.value?.inputData || nodeData.value?.inputConnections?.length);
   });
@@ -223,6 +256,34 @@ export function useNodeOutputData({
     if (metadata.spectral_technique) info.spectralTechnique = metadata.spectral_technique;
     if (metadata.data_quantity) info.dataQuantity = metadata.data_quantity;
     if (metadata.is_spectra) info.isSpectra = true;
+    const dataRole =
+      metadata["sherpa.data_role"] ||
+      metadata.data_role ||
+      portValue?.data_role ||
+      portValue?.metadata?.["sherpa.data_role"] ||
+      portValue?.metadata?.data_role;
+    if (dataRole) {
+      info.dataRole = dataRole;
+      info.dataRoleLabel =
+        dataRole === "X_features"
+          ? "Feature Table"
+          : dataRole === "X_spectra"
+            ? "Spectral Matrix"
+            : String(dataRole);
+      if (dataRole === "X_features") info.isFeatureTable = true;
+    }
+    const targetContext = portValue?.target_context || metadata.target_context || metadata.source_metadata?.target_context;
+    const hasTarget =
+      portValue?.target != null ||
+      metadata.has_target === true ||
+      !!targetContext ||
+      Array.isArray(metadata.target_names);
+    if (hasTarget) {
+      info.target = {
+        type: targetContext?.target_type || metadata.target_type || "available",
+        names: targetContext?.target_names || metadata.target_names,
+      };
+    }
     if (metadata.value_units || metadata.value_units_label) {
       info.valueUnits = metadata.value_units || metadata.value_units_label;
     }
@@ -246,22 +307,40 @@ export function useNodeOutputData({
   });
 
   const processingHistory = computed(() => {
-    const hist = nodeOutput.value?.metadata?.processing_history;
-    return Array.isArray(hist) && hist.length > 0 ? hist : null;
+    const combined: any[] = [];
+    for (const meta of metadataCandidates.value) {
+      const hist = meta.processing_history;
+      if (!Array.isArray(hist)) continue;
+      for (const step of hist) {
+        const key = typeof step === "string" ? step : JSON.stringify(step);
+        if (!combined.some((existing) => (typeof existing === "string" ? existing : JSON.stringify(existing)) === key)) {
+          combined.push(step);
+        }
+      }
+    }
+    return combined.length > 0 ? combined : null;
   });
 
   const PROVENANCE_KNOWN_KEYS = new Set(["source_type", "operations", "last_modified"]);
 
   const provenanceInfo = computed(() => {
-    const prov = nodeOutput.value?.metadata?.provenance as Record<string, any> | undefined;
-    if (!prov || typeof prov !== "object") return null;
+    const provenanceBlocks = metadataCandidates.value
+      .map((meta) => meta.provenance as Record<string, any> | undefined)
+      .filter((prov): prov is Record<string, any> => !!prov && typeof prov === "object");
+    if (provenanceBlocks.length === 0) return null;
+    const operations = Array.from(
+      new Set(provenanceBlocks.flatMap((prov) => (Array.isArray(prov.operations) ? prov.operations : []))),
+    );
+    const prov = provenanceBlocks[0];
     const extras: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(prov)) {
-      if (!PROVENANCE_KNOWN_KEYS.has(k)) extras[k] = v;
+    for (const block of provenanceBlocks) {
+      for (const [k, v] of Object.entries(block)) {
+        if (!PROVENANCE_KNOWN_KEYS.has(k)) extras[k] = v;
+      }
     }
     return {
       source_type: prov.source_type as string | undefined,
-      operations: prov.operations as string[] | undefined,
+      operations: operations.length > 0 ? operations : (prov.operations as string[] | undefined),
       last_modified: prov.last_modified as string | undefined,
       ...(Object.keys(extras).length > 0 ? { extras } : {}),
     };
@@ -270,7 +349,7 @@ export function useNodeOutputData({
   const QUALITY_KNOWN_KEYS = new Set(["latest_model_type", "latest_r2", "latest_rmse", "n_evaluations"]);
 
   const qualitySummary = computed(() => {
-    const qs = nodeOutput.value?.metadata?.quality_summary as Record<string, any> | undefined;
+    const qs = firstMetadataValue(["quality_summary"]) as Record<string, any> | undefined;
     if (!qs || typeof qs !== "object") return null;
     const extras: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(qs)) {

@@ -78,6 +78,34 @@
               :class="{ 'p-invalid': getParamError(param.name) }"
             />
 
+            <div v-else-if="param.type === 'model_select'" class="model-select-row">
+              <div v-if="!modelSelectOptions.length && !modelOptionsLoading" class="model-select-banner">
+                <i class="pi pi-info-circle"></i>
+                <span>No trained artifacts yet — run a training node first.</span>
+              </div>
+              <Dropdown
+                :model-value="localParams[param.name]"
+                @update:model-value="(v) => $emit('updateParam', param.name, v)"
+                :id="param.name"
+                :options="modelSelectOptions"
+                optionLabel="label"
+                optionValue="value"
+                placeholder="Select saved artifact"
+                class="full-width"
+                filter
+                showClear
+                :loading="modelOptionsLoading"
+                :class="{ 'p-invalid': getParamError(param.name) }"
+              />
+              <Button
+                icon="pi pi-refresh"
+                class="p-button-text p-button-sm"
+                title="Refresh saved artifacts"
+                :loading="modelOptionsLoading"
+                @click="loadModelOptions"
+              />
+            </div>
+
             <InputText
               v-else
               :model-value="localParams[param.name]"
@@ -108,11 +136,15 @@
 </template>
 
 <script setup lang="ts">
+import { computed, ref, watch } from "vue";
 import Button from "primevue/button";
 import InputNumber from "primevue/inputnumber";
 import InputText from "primevue/inputtext";
 import InputSwitch from "primevue/inputswitch";
 import Dropdown from "primevue/dropdown";
+import api from "@/api/client";
+import { useProjectStore } from "@/stores/project";
+import { useWorkflowStore } from "@/stores/workflow";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Param = any;
@@ -122,7 +154,16 @@ interface ValidationError {
   message: string;
 }
 
-defineProps<{
+interface ModelSelectItem {
+  artifact_uid: string;
+  name: string;
+  display_name?: string | null;
+  model_type: string;
+  n_features: number;
+  n_components?: number | null;
+}
+
+const props = defineProps<{
   expanded: boolean;
   settingsCount: number;
   params: Param[];
@@ -139,6 +180,83 @@ defineEmits<{
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (e: "updateParam", name: string, value: any): void;
 }>();
+
+const projectStore = useProjectStore();
+const workflowStore = useWorkflowStore();
+const modelOptionsLoading = ref(false);
+const modelSelectItems = ref<ModelSelectItem[]>([]);
+
+const hasModelSelectParam = computed(() =>
+  props.params.some((param) => param.type === "model_select"),
+);
+
+const modelSelectOptions = computed(() =>
+  modelSelectItems.value.map((model) => {
+    const name = model.display_name || model.name;
+    const pieces = [
+      model.model_type,
+      `${model.n_features} feature${model.n_features === 1 ? "" : "s"}`,
+    ];
+    if (model.n_components != null) {
+      pieces.push(`${model.n_components} component${model.n_components === 1 ? "" : "s"}`);
+    }
+    return {
+      label: `${name} · ${pieces.join(" · ")}`,
+      value: model.artifact_uid,
+    };
+  }),
+);
+
+async function loadModelOptions(): Promise<void> {
+  if (!hasModelSelectParam.value) return;
+  modelOptionsLoading.value = true;
+  try {
+    const params: Record<string, unknown> = {};
+    if (projectStore.currentProjectId != null) {
+      params.project_id = projectStore.currentProjectId;
+    }
+    const response = await api.get<ModelSelectItem[]>("/models/select", { params });
+    modelSelectItems.value = response.data;
+  } catch (err) {
+    console.warn("[node-settings] failed to load model artifacts", err);
+    modelSelectItems.value = [];
+  } finally {
+    modelOptionsLoading.value = false;
+  }
+}
+
+function collectModelIds(value: unknown, ids = new Set<string>()): Set<string> {
+  if (!value || typeof value !== "object") return ids;
+  if (Array.isArray(value)) {
+    for (const item of value) collectModelIds(item, ids);
+    return ids;
+  }
+  const record = value as Record<string, unknown>;
+  for (const key of ["model_id", "artifact_uid"]) {
+    const candidate = record[key];
+    if (typeof candidate === "string" && candidate.length > 0) ids.add(candidate);
+  }
+  for (const child of Object.values(record)) {
+    collectModelIds(child, ids);
+  }
+  return ids;
+}
+
+watch(
+  [hasModelSelectParam, () => projectStore.currentProjectId],
+  ([needsModels]) => {
+    if (needsModels) void loadModelOptions();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => workflowStore.lastExecutionResults,
+  (results) => {
+    if (!hasModelSelectParam.value || !results) return;
+    if (collectModelIds(results).size > 0) void loadModelOptions();
+  },
+);
 </script>
 
 <style scoped>
@@ -307,6 +425,24 @@ defineEmits<{
 }
 .full-width {
   width: 100%;
+}
+.model-select-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.model-select-banner {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 8px;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.35);
+  font-size: 0.85rem;
 }
 .settings-actions {
   display: flex;

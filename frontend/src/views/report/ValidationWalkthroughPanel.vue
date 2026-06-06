@@ -43,7 +43,7 @@
           <li>Spectra Sherpa is running with audit enabled (<code>SHERPA_AUDIT_ENABLED=true</code>).</li>
           <li>The current user can access <code>audit.basic</code>, <code>audit.full</code>, <code>audit.export</code>, and <code>audit.report_pack</code>.</li>
           <li>The audit chainer is running and <code>/api/v1/audit/verify</code> returns <code>ok: true</code> before the demo starts.</li>
-          <li>An FTIR or Raman example dataset/template is available; if Raman is unavailable, substitute with FTIR or NIR and record the substitution in the validation pack.</li>
+          <li>An FTIR or Raman example dataset or analysis starter is available; if Raman is unavailable, substitute with FTIR or NIR and record the substitution in the validation pack.</li>
           <li>PLS scaling defaults remain <code>false</code> unless a method-specific reason is documented in the workflow parameters.</li>
         </ul>
       </details>
@@ -55,8 +55,8 @@
           <li>Select or create a project named <em>ISO 17025 Example — FTIR Raman</em>.</li>
           <li>Click <strong>Audit</strong> from the project header.</li>
           <li>Confirm <strong>Chain Health</strong> shows <em>Verified</em>.</li>
-          <li>Return to <strong>Workflow Builder</strong>.</li>
-          <li>Start from the FTIR/Raman template, or build the target workflow manually.</li>
+          <li>Return to <strong>Workflows</strong>.</li>
+          <li>Start from the FTIR/Raman analysis starter, or build the target workflow manually.</li>
           <li>Load the example dataset.</li>
           <li>Confirm labels/targets are visible and correct.</li>
           <li>Run the workflow.</li>

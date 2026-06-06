@@ -169,6 +169,18 @@ describe('IntegrationsTab', () => {
           },
         });
       }
+      if (url === '/egress/defaults') {
+        return Promise.resolve({
+          data: {
+            allow_llm_chat: true,
+            allow_llm_context: false,
+            allow_nist_queries: true,
+            allow_hitran_queries: true,
+            allow_export: true,
+            allow_spectrasherpa_sync: false,
+          },
+        });
+      }
       throw new Error(`Unhandled GET ${url}`);
     });
   });
@@ -190,6 +202,8 @@ describe('IntegrationsTab', () => {
     expect(wrapper.text()).toContain('Validate Connection');
     expect(wrapper.text()).toContain('Refresh');
     expect(wrapper.text()).not.toContain('Test Connection');
+    expect(wrapper.text()).toContain('NIST WebBook Queries');
+    expect(wrapper.text()).toContain('HITRAN/HAPI Queries');
 
     const validateButton = wrapper.findAll('button').find((button) => button.text().includes('Validate Connection'));
     expect(validateButton).toBeDefined();
@@ -206,5 +220,30 @@ describe('IntegrationsTab', () => {
     expect(wrapper.text()).toContain('Deployment: Demo Deployment');
     expect(wrapper.text()).toContain('Plan: demo');
     expect(wrapper.text()).toContain('1 managed LLM provider(s) available');
+  });
+
+  it('can render only Data & Privacy without loading deployment connection state', async () => {
+    const wrapper = mount(IntegrationsTab, {
+      props: { privacyOnly: true },
+      global: {
+        stubs: {
+          InputText: InputTextStub,
+          Button: ButtonStub,
+          Tag: TagStub,
+          Dialog: DialogStub,
+        },
+      },
+    });
+
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Data & Privacy');
+    expect(wrapper.text()).toContain('NIST WebBook Queries');
+    expect(wrapper.text()).toContain('HITRAN/HAPI Queries');
+    expect(wrapper.text()).not.toContain('Connect to a SpectraSherpa Cloud server');
+    expect(wrapper.text()).not.toContain('Connect & Enable Hybrid');
+    expect(wrapper.text()).not.toContain('Validate Connection');
+    expect(mocks.apiGet).not.toHaveBeenCalledWith('/config/spectrasherpa');
+    expect(mocks.apiGet).toHaveBeenCalledWith('/egress/defaults');
   });
 });

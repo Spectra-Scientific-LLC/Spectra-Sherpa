@@ -1,334 +1,505 @@
 <template>
   <section class="project-content">
-    <OnboardingBanner />
-    <div class="section-header">
-      <div>
-        <h1>Projects</h1>
-        <p class="section-subtitle">
-          Organize your spectral analysis work into projects
-        </p>
-      </div>
-      <div class="header-actions">
+    <!-- Header --------------------------------------------------------- -->
+    <header class="tab-header">
+      <h1>Project</h1>
+      <ResponsiveHeaderActions :items="headerActionItems">
         <Button
           v-if="isServerBacked && projectStore.currentProjectId"
           label="Memory Map"
           icon="pi pi-sitemap"
-          data-action="open_memory_map"
-          class="p-button-outlined"
+          class="p-button-text p-button-sm"
           @click="openMemoryMap"
-          v-tooltip.bottom="'Visualize Sherpa Advisor memory for this project'"
         />
         <Button
           v-if="projectStore.currentProjectId"
           label="Audit"
           icon="pi pi-shield"
-          class="p-button-outlined"
+          class="p-button-text p-button-sm"
           @click="openProjectAudit"
-          v-tooltip.bottom="'Open audit trail for this project'"
         />
         <Button
           label="Import"
           icon="pi pi-upload"
-          class="p-button-outlined"
+          class="p-button-outlined p-button-sm"
+          :disabled="projectImportDisabled"
           @click="triggerImport"
         />
-        <Button
-          label="New Project"
-          icon="pi pi-plus"
-          data-action="new_project"
-          @click="showNewProjectDialog"
-        />
-      </div>
+      </ResponsiveHeaderActions>
+    </header>
+
+    <!-- Loading -------------------------------------------------------- -->
+    <div v-if="projectStore.isLoading && !projectStore.projects.length" class="empty-state">
+      <ProgressSpinner style="width: 28px; height: 28px" />
+      <p>Loading projects…</p>
     </div>
 
-    <!-- Loading state -->
-    <div v-if="projectStore.isLoading && !projectStore.projects.length" class="loading-container">
-      <ProgressSpinner style="width: 40px; height: 40px" />
-      <span>Loading projects...</span>
-    </div>
-
-    <!-- Empty state -->
+    <!-- No projects at all -->
     <div v-else-if="!projectStore.projects.length" class="empty-state">
-      <i class="pi pi-folder-open"></i>
-      <h3>No projects yet</h3>
-      <p>Create your first project to organize experiments, workflows, and reusable templates.</p>
-      <Button label="Create Project" icon="pi pi-plus" @click="showNewProjectDialog" />
+      <p class="empty-state__title">No projects yet.</p>
+      <p class="empty-state__hint">Start from New Analysis on the Dashboard, or import a project package.</p>
+    </div>
 
-      <div class="templates-panel empty-templates-panel">
-        <div class="templates-header">
-          <div>
-            <h3>Workflow Templates</h3>
-            <p>Create a project first, then launch one of the validated templates below into that project.</p>
-          </div>
-        </div>
-        <TemplateGallery :selected-template-id="selectedTemplateId" :show-header="false" @select="openTemplateWizard" />
-      </div>
+    <!-- Projects exist but none selected -->
+    <div v-else-if="!activeProject" class="empty-state">
+      <p class="empty-state__title">No project selected.</p>
+      <Button
+        label="Go to Dashboard"
+        icon="pi pi-arrow-right"
+        iconPos="right"
+        class="p-button-text p-button-sm"
+        @click="router.push('/dashboard')"
+      />
     </div>
 
     <template v-else>
-      <!-- Current Project Banner -->
-      <div v-if="projectStore.currentProject" class="current-project-banner">
-        <div class="banner-left">
-          <i class="pi pi-folder-open banner-icon"></i>
-          <div class="banner-info">
-            <span class="banner-label">Active Project</span>
-            <h2 class="banner-name">{{ projectStore.currentProject.name }}</h2>
-            <p v-if="projectStore.currentProject.description" class="banner-desc">
-              {{ projectStore.currentProject.description }}
+      <!-- Active project header section ----------------------------- -->
+      <section class="current-section">
+        <div class="current-head">
+          <div class="current-head__main">
+            <span class="eyebrow">Current Project</span>
+            <h2 class="current-name">{{ activeProject.name }}</h2>
+            <p v-if="activeProject.description" class="current-desc">
+              {{ activeProject.description }}
             </p>
           </div>
+          <span class="current-time" :title="absoluteTimestamp(activeProject.updated_at)">
+            {{ formatRelative(activeProject.updated_at) }}
+          </span>
         </div>
-        <div class="banner-actions">
-          <div class="banner-tags">
-            <Tag v-if="projectStore.currentProject.technique" :value="projectStore.currentProject.technique" severity="info" class="project-tag" />
-            <Tag v-if="projectStore.currentProject.sample_type" :value="projectStore.currentProject.sample_type" severity="secondary" class="project-tag" />
-          </div>
-          <div class="banner-stats">
-            <span class="stat" title="Experiments">
-              <i class="pi pi-chart-bar"></i> {{ projectStore.currentProject.experiment_count }}
-            </span>
-            <span class="stat" title="Workflows">
-              <i class="pi pi-sitemap"></i> {{ projectStore.currentProject.workflow_count }}
-            </span>
-            <span class="stat" title="Scripts">
-              <i class="pi pi-code"></i> {{ projectStore.currentProject.script_count }}
-            </span>
-            <span class="stat" title="Models">
-              <i class="pi pi-box"></i> {{ projectStore.currentProject.model_count }}
-            </span>
-            <span class="stat" title="Versions">
-              <i class="pi pi-history"></i> {{ projectStore.currentProject.version_count }}
-            </span>
-          </div>
-          <div class="banner-buttons">
-            <Button
-              label="Save"
-              icon="pi pi-save"
-              class="p-button-outlined"
-              @click="openSaveDialog"
-            />
-            <Button
-              label="Continue"
-              icon="pi pi-arrow-right"
-              iconPos="right"
-              @click="continueProject"
-            />
-          </div>
-        </div>
-      </div>
 
-      <div class="projects-section templates-panel">
-        <div class="templates-header">
-          <div>
-            <h3 class="section-title">Workflow Templates</h3>
-            <p class="templates-subtitle">
-              Start common chemometric workflows from validated backend templates inside the active project.
-            </p>
-          </div>
+        <div class="current-meta">
+          <span v-if="activeProject.technique">{{ activeProject.technique }}</span>
+          <span v-if="activeProject.sample_type">{{ activeProject.sample_type }}</span>
+          <span><strong>{{ activeProject.experiment_count }}</strong> data</span>
+          <span><strong>{{ activeProject.workflow_count }}</strong> workflows</span>
+          <span><strong>{{ activeProject.model_count }}</strong> artifacts</span>
+          <span>created {{ formatRelative(activeProject.created_at) }}</span>
         </div>
-        <TemplateGallery :selected-template-id="selectedTemplateId" :show-header="false" @select="openTemplateWizard" />
-      </div>
 
-      <!-- Version History (when active project has versions) -->
-      <div v-if="projectStore.currentProject && projectStore.versions.length" class="projects-section">
-        <h3 class="section-title">Version History</h3>
-        <div class="version-list">
+        <div class="current-actions">
+          <Button label="Edit" icon="pi pi-pencil" class="p-button-text p-button-sm" @click="showEditProjectDialog(activeProject)" />
+          <Button label="Export" icon="pi pi-download" class="p-button-text p-button-sm" @click="onExportProject(activeProject)" />
+        </div>
+      </section>
+
+      <!-- Data ------------------------------------------------------- -->
+      <section class="object-section">
+        <div class="object-section__head">
+          <div class="object-section__title">
+            <span class="eyebrow">Data</span>
+            <span class="object-section__count">{{ experiments.length }}</span>
+          </div>
+          <Button label="Open Data" icon="pi pi-arrow-right" iconPos="right" class="p-button-text p-button-sm" @click="openData" />
+        </div>
+
+        <div v-if="experiments.length" class="object-list">
           <div
-            v-for="ver in projectStore.versions"
-            :key="ver.id"
-            class="version-row"
+            v-for="experiment in experiments"
+            :key="experiment.id"
+            class="object-row"
+            role="button"
+            tabindex="0"
+            @click="openData"
+            @keydown.enter.prevent="openData"
+            @keydown.space.prevent="openData"
           >
-            <div class="version-info">
-              <span class="version-number">v{{ ver.version_number }}</span>
-              <span class="version-desc">{{ ver.change_description || 'No description' }}</span>
-            </div>
-            <div class="version-meta">
-              <Tag v-if="ver.include_raw_data" value="Raw Data" severity="info" class="version-tag" />
-              <span class="version-date">{{ formatDate(ver.created_at) }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Recent Projects -->
-      <div class="projects-section">
-        <h3 class="section-title">Recent Projects</h3>
-        <div class="projects-grid">
-          <div
-            v-for="project in projectStore.recentProjects"
-            :key="project.id"
-            class="project-card"
-            :class="{ active: project.id === projectStore.currentProjectId }"
-            @click="selectAndOpen(project.id)"
-          >
-            <div class="card-header">
-              <div class="card-icon" :class="iconClass(project)">
-                <i :class="techniqueIcon(project)"></i>
-              </div>
-              <div class="card-meta">
-                <h4 class="card-name">{{ project.name }}</h4>
-                <span class="card-date">{{ formatDate(project.updated_at) }}</span>
-              </div>
-              <Button
-                icon="pi pi-ellipsis-v"
-                class="p-button-text p-button-rounded p-button-sm card-menu-btn"
-                @click.stop="toggleMenu($event, project.id)"
-              />
-            </div>
-            <p v-if="project.description" class="card-description">
-              {{ truncate(project.description, 120) }}
-            </p>
-            <div class="card-footer">
-              <div class="card-stats">
-                <span class="stat" title="Workflows">
-                  <i class="pi pi-sitemap"></i> {{ project.workflow_count }}
-                </span>
-                <span class="stat" title="Experiments">
-                  <i class="pi pi-chart-bar"></i> {{ project.experiment_count }}
-                </span>
-                <span class="stat" title="Models">
-                  <i class="pi pi-box"></i> {{ project.model_count }}
-                </span>
-              </div>
-              <div class="card-tags">
-                <Tag v-if="project.technique" :value="project.technique" severity="secondary" class="card-tag" />
-                <Tag v-if="project.sample_type" :value="project.sample_type" severity="secondary" class="card-tag" />
+            <span class="dot" :class="datasetStageTone(experiment)"></span>
+            <div class="object-row__main">
+              <strong>{{ experiment.name }}</strong>
+              <small>
+                <span>{{ experiment.file_count }} file{{ experiment.file_count === 1 ? "" : "s" }}</span>
+                <span v-if="experimentDescription(experiment)">{{ experimentDescription(experiment) }}</span>
+              </small>
+              <div v-if="experimentFacts(experiment).length" class="data-facts">
+                <span v-for="fact in experimentFacts(experiment)" :key="fact">{{ fact }}</span>
               </div>
             </div>
-          </div>
-
-          <!-- New Project Card -->
-          <div class="project-card new-project-card" data-action="new_project" @click="showNewProjectDialog">
-            <div class="new-card-content">
-              <i class="pi pi-plus-circle"></i>
-              <span>Create New Project</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- All Projects Table (shown when > 5 projects) -->
-      <div v-if="projectStore.projects.length > 5" class="projects-section">
-        <h3 class="section-title">All Projects ({{ projectStore.projects.length }})</h3>
-        <div class="projects-table">
-          <div class="table-header">
-            <span class="th name">Name</span>
-            <span class="th desc">Description</span>
-            <span class="th tech">Technique</span>
-            <span class="th date">Modified</span>
-            <span class="th actions-col">Actions</span>
-          </div>
-          <div
-            v-for="project in allProjectsSorted"
-            :key="project.id"
-            class="table-row"
-            :class="{ active: project.id === projectStore.currentProjectId }"
-            @click="selectAndOpen(project.id)"
-          >
-            <span class="td name">
-              <i class="pi pi-folder"></i>
-              {{ project.name }}
+            <span class="object-row__time" :title="absoluteTimestamp(experiment.created_at)">
+              {{ formatRelative(experiment.created_at) }}
             </span>
-            <span class="td desc">{{ truncate(project.description || '', 80) }}</span>
-            <span class="td tech">{{ project.technique || '\u2014' }}</span>
-            <span class="td date">{{ formatDate(project.updated_at) }}</span>
-            <span class="td actions-col">
-              <Button
-                icon="pi pi-ellipsis-h"
-                class="p-button-text p-button-rounded p-button-sm"
-                @click.stop="toggleMenu($event, project.id)"
-              />
+            <span class="lifecycle-pill" :class="datasetStageTone(experiment)">
+              {{ datasetStageLabel(experiment) }}
             </span>
           </div>
         </div>
-      </div>
+        <p v-else class="object-empty">No datasets in this project.</p>
+      </section>
+
+      <!-- Workflows -------------------------------------------------- -->
+      <section class="object-section">
+        <div class="object-section__head">
+          <div class="object-section__title">
+            <span class="eyebrow">Workflows</span>
+            <span class="object-section__count">{{ workflows.length }}</span>
+          </div>
+          <Button label="Open Workflows" icon="pi pi-arrow-right" iconPos="right" class="p-button-text p-button-sm" @click="openWorkflows" />
+        </div>
+
+        <div v-if="workflows.length" class="object-list">
+          <div
+            v-for="workflow in workflows"
+            :key="workflow.id"
+            class="object-row"
+            role="button"
+            tabindex="0"
+            @click="openWorkflows"
+            @keydown.enter.prevent="openWorkflows"
+            @keydown.space.prevent="openWorkflows"
+          >
+            <span class="dot" :class="workflowStageTone(workflow)"></span>
+            <div class="object-row__main">
+              <strong>{{ workflow.name }}</strong>
+              <small>
+                <span v-if="workflow.created_from_template_name">from {{ workflow.created_from_template_name }}</span>
+                <span v-else-if="workflow.created_from_workflow_name">copied from {{ workflow.created_from_workflow_name }}</span>
+                <span>{{ workflow.node_count ?? 0 }} node{{ workflow.node_count === 1 ? "" : "s" }} · {{ workflow.edge_count ?? 0 }} edge{{ workflow.edge_count === 1 ? "" : "s" }}</span>
+              </small>
+            </div>
+            <span class="object-row__time" :title="absoluteTimestamp(workflow.updated_at)">
+              {{ formatRelative(workflow.updated_at) }}
+            </span>
+            <span class="lifecycle-pill" :class="workflowStageTone(workflow)">
+              {{ workflowStageLabel(workflow) }}
+            </span>
+          </div>
+        </div>
+        <p v-else class="object-empty">No workflows in this project.</p>
+      </section>
+
+      <!-- Artifacts -------------------------------------------------- -->
+      <section class="object-section">
+        <div class="object-section__head">
+          <div class="object-section__title">
+            <span class="eyebrow">Artifacts</span>
+            <span class="object-section__count">{{ models.length }}</span>
+          </div>
+          <Button label="Open Artifacts" icon="pi pi-arrow-right" iconPos="right" class="p-button-text p-button-sm" @click="openArtifacts" />
+        </div>
+
+        <div v-if="models.length" class="object-list">
+          <div
+            v-for="model in models"
+            :key="model.artifact_uid"
+            class="object-row"
+            role="button"
+            tabindex="0"
+            @click="openArtifacts"
+            @keydown.enter.prevent="openArtifacts"
+            @keydown.space.prevent="openArtifacts"
+          >
+            <span class="dot ready"></span>
+            <div class="object-row__main">
+              <strong>{{ model.name }}</strong>
+              <small>{{ modelSubtitle(model) }}</small>
+            </div>
+            <span class="object-row__time" :title="absoluteTimestamp(model.updated_at || model.created_at)">
+              {{ formatRelative(model.updated_at || model.created_at) }}
+            </span>
+            <span class="lifecycle-pill ready">Trained</span>
+          </div>
+        </div>
+        <p v-else class="object-empty">No artifacts in this project yet.</p>
+      </section>
     </template>
 
-    <!-- Context Menu -->
-    <Menu ref="menu" :model="menuItems" :popup="true" />
-
-    <!-- Project Dialog (create/edit) -->
+    <!-- Dialogs ----------------------------------------------------- -->
     <ProjectDialog
       v-model:visible="dialogVisible"
       :edit-project="editingProject"
-      @create="onCreateProject"
       @update="onUpdateProject"
     />
 
-    <TemplateWizardModal
-      ref="templateWizardRef"
-      v-model="templateWizardVisible"
-      @instantiated="onTemplateInstantiated"
-    />
-
-    <!-- Save Dialog -->
-    <Dialog
-      v-model:visible="saveDialogVisible"
-      header="Save Project"
-      :modal="true"
-      :style="{ width: '420px' }"
-    >
-      <div class="save-form">
-        <div class="field">
-          <label>Description (optional)</label>
-          <InputText v-model="saveDescription" placeholder="What changed?" />
-        </div>
-        <div class="field-checkbox">
-          <Checkbox v-model="saveIncludeRaw" :binary="true" inputId="include-raw" />
-          <label for="include-raw">Include raw data files</label>
-        </div>
-      </div>
-      <template #footer>
-        <Button label="Cancel" class="p-button-text" @click="saveDialogVisible = false" />
-        <Button label="Save Snapshot" icon="pi pi-save" @click="onSaveProject" />
-      </template>
-    </Dialog>
-
-    <!-- Hidden file input for import -->
     <input
       ref="fileInput"
       type="file"
       accept=".spectrapy,.zip"
-      style="display: none"
+      class="hidden-file-input"
       @change="onFileSelected"
     />
   </section>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import Button from "primevue/button";
-import Tag from "primevue/tag";
-import Menu from "primevue/menu";
-import Dialog from "primevue/dialog";
-import InputText from "primevue/inputtext";
-import Checkbox from "primevue/checkbox";
 import ProgressSpinner from "primevue/progressspinner";
 import { useToast } from "primevue/usetoast";
+import api from "@/api/client";
+import ProjectDialog, { type ProjectFormData } from "@/components/ProjectDialog.vue";
+import ResponsiveHeaderActions from "@/components/ResponsiveHeaderActions.vue";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useDemoMode } from "@/composables/useDemoMode";
+import { useDataStore } from "@/stores/data";
 import { useProjectStore } from "@/stores/project";
-import { useWorkflowStore, type WorkflowTemplate } from "@/stores/workflow";
-import type { ProjectSummary } from "@/types";
-import ProjectDialog from "@/components/ProjectDialog.vue";
-import type { ProjectFormData } from "@/components/ProjectDialog.vue";
-import OnboardingBanner from "@/components/OnboardingBanner.vue";
-import TemplateGallery from "@/views/workflow-builder/TemplateGallery.vue";
-import TemplateWizardModal from "@/views/workflow-builder/modals/TemplateWizardModal.vue";
+import { useWorkflowStore, type WorkflowListItem } from "@/stores/workflow";
+import type { ExperimentSummary, ProjectSummary } from "@/types";
+
+interface ModelRow {
+  artifact_uid: string;
+  name: string;
+  model_type: string;
+  n_features: number;
+  n_components: number | null;
+  metrics?: Record<string, unknown> | null;
+  created_at: string;
+  updated_at?: string;
+}
 
 const router = useRouter();
 const toast = useToast();
 const projectStore = useProjectStore();
+const dataStore = useDataStore();
 const workflowStore = useWorkflowStore();
 const advisorStore = useAdvisorStore();
-const { appMode } = useAppConfig();
+const { appMode, isCapabilityDisabled } = useAppConfig();
+const { isDemoMode, uploadsLastWeek, uploadsLimitWeek, uploadsResetWeekAt, fetchQuota } = useDemoMode();
 
-// R9 — Memory Map button is server-backed only.  Local mode's
-// adapter returns ``null`` from ``getMemoryMap`` because there is
-// no graph to render; hide the entry so users don't bounce off an
-// empty view.
 const isServerBacked = computed(() => appMode.value !== "local");
+const uploadQuotaExhausted = computed(() => (
+  isDemoMode.value
+  && uploadsLastWeek.value !== null
+  && uploadsLimitWeek.value > 0
+  && uploadsLimitWeek.value < 999999
+  && uploadsLastWeek.value >= uploadsLimitWeek.value
+));
+const uploadDisabledMessage = computed(() => {
+  if (isCapabilityDisabled("data_upload")) return "Project import is disabled for this deployment.";
+  if (uploadQuotaExhausted.value) {
+    const reset = uploadsResetWeekAt.value ? new Date(uploadsResetWeekAt.value).toLocaleString() : "later";
+    return `Demo upload limit reached. Your next import is available ${reset}.`;
+  }
+  return "";
+});
+const dataUploadDisabled = computed(() => isCapabilityDisabled("data_upload") || uploadQuotaExhausted.value);
+const projectImportDisabled = computed(
+  () => dataUploadDisabled.value || isCapabilityDisabled("project_import"),
+);
+const activeProject = computed(() => projectStore.currentProject);
+const headerActionItems = computed(() => [
+  ...(isServerBacked.value && projectStore.currentProjectId
+    ? [
+        {
+          label: "Memory Map",
+          icon: "pi pi-sitemap",
+          command: openMemoryMap,
+        },
+      ]
+    : []),
+  ...(projectStore.currentProjectId
+    ? [
+        {
+          label: "Audit",
+          icon: "pi pi-shield",
+          command: openProjectAudit,
+        },
+      ]
+    : []),
+  {
+    label: "Import",
+    icon: "pi pi-upload",
+    disabled: projectImportDisabled.value,
+    command: triggerImport,
+  },
+]);
+
+const fileInput = ref<HTMLInputElement | null>(null);
+const dialogVisible = ref(false);
+const editingProject = ref<ProjectSummary | null>(null);
+
+// Richer per-object lists than what ProjectDetail.experiments / .workflows /
+// .models carry — ExperimentBrief/WorkflowBrief don't include created_at /
+// node_count / metrics, all of which the lifecycle line needs.
+const experiments = ref<ExperimentSummary[]>([]);
+const workflows = ref<WorkflowListItem[]>([]);
+const models = ref<ModelRow[]>([]);
+
+// Lifecycle helpers ----------------------------------------------------
+
+// "Linked" means at least one of this project's workflows references the
+// dataset via primary_data_source_id or data_source_ids — i.e. the dataset
+// has graduated from "just imported" to "actively used".
+const linkedExperimentIds = computed<Set<number>>(() => {
+  const set = new Set<number>();
+  const wfs = activeProject.value?.workflows || [];
+  for (const wf of wfs) {
+    if (wf.primary_data_source_id != null) set.add(wf.primary_data_source_id);
+    if (wf.data_source_ids) {
+      for (const id of wf.data_source_ids) set.add(id);
+    }
+  }
+  return set;
+});
+
+const projectExperimentsById = computed(() => {
+  const map = new Map<number, { description?: string | null; facts?: string[] }>();
+  for (const experiment of activeProject.value?.experiments ?? []) {
+    map.set(experiment.id, {
+      description: experiment.description,
+      facts: experiment.facts ?? [],
+    });
+  }
+  return map;
+});
+
+type Tone = "ready" | "neutral" | "empty" | "failed" | "running" | "";
+
+function datasetStageTone(exp: ExperimentSummary): Tone {
+  if (exp.file_count === 0) return "empty";
+  if (linkedExperimentIds.value.has(exp.id)) return "ready";
+  return "neutral";
+}
+
+function datasetStageLabel(exp: ExperimentSummary): string {
+  if (exp.file_count === 0) return "Empty";
+  if (linkedExperimentIds.value.has(exp.id)) return "Linked";
+  return "Imported";
+}
+
+function experimentDescription(exp: ExperimentSummary): string | null {
+  return projectExperimentsById.value.get(exp.id)?.description ?? exp.description ?? null;
+}
+
+function experimentFacts(exp: ExperimentSummary): string[] {
+  return projectExperimentsById.value.get(exp.id)?.facts ?? [];
+}
+
+function workflowStageTone(wf: WorkflowListItem): Tone {
+  const status = (wf.status || "").toLowerCase();
+  if (["error", "failed"].includes(status)) return "failed";
+  if (["completed", "ready", "active", "success"].includes(status)) return "ready";
+  if (status === "running") return "running";
+  if ((wf.node_count ?? 0) === 0) return "empty";
+  return "neutral";
+}
+
+function workflowStageLabel(wf: WorkflowListItem): string {
+  const status = (wf.status || "").toLowerCase();
+  if (["error", "failed"].includes(status)) return "Failed";
+  if (["completed", "ready", "active", "success"].includes(status)) return "Completed";
+  if (status === "running") return "Running";
+  if ((wf.node_count ?? 0) === 0) return "Empty";
+  return "Draft";
+}
+
+function modelSubtitle(model: ModelRow): string {
+  const parts: string[] = [model.model_type, `${model.n_features} features`];
+  if (model.n_components != null) {
+    parts.push(`${model.n_components} components`);
+  }
+  const metric = modelMetricSummary(model.metrics ?? null);
+  if (metric) parts.push(metric);
+  return parts.join(" · ");
+}
+
+function modelMetricSummary(metrics: Record<string, unknown> | null): string | null {
+  if (!metrics) return null;
+  for (const key of ["r2", "rmse", "accuracy", "f1", "mae"]) {
+    const value = metrics[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return `${key.toUpperCase()} ${formatMetric(value)}`;
+    }
+  }
+  return null;
+}
+
+function formatMetric(value: number): string {
+  if (Math.abs(value) >= 100) return value.toFixed(0);
+  if (Math.abs(value) >= 10) return value.toFixed(1);
+  return value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+// Data loading --------------------------------------------------------
+
+onMounted(async () => {
+  await Promise.all([projectStore.fetchProjects(), fetchQuota()]);
+  const projectId =
+    projectStore.currentProjectId ?? projectStore.recentProjects[0]?.id ?? null;
+  if (projectId != null) {
+    await Promise.allSettled([
+      projectStore.fetchProject(projectId),
+      loadObjects(projectId),
+    ]);
+  }
+  void syncAdvisorForProject();
+});
+
+watch(
+  () => projectStore.currentProjectId,
+  async (next) => {
+    if (next != null) {
+      await loadObjects(next);
+      void syncAdvisorForProject();
+    } else {
+      experiments.value = [];
+      workflows.value = [];
+      models.value = [];
+    }
+  },
+);
+
+async function loadObjects(projectId: number): Promise<void> {
+  // All three lifecycle surfaces in parallel; tolerate individual failures.
+  await Promise.allSettled([
+    loadExperiments(projectId),
+    loadWorkflows(projectId),
+    loadModels(projectId),
+  ]);
+}
+
+async function loadExperiments(projectId: number): Promise<void> {
+  try {
+    await dataStore.fetchExperiments(projectId);
+    experiments.value = [...dataStore.experiments];
+  } catch (err) {
+    console.warn("[project] failed to load experiments", err);
+    experiments.value = [];
+  }
+}
+
+async function loadWorkflows(projectId: number): Promise<void> {
+  try {
+    const list = await workflowStore.listWorkflows(projectId);
+    workflows.value = [...list].sort(
+      (a, b) =>
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+    );
+  } catch (err) {
+    console.warn("[project] failed to load workflows", err);
+    workflows.value = [];
+  }
+}
+
+async function loadModels(projectId: number): Promise<void> {
+  try {
+    const response = await api.get<ModelRow[]>("/models", {
+      params: { limit: 50, project_id: projectId },
+    });
+    models.value = response.data || [];
+  } catch (err) {
+    console.warn("[project] failed to load models", err);
+    models.value = [];
+  }
+}
+
+async function syncAdvisorForProject(): Promise<void> {
+  const projectId = projectStore.currentProjectId;
+  if (projectId == null) return;
+  try {
+    await advisorStore.switchScope({
+      projectId,
+      tabKey: "project",
+      subscopeKey: "overview",
+      title: "Overview",
+    });
+  } catch (err) {
+    console.warn("[project] switchScope failed", err);
+  }
+}
+
+// Navigation helpers --------------------------------------------------
 
 function openMemoryMap(): void {
   router.push("/project/memory-map");
@@ -348,233 +519,67 @@ function openProjectAudit(): void {
   });
 }
 
-// R4 — Single-scope Sherpa Advisor routing for the Project tab.
-async function syncAdvisorForProject(): Promise<void> {
-  const projectId = projectStore.currentProjectId;
-  if (projectId == null) return;
-  try {
-    await advisorStore.switchScope({
-      projectId,
-      tabKey: "project",
-      subscopeKey: "overview",
-      title: "Overview",
-    });
-  } catch (err) {
-    console.warn("[project] switchScope failed", err);
-  }
-}
-const menu = ref();
-const fileInput = ref<HTMLInputElement | null>(null);
-const dialogVisible = ref(false);
-const editingProject = ref<ProjectSummary | null>(null);
-const activeMenuProjectId = ref<number | null>(null);
-const templateWizardVisible = ref(false);
-const templateWizardRef = ref<InstanceType<typeof TemplateWizardModal> | null>(null);
-const selectedTemplateId = ref<number | null>(null);
-
-// Save dialog
-const saveDialogVisible = ref(false);
-const saveDescription = ref("");
-const saveIncludeRaw = ref(false);
-
-onMounted(async () => {
-  await projectStore.fetchProjects();
-  try {
-    await workflowStore.fetchTemplates();
-  } catch {
-    // Gallery renders the store-owned error state.
-  }
-  // If there's a current project, load its versions
-  if (projectStore.currentProjectId) {
-    await projectStore.fetchProject(projectStore.currentProjectId);
-    await projectStore.fetchVersions(projectStore.currentProjectId);
-  }
-  void syncAdvisorForProject();
-});
-
-watch(
-  () => projectStore.currentProjectId,
-  (next) => {
-    if (next != null) void syncAdvisorForProject();
-  },
-);
-
-const allProjectsSorted = computed(() =>
-  [...projectStore.projects].sort(
-    (a, b) =>
-      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-  )
-);
-
-const menuItems = computed(() => [
-  {
-    label: "Open",
-    icon: "pi pi-folder-open",
-    command: () => selectAndOpen(activeMenuProjectId.value!),
-  },
-  {
-    label: "Edit",
-    icon: "pi pi-pencil",
-    command: () => editProject(activeMenuProjectId.value!),
-  },
-  {
-    label: "Export",
-    icon: "pi pi-download",
-    command: () => doExportProject(activeMenuProjectId.value!),
-  },
-  { separator: true },
-  {
-    label: "Delete",
-    icon: "pi pi-trash",
-    class: "p-menuitem-danger",
-    command: () => doDeleteProject(activeMenuProjectId.value!),
-  },
-]);
-
-function toggleMenu(event: Event, projectId: number) {
-  activeMenuProjectId.value = projectId;
-  menu.value.toggle(event);
-}
-
-async function selectAndOpen(projectId: number) {
-  await projectStore.selectProject(projectId);
-  await projectStore.fetchVersions(projectId);
+function openData(): void {
   router.push("/data");
 }
 
-function openTemplateWizard(template: WorkflowTemplate) {
-  if (!projectStore.projects.length) {
-    toast.add({
-      severity: "warn",
-      summary: "Create a Project First",
-      detail: "Templates now belong to Projects so workflows keep their analysis context.",
-      life: 4000,
-    });
-    return;
-  }
-
-  if (!projectStore.currentProjectId) {
-    toast.add({
-      severity: "warn",
-      summary: "Select an Active Project",
-      detail: "Choose the target project from the project context first, then launch the template.",
-      life: 4000,
-    });
-    return;
-  }
-
-  selectedTemplateId.value = template.id;
-  templateWizardVisible.value = true;
-  templateWizardRef.value?.open(template);
+function openWorkflows(): void {
+  router.push("/workflow");
 }
 
-async function onTemplateInstantiated(result: { workflowId: number; projectId: number | null; slug?: string }) {
-  if (result.slug) {
-    const matchedTemplate = workflowStore.templates.find((template) => template.slug === result.slug);
-    if (matchedTemplate) {
-      selectedTemplateId.value = matchedTemplate.id;
-    }
-  }
-  if (result.projectId) {
-    await projectStore.selectProject(result.projectId);
-    await projectStore.fetchVersions(result.projectId);
-  }
+function openArtifacts(): void {
+  router.push("/runs");
 }
 
-function continueProject() {
-  router.push("/data");
-}
+// Project CRUD --------------------------------------------------------
 
-function showNewProjectDialog() {
-  editingProject.value = null;
+function showEditProjectDialog(project: ProjectSummary): void {
+  editingProject.value = project;
   dialogVisible.value = true;
 }
 
-function editProject(projectId: number) {
-  const project = projectStore.projects.find((p) => p.id === projectId);
-  if (project) {
-    editingProject.value = project;
-    dialogVisible.value = true;
+function triggerImport(): void {
+  if (projectImportDisabled.value) {
+    toast.add({
+      severity: "warn",
+      summary: "Import Disabled",
+      detail: uploadDisabledMessage.value || "Project import is disabled for this deployment.",
+      life: 4000,
+    });
+    return;
   }
-}
-
-async function doExportProject(projectId: number) {
-  await projectStore.exportProject(projectId);
-  toast.add({
-    severity: "success",
-    summary: "Project Exported",
-    detail: "Project archive downloaded",
-    life: 2000,
-  });
-}
-
-async function doDeleteProject(projectId: number) {
-  const project = projectStore.projects.find((p) => p.id === projectId);
-  if (!project) return;
-
-  if (confirm(`Delete "${project.name}"? This cannot be undone.`)) {
-    const ok = await projectStore.deleteProject(projectId);
-    if (ok) {
-      toast.add({
-        severity: "info",
-        summary: "Project Deleted",
-        detail: `"${project.name}" has been removed`,
-        life: 2000,
-      });
-    }
-  }
-}
-
-function triggerImport() {
   fileInput.value?.click();
 }
 
-async function onFileSelected(event: Event) {
+async function onFileSelected(event: Event): Promise<void> {
+  if (projectImportDisabled.value) return;
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
 
   const project = await projectStore.importProject(file);
   if (project) {
+    await fetchQuota();
     toast.add({
       severity: "success",
-      summary: "Project Imported",
-      detail: `Imported "${project.name}"`,
-      life: 2000,
+      summary: `Imported ${project.name}`,
+      life: 2500,
     });
   } else {
     toast.add({
       severity: "error",
-      summary: "Import Failed",
-      detail: projectStore.error || "Unable to import project file",
-      life: 3000,
+      summary: "Import failed",
+      detail: projectStore.error || undefined,
+      life: 3500,
     });
   }
   input.value = "";
 }
 
-async function onCreateProject(data: ProjectFormData) {
-  const project = await projectStore.createProject({
-    name: data.name,
-    description: data.description || null,
-    technique: data.technique,
-    sample_type: data.sample_type,
-  });
-  if (project) {
-    toast.add({
-      severity: "success",
-      summary: "Project Created",
-      detail: `Created "${project.name}"`,
-      life: 2000,
-    });
-  }
-}
-
-async function onUpdateProject(data: ProjectFormData) {
-  const id = editingProject.value?.id || activeMenuProjectId.value;
-  if (!id) return;
-
-  const updated = await projectStore.updateProject(id, {
+async function onUpdateProject(data: ProjectFormData): Promise<void> {
+  const project = editingProject.value;
+  if (!project) return;
+  const updated = await projectStore.updateProject(project.id, {
     name: data.name,
     description: data.description || null,
     technique: data.technique,
@@ -583,605 +588,434 @@ async function onUpdateProject(data: ProjectFormData) {
   if (updated) {
     toast.add({
       severity: "success",
-      summary: "Project Updated",
-      detail: "Changes saved",
+      summary: "Updated",
       life: 2000,
     });
+    editingProject.value = null;
+    dialogVisible.value = false;
   }
 }
 
-function openSaveDialog() {
-  saveDescription.value = "";
-  saveIncludeRaw.value = false;
-  saveDialogVisible.value = true;
-}
-
-async function onSaveProject() {
-  if (!projectStore.currentProjectId) return;
-  saveDialogVisible.value = false;
-
-  const ver = await projectStore.saveProject(projectStore.currentProjectId, {
-    change_description: saveDescription.value || null,
-    include_raw_data: saveIncludeRaw.value,
-  });
-  if (ver) {
+async function onExportProject(project: ProjectSummary): Promise<void> {
+  await projectStore.exportProject(project.id);
+  if (projectStore.error) {
     toast.add({
-      severity: "success",
-      summary: "Project Saved",
-      detail: `Version ${ver.version_number} created`,
-      life: 2000,
+      severity: "error",
+      summary: "Export failed",
+      detail: projectStore.error,
+      life: 3500,
     });
   }
 }
 
-function formatDate(dateStr: string): string {
+// Date helpers --------------------------------------------------------
+
+function formatRelative(dateStr: string): string {
+  if (!dateStr) return "—";
   const date = new Date(dateStr);
   const now = new Date();
   const diff = now.getTime() - date.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-  if (days === 0) return "Today";
-  if (days === 1) return "Yesterday";
+  if (diff < 0) return "just now";
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return "yesterday";
   if (days < 7) return `${days} days ago`;
-
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
   return date.toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
-    year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+    year: "numeric",
   });
 }
 
-function truncate(text: string, max: number): string {
-  return text.length <= max ? text : text.slice(0, max) + "...";
-}
-
-function techniqueIcon(project: ProjectSummary): string {
-  const tech = (project.technique || "").toLowerCase();
-  if (["ftir", "ir", "infrared", "nir"].some((t) => tech.includes(t))) return "pi pi-wave-pulse";
-  if (tech.includes("raman")) return "pi pi-sun";
-  if (["nmr", "1h", "13c"].some((t) => tech.includes(t))) return "pi pi-bolt";
-  if (["uv", "uv-vis", "visible"].some((t) => tech.includes(t))) return "pi pi-eye";
-  return "pi pi-folder";
-}
-
-function iconClass(project: ProjectSummary): string {
-  const tech = (project.technique || "").toLowerCase();
-  if (["ftir", "ir", "infrared", "nir"].some((t) => tech.includes(t))) return "icon-ir";
-  if (tech.includes("raman")) return "icon-raman";
-  if (["nmr", "1h", "13c"].some((t) => tech.includes(t))) return "icon-nmr";
-  if (["uv", "uv-vis", "visible"].some((t) => tech.includes(t))) return "icon-uv";
-  return "icon-default";
+function absoluteTimestamp(dateStr: string): string {
+  if (!dateStr) return "";
+  try {
+    return new Date(dateStr).toLocaleString();
+  } catch {
+    return dateStr;
+  }
 }
 </script>
 
 <style scoped>
+/*
+  Zen language — same vocabulary as Dashboard V2. Hairlines instead of
+  boxed cards; one accent color (primary) for "ready" / "linked" lifecycle
+  states only; red for failed; everything else neutral. Single type and
+  spacing rhythm so the three object surfaces (Data / Workflows /
+  Artifacts) read as one continuous page.
+*/
+
 .project-content {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-}
-
-.templates-panel {
-  padding: 1.25rem;
-  border: 1px solid var(--surface-border);
-  border-radius: 14px;
-  background: var(--surface-card);
-}
-
-.empty-templates-panel {
-  margin-top: 1.5rem;
-  width: 100%;
-  max-width: 980px;
-}
-
-.templates-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.templates-header h3 {
-  margin: 0 0 0.35rem;
-}
-
-.templates-subtitle,
-.templates-header p {
-  margin: 0;
-  color: var(--text-color-secondary);
+  gap: 2rem;
+  padding: 0 1rem;
+  color: var(--text-color);
+  font-size: 0.9375rem;
   line-height: 1.5;
 }
 
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.section-header h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
+/* Header ----------------------------------------------------------- */
 
 .header-actions {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
-/* Loading / Empty */
-.loading-container,
+/* Empty state ----------------------------------------------------- */
+
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 12px;
-  padding: 60px 20px;
-  color: #64748b;
+  gap: 0.5rem;
+  padding: 3rem 1rem;
   text-align: center;
 }
 
-.empty-state i {
-  font-size: 3rem;
-  color: #cbd5e1;
-}
-
-.empty-state h3 {
+.empty-state__title {
   margin: 0;
-  color: #334155;
+  font-size: 1rem;
+  font-weight: 500;
 }
 
+.empty-state__hint,
 .empty-state p {
   margin: 0;
-  max-width: 400px;
+  color: var(--text-color-secondary);
+  font-size: 0.875rem;
 }
 
-/* Current project banner */
-.current-project-banner {
+/* Current Project section ----------------------------------------- */
+
+.current-section {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: linear-gradient(135deg, #eff6ff, #dbeafe);
-  border: 1px solid #bfdbfe;
-  border-radius: 12px;
-  padding: 20px 24px;
-  gap: 24px;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--surface-border);
 }
 
-.banner-left {
+.current-head {
   display: flex;
   align-items: flex-start;
-  gap: 16px;
-  flex: 1;
-}
-
-.banner-icon {
-  font-size: 1.75rem;
-  color: #3b82f6;
-  margin-top: 2px;
-}
-
-.banner-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.banner-label {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #3b82f6;
-  font-weight: 600;
-}
-
-.banner-name {
-  margin: 0;
-  font-size: 1.2rem;
-  font-weight: 600;
-  color: #1e293b;
-}
-
-.banner-desc {
-  margin: 0;
-  font-size: 0.9rem;
-  color: #64748b;
-}
-
-.banner-actions {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
-}
-
-.banner-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.banner-stats {
-  display: flex;
-  gap: 14px;
-}
-
-.banner-buttons {
-  display: flex;
-  gap: 8px;
-}
-
-/* Version history */
-.version-list {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  overflow: hidden;
-  max-height: 240px;
-  overflow-y: auto;
-}
-
-.version-row {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #f1f5f9;
+  gap: 1rem;
 }
 
-.version-row:last-child {
-  border-bottom: none;
-}
-
-.version-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.version-number {
-  font-weight: 600;
-  color: #3b82f6;
-  font-size: 0.9rem;
-  min-width: 36px;
-}
-
-.version-desc {
-  color: #475569;
-  font-size: 0.9rem;
-}
-
-.version-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.version-tag {
-  font-size: 0.7rem;
-}
-
-.version-date {
-  color: #94a3b8;
-  font-size: 0.85rem;
-  white-space: nowrap;
-}
-
-/* Projects sections */
-.projects-section {
+.current-head__main {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.section-title {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: #334155;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-/* Project cards grid */
-.projects-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
-}
-
-.project-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  padding: 20px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-
-.project-card:hover {
-  border-color: #93c5fd;
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);
-}
-
-.project-card.active {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
-}
-
-.card-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.card-icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.card-icon i {
-  font-size: 1.15rem;
-}
-
-.icon-ir { background: #fef3c7; }
-.icon-ir i { color: #d97706; }
-.icon-raman { background: #dcfce7; }
-.icon-raman i { color: #16a34a; }
-.icon-nmr { background: #fce7f3; }
-.icon-nmr i { color: #db2777; }
-.icon-uv { background: #ede9fe; }
-.icon-uv i { color: #7c3aed; }
-.icon-default { background: #f1f5f9; }
-.icon-default i { color: #64748b; }
-
-.card-meta {
-  flex: 1;
+  gap: 0.15rem;
   min-width: 0;
 }
 
-.card-name {
+.current-name {
+  font-size: 1.5rem;
+  font-weight: 500;
   margin: 0;
-  font-size: 1rem;
-  font-weight: 600;
-  color: #1e293b;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  letter-spacing: 0;
 }
 
-.card-date {
-  font-size: 0.8rem;
-  color: #94a3b8;
+.current-desc {
+  color: var(--text-color-secondary);
+  font-size: 0.9375rem;
+  margin: 0.25rem 0 0 0;
+  max-width: 70ch;
 }
 
-.card-menu-btn {
+.current-time {
+  color: var(--text-color-secondary);
+  font-size: 0.875rem;
+  font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
 
-.card-description {
-  margin: 0;
-  font-size: 0.875rem;
-  color: #64748b;
-  line-height: 1.5;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.card-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: auto;
-}
-
-.card-stats {
-  display: flex;
-  gap: 12px;
-}
-
-.stat {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.8rem;
-  color: #94a3b8;
-}
-
-.stat i {
-  font-size: 0.85rem;
-}
-
-.card-tags {
+.current-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  font-size: 0.875rem;
+  color: var(--text-color-secondary);
 }
 
-.card-tag {
-  font-size: 0.7rem;
+.current-meta span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
 }
 
-/* New project card */
-.new-project-card {
-  border-style: dashed;
-  border-color: #cbd5e1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 160px;
+.current-meta span + span::before {
+  content: "·";
+  margin: 0 0.6rem;
+  color: var(--surface-border);
 }
 
-.new-project-card:hover {
-  border-color: #3b82f6;
-  background: #f8fafc;
-}
-
-.new-card-content {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  color: #94a3b8;
-}
-
-.new-card-content i {
-  font-size: 2rem;
-}
-
-.new-card-content span {
+.current-meta strong {
+  color: var(--text-color);
   font-weight: 500;
 }
 
-.new-project-card:hover .new-card-content {
-  color: #3b82f6;
-}
-
-/* Projects table */
-.projects-table {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-.table-header {
-  display: grid;
-  grid-template-columns: 1.5fr 2fr 100px 100px 60px;
-  padding: 12px 16px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.table-row {
-  display: grid;
-  grid-template-columns: 1.5fr 2fr 100px 100px 60px;
-  padding: 12px 16px;
-  border-bottom: 1px solid #f1f5f9;
-  cursor: pointer;
-  transition: background 0.15s;
+.current-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  margin-left: -0.5rem;
   align-items: center;
 }
 
-.table-row:hover {
-  background: #f8fafc;
+.action-sep {
+  display: inline-block;
+  width: 1px;
+  height: 1.2rem;
+  background: var(--surface-border);
+  margin: 0 0.4rem;
 }
 
-.table-row.active {
-  background: #eff6ff;
+/* Object sections (Data / Workflows / Artifacts) ----------------- */
+
+.object-section {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--surface-border);
 }
 
-.table-row:last-child {
+.object-section:last-of-type {
   border-bottom: none;
 }
 
-.td.name {
+.object-section__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.object-section__title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.object-section__count {
+  color: var(--text-color-secondary);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.object-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.object-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--surface-border);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.object-row:last-child {
+  border-bottom: none;
+}
+
+.object-row:hover {
+  color: var(--primary-color);
+}
+
+.object-row:focus-visible {
+  outline: 1px solid var(--primary-color);
+  outline-offset: 2px;
+}
+
+.object-row__main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.object-row__main strong {
+  font-size: 0.9375rem;
   font-weight: 500;
-  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.td.name i {
-  color: #94a3b8;
+.object-row__main small {
+  color: var(--text-color-secondary);
+  font-size: 0.8125rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  flex-wrap: wrap;
 }
 
-.td.desc {
-  color: #64748b;
-  font-size: 0.875rem;
+.object-row__main small > span + span::before {
+  content: "·";
+  margin: 0 0.4rem;
+  color: var(--surface-border);
 }
 
-.td.tech {
-  font-size: 0.85rem;
-  color: #64748b;
+.data-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.25rem;
 }
 
-.td.date {
-  font-size: 0.85rem;
-  color: #94a3b8;
-}
-
-.td.actions-col {
-  text-align: right;
-}
-
-.project-tag {
+.data-facts span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.35rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  color: var(--text-color-secondary);
   font-size: 0.75rem;
+  line-height: 1.2;
+  background: transparent;
 }
 
-/* Save form */
-.save-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.object-row__time {
+  color: var(--text-color-secondary);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
-.save-form .field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.object-empty {
+  color: var(--text-color-secondary);
+  font-size: 0.875rem;
+  margin: 0.5rem 0 0;
 }
 
-.save-form .field label {
-  font-weight: 500;
-  font-size: 0.9rem;
-  color: #334155;
+/* Lifecycle indicators ------------------------------------------- */
+
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border: 1.5px solid var(--text-color-secondary);
+  border-radius: 50%;
+  flex-shrink: 0;
+  opacity: 0.55;
 }
 
-.field-checkbox {
-  display: flex;
+.dot.ready {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  opacity: 1;
+}
+
+.dot.failed {
+  background: var(--red-500);
+  border-color: var(--red-500);
+  opacity: 1;
+}
+
+.dot.running {
+  background: var(--yellow-500);
+  border-color: var(--yellow-500);
+  opacity: 1;
+}
+
+.dot.empty {
+  border-color: var(--surface-border);
+  opacity: 1;
+}
+
+.lifecycle-pill {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  padding: 0.05rem 0.45rem;
+  color: var(--text-color-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 4.5rem;
+  justify-content: center;
 }
 
-.field-checkbox label {
-  font-size: 0.9rem;
-  color: #475569;
+.lifecycle-pill.ready {
+  border-color: color-mix(in srgb, var(--primary-color) 35%, transparent);
+  color: var(--primary-color);
 }
 
-@media (max-width: 768px) {
-  .projects-grid {
-    grid-template-columns: 1fr;
+.lifecycle-pill.failed {
+  border-color: color-mix(in srgb, var(--red-500) 35%, transparent);
+  color: var(--red-500);
+}
+
+.lifecycle-pill.running {
+  border-color: color-mix(in srgb, var(--yellow-500) 50%, transparent);
+  color: var(--yellow-600, var(--yellow-500));
+}
+
+.lifecycle-pill.empty {
+  color: var(--text-color-secondary);
+}
+
+.hidden-file-input {
+  display: none;
+}
+
+/* Shared --------------------------------------------------------- */
+
+.eyebrow {
+  display: block;
+  color: var(--text-color-secondary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Responsive ----------------------------------------------------- */
+
+@media (max-width: 900px) {
+  .header-actions {
+    justify-content: flex-start;
   }
-
-  .current-project-banner {
+  .current-head {
+    flex-direction: column;
+  }
+  .current-actions {
     flex-direction: column;
     align-items: stretch;
+    margin-left: 0;
   }
-
-  .banner-actions {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .table-header,
-  .table-row {
-    grid-template-columns: 1fr 100px 60px;
-  }
-
-  .th.desc,
-  .th.tech,
-  .td.desc,
-  .td.tech {
+  .action-sep {
     display: none;
+  }
+  .object-row {
+    flex-wrap: wrap;
+  }
+  .object-row__time,
+  .lifecycle-pill {
+    margin-left: 1.25rem;
   }
 }
 </style>

@@ -4,22 +4,22 @@
     modal
     :draggable="false"
     :style="{ width: '720px' }"
-    header="Start from a template"
+    header="Analysis Starters"
     class="template-picker-dialog"
   >
     <div v-if="loading" class="tp-status">
-      <i class="pi pi-spin pi-spinner"></i> Loading templates…
+      <i class="pi pi-spin pi-spinner"></i> Loading analysis starters...
     </div>
     <div v-else-if="loadError" class="tp-status tp-status-error">
       <i class="pi pi-exclamation-triangle"></i>
       {{ loadError }}
     </div>
     <div v-else-if="templates.length === 0" class="tp-status">
-      No templates are available. Reinstall <code>spectra-sherpa</code> to refresh the catalog.
+      No analysis starters are available. Reinstall <code>spectra-sherpa</code> to refresh the catalog.
     </div>
     <template v-else>
       <p class="tp-tagline">
-        Curated starter workflows. Ready-to-run templates include sample data so
+        Curated analysis starters. Ready-to-run workflows include sample data so
         you can see the pipeline run end-to-end before swapping in your own data.
       </p>
       <div v-for="(group, idx) in groupedTemplates" :key="group.category" class="tp-group">
@@ -32,7 +32,7 @@
             <div class="tp-row-main">
               <div class="tp-row-title">
                 {{ tpl.name }}
-                <span v-if="!supportsExample(tpl)" class="tp-needs-data" title="This template needs you to bind it to your own data after creation.">
+                <span v-if="!canUseTemplate(tpl)" class="tp-needs-data" title="This analysis starter needs you to bind it to your own data after creation.">
                   needs data
                 </span>
               </div>
@@ -43,7 +43,7 @@
               :icon="templateButtonIcon(tpl)"
               icon-pos="right"
               class="p-button-sm"
-              :disabled="instantiating !== null || !projectAvailable || !supportsExample(tpl)"
+              :disabled="instantiating !== null || !projectAvailable || !canUseTemplate(tpl)"
               :title="templateButtonTitle(tpl)"
               @click="onUse(tpl)"
             />
@@ -53,7 +53,7 @@
       </div>
       <div v-if="!projectAvailable" class="tp-status tp-status-warning">
         <i class="pi pi-info-circle"></i>
-        Create or open a project first — templates land as sheets inside the active project.
+        Create or open a project first — analysis starters create workflow sheets inside the active project.
       </div>
     </template>
 
@@ -70,12 +70,22 @@ import Button from "primevue/button";
 import { useToast } from "primevue/usetoast";
 import { api } from "@/api";
 import { useWorkbookStore } from "@/stores/workbook";
+import { useWorkflowStore } from "@/stores/workflow";
+import type { TemplateDataBinding, WorkflowNode } from "@/stores/workflow-types";
+import type { ExperimentStage } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 
 interface TemplateNode {
   node_id?: string;
   node_type?: string;
   parameters?: Record<string, unknown>;
+}
+
+interface TemplateRole {
+  node_binding?: string;
+  required?: boolean;
+  binding_mode?: string;
+  target_type?: string | null;
 }
 
 interface TemplateOut {
@@ -88,6 +98,7 @@ interface TemplateOut {
   is_active: boolean;
   template_data: {
     nodes?: TemplateNode[];
+    data_roles?: Record<string, TemplateRole>;
     [key: string]: unknown;
   };
 }
@@ -96,6 +107,7 @@ const visible = defineModel<boolean>("visible", { default: false });
 const emit = defineEmits<{ "sheet-opened": [] }>();
 
 const workbookStore = useWorkbookStore();
+const workflowStore = useWorkflowStore();
 const toast = useToast();
 
 const templates = ref<TemplateOut[]>([]);
@@ -143,7 +155,7 @@ const groupedTemplates = computed(() => {
 
 // Mirror of the backend's _extract_example_reference: a template supports
 // example mode if any data.source node references a bundled dataset (one
-// of eigenvector / sklearn / spectrochempy / oes).  Templates that don't
+// of synthetic / eigenvector / sklearn / spectrochempy / oes). Templates that don't
 // support it instantiate via launch_mode=example with a 400 we surface,
 // so we flag them upfront with a "needs data" chip.
 const supportsExample = (tpl: TemplateOut): boolean => {
@@ -153,6 +165,7 @@ const supportsExample = (tpl: TemplateOut): boolean => {
     const p = (n.parameters ?? {}) as Record<string, unknown>;
     const src = p.source;
     if (src === "eigenvector" && typeof p.eigenvector_dataset === "string") return true;
+    if (src === "synthetic" && typeof p.synthetic_dataset === "string") return true;
     if (src === "sklearn" && typeof p.sklearn_dataset === "string") return true;
     if (src === "spectrochempy" && (typeof p.example_dataset === "string" || typeof p.example_file === "string")) return true;
     if (src === "oes" && typeof p.oes_dataset === "string") return true;
@@ -160,20 +173,127 @@ const supportsExample = (tpl: TemplateOut): boolean => {
   });
 };
 
+const parseNumberParam = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const normalizeStage = (value: unknown): ExperimentStage =>
+  typeof value === "string" && value.trim() ? (value as ExperimentStage) : "raw";
+
+const isPrimaryDataSourceNode = (node: WorkflowNode): boolean =>
+  (node.type === "data.source" || node.type === "data.my_dataset") && !String(node.id).endsWith("__target_source");
+
+const isTargetDataSourceNode = (node: WorkflowNode): boolean =>
+  node.type === "data.source" && String(node.id).endsWith("__target_source");
+
+const bindingFromNode = (node: WorkflowNode | undefined): TemplateDataBinding | null => {
+  if (!node) return null;
+  const params = node.params || {};
+  if (node.type === "data.my_dataset") {
+    const experimentId = parseNumberParam(params.dataset_id);
+    if (experimentId === null) return null;
+    return {
+      source: "experiment",
+      experimentId,
+      fileId: null,
+      stage: "raw",
+    };
+  }
+  if (params.source !== "experiment") return null;
+  const experimentId = parseNumberParam(params.experiment_id);
+  if (experimentId === null) return null;
+  return {
+    source: "experiment",
+    experimentId,
+    fileId: parseNumberParam(params.file_id),
+    stage: normalizeStage(params.stage),
+  };
+};
+
+const currentPrimaryDataBinding = (): TemplateDataBinding | null =>
+  bindingFromNode(workflowStore.nodes.find(isPrimaryDataSourceNode));
+
+const currentTargetDataBinding = (): TemplateDataBinding | null =>
+  bindingFromNode(workflowStore.nodes.find(isTargetDataSourceNode));
+
+const templateSourceNodeIds = (tpl: TemplateOut): string[] => {
+  const roles = Object.values(tpl.template_data.data_roles || {});
+  const roleNodeIds = Array.from(
+    new Set(
+      roles
+        .filter((role) => role.required !== false && role.node_binding)
+        .map((role) => String(role.node_binding))
+    )
+  );
+  if (roleNodeIds.length > 0) return roleNodeIds;
+
+  return (tpl.template_data.nodes || [])
+    .filter((node) => node.node_type === "data.source" && !String(node.node_id || "").endsWith("__target_source"))
+    .map((node) => String(node.node_id))
+    .filter(Boolean);
+};
+
+const separateTargetTypeForNode = (tpl: TemplateOut, nodeId: string): string | null => {
+  const targetRole = Object.values(tpl.template_data.data_roles || {}).find(
+    (role) =>
+      role.required !== false &&
+      role.binding_mode === "separate_source" &&
+      String(role.node_binding || "") === nodeId
+  );
+  return targetRole?.target_type || null;
+};
+
+const inheritedDataBindingsForTemplate = (tpl: TemplateOut): Record<string, TemplateDataBinding> | null => {
+  const primaryBinding = currentPrimaryDataBinding();
+  if (!primaryBinding) return null;
+
+  const sourceNodeIds = templateSourceNodeIds(tpl);
+  if (sourceNodeIds.length !== 1) return null;
+
+  const targetType = separateTargetTypeForNode(tpl, sourceNodeIds[0]);
+  const targetBinding = targetType ? currentTargetDataBinding() : null;
+  if (targetType && !targetBinding) return null;
+
+  return {
+    [sourceNodeIds[0]]: {
+      ...primaryBinding,
+      targetBinding: targetBinding || undefined,
+      targetType,
+    },
+  };
+};
+
+const canUseTemplate = (tpl: TemplateOut): boolean =>
+  !!inheritedDataBindingsForTemplate(tpl) || supportsExample(tpl);
+
 const templateButtonLabel = (tpl: TemplateOut): string => {
+  if (instantiating.value === tpl.id) return "Creating…";
+  if (inheritedDataBindingsForTemplate(tpl)) return "Use Current Data";
   if (!supportsExample(tpl)) return "Needs data";
-  return instantiating.value === tpl.id ? "Creating…" : "Use";
+  return "Use";
 };
 
 const templateButtonIcon = (tpl: TemplateOut): string => {
+  if (inheritedDataBindingsForTemplate(tpl)) {
+    return instantiating.value === tpl.id ? "pi pi-spin pi-spinner" : "pi pi-link";
+  }
   if (!supportsExample(tpl)) return "pi pi-lock";
   return instantiating.value === tpl.id ? "pi pi-spin pi-spinner" : "pi pi-arrow-right";
 };
 
-const templateButtonTitle = (tpl: TemplateOut): string =>
-  supportsExample(tpl)
-    ? "Create a new workflow sheet from this template."
-    : "This template needs a data-binding flow before it can be created from the workbook picker.";
+const templateButtonTitle = (tpl: TemplateOut): string => {
+  if (inheritedDataBindingsForTemplate(tpl)) {
+    return "Create a new workflow sheet using the active sheet's Data Source.";
+  }
+  return supportsExample(tpl)
+    ? "Create a new workflow sheet from this analysis starter."
+    : "This analysis starter needs a data-binding flow before it can be created from the workbook picker.";
+};
 
 const loadTemplates = async () => {
   loading.value = true;
@@ -184,7 +304,7 @@ const loadTemplates = async () => {
     );
     templates.value = response.data.templates;
   } catch (err) {
-    loadError.value = getErrorMessage(err, "Failed to load templates.");
+    loadError.value = getErrorMessage(err, "Failed to load analysis starters.");
     templates.value = [];
   } finally {
     loading.value = false;
@@ -199,11 +319,12 @@ watch(visible, (next) => {
 
 const onUse = async (tpl: TemplateOut) => {
   if (!projectAvailable.value) return;
-  if (!supportsExample(tpl)) {
+  const inheritedBindings = inheritedDataBindingsForTemplate(tpl);
+  if (!inheritedBindings && !supportsExample(tpl)) {
     toast.add({
       severity: "info",
       summary: "Data binding required",
-      detail: "This template needs your data to be bound before creation.",
+      detail: "This analysis starter needs your data to be bound before creation.",
       life: 3000,
     });
     return;
@@ -211,28 +332,39 @@ const onUse = async (tpl: TemplateOut) => {
   instantiating.value = tpl.id;
   try {
     const workflowName = `${tpl.name}`;
-    const sheet = await workbookStore.openTemplateAsSheet(tpl.id, workflowName);
+    const sheet = await workbookStore.openTemplateAsSheet(
+      tpl.id,
+      workflowName,
+      inheritedBindings
+        ? {
+            launchMode: "user",
+            dataBindings: inheritedBindings,
+          }
+        : undefined
+    );
     emit("sheet-opened");
     toast.add({
       severity: "success",
-      summary: "Template applied",
-      detail: `"${sheet.name}" is now active in the workbook.`,
+      summary: "Analysis started",
+      detail: inheritedBindings
+        ? `"${sheet.name}" is now active and linked to the current Data Source.`
+        : `"${sheet.name}" is now active in the workbook.`,
       life: 2500,
     });
     visible.value = false;
   } catch (err) {
-    const message = getErrorMessage(err, "Template instantiation failed.");
+    const message = getErrorMessage(err, "Could not start analysis.");
     // ~half the shipped templates reference SpectroChemPy bundled datasets
-    // (irdata, ramandata, nmrdata, …).  In a base ``pip install spectra-sherpa``
+    // (irdata, ramandata, …).  In a base ``pip install spectra-sherpa``
     // install (no ``[scp]`` extra), ``_resolve_scp_path`` raises a 404 with
     // "SCP dataset not found: …" — opaque to a user who doesn't know about
     // optional extras.  Rewrite the toast with the install hint.
     const isScpMissing = /SCP dataset not found/i.test(message);
     toast.add({
       severity: "error",
-      summary: isScpMissing ? "SpectroChemPy required" : "Could not start from template",
+      summary: isScpMissing ? "SpectroChemPy required" : "Could not start analysis",
       detail: isScpMissing
-        ? "This template needs the SpectroChemPy extra. Install it with: pip install 'spectra-sherpa[scp]' and restart the app."
+        ? "This analysis starter needs the SpectroChemPy extra. Install it with: pip install 'spectra-sherpa[scp]' and restart the app."
         : message,
       life: isScpMissing ? 8000 : 4000,
     });

@@ -1,10 +1,9 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import Dialog from "primevue/dialog";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
-import Textarea from "primevue/textarea";
 import Dropdown from "primevue/dropdown";
 import Message from "primevue/message";
 import { useToast } from "primevue/usetoast";
@@ -19,6 +18,7 @@ import {
 import { useProjectStore } from "@/stores/project";
 import { useExperimentStore } from "@/stores/experiment";
 import type { ExperimentBrief, ExperimentFile, ExperimentStage } from "@/types";
+import { useAppConfig } from "@/composables/useAppConfig";
 import { getErrorMessage } from "@/utils/errors";
 import api from "@/api/client";
 
@@ -69,6 +69,16 @@ interface ExploreBinding {
 }
 
 const visible = defineModel<boolean>({ default: false });
+const props = withDefaults(
+  defineProps<{
+    projectCreationMode?: "auto" | "always";
+    landingRoute?: string;
+  }>(),
+  {
+    projectCreationMode: "auto",
+    landingRoute: "/data",
+  }
+);
 const emit = defineEmits<{
   instantiated: [result: { workflowId: number; projectId: number | null; slug: string }];
 }>();
@@ -78,6 +88,7 @@ const toast = useToast();
 const workflowStore = useWorkflowStore();
 const projectStore = useProjectStore();
 const experimentStore = useExperimentStore();
+const { isCapabilityDisabled, loadConfig } = useAppConfig();
 
 const template = ref<WorkflowTemplate | null>(null);
 const workflowName = ref("");
@@ -91,6 +102,25 @@ const selectedExampleDatasets = ref<Record<string, ExampleDatasetChoice | null>>
 // Backend-computed match scores: { roleKey: [{ ...dataset, match_score }] }
 const datasetMatchScores = ref<Record<string, Record<string, number>>>({});
 const activeProjectId = computed(() => projectStore.currentProjectId);
+const forceProjectCreation = computed(() => props.projectCreationMode === "always");
+const willCreateProject = computed(() => forceProjectCreation.value || activeProjectId.value === null);
+const dataUploadAvailable = computed(() => !isCapabilityDisabled("data_upload"));
+const canUseMyDatasetMode = computed(() => !forceProjectCreation.value || dataUploadAvailable.value);
+const showUploadDatasetCta = computed(
+  () =>
+    launchMode.value === "user" &&
+    dataUploadAvailable.value &&
+    (activeProjectId.value === null || projectExperiments.value.length === 0)
+);
+
+// In-wizard inline hint: if the user lingers without choosing data,
+// surface a concise nudge *inside* the modal.  Guidance toasts are
+// reserved for full-screen, route-level prompts — pop-ups guide
+// themselves inline.
+const DATA_HINT_DELAY_MS = 15000;
+const showDataHint = ref(false);
+const hintDismissed = ref(false);
+let dataHintTimer: number | null = null;
 
 const roleLabels: Record<string, string> = {
   X_spectra: "Spectral Data",
@@ -133,6 +163,7 @@ const exampleSources = computed<ExampleSourceSummary[]>(() => {
     }
 
     const datasetName =
+      (source === "synthetic" && typeof params.synthetic_dataset === "string" && params.synthetic_dataset) ||
       (source === "eigenvector" && typeof params.eigenvector_dataset === "string" && params.eigenvector_dataset) ||
       (source === "sklearn" && typeof params.sklearn_dataset === "string" && params.sklearn_dataset) ||
       (source === "spectrochempy" &&
@@ -195,14 +226,24 @@ const dataRoleGroups = computed<TemplateBindingGroup[]>(() => {
 });
 
 const canInstantiate = computed(() => {
-  if (!template.value || !workflowName.value.trim() || activeProjectId.value === null) {
+  if (!template.value || !workflowName.value.trim()) {
     return false;
   }
   if (templateStatus.value !== "ready") {
     return false;
   }
+  // Example mode binds to bundled datasets — it doesn't depend on a
+  // project's experiments, so it can proceed even when no project is
+  // active (handleInstantiate will spin up a default project on click).
   if (launchMode.value === "example") {
     return supportsExampleMode.value && exampleSources.value.every((source) => !!selectedExampleDatasets.value[source.nodeId]);
+  }
+  // User mode needs a project to bind data to.
+  if (forceProjectCreation.value) {
+    return false;
+  }
+  if (activeProjectId.value === null) {
+    return false;
   }
   if (dataRoleGroups.value.length === 0) {
     return true;
@@ -222,6 +263,65 @@ const canInstantiate = computed(() => {
     return true;
   });
 });
+
+// The CTA's verb changes with intent: when there's no active project,
+// clicking it will mint one (with a sensible default name) before the
+// workflow gets instantiated — so the label leads with the bigger action
+// the user is committing to.
+const instantiateButtonLabel = computed(() =>
+  willCreateProject.value ? "Create Project" : "Create Workflow",
+);
+const headerEntityLabel = computed(() => (willCreateProject.value ? "Project" : "Workflow"));
+const namePlaceholder = computed(() => (willCreateProject.value ? "Name this project" : "Name this workflow"));
+
+// True once the user has supplied the data the template needs —
+// an example dataset per source (example mode) or a bound experiment
+// file per required role (user mode).  Deliberately narrower than
+// canInstantiate: it ignores name/project/status so the hint is
+// purely about whether data has been picked.
+const dataChosen = computed(() => {
+  if (!template.value) return false;
+  if (launchMode.value === "example") {
+    return (
+      supportsExampleMode.value &&
+      exampleSources.value.length > 0 &&
+      exampleSources.value.every((source) => !!selectedExampleDatasets.value[source.nodeId])
+    );
+  }
+  if (dataRoleGroups.value.length === 0) return true;
+  return dataRoleGroups.value.every((group) => {
+    const state = bindingState.value[group.nodeId];
+    if (!state?.experimentId || !state.fileId) return false;
+    if (group.targetRole?.role.binding_mode === "separate_source") {
+      return !!state.targetExperimentId && !!state.targetFileId;
+    }
+    return true;
+  });
+});
+
+function clearDataHintTimer() {
+  if (dataHintTimer !== null) {
+    window.clearTimeout(dataHintTimer);
+    dataHintTimer = null;
+  }
+}
+
+function armDataHintTimer() {
+  clearDataHintTimer();
+  showDataHint.value = false;
+  dataHintTimer = window.setTimeout(() => {
+    dataHintTimer = null;
+    if (!dataChosen.value && !hintDismissed.value) {
+      showDataHint.value = true;
+    }
+  }, DATA_HINT_DELAY_MS);
+}
+
+function dismissDataHint() {
+  hintDismissed.value = true;
+  showDataHint.value = false;
+  clearDataHintTimer();
+}
 
 function compactPath(filePath: string): string {
   const normalized = filePath.replace(/\\/g, "/");
@@ -247,10 +347,11 @@ function roleHint(entry: TemplateRoleEntry): string {
   if (entry.role.binding_mode === "separate_source") {
     return "This role is supplied from a separate experiment file and attached during instantiation.";
   }
-  return "This role is bound through the template workflow.";
+  return "This role is bound through the analysis starter workflow.";
 }
 
 function sourceLabel(source: string): string {
+  if (source === "synthetic") return "Spectra Scientific Synthetic";
   if (source === "eigenvector") return "Eigenvector Research";
   if (source === "sklearn") return "Scikit-learn";
   if (source === "spectrochempy") return "SpectroChemPy";
@@ -260,17 +361,29 @@ function sourceLabel(source: string): string {
 
 function findWorkflowExploreBinding(): ExploreBinding | null {
   const candidates = workflowStore.nodes
-    .filter((node) => node.type === "data.source" && !String(node.id).endsWith("__target_source"))
+    .filter(
+      (node) =>
+        (node.type === "data.source" || node.type === "data.my_dataset") &&
+        !String(node.id).endsWith("__target_source")
+    )
     .map((node) => {
       const params = node.params || {};
       const experimentId =
-        typeof params.experiment_id === "number"
-          ? params.experiment_id
-          : typeof params.experiment_id === "string"
-            ? Number.parseInt(params.experiment_id, 10)
-            : NaN;
+        node.type === "data.my_dataset"
+          ? typeof params.dataset_id === "number"
+            ? params.dataset_id
+            : typeof params.dataset_id === "string"
+              ? Number.parseInt(params.dataset_id, 10)
+              : NaN
+          : typeof params.experiment_id === "number"
+            ? params.experiment_id
+            : typeof params.experiment_id === "string"
+              ? Number.parseInt(params.experiment_id, 10)
+              : NaN;
       const fileId =
-        typeof params.file_id === "number"
+        node.type === "data.my_dataset"
+          ? null
+          : typeof params.file_id === "number"
           ? params.file_id
           : typeof params.file_id === "string" && params.file_id.trim()
             ? Number.parseInt(params.file_id, 10)
@@ -302,15 +415,30 @@ function compatibleExampleDatasetsForNode(nodeId: string): ExampleDatasetChoice[
       .map((technique) => technique.trim())
       .filter(Boolean)
   );
+  // Three-shape role match: when a role lists `accepted_data_roles`
+  // (X_spectra / X_features / X_hsi), an option whose `data_role` is
+  // in that set is eligible regardless of technique. Without this the
+  // sklearn feature-tables (technique "ML/Statistics") are filtered
+  // out by the technique check below even though dual-mode templates
+  // (PCA, PLS-DA, KNN, …) accept X_features.
+  const acceptedDataRoles = new Set(
+    (group?.roles || []).flatMap((entry) => entry.role.accepted_data_roles || []),
+  );
   const requiredTargetType = normalizeTargetType(group);
 
-  const allOptions = ["eigenvector", "spectrochempy", "oes", "sklearn"]
+  const allOptions = ["synthetic", "eigenvector", "spectrochempy", "oes", "sklearn"]
     .flatMap((source) => workflowStore.getReferenceDatasetOptions(source))
     .filter((option) => {
       if (requiredTargetType) {
         if (!option.has_embedded_target || option.target_type !== requiredTargetType) {
           return false;
         }
+      }
+
+      // Role-based pass: dataset whose data_role is in the template's
+      // accepted_data_roles is always eligible (technique-mismatch OK).
+      if (option.data_role && acceptedDataRoles.has(option.data_role)) {
+        return true;
       }
 
       if (acceptedTechniques.size === 0) {
@@ -357,6 +485,10 @@ function compatibleExampleDatasetsForNode(nodeId: string): ExampleDatasetChoice[
     if (scoreRight !== scoreLeft) return scoreRight - scoreLeft;
     return left.label.localeCompare(right.label);
   });
+}
+
+function conciseBindingLabel(label: string): string {
+  return label.replace(/^Load\s+/i, "").trim() || label;
 }
 
 function resetExampleSelections() {
@@ -438,9 +570,18 @@ function getGroupState(nodeId: string): GroupBindingState {
 function fileOptionsForExperiment(experimentId: number | null) {
   if (experimentId == null) return [];
   return (filesByExperimentId.value[experimentId] || []).map((file) => ({
-    label: `${compactPath(file.file_path)} · ${file.stage}`,
+    label: `${compactPath(file.file_path)} · ${file.stage}${fileShapeSummary(file)}`,
     value: file.id,
   }));
+}
+
+function fileShapeSummary(file: ExperimentFile): string {
+  if (typeof file.n_samples !== "number" || typeof file.n_features !== "number") {
+    return "";
+  }
+  const featureLabel = file.is_spectra ? "points" : "features";
+  const sampleLabel = file.is_spectra ? "spectra" : "samples";
+  return ` · ${file.n_samples} ${sampleLabel} × ${file.n_features} ${featureLabel}`;
 }
 
 function resolveStage(experimentId: number, fileId: number | null): ExperimentStage {
@@ -480,6 +621,7 @@ async function onTargetExperimentChange(nodeId: string, experimentId: number | n
 }
 
 async function open(nextTemplate: WorkflowTemplate) {
+  await loadConfig();
   // Always fetch the full template from the API to ensure data_roles
   // and other fields are present (list endpoint responses may be cached
   // or incomplete due to browser/HMR caching).
@@ -526,11 +668,84 @@ async function open(nextTemplate: WorkflowTemplate) {
   visible.value = true;
 }
 
+async function jumpToUploadForTemplate() {
+  if (!template.value || !dataUploadAvailable.value) return;
+
+  try {
+    let targetProjectId = activeProjectId.value;
+    if (targetProjectId === null) {
+      const newProject = await projectStore.createProject({
+        name: workflowName.value.trim() || template.value.name,
+        description: workflowDescription.value.trim() || null,
+        technique: null,
+        sample_type: null,
+      });
+      if (!newProject) {
+        toast.add({
+          severity: "error",
+          summary: "Project creation failed",
+          detail: projectStore.error || "Could not create a project before upload.",
+          life: 4000,
+        });
+        return;
+      }
+      targetProjectId = newProject.id;
+    }
+
+    window.sessionStorage.setItem(DATA_ENTRY_MODE_KEY, "template-upload");
+    window.sessionStorage.setItem(DATA_ENTRY_PROJECT_KEY, String(targetProjectId));
+    visible.value = false;
+    await router.push({
+      path: "/data",
+      query: {
+        tab: "upload",
+        fromTemplate: "1",
+        templateId: String(template.value.id),
+        projectId: String(targetProjectId),
+      },
+    });
+  } catch (error: unknown) {
+    toast.add({
+      severity: "error",
+      summary: "Upload Setup Failed",
+      detail: getErrorMessage(error, "Could not open the Upload workspace"),
+      life: 5000,
+    });
+  }
+}
+
 async function handleInstantiate() {
-  if (!template.value || activeProjectId.value === null) return;
+  if (!template.value) return;
 
   isInstantiating.value = true;
   try {
+    const createProjectForThisRun = willCreateProject.value;
+    // If no project is active, or this wizard is being used as a project
+    // starter, spin one up first so the bundled data + workflow land
+    // together and the user returns to the Project overview.
+    let effectiveProjectId = createProjectForThisRun ? null : activeProjectId.value;
+    if (effectiveProjectId === null) {
+      const newProject = await projectStore.createProject({
+        name: workflowName.value.trim() || template.value.name,
+        description: workflowDescription.value.trim() || null,
+        technique: null,
+        sample_type: null,
+      });
+      if (!newProject) {
+        toast.add({
+          severity: "error",
+          summary: "Project creation failed",
+          detail: projectStore.error || "Could not create a project for this analysis.",
+          life: 4000,
+        });
+        return;
+      }
+      effectiveProjectId = newProject.id;
+      // projectStore.createProject sets currentProject + currentProjectId
+      // synchronously, so activeProjectId (computed) sees the new id on
+      // the next tick. No explicit selectProject call needed.
+    }
+
     const dataBindings: Record<string, TemplateDataBinding> = {};
 
     for (const group of dataRoleGroups.value) {
@@ -564,7 +779,7 @@ async function handleInstantiate() {
     const result = await workflowStore.instantiateTemplate(template.value.id, {
       workflowName: workflowName.value.trim(),
       workflowDescription: workflowDescription.value.trim() || undefined,
-      projectId: activeProjectId.value,
+      projectId: effectiveProjectId,
       launchMode: launchMode.value,
       dataBindings: launchMode.value === "user" ? dataBindings : undefined,
       exampleBindings:
@@ -583,13 +798,15 @@ async function handleInstantiate() {
           : undefined,
     });
 
-    await projectStore.fetchProject(activeProjectId.value);
+    await projectStore.fetchProject(effectiveProjectId);
     await workflowStore.loadWorkflow(result.workflowId);
 
     toast.add({
       severity: "success",
-      summary: "Template Ready",
-      detail: `Created "${workflowName.value.trim()}" in the active project`,
+      summary: createProjectForThisRun ? "Project Created" : "Analysis Started",
+      detail: createProjectForThisRun
+        ? `Created "${workflowName.value.trim()}" with data and workflow ready to inspect`
+        : `Created "${workflowName.value.trim()}" in the active project`,
       life: 3000,
     });
 
@@ -597,7 +814,7 @@ async function handleInstantiate() {
     emit("instantiated", result);
     if (launchMode.value === "example") {
       window.sessionStorage.setItem(DATA_ENTRY_MODE_KEY, "template-example");
-      window.sessionStorage.setItem(DATA_ENTRY_PROJECT_KEY, String(activeProjectId.value));
+      window.sessionStorage.setItem(DATA_ENTRY_PROJECT_KEY, String(effectiveProjectId));
     } else {
       window.sessionStorage.removeItem(DATA_ENTRY_MODE_KEY);
       window.sessionStorage.removeItem(DATA_ENTRY_PROJECT_KEY);
@@ -617,15 +834,19 @@ async function handleInstantiate() {
     } else {
       exploreQuery.focus = "latest-project";
     }
-    await router.push({
-      path: "/data",
-      query: exploreQuery,
-    });
+    if (props.landingRoute === "/data") {
+      await router.push({
+        path: "/data",
+        query: exploreQuery,
+      });
+    } else if (props.landingRoute) {
+      await router.push(props.landingRoute);
+    }
   } catch (error: unknown) {
     toast.add({
       severity: "error",
-      summary: "Template Failed",
-      detail: getErrorMessage(error, "Could not create the workflow from this template"),
+      summary: "Start Failed",
+      detail: getErrorMessage(error, "Could not create the workflow from this analysis starter"),
       life: 5000,
     });
   } finally {
@@ -641,6 +862,26 @@ watch(activeProjectId, async (projectId) => {
   }
 });
 
+watch(visible, (isVisible) => {
+  if (isVisible) {
+    hintDismissed.value = false;
+    armDataHintTimer();
+  } else {
+    clearDataHintTimer();
+    showDataHint.value = false;
+  }
+});
+
+// Once data is chosen there's nothing to nudge — hide and disarm.
+watch(dataChosen, (chosen) => {
+  if (chosen) {
+    showDataHint.value = false;
+    clearDataHintTimer();
+  }
+});
+
+onBeforeUnmount(clearDataHintTimer);
+
 defineExpose({ open });
 </script>
 
@@ -648,16 +889,34 @@ defineExpose({ open });
   <Dialog
     v-model:visible="visible"
     modal
-    :header="template ? `Use Template: ${template.name}` : 'Use Template'"
     :style="{ width: '760px' }"
     :closable="!isInstantiating"
     :close-on-escape="!isInstantiating"
   >
+    <template #header>
+      <div class="wizard-header">
+        <template v-if="template">
+          <span class="wizard-header-label">{{ headerEntityLabel }}</span>
+          <div class="wizard-title-field">
+            <InputText
+              v-model="workflowName"
+              class="wizard-title-input"
+              :placeholder="namePlaceholder"
+              :aria-label="namePlaceholder"
+              :disabled="isInstantiating"
+            />
+            <i class="pi pi-pencil wizard-title-icon" aria-hidden="true" />
+          </div>
+          <span class="template-status" :class="templateStatus">{{ templateStatus }}</span>
+        </template>
+        <span v-else class="wizard-header-label">Analysis Starter</span>
+      </div>
+    </template>
+
     <div v-if="template" class="template-wizard">
       <div class="template-summary">
         <div class="template-summary-row">
           <span class="template-category">{{ template.category.replace(/_/g, " ") }}</span>
-          <span class="template-status" :class="templateStatus">{{ templateStatus }}</span>
         </div>
         <p class="template-description">{{ template.description }}</p>
       </div>
@@ -665,7 +924,7 @@ defineExpose({ open });
       <div class="launch-mode-section">
         <div class="binding-header">
           <h4>Launch Mode</h4>
-          <p>Choose whether to start from the bundled validated example or bind this template to your own project data.</p>
+          <p>Start from the bundled example data, or bind your own project data.</p>
         </div>
         <div class="launch-mode-grid">
           <button
@@ -683,51 +942,70 @@ defineExpose({ open });
           <button
             type="button"
             class="launch-mode-card"
-            :class="{ active: launchMode === 'user' }"
+            :class="{ active: launchMode === 'user', disabled: !canUseMyDatasetMode }"
+            :disabled="!canUseMyDatasetMode"
             @click="launchMode = 'user'"
           >
             <span class="launch-mode-title">Use My Dataset</span>
             <span class="launch-mode-copy">
-              Bind explicit project experiments and files for the required chemometric roles before the workflow is created.
+              Bind project data for the required chemometric roles. If your dataset is not here yet, upload it first.
             </span>
           </button>
         </div>
       </div>
 
+      <div
+        v-if="showDataHint && !dataChosen && activeProjectId !== null && templateStatus === 'ready'"
+        class="wizard-inline-hint"
+        role="status"
+      >
+        <i class="pi pi-info-circle" aria-hidden="true" />
+        <span class="wizard-inline-hint-text">
+          Pick a dataset to continue — or choose <strong>Use Example Data</strong> to start with the bundled spectra.
+        </span>
+        <button
+          type="button"
+          class="wizard-inline-hint-dismiss"
+          aria-label="Dismiss hint"
+          @click="dismissDataHint"
+        >
+          <i class="pi pi-times" aria-hidden="true" />
+        </button>
+      </div>
+
       <Message v-if="templateStatus !== 'ready'" severity="warn" :closable="false">
-        This template is still marked work in progress and cannot be instantiated for production work.
+        This analysis starter is still marked work in progress and cannot be used for production work.
       </Message>
 
-      <Message v-if="activeProjectId === null" severity="warn" :closable="false">
-        Select an active project first. Templates now belong to Projects so new workflows keep their data and analysis context together.
+      <Message v-if="activeProjectId === null && launchMode === 'user'" severity="warn" :closable="false">
+        Select an active project first. Analysis starters create workflows inside Projects so data and analysis context stay together.
       </Message>
 
-      <div class="field">
-        <label for="template-workflow-name">Workflow Name</label>
-        <InputText
-          id="template-workflow-name"
-          v-model="workflowName"
-          placeholder="Workflow name"
-          class="full-width"
-        />
-      </div>
+      <Message v-if="showUploadDatasetCta" severity="info" :closable="false">
+        <div class="upload-handoff-message">
+          <span>
+            Upload a file into My Dataset first, then return to this starter and bind it to the workflow.
+          </span>
+          <Button
+            label="Go to Upload"
+            icon="pi pi-upload"
+            class="p-button-sm p-button-outlined"
+            @click="jumpToUploadForTemplate"
+          />
+        </div>
+      </Message>
 
-      <div class="field">
-        <label for="template-workflow-description">Description</label>
-        <Textarea
-          id="template-workflow-description"
-          v-model="workflowDescription"
-          rows="3"
-          auto-resize
-          class="full-width"
-          placeholder="Optional description"
-        />
-      </div>
+      <Message
+        v-else-if="launchMode === 'user' && !dataUploadAvailable && projectExperiments.length === 0"
+        severity="warn"
+        :closable="false"
+      >
+        Upload is disabled for this deployment. Use bundled example data, or ask an administrator to enable uploads.
+      </Message>
 
       <div v-if="launchMode === 'example'" class="binding-section">
         <div class="binding-header">
-          <h4>Bundled Example Data</h4>
-          <p>Select one compatible bundled dataset. It will be imported into a project-linked dataset so you can inspect and rerun the workflow with visible provenance.</p>
+          <h4>Example Data</h4>
         </div>
 
         <article
@@ -736,11 +1014,11 @@ defineExpose({ open });
           class="binding-card"
         >
           <div class="binding-card-header">
-            <h5>{{ source.label }}</h5>
+            <h5>{{ conciseBindingLabel(source.label) }}</h5>
             <span class="binding-node-id">{{ source.nodeId }}</span>
           </div>
           <div class="field">
-            <label :for="`${source.nodeId}-example-dataset`">Compatible Example Dataset</label>
+            <label :for="`${source.nodeId}-example-dataset`">Dataset</label>
             <Dropdown
               :id="`${source.nodeId}-example-dataset`"
               v-model="selectedExampleDatasets[source.nodeId]"
@@ -762,16 +1040,13 @@ defineExpose({ open });
                 </div>
               </template>
             </Dropdown>
-            <small class="field-hint">
-              Only example datasets compatible with this template’s required roles are shown.
-            </small>
           </div>
           <Message
             v-if="compatibleExampleDatasetsForNode(source.nodeId).length === 0"
             severity="warn"
             :closable="false"
           >
-            No bundled example datasets currently satisfy this template’s required roles.
+            No bundled example datasets currently satisfy this analysis starter's required roles.
           </Message>
           <div
             v-else-if="selectedExampleDatasets[source.nodeId]"
@@ -791,7 +1066,7 @@ defineExpose({ open });
       <div v-else-if="dataRoleGroups.length > 0" class="binding-section">
         <div class="binding-header">
           <h4>Bind Project Data</h4>
-          <p>Templates now bind explicit chemometric data roles before the workflow is created. Select the experiment files that supply each required role.</p>
+          <p>Analysis starters bind explicit chemometric data roles before the workflow is created. Select the experiment files that supply each required role.</p>
         </div>
 
         <Message
@@ -799,7 +1074,7 @@ defineExpose({ open });
           severity="warn"
           :closable="false"
         >
-          This project has no linked experiments yet. Add data to the project first, then instantiate the template with project data.
+          This project has no linked experiments yet. Add data to the project first, then start analysis with project data.
         </Message>
 
         <article
@@ -900,7 +1175,7 @@ defineExpose({ open });
         @click="visible = false"
       />
       <Button
-        label="Create Workflow"
+        :label="instantiateButtonLabel"
         icon="pi pi-check"
         :loading="isInstantiating"
         :disabled="!canInstantiate"
@@ -915,6 +1190,110 @@ defineExpose({ open });
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.wizard-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.wizard-header-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-color-secondary);
+  flex-shrink: 0;
+}
+
+.wizard-title-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.wizard-title-icon {
+  position: absolute;
+  right: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--text-color-secondary);
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.wizard-title-field .wizard-title-input {
+  width: 100%;
+  padding: 0.3rem 1.9rem 0.3rem 0.55rem;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text-color, #1e293b);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
+}
+
+.wizard-title-field .wizard-title-input:hover {
+  border-color: var(--surface-border);
+  background: var(--surface-50);
+}
+
+.wizard-title-field .wizard-title-input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--text-color, #1e293b) 38%, var(--surface-border));
+  background: var(--surface-card);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-color, #1e293b) 8%, transparent);
+}
+
+.wizard-title-field:hover .wizard-title-icon,
+.wizard-title-field:focus-within .wizard-title-icon {
+  opacity: 0.85;
+}
+
+.wizard-inline-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--primary-color, #3b82f6) 9%, var(--surface-card));
+  border: 1px solid color-mix(in srgb, var(--primary-color, #3b82f6) 22%, var(--surface-border));
+  color: var(--text-color, #1e293b);
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.wizard-inline-hint > .pi-info-circle {
+  margin-top: 0.1rem;
+  color: var(--primary-color, #3b82f6);
+  flex-shrink: 0;
+}
+
+.wizard-inline-hint-text {
+  flex: 1;
+}
+
+.wizard-inline-hint-dismiss {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-color-secondary);
+  cursor: pointer;
+  padding: 0.1rem;
+  line-height: 1;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.wizard-inline-hint-dismiss:hover {
+  color: var(--text-color, #1e293b);
+  background: color-mix(in srgb, var(--text-color, #1e293b) 8%, transparent);
 }
 
 .template-summary {
@@ -1062,6 +1441,17 @@ button.launch-mode-card:not(.p-button):not(.p-dialog-header-icon):not(.p-link).a
 .launch-mode-copy {
   color: var(--text-color-secondary, #64748b);
   line-height: 1.45;
+}
+
+.upload-handoff-message {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.upload-handoff-message span {
+  min-width: 0;
 }
 
 .binding-header h4 {

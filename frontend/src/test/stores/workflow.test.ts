@@ -336,3 +336,58 @@ describe("Workflow Store execution state restoration on loadWorkflow", () => {
     expect(store.lastExecutionResults).toBeNull();
   });
 });
+
+describe("Workflow Store node updates", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it("ignores equivalent node updates so opening the inspector does not stale a run", () => {
+    const store = useWorkflowStore();
+    store.nodes = [
+      {
+        id: "model_1",
+        type: "model.pca",
+        x: 0,
+        y: 0,
+        params: { n_components: 2, scale: false },
+        executionState: { status: "completed" },
+      },
+    ];
+    store.hasUnsavedChanges = false;
+    store.clearWorkflowStale();
+
+    store.updateNode("model_1", {
+      params: { scale: false, n_components: 2 },
+    });
+
+    expect(store.hasUnsavedChanges).toBe(false);
+    expect(store.isWorkflowStale).toBe(false);
+    expect(store.nodes[0].executionState?.status).toBe("completed");
+  });
+
+  it("marks the workflow stale when node params actually change", () => {
+    const store = useWorkflowStore();
+    store.nodes = [
+      {
+        id: "model_1",
+        type: "model.pca",
+        x: 0,
+        y: 0,
+        params: { n_components: 2, scale: false },
+        executionState: { status: "completed" },
+      },
+    ];
+    store.hasUnsavedChanges = false;
+    store.clearWorkflowStale();
+
+    store.updateNode("model_1", {
+      params: { n_components: 3, scale: false },
+    });
+
+    expect(store.hasUnsavedChanges).toBe(true);
+    expect(store.isWorkflowStale).toBe(true);
+    expect(store.nodes[0].params).toEqual({ n_components: 3, scale: false });
+  });
+});

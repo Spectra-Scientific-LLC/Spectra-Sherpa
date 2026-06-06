@@ -11,9 +11,9 @@
           v-if="appMode === 'local' && canConfigureLlm"
           icon="pi pi-cog"
           class="p-button-text llm-settings-btn"
-          aria-label="LLM Settings"
+          aria-label="BYO Chat Settings"
           @click="toggleLlmMenu"
-          v-tooltip.bottom="'LLM Settings'"
+          v-tooltip.bottom="'BYO Chat Settings'"
         />
         <Menu ref="llmMenu" :model="llmMenuItems" :popup="true" class="llm-menu">
           <template #item="{ item }">
@@ -33,7 +33,6 @@
       </div>
     </header>
 
-    <!-- Chat Panel Full Width -->
     <div class="llm-chat-content">
       <ChatPanel :compact="false" :collapsed="false" />
     </div>
@@ -41,7 +40,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, computed } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
 import Menu from "primevue/menu";
@@ -60,10 +59,15 @@ const { appMode, isFeatureEnabled } = useAppConfig();
 // Capability gate: provider switching writes to /llm-config which
 // is server-only. Hide the settings cog on OSS-only installs.
 const canConfigureLlm = computed(() => isFeatureEnabled("sherpaAdvisor"));
-const pageTitle = computed(() => (route.query.tab === "sherpa" ? "Sherpa Advisor" : "LLM assistant"));
+const pageTitle = computed(() => (appMode.value === "local" ? "BYO Chat" : "Chat"));
 
 const goBack = () => {
-  router.push("/workflow");
+  const returnTo = route.query.returnTo;
+  if (typeof returnTo === "string" && returnTo.startsWith("/") && !returnTo.startsWith("//")) {
+    router.push(returnTo);
+    return;
+  }
+  router.push("/dashboard");
 };
 
 // LLM Provider Menu
@@ -180,8 +184,8 @@ const onProviderChange = async () => {
   align-items: center;
   justify-content: space-between;
   padding: 16px 24px;
-  background: #f8fafc;
-  border-bottom: 2px solid #e2e8f0;
+  background: #ffffff;
+  border-bottom: 1px solid var(--surface-border, #e2e8f0);
   flex-shrink: 0;
 }
 
@@ -193,8 +197,9 @@ const onProviderChange = async () => {
 
 .llm-chat-header h1 {
   margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
+  font-size: 1.75rem;
+  font-weight: 500;
+  letter-spacing: 0;
   color: #1e293b;
 }
 
@@ -264,5 +269,17 @@ const onProviderChange = async () => {
 
 .llm-chat-content :deep(.panel-topbar) {
   display: none;
+}
+
+@media (max-width: 640px) {
+  .llm-chat-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .llm-chat-header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
 }
 </style>

@@ -38,16 +38,40 @@ const makeNode = (overrides: Partial<NodeTypeMetadata> & Pick<NodeTypeMetadata, 
 
 const seedLibrary: NodeTypeMetadata[] = [
   makeNode({
+    node_type: "data.my_dataset",
+    category: "data",
+    label: "My Dataset",
+    description: "Load the selected My Dataset into the workflow.",
+  }),
+  makeNode({
     node_type: "data.source",
     category: "data",
     label: "Data Source",
-    description: "Load spectral data from a source into the workflow for further processing.",
+    description: "Legacy source node kept for saved workflows.",
   }),
   makeNode({
     node_type: "data.file_load",
     category: "data",
     label: "File Load",
     description: "Read CSV",
+  }),
+  makeNode({
+    node_type: "data.load_group",
+    category: "data",
+    label: "Load Group",
+    description: "Legacy group file loader.",
+  }),
+  makeNode({
+    node_type: "data.nist_library",
+    category: "data",
+    label: "NIST Library",
+    description: "Legacy NIST library loader.",
+  }),
+  makeNode({
+    node_type: "data.synthetic_curve",
+    category: "synthesis",
+    label: "Synthetic Curve",
+    description: "Generate synthetic concentration curves.",
   }),
   makeNode({
     node_type: "preprocess.smooth",
@@ -140,6 +164,22 @@ describe("WorkflowToolbar", () => {
       expect(wrapper.get('[data-testid="section-nodes-preprocessing"]').classes()).toContain("expanded");
       expect(wrapper.get('[data-testid="section-nodes-regression"]').classes()).toContain("expanded");
     });
+
+    it("shows only My Dataset in Data while keeping Synthetic Curve under Synthesis", async () => {
+      const wrapper = await mountToolbar();
+
+      await wrapper.get('[data-testid="section-header-data"]').trigger("click");
+      const dataSection = wrapper.get('[data-testid="section-nodes-data"]');
+      expect(dataSection.html()).toContain("My Dataset");
+      expect(dataSection.find('[data-testid="node-button-data.source"]').exists()).toBe(false);
+      expect(dataSection.find('[data-testid="node-button-data.file_load"]').exists()).toBe(false);
+      expect(dataSection.find('[data-testid="node-button-data.load_group"]').exists()).toBe(false);
+      expect(dataSection.find('[data-testid="node-button-data.nist_library"]').exists()).toBe(false);
+
+      await wrapper.get('[data-testid="section-header-synthesis"]').trigger("click");
+      const synthesisSection = wrapper.get('[data-testid="section-nodes-synthesis"]');
+      expect(synthesisSection.find('[data-testid="node-button-data.synthetic_curve"]').exists()).toBe(true);
+    });
   });
 
   describe("search", () => {
@@ -159,6 +199,17 @@ describe("WorkflowToolbar", () => {
       // Should NOT contain unrelated labels.
       expect(results.html()).not.toContain("PLS Regression");
       expect(results.html()).not.toContain("Data Source");
+    });
+
+    it("hides legacy ingestion nodes from palette search", async () => {
+      const wrapper = await mountToolbar();
+      const input = wrapper.get('[data-testid="toolbar-search-input"]');
+
+      await input.setValue("data.source");
+      expect(wrapper.get('[data-testid="toolbar-search-empty"]').text()).toContain("data.source");
+
+      await input.setValue("NIST");
+      expect(wrapper.get('[data-testid="toolbar-search-empty"]').text()).toContain("NIST");
     });
 
     it("is case-insensitive and also matches node_type identifiers", async () => {
@@ -229,25 +280,25 @@ describe("WorkflowToolbar", () => {
       const wrapper = await mountToolbar();
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
 
-      const button = wrapper.get('[data-testid="node-button-data.source"]');
+      const button = wrapper.get('[data-testid="node-button-data.my_dataset"]');
       await button.trigger("mouseenter");
 
       const tooltip = wrapper.get('[data-testid="node-hover-tooltip"]');
       // Full description (from seedLibrary), no 7-word ellipsis.
       expect(tooltip.text()).toContain(
-        "Load spectral data from a source into the workflow for further processing."
+        "Load the selected My Dataset into the workflow."
       );
       // Label rendered as tooltip title.
-      expect(tooltip.get(".node-tooltip-title").text()).toBe("Data Source");
+      expect(tooltip.get(".node-tooltip-title").text()).toBe("My Dataset");
       // > 9 words proves the 7-word cap is gone.
       const words = tooltip.get(".node-tooltip-body").text().split(/\s+/).filter(Boolean);
-      expect(words.length).toBeGreaterThan(9);
+      expect(words.length).toBeGreaterThan(6);
     });
 
     it("hides the tooltip on mouseleave", async () => {
       const wrapper = await mountToolbar();
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
-      const button = wrapper.get('[data-testid="node-button-data.source"]');
+      const button = wrapper.get('[data-testid="node-button-data.my_dataset"]');
 
       await button.trigger("mouseenter");
       expect(wrapper.find('[data-testid="node-hover-tooltip"]').exists()).toBe(true);
@@ -260,7 +311,7 @@ describe("WorkflowToolbar", () => {
       const wrapper = await mountToolbar();
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
 
-      const button = wrapper.get('[data-testid="node-button-data.source"]');
+      const button = wrapper.get('[data-testid="node-button-data.my_dataset"]');
       stubRect(button.element as HTMLElement, { top: 150, left: 20, right: 200, bottom: 180, width: 180, height: 30 });
 
       await button.trigger("mouseenter");
@@ -276,7 +327,7 @@ describe("WorkflowToolbar", () => {
       const wrapper = await mountToolbar();
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
 
-      const button = wrapper.get('[data-testid="node-button-data.source"]');
+      const button = wrapper.get('[data-testid="node-button-data.my_dataset"]');
       // Force the button to sit near the right edge of a narrow viewport.
       Object.defineProperty(window, "innerWidth", { value: 400, configurable: true });
       stubRect(button.element as HTMLElement, { top: 100, left: 180, right: 380, bottom: 130, width: 200, height: 30 });
@@ -302,7 +353,7 @@ describe("WorkflowToolbar", () => {
       const wrapper = await mountToolbar();
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
 
-      const button = wrapper.get('[data-testid="node-button-data.source"]');
+      const button = wrapper.get('[data-testid="node-button-data.my_dataset"]');
       await button.trigger("mouseenter");
       expect(wrapper.find('[data-testid="node-hover-tooltip"]').exists()).toBe(true);
 

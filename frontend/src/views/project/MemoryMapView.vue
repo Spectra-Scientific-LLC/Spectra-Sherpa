@@ -1,14 +1,8 @@
 <template>
   <section class="memory-map-content">
-    <div class="section-header">
-      <div>
-        <h1>Memory Map</h1>
-        <p class="section-subtitle">
-          Sherpa Advisor's memory for this project — every scope you've visited,
-          every conversation thread, and every cross-cutting relationship.
-        </p>
-      </div>
-      <div class="header-actions">
+    <header class="tab-header">
+      <h1>Memory Map</h1>
+      <ResponsiveHeaderActions :items="headerActionItems">
         <Button
           icon="pi pi-arrow-left"
           label="Back to Project"
@@ -22,8 +16,8 @@
           @click="() => reload()"
           v-tooltip.bottom="'Refresh'"
         />
-      </div>
-    </div>
+      </ResponsiveHeaderActions>
+    </header>
 
     <div v-if="!projectId" class="empty-state">
       <i class="pi pi-folder-open"></i>
@@ -143,6 +137,7 @@ import { useRouter } from "vue-router";
 import Button from "primevue/button";
 import ProgressSpinner from "primevue/progressspinner";
 
+import ResponsiveHeaderActions from "@/components/ResponsiveHeaderActions.vue";
 import { useAppConfig } from "@/composables/useAppConfig";
 import {
   getAdvisorMemoryAdapter,
@@ -163,12 +158,27 @@ const graph = ref<MemoryMapData | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const isLocalUnavailable = ref(false);
+const headerActionItems = computed(() => [
+  {
+    label: "Back to Project",
+    icon: "pi pi-arrow-left",
+    command: goBack,
+  },
+  {
+    label: "Refresh",
+    icon: "pi pi-refresh",
+    disabled: loading.value,
+    command: () => void reload(),
+  },
+]);
 
 // Tab display labels.  Order mirrors TAB_INHERITANCE_ORDER on the server.
+// Server-side key `experiments` is preserved (backend contract); the
+// user-visible label maps to the current "Runs" tab.
 const TAB_DISPLAY: Record<string, string> = {
   project: "Project",
   data: "Data",
-  experiments: "Experiments",
+  experiments: "Runs",
   workflow: "Workflow",
   deploy: "Deploy",
   report: "Report",
@@ -289,25 +299,6 @@ onMounted(() => {
   margin: 0 auto;
 }
 
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 24px;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--surface-border, #e5e7eb);
-}
-
-.section-header h1 {
-  margin: 0 0 4px;
-}
-
-.section-subtitle {
-  margin: 0;
-  color: var(--text-color-secondary, #667085);
-  font-size: 0.9rem;
-}
 
 .header-actions {
   display: flex;

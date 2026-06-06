@@ -41,10 +41,17 @@ describe("Experiment Store", () => {
     const store = useExperimentStore();
     await store.fetchExperiments();
 
-    expect(api.get).toHaveBeenCalledWith("/experiments");
+    expect(api.get).toHaveBeenCalledWith("/experiments", { params: undefined });
     expect(store.experiments).toEqual(mockExperiments);
     expect(store.loading).toBe(false);
     expect(store.error).toBeNull();
+  });
+
+  it("scopes fetch by project_id when projectId is provided", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce({ data: [] });
+    const store = useExperimentStore();
+    await store.fetchExperiments(42);
+    expect(api.get).toHaveBeenCalledWith("/experiments", { params: { project_id: 42 } });
   });
 
   it("captures and rethrows fetchExperiments errors", async () => {

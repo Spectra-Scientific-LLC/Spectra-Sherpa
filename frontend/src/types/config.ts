@@ -6,7 +6,7 @@
 
 export type AppMode = 'local' | 'hybrid' | 'enterprise'
 
-export type SiteProfile = 'demo' | 'production' | 'internal'
+export type SiteProfile = 'demo' | 'pro' | 'hybrid_server' | 'org' | 'production' | 'internal'
 
 export type LLMProvider = 'openai' | 'anthropic' | 'deepseek' | 'gemini' | 'custom_llm'
 
@@ -52,28 +52,62 @@ export interface AuditConfig {
   exportAudited: boolean
 }
 
+export interface DataFormatInfo {
+  key: string
+  name: string
+  extensions: string[]
+  description: string
+  requiresScp: boolean
+  requiresExport?: boolean
+  unsupportedReason?: string
+  available: boolean
+}
+
+export interface DataFormatsConfig {
+  hasScp: boolean
+  installScpCommand: string
+  baseExtensions: string[]
+  scpExtensions: string[]
+  knownUnsupportedExtensions?: string[]
+  acceptedExtensions: string[]
+  formats: DataFormatInfo[]
+}
+
 export interface DemoContract {
   featuredDatasets: string[]
   featuredTemplates: string[]
-  maxExecutionsPerSession: number
-  maxSherpaInteractions: number
-  sessionExpiryHours?: number
+  maxExecutionsPerHour: number
+  maxExecutionsPerDay: number
+  maxSherpaPerHour: number
+  maxSherpaPerDay: number
+  maxUploadPerWeek: number
   disabledCapabilities: string[]
   upgradeUrl: string
   upgradeMessage: string
   availablePlans: string[]
 }
 
-export interface DemoQuota {
-  remaining: number
-  limit: number
+export interface DemoQuotaWindow {
+  lastHour: number
+  lastDay: number
+  limitPerHour: number
+  limitPerDay: number
+  resetHourAt?: string | null
+  resetDayAt?: string | null
+}
+
+export interface DemoUploadQuotaWindow {
+  lastWeek: number
+  limitPerWeek: number
+  resetWeekAt?: string | null
 }
 
 export interface DemoQuotaResponse {
   demo: boolean
   adminBypass?: boolean
-  executions?: DemoQuota
-  sherpa?: DemoQuota
+  executions?: DemoQuotaWindow
+  sherpa?: DemoQuotaWindow
+  uploads?: DemoUploadQuotaWindow
 }
 
 /** Structured detail from demo 403 guards */
@@ -96,6 +130,7 @@ export interface AppConfig {
   features: AppFeatures
   llms: Record<string, LLMConfig>
   limits?: AppLimits
+  dataFormats?: DataFormatsConfig
   subscription?: SubscriptionInfo | null
   audit?: AuditConfig
   demo?: DemoContract | null

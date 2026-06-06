@@ -48,15 +48,17 @@ vi.mock("@/api/client", () => ({
   },
 }));
 
+vi.mock("@/views/dashboard/SimplifiedDashboard.vue", () => makeViewStub("Dashboard"));
 vi.mock("@/views/project/ProjectContent.vue", () => makeViewStub("ProjectContent"));
 vi.mock("@/views/data/DataContent.vue", () => makeViewStub("DataContent"));
 vi.mock("@/views/workflow-builder/WorkflowBuilderContent.vue", () => makeViewStub("WorkflowBuilderContent"));
+vi.mock("@/views/models/ModelsContent.vue", () => makeViewStub("ModelsContent"));
 
 import api from "@/api/client";
 import router from "@/router";
 import { useAuthStore } from "@/stores/auth";
 
-const HOME_PATH = "/project";
+const HOME_PATH = "/dashboard";
 
 async function navigateTo(path: string): Promise<string> {
   await router.push(path);
@@ -89,6 +91,10 @@ describe("Router auth guard (OSS routes)", () => {
 
     it("allows protected routes without credentials", async () => {
       expect(await navigateTo("/workflow")).toBe("/workflow");
+    });
+
+    it("redirects home to the dashboard", async () => {
+      expect(await navigateTo("/")).toBe(HOME_PATH);
     });
 
     it("allows /data without credentials", async () => {

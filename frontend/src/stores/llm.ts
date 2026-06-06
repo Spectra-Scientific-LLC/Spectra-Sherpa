@@ -373,7 +373,7 @@ export const useLlmStore = defineStore("llm", () => {
           notifications.add({
             source: "system",
             severity: "warning",
-            title: "AI Chat",
+            title: "Chat",
             message,
             detail,
           });

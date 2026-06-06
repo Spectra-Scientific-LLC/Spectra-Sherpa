@@ -63,6 +63,21 @@ describe("getErrorMessage", () => {
     expect(getErrorMessage(err)).toBe("Upgrade required");
   });
 
+  it("formats FastAPI validation detail arrays", () => {
+    const err = makeAxiosError(422, {
+      detail: [
+        {
+          loc: ["body", "components"],
+          msg: "List should have at least 1 item after validation",
+          type: "too_short",
+        },
+      ],
+    });
+    expect(getErrorMessage(err)).toBe(
+      "body.components: List should have at least 1 item after validation",
+    );
+  });
+
   it("returns fallback for non-error values", () => {
     expect(getErrorMessage(42)).toBe("An unexpected error occurred");
     expect(getErrorMessage(undefined)).toBe("An unexpected error occurred");

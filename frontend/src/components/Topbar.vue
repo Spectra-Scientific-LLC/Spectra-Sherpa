@@ -35,59 +35,61 @@
               <span class="project-option-date">{{ slotProps.option.modified }}</span>
             </div>
           </template>
-          <template #footer>
-            <div class="project-dropdown-footer">
-              <Button
-                label="New Project"
-                icon="pi pi-plus"
-                data-action="new_project"
-                class="p-button-text p-button-sm"
-                @click="showNewProjectDialog"
-              />
-              <Button
-                label="Import"
-                icon="pi pi-upload"
-                class="p-button-text p-button-sm"
-                @click="triggerImport"
-              />
-            </div>
-          </template>
         </Dropdown>
-        <Button
-          v-if="projectStore.currentProject"
-          icon="pi pi-info-circle"
-          class="p-button-text p-button-rounded p-button-sm project-info-btn"
-          aria-label="Project details"
-          title="View project details"
-          @click="showProjectDetails"
-        />
-        <Button
-          v-if="projectStore.currentProject"
-          icon="pi pi-cog"
-          class="p-button-text p-button-rounded p-button-sm project-settings-btn"
-          aria-label="Project settings"
-          title="Edit project settings"
-          @click="showEditProjectDialog"
-        />
       </div>
     </div>
 
     <div class="topbar-center">
       <!-- Status Indicators (Traffic Lights) -->
       <div class="status-indicators">
-        <div class="status-light" :class="backendStatus.class">
+        <div
+          class="status-light"
+          :class="backendStatus.class"
+          role="img"
+          tabindex="0"
+          :aria-label="backendStatus.tooltip"
+          :title="backendStatus.tooltip"
+        >
           <span class="status-tooltip">{{ backendStatus.tooltip }}</span>
         </div>
-        <div class="status-light" :class="dataStatus.class">
+        <div
+          class="status-light"
+          :class="dataStatus.class"
+          role="img"
+          tabindex="0"
+          :aria-label="dataStatus.tooltip"
+          :title="dataStatus.tooltip"
+        >
           <span class="status-tooltip">{{ dataStatus.tooltip }}</span>
         </div>
-        <div class="status-light" :class="workflowStatus.class">
+        <div
+          class="status-light"
+          :class="workflowStatus.class"
+          role="img"
+          tabindex="0"
+          :aria-label="workflowStatus.tooltip"
+          :title="workflowStatus.tooltip"
+        >
           <span class="status-tooltip">{{ workflowStatus.tooltip }}</span>
         </div>
-        <div class="status-light" :class="llmStatus.class">
+        <div
+          class="status-light"
+          :class="llmStatus.class"
+          role="img"
+          tabindex="0"
+          :aria-label="llmStatus.tooltip"
+          :title="llmStatus.tooltip"
+        >
           <span class="status-tooltip">{{ llmStatus.tooltip }}</span>
         </div>
-        <div class="status-light" :class="computeStatus.class">
+        <div
+          class="status-light"
+          :class="computeStatus.class"
+          role="img"
+          tabindex="0"
+          :aria-label="computeStatus.tooltip"
+          :title="computeStatus.tooltip"
+        >
           <span class="status-tooltip">{{ computeStatus.tooltip }}</span>
         </div>
       </div>
@@ -95,24 +97,16 @@
 
     <div class="topbar-right">
       <Button
-        v-if="projectStore.currentProject"
-        icon="pi pi-download"
-        class="p-button-text p-button-rounded"
-        aria-label="Export project"
-        title="Export Project"
-        @click="exportCurrentProject"
-      />
-      <Button
         v-if="showChatToggle !== false"
         icon="pi pi-comments"
-        class="p-button-text p-button-rounded"
+        class="p-button-text topbar-bare-icon"
         aria-label="Toggle chat panel"
         :title="chatToggleTitle"
         @click="emit('toggle-chat')"
       />
       <Button
         icon="pi pi-bell"
-        class="p-button-text p-button-rounded"
+        class="p-button-text topbar-bare-icon"
         aria-label="Notifications"
         title="Open notifications"
         :badge="
@@ -136,7 +130,7 @@
       />
       <Button
         icon="pi pi-user"
-        class="p-button-text p-button-rounded"
+        class="p-button-text topbar-bare-icon"
         aria-label="User menu"
         title="Open user menu"
         @click="toggleUserMenu"
@@ -144,26 +138,6 @@
       <Menu ref="userMenu" :model="userMenuItems" :popup="true" />
       <AboutDialog v-model:visible="aboutVisible" />
     </div>
-
-    <!-- Project Dialog -->
-    <ProjectDialog
-      v-model:visible="projectDialogVisible"
-      :edit-project="editingProject"
-      @create="onCreateProject"
-      @update="onUpdateProject"
-    />
-
-    <!-- Hidden file input for import -->
-    <input
-      ref="fileInput"
-      type="file"
-      accept=".spectrapy,.json"
-      style="display: none"
-      @change="onFileSelected"
-    />
-
-    <!-- Project Details Drawer -->
-    <ProjectDetailsDrawer v-model="projectDetailsVisible" />
 
     <!-- Notification Drawer -->
     <NotificationCenterDrawer v-model="notificationDrawerVisible" />
@@ -178,8 +152,6 @@ import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
 import { useProjectStore } from "@/stores/project";
 import { useNotificationStore } from "@/stores/notification";
-import type { ProjectSummary } from "@/types";
-import type { ProjectFormData } from "./ProjectDialog.vue";
 import { useWorkflowStore } from "@/stores/workflow";
 import { useExperimentStore } from "@/stores/experiment";
 import { useLlmStore } from "@/stores/llm";
@@ -189,8 +161,6 @@ import { useBackendStatus } from "@/composables/useBackendStatus";
 import { useTopbarMenu } from "@/composables/useTopbarMenu";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useNotifier } from "@/composables/useNotifier";
-import ProjectDialog from "./ProjectDialog.vue";
-import ProjectDetailsDrawer from "./ProjectDetailsDrawer.vue";
 import NotificationCenterDrawer from "./NotificationCenterDrawer.vue";
 import AboutDialog from "./AboutDialog.vue";
 
@@ -215,8 +185,7 @@ const llmStore = useLlmStore();
 const authStore = useAuthStore();
 const router = useRouter();
 const { backendConnected } = useBackendStatus();
-const { appMode, hasLLMConfigured } = useAppConfig();
-const fileInput = ref<HTMLInputElement | null>(null);
+const { appMode, hasLLMConfigured, reloadConfig } = useAppConfig();
 const notificationDrawerVisible = ref(false);
 const aboutVisible = ref(false);
 
@@ -316,22 +285,30 @@ const llmStatus = computed(() => {
 // waiting up to 60s for the next poll tick. The settings panel dispatches
 // "llm-config-changed" after a successful save (and after a successful
 // test-then-save in the same handler).
-const handleLlmConfigChange = () => {
-  llmStore.checkConfigChange();
+const handleLlmConfigChange = async () => {
+  await reloadConfig();
+  await llmStore.checkConfigChange();
+};
+
+const syncLocalLlmPolling = () => {
+  if (appMode.value === "local") {
+    llmStore.startConfigPolling();
+  } else {
+    llmStore.stopConfigPolling();
+  }
 };
 
 onMounted(() => {
-  // Only poll LLM config in local mode — server owns model selection in hybrid/enterprise
-  if (appMode.value === "local") {
-    llmStore.startConfigPolling();
-    window.addEventListener("llm-config-changed", handleLlmConfigChange);
-  }
+  syncLocalLlmPolling();
+  window.addEventListener("llm-config-changed", handleLlmConfigChange);
 });
 
 onUnmounted(() => {
   llmStore.stopConfigPolling();
   window.removeEventListener("llm-config-changed", handleLlmConfigChange);
 });
+
+watch(appMode, syncLocalLlmPolling);
 
 const computeStatus = computed(() => {
   return { class: "status-blue", tooltip: "Compute: Local" };
@@ -391,107 +368,6 @@ const onProjectChange = async () => {
   }
 };
 
-// Project dialog
-const projectDialogVisible = ref(false);
-const editingProject = ref<ProjectSummary | null>(null);
-
-// Project details drawer
-const projectDetailsVisible = ref(false);
-
-const showProjectDetails = () => {
-  projectDetailsVisible.value = true;
-};
-
-const showNewProjectDialog = () => {
-  editingProject.value = null;
-  projectDialogVisible.value = true;
-};
-
-const showEditProjectDialog = () => {
-  if (projectStore.currentProject) {
-    editingProject.value = projectStore.currentProject;
-  }
-  projectDialogVisible.value = true;
-};
-
-const onCreateProject = async (data: ProjectFormData) => {
-  const project = await projectStore.createProject({
-    name: data.name,
-    description: data.description || null,
-    technique: data.technique,
-    sample_type: data.sample_type,
-  });
-  if (project) {
-    toast.add({
-      severity: "success",
-      summary: "Project Created",
-      detail: `Created "${project.name}"`,
-      life: 2000,
-    });
-  }
-};
-
-const onUpdateProject = async (data: ProjectFormData) => {
-  if (projectStore.currentProjectId) {
-    const updated = await projectStore.updateProject(projectStore.currentProjectId, {
-      name: data.name,
-      description: data.description || null,
-      technique: data.technique,
-      sample_type: data.sample_type,
-    });
-    if (updated) {
-      toast.add({
-        severity: "success",
-        summary: "Project Updated",
-        detail: "Changes saved successfully",
-        life: 2000,
-      });
-    }
-  }
-};
-
-// Export/Import
-const exportCurrentProject = async () => {
-  if (projectStore.currentProjectId) {
-    await projectStore.exportProject(projectStore.currentProjectId);
-    toast.add({
-      severity: "success",
-      summary: "Project Exported",
-      detail: "Project file downloaded",
-      life: 2000,
-    });
-  }
-};
-
-const triggerImport = () => {
-  fileInput.value?.click();
-};
-
-const onFileSelected = async (event: Event) => {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-
-  const project = await projectStore.importProject(file);
-  if (project) {
-    toast.add({
-      severity: "success",
-      summary: "Project Imported",
-      detail: `Imported "${project.name}"`,
-      life: 2000,
-    });
-  } else {
-    toast.add({
-      severity: "error",
-      summary: "Import Failed",
-      detail: projectStore.error || "Unable to import project file",
-      life: 3000,
-    });
-  }
-
-  // Clear the input
-  input.value = "";
-};
 </script>
 
 <style scoped>
@@ -550,6 +426,20 @@ const onFileSelected = async (event: Event) => {
   gap: 4px;
 }
 
+/* Truly bare icon buttons: no background, no border, no hover shape — just
+ * the icon. PrimeVue's `p-button-text` keeps a hover/focus background that
+ * reads as a rectangular shape; override to keep them flat at all states. */
+:deep(.topbar-bare-icon.p-button),
+:deep(.topbar-bare-icon.p-button:hover),
+:deep(.topbar-bare-icon.p-button:focus),
+:deep(.topbar-bare-icon.p-button:enabled:hover),
+:deep(.topbar-bare-icon.p-button:enabled:focus),
+:deep(.topbar-bare-icon.p-button:enabled:active) {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
 /* Project Selector */
 .project-selector {
   display: flex;
@@ -606,25 +496,6 @@ const onFileSelected = async (event: Event) => {
   color: #94a3b8;
 }
 
-.project-dropdown-footer {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px;
-  border-top: 1px solid #e2e8f0;
-}
-
-.project-info-btn {
-  color: #3b82f6;
-}
-
-.project-info-btn:hover {
-  background: rgba(59, 130, 246, 0.1) !important;
-}
-
-.project-settings-btn {
-  margin-left: 2px;
-}
-
 /* Status Indicators (Traffic Lights) */
 .status-indicators {
   display: flex;
@@ -647,11 +518,18 @@ const onFileSelected = async (event: Event) => {
     box-shadow 0.2s;
 }
 
-.status-light:hover {
+.status-light:hover,
+.status-light:focus-visible {
   transform: scale(1.3);
 }
 
-.status-light:hover .status-tooltip {
+.status-light:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 3px;
+}
+
+.status-light:hover .status-tooltip,
+.status-light:focus-visible .status-tooltip {
   opacity: 1;
   visibility: visible;
   transform: translateX(-50%) translateY(0);
@@ -685,30 +563,26 @@ const onFileSelected = async (event: Event) => {
   border-bottom-color: #1e293b;
 }
 
-/* Status colors */
+/* Status colors — flat mid-tone fills; the pulse animation still glows
+   on transitional states (connecting, offline). */
 .status-green {
-  background: radial-gradient(circle at 30% 30%, #4ade80, #16a34a);
-  box-shadow: 0 0 6px rgba(74, 222, 128, 0.5);
+  background: #16a34a;
 }
 
 .status-yellow {
-  background: radial-gradient(circle at 30% 30%, #facc15, #ca8a04);
-  box-shadow: 0 0 6px rgba(250, 204, 21, 0.5);
+  background: #ca8a04;
 }
 
 .status-red {
-  background: radial-gradient(circle at 30% 30%, #f87171, #dc2626);
-  box-shadow: 0 0 6px rgba(248, 113, 113, 0.5);
+  background: #dc2626;
 }
 
 .status-blue {
-  background: radial-gradient(circle at 30% 30%, #60a5fa, #2563eb);
-  box-shadow: 0 0 6px rgba(96, 165, 250, 0.5);
+  background: #2563eb;
 }
 
 .status-gray {
-  background: radial-gradient(circle at 30% 30%, #94a3b8, #64748b);
-  box-shadow: 0 0 4px rgba(148, 163, 184, 0.3);
+  background: #94a3b8;
 }
 
 /* Pulse animation for active/connecting states */

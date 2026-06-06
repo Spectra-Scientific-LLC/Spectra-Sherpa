@@ -7,6 +7,7 @@ export type OutputSubsection =
   | "processing"
   | "provenance"
   | "quality"
+  | "modelArtifact"
   | "ports";
 
 const DEFAULT_PLOT_SECTIONS: Record<string, boolean> = {
@@ -17,6 +18,7 @@ const DEFAULT_PLOT_SECTIONS: Record<string, boolean> = {
   pcaDiagnostics: false,
   mcrConcentrations: false,
   mcrSpectra: false,
+  mcrGroundTruthValidation: false,
   mcrOriginalContour: false,
   mcrReconstructedContour: false,
   mcrResidualContour: false,
@@ -34,6 +36,7 @@ const DEFAULT_PLOT_SECTIONS: Record<string, boolean> = {
   classificationAccuracy: false,
   hcaDendrogram: false,
   peakFinding: false,
+  libraryCompare: true,
   plotVisualization: false,
   efaEigenvalues: false,
   evaluationResults: true,
@@ -56,6 +59,10 @@ export function useNodeSections() {
     processing: false,
     provenance: false,
     quality: false,
+    // Auto-expand the Model Artifact section when present: it's only
+    // rendered for training-node runs, and when the user is on such a
+    // node they almost always want to see the saved-artifact reference.
+    modelArtifact: true,
     ports: false,
   });
 

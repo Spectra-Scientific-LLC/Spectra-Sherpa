@@ -2,12 +2,23 @@ import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";
 import { useAuthStore } from "@/stores/auth";
+import { runProjectScopeResets } from "@/stores/projectScopeRegistry";
 import { getErrorMessage } from "@/utils/errors";
 
 const LAST_ACTIVE_PROJECT_PREFIX = "spectra_sherpa_last_project_";
+const DATA_ACTIVE_TAB_PREFIX = "spectra_sherpa_data_active_tab_v2";
+const LEGACY_DATA_ACTIVE_TAB_PREFIX = "spectra_sherpa_data_active_tab";
+const DATA_DRAFT_PREFIX = "spectra_sherpa_data_draft_v1";
+const LAST_ACTIVE_EXPERIMENT_PREFIX = "spectra_sherpa_last_experiment";
+const SYNTHESIS_STATE_PREFIX = "spectra_sherpa_synthesis_state_v1";
 
+// "local" is the canonical sentinel for "no signed-in user" across every
+// project-scoped localStorage key in the SPA (see also workbook.ts,
+// data.ts, synthesis.ts). Earlier code paths wrote some keys under "anon"
+// and others under "local" for the same logged-out state, splitting a
+// single user's saved preferences between two key spaces.
 const lastActiveProjectKey = (userId: number | string | null): string =>
-  `${LAST_ACTIVE_PROJECT_PREFIX}${userId ?? "anon"}`;
+  `${LAST_ACTIVE_PROJECT_PREFIX}${userId ?? "local"}`;
 
 const readLastActiveProjectId = (userId: number | string | null): number | null => {
   try {
@@ -27,6 +38,22 @@ const writeLastActiveProjectId = (userId: number | string | null, id: number | n
     /* localStorage may be unavailable in some sandboxes */
   }
 };
+
+const clearProjectScopedBrowserState = (
+  userId: number | string | null,
+  projectId: number,
+): void => {
+  const scopeUserId = userId ?? "local";
+  try {
+    localStorage.removeItem(`${DATA_ACTIVE_TAB_PREFIX}_${scopeUserId}_${projectId}`);
+    localStorage.removeItem(`${LEGACY_DATA_ACTIVE_TAB_PREFIX}_${scopeUserId}_${projectId}`);
+    localStorage.removeItem(`${DATA_DRAFT_PREFIX}:${scopeUserId}:${projectId}`);
+    localStorage.removeItem(`${LAST_ACTIVE_EXPERIMENT_PREFIX}_${scopeUserId}_${projectId}`);
+    localStorage.removeItem(`${SYNTHESIS_STATE_PREFIX}:${scopeUserId}:${projectId}`);
+  } catch {
+    /* localStorage may be unavailable in hardened browsers/tests. */
+  }
+};
 import type {
   ProjectSummary,
   ProjectDetail,
@@ -35,7 +62,6 @@ import type {
   ProjectVersionSummary,
   ProjectScriptSummary,
   ProjectScriptDetail,
-  SaveProjectRequest,
 } from "@/types";
 
 // Format date for display
@@ -136,6 +162,7 @@ export const useProjectStore = defineStore("project", () => {
       const { data } = await api.post<ProjectDetail>("/projects", payload);
       currentProject.value = data;
       currentProjectId.value = data.id;
+      writeLastActiveProjectId(useAuthStore().user?.id ?? null, data.id);
       await fetchProjects();
       return data;
     } catch (e) {
@@ -163,10 +190,17 @@ export const useProjectStore = defineStore("project", () => {
     error.value = null;
     try {
       await api.delete(`/projects/${id}`);
-      if (currentProjectId.value === id) {
+      const wasActive = currentProjectId.value === id;
+      if (wasActive) {
         currentProjectId.value = null;
         currentProject.value = null;
+        writeLastActiveProjectId(useAuthStore().user?.id ?? null, null);
+        // Drop every project-scoped store's in-memory state so a deleted
+        // active project doesn't leave a stale runs list / advisor channel /
+        // experiment selection in the UI.
+        runProjectScopeResets();
       }
+      clearProjectScopedBrowserState(useAuthStore().user?.id ?? null, id);
       await fetchProjects();
       return true;
     } catch (e) {
@@ -176,6 +210,15 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   async function selectProject(id: number): Promise<void> {
+    // Avoid a no-op reset on the current project — the user hasn't switched
+    // away, and resetting would wipe legitimately-loaded state.
+    const switching = currentProjectId.value !== id;
+    if (switching) {
+      // Atomic project-scope swap: clear every store's project-scoped state
+      // BEFORE the new project loads, so the UI never briefly renders a
+      // mixture of the previous and the next project's data.
+      runProjectScopeResets();
+    }
     currentProjectId.value = id;
     await fetchProject(id);
   }
@@ -275,26 +318,7 @@ export const useProjectStore = defineStore("project", () => {
     );
   }
 
-  // ── Save All + Versioning ─────────────────────────────────────
-
-  async function saveProject(
-    id: number,
-    payload: SaveProjectRequest
-  ): Promise<ProjectVersionSummary | null> {
-    error.value = null;
-    try {
-      const { data } = await api.post<ProjectVersionSummary>(
-        `/projects/${id}/save`,
-        payload
-      );
-      await fetchVersions(id);
-      await fetchProjects();
-      return data;
-    } catch (e) {
-      error.value = getErrorMessage(e);
-      return null;
-    }
-  }
+  // ── Versioning ────────────────────────────────────────────────
 
   async function fetchVersions(id: number): Promise<void> {
     error.value = null;
@@ -443,6 +467,7 @@ export const useProjectStore = defineStore("project", () => {
       );
       currentProject.value = data;
       currentProjectId.value = data.id;
+      writeLastActiveProjectId(useAuthStore().user?.id ?? null, data.id);
       await fetchProjects();
       return data;
     } catch (e) {
@@ -483,8 +508,7 @@ export const useProjectStore = defineStore("project", () => {
     unlinkWorkflow,
     removeWorkflowFromCurrentProject,
 
-    // Save All + Versioning
-    saveProject,
+    // Versioning
     fetchVersions,
 
     // Scripts

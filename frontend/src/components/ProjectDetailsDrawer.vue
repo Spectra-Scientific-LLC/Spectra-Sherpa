@@ -45,59 +45,12 @@
         </div>
       </section>
 
-      <!-- Data Sources Section -->
+      <!-- Data Section -->
       <section class="section">
         <div class="section-header">
           <h4 class="section-subtitle">
             <i class="pi pi-database"></i>
-            Data Sources ({{ project.data_sources?.length ?? 0 }})
-          </h4>
-          <Button
-            icon="pi pi-external-link"
-            class="p-button-text p-button-sm"
-            title="Go to Data"
-            @click="navigateToData"
-          />
-        </div>
-
-        <div v-if="(project.data_sources?.length ?? 0) === 0" class="empty-state">
-          <i class="pi pi-inbox"></i>
-          <span>No data sources detected for this project</span>
-        </div>
-
-        <div v-else class="data-source-list">
-          <div
-            v-for="dataSource in project.data_sources ?? []"
-            :key="dataSource.id"
-            class="data-source-card"
-          >
-            <div class="data-source-header">
-              <span
-                class="data-source-color"
-                :style="{ backgroundColor: dataSource.color }"
-                aria-hidden="true"
-              ></span>
-              <div class="data-source-copy">
-                <span class="data-source-name">{{ dataSource.display_name }}</span>
-                <span class="data-source-meta">{{ dataSource.source_type }}</span>
-              </div>
-            </div>
-            <div class="data-source-workflows">
-              <span class="data-source-label">Sheets</span>
-              <span class="data-source-value">
-                {{ workflowNamesForDataSource(dataSource.id) || "\u2014" }}
-              </span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Experiments Section -->
-      <section class="section">
-        <div class="section-header">
-          <h4 class="section-subtitle">
-            <i class="pi pi-flask"></i>
-            Experiments ({{ project.experiments.length }})
+            Data ({{ project.experiments.length }})
           </h4>
           <Button
             icon="pi pi-external-link"
@@ -109,7 +62,7 @@
 
         <div v-if="project.experiments.length === 0" class="empty-state">
           <i class="pi pi-inbox"></i>
-          <span>No experiments linked to this project</span>
+          <span>No datasets in this project</span>
         </div>
 
         <div v-else class="experiments-list">
@@ -126,6 +79,9 @@
             <div v-if="exp.description" class="exp-details">
               <span class="exp-description">{{ truncate(exp.description, 60) }}</span>
             </div>
+            <div v-if="exp.facts && exp.facts.length" class="exp-facts">
+              <span v-for="fact in exp.facts" :key="fact">{{ fact }}</span>
+            </div>
           </div>
         </div>
       </section>
@@ -140,7 +96,7 @@
           <Button
             icon="pi pi-external-link"
             class="p-button-text p-button-sm"
-            title="Go to Workflow Builder"
+            title="Go to Workflows"
             @click="navigateToWorkflows"
           />
         </div>
@@ -166,12 +122,85 @@
                 {{ workflowPrimaryDataName(wf) }}
               </span>
               <span v-if="wf.created_from_template_name" class="workflow-template">
-                Created from {{ wf.created_from_template_name }}
+                Started from {{ wf.created_from_template_name }}
               </span>
               <span v-else-if="wf.created_from_workflow_id" class="workflow-template ai-generated">
                 <i class="pi pi-sparkles"></i>
                 <span class="ai-chip">AI</span>
                 Generated from: {{ wf.created_from_workflow_name || `Sheet #${wf.created_from_workflow_id}` }}
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Models Section -->
+      <section class="section">
+        <div class="section-header">
+          <h4 class="section-subtitle">
+            <i class="pi pi-box"></i>
+            Models ({{ project.models.length }})
+          </h4>
+          <Button
+            icon="pi pi-external-link"
+            class="p-button-text p-button-sm"
+            title="Go to Models"
+            @click="navigateToModels"
+          />
+        </div>
+
+        <div v-if="project.models.length === 0" class="empty-state">
+          <i class="pi pi-inbox"></i>
+          <span>No saved models</span>
+        </div>
+
+        <div v-else class="experiments-list">
+          <div
+            v-for="model in project.models"
+            :key="model.artifact_uid"
+            class="experiment-card"
+            @click="navigateToModels"
+          >
+            <div class="exp-header">
+              <span class="exp-name">{{ model.name }}</span>
+              <span class="exp-subtle">{{ model.model_type }}</span>
+            </div>
+            <div class="exp-details">
+              <span class="exp-description">
+                {{ model.n_features }} features<span v-if="model.n_components != null"> · {{ model.n_components }} components</span>
+              </span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Snapshots Section -->
+      <section class="section">
+        <div class="section-header">
+          <h4 class="section-subtitle">
+            <i class="pi pi-history"></i>
+            Snapshots ({{ projectStore.versions.length }})
+          </h4>
+        </div>
+
+        <div v-if="projectStore.versions.length === 0" class="empty-state">
+          <i class="pi pi-inbox"></i>
+          <span>No snapshots saved</span>
+        </div>
+
+        <div v-else class="experiments-list">
+          <div
+            v-for="version in projectStore.versions"
+            :key="version.id"
+            class="experiment-card"
+          >
+            <div class="exp-header">
+              <span class="exp-name">v{{ version.version_number }}</span>
+              <span v-if="version.include_raw_data" class="exp-subtle raw">raw data</span>
+            </div>
+            <div class="exp-details">
+              <span class="exp-description">
+                {{ version.change_description || "—" }} · {{ formatDate(version.created_at) }}
               </span>
             </div>
           </div>
@@ -206,7 +235,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
 import Sidebar from "primevue/sidebar";
@@ -260,14 +289,6 @@ function truncate(text: string, maxLength: number): string {
   return text.slice(0, maxLength) + "...";
 }
 
-function workflowNamesForDataSource(dataSourceId: number): string {
-  const names =
-    project.value?.workflows
-      .filter((workflow) => workflow.data_source_ids?.includes(dataSourceId))
-      .map((workflow) => workflow.name) ?? [];
-  return names.join(", ");
-}
-
 function workflowPrimaryDataName(workflow: WorkflowBrief): string {
   const dataSourceId = workflow.primary_data_source_id;
   if (!dataSourceId) return "";
@@ -300,6 +321,36 @@ async function navigateToWorkflows() {
     query: targetProjectId !== null ? { project_id: String(targetProjectId) } : {},
   });
 }
+
+async function navigateToModels() {
+  const targetProjectId = project.value?.id ?? projectStore.currentProjectId;
+  visible.value = false;
+  if (targetProjectId !== null && projectStore.currentProjectId !== targetProjectId) {
+    await projectStore.selectProject(targetProjectId);
+  }
+  router.push({
+    path: "/runs",
+    query: targetProjectId !== null ? { project_id: String(targetProjectId) } : {},
+  });
+}
+
+// Pull the current project's snapshot list lazily when the drawer is opened
+// so the Snapshots section reflects the latest version count without forcing
+// every page that mounts the drawer to pre-fetch.
+watch(
+  () => visible.value,
+  async (isOpen) => {
+    if (!isOpen) return;
+    const projectId = project.value?.id ?? projectStore.currentProjectId;
+    if (projectId != null) {
+      try {
+        await projectStore.fetchVersions(projectId);
+      } catch (err) {
+        console.warn("[project-drawer] fetchVersions failed", err);
+      }
+    }
+  },
+);
 
 async function openExperiment(_experimentId: number) {
   const targetProjectId = project.value?.id ?? projectStore.currentProjectId;
@@ -583,6 +634,34 @@ async function openSubProject(projectId: number) {
 .exp-description {
   font-size: 0.85rem;
   color: #64748b;
+}
+
+.exp-subtle {
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.exp-subtle.raw {
+  color: var(--primary-color);
+  border: 1px solid color-mix(in srgb, var(--primary-color) 35%, transparent);
+  border-radius: 4px;
+  padding: 0.05rem 0.4rem;
+}
+
+/* Facts line: middle-dot separated scientific summary
+   (samples · features · technique etc.) mirroring the Project page rows. */
+.exp-facts {
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.exp-facts > span + span::before {
+  content: "·";
+  margin: 0 0.4rem;
+  color: var(--surface-border);
 }
 
 .workflows-list {

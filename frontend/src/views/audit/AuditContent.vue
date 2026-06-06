@@ -1,10 +1,7 @@
 <template>
-  <main class="audit-page">
-    <header class="audit-header">
-      <div>
-        <p class="eyebrow">Audit</p>
-        <h1>Evidence Workbench</h1>
-      </div>
+  <section class="audit-page">
+    <header class="tab-header">
+      <h1>Audit</h1>
       <AuditCapabilityStrip :caps="auditConfig" :can-query="canQuery" />
     </header>
 
@@ -62,7 +59,7 @@
       :has-more-events="hasMoreEvents"
       @load-more="loadMoreEvents"
     />
-  </main>
+  </section>
 </template>
 
 <script setup lang="ts">
@@ -71,7 +68,6 @@ import { useRoute } from "vue-router";
 
 import { api } from "@/api";
 import { useAppConfig } from "@/composables/useAppConfig";
-
 import AuditCapabilityStrip from "./AuditCapabilityStrip.vue";
 import AuditFilterChips from "./AuditFilterChips.vue";
 import AuditTimeline from "./AuditTimeline.vue";
@@ -310,29 +306,7 @@ onMounted(() => {
   background: #f8fafc;
   color: #0f172a;
   min-height: 100%;
-  padding: 24px;
-}
-
-.audit-header {
-  align-items: center;
-  display: flex;
-  gap: 16px;
-  justify-content: space-between;
-  margin-bottom: 20px;
-}
-
-.audit-header h1 {
-  font-size: 1.35rem;
-  letter-spacing: 0;
-  margin: 2px 0 0;
-}
-
-.eyebrow {
-  color: #64748b;
-  font-size: 0.76rem;
-  font-weight: 700;
-  margin: 0;
-  text-transform: uppercase;
+  padding: 0 1rem 1.5rem;
 }
 
 .notice {
@@ -385,12 +359,6 @@ onMounted(() => {
 @media (max-width: 980px) {
   .workbench-layout {
     grid-template-columns: 1fr;
-  }
-
-  .audit-header {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 12px;
   }
 }
 </style>

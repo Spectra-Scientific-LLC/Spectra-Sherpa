@@ -26,10 +26,11 @@ import { guidanceRuleLabel } from "@/lib/guidanceRules";
 describe("guidance notification labels (drawer chip)", () => {
   it("PR1 starter rules have friendly labels", () => {
     expect(guidanceRuleLabel("empty_project_import")).toBe("Project setup");
-    expect(guidanceRuleLabel("imported_no_preprocess")).toBe("Data preparation");
+    expect(guidanceRuleLabel("imported_no_preprocess")).toBe("Analysis setup");
     expect(guidanceRuleLabel("workflow_saved_never_run")).toBe("Workflow run");
     expect(guidanceRuleLabel("correction_caveat_ignored")).toBe("Data caveat");
     expect(guidanceRuleLabel("idle_on_results")).toBe("Results review");
+    expect(guidanceRuleLabel("data_idle_no_dataset_synthesis")).toBe("FTIR synthesis");
   });
 
   it("PR5 rules have friendly labels", () => {
@@ -60,6 +61,7 @@ describe("guidance notification labels (drawer chip)", () => {
       "workflow_saved_never_run",
       "correction_caveat_ignored",
       "idle_on_results",
+      "data_idle_no_dataset_synthesis",
       "deploy_runs_no_automation",
       "report_idle_with_runs",
     ];

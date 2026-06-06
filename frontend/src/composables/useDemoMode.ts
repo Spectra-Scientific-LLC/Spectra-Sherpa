@@ -12,30 +12,41 @@ import { useAppConfig } from '@/composables/useAppConfig'
 import type { DemoQuotaResponse } from '@/types/config'
 import {
   closeDemoUpgradeModal,
-  executionsLimit,
-  executionsRemaining,
+  executionsLastDay,
+  executionsLastHour,
+  executionsLimitDay,
+  executionsLimitHour,
   openDemoUpgradeModal,
-  sherpaLimit,
-  sherpaRemaining,
+  sherpaLastDay,
+  sherpaLastHour,
+  sherpaLimitDay,
+  sherpaLimitHour,
   showUpgradeModal,
   updateDemoQuotaFromFetch,
-  updateDemoQuotaFromRateLimit,
   upgradeModalContext,
+  uploadsLastWeek,
+  uploadsLimitWeek,
+  uploadsResetWeekAt,
 } from '@/composables/demoModeState'
+
+function windowPercent(used: number | null, limit: number): number {
+  if (used == null || !limit) return 0
+  return Math.min(100, Math.round((used / limit) * 100))
+}
 
 export function useDemoMode() {
   const { siteProfile, config } = useAppConfig()
 
-  const isDemoMode = computed(() => siteProfile.value === 'demo')
+  const isDemoMode = computed(() => siteProfile?.value === 'demo')
 
-  const demoContract = computed(() => config.value?.demo ?? null)
+  const demoContract = computed(() => config?.value?.demo ?? null)
 
-  const executionPercent = computed(() => {
-    if (executionsRemaining.value === null || executionsLimit.value === 0) return 0
-    return Math.round(
-      ((executionsLimit.value - executionsRemaining.value) / executionsLimit.value) * 100,
-    )
-  })
+  // Pick the tightest window (hourly vs daily) — that's the one closest
+  // to throttling the user. Used by the demo banner to color itself.
+  const executionPercent = computed(() => Math.max(
+    windowPercent(executionsLastHour.value, executionsLimitHour.value),
+    windowPercent(executionsLastDay.value, executionsLimitDay.value),
+  ))
 
   const bannerSeverity = computed<'info' | 'warning' | 'danger'>(() => {
     if (executionPercent.value >= 100) return 'danger'
@@ -48,12 +59,7 @@ export function useDemoMode() {
     try {
       const { data } = await api.get<DemoQuotaResponse>('/config/demo/quota')
       if (data.demo && data.executions && data.sherpa) {
-        updateDemoQuotaFromFetch(
-          data.executions.remaining,
-          data.executions.limit,
-          data.sherpa.remaining,
-          data.sherpa.limit,
-        )
+        updateDemoQuotaFromFetch(data.executions, data.sherpa, data.uploads)
       }
     } catch {
       // Non-critical; banner degrades to static mode without quota numbers
@@ -61,8 +67,18 @@ export function useDemoMode() {
   }
 
   /** Called from API interceptor when 429 with demo fields is received */
-  function updateFromRateLimit(remaining: number, limit: number): void {
-    updateDemoQuotaFromRateLimit(remaining, limit)
+  function updateFromRateLimit(detail: {
+    limit_type?: string
+    limit_per_hour?: number
+    limit_per_day?: number
+    limit_per_week?: number
+    remaining?: number
+  }): void {
+    // Re-export so callers don't need to import the state module
+    // directly. Implementation lives in demoModeState.
+    import('@/composables/demoModeState').then(({ updateDemoQuotaFromRateLimit }) => {
+      updateDemoQuotaFromRateLimit(detail)
+    })
   }
 
   /** Called from API interceptor or WS handler to show the upgrade modal */
@@ -77,10 +93,17 @@ export function useDemoMode() {
   return {
     isDemoMode,
     demoContract,
-    executionsRemaining: readonly(executionsRemaining),
-    executionsLimit: readonly(executionsLimit),
-    sherpaRemaining: readonly(sherpaRemaining),
-    sherpaLimit: readonly(sherpaLimit),
+    executionsLastHour: readonly(executionsLastHour),
+    executionsLastDay: readonly(executionsLastDay),
+    executionsLimitHour: readonly(executionsLimitHour),
+    executionsLimitDay: readonly(executionsLimitDay),
+    sherpaLastHour: readonly(sherpaLastHour),
+    sherpaLastDay: readonly(sherpaLastDay),
+    sherpaLimitHour: readonly(sherpaLimitHour),
+    sherpaLimitDay: readonly(sherpaLimitDay),
+    uploadsLastWeek: readonly(uploadsLastWeek),
+    uploadsLimitWeek: readonly(uploadsLimitWeek),
+    uploadsResetWeekAt: readonly(uploadsResetWeekAt),
     executionPercent,
     bannerSeverity,
     showUpgradeModal,

@@ -13,6 +13,7 @@ import {
   type ReportNode,
   type ReportEdge,
 } from "@/utils/reportGenerator";
+import { collectCanonicalClassificationMetrics } from "@/utils/classificationMetrics";
 import type { NodeOutput } from "@/utils/nodeOutput";
 
 declare const Plotly: {
@@ -82,6 +83,7 @@ export function useReportExport() {
           for (const key of ["explained_variance_ratio", "r2", "rmse", "accuracy", "n_components", "n_clusters"]) {
             if (raw[key] !== undefined) metrics[key] = raw[key];
           }
+          collectCanonicalClassificationMetrics(raw, metrics);
           // Also look inside ports.default or the raw data
           if (raw.ports?.default) {
             const defaultPort = raw.ports.default;
@@ -90,6 +92,7 @@ export function useReportExport() {
                 metrics[key] = defaultPort[key];
               }
             }
+            collectCanonicalClassificationMetrics(defaultPort, metrics);
           }
           if (Object.keys(metrics).length > 0) {
             terminalMetrics[String(node.id)] = metrics;

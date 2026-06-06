@@ -67,6 +67,7 @@
         <!-- Output Section -->
         <OutputPanel
           :expanded="sections.output"
+          :node-type="nodeType"
           @toggle="toggleSection('output')"
           @toggle-sub="toggleOutputSubsection"
           @show-full-metadata="showFullMetadata = true"
@@ -156,7 +157,6 @@ const route = useRoute();
 const toast = useToast();
 
 const props = withDefaults(defineProps<{
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- embedded trial tabs pass the existing node-detail payload.
   initialNodeData?: any | null;
   embedded?: boolean;
 }>(), {
@@ -183,6 +183,7 @@ const plsdaLoadingsViewMode = ref<"lines" | "biplot">("lines");
 const regressionTargetIdx = ref(0);
 const pcaXAxis = ref(0);
 const pcaYAxis = ref(1);
+const scoreColorMode = ref("labels");
 const spectraDisplayMode = ref<"overlay" | "contour">("contour");
 const genericDisplayMode = ref<"boxplot" | "scatter">("boxplot");
 const featureXAxis = ref(0);
@@ -204,9 +205,10 @@ const workflowStore = useWorkflowStore();
 const projectStore = useProjectStore();
 
 const NODE_ICONS: Record<string, string> = {
-  "data.source": "📊", "preprocess.normalize": "📏", "preprocess.scale": "📏",
+  "data.source": "📊", "data.my_dataset": "🧪", "preprocess.normalize": "📏", "preprocess.scale": "📏",
   "baseline.penalized_ls": "📉", "preprocess.smooth": "〰️", "model.pca": "🔀",
   "model.pls": "📈", "model.mcr_als": "🧩", "stats.summary": "📊",
+  "analysis.peak_finding": "⛰️", "analysis.peak_id": "🔬", "analysis.compare_library": "📚",
   "output.plot": "📈", "output.contour": "🗺️", "output.export": "💾",
 };
 
@@ -218,6 +220,15 @@ const nodeLabel = computed(() => nodeData.value?.label || `Node ${nodeId.value}`
 const nodeIcon = computed(() => NODE_ICONS[nodeType.value] || "📦");
 const nodeMetadata = computed(() => workflowStore.getNodeMetadata(nodeType.value));
 const nodeOutput = computed(() => nodeData.value?.output || null);
+
+// Training nodes emit `model_id` at the top level of their result after the
+// executor's `_process_model_artifact` lift (executor.py:135). Surface that
+// to the OutputPanel so it can render a Model Artifact section linking back
+// to /runs?tab=4&artifact=<uid>.
+const modelId = computed<string | null>(() => {
+  const raw = (nodeOutput.value as Record<string, unknown> | null)?.model_id;
+  return typeof raw === "string" && raw.length > 0 ? raw : null;
+});
 
 // ── Parameter handling ──────────────────────────────────────────────────
 const {
@@ -275,7 +286,7 @@ const {
 // ── Plot composable (owns all plot data/layout computeds + derived flags) ──
 const { plotBag, handleContourClick } = useNodePlotData({
   nodeOutput, nodeType, nodeTypeKey, hasOutput, isPCAOutput,
-  pcaXAxis, pcaYAxis, plsdaLoadingsViewMode, regressionTargetIdx,
+  pcaXAxis, pcaYAxis, scoreColorMode, plsdaLoadingsViewMode, regressionTargetIdx,
   featureXAxis, featureYAxis, contourClickPoint,
   regressionTargetOptions, selectedRegressionR2, selectedRegressionRmse,
 });
@@ -289,7 +300,10 @@ const resetToDefaults = () => {
 };
 
 const openDataTable = () => { showDataTableModal.value = true; };
-const openQuickPlot = () => { showQuickPlotModal.value = true; };
+const openQuickPlot = () => {
+  if (nodeType.value === "output.data_table") return;
+  showQuickPlotModal.value = true;
+};
 
 const exportOutput = () => {
   const data = nodeOutput.value?.data;
@@ -373,11 +387,12 @@ const detailState: NodeDetailState = {
     preview: computed(() => ({ rows: outputPreview.value, columns: outputPreviewColumns.value, summary: outputDataSummary.value })),
     pcaDiagnostics: computed(() => ({ rows: pcaDiagnosticsPreview.value, columns: pcaDiagnosticsColumns.value, summary: pcaDiagSummary.value })),
     isRegressionNode, regressionTargetOptions, selectedRegressionR2, selectedRegressionRmse,
+    modelId,
     getMetaTooltip, formatMetaValue,
   },
   plots: plotBag,
   writable: {
-    pcaXAxis, pcaYAxis, plsdaLoadingsViewMode, regressionTargetIdx,
+    pcaXAxis, pcaYAxis, scoreColorMode, plsdaLoadingsViewMode, regressionTargetIdx,
     spectraDisplayMode, genericDisplayMode, featureXAxis, featureYAxis, contourClickPoint,
   },
   plotSections,

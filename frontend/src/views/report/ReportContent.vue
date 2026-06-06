@@ -1,14 +1,12 @@
 <template>
   <section class="page-content">
     <!-- Header -->
-    <div class="section-header">
-      <div>
-        <h1>Report</h1>
-        <p class="section-subtitle">
-          Assemble, preview, and export analysis reports
-        </p>
-      </div>
-      <div v-if="reportStore.isReady || reportStore.selectedWorkflowId" class="header-actions">
+    <header class="tab-header">
+      <h1>Report</h1>
+      <ResponsiveHeaderActions
+        v-if="reportStore.isReady || reportStore.selectedWorkflowId"
+        :items="reportHeaderActionItems"
+      >
         <Button
           v-if="reportStore.selectedWorkflowId"
           label="Audit"
@@ -25,15 +23,15 @@
           @click="toggleExportMenu"
         />
         <Menu ref="exportMenuRef" :model="exportMenuItems" :popup="true" />
-      </div>
-    </div>
+      </ResponsiveHeaderActions>
+    </header>
 
     <!-- Configuration bar -->
     <div class="report-config">
       <div class="config-field">
         <label for="report-workflow">Workflow</label>
         <Dropdown
-          id="report-workflow"
+          inputId="report-workflow"
           v-model="reportStore.selectedWorkflowId"
           :options="reportStore.workflows"
           optionLabel="name"
@@ -48,7 +46,7 @@
       <div class="config-field">
         <label for="report-runs">Execution Runs (optional)</label>
         <Dropdown
-          id="report-runs"
+          inputId="report-runs"
           v-model="selectedRunProxy"
           :options="runDropdownOptions"
           optionLabel="label"
@@ -86,8 +84,8 @@
     <div v-if="reportStore.isReady" class="section-toggles">
       <ToggleButton
         v-model="reportStore.sections.pipelineDetails"
-        onLabel="Pipeline"
-        offLabel="Pipeline"
+        onLabel="Workflow"
+        offLabel="Workflow"
         onIcon="pi pi-check"
         offIcon="pi pi-times"
         class="toggle-chip"
@@ -203,6 +201,7 @@ import { useToast } from "primevue/usetoast";
 import { useRouter } from "vue-router";
 
 import MemoryAttribution from "@/components/MemoryAttribution.vue";
+import ResponsiveHeaderActions from "@/components/ResponsiveHeaderActions.vue";
 import ValidationWalkthroughPanel from "@/views/report/ValidationWalkthroughPanel.vue";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useProjectStore } from "@/stores/project";
@@ -215,6 +214,7 @@ import {
   type ReportEdge,
 } from "@/utils/reportGenerator";
 import { generateMarkdownReport } from "@/utils/reportMarkdownGenerator";
+import { openReportPdfExport } from "@/utils/reportPdf";
 import { downloadBlob, downloadText, downloadJson } from "@/utils/download";
 import api from "@/api/client";
 
@@ -249,6 +249,23 @@ watch(
   () => projectStore.currentProjectId,
   (next) => {
     if (next != null) void syncAdvisorForReport();
+  },
+);
+
+// Section defaults are "show all that apply" — when the report becomes
+// ready with AI Summary already toggled on, fetch the narrative once so
+// the section has content instead of an empty placeholder.
+watch(
+  () => reportStore.isReady,
+  (ready) => {
+    if (
+      ready &&
+      reportStore.sections.aiNarrative &&
+      !reportStore.narrativeText &&
+      llmAvailable.value
+    ) {
+      void onNarrativeToggle();
+    }
   },
 );
 onMounted(() => {
@@ -366,7 +383,9 @@ async function onNarrativeToggle(): Promise<void> {
       toast.add({
         severity: "warn",
         summary: "Narrative Unavailable",
-        detail: "Could not generate AI narrative. Check LLM configuration.",
+        detail:
+          reportStore.narrativeError ||
+          "Could not generate AI narrative. Check LLM configuration.",
         life: 5000,
       });
       reportStore.sections.aiNarrative = false;
@@ -386,6 +405,30 @@ function getExportFilename(ext: string): string {
 }
 
 const exportMenuItems = computed(() => [
+  {
+    label: "PDF",
+    icon: "pi pi-file-pdf",
+    command: () => {
+      const html = previewHtml.value;
+      if (!html) return;
+      const opened = openReportPdfExport(html, getExportFilename("pdf"));
+      if (opened) {
+        toast.add({
+          severity: "success",
+          summary: "PDF Ready",
+          detail: "Use the print dialog to save the report as PDF.",
+          life: 5000,
+        });
+      } else {
+        toast.add({
+          severity: "warn",
+          summary: "Popup Blocked",
+          detail: "Allow popups for SpectraSherpa, then export PDF again.",
+          life: 5000,
+        });
+      }
+    },
+  },
   {
     label: "HTML Report",
     icon: "pi pi-code",
@@ -457,6 +500,27 @@ const exportMenuItems = computed(() => [
   },
 ]);
 
+const reportHeaderActionItems = computed(() => [
+  ...(reportStore.selectedWorkflowId
+    ? [
+        {
+          label: "Audit",
+          icon: "pi pi-shield",
+          command: openWorkflowAudit,
+        },
+      ]
+    : []),
+  ...(reportStore.isReady
+    ? [
+        {
+          label: "Export",
+          icon: "pi pi-download",
+          items: exportMenuItems.value,
+        },
+      ]
+    : []),
+]);
+
 onMounted(() => {
   reportStore.fetchWorkflows();
 });
@@ -466,25 +530,9 @@ onMounted(() => {
 .page-content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-}
-
-.section-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-}
-
-.section-header h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.section-subtitle {
-  margin: 4px 0 0;
-  color: #64748b;
-  font-size: 0.9rem;
+  gap: 2rem;
+  padding: 0 1rem;
+  color: var(--text-color);
 }
 
 .header-actions {
@@ -533,13 +581,24 @@ onMounted(() => {
 
 .section-toggles {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   flex-wrap: wrap;
   align-items: center;
 }
 
 .toggle-chip {
-  font-size: 0.8rem;
+  font-size: 0.72rem;
+}
+
+.toggle-chip :deep(.p-button) {
+  padding: 0.25rem 0.55rem;
+  border-radius: 999px;
+  min-width: 0;
+  line-height: 1.1;
+}
+
+.toggle-chip :deep(.p-button .p-button-icon) {
+  font-size: 0.65rem;
 }
 
 .error-banner {

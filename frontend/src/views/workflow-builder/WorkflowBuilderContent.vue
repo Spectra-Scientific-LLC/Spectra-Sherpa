@@ -1,8 +1,8 @@
 <template>
   <section class="workflow-builder-content">
-    <div class="section-header">
+    <header class="tab-header">
       <div class="section-title-row">
-        <h1>Workflow Builder</h1>
+        <h1>Workflows</h1>
         <span
           v-if="workflowBadgeText"
           class="workflow-meta-badge"
@@ -13,54 +13,36 @@
         </span>
       </div>
 
-      <div class="header-actions">
+      <ResponsiveHeaderActions :items="actionMenuItems">
         <div class="toolbar-action-group">
+          <Button
+            label="Analysis Starter"
+            icon="pi pi-sparkles"
+            class="p-button-outlined p-button-sm"
+            :disabled="isTrialTabActive"
+            @click="templatePickerVisible = true"
+          />
           <Button
             :label="isWorkflowStale ? 'Run (Mod)' : 'Run'"
             icon="pi pi-play"
             data-action="run_workflow"
-            class="toolbar-btn toolbar-action-btn"
+            class="p-button-outlined p-button-sm"
             :loading="isExecuting || isBatchExecuting"
             :disabled="isTrialTabActive || nodes.length === 0 || isExecuting || isBatchExecuting"
             @click="onRunClick"
             :title="runButtonTitle"
           />
           <Button
-            label="New"
-            icon="pi pi-plus"
-            class="toolbar-btn toolbar-action-btn"
-            :disabled="isTrialTabActive"
-            @click="createNewWorkflow"
-          />
-          <Button
-            :label="saveButtonLabel"
-            icon="pi pi-save"
-            data-action="save_workflow"
-            class="toolbar-btn toolbar-action-btn"
-            :disabled="isTrialTabActive || autosaveStatus === 'saving'"
-            @click="saveWorkflow"
-            title="Save workflow definition"
-          />
-          <Button
-            v-if="advisorAvailable"
-            :label="memoryButtonLabel"
-            :icon="isCompactingMemory ? 'pi pi-spin pi-spinner' : 'pi pi-bookmark'"
-            class="toolbar-btn toolbar-action-btn"
-            :disabled="isTrialTabActive || isCompactingMemory || activeAdvisorNodeId === null"
-            @click="onSaveMemoryClick"
-            title="Compact this scope's Sherpa Advisor conversation into durable memory"
-          />
-          <Button
             label="Export"
             icon="pi pi-download"
-            class="toolbar-btn toolbar-action-btn"
+            class="p-button-outlined p-button-sm"
             :disabled="isTrialTabActive"
             @click="toggleExportMenu"
           />
           <Button
             label="Audit"
             icon="pi pi-shield"
-            class="toolbar-btn toolbar-action-btn"
+            class="p-button-outlined p-button-sm"
             :disabled="isTrialTabActive || workflowStore.workflowId === null"
             @click="openWorkflowAudit"
             title="Open audit trail for this workflow"
@@ -68,72 +50,61 @@
         </div>
         <Menu ref="exportMenuRef" :model="exportMenuItems" :popup="true" />
 
-        <span v-if="autosaveStatus === 'saved'" class="autosave-indicator">
-          <i class="pi pi-check"></i> Saved
-        </span>
+        <template #after>
+          <span v-if="autosaveStatus === 'saved'" class="autosave-indicator">
+            <i class="pi pi-check"></i> Saved
+          </span>
+          <span
+            v-else-if="autosaveStatus === 'error'"
+            class="autosave-indicator autosave-indicator-error"
+            :title="autosaveErrorMessage"
+          >
+            <i class="pi pi-exclamation-triangle"></i> Save failed
+          </span>
 
-        <Button
-          label="Actions"
-          icon="pi pi-bars"
-          class="toolbar-btn toolbar-action-btn toolbar-actions-menu-btn"
-          @click="toggleActionMenu"
-        />
-        <TieredMenu ref="actionMenuRef" :model="actionMenuItems" :popup="true" />
-
-        <Button
-          icon="pi pi-cog"
-          class="toolbar-btn toolbar-action-btn toolbar-settings-btn"
-          title="Settings"
-          aria-label="Settings"
-          @click="toggleSettingsPanel"
-        />
-        <OverlayPanel ref="settingsPanelRef">
-          <div class="settings-panel-content">
-            <label class="toolbar-state-control" title="Auto-execute on connect/param change">
-              <Checkbox
-                v-model="autoExecute"
-                binary
-                input-id="workflow-auto-update"
-                @change="onAutoExecuteChange"
-              />
-              <span>Auto update</span>
-            </label>
-            <label
-              v-if="advisorAvailable"
-              class="toolbar-state-control"
-              title="Compact and save the active sheet's Sherpa Advisor memory whenever the workflow is explicitly saved"
-            >
-              <Checkbox
-                v-model="autoSaveMemory"
-                binary
-                input-id="workflow-auto-save-memory"
-              />
-              <span>Auto save memory</span>
-            </label>
-            <label class="toolbar-state-control" title="Run all non-trial sheets in the workbook sequentially">
-              <Checkbox
-                v-model="runAllSheets"
-                binary
-                input-id="workflow-run-all"
-              />
-              <span>Run all sheets</span>
-            </label>
-            <label
-              v-if="runAllSheets"
-              class="toolbar-state-control"
-              title="Continue running remaining sheets if one sheet fails"
-            >
-              <Checkbox
-                v-model="continueWorkbookOnError"
-                binary
-                input-id="workflow-run-all-continue"
-              />
-              <span>Continue on error</span>
-            </label>
-          </div>
-        </OverlayPanel>
-      </div>
-    </div>
+          <Button
+            icon="pi pi-cog"
+            class="p-button-outlined p-button-sm toolbar-settings-btn"
+            title="Settings"
+            aria-label="Settings"
+            @click="toggleSettingsPanel"
+          />
+          <OverlayPanel ref="settingsPanelRef">
+            <div class="settings-panel-content">
+              <label class="toolbar-state-control" title="Auto-execute on connect/param change">
+                <Checkbox
+                  v-model="autoExecute"
+                  binary
+                  input-id="workflow-auto-update"
+                  @change="onAutoExecuteChange"
+                />
+                <span>Auto update</span>
+              </label>
+              <label class="toolbar-state-control" title="Run all non-trial sheets in the workbook sequentially">
+                <Checkbox
+                  v-model="runAllSheets"
+                  binary
+                  input-id="workflow-run-all"
+                />
+                <span>Run all sheets</span>
+              </label>
+              <label
+                v-if="runAllSheets"
+                class="toolbar-state-control"
+                title="Continue running remaining sheets if one sheet fails"
+              >
+                <Checkbox
+                  v-model="continueWorkbookOnError"
+                  binary
+                  input-id="workflow-run-all-continue"
+                />
+                <span>Continue on error</span>
+              </label>
+            </div>
+          </OverlayPanel>
+        </template>
+      </ResponsiveHeaderActions>
+    </header>
 
     <VersionHistoryDialog
       v-model:visible="versionHistoryVisible"
@@ -146,11 +117,44 @@
       @sheet-opened="resetDialogOpenedSheetUi"
     />
 
+    <!-- Workspace context strip: 4 read-only cells that re-read on every
+         sheet switch. "Project Data" reflects the active sheet's bound
+         data sources, not the project's total. Project Record / Data
+         navigation removed (sidebar handles it). -->
+    <div class="workflow-context-strip">
+      <div class="workflow-context-item">
+        <span>Project</span>
+        <strong>{{ activeProjectName }}</strong>
+      </div>
+      <div class="workflow-context-item">
+        <span>Active Sheet</span>
+        <strong>{{ activeSheetName }}</strong>
+      </div>
+      <div class="workflow-context-item">
+        <span>Project Data</span>
+        <strong>{{ linkedDataLabel }}</strong>
+      </div>
+      <div class="workflow-context-item">
+        <span>Canvas</span>
+        <strong>{{ canvasSummaryLabel }}</strong>
+      </div>
+    </div>
+
     <!-- Execution status banner -->
     <div v-if="executionCount > 0" class="execution-banner">
       <i class="pi pi-check-circle"></i>
       <span>Workflow executed {{ executionCount }} time{{ executionCount !== 1 ? 's' : '' }}</span>
       <span v-if="lastExecutionTime" class="execution-time">Last run: {{ lastExecutionTime }}</span>
+    </div>
+
+    <div v-if="recentlyDeletedSnapshot" class="node-undo-banner" role="status">
+      <span>{{ recentlyDeletedSnapshot.label }} deleted</span>
+      <Button
+        label="Undo"
+        icon="pi pi-undo"
+        class="p-button-text p-button-sm"
+        @click="restoreDeletedNodes"
+      />
     </div>
 
     <!-- Three-column layout: Toolbar | Canvas | Inspector Sidebar -->
@@ -253,19 +257,18 @@ import { storeToRefs } from "pinia";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
 import Menu from "primevue/menu";
-import TieredMenu from "primevue/tieredmenu";
 import OverlayPanel from "primevue/overlaypanel";
 import { useToast } from "primevue/usetoast";
-import { useRoute, useRouter } from "vue-router";
+import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
 import { useWorkflowStore, type WorkflowNode, type WorkflowEdge } from "@/stores/workflow";
 import { useExperimentStore } from "@/stores/experiment";
 import { useProjectStore } from "@/stores/project";
 import { useWorkbookStore } from "@/stores/workbook";
+import { useAuthStore } from "@/stores/auth";
 import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
-import { useAdvisorStore } from "@/stores/advisor";
-import { useAppConfig } from "@/composables/useAppConfig";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
+import ResponsiveHeaderActions from "@/components/ResponsiveHeaderActions.vue";
 import VersionHistoryDialog from "@/components/VersionHistoryDialog.vue";
 import TemplatePickerDialog from "@/components/TemplatePickerDialog.vue";
 import WorkflowToolbar from "./WorkflowToolbar.vue";
@@ -279,6 +282,14 @@ import { handleBroadcastMessage as _handleBroadcastMessage } from "./handleBroad
 
 type ParamsMap = Record<string, unknown>;
 
+type DeletedWorkflowSnapshot = {
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+  outputs: Array<[string, NodeOutput]>;
+  selectedNodeId: string | null;
+  label: string;
+};
+
 const toast = useToast();
 const route = useRoute();
 const router = useRouter();
@@ -286,26 +297,14 @@ const workflowStore = useWorkflowStore();
 const experimentStore = useExperimentStore();
 const projectStore = useProjectStore();
 const workbookStore = useWorkbookStore();
+const authStore = useAuthStore();
 const workflowBuilderConfigStore = useWorkflowBuilderConfigStore();
-const { autoExecute, autoSaveMemory } = storeToRefs(workflowBuilderConfigStore);
+const { autoExecute } = storeToRefs(workflowBuilderConfigStore);
 const clipboardStore = useClipboardStore();
-const advisorStore = useAdvisorStore();
-const { appMode, isFeatureEnabled } = useAppConfig();
-// Sherpa Advisor (memory compaction, advisor channels) is a server-backed
-// feature.  In OSS local mode the backend has no /memory/compact route and
-// the local adapter no-ops compactScope, so the "Save Memory" button and
-// related controls just advertise a feature that doesn't exist — hide them.
-const advisorAvailable = computed(
-  () => appMode.value !== "local" && isFeatureEnabled("sherpaGuidance"),
-);
-const isCompactingMemory = ref(false);
-const activeAdvisorNodeId = computed(() => advisorStore.activeNodeId);
-const memoryButtonLabel = computed(() => (isCompactingMemory.value ? "Memorizing…" : "Memorize"));
 const versionHistoryVisible = ref(false);
 const templatePickerVisible = ref(false);
 const canvasRef = ref();
 const exportMenuRef = ref();
-const actionMenuRef = ref();
 const settingsPanelRef = ref();
 
 // Use store for workflow state
@@ -360,20 +359,26 @@ const handleKeyDown = (e: KeyboardEvent) => {
 
   const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
   const isCmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+  const key = e.key.toLowerCase();
+  const browserHasSelectedText = Boolean(window.getSelection()?.toString());
 
-  if (isCmdOrCtrl && e.key.toLowerCase() === 'c') {
+  if (isCmdOrCtrl && key === 'c' && browserHasSelectedText) {
+    return;
+  }
+
+  if (isCmdOrCtrl && key === 'c') {
     onCopySelection();
     e.preventDefault();
-  } else if (isCmdOrCtrl && e.key.toLowerCase() === 'x') {
+  } else if (isCmdOrCtrl && key === 'x') {
     onCutSelection();
     e.preventDefault();
-  } else if (isCmdOrCtrl && e.key.toLowerCase() === 'v') {
+  } else if (isCmdOrCtrl && key === 'v') {
     onPasteSelection();
     e.preventDefault();
-  } else if (isCmdOrCtrl && e.key.toLowerCase() === 'd') {
+  } else if (isCmdOrCtrl && key === 'd') {
     onDuplicateSelection();
     e.preventDefault();
-  } else if (isCmdOrCtrl && e.key.toLowerCase() === 'a') {
+  } else if (isCmdOrCtrl && key === 'a') {
     canvasRef.value?.selectAll();
     e.preventDefault();
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -417,19 +422,92 @@ const onCutSelection = () => {
   onDeleteSelection();
 };
 
+const saveDeletedSnapshot = (snapshot: DeletedWorkflowSnapshot) => {
+  clearDeleteUndoTimer();
+  recentlyDeletedSnapshot.value = snapshot;
+  deleteUndoTimer.value = window.setTimeout(() => {
+    recentlyDeletedSnapshot.value = null;
+    deleteUndoTimer.value = null;
+  }, 8000);
+};
+
+const restoreDeletedNodes = () => {
+  const snapshot = recentlyDeletedSnapshot.value;
+  if (!snapshot) return;
+  clearDeleteUndoTimer();
+  const existingNodeIds = new Set(workflowStore.nodes.map((node) => node.id));
+  const restoredNodes = snapshot.nodes.filter((node) => !existingNodeIds.has(node.id));
+  if (restoredNodes.length === 0) {
+    recentlyDeletedSnapshot.value = null;
+    return;
+  }
+  const restoredNodeIds = new Set(restoredNodes.map((node) => node.id));
+  const existingEdges = new Set(workflowStore.edges.map((edge) => `${edge.from}->${edge.to}:${edge.fromPort || ""}:${edge.toPort || ""}`));
+  const restoredEdges = snapshot.edges.filter((edge) => {
+    if (!restoredNodeIds.has(edge.from) && !restoredNodeIds.has(edge.to)) return false;
+    const key = `${edge.from}->${edge.to}:${edge.fromPort || ""}:${edge.toPort || ""}`;
+    return !existingEdges.has(key);
+  });
+  workflowStore.setNodes([...workflowStore.nodes, ...restoredNodes]);
+  workflowStore.setEdges([...workflowStore.edges, ...restoredEdges]);
+  const restoredOutputs = new Map(nodeOutputs.value);
+  for (const [nodeId, output] of snapshot.outputs) {
+    restoredOutputs.set(nodeId, output);
+  }
+  nodeOutputs.value = restoredOutputs;
+  if (snapshot.selectedNodeId) {
+    selectedNode.value = workflowStore.nodes.find((node) => node.id === snapshot.selectedNodeId) || null;
+    inspectorOpen.value = selectedNode.value !== null;
+  }
+  workflowStore.hasUnsavedChanges = true;
+  recentlyDeletedSnapshot.value = null;
+  toast.add({
+    severity: "success",
+    summary: "Node Restored",
+    detail: `${snapshot.label} restored to the canvas.`,
+    life: 2500,
+  });
+};
+
+const deleteNodesById = (ids: Set<string>, options: { requireConfirmation?: boolean } = {}) => {
+  const requireConfirmation = options.requireConfirmation ?? true;
+  if (ids.size === 0) return;
+  const deletedNodes = workflowStore.nodes.filter((node) => ids.has(node.id));
+  if (deletedNodes.length === 0) return;
+  const label = deletedNodes.length === 1 ? getNodeLabel(deletedNodes[0].type) : `${deletedNodes.length} nodes`;
+  if (requireConfirmation && !window.confirm(`Delete ${label}? You can undo this immediately after deletion.`)) {
+    return;
+  }
+  const deletedEdges = workflowStore.edges.filter((edge) => ids.has(edge.from) || ids.has(edge.to));
+  const deletedOutputs = Array.from(nodeOutputs.value.entries()).filter(([nodeId]) => ids.has(nodeId));
+  const selectedNodeId = selectedNode.value && ids.has(selectedNode.value.id) ? selectedNode.value.id : null;
+
+  workflowStore.setNodes(workflowStore.nodes.filter((node) => !ids.has(node.id)));
+  workflowStore.setEdges(workflowStore.edges.filter((edge) => !ids.has(edge.from) && !ids.has(edge.to)));
+  const nextOutputs = new Map(nodeOutputs.value);
+  for (const nodeId of ids) nextOutputs.delete(nodeId);
+  nodeOutputs.value = nextOutputs;
+  if (selectedNodeId) {
+    selectedNode.value = null;
+    inspectorOpen.value = false;
+  }
+  canvasRef.value?.clearSelection?.();
+  workflowStore.hasUnsavedChanges = true;
+  saveDeletedSnapshot({
+    nodes: deletedNodes,
+    edges: deletedEdges,
+    outputs: deletedOutputs,
+    selectedNodeId,
+    label,
+  });
+};
+
 const onDeleteSelection = () => {
   if (!canvasRef.value?.selectedNodeIds) return;
   const selectedIds = canvasRef.value.selectedNodeIds;
   if (selectedIds.size === 0) return;
 
-  const updatedNodes = workflowStore.nodes.filter(n => !selectedIds.has(n.id));
-  const updatedEdges = workflowStore.edges.filter(e => !selectedIds.has(e.from) && !selectedIds.has(e.to));
-
-  workflowStore.setNodes(updatedNodes);
-  workflowStore.setEdges(updatedEdges);
-  
-  canvasRef.value.clearSelection();
-  workflowStore.hasUnsavedChanges = true;
+  deleteNodesById(new Set(selectedIds));
 };
 
 let lastPasteCount = 0;
@@ -534,9 +612,157 @@ const onViewOutput = (nodeId: string) => {
 };
 
 // Autosave state
-const autosaveStatus = ref<'idle' | 'saving' | 'saved'>('idle');
+const autosaveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
+const autosaveErrorMessage = ref("");
+const autosaveFailureToastShown = ref(false);
 const autosaveTimer = ref<number | null>(null);
+const autoExecuteTimer = ref<number | null>(null);
+const autoExecuteAcceptedForExpensiveWorkflow = ref(autoExecute.value);
+const recentlyDeletedSnapshot = ref<DeletedWorkflowSnapshot | null>(null);
+const deleteUndoTimer = ref<number | null>(null);
 const AUTOSAVE_DELAY = 30000; // 30 seconds
+const WORKFLOW_DRAFT_PREFIX = "spectra_sherpa_workflow_draft_v1";
+const EXPENSIVE_AUTO_EXECUTE_TYPES = [
+  "model.",
+  "classification.",
+  "selection.",
+  "baseline.",
+  "preprocess.osc",
+  "preprocess.msc",
+  "transfer.",
+  "synthesis.",
+];
+
+type WorkflowDraftSnapshot = {
+  projectId: number;
+  workflowId: number;
+  savedAt: string;
+  workflowName: string;
+  workflowDescription: string;
+  nodes: WorkflowNode[];
+  edges: WorkflowEdge[];
+};
+
+const workflowDraftKey = (projectId: number, workflowId: number): string =>
+  `${WORKFLOW_DRAFT_PREFIX}:${authStore.user?.id ?? "local"}:${projectId}:${workflowId}`;
+
+const currentWorkflowDraftKey = (): string | null => {
+  const projectId = workbookStore.projectId;
+  const currentWorkflowId = workflowStore.workflowId;
+  if (projectId === null || currentWorkflowId === null) return null;
+  return workflowDraftKey(projectId, currentWorkflowId);
+};
+
+const clearPendingAutosave = () => {
+  if (autosaveTimer.value !== null) {
+    window.clearTimeout(autosaveTimer.value);
+    autosaveTimer.value = null;
+  }
+};
+
+const clearPendingAutoExecute = () => {
+  if (autoExecuteTimer.value !== null) {
+    window.clearTimeout(autoExecuteTimer.value);
+    autoExecuteTimer.value = null;
+  }
+};
+
+const clearDeleteUndoTimer = () => {
+  if (deleteUndoTimer.value !== null) {
+    window.clearTimeout(deleteUndoTimer.value);
+    deleteUndoTimer.value = null;
+  }
+};
+
+const persistWorkflowDraftSnapshot = () => {
+  if (!workflowStore.hasUnsavedChanges) return;
+  if (workbookStore.activeSheet?.kind === "trial") return;
+  const key = currentWorkflowDraftKey();
+  if (!key || workbookStore.projectId === null || workflowStore.workflowId === null) return;
+  try {
+    const draft: WorkflowDraftSnapshot = {
+      projectId: workbookStore.projectId,
+      workflowId: workflowStore.workflowId,
+      savedAt: new Date().toISOString(),
+      workflowName: workflowStore.workflowName,
+      workflowDescription: workflowStore.workflowDescription,
+      nodes: workflowStore.nodes,
+      edges: workflowStore.edges,
+    };
+    localStorage.setItem(key, JSON.stringify(draft));
+  } catch {
+    // Draft persistence is best-effort; server autosave remains primary.
+  }
+};
+
+const clearWorkflowDraftSnapshot = () => {
+  const key = currentWorkflowDraftKey();
+  if (!key) return;
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+};
+
+const restoreWorkflowDraftSnapshot = () => {
+  if (workbookStore.activeSheet?.kind === "trial") return;
+  const key = currentWorkflowDraftKey();
+  if (!key) return;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return;
+    const draft = JSON.parse(raw) as Partial<WorkflowDraftSnapshot>;
+    if (
+      draft.projectId !== workbookStore.projectId ||
+      draft.workflowId !== workflowStore.workflowId ||
+      !Array.isArray(draft.nodes) ||
+      !Array.isArray(draft.edges)
+    ) {
+      return;
+    }
+    workflowStore.workflowName = draft.workflowName || workflowStore.workflowName;
+    workflowStore.workflowDescription = draft.workflowDescription || workflowStore.workflowDescription;
+    workflowStore.setNodes(draft.nodes);
+    workflowStore.setEdges(draft.edges);
+    workflowStore.hasUnsavedChanges = true;
+    workflowStore.markWorkflowStale();
+    autosaveStatus.value = "idle";
+    toast.add({
+      severity: "info",
+      summary: "Draft restored",
+      detail: "Recovered unsaved workflow edits from this browser.",
+      life: 2500,
+    });
+  } catch {
+    // Corrupt drafts should not block loading the server copy.
+  }
+};
+
+const flushWorkflowDraftBeforeUnload = () => {
+  persistWorkflowDraftSnapshot();
+};
+
+const shouldWarnAboutUnsavedWorkflow = () =>
+  workflowStore.hasUnsavedChanges || autosaveStatus.value === "error";
+
+const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+  persistWorkflowDraftSnapshot();
+  if (!shouldWarnAboutUnsavedWorkflow()) return;
+  event.preventDefault();
+  event.returnValue = "";
+};
+
+onBeforeRouteLeave((_to, _from, next) => {
+  if (
+    shouldWarnAboutUnsavedWorkflow() &&
+    !window.confirm("This workflow has unsaved edits or a failed autosave. Leave this page?")
+  ) {
+    next(false);
+    return;
+  }
+  next();
+});
 
 const sanitizeNodeIdSeed = (nodeType: string): string =>
   nodeType.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "node";
@@ -555,14 +781,14 @@ const createNodeId = (nodeType: string, existingNodes: WorkflowNode[] = workflow
 // Handle BroadcastChannel messages from NodeDetailView.
 // DetailView is send-only for `node_params_updated` (fired on Save and Exit).
 const handleBroadcastMessage = (event: MessageEvent) =>
-  _handleBroadcastMessage(event, nodes, workflowStore.updateNode);
+  _handleBroadcastMessage(event, nodes, workflowStore.updateNode, workflowStore.workflowId);
 
 // Load supporting data for the workflow bench
 onMounted(async () => {
   // Load experiments for DATA node selection
   if (experimentStore.experiments.length === 0) {
     try {
-      await experimentStore.fetchExperiments();
+      await experimentStore.fetchExperiments(projectStore.currentProjectId);
     } catch {
       console.warn("Failed to load experiments for workflow builder");
     }
@@ -580,6 +806,9 @@ onMounted(async () => {
   await initializeWorkbook();
 
   window.addEventListener('keydown', handleKeyDown);
+  window.addEventListener('beforeunload', handleBeforeUnload);
+  window.addEventListener('pagehide', flushWorkflowDraftBeforeUnload);
+  document.addEventListener('visibilitychange', flushWorkflowDraftBeforeUnload);
 });
 
 // Clean up BroadcastChannel and autosave timer on unmount
@@ -590,10 +819,15 @@ onUnmounted(() => {
     console.log('[WorkflowBuilder] BroadcastChannel closed');
   }
   if (autosaveTimer.value !== null) {
-    window.clearTimeout(autosaveTimer.value);
+    clearPendingAutosave();
   }
+  clearPendingAutoExecute();
+  clearDeleteUndoTimer();
   
   window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('beforeunload', handleBeforeUnload);
+  window.removeEventListener('pagehide', flushWorkflowDraftBeforeUnload);
+  document.removeEventListener('visibilitychange', flushWorkflowDraftBeforeUnload);
 });
 
 // Watch for store changes - only react to node count changes (add/remove)
@@ -609,26 +843,40 @@ watch(() => workflowStore.nodes.length, (newLength, oldLength) => {
 // Autosave watcher - trigger autosave when changes are made
 watch(() => hasChanges.value, (hasChangesVal) => {
   // Clear any existing timer
-  if (autosaveTimer.value !== null) {
-    clearTimeout(autosaveTimer.value);
-    autosaveTimer.value = null;
-  }
+  clearPendingAutosave();
 
   // Only autosave if:
   // 1. There are unsaved changes
   // 2. We have an existing workflow (not a brand new workflow)
   if (hasChangesVal && workflowStore.workflowId !== null) {
     autosaveStatus.value = 'idle';
+    autosaveErrorMessage.value = "";
+    const scheduledWorkflowId = workflowStore.workflowId;
+    const scheduledSheetIndex = workbookStore.activeIndex;
 
     // Set up debounced autosave
     autosaveTimer.value = window.setTimeout(async () => {
-      await triggerAutosave();
+      await triggerAutosave(scheduledWorkflowId, scheduledSheetIndex);
     }, AUTOSAVE_DELAY);
   } else if (!hasChangesVal) {
     // No changes, reset status
     autosaveStatus.value = 'idle';
+    autosaveErrorMessage.value = "";
   }
 });
+
+watch(
+  [
+    () => workflowStore.nodes,
+    () => workflowStore.edges,
+    () => workflowStore.workflowName,
+    () => workflowStore.workflowDescription,
+  ],
+  () => {
+    persistWorkflowDraftSnapshot();
+  },
+  { deep: true },
+);
 
 // Execution state
 const isExecuting = ref(false);
@@ -639,40 +887,18 @@ const lastExecutionTime = ref<string | null>(null);
 const BROADCAST_CHANNEL_NAME = "workflow_node_updates";
 const broadcastChannel = ref<BroadcastChannel | null>(null);
 
-// Node type labels for display
-const NODE_LABELS: Record<string, string> = {
-  'data.source': 'Load Data',
-  'preprocess.normalize': 'Normalize',
-  'preprocess.scale': 'Scale',
-  'baseline.penalized_ls': 'Baseline',
-  'preprocess.smooth': 'Smooth',
-  'model.pca': 'PCA',
-  'model.pls': 'PLS',
-  'model.mcr_als': 'MCR-ALS',
-  'stats.summary': 'Statistics',
-  'output.plot': 'Plot',
-  'output.contour': 'Contour Plot',
-  'output.export': 'Export',
-};
-
 const getNodeLabel = (nodeType: string): string => {
   const metadata = workflowStore.getNodeMetadata(nodeType);
   if (metadata?.label) {
     return metadata.label;
   }
-  return NODE_LABELS[nodeType] || nodeType;
+  return nodeType;
 };
 
 // Computed
 const selectedNodeOutput = computed(() => {
   if (!selectedNode.value) return null;
   return nodeOutputs.value.get(selectedNode.value.id) || null;
-});
-
-const saveButtonLabel = computed(() => {
-  if (autosaveStatus.value === 'saving') return 'Saving...';
-  if (autosaveStatus.value === 'saved' && !hasChanges.value) return 'Saved';
-  return 'Save';
 });
 
 const workflowBadgeText = computed(() => {
@@ -687,6 +913,48 @@ const workflowBadgeTitle = computed(() => {
 });
 const isTrialTabActive = computed(() => workbookStore.activeSheet?.kind === "trial");
 
+const activeProjectName = computed(() =>
+  projectStore.currentProject?.name || "No project selected",
+);
+
+const activeSheetName = computed(() =>
+  workbookStore.activeSheet?.name || workflowStore.workflowName || "No sheet open",
+);
+
+const linkedDataLabel = computed(() => {
+  // Per-active-sheet count, not project total: look up the active sheet's
+  // workflow in ProjectDetail.workflows and tally the data sources it binds
+  // (primary_data_source_id + data_source_ids, deduped). Switching sheets
+  // re-runs this computed so the strip reflects the sheet you're on.
+  const activeWorkflowId =
+    workbookStore.activeSheet?.workflowId ?? workflowStore.workflowId;
+  if (activeWorkflowId != null) {
+    const wf = projectStore.currentProject?.workflows?.find(
+      (entry) => entry.id === activeWorkflowId,
+    );
+    if (wf) {
+      const ids = new Set<number>();
+      if (wf.primary_data_source_id != null) ids.add(wf.primary_data_source_id);
+      if (wf.data_source_ids) {
+        for (const id of wf.data_source_ids) ids.add(id);
+      }
+      if (ids.size > 0) {
+        return `${ids.size} dataset${ids.size === 1 ? "" : "s"} bound`;
+      }
+      return "No datasets bound";
+    }
+  }
+  // No active sheet yet — fall back to the project's total.
+  const total = projectStore.currentProject?.experiment_count ?? 0;
+  return total > 0 ? `${total} in project` : "No linked datasets";
+});
+
+const canvasSummaryLabel = computed(() => {
+  const nodeCount = nodes.value.length;
+  const edgeCount = edges.value.length;
+  return `${nodeCount} node${nodeCount === 1 ? "" : "s"} · ${edgeCount} link${edgeCount === 1 ? "" : "s"}`;
+});
+
 const runButtonTitle = computed(() => {
   const sheetName = workbookStore.activeSheet?.name;
   const scope = sheetName ? `Run the active sheet "${sheetName}"` : "Run the active sheet";
@@ -696,11 +964,60 @@ const runButtonTitle = computed(() => {
   return scope;
 });
 
+const hasExpensiveAutoExecuteNodes = computed(() =>
+  nodes.value.some((node) => EXPENSIVE_AUTO_EXECUTE_TYPES.some((prefix) => node.type.startsWith(prefix))),
+);
+
 const buildOutputForNode = (nodeId: string, result: unknown): NodeOutput => {
   const node = nodes.value.find(n => n.id === nodeId);
   const outputPorts = node ? workflowStore.getNodeMetadata(node.type)?.output_ports : undefined;
   return buildNodeOutput(result, outputPorts);
 };
+
+const hasRenderableOutput = (output: NodeOutput): boolean => {
+  if (Array.isArray(output.data) && output.data.length > 0) {
+    return true;
+  }
+  if (output.plots && Object.keys(output.plots).length > 0) {
+    return true;
+  }
+  for (const port of Object.values(output.ports || {})) {
+    if (Array.isArray(port.data) && port.data.length > 0) {
+      return true;
+    }
+    if (port.plots && Object.keys(port.plots).length > 0) {
+      return true;
+    }
+  }
+  return false;
+};
+
+const hydrateNodeOutputsFromRunResults = (results: Record<string, unknown> | null | undefined) => {
+  if (!results) {
+    return;
+  }
+  const nextOutputs = new Map(nodeOutputs.value);
+  let changed = false;
+  for (const [nodeId, result] of Object.entries(results)) {
+    const output = buildOutputForNode(nodeId, result);
+    if (!hasRenderableOutput(output)) {
+      continue;
+    }
+    nextOutputs.set(nodeId, output);
+    changed = true;
+  }
+  if (changed) {
+    nodeOutputs.value = nextOutputs;
+    if (workbookStore.activeSheet && workbookStore.activeSheet.kind !== "trial") {
+      workbookStore.activeSheet.nodeOutputsCache = new Map(nextOutputs);
+    }
+  }
+};
+
+watch(
+  () => workflowStore.lastExecutionResults,
+  (results) => hydrateNodeOutputsFromRunResults(results as Record<string, unknown> | null),
+);
 
 // Compute input connections for selected node
 const selectedNodeInputConnections = computed(() => {
@@ -747,98 +1064,15 @@ const resetDialogOpenedSheetUi = () => {
   inspectorOpen.value = false;
 };
 
-const createNewWorkflow = () => {
-  if (hasChanges.value) {
-    if (!window.confirm("Clear this sheet? Unsaved changes will be replaced by an empty canvas.")) {
-      return;
-    }
-  }
-  workflowStore.setNodes([]);
-  workflowStore.setEdges([]);
-  resetCanvasUi();
-  toast.add({
-    severity: "info",
-    summary: "Sheet Cleared",
-    detail: "Cleared the active workflow canvas",
-    life: 2000,
-  });
-};
-
-const onSaveMemoryClick = async () => {
-  if (isCompactingMemory.value || activeAdvisorNodeId.value === null) return;
-  isCompactingMemory.value = true;
-  try {
-    const result = await advisorStore.compactScope();
-    if (result?.compacted) {
-      toast.add({
-        severity: "success",
-        summary: "Memory saved",
-        detail: `Compacted ${result.messageCount ?? 0} messages into scope memory v${result.version ?? "?"}.`,
-        life: 2500,
-      });
-    } else {
-      toast.add({
-        severity: "info",
-        summary: "Nothing to save",
-        detail: "Not enough new conversation to compact yet.",
-        life: 2500,
-      });
-    }
-  } catch (err: unknown) {
-    toast.add({
-      severity: "warn",
-      summary: "Save Memory failed",
-      detail: getErrorMessage(err, "Could not compact scope memory"),
-      life: 3000,
-    });
-  } finally {
-    isCompactingMemory.value = false;
-  }
-};
-
-const saveWorkflow = async () => {
-  // PR #80 made the Save button always clickable (manual checkpoint UX), but
-  // the backend unconditionally appends a workflow_version row on every save
-  // with create_version=true.  Without this guard, repeated clicks on an
-  // unchanged sheet spawn duplicate identical version snapshots that clutter
-  // version history.  When the user has nothing new to save, short-circuit
-  // with a quiet info toast instead of round-tripping.
-  if (!hasChanges.value) {
-    toast.add({
-      severity: "info",
-      summary: "Already saved",
-      detail: "No changes since the last save.",
-      life: 1800,
-    });
+const triggerAutosave = async (expectedWorkflowId?: number | null, expectedSheetIndex?: number) => {
+  autosaveTimer.value = null;
+  if (
+    expectedWorkflowId != null &&
+    (workflowStore.workflowId !== expectedWorkflowId || workbookStore.activeIndex !== expectedSheetIndex)
+  ) {
+    autosaveStatus.value = 'idle';
     return;
   }
-  try {
-    const savedId = await workflowStore.saveWorkflow();
-    if (autoSaveMemory.value && activeAdvisorNodeId.value !== null) {
-      // Fire-and-forget: workflow save is the primary user action, so
-      // we don't await compaction.  Failures are surfaced via the
-      // adapter's own error path; success is silent (no toast spam).
-      void advisorStore.compactScope();
-    }
-    autosaveStatus.value = 'saved';
-    toast.add({
-      severity: "success",
-      summary: "Saved",
-      detail: `Workflow saved (ID: ${savedId})`,
-      life: 2000,
-    });
-  } catch (err: unknown) {
-    const message = getErrorMessage(err, "Unable to save workflow");
-    toast.add({
-      severity: "error",
-      summary: "Save Failed",
-      detail: message,
-      life: 3000,
-    });
-  }
-};
-
-const triggerAutosave = async () => {
   if (workflowStore.workflowId === null && nodes.value.length === 0 && edges.value.length === 0) {
     return;
   }
@@ -854,7 +1088,10 @@ const triggerAutosave = async () => {
       await workbookStore.refreshSheets();
       await workbookStore.selectWorkflowSheet(savedId);
     }
+    clearWorkflowDraftSnapshot();
     autosaveStatus.value = 'saved';
+    autosaveErrorMessage.value = "";
+    autosaveFailureToastShown.value = false;
     console.log('[WorkflowBuilder] Autosaved workflow');
 
     // Reset autosave indicator after 5 seconds
@@ -864,9 +1101,18 @@ const triggerAutosave = async () => {
       }
     }, 5000);
   } catch (err: unknown) {
-    autosaveStatus.value = 'idle';
+    autosaveStatus.value = 'error';
+    autosaveErrorMessage.value = getErrorMessage(err, "Autosave failed");
     console.error('[WorkflowBuilder] Autosave failed:', err);
-    // Don't show error toast for autosave failures to avoid interrupting user
+    if (!autosaveFailureToastShown.value) {
+      toast.add({
+        severity: "error",
+        summary: "Autosave Failed",
+        detail: "Your edits are kept as a local draft. Run or save again before leaving.",
+        life: 6000,
+      });
+      autosaveFailureToastShown.value = true;
+    }
   }
 };
 
@@ -913,6 +1159,7 @@ const initializeWorkbook = async () => {
 
     await projectStore.selectProject(targetProjectId);
     await workbookStore.loadSheets(targetProjectId);
+    restoreWorkflowDraftSnapshot();
     resetCanvasUi();
 
     if (workflowStore.workflowWarnings.length > 0) {
@@ -961,6 +1208,7 @@ const switchWorkbookSheet = async (index: number) => {
   const wasDirty =
     workflowStore.hasUnsavedChanges && workflowStore.workflowId !== null;
   const previousSheetName = workbookStore.activeSheet?.name ?? "previous sheet";
+  clearPendingAutosave();
 
   // Cache current outputs before switching
   if (workbookStore.activeSheet && workbookStore.activeSheet.kind !== "trial") {
@@ -969,6 +1217,7 @@ const switchWorkbookSheet = async (index: number) => {
 
   try {
     await workbookStore.switchSheet(index);
+    restoreWorkflowDraftSnapshot();
     if (workbookStore.activeSheet?.kind !== "trial") {
       resetCanvasUi();
       
@@ -1223,22 +1472,18 @@ const exportMenuItems = [
 
 const actionMenuItems = computed(() => [
   {
+    label: "Analysis Starter",
+    icon: "pi pi-sparkles",
+    disabled: isTrialTabActive.value,
+    command: () => {
+      templatePickerVisible.value = true;
+    },
+  },
+  {
     label: isWorkflowStale.value ? "Run (Mod)" : "Run",
     icon: "pi pi-play",
     disabled: isTrialTabActive.value || nodes.value.length === 0 || isExecuting.value || isBatchExecuting.value,
     command: onRunClick,
-  },
-  {
-    label: "New",
-    icon: "pi pi-plus",
-    disabled: isTrialTabActive.value,
-    command: createNewWorkflow,
-  },
-  {
-    label: saveButtonLabel.value,
-    icon: "pi pi-save",
-    disabled: isTrialTabActive.value || autosaveStatus.value === "saving",
-    command: saveWorkflow,
   },
   {
     label: "Version history…",
@@ -1256,6 +1501,12 @@ const actionMenuItems = computed(() => [
     icon: "pi pi-download",
     disabled: isTrialTabActive.value,
     items: exportMenuItems,
+  },
+  {
+    label: "Audit",
+    icon: "pi pi-shield",
+    disabled: isTrialTabActive.value || workflowStore.workflowId === null,
+    command: openWorkflowAudit,
   },
 ]);
 
@@ -1276,12 +1527,25 @@ const toggleExportMenu = (event: Event) => {
   exportMenuRef.value?.toggle(event);
 };
 
-const toggleActionMenu = (event: Event) => {
-  actionMenuRef.value?.toggle(event);
-};
-
 // Auto-execute toggle handler
 const onAutoExecuteChange = () => {
+  if (autoExecute.value && hasExpensiveAutoExecuteNodes.value) {
+    const confirmed = window.confirm(
+      "Auto update reruns modeling and selection workflows after connections or parameter edits. Enable it for this workflow?",
+    );
+    if (!confirmed) {
+      autoExecute.value = false;
+      autoExecuteAcceptedForExpensiveWorkflow.value = false;
+      toast.add({
+        severity: "info",
+        summary: "Auto-Execute Disabled",
+        detail: "Manual execution mode - click Run when you are ready.",
+        life: 3000,
+      });
+      return;
+    }
+  }
+  autoExecuteAcceptedForExpensiveWorkflow.value = autoExecute.value;
   toast.add({
     severity: "info",
     summary: autoExecute.value ? "Auto-Execute Enabled" : "Auto-Execute Disabled",
@@ -1293,6 +1557,24 @@ const onAutoExecuteChange = () => {
 
   // Mark as having unsaved changes
   workflowStore.hasUnsavedChanges = true;
+};
+
+const scheduleAutoExecute = (delayMs: number) => {
+  if (!autoExecute.value || isExecuting.value || isBatchExecuting.value) return;
+  if (hasExpensiveAutoExecuteNodes.value && !autoExecuteAcceptedForExpensiveWorkflow.value) {
+    toast.add({
+      severity: "warn",
+      summary: "Auto-Execute Paused",
+      detail: "This workflow includes modeling or selection nodes. Enable Auto update from settings to rerun automatically.",
+      life: 4000,
+    });
+    return;
+  }
+  clearPendingAutoExecute();
+  autoExecuteTimer.value = window.setTimeout(() => {
+    autoExecuteTimer.value = null;
+    void executeWorkflow();
+  }, delayMs);
 };
 
 const onRunClick = async () => {
@@ -1399,6 +1681,9 @@ const executeWorkflow = async () => {
 
     // Assign new Map for proper Vue reactivity
     nodeOutputs.value = outputs;
+    if (workbookStore.activeSheet && workbookStore.activeSheet.kind !== "trial") {
+      workbookStore.activeSheet.nodeOutputsCache = new Map(outputs);
+    }
     executionCount.value++;
     lastExecutionTime.value = new Date().toLocaleTimeString();
 
@@ -1445,10 +1730,20 @@ const coerceNumber = (value: unknown): number | null => {
 const buildInitialData = async (): Promise<Record<string, unknown>> => {
   const initialData: Record<string, unknown> = {};
 
-  // Find all DATA nodes
-  const dataNodes = nodes.value.filter(n => n.type === 'data.source');
+  // Find source DATA nodes
+  const dataNodes = nodes.value.filter(n => n.type === 'data.source' || n.type === 'data.my_dataset');
 
   for (const node of dataNodes) {
+    if (node.type === 'data.my_dataset') {
+      const datasetId = coerceNumber(node.params.dataset_id);
+      if (datasetId !== null) {
+        initialData[String(node.id)] = {
+          dataset_id: datasetId,
+          source: 'experiment',
+        };
+      }
+      continue;
+    }
     const experimentId = coerceNumber(node.params.experiment_id);
     if (experimentId !== null) {
       initialData[String(node.id)] = {
@@ -1483,8 +1778,13 @@ const onAddNode = (nodeType: string) => {
 
 const getDefaultParams = (nodeType: string): ParamsMap => {
   // Get first available experiment ID for DATA nodes
-  const defaultExperimentId = experimentStore.experiments.length > 0
-    ? experimentStore.experiments[0].id
+  const projectExperiments = projectStore.currentProjectId == null
+    ? experimentStore.experiments
+    : experimentStore.experiments.filter(
+        (experiment) => experiment.project_id === projectStore.currentProjectId,
+      );
+  const defaultExperimentId = projectExperiments.length > 0
+    ? projectExperiments[0].id
     : null;
 
   const defaults: Record<string, ParamsMap> = {
@@ -1494,6 +1794,9 @@ const getDefaultParams = (nodeType: string): ParamsMap => {
       file_path: '',
       experiment_id: defaultExperimentId,
       format: 'csv',
+    },
+    'data.my_dataset': {
+      dataset_id: defaultExperimentId,
     },
     'data.nist_library': {
       library_id: null,
@@ -1530,7 +1833,14 @@ const getDefaultParams = (nodeType: string): ParamsMap => {
     // Analysis nodes - use backend parameter names directly (n_components)
     'model.pca': { n_components: "5", standardized: false, scaled: false },
     'model.pls': { n_components: 3, scale: false },
-    'model.mcr_als': { n_components: 3, max_iter: 100 },
+    'model.mcr_als': {
+      n_components: 3,
+      max_iter: 200,
+      tol: 0.00001,
+      normSpec: 'euclid',
+      non_negative_C: true,
+      non_negative_St: true,
+    },
     'model.efa': { n_components: 10, direction: 'both' },
     'model.pcr': { n_components: 3, scale: true },
     'model.svr': { kernel: 'rbf', C: 1.0, epsilon: 0.1, gamma: 'scale', degree: 3, coef0: 0.0, scale: true },
@@ -1539,6 +1849,8 @@ const getDefaultParams = (nodeType: string): ParamsMap => {
     'model.hca': { n_clusters: 3, linkage: 'ward', metric: 'euclidean' },
     'model.simplisma': { n_components: 3, noise: 3 },
     'stats.summary': {},
+    'analysis.peak_id': { compound: '' },
+    'analysis.compare_library': { top_n: 10, library_filter: '' },
     // Classification nodes
     'classification.plsda': { n_components: 3, scale: false },
     'classification.knn': { n_neighbors: 5, metric: 'euclidean' },
@@ -1594,9 +1906,7 @@ const onNodeConnect = (connection: { from: string; to: string; fromPort?: string
   workflowStore.addEdge(connection);
 
   // Auto-execute if enabled
-  if (autoExecute.value && !isExecuting.value && !isBatchExecuting.value) {
-    setTimeout(() => executeWorkflow(), 500); // Debounce slightly
-  }
+  scheduleAutoExecute(500);
 };
 
 const onConnectionError = (errorMessage: string) => {
@@ -1608,13 +1918,63 @@ const onConnectionError = (errorMessage: string) => {
   });
 };
 
+const stableStringify = (value: unknown): string => {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record)
+      .sort()
+      .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+};
+
+const stripUndefinedAndDefaultParams = (
+  nodeType: string,
+  params: ParamsMap,
+): ParamsMap => {
+  const metadataDefaults: ParamsMap = {};
+  const metadata = workflowStore.getNodeMetadata(nodeType);
+  for (const param of metadata?.parameters || []) {
+    if (param.default !== undefined) {
+      metadataDefaults[param.name] = param.default;
+    }
+  }
+  const defaults = { ...getDefaultParams(nodeType), ...metadataDefaults };
+  const normalized: ParamsMap = {};
+  for (const [key, value] of Object.entries(params || {})) {
+    if (value === undefined) {
+      continue;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(defaults, key) &&
+      stableStringify(value) === stableStringify(defaults[key])
+    ) {
+      continue;
+    }
+    normalized[key] = value;
+  }
+  return normalized;
+};
+
 const onUpdateParams = (nodeId: string, params: ParamsMap) => {
+  const node = workflowStore.nodes.find((candidate) => candidate.id === nodeId);
+  if (!node) {
+    return;
+  }
+  const previous = stripUndefinedAndDefaultParams(node.type, node.params || {});
+  const next = stripUndefinedAndDefaultParams(node.type, params || {});
+  if (stableStringify(previous) === stableStringify(next)) {
+    return;
+  }
+
   workflowStore.updateNode(nodeId, { params });
 
   // Auto-execute if enabled (with longer debounce for parameter changes)
-  if (autoExecute.value && !isExecuting.value && !isBatchExecuting.value) {
-    setTimeout(() => executeWorkflow(), 1000); // Longer debounce for params
-  }
+  scheduleAutoExecute(1000);
 };
 
 const onExecuteNode = async (nodeId: string) => {
@@ -1678,44 +2038,78 @@ const onExecuteNode = async (nodeId: string) => {
 };
 
 const onDeleteNode = (nodeId: string) => {
-  workflowStore.removeNode(nodeId);
-  if (selectedNode.value?.id === nodeId) {
-    selectedNode.value = null;
-  }
-  nodeOutputs.value.delete(nodeId);
+  deleteNodesById(new Set([nodeId]));
 };
 </script>
 
 <style scoped>
+/*
+  Page-level chrome adopts the canonical Zen vocabulary used on Project /
+  Dashboard / Data / Models: 0.9375rem base font, 1.75rem h1 at weight 500,
+  hairline section dividers, restrained accent. The dark slate background
+  was removed so the workflow page reads as part of the same app surface
+  as everything else. The canvas, Add-Nodes toolbar, sheet tabs, and
+  inspector live in their own components and own their internal styling.
+*/
+
 .workflow-builder-content {
   display: flex;
   flex-direction: column;
-  padding: 16px;
-  background: #0f172a;
-  color: #f8fafc;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
+  padding: 0 1rem;
+  color: var(--text-color);
+  font-size: 0.9375rem;
+  line-height: 1.5;
 }
 
 .section-title-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 0.75rem;
   min-width: 0;
 }
 
-.section-header h1 {
-  flex: 0 0 auto;
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
+/* Context strip: 4 read-only cells, hairline-only — no boxed background,
+   vertical hairlines between cells, hairline below. */
+.workflow-context-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  align-items: center;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--surface-border);
+  margin-bottom: 1rem;
 }
+
+.workflow-context-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  padding: 0 1rem;
+  border-right: 1px solid var(--surface-border);
+}
+
+.workflow-context-item:first-child {
+  padding-left: 0;
+}
+
+.workflow-context-item span {
+  color: var(--text-color-secondary);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.workflow-context-item strong {
+  overflow: hidden;
+  color: var(--text-color);
+  font-size: 1rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 
 .workflow-meta-badge {
   display: inline-flex;
@@ -1810,6 +2204,12 @@ const onDeleteNode = (nodeId: string) => {
   font-weight: 500;
 }
 
+.autosave-indicator-error {
+  background: rgba(239, 68, 68, 0.14);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fecaca;
+}
+
 .toolbar-state-control {
   display: inline-flex;
   align-items: center;
@@ -1852,24 +2252,36 @@ const onDeleteNode = (nodeId: string) => {
 .execution-banner {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
-  background: rgba(34, 197, 94, 0.15);
-  border: 1px solid rgba(34, 197, 94, 0.3);
-  border-radius: 8px;
-  color: #4ade80;
-  font-size: 0.9rem;
-  margin-bottom: 16px;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  color: var(--text-color-secondary);
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--surface-border);
+  margin-bottom: 1rem;
 }
 
 .execution-banner i {
-  font-size: 1.1rem;
+  color: var(--primary-color);
+  font-size: 0.95rem;
 }
 
 .execution-time {
   margin-left: auto;
-  color: #94a3b8;
-  font-size: 0.85rem;
+  color: var(--text-color-secondary);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.node-undo-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  color: var(--text-color);
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--surface-border);
+  margin-bottom: 1rem;
 }
 
 .workflow-workspace {
@@ -1978,6 +2390,17 @@ const onDeleteNode = (nodeId: string) => {
   min-height: 100%;
 }
 
+.run-name-form {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.run-name-form label {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
 @media (max-width: 1200px) {
   .workflow-workspace.inspector-open {
     grid-template-columns: 180px 1fr 280px;
@@ -1987,27 +2410,16 @@ const onDeleteNode = (nodeId: string) => {
   }
 }
 
-@media (max-width: 1280px) {
-  .toolbar-action-group {
-    display: none;
-  }
-
-  .header-actions :deep(.toolbar-actions-menu-btn.p-button) {
-    display: inline-flex;
-  }
-}
-
 @media (max-width: 900px) {
+  .workflow-context-strip {
+    grid-template-columns: 1fr;
+  }
+
   .workflow-workspace {
     grid-template-columns: 1fr;
   }
   .workflow-workspace.inspector-open {
     grid-template-columns: 1fr;
-  }
-
-  .section-header {
-    align-items: flex-start;
-    flex-direction: column;
   }
 }
 

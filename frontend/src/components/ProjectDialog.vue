@@ -35,7 +35,7 @@
         <div class="field">
           <label for="project-technique">Technique</label>
           <Dropdown
-            id="project-technique"
+            inputId="project-technique"
             v-model="form.technique"
             :options="techniqueOptions"
             placeholder="Select technique"

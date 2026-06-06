@@ -1,76 +1,15 @@
 <template>
   <section class="documentation-content">
-    <div class="section-header">
-      <div>
-        <h1>Documentation</h1>
-        <p class="section-subtitle">Guides, reference docs, and examples for Spectra Sherpa.</p>
-      </div>
-    </div>
+    <header class="tab-header">
+      <h1>Documentation</h1>
+    </header>
 
     <div class="doc-tab">
-      <!-- Getting Started -->
-      <div class="doc-group">
-        <h3><i class="pi pi-home" /> Getting Started</h3>
+      <div v-for="section in sections" :key="section.title" class="doc-group">
+        <h3><i :class="section.icon" /> {{ section.title }}</h3>
         <div class="doc-cards">
           <a
-            v-for="item in gettingStarted"
-            :key="item.path"
-            :href="DOCS_BASE + item.path"
-            target="_blank"
-            rel="noopener"
-            class="doc-card"
-          >
-            <span class="card-title">{{ item.title }}</span>
-            <span class="card-desc">{{ item.desc }}</span>
-            <i class="pi pi-external-link card-icon" />
-          </a>
-        </div>
-      </div>
-
-      <!-- User Guide -->
-      <div class="doc-group">
-        <h3><i class="pi pi-book" /> User Guide</h3>
-        <div class="doc-cards">
-          <a
-            v-for="item in userGuide"
-            :key="item.path"
-            :href="DOCS_BASE + item.path"
-            target="_blank"
-            rel="noopener"
-            class="doc-card"
-          >
-            <span class="card-title">{{ item.title }}</span>
-            <span class="card-desc">{{ item.desc }}</span>
-            <i class="pi pi-external-link card-icon" />
-          </a>
-        </div>
-      </div>
-
-      <!-- Developer -->
-      <div class="doc-group">
-        <h3><i class="pi pi-code" /> Developer Guide</h3>
-        <div class="doc-cards">
-          <a
-            v-for="item in developer"
-            :key="item.path"
-            :href="DOCS_BASE + item.path"
-            target="_blank"
-            rel="noopener"
-            class="doc-card"
-          >
-            <span class="card-title">{{ item.title }}</span>
-            <span class="card-desc">{{ item.desc }}</span>
-            <i class="pi pi-external-link card-icon" />
-          </a>
-        </div>
-      </div>
-
-      <!-- Examples -->
-      <div class="doc-group">
-        <h3><i class="pi pi-list" /> Examples</h3>
-        <div class="doc-cards">
-          <a
-            v-for="item in examples"
+            v-for="item in section.items"
             :key="item.path"
             :href="DOCS_BASE + item.path"
             target="_blank"
@@ -96,39 +35,81 @@ interface DocLink {
   path: string;
 }
 
-const gettingStarted: DocLink[] = [
-  { title: "Installation", desc: "Install SpectraSherpa from PyPI or source", path: "/user/installation/" },
-  { title: "Quickstart", desc: "Your first spectral analysis in minutes", path: "/user/quickstart/" },
-  { title: "Configuration", desc: "Environment variables and app modes", path: "/user/configuration/" },
-];
+interface DocSection {
+  title: string;
+  icon: string;
+  items: DocLink[];
+}
 
-const userGuide: DocLink[] = [
-  { title: "Experiments", desc: "Create and manage spectral experiments", path: "/user/experiments/" },
-  { title: "Workflow Builder", desc: "Build DAG-based analysis pipelines", path: "/user/workflow/" },
-  { title: "DOE (96-Well)", desc: "Design of experiments with plate layouts", path: "/user/doe/" },
-  { title: "Synthesis Builder", desc: "Plan and track synthesis procedures", path: "/user/synthesis/" },
-  { title: "NIST Library", desc: "Search the NIST spectral reference library", path: "/user/library/" },
-  { title: "User Manual", desc: "Complete reference for all features", path: "/user/manual/" },
-];
-
-const developer: DocLink[] = [
-  { title: "Setup & Contributing", desc: "Dev environment, testing, and contribution guide", path: "/dev/setup/" },
-  { title: "Architecture", desc: "System design, backend/frontend split, data flow", path: "/dev/architecture/" },
-  { title: "Your First Node", desc: "Build a custom DAG node plugin", path: "/dev/first_plugin/" },
-  { title: "Node Reference", desc: "All built-in workflow nodes and their parameters", path: "/user/reference/nodes/" },
-];
-
-const examples: DocLink[] = [
-  { title: "Loading Data", desc: "Import spectra from CSV, SPA, SPG, and more", path: "/user/examples/01_loading_data/" },
-  { title: "Dataset Manipulation", desc: "Slice, merge, and transform datasets", path: "/user/examples/02_dataset_manipulation/" },
-  { title: "Plotting", desc: "Visualize spectra with built-in plot tools", path: "/user/examples/03_plotting/" },
-  { title: "Smoothing", desc: "Savitzky-Golay and other smoothing methods", path: "/user/examples/04_preprocessing_smoothing/" },
-  { title: "Baseline Correction", desc: "Remove baselines with multiple algorithms", path: "/user/examples/05_preprocessing_baseline/" },
-  { title: "Peak Finding", desc: "Detect and characterize spectral peaks", path: "/user/examples/06_peak_finding/" },
-  { title: "Peak Fitting", desc: "Fit peaks with Gaussian, Lorentzian models", path: "/user/examples/07_peak_fitting/" },
-  { title: "PCA", desc: "Principal component analysis for spectral data", path: "/user/examples/08_pca/" },
-  { title: "MCR-ALS", desc: "Multivariate curve resolution", path: "/user/examples/09_mcr_als/" },
-  { title: "PLS Regression", desc: "Partial least squares for quantitative analysis", path: "/user/examples/10_pls_regression/" },
+const sections: DocSection[] = [
+  {
+    title: "Introduction",
+    icon: "pi pi-home",
+    items: [
+      { title: "What SpectraSherpa Is", desc: "Product scope, scientific foundations, and first paths", path: "/" },
+      { title: "Cloud vs Local OSS", desc: "Choose hosted evaluation or local compute", path: "/introduction/cloud-vs-local/" },
+      { title: "Current Capabilities", desc: "What is built and supported in this release", path: "/introduction/capabilities/" },
+      { title: "Supported File Types", desc: "Base readers and optional SpectroChemPy formats", path: "/introduction/file-types/" },
+      { title: "License", desc: "AGPLv3, upstream terms, and BYOK responsibilities", path: "/introduction/license/" },
+    ],
+  },
+  {
+    title: "Onboarding",
+    icon: "pi pi-compass",
+    items: [
+      { title: "30 Minutes to Local Compute", desc: "Install and run the OSS app locally", path: "/onboarding/local-30-minutes/" },
+      { title: "Import Your First Dataset", desc: "Check files, metadata, and the data matrix", path: "/onboarding/import-first-dataset/" },
+      { title: "Data Import", desc: "Move from raw files into reusable datasets", path: "/workflows/data-import/" },
+      { title: "Projects, Datasets, and Runs", desc: "Understand the core analysis objects", path: "/workflows/projects-datasets-runs/" },
+    ],
+  },
+  {
+    title: "Chemometrics",
+    icon: "pi pi-chart-line",
+    items: [
+      { title: "Overview", desc: "How to read workflows, plots, and validation outputs", path: "/chemometrics/" },
+      { title: "PCA", desc: "Exploratory structure, scores, loadings, and diagnostics", path: "/chemometrics/pca/" },
+      { title: "PLS Calibration", desc: "Regression, validation, and model application", path: "/chemometrics/pls/" },
+      { title: "Classification", desc: "PLS-DA and KNN classifier workflows", path: "/chemometrics/classification/" },
+      { title: "SIMCA QC", desc: "Class-model acceptance and rejection workflows", path: "/chemometrics/simca/" },
+      { title: "MCR-ALS", desc: "Curve resolution for mixtures and evolving systems", path: "/chemometrics/mcr-als/" },
+    ],
+  },
+  {
+    title: "Node Library",
+    icon: "pi pi-sitemap",
+    items: [
+      { title: "Node Overview", desc: "Inputs, outputs, and node contract vocabulary", path: "/nodes/" },
+      { title: "Data Nodes", desc: "Source, table, and dataset-shaping nodes", path: "/nodes/data/" },
+      { title: "Preprocessing Nodes", desc: "Baseline, scaling, smoothing, and transforms", path: "/nodes/preprocessing/" },
+      { title: "Regression Nodes", desc: "PLS calibration and related outputs", path: "/nodes/regression/" },
+      { title: "Classification Nodes", desc: "PLS-DA, SIMCA, KNN, and metrics", path: "/nodes/classification/" },
+      { title: "Optional SpectroChemPy Nodes", desc: "Extra algorithms and readers enabled by [scp]", path: "/nodes/spectrochempy/" },
+    ],
+  },
+  {
+    title: "Templates",
+    icon: "pi pi-list",
+    items: [
+      { title: "Templates", desc: "Runnable workflow starters and how to read them", path: "/workflow-templates/" },
+      { title: "PCA Starter", desc: "First-look exploratory analysis", path: "/workflow-templates/pca/" },
+      { title: "PLS Calibration Starter", desc: "Quantitative calibration workflow", path: "/workflow-templates/pls-calibration/" },
+      { title: "Classification Starters", desc: "Categorical prediction and QC workflows", path: "/workflow-templates/classification/" },
+      { title: "MCR-ALS Starter", desc: "Resolve component spectra and profiles", path: "/workflow-templates/mcr-als/" },
+    ],
+  },
+  {
+    title: "Architecture and Developers",
+    icon: "pi pi-code",
+    items: [
+      { title: "Architecture", desc: "System overview and extension boundaries", path: "/architecture/" },
+      { title: "Workflow Execution", desc: "How DAGs run and preserve provenance", path: "/architecture/workflows/" },
+      { title: "Plugins and Extension Points", desc: "Build new nodes and integrations", path: "/architecture/plugins/" },
+      { title: "Export Design", desc: "How workflows become portable outputs", path: "/architecture/export/" },
+      { title: "Developer Setup", desc: "Environment, tests, and contribution workflow", path: "/developers/setup/" },
+      { title: "Attributions", desc: "SpectroChemPy, NIST, HITRAN/HAPI, and citations", path: "/attributions/" },
+    ],
+  },
 ];
 </script>
 
@@ -136,26 +117,11 @@ const examples: DocLink[] = [
 .documentation-content {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 2rem;
+  padding: 0 1rem;
+  color: var(--text-color);
   height: 100%;
   overflow-y: auto;
-}
-
-.section-header {
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--surface-border);
-}
-
-.section-header h1 {
-  margin: 0 0 4px;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.section-subtitle {
-  margin: 0;
-  color: var(--text-color-secondary);
-  font-size: 0.9rem;
 }
 
 .doc-tab {
@@ -169,7 +135,9 @@ const examples: DocLink[] = [
   margin: 0 0 12px;
   font-size: 1rem;
   font-weight: 600;
-  color: #1f2937;
+  /* Sub-section headings stay in the body-text mid-gray; the near-black
+   * weight is reserved for the page title (.tab-header h1). */
+  color: var(--text-color);
   display: flex;
   align-items: center;
   gap: 8px;

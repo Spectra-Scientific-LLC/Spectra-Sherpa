@@ -238,7 +238,7 @@ describe("LLM Store WebSocket handshake", () => {
     expect(llm.messages.at(-1)?.content).toBe(
       "Conversation history could not be loaded. Continuing without prior chat context."
     );
-    expect(notifications.notifications[0]?.title).toBe("AI Chat");
+    expect(notifications.notifications[0]?.title).toBe("Chat");
     expect(notifications.notifications[0]?.message).toBe(
       "Conversation history could not be loaded. Continuing without prior chat context."
     );

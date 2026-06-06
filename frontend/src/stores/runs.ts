@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";
+import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import type {
   ExecutionRunSummary,
   ComparisonResult,
@@ -10,6 +11,7 @@ import type {
 } from "@/types";
 
 interface SaveRunPayload {
+  run_id?: number | null;
   name: string;
   notes?: string;
   status: string;
@@ -21,6 +23,8 @@ interface SaveRunPayload {
   executed_at: string;
   labels?: string[];
   model_ids?: string[];
+  run_kind?: string;
+  applied_artifact_uids?: string[];
 }
 
 export const useRunsStore = defineStore("runs", () => {
@@ -30,6 +34,15 @@ export const useRunsStore = defineStore("runs", () => {
   const selectedRunIds = ref<Set<number>>(new Set());
   const comparison = ref<ComparisonResult | null>(null);
   const comparisonLoading = ref(false);
+
+  function resetProjectScope(): void {
+    runs.value = [];
+    runsLoading.value = false;
+    selectedRunIds.value = new Set();
+    comparison.value = null;
+    comparisonLoading.value = false;
+  }
+  registerProjectScopeReset(resetProjectScope);
 
   // Computed
   const selectedRuns = computed(() =>
@@ -48,6 +61,22 @@ export const useRunsStore = defineStore("runs", () => {
       runs.value = response.data.runs;
     } catch (error) {
       console.error("Failed to fetch runs:", error);
+      runs.value = [];
+    } finally {
+      runsLoading.value = false;
+    }
+  }
+
+  async function fetchProjectRuns(projectId: number): Promise<void> {
+    runsLoading.value = true;
+    try {
+      const response = await api.get<{ runs: ExecutionRunSummary[]; total: number }>(
+        "/runs",
+        { params: { project_id: projectId } }
+      );
+      runs.value = response.data.runs;
+    } catch (error) {
+      console.error("Failed to fetch project runs:", error);
       runs.value = [];
     } finally {
       runsLoading.value = false;
@@ -75,6 +104,14 @@ export const useRunsStore = defineStore("runs", () => {
     selectedRunIds.value = next;
   }
 
+  async function deleteProjectRun(projectId: number, runId: number): Promise<void> {
+    await api.delete(`/runs/${runId}`, { params: { project_id: projectId } });
+    runs.value = runs.value.filter((r) => r.id !== runId);
+    const next = new Set(selectedRunIds.value);
+    next.delete(runId);
+    selectedRunIds.value = next;
+  }
+
   async function compareRuns(
     workflowId: number,
     runIds: number[]
@@ -84,6 +121,24 @@ export const useRunsStore = defineStore("runs", () => {
       const response = await api.post<ComparisonResult>(
         `/workflows/${workflowId}/runs/compare`,
         { run_ids: runIds }
+      );
+      comparison.value = response.data;
+      return response.data;
+    } finally {
+      comparisonLoading.value = false;
+    }
+  }
+
+  async function compareProjectRuns(
+    projectId: number,
+    runIds: number[]
+  ): Promise<ComparisonResult> {
+    comparisonLoading.value = true;
+    try {
+      const response = await api.post<ComparisonResult>(
+        "/runs/compare",
+        { run_ids: runIds },
+        { params: { project_id: projectId } }
       );
       comparison.value = response.data;
       return response.data;
@@ -158,13 +213,17 @@ export const useRunsStore = defineStore("runs", () => {
 
     // Actions
     fetchRuns,
+    fetchProjectRuns,
     saveRun,
     deleteRun,
+    deleteProjectRun,
     compareRuns,
+    compareProjectRuns,
     toggleRunSelection,
     clearSelection,
     startBatchRun,
     fetchPredictions,
     updateLabels,
+    resetProjectScope,
   };
 });

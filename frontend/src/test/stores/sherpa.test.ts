@@ -138,6 +138,8 @@ vi.mock("@/stores/data", () => ({
       ? xAxis.data.filter((value): value is number => typeof value === "number")
       : [];
     return {
+      dataset_id:
+        typeof datasetInfo.dataset_id === "string" ? datasetInfo.dataset_id : null,
       label: typeof datasetInfo.label === "string" ? datasetInfo.label : null,
       source: typeof datasetInfo.source === "string" ? datasetInfo.source : null,
       dataset_name: typeof datasetInfo.name === "string" ? datasetInfo.name : null,
@@ -234,12 +236,6 @@ const emitSherpa = (payload: Record<string, unknown>) => {
   dispatchSherpaEvent(payload as { type: string; request_id?: string | null });
 };
 
-const flushPromises = async (cycles = 6) => {
-  for (let index = 0; index < cycles; index += 1) {
-    await Promise.resolve();
-  }
-};
-
 describe("Sherpa Store communication state", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -321,13 +317,16 @@ describe("Sherpa Store communication state", () => {
     expect(sherpa.messages).toHaveLength(1);
     const welcome = sherpa.messages[0];
     expect(welcome?.role).toBe("assistant");
-    // Five-step orientation: Project → Template → Data → Inspect → Workflow.
+    // Main-tab orientation: Dashboard → Project → Data → Workflows → Runs → Deploy → Report.
     expect(welcome?.content).toContain("Welcome to Sherpa Advisor");
-    expect(welcome?.content).toMatch(/1\.\s+\*\*Project\*\*/);
-    expect(welcome?.content).toMatch(/2\.\s+\*\*Template\*\*/);
+    expect(welcome?.content).toMatch(/1\.\s+\*\*Dashboard\*\*/);
+    expect(welcome?.content).toMatch(/2\.\s+\*\*Project\*\*/);
     expect(welcome?.content).toMatch(/3\.\s+\*\*Data\*\*/);
-    expect(welcome?.content).toMatch(/4\.\s+\*\*Inspect\*\*/);
-    expect(welcome?.content).toMatch(/5\.\s+\*\*Workflow\*\*/);
+    expect(welcome?.content).toMatch(/4\.\s+\*\*Workflows\*\*/);
+    expect(welcome?.content).toMatch(/5\.\s+\*\*Runs\*\*/);
+    expect(welcome?.content).toMatch(/6\.\s+\*\*Deploy\*\*/);
+    expect(welcome?.content).toMatch(/7\.\s+\*\*Report\*\*/);
+    expect(welcome?.content).toContain("Use **Settings**");
 
     sherpa.dispose();
   });
@@ -341,7 +340,7 @@ describe("Sherpa Store communication state", () => {
     expect(sherpa.messages).toHaveLength(1);
     expect(sherpa.messages[0]?.role).toBe("assistant");
     expect(sherpa.messages[0]?.content).toContain("Welcome to Sherpa Advisor");
-    expect(sherpa.messages[0]?.content).toMatch(/1\.\s+\*\*Project\*\*/);
+    expect(sherpa.messages[0]?.content).toMatch(/1\.\s+\*\*Dashboard\*\*/);
   });
 
   it("does not show the delayed preparing notice after chat streaming starts", async () => {
@@ -569,6 +568,7 @@ describe("Sherpa Store communication state", () => {
 
     const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
     expect(payload.payload.workflow_context.dataset_context).toEqual({
+      dataset_id: null,
       label: null,
       source: null,
       dataset_name: null,
@@ -613,6 +613,7 @@ describe("Sherpa Store communication state", () => {
     mockWorkflowStore.lastExecutionResults = {
       data_1: {
         type: "SherpaDataset",
+        dataset_id: "wine-dataset-1",
         title: "wine",
         backend: "sklearn",
         n_samples: 178,
@@ -637,6 +638,7 @@ describe("Sherpa Store communication state", () => {
 
     const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
     expect(payload.payload.workflow_context.dataset_context).toEqual({
+      dataset_id: "wine-dataset-1",
       label: "wine",
       source: "sklearn",
       dataset_name: "wine",
@@ -659,6 +661,7 @@ describe("Sherpa Store communication state", () => {
       metadata_summary: null,
     });
     expect(payload.payload.workflow_context.results_summary.data_1).toMatchObject({
+      dataset_id: "wine-dataset-1",
       backend: "sklearn",
       dataset_name: "wine",
       feature_names: ["alcohol", "malic_acid", "ash"],
@@ -694,6 +697,7 @@ describe("Sherpa Store communication state", () => {
         // target}`` keys.
         default: {
           type: "SherpaDataset",
+          dataset_id: "wine-dataset-2",
           title: "wine",
           backend: "sklearn",
           n_samples: 178,
@@ -724,6 +728,7 @@ describe("Sherpa Store communication state", () => {
     const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
     const datasetContext = payload.payload.workflow_context.dataset_context;
     expect(datasetContext).toMatchObject({
+      dataset_id: "wine-dataset-2",
       label: "wine",
       source: "sklearn",
       dataset_name: "wine",
@@ -732,6 +737,7 @@ describe("Sherpa Store communication state", () => {
     });
     // And the results_summary entry should also carry the unwrapped fields.
     expect(payload.payload.workflow_context.results_summary.data_1).toMatchObject({
+      dataset_id: "wine-dataset-2",
       backend: "sklearn",
       dataset_name: "wine",
       feature_names: ["alcohol", "malic_acid", "ash"],

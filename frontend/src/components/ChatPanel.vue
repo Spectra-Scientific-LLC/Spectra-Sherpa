@@ -10,7 +10,7 @@
             :class="{ active: activeTab === 'llm' }"
             @click="setActiveTab('llm')"
           >
-            LLM Chat
+            {{ chatTabLabel }}
           </button>
           <button
             v-if="sherpaEnabled"
@@ -78,9 +78,9 @@
               icon="pi pi-list"
               label="Conversations"
               class="p-button-text p-button-sm sherpa-topics-btn"
-              aria-label="LLM conversations"
+              :aria-label="`${chatTabLabel} conversations`"
               @click="toggleLlmConversationMenu"
-              v-tooltip.bottom="'LLM conversations'"
+              v-tooltip.bottom="`${chatTabLabel} conversations`"
             />
             <Menu
               ref="llmConversationMenu"
@@ -120,9 +120,9 @@
             v-if="activeTab === 'llm' && appMode === 'local' && isFeatureEnabled('sherpaAdvisor')"
             icon="pi pi-cog"
             class="p-button-text p-button-sm llm-settings-btn"
-            aria-label="LLM Settings"
+            aria-label="BYO Chat Settings"
             @click="toggleLlmMenu"
-            v-tooltip.bottom="'LLM Settings'"
+            v-tooltip.bottom="'BYO Chat Settings'"
           />
           <Menu ref="llmMenu" :model="llmMenuItems" :popup="true" class="llm-menu">
             <template #item="{ item }">
@@ -154,6 +154,7 @@
             v-tooltip.bottom="toolsActive ? 'Gen Mode enabled' : 'Enable Gen Mode'"
           />
           <Button
+            v-if="activeTab === 'llm'"
             icon="pi pi-external-link"
             class="p-button-text p-button-sm open-tab-btn"
             aria-label="Open in new tab"
@@ -205,14 +206,14 @@
                 <!-- No LLM configured -->
                 <div v-if="!llmChatAllowed" class="no-key-notice">
                   <i class="pi pi-info-circle"></i>
-                  <span>AI chat is disabled in Settings &gt; Data &amp; Privacy.</span>
+                  <span>Chat access is disabled in Settings &gt; Data &amp; Privacy.</span>
                   <a class="setup-link" @click="router.push('/settings')">Enable</a>
                 </div>
                 <div v-else-if="!llmChatEnabled && appMode === 'local'" class="no-key-notice">
                   <i class="pi pi-info-circle"></i>
                   <span
                     >Set <code>CHAT_ENDPOINT_URL</code> and <code>CHAT_ENDPOINT_KEY</code> in your
-                    environment, or configure local chat in Settings.</span
+                    environment, or configure BYO Chat in Settings.</span
                   >
                 </div>
                 <div v-else-if="!llmChatEnabled" class="no-key-notice">
@@ -406,7 +407,7 @@ const workflowStore = useWorkflowStore();
 const projectStore = useProjectStore();
 const authStore = useAuthStore();
 const toast = useToast();
-const { appMode, appConfig, isFeatureEnabled } = useAppConfig();
+const { appMode, appConfig, isFeatureEnabled, reloadConfig } = useAppConfig();
 const { isDemoMode } = useDemoMode();
 const isCreatingSherpaTopic = ref(false);
 
@@ -460,8 +461,9 @@ const sherpaEnabled = computed(() => isFeatureEnabled("sherpaAdvisor"));
 const llmChatEnabled = computed(() => isFeatureEnabled("chatAssistant"));
 const showLlmTab = computed(() => !(isDemoMode.value && sherpaEnabled.value));
 const showTabToggle = computed(() => showLlmTab.value && sherpaEnabled.value);
+const chatTabLabel = computed(() => (appMode.value === "local" ? "BYO Chat" : "Chat"));
 const activeTabLabel = computed(() =>
-  activeTab.value === "sherpa" ? "Sherpa Advisor" : "LLM Chat",
+  activeTab.value === "sherpa" ? "Sherpa Advisor" : chatTabLabel.value,
 );
 const hasSherpaSubscription = computed(
   () => (appConfig.value?.subscription?.plan || "none") !== "none",
@@ -496,11 +498,14 @@ const activeTab = ref<ChatTab>(resolveInitialTab());
 const workflowGenerationRequestPattern =
   /\b(generate|create|build|make|draft|propose)\b[\s\S]{0,120}\b(workflow|pipeline|sheet|model|pls-?da|pca|simca|mcr)\b/i;
 
+const quantitativeDataRequestPattern =
+  /(?=.*\b(mean|average|median|std|standard deviation|variance|min|max|minimum|maximum|quartile|q1|q3|percentile|statistics?|summary stats?)\b)(?=.*\b(data|dataset|feature|features|column|columns|variable|variables|spectrum|spectra)\b)/i;
+
 const shouldUseAgenticToolsForMessage = (message: string): boolean =>
   toolsActive.value ||
   (activeTab.value === "sherpa" &&
     isFeatureEnabled("sherpaAgenticTools") &&
-    workflowGenerationRequestPattern.test(message));
+    (workflowGenerationRequestPattern.test(message) || quantitativeDataRequestPattern.test(message)));
 
 const setActiveTab = (tab: ChatTab) => {
   if (tab === "sherpa" && !sherpaEnabled.value) {
@@ -752,14 +757,15 @@ watch(
 );
 
 const handleConfigChange = async () => {
+  await reloadConfig();
   if (appMode.value !== "local") return;
-  await store.checkConfigChange();
+  await Promise.all([store.checkConfigChange(), loadEgressDefaults()]);
 };
 
 const loadEgressDefaults = async () => {
   try {
     const { data } = await api.get("/egress/defaults");
-    llmChatAllowed.value = data?.allow_llm_chat ?? false;
+    llmChatAllowed.value = data?.allow_llm_chat ?? appMode.value === "local";
   } catch {
     llmChatAllowed.value = false;
   }
@@ -1242,9 +1248,12 @@ const startNewSherpaConversation = async () => {
 };
 
 const openInNewTab = () => {
+  // /llm-chat is BYO Chat only. Sherpa Advisor lives inline in the side
+  // panel and has no standalone fullscreen route, so we always open the
+  // LLM tab when external; the Sherpa tab is suppressed in that view.
   const target = router.resolve({
     path: "/llm-chat",
-    query: { tab: activeTab.value },
+    query: { tab: "llm" },
   });
   if (typeof window !== "undefined") {
     const opened = window.open(target.href, "_blank", "noopener,noreferrer");
@@ -1851,14 +1860,25 @@ const collapsed = computed(() => props.collapsed);
 
 .chat-input {
   display: flex;
-  gap: 12px;
+  gap: 0.5rem;
   align-items: center;
   flex-shrink: 0;
-  padding: 8px;
+  padding: 0.75rem 1.25rem;
 }
 
 .chat-input__field {
   flex: 1;
+}
+
+.chat-input :deep(.p-inputtext) {
+  border: 1px solid var(--surface-border);
+  background: transparent;
+  font-size: 0.9375rem;
+}
+
+.chat-input :deep(.p-inputtext:focus) {
+  border-color: var(--primary-color);
+  box-shadow: none;
 }
 
 .chat-panel.compact .chat-view {
@@ -1880,62 +1900,70 @@ const collapsed = computed(() => props.collapsed);
 .system-notification {
   width: 100%;
   text-align: center;
-  padding: 6px 10px;
-  margin: 4px 0;
+  padding: 0.25rem 0.75rem;
+  margin: 0.25rem 0;
   font-size: 0.75rem;
-  color: #64748b;
-  background: rgba(100, 116, 139, 0.1);
-  border: 1px solid rgba(100, 116, 139, 0.2);
-  border-radius: 6px;
-  font-style: italic;
+  color: var(--text-color-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  font-style: normal;
+  letter-spacing: 0.02em;
 }
 
 /* Tools toggle active state */
 .tools-active-btn {
-  color: #3b82f6 !important;
-  background: rgba(59, 130, 246, 0.1) !important;
-  border-radius: 6px;
+  color: var(--primary-color) !important;
+  background: transparent !important;
 }
 
 /* Gen Mode tool progress */
 .tool-progress {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  font-size: 0.8rem;
-  color: #475569;
+  gap: 0.375rem;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--text-color-secondary);
 }
 
-/* No BYOK key notice */
+/* No BYOK key notice — Zen leading-stripe */
 .no-key-notice {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 16px;
-  margin: 8px;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  color: #64748b;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  margin: 1rem 1.25rem;
+  background: transparent;
+  border: none;
+  border-left: 2px solid var(--surface-border);
+  border-radius: 0;
+  font-size: 0.875rem;
+  color: var(--text-color-secondary);
 }
 
 .no-key-notice i {
-  color: #3b82f6;
-  font-size: 1rem;
+  color: var(--text-color-secondary);
+  font-size: 0.875rem;
+}
+
+.no-key-notice code {
+  font-size: 0.8125rem;
+  color: var(--text-color);
+  background: transparent;
+  padding: 0;
 }
 
 .setup-link {
-  color: #3b82f6;
+  color: var(--primary-color);
   cursor: pointer;
   font-weight: 500;
-  text-decoration: underline;
+  text-decoration: none;
   margin-left: auto;
 }
 
 .setup-link:hover {
-  color: #2563eb;
+  text-decoration: underline;
 }
 
 @media (max-width: 900px) {

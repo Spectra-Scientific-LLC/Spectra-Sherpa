@@ -1,6 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { nextTick } from "vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const onMock = vi.fn();
 const reactMock = vi.fn(async (element: HTMLDivElement) => {
@@ -9,6 +9,9 @@ const reactMock = vi.fn(async (element: HTMLDivElement) => {
 const relayoutMock = vi.fn();
 const purgeMock = vi.fn();
 const resizeMock = vi.fn();
+const observeMock = vi.fn();
+const disconnectMock = vi.fn();
+let resizeObserverCallback: ResizeObserverCallback | null = null;
 
 vi.mock("plotly.js-cartesian-dist-min", () => ({
   default: {
@@ -35,6 +38,23 @@ describe("PlotlyChart", () => {
     relayoutMock.mockClear();
     purgeMock.mockClear();
     resizeMock.mockClear();
+    observeMock.mockClear();
+    disconnectMock.mockClear();
+    resizeObserverCallback = null;
+    class MockResizeObserver {
+      observe = observeMock;
+      disconnect = disconnectMock;
+      unobserve = vi.fn();
+
+      constructor(callback: ResizeObserverCallback) {
+        resizeObserverCallback = callback;
+      }
+    }
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it("clones data/layout before handing them to Plotly and binds listeners once", async () => {
@@ -72,5 +92,26 @@ describe("PlotlyChart", () => {
 
     expect(relayoutMock).toHaveBeenCalled();
     expect(onMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("resizes when its container changes size", async () => {
+    const wrapper = mount(PlotlyChart, {
+      props: {
+        data: [{ x: [1], y: [2], type: "scatter" }],
+        layout: { title: "Autosize" },
+      },
+    });
+
+    await settle();
+    expect(observeMock).toHaveBeenCalled();
+
+    resizeMock.mockClear();
+    resizeObserverCallback?.([], {} as ResizeObserver);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    await settle();
+
+    expect(resizeMock).toHaveBeenCalled();
+    wrapper.unmount();
+    expect(disconnectMock).toHaveBeenCalled();
   });
 });

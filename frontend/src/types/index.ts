@@ -6,6 +6,7 @@ export interface ExperimentSummary {
   description?: string | null;
   created_at: string;
   file_count: number;
+  project_id?: number | null;
 }
 
 export interface ExperimentDetail extends ExperimentSummary {
@@ -19,6 +20,13 @@ export interface ExperimentFile {
   stage: ExperimentStage;
   file_size_bytes?: number | null;
   created_at: string;
+  shape?: number[] | null;
+  n_samples?: number | null;
+  n_features?: number | null;
+  data_role?: string | null;
+  x_title?: string | null;
+  x_units?: string | null;
+  is_spectra?: boolean | null;
 }
 
 export interface VersionInfo {
@@ -64,6 +72,7 @@ export interface SherpaDatasetDict {
   n_features: number;
   title?: string;
   units?: string;
+  data_role?: string | null;
   x_axis?: {
     data?: number[];
     labels?: string[];
@@ -75,6 +84,15 @@ export interface SherpaDatasetDict {
     labels?: string[];
     title?: string;
     units?: string;
+  };
+  target?: unknown[] | unknown[][] | null;
+  target_context?: {
+    target_type?: string | null;
+    target_name?: string | null;
+    target_names?: string[] | null;
+    target_units?: string | null;
+    class_names?: string[] | null;
+    n_classes?: number | null;
   };
   is_time_series?: boolean;
   metadata?: Record<string, unknown>;
@@ -213,7 +231,7 @@ export interface SherpaResumeRecap {
 
 export interface SherpaRecommendationPayload {
   suggestion_id: string;
-  workflow_id: number;
+  workflow_id: number | null;
   category: string;
   title: string;
   explanation: string;
@@ -250,6 +268,7 @@ export interface NodePortMetadata {
   label: string;  // Display label (e.g., "Training Spectra")
   description?: string;
   variadic?: boolean;  // True = accepts multiple incoming edges (list input)
+  accepted_data_roles?: string[] | null;  // Dataset roles accepted by this port
 }
 
 // Node metadata from backend
@@ -289,14 +308,16 @@ export interface ValidationError {
   message: string;
 }
 
-// ── Execution Runs (Experiments page) ───────────────────────────
+// ── Execution Runs (workflow run history) ───────────────────────
 
 export interface ExecutionRunSummary {
   id: number;
-  workflow_id: number;
+  project_id: number | null;
+  workflow_id: number | null;
   workflow_version_id: number | null;
   name: string;
   status: string;
+  params_snapshot: Record<string, Record<string, unknown>>;
   results_summary: Record<string, Record<string, unknown>>;
   integrity_hash: string | null;
   executed_at: string;
@@ -307,11 +328,12 @@ export interface ExecutionRunSummary {
   source_type: string | null;
   source_metadata: Record<string, unknown> | null;
   model_ids: string[] | null;
+  run_kind: "training" | "batch_inference" | "data" | "other" | string;
+  applied_artifact_uids: string[] | null;
 }
 
 export interface ExecutionRunDetail extends ExecutionRunSummary {
   user_id: number;
-  params_snapshot: Record<string, Record<string, unknown>>;
   diagnostics: Record<string, Record<string, unknown>> | null;
   node_statuses: Record<string, string> | null;
 }
@@ -389,6 +411,7 @@ export interface ExperimentBrief {
   name: string;
   description: string | null;
   file_count: number;
+  facts?: string[];
 }
 
 export interface WorkflowBrief {
@@ -449,10 +472,15 @@ export interface ScriptBrief {
 export interface ModelBrief {
   artifact_uid: string;
   name: string;
+  display_name?: string | null;
   model_type: string;
   n_features: number;
   n_components: number | null;
   metrics: Record<string, unknown> | null;
+  source_run_id?: number | null;
+  training_dataset_id?: number | null;
+  is_deploy_ready?: boolean;
+  tags?: string[];
   created_at: string;
 }
 
@@ -513,9 +541,4 @@ export interface ProjectVersionSummary {
 
 export interface ProjectVersionDetail extends ProjectVersionSummary {
   snapshot: Record<string, unknown>;
-}
-
-export interface SaveProjectRequest {
-  change_description?: string | null;
-  include_raw_data?: boolean;
 }

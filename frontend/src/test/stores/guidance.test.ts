@@ -226,11 +226,11 @@ describe("guidance store", () => {
 
     await store.clickAction();
 
-    expect(mocks.routerPush).toHaveBeenCalledWith("/experiments");
+    expect(mocks.routerPush).toHaveBeenCalledWith("/runs");
     expect(promptListener).toHaveBeenCalledTimes(1);
     const event = promptListener.mock.calls[0]?.[0] as CustomEvent<AdvisorPromptRequestDetail>;
     expect(event.detail).toEqual({
-      prompt: "Explain the results of my latest run.",
+      prompt: "Explain the latest saved run and model artifacts in this project, including what I should compare next.",
       autoSend: true,
     });
     window.removeEventListener(ADVISOR_PROMPT_REQUEST_EVENT, promptListener);

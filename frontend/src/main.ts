@@ -32,7 +32,9 @@ import * as pvUsetoast from "primevue/usetoast";
 
 import App from "./App.vue";
 import router from "./router";
+import { useNotificationStore } from "./stores/notification";
 import { useWorkflowStore } from "./stores/workflow";
+import { getErrorMessage } from "./utils/errors";
 import { buildWsUrl } from "./utils/ws";
 
 import "primevue/resources/themes/lara-light-blue/theme.css";
@@ -77,12 +79,72 @@ window.__OSS_VENDOR__ = {
 };
 
 const app = createApp(App);
+const pinia = createPinia();
+
+type ToastMessage = {
+  severity?: string;
+  summary?: unknown;
+  detail?: unknown;
+};
+
+type ToastServiceApi = {
+  add?: (message: ToastMessage) => void;
+};
+
+function stringifyErrorDetail(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (value instanceof Error) {
+    return value.stack || value.message;
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function notificationSeverityFromToast(
+  severity: string | undefined,
+): "warning" | "error" | null {
+  if (severity === "warn" || severity === "warning") return "warning";
+  if (severity === "error") return "error";
+  return null;
+}
+
+function addSystemNotification(
+  severity: "warning" | "error",
+  title: string,
+  message: string,
+  detail?: string,
+) {
+  useNotificationStore(pinia).add({
+    source: "system",
+    severity,
+    title,
+    message,
+    detail,
+  });
+}
+
+function recordFrontendFailure(
+  title: string,
+  error: unknown,
+  context?: string,
+) {
+  const message = getErrorMessage(error, "An unexpected frontend error occurred");
+  const detail = [context, stringifyErrorDetail(error)].filter(Boolean).join("\n\n");
+  addSystemNotification("error", title, message, detail || undefined);
+}
 
 // Global error boundary — catches unhandled errors in component lifecycle hooks,
 // watchers, and render functions.  Without this, async errors silently swallow
 // stack traces in production and leave the UI in an unknown state.
 app.config.errorHandler = (err, _instance, info) => {
   console.error("[Spectra] Unhandled Vue error —", info, err);
+  recordFrontendFailure("Frontend Error", err, `Vue error boundary: ${info}`);
   // In development, re-throw so Vue DevTools shows the overlay.
   if (import.meta.env.DEV) {
     throw err;
@@ -131,6 +193,7 @@ router.onError((err) => {
     // Already reloaded once this session and still failing — surface
     // the error rather than loop. Likely a genuine deployment problem.
     console.error("[Spectra] Chunk load error after reload; not retrying:", err);
+    recordFrontendFailure("Frontend Update Failed", err, "Chunk load failed after a reload.");
     return;
   }
   sessionStorage.setItem(CHUNK_RELOAD_FLAG, "1");
@@ -141,11 +204,51 @@ router.onError((err) => {
   window.location.reload();
 });
 
-const pinia = createPinia();
 app.use(pinia);
 app.use(PrimeVue);
 app.use(ToastService);
 app.directive("tooltip", Tooltip);
+
+const toastService = app.config.globalProperties.$toast as
+  | ToastServiceApi
+  | undefined;
+if (toastService?.add) {
+  const originalAdd = toastService.add.bind(toastService);
+  toastService.add = (message: ToastMessage) => {
+    const severity = notificationSeverityFromToast(message.severity);
+    if (severity) {
+      const title =
+        typeof message.summary === "string" && message.summary.trim()
+          ? message.summary
+          : severity === "error"
+            ? "Error"
+            : "Warning";
+      const detail =
+        typeof message.detail === "string"
+          ? message.detail
+          : stringifyErrorDetail(message.detail);
+      addSystemNotification(
+        severity,
+        title,
+        detail || "A warning or error occurred.",
+        detail,
+      );
+    }
+    originalAdd(message);
+  };
+}
+
+window.addEventListener("error", (event) => {
+  recordFrontendFailure(
+    "Frontend Error",
+    event.error || event.message,
+    `${event.filename}:${event.lineno}:${event.colno}`,
+  );
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  recordFrontendFailure("Unhandled Promise Rejection", event.reason);
+});
 
 let disposeWorkflowMetadataRefresh: (() => void) | null = null;
 

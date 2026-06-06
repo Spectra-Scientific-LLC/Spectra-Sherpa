@@ -284,9 +284,18 @@ describe("Workflow sheet frontend consistency", () => {
         ],
       }),
     );
-    expect(api.post).toHaveBeenCalledWith("/workflows/20/execute", {
-      initial_data: {},
-    });
+    // executeStoredWorkflow wraps the call with a fresh Idempotency-Key
+    // header per request (REM-4). The key value is opaque; we only assert
+    // the URL + body + that some Idempotency-Key was sent.
+    expect(api.post).toHaveBeenCalledWith(
+      "/workflows/20/execute",
+      { initial_data: {} },
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Idempotency-Key": expect.any(String),
+        }),
+      }),
+    );
     expect(workflowStore.lastExecutionResults?.model_1).toEqual({
       type: "PLSModel",
       n_samples: 150,

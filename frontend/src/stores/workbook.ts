@@ -4,9 +4,13 @@ import api from "@/api/client";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
-import { useSherpaStore } from "@/stores/sherpa";
 import { useWorkflowStore } from "@/stores/workflow";
-import type { WorkflowListItem } from "@/stores/workflow";
+import type {
+  TemplateDataBinding,
+  TemplateExampleBinding,
+  TemplateLaunchMode,
+  WorkflowListItem,
+} from "@/stores/workflow-types";
 import type { NodeOutput } from "@/utils/nodeOutput";
 
 export interface WorkbookSheet {
@@ -35,8 +39,41 @@ export interface WorkbookSheet {
 }
 
 const activeSheetKey = (projectId: number): string => {
-  const userId = useAuthStore().user?.id ?? "anon";
+  // "local" matches the sentinel used by project.ts / data.ts /
+  // synthesis.ts for "no signed-in user" so a local-mode user's saved
+  // active sheet, active data tab, and synthesis state all key under the
+  // same userId space.
+  const userId = useAuthStore().user?.id ?? "local";
   return `spectra_sherpa_active_sheet_${userId}_${projectId}`;
+};
+
+const QUOTA_RECOVERY_PREFIXES = [
+  "spectra_sherpa_workflow_draft_v1:",
+];
+
+const pruneTransientStorageForQuota = (): void => {
+  try {
+    const keysToRemove: string[] = [];
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      if (key && QUOTA_RECOVERY_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    // If storage is blocked entirely, navigation should still continue.
+  }
+};
+
+const readActiveSheetWorkflowId = (targetProjectId: number): number | null => {
+  try {
+    const raw = localStorage.getItem(activeSheetKey(targetProjectId));
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 };
 
 const toSheet = (item: WorkflowListItem): WorkbookSheet => ({
@@ -69,7 +106,21 @@ export const useWorkbookStore = defineStore("workbook", () => {
 
   function persistActiveSheet(): void {
     if (projectId.value === null || !activeSheet.value || activeSheet.value.kind === "trial") return;
-    localStorage.setItem(activeSheetKey(projectId.value), String(activeSheet.value.workflowId));
+    const key = activeSheetKey(projectId.value);
+    const value = String(activeSheet.value.workflowId);
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      // Remembering the last active sheet is best-effort. If quota is full,
+      // clear stale workflow drafts (server autosave remains primary) and try
+      // once more so refresh lands back on the selected sheet.
+      pruneTransientStorageForQuota();
+      try {
+        localStorage.setItem(key, value);
+      } catch {
+        // Hardened-browser or still-full storage must never block navigation.
+      }
+    }
   }
 
   async function syncAdvisorForSheet(sheet: WorkbookSheet | null): Promise<void> {
@@ -143,8 +194,8 @@ export const useWorkbookStore = defineStore("workbook", () => {
       }
 
       sheets.value = loadedSheets;
-      const savedWorkflowId = Number(localStorage.getItem(activeSheetKey(targetProjectId)));
-      const savedIndex = Number.isFinite(savedWorkflowId)
+      const savedWorkflowId = readActiveSheetWorkflowId(targetProjectId);
+      const savedIndex = savedWorkflowId !== null
         ? sheets.value.findIndex((sheet) => sheet.workflowId === savedWorkflowId)
         : -1;
       activeIndex.value = savedIndex >= 0 ? savedIndex : 0;
@@ -263,16 +314,51 @@ export const useWorkbookStore = defineStore("workbook", () => {
   async function openTemplateAsSheet(
     templateId: number,
     workflowName: string,
+    options: {
+      launchMode?: TemplateLaunchMode;
+      dataBindings?: Record<string, TemplateDataBinding>;
+      exampleBindings?: Record<string, TemplateExampleBinding>;
+    } = {},
   ): Promise<WorkbookSheet> {
     if (projectId.value === null) {
-      throw new Error("Open or create a project before instantiating a template.");
+      throw new Error("Open or create a project before starting analysis.");
     }
+    const launchMode = options.launchMode ?? "example";
     const response = await api.post<WorkflowListItem>(
       `/workflow-templates/${templateId}/instantiate`,
       {
         workflow_name: workflowName,
         project_id: projectId.value,
-        launch_mode: "example",
+        launch_mode: launchMode,
+        data_bindings: Object.fromEntries(
+          Object.entries(options.dataBindings || {}).map(([key, binding]) => [
+            key,
+            {
+              source: binding.source ?? "experiment",
+              experiment_id: binding.experimentId,
+              file_id: binding.fileId ?? null,
+              stage: binding.stage ?? "raw",
+              target_binding: binding.targetBinding
+                ? {
+                    source: binding.targetBinding.source ?? "experiment",
+                    experiment_id: binding.targetBinding.experimentId,
+                    file_id: binding.targetBinding.fileId ?? null,
+                    stage: binding.targetBinding.stage ?? "raw",
+                  }
+                : null,
+              target_type: binding.targetType ?? null,
+            },
+          ])
+        ),
+        example_bindings: Object.fromEntries(
+          Object.entries(options.exampleBindings || {}).map(([key, binding]) => [
+            key,
+            {
+              source: binding.source,
+              dataset_name: binding.datasetName,
+            },
+          ])
+        ),
       },
     );
     const sheet = toSheet(response.data);
@@ -346,6 +432,16 @@ export const useWorkbookStore = defineStore("workbook", () => {
 
     const currentWorkflowId = activeSheet.value?.workflowId;
     const wasActive = currentWorkflowId === workflowId;
+    // ``activeSheetWasTrialOfDeleted`` covers the edge case where the
+    // currently-active sheet is a TRIAL whose ``sourceWorkflowId`` is the
+    // workflow being deleted. The cascade loop below will splice that
+    // active trial sheet out, and the wasActive flag (computed above)
+    // will be false because the trial's own workflowId differs from the
+    // deleted workflow id. Without this flag the post-cascade
+    // currentWorkflowId lookup returns -1 and activeIndex points at a
+    // surprise sheet.
+    const activeSheetWasTrialOfDeleted =
+      activeSheet.value?.kind === "trial" && activeSheet.value?.sourceWorkflowId === workflowId;
     // R4: conversation cleanup is handled by the server's cascade
     // chain (workflow → advisor_memory_node → advisor_topic), so the
     // frontend no longer needs to chase the channel/conversation
@@ -355,7 +451,27 @@ export const useWorkbookStore = defineStore("workbook", () => {
     useProjectStore().removeWorkflowFromCurrentProject(workflowId);
     sheets.value.splice(deleteIndex, 1);
 
-    if (wasActive) {
+    // Cascade-drop trial sheets that pointed at the deleted source workflow.
+    // Without this they remain in the tab list as orphans whose
+    // ``sourceWorkflowId`` no longer resolves — activating them then calls
+    // ``loadWorkflow(deletedId)`` which 404s. Walk indices high-to-low so
+    // the running splice doesn't shift positions we still need to read.
+    let activeShift = 0;
+    for (let i = sheets.value.length - 1; i >= 0; i -= 1) {
+      const candidate = sheets.value[i];
+      if (candidate.kind === "trial" && candidate.sourceWorkflowId === workflowId) {
+        sheets.value.splice(i, 1);
+        if (i < activeIndex.value) activeShift += 1;
+      }
+    }
+
+    if (wasActive || activeSheetWasTrialOfDeleted) {
+      // Either the active sheet WAS the deleted workflow, or it was a
+      // trial whose source got cascade-deleted out from under it. In
+      // both cases the active sheet no longer exists in the array, so
+      // we need to land on a sensible neighbour rather than letting the
+      // currentWorkflowId lookup below (which would return -1) leave
+      // activeIndex pointing at a surprise sheet.
       const nextIndex = Math.min(deleteIndex, sheets.value.length - 1);
       activeIndex.value = nextIndex;
       persistActiveSheet();
@@ -368,6 +484,9 @@ export const useWorkbookStore = defineStore("workbook", () => {
     } else {
       if (deleteIndex < activeIndex.value) {
         activeIndex.value -= 1;
+      }
+      if (activeShift > 0) {
+        activeIndex.value = Math.max(0, activeIndex.value - activeShift);
       }
       if (currentWorkflowId) {
         const nextIndex = sheets.value.findIndex((sheet) => sheet.workflowId === currentWorkflowId);

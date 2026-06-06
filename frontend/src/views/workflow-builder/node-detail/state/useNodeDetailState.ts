@@ -32,6 +32,13 @@ export interface OutputStats {
 export interface DatasetInfo {
   title?: string;
   isSpectra?: boolean;
+  isFeatureTable?: boolean;
+  dataRole?: string;
+  dataRoleLabel?: string;
+  target?: {
+    type: string;
+    names?: string[];
+  };
   spectralTechnique?: string;
   dataQuantity?: string;
   valueUnits?: string;
@@ -113,6 +120,11 @@ export interface OutputSlice {
   regressionTargetOptions: Ref<{ label: string; value: number }[]>;
   selectedRegressionR2: Ref<number | null>;
   selectedRegressionRmse: Ref<number | null>;
+  /**
+   * Artifact UID emitted by the executor when this node produced a saved
+   * model (training nodes only). `null` for every other node.
+   */
+  modelId: Ref<string | null>;
   getMetaTooltip: (key: string) => string;
   formatMetaValue: (value: any) => string;
 }
@@ -148,6 +160,7 @@ export interface PlotMetaSlice {
   genericDisplayOptions: { label: string; value: string }[];
   featureOptions: { label: string; value: number }[];
   holdoutVisualization: Record<string, any> | null;
+  scoreColorOptions: { label: string; value: string }[];
 }
 
 export interface PcaPlotSlice {
@@ -161,6 +174,8 @@ export interface PcaPlotSlice {
 export interface McrPlotSlice {
   mcrConcentrationData: any[]; mcrConcentrationLayout: Record<string, any>;
   mcrSpectraData: any[]; mcrSpectraLayout: Record<string, any>;
+  mcrValidationScatterData: any[]; mcrValidationScatterLayout: Record<string, any>;
+  mcrValidationSpectrumData: any[]; mcrValidationSpectrumLayout: Record<string, any>;
   mcrOriginalContourData: any[]; mcrOriginalContourLayout: Record<string, any>;
   mcrReconstructedContourData: any[]; mcrReconstructedContourLayout: Record<string, any>;
   mcrResidualContourData: any[]; mcrResidualContourLayout: Record<string, any>;
@@ -191,7 +206,8 @@ export interface RegressionPlotSlice {
 export interface OverviewPlotSlice {
   hcaDendrogramData: any[]; hcaDendrogramLayout: Record<string, any>;
   peakFindingPlotData: any[]; peakFindingPlotLayout: Record<string, any>;
-  plotNodeData: any[]; plotNodeLayout: Record<string, any>;
+  libraryComparePlotData: any[]; libraryComparePlotLayout: Record<string, any>;
+  plotNodeData: any[]; plotNodeLayout: Record<string, any>; plotNodeWarning: string;
 }
 
 export interface SpectraPlotSlice {
@@ -231,6 +247,7 @@ export type PlotDataBag = PlotMetaSlice &
 export interface WritableSlice {
   pcaXAxis: Ref<number>;
   pcaYAxis: Ref<number>;
+  scoreColorMode: Ref<string>;
   plsdaLoadingsViewMode: Ref<"lines" | "biplot">;
   regressionTargetIdx: Ref<number>;
   spectraDisplayMode: Ref<"overlay" | "contour">;

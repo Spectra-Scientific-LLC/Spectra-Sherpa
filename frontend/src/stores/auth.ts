@@ -9,7 +9,6 @@
  * identity back into this store after a successful /auth/me call so
  * the rest of the OSS app can see it.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any -- auth error payloads come from heterogeneous backend/axios shapes. */
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
@@ -72,7 +71,6 @@ export const useAuthStore = defineStore('auth', () => {
             const response = await api.get('/auth/me')
             user.value = response.data
         } catch {
-            // eslint-disable-next-line no-console
             console.warn('Could not fetch hybrid user profile')
         }
     }

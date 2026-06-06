@@ -129,6 +129,7 @@ vi.mock("@/composables/useAppConfig", () => ({
     appMode: mocks.appMode,
     appConfig: mocks.appConfig,
     isFeatureEnabled: (feature: string) => Boolean(mocks.featureFlags[feature]),
+    reloadConfig: vi.fn().mockResolvedValue(true),
   }),
 }));
 
@@ -330,7 +331,7 @@ describe("ChatPanel", () => {
     const wrapper = mountWithUiStubs(ChatPanel);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY in your environment, or configure local chat in Settings.");
+    expect(wrapper.text()).toContain("Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY in your environment, or configure BYO Chat in Settings.");
     expect(wrapper.find(".setup-link").exists()).toBe(false);
   });
 
@@ -358,7 +359,7 @@ describe("ChatPanel", () => {
     expect(wrapper.find(".llm-settings-btn").exists()).toBe(false);
   });
 
-  it("shows privacy-gated message before provider/subscription messages when AI chat is disabled", async () => {
+  it("shows privacy-gated message before provider/subscription messages when chat access is disabled", async () => {
     mocks.apiGet.mockImplementation((url: string) => {
       if (url === "/egress/defaults") {
         return Promise.resolve({ data: { allow_llm_chat: false } });
@@ -369,8 +370,8 @@ describe("ChatPanel", () => {
     const wrapper = mountWithUiStubs(ChatPanel);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("AI chat is disabled in Settings > Data & Privacy.");
-    expect(wrapper.text()).not.toContain("Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY in your environment, or configure local chat in Settings.");
+    expect(wrapper.text()).toContain("Chat access is disabled in Settings > Data & Privacy.");
+    expect(wrapper.text()).not.toContain("Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY in your environment, or configure BYO Chat in Settings.");
   });
 
   it("shows only Sherpa Advisor in demo mode when Sherpa is available", async () => {
@@ -384,10 +385,10 @@ describe("ChatPanel", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("Sherpa Advisor");
-    expect(wrapper.text()).not.toContain("LLM Chat");
+    expect(wrapper.text()).not.toContain("BYO Chat");
   });
 
-  it("renders LLM assistant markdown and math with the shared renderer", async () => {
+  it("renders BYO Chat markdown and math with the shared renderer", async () => {
     mocks.featureFlags.chatAssistant = true;
     mocks.llmStore.messages = [
       { role: "assistant", content: "**PLS-DA**\n\n$$y = x^2$$" },
@@ -402,30 +403,28 @@ describe("ChatPanel", () => {
     expect(assistantBubble.html()).toContain("katex");
   });
 
-  it("opens the standalone Sherpa view with the current Sherpa tab preserved", async () => {
+  it("hides the open-in-new-tab affordance while on the Sherpa Advisor tab", async () => {
+    // Sherpa Advisor has no standalone fullscreen route (/llm-chat is BYO
+    // Chat only); the "Open in new tab" affordance therefore only shows
+    // when the LLM tab is active.
     mocks.appMode.value = "enterprise";
     mocks.appConfig.value = { subscription: { plan: "demo" } };
     mocks.featureFlags.chatAssistant = true;
     mocks.featureFlags.sherpaAdvisor = true;
 
-    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     const wrapper = mountWithUiStubs(ChatPanel);
     await flushPromises();
+
+    // LLM tab — button is present.
+    expect(wrapper.find('[aria-label="Open in new tab"]').exists()).toBe(true);
 
     const sherpaTab = wrapper.findAll("button").find((button) => button.text() === "Sherpa Advisor");
     expect(sherpaTab).toBeTruthy();
     await sherpaTab!.trigger("click");
     await flushPromises();
 
-    await wrapper.find('[aria-label="Open in new tab"]').trigger("click");
-
-    expect(openSpy).toHaveBeenCalledWith("/llm-chat?tab=sherpa", "_blank", "noopener,noreferrer");
-    expect(mocks.routerPush).toHaveBeenCalledWith({
-      path: "/llm-chat",
-      query: { tab: "sherpa" },
-    });
-
-    openSpy.mockRestore();
+    // Sherpa tab — button is hidden.
+    expect(wrapper.find('[aria-label="Open in new tab"]').exists()).toBe(false);
   });
 
   it("loads the standalone Sherpa view from route state without auto-syncing the workflow", async () => {
@@ -654,6 +653,32 @@ describe("ChatPanel", () => {
 
     expect(mocks.sherpaStore.sendMessage).toHaveBeenCalledWith(
       "Can you generate a PLSDA model of the same data?",
+      true,
+    );
+  });
+
+  it("routes quantitative dataset questions through Gen Mode tools", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { subscription: { plan: "demo" } };
+    mocks.featureFlags.chatAssistant = true;
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.featureFlags.sherpaAgenticTools = true;
+    mocks.workflowStore.workflowId = 12;
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+
+    const sherpaTab = wrapper.findAll("button").find((button) => button.text() === "Sherpa Advisor");
+    expect(sherpaTab).toBeTruthy();
+    await sherpaTab!.trigger("click");
+    await flushPromises();
+
+    const input = wrapper.find("input");
+    await input.setValue("Give me the median of each feature");
+    await input.trigger("keyup.enter");
+
+    expect(mocks.sherpaStore.sendMessage).toHaveBeenCalledWith(
+      "Give me the median of each feature",
       true,
     );
   });

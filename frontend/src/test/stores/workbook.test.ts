@@ -3,8 +3,15 @@ import { createPinia, setActivePinia } from "pinia";
 import { useWorkbookStore } from "@/stores/workbook";
 import type { WorkbookSheet } from "@/stores/workbook";
 
+const apiMock = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+  delete: vi.fn(),
+}));
+
 vi.mock("@/api/client", () => ({
-  default: { get: vi.fn(), post: vi.fn(), put: vi.fn(), delete: vi.fn() },
+  default: apiMock,
 }));
 
 vi.mock("@/stores/auth", () => ({
@@ -96,7 +103,167 @@ describe("useWorkbookStore", () => {
     });
   });
 
+  describe("deleteSheet cascade", () => {
+    it("drops trial sheets pointing at the deleted source workflow", async () => {
+      const store = useWorkbookStore();
+      store.projectId = 5;
+      store.sheets = [
+        makeSheet({ workflowId: 10, sheetOrder: 0 }),
+        makeSheet({ workflowId: 20, sheetOrder: 1 }),
+        makeSheet({
+          workflowId: -1,
+          kind: "trial",
+          trialId: "trial-1",
+          sourceWorkflowId: 20,
+          sheetOrder: 2,
+        }),
+        makeSheet({
+          workflowId: -2,
+          kind: "trial",
+          trialId: "trial-2",
+          sourceWorkflowId: 10,
+          sheetOrder: 3,
+        }),
+      ];
+      store.activeIndex = 0;
+      apiMock.delete.mockResolvedValueOnce({ data: null });
+      // refreshSheets in the wasActive=false branch — return current persisted sheets
+      apiMock.get.mockResolvedValueOnce({
+        data: [
+          { id: 10, name: "Sheet 1", tab_color: null, sheet_order: 0, node_count: 0 },
+        ],
+      });
+
+      await store.deleteSheet(20);
+
+      // workflow 20 is gone; trial-1 (sourced from 20) is gone;
+      // workflow 10 + trial-2 (sourced from 10) remain.
+      const remaining = store.sheets.map((s) => s.workflowId).sort((a, b) => a - b);
+      expect(remaining).toEqual([-2, 10]);
+    });
+
+    it("leaves trial sheets pointing at a different workflow alone", async () => {
+      const store = useWorkbookStore();
+      store.projectId = 5;
+      store.sheets = [
+        makeSheet({ workflowId: 10, sheetOrder: 0 }),
+        makeSheet({ workflowId: 20, sheetOrder: 1 }),
+        makeSheet({
+          workflowId: -1,
+          kind: "trial",
+          trialId: "trial-1",
+          sourceWorkflowId: 10,
+          sheetOrder: 2,
+        }),
+      ];
+      store.activeIndex = 0;
+      apiMock.delete.mockResolvedValueOnce({ data: null });
+      apiMock.get.mockResolvedValueOnce({
+        data: [
+          { id: 10, name: "Sheet 1", tab_color: null, sheet_order: 0, node_count: 0 },
+        ],
+      });
+
+      await store.deleteSheet(20);
+
+      const remaining = store.sheets.map((s) => s.workflowId).sort((a, b) => a - b);
+      expect(remaining).toEqual([-1, 10]);
+    });
+
+    it("lands activeIndex on a sensible sheet when the active sheet was a trial of the deleted workflow", async () => {
+      // Repro for M2: active sheet is a TRIAL of workflow W, user deletes
+      // W. Pre-fix, the cascade splices the active trial out but wasActive
+      // is false (the trial's own workflowId != W), so the else-branch's
+      // currentWorkflowId lookup returns -1 and activeIndex points wherever
+      // it happens to land. Post-fix, activeIndex must land on a valid
+      // non-trial sheet.
+      const store = useWorkbookStore();
+      store.projectId = 5;
+      store.sheets = [
+        makeSheet({ workflowId: 10, sheetOrder: 0, name: "Other" }),
+        makeSheet({ workflowId: 20, sheetOrder: 1, name: "Source" }),
+        makeSheet({
+          workflowId: -1,
+          kind: "trial",
+          trialId: "trial-1",
+          sourceWorkflowId: 20,
+          sheetOrder: 2,
+          name: "Trial of Source",
+        }),
+      ];
+      store.activeIndex = 2; // active sheet IS the trial of workflow 20
+
+      apiMock.delete.mockResolvedValueOnce({ data: null });
+      apiMock.get.mockResolvedValueOnce({
+        data: [
+          { id: 10, name: "Other", tab_color: null, sheet_order: 0, node_count: 0 },
+        ],
+      });
+
+      await store.deleteSheet(20);
+
+      // Workflow 20 and the trial-1 (sourced from 20) are both gone.
+      const remainingIds = store.sheets.map((s) => s.workflowId).sort((a, b) => a - b);
+      expect(remainingIds).toEqual([10]);
+
+      // activeIndex must land on a valid sheet index (0), not be left at
+      // a stale value pointing past the array.
+      expect(store.activeIndex).toBe(0);
+      expect(store.sheets[store.activeIndex]?.workflowId).toBe(10);
+    });
+  });
+
   describe("advisor channel switching", () => {
+    it("does not fail sheet switching when localStorage quota is exhausted", async () => {
+      const store = useWorkbookStore();
+      store.projectId = 5;
+      store.sheets = [
+        makeSheet({ workflowId: 10, sheetOrder: 0 }),
+        makeSheet({ workflowId: 20, sheetOrder: 1 }),
+      ];
+      store.activeIndex = 0;
+      const setItemSpy = vi
+        .spyOn(localStorage, "setItem")
+        .mockImplementation(() => {
+          throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+        });
+
+      await expect(store.switchSheet(1)).resolves.toBeUndefined();
+
+      expect(store.activeIndex).toBe(1);
+      setItemSpy.mockRestore();
+    });
+
+    it("prunes stale workflow drafts and retries active-sheet persistence on quota errors", async () => {
+      const store = useWorkbookStore();
+      store.projectId = 5;
+      store.sheets = [
+        makeSheet({ workflowId: 10, sheetOrder: 0 }),
+        makeSheet({ workflowId: 20, sheetOrder: 1 }),
+      ];
+      store.activeIndex = 0;
+      localStorage.setItem("spectra_sherpa_workflow_draft_v1:3:5:10", "large-draft");
+      localStorage.setItem("spectra_sherpa_data_draft_v1:3:5", "keep-data-draft");
+      const originalSetItem = localStorage.setItem.bind(localStorage);
+      let activeSheetAttempts = 0;
+      const setItemSpy = vi
+        .spyOn(localStorage, "setItem")
+        .mockImplementation(function setItemWithOneQuotaFailure(key: string, value: string) {
+          if (key === "spectra_sherpa_active_sheet_3_5" && activeSheetAttempts === 0) {
+            activeSheetAttempts += 1;
+            throw new DOMException("The quota has been exceeded.", "QuotaExceededError");
+          }
+          return originalSetItem(key, value);
+        });
+
+      await store.switchSheet(1);
+
+      expect(localStorage.getItem("spectra_sherpa_workflow_draft_v1:3:5:10")).toBeNull();
+      expect(localStorage.getItem("spectra_sherpa_data_draft_v1:3:5")).toBe("keep-data-draft");
+      expect(localStorage.getItem("spectra_sherpa_active_sheet_3_5")).toBe("20");
+      setItemSpy.mockRestore();
+    });
+
     it("switches Sherpa Advisor to the active workflow sheet channel", async () => {
       const store = useWorkbookStore();
       store.projectId = 5;

@@ -143,6 +143,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue';
 import { useWorkflowStore } from '@/stores/workflow';
+import { getNodeVisualColorClass } from '@/utils/nodeVisuals';
 import type { NodeTypeMetadata } from '@/types';
 
 interface NodeConfig {
@@ -224,14 +225,17 @@ onMounted(async () => {
 
 // Icon mappings by canonical node_type
 const NODE_ICONS: Record<string, string> = {
-  // Data sources
+  // Data
   'data.source': '📊',
   'data.file_load': '📂',
+  'data.load_group': '🗂️',
+  'data.my_dataset': '🧪',
   'data.nist_library': '📚',
-  'data.synthetic_curve': '📈',
+  'data.filter_samples': '🔎',
   'data.train_test_split': '✂️',
   'data.attach_target': '🎯',
   // Synthesis
+  'data.synthetic_curve': '📈',
   'synthesis.species': '🧬',
   'synthesis.blend': '🔀',
   'synthesis.merge': '📚',
@@ -261,6 +265,7 @@ const NODE_ICONS: Record<string, string> = {
   'model.nmf': '📊',
   'model.ica': '⚡',
   'analysis.peak_finding': '⛰️',
+  'analysis.peak_id': '🔬',
   // Regression
   'model.pls': '📈',
   'model.pls_predict': '🎯',
@@ -268,6 +273,7 @@ const NODE_ICONS: Record<string, string> = {
   'model.svr': '🧲',
   'model.linear_regression': '📉',
   'model.load_apply': '📦',
+  'analysis.compare_library': '📚',
   // Clustering
   'model.kmeans': '🧭',
   'model.dbscan': '🫧',
@@ -302,24 +308,9 @@ const NODE_ICONS: Record<string, string> = {
   'deploy.output': '📤',
 };
 
-// Category to color class mapping
-const CATEGORY_COLOR: Record<string, string> = {
-  data: 'node-data',
-  synthesis: 'node-synthesis',
-  preprocessing: 'node-preprocess',
-  selection: 'node-selection',
-  exploratory: 'node-exploratory',
-  regression: 'node-regression',
-  classification: 'node-classify',
-  clustering: 'node-clustering',
-  validation: 'node-validation',
-  output: 'node-visualize',
-  deploy: 'node-export',
-};
-
 // Category display names
 const CATEGORY_LABELS: Record<string, string> = {
-  data: 'Data Sources',
+  data: 'Data',
   synthesis: 'Synthesis',
   preprocessing: 'Preprocessing',
   selection: 'Selection & Design',
@@ -359,18 +350,23 @@ const summarizePurpose = (description: string): string => {
 
 // Convert backend metadata to NodeConfig
 const metadataToConfig = (metadata: NodeTypeMetadata): NodeConfig => {
-  const baseColor = CATEGORY_COLOR[metadata.category] || 'node-plugin';
-  const colorClass = metadata.node_type === 'output.export' ? 'node-export' : baseColor;
   return {
     label: metadata.label,
     icon: NODE_ICONS[metadata.node_type] || '📦',
-    colorClass,
+    colorClass: getNodeVisualColorClass(metadata.node_type, metadata),
     description: summarizePurpose(metadata.description),
   };
 };
 
 // Built-in category keys handled by the canonical template sections
 const BUILTIN_CATEGORIES = new Set(BUILTIN_CATEGORY_ORDER);
+
+const HIDDEN_PALETTE_NODE_TYPES = new Set([
+  'data.source',
+  'data.file_load',
+  'data.load_group',
+  'data.nist_library',
+]);
 
 // Dynamically group nodes by category from backend
 const nodesByCategory = computed(() => {
@@ -381,6 +377,9 @@ const nodesByCategory = computed(() => {
   }
 
   workflowStore.nodeLibrary.forEach((metadata) => {
+    if (HIDDEN_PALETTE_NODE_TYPES.has(metadata.node_type)) {
+      return;
+    }
     const category = metadata.category;
     if (!groups[category]) {
       groups[category] = {};

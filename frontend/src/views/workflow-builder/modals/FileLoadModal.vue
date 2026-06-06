@@ -15,8 +15,9 @@
           :key="tab.key"
           :label="tab.label"
           :icon="tab.icon"
+          :disabled="tab.disabled"
           :class="['source-tab', { active: activeSource === tab.key }]"
-          @click="activeSource = tab.key"
+          @click="selectSource(tab.key)"
         />
       </div>
 
@@ -104,14 +105,18 @@
         <div class="panel-header">
           <h3>Upload New File</h3>
         </div>
+        <div v-if="dataUploadDisabled" class="upload-disabled-notice">
+          {{ uploadDisabledMessage }}
+        </div>
 
         <div class="upload-zone">
           <FileUpload
             mode="advanced"
             :multiple="true"
-            accept=".csv,.mat,.jdx,.spa,.spc,.spg,.dx,.txt,.wdf,.opus,.dat"
+            :accept="uploadAcceptList"
             :maxFileSize="50000000"
             :auto="false"
+            :disabled="dataUploadDisabled"
             @select="onFileSelect"
             class="file-uploader"
           >
@@ -119,7 +124,17 @@
               <div class="upload-placeholder">
                 <i class="pi pi-cloud-upload" />
                 <p>Drag and drop files here</p>
-                <small>Supported: CSV, MAT, JDX, SPA, SPC</small>
+                <small>{{ uploadFormatHint }}</small>
+                <div v-if="disabledUploadFormats.length" class="upload-format-chips" aria-label="SCP-only formats">
+                  <span
+                    v-for="format in disabledUploadFormats"
+                    :key="format.key"
+                    class="upload-format-chip disabled"
+                    :title="disabledUploadFormatTitle(format)"
+                  >
+                    {{ format.name }}
+                  </span>
+                </div>
               </div>
             </template>
           </FileUpload>
@@ -158,6 +173,8 @@ import Column from "primevue/column";
 import FileUpload from "primevue/fileupload";
 import { useWorkflowStore, type LibraryDataset } from "@/stores/workflow";
 import { useBuilderStore } from "@/stores/builder";
+import { useAppConfig } from "@/composables/useAppConfig";
+import { useDemoMode } from "@/composables/useDemoMode";
 import { useToast } from "primevue/usetoast";
 
 interface Props {
@@ -182,16 +199,79 @@ const visible = computed({
 
 const workflowStore = useWorkflowStore();
 const builderStore = useBuilderStore();
+const appConfigApi = useAppConfig();
+const appConfig = computed(() => appConfigApi.config?.value ?? appConfigApi.appConfig?.value ?? null);
+const { isCapabilityDisabled } = appConfigApi;
+const { isDemoMode, uploadsLastWeek, uploadsLimitWeek, uploadsResetWeekAt, fetchQuota } = useDemoMode();
 const toast = useToast();
 
 // Source tabs
 type SourceType = "experiment" | "library" | "upload";
-const sourceTabs: { key: SourceType; label: string; icon: string }[] = [
+const uploadQuotaExhausted = computed(() => (
+  isDemoMode.value
+  && uploadsLastWeek.value !== null
+  && uploadsLimitWeek.value > 0
+  && uploadsLimitWeek.value < 999999
+  && uploadsLastWeek.value >= uploadsLimitWeek.value
+));
+const uploadDisabledMessage = computed(() => {
+  if (isCapabilityDisabled("data_upload")) return "File upload is disabled for this deployment.";
+  if (uploadQuotaExhausted.value) {
+    const reset = uploadsResetWeekAt.value ? new Date(uploadsResetWeekAt.value).toLocaleString() : "later";
+    return `Demo upload limit reached. Your next upload is available ${reset}.`;
+  }
+  return "";
+});
+const dataUploadDisabled = computed(() => isCapabilityDisabled("data_upload") || uploadQuotaExhausted.value);
+const uploadDataFormats = computed(() => appConfig.value?.dataFormats ?? null);
+const uploadScpInstallCommand = computed(() => uploadDataFormats.value?.installScpCommand ?? "pip install spectra-sherpa[scp]");
+const uploadAcceptList = computed(() => {
+  const accepted = uploadDataFormats.value?.acceptedExtensions;
+  if (accepted?.length) return accepted.join(",");
+  return ".csv,.mat,.jdx,.dx,.npy,.npz";
+});
+const availableUploadFormats = computed(() => {
+  const formats = uploadDataFormats.value?.formats;
+  if (!formats?.length) return ["CSV", "MAT", "JCAMP-DX", "NumPy"];
+  return formats.filter((format) => format.available).map((format) => format.name);
+});
+const disabledUploadFormats = computed(() => {
+  const formats = uploadDataFormats.value?.formats ?? [];
+  return formats.filter((format) => !format.available);
+});
+function disabledUploadFormatTitle(format: { name: string; unsupportedReason?: string; requiresScp?: boolean }): string {
+  if (format.unsupportedReason) return format.unsupportedReason;
+  if (format.requiresScp) return `${format.name} requires ${uploadScpInstallCommand.value}`;
+  return `${format.name} is not available in this deployment.`;
+}
+const uploadFormatHint = computed(() => {
+  const supported = availableUploadFormats.value.join(", ");
+  const disabled = disabledUploadFormats.value;
+  if (!disabled.length) return `Supported: ${supported}`;
+  const hints: string[] = [];
+  if (disabled.some((format) => format.requiresScp)) hints.push(`vendor formats require ${uploadScpInstallCommand.value}`);
+  if (disabled.some((format) => format.requiresExport)) hints.push("OMNICxi/Paradigm containers require spectrum export first");
+  return `Supported: ${supported}. ${hints.join("; ")}.`;
+});
+const sourceTabs = computed<{ key: SourceType; label: string; icon: string; disabled?: boolean }[]>(() => [
   { key: "experiment", label: "Experiments", icon: "pi pi-folder" },
   { key: "library", label: "NIST Library", icon: "pi pi-database" },
-  { key: "upload", label: "Upload", icon: "pi pi-upload" },
-];
+  { key: "upload", label: "Upload", icon: "pi pi-upload", disabled: dataUploadDisabled.value },
+]);
 const activeSource = ref<SourceType>("experiment");
+
+function selectSource(source: SourceType): void {
+  if (source === "upload" && dataUploadDisabled.value) {
+    toast.add({
+      severity: "warn",
+      summary: "Upload Disabled",
+      detail: uploadDisabledMessage.value || "File upload is disabled.",
+      life: 4000,
+    });
+    return;
+  }
+  activeSource.value = source;
+}
 
 // Experiment browser
 const experimentSearch = ref("");
@@ -218,7 +298,7 @@ const experimentTreeNodes = computed(() => {
           selectable: false,
           children: exp.stages[stage as keyof typeof exp.stages].map((file) => ({
             key: `exp-${exp.id}-${stage}-${file.id}`,
-            label: file.file_path.split("/").pop() || file.file_path,
+            label: `${file.file_path.split("/").pop() || file.file_path}${datasetFileShapeSummary(file)}`,
             data: {
               source: "experiment",
               experiment_id: exp.id,
@@ -231,6 +311,19 @@ const experimentTreeNodes = computed(() => {
         })),
     }));
 });
+
+function datasetFileShapeSummary(file: {
+  n_samples?: number | null;
+  n_features?: number | null;
+  is_spectra?: boolean | null;
+}): string {
+  if (typeof file.n_samples !== "number" || typeof file.n_features !== "number") {
+    return "";
+  }
+  const sampleLabel = file.is_spectra ? "spectra" : "samples";
+  const featureLabel = file.is_spectra ? "points" : "features";
+  return ` · ${file.n_samples} ${sampleLabel} × ${file.n_features} ${featureLabel}`;
+}
 
 const selectedExperimentCount = computed(() => {
   return Object.keys(selectedExpKeys.value).filter((key) =>
@@ -259,6 +352,10 @@ const filteredLibraryEntries = computed(() => {
 // Upload
 const uploadedFiles = ref<File[]>([]);
 const onFileSelect = (event: any) => {
+  if (dataUploadDisabled.value) {
+    uploadedFiles.value = [];
+    return;
+  }
   uploadedFiles.value = event.files;
 };
 
@@ -269,7 +366,7 @@ const hasSelection = computed(() => {
   } else if (activeSource.value === "library") {
     return selectedLibraryEntries.value.length > 0;
   } else {
-    return uploadedFiles.value.length > 0;
+    return !dataUploadDisabled.value && uploadedFiles.value.length > 0;
   }
 });
 
@@ -323,7 +420,7 @@ function loadSelected() {
 
 // Fetch datasets on mount
 onMounted(async () => {
-  await workflowStore.fetchAvailableDatasets();
+  await Promise.all([workflowStore.fetchAvailableDatasets(), fetchQuota()]);
 });
 </script>
 
@@ -480,6 +577,16 @@ onMounted(async () => {
   color: #94a3b8;
 }
 
+.upload-disabled-notice {
+  border: 1px solid #fbbf24;
+  background: #451a03;
+  color: #fde68a;
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+}
+
 .upload-zone {
   flex: 1;
   display: flex;
@@ -518,6 +625,27 @@ onMounted(async () => {
 
 .upload-placeholder small {
   color: #64748b;
+}
+
+.upload-format-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.375rem;
+  margin-top: 0.75rem;
+}
+
+.upload-format-chip {
+  border: 1px solid #334155;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.3rem 0.5rem;
+}
+
+.upload-format-chip.disabled {
+  color: #64748b;
+  background: #111827;
 }
 
 .modal-footer {

@@ -12,6 +12,7 @@ import { api } from '@/api'
 const config = ref<AppConfig | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
+let configChangeListenerRegistered = false
 
 /**
  * Load configuration from backend
@@ -48,6 +49,14 @@ async function reloadConfig(): Promise<boolean> {
   return loadConfig(true)
 }
 
+function registerConfigChangeListener(): void {
+  if (configChangeListenerRegistered || typeof window === 'undefined') return
+  configChangeListenerRegistered = true
+  window.addEventListener('llm-config-changed', () => {
+    void reloadConfig()
+  })
+}
+
 /**
  * Get list of configured LLM providers
  */
@@ -62,7 +71,8 @@ const configuredLLMs = computed(() => {
  * Check if any LLM is configured
  */
 const hasLLMConfigured = computed(() => {
-  return configuredLLMs.value.length > 0
+  if (configuredLLMs.value.length > 0) return true
+  return config.value?.mode === 'local' && Boolean(config.value?.features.chatAssistant)
 })
 
 /**
@@ -108,6 +118,13 @@ function isFeatureEnabled(feature: keyof AppConfig['features']): boolean {
 }
 
 /**
+ * Check whether the server-provided demo contract disables a capability.
+ */
+function isCapabilityDisabled(capability: string): boolean {
+  return config.value?.demo?.disabledCapabilities?.includes(capability) || false
+}
+
+/**
  * Format provider name for display
  */
 function formatProviderName(provider: string): string {
@@ -121,6 +138,7 @@ function formatProviderName(provider: string): string {
 }
 
 export function useAppConfig() {
+  registerConfigChangeListener()
   return {
     config: readonly(config),
     appConfig: readonly(config),  // backward-compatible alias
@@ -138,6 +156,7 @@ export function useAppConfig() {
     configStatus,
     configError,
     isFeatureEnabled,
+    isCapabilityDisabled,
     formatProviderName,
   }
 }

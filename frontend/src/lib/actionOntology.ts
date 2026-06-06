@@ -43,18 +43,38 @@ export const GUIDANCE_ACTIONS: Record<string, GuidanceActionMeta> = {
     actionId: "add_preprocessing",
     actionVersion: 1,
     route: "/workflow",
-    label: "Add preprocessing",
+    label: "Add preprocessing if needed",
   },
   // run_workflow and save_workflow deliberately have NO clickTarget
   // — auto-clicking them would execute / persist work.  Glow-only.
   run_workflow: { actionId: "run_workflow", actionVersion: 1, route: "/workflow", label: "Run workflow" },
   save_workflow: { actionId: "save_workflow", actionVersion: 1, route: "/workflow", label: "Save workflow" },
-  view_results: { actionId: "view_results", actionVersion: 1, route: "/experiments", label: "View results" },
+  view_results: {
+    actionId: "view_results",
+    actionVersion: 1,
+    route: "/runs",
+    label: "View runs",
+    expectedScope: { tabKey: "models", subscopeKey: "run_history" },
+  },
   open_data_explore: {
     actionId: "open_data_explore",
     actionVersion: 1,
     route: "/data",
     label: "Review data",
+  },
+  open_synthesis: {
+    actionId: "open_synthesis",
+    actionVersion: 1,
+    route: "/data",
+    label: "Open synthesis",
+    clickTarget: "open_synthesis",
+  },
+  open_library: {
+    actionId: "open_library",
+    actionVersion: 1,
+    route: "/data",
+    label: "Open library",
+    clickTarget: "open_library",
   },
   open_memory_map: {
     actionId: "open_memory_map",
@@ -65,13 +85,10 @@ export const GUIDANCE_ACTIONS: Record<string, GuidanceActionMeta> = {
   explain_latest_results: {
     actionId: "explain_latest_results",
     actionVersion: 1,
-    route: "/experiments",
+    route: "/runs",
     label: "Explain results",
-    prompt: "Explain the results of my latest run.",
-    // Experiments has dynamic subscopes (overview / batch_run /
-    // compare keyed by active tab). Wait for the tab to settle, but
-    // accept whichever experiments subscope the user lands on.
-    expectedScope: { tabKey: "experiments" },
+    prompt: "Explain the latest saved run and model artifacts in this project, including what I should compare next.",
+    expectedScope: { tabKey: "models", subscopeKey: "run_history" },
   },
   new_project: {
     actionId: "new_project",
@@ -81,6 +98,9 @@ export const GUIDANCE_ACTIONS: Record<string, GuidanceActionMeta> = {
     // Opens the create-project dialog.
     clickTarget: "new_project",
   },
+  // No clickTarget — selecting a specific starter is a user decision;
+  // the dashboard surfaces the analysis starter gallery.
+  pick_template: { actionId: "pick_template", actionVersion: 1, route: "/dashboard", label: "Browse analysis starters" },
   open_workflow: { actionId: "open_workflow", actionVersion: 1, route: "/workflow", label: "Open workflow" },
   create_folder_watch: {
     actionId: "create_folder_watch",

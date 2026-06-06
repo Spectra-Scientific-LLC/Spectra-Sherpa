@@ -10,7 +10,9 @@ import {
   type ScopeStateEnvelope,
   type Topic,
 } from "@/lib/advisorMemoryAdapter";
+import { useProjectStore } from "@/stores/project";
 import { useSherpaStore } from "@/stores/sherpa";
+import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import type { AdvisorChannel } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 
@@ -40,6 +42,18 @@ export const useAdvisorStore = defineStore("advisor", () => {
     () => channels.value.find((channel) => channel.channel_type === "project" && channel.workflow_id == null) ?? null
   );
 
+  function resetProjectScope(): void {
+    activeNode.value = null;
+    topics.value = [];
+    activeTopicId.value = null;
+    projectId.value = null;
+    channels.value = [];
+    activeChannelId.value = null;
+    isLoading.value = false;
+    error.value = null;
+  }
+  registerProjectScopeReset(resetProjectScope);
+
   function _applyScopeEnvelope(envelope: ScopeStateEnvelope): void {
     activeNode.value = envelope.active_node;
     topics.value = envelope.topics;
@@ -55,6 +69,22 @@ export const useAdvisorStore = defineStore("advisor", () => {
    * back.  All graph traversal is server-side.
    */
   async function switchScope(args: ScopeArgs): Promise<MemoryNode | null> {
+    // Pre-check: the requested scope must belong to the project the user
+    // currently has loaded. The backend still authoritatively rejects
+    // cross-project scopes (the memory adapter is project-scoped on the
+    // server) — this fail-fast guard turns what would be a noisy 403 into
+    // a clean local refusal and prevents the advisor UI from briefly
+    // showing a foreign project's channel while the request is in flight.
+    const activeProjectId = useProjectStore().currentProjectId;
+    if (activeProjectId !== null && args.projectId !== activeProjectId) {
+      console.warn(
+        "[advisor] switchScope refused: requested projectId=%s but active is %s",
+        args.projectId,
+        activeProjectId,
+      );
+      return null;
+    }
+
     isLoading.value = true;
     error.value = null;
     try {
@@ -274,5 +304,6 @@ export const useAdvisorStore = defineStore("advisor", () => {
     switchToWorkflowChannel,
     switchToProjectChannel,
     setFromProjectDetail,
+    resetProjectScope,
   };
 });

@@ -271,7 +271,7 @@ const addMenuItems = computed(() => {
       }
     },
     {
-      label: "From Template…",
+      label: "From Analysis Starter...",
       icon: "pi pi-th-large",
       command: () => {
         emit("open-template-picker");

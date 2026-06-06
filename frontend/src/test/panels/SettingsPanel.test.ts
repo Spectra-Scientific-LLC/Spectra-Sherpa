@@ -1,5 +1,6 @@
 import { mount } from "@vue/test-utils";
-import { describe, it, expect } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
+import { beforeEach, describe, it, expect } from "vitest";
 import SettingsPanel from "@/views/workflow-builder/node-detail/panels/SettingsPanel.vue";
 
 function factory(props: Partial<InstanceType<typeof SettingsPanel>["$props"]> = {}) {
@@ -31,6 +32,10 @@ function factory(props: Partial<InstanceType<typeof SettingsPanel>["$props"]> = 
 }
 
 describe("SettingsPanel", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+  });
+
   it("renders empty state when there are no params", () => {
     const w = factory();
     expect(w.text()).toContain("No configurable parameters");

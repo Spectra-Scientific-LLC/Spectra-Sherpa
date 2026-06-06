@@ -127,10 +127,12 @@ describe("Cross-tab sync — BroadcastChannel seam", () => {
     const msg = received[0] as {
       type: string;
       nodeId: number;
+      workflowId: number | null;
       params: Record<string, number>;
     };
     expect(msg.type).toBe("node_params_updated");
     expect(msg.nodeId).toBe(42);
+    expect(msg.workflowId).toBeNull();
     expect(msg.params).toEqual({ n_components: 4 });
   });
 
@@ -288,6 +290,44 @@ describe("Receiver side — handleBroadcastMessage → updateNode", () => {
 
     expect(updateNode).toHaveBeenCalledWith("10", {
       params: { alpha: 0.9, beta: 0.2 },
+    });
+  });
+
+  it("ignores matching node ids from another workflow sheet", () => {
+    const updateNode = vi.fn();
+    const nodesRef = { value: [{ id: "source_1", params: {} }] };
+    const handler = (event: MessageEvent) =>
+      handleBroadcastMessage(event, nodesRef, updateNode, 100);
+
+    handler({
+      data: {
+        type: "node_params_updated",
+        workflowId: 200,
+        nodeId: "source_1",
+        params: { experiment_id: 12 },
+      },
+    } as MessageEvent);
+
+    expect(updateNode).not.toHaveBeenCalled();
+  });
+
+  it("accepts matching workflow-scoped messages", () => {
+    const updateNode = vi.fn();
+    const nodesRef = { value: [{ id: "source_1", params: {} }] };
+    const handler = (event: MessageEvent) =>
+      handleBroadcastMessage(event, nodesRef, updateNode, 100);
+
+    handler({
+      data: {
+        type: "node_params_updated",
+        workflowId: 100,
+        nodeId: "source_1",
+        params: { experiment_id: 12 },
+      },
+    } as MessageEvent);
+
+    expect(updateNode).toHaveBeenCalledWith("source_1", {
+      params: { experiment_id: 12 },
     });
   });
 });

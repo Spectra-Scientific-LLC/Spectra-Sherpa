@@ -5,7 +5,7 @@
       <h2 v-if="!collapsed">Spectra Sherpa</h2>
     </div>
     <nav class="nav-list">
-      <!-- Main Navigation (6 pages) -->
+      <!-- Main Navigation -->
       <RouterLink
         v-for="item in visibleMainNavItems"
         :key="item.to"
@@ -41,39 +41,30 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { useDemoMode } from "@/composables/useDemoMode";
-import { useAppConfig } from "@/composables/useAppConfig";
 
 defineProps<{
   collapsed: boolean;
 }>();
 
 const { isDemoMode } = useDemoMode();
-const { appConfig } = useAppConfig();
 
-// Main navigation — chemometrician workflow
 const mainNavItems = [
+  { label: "Dashboard", to: "/dashboard", icon: "pi pi-home" },
   { label: "Project", to: "/project", icon: "pi pi-folder" },
   { label: "Data", to: "/data", icon: "pi pi-database" },
-  { label: "Workflow", to: "/workflow", icon: "pi pi-sitemap" },
-  { label: "Experiments", to: "/experiments", icon: "pi pi-chart-bar" },
+  { label: "Workflows", to: "/workflow", icon: "pi pi-sitemap" },
+  { label: "Runs", to: "/runs", icon: "pi pi-history" },
   { label: "Deploy", to: "/deploy", icon: "pi pi-cloud-upload" },
-  { label: "Report", to: "/report", icon: "pi pi-file-pdf" },
-  { label: "Audit", to: "/audit", icon: "pi pi-shield", requiresAudit: true },
+  { label: "Report", to: "/report", icon: "pi pi-file-edit" },
 ];
 
-const visibleMainNavItems = computed(() =>
-  mainNavItems.filter((item) => {
-    if (!item.requiresAudit) return true;
-    const audit = appConfig.value?.audit;
-    return Boolean(audit?.localQuery || audit?.fullPipeline || audit?.reportPack);
-  }),
-);
+const visibleMainNavItems = mainNavItems;
 
-// Secondary navigation
-const secondaryNavItems = [
+const secondaryNavItems = computed(() => [
+  { label: "Logs", to: "/logs", icon: "pi pi-list", dimInDemo: false },
   { label: "Settings", to: "/settings", icon: "pi pi-sliders-h", dimInDemo: true },
   { label: "Documentation", to: "/documentation", icon: "pi pi-book", dimInDemo: false },
-];
+]);
 </script>
 
 <style scoped>

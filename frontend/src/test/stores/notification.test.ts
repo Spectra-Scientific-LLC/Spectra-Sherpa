@@ -72,6 +72,26 @@ describe("Notification Store", () => {
       expect(store.notifications[0].title).toBe("Done");
       expect(store.notifications[0].severity).toBe("success");
     });
+
+    it("deduplicates repeated system warnings without an entity ref", () => {
+      const store = useNotificationStore();
+      store.add({
+        source: "system",
+        severity: "warning",
+        title: "Autosave Failed",
+        message: "The workflow could not be saved.",
+      });
+      store.add({
+        source: "system",
+        severity: "warning",
+        title: "Autosave Failed",
+        message: "The workflow could not be saved.",
+      });
+
+      expect(store.notifications.length).toBe(1);
+      expect(store.notifications[0].title).toBe("Autosave Failed");
+      expect(store.notifications[0].readAt).toBeNull();
+    });
   });
 
   describe("markRead / markAllRead", () => {

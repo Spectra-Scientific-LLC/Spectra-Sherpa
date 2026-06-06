@@ -233,18 +233,15 @@ async function loadAndRegister(
       } catch (err) {
         // Re-resolve can throw on guard-driven redirects; that's
         // fine — the navigation still completes.
-        // eslint-disable-next-line no-console
         console.warn(
           `[boot] re-resolve after addRoute(${url}) failed:`,
           err,
         );
       }
     }
-    // eslint-disable-next-line no-console
     console.info(`[boot] loaded server module ${url}`);
     return true;
   } catch (error) {
-    // eslint-disable-next-line no-console
     console.error(`[boot] failed to load server module ${url}:`, error);
     if (failClosed) {
       serverModuleLoadFailed.value = { module: url, error };

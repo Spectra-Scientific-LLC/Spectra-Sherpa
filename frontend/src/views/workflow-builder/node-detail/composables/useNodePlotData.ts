@@ -35,6 +35,7 @@ interface UseNodePlotDataDeps {
   // and the contour click handler.
   pcaXAxis: Ref<number>;
   pcaYAxis: Ref<number>;
+  scoreColorMode: Ref<string>;
   plsdaLoadingsViewMode: Ref<"lines" | "biplot">;
   regressionTargetIdx: Ref<number>;
   featureXAxis: Ref<number>;
@@ -61,6 +62,7 @@ export function useNodePlotData(deps: UseNodePlotDataDeps) {
     isPCAOutput,
     pcaXAxis,
     pcaYAxis,
+    scoreColorMode,
     plsdaLoadingsViewMode,
     regressionTargetIdx,
     featureXAxis,
@@ -136,6 +138,163 @@ export function useNodePlotData(deps: UseNodePlotDataDeps) {
     return categories.length <= 20;
   });
 
+  function numericVectorFrom(value: unknown, expectedLength: number): number[] | null {
+    const raw = Array.isArray(value)
+      ? value
+      : value && typeof value === "object" && Array.isArray((value as { data?: unknown }).data)
+        ? (value as { data: unknown[] }).data
+        : null;
+    if (!raw || raw.length !== expectedLength) return null;
+    if (raw.every((item) => typeof item === "number" && Number.isFinite(item))) {
+      return raw as number[];
+    }
+    return null;
+  }
+
+  function firstColumnNumericMatrix(value: unknown, expectedLength: number): number[] | null {
+    if (!Array.isArray(value) || value.length !== expectedLength) return null;
+    const firstColumn = value.map((row) => Array.isArray(row) ? row[0] : null);
+    return numericVectorFrom(firstColumn, expectedLength);
+  }
+
+  function scoreTargetValues(expectedLength: number): number[] | null {
+    const metadata = nodeOutput.value?.metadata || {};
+    const targetPort = resolvePortPayload(nodeOutput.value?.ports?.target);
+    const candidates = [
+      metadata.target,
+      metadata.target_values,
+      metadata.y,
+      metadata.y_values,
+      targetPort?.data,
+      nodeOutput.value?.ports?.target?.data,
+    ];
+    for (const candidate of candidates) {
+      const vector = numericVectorFrom(candidate, expectedLength) ?? firstColumnNumericMatrix(candidate, expectedLength);
+      if (vector) return vector;
+    }
+    if (!Array.isArray(metadata.label_categories)) {
+      const yTrue = numericVectorFrom(metadata.y_true, expectedLength);
+      if (yTrue) return yTrue;
+    }
+    return null;
+  }
+
+  function classColorValues(
+    sampleLabels: string[],
+    categories: unknown,
+    fallbackAssignments?: unknown[]
+  ): { labels: string[]; categories: string[] } | null {
+    const rawAssignments =
+      Array.isArray(fallbackAssignments) && fallbackAssignments.length === sampleLabels.length
+        ? fallbackAssignments.map((item) => normalizeSampleLabel(item))
+        : sampleLabels;
+    const categoryLabels = Array.isArray(categories)
+      ? categories.map((item) => normalizeSampleLabel(item))
+      : Array.from(new Set(rawAssignments));
+    const categorySet = new Set(categoryLabels);
+    const filteredCategories = categoryLabels.filter((category) => categorySet.has(category));
+    const uniqueCategories = Array.from(new Set(filteredCategories.length ? filteredCategories : rawAssignments));
+    if (rawAssignments.length === 0 || uniqueCategories.length < 2) return null;
+    if (uniqueCategories.length >= rawAssignments.length) return null;
+    if (uniqueCategories.length > 50) return null;
+    return { labels: rawAssignments, categories: uniqueCategories };
+  }
+
+  function resolvedScoreColorMode(rowCount: number, hasLabels: boolean, hasTarget: boolean): "samples" | "labels" | "target" {
+    if (scoreColorMode.value === "target" && hasTarget) return "target";
+    if (scoreColorMode.value === "labels" && hasLabels) return "labels";
+    if (scoreColorMode.value === "samples") return "samples";
+    if (hasLabels) return "labels";
+    if (hasTarget) return "target";
+    return rowCount > 0 ? "samples" : "samples";
+  }
+
+  function buildScoreScatterTraces(params: {
+    scores: number[][];
+    axisLabels: string[];
+    sampleLabels: string[];
+    classInfo?: { labels: string[]; categories: string[] } | null;
+    targetValues?: number[] | null;
+    fallbackColor?: string;
+  }): any[] {
+    const { scores, axisLabels, sampleLabels, classInfo, targetValues } = params;
+    const colorMode = resolvedScoreColorMode(scores.length, Boolean(classInfo), Boolean(targetValues));
+    const xTitle = axisLabels[pcaXAxis.value] || `Dimension ${pcaXAxis.value + 1}`;
+    const yTitle = axisLabels[pcaYAxis.value] || `Dimension ${pcaYAxis.value + 1}`;
+    if (colorMode === "labels" && classInfo) {
+      const colorMap = createCategoryColorMap(classInfo.labels, classInfo.categories);
+      return classInfo.categories.flatMap((category) => {
+        const group = { x: [] as number[], y: [] as number[], text: [] as string[] };
+        scores.forEach((row, idx) => {
+          if (classInfo.labels[idx] !== category) return;
+          group.x.push(row[pcaXAxis.value]);
+          group.y.push(row[pcaYAxis.value]);
+          group.text.push(String(sampleLabels[idx] ?? `Sample ${idx + 1}`));
+        });
+        if (group.x.length === 0) return [];
+        return [{
+          type: "scatter",
+          mode: "markers",
+          x: group.x,
+          y: group.y,
+          text: group.text,
+          name: category,
+          marker: {
+            size: 10,
+            color: colorMap.get(category),
+            opacity: 0.8,
+            line: { width: 1, color: "rgba(0,0,0,0.3)" },
+          },
+          hovertemplate: `%{text}<br>${xTitle}: %{x:.3f}<br>${yTitle}: %{y:.3f}<extra></extra>`,
+        }];
+      });
+    }
+    const x = scores.map((row) => row[pcaXAxis.value]);
+    const y = scores.map((row) => row[pcaYAxis.value]);
+    const marker = colorMode === "target" && targetValues
+      ? {
+          size: 10,
+          color: targetValues,
+          colorscale: "Viridis",
+          showscale: true,
+          colorbar: { title: "Target" },
+          opacity: 0.85,
+          line: { width: 1, color: "rgba(15,23,42,0.35)" },
+        }
+      : {
+          size: 10,
+          color: params.fallbackColor ?? "#3b82f6",
+          opacity: 0.8,
+          line: { width: 1, color: "#1e40af" },
+        };
+    return [{
+      type: "scatter",
+      mode: "markers",
+      x,
+      y,
+      text: sampleLabels,
+      marker,
+      hovertemplate: colorMode === "target"
+        ? `%{text}<br>${xTitle}: %{x:.3f}<br>${yTitle}: %{y:.3f}<br>Target: %{marker.color:.4g}<extra></extra>`
+        : `%{text}<br>${xTitle}: %{x:.3f}<br>${yTitle}: %{y:.3f}<extra></extra>`,
+    }];
+  }
+
+  const scoreColorOptions = computed(() => {
+    const scores = Array.isArray(nodeOutput.value?.data) ? nodeOutput.value.data : [];
+    const rowCount = scores.length;
+    const metadata = nodeOutput.value?.metadata || {};
+    const sampleLabels = pcaSampleLabels.value.length === rowCount
+      ? pcaSampleLabels.value
+      : Array.from({ length: rowCount }, (_, i) => `Sample ${i + 1}`);
+    const labelsAvailable = Boolean(classColorValues(sampleLabels, metadata.label_categories, metadata.y_true));
+    const targetAvailable = Boolean(scoreTargetValues(rowCount));
+    const options = [{ label: "Samples", value: "samples" }];
+    if (labelsAvailable) options.push({ label: "Class labels", value: "labels" });
+    if (targetAvailable) options.push({ label: "Target", value: "target" });
+    return options;
+  });
+
 
 // Spectra display mode
 const spectraDisplayOptions = [
@@ -173,6 +332,20 @@ const isPreprocessingNode = computed(() => {
   );
 });
 
+const hasPrebuiltPlotData = (plotKey: string): boolean => {
+  const data = nodeOutput.value?.plots?.[plotKey]?.data;
+  return Array.isArray(data) && data.length > 0;
+};
+
+const hasClassificationAccuracyInputs = (): boolean => {
+  const metadata = nodeOutput.value?.metadata || {};
+  return (
+    Array.isArray(metadata.y_true) &&
+    (Array.isArray(metadata.y_pred_cv) || Array.isArray(metadata.y_pred)) &&
+    Array.isArray(metadata.label_categories)
+  );
+};
+
 // Available plots based on node type
 const availablePlots = computed(() => {
   const plots: string[] = [];
@@ -182,7 +355,7 @@ const availablePlots = computed(() => {
   }
   switch (nodeTypeKey.value) {
     case "model.mcr_als":
-      plots.push("Concentration Profiles", "Pure Spectra", "Original Contour", "Reconstructed Contour", "Residual Contour");
+      plots.push("Concentration Profiles", "Pure Spectra", "Ground Truth Validation", "Original Contour", "Reconstructed Contour", "Residual Contour");
       break;
     case "model.simplisma":
       plots.push("Concentration Profiles", "Pure Spectra");
@@ -198,7 +371,18 @@ const availablePlots = computed(() => {
       plots.push("Predicted vs Actual");
       break;
     case "classification.plsda":
-      plots.push("Scores Plot (with confidence ellipses)", "Loadings Plot", "VIP Scores", "Class Accuracy");
+      if (hasPrebuiltPlotData("scores")) plots.push("Scores Plot");
+      if (
+        hasPrebuiltPlotData("loadings_lines") ||
+        hasPrebuiltPlotData("loadings") ||
+        hasPrebuiltPlotData("loadings_biplot")
+      ) {
+        plots.push("Loadings Plot");
+      }
+      if (hasPrebuiltPlotData("vip")) plots.push("VIP Scores");
+      if (hasPrebuiltPlotData("confusion_matrix_train")) plots.push("Confusion Matrix (Training)");
+      if (hasPrebuiltPlotData("confusion_matrix_cv")) plots.push("Confusion Matrix (Cross-Validation)");
+      if (hasClassificationAccuracyInputs()) plots.push("Per-Class Accuracy");
       break;
     case "classification.simca":
       plots.push("Scores Plot", "Confusion Matrix", "Per-Class Accuracy");
@@ -231,6 +415,9 @@ const availablePlots = computed(() => {
       break;
     case "analysis.peak_finding":
       plots.push("Spectra with Peaks");
+      break;
+    case "analysis.compare_library":
+      plots.push("Library Overlay");
       break;
     case "output.plot":
     case "output.contour":
@@ -275,6 +462,16 @@ const basePlotLayout = {
   margin: { t: 40, r: 20, b: 50, l: 60 },
   xaxis: { gridcolor: "#334155", zerolinecolor: "#475569" },
   yaxis: { gridcolor: "#334155", zerolinecolor: "#475569" },
+};
+
+const isFeatureRole = (metadata: any, portPayload?: any): boolean => {
+  const dataRole =
+    metadata?.["sherpa.data_role"] ||
+    metadata?.data_role ||
+    portPayload?.metadata?.["sherpa.data_role"] ||
+    portPayload?.metadata?.data_role ||
+    portPayload?.data_role;
+  return dataRole === "X_features";
 };
 
 // ============================================================================
@@ -364,75 +561,27 @@ const pcaScoresData = computed(() => {
     ? pcaSampleLabels.value
     : Array.from({ length: scores.length }, (_, i) => `Sample ${i + 1}`);
   const axisLabels = pcLabels.value;  // Use computed pcLabels
-  const labelCategories = pcaLabelCategories.value;
-
-  // Determine if we should use categorical coloring
-  const useCategorical = pcaUseCategorical.value;
-
-  if (useCategorical) {
-    // Multiple traces, one per category
-    const colorMap = createCategoryColorMap(labels, labelCategories);
-    const traces: any[] = [];
-
-    // Group points by category
-    const categoryGroups = new Map<string | number, { x: number[], y: number[], labels: string[] }>();
-    labelCategories.forEach((cat: any) => {
-      categoryGroups.set(cat, { x: [], y: [], labels: [] });
-    });
-
-    scores.forEach((row: number[], idx: number) => {
-      const category = labels[idx];
-      const group = categoryGroups.get(category);
-      if (group) {
-        group.x.push(row[pcaXAxis.value]);
-        group.y.push(row[pcaYAxis.value]);
-        group.labels.push(String(labels[idx]));
-      }
-    });
-
-    // Create one trace per category
-    labelCategories.forEach((category: any) => {
-      const group = categoryGroups.get(category);
-      if (group && group.x.length > 0) {
-        traces.push({
-          type: "scatter",
-          mode: "markers",
-          x: group.x,
-          y: group.y,
-          text: group.labels,
-          name: String(category),
-          marker: {
-            size: 10,
-            color: colorMap.get(category),
-            opacity: 0.8,
-            line: { width: 1, color: "rgba(0,0,0,0.3)" },
-          },
-          hovertemplate: `%{text}<br>${axisLabels[pcaXAxis.value] || `PC${pcaXAxis.value + 1}`}: %{x:.3f}<br>${axisLabels[pcaYAxis.value] || `PC${pcaYAxis.value + 1}`}: %{y:.3f}<extra></extra>`,
-        });
-      }
-    });
-
-    if (traces.length > 0) {
-      return traces;
-    }
-  }
-  // Fallback: Single trace with default blue color
-  const x = scores.map((row: number[]) => row[pcaXAxis.value]);
-  const y = scores.map((row: number[]) => row[pcaYAxis.value]);
-
-  return [{
-    type: "scatter",
-    mode: "markers",
-    x, y,
-    text: labels,
-    marker: { size: 10, color: "#3b82f6", opacity: 0.8, line: { width: 1, color: "#1e40af" } },
-    hovertemplate: `%{text}<br>${axisLabels[pcaXAxis.value] || `PC${pcaXAxis.value + 1}`}: %{x:.3f}<br>${axisLabels[pcaYAxis.value] || `PC${pcaYAxis.value + 1}`}: %{y:.3f}<extra></extra>`,
-  }];
+  const metadata = nodeOutput.value?.metadata || {};
+  return buildScoreScatterTraces({
+    scores,
+    axisLabels,
+    sampleLabels: labels,
+    classInfo: classColorValues(labels, pcaLabelCategories.value, metadata.y_true),
+    targetValues: scoreTargetValues(scores.length),
+  });
 });
 
 const pcaScoresLayout = computed(() => {
   const axisLabels = pcLabels.value;  // Use computed pcLabels
-  const hasCategorical = pcaUseCategorical.value;
+  const scores = nodeOutput.value?.data || [];
+  const labels = pcaSampleLabels.value.length === scores.length
+    ? pcaSampleLabels.value
+    : Array.from({ length: scores.length }, (_, i) => `Sample ${i + 1}`);
+  const metadata = nodeOutput.value?.metadata || {};
+  const classInfo = classColorValues(labels, pcaLabelCategories.value, metadata.y_true);
+  const targetValues = scoreTargetValues(scores.length);
+  const colorMode = resolvedScoreColorMode(scores.length, Boolean(classInfo), Boolean(targetValues));
+  const hasCategorical = colorMode === "labels";
 
   const layout: Record<string, any> = {
     ...basePlotLayout,
@@ -788,13 +937,13 @@ const pcaLoadingsLayout = computed(() => {
   } else if (portXTitle) {
     // Use title/units from loadings port coordinate
     xaxis_title = portXUnits ? `${portXTitle} (${portXUnits})` : portXTitle;
-    xaxis_reversed = portXTitle.toLowerCase().includes("wavenumber");
+    xaxis_reversed = !isFeatureRole(metadata, loadingsPayload) && portXTitle.toLowerCase().includes("wavenumber");
   } else if (wavenumbers && wavenumbers.length > 0) {
     // Use metadata x_title/x_units (could be wavenumber, wavelength, m/z, etc.)
     const xTitle = metadata.x_title || "Feature";
     const xUnits = metadata.x_units || "";
     xaxis_title = xUnits ? `${xTitle} (${xUnits})` : xTitle;
-    xaxis_reversed = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
+    xaxis_reversed = !isFeatureRole(metadata, loadingsPayload) && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
   }
 
   return {
@@ -1171,9 +1320,9 @@ const mcrSpectraLayout = computed(() => {
   const xTitle = hasRealWavenumbers ? (metadata.spectral_x_title || metadata.x_title || "") : "";
   const xUnits = hasRealWavenumbers ? (metadata.spectral_x_units || metadata.x_units || "") : "";
   const xLabel = xUnits ? `${xTitle} (${xUnits})` : (xTitle || "Feature Index");
-  const yLabel = yAxisLabel.value || "Response";
+  const yLabel = metadata.mcr_spectra_y_units || yAxisLabel.value || "Response";
   // Reverse x-axis for wavenumber data (cm⁻¹), not for wavelength (nm)
-  const shouldReverse = hasRealWavenumbers && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
+  const shouldReverse = !isFeatureRole(metadata) && hasRealWavenumbers && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
 
   return {
     ...basePlotLayout,
@@ -1186,6 +1335,126 @@ const mcrSpectraLayout = computed(() => {
       autorange: shouldReverse ? "reversed" : true,
     },
     yaxis: { ...basePlotLayout.yaxis, title: yLabel },
+  };
+});
+
+const mcrGroundTruthComparison = computed<Record<string, any> | null>(() => {
+  if (nodeTypeKey.value !== "model.mcr_als" || !hasOutput.value) return null;
+  const portPayload = resolvePortPayload(nodeOutput.value?.ports?.ground_truth_comparison);
+  if (portPayload && typeof portPayload === "object") return portPayload;
+  const metadata = nodeOutput.value?.metadata || {};
+  const embedded = metadata.ground_truth_comparison;
+  return embedded && typeof embedded === "object" ? embedded : null;
+});
+
+const mcrValidationScatterData = computed(() => {
+  const comparison = mcrGroundTruthComparison.value;
+  const series = Array.isArray(comparison?.series) ? comparison.series[0] : null;
+  const rawActual = Array.isArray(series?.actual) ? series.actual.map(Number) : [];
+  const rawPredicted = Array.isArray(series?.predicted) ? series.predicted.map(Number) : [];
+  const actual: number[] = [];
+  const predicted: number[] = [];
+  for (let i = 0; i < Math.min(rawActual.length, rawPredicted.length); i++) {
+    if (Number.isFinite(rawActual[i]) && Number.isFinite(rawPredicted[i])) {
+      actual.push(rawActual[i]);
+      predicted.push(rawPredicted[i]);
+    }
+  }
+  if (actual.length === 0 || predicted.length === 0) return [];
+  const lo = Math.min(...actual, ...predicted);
+  const hi = Math.max(...actual, ...predicted);
+  return [
+    {
+      type: "scatter",
+      mode: "markers",
+      x: actual,
+      y: predicted,
+      name: "Selected match",
+      marker: { color: "#3b82f6", size: 8 },
+      hovertemplate: "Target: %{x:.4g}<br>Recovered: %{y:.4g}<extra></extra>",
+    },
+    {
+      type: "scatter",
+      mode: "lines",
+      x: [lo, hi],
+      y: [lo, hi],
+      name: "Ideal",
+      line: { dash: "dash", color: "#94a3b8" },
+    },
+  ];
+});
+
+const formatMcrMetric = (value: unknown) => {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric.toFixed(4) : "n/a";
+};
+
+const mcrValidationScatterLayout = computed(() => {
+  const comparison = mcrGroundTruthComparison.value;
+  const metrics = comparison?.metrics || {};
+  const target = metrics.target || "target";
+  const component = metrics.recovered_component || "component";
+  const units = comparison?.metadata?.target_units || comparison?.target_units;
+  const title = [
+    `Ground Truth Validation: ${component} vs ${target}`,
+    `R² = ${formatMcrMetric(metrics.R2)}  |  RMSE = ${formatMcrMetric(metrics.RMSE)}`,
+  ];
+  const targetTitle = units ? `Target (${units})` : "Target";
+  return {
+    ...basePlotLayout,
+    height: 360,
+    title: {
+      text: `${title[0]}<br><span style="font-size:11px;color:#94a3b8">${title[1]}</span>`,
+      font: { size: 14, color: "#f8fafc" },
+    },
+    xaxis: { ...basePlotLayout.xaxis, title: targetTitle },
+    yaxis: { ...basePlotLayout.yaxis, title: "Affine-aligned recovered concentration" },
+    showlegend: true,
+    legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
+  };
+});
+
+const mcrValidationSpectrumData = computed(() => {
+  const metadata = mcrGroundTruthComparison.value?.metadata || {};
+  const spectrum = Array.isArray(metadata.selected_component_spectrum)
+    ? metadata.selected_component_spectrum.map(Number)
+    : [];
+  if (spectrum.length === 0) return [];
+  const rawX = Array.isArray(metadata.selected_component_spectrum_x)
+    ? metadata.selected_component_spectrum_x.map(Number)
+    : [];
+  const x = rawX.length === spectrum.length
+    ? rawX
+    : Array.from({ length: spectrum.length }, (_, i) => i);
+  const metrics = mcrGroundTruthComparison.value?.metrics || {};
+  return [
+    {
+      type: "scatter",
+      mode: "lines",
+      x,
+      y: spectrum,
+      name: String(metrics.recovered_component || "Selected spectrum"),
+      line: { width: 2, color: "#14b8a6" },
+      hovertemplate: "%{x:.4g}<br>Normalized intensity: %{y:.4g}<extra></extra>",
+    },
+  ];
+});
+
+const mcrValidationSpectrumLayout = computed(() => {
+  const metadata = mcrGroundTruthComparison.value?.metadata || {};
+  const xTitle = String(metadata.selected_component_spectrum_x_title || "Feature");
+  const xUnits = metadata.selected_component_spectrum_x_units
+    ? String(metadata.selected_component_spectrum_x_units)
+    : "";
+  const xLabel = xUnits ? `${xTitle} (${xUnits})` : xTitle;
+  const shouldReverse = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
+  return {
+    ...basePlotLayout,
+    height: 320,
+    title: { text: "Selected Normalized Pure Spectrum", font: { size: 14, color: "#f8fafc" } },
+    xaxis: { ...basePlotLayout.xaxis, title: xLabel, autorange: shouldReverse ? "reversed" : true },
+    yaxis: { ...basePlotLayout.yaxis, title: "Normalized intensity" },
+    showlegend: false,
   };
 });
 
@@ -1237,7 +1506,7 @@ const mcrContourXMeta = computed(() => {
   const xUnits = real ? (metadata.spectral_x_units ?? metadata.x_units ?? "") as string : "";
   return {
     xLabel: xUnits ? `${xTitle} (${xUnits})` : (xTitle || "Feature Index"),
-    shouldReverse: real && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber")),
+    shouldReverse: !isFeatureRole(metadata) && real && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber")),
   };
 });
 
@@ -1386,6 +1655,13 @@ const plotNodeLayout = computed(() => {
   };
 });
 
+const plotNodeWarning = computed(() => {
+  if (!['output.plot', 'output.contour'].includes(nodeTypeKey.value) || !hasOutput.value) return "";
+  const viz = nodeOutput.value?.ports?.visualization?.value || nodeOutput.value?.metadata || {};
+  const warning = viz?.metadata?.warning || viz?.warning;
+  return typeof warning === "string" ? warning : "";
+});
+
 // ============================================================================
 // PLS Plots
 // ============================================================================
@@ -1398,68 +1674,24 @@ const plsScoresData = computed(() => {
 
   const labels = metadata.sample_labels || Array.from({ length: scores.length }, (_, i) => `Sample ${i + 1}`);
   const lvLabels = metadata.pc_labels || [];
-  const labelCategories = metadata.label_categories;
-
-  // Determine if we should use categorical coloring
-  const useCategorical = labelCategories && labelCategories.length > 0 && labelCategories.length < 50;
-
-  if (useCategorical) {
-    const colorMap = createCategoryColorMap(labels, labelCategories);
-    const traces: any[] = [];
-    const categoryGroups = new Map<string | number, { x: number[], y: number[], labels: string[] }>();
-    labelCategories.forEach((cat: any) => {
-      categoryGroups.set(cat, { x: [], y: [], labels: [] });
-    });
-
-    scores.forEach((row: number[], idx: number) => {
-      const category = labels[idx];
-      const group = categoryGroups.get(category);
-      if (group) {
-        group.x.push(row[pcaXAxis.value]);
-        group.y.push(row[pcaYAxis.value]);
-        group.labels.push(String(labels[idx]));
-      }
-    });
-
-    labelCategories.forEach((category: any) => {
-      const group = categoryGroups.get(category);
-      if (group && group.x.length > 0) {
-        traces.push({
-          type: "scatter",
-          mode: "markers",
-          x: group.x,
-          y: group.y,
-          text: group.labels,
-          name: String(category),
-          marker: {
-            size: 10,
-            color: colorMap.get(category),
-            opacity: 0.8,
-            line: { width: 1, color: "rgba(0,0,0,0.3)" },
-          },
-          hovertemplate: `%{text}<br>${lvLabels[pcaXAxis.value] || `LV${pcaXAxis.value + 1}`}: %{x:.3f}<br>${lvLabels[pcaYAxis.value] || `LV${pcaYAxis.value + 1}`}: %{y:.3f}<extra></extra>`,
-        });
-      }
-    });
-    return traces;
-  } else {
-    const x = scores.map((row: number[]) => row[pcaXAxis.value]);
-    const y = scores.map((row: number[]) => row[pcaYAxis.value]);
-    return [{
-      type: "scatter",
-      mode: "markers",
-      x, y,
-      text: labels,
-      marker: { size: 10, color: "#3b82f6", opacity: 0.8, line: { width: 1, color: "#1e40af" } },
-      hovertemplate: `%{text}<br>${lvLabels[pcaXAxis.value] || `LV${pcaXAxis.value + 1}`}: %{x:.3f}<br>${lvLabels[pcaYAxis.value] || `LV${pcaYAxis.value + 1}`}: %{y:.3f}<extra></extra>`,
-    }];
-  }
+  return buildScoreScatterTraces({
+    scores,
+    axisLabels: lvLabels,
+    sampleLabels: labels.map((label: any) => normalizeSampleLabel(label)),
+    classInfo: classColorValues(labels.map((label: any) => normalizeSampleLabel(label)), metadata.label_categories, metadata.y_true),
+    targetValues: scoreTargetValues(scores.length),
+  });
 });
 
 const plsScoresLayout = computed(() => {
   const metadata = nodeOutput.value?.metadata || {};
+  const scores = nodeOutput.value?.data || [];
+  const labels = (metadata.sample_labels || Array.from({ length: scores.length }, (_, i) => `Sample ${i + 1}`))
+    .map((label: any) => normalizeSampleLabel(label));
   const lvLabels = metadata.pc_labels || [];
-  const hasCategorical = metadata.label_categories && metadata.label_categories.length > 0 && metadata.label_categories.length < 50;
+  const classInfo = classColorValues(labels, metadata.label_categories, metadata.y_true);
+  const targetValues = scoreTargetValues(scores.length);
+  const hasCategorical = resolvedScoreColorMode(scores.length, Boolean(classInfo), Boolean(targetValues)) === "labels";
 
   const layout: Record<string, any> = {
     ...basePlotLayout,
@@ -1536,12 +1768,12 @@ const plsLoadingsLayout = computed(() => {
     xaxis_title = "Feature";
   } else if (portXTitle) {
     xaxis_title = portXUnits ? `${portXTitle} (${portXUnits})` : portXTitle;
-    xaxis_reversed = portXTitle.toLowerCase().includes("wavenumber");
+    xaxis_reversed = !isFeatureRole(metadata, loadingsPayload) && portXTitle.toLowerCase().includes("wavenumber");
   } else if (wavenumbers && wavenumbers.length > 0) {
     const xTitle = metadata.x_title || "Feature";
     const xUnits = metadata.x_units || "";
     xaxis_title = xUnits ? `${xTitle} (${xUnits})` : xTitle;
-    xaxis_reversed = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
+    xaxis_reversed = !isFeatureRole(metadata, loadingsPayload) && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
   }
 
   return {
@@ -1582,61 +1814,17 @@ const classificationScoresData = computed(() => {
   // Use shared pcLabels computed (resolves pc_labels → evr → lv_labels).
   const axisLabels = pcLabels.value;
   const labelCategories = metadata.label_categories;
-
-  const useCategorical = labelCategories && labelCategories.length > 0 && labelCategories.length < 50
-    && yTrue.length === scores.length;
-
-  if (useCategorical) {
-    const colorMap = createCategoryColorMap(classAssignments, labelCategories);
-    const traces: any[] = [];
-    const categoryGroups = new Map<string | number, { x: number[], y: number[], labels: string[] }>();
-    labelCategories.forEach((cat: any) => {
-      categoryGroups.set(cat, { x: [], y: [], labels: [] });
-    });
-
-    scores.forEach((row: number[], idx: number) => {
-      const category = classAssignments[idx];
-      const group = categoryGroups.get(category);
-      if (group) {
-        group.x.push(row[pcaXAxis.value]);
-        group.y.push(row[pcaYAxis.value]);
-        group.labels.push(String(sampleLabels[idx]));
-      }
-    });
-
-    labelCategories.forEach((category: any) => {
-      const group = categoryGroups.get(category);
-      if (group && group.x.length > 0) {
-        traces.push({
-          type: "scatter",
-          mode: "markers",
-          x: group.x,
-          y: group.y,
-          text: group.labels,
-          name: String(category),
-          marker: {
-            size: 10,
-            color: colorMap.get(category),
-            opacity: 0.8,
-            line: { width: 1, color: "rgba(0,0,0,0.3)" },
-          },
-          hovertemplate: `%{text}<br>${axisLabels[pcaXAxis.value] || `Dimension ${pcaXAxis.value + 1}`}: %{x:.3f}<br>${axisLabels[pcaYAxis.value] || `Dimension ${pcaYAxis.value + 1}`}: %{y:.3f}<extra></extra>`,
-        });
-      }
-    });
-    return traces;
-  } else {
-    const x = scores.map((row: number[]) => row[pcaXAxis.value]);
-    const y = scores.map((row: number[]) => row[pcaYAxis.value]);
-    return [{
-      type: "scatter",
-      mode: "markers",
-      x, y,
-      text: sampleLabels,
-      marker: { size: 10, color: "#3b82f6", opacity: 0.8, line: { width: 1, color: "#1e40af" } },
-      hovertemplate: `%{text}<br>${axisLabels[pcaXAxis.value] || `Dimension ${pcaXAxis.value + 1}`}: %{x:.3f}<br>${axisLabels[pcaYAxis.value] || `Dimension ${pcaYAxis.value + 1}`}: %{y:.3f}<extra></extra>`,
-    }];
-  }
+  return buildScoreScatterTraces({
+    scores,
+    axisLabels,
+    sampleLabels: sampleLabels.map((label: any) => normalizeSampleLabel(label)),
+    classInfo: classColorValues(
+      sampleLabels.map((label: any) => normalizeSampleLabel(label)),
+      labelCategories,
+      classAssignments,
+    ),
+    targetValues: scoreTargetValues(scores.length),
+  });
 });
 
 const classificationScoresLayout = computed(() => {
@@ -1647,10 +1835,17 @@ const classificationScoresLayout = computed(() => {
   // updated. Mirror of the fix in PR #36 on main.
 
   const metadata = nodeOutput.value?.metadata || {};
+  const scores = nodeOutput.value?.data || [];
+  const sampleLabels = (metadata.sample_labels || Array.from({ length: scores.length }, (_, i) => `Sample ${i + 1}`))
+    .map((label: any) => normalizeSampleLabel(label));
+  const yTrue: any[] = metadata.y_true || [];
+  const classAssignments = yTrue.length === scores.length ? yTrue : sampleLabels;
   // Use the shared pcLabels computed (resolves pc_labels → evr → lv_labels)
   // so PLS-DA gets "LV1 / LV2" titles instead of "Dimension 1 / Dimension 2".
   const axisLabels = pcLabels.value;
-  const hasCategorical = metadata.label_categories && metadata.label_categories.length > 0 && metadata.label_categories.length < 50;
+  const classInfo = classColorValues(sampleLabels, metadata.label_categories, classAssignments);
+  const targetValues = scoreTargetValues(scores.length);
+  const hasCategorical = resolvedScoreColorMode(scores.length, Boolean(classInfo), Boolean(targetValues)) === "labels";
 
   const layout: Record<string, any> = {
     ...basePlotLayout,
@@ -1737,6 +1932,23 @@ const peakFindingPlotLayout = computed(() => {
     return { ...basePlotLayout, height: 500, ...backendLayout };
   }
   return { ...basePlotLayout, height: 500 };
+});
+
+const libraryComparePlotData = computed(() => {
+  if (nodeTypeKey.value !== "analysis.compare_library" || !hasOutput.value) return [];
+  const plots = nodeOutput.value?.plots;
+  if (plots?.library_compare?.data) {
+    return plots.library_compare.data;
+  }
+  return [];
+});
+
+const libraryComparePlotLayout = computed(() => {
+  if (nodeTypeKey.value !== "analysis.compare_library" || !hasOutput.value) {
+    return { ...basePlotLayout, height: 500 };
+  }
+  const backendLayout = nodeOutput.value?.plots?.library_compare?.layout;
+  return { ...basePlotLayout, height: 500, ...(backendLayout || {}) };
 });
 
 const plsdaLoadingsData = computed(() => {
@@ -1971,7 +2183,7 @@ const plsdaVipLayout = computed(() => {
     const xTitle = metadata.x_title || "Feature";
     const xUnits = metadata.x_units || "";
     xaxis_title = xUnits ? `${xTitle} (${xUnits})` : xTitle;
-    xaxis_reversed = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
+    xaxis_reversed = !isFeatureRole(metadata) && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
   }
 
   // Calculate number of bars for threshold line
@@ -1993,9 +2205,9 @@ const plsdaVipLayout = computed(() => {
   };
 });
 
-// Confusion Matrix (Training) for PLS-DA
+// Confusion Matrix (Training) for classification nodes
 const plsdaConfusionTrainData = computed(() => {
-  if (nodeTypeKey.value !== "classification.plsda" || !hasOutput.value) return [];
+  if (!["classification.plsda", "classification.simca", "classification.knn"].includes(nodeTypeKey.value) || !hasOutput.value) return [];
 
   const plots = nodeOutput.value?.plots;
   if (plots?.confusion_matrix_train?.data) {
@@ -2024,9 +2236,9 @@ const plsdaConfusionTrainLayout = computed(() => {
   };
 });
 
-// Confusion Matrix (Cross-Validation) for PLS-DA
+// Confusion Matrix (Cross-Validation) for classification nodes
 const plsdaConfusionCVData = computed(() => {
-  if (nodeTypeKey.value !== "classification.plsda" || !hasOutput.value) return [];
+  if (!["classification.plsda", "classification.simca", "classification.knn"].includes(nodeTypeKey.value) || !hasOutput.value) return [];
 
   const plots = nodeOutput.value?.plots;
   if (plots?.confusion_matrix_cv?.data) {
@@ -2088,7 +2300,7 @@ const spectraOverlayLayout = computed(() => {
   const xTitle = metadata.x_title || "Feature";
   const xUnits = metadata.x_units || "";
   const xLabel = xUnits ? `${xTitle} (${xUnits})` : xTitle;
-  const shouldReverse = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
+  const shouldReverse = !isFeatureRole(metadata) && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
 
   return {
     ...basePlotLayout,
@@ -2128,7 +2340,7 @@ const spectraContourLayout = computed(() => {
   const xTitle = metadata.x_title || "Feature";
   const xUnits = metadata.x_units || "";
   const xLabel = xUnits ? `${xTitle} (${xUnits})` : xTitle;
-  const shouldReverse = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
+  const shouldReverse = !isFeatureRole(metadata) && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
   const yLabel = metadata.is_time_series ? "Scan / Time Index" : "Sample Index";
 
   return {
@@ -2376,7 +2588,7 @@ const horizontalSliceLayout = computed(() => {
   const xTitle = metadata.x_title || "Feature";
   const xUnits = metadata.x_units || "";
   const xLabel = xUnits ? `${xTitle} (${xUnits})` : xTitle;
-  const shouldReverse = xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber");
+  const shouldReverse = !isFeatureRole(metadata) && (xUnits.includes("cm") || xTitle.toLowerCase().includes("wavenumber"));
 
   return {
     ...basePlotLayout,
@@ -2612,6 +2824,30 @@ const holdoutConfusionLayout = computed(() => ({
   yaxis: { title: "True", color: "#94a3b8", autorange: "reversed" as const },
 }));
 
+const holdoutRegressionColors = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#06b6d4", "#f97316"];
+
+const formatHoldoutMetric = (value: unknown, digits = 3) => {
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(digits) : "n/a";
+};
+
+const holdoutSplitSummary = (viz: any) => {
+  const metadata = viz?.metadata || {};
+  const train = metadata.train || {};
+  const test = metadata.test || {};
+  const r2Train = metadata.r2_train ?? train.R2;
+  const rmseTrain = metadata.rmse_train ?? train.RMSE;
+  const r2Test = metadata.r2_test ?? test.R2;
+  const rmseTest = metadata.rmse_test ?? test.RMSE;
+  if (r2Train === undefined && rmseTrain === undefined) {
+    return `Test R²=${formatHoldoutMetric(r2Test)} · RMSE=${formatHoldoutMetric(rmseTest)}`;
+  }
+  return [
+    `Train R²=${formatHoldoutMetric(r2Train)} · RMSE=${formatHoldoutMetric(rmseTrain)}`,
+    `Test R²=${formatHoldoutMetric(r2Test)} · RMSE=${formatHoldoutMetric(rmseTest)}`,
+  ].join("    ");
+};
+
 const holdoutRegressionData = computed(() => {
   const viz = holdoutVisualization.value;
   if (!viz || viz.type !== "predicted_vs_actual") return [];
@@ -2624,24 +2860,44 @@ const holdoutRegressionData = computed(() => {
     name?: string;
     actual?: number[];
     predicted?: number[];
+    train_actual?: number[];
+    train_predicted?: number[];
   }> | undefined;
   if (Array.isArray(series) && series.length > 0) {
     const traces: any[] = [];
     const allActual: number[] = [];
     const allPredicted: number[] = [];
-    for (const s of series) {
+    for (const [idx, s] of series.entries()) {
       const actual = Array.isArray(s.actual) ? s.actual.map(Number) : [];
       const predicted = Array.isArray(s.predicted) ? s.predicted.map(Number) : [];
-      if (actual.length === 0 || predicted.length === 0) continue;
-      traces.push({
-        x: actual,
-        y: predicted,
-        mode: "markers" as const,
-        type: "scatter" as const,
-        name: String(s.name || "Target"),
-      });
-      allActual.push(...actual);
-      allPredicted.push(...predicted);
+      const trainActual = Array.isArray(s.train_actual) ? s.train_actual.map(Number) : [];
+      const trainPredicted = Array.isArray(s.train_predicted) ? s.train_predicted.map(Number) : [];
+      const name = String(s.name || "Target");
+      const color = holdoutRegressionColors[idx % holdoutRegressionColors.length];
+      if (trainActual.length > 0 && trainPredicted.length > 0) {
+        traces.push({
+          x: trainActual,
+          y: trainPredicted,
+          mode: "markers" as const,
+          type: "scatter" as const,
+          name: `${name} train`,
+          marker: { color, size: 7, symbol: "circle-open" },
+        });
+        allActual.push(...trainActual);
+        allPredicted.push(...trainPredicted);
+      }
+      if (actual.length > 0 && predicted.length > 0) {
+        traces.push({
+          x: actual,
+          y: predicted,
+          mode: "markers" as const,
+          type: "scatter" as const,
+          name: `${name} test`,
+          marker: { color, size: 8, symbol: "circle" },
+        });
+        allActual.push(...actual);
+        allPredicted.push(...predicted);
+      }
     }
     if (traces.length === 0) return [];
     const minVal = Math.min(...allActual, ...allPredicted);
@@ -2660,14 +2916,29 @@ const holdoutRegressionData = computed(() => {
   // Legacy single-target payload: viz.data = number[][] of [actual, predicted] pairs.
   const pairs = (viz.data as number[][]) || [];
   if (!pairs.length) return [];
+  const vizMetadata = (viz.metadata || {}) as Record<string, any>;
+  const trainPairs = (vizMetadata.train?.data as number[][] | undefined) || [];
   const actual = pairs.map((p: number[]) => p[0]);
   const predicted = pairs.map((p: number[]) => p[1]);
-  const minVal = Math.min(...actual, ...predicted);
-  const maxVal = Math.max(...actual, ...predicted);
-  return [
-    { x: actual, y: predicted, mode: "markers" as const, type: "scatter" as const, name: "Samples", marker: { color: "#3b82f6" } },
+  const trainActual = trainPairs.map((p: number[]) => p[0]);
+  const trainPredicted = trainPairs.map((p: number[]) => p[1]);
+  const minVal = Math.min(...actual, ...predicted, ...trainActual, ...trainPredicted);
+  const maxVal = Math.max(...actual, ...predicted, ...trainActual, ...trainPredicted);
+  const traces = [
+    ...(trainPairs.length
+      ? [{
+          x: trainActual,
+          y: trainPredicted,
+          mode: "markers" as const,
+          type: "scatter" as const,
+          name: "Train",
+          marker: { color: "#3b82f6", size: 7, symbol: "circle-open" },
+        }]
+      : []),
+    { x: actual, y: predicted, mode: "markers" as const, type: "scatter" as const, name: "Test", marker: { color: "#3b82f6", size: 8, symbol: "circle" } },
     { x: [minVal, maxVal], y: [minVal, maxVal], mode: "lines" as const, type: "scatter" as const, name: "1:1 Line", line: { dash: "dash" as const, color: "#94a3b8" } },
   ];
+  return traces;
 });
 
 const holdoutRegressionLayout = computed(() => {
@@ -2697,10 +2968,11 @@ const holdoutRegressionLayout = computed(() => {
 
   return {
     ...basePlotLayout,
-    title: { text: titleText, font: { color: "#e2e8f0", size: 14 } },
+    title: { text: `${titleText}<br><sup>${holdoutSplitSummary(viz)}</sup>`, font: { color: "#e2e8f0", size: 14 } },
+    margin: { ...basePlotLayout.margin, t: 66 },
     xaxis: { title: "Actual", color: "#94a3b8" },
     yaxis: { title: yTitle, color: "#94a3b8" },
-    showlegend: isMultiTarget,
+    showlegend: isMultiTarget || Array.isArray((viz?.metadata as any)?.train?.data),
   };
 });
 
@@ -2764,6 +3036,61 @@ const statsPlotData = computed(() => {
     }];
   }
 
+  const plots = (portValue?.plots || {}) as Record<string, any>;
+  const meanPlot = plots.mean_feature_response || plots.mean_spectrum;
+  const stdPlot = plots.std_feature_response || plots.std_spectrum;
+  if (Array.isArray(meanPlot?.x) && Array.isArray(meanPlot?.y) && meanPlot.x.length && meanPlot.y.length) {
+    const isFeatureResponse = Boolean(plots.mean_feature_response) || meanPlot.type === "bar";
+    const x = meanPlot.x;
+    const means = meanPlot.y;
+    const stds = Array.isArray(stdPlot?.y) ? stdPlot.y : [];
+
+    if (isFeatureResponse) {
+      const traces: any[] = [{
+        type: "bar",
+        x,
+        y: means,
+        name: "Mean",
+        marker: { color: "#3b82f6" },
+        hovertemplate: "Feature: %{x}<br>Mean: %{y:.4f}<extra></extra>",
+      }];
+      if (stds.length === x.length) {
+        traces.push({
+          type: "bar",
+          x,
+          y: stds,
+          name: "Std Dev",
+          marker: { color: "#f59e0b" },
+          hovertemplate: "Feature: %{x}<br>Std Dev: %{y:.4f}<extra></extra>",
+        });
+      }
+      return traces;
+    }
+
+    const traces: any[] = [{
+      type: "scatter",
+      mode: "lines",
+      x,
+      y: means,
+      name: "Mean",
+      line: { color: "#3b82f6", width: 2 },
+      hovertemplate: "x: %{x:.1f}<br>Mean: %{y:.4f}<extra></extra>",
+    }];
+    if (stds.length === x.length) {
+      traces.push({
+        type: "scatter",
+        mode: "lines",
+        x,
+        y: stds,
+        name: "Std Dev",
+        line: { color: "#f59e0b", width: 1.5, dash: "dash" },
+        yaxis: "y2",
+        hovertemplate: "x: %{x:.1f}<br>Std Dev: %{y:.4f}<extra></extra>",
+      });
+    }
+    return traces;
+  }
+
   // Default: histogram of flattened numeric data
   const data = nodeOutput.value?.data || [];
   const values: number[] = [];
@@ -2806,6 +3133,37 @@ const statsPlotLayout = computed(() => {
       showlegend: false,
     };
   }
+
+  const plots = (portValue?.plots || {}) as Record<string, any>;
+  const meanPlot = plots.mean_feature_response || plots.mean_spectrum;
+  if (Array.isArray(meanPlot?.x) && Array.isArray(meanPlot?.y) && meanPlot.x.length && meanPlot.y.length) {
+    const isFeatureResponse = Boolean(plots.mean_feature_response) || meanPlot.type === "bar";
+    if (isFeatureResponse) {
+      return {
+        ...basePlotLayout,
+        height: 380,
+        xaxis: { ...basePlotLayout.xaxis, title: "Feature" },
+        yaxis: { ...basePlotLayout.yaxis, title: "Response" },
+        barmode: "group",
+        bargap: 0.15,
+      };
+    }
+    return {
+      ...basePlotLayout,
+      height: 380,
+      xaxis: { ...basePlotLayout.xaxis, title: "Wavelength / Channel" },
+      yaxis: { ...basePlotLayout.yaxis, title: "Mean Response", side: "left" },
+      yaxis2: {
+        title: "Std Dev",
+        overlaying: "y",
+        side: "right",
+        gridcolor: "transparent",
+        color: "#f59e0b",
+      },
+      showlegend: true,
+    };
+  }
+
   return {
     ...basePlotLayout,
     height: 350,
@@ -2948,7 +3306,7 @@ const regressionCorrelationLayout = computed(() => {
 const classificationAccuracyData = computed(() => {
   const metadata = nodeOutput.value?.metadata || {};
   const yTrue = metadata.y_true;
-  const yPred = metadata.y_pred;
+  const yPred = Array.isArray(metadata.y_pred_cv) ? metadata.y_pred_cv : metadata.y_pred;
   const categories = metadata.label_categories;
   if (!Array.isArray(yTrue) || !Array.isArray(yPred) || !Array.isArray(categories)) return [];
 
@@ -2996,10 +3354,12 @@ const classificationAccuracyData = computed(() => {
 });
 
 const classificationAccuracyLayout = computed(() => {
+  const metadata = nodeOutput.value?.metadata || {};
+  const splitLabel = Array.isArray(metadata.y_pred_cv) ? "Cross-Validation" : "Training";
   return {
     ...basePlotLayout,
     height: 350,
-    title: { text: "Per-Class Accuracy", font: { size: 14, color: "#f8fafc" } },
+    title: { text: `Per-Class Accuracy (${splitLabel})`, font: { size: 14, color: "#f8fafc" } },
     xaxis: { ...basePlotLayout.xaxis, title: "Class" },
     yaxis: { ...basePlotLayout.yaxis, title: "Accuracy (%)", range: [0, 105] },
     showlegend: true,
@@ -3023,6 +3383,7 @@ const classificationAccuracyLayout = computed(() => {
     nodeOutput: nodeOutput.value,
     contourClickPoint: contourClickPoint.value,
     pcaAxisOptions: pcaAxisOptions.value,
+    scoreColorOptions: scoreColorOptions.value,
     regressionTargetOptions: regressionTargetOptions.value,
     spectraDisplayOptions,
     genericDisplayOptions,
@@ -3037,6 +3398,8 @@ const classificationAccuracyLayout = computed(() => {
     // MCR / SIMPLISMA / NMF / ICA
     mcrConcentrationData: mcrConcentrationData.value, mcrConcentrationLayout: mcrConcentrationLayout.value,
     mcrSpectraData: mcrSpectraData.value, mcrSpectraLayout: mcrSpectraLayout.value,
+    mcrValidationScatterData: mcrValidationScatterData.value, mcrValidationScatterLayout: mcrValidationScatterLayout.value,
+    mcrValidationSpectrumData: mcrValidationSpectrumData.value, mcrValidationSpectrumLayout: mcrValidationSpectrumLayout.value,
     mcrOriginalContourData: mcrOriginalContourData.value, mcrOriginalContourLayout: mcrOriginalContourLayout.value,
     mcrReconstructedContourData: mcrReconstructedContourData.value, mcrReconstructedContourLayout: mcrReconstructedContourLayout.value,
     mcrResidualContourData: mcrResidualContourData.value, mcrResidualContourLayout: mcrResidualContourLayout.value,
@@ -3057,7 +3420,8 @@ const classificationAccuracyLayout = computed(() => {
     // HCA / Peak / Plot node
     hcaDendrogramData: hcaDendrogramData.value, hcaDendrogramLayout: hcaDendrogramLayout.value,
     peakFindingPlotData: peakFindingPlotData.value, peakFindingPlotLayout: peakFindingPlotLayout.value,
-    plotNodeData: plotNodeData.value, plotNodeLayout: plotNodeLayout.value,
+    libraryComparePlotData: libraryComparePlotData.value, libraryComparePlotLayout: libraryComparePlotLayout.value,
+    plotNodeData: plotNodeData.value, plotNodeLayout: plotNodeLayout.value, plotNodeWarning: plotNodeWarning.value,
     // Spectra
     spectraOverlayData: spectraOverlayData.value, spectraOverlayLayout: spectraOverlayLayout.value,
     spectraContourData: spectraContourData.value, spectraContourLayout: spectraContourLayout.value,

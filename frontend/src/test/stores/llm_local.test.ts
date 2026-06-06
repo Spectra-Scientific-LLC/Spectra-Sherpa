@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-import { ref } from "vue";
 
 const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),

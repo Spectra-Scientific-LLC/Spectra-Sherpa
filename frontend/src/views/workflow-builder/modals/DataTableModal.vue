@@ -31,6 +31,17 @@
           />
         </div>
 
+        <div v-if="sampleFilterOptions.length > 1" class="control-group">
+          <label>{{ sampleFilterLabel }}</label>
+          <Dropdown
+            v-model="selectedSampleFilter"
+            :options="sampleFilterOptions"
+            optionLabel="label"
+            optionValue="value"
+            class="sample-filter-dropdown"
+          />
+        </div>
+
         <div class="control-group search-group">
           <label>Search</label>
           <InputText
@@ -61,7 +72,7 @@
           <span v-if="hasActiveFilter" class="stat-item">
             <strong>{{ filteredRowCount }}</strong> matched
           </span>
-          <span v-if="dataShape.rows > rowLimit" class="stat-item warning">
+          <span v-if="filteredRowCount > rowLimit" class="stat-item warning">
             Showing first {{ rowLimit }} rows
           </span>
         </div>
@@ -80,9 +91,10 @@
           v-if="tableData.length > 0"
           :value="tableData"
           :scrollable="true"
-          scrollHeight="60vh"
-          :virtualScrollerOptions="{ itemSize: 40 }"
+          scrollHeight="flex"
+          :virtualScrollerOptions="{ itemSize: 28 }"
           class="data-table"
+          size="small"
           stripedRows
         >
           <Column
@@ -132,7 +144,7 @@
 
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any -- table modal accepts generic node outputs and loose Plotly-shaped metadata. */
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
 import InputText from "primevue/inputtext";
@@ -170,13 +182,14 @@ const rowLimit = ref(100);
 const precision = ref(6);
 const searchQuery = ref("");
 const searchScope = ref<"all" | "label">("all");
+const selectedSampleFilter = ref("__all__");
 
 const rowLimitOptions = [
   { label: "50 rows", value: 50 },
   { label: "100 rows", value: 100 },
   { label: "500 rows", value: 500 },
   { label: "1000 rows", value: 1000 },
-  { label: "All rows", value: 10000 },
+  { label: "All rows", value: 100000 },
 ];
 
 const precisionOptions = [
@@ -190,6 +203,9 @@ const searchScopeOptions = [
   { label: "All fields", value: "all" },
   { label: "Labels only", value: "label" },
 ];
+
+const isLibraryCompareOutput = computed(() => props.nodeType === "analysis.compare_library");
+const sampleFilterLabel = computed(() => isLibraryCompareOutput.value ? "Spectrum" : "Sample");
 
 // Check if data is Plotly visualization format (from CONTOUR_PLOT, PLOT nodes)
 const isPlotlyFormat = computed(() => {
@@ -493,7 +509,7 @@ const previewTableData = computed(() => {
   // ``tableColumns`` emits.  ``_label_full`` stays empty — there's no
   // sample label concept for per-target metrics tables.
   if (isRowDictFormat.value) {
-    for (let i = 0; i < maxRows; i += 1) {
+    for (let i = 0; i < data.length; i += 1) {
       const src = data[i];
       if (!src || typeof src !== "object" || Array.isArray(src)) continue;
       const row: any = { _index: i + 1, _label_full: "" };
@@ -573,19 +589,54 @@ const previewTableData = computed(() => {
   return rows;
 });
 
-const hasActiveFilter = computed(() => searchQuery.value.trim().length > 0);
+const sampleFilterOptions = computed(() => {
+  if (!isRowDictFormat.value) return [];
+  const seen = new Set<string>();
+  const options = isLibraryCompareOutput.value
+    ? []
+    : [{ label: "All samples", value: "__all__" }];
+  for (const row of previewTableData.value) {
+    const sample = row?.sample;
+    if (sample === null || sample === undefined || sample === "") continue;
+    const label = String(sample);
+    if (seen.has(label)) continue;
+    seen.add(label);
+    options.push({ label, value: label });
+  }
+  return options;
+});
 
-const tableData = computed(() => {
-  if (!hasActiveFilter.value) return previewTableData.value;
+watch(
+  sampleFilterOptions,
+  (options) => {
+    if (!options.some((option) => option.value === selectedSampleFilter.value)) {
+      selectedSampleFilter.value = isLibraryCompareOutput.value && options.length > 0
+        ? options[0].value
+        : "__all__";
+    }
+  },
+  { immediate: true }
+);
+
+const hasActiveFilter = computed(() => (
+  searchQuery.value.trim().length > 0 || selectedSampleFilter.value !== "__all__"
+));
+
+const filteredTableRows = computed(() => {
+  const sampleFiltered = selectedSampleFilter.value === "__all__"
+    ? previewTableData.value
+    : previewTableData.value.filter((row: Record<string, any>) => String(row.sample ?? "") === selectedSampleFilter.value);
+
+  if (!hasActiveFilter.value) return sampleFiltered;
 
   const tokens = searchQuery.value
     .trim()
     .toLowerCase()
     .split(/\s+/)
     .filter(Boolean);
-  if (tokens.length === 0) return previewTableData.value;
+  if (tokens.length === 0) return sampleFiltered;
 
-  return previewTableData.value.filter((row: Record<string, any>) => {
+  return sampleFiltered.filter((row: Record<string, any>) => {
     const fields = searchScope.value === "label"
       ? [row._label_full ?? row._label ?? ""]
       : Object.values(row);
@@ -594,7 +645,13 @@ const tableData = computed(() => {
   });
 });
 
-const filteredRowCount = computed(() => tableData.value.length);
+const tableData = computed(() => (
+  isRowDictFormat.value
+    ? filteredTableRows.value.slice(0, rowLimit.value)
+    : filteredTableRows.value
+));
+
+const filteredRowCount = computed(() => filteredTableRows.value.length);
 
 // Metadata handling
 const hasMetadata = computed(() => {
@@ -784,16 +841,20 @@ function exportCSV() {
 .data-table-modal :deep(.p-dialog-content) {
   padding: 0;
   background: #0f172a;
+  max-height: calc(100vh - 120px);
+  overflow: hidden;
 }
 
 .table-container {
   display: flex;
   flex-direction: column;
-  height: 75vh;
+  height: min(75vh, calc(100vh - 120px));
   min-height: 500px;
+  overflow: hidden;
 }
 
 .table-controls {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   gap: 20px;
@@ -830,6 +891,11 @@ function exportCSV() {
   min-width: 140px;
 }
 
+.sample-filter-dropdown {
+  min-width: 180px;
+  max-width: 280px;
+}
+
 .stats-summary {
   margin-left: auto;
   gap: 16px;
@@ -850,23 +916,29 @@ function exportCSV() {
 
 .table-wrapper {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
 }
 
 .data-table {
-  font-size: 0.85rem;
+  flex: 1;
+  min-height: 0;
+  font-size: 0.8rem;
 }
 
 .data-table :deep(.p-datatable-wrapper) {
   background: #0f172a;
+  min-height: 0;
 }
 
 .data-table :deep(.p-datatable-thead > tr > th) {
   background: #1e293b;
   color: #f8fafc;
   border-color: #334155;
-  padding: 10px 12px;
+  padding: 6px 10px;
   font-weight: 600;
 }
 
@@ -881,7 +953,8 @@ function exportCSV() {
 
 .data-table :deep(.p-datatable-tbody > tr > td) {
   border-color: #334155;
-  padding: 8px 12px;
+  padding: 5px 10px;
+  line-height: 1.25;
 }
 
 .data-table :deep(.p-datatable-tbody > tr:hover) {
@@ -890,7 +963,7 @@ function exportCSV() {
 
 .numeric-cell {
   font-family: "JetBrains Mono", "Fira Code", monospace;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
 }
 
 .label-cell {
@@ -900,7 +973,7 @@ function exportCSV() {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: "JetBrains Mono", "Fira Code", monospace;
-  font-size: 0.8rem;
+  font-size: 0.76rem;
 }
 
 .empty-table {
@@ -929,6 +1002,9 @@ function exportCSV() {
 }
 
 .metadata-panel {
+  flex: 0 0 auto;
+  max-height: 22vh;
+  overflow: auto;
   padding: 16px 20px;
   background: #1e293b;
   border-top: 1px solid #334155;

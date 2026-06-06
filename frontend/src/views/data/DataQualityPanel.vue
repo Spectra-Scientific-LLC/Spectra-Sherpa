@@ -19,7 +19,7 @@
       <!-- Labels -->
       <div v-if="sampleLabels.length > 0" class="dq-labels">
         <span class="dq-range-label">
-          Labels ({{ sampleLabels.length }})
+          Sample IDs ({{ sampleLabels.length }})
         </span>
         <div class="dq-label-list" :class="{ 'dq-label-list--expanded': labelsExpanded }">
           <Tag
@@ -43,6 +43,22 @@
           >
             Show less
           </span>
+        </div>
+      </div>
+
+      <div v-if="targetLabels.length > 0" class="dq-labels">
+        <span class="dq-range-label">
+          Target labels ({{ targetLabels.length }})
+          <span v-if="targetUnits"> · {{ targetUnits }}</span>
+        </span>
+        <div class="dq-label-list">
+          <Tag
+            v-for="label in targetLabels"
+            :key="label"
+            :value="label"
+            severity="success"
+            class="dq-label-tag"
+          />
         </div>
       </div>
 
@@ -87,15 +103,36 @@ const LABEL_PREVIEW_COUNT = 5;
 
 const meta = computed(() => {
   const m = props.datasetDict?.metadata as Record<string, unknown> | undefined;
+  const targetContext = props.datasetDict?.target_context;
   return {
     labels: (m?.labels ?? m?.sample_labels ?? []) as string[],
     wavenumbers: (m?.wavenumbers ?? []) as number[],
     is_spectra: (m?.is_spectra ?? false) as boolean,
+    data_role: (m?.data_role ?? m?.["sherpa.data_role"] ?? null) as string | null,
     spectral_technique: (m?.spectral_technique ?? null) as string | null,
+    target_class_names: (targetContext?.class_names ?? m?.class_names ?? []) as string[],
   };
 });
 
-const sampleLabels = computed(() => meta.value.labels);
+const targetUnits = computed(() => props.datasetDict?.target_context?.target_units ?? "");
+const sampleLabels = computed(() => {
+  if (meta.value.labels.length) return meta.value.labels;
+  const yLabels = props.datasetDict?.y_axis?.labels;
+  return Array.isArray(yLabels) ? yLabels.map((label) => String(label)) : [];
+});
+
+const targetLabels = computed(() => {
+  const context = props.datasetDict?.target_context;
+  const labels = context?.target_names ?? context?.class_names ?? meta.value.target_class_names;
+  return Array.isArray(labels) ? labels.map((label) => String(label)).filter(Boolean) : [];
+});
+
+const isSpectralDataset = computed(() => {
+  const role = meta.value.data_role;
+  if (role === "X_spectra") return true;
+  if (role === "X_features") return false;
+  return meta.value.is_spectra || meta.value.wavenumbers.length > 1;
+});
 
 const visibleLabels = computed(() => {
   if (labelsExpanded.value) return sampleLabels.value;
@@ -116,19 +153,47 @@ const qcFlags = computed<QcFlag[]>(() => {
   if (!sd) return [];
   const flags: QcFlag[] = [];
 
-  // Spectra count
+  const sampleLabel = isSpectralDataset.value ? "spectra" : "samples";
+  const featureLabel = isSpectralDataset.value ? "spectral variables" : "features";
+
+  // Sample count
   if (sd.n_samples >= 3) {
-    flags.push({ severity: "success", message: "Multiple spectra loaded" });
+    flags.push({ severity: "success", message: `Multiple ${sampleLabel} loaded` });
   } else {
     flags.push({
       severity: "warning",
-      message: "Very few spectra — statistical methods may be unreliable",
+      message: `Very few ${sampleLabel} — statistical methods may be unreliable`,
     });
   }
 
-  // Spectral range (only if numeric feature axis)
+  // Feature count
+  if (sd.n_features >= 2) {
+    flags.push({ severity: "success", message: `${sd.n_features.toLocaleString()} ${featureLabel} detected` });
+  } else {
+    flags.push({ severity: "warning", message: "Only one feature detected" });
+  }
+
+  // Missing/non-finite values
+  let total = 0;
+  let missing = 0;
+  for (const row of sd.data ?? []) {
+    for (const value of row ?? []) {
+      total += 1;
+      if (value == null || !Number.isFinite(value)) missing += 1;
+    }
+  }
+  if (total > 0) {
+    if (missing === 0) {
+      flags.push({ severity: "success", message: "No missing values detected" });
+    } else {
+      const pct = ((missing / total) * 100).toFixed(2);
+      flags.push({ severity: "warning", message: `${missing.toLocaleString()} missing values (${pct}%)` });
+    }
+  }
+
+  // Spectral range (only if numeric spectral axis)
   const wn = meta.value.wavenumbers;
-  if (wn.length > 1) {
+  if (isSpectralDataset.value && wn.length > 1) {
     const range = Math.abs(wn[wn.length - 1] - wn[0]);
     if (range > 100) {
       flags.push({ severity: "success", message: "Adequate spectral range" });
@@ -139,7 +204,12 @@ const qcFlags = computed<QcFlag[]>(() => {
 
   // Labels
   if (sampleLabels.value.length === 0) {
-    flags.push({ severity: "info", message: "No sample labels detected" });
+    flags.push({
+      severity: "info",
+      message: targetLabels.value.length
+        ? "No sample IDs detected; target labels are available"
+        : "No sample IDs detected",
+    });
   }
 
   return flags;

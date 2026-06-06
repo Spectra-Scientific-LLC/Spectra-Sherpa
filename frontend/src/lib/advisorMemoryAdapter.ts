@@ -6,7 +6,7 @@
  * server/local split behind a single interface so the rest of the app
  * does not need to know which mode it is in.
  *
- * Server-backed mode (hybrid / enterprise) talks to spectra-server's
+ * Server-backed mode (hybrid / enterprise) talks to the managed server's
  * ``/api/v1/memory/*`` endpoints.  Local mode keeps a minimal per-scope
  * topic list in ``localStorage`` — no graph, no facts, no compaction,
  * no Memory Map.

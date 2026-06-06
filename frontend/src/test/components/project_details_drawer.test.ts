@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   projectStore: {
     currentProjectId: 1 as number | null,
     currentProject: null as ProjectDetail | null,
+    versions: [] as unknown[],
     selectProject: vi.fn(),
   },
   workbookStore: {
@@ -65,13 +66,17 @@ const ButtonStub = defineComponent({
 
 const TagStub = defineComponent({
   name: "Tag",
-  props: ["value"],
+  props: {
+    value: { type: String, default: "" },
+  },
   template: `<span>{{ value }}</span>`,
 });
 
 const BadgeStub = defineComponent({
   name: "Badge",
-  props: ["value"],
+  props: {
+    value: { type: [String, Number], default: "" },
+  },
   template: `<span>{{ value }}</span>`,
 });
 
@@ -91,7 +96,15 @@ const makeProject = (): ProjectDetail => ({
   created_at: "2026-05-01T00:00:00Z",
   updated_at: "2026-05-01T00:00:00Z",
   metadata: {},
-  experiments: [],
+  experiments: [
+    {
+      id: 200,
+      name: "Wine",
+      description: "Sklearn wine reference dataset",
+      file_count: 1,
+      facts: ["178 samples", "13 features"],
+    },
+  ],
   data_sources: [
     {
       id: 100,
@@ -124,6 +137,7 @@ const makeProject = (): ProjectDetail => ({
   scripts: [],
   models: [],
   children: [],
+  versions: [],
 });
 
 const mountDrawer = () =>
@@ -146,6 +160,7 @@ describe("ProjectDetailsDrawer", () => {
     vi.clearAllMocks();
     mocks.projectStore.currentProjectId = 1;
     mocks.projectStore.currentProject = makeProject();
+    mocks.projectStore.versions = [];
     mocks.projectStore.selectProject.mockResolvedValue(undefined);
     mocks.workbookStore.activeSheet = { workflowId: 10 };
     mocks.workbookStore.selectWorkflowSheet.mockResolvedValue(undefined);
@@ -173,10 +188,12 @@ describe("ProjectDetailsDrawer", () => {
   it("renders project data sources and workflow provenance", () => {
     const wrapper = mountDrawer();
 
-    expect(wrapper.text()).toContain("Data Sources (1)");
-    expect(wrapper.text()).toContain("Sklearn: Wine");
-    expect(wrapper.text()).toContain("SheetsPCA Analysis");
+    expect(wrapper.text()).toContain("Data (1)");
+    expect(wrapper.text()).toContain("Wine");
+    expect(wrapper.text()).toContain("178 samples");
+    expect(wrapper.text()).toContain("Workflows (2)");
+    expect(wrapper.text()).toContain("PCA Analysis");
     expect(wrapper.text()).toContain("Data: Sklearn: Wine");
-    expect(wrapper.text()).toContain("Created from PCA Exploration");
+    expect(wrapper.text()).toContain("Started from PCA Exploration");
   });
 });

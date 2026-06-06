@@ -4,6 +4,7 @@ import api from "@/api/client";
 import { createSherpaRequestId, subscribeSherpaEvents } from "@/lib/sherpaEvents";
 import { SHERPA_WS_ACTION, SHERPA_WS_EVENT } from "@/lib/sherpaWs";
 import { useAdvisorStore } from "@/stores/advisor";
+import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
 import { getErrorMessage } from "@/utils/errors";
 import type {
@@ -19,6 +20,36 @@ import type {
 } from "@/stores/workflow";
 
 type StoryObject = Record<string, unknown>;
+const LAST_ACTIVE_EXPERIMENT_PREFIX = "spectra_sherpa_last_experiment";
+
+const lastActiveExperimentKey = (): string => {
+  const userId = useAuthStore().user?.id ?? "local";
+  const projectId = useProjectStore().currentProjectId ?? "no-project";
+  return `${LAST_ACTIVE_EXPERIMENT_PREFIX}_${userId}_${projectId}`;
+};
+
+const readLastActiveExperimentId = (): number | null => {
+  try {
+    const raw = localStorage.getItem(lastActiveExperimentKey());
+    const parsed = raw === null ? NaN : Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const writeLastActiveExperimentId = (id: number | null): void => {
+  try {
+    const key = lastActiveExperimentKey();
+    if (id === null) {
+      localStorage.removeItem(key);
+    } else {
+      localStorage.setItem(key, String(id));
+    }
+  } catch {
+    /* localStorage may be unavailable in hardened browsers/tests. */
+  }
+};
 
 export interface DataStoryPropertyStat {
   name: string;
@@ -55,16 +86,118 @@ export interface CatalogDatasetInfo {
   property_stats?: DataStoryPropertyStat[];
   file_metadata?: DataStoryFileMetadata;
   metadata?: StoryObject;
+  // Preview payload powering the Inspect-tab chart on the catalog
+  // branch. Spectral catalogs ship row-per-spectrum arrays in
+  // `preview_spectra` plus the matching `wavelengths` axis; tabular
+  // (sklearn) catalogs ship one row per sample plus `feature_labels`
+  // so the frontend can render a box plot.
+  preview_spectra?: (number | null)[][];
+  wavelengths?: number[];
+  feature_labels?: string[];
 }
 
 export interface ReferenceCatalog {
+  synthetic: ReferenceDatasetOption[];
   eigenvector: ReferenceDatasetOption[];
   oes: ReferenceDatasetOption[];
   spectrochempy: ReferenceDatasetOption[];
   sklearn: ReferenceDatasetOption[];
 }
 
+export interface PreparedDataOverrides {
+  title?: string | null;
+  x_title?: string | null;
+  x_units?: string | null;
+  y_title?: string | null;
+  data_role?: string | null;
+  target_column?: string | null;
+  target_type?: string | null;
+  is_time_series?: boolean | null;
+}
+
+export type DataMatrixRef =
+  | { kind: "reference"; source: string; name: string; overrides?: PreparedDataOverrides | null }
+  | { kind: "staged"; staging_id: string; overrides?: PreparedDataOverrides | null }
+  | { kind: "experiment_file"; experiment_id: number; file_id: number; overrides?: PreparedDataOverrides | null };
+
+export interface DataMatrixColumnStat {
+  label: string;
+  count: number;
+  missing: number;
+  missing_pct: number;
+  min: number | null;
+  max: number | null;
+  mean: number | null;
+  std: number | null;
+}
+
+export interface DataMatrixTargetClass {
+  value: number | string | null;
+  label: string;
+  count: number;
+  pct: number;
+}
+
+export interface DataMatrixTargetSummary {
+  has_target: boolean;
+  target_type: string | null;
+  target_name: string | null;
+  target_names?: string[] | null;
+  target_units?: string | null;
+  n_targets: number;
+  count: number;
+  missing: number;
+  missing_pct: number;
+  class_names?: string[] | null;
+  n_classes?: number | null;
+  classes?: DataMatrixTargetClass[];
+  min?: number | null;
+  max?: number | null;
+  mean?: number | null;
+  std?: number | null;
+}
+
+export interface DataMatrixResponse {
+  shape: [number, number];
+  shape_label: string;
+  x_title: string | null;
+  x_units: string | null;
+  y_title: string | null;
+  data_role: string;
+  data_modality: string;
+  is_spectra: boolean;
+  row_start: number;
+  col_start: number;
+  rows_shown: number;
+  cols_shown: number;
+  total_rows: number;
+  total_cols: number;
+  truncated: boolean;
+  row_labels: string[];
+  col_labels: string[];
+  matrix: (number | string | null)[][];
+  target: DataMatrixTargetSummary | null;
+  stats: {
+    per_column: DataMatrixColumnStat[];
+    summary: {
+      n_samples: number;
+      n_features: number;
+      global_min: number | null;
+      global_max: number | null;
+      global_mean: number | null;
+      total_missing_pct: number;
+    };
+  };
+}
+
+export interface StagedUpload {
+  staging_id: string;
+  filename: string;
+  size_bytes: number;
+}
+
 export interface SherpaDatasetContext {
+  dataset_id: string | null;
   label: string | null;
   source: string | null;
   dataset_name: string | null;
@@ -227,6 +360,8 @@ export function summarizeDatasetForSherpaContext(
     asStringList(metadata.prop_names);
 
   return {
+    dataset_id:
+      typeof datasetInfo.dataset_id === "string" ? datasetInfo.dataset_id : null,
     label:
       typeof datasetInfo.label === "string"
         ? datasetInfo.label
@@ -331,12 +466,20 @@ export const useDataStore = defineStore("data", () => {
     () => availableDatasets.value?.library ?? []
   );
 
+  const currentProjectId = () => useProjectStore().currentProjectId;
+
   // --- Actions ---
 
-  const fetchCatalog = async () => {
+  const fetchCatalog = async (projectId: number | null = currentProjectId()) => {
     catalogLoading.value = true;
     try {
-      const response = await api.get<AvailableDatasets>("/datasets/available");
+      if (projectId == null) {
+        availableDatasets.value = { experiments: [], library: [], builder: [] };
+        return;
+      }
+      const response = await api.get<AvailableDatasets>("/datasets/available", {
+        params: { project_id: projectId },
+      });
       availableDatasets.value = response.data;
     } catch (error) {
       console.error("Failed to fetch dataset catalog:", error);
@@ -345,10 +488,16 @@ export const useDataStore = defineStore("data", () => {
     }
   };
 
-  const fetchExperiments = async () => {
+  const fetchExperiments = async (projectId: number | null = currentProjectId()) => {
     experimentsLoading.value = true;
     try {
-      const response = await api.get<ExperimentSummary[]>("/experiments");
+      if (projectId == null) {
+        experiments.value = [];
+        return;
+      }
+      const response = await api.get<ExperimentSummary[]>("/experiments", {
+        params: { project_id: projectId },
+      });
       experiments.value = response.data;
     } catch (error) {
       console.error("Failed to fetch experiments:", error);
@@ -359,6 +508,7 @@ export const useDataStore = defineStore("data", () => {
 
   const selectExperiment = async (experimentId: number) => {
     activeExperimentId.value = experimentId;
+    writeLastActiveExperimentId(experimentId);
     experimentFilesLoading.value = true;
     try {
       const response = await api.get<ExperimentFile[]>(
@@ -373,14 +523,28 @@ export const useDataStore = defineStore("data", () => {
     }
   };
 
-  const createExperiment = async (name: string, description?: string, projectId?: number | null) => {
+  const createExperiment = async (
+    name: string,
+    description?: string,
+    projectId?: number | null,
+    metadata?: Record<string, unknown>,
+  ) => {
     const response = await api.post("/experiments", {
       name,
       description: description || null,
-      metadata: {},
+      metadata: metadata ?? {},
       project_id: projectId ?? null,
     });
     // Refresh both lists
+    await Promise.all([fetchExperiments(), fetchCatalog()]);
+    return response.data;
+  };
+
+  const updateExperiment = async (
+    experimentId: number,
+    payload: { name?: string; description?: string | null; metadata?: Record<string, unknown> }
+  ) => {
+    const response = await api.put(`/experiments/${experimentId}`, payload);
     await Promise.all([fetchExperiments(), fetchCatalog()]);
     return response.data;
   };
@@ -414,23 +578,91 @@ export const useDataStore = defineStore("data", () => {
       } else {
         activeExperimentId.value = null;
         experimentFiles.value = [];
+        writeLastActiveExperimentId(null);
       }
     }
+  };
+
+  const restoreActiveExperimentForCurrentProject = async () => {
+    if (activeExperimentId.value !== null) {
+      return;
+    }
+    if (experiments.value.length === 0) {
+      await fetchExperiments();
+    }
+    const remembered = readLastActiveExperimentId();
+    if (
+      remembered !== null &&
+      experiments.value.some((experiment) => experiment.id === remembered)
+    ) {
+      await selectExperiment(remembered);
+    }
+  };
+
+  const clearActiveExperimentSelection = () => {
+    activeExperimentId.value = null;
+    experimentFiles.value = [];
   };
 
   const uploadFile = async (
     experimentId: number,
     file: File,
-    stage: string
+    stage: string,
+    options?: {
+      dataRole?: string | null;
+      targetColumn?: string | null;
+      targetType?: string | null;
+    }
   ) => {
     const form = new FormData();
     form.append("file", file);
     form.append("stage", stage);
+    if (options?.dataRole) {
+      form.append("data_role", options.dataRole);
+    }
+    if (options?.targetColumn) {
+      form.append("target_column", options.targetColumn);
+    }
+    if (options?.targetType && options.targetType !== "auto") {
+      form.append("target_type", options.targetType);
+    }
     await api.post(`/experiments/${experimentId}/files`, form, {
       headers: { "Content-Type": "multipart/form-data" },
     });
     // Refresh file list and catalog
     await Promise.all([selectExperiment(experimentId), fetchCatalog()]);
+  };
+
+  const fetchDataMatrix = async (ref: DataMatrixRef): Promise<DataMatrixResponse> => {
+    const response = await api.post<DataMatrixResponse>("/builder/data-matrix", ref);
+    return response.data;
+  };
+
+  const stageUploadFile = async (file: File): Promise<StagedUpload> => {
+    const form = new FormData();
+    form.append("file", file);
+    const response = await api.post<StagedUpload>("/builder/upload/stage", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return response.data;
+  };
+
+  const deleteStagedUpload = async (stagingId: string): Promise<void> => {
+    await api.delete(`/builder/upload/stage/${stagingId}`);
+  };
+
+  const commitStagedUploads = async (
+    experimentId: number,
+    stage: string,
+    files: Array<{ staging_id: string; overrides?: PreparedDataOverrides | null }>,
+  ) => {
+    const response = await api.post("/builder/upload/commit", {
+      experiment_id: experimentId,
+      stage,
+      files,
+    });
+    await Promise.all([selectExperiment(experimentId), fetchExperiments(), fetchCatalog()]);
+    return response.data;
   };
 
   const deleteFile = async (experimentId: number, fileId: number) => {
@@ -458,6 +690,28 @@ export const useDataStore = defineStore("data", () => {
     } catch (error: unknown) {
       fileInfo.value = null;
       fileInfoError.value = getErrorMessage(error, "Failed to inspect file");
+      throw error;
+    } finally {
+      fileInfoLoading.value = false;
+    }
+  };
+
+  const inspectExperimentRawFiles = async (experimentId: number) => {
+    activeFileId.value = null;
+    activeFilePath.value = null;
+    fileInfoLoading.value = true;
+    fileInfo.value = null;
+    fileInfoError.value = null;
+    clearCatalogExploration();
+    try {
+      const response = await api.post<SherpaDatasetDict>("/builder/file-info", {
+        experiment_id: experimentId,
+      });
+      fileInfo.value = response.data;
+      return response.data;
+    } catch (error: unknown) {
+      fileInfo.value = null;
+      fileInfoError.value = getErrorMessage(error, "Failed to inspect dataset contents");
       throw error;
     } finally {
       fileInfoLoading.value = false;
@@ -505,13 +759,56 @@ export const useDataStore = defineStore("data", () => {
 
   const importReferenceDatasets = async (
     experimentId: number,
-    datasets: Array<{ source: string; name: string }>
+    datasets: Array<{ source: string; name: string; overrides?: PreparedDataOverrides | null }>
   ) => {
     const response = await api.post(
       `/experiments/${experimentId}/import-reference`,
       { datasets }
     );
     // Refresh file list and experiment list to reflect new files
+    await Promise.all([selectExperiment(experimentId), fetchExperiments(), fetchCatalog()]);
+    return response.data;
+  };
+
+  const importLibraryDatasets = async (
+    experimentId: number,
+    payload: {
+      source?: "nist" | "hitran" | "hitran_xsec";
+      library_ids?: number[];
+      component_ids?: string[];
+      component_specs?: Array<{
+        component_id: string;
+        resolution_cm1?: number | null;
+        wavenumber_min?: number | null;
+        wavenumber_max?: number | null;
+        temperature_k?: number | null;
+        pressure_atm?: number | null;
+      }>;
+      spectra?: Array<{
+        component_id: string;
+        name: string;
+        source: string;
+        wavenumber: number[];
+        intensity: number[];
+        y_quantity: string;
+        y_units?: string | null;
+        resolution_cm1?: number | null;
+        apodization?: string | null;
+      }>;
+      range_mode?: "common" | "widest";
+      resolution_cm1?: number | null;
+      wavenumber_min?: number | null;
+      wavenumber_max?: number | null;
+      temperature_k?: number | null;
+      pressure_atm?: number | null;
+    } | number[]
+  ) => {
+    const requestPayload = Array.isArray(payload)
+      ? { experiment_id: experimentId, library_ids: payload }
+      : { experiment_id: experimentId, ...payload };
+    const response = await api.post("/datasets/library/import", {
+      ...requestPayload,
+    });
     await Promise.all([selectExperiment(experimentId), fetchExperiments(), fetchCatalog()]);
     return response.data;
   };
@@ -688,15 +985,24 @@ export const useDataStore = defineStore("data", () => {
     fetchCatalog,
     fetchExperiments,
     selectExperiment,
+    restoreActiveExperimentForCurrentProject,
+    clearActiveExperimentSelection,
     createExperiment,
+    updateExperiment,
     deleteExperiment,
     uploadFile,
+    fetchDataMatrix,
+    stageUploadFile,
+    deleteStagedUpload,
+    commitStagedUploads,
     deleteFile,
     inspectFile,
+    inspectExperimentRawFiles,
     downloadFile,
     clearInspection,
     fetchReferenceCatalog,
     importReferenceDatasets,
+    importLibraryDatasets,
     exploreCatalogDataset,
     generateDataStory,
     clearCatalogExploration,

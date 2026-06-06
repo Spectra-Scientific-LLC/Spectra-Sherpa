@@ -1,20 +1,8 @@
 <template>
   <section class="page-content">
-    <div class="section-header">
-      <div>
-        <h1>Deploy</h1>
-        <p class="section-subtitle">
-          Monitor folders for new spectral files and auto-process through workflows
-        </p>
-      </div>
-      <div class="header-actions">
-        <Button
-          label="New Watch"
-          icon="pi pi-plus"
-          class="p-button-sm"
-          data-action="create_folder_watch"
-          @click="showCreateDialog = true"
-        />
+    <header class="tab-header">
+      <h1>Deploy</h1>
+      <ResponsiveHeaderActions :items="headerActionItems">
         <Button
           icon="pi pi-refresh"
           class="p-button-sm p-button-text"
@@ -22,8 +10,15 @@
           title="Refresh"
           @click="refreshAll"
         />
-      </div>
-    </div>
+        <Button
+          label="New Watch"
+          icon="pi pi-plus"
+          class="p-button-sm"
+          data-action="create_folder_watch"
+          @click="showCreateDialog = true"
+        />
+      </ResponsiveHeaderActions>
+    </header>
 
     <TabView v-model:activeIndex="activeTab">
       <!-- ======================== FOLDER WATCHES TAB ======================== -->
@@ -192,7 +187,7 @@
             </template>
           </Column>
 
-          <Column header="Models" style="min-width: 170px">
+          <Column header="Artifacts" style="min-width: 170px">
             <template #body="{ data }">
               <span class="workflow-ref" :title="(data.model_ids || []).join(', ')">
                 {{ formatModelIds(data.model_ids) }}
@@ -235,7 +230,7 @@
                     {{ pred.processing_time_ms ? `${pred.processing_time_ms}ms` : "\u2014" }}
                   </template>
                 </Column>
-                <Column header="Model" style="min-width: 130px">
+                <Column header="Artifact" style="min-width: 130px">
                   <template #body="{ data: pred }">
                     <span class="workflow-ref" :title="pred.model_id || ''">
                       {{ shortModelId(pred.model_id) }}
@@ -268,7 +263,7 @@
         <div class="form-field">
           <label for="watch-workflow">Workflow</label>
           <Dropdown
-            id="watch-workflow"
+            inputId="watch-workflow"
             v-model="newWatch.workflow_id"
             :options="workflowOptions"
             optionLabel="name"
@@ -308,7 +303,7 @@
           <div class="form-field">
             <label for="watch-interval">Poll Interval (sec)</label>
             <InputNumber
-              id="watch-interval"
+              inputId="watch-interval"
               v-model="newWatch.poll_interval_sec"
               :min="10"
               :max="86400"
@@ -380,6 +375,7 @@ import ProgressSpinner from "primevue/progressspinner";
 import { useToast } from "primevue/usetoast";
 
 import LabelChips from "@/components/LabelChips.vue";
+import ResponsiveHeaderActions from "@/components/ResponsiveHeaderActions.vue";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useDeployStore } from "@/stores/deploy";
 import { useProjectStore } from "@/stores/project";
@@ -440,6 +436,21 @@ const workflowOptions = ref<WorkflowOption[]>([]);
 
 // Watch CRUD state
 const showCreateDialog = ref(false);
+const headerActionItems = computed(() => [
+  {
+    label: "Refresh",
+    icon: "pi pi-refresh",
+    disabled: deployStore.loading,
+    command: refreshAll,
+  },
+  {
+    label: "New Watch",
+    icon: "pi pi-plus",
+    command: () => {
+      showCreateDialog.value = true;
+    },
+  },
+]);
 const creating = ref(false);
 const newWatch = reactive({
   workflow_id: null as number | null,
@@ -641,25 +652,9 @@ function formatRelativeTime(isoString: string): string {
 .page-content {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-}
-
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-}
-
-.section-header h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-}
-
-.section-subtitle {
-  margin: 4px 0 0;
-  color: #64748b;
-  font-size: 0.9rem;
+  gap: 2rem;
+  padding: 0 1rem;
+  color: var(--text-color);
 }
 
 .header-actions {
@@ -800,5 +795,63 @@ function formatRelativeTime(isoString: string): string {
 
 .w-full {
   width: 100%;
+}
+
+/* ===== Sub-tab styling ============================================
+   Match DataContent.vue: transparent panels, hairline rule beneath the
+   nav, primary-color underline marks the active sub-tab. Keeps Deploy's
+   "Folder Watches / Prediction History" visually consistent with Data's
+   "Import / Synthesis / Upload / ..." sub-tabs. */
+.page-content :deep(.p-tabview) {
+  background: transparent;
+}
+
+.page-content :deep(.p-tabview-nav-container),
+.page-content :deep(.p-tabview-nav-content) {
+  background: transparent;
+}
+
+.page-content :deep(.p-tabview-nav) {
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--surface-border);
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.page-content :deep(.p-tabview-nav li) {
+  margin: 0;
+  background: transparent;
+}
+
+.page-content :deep(.p-tabview-nav .p-tabview-nav-link) {
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0;
+  border-bottom: 2px solid transparent !important;
+  color: var(--text-color-secondary);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  padding: 0.6rem 1rem;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  box-shadow: none !important;
+}
+
+.page-content :deep(.p-tabview-nav li:not(.p-disabled):not(.p-highlight) .p-tabview-nav-link:hover) {
+  color: var(--primary-color);
+  border-bottom-color: color-mix(in srgb, var(--primary-color) 40%, transparent) !important;
+}
+
+.page-content :deep(.p-tabview-nav li.p-highlight .p-tabview-nav-link) {
+  color: var(--primary-color);
+  border-bottom-color: var(--primary-color) !important;
+}
+
+.page-content :deep(.p-tabview-panels) {
+  background: transparent;
+  padding: 1.5rem 0 0;
 }
 </style>

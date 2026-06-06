@@ -77,6 +77,8 @@ type PlotlyElement = HTMLDivElement & {
 
 let plotlyClientPromise: Promise<PlotlyClient> | null = null;
 let listenersBound = false;
+let resizeObserver: ResizeObserver | null = null;
+let resizeFrame: number | null = null;
 
 const cloneForPlotly = <T>(value: T): T => {
   if (value == null) {
@@ -120,6 +122,20 @@ const setupEventListeners = () => {
   listenersBound = true;
 };
 
+const scheduleResize = () => {
+  if (resizeFrame !== null) {
+    cancelAnimationFrame(resizeFrame);
+  }
+  resizeFrame = requestAnimationFrame(async () => {
+    resizeFrame = null;
+    if (!chartEl.value) return;
+    const Plotly = await getPlotlyClient();
+    if (chartEl.value) {
+      Plotly.Plots.resize(chartEl.value);
+    }
+  });
+};
+
 const render = async () => {
   if (!chartEl.value) {
     return;
@@ -136,13 +152,12 @@ onMounted(() => {
   void render();
   // Plotly computes width at render time; container may not be laid out yet.
   // Resize after the browser paints so the chart fills the full width.
-  void nextTick(async () => {
-    const Plotly = await getPlotlyClient();
-    requestAnimationFrame(() => {
-      if (chartEl.value) {
-        Plotly.Plots.resize(chartEl.value);
-      }
-    });
+  void nextTick(() => {
+    scheduleResize();
+    if (typeof ResizeObserver !== "undefined" && chartEl.value) {
+      resizeObserver = new ResizeObserver(scheduleResize);
+      resizeObserver.observe(chartEl.value);
+    }
   });
 });
 
@@ -178,6 +193,12 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+  if (resizeFrame !== null) {
+    cancelAnimationFrame(resizeFrame);
+    resizeFrame = null;
+  }
   if (chartEl.value && plotlyClientPromise) {
     const element = chartEl.value;
     void plotlyClientPromise.then((Plotly) => {

@@ -17,6 +17,20 @@ body {
   background: #f5f7fa;
 }
 
+.p-toast,
+.p-toast *,
+.notification-drawer,
+.notification-drawer * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.p-toast button,
+.notification-drawer button {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 a {
   color: inherit;
   text-decoration: none;
@@ -158,29 +172,184 @@ select {
   border: 1px solid #cbd5f5;
 }
 
-button:not(.p-button):not(.p-dialog-header-icon):not(.p-link) {
-  padding: 10px 16px;
-  border-radius: 8px;
-  border: none;
-  background: #1d4ed8;
-  color: white;
-  cursor: pointer;
+/*
+ * Action buttons use one visual grammar across the app. PrimeVue pages mix
+ * default, outlined, and text variants; normalize them to a consistent blue
+ * outline so every clickable button reads as an explicit action.
+ */
+.p-button:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+  color: #334155;
+  background: #ffffff;
+  border: 1px solid #2563eb;
+  box-shadow: none;
 }
 
-button.secondary:not(.p-button):not(.p-dialog-header-icon):not(.p-link) {
-  background: #475569;
+.p-button.p-button-text:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
+.p-button.p-button-outlined:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
+.p-button.p-button-secondary:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
+.p-button.p-button-primary:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
+.p-button.p-button-success:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
+.p-button.p-button-info:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
+.p-button.p-button-warning:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close),
+.p-button.p-button-danger:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+  background: #ffffff;
+  border-color: #2563eb;
+  box-shadow: none;
+}
+
+.p-button:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:hover,
+.p-button:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:focus {
+  color: #0f172a;
+  background: #eff6ff;
+  border-color: #1d4ed8;
+  box-shadow: none;
+}
+
+.p-button.p-button-secondary:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+  color: #475569;
+}
+
+.p-button.p-button-success:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+  color: #15803d;
+  border-color: #2563eb;
+}
+
+.p-button.p-button-info:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+  color: #0369a1;
+  border-color: #2563eb;
+}
+
+.p-button.p-button-warning:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+  color: #b45309;
+  border-color: #2563eb;
+}
+
+.p-button.p-button-danger:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close) {
+  color: #b91c1c;
+  border-color: #2563eb;
+}
+
+.p-button.p-button-success:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:hover,
+.p-button.p-button-success:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:focus {
+  color: #166534;
+  background: #f0fdf4;
+  border-color: #1d4ed8;
+}
+
+.p-button.p-button-info:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:hover,
+.p-button.p-button-info:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:focus {
+  color: #075985;
+  background: #f0f9ff;
+  border-color: #1d4ed8;
+}
+
+.p-button.p-button-warning:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:hover,
+.p-button.p-button-warning:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:focus {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #1d4ed8;
+}
+
+.p-button.p-button-danger:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:hover,
+.p-button.p-button-danger:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):enabled:focus {
+  color: #991b1b;
+  background: #fef2f2;
+  border-color: #1d4ed8;
+}
+
+.p-button:not(.p-dialog-header-icon):not(.p-sidebar-close):not(.p-toast-icon-close):disabled {
+  color: #94a3b8;
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.header-actions .p-button:not(.p-dialog-header-icon),
+.topbar .p-button:not(.p-dialog-header-icon),
+.hero-actions .p-button:not(.p-dialog-header-icon),
+.llm-chat-header-actions .p-button:not(.p-dialog-header-icon),
+.synthesis-toolbar > .p-button:not(.p-dialog-header-icon),
+.preview-toolbar > .p-button:not(.p-dialog-header-icon),
+.library-toolbar > .p-button:not(.p-dialog-header-icon),
+.artifact-toolbar > .p-button:not(.p-dialog-header-icon),
+.toolbar-header .p-button:not(.p-dialog-header-icon) {
+  background: #ffffff;
+  border-color: #2563eb;
+}
+
+.header-actions .p-button:not(.p-dialog-header-icon):enabled:hover,
+.header-actions .p-button:not(.p-dialog-header-icon):enabled:focus,
+.topbar .p-button:not(.p-dialog-header-icon):enabled:hover,
+.topbar .p-button:not(.p-dialog-header-icon):enabled:focus,
+.hero-actions .p-button:not(.p-dialog-header-icon):enabled:hover,
+.hero-actions .p-button:not(.p-dialog-header-icon):enabled:focus,
+.llm-chat-header-actions .p-button:not(.p-dialog-header-icon):enabled:hover,
+.llm-chat-header-actions .p-button:not(.p-dialog-header-icon):enabled:focus,
+.synthesis-toolbar > .p-button:not(.p-dialog-header-icon):enabled:hover,
+.synthesis-toolbar > .p-button:not(.p-dialog-header-icon):enabled:focus,
+.preview-toolbar > .p-button:not(.p-dialog-header-icon):enabled:hover,
+.preview-toolbar > .p-button:not(.p-dialog-header-icon):enabled:focus,
+.library-toolbar > .p-button:not(.p-dialog-header-icon):enabled:hover,
+.library-toolbar > .p-button:not(.p-dialog-header-icon):enabled:focus,
+.artifact-toolbar > .p-button:not(.p-dialog-header-icon):enabled:hover,
+.artifact-toolbar > .p-button:not(.p-dialog-header-icon):enabled:focus,
+.toolbar-header .p-button:not(.p-dialog-header-icon):enabled:hover,
+.toolbar-header .p-button:not(.p-dialog-header-icon):enabled:focus {
+  background: #eff6ff;
+  border-color: #1d4ed8;
 }
 
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
 }
 
 .section-subtitle {
   color: #64748b;
   margin-top: 4px;
+}
+
+/* Top-of-tab page header: matches the canonical Dashboard look — h1 on the
+ * left, ResponsiveHeaderActions on the right, lower horizontal rule, no
+ * subtitle. Every primary tab page uses this so the chrome feels uniform
+ * regardless of which route you're on. */
+.tab-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 2.5rem 0 1rem;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.tab-header h1 {
+  margin: 0;
+  font-size: 1.75rem;
+  font-weight: 500;
+  /* Pinned line-height so the title row is the same height on every
+   * tab. Without this, h1 inherits the wrapper's line-height — 1.5 on
+   * tabs whose wrappers set it (Data, Project, Models, …) and the
+   * browser default (~1.2) elsewhere (Deploy, Report, Audit, …) —
+   * producing a subtle height mismatch between pages. */
+  line-height: 1.2;
+  letter-spacing: 0;
+  /* Explicit dark slate for the tab title; wins over wrapper-inherited
+   * `var(--text-color)` (mid-gray) so every tab's title reads the same
+   * weight regardless of which wrapper class scopes the page. Reserved
+   * for the page H1 only — sub-headings inherit the wrapper's lighter
+   * body color so they don't compete with the title. */
+  color: #1b1f23;
+}
+
+@media (max-width: 900px) {
+  .tab-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+    padding-top: 1.5rem;
+  }
 }
 
 .form-grid {

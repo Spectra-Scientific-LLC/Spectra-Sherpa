@@ -82,6 +82,57 @@
           />
         </div>
 
+        <template v-if="showLibraryCompareControls">
+          <div class="control-group">
+            <label>Spectrum</label>
+            <Dropdown
+              v-model="selectedLibrarySample"
+              :options="libraryCompareSampleOptions"
+              optionLabel="label"
+              optionValue="value"
+              class="axis-dropdown"
+            />
+          </div>
+          <div class="control-group species-rank-control">
+            <label>Species rank</label>
+            <div class="species-rank-list" role="listbox" aria-label="Library species to overlay">
+              <button
+                v-for="candidate in filteredLibraryCompareCandidates"
+                :key="libraryCandidateKey(candidate)"
+                type="button"
+                class="species-rank-row"
+                :class="{ selected: isLibraryCandidateChecked(candidate) }"
+                @click="toggleLibraryCandidate(candidate)"
+              >
+                <input
+                  type="checkbox"
+                  :checked="isLibraryCandidateChecked(candidate)"
+                  tabindex="-1"
+                  aria-hidden="true"
+                  readonly
+                />
+                <span
+                  class="species-color-swatch"
+                  :style="{ background: libraryTraceColorForCandidate(candidate) }"
+                  aria-hidden="true"
+                />
+                <span>
+                  #{{ candidate.sample_rank ?? candidate.rank ?? "?" }} {{ candidate.library ?? "Library" }}
+                </span>
+                <strong>HQI {{ formatHqi(candidate.hqi) }}</strong>
+              </button>
+            </div>
+          </div>
+          <span
+            v-if="selectedLibraryAlignmentStatus"
+            class="candidate-alignment-badge"
+            :class="{ aligned: selectedLibraryAlignmentStatus.aligned }"
+          >
+            <i :class="selectedLibraryAlignmentStatus.aligned ? 'pi pi-check-circle' : 'pi pi-exclamation-triangle'" />
+            {{ selectedLibraryAlignmentStatus.label }}
+          </span>
+        </template>
+
         <!-- Data shape summary -->
         <div class="control-group stats-summary">
           <span class="stat-item">
@@ -118,9 +169,9 @@
       <!-- Plotly chart -->
       <div v-if="viewMode === 'plot'" ref="plotContainerEl" class="plotly-container">
         <PlotlyChart
-          v-if="plotData.length > 0"
-          :data="plotData"
-          :layout="plotLayout"
+          v-if="displayPlotData.length > 0"
+          :data="displayPlotData"
+          :layout="displayPlotLayout"
           :config="PLOT_CONFIG"
         />
         <div v-else class="empty-plot">
@@ -162,7 +213,7 @@
 
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any -- quick-plot consumes generic backend visualization payloads. */
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
 import Button from "primevue/button";
@@ -176,6 +227,7 @@ import {
   detectLabelDelimiter,
   splitLabelByDelimiter,
 } from "@/utils/sampleLabels";
+import { scaleLibraryTraceToSamplePeaks } from "@/utils/libraryTraceScaling";
 
 interface Props {
   modelValue: boolean;
@@ -221,6 +273,234 @@ const {
   dataShape,
 } = usePlotData(nodeOutputRef, nodeTypeRef, nodeInputRef);
 
+type LibraryCompareCandidate = {
+  rank?: number;
+  sample_rank?: number;
+  sample_index?: number;
+  library_index?: number;
+  sample_trace_index?: number;
+  library_trace_index?: number;
+  sample?: string;
+  library?: string;
+  hqi?: number;
+  hqi_band?: string;
+  candidate_status?: string;
+  confidence_caveats?: string;
+  sample_spacing?: number | null;
+  library_spacing?: number | null;
+  alignment_spacing?: number | null;
+  grid_aligned?: boolean;
+  interpolation?: string;
+  x?: Array<number | null>;
+  sample_x?: Array<number | null>;
+  sample_y?: Array<number | null>;
+  library_x?: Array<number | null>;
+  library_y?: Array<number | null>;
+  comparison_x?: Array<number | null>;
+  comparison_sample_y?: Array<number | null>;
+  comparison_library_y?: Array<number | null>;
+  y_units?: string;
+};
+
+type LibraryCompareTrace = {
+  sample_index?: number;
+  library_index?: number;
+  sample?: string;
+  library?: string;
+  x?: Array<number | null>;
+  y?: Array<number | null>;
+};
+
+const selectedLibrarySample = ref<string | null>(null);
+const selectedLibraryCandidateKeys = ref<string[]>([]);
+
+const libraryCompareTracePayload = computed(() => props.nodeOutput?.plots?.library_compare_candidates || {});
+
+const libraryCompareCandidates = computed<LibraryCompareCandidate[]>(() => {
+  const raw = libraryCompareTracePayload.value?.data;
+  return Array.isArray(raw) ? raw : [];
+});
+
+const libraryCompareSampleTraceMap = computed(() => {
+  const traces = libraryCompareTracePayload.value?.samples;
+  const map = new Map<number, LibraryCompareTrace>();
+  if (!Array.isArray(traces)) return map;
+  for (const trace of traces) {
+    const index = Number(trace?.sample_index);
+    if (Number.isFinite(index)) map.set(index, trace as LibraryCompareTrace);
+  }
+  return map;
+});
+
+const libraryCompareLibraryTraceMap = computed(() => {
+  const traces = libraryCompareTracePayload.value?.libraries;
+  const map = new Map<number, LibraryCompareTrace>();
+  if (!Array.isArray(traces)) return map;
+  for (const trace of traces) {
+    const index = Number(trace?.library_index);
+    if (Number.isFinite(index)) map.set(index, trace as LibraryCompareTrace);
+  }
+  return map;
+});
+
+const libraryCompareSampleOptions = computed(() => {
+  const seen = new Set<string>();
+  const options: Array<{ label: string; value: string }> = [];
+  for (const candidate of libraryCompareCandidates.value) {
+    const label = String(candidate.sample ?? `Sample ${Number(candidate.sample_index ?? options.length) + 1}`);
+    if (seen.has(label)) continue;
+    seen.add(label);
+    options.push({ label, value: label });
+  }
+  return options;
+});
+
+const filteredLibraryCompareCandidates = computed(() => {
+  if (!selectedLibrarySample.value) return libraryCompareCandidates.value;
+  return libraryCompareCandidates.value.filter((candidate) => String(candidate.sample ?? "") === selectedLibrarySample.value);
+});
+
+const selectedLibraryCandidateRecords = computed<LibraryCompareCandidate[]>(() =>
+  filteredLibraryCompareCandidates.value.filter((candidate) =>
+    selectedLibraryCandidateKeys.value.includes(libraryCandidateKey(candidate))
+  )
+);
+
+const showLibraryCompareControls = computed(() =>
+  props.nodeType === "analysis.compare_library"
+    && selectedPlotKey.value === "library_compare"
+    && libraryCompareCandidates.value.length > 0
+);
+
+const selectedLibraryAlignmentStatus = computed(() => {
+  const candidate = selectedLibraryCandidateRecords.value[0] ?? filteredLibraryCompareCandidates.value[0];
+  if (!candidate) return null;
+  const aligned = candidate.grid_aligned !== false;
+  const spacing = formatSpacing(candidate.alignment_spacing);
+  const sampleSpacing = formatSpacing(candidate.sample_spacing);
+  const librarySpacing = formatSpacing(candidate.library_spacing);
+  const spacingLabel = spacing
+    ? `Δ ${spacing} cm-1`
+    : sampleSpacing && librarySpacing
+      ? `sample/library Δ ${sampleSpacing}/${librarySpacing} cm-1`
+      : "";
+  return {
+    aligned,
+    label: `${aligned ? "Grid aligned" : "Grid alignment warning"}${spacingLabel ? ` · ${spacingLabel}` : ""}`,
+  };
+});
+
+watch(
+  libraryCompareSampleOptions,
+  (options) => {
+    if (options.length === 0) {
+      selectedLibrarySample.value = null;
+      selectedLibraryCandidateKeys.value = [];
+      return;
+    }
+    if (!options.some((option) => option.value === selectedLibrarySample.value)) {
+      selectedLibrarySample.value = options[0].value;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => selectedLibrarySample.value,
+  () => {
+    selectedLibraryCandidateKeys.value = [];
+  }
+);
+
+watch(
+  () => filteredLibraryCompareCandidates.value.map(libraryCandidateKey).join("|"),
+  () => {
+    if (filteredLibraryCompareCandidates.value.length === 0) {
+      selectedLibraryCandidateKeys.value = [];
+      return;
+    }
+    const validKeys = new Set(filteredLibraryCompareCandidates.value.map(libraryCandidateKey));
+    const nextKeys = selectedLibraryCandidateKeys.value.filter((key) => validKeys.has(key));
+    if (nextKeys.length === 0) {
+      nextKeys.push(libraryCandidateKey(filteredLibraryCompareCandidates.value[0]));
+    }
+    selectedLibraryCandidateKeys.value = nextKeys;
+  },
+  { immediate: true }
+);
+
+const libraryCompareQuickPlotData = computed(() => {
+  const candidates = selectedLibraryCandidateRecords.value;
+  const firstCandidate = candidates[0] ?? filteredLibraryCompareCandidates.value[0];
+  if (!firstCandidate) return [];
+  const firstSampleTraceIndex = Number(firstCandidate?.sample_trace_index ?? firstCandidate?.sample_index);
+  const firstSampleTrace = Number.isFinite(firstSampleTraceIndex)
+    ? libraryCompareSampleTraceMap.value.get(firstSampleTraceIndex)
+    : undefined;
+  const sampleX = firstCandidate?.sample_x ?? firstCandidate?.x ?? firstSampleTrace?.x;
+  const sampleY = firstCandidate?.sample_y ?? firstSampleTrace?.y;
+  if (!sampleX || !sampleY) return [];
+  const traces: any[] = [
+    {
+      type: "scatter",
+      mode: "lines",
+      x: sampleX,
+      y: sampleY,
+      name: firstCandidate.sample || "Sample",
+      line: { color: "#f8fafc", width: 2 },
+    }
+  ];
+  for (const candidate of candidates) {
+    const libraryTraceIndex = Number(candidate?.library_trace_index ?? candidate?.library_index);
+    const libraryTrace = Number.isFinite(libraryTraceIndex)
+      ? libraryCompareLibraryTraceMap.value.get(libraryTraceIndex)
+      : undefined;
+    const libraryX = candidate?.library_x ?? candidate?.x ?? libraryTrace?.x;
+    const libraryY = candidate?.library_y ?? libraryTrace?.y;
+    if (!libraryX || !libraryY) continue;
+    traces.push({
+      type: "scatter",
+      mode: "lines",
+      x: libraryX,
+      y: scaleLibraryTraceToSamplePeaks(libraryX, libraryY, sampleX, sampleY),
+      name: `${candidate.library || "Library"} (HQI ${formatHqi(candidate.hqi)})`,
+      line: { color: libraryTraceColorForCandidate(candidate), width: 2 },
+    });
+  }
+  return traces;
+});
+
+const libraryCompareQuickPlotLayout = computed(() => {
+  const candidate = selectedLibraryCandidateRecords.value[0] ?? filteredLibraryCompareCandidates.value[0];
+  const backendLayout = props.nodeOutput?.plots?.library_compare_candidates?.layout || {};
+  return {
+    ...plotLayout.value,
+    ...backendLayout,
+    title: candidate
+      ? `${candidate.sample || "Sample"} vs selected library signatures`
+      : backendLayout.title || "Normalized Sample vs. Library Candidate",
+    yaxis: {
+      ...(plotLayout.value?.yaxis || {}),
+      ...(backendLayout.yaxis || {}),
+      title: candidate?.y_units || "Max-normalized response",
+    },
+  };
+});
+
+const displayPlotData = computed(() => {
+  if (props.nodeType === "analysis.compare_library" && libraryCompareQuickPlotData.value.length > 0) {
+    return libraryCompareQuickPlotData.value;
+  }
+  return plotData.value;
+});
+
+const displayPlotLayout = computed(() => {
+  if (props.nodeType === "analysis.compare_library" && libraryCompareQuickPlotData.value.length > 0) {
+    return libraryCompareQuickPlotLayout.value;
+  }
+  return plotLayout.value;
+});
+
 // View mode toggle
 const viewMode = ref<"plot" | "data">("plot");
 const previewRowLimit = 100;
@@ -229,11 +509,55 @@ function toggleViewMode() {
   viewMode.value = viewMode.value === "plot" ? "data" : "plot";
 }
 
+function formatHqi(value?: number): string {
+  if (!Number.isFinite(Number(value))) return "n/a";
+  return Number(value).toFixed(1);
+}
+
+function formatSpacing(value?: number | null): string {
+  if (!Number.isFinite(Number(value))) return "";
+  return Number(value).toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function libraryCandidateKey(candidate: LibraryCompareCandidate): string {
+  return `${Number(candidate.sample_index ?? -1)}:${Number(candidate.library_index ?? -1)}`;
+}
+
+function isLibraryCandidateChecked(candidate: LibraryCompareCandidate): boolean {
+  return selectedLibraryCandidateKeys.value.includes(libraryCandidateKey(candidate));
+}
+
+function toggleLibraryCandidate(candidate: LibraryCompareCandidate): void {
+  const key = libraryCandidateKey(candidate);
+  selectedLibraryCandidateKeys.value = isLibraryCandidateChecked(candidate)
+    ? selectedLibraryCandidateKeys.value.filter((item) => item !== key)
+    : [...selectedLibraryCandidateKeys.value, key];
+}
+
+function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): string {
+  const palette = [
+    "#38bdf8", "#f59e0b", "#22c55e", "#e879f9", "#fb7185", "#a78bfa",
+    "#14b8a6", "#f97316", "#84cc16", "#60a5fa", "#f472b6", "#c084fc",
+  ];
+  const index = Number(candidate.library_trace_index ?? candidate.library_index ?? candidate.sample_rank ?? 0);
+  return palette[Math.abs(Math.trunc(Number.isFinite(index) ? index : 0)) % palette.length];
+}
+
 // Data preview for table view
 const dataPreview = computed(() => {
   const data = props.nodeOutput?.data;
   const metadata = props.nodeOutput?.metadata || {};
   if (!data || !Array.isArray(data)) return [];
+
+  if (data.length > 0 && typeof data[0] === "object" && !Array.isArray(data[0])) {
+    const rows = props.nodeType === "analysis.compare_library" && selectedLibrarySample.value
+      ? data.filter((row: any) => String(row?.sample ?? "") === selectedLibrarySample.value)
+      : data;
+    return rows.slice(0, previewRowLimit).map((row: any, i: number) => ({
+      _index: i + 1,
+      ...row,
+    }));
+  }
 
   const labelsRaw = metadata.sample_labels || metadata.labels || [];
   const labels = Array.isArray(labelsRaw)
@@ -278,8 +602,16 @@ const dataPreview = computed(() => {
 const dataPreviewSummary = computed(() => {
   const data = props.nodeOutput?.data;
   if (!data || !Array.isArray(data)) return "";
-  const totalRows = data.length;
-  const totalCols = Array.isArray(data[0]) ? data[0].length : 1;
+  const rows = props.nodeType === "analysis.compare_library" && selectedLibrarySample.value
+    ? data.filter((row: any) => String(row?.sample ?? "") === selectedLibrarySample.value)
+    : data;
+  const totalRows = rows.length;
+  const firstRow = rows[0] ?? data[0];
+  const totalCols = Array.isArray(firstRow)
+    ? firstRow.length
+    : firstRow && typeof firstRow === "object"
+      ? Object.keys(firstRow).length + 1
+      : 1;
   const shownRows = Math.min(totalRows, previewRowLimit);
   const shownCols = Math.min(totalCols, 10);
   let summary = `${shownRows} of ${totalRows} rows`;
@@ -389,6 +721,87 @@ function downloadPlot() {
   min-width: 160px;
 }
 
+.species-rank-control {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.species-rank-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 4px;
+  max-height: 96px;
+  min-width: min(680px, 70vw);
+  overflow: auto;
+}
+
+.species-rank-row {
+  display: grid;
+  grid-template-columns: 16px 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #cbd5e1;
+  cursor: pointer;
+  font-size: 0.76rem;
+  line-height: 1.15;
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.species-rank-row:hover,
+.species-rank-row.selected {
+  border-color: #38bdf8;
+  background: rgba(14, 165, 233, 0.14);
+}
+
+.species-rank-row input {
+  pointer-events: none;
+}
+
+.species-color-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(248, 250, 252, 0.28);
+}
+
+.species-rank-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.species-rank-row strong {
+  color: #e2e8f0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.candidate-alignment-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  color: #fde68a;
+  border: 1px solid #a16207;
+  border-radius: 6px;
+  background: rgba(113, 63, 18, 0.22);
+  padding: 0 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.candidate-alignment-badge.aligned {
+  color: #bbf7d0;
+  border-color: #15803d;
+  background: rgba(22, 101, 52, 0.24);
+}
+
 .stats-summary {
   margin-left: auto;
   gap: 16px;
@@ -460,7 +873,7 @@ function downloadPlot() {
 }
 
 .preview-datatable {
-  font-size: 0.85rem;
+  font-size: 0.76rem;
 }
 
 :deep(.preview-datatable .p-datatable-thead > tr > th) {
@@ -468,7 +881,8 @@ function downloadPlot() {
   color: #f8fafc;
   border-color: #334155;
   font-weight: 600;
-  padding: 8px 12px;
+  padding: 3px 8px;
+  line-height: 1.15;
 }
 
 :deep(.preview-datatable .p-datatable-tbody > tr) {
@@ -478,7 +892,8 @@ function downloadPlot() {
 
 :deep(.preview-datatable .p-datatable-tbody > tr > td) {
   border-color: #334155;
-  padding: 6px 12px;
+  padding: 2px 8px;
+  line-height: 1.15;
 }
 
 :deep(.preview-datatable .p-datatable-tbody > tr:nth-child(even)) {

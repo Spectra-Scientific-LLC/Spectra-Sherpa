@@ -8,7 +8,7 @@
       </div>
       <p class="description">
         This key must match the <code>APP_API_KEY</code> environment variable set on the backend.
-        The default for local development is <code>default-local-key</code>.
+        The default for local development is <code>local-key</code>.
         It is stored in your browser only — never sent to any external service.
       </p>
       <div class="field">
@@ -16,7 +16,7 @@
         <InputText
           id="app-key"
           v-model="appApiKey"
-          placeholder="default-local-key"
+          placeholder="local-key"
           class="key-input"
           autocomplete="off"
         />
@@ -43,12 +43,12 @@
     <!-- BYO Chat Config — local/OSS mode only. Uses CHAT_ENDPOINT_URL/KEY/MODEL env vars. -->
     <div v-if="appMode === 'local'" class="key-section">
       <div class="section-header">
-        <h3>AI Assistant / LLM Configuration</h3>
+        <h3>BYO Chat Configuration</h3>
         <Tag v-if="byoChatConfigured" severity="success" value="Configured" />
         <span v-else class="badge optional">Optional</span>
       </div>
       <p class="description">
-        Configure your LLM provider for basic AI chat in local/OSS mode.
+        Configure your local BYO Chat provider for OSS mode.
         DeepSeek is preconfigured but you can change to another OpenAI-compatible provider.
         Settings are saved to your local <code>.env</code> file.
       </p>
@@ -56,7 +56,7 @@
       <div class="field">
         <label for="byo-provider">LLM Provider</label>
         <Dropdown
-          id="byo-provider"
+          inputId="byo-provider"
           v-model="byoProvider"
           :options="byoProviders"
           optionLabel="label"
@@ -174,28 +174,112 @@
       </div>
     </div>
 
-    <!-- LLM Provider Configuration -->
+    <!-- HITRAN key for FTIR synthesis live downloads. -->
+    <div class="key-section">
+      <div class="section-header">
+        <h3>HITRAN API Key</h3>
+        <Tag v-if="isHitranKeySaved" severity="success" value="Saved" />
+        <span v-else class="badge optional">Optional</span>
+      </div>
+      <p class="description">
+        Required for live HITRAN/HAPI line downloads used by Data > Synthesis.
+        Use your own HITRAN account key; demo and staging deployments do not
+        provide a shared HITRAN key. Your key is stored encrypted in the backend
+        database and is sent only to HITRAN.
+      </p>
+      <div class="field">
+        <label for="hitran-key">
+          HITRAN API Key
+          <span v-if="isHitranKeySaved" class="saved-indicator"><i class="pi pi-check-circle" /> Saved</span>
+        </label>
+        <div class="password-input-wrapper">
+          <InputText
+            id="hitran-key"
+            v-model="hitranApiKey"
+            :type="showHitranKey ? 'text' : 'password'"
+            :placeholder="isHitranKeySaved ? 'Leave empty to keep existing key' : 'Enter your HITRAN API key'"
+            class="key-input"
+            autocomplete="off"
+          />
+          <Button
+            :icon="showHitranKey ? 'pi pi-eye-slash' : 'pi pi-eye'"
+            class="p-button-text p-button-sm toggle-visibility"
+            @click="showHitranKey = !showHitranKey"
+            v-tooltip.left="showHitranKey ? 'Hide key' : 'Show key'"
+          />
+        </div>
+        <small class="hint">
+          Generate a free key from your HITRAN profile:
+          <a href="https://hitran.org/profile/" target="_blank" rel="noopener">https://hitran.org/profile/</a>
+        </small>
+      </div>
+      <div class="actions">
+        <Button
+          label="Save HITRAN Key"
+          icon="pi pi-save"
+          :loading="savingHitran"
+          :disabled="!hitranApiKey.trim() || savingHitran"
+          @click="saveHitranKey"
+        />
+        <Button
+          v-if="isHitranKeySaved"
+          label="Validate Key"
+          icon="pi pi-check-circle"
+          class="p-button-outlined"
+          :loading="validatingHitran"
+          :disabled="savingHitran || validatingHitran"
+          @click="validateHitranKey"
+        />
+        <Button
+          v-else
+          label="Validate Key"
+          icon="pi pi-check-circle"
+          class="p-button-outlined"
+          :loading="validatingHitran"
+          :disabled="!hitranApiKey.trim() || savingHitran || validatingHitran"
+          @click="validateHitranKey"
+        />
+        <Button
+          v-if="isHitranKeySaved"
+          label="Delete HITRAN Key"
+          icon="pi pi-trash"
+          class="p-button-outlined p-button-danger"
+          :disabled="savingHitran || validatingHitran"
+          @click="deleteKey('hitran')"
+        />
+      </div>
+      <div v-if="hitranMessage" class="message success">
+        <i class="pi pi-check-circle" />
+        {{ hitranMessage }}
+      </div>
+      <div v-if="hitranError" class="message error">
+        <i class="pi pi-times-circle" />
+        {{ hitranError }}
+      </div>
+    </div>
+
+    <!-- Sherpa model provider configuration -->
     <!-- Gated by sherpaAdvisor capability. Hidden in OSS-only mode
          where /llm-config and /llm/chat are not served. -->
     <div v-if="canConfigureLlm" class="key-section">
       <div class="section-header">
-        <h3>AI Assistant / LLM Configuration</h3>
+        <h3>Sherpa Model Configuration</h3>
         <span class="badge optional">Optional</span>
       </div>
       <p class="description">
-        Configure your LLM provider for AI assistant features (workflow suggestions, code generation, peak identification).
+        Configure the model provider used by Sherpa features (workflow suggestions, code generation, peak identification).
         DeepSeek is preconfigured but you can change to another OpenAI-compatible provider.
       </p>
       <div v-if="isDemoMode" class="message info">
         <i class="pi pi-info-circle" />
-        Demo mode uses managed AI settings. Saving or deleting API keys is disabled.
+        Demo mode uses managed Sherpa model settings. Saving or deleting API keys is disabled.
       </div>
 
       <!-- LLM Provider Selection -->
       <div class="field">
         <label for="llm-provider">LLM Provider</label>
         <Dropdown
-          id="llm-provider"
+          inputId="llm-provider"
           v-model="llmProvider"
           :options="llmProviders"
           optionLabel="label"
@@ -360,8 +444,8 @@ import { useAppConfig } from "@/composables/useAppConfig";
 // announced sherpaAdvisor support. Per /llm-config and /llm/*
 // live on the commercial server only; OSS-only installs would 404 here.
 const { isFeatureEnabled, appMode, appConfig } = useAppConfig();
-const canConfigureLlm = computed(() => isFeatureEnabled("sherpaAdvisor"));
 const isDemoMode = computed(() => Boolean(appConfig.value?.demo));
+const canConfigureLlm = computed(() => isFeatureEnabled("sherpaAdvisor") && !isDemoMode.value);
 
 interface SavedKeyInfo {
   service_name: string;
@@ -375,14 +459,20 @@ const llmModel = ref("deepseek-chat"); // Cost-effective default
 const llmApiKey = ref("");
 const llmVerbose = ref(localStorage.getItem("llm_verbose") !== "false"); // Default true
 const showLlmKey = ref(false);
+const hitranApiKey = ref("");
+const showHitranKey = ref(false);
 
 const appMessage = ref("");
 const appError = ref("");
 const llmMessage = ref("");
 const llmError = ref("");
+const hitranMessage = ref("");
+const hitranError = ref("");
 
 const savingApp = ref(false);
 const savingLlm = ref(false);
+const savingHitran = ref(false);
+const validatingHitran = ref(false);
 const testing = ref(false);
 const loading = ref(true);
 
@@ -475,7 +565,7 @@ const saveByoChatConfig = async () => {
     localStorage.setItem("llm_verbose", byoVerbose.value ? "true" : "false");
     localStorage.setItem("llm_max_paragraphs", String(byoMaxParagraphs.value));
     window.dispatchEvent(new CustomEvent("llm-config-changed"));
-    byoMessage.value = "LLM configuration saved! The AI chat panel will use the new settings.";
+    byoMessage.value = "BYO Chat configuration saved. The chat panel will use the new settings.";
   } catch (err: any) {
     byoError.value = err.response?.data?.detail || "Failed to save chat configuration.";
   } finally {
@@ -532,6 +622,7 @@ const isCurrentProviderKeySaved = computed(() => {
   const serviceName = llmProvider.value === "custom" ? "custom_llm" : llmProvider.value;
   return savedKeys.value.some(k => k.service_name === serviceName);
 });
+const isHitranKeySaved = computed(() => savedKeys.value.some(k => k.service_name === "hitran"));
 
 const llmProviderUrl = computed(() => {
   switch (llmProvider.value) {
@@ -573,6 +664,7 @@ const formatServiceName = (service: string): string => {
     deepseek: "DeepSeek LLM",
     openai: "OpenAI LLM",
     gemini: "Google Gemini LLM",
+    hitran: "HITRAN",
   };
   return names[service] || service;
 };
@@ -636,6 +728,52 @@ const saveAppKey = async () => {
     appError.value = "Key validation failed — the key was not accepted by the backend.";
   } finally {
     savingApp.value = false;
+  }
+};
+
+const saveHitranKey = async () => {
+  hitranMessage.value = "";
+  hitranError.value = "";
+  savingHitran.value = true;
+
+  try {
+    const key = hitranApiKey.value.trim();
+    if (!key) {
+      hitranError.value = "HITRAN API key cannot be empty.";
+      return;
+    }
+    await api.post("/api-keys", {
+      service_name: "hitran",
+      key,
+    });
+    hitranApiKey.value = "";
+    hitranMessage.value = "HITRAN API key saved successfully.";
+    await loadSavedKeys();
+  } catch (error: any) {
+    hitranError.value = error.response?.data?.detail || "Failed to save HITRAN API key.";
+  } finally {
+    savingHitran.value = false;
+  }
+};
+
+const validateHitranKey = async () => {
+  hitranMessage.value = "";
+  hitranError.value = "";
+  validatingHitran.value = true;
+
+  try {
+    const response = await api.post("/api-keys/hitran/validate", {
+      key: hitranApiKey.value.trim() || null,
+    });
+    if (response.data?.valid) {
+      hitranMessage.value = response.data.message || "HITRAN key validated.";
+    } else {
+      hitranError.value = response.data?.message || "HITRAN key validation failed.";
+    }
+  } catch (error: any) {
+    hitranError.value = error.response?.data?.detail || "Failed to validate HITRAN API key.";
+  } finally {
+    validatingHitran.value = false;
   }
 };
 
@@ -725,6 +863,10 @@ const deleteKey = async (serviceName: string) => {
     if (serviceName === "deepseek" || serviceName === "openai" || serviceName === "gemini") {
       hasLlmKey.value = false;
     }
+    if (serviceName === "hitran") {
+      hitranMessage.value = "HITRAN API key deleted.";
+      hitranError.value = "";
+    }
   } catch {
     alert("Failed to delete API key.");
   }
@@ -742,85 +884,91 @@ onMounted(async () => {
 .api-keys-container {
   display: flex;
   flex-direction: column;
-  gap: 32px;
-  max-width: 800px;
+  gap: 1.25rem;
+  max-width: 920px;
+  color: var(--text-color);
+  font-size: 0.9375rem;
 }
 
 .key-section {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
   border-radius: 8px;
-  padding: 24px;
+  padding: 1.25rem;
 }
 
 .section-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
 }
 
 .section-header h3 {
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: #1f2937;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-color);
 }
 
 .badge {
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 0.7rem;
-  font-weight: 600;
+  padding: 0.125rem 0.5rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  background: transparent;
+  font-size: 0.6875rem;
+  font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.04em;
 }
 
 .badge.required {
-  background: #fee2e2;
-  color: #991b1b;
+  border-color: color-mix(in srgb, var(--red-500) 35%, transparent);
+  color: var(--red-500);
 }
 
 .badge.optional {
-  background: #dbeafe;
-  color: #1e40af;
+  border-color: color-mix(in srgb, var(--primary-color) 35%, transparent);
+  color: var(--primary-color);
 }
 
 .description {
-  margin: 0 0 20px;
-  font-size: 0.9rem;
-  color: #6b7280;
+  margin: 0 0 1.25rem;
+  font-size: 0.875rem;
+  color: var(--text-color-secondary);
   line-height: 1.5;
 }
 
 .description code {
-  background: #f3f4f6;
-  padding: 2px 6px;
+  background: transparent;
+  border: 1px solid var(--surface-border);
+  padding: 0.0625rem 0.25rem;
   border-radius: 3px;
-  font-size: 0.85rem;
-  color: #1f2937;
+  font-size: 0.8125rem;
+  color: var(--text-color);
 }
 
 .field {
-  margin-bottom: 16px;
+  margin-bottom: 1rem;
 }
 
 .field label {
   display: block;
   font-weight: 500;
-  font-size: 0.9rem;
-  color: #374151;
-  margin-bottom: 6px;
+  font-size: 0.875rem;
+  color: var(--text-color);
+  margin-bottom: 0.375rem;
 }
 
 .saved-indicator {
-  margin-left: 8px;
+  margin-left: 0.5rem;
   font-size: 0.75rem;
   font-weight: 500;
-  color: #059669;
+  color: var(--green-600, var(--green-500, #059669));
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 0.25rem;
 }
 
 .saved-indicator i {
@@ -858,18 +1006,18 @@ onMounted(async () => {
 .password-input-wrapper .toggle-visibility {
   position: absolute;
   right: 4px;
-  color: #6b7280;
+  color: var(--text-color-secondary);
 }
 
 .password-input-wrapper .toggle-visibility:hover {
-  color: #374151;
+  color: var(--text-color);
 }
 
 .hint {
   display: block;
   margin-top: 6px;
   font-size: 0.8rem;
-  color: #9ca3af;
+  color: var(--text-color-secondary);
 }
 
 .slider-row {
@@ -890,13 +1038,13 @@ onMounted(async () => {
 
 .paragraph-slider::-webkit-slider-runnable-track {
   height: 4px;
-  background: #d1d5db;
+  background: var(--surface-border);
   border-radius: 2px;
 }
 
 .paragraph-slider::-moz-range-track {
   height: 4px;
-  background: #d1d5db;
+  background: var(--surface-border);
   border-radius: 2px;
 }
 
@@ -906,7 +1054,7 @@ onMounted(async () => {
   height: 16px;
   margin-top: -6px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--primary-color);
   border: none;
   cursor: grab;
 }
@@ -915,14 +1063,14 @@ onMounted(async () => {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--primary-color);
   border: none;
   cursor: grab;
 }
 
 .slider-bound {
   font-size: 0.8rem;
-  color: #9ca3af;
+  color: var(--text-color-secondary);
   min-width: 14px;
   text-align: center;
 }
@@ -931,8 +1079,8 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  background: #2563eb;
-  color: #fff;
+  background: var(--primary-color);
+  color: var(--primary-color-text);
   border-radius: 4px;
   font-size: 0.75rem;
   font-weight: 600;
@@ -943,7 +1091,7 @@ onMounted(async () => {
 }
 
 .hint a {
-  color: #2563eb;
+  color: var(--primary-color);
   text-decoration: none;
 }
 
@@ -952,7 +1100,7 @@ onMounted(async () => {
 }
 
 .hint code {
-  background: #f3f4f6;
+  background: var(--surface-ground);
   padding: 2px 4px;
   border-radius: 3px;
   font-size: 0.75rem;
@@ -960,6 +1108,7 @@ onMounted(async () => {
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 12px;
   margin-top: 20px;
 }
@@ -1003,8 +1152,8 @@ onMounted(async () => {
   justify-content: space-between;
   align-items: center;
   padding: 12px 16px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+  background: var(--surface-ground);
+  border: 1px solid var(--surface-border);
   border-radius: 6px;
 }
 
@@ -1016,12 +1165,12 @@ onMounted(async () => {
 
 .service-name {
   font-weight: 600;
-  color: #1f2937;
+  color: var(--text-color);
 }
 
 .last-used {
   font-size: 0.8rem;
-  color: #6b7280;
+  color: var(--text-color-secondary);
 }
 
 .loading-state,
@@ -1030,13 +1179,13 @@ onMounted(async () => {
   align-items: center;
   gap: 8px;
   padding: 16px;
-  color: #6b7280;
+  color: var(--text-color-secondary);
   font-size: 0.9rem;
 }
 
 .empty-state {
-  background: #f9fafb;
-  border: 1px dashed #d1d5db;
+  background: var(--surface-ground);
+  border: 1px dashed var(--surface-border);
   border-radius: 6px;
 }
 </style>

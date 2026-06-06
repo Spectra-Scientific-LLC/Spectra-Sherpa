@@ -23,6 +23,14 @@ export interface LabelTableData {
 const DEFAULT_DELIMITERS = [",", ";", "|", "\t"];
 
 const collapseWhitespace = (text: string): string => text.replace(/\s+/g, " ").trim();
+const isBinaryControlCode = (code: number): boolean =>
+  (code >= 0 && code <= 8) || code === 11 || code === 12 || (code >= 14 && code <= 31) || (code >= 127 && code <= 159);
+const stripControlPayload = (text: string): string => {
+  for (let index = 0; index < text.length; index += 1) {
+    if (isBinaryControlCode(text.charCodeAt(index))) return text.slice(0, index);
+  }
+  return text;
+};
 
 export function normalizeSampleLabel(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -51,7 +59,9 @@ export function normalizeSampleLabel(value: unknown): string {
   }
 
   if (typeof value === "string") {
-    const trimmed = value.trim();
+    const trimmed = stripControlPayload(value).trim();
+    const linked = trimmed.match(/linked\s+spectrum\s+at\s*([+-]?\d+(?:\.\d+)?)\s*([A-Za-zµμ]+)/i);
+    if (linked) return `${linked[1]} ${linked[2]}`;
     if (trimmed.startsWith("[") || trimmed.startsWith("(")) {
       const quoted = [...trimmed.matchAll(/'([^']+)'|"([^"]+)"/g)]
         .map((match) => match[1] || match[2])

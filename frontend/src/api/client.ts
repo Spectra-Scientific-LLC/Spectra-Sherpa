@@ -45,6 +45,43 @@ function isAsyncErrorCandidate(error: AxiosError): boolean {
   return ASYNC_ERROR_PATH_HINTS.some((prefix) => path.startsWith(prefix));
 }
 
+// Exact ``/projects/{id}`` (no trailing path) — these requests target the
+// project resource itself, so a 404 means the project the SPA still
+// considers "active" no longer exists server-side (deleted in another tab,
+// demo-mode GC, etc.). A 404 on a NESTED route (``/projects/{id}/foo``)
+// means the parent exists but the child doesn't — that's a different
+// failure mode and we leave it to the calling view.
+const PROJECT_RESOURCE_PATH = /^\/projects\/(\d+)\/?$/;
+
+function activeProjectIdFromPath(path: string): number | null {
+  const match = PROJECT_RESOURCE_PATH.exec(path);
+  if (!match) return null;
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+async function handleActiveProjectGone(projectId: number): Promise<void> {
+  // Lazy-load the project store so this module stays import-cycle-free
+  // (the project store, in turn, never imports api/client at module
+  // load time, but the indirection keeps that invariant explicit).
+  const { useProjectStore } = await import("@/stores/project");
+  const projectStore = useProjectStore();
+  if (projectStore.currentProjectId !== projectId) {
+    return; // Stale 404 for a project the user already moved away from.
+  }
+  projectStore.currentProjectId = null;
+  projectStore.currentProject = null;
+  // Best-effort UX recovery: pull the user to the dashboard so the
+  // sidebar stops pointing at a phantom project. The dashboard route
+  // re-runs project list fetching on mount.
+  if (typeof window !== "undefined") {
+    const path = window.location.pathname;
+    if (path !== "/dashboard" && path !== "/login") {
+      window.location.href = "/dashboard";
+    }
+  }
+}
+
 function formatAsyncErrorMessage(error: AxiosError): string {
   const path = normalizeUrlPath(error.config?.url);
   if (!error.response) {
@@ -137,11 +174,15 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    // Demo mode: 429 (execution limit) — update banner quota counter.
-    // Demo mode: rate-limit response — update quota counter for DemoUpgradeModal.
+    // Demo mode: 429 (execution / sherpa rate limit) — refresh banner
+    // limit refs from the structured detail (limit_type, limit_per_hour,
+    // limit_per_day, remaining). Old payloads with just `{remaining,
+    // limit}` are tolerated — they just don't update anything because
+    // the new function only reacts to limit_per_hour / limit_per_day.
     if (isDemoUpgradeError(error) && error.response?.status === 429) {
-      const data = error.response?.data;
-      updateDemoQuotaFromRateLimit(data?.remaining ?? 0, data?.limit ?? 25);
+      const data = error.response?.data ?? {};
+      const detail = typeof data.detail === "object" && data.detail !== null ? data.detail : data;
+      updateDemoQuotaFromRateLimit(detail);
       return Promise.reject(error);
     }
 
@@ -151,6 +192,20 @@ api.interceptors.response.use(
         status === 0 || status >= 500 || (status === 404 && normalizeUrlPath(error.config?.url).startsWith("/jobs"));
       if (shouldNotify) {
         emitAsyncApiErrorNotification(error);
+      }
+    }
+
+    // Active-project gone (404 on the project resource itself). Demo droplets
+    // GC stale projects, and another browser tab can delete the active
+    // project out from under us. Without this, the SPA keeps a phantom
+    // currentProjectId, and every subsequent call into that project 404s
+    // silently until the user reloads.
+    if (axios.isAxiosError(error) && error.response?.status === 404) {
+      const id = activeProjectIdFromPath(normalizeUrlPath(error.config?.url));
+      if (id !== null) {
+        // Fire and forget — we don't want to block the rejection chain on
+        // the dynamic import or the navigation.
+        void handleActiveProjectGone(id);
       }
     }
 

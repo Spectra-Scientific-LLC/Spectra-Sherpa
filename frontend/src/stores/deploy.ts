@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import api from "@/api/client";
+import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import type {
   FolderWatch,
   ExecutionRunSummary,
@@ -27,6 +28,14 @@ export const useDeployStore = defineStore("deploy", () => {
   const deployRuns = ref<ExecutionRunSummary[]>([]);
   const loading = ref(false);
   const runsLoading = ref(false);
+
+  function resetProjectScope(): void {
+    watches.value = [];
+    deployRuns.value = [];
+    loading.value = false;
+    runsLoading.value = false;
+  }
+  registerProjectScopeReset(resetProjectScope);
 
   async function fetchWatches(): Promise<void> {
     loading.value = true;
@@ -112,5 +121,6 @@ export const useDeployStore = defineStore("deploy", () => {
     deleteWatch,
     toggleWatch,
     fetchDeployRuns,
+    resetProjectScope,
   };
 });

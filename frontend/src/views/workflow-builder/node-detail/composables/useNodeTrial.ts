@@ -39,6 +39,7 @@ export function useNodeTrial({
       type: "node_params_updated",
       nodeId: nodeData.value?.id,
       nodeType: nodeData.value?.type,
+      workflowId: nodeData.value?.workflowId ?? null,
       params: { ...localParams.value },
       timestamp: Date.now(),
     };
@@ -57,6 +58,7 @@ export function useNodeTrial({
       _savedAt: Date.now(),
       id: nodeData.value?.id,
       type: nodeData.value?.type,
+      workflowId: nodeData.value?.workflowId ?? null,
       params: { ...localParams.value },
     });
     try {
@@ -134,6 +136,7 @@ export function useNodeTrial({
         nodes: trialNodes,
         edges: trialEdges,
         initial_data: Object.keys(initialData).length > 0 ? initialData : null,
+        project_id: nodeData.value.projectId ?? null,
       };
 
       const changes: string[] = [];

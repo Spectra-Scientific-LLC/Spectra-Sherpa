@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed, onMounted, ref } from "vue";
 import Button from "primevue/button";
 import ProgressSpinner from "primevue/progressspinner";
 import Message from "primevue/message";
 import { useWorkflowStore, type WorkflowTemplate } from "@/stores/workflow";
+import type { DataModality } from "@/stores/workflow-types";
 
 const props = defineProps<{
   selectedTemplateId?: number | null;
@@ -15,12 +16,53 @@ const emit = defineEmits<{
 }>();
 
 const workflowStore = useWorkflowStore();
+const selectedModality = ref<"all" | DataModality>("all");
 
 const templateStatus = (template: WorkflowTemplate) => template.status || template.template_data.status || "ready";
 
+const modalityMeta: Record<DataModality, { label: string; icon: string; tooltip: string }> = {
+  spectra: {
+    label: "Spectra",
+    icon: "pi-chart-line",
+    tooltip: "Spectra: ordered wavelength, wavenumber, Raman-shift, NMR, or m/z axes",
+  },
+  features: {
+    label: "Features",
+    icon: "pi-table",
+    tooltip: "Feature table: multivariate columns with no ordered spectral axis",
+  },
+  hsi: {
+    label: "HSI",
+    icon: "pi-image",
+    tooltip: "Hyperspectral image cube: spectral axis plus spatial map",
+  },
+};
+
+const modalityFilters: Array<{ label: string; value: "all" | DataModality }> = [
+  { label: "All", value: "all" },
+  { label: "Spectra", value: "spectra" },
+  { label: "Features", value: "features" },
+  { label: "HSI", value: "hsi" },
+];
+
+const templateModalities = (template: WorkflowTemplate): DataModality[] => {
+  const modalities = template.data_modalities || template.template_data.data_modalities;
+  if (Array.isArray(modalities) && modalities.length) {
+    return modalities;
+  }
+  return ["spectra"];
+};
+
 const groupedTemplates = computed(() => {
   const groups = new Map<string, WorkflowTemplate[]>();
-  for (const template of workflowStore.availableTemplates) {
+  const visibleTemplates = workflowStore.availableTemplates.filter((template) => {
+    if (selectedModality.value === "all") {
+      return true;
+    }
+    return templateModalities(template).includes(selectedModality.value);
+  });
+
+  for (const template of visibleTemplates) {
     const category = template.category || "other";
     if (!groups.has(category)) {
       groups.set(category, []);
@@ -52,13 +94,23 @@ onMounted(async () => {
 <template>
   <div class="template-gallery">
     <div v-if="props.showHeader !== false" class="gallery-header">
-      <h3>Workflow Templates</h3>
-      <p>Start from a validated backend template instead of rebuilding common chemometric workflows by hand.</p>
+      <h3>Analysis Starters</h3>
+      <p>Choose a validated analysis starter instead of rebuilding common chemometric workflows by hand.</p>
+      <div class="modality-filters" aria-label="Filter templates by data shape">
+        <Button
+          v-for="filter in modalityFilters"
+          :key="filter.value"
+          :label="filter.label"
+          :class="{ active: selectedModality === filter.value }"
+          class="p-button-sm p-button-text modality-filter"
+          @click="selectedModality = filter.value"
+        />
+      </div>
     </div>
 
     <div v-if="workflowStore.templatesLoading" class="gallery-state">
       <ProgressSpinner style="width: 36px; height: 36px" />
-      <span>Loading templates...</span>
+      <span>Loading analysis starters...</span>
     </div>
 
     <Message
@@ -71,7 +123,7 @@ onMounted(async () => {
 
     <div v-else-if="!groupedTemplates.length" class="gallery-state empty">
       <i class="pi pi-th-large"></i>
-      <span>No templates are available.</span>
+      <span>No analysis starters are available.</span>
     </div>
 
     <div v-else class="template-groups">
@@ -94,7 +146,18 @@ onMounted(async () => {
           >
             <div class="template-card-body">
               <div class="template-card-heading">
-                <h5>{{ template.name }}</h5>
+                <div class="template-title-row">
+                  <h5>{{ template.name }}</h5>
+                  <span class="modality-icons" aria-label="Accepted data modalities">
+                    <i
+                      v-for="modality in templateModalities(template)"
+                      :key="modality"
+                      class="pi"
+                      :class="modalityMeta[modality].icon"
+                      :title="modalityMeta[modality].tooltip"
+                    />
+                  </span>
+                </div>
                 <span class="template-status" :class="templateStatus(template)">
                   {{ templateStatus(template) }}
                 </span>
@@ -102,7 +165,7 @@ onMounted(async () => {
               <p>{{ template.description }}</p>
             </div>
             <Button
-              label="Use Template"
+              label="Start"
               icon="pi pi-arrow-right"
               icon-pos="right"
               class="p-button-outlined"
@@ -132,6 +195,22 @@ onMounted(async () => {
   margin: 0;
   color: var(--text-color-secondary);
   line-height: 1.5;
+}
+
+.modality-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.85rem;
+}
+
+.modality-filter {
+  color: var(--text-color-secondary);
+}
+
+.modality-filter.active {
+  background: color-mix(in srgb, var(--primary-color) 9%, transparent);
+  color: var(--primary-color);
 }
 
 .gallery-state {
@@ -209,6 +288,25 @@ onMounted(async () => {
 .template-card-body h5 {
   margin: 0;
   font-size: 1rem;
+}
+
+.template-title-row {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.modality-icons {
+  align-items: center;
+  color: var(--text-color-secondary);
+  display: inline-flex;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.modality-icons i {
+  font-size: 0.88rem;
 }
 
 .template-card-heading {

@@ -39,31 +39,41 @@ export const useNotificationStore = defineStore("notification", () => {
   );
 
   function add(input: NewNotification) {
+    const now = Date.now();
     // Dedupe: if a matching notification exists within the window, update it
+    let existing: AppNotification | undefined;
     if (input.entityRef) {
-      const now = Date.now();
-      const existing = notifications.value.find(
+      existing = notifications.value.find(
         (n) =>
           n.source === input.source &&
           n.entityRef?.type === input.entityRef!.type &&
           n.entityRef?.id === input.entityRef!.id &&
           now - n.timestamp < DEDUPE_WINDOW_MS
       );
-      if (existing) {
-        existing.severity = input.severity;
-        existing.title = input.title;
-        existing.message = input.message;
-        existing.detail = input.detail;
-        existing.timestamp = now;
-        existing.readAt = null;
-        return;
-      }
+    } else {
+      existing = notifications.value.find(
+        (n) =>
+          n.source === input.source &&
+          n.severity === input.severity &&
+          n.title === input.title &&
+          n.message === input.message &&
+          now - n.timestamp < DEDUPE_WINDOW_MS
+      );
+    }
+    if (existing) {
+      existing.severity = input.severity;
+      existing.title = input.title;
+      existing.message = input.message;
+      existing.detail = input.detail;
+      existing.timestamp = now;
+      existing.readAt = null;
+      return;
     }
 
     const notification: AppNotification = {
       ...input,
       id: crypto.randomUUID(),
-      timestamp: Date.now(),
+      timestamp: now,
       readAt: null,
     };
 

@@ -81,19 +81,31 @@
           <div class="notif-title-row">
             <span class="notif-title">{{ n.title }}</span>
             <span v-if="!n.readAt" class="notif-unread-dot"></span>
-            <button
-              v-if="n.detail"
-              class="notif-expand-btn"
-              @click.stop="toggleExpand(n)"
-            >
-              <i
-                :class="
-                  expandedId === n.id
-                    ? 'pi pi-chevron-up'
-                    : 'pi pi-chevron-down'
-                "
-              ></i>
-            </button>
+            <div class="notif-row-actions">
+              <button
+                class="notif-icon-btn"
+                :title="copiedId === n.id ? 'Copied' : 'Copy notification'"
+                type="button"
+                @click.stop="copyNotification(n)"
+              >
+                <i :class="copiedId === n.id ? 'pi pi-check' : 'pi pi-copy'"></i>
+              </button>
+              <button
+                v-if="n.detail"
+                class="notif-icon-btn"
+                title="Show details"
+                type="button"
+                @click.stop="toggleExpand(n)"
+              >
+                <i
+                  :class="
+                    expandedId === n.id
+                      ? 'pi pi-chevron-up'
+                      : 'pi pi-chevron-down'
+                  "
+                ></i>
+              </button>
+            </div>
           </div>
           <div class="notif-message">{{ n.message }}</div>
           <div v-if="n.detail && expandedId === n.id" class="notif-detail">
@@ -196,6 +208,7 @@ const store = useNotificationStore();
 const guidance = useGuidanceStore();
 const activeTab = ref<"all" | "action" | "guidance">("all");
 const expandedId = ref<string | null>(null);
+const copiedId = ref<string | null>(null);
 
 function toggleExpand(n: AppNotification) {
   expandedId.value = expandedId.value === n.id ? null : n.id;
@@ -216,6 +229,41 @@ const displayedNotifications = computed(() => {
 
 function onNotificationClick(n: AppNotification) {
   store.markRead(n.id);
+}
+
+async function copyText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "true");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
+async function copyNotification(n: AppNotification) {
+  const text = [
+    `[${n.severity.toUpperCase()}] ${n.title}`,
+    n.message,
+    n.detail ? `\n${n.detail}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  try {
+    await copyText(text);
+    copiedId.value = n.id;
+    window.setTimeout(() => {
+      if (copiedId.value === n.id) copiedId.value = null;
+    }, 1500);
+  } catch (err) {
+    console.warn("[Notifications] Failed to copy notification", err);
+  }
 }
 
 function refreshGuidance() {
@@ -358,6 +406,8 @@ function timeAgo(timestamp: number): string {
   border: 1px solid transparent;
   cursor: pointer;
   transition: all 0.15s;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .notif-item:hover {
@@ -426,6 +476,8 @@ function timeAgo(timestamp: number): string {
   font-size: 0.9rem;
   font-weight: 600;
   color: #1e293b;
+  flex: 1;
+  min-width: 0;
 }
 
 .notif-unread-dot {
@@ -537,18 +589,26 @@ function timeAgo(timestamp: number): string {
   line-height: 1.4;
 }
 
-.notif-expand-btn {
+.notif-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.notif-icon-btn {
   background: none;
   border: none;
   color: #94a3b8;
   cursor: pointer;
   padding: 2px 4px;
-  margin-left: auto;
   border-radius: 4px;
   line-height: 1;
 }
 
-.notif-expand-btn:hover {
+.notif-icon-btn:hover {
   color: #475569;
   background: #f1f5f9;
 }

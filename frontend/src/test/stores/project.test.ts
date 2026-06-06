@@ -108,6 +108,7 @@ describe("Project Store", () => {
       expect(api.post).toHaveBeenCalledWith("/projects", { name: "New" });
       expect(result).toEqual(created);
       expect(store.currentProjectId).toBe(2);
+      expect(localStorage.getItem("spectra_sherpa_last_project_7")).toBe("2");
     });
   });
 
@@ -126,12 +127,23 @@ describe("Project Store", () => {
         models: [],
         children: [],
       } satisfies ProjectDetail;
+      localStorage.setItem("spectra_sherpa_data_active_tab_v2_7_1", "3");
+      localStorage.setItem("spectra_sherpa_data_active_tab_7_1", "2");
+      localStorage.setItem("spectra_sherpa_data_draft_v1:7:1", "{}");
+      localStorage.setItem("spectra_sherpa_last_experiment_7_1", "44");
+      localStorage.setItem("spectra_sherpa_synthesis_state_v1:7:1", "{}");
 
       const success = await store.deleteProject(1);
 
       expect(success).toBe(true);
       expect(store.currentProjectId).toBeNull();
       expect(store.currentProject).toBeNull();
+      expect(localStorage.getItem("spectra_sherpa_last_project_7")).toBeNull();
+      expect(localStorage.getItem("spectra_sherpa_data_active_tab_v2_7_1")).toBeNull();
+      expect(localStorage.getItem("spectra_sherpa_data_active_tab_7_1")).toBeNull();
+      expect(localStorage.getItem("spectra_sherpa_data_draft_v1:7:1")).toBeNull();
+      expect(localStorage.getItem("spectra_sherpa_last_experiment_7_1")).toBeNull();
+      expect(localStorage.getItem("spectra_sherpa_synthesis_state_v1:7:1")).toBeNull();
     });
 
     it("does not clear current if different project deleted", async () => {

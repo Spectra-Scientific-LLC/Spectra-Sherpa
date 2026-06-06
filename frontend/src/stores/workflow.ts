@@ -4,7 +4,9 @@ import api from "@/api/client";
 import type { NodeTypeMetadata, NodeLibraryResponse, NodeExecutionStatus } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 import { useJobStore } from "@/stores/job";
+import { useProjectStore } from "@/stores/project";
 import { useWorkbookStore } from "@/stores/workbook";
+import { newIdempotencyKey, requestScopedSingleFlightKey, singleFlight } from "@/utils/idempotency";
 
 // Types extracted to workflow-types.ts for module size reduction.
 // Re-exported here for backward compatibility.
@@ -372,12 +374,24 @@ export const useWorkflowStore = defineStore("workflow", () => {
         hasUnsavedChanges.value = false;
         return response.data.id;
       } else {
-        // Create new workflow
+        // Create new workflow. Require a project context — without one the
+        // workflow lands with project_id=null, becomes invisible in every
+        // project view, and effectively orphans the user's work. We resolve
+        // the project at call time (caller may pass an explicit one;
+        // otherwise the active project store wins) and fail loudly when
+        // neither is available, rather than silently creating an orphan.
+        const projectId = options.projectId ?? useProjectStore().currentProjectId;
+        if (projectId === null || projectId === undefined) {
+          throw new Error(
+            "Cannot save a new workflow without an active project. " +
+              "Select or create a project before saving.",
+          );
+        }
         const payload: WorkflowCreatePayload = {
           name: workflowName.value,
           description: workflowDescription.value,
           status: "draft",
-          project_id: options.projectId ?? null,
+          project_id: projectId,
           nodes: backendNodes,
           edges: backendEdges,
         };
@@ -479,8 +493,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
   }
 
-  async function listWorkflows(): Promise<WorkflowListItem[]> {
-    const response = await api.get<WorkflowListItem[]>("/workflows");
+  async function listWorkflows(projectId: number | null = useProjectStore().currentProjectId): Promise<WorkflowListItem[]> {
+    const params = projectId != null ? { project_id: projectId } : undefined;
+    const response = await api.get<WorkflowListItem[]>("/workflows", { params });
     return response.data;
   }
 
@@ -500,7 +515,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       templates.value = fetched;
       return templates.value;
     } catch (error: unknown) {
-      templatesError.value = getErrorMessage(error, "Failed to load workflow templates");
+      templatesError.value = getErrorMessage(error, "Failed to load analysis starters");
       throw error;
     } finally {
       templatesLoading.value = false;
@@ -622,22 +637,44 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
     const workbookStore = useWorkbookStore();
     const sheet = workbookStore.sheets.find((s) => s.workflowId === executingWorkflowId);
-    
-    if (sheet) {
-      sheet.executionStatus = "running";
-    }
+    // Trial tabs are passive views of a source workflow — mirror the
+    // source's run state onto every trial sheet pointing at it so the
+    // tab dots stay honest while another tab triggers the execution.
+    const trialMirrors = workbookStore.sheets.filter(
+      (s) => s.kind === "trial" && s.sourceWorkflowId === executingWorkflowId,
+    );
+    const allMirroredSheets = sheet ? [sheet, ...trialMirrors] : trialMirrors;
+    const setMirroredStatus = (status: "idle" | "running" | "success" | "error") => {
+      for (const s of allMirroredSheets) s.executionStatus = status;
+    };
+    const scheduleStatusClear = (terminal: "success" | "error") => {
+      setTimeout(() => {
+        for (const s of allMirroredSheets) {
+          if (s.executionStatus === terminal) s.executionStatus = "idle";
+        }
+      }, 3000);
+    };
+
+    setMirroredStatus("running");
 
     try {
-      const response = await api.post(`/workflows/${executingWorkflowId}/execute`, {
-        initial_data: initialData || {},
-      });
+      // REM-4: every execute carries a fresh Idempotency-Key so a network
+      // blip that drops the response is replayed server-side instead of
+      // creating a second ExecutionRun. singleFlight coalesces rapid
+      // double-clicks BEFORE the network call leaves the browser.
+      const requestPayload = { initial_data: initialData || {} };
+      const response = await singleFlight(requestScopedSingleFlightKey(`execute:${executingWorkflowId}`, requestPayload), () =>
+        api.post(
+          `/workflows/${executingWorkflowId}/execute`,
+          requestPayload,
+          { headers: { "Idempotency-Key": newIdempotencyKey() } },
+        ),
+      );
 
       const isStillActiveWorkflow = workflowId.value === executingWorkflowId;
       if (!isStillActiveWorkflow) {
-        if (sheet) {
-          sheet.executionStatus = "success";
-          setTimeout(() => { if (sheet.executionStatus === "success") sheet.executionStatus = "idle"; }, 3000);
-        }
+        setMirroredStatus("success");
+        scheduleStatusClear("success");
         return response.data;
       }
 
@@ -691,10 +728,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
       // Clear stale flag after successful execution
       clearWorkflowStale();
 
-      if (sheet) {
-        sheet.executionStatus = "success";
-        setTimeout(() => { if (sheet.executionStatus === "success") sheet.executionStatus = "idle"; }, 3000);
-      }
+      setMirroredStatus("success");
+      scheduleStatusClear("success");
 
       return response.data;
     } catch (error: unknown) {
@@ -709,10 +744,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
           });
         }
       }
-      if (sheet) {
-        sheet.executionStatus = "error";
-        setTimeout(() => { if (sheet.executionStatus === "error") sheet.executionStatus = "idle"; }, 3000);
-      }
+      setMirroredStatus("error");
+      scheduleStatusClear("error");
       throw error;
     } finally {
       // Clean up workflow progress subscription
@@ -732,29 +765,39 @@ export const useWorkflowStore = defineStore("workflow", () => {
   ): Promise<WorkflowExecuteResponse> {
     const workbookStore = useWorkbookStore();
     const sheet = workbookStore.sheets.find((s) => s.workflowId === targetWorkflowId);
-    if (sheet) {
-      sheet.executionStatus = "running";
-    }
+    // Trial tabs mirror the source workflow's run state — see executeWorkflow.
+    const trialMirrors = workbookStore.sheets.filter(
+      (s) => s.kind === "trial" && s.sourceWorkflowId === targetWorkflowId,
+    );
+    const allMirroredSheets = sheet ? [sheet, ...trialMirrors] : trialMirrors;
+    const setMirroredStatus = (status: "idle" | "running" | "success" | "error") => {
+      for (const s of allMirroredSheets) s.executionStatus = status;
+    };
+    const scheduleStatusClear = (terminal: "success" | "error") => {
+      setTimeout(() => {
+        for (const s of allMirroredSheets) {
+          if (s.executionStatus === terminal) s.executionStatus = "idle";
+        }
+      }, 3000);
+    };
+
+    setMirroredStatus("running");
 
     try {
-      const response = await api.post<WorkflowExecuteResponse>(
-        `/workflows/${targetWorkflowId}/execute`,
-        { initial_data: initialData || {} },
+      const requestPayload = { initial_data: initialData || {} };
+      const response = await singleFlight(requestScopedSingleFlightKey(`execute:${targetWorkflowId}`, requestPayload), () =>
+        api.post<WorkflowExecuteResponse>(
+          `/workflows/${targetWorkflowId}/execute`,
+          requestPayload,
+          { headers: { "Idempotency-Key": newIdempotencyKey() } },
+        ),
       );
-      if (sheet) {
-        sheet.executionStatus = "success";
-        setTimeout(() => {
-          if (sheet.executionStatus === "success") sheet.executionStatus = "idle";
-        }, 3000);
-      }
+      setMirroredStatus("success");
+      scheduleStatusClear("success");
       return response.data;
     } catch (error) {
-      if (sheet) {
-        sheet.executionStatus = "error";
-        setTimeout(() => {
-          if (sheet.executionStatus === "error") sheet.executionStatus = "idle";
-        }, 3000);
-      }
+      setMirroredStatus("error");
+      scheduleStatusClear("error");
       throw error;
     }
   }
@@ -777,10 +820,18 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
     isLoading.value = true;
     try {
-      const response = await api.post(`/workflows/${executingWorkflowId}/execute`, {
-        node_id: backendNodeId,
-        initial_data: initialData || {},
-      });
+      // Per-node execute scopes single-flight by (workflow, node) so two
+      // rapid clicks on the same node coalesce but distinct nodes still
+      // run independently. The Idempotency-Key is also a fresh UUID per
+      // logical click intent.
+      const requestPayload = { node_id: backendNodeId, initial_data: initialData || {} };
+      const response = await singleFlight(requestScopedSingleFlightKey(`execute:${executingWorkflowId}:${nodeId}`, requestPayload), () =>
+        api.post(
+          `/workflows/${executingWorkflowId}/execute`,
+          requestPayload,
+          { headers: { "Idempotency-Key": newIdempotencyKey() } },
+        ),
+      );
 
       if (workflowId.value !== executingWorkflowId) {
         return response.data;
@@ -951,8 +1002,15 @@ export const useWorkflowStore = defineStore("workflow", () => {
     URL.revokeObjectURL(url);
   }
 
-  async function fetchAvailableDatasets(): Promise<AvailableDatasets> {
-    const response = await api.get("/datasets/available");
+  async function fetchAvailableDatasets(projectId: number | null = useProjectStore().currentProjectId): Promise<AvailableDatasets> {
+    if (projectId == null) {
+      const empty = { experiments: [], library: [], builder: [] };
+      availableDatasets.value = empty;
+      return empty;
+    }
+    const response = await api.get("/datasets/available", {
+      params: { project_id: projectId },
+    });
     availableDatasets.value = response.data;
     return response.data;
   }
@@ -967,7 +1025,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
    * Fetch available files for a SpectroChemPy example dataset.
    * Results are cached to avoid redundant API calls.
    *
-   * @param dataset - Dataset name (irdata, ramandata, nmrdata, galacticdata)
+   * @param dataset - Dataset name (irdata, ramandata, galacticdata)
    * @returns Array of file options for dropdown
    */
   async function fetchSpectroChemPyFiles(dataset: string): Promise<Array<{label: string; value: string; path: string}>> {
@@ -980,7 +1038,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
     // Ensure API key is set (fallback for dev mode)
     if (!localStorage.getItem("api_key") && import.meta.env.DEV) {
-      const defaultKey = import.meta.env.VITE_DEFAULT_API_KEY || "default-local-key";
+      const defaultKey = import.meta.env.VITE_DEFAULT_API_KEY || "local-key";
       console.log(`[fetchSpectroChemPyFiles] Setting default API key for dev mode`);
       localStorage.setItem("api_key", defaultKey);
     }
@@ -1335,9 +1393,33 @@ export const useWorkflowStore = defineStore("workflow", () => {
     markWorkflowStale();
   }
 
+  const stableStringify = (value: unknown): string => {
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+    }
+    if (value && typeof value === "object") {
+      const record = value as Record<string, unknown>;
+      return `{${Object.keys(record)
+        .sort()
+        .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+        .join(",")}}`;
+    }
+    return JSON.stringify(value);
+  };
+
+  const valuesEqual = (left: unknown, right: unknown): boolean =>
+    stableStringify(left) === stableStringify(right);
+
   function updateNode(nodeId: string, updates: Partial<WorkflowNode>) {
     const node = nodes.value.find((n) => n.id === nodeId);
     if (node) {
+      const changed = Object.entries(updates).some(([key, value]) => {
+        const currentValue = node[key as keyof WorkflowNode];
+        return !valuesEqual(currentValue, value);
+      });
+      if (!changed) {
+        return;
+      }
       Object.assign(node, updates);
       hasUnsavedChanges.value = true;
       markWorkflowStale();

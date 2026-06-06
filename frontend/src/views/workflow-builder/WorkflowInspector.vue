@@ -20,14 +20,14 @@
         <div class="header-actions">
           <Button
             icon="pi pi-sliders-h"
-            class="p-button-text p-button-secondary p-button-sm trial-launch-btn"
+            class="p-button-sm inspector-action-btn"
             @click="openToRunTrials"
             title="Open to Run Trials"
             aria-label="Open to Run Trials"
           />
           <Button
             icon="pi pi-times"
-            class="p-button-text p-button-secondary p-button-sm"
+            class="p-button-sm inspector-action-btn"
             @click="closeInspector"
             title="Close inspector"
           />
@@ -39,13 +39,13 @@
         <Button
           label="Run Node"
           icon="pi pi-play"
-          class="p-button-sm p-button-success"
+          class="p-button-sm inspector-action-btn"
           @click="executeNode"
         />
         <Button
           label="Delete"
           icon="pi pi-trash"
-          class="p-button-sm p-button-danger p-button-outlined"
+          class="p-button-sm inspector-action-btn"
           @click="deleteNode"
         />
         <Button
@@ -665,8 +665,10 @@
             <span class="diagnostics-title">Diagnostics</span>
             <div class="diagnostics-grid">
               <div v-for="entry in diagnosticEntries" :key="entry.key" class="diagnostics-item">
-                <span class="diagnostics-key">{{ entry.key }}</span>
-                <span class="diagnostics-value">{{ formatDiagnosticValue(entry.value) }}</span>
+                <span class="diagnostics-key">{{ entry.label }}</span>
+                <span class="diagnostics-value" :title="entry.detail || entry.displayValue">
+                  {{ entry.displayValue }}
+                </span>
               </div>
             </div>
           </div>
@@ -674,6 +676,7 @@
           <!-- Universal Quick Plot and View Data buttons -->
           <div class="output-actions">
             <Button
+              v-if="selectedNodeType !== 'output.data_table'"
               icon="pi pi-chart-line"
               label="Quick Plot"
               class="p-button-sm p-button-outlined"
@@ -1291,6 +1294,7 @@ import DataTableModal from "./modals/DataTableModal.vue";
 import type { NodeOutput, PortOutput } from "@/utils/nodeOutput";
 import type { NodeParameterMetadata } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
+import { buildDiagnosticEntries } from "@/utils/diagnostics";
 
 type ParamsMap = Record<string, any>;
 
@@ -1399,7 +1403,6 @@ const emit = defineEmits<{
   (e: 'update-params', nodeId: string, params: ParamsMap): void;
   (e: 'execute-node', nodeId: string): void;
   (e: 'delete-node', nodeId: string): void;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- reuses the existing NodeDetailView payload shape.
   (e: 'open-trial', nodeData: any): void;
   (e: 'close'): void;
 }>();
@@ -1442,49 +1445,10 @@ const isPeakFindingStats = computed(() => {
   return meta.type === "PeakFinding" || meta.input_type === "PeakFinding";
 });
 
-const diagnosticEntries = computed<Array<{ key: string; value: unknown }>>(() => {
+const diagnosticEntries = computed(() => {
   const diagnostics = asObject(outputMetadata.value.diagnostics);
-  if (!diagnostics) {
-    return [];
-  }
-  return Object.entries(diagnostics).map(([key, value]) => ({ key, value }));
+  return buildDiagnosticEntries(diagnostics);
 });
-
-const formatDiagnosticValue = (value: unknown): string => {
-  if (typeof value === "number") {
-    if (Number.isInteger(value)) return String(value);
-    return value.toFixed(4);
-  }
-  if (Array.isArray(value)) {
-    const preview = value.slice(0, 4).map((item) => {
-      if (typeof item === "number") {
-        return Number.isInteger(item) ? String(item) : item.toFixed(4);
-      }
-      // Arrays of row dicts (e.g. HoldoutEvaluation's ``data`` /
-      // ``per_target``) used to render as ``[object Object]`` via
-      // ``String(item)`` — JSON-stringify instead so the preview
-      // actually shows the row contents.
-      if (item && typeof item === "object") {
-        try {
-          return JSON.stringify(item);
-        } catch {
-          return String(item);
-        }
-      }
-      return String(item);
-    });
-    const suffix = value.length > 4 ? `, ... (${value.length})` : "";
-    return `[${preview.join(", ")}${suffix}]`;
-  }
-  if (value && typeof value === "object") {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return String(value);
-    }
-  }
-  return String(value);
-};
 
 const outputStatsRows = computed<StatsRow[]>(() => {
   if (!Array.isArray(props.nodeOutput?.data)) {
@@ -1519,7 +1483,7 @@ const getNodeLabel = (nodeType: string): string => {
   if (metadata?.label) {
     return metadata.label;
   }
-  return NODE_LABELS[nodeType] || nodeType;
+  return nodeType;
 };
 
 // Close inspector
@@ -1568,49 +1532,6 @@ const NODE_ICONS: Record<string, string> = {
   // Deploy
   'deploy.input': '📥',
   'deploy.output': '📤',
-};
-
-const NODE_LABELS: Record<string, string> = {
-  // Data source
-  'data.source': 'Load Data',
-  'data.my_dataset': 'My Dataset',
-
-  // Preprocessing - atomic
-  'preprocess.cosmic_ray': 'Cosmic Ray Removal',
-  'preprocess.clip_range': 'Clip Range',
-  'preprocess.clip_floor': 'Clip Floor',
-  'preprocess.wavenumber_align': 'Wavenumber Align',
-
-  // Preprocessing - existing
-  'preprocess.normalize': 'Normalize',
-  'preprocess.scale': 'Scale',
-  'baseline.penalized_ls': 'Baseline (ALS)',
-  'baseline.rubberband': 'Baseline (Rubberband)',
-  'preprocess.smooth': 'Smooth (S-G)',
-  'preprocess.derivative': 'Derivative',
-  'preprocess.emsc': 'MSC',
-
-  // Synthesis / Blend
-  'synthesis.blend': 'Blend',
-  'synthesis.species': 'Species',
-  'synthesis.merge': 'Merge Spectra',
-
-  // Analysis
-  'model.pca': 'PCA',
-  'model.pls': 'PLS',
-  'model.mcr_als': 'MCR-ALS',
-  'model.efa': 'EFA',
-  'model.simplisma': 'SIMPLISMA',
-
-  // Output
-  'stats.summary': 'Statistics',
-  'output.plot': 'Scatter Plot',
-  'output.contour': 'Contour Plot',
-  'output.export': 'Export',
-
-  // Deploy
-  'deploy.input': 'Deploy Input',
-  'deploy.output': 'Deploy Output',
 };
 
 // Local params copy for editing
@@ -2044,7 +1965,7 @@ const datasetTreeNodes = computed(() => {
               selectable: false,
               children: files.map(file => ({
                 key: `exp-${exp.id}-${stage}-${file.id}`,
-                label: file.file_path.split('/').pop() || file.file_path,
+                label: `${file.file_path.split('/').pop() || file.file_path}${datasetFileShapeSummary(file)}`,
                 data: {
                   source: 'experiment',
                   experiment_id: exp.id,
@@ -2109,6 +2030,19 @@ const datasetTreeNodes = computed(() => {
 
   return nodes;
 });
+
+function datasetFileShapeSummary(file: {
+  n_samples?: number | null;
+  n_features?: number | null;
+  is_spectra?: boolean | null;
+}): string {
+  if (typeof file.n_samples !== 'number' || typeof file.n_features !== 'number') {
+    return '';
+  }
+  const sampleLabel = file.is_spectra ? 'spectra' : 'samples';
+  const featureLabel = file.is_spectra ? 'points' : 'features';
+  return ` · ${file.n_samples} ${sampleLabel} × ${file.n_features} ${featureLabel}`;
+}
 
 // My Dataset node: flat experiment options for simple Dropdown
 const myDatasetExperimentOptions = computed(() => {
@@ -2292,7 +2226,6 @@ const scpExampleOptions = computed(() => {
   return datasets.length > 0 ? datasets : [
     'irdata',
     'ramandata',
-    'nmrdata',
     'galacticdata',
     'agirdata',
     'matlabdata',
@@ -2678,6 +2611,7 @@ const openToRunTrials = () => {
       id: props.selectedNode.id,
       type: props.selectedNode.type,
       label: getNodeLabel(props.selectedNode.type),
+      workflowId: workflowStore.workflowId,
       params: { ...localParams.value },
       output: props.nodeOutput ? {
         // For output.* nodes in reduced tiers, top-level data duplicates
@@ -2688,6 +2622,12 @@ const openToRunTrials = () => {
         plots: props.nodeOutput.plots || null,
         ports: buildReducedPorts(level, props.nodeOutput.ports),
         primary_port: props.nodeOutput.primary_port || null,
+        // Carry the executor-lifted artifact UID through to sessionStorage
+        // so the NodeDetailView's "Saved Model Artifact" section can render
+        // (gated on `v-if="modelId"` after the OutputPanel inject chain).
+        // Without this, the section is invisible on every run regardless of
+        // whether the artifact was actually persisted.
+        model_id: props.nodeOutput.model_id ?? null,
       } : null,
       // Include input connections with their data
       inputConnections: inputConns,
@@ -2761,6 +2701,17 @@ const getParamDefinitions = (nodeType: string): NodeParameterDefinition[] => {
     ],
     'model.mcr_als': [
       { name: 'n_components', label: 'Number of Components', type: 'number', min: 1, max: 10, step: 1, default: 3 },
+      { name: 'normSpec', label: 'Spectra Normalization', type: 'select', default: 'euclid', options: [
+        { label: 'Euclidean norm', value: 'euclid' },
+        { label: 'Maximum intensity', value: 'max' },
+        { label: 'None', value: 'none' },
+      ] },
+      { name: 'max_iter', label: 'Maximum Iterations', type: 'number', min: 10, max: 1000, step: 10, default: 200 },
+      { name: 'tol', label: 'Convergence Tolerance', type: 'number', min: 1e-8, step: 1e-6, default: 1e-5 },
+      { name: 'non_negative_C', label: 'Non-negative Concentrations', type: 'boolean', default: true },
+      { name: 'non_negative_St', label: 'Non-negative Spectra', type: 'boolean', default: true },
+      { name: 'validation_target_index', label: 'Validation Target', type: 'number', min: 1, step: 1, default: 1 },
+      { name: 'validation_component_index', label: 'Validation MCR Component', type: 'number', min: 1, step: 1, default: 1 },
     ],
     'stats.summary': [
       { name: 'max_samples', label: 'Max Samples', type: 'number', min: 10, max: 500, step: 10, default: 50 },
@@ -2784,7 +2735,15 @@ const handleStorageChange = (event: StorageEvent) => {
   if (event.key === STORAGE_KEY && event.newValue) {
     try {
       const updatedData = JSON.parse(event.newValue);
-      if (updatedData._saved && updatedData.id === props.selectedNode?.id) {
+      const messageWorkflowId = updatedData.workflowId ?? null;
+      const currentWorkflowId = workflowStore.workflowId ?? null;
+      if (
+        updatedData._saved &&
+        updatedData.id === props.selectedNode?.id &&
+        (messageWorkflowId == null ||
+          currentWorkflowId == null ||
+          Number(messageWorkflowId) === Number(currentWorkflowId))
+      ) {
         // Update local params with defaults merged with saved values
         const defaults = getDefaultsForNodeType(updatedData.type || props.selectedNode?.type || '');
         localParams.value = { ...defaults, ...updatedData.params };
@@ -2803,11 +2762,17 @@ const handleStorageChange = (event: StorageEvent) => {
 const broadcastChannel = ref<BroadcastChannel | null>(null);
 
 const handleBroadcastMessage = async (event: MessageEvent) => {
-  const { type, nodeId, params, nodeType } = event.data;
+  const { type, nodeId, params, nodeType, workflowId } = event.data;
 
   // Only handle param updates for the currently selected node
   // (Execution requests are handled by WorkflowBuilderContent)
-  if (type === 'node_params_updated' && nodeId === props.selectedNode?.id) {
+  if (
+    type === 'node_params_updated' &&
+    nodeId === props.selectedNode?.id &&
+    (workflowId == null ||
+      workflowStore.workflowId == null ||
+      Number(workflowId) === Number(workflowStore.workflowId))
+  ) {
     // Update local params with defaults merged with saved values
     const defaults = getDefaultsForNodeType(nodeType || props.selectedNode?.type || '');
     localParams.value = { ...defaults, ...params };
@@ -2939,23 +2904,34 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-/* "Open to Run Trials" — the previous icon `pi pi-flask` is not part of the
-   primeicons 7 set in this project, so it rendered as an empty glyph (the
-   adjacent `pi pi-times` X was visible because that icon does exist). The
-   icon is now `pi pi-sliders-h` (parameter tuning — semantically a trial)
-   and the front color is forced white to win against PrimeVue's muted
-   secondary-text default on dark backgrounds. */
-.header-actions :deep(.trial-launch-btn),
-.header-actions :deep(.trial-launch-btn:hover),
-.header-actions :deep(.trial-launch-btn:focus),
-.header-actions :deep(.trial-launch-btn .p-button-icon),
-.header-actions :deep(.trial-launch-btn:hover .p-button-icon),
-.header-actions :deep(.trial-launch-btn:focus .p-button-icon) {
+/* Inspector quick-view action buttons — unified style across the four
+ * buttons that sit on the dark inspector chrome (Open trial / Close X
+ * in the header, Run Node / Delete in the action bar). White text on
+ * the dark slate background showing through, with a blue (primary)
+ * outline. Overrides PrimeVue's filled/secondary defaults that would
+ * otherwise paint a white background on a dark surface. */
+:deep(.inspector-action-btn.p-button) {
+  background: transparent !important;
+  color: #ffffff !important;
+  border: 1px solid #3b82f6 !important;
+  box-shadow: none !important;
+}
+
+:deep(.inspector-action-btn.p-button .p-button-icon),
+:deep(.inspector-action-btn.p-button .p-button-label) {
   color: #ffffff !important;
 }
 
-.header-actions :deep(.trial-launch-btn:hover) {
-  background: rgba(96, 165, 250, 0.18) !important;
+:deep(.inspector-action-btn.p-button:hover),
+:deep(.inspector-action-btn.p-button:focus),
+:deep(.inspector-action-btn.p-button:enabled:hover),
+:deep(.inspector-action-btn.p-button:enabled:focus) {
+  background: rgba(59, 130, 246, 0.18) !important;
+  border-color: #60a5fa !important;
+}
+
+:deep(.inspector-action-btn.p-button:disabled) {
+  opacity: 0.45;
 }
 
 /* Action buttons row */
@@ -3253,6 +3229,10 @@ onUnmounted(() => {
   color: #f8fafc;
   text-align: right;
   font-family: 'SF Mono', Monaco, monospace;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Output action buttons - vertical stack */

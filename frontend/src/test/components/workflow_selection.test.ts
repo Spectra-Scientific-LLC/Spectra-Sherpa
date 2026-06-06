@@ -1,8 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { mount } from '@vue/test-utils';
 import { createPinia, setActivePinia } from 'pinia';
 import WorkflowCanvas from '../../views/workflow-builder/WorkflowCanvas.vue';
+import { useWorkflowStore } from '../../stores/workflow';
 import type { WorkflowNode, WorkflowEdge } from '../../stores/workflow';
+import type { NodeTypeMetadata } from '../../types';
 
 describe('WorkflowCanvas Selection & Multi-Drag', () => {
   beforeEach(() => {
@@ -15,6 +17,34 @@ describe('WorkflowCanvas Selection & Multi-Drag', () => {
   ];
 
   const mockEdges: WorkflowEdge[] = [];
+
+  const makeNodeMetadata = (
+    node_type: string,
+    category: string,
+    label: string,
+  ): NodeTypeMetadata => ({
+    node_type,
+    category,
+    label,
+    description: "",
+    parameters: [],
+    input_types: [],
+    output_type: "",
+  });
+
+  const seedNodeLibrary = () => {
+    const store = useWorkflowStore();
+    store.nodeLibrary = new Map<string, NodeTypeMetadata>([
+      ["data.synthetic_curve", makeNodeMetadata("data.synthetic_curve", "synthesis", "Synthetic Curve")],
+      ["model.pca", makeNodeMetadata("model.pca", "exploratory", "PCA")],
+      ["model.pls", makeNodeMetadata("model.pls", "regression", "PLS Regression")],
+      ["classification.plsda", makeNodeMetadata("classification.plsda", "classification", "PLS-DA")],
+      ["model.kmeans", makeNodeMetadata("model.kmeans", "clustering", "K-Means")],
+      ["diagnostics.cross_validation", makeNodeMetadata("diagnostics.cross_validation", "validation", "Cross Validation")],
+      ["output.plot", makeNodeMetadata("output.plot", "output", "Plot")],
+      ["output.export", makeNodeMetadata("output.export", "output", "Export")],
+    ]);
+  };
 
   it('selects a single node without modifiers', async () => {
     const wrapper = mount(WorkflowCanvas, {
@@ -162,5 +192,33 @@ describe('WorkflowCanvas Selection & Multi-Drag', () => {
     });
 
     expect(wrapper.vm.selectedNodeIds.size).toBe(2);
+  });
+
+  it('uses the same category color classes for loaded nodes as the add-node palette', () => {
+    seedNodeLibrary();
+    const loadedNodes: WorkflowNode[] = [
+      { id: 'synthetic', type: 'data.synthetic_curve', x: 0, y: 0, params: {} } as WorkflowNode,
+      { id: 'pca', type: 'model.pca', x: 180, y: 0, params: {} } as WorkflowNode,
+      { id: 'pls', type: 'model.pls', x: 360, y: 0, params: {} } as WorkflowNode,
+      { id: 'plsda', type: 'classification.plsda', x: 540, y: 0, params: {} } as WorkflowNode,
+      { id: 'kmeans', type: 'model.kmeans', x: 720, y: 0, params: {} } as WorkflowNode,
+      { id: 'cv', type: 'diagnostics.cross_validation', x: 900, y: 0, params: {} } as WorkflowNode,
+      { id: 'plot', type: 'output.plot', x: 1080, y: 0, params: {} } as WorkflowNode,
+      { id: 'export', type: 'output.export', x: 1260, y: 0, params: {} } as WorkflowNode,
+    ];
+
+    const wrapper = mount(WorkflowCanvas, {
+      props: { nodes: loadedNodes, edges: mockEdges, nodeOutputs: new Map() },
+    });
+
+    const headers = wrapper.findAll('.node-header').map((header) => header.classes());
+    expect(headers[0]).toContain('header-synthesis');
+    expect(headers[1]).toContain('header-exploratory');
+    expect(headers[2]).toContain('header-regression');
+    expect(headers[3]).toContain('header-classify');
+    expect(headers[4]).toContain('header-clustering');
+    expect(headers[5]).toContain('header-validation');
+    expect(headers[6]).toContain('header-visualize');
+    expect(headers[7]).toContain('header-export');
   });
 });

@@ -1,6 +1,7 @@
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";
+import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import type { ProjectDataSource } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 
@@ -29,6 +30,14 @@ export const useDataSourceStore = defineStore("dataSources", () => {
   const error = ref<string | null>(null);
 
   const byId = computed(() => new Map(dataSources.value.map((item) => [item.id, item])));
+
+  function resetProjectScope(): void {
+    projectId.value = null;
+    dataSources.value = [];
+    isLoading.value = false;
+    error.value = null;
+  }
+  registerProjectScopeReset(resetProjectScope);
 
   async function loadProjectDataSources(targetProjectId: number): Promise<ProjectDataSource[]> {
     isLoading.value = true;
@@ -104,5 +113,6 @@ export const useDataSourceStore = defineStore("dataSources", () => {
     createDataSource,
     updateDataSource,
     setFromProjectDetail,
+    resetProjectScope,
   };
 });

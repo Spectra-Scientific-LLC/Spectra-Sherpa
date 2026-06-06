@@ -622,13 +622,15 @@ export const useSherpaStore = defineStore("sherpa", () => {
       content: [
         "Welcome to Sherpa Advisor. Quick tour:",
         "",
-        "1. **Project** — create or select one.",
-        "2. **Template** — pick one that fits your analysis.",
-        "3. **Data** — load a dataset (your files or the reference catalog).",
-        "4. **Inspect** — review and refine axes / metadata in the Data → Explore tab.",
-        "5. **Workflow** — run the pipeline, then ask me about the results.",
+        "1. **Dashboard** — start a new analysis or return to recent work.",
+        "2. **Project** — review project context, files, and Advisor memory.",
+        "3. **Data** — import, upload, synthesize, or stage library datasets.",
+        "4. **Workflows** — build and run chemometric pipelines.",
+        "5. **Runs** — inspect model runs, metrics, outputs, and saved models.",
+        "6. **Deploy** — package validated workflows for reuse.",
+        "7. **Report** — turn results into shareable analysis notes.",
         "",
-        "Ask me anything as you go — I can explain templates, diagnose runs, and suggest next steps.",
+        "Use **Settings** for keys and integrations. Ask me as you go; I can explain choices, diagnose runs, and suggest next steps.",
       ].join("\n"),
     };
   }
@@ -833,6 +835,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
       Record<string, unknown>
     > | null;
     const emptyDatasetContext = (): SherpaDatasetContext => ({
+      dataset_id: null,
       label: null,
       source: null,
       dataset_name: null,
@@ -919,6 +922,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
         toStringList(metadata?.["sklearn.target_names"]);
 
       const identity: Partial<SherpaDatasetContext> = {};
+      if (typeof ds.dataset_id === "string" && ds.dataset_id.trim()) {
+        identity.dataset_id = ds.dataset_id;
+      }
       if (typeof ds.title === "string" && ds.title.trim()) {
         identity.label = ds.title;
       }
@@ -1083,10 +1089,13 @@ export const useSherpaStore = defineStore("sherpa", () => {
       // Regression metrics
       "r2",
       "R2",
+      "r2_cv",
+      "r2_test",
       "rmse",
       "RMSE",
       "rmsep",
       "RMSEP",
+      "rmse_test",
       "rmsecv",
       "RMSECV",
       "q2",
@@ -1100,14 +1109,46 @@ export const useSherpaStore = defineStore("sherpa", () => {
       "rpd",
       "bias",
       // Classification metrics
+      "metrics",
+      "schema_version",
+      "primary_split",
+      "primary_metric",
       "accuracy",
       "train_accuracy",
+      "train_balanced_accuracy",
+      "train_f1_macro",
+      "train_precision_macro",
+      "train_recall_macro",
+      "train_sensitivity_macro",
+      "train_specificity_macro",
       "cv_accuracy",
       "cv_balanced_accuracy",
+      "cv_f1_macro",
+      "cv_precision_macro",
+      "cv_recall_macro",
+      "cv_sensitivity_macro",
+      "cv_specificity_macro",
+      "test_accuracy",
+      "test_balanced_accuracy",
+      "test_f1_macro",
+      "test_precision_macro",
+      "test_recall_macro",
+      "test_sensitivity_macro",
+      "test_specificity_macro",
+      "balanced_accuracy",
+      "f1_macro",
+      "precision_macro",
+      "recall_macro",
+      "sensitivity_macro",
+      "specificity_macro",
       "f1_score",
       "precision",
       "recall",
       "confusion_matrix",
+      "confusion_matrix_train",
+      "confusion_matrix_cv",
+      "confusion_matrix_test",
+      "confusion_matrices",
       "per_class",
       // Decomposition metrics
       "explained_variance",
@@ -1204,6 +1245,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
         const dsMetadata = toObject(ds.metadata) ?? toObject(metadata);
         const extra = toObject(ds.extra);
         const targetContext = toObject(ds.target_context);
+        if (typeof ds.dataset_id === "string" && ds.dataset_id.trim()) {
+          summary.dataset_id = ds.dataset_id;
+        }
         const featureNames =
           toStringList(dsMetadata?.feature_names) ??
           toStringList(extra?.["csv.feature_names"]) ??

@@ -1,15 +1,15 @@
 <template>
   <div class="integrations-tab">
-    <div class="info-callout">
+    <div v-if="!privacyOnly" class="info-callout">
       <i class="pi pi-info-circle"></i>
       <span>
         <strong>Looking to set up DeepSeek, OpenAI, or another LLM provider?</strong>
-        Go to the <strong>API Keys</strong> tab — the AI Assistant / LLM Configuration section is there.
+        Go to the <strong>API Keys</strong> tab — the BYO Chat configuration section is there.
         This page is for connecting to a SpectraSherpa Cloud server instance (enterprise / hybrid mode).
       </span>
     </div>
 
-    <div class="section">
+    <div v-if="!privacyOnly" class="section">
       <div class="section-header">
         <h3>SpectraSherpa Cloud</h3>
         <Tag v-if="connectionStatus" :severity="connectionSeverity" :value="connectionLabel" />
@@ -158,7 +158,7 @@
       </div>
     </div>
 
-    <div class="section" v-if="appMode">
+    <div v-if="!privacyOnly && appMode" class="section">
       <h3>Application Mode</h3>
       <div class="mode-panel">
         <div class="mode-info">
@@ -200,9 +200,9 @@
         <template v-else>
           <div class="toggle-row">
             <div class="toggle-info">
-              <strong>Enable AI Chat</strong>
+              <strong>Enable Chat Access</strong>
               <p v-if="chatToggleReason">{{ chatToggleReason }}</p>
-              <p v-else>Allow Spectra Sherpa to call an LLM for chat and assistant features.</p>
+              <p v-else>Allow Spectra Sherpa to call configured chat services.</p>
             </div>
             <InputSwitch v-model="privacyForm.allow_llm_chat" :disabled="!chatToggleEnabled" @change="savePrivacy" />
           </div>
@@ -222,6 +222,14 @@
               <p>Allow outbound requests to the NIST WebBook for spectral library lookups.</p>
             </div>
             <InputSwitch v-model="privacyForm.allow_nist_queries" @change="savePrivacy" />
+          </div>
+
+          <div class="toggle-row">
+            <div class="toggle-info">
+              <strong>HITRAN/HAPI Queries</strong>
+              <p>Allow outbound HITRAN line-table requests for synthesis spectra.</p>
+            </div>
+            <InputSwitch v-model="privacyForm.allow_hitran_queries" @change="savePrivacy" />
           </div>
 
           <div class="toggle-row">
@@ -252,7 +260,7 @@
       </div>
     </div>
 
-    <Dialog v-model:visible="showTestResult" header="Connection Test" modal :style="{ width: '420px' }">
+    <Dialog v-if="!privacyOnly" v-model:visible="showTestResult" header="Connection Test" modal :style="{ width: '420px' }">
       <div class="test-result">
         <div v-if="testResult?.success" class="success">
           <i class="pi pi-check-circle"></i>
@@ -295,6 +303,11 @@ import Button from 'primevue/button';
 import Tag from 'primevue/tag';
 import Dialog from 'primevue/dialog';
 
+const props = withDefaults(defineProps<{ privacyOnly?: boolean }>(), {
+  privacyOnly: false,
+});
+const privacyOnly = computed(() => props.privacyOnly);
+
 const toast = useToast();
 const { appConfig, loadConfig, isFeatureEnabled } = useAppConfig();
 const { isDemoMode } = useDemoMode();
@@ -309,13 +322,14 @@ const privacyForm = reactive({
   allow_llm_chat: false,
   allow_llm_context: false,
   allow_nist_queries: false,
+  allow_hitran_queries: false,
   allow_export: false,
   allow_spectrasherpa_sync: false,
 });
 
 const chatToggleEnabled = computed(() => !isDemoMode.value);
 const chatToggleReason = computed(() =>
-  isDemoMode.value ? 'AI Chat is always enabled in the Sherpa demo.' : ''
+  isDemoMode.value ? 'Chat access is always enabled in the Sherpa demo.' : ''
 );
 const contextToggleEnabled = computed(() => {
   if (isDemoMode.value) return false;
@@ -326,7 +340,7 @@ const contextToggleEnabled = computed(() => {
 const contextToggleReason = computed(() => {
   if (isDemoMode.value) return 'Workflow context sharing is always enabled in the Sherpa demo.';
   if (appMode.value === 'local') return 'Context-aware chat requires a Sherpa subscription.';
-  if (!privacyForm.allow_llm_chat) return 'Enable AI Chat to share workflow context with Sherpa.';
+  if (!privacyForm.allow_llm_chat) return 'Enable Chat Access to share workflow context with Sherpa.';
   if (!isFeatureEnabled('chatAssistant')) return 'Context-aware chat requires a Sherpa subscription.';
   return '';
 });
@@ -348,6 +362,7 @@ async function savePrivacy() {
       allow_llm_chat: isDemoMode.value ? true : privacyForm.allow_llm_chat,
       allow_llm_context: isDemoMode.value ? true : (contextToggleEnabled.value ? privacyForm.allow_llm_context : false),
       allow_nist_queries: privacyForm.allow_nist_queries,
+      allow_hitran_queries: privacyForm.allow_hitran_queries,
       allow_export: privacyForm.allow_export,
       allow_spectrasherpa_sync: privacyForm.allow_spectrasherpa_sync,
     });
@@ -444,7 +459,9 @@ const modeDescription = computed(() => {
 
 onMounted(async () => {
   await loadConfig();
-  await loadConnectionState();
+  if (!privacyOnly.value) {
+    await loadConnectionState();
+  }
 
   // Load privacy settings
   showSyncOption.value = appMode.value !== 'local';
@@ -462,6 +479,7 @@ onMounted(async () => {
             ? false
             : (data.allow_llm_context ?? false));
       privacyForm.allow_nist_queries = data.allow_nist_queries ?? false;
+      privacyForm.allow_hitran_queries = data.allow_hitran_queries ?? false;
       privacyForm.allow_export = data.allow_export ?? false;
       privacyForm.allow_spectrasherpa_sync = data.allow_spectrasherpa_sync ?? false;
     }
@@ -646,7 +664,11 @@ const refreshConnection = async () => {
 
 <style scoped>
 .integrations-tab {
-  padding: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  max-width: 920px;
+  padding: 0;
 }
 
 .info-callout {
@@ -671,7 +693,10 @@ const refreshConnection = async () => {
 }
 
 .section {
-  margin-bottom: 2rem;
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  padding: 1.25rem;
 }
 
 .section-header {
@@ -690,13 +715,13 @@ const refreshConnection = async () => {
 .muted-text {
   color: var(--text-color-secondary);
   font-size: 0.9rem;
-  margin-bottom: 1rem;
+  margin: 0 0 1rem;
 }
 
 .connection-panel {
-  background: var(--surface-card);
-  border-radius: 12px;
-  padding: 1.5rem;
+  background: var(--surface-ground);
+  border-radius: 8px;
+  padding: 1rem;
   border: 1px solid var(--surface-border);
 }
 
@@ -863,9 +888,9 @@ const refreshConnection = async () => {
 }
 
 .mode-panel {
-  background: var(--surface-card);
-  border-radius: 12px;
-  padding: 1.5rem;
+  background: var(--surface-ground);
+  border-radius: 8px;
+  padding: 1rem;
   border: 1px solid var(--surface-border);
 }
 
@@ -924,9 +949,9 @@ const refreshConnection = async () => {
 }
 
 .panel {
-  background: var(--surface-card);
-  border-radius: 12px;
-  padding: 1.5rem;
+  background: var(--surface-ground);
+  border-radius: 8px;
+  padding: 1rem;
   border: 1px solid var(--surface-border);
 }
 

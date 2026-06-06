@@ -10,14 +10,26 @@ import { useAuthStore } from "@/stores/auth";
 // navigating to them falls through to the SPA catchall / 404 view.
 
 const routes = [
-  { path: "/", redirect: "/project" },
+  { path: "/", redirect: "/dashboard" },
 
-  // --- 6 main pages (chemometrician workflow) ---
+  // --- Main pages (chemometrician workflow) ---
+  // The V2 designs were adopted as canonical. The /dashboard route serves
+  // the former "Dashboard V2" (SimplifiedDashboard.vue); /project serves
+  // the redesigned ProjectContent.vue. Legacy /dashboard-v2 and /project-v2
+  // paths are kept as redirects so existing bookmarks / in-app links don't
+  // break — they collapse to the canonical routes.
+  {
+    path: "/dashboard",
+    component: () => import("@/views/dashboard/SimplifiedDashboard.vue"),
+    meta: { nav: "dashboard" },
+  },
+  { path: "/dashboard-v2", redirect: "/dashboard" },
   {
     path: "/project",
     component: () => import("@/views/project/ProjectContent.vue"),
     meta: { nav: "project" },
   },
+  { path: "/project-v2", redirect: "/project" },
   {
     // R9 — Memory Map view.  Standalone (no nav highlight) because
     // the entry is the "Memory Map" button on Project Details, not a
@@ -38,15 +50,17 @@ const routes = [
     meta: { nav: "workflow" },
   },
   {
+    path: "/runs",
+    component: () => import("@/views/models/ModelsContent.vue"),
+    meta: { nav: "runs" },
+  },
+  { path: "/models", redirect: "/runs" },
+  {
     path: "/workflow/node/:nodeId",
     component: () => import("@/views/workflow-builder/NodeDetailView.vue"),
     meta: { standalone: true },
   },
-  {
-    path: "/experiments",
-    component: () => import("@/views/experiments/ExperimentsContent.vue"),
-    meta: { nav: "experiments" },
-  },
+  { path: "/experiments", redirect: "/runs" },
   {
     path: "/deploy",
     component: () => import("@/views/deploy/DeployContent.vue"),
@@ -74,10 +88,10 @@ const routes = [
   },
 
   // --- Legacy redirects ---
-  { path: "/workspace", redirect: "/project" },
+  { path: "/workspace", redirect: "/dashboard" },
   { path: "/workspace/node/:nodeId", redirect: (to: RouteLocation) => `/workflow/node/${to.params.nodeId}` },
   { path: "/operations/:rest(.*)", redirect: "/workflow" },
-  { path: "/templates", redirect: "/project" },
+  { path: "/templates", redirect: "/dashboard" },
   { path: "/workflows/:pathMatch(.*)*", redirect: "/workflow" },
 ];
 

@@ -1,10 +1,21 @@
 import axios from "axios";
 
 interface ErrorBody {
-  detail?: string | Record<string, unknown>;
+  detail?: string | Record<string, unknown> | Array<Record<string, unknown>>;
   message?: string;
   error?: string;
   upgrade_url?: string;
+}
+
+function formatValidationDetail(detail: Array<Record<string, unknown>>): string {
+  const messages = detail
+    .map((item) => {
+      const loc = Array.isArray(item.loc) ? item.loc.join(".") : "";
+      const msg = typeof item.msg === "string" ? item.msg : "";
+      return [loc, msg].filter(Boolean).join(": ");
+    })
+    .filter(Boolean);
+  return messages.join("; ");
 }
 
 /**
@@ -76,9 +87,13 @@ export function getErrorMessage(
 ): string {
   if (axios.isAxiosError<ErrorBody>(error)) {
     const detail = error.response?.data?.detail;
+    if (Array.isArray(detail)) {
+      return formatValidationDetail(detail) || fallback;
+    }
     // Handle object detail (demo 403/429)
     if (typeof detail === "object" && detail !== null) {
-      return String((detail as Record<string, unknown>).message) || fallback;
+      const message = (detail as Record<string, unknown>).message;
+      return typeof message === "string" && message ? message : fallback;
     }
     return (
       detail ||

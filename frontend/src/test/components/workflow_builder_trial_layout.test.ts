@@ -80,12 +80,12 @@ const workflowStore = reactive({
 
 const workflowBuilderConfigStore = {
   autoExecute: { __v_isRef: true, value: false },
-  autoSaveMemory: { __v_isRef: true, value: true },
 };
 
 vi.mock("vue-router", () => ({
   useRoute: () => ({ query: { project_id: "1" } }),
   useRouter: () => ({ push: vi.fn() }),
+  onBeforeRouteLeave: vi.fn(),
 }));
 
 vi.mock("primevue/usetoast", () => ({
@@ -96,8 +96,20 @@ vi.mock("@/stores/workbook", () => ({
   useWorkbookStore: () => workbookStore,
 }));
 
+vi.mock("@/stores/runs", () => ({
+  useRunsStore: () => ({
+    saveRun: vi.fn(),
+  }),
+}));
+
 vi.mock("@/stores/workflow", () => ({
   useWorkflowStore: () => workflowStore,
+}));
+
+vi.mock("@/stores/auth", () => ({
+  useAuthStore: () => ({
+    user: { id: 1 },
+  }),
 }));
 
 vi.mock("@/stores/workflowBuilderConfig", () => ({

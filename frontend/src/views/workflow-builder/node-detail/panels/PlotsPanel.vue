@@ -36,6 +36,10 @@
                       <label>Y Axis</label>
                       <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                     </div>
+                    <div v-if="state.scoreColorOptions.length > 1" class="control-group">
+                      <label>Color by</label>
+                      <Dropdown v-model="scoreColorMode" :options="state.scoreColorOptions" optionLabel="label" optionValue="value" />
+                    </div>
                   </div>
                   <PlotlyChart :data="state.pcaScoresData" :layout="state.pcaScoresLayout" :config="state.pcaScoresConfig" />
                 </div>
@@ -125,6 +129,48 @@
               </div>
             </Transition>
           </div>
+          <div v-if="state.nodeTypeKey === 'model.mcr_als'" class="plot-subsection">
+            <div class="plot-subsection-header" @click="$emit('togglePlot', 'mcrGroundTruthValidation')">
+              <i :class="plotSections.mcrGroundTruthValidation ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <span>Ground Truth Validation</span>
+            </div>
+            <Transition name="collapse">
+              <div v-if="plotSections.mcrGroundTruthValidation" class="plot-container">
+                <div v-if="mcrCandidateOptions.length > 0" class="mcr-validation-controls">
+                  <div class="control-group mcr-candidate-picker">
+                    <label>Review Target / Component Pair</label>
+                    <Dropdown
+                      v-model="selectedMcrCandidate"
+                      :options="mcrCandidateOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                    />
+                  </div>
+                  <div v-if="selectedMcrCandidateRecord" class="mcr-candidate-metrics">
+                    <span>R² {{ formatMcrNumber(selectedMcrCandidateRecord.r2) }}</span>
+                    <span>RMSE {{ formatMcrNumber(selectedMcrCandidateRecord.rmse) }}</span>
+                    <span>r {{ formatMcrNumber(selectedMcrCandidateRecord.correlation) }}</span>
+                  </div>
+                  <div v-if="selectedMcrCandidateRecord" class="mcr-candidate-hint">
+                    Set Validation Target {{ Number(selectedMcrCandidateRecord.target_index ?? 0) + 1 }}
+                    and MCR Component {{ Number(selectedMcrCandidateRecord.component_index ?? 0) + 1 }},
+                    then rerun to emit this pair as ValidationResult.
+                  </div>
+                </div>
+                <div v-if="mcrSelectedValidationScatterData.length > 0" class="mcr-validation-grid">
+                  <PlotlyChart :data="mcrSelectedValidationScatterData" :layout="state.mcrValidationScatterLayout" />
+                  <PlotlyChart
+                    v-if="mcrSelectedSpectrumData.length > 0 || state.mcrValidationSpectrumData.length > 0"
+                    :data="mcrSelectedSpectrumData.length > 0 ? mcrSelectedSpectrumData : state.mcrValidationSpectrumData"
+                    :layout="state.mcrValidationSpectrumLayout"
+                  />
+                </div>
+                <div v-else class="no-plot-message">
+                  Run MCR-ALS on a synthetic dataset with ground-truth concentrations, then select the validation target and MCR component in the node settings.
+                </div>
+              </div>
+            </Transition>
+          </div>
         </template>
 
         <!-- MCR-ALS only: contour diagnostics -->
@@ -197,6 +243,10 @@
                     <label>Y Axis</label>
                     <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
+                  <div v-if="state.scoreColorOptions.length > 1" class="control-group">
+                    <label>Color by</label>
+                    <Dropdown v-model="scoreColorMode" :options="state.scoreColorOptions" optionLabel="label" optionValue="value" />
+                  </div>
                 </div>
                 <PlotlyChart :data="state.plsScoresData" :layout="state.plsScoresLayout" :config="state.pcaScoresConfig" />
               </div>
@@ -232,6 +282,10 @@
                   <div class="control-group">
                     <label>Y Axis</label>
                     <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                  </div>
+                  <div v-if="state.scoreColorOptions.length > 1" class="control-group">
+                    <label>Color by</label>
+                    <Dropdown v-model="scoreColorMode" :options="state.scoreColorOptions" optionLabel="label" optionValue="value" />
                   </div>
                 </div>
                 <PlotlyChart :data="state.classificationScoresData" :layout="state.classificationScoresLayout" :config="state.pcaScoresConfig" />
@@ -274,28 +328,6 @@
               </div>
             </Transition>
           </div>
-          <div class="plot-subsection">
-            <div class="plot-subsection-header" @click="$emit('togglePlot', 'plsdaConfusionTrain')">
-              <i :class="plotSections.plsdaConfusionTrain ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-              <span>Confusion Matrix (Training)</span>
-            </div>
-            <Transition name="collapse">
-              <div v-if="plotSections.plsdaConfusionTrain" class="plot-container">
-                <PlotlyChart :data="state.plsdaConfusionTrainData" :layout="state.plsdaConfusionTrainLayout" />
-              </div>
-            </Transition>
-          </div>
-          <div class="plot-subsection">
-            <div class="plot-subsection-header" @click="$emit('togglePlot', 'plsdaConfusionCV')">
-              <i :class="plotSections.plsdaConfusionCV ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
-              <span>Confusion Matrix (Cross-Validation)</span>
-            </div>
-            <Transition name="collapse">
-              <div v-if="plotSections.plsdaConfusionCV" class="plot-container">
-                <PlotlyChart :data="state.plsdaConfusionCVData" :layout="state.plsdaConfusionCVLayout" />
-              </div>
-            </Transition>
-          </div>
         </template>
 
         <!-- SIMCA -->
@@ -315,6 +347,10 @@
                   <div class="control-group">
                     <label>Y Axis</label>
                     <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
+                  </div>
+                  <div v-if="state.scoreColorOptions.length > 1" class="control-group">
+                    <label>Color by</label>
+                    <Dropdown v-model="scoreColorMode" :options="state.scoreColorOptions" optionLabel="label" optionValue="value" />
                   </div>
                 </div>
                 <PlotlyChart :data="state.classificationScoresData" :layout="state.classificationScoresLayout" :config="state.pcaScoresConfig" />
@@ -341,6 +377,10 @@
                     <label>Y Axis</label>
                     <Dropdown v-model="pcaYAxis" :options="state.pcaAxisOptions" optionLabel="label" optionValue="value" />
                   </div>
+                  <div v-if="state.scoreColorOptions.length > 1" class="control-group">
+                    <label>Color by</label>
+                    <Dropdown v-model="scoreColorMode" :options="state.scoreColorOptions" optionLabel="label" optionValue="value" />
+                  </div>
                 </div>
                 <PlotlyChart :data="state.classificationScoresData" :layout="state.classificationScoresLayout" :config="state.pcaScoresConfig" />
               </div>
@@ -364,6 +404,32 @@
                   </div>
                 </div>
                 <PlotlyChart :data="state.regressionCorrelationData" :layout="state.regressionCorrelationLayout" />
+              </div>
+            </Transition>
+          </div>
+        </template>
+
+        <!-- Classification: Confusion Matrices -->
+        <template v-if="['classification.plsda', 'classification.simca', 'classification.knn'].includes(state.nodeTypeKey)">
+          <div v-if="state.plsdaConfusionTrainData.length > 0" class="plot-subsection">
+            <div class="plot-subsection-header" @click="$emit('togglePlot', 'plsdaConfusionTrain')">
+              <i :class="plotSections.plsdaConfusionTrain ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <span>Confusion Matrix (Training)</span>
+            </div>
+            <Transition name="collapse">
+              <div v-if="plotSections.plsdaConfusionTrain" class="plot-container">
+                <PlotlyChart :data="state.plsdaConfusionTrainData" :layout="state.plsdaConfusionTrainLayout" />
+              </div>
+            </Transition>
+          </div>
+          <div v-if="state.plsdaConfusionCVData.length > 0" class="plot-subsection">
+            <div class="plot-subsection-header" @click="$emit('togglePlot', 'plsdaConfusionCV')">
+              <i :class="plotSections.plsdaConfusionCV ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <span>Confusion Matrix (Cross-Validation)</span>
+            </div>
+            <Transition name="collapse">
+              <div v-if="plotSections.plsdaConfusionCV" class="plot-container">
+                <PlotlyChart :data="state.plsdaConfusionCVData" :layout="state.plsdaConfusionCVLayout" />
               </div>
             </Transition>
           </div>
@@ -414,6 +480,83 @@
           </div>
         </template>
 
+        <!-- Compare vs. Library -->
+        <template v-if="state.nodeTypeKey === 'analysis.compare_library'">
+          <div class="plot-subsection">
+            <div class="plot-subsection-header" @click="$emit('togglePlot', 'libraryCompare')">
+              <i :class="plotSections.libraryCompare ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <span>Library Overlay</span>
+            </div>
+            <Transition name="collapse">
+              <div v-if="plotSections.libraryCompare" class="plot-container">
+                <div v-if="filteredLibraryCompareCandidates.length > 0" class="library-candidate-controls">
+                  <div class="control-group library-sample-picker">
+                    <label>Spectrum</label>
+                    <Dropdown
+                      v-model="selectedLibrarySample"
+                      :options="libraryCompareSampleOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                    />
+                  </div>
+                  <div class="control-group library-candidate-picker">
+                    <label>Species rank</label>
+                    <div class="species-rank-list" role="listbox" aria-label="Library species to overlay">
+                      <button
+                        v-for="candidate in filteredLibraryCompareCandidates"
+                        :key="libraryCandidateKey(candidate)"
+                        type="button"
+                        class="species-rank-row"
+                        :class="{ selected: isLibraryCandidateChecked(candidate) }"
+                        @click="toggleLibraryCandidate(candidate)"
+                      >
+                        <input
+                          type="checkbox"
+                          :checked="isLibraryCandidateChecked(candidate)"
+                          tabindex="-1"
+                          aria-hidden="true"
+                          readonly
+                        />
+                        <span
+                          class="species-color-swatch"
+                          :style="{ background: libraryTraceColorForCandidate(candidate) }"
+                          aria-hidden="true"
+                        />
+                        <span>
+                          #{{ candidate.sample_rank ?? candidate.rank ?? "?" }} {{ candidate.library ?? "Library" }}
+                        </span>
+                        <strong>HQI {{ formatHqi(candidate.hqi) }}</strong>
+                      </button>
+                    </div>
+                  </div>
+                  <span
+                    v-if="selectedLibraryCandidateRecords.length === 1"
+                    class="candidate-status-badge"
+                    :class="`candidate-status-${selectedLibraryCandidateRecords[0].candidate_status || 'review'}`"
+                  >
+                    {{ formatCandidateStatus(selectedLibraryCandidateRecords[0].candidate_status) }}
+                  </span>
+                  <span v-else-if="selectedLibraryCandidateRecords.length > 1" class="candidate-hqi">
+                    {{ selectedLibraryCandidateRecords.length }} species selected
+                  </span>
+                  <span
+                    v-if="selectedLibraryAlignmentStatus"
+                    class="candidate-alignment-badge"
+                    :class="{ aligned: selectedLibraryAlignmentStatus.aligned }"
+                  >
+                    <i :class="selectedLibraryAlignmentStatus.aligned ? 'pi pi-check-circle' : 'pi pi-exclamation-triangle'" />
+                    {{ selectedLibraryAlignmentStatus.label }}
+                  </span>
+                  <span v-if="selectedLibraryCandidateCaveat" class="candidate-caveat">
+                    {{ selectedLibraryCandidateCaveat }}
+                  </span>
+                </div>
+                <PlotlyChart :data="libraryCompareInteractiveData" :layout="libraryCompareInteractiveLayout" />
+              </div>
+            </Transition>
+          </div>
+        </template>
+
         <!-- Plot / Contour Visualization -->
         <template v-if="state.nodeTypeKey === 'output.plot' || state.nodeTypeKey === 'output.contour'">
           <div class="plot-subsection">
@@ -423,6 +566,10 @@
             </div>
             <Transition name="collapse">
               <div v-if="plotSections.plotVisualization" class="plot-container">
+                <div v-if="state.plotNodeWarning" class="plot-warning" :title="state.plotNodeWarning">
+                  <i class="pi pi-info-circle" />
+                  <span>{{ state.plotNodeWarning }}</span>
+                </div>
                 <PlotlyChart v-if="state.plotNodeData.length > 0" :data="state.plotNodeData" :layout="state.plotNodeLayout" />
                 <div v-else class="empty-plot-message">
                   <i class="pi pi-play" />
@@ -631,10 +778,11 @@
 </template>
 
 <script setup lang="ts">
-import { inject } from "vue";
+import { computed, inject, ref, watch } from "vue";
 import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
 import PlotlyChart from "@/components/PlotlyChart.vue";
+import { scaleLibraryTraceToSamplePeaks } from "@/utils/libraryTraceScaling";
 import { NODE_DETAIL_STATE_KEY } from "../state/useNodeDetailState";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -661,12 +809,431 @@ const state = plots;
 // Writable refs: v-model binds directly — mutating .value propagates to shell.
 const pcaXAxis = writable.pcaXAxis;
 const pcaYAxis = writable.pcaYAxis;
+const scoreColorMode = writable.scoreColorMode;
 const plsdaLoadingsViewMode = writable.plsdaLoadingsViewMode;
 const regressionTargetIdx = writable.regressionTargetIdx;
 const spectraDisplayMode = writable.spectraDisplayMode;
 const genericDisplayMode = writable.genericDisplayMode;
 const featureXAxis = writable.featureXAxis;
 const featureYAxis = writable.featureYAxis;
+
+type LibraryCompareCandidate = {
+  rank?: number;
+  sample_rank?: number;
+  global_rank?: number;
+  sample_index?: number;
+  library_index?: number;
+  sample_trace_index?: number;
+  library_trace_index?: number;
+  sample?: string;
+  library?: string;
+  hqi?: number;
+  hqi_band?: string;
+  raw_hqi_band?: string;
+  candidate_status?: string;
+  overlap_sufficient?: boolean;
+  coverage_fraction?: number;
+  baseline_suspected?: boolean;
+  confidence_caveats?: string;
+  sample_spacing?: number | null;
+  library_spacing?: number | null;
+  alignment_spacing?: number | null;
+  grid_aligned?: boolean;
+  interpolation?: string;
+  x?: Array<number | null>;
+  sample_x?: Array<number | null>;
+  sample_y?: Array<number | null>;
+  library_x?: Array<number | null>;
+  library_y?: Array<number | null>;
+  comparison_x?: Array<number | null>;
+  comparison_sample_y?: Array<number | null>;
+  comparison_library_y?: Array<number | null>;
+  y_units?: string;
+};
+
+type LibraryCompareTrace = {
+  sample_index?: number;
+  library_index?: number;
+  sample?: string;
+  library?: string;
+  x?: Array<number | null>;
+  y?: Array<number | null>;
+};
+
+type McrCandidatePair = {
+  component_index?: number;
+  component_name?: string;
+  target_index?: number;
+  target_name?: string;
+  correlation?: number;
+  r2?: number | null;
+  rmse?: number | null;
+  normalized_rmse?: number | null;
+  actual?: unknown;
+  predicted?: unknown;
+};
+
+const selectedMcrCandidate = ref(0);
+const selectedLibraryCandidateKeys = ref<string[]>([]);
+const selectedLibrarySample = ref<string | number | null>(null);
+
+const mcrGroundTruthComparison = computed<Record<string, any> | null>(() => {
+  if (state.value.nodeTypeKey !== "model.mcr_als") return null;
+  const port = (state.value.nodeOutput as any)?.ports?.ground_truth_comparison;
+  const portPayload = port && typeof port === "object" && "value" in port ? port.value : port;
+  if (portPayload && typeof portPayload === "object") return portPayload;
+  const embedded = (state.value.nodeOutput as any)?.metadata?.ground_truth_comparison;
+  return embedded && typeof embedded === "object" ? embedded : null;
+});
+
+const mcrCandidatePairs = computed<McrCandidatePair[]>(() => {
+  const raw = mcrGroundTruthComparison.value?.metadata?.candidate_pairs;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((pair) => pair && typeof pair === "object")
+    .slice()
+    .sort((a, b) => Math.abs(Number(b.correlation ?? 0)) - Math.abs(Number(a.correlation ?? 0)));
+});
+
+const mcrCandidateOptions = computed(() =>
+  mcrCandidatePairs.value.map((pair, index) => ({
+    value: index,
+    label: `${pair.component_name ?? `Component ${Number(pair.component_index ?? index) + 1}`} vs ${pair.target_name ?? `Target ${Number(pair.target_index ?? index) + 1}`} · r ${formatMcrNumber(pair.correlation)}`,
+  }))
+);
+
+const selectedMcrCandidateRecord = computed<McrCandidatePair | null>(() => {
+  return mcrCandidatePairs.value[selectedMcrCandidate.value] ?? null;
+});
+
+const toFiniteNumberList = (values: unknown): number[] => {
+  return Array.isArray(values)
+    ? values.map(Number).filter((value) => Number.isFinite(value))
+    : [];
+};
+
+const maxNormalize = (values: number[]): number[] => {
+  const finiteAbs = values.map((value) => Math.abs(value)).filter(Number.isFinite);
+  const maxAbs = finiteAbs.length > 0 ? Math.max(...finiteAbs) : 0;
+  return maxAbs > 0 ? values.map((value) => value / maxAbs) : values;
+};
+
+const mcrSelectedValidationScatterData = computed(() => {
+  const candidate = selectedMcrCandidateRecord.value as (McrCandidatePair & { actual?: unknown; predicted?: unknown }) | null;
+  const actual = toFiniteNumberList(candidate?.actual);
+  const predicted = toFiniteNumberList(candidate?.predicted);
+  if (actual.length > 0 && predicted.length > 0) {
+    const n = Math.min(actual.length, predicted.length);
+    const x = actual.slice(0, n);
+    const y = predicted.slice(0, n);
+    const lo = Math.min(...x, ...y);
+    const hi = Math.max(...x, ...y);
+    return [
+      {
+        type: "scatter",
+        mode: "markers",
+        x,
+        y,
+        name: "Samples",
+        marker: { color: "#3b82f6", size: 8, opacity: 0.72 },
+        hovertemplate: "Target: %{x:.4g}<br>Recovered: %{y:.4g}<extra></extra>",
+      },
+      {
+        type: "scatter",
+        mode: "lines",
+        x: [lo, hi],
+        y: [lo, hi],
+        name: "Ideal",
+        line: { dash: "dash", color: "#94a3b8" },
+      },
+    ];
+  }
+  return state.value.mcrValidationScatterData;
+});
+
+const mcrSelectedSpectrumData = computed(() => {
+  const candidate = selectedMcrCandidateRecord.value;
+  const componentIndex = Number(candidate?.component_index);
+  const metadata = (state.value.nodeOutput as any)?.metadata || {};
+  const St = Array.isArray(metadata.St) ? metadata.St : [];
+  const row = Number.isInteger(componentIndex) && componentIndex >= 0 ? St[componentIndex] : null;
+  const spectrum = Array.isArray(row) ? row.map(Number) : [];
+  if (spectrum.length === 0) return [];
+  const normalized = maxNormalize(spectrum);
+  const rawX = Array.isArray(metadata.spectral_wavenumbers) ? metadata.spectral_wavenumbers.map(Number) : [];
+  const x = rawX.length === normalized.length ? rawX : Array.from({ length: normalized.length }, (_, i) => i);
+  const traces: any[] = [
+    {
+      type: "scatter",
+      mode: "lines",
+      x,
+      y: normalized,
+      name: String(candidate?.component_name || `Component ${componentIndex + 1}`),
+      line: { width: 2, color: "#14b8a6" },
+      hovertemplate: "%{x:.4g}<br>Normalized intensity: %{y:.4g}<extra></extra>",
+    },
+  ];
+  const recovery = mcrGroundTruthComparison.value?.spectra_recovery || mcrGroundTruthComparison.value?.metadata?.spectra_recovery;
+  const truthIndex = Number((candidate as any)?.target_index ?? (candidate as any)?.truth_index);
+  const truthRows = Array.isArray(recovery?.truth_spectra) ? recovery.truth_spectra : [];
+  const truthRow = Number.isInteger(truthIndex) && truthIndex >= 0 ? truthRows[truthIndex] : null;
+  const truthSpectrum = Array.isArray(truthRow) ? truthRow.map(Number) : [];
+  if (truthSpectrum.length > 0) {
+    const truthXRaw = Array.isArray(recovery?.truth_spectra_x) ? recovery.truth_spectra_x.map(Number) : [];
+    const truthX = truthXRaw.length === truthSpectrum.length
+      ? truthXRaw
+      : Array.from({ length: truthSpectrum.length }, (_, i) => i);
+    traces.push({
+      type: "scatter",
+      mode: "lines",
+      x: truthX,
+      y: maxNormalize(truthSpectrum),
+      name: String((candidate as any)?.target_name || `Ground truth ${truthIndex + 1}`),
+      line: { width: 2, color: "#f59e0b", dash: "dot" },
+      hovertemplate: "%{x:.4g}<br>Ground truth: %{y:.4g}<extra></extra>",
+    });
+  }
+  return traces;
+});
+
+watch(
+  () => mcrCandidatePairs.value.length,
+  (length) => {
+    if (length === 0 || selectedMcrCandidate.value >= length) {
+      selectedMcrCandidate.value = 0;
+    }
+  },
+  { immediate: true }
+);
+
+const libraryCompareTracePayload = computed(() => (state.value.nodeOutput as any)?.plots?.library_compare_candidates || {});
+
+const libraryCompareCandidates = computed<LibraryCompareCandidate[]>(() => {
+  const raw = libraryCompareTracePayload.value?.data;
+  return Array.isArray(raw) ? raw : [];
+});
+
+const libraryCompareSampleTraceMap = computed(() => {
+  const traces = libraryCompareTracePayload.value?.samples;
+  const map = new Map<number, LibraryCompareTrace>();
+  if (!Array.isArray(traces)) return map;
+  for (const trace of traces) {
+    const index = Number(trace?.sample_index);
+    if (Number.isFinite(index)) map.set(index, trace as LibraryCompareTrace);
+  }
+  return map;
+});
+
+const libraryCompareLibraryTraceMap = computed(() => {
+  const traces = libraryCompareTracePayload.value?.libraries;
+  const map = new Map<number, LibraryCompareTrace>();
+  if (!Array.isArray(traces)) return map;
+  for (const trace of traces) {
+    const index = Number(trace?.library_index);
+    if (Number.isFinite(index)) map.set(index, trace as LibraryCompareTrace);
+  }
+  return map;
+});
+
+const libraryCompareSampleOptions = computed(() => {
+  const seen = new Set<string>();
+  const options: Array<{ value: string; label: string }> = [];
+  for (const candidate of libraryCompareCandidates.value) {
+    const label = String(candidate.sample ?? `Sample ${Number(candidate.sample_index ?? options.length) + 1}`);
+    if (seen.has(label)) continue;
+    seen.add(label);
+    options.push({ value: label, label });
+  }
+  return options;
+});
+
+const filteredLibraryCompareCandidates = computed(() => {
+  const sample = selectedLibrarySample.value;
+  if (sample === null || sample === undefined || sample === "") {
+    return libraryCompareCandidates.value;
+  }
+  return libraryCompareCandidates.value.filter((candidate) => String(candidate.sample ?? "") === String(sample));
+});
+
+const selectedLibraryCandidateRecords = computed<LibraryCompareCandidate[]>(() =>
+  filteredLibraryCompareCandidates.value.filter((candidate) =>
+    selectedLibraryCandidateKeys.value.includes(libraryCandidateKey(candidate))
+  )
+);
+
+const selectedLibraryCandidateCaveat = computed(() => {
+  if (selectedLibraryCandidateRecords.value.length !== 1) return "";
+  const candidate = selectedLibraryCandidateRecords.value[0];
+  if (!candidate?.confidence_caveats) return "";
+  const coverage = Number.isFinite(Number(candidate.coverage_fraction))
+    ? `coverage ${Number(candidate.coverage_fraction).toFixed(2)}`
+    : "";
+  return coverage ? `${candidate.confidence_caveats} · ${coverage}` : candidate.confidence_caveats;
+});
+
+const selectedLibraryAlignmentStatus = computed(() => {
+  const candidate = selectedLibraryCandidateRecords.value[0] ?? filteredLibraryCompareCandidates.value[0];
+  if (!candidate) return null;
+  const aligned = candidate.grid_aligned !== false;
+  const spacing = formatSpacing(candidate.alignment_spacing);
+  const sampleSpacing = formatSpacing(candidate.sample_spacing);
+  const librarySpacing = formatSpacing(candidate.library_spacing);
+  const spacingLabel = spacing
+    ? `Δ ${spacing} cm-1`
+    : sampleSpacing && librarySpacing
+      ? `sample/library Δ ${sampleSpacing}/${librarySpacing} cm-1`
+      : "";
+  return {
+    aligned,
+    label: `${aligned ? "Grid aligned" : "Grid alignment warning"}${spacingLabel ? ` · ${spacingLabel}` : ""}`,
+  };
+});
+
+watch(
+  libraryCompareSampleOptions,
+  (options) => {
+    if (options.length === 0) {
+      selectedLibrarySample.value = null;
+      selectedLibraryCandidateKeys.value = [];
+      return;
+    }
+    if (!options.some((option) => option.value === selectedLibrarySample.value)) {
+      selectedLibrarySample.value = options[0].value;
+    }
+  },
+  { immediate: true }
+);
+
+watch(
+  () => selectedLibrarySample.value,
+  () => {
+    selectedLibraryCandidateKeys.value = [];
+  }
+);
+
+watch(
+  () => filteredLibraryCompareCandidates.value.map(libraryCandidateKey).join("|"),
+  () => {
+    if (filteredLibraryCompareCandidates.value.length === 0) {
+      selectedLibraryCandidateKeys.value = [];
+      return;
+    }
+    const validKeys = new Set(filteredLibraryCompareCandidates.value.map(libraryCandidateKey));
+    const nextKeys = selectedLibraryCandidateKeys.value.filter((key) => validKeys.has(key));
+    if (nextKeys.length === 0) {
+      nextKeys.push(libraryCandidateKey(filteredLibraryCompareCandidates.value[0]));
+    }
+    selectedLibraryCandidateKeys.value = nextKeys;
+  },
+  { immediate: true }
+);
+
+const libraryCompareInteractiveData = computed(() => {
+  const candidates = selectedLibraryCandidateRecords.value;
+  const firstCandidate = candidates[0] ?? filteredLibraryCompareCandidates.value[0];
+  if (!firstCandidate) {
+    return state.value.libraryComparePlotData;
+  }
+  const firstSampleTraceIndex = Number(firstCandidate?.sample_trace_index ?? firstCandidate?.sample_index);
+  const firstSampleTrace = Number.isFinite(firstSampleTraceIndex)
+    ? libraryCompareSampleTraceMap.value.get(firstSampleTraceIndex)
+    : undefined;
+  const sampleX = firstCandidate?.sample_x ?? firstCandidate?.x ?? firstSampleTrace?.x;
+  const sampleY = firstCandidate?.sample_y ?? firstSampleTrace?.y;
+  if (!sampleX || !sampleY) {
+    return state.value.libraryComparePlotData;
+  }
+  const traces: any[] = [
+    {
+      type: "scatter",
+      mode: "lines",
+      x: sampleX,
+      y: sampleY,
+      name: firstCandidate.sample || "Sample",
+      line: { color: "#f8fafc", width: 2 },
+    }
+  ];
+  for (const candidate of candidates) {
+    const libraryTraceIndex = Number(candidate?.library_trace_index ?? candidate?.library_index);
+    const libraryTrace = Number.isFinite(libraryTraceIndex)
+      ? libraryCompareLibraryTraceMap.value.get(libraryTraceIndex)
+      : undefined;
+    const libraryX = candidate?.library_x ?? candidate?.x ?? libraryTrace?.x;
+    const libraryY = candidate?.library_y ?? libraryTrace?.y;
+    if (!libraryX || !libraryY) continue;
+    traces.push({
+      type: "scatter",
+      mode: "lines",
+      x: libraryX,
+      y: scaleLibraryTraceToSamplePeaks(libraryX, libraryY, sampleX, sampleY),
+      name: `${candidate.library || "Library"} (HQI ${formatHqi(candidate.hqi)})`,
+      line: { color: libraryTraceColorForCandidate(candidate), width: 2 },
+    });
+  }
+  return traces;
+});
+
+const libraryCompareInteractiveLayout = computed(() => {
+  const candidate = selectedLibraryCandidateRecords.value[0] ?? filteredLibraryCompareCandidates.value[0];
+  if (!candidate) return state.value.libraryComparePlotLayout;
+  const backendLayout = (state.value.nodeOutput as any)?.plots?.library_compare_candidates?.layout || {};
+  return {
+    ...state.value.libraryComparePlotLayout,
+    ...backendLayout,
+    title: `${candidate.sample || "Sample"} vs selected library signatures`,
+    yaxis: {
+      ...(state.value.libraryComparePlotLayout?.yaxis || {}),
+      ...(backendLayout.yaxis || {}),
+      title: candidate.y_units || "Max-normalized response",
+    },
+  };
+});
+
+function formatHqi(value?: number): string {
+  if (!Number.isFinite(Number(value))) return "n/a";
+  return Number(value).toFixed(1);
+}
+
+function formatSpacing(value?: number | null): string {
+  if (!Number.isFinite(Number(value))) return "";
+  return Number(value).toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+function formatMcrNumber(value?: number | null): string {
+  if (!Number.isFinite(Number(value))) return "n/a";
+  return Number(value).toFixed(4);
+}
+
+function formatCandidateStatus(value?: string): string {
+  if (value === "auto_selected") return "Auto-selected";
+  if (value === "rejected") return "Rejected";
+  return "Review";
+}
+
+function libraryCandidateKey(candidate: LibraryCompareCandidate): string {
+  return `${Number(candidate.sample_index ?? -1)}:${Number(candidate.library_index ?? -1)}`;
+}
+
+function isLibraryCandidateChecked(candidate: LibraryCompareCandidate): boolean {
+  return selectedLibraryCandidateKeys.value.includes(libraryCandidateKey(candidate));
+}
+
+function toggleLibraryCandidate(candidate: LibraryCompareCandidate): void {
+  const key = libraryCandidateKey(candidate);
+  selectedLibraryCandidateKeys.value = isLibraryCandidateChecked(candidate)
+    ? selectedLibraryCandidateKeys.value.filter((item) => item !== key)
+    : [...selectedLibraryCandidateKeys.value, key];
+}
+
+function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): string {
+  const palette = [
+    "#38bdf8", "#f59e0b", "#22c55e", "#e879f9", "#fb7185", "#a78bfa",
+    "#14b8a6", "#f97316", "#84cc16", "#60a5fa", "#f472b6", "#c084fc",
+  ];
+  const index = Number(candidate.library_trace_index ?? candidate.library_index ?? candidate.sample_rank ?? 0);
+  return palette[Math.abs(Math.trunc(Number.isFinite(index) ? index : 0)) % palette.length];
+}
+
 </script>
 
 <style scoped>
@@ -721,6 +1288,54 @@ const featureYAxis = writable.featureYAxis;
 .plot-subsection-header:hover { background: rgba(51, 65, 85, 0.3); }
 .plot-subsection-header i { font-size: 0.75rem; color: #64748b; }
 .plot-container { padding: 12px 14px; }
+.mcr-validation-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+}
+.mcr-validation-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.mcr-candidate-picker { min-width: min(100%, 420px); }
+.mcr-candidate-metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  color: #e2e8f0;
+  font-size: 0.84rem;
+}
+.mcr-candidate-metrics span {
+  padding: 4px 8px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #1e293b;
+}
+.mcr-candidate-hint {
+  flex: 1 1 260px;
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  color: #94a3b8;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+.plot-warning {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.08);
+  color: #fbbf24;
+  font-size: 0.82rem;
+}
 .plot-controls {
   display: flex;
   flex-wrap: wrap;
@@ -733,6 +1348,124 @@ const featureYAxis = writable.featureYAxis;
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+.library-candidate-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.library-candidate-picker { min-width: min(100%, 420px); }
+.library-candidate-picker.control-group {
+  align-items: flex-start;
+}
+.species-rank-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 4px;
+  max-height: 132px;
+  min-width: min(720px, 100%);
+  overflow: auto;
+}
+.species-rank-row {
+  display: grid;
+  grid-template-columns: 16px 10px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #0f172a;
+  color: #cbd5e1;
+  cursor: pointer;
+  font-size: 0.76rem;
+  line-height: 1.15;
+  padding: 4px 6px;
+  text-align: left;
+}
+.species-rank-row:hover,
+.species-rank-row.selected {
+  border-color: #38bdf8;
+  background: rgba(14, 165, 233, 0.14);
+}
+.species-rank-row input {
+  pointer-events: none;
+}
+.species-color-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(248, 250, 252, 0.28);
+}
+.species-rank-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.species-rank-row strong {
+  color: #e2e8f0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.candidate-status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid #475569;
+  color: #cbd5e1;
+  background: #1e293b;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.candidate-status-auto_selected {
+  color: #bbf7d0;
+  border-color: #15803d;
+  background: rgba(22, 101, 52, 0.28);
+}
+.candidate-status-rejected {
+  color: #fecaca;
+  border-color: #b91c1c;
+  background: rgba(127, 29, 29, 0.26);
+}
+.candidate-status-review {
+  color: #fde68a;
+  border-color: #a16207;
+  background: rgba(113, 63, 18, 0.28);
+}
+.candidate-hqi {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  color: #e2e8f0;
+  font-size: 0.85rem;
+}
+.candidate-alignment-badge {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #fde68a;
+  border: 1px solid #a16207;
+  border-radius: 6px;
+  background: rgba(113, 63, 18, 0.22);
+  padding: 0 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.candidate-alignment-badge.aligned {
+  color: #bbf7d0;
+  border-color: #15803d;
+  background: rgba(22, 101, 52, 0.24);
+}
+.candidate-caveat {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  color: #fbbf24;
+  font-size: 0.82rem;
 }
 .interactive-contour-container { display: flex; flex-direction: column; gap: 14px; }
 .slice-plots { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

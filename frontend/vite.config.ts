@@ -25,6 +25,19 @@ export default defineConfig({
           if (id.includes("plotly.js-cartesian-dist-min")) {
             return "plotly";
           }
+          // Keep the Vue runtime (incl. @vue/reactivity) in its own leaf
+          // vendor chunk. Otherwise the default splitter co-locates Vue
+          // inside the entry chunk, and any small module that calls a
+          // reactivity primitive at top level (e.g. composables/demoModeState's
+          // `ref(...)` state) lands in a sibling chunk that imports `ref`
+          // back from the entry — a circular chunk dependency. In the
+          // production build that cycle can evaluate the sibling before the
+          // entry defines RefImpl, throwing "X is not a constructor" at boot
+          // and blanking the SPA. A dedicated, dependency-free Vue chunk
+          // always initializes first, so the cycle cannot form.
+          if (id.includes("/node_modules/@vue/") || id.includes("/node_modules/vue/")) {
+            return "vue";
+          }
           return undefined;
         },
       },

@@ -72,17 +72,20 @@ function toggle(key: keyof GuidanceSettingsPatch, event: Event): void {
 .guidance-settings {
   display: grid;
   gap: 16px;
+  color: var(--text-color);
 }
 
 .section-header h3 {
   margin: 0 0 4px;
-  font-size: 18px;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text-color);
 }
 
 .section-header p {
   margin: 0;
-  color: #64748b;
-  font-size: 14px;
+  color: var(--text-color-secondary);
+  font-size: 0.875rem;
 }
 
 .setting-row {
@@ -90,9 +93,9 @@ function toggle(key: keyof GuidanceSettingsPatch, event: Event): void {
   align-items: flex-start;
   gap: 12px;
   padding: 14px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--surface-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--surface-ground);
 }
 
 .setting-row.child {
@@ -109,13 +112,13 @@ function toggle(key: keyof GuidanceSettingsPatch, event: Event): void {
 }
 
 .setting-row small {
-  color: #64748b;
+  color: var(--text-color-secondary);
   font-size: 13px;
 }
 
 .error-message {
   margin: 0;
-  color: #b91c1c;
+  color: var(--red-500);
   font-size: 14px;
 }
 </style>

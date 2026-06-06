@@ -12,7 +12,7 @@
       <!-- SVG layer for edges -->
       <svg class="edges-layer">
         <defs>
-          <!-- Valid edge arrowhead (green) -->
+          <!-- Valid edge arrowhead (emerald, slightly muted from #4ade80) -->
           <marker
             id="arrowhead-valid"
             markerWidth="10"
@@ -21,7 +21,7 @@
             refY="3"
             orient="auto"
           >
-            <polygon points="0 0, 10 3, 0 6" fill="#4ade80" />
+            <polygon points="0 0, 10 3, 0 6" fill="#10b981" />
           </marker>
           <!-- Invalid edge arrowhead (red) -->
           <marker
@@ -59,7 +59,7 @@
             :y1="getNodeCenter(edge.from).y"
             :x2="getNodeCenter(edge.to).x"
             :y2="getNodeCenter(edge.to).y"
-            :stroke="edge.isValid === false ? '#ef4444' : '#4ade80'"
+            :stroke="edge.isValid === false ? '#ef4444' : '#10b981'"
             :stroke-width="edge.isValid === false ? 3 : 2"
             :stroke-dasharray="edge.isValid === false ? '5,5' : 'none'"
             :marker-end="edge.isValid === false ? 'url(#arrowhead-invalid)' : 'url(#arrowhead-valid)'"
@@ -103,7 +103,7 @@
           :y1="getNodeCenter(connecting).y"
           :x2="mousePos.x"
           :y2="mousePos.y"
-          stroke="#4ade80"
+          stroke="#10b981"
           stroke-width="2"
           stroke-dasharray="5,5"
           opacity="0.6"
@@ -199,7 +199,7 @@
         @mousedown.stop="handleNodeMouseDown($event, node.id)"
         @contextmenu.prevent="handleNodeContextMenu($event, node.id)"
       >
-      <!-- Input ports (left side) -->
+      <!-- Input ports (top edge) — click a compatible port while connecting to complete the edge -->
       <div class="input-ports">
         <div
           v-for="(port, idx) in getNodeInputPorts(node.type)"
@@ -210,10 +210,11 @@
             'port-incompatible': isConnecting && !isPortCompatible(node.id, port.name)
           }"
           :style="{
-            top: `${30 + idx * 20}px`,
+            left: `${30 + idx * 20}px`,
             backgroundColor: getPortColor(getPortCategory(port.type_ref))
           }"
           :title="isConnecting ? getPortCompatibilityReason(node.id, port.name) || `${port.label} (${getTypeName(port.type_ref)})` : `${port.label} (${getTypeName(port.type_ref)})`"
+          @click.stop="onInputPortClick(node.id, port.name)"
         >
           <span
             v-if="isConnecting"
@@ -236,17 +237,18 @@
         </div>
       </div>
 
-      <!-- Output ports (right side) -->
+      <!-- Output ports (bottom edge) — click a port to start a connection from it -->
       <div class="output-ports">
         <div
           v-for="(port, idx) in getNodeOutputPorts(node.type)"
           :key="`output-${port.name}`"
           class="port port-output"
           :style="{
-            top: `${30 + idx * 20}px`,
+            left: `${30 + idx * 20}px`,
             backgroundColor: getPortColor(getPortCategory(port.type_ref))
           }"
-          :title="`${port.label} (${getTypeName(port.type_ref)})`"
+          :title="`${port.label} (${getTypeName(port.type_ref)}) — click to start a connection`"
+          @click.stop="startConnect(node.id, port.name)"
         >
           <div class="port-tooltip">
             <div class="port-tooltip-label">{{ port.label }}</div>
@@ -259,7 +261,9 @@
       <!-- Node header -->
       <div class="node-header" :class="`header-${getNodeCategory(node.type)}`">
         <span class="node-icon">{{ getNodeIcon(node.type) }}</span>
-        <span class="node-label">{{ getNodeLabel(node.type) }}</span>
+        <span class="node-label" :title="getNodeLabel(node.type)">
+          {{ getNodeLabel(node.type) }}
+        </span>
         <button
           class="delete-btn"
           @click.stop="deleteNode(node.id)"
@@ -305,78 +309,20 @@
 
       </div>
 
-      <!-- Node footer with connect button -->
-      <div class="node-footer">
-        <button
-          v-if="connecting === node.id"
-          class="connect-btn connecting"
-          @click.stop="cancelConnect"
-        >
-          <i class="pi pi-times"></i>
-          Cancel
-        </button>
-        <!-- Multi-input node: show port selection buttons -->
-        <template v-else-if="isConnecting && connecting !== node.id && getInputPorts(node.type).length > 0">
-          <div class="port-selection">
-            <span class="port-label">Connect to:</span>
-            <div class="port-buttons">
-              <button
-                v-for="port in getAvailablePorts(node.id, node.type)"
-                :key="port.name"
-                class="port-btn port-btn-letter"
-                :title="port.label"
-                @click.stop="completeConnect(node.id, port.name)"
-              >
-                {{ port.label.charAt(0) }}
-              </button>
-            </div>
-            <span v-if="getAvailablePorts(node.id, node.type).length === 0" class="ports-full">
-              All ports connected
-            </span>
-          </div>
-        </template>
-        <!-- Single-input node: simple connect button -->
-        <button
-          v-else-if="isConnecting && connecting !== node.id"
-          class="connect-btn target"
-          @click.stop="completeConnect(node.id)"
-        >
-          <i class="pi pi-arrow-right"></i>
-          Connect Here
-        </button>
-        <!-- Multi-output node: show output port selection -->
-        <template v-else-if="hasMultipleOutputs(node.type)">
-          <div class="port-selection">
-            <span class="port-label">Connect from:</span>
-            <div class="port-buttons">
-              <button
-                v-for="port in getNodeOutputPorts(node.type)"
-                :key="port.name"
-                class="port-btn port-btn-letter"
-                :style="{ backgroundColor: getPortColor(getPortCategory(port.type_ref)) }"
-                :title="port.label"
-                @click.stop="startConnect(node.id, port.name)"
-              >
-                {{ port.label.charAt(0) }}
-              </button>
-            </div>
-          </div>
-        </template>
-        <!-- Single-output node: simple connect button -->
-        <button
-          v-else
-          class="connect-btn"
-          @click.stop="startConnect(node.id)"
-        >
-          <i class="pi pi-share-alt"></i>
-          Connect
-        </button>
-      </div>
+      <!-- Cancel pill — only when this node is the active connection source. -->
+      <button
+        v-if="connecting === node.id"
+        class="cancel-connect-pill"
+        @click.stop="cancelConnect"
+      >
+        <i class="pi pi-times"></i>
+        Cancel
+      </button>
       </div>
 
       <!-- Empty state -->
       <div v-if="nodes.length === 0" class="empty-state">
-        <div class="empty-icon">🔧</div>
+        <i class="pi pi-share-alt empty-icon" aria-hidden="true"></i>
         <h3 class="empty-title">Start your workflow</h3>
         <p>Drag a node from the toolbar on the left, or pick a starter from the Actions menu.</p>
         <div class="empty-pointer">
@@ -391,6 +337,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from "vue";
 import { useWorkflowStore } from "@/stores/workflow";
+import { getNodeVisualCategory } from "@/utils/nodeVisuals";
 import type { WorkflowNode, WorkflowEdge } from "@/stores/workflow";
 import type { NodeOutput } from "@/utils/nodeOutput";
 import type { NodePortMetadata } from "@/types";
@@ -482,35 +429,9 @@ const getNodeOutputPorts = (nodeType: string): NodePortMetadata[] => {
   }];
 };
 
-// Check if a node type has multiple input ports (uses backend metadata)
-const getInputPorts = (nodeType: string): NodePortMetadata[] => {
-  return getNodeInputPorts(nodeType);
-};
-
-// Get available (unconnected) ports for a multi-input node
-const getAvailablePorts = (nodeId: string, nodeType: string): NodePortMetadata[] => {
-  const allPorts = getInputPorts(nodeType);
-  if (!allPorts || allPorts.length === 0) return [];
-
-  // Find which ports are already connected
-  const connectedPorts = new Set(
-    props.edges
-      .filter(e => e.to === nodeId && e.toPort)
-      .map(e => e.toPort)
-  );
-
-  // Return only unconnected ports
-  return allPorts.filter(port => !connectedPorts.has(port.name));
-};
-
-// Check if a node has multiple output ports
-const hasMultipleOutputs = (nodeType: string): boolean => {
-  const outputPorts = getNodeOutputPorts(nodeType);
-  return outputPorts.length > 1;
-};
-
 const NODE_ICONS: Record<string, string> = {
   'data.source': '📊',
+  'data.my_dataset': '🧪',
   'preprocess.normalize': '⚖️',
   'preprocess.scale': '📏',
   'baseline.penalized_ls': '📉',
@@ -520,27 +441,13 @@ const NODE_ICONS: Record<string, string> = {
   'model.mcr_als': '🧩',
   'model.efa': '🔍',
   'model.simplisma': '🎯',
+  'analysis.peak_finding': '⛰️',
+  'analysis.peak_id': '🔬',
+  'analysis.compare_library': '📚',
   'stats.summary': '📊',
   'output.plot': '📈',
   'output.contour': '🗺️',
   'output.export': '💾',
-};
-
-const NODE_LABELS: Record<string, string> = {
-  'data.source': 'Load Data',
-  'preprocess.normalize': 'Normalize',
-  'preprocess.scale': 'Scale',
-  'baseline.penalized_ls': 'Baseline',
-  'preprocess.smooth': 'Smooth',
-  'model.pca': 'PCA',
-  'model.pls': 'PLS',
-  'model.mcr_als': 'MCR-ALS',
-  'model.efa': 'EFA',
-  'model.simplisma': 'SIMPLISMA',
-  'stats.summary': 'Statistics',
-  'output.plot': 'Plot',
-  'output.contour': 'Contour Plot',
-  'output.export': 'Export',
 };
 
 const getNodeIcon = (type: string): string => {
@@ -552,53 +459,12 @@ const getNodeLabel = (type: string): string => {
   if (metadata?.label) {
     return metadata.label;
   }
-  return NODE_LABELS[type] || type;
+  return type;
 };
 
 const getNodeCategory = (type: string): string => {
   const metadata = workflowStore.getNodeMetadata(type);
-  if (metadata?.category) {
-    const categoryMap: Record<string, string> = {
-      data: 'data',
-      synthesis: 'data',
-      preprocessing: 'preprocess',
-      selection: 'selection',
-      modeling: 'model',
-      analysis: 'analyze',
-      classification: 'analyze',
-      diagnostics: 'analyze',
-      time_series: 'analyze',
-      output: 'export',
-      stats: 'analyze',
-    };
-    const mapped = categoryMap[metadata.category.toLowerCase()];
-    if (mapped) return mapped;
-  }
-
-  if (type.includes(".")) {
-    const prefix = type.split(".")[0];
-    const prefixMap: Record<string, string> = {
-      data: 'data',
-      synthesis: 'data',
-      preprocess: 'preprocess',
-      normalize: 'preprocess',
-      baseline: 'preprocess',
-      smooth: 'preprocess',
-      derivative: 'preprocess',
-      selection: 'selection',
-      model: 'model',
-      analysis: 'analyze',
-      classification: 'analyze',
-      diagnostics: 'analyze',
-      time_series: 'analyze',
-      stats: 'analyze',
-      output: 'export',
-    };
-    const mapped = prefixMap[prefix];
-    if (mapped) return mapped;
-  }
-
-  return 'default';
+  return getNodeVisualCategory(type, metadata);
 };
 
 // Format data shape for display
@@ -874,6 +740,14 @@ const cancelConnect = () => {
   connectingFromPort.value = null;
 };
 
+// Input-port click: only meaningful while a connection is in flight from another
+// node. No-op otherwise (input ports aren't a connection start point).
+const onInputPortClick = (nodeId: string, portName: string) => {
+  if (!isConnecting.value || connecting.value === nodeId) return;
+  if (!isPortCompatible(nodeId, portName)) return;
+  completeConnect(nodeId, portName);
+};
+
 const completeConnect = (toNodeId: string, toPort?: string) => {
   if (connecting.value !== null && connecting.value !== toNodeId) {
     const fromNodeId = connecting.value;
@@ -1142,7 +1016,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
 .edge-label {
   font-size: 11px;
   font-weight: 600;
-  fill: #4ade80;
+  fill: #10b981;
   font-family: 'SF Mono', Monaco, monospace;
   pointer-events: none;
   text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
@@ -1199,12 +1073,18 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
 }
 
 .header-data { background: linear-gradient(135deg, #3b82f6, #2563eb); }
+.header-synthesis { background: linear-gradient(135deg, #06b6d4, #0891b2); }
 .header-preprocess { background: linear-gradient(135deg, #22c55e, #16a34a); }
 .header-selection { background: linear-gradient(135deg, #14b8a6, #0d9488); }
-.header-model { background: linear-gradient(135deg, #a855f7, #9333ea); }
-.header-analyze { background: linear-gradient(135deg, #eab308, #ca8a04); }
+.header-exploratory { background: linear-gradient(135deg, #a855f7, #9333ea); }
+.header-regression { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
+.header-classify { background: linear-gradient(135deg, #f59e0b, #d97706); }
+.header-clustering { background: linear-gradient(135deg, #ec4899, #db2777); }
+.header-validation { background: linear-gradient(135deg, #eab308, #ca8a04); }
 .header-visualize { background: linear-gradient(135deg, #f97316, #ea580c); }
 .header-export { background: linear-gradient(135deg, #64748b, #475569); }
+.header-plugin,
+.header-default { background: linear-gradient(135deg, #ec4899, #be185d); }
 
 .node-icon {
   font-size: 1rem;
@@ -1251,7 +1131,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
 }
 
 .node-status.success {
-  color: #4ade80;
+  color: #10b981;
 }
 
 .node-status.pending {
@@ -1290,104 +1170,28 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
   font-size: 0.65rem;
 }
 
-.node-footer {
-  padding: 8px;
-}
-
-.connect-btn {
-  width: 100%;
+/* Cancel pill — sits below the node body only while this node is the
+   active connection source. Connections themselves start by clicking
+   an output dot and complete by clicking a compatible input dot. */
+.cancel-connect-pill {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 6px 10px;
-  background: #334155;
+  margin: 8px;
+  padding: 4px 10px;
+  background: #ef4444;
   border: none;
-  border-radius: 4px;
-  color: #e2e8f0;
-  font-size: 0.75rem;
+  border-radius: 999px;
+  color: white;
+  font-size: 0.7rem;
   font-weight: 500;
   cursor: pointer;
   transition: background 0.2s;
 }
 
-.connect-btn:hover {
-  background: #475569;
-}
-
-.connect-btn.connecting {
-  background: #ef4444;
-}
-
-.connect-btn.connecting:hover {
+.cancel-connect-pill:hover {
   background: #dc2626;
-}
-
-.connect-btn.target {
-  background: #22c55e;
-}
-
-.connect-btn.target:hover {
-  background: #16a34a;
-}
-
-/* Port selection for multi-input nodes */
-.port-selection {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.port-label {
-  font-size: 0.7rem;
-  color: #94a3b8;
-  text-align: center;
-}
-
-.port-buttons {
-  display: flex;
-  gap: 4px;
-  justify-content: center;
-}
-
-.port-btn {
-  flex: 1;
-  padding: 6px 8px;
-  background: #22c55e;
-  border: none;
-  border-radius: 4px;
-  color: white;
-  font-size: 0.7rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.port-btn-letter {
-  flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  font-size: 0.8rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-}
-
-.port-btn:hover {
-  background: #16a34a;
-}
-
-.ports-full {
-  font-size: 0.7rem;
-  color: #f59e0b;
-  text-align: center;
-  padding: 4px;
 }
 
 .empty-state {
@@ -1401,8 +1205,9 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
 }
 
 .empty-icon {
-  font-size: 3rem;
+  font-size: 2.25rem;
   margin-bottom: 12px;
+  color: #94a3b8;
 }
 
 .empty-title {
@@ -1491,21 +1296,24 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
   margin: 4px 0;
 }
 
-/* Port indicators */
+/* Port indicators — inputs on the top edge, outputs on the bottom edge.
+ * Each port lane spans the full node width so individual port circles
+ * position themselves with `left: ${30 + idx * 20}px` from the template. */
 .input-ports,
 .output-ports {
   position: absolute;
-  top: 0;
-  height: 100%;
+  left: 0;
+  right: 0;
+  width: 100%;
   pointer-events: none;
 }
 
 .input-ports {
-  left: -6px;
+  top: -6px;
 }
 
 .output-ports {
-  right: -6px;
+  bottom: -6px;
 }
 
 .port {
@@ -1526,12 +1334,15 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
   box-shadow: 0 0 8px currentColor;
 }
 
+/* Inputs nudged up so half the circle sits above the node's top edge,
+ * outputs nudged down so half the circle sits below the bottom edge —
+ * mirrors the previous left/right behaviour after the axis swap. */
 .port-input {
-  transform: translateX(-50%);
+  transform: translateY(-50%);
 }
 
 .port-output {
-  transform: translateX(50%);
+  transform: translateY(50%);
 }
 
 .port:hover .port-tooltip {
@@ -1556,7 +1367,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
 }
 
 .port-compat-indicator.ok {
-  color: #4ade80;
+  color: #10b981;
 }
 
 .port-compat-indicator.bad {

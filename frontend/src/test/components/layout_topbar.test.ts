@@ -89,6 +89,7 @@ vi.mock("@/composables/useAppConfig", () => ({
     appMode: mocks.appMode,
     appConfig: mocks.appConfig,
     hasLLMConfigured: mocks.hasLLMConfigured,
+    reloadConfig: vi.fn().mockResolvedValue(true),
   }),
 }));
 
@@ -482,7 +483,6 @@ describe("Topbar action hover labels", () => {
   it("adds descriptive titles to the action icons to the right of the status lights", () => {
     const wrapper = mountTopbar(true);
 
-    expect(wrapper.get('[aria-label="Export project"]').attributes("title")).toBe("Export Project");
     expect(wrapper.get('[aria-label="Toggle chat panel"]').attributes("title")).toBe("Open chat panel");
     expect(wrapper.get('[aria-label="Notifications"]').attributes("title")).toBe("Open notifications");
     expect(wrapper.get('[aria-label="User menu"]').attributes("title")).toBe("Open user menu");

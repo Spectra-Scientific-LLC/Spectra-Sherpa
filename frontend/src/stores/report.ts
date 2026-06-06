@@ -8,7 +8,35 @@ import { useAppConfig } from "@/composables/useAppConfig";
 import { useLlmStore } from "@/stores/llm";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useProjectStore } from "@/stores/project";
+import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import type { ExecutionRunSummary } from "@/types";
+
+const REPORT_GENERATION_TIMEOUT_MS = 180_000;
+
+function formatSherpaReportFailure(payload: Record<string, any>): string {
+  const detail =
+    typeof payload.detail === "string" && payload.detail.trim()
+      ? payload.detail.trim()
+      : typeof payload.message === "string" && payload.message.trim()
+        ? payload.message.trim()
+        : null;
+  if (detail) return detail;
+
+  const statusPayload = payload.payload;
+  if (
+    payload.type === SHERPA_WS_EVENT.status &&
+    statusPayload &&
+    statusPayload.connected === false
+  ) {
+    const reason =
+      typeof statusPayload.reason === "string" && statusPayload.reason.trim()
+        ? statusPayload.reason.trim()
+        : "unknown";
+    return `Sherpa Advisor is unavailable (${reason}).`;
+  }
+
+  return "Report generation failed.";
+}
 
 interface WorkflowOption {
   id: number;
@@ -80,19 +108,59 @@ export interface ReportSections {
   aiNarrative: boolean;
 }
 
+export function buildReportExperimentPayload(
+  reportData: ExtendedReportData | null
+): Record<string, unknown> {
+  if (!reportData) return {};
+  const experiment: Record<string, unknown> = {
+    workflow_name: reportData.name,
+    description: reportData.description,
+    technique: reportData.technique,
+    sample_type: reportData.sample_type,
+    node_count: reportData.nodes.length,
+    nodes: reportData.nodes.map((n) => ({
+      type: n.node_type,
+      label: n.label,
+      parameters: n.parameters,
+    })),
+  };
+
+  if (reportData.runs?.length) {
+    experiment.runs = reportData.runs.map((r) => ({
+      id: r.id,
+      name: r.name,
+      status: r.status,
+      executed_at: r.executed_at,
+      results_summary: r.results_summary,
+      diagnostics: r.diagnostics ?? {},
+      params_snapshot: r.params_snapshot,
+      node_statuses: r.node_statuses ?? {},
+      integrity_hash: r.integrity_hash,
+      labels: r.labels ?? [],
+    }));
+  }
+
+  if (reportData.comparison) {
+    experiment.comparison = reportData.comparison;
+  }
+  return experiment;
+}
+
 export const useReportStore = defineStore("report", () => {
   // Source selection
   const selectedWorkflowId = ref<number | null>(null);
   const selectedRunIds = ref<number[]>([]);
 
-  // Section toggles
+  // Section toggles — default ON; disabled chips (e.g. Comparison without
+  // multi-run, AI Summary without LLM) stay visually inert until the
+  // prerequisites are met. "Show all that apply".
   const sections = reactive<ReportSections>({
     pipelineDetails: true,
     connections: true,
     executionResults: true,
-    diagnostics: false,
-    runComparison: false,
-    aiNarrative: false,
+    diagnostics: true,
+    runComparison: true,
+    aiNarrative: true,
   });
 
   // Data
@@ -101,6 +169,7 @@ export const useReportStore = defineStore("report", () => {
   const error = ref<string | null>(null);
   const narrativeText = ref<string | null>(null);
   const narrativeMemoryScopes = ref<string[]>([]);
+  const narrativeError = ref<string | null>(null);
   const narrativeLoading = ref(false);
 
   // Options for selectors
@@ -176,37 +245,13 @@ export const useReportStore = defineStore("report", () => {
   }
 
   function _buildExperimentPayload(): Record<string, unknown> {
-    if (!reportData.value) return {};
-    const experiment: Record<string, unknown> = {
-      workflow_name: reportData.value.name,
-      description: reportData.value.description,
-      technique: reportData.value.technique,
-      sample_type: reportData.value.sample_type,
-      node_count: reportData.value.nodes.length,
-      nodes: reportData.value.nodes.map((n) => ({
-        type: n.node_type,
-        label: n.label,
-        parameters: n.parameters,
-      })),
-    };
-
-    if (reportData.value.runs?.length) {
-      experiment.runs = reportData.value.runs.map((r) => ({
-        name: r.name,
-        status: r.status,
-        results_summary: r.results_summary,
-      }));
-    }
-
-    if (reportData.value.comparison) {
-      experiment.comparison = reportData.value.comparison;
-    }
-    return experiment;
+    return buildReportExperimentPayload(reportData.value);
   }
 
   async function generateNarrative(): Promise<void> {
     if (!reportData.value) return;
     narrativeLoading.value = true;
+    narrativeError.value = null;
 
     try {
       const experiment = _buildExperimentPayload();
@@ -230,7 +275,7 @@ export const useReportStore = defineStore("report", () => {
         const timeout = window.setTimeout(() => {
           cleanup();
           reject(new Error("Report generation timed out"));
-        }, 60_000);
+        }, REPORT_GENERATION_TIMEOUT_MS);
 
         const unsubscribe = subscribeSherpaEvents((payload) => {
           if (payload.type === SHERPA_WS_EVENT.reportResult) {
@@ -245,16 +290,29 @@ export const useReportStore = defineStore("report", () => {
             );
           } else if (payload.type === SHERPA_WS_EVENT.reportError) {
             cleanup();
-            reject(new Error(payload.detail || "Report generation failed"));
+            reject(new Error(formatSherpaReportFailure(payload)));
+          } else if (payload.type === SHERPA_WS_EVENT.error) {
+            cleanup();
+            reject(new Error(formatSherpaReportFailure(payload)));
+          } else if (payload.type === SHERPA_WS_EVENT.status) {
+            const statusPayload = payload.payload;
+            if (statusPayload && statusPayload.connected === false) {
+              cleanup();
+              reject(new Error(formatSherpaReportFailure(payload)));
+            }
           } else if (payload.type === SHERPA_WS_EVENT.subscriptionRequired) {
             cleanup();
-            reject(new Error("Subscription required for AI reports"));
+            reject(
+              new Error(payload.detail || "Subscription required for AI reports")
+            );
           }
         }, {
           requestId,
           types: [
             SHERPA_WS_EVENT.reportResult,
             SHERPA_WS_EVENT.reportError,
+            SHERPA_WS_EVENT.error,
+            SHERPA_WS_EVENT.status,
             SHERPA_WS_EVENT.subscriptionRequired,
           ],
         });
@@ -279,6 +337,10 @@ export const useReportStore = defineStore("report", () => {
     } catch (err: any) {
       narrativeText.value = null;
       narrativeMemoryScopes.value = [];
+      narrativeError.value =
+        err instanceof Error && err.message
+          ? err.message
+          : "Could not generate AI narrative.";
       console.error("Failed to generate narrative:", err);
     } finally {
       narrativeLoading.value = false;
@@ -292,13 +354,25 @@ export const useReportStore = defineStore("report", () => {
     error.value = null;
     narrativeText.value = null;
     narrativeMemoryScopes.value = [];
+    narrativeError.value = null;
     sections.pipelineDetails = true;
     sections.connections = true;
     sections.executionResults = true;
-    sections.diagnostics = false;
-    sections.runComparison = false;
-    sections.aiNarrative = false;
+    sections.diagnostics = true;
+    sections.runComparison = true;
+    sections.aiNarrative = true;
   }
+
+  function resetProjectScope(): void {
+    reset();
+    workflows.value = [];
+    workflowsLoading.value = false;
+    availableRuns.value = [];
+    runsLoading.value = false;
+    narrativeLoading.value = false;
+    loading.value = false;
+  }
+  registerProjectScopeReset(resetProjectScope);
 
   return {
     // State
@@ -310,6 +384,7 @@ export const useReportStore = defineStore("report", () => {
     error,
     narrativeText,
     narrativeMemoryScopes,
+    narrativeError,
     narrativeLoading,
     workflows,
     workflowsLoading,
@@ -327,5 +402,6 @@ export const useReportStore = defineStore("report", () => {
     fetchReportData,
     generateNarrative,
     reset,
+    resetProjectScope,
   };
 });

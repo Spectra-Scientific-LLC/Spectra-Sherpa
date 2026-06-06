@@ -1,5 +1,5 @@
-import { mount } from "@vue/test-utils";
-import { describe, it, expect } from "vitest";
+import { flushPromises, mount } from "@vue/test-utils";
+import { beforeEach, describe, it, expect, vi } from "vitest";
 import { ref, computed } from "vue";
 import OutputPanel from "@/views/workflow-builder/node-detail/panels/OutputPanel.vue";
 import {
@@ -8,6 +8,23 @@ import {
 } from "@/views/workflow-builder/node-detail/state/useNodeDetailState";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+const mocks = vi.hoisted(() => ({
+  apiGet: vi.fn(),
+  routerPush: vi.fn(),
+}));
+
+vi.mock("@/api/client", () => ({
+  default: {
+    get: mocks.apiGet,
+  },
+}));
+
+vi.mock("vue-router", () => ({
+  useRouter: () => ({
+    push: mocks.routerPush,
+  }),
+}));
 
 interface OutputOverrides {
   summary?: string;
@@ -25,6 +42,7 @@ interface OutputOverrides {
   portSummaries?: any[];
   preview?: { rows: any[]; columns: { field: string; header: string }[]; summary: string };
   pcaDiagnostics?: { rows: any[]; columns: { field: string; header: string }[]; summary: string };
+  modelId?: string | null;
 }
 
 function makeState(overrides: OutputOverrides = {}): NodeDetailState {
@@ -42,6 +60,7 @@ function makeState(overrides: OutputOverrides = {}): NodeDetailState {
           processing: false,
           provenance: false,
           quality: false,
+          modelArtifact: true,
           ports: false,
         },
       ),
@@ -60,6 +79,7 @@ function makeState(overrides: OutputOverrides = {}): NodeDetailState {
       regressionTargetOptions: ref(overrides.regressionTargetOptions ?? []),
       selectedRegressionR2: ref(null),
       selectedRegressionRmse: ref(null),
+      modelId: ref<string | null>(overrides.modelId ?? null),
       getMetaTooltip: () => "",
       formatMetaValue: (v: unknown) => String(v),
     },
@@ -108,6 +128,41 @@ function factory(overrides: OutputOverrides = {}, expanded = true) {
 }
 
 describe("OutputPanel", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("renders saved model artifact provenance links from the current artifact schema", async () => {
+    mocks.apiGet.mockResolvedValueOnce({
+      data: {
+        artifact_uid: "artifact-123456",
+        name: "PLSDA — auto",
+        display_name: "Wine PLSDA v1",
+        model_type: "plsda",
+        n_features: 13,
+        n_components: 3,
+        source_run_id: 42,
+        training_dataset_id: 7,
+        metrics: { cv_accuracy: 0.91 },
+      },
+    });
+
+    const { wrapper } = factory({ modelId: "artifact-123456" });
+    await flushPromises();
+
+    expect(mocks.apiGet).toHaveBeenCalledWith("/models/artifact-123456");
+    expect(wrapper.text()).toContain("Wine PLSDA v1");
+    expect(wrapper.text()).toContain("Source Run");
+    expect(wrapper.text()).toContain("#42");
+    expect(wrapper.text()).toContain("Training Dataset");
+    expect(wrapper.text()).toContain("Dataset #7");
+
+    await wrapper.findAll(".artifact-link")[0].trigger("click");
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/runs", query: { run: "42" } });
+    await wrapper.findAll(".artifact-link")[1].trigger("click");
+    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/data", query: { experiment: "7" } });
+  });
+
   it("renders empty state when hasOutput is false", () => {
     const { wrapper } = factory({ hasOutput: false });
     expect(wrapper.text()).toContain("No output data available");
