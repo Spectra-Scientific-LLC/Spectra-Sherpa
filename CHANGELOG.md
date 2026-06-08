@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.13] - 2026-06-08
+## [0.5.14] - 2026-06-08
+
+## [0.5.14] - 2026-06-08
+
+### Release Hygiene
+
+- Added an explicit OSS CodeQL advanced-setup workflow so public scans use the
+  checked-in CodeQL configuration instead of GitHub's opaque default setup.
+- Narrowed CodeQL's JavaScript/TypeScript surface to source, workflow, and
+  frontend configuration files while excluding generated static bundles,
+  vendored browser assets, tests, and dependency folders.
 
 ## [0.5.13] - 2026-06-08
 
