@@ -35,6 +35,7 @@ import router from "./router";
 import { useNotificationStore } from "./stores/notification";
 import { useWorkflowStore } from "./stores/workflow";
 import { getErrorMessage } from "./utils/errors";
+import { hasStoredApiKey, readStoredApiKey, writeStoredApiKey } from "./utils/authStorage";
 import { buildWsUrl } from "./utils/ws";
 
 import "primevue/resources/themes/lara-light-blue/theme.css";
@@ -157,15 +158,15 @@ if (import.meta.env.DEV) {
   const defaultApiKey = import.meta.env.VITE_DEFAULT_API_KEY as
     | string
     | undefined;
-  if (defaultApiKey && localStorage.getItem("api_key") !== defaultApiKey) {
-    localStorage.setItem("api_key", defaultApiKey);
+  if (defaultApiKey && readStoredApiKey() !== defaultApiKey) {
+    writeStoredApiKey(defaultApiKey);
   }
   console.info("[Spectra] Frontend origin:", window.location.origin);
   console.info("[Spectra] API base:", apiBase);
   console.info("[Spectra] WS base:", buildWsUrl());
   console.info(
     "[Spectra] API key set:",
-    localStorage.getItem("api_key") ? "yes" : "no"
+    hasStoredApiKey() ? "yes" : "no"
   );
 }
 

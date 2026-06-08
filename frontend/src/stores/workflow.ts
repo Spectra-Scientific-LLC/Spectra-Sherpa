@@ -7,6 +7,7 @@ import { useJobStore } from "@/stores/job";
 import { useProjectStore } from "@/stores/project";
 import { useWorkbookStore } from "@/stores/workbook";
 import { newIdempotencyKey, requestScopedSingleFlightKey, singleFlight } from "@/utils/idempotency";
+import { hasStoredApiKey, writeStoredApiKey } from "@/utils/authStorage";
 
 // Types extracted to workflow-types.ts for module size reduction.
 // Re-exported here for backward compatibility.
@@ -1037,15 +1038,15 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
 
     // Ensure API key is set (fallback for dev mode)
-    if (!localStorage.getItem("api_key") && import.meta.env.DEV) {
+    if (!hasStoredApiKey() && import.meta.env.DEV) {
       const defaultKey = import.meta.env.VITE_DEFAULT_API_KEY || "local-key";
       console.log(`[fetchSpectroChemPyFiles] Setting default API key for dev mode`);
-      localStorage.setItem("api_key", defaultKey);
+      writeStoredApiKey(defaultKey);
     }
 
     try {
       console.log(`[fetchSpectroChemPyFiles] Fetching files from API for ${dataset}...`);
-      console.log(`[fetchSpectroChemPyFiles] API key present:`, !!localStorage.getItem("api_key"));
+      console.log(`[fetchSpectroChemPyFiles] API key present:`, hasStoredApiKey());
       const response = await api.get("/workflows/spectrochempy-examples");
       const allFiles = response.data;
 

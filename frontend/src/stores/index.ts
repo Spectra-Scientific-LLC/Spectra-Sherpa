@@ -1,13 +1,14 @@
 import { defineStore } from "pinia";
+import { readStoredApiKey, writeStoredApiKey } from "@/utils/authStorage";
 
 export const useAppStore = defineStore("app", {
   state: () => ({
-    apiKey: localStorage.getItem("api_key") || "",
+    apiKey: readStoredApiKey(),
   }),
   actions: {
     setApiKey(value: string) {
       this.apiKey = value;
-      localStorage.setItem("api_key", value);
+      writeStoredApiKey(value);
     },
   },
 });

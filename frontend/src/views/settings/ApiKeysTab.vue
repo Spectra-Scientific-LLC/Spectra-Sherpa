@@ -438,6 +438,7 @@ import InputSwitch from "primevue/inputswitch";
 import Dropdown from "primevue/dropdown";
 import Tag from "primevue/tag";
 import api from "@/api/client";
+import { readStoredApiKey, writeStoredApiKey } from "@/utils/authStorage";
 import { useAppConfig } from "@/composables/useAppConfig";
 
 // Capability gate: only show the LLM-config surface when the server has
@@ -452,7 +453,7 @@ interface SavedKeyInfo {
   last_used_at: string | null;
 }
 
-const appApiKey = ref(localStorage.getItem("api_key") || "");
+const appApiKey = ref(readStoredApiKey());
 const llmProvider = ref("deepseek");
 const llmBaseUrl = ref("https://api.deepseek.com");
 const llmModel = ref("deepseek-chat"); // Cost-effective default
@@ -722,7 +723,7 @@ const saveAppKey = async () => {
     // The app key is a client-side localStorage value — no server storage needed.
     // Validate that the key authenticates via /auth/me before committing to localStorage.
     await api.get("/auth/me", { headers: { "X-API-Key": newKey } });
-    localStorage.setItem("api_key", newKey);
+    writeStoredApiKey(newKey);
     appMessage.value = "App API key saved successfully!";
   } catch {
     appError.value = "Key validation failed — the key was not accepted by the backend.";
