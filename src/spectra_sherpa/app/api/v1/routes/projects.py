@@ -1426,6 +1426,57 @@ def _model_members_for_snapshot(snapshot: dict[str, Any]) -> list[ArchiveMember]
     return members
 
 
+def _public_archive_validation_error(message: Any) -> str:
+    """Map archive-parser details to user-safe validation messages."""
+
+    text = str(message)
+    if text.startswith("Archive uncompressed payload exceeds limit"):
+        return "Archive uncompressed payload exceeds the configured upload limit."
+    if text.startswith("Unsupported .sherpa object version"):
+        return "Unsupported .sherpa object version."
+    if text.startswith("Unsafe archive member path"):
+        return "Archive contains an unsafe member path."
+    if text.startswith("Missing required payload:"):
+        return "Archive is missing a required payload."
+    if text.startswith("Missing required manifest:"):
+        return "Archive is missing the required manifest."
+    if text.startswith("Duplicate archive member:"):
+        return "Archive contains duplicate members."
+    if text.startswith("Manifest member missing from archive:"):
+        return "Manifest references a missing archive member."
+    if text.startswith("Manifest member entry is not an object:"):
+        return "Manifest contains an invalid member entry."
+    if text.startswith("SHA-256 mismatch for"):
+        return "Archive member hash does not match the manifest."
+    if text.startswith("Size mismatch for"):
+        return "Archive member size does not match the manifest."
+    if text.startswith("Archive member missing from manifest:"):
+        return "Archive contains a member missing from the manifest."
+    if text.startswith("Manifest content_hash does not match"):
+        return "Manifest content hash does not match the archive payloads."
+    if text.startswith("Manifest schema must be"):
+        return "Archive manifest schema is unsupported."
+    if text.startswith("Manifest must be"):
+        return "Archive manifest is invalid."
+    if text.startswith("Manifest payloads.members must be"):
+        return "Archive manifest member inventory is invalid."
+    if text.startswith("Only project .sherpa objects"):
+        return "Only project .sherpa objects are supported."
+    if text.startswith("Invalid ZIP archive:"):
+        return "File is not a valid ZIP archive."
+    return "Archive validation failed. Check that the file is a valid SpectraSherpa object archive."
+
+
+def _public_archive_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Remove parser/exception detail before returning archive reports over HTTP."""
+
+    public = dict(report)
+    errors = public.get("errors")
+    if isinstance(errors, list):
+        public["errors"] = [_public_archive_validation_error(error) for error in errors]
+    return public
+
+
 @router.get("/{project_id}/export/sherpa")
 async def export_project_sherpa_object(
     project_id: int,
@@ -1472,7 +1523,7 @@ async def inspect_sherpa_object(
     payload = await _read_upload_with_limit(file, max_bytes=max_bytes)
     if len(payload) > max_bytes:
         raise HTTPException(status_code=413, detail="Archive too large")
-    return inspect_archive_bytes(payload, max_uncompressed_bytes=max_bytes).to_dict()
+    return _public_archive_report(inspect_archive_bytes(payload, max_uncompressed_bytes=max_bytes).to_dict())
 
 
 @router.post("/objects/validate")
@@ -1485,14 +1536,14 @@ async def validate_sherpa_object(
     payload = await _read_upload_with_limit(file, max_bytes=max_bytes)
     if len(payload) > max_bytes:
         raise HTTPException(status_code=413, detail="Archive too large")
-    return validate_archive_bytes(payload, max_uncompressed_bytes=max_bytes)
+    return _public_archive_report(validate_archive_bytes(payload, max_uncompressed_bytes=max_bytes))
 
 
 def _remap_model_uids_in_snapshot(project_json: dict[str, Any], remap: dict[str, str]) -> None:
     """Rewrite artifact-uid references in an import snapshot after collisions.
 
-    Audit DATA-4: when an imported model's uid collided with an existing
-    artifact we saved it under a fresh server-generated uid.  The
+    When an imported model's uid collided with an existing artifact, we
+    saved it under a fresh server-generated uid.  The
     snapshot blob (persisted as ``ProjectVersion.snapshot``) must point
     at the new uid so a later version-restore + ``model.load_apply``
     resolves the imported model and not whatever happened to own the
@@ -1656,9 +1707,9 @@ async def _restore_workflows_from_snapshot(
 def _purge_artifacts(uids: list[str]) -> None:
     """Best-effort delete of artifacts written by a now-rolled-back import.
 
-    Audit DATA-4 / DATA-2: ``store.save()`` writes files before the
-    transaction commits.  If the import rolls back, the DB rows vanish
-    but the files would leak as orphans — remove them here.
+    ``store.save()`` writes files before the transaction commits.  If the
+    import rolls back, the DB rows vanish but the files would leak as
+    orphans — remove them here.
     """
     if not uids:
         return
@@ -1698,7 +1749,7 @@ async def import_project(
     project: Project | None = None
     models_imported = 0
     # Artifacts written to disk during this import; purged if the
-    # transaction rolls back so a failed import leaves no orphans (DATA-4).
+    # transaction rolls back so a failed import leaves no orphans.
     imported_artifact_uids: list[str] = []
     committed = False
 
@@ -1862,14 +1913,14 @@ async def import_project(
                 )
                 session.add(script)
 
-            # Audit DATA-4: an archive must never overwrite an artifact
-            # that already exists (on disk or in the DB) — a crafted
-            # archive could otherwise target a victim's known uid and
-            # corrupt their model.  Pre-resolve which candidate uids are
-            # already taken in the DB; the per-model loop also checks
-            # disk (covers another project's files and intra-archive
-            # duplicate uids).  Colliding models are saved under a fresh
-            # server-generated uid and the snapshot is remapped to it.
+            # An archive must never overwrite an artifact that already
+            # exists (on disk or in the DB) — a crafted archive could
+            # otherwise target a victim's known uid and corrupt their
+            # model. Pre-resolve which candidate uids are already taken
+            # in the DB; the per-model loop also checks disk (covers
+            # another project's files and intra-archive duplicate uids).
+            # Colliding models are saved under a fresh server-generated
+            # uid and the snapshot is remapped to it.
             uid_remap: dict[str, str] = {}
             candidate_uids = [e[0] for e in model_entries]
             existing_db_uids: set[str] = set()
@@ -1928,7 +1979,7 @@ async def import_project(
                     logger.warning("Failed to import model %s: %s", uid, exc)
 
             # Keep the persisted snapshot internally consistent with the
-            # uids we actually wrote (DATA-4).
+            # uids we actually wrote.
             _remap_model_uids_in_snapshot(project_json, uid_remap)
 
             # Save import snapshot as version 1

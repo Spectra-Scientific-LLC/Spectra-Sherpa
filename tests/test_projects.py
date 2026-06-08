@@ -810,7 +810,7 @@ class TestExportImport:
             assert resp.status_code == 200
             data = resp.json()
             assert data["valid"] is False
-            assert any("uncompressed payload exceeds limit" in error for error in data["errors"])
+            assert "Archive uncompressed payload exceeds the configured upload limit." in data["errors"]
         finally:
             object.__setattr__(settings, "max_file_size_mb", original_max_size)
 
@@ -842,7 +842,7 @@ class TestExportImport:
             files={"file": ("future.sherpa", archive, "application/zip")},
         )
         assert resp.status_code == 200
-        assert any("Unsupported .sherpa object version" in error for error in resp.json()["errors"])
+        assert "Unsupported .sherpa object version." in resp.json()["errors"]
 
     @pytest.mark.anyio
     async def test_validate_sherpa_object_rejects_parent_directory_member(self, auth_client: AsyncClient):
@@ -858,7 +858,26 @@ class TestExportImport:
             files={"file": ("unsafe.sherpa", archive, "application/zip")},
         )
         assert resp.status_code == 200
-        assert any("Unsafe archive member path" in error for error in resp.json()["errors"])
+        assert "Archive contains an unsafe member path." in resp.json()["errors"]
+
+    @pytest.mark.anyio
+    async def test_validate_sherpa_object_sanitizes_parser_details(self, auth_client: AsyncClient):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("project.json", "{not-json")
+            zf.writestr("sherpa-object.json", "{also-not-json")
+        archive.seek(0)
+
+        resp = await auth_client.post(
+            "/api/v1/projects/objects/validate",
+            files={"file": ("invalid.sherpa", archive, "application/zip")},
+        )
+
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["valid"] is False
+        assert payload["errors"]
+        assert all("line " not in error and "column " not in error for error in payload["errors"])
 
     @pytest.mark.anyio
     async def test_import_project(self, auth_client: AsyncClient):
@@ -1130,7 +1149,7 @@ class TestExportImport:
         assert resp.status_code == 200
         data = resp.json()
         assert data["valid"] is False
-        assert any("SHA-256 mismatch" in error for error in data["errors"])
+        assert "Archive member hash does not match the manifest." in data["errors"]
 
     @pytest.mark.anyio
     async def test_import_creates_initial_version(self, auth_client: AsyncClient):

@@ -19,6 +19,9 @@ def _resolve_existing_path(value: str | Path, *, label: str) -> Path:
         raise ValueError(f"{label} path contains an invalid NUL byte.")
 
     try:
+        # This helper is the boundary check for user-selected local files.
+        # Multi-user callers opt into a resolved data-dir containment check below.
+        # codeql[py/path-injection]
         return Path(text).expanduser().resolve(strict=True)
     except OSError as exc:
         raise ValueError(f"{label} path does not exist: {_display_path(value)}") from exc

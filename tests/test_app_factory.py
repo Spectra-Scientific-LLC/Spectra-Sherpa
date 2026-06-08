@@ -315,7 +315,7 @@ async def test_lifespan_runs_extra_shutdown_before_core_teardown(monkeypatch: py
 
 
 # --------------------------------------------------------------------------
-# Audit SEC-3: wildcard CORS must not be credentialed
+# Wildcard CORS must not be credentialed
 # --------------------------------------------------------------------------
 
 
@@ -377,6 +377,7 @@ def test_trusted_hosts_reject_unlisted_host(monkeypatch: pytest.MonkeyPatch):
     client = TestClient(app, base_url="https://good.example.com")
     allowed_hosts = set(kw["allowed_hosts"])
 
-    assert "good.example.com" in allowed_hosts
+    assert any(host == "good.example.com" for host in allowed_hosts)
     assert client.get("/api/health").status_code == 200
     assert client.get("/api/health", headers={"Host": "evil.example.com"}).status_code == 400
+    assert client.get("/api/health", headers={"Host": "good.example.com/poison?x="}).status_code == 400
