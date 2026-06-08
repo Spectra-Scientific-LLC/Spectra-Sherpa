@@ -4,10 +4,6 @@ paths:
   - src
   - .github/workflows
   - frontend/src
-  - frontend/eslint.config.js
-  - frontend/playwright.config.ts
-  - frontend/vite.config.ts
-  - frontend/vitest.config.ts
 
 paths-ignore:
   - src/spectra_sherpa/static/**
