@@ -7,16 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.11] - 2026-06-08
+## [0.5.12] - 2026-06-08
+
+## [0.5.12] - 2026-06-08
+
+### Security
+
+- Made the OSS CodeQL policy explicit for SpectraSherpa's product model:
+  default CodeQL scanning remains enabled, while the generic Python
+  `py/path-injection` query is excluded because local/desktop SpectraSherpa
+  intentionally accepts user-selected local files and multi-user API paths are
+  separately contained under `DATA_DIR` with regression coverage.
+- Removed ineffective inline CodeQL suppression markers from source so the
+  security posture is controlled by the repository CodeQL configuration rather
+  than comments that GitHub did not honor in default code scanning.
+- Kept public OSS CI warning-mode mypy from surfacing as a failed GitHub
+  annotation while the DAG-node type ratchet remains non-blocking.
 
 ## [0.5.11] - 2026-06-08
 
 ### Security
 
-- Moved remaining intentional local-file CodeQL suppressions to the in-source
-  form that public GitHub code scanning recognizes, covering validated local
-  spectroscopy file readers, builder import paths, batch folder discovery, and
-  synthetic NPZ metadata replacement.
+- Attempted to move remaining intentional local-file CodeQL suppressions to
+  in-source comments for validated local spectroscopy file readers, builder
+  import paths, batch folder discovery, and synthetic NPZ metadata replacement;
+  v0.5.12 replaces this with an explicit CodeQL query policy after GitHub
+  default code scanning continued to report the generic path-injection rule.
 - Switched the API-key cache lookup digest to the cryptography HMAC primitive
   so the high-entropy API-key cache no longer triggers weak password-hashing
   findings in public CodeQL.
