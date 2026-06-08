@@ -7,7 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.14] - 2026-06-08
+## [0.5.15] - 2026-06-08
+
+## [0.5.15] - 2026-06-08
+
+### Release Hygiene
+
+- Adjusted the OSS CodeQL advanced-setup path scopes to use directories only,
+  avoiding Python extractor failures while preserving the generated-static
+  JavaScript/TypeScript exclusions introduced in 0.5.14.
 
 ## [0.5.14] - 2026-06-08
 
