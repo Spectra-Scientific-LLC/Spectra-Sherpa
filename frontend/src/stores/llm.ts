@@ -8,6 +8,7 @@ import { useAuthStore } from "@/stores/auth";
 import { useNotificationStore } from "@/stores/notification";
 import { useProjectStore } from "@/stores/project";
 import { buildAuthMessage, buildWsUrl, withCredentials } from "@/utils/ws";
+import { hasStoredApiKey, readStoredApiKey } from "@/utils/authStorage";
 
 const STORAGE_KEY = "llm_conversations";
 const RECORD_STORAGE_KEY = "llm_conversation_records";
@@ -104,7 +105,7 @@ const getRequestHeaders = (): HeadersInit => {
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  const apiKey = localStorage.getItem("api_key");
+  const apiKey = readStoredApiKey();
   if (apiKey) {
     headers["X-API-Key"] = apiKey;
   }
@@ -426,7 +427,7 @@ export const useLlmStore = defineStore("llm", () => {
           event.code === 1008 &&
           !authFallbackRetried &&
           localStorage.getItem("token") &&
-          localStorage.getItem("api_key")
+          hasStoredApiKey()
         ) {
           localStorage.removeItem("token");
           authFallbackRetried = true;
@@ -473,7 +474,7 @@ export const useLlmStore = defineStore("llm", () => {
         if (hadToken) {
           localStorage.removeItem("token");
         }
-        if (hadToken && localStorage.getItem("api_key")) {
+        if (hadToken && hasStoredApiKey()) {
           reconnectAttempts.value = 0;
           scheduleReconnect();
           return;

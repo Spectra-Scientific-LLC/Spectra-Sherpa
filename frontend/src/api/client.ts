@@ -1,6 +1,7 @@
 import axios, { type AxiosError } from "axios";
 import { updateDemoQuotaFromRateLimit } from "@/composables/demoModeState";
 import { useNotifier } from "@/composables/useNotifier";
+import { clearStoredApiKey, readStoredApiKey } from "@/utils/authStorage";
 import { isDemoUpgradeError } from "@/utils/errors";
 
 // Use relative URL in production (nginx proxies to backend)
@@ -155,7 +156,7 @@ api.interceptors.request.use((config) => {
   }
 
   // Also add API key if present (for hybrid mode M2M auth)
-  const apiKey = localStorage.getItem("api_key");
+  const apiKey = readStoredApiKey();
   if (apiKey) {
     config.headers["X-API-Key"] = apiKey;
   }
@@ -214,7 +215,7 @@ api.interceptors.response.use(
       // Don't redirect if on login or register page (avoid loop / breaking registration UX)
       if (!path.startsWith("/login") && !path.startsWith("/register")) {
         localStorage.removeItem("token");
-        localStorage.removeItem("api_key");
+        clearStoredApiKey();
         window.location.href = "/login";
       }
     }

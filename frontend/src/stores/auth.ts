@@ -13,6 +13,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import api from '@/api/client'
+import { clearStoredApiKey, hasStoredApiKey } from '@/utils/authStorage'
 
 /** Per-user capability flags populated by the server's /auth/me response. */
 interface UserCapabilities {
@@ -55,7 +56,7 @@ export const useAuthStore = defineStore('auth', () => {
         token.value = null
         user.value = null
         localStorage.removeItem('token')
-        localStorage.removeItem('api_key')
+        clearStoredApiKey()
     }
 
     /**
@@ -64,7 +65,7 @@ export const useAuthStore = defineStore('auth', () => {
      * a prior enterprise session doesn't taint the hybrid handshake.
      */
     async function initHybridUser() {
-        if (token.value || localStorage.getItem('token') || localStorage.getItem('api_key')) {
+        if (token.value || localStorage.getItem('token') || hasStoredApiKey()) {
             clearCredentials()
         }
         try {

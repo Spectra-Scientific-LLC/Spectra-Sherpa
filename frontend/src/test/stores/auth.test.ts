@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
 import api from "@/api/client";
+import { clearStoredApiKey, writeStoredApiKey } from "@/utils/authStorage";
 
 vi.mock("@/api/client", () => ({
   default: {
@@ -23,6 +24,7 @@ describe("OSS auth store (identity-only, post-v0.4.1)", () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     localStorage.clear();
+    clearStoredApiKey();
   });
 
   it("initializes unauthenticated", () => {
@@ -34,7 +36,7 @@ describe("OSS auth store (identity-only, post-v0.4.1)", () => {
 
   describe("clearCredentials", () => {
     it("removes token and api_key and drops user without navigation", () => {
-      localStorage.setItem("api_key", "key");
+      writeStoredApiKey("key");
       const store = useAuthStore();
       store.token = "jwt";
       localStorage.setItem("token", "jwt");
@@ -65,7 +67,7 @@ describe("OSS auth store (identity-only, post-v0.4.1)", () => {
 
     it("clears stale tokens before calling /auth/me", async () => {
       localStorage.setItem("token", "stale-jwt");
-      localStorage.setItem("api_key", "stale-key");
+      writeStoredApiKey("stale-key");
       vi.mocked(api.get).mockResolvedValueOnce({
         data: { id: 7, username: "implicit-user", is_active: true },
       });

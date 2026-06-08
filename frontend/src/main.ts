@@ -259,8 +259,7 @@ const initWorkflowMetadataRefresh = async () => {
   // Skip initial fetch when not authenticated (enterprise/hybrid mode).
   // The node library will be fetched once the user logs in and views load.
   const token = localStorage.getItem("token");
-  const apiKey = localStorage.getItem("api_key");
-  if (!token && !apiKey) {
+  if (!token && !hasStoredApiKey()) {
     // No credentials — defer until after login to avoid 401 spam.
     return;
   }

@@ -1,8 +1,17 @@
 const API_KEY_STORAGE_KEY = "api_key";
 const TOKEN_STORAGE_KEY = "token";
 
+let runtimeApiKey = "";
+
+if (typeof import.meta !== "undefined") {
+  runtimeApiKey = (import.meta.env.VITE_DEFAULT_API_KEY as string | undefined) || "";
+}
+
 export function readStoredApiKey(): string {
-  return localStorage.getItem(API_KEY_STORAGE_KEY) || "";
+  if (localStorage.getItem(API_KEY_STORAGE_KEY)) {
+    localStorage.removeItem(API_KEY_STORAGE_KEY);
+  }
+  return runtimeApiKey;
 }
 
 export function hasStoredApiKey(): boolean {
@@ -10,14 +19,12 @@ export function hasStoredApiKey(): boolean {
 }
 
 export function writeStoredApiKey(value: string): void {
-  // Local/OSS compatibility credential: enterprise browser auth uses JWTs,
-  // while local and hybrid deployments may still need an API key fallback.
-  // lgtm[js/clear-text-storage-of-sensitive-data]
-  localStorage.setItem(API_KEY_STORAGE_KEY, value);
+  runtimeApiKey = value;
 }
 
 export function clearStoredApiKey(): void {
   localStorage.removeItem(API_KEY_STORAGE_KEY);
+  runtimeApiKey = "";
 }
 
 export function readStoredToken(): string {

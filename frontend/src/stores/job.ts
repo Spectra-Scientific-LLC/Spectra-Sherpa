@@ -5,6 +5,7 @@ import type { JobInfo } from "@/types";
 import { buildAuthMessage, buildWsUrl, withCredentials } from "@/utils/ws";
 import { useAuthStore } from "@/stores/auth";
 import { useNotifier } from "@/composables/useNotifier";
+import { hasStoredApiKey } from "@/utils/authStorage";
 
 export const useJobStore = defineStore("job", () => {
   const authStore = useAuthStore();
@@ -176,7 +177,7 @@ export const useJobStore = defineStore("job", () => {
         if (hadToken) {
           localStorage.removeItem("token");
         }
-        if (hadToken && localStorage.getItem("api_key")) {
+        if (hadToken && hasStoredApiKey()) {
           reconnectAttempts.value = 0;
           scheduleReconnect();
           return;

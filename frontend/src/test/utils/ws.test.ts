@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { clearStoredApiKey, writeStoredApiKey } from "@/utils/authStorage";
 import { buildWsUrl, withCredentials, buildAuthMessage } from "@/utils/ws";
 
 describe("buildWsUrl", () => {
@@ -25,6 +26,7 @@ describe("withCredentials", () => {
 describe("buildAuthMessage", () => {
   beforeEach(() => {
     localStorage.clear();
+    clearStoredApiKey();
   });
 
   it("returns JSON with null token and api_key when nothing stored", () => {
@@ -44,8 +46,8 @@ describe("buildAuthMessage", () => {
     expect(msg.api_key).toBeNull();
   });
 
-  it("includes api_key from localStorage", () => {
-    localStorage.setItem("api_key", "key-456");
+  it("includes api_key from runtime auth storage", () => {
+    writeStoredApiKey("key-456");
     const msg = JSON.parse(buildAuthMessage());
     expect(msg.token).toBeNull();
     expect(msg.api_key).toBe("key-456");
@@ -53,7 +55,7 @@ describe("buildAuthMessage", () => {
 
   it("includes both when both present", () => {
     localStorage.setItem("token", "jwt-123");
-    localStorage.setItem("api_key", "key-456");
+    writeStoredApiKey("key-456");
     const msg = JSON.parse(buildAuthMessage());
     expect(msg.token).toBe("jwt-123");
     expect(msg.api_key).toBe("key-456");

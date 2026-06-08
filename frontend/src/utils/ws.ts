@@ -1,3 +1,5 @@
+import { readStoredApiKey } from "@/utils/authStorage";
+
 export const buildWsUrl = (): string => {
   // In development, use explicit API URL
   // In production, derive from current page location (nginx proxies /ws)
@@ -42,7 +44,7 @@ export const withCredentials = (wsUrl: string): string => {
  */
 export const buildAuthMessage = (): string => {
   const token = localStorage.getItem("token");
-  const apiKey = localStorage.getItem("api_key");
+  const apiKey = readStoredApiKey();
   return JSON.stringify({
     type: "authenticate",
     token: token || null,
