@@ -27,7 +27,8 @@ def _resolve_existing_path(value: str | Path, *, label: str) -> Path:
     # Local/desktop mode intentionally accepts user-selected filesystem paths.
     # Multi-user API call sites set ``restrict_to_data_dir_in_multi_user=True``
     # and therefore use the containment-enforced resolver below.
-    candidate = Path(os.path.abspath(os.path.expanduser(text)))  # lgtm[py/path-injection]
+    # codeql[py/path-injection]
+    candidate = Path(os.path.abspath(os.path.expanduser(text)))
     if not candidate.exists():
         raise ValueError(f"{label} path does not exist: {_display_path(value)}")
     return candidate
@@ -53,7 +54,8 @@ def _resolve_existing_path_under_root(value: str | Path, root: Path, *, label: s
 
     candidate = Path(candidate_text)
     try:
-        resolved = candidate.resolve(strict=True)  # lgtm[py/path-injection]
+        # codeql[py/path-injection]
+        resolved = candidate.resolve(strict=True)
     except OSError as exc:
         raise ValueError(f"{label} path does not exist: {_display_path(value)}") from exc
     _assert_under_root(resolved, allowed_root, label=label)
@@ -102,6 +104,7 @@ def resolve_existing_file_path(
     else:
         resolved = _resolve_existing_path(value, label=label)
 
+    # codeql[py/path-injection]
     if not resolved.is_file():
         raise ValueError(f"{label} path is not a file: {resolved}")
 
@@ -129,6 +132,7 @@ def resolve_existing_directory_path(
     else:
         resolved = _resolve_existing_path(value, label=label)
 
+    # codeql[py/path-injection]
     if not resolved.is_dir():
         raise ValueError(f"{label} path is not a directory: {resolved}")
 

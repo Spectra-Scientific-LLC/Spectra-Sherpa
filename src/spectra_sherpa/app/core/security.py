@@ -1,10 +1,10 @@
-import hashlib
 import ipaddress
 import logging
 import os
 import time
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
+from cryptography.hazmat.primitives import hashes, hmac
 from fastapi import Depends, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -56,7 +56,7 @@ def llm_egress_defaults_forced() -> bool:
 def _hash_api_key(api_key: str) -> str:
     """Deterministically authenticate a high-entropy API key for cache lookup.
 
-    A keyed BLAKE2b digest is the right tool here, not Argon2/bcrypt:
+    A keyed HMAC digest is the right tool here, not Argon2/bcrypt:
 
     - API keys in this codebase are high-entropy random tokens
       (``secrets.token_urlsafe``), not user-chosen passwords.  Slow
@@ -70,9 +70,9 @@ def _hash_api_key(api_key: str) -> str:
       is used only as an in-process lookup key after a real authenticator has
       accepted the presented token.
     """
-    key = settings.secret_key.encode("utf-8")[:64]
-    digest = hashlib.blake2b(api_key.encode("utf-8"), key=key, digest_size=32)
-    return digest.hexdigest()
+    signer = hmac.HMAC(settings.secret_key.encode("utf-8"), hashes.SHA256())
+    signer.update(api_key.encode("utf-8"))
+    return cast(str, signer.finalize().hex())
 
 
 def _get_cached_user_id(api_key: str) -> Optional[int]:
