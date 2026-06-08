@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.6] - 2026-06-08
+
+## [0.5.6] - 2026-06-08
+
+### Security
+
+- Tightened server-side path resolution for protected file readers so API-facing
+  CSV, JCAMP-DX, synthetic NPZ metadata, and batch-prediction folder paths are
+  resolved under `DATA_DIR` before strict filesystem access in multi-user
+  deployments. Trusted local/OSS file workflows still support user-selected
+  files outside `DATA_DIR`.
+- Sanitized `.sherpa` archive inspection/validation at the service layer so raw
+  JSON parser and ZIP parser exception details are not carried into HTTP
+  inspect/validate responses before the route-level public-report sanitizer.
+- Reaffirmed the Starlette Host-header advisory mitigation: SpectraSherpa keeps
+  `TrustedHostMiddleware` active while FastAPI remains on the Starlette 0.49.x
+  compatibility line, which is still below the advisory's patched 1.x release
+  line.
+
 ## [0.5.5] - 2026-06-08
 
 ### Security
