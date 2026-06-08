@@ -1,6 +1,6 @@
 {
   "name": "spectra-sherpa-frontend",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -51,6 +51,7 @@
     "@vue/test-utils": "^2.4.6",
     "autoprefixer": "^10.4.20",
     "dotenv": "^17.4.1",
+    "esbuild": "^0.27.7",
     "eslint": "^9.16.0",
     "eslint-plugin-vue": "^9.32.0",
     "happy-dom": "^20.7.0",

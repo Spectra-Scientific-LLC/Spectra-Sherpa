@@ -19,6 +19,10 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "../src/spectra_sherpa/static"),
     emptyOutDir: true,
+    // Avoid Lightning CSS's platform-specific optional native package in CI.
+    // esbuild minification is deterministic for the committed OSS static bundle
+    // and removes a flaky post-merge failure mode on Ubuntu runners.
+    cssMinify: "esbuild",
     rollupOptions: {
       output: {
         manualChunks(id) {
