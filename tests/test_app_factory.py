@@ -363,9 +363,9 @@ def test_trusted_hosts_derive_from_env_and_cors(monkeypatch: pytest.MonkeyPatch)
 
     app = app_main.create_app(include_server_routers=False)
     kw = _middleware_kwargs(app, "TrustedHostMiddleware")
+    allowed_hosts = set(kw["allowed_hosts"])
 
-    assert "demo.example.com" in kw["allowed_hosts"]
-    assert "app.example.com" in kw["allowed_hosts"]
+    assert {"demo.example.com", "app.example.com"}.issubset(allowed_hosts)
 
 
 def test_trusted_hosts_reject_unlisted_host(monkeypatch: pytest.MonkeyPatch):
@@ -375,7 +375,8 @@ def test_trusted_hosts_reject_unlisted_host(monkeypatch: pytest.MonkeyPatch):
     app = app_main.create_app(include_server_routers=False)
     kw = _middleware_kwargs(app, "TrustedHostMiddleware")
     client = TestClient(app, base_url="https://good.example.com")
+    allowed_hosts = set(kw["allowed_hosts"])
 
-    assert "good.example.com" in kw["allowed_hosts"]
+    assert "good.example.com" in allowed_hosts
     assert client.get("/api/health").status_code == 200
     assert client.get("/api/health", headers={"Host": "evil.example.com"}).status_code == 400

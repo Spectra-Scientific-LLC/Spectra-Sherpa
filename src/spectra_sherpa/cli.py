@@ -22,7 +22,7 @@ import time
 import webbrowser
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 
 def _health_url(url: str) -> str:
@@ -68,6 +68,100 @@ def _env_float(name: str, default: float) -> float:
         return float(value)
     except ValueError:
         return default
+
+
+def _normalize_api_base(url: str) -> str:
+    base = url.rstrip("/")
+    return base if base.endswith("/api/v1") else f"{base}/api/v1"
+
+
+def _auth_headers(token: str | None) -> dict[str, str]:
+    if not token:
+        return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _resolve_path(path: str):
+    from pathlib import Path
+
+    return Path(path).expanduser().resolve()
+
+
+def _object_inspect(path: str) -> None:
+    import json
+
+    from spectra_sherpa.app.services.sherpa_object import inspect_archive_bytes
+
+    payload = _resolve_path(path).read_bytes()
+    print(json.dumps(inspect_archive_bytes(payload).to_dict(), indent=2))
+
+
+def _object_validate(path: str) -> None:
+    import json
+
+    from spectra_sherpa.app.services.sherpa_object import validate_archive_bytes
+
+    payload = _resolve_path(path).read_bytes()
+    result = validate_archive_bytes(payload)
+    print(json.dumps(result, indent=2))
+    if not result.get("valid"):
+        raise SystemExit(2)
+
+
+def _raise_api_error(action: str, exc: HTTPError | URLError) -> None:
+    if isinstance(exc, HTTPError):
+        detail = exc.reason
+        try:
+            payload = exc.read().decode("utf-8", errors="replace").strip()
+        except Exception:
+            payload = ""
+        if payload:
+            detail = payload
+        raise SystemExit(f"{action} failed: HTTP {exc.code} {detail}") from exc
+    raise SystemExit(f"{action} failed: {exc.reason}") from exc
+
+
+def _object_export(project_id: int, output: str, api_url: str, token: str | None) -> None:
+    url = f"{_normalize_api_base(api_url)}/projects/{project_id}/export/sherpa"
+    request = Request(url, headers=_auth_headers(token), method="GET")
+    try:
+        with urlopen(request) as response:  # nosec B310 - explicit user-provided API endpoint
+            payload = response.read()
+    except (HTTPError, URLError) as exc:
+        _raise_api_error("Export", exc)
+    _resolve_path(output).write_bytes(payload)
+    print(f"Wrote {output} ({len(payload)} bytes)")
+
+
+def _object_import(path: str, api_url: str, token: str | None) -> None:
+    import json
+    import uuid
+
+    file_path = _resolve_path(path)
+    boundary = f"spectra-sherpa-{uuid.uuid4().hex}"
+    file_payload = file_path.read_bytes()
+    body = (
+        (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="{file_path.name}"\r\n'
+            "Content-Type: application/zip\r\n\r\n"
+        ).encode("utf-8")
+        + file_payload
+        + f"\r\n--{boundary}--\r\n".encode("utf-8")
+    )
+
+    headers = {
+        **_auth_headers(token),
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Content-Length": str(len(body)),
+    }
+    request = Request(f"{_normalize_api_base(api_url)}/projects/import", data=body, headers=headers, method="POST")
+    try:
+        with urlopen(request) as response:  # nosec B310 - explicit user-provided API endpoint
+            result = json.loads(response.read())
+    except (HTTPError, URLError) as exc:
+        _raise_api_error("Import", exc)
+    print(json.dumps({"id": result.get("id"), "name": result.get("name")}, indent=2))
 
 
 def _find_listening_pids(port: int) -> list[int]:
@@ -281,6 +375,26 @@ def main(argv: list[str] | None = None) -> None:
     serve_parser.add_argument(
         "--port", type=int, default=8001, help="Port number for the headless server (default: 8001)"
     )
+    object_parser = subparsers.add_parser("object", help="Inspect, validate, export, or import .sherpa objects")
+    object_subparsers = object_parser.add_subparsers(dest="object_command", required=True)
+
+    inspect_parser = object_subparsers.add_parser("inspect", help="Inspect a .sherpa object offline")
+    inspect_parser.add_argument("path", help="Path to .sherpa object")
+
+    validate_parser = object_subparsers.add_parser("validate", help="Validate a .sherpa object offline")
+    validate_parser.add_argument("path", help="Path to .sherpa object")
+
+    export_parser = object_subparsers.add_parser("export", help="Export a project from a running SpectraSherpa API")
+    export_parser.add_argument("project_id", type=int, help="Project ID to export")
+    export_parser.add_argument("output", help="Output .sherpa path")
+    export_parser.add_argument("--api-url", default="http://127.0.0.1:8000", help="SpectraSherpa server URL")
+    export_parser.add_argument("--token", default=None, help="Bearer token for hosted/hybrid APIs")
+
+    import_parser = object_subparsers.add_parser("import", help="Import a .sherpa object into a running API")
+    import_parser.add_argument("path", help="Path to .sherpa object")
+    import_parser.add_argument("--api-url", default="http://127.0.0.1:8000", help="SpectraSherpa server URL")
+    import_parser.add_argument("--token", default=None, help="Bearer token for hosted/hybrid APIs")
+
     prewarm_parser = subparsers.add_parser(
         "prewarm-hitran-synthesis",
         help="Populate the local default HITRAN synthesis spectrum cache",
@@ -338,6 +452,17 @@ def main(argv: list[str] | None = None) -> None:
 
     if getattr(args, "command", None) == "prewarm-hitran-synthesis":
         asyncio.run(_prewarm_hitran_synthesis_library(args))
+        return
+
+    if getattr(args, "command", None) == "object":
+        if args.object_command == "inspect":
+            _object_inspect(args.path)
+        elif args.object_command == "validate":
+            _object_validate(args.path)
+        elif args.object_command == "export":
+            _object_export(args.project_id, args.output, args.api_url, args.token)
+        elif args.object_command == "import":
+            _object_import(args.path, args.api_url, args.token)
         return
 
     # Check for headless mode BEFORE browser launch to avoid unnecessary GUI on servers

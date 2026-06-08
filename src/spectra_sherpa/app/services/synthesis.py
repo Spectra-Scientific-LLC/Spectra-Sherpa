@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.core.path_security import resolve_existing_file_path
 from spectra_sherpa.app.lib.curves import evaluate_catmull_rom_samples
 from spectra_sherpa.app.lib.jcamp_reader import parse_jcamp
 from spectra_sherpa.app.lib.wavenumber_grid import (
@@ -768,24 +769,12 @@ def _write_synthesis_npz(path: Path, result: SynthesisResult, *, title: str | No
 
 
 def _resolve_synthetic_npz_path(path: str | Path) -> Path:
-    try:
-        resolved = Path(path).expanduser().resolve(strict=True)
-    except OSError as exc:
-        raise ValueError(f"Synthetic NPZ file does not exist: {path}") from exc
-    if not resolved.is_file():
-        raise ValueError(f"Synthetic NPZ path is not a file: {resolved}")
-    if resolved.suffix.lower() != ".npz":
-        raise ValueError(f"Synthetic metadata edits require a .npz file, got: {resolved.suffix or '<none>'}")
-
-    from spectra_sherpa.app.core.mode_policy import is_multi_user
-
-    if is_multi_user():
-        allowed_root = settings.data_dir.resolve(strict=False)
-        try:
-            resolved.relative_to(allowed_root)
-        except ValueError as exc:
-            raise ValueError(f"Synthetic NPZ path must be under the data directory ({allowed_root}).") from exc
-    return resolved
+    return resolve_existing_file_path(
+        path,
+        label="Synthetic NPZ",
+        suffixes={".npz"},
+        restrict_to_data_dir_in_multi_user=True,
+    )
 
 
 def update_synthetic_npz_metadata(path: str | Path, updates: dict[str, Any]) -> None:

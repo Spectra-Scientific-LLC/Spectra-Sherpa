@@ -24,6 +24,8 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.core.path_security import resolve_existing_file_path
+
 _JCAMP_EXTENSIONS = {".jdx", ".dx", ".jcamp"}
 
 logger = logging.getLogger(__name__)
@@ -200,14 +202,12 @@ def read_jcamp(filepath: str | Path) -> JCAMPData:
     ValueError
         If the file cannot be parsed or contains no data block.
     """
-    try:
-        filepath = Path(filepath).expanduser().resolve(strict=True)
-    except OSError as exc:
-        raise ValueError(f"JCAMP-DX file does not exist: {filepath}") from exc
-    if not filepath.is_file():
-        raise ValueError(f"JCAMP-DX path is not a file: {filepath}")
-    if filepath.suffix.lower() not in _JCAMP_EXTENSIONS:
-        raise ValueError(f"Unsupported JCAMP-DX extension: {filepath.suffix or '<none>'}")
+    filepath = resolve_existing_file_path(
+        filepath,
+        label="JCAMP-DX",
+        suffixes=_JCAMP_EXTENSIONS,
+        restrict_to_data_dir_in_multi_user=True,
+    )
     text = filepath.read_text(encoding="utf-8", errors="replace")
     return parse_jcamp(text)
 

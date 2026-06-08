@@ -27,14 +27,17 @@ from spectra_sherpa.app.api.deps import (
     reserve_demo_upload_quota_or_429,
 )
 from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.core.security import check_export_allowed
 from spectra_sherpa.app.models.advisor_channel import AdvisorChannel
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.model_artifact import ModelArtifact
 from spectra_sherpa.app.models.project import Project, ProjectVersion
-from spectra_sherpa.app.models.project_data_source import ProjectDataSource
+from spectra_sherpa.app.models.project_data_source import ProjectDataSource, WorkflowDataSource
 from spectra_sherpa.app.models.project_script import ProjectScript
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
+from spectra_sherpa.app.models.workflow_node import WorkflowNode
 from spectra_sherpa.app.schemas.projects import (
     AdvisorChannelOut,
     AdvisorChannelUpdate,
@@ -58,6 +61,14 @@ from spectra_sherpa.app.services.experiments import read_metadata, resolve_data_
 from spectra_sherpa.app.services.project_data_sources import (
     effective_workflow_tab_color,
     ensure_project_advisor_channel,
+)
+from spectra_sherpa.app.services.sherpa_object import (
+    PROJECT_PAYLOAD,
+    SHERPA_OBJECT_MANIFEST,
+    ArchiveMember,
+    build_archive,
+    inspect_archive_bytes,
+    validate_archive_bytes,
 )
 
 logger = logging.getLogger(__name__)
@@ -1101,6 +1112,27 @@ async def unlink_model(
 
 async def _build_snapshot(project: Project, session: AsyncSession) -> dict:
     """Build a recursive snapshot of the project tree."""
+    # Project data sources
+    data_source_result = await session.execute(
+        select(ProjectDataSource)
+        .where(ProjectDataSource.project_id == project.id)
+        .order_by(ProjectDataSource.sort_order.asc(), ProjectDataSource.display_name.asc())
+    )
+    data_sources_snap = []
+    for data_source in data_source_result.scalars().all():
+        data_sources_snap.append(
+            {
+                "id": data_source.id,
+                "display_name": data_source.display_name,
+                "source_type": data_source.source_type,
+                "source_ref": data_source.source_ref,
+                "fingerprint": data_source.fingerprint,
+                "color": data_source.color,
+                "metadata": data_source.metadata_ or {},
+                "sort_order": data_source.sort_order,
+            }
+        )
+
     # Experiments with files
     exp_result = await session.execute(
         select(Experiment).where(Experiment.project_id == project.id).options(selectinload(Experiment.files))
@@ -1124,7 +1156,7 @@ async def _build_snapshot(project: Project, session: AsyncSession) -> dict:
     wf_result = await session.execute(
         select(Workflow)
         .where(Workflow.project_id == project.id)
-        .options(selectinload(Workflow.nodes), selectinload(Workflow.edges))
+        .options(selectinload(Workflow.nodes), selectinload(Workflow.edges), selectinload(Workflow.data_source_links))
     )
     workflows_snap = []
     for wf in wf_result.scalars().all():
@@ -1137,14 +1169,29 @@ async def _build_snapshot(project: Project, session: AsyncSession) -> dict:
                 "integrity_hash": wf.integrity_hash,
                 "technique": wf.technique,
                 "sample_type": wf.sample_type,
+                "canvas_state": wf.canvas_state,
+                "notes": wf.notes,
+                "sheet_order": wf.sheet_order,
+                "tab_color": wf.tab_color,
+                "tab_color_override": wf.tab_color_override,
+                "color_source": wf.color_source,
+                "primary_data_source_id": wf.primary_data_source_id,
+                "data_source_ids": wf.data_source_ids,
+                "created_from_template_id": wf.created_from_template_id,
+                "created_from_template_name": wf.created_from_template_name,
+                "created_from_template_version": wf.created_from_template_version,
+                "created_from_workflow_id": wf.created_from_workflow_id,
                 "nodes": [
                     {
                         "node_id": n.node_id,
                         "node_type": n.node_type,
                         "label": n.label,
                         "parameters": n.parameters,
+                        "annotation": n.annotation,
                         "position_x": n.position_x,
                         "position_y": n.position_y,
+                        "execution_order": n.execution_order,
+                        "status": n.status,
                     }
                     for n in wf.nodes
                 ],
@@ -1213,6 +1260,7 @@ async def _build_snapshot(project: Project, session: AsyncSession) -> dict:
         "metadata": project.metadata_ or {},
         "technique": project.technique,
         "sample_type": project.sample_type,
+        "data_sources": data_sources_snap,
         "experiments": experiments_snap,
         "workflows": workflows_snap,
         "scripts": scripts_snap,
@@ -1308,6 +1356,9 @@ async def export_project(
     current_user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """Download project as a .spectrapy archive (ZIP with project.json + model artifacts)."""
+    if not await check_export_allowed(current_user, session):
+        raise HTTPException(status_code=403, detail="Export not permitted for this user")
+
     project = await require_project(project_id, current_user.id, session)
 
     if version_id:
@@ -1351,6 +1402,92 @@ async def export_project(
     )
 
 
+def _model_members_for_snapshot(snapshot: dict[str, Any]) -> list[ArchiveMember]:
+    """Collect model artifact files for a portable object."""
+    members: list[ArchiveMember] = []
+    model_uids = [m["artifact_uid"] for m in snapshot.get("models", []) if m.get("artifact_uid")]
+    if not model_uids:
+        return members
+    try:
+        from spectra_sherpa.app.services.model_store import get_model_store
+
+        store = get_model_store()
+    except RuntimeError:
+        logger.warning("ModelStore not initialized — model files not included in .sherpa export")
+        return members
+    for uid in model_uids:
+        artifact_dir = store._artifact_dir(uid)
+        manifest_path = artifact_dir / "manifest.json"
+        arrays_path = artifact_dir / "arrays.npz"
+        if manifest_path.exists():
+            members.append(ArchiveMember(f"models/{uid}/manifest.json", manifest_path.read_bytes()))
+        if arrays_path.exists():
+            members.append(ArchiveMember(f"models/{uid}/arrays.npz", arrays_path.read_bytes()))
+    return members
+
+
+@router.get("/{project_id}/export/sherpa")
+async def export_project_sherpa_object(
+    project_id: int,
+    version_id: int | None = None,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    """Download project as a portable .sherpa object with offline-verifiable manifest."""
+    if not await check_export_allowed(current_user, session):
+        raise HTTPException(status_code=403, detail="Export not permitted for this user")
+
+    project = await require_project(project_id, current_user.id, session)
+
+    if version_id:
+        query = select(ProjectVersion).where(ProjectVersion.id == version_id, ProjectVersion.project_id == project_id)
+        result = await session.execute(query)
+        version = result.scalar_one_or_none()
+        if version is None:
+            raise HTTPException(status_code=404, detail="Version not found")
+        snapshot = version.snapshot
+    else:
+        snapshot = await _build_snapshot(project, session)
+
+    archive_bytes = build_archive(
+        project_payload=snapshot,
+        members=_model_members_for_snapshot(snapshot),
+        package_mode="full",
+    )
+    safe_name = project.name.replace(" ", "_").replace("/", "_")
+    return StreamingResponse(
+        io.BytesIO(archive_bytes),
+        media_type="application/vnd.spectrasherpa.object+zip",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}.sherpa"'},
+    )
+
+
+@router.post("/objects/inspect")
+async def inspect_sherpa_object(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Inspect a .sherpa object without importing or executing it."""
+    max_bytes = settings.max_file_size_mb * 1024 * 1024
+    payload = await _read_upload_with_limit(file, max_bytes=max_bytes)
+    if len(payload) > max_bytes:
+        raise HTTPException(status_code=413, detail="Archive too large")
+    return inspect_archive_bytes(payload, max_uncompressed_bytes=max_bytes).to_dict()
+
+
+@router.post("/objects/validate")
+async def validate_sherpa_object(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Validate a .sherpa object without importing or executing it."""
+    max_bytes = settings.max_file_size_mb * 1024 * 1024
+    payload = await _read_upload_with_limit(file, max_bytes=max_bytes)
+    if len(payload) > max_bytes:
+        raise HTTPException(status_code=413, detail="Archive too large")
+    return validate_archive_bytes(payload, max_uncompressed_bytes=max_bytes)
+
+
 def _remap_model_uids_in_snapshot(project_json: dict[str, Any], remap: dict[str, str]) -> None:
     """Rewrite artifact-uid references in an import snapshot after collisions.
 
@@ -1371,6 +1508,149 @@ def _remap_model_uids_in_snapshot(project_json: dict[str, Any], remap: dict[str,
             params = node.get("parameters") if isinstance(node, dict) else None
             if isinstance(params, dict) and params.get("model_id") in remap:
                 params["model_id"] = remap[params["model_id"]]
+
+
+async def _restore_project_data_sources(
+    project: Project,
+    project_json: dict[str, Any],
+    session: AsyncSession,
+) -> dict[int, int]:
+    """Recreate project data source rows and return old-id -> new-id map."""
+    remap: dict[int, int] = {}
+    for source_data in project_json.get("data_sources", []):
+        if not isinstance(source_data, dict):
+            continue
+        data_source = ProjectDataSource(
+            project_id=project.id,
+            display_name=source_data.get("display_name") or "Imported Data Source",
+            source_type=source_data.get("source_type") or "external",
+            source_ref=source_data.get("source_ref"),
+            fingerprint=source_data.get("fingerprint"),
+            color=source_data.get("color") or "#3b82f6",
+            metadata_=source_data.get("metadata") or {},
+            sort_order=source_data.get("sort_order") or 0,
+        )
+        session.add(data_source)
+        await session.flush()
+        old_id = source_data.get("id")
+        if isinstance(old_id, int):
+            remap[old_id] = data_source.id
+    return remap
+
+
+def _remap_workflow_parameters(value: Any, data_source_remap: dict[int, int]) -> Any:
+    """Best-effort rewrite of known project-local IDs inside node parameters."""
+    if isinstance(value, dict):
+        rewritten = {key: _remap_workflow_parameters(item, data_source_remap) for key, item in value.items()}
+        for key in ("data_source_id", "primary_data_source_id"):
+            if isinstance(rewritten.get(key), int) and rewritten[key] in data_source_remap:
+                rewritten[key] = data_source_remap[rewritten[key]]
+        return rewritten
+    if isinstance(value, list):
+        return [_remap_workflow_parameters(item, data_source_remap) for item in value]
+    return value
+
+
+async def _restore_workflows_from_snapshot(
+    project: Project,
+    user_id: int,
+    project_json: dict[str, Any],
+    data_source_remap: dict[int, int],
+    session: AsyncSession,
+) -> dict[int, int]:
+    """Recreate workflow rows from a project snapshot."""
+    workflow_remap: dict[int, int] = {}
+    pending_created_from: list[tuple[Workflow, int]] = []
+
+    for wf_data in project_json.get("workflows", []):
+        if not isinstance(wf_data, dict):
+            continue
+        primary_data_source_id = wf_data.get("primary_data_source_id")
+        if isinstance(primary_data_source_id, int):
+            primary_data_source_id = data_source_remap.get(primary_data_source_id)
+        else:
+            primary_data_source_id = None
+
+        workflow = Workflow(
+            user_id=user_id,
+            project_id=project.id,
+            name=wf_data.get("name") or "Imported Workflow",
+            description=wf_data.get("description"),
+            status=wf_data.get("status") or "draft",
+            canvas_state=wf_data.get("canvas_state"),
+            notes=wf_data.get("notes"),
+            integrity_hash=wf_data.get("integrity_hash"),
+            technique=wf_data.get("technique"),
+            sample_type=wf_data.get("sample_type"),
+            tab_color=wf_data.get("tab_color"),
+            primary_data_source_id=primary_data_source_id,
+            tab_color_override=wf_data.get("tab_color_override"),
+            color_source=wf_data.get("color_source") or "blank",
+            created_from_template_id=wf_data.get("created_from_template_id"),
+            created_from_template_name=wf_data.get("created_from_template_name"),
+            created_from_template_version=wf_data.get("created_from_template_version"),
+            sheet_order=wf_data.get("sheet_order") or 0,
+        )
+        session.add(workflow)
+        await session.flush()
+
+        old_wf_id = wf_data.get("id")
+        if isinstance(old_wf_id, int):
+            workflow_remap[old_wf_id] = workflow.id
+        created_from = wf_data.get("created_from_workflow_id")
+        if isinstance(created_from, int):
+            pending_created_from.append((workflow, created_from))
+
+        data_source_ids = wf_data.get("data_source_ids") or []
+        ordered_data_source_ids = [
+            data_source_remap[item] for item in data_source_ids if isinstance(item, int) and item in data_source_remap
+        ]
+        if primary_data_source_id is not None and primary_data_source_id not in ordered_data_source_ids:
+            ordered_data_source_ids.insert(0, primary_data_source_id)
+        for index, data_source_id in enumerate(dict.fromkeys(ordered_data_source_ids)):
+            session.add(
+                WorkflowDataSource(
+                    workflow_id=workflow.id,
+                    data_source_id=data_source_id,
+                    role="primary" if index == 0 else "secondary",
+                )
+            )
+
+        for node_data in wf_data.get("nodes", []):
+            if not isinstance(node_data, dict):
+                continue
+            session.add(
+                WorkflowNode(
+                    workflow_id=workflow.id,
+                    node_id=node_data.get("node_id") or "imported_node",
+                    node_type=node_data.get("node_type") or "unknown",
+                    label=node_data.get("label"),
+                    parameters=_remap_workflow_parameters(node_data.get("parameters") or {}, data_source_remap),
+                    annotation=node_data.get("annotation"),
+                    position_x=node_data.get("position_x"),
+                    position_y=node_data.get("position_y"),
+                    execution_order=node_data.get("execution_order"),
+                    status=node_data.get("status") or "pending",
+                )
+            )
+
+        for edge_data in wf_data.get("edges", []):
+            if not isinstance(edge_data, dict):
+                continue
+            session.add(
+                WorkflowEdge(
+                    workflow_id=workflow.id,
+                    from_node_id=edge_data.get("from_node_id") or "",
+                    to_node_id=edge_data.get("to_node_id") or "",
+                    from_output=edge_data.get("from_output") or "default",
+                    to_input=edge_data.get("to_input") or "default",
+                )
+            )
+
+    await session.flush()
+    for workflow, old_parent_id in pending_created_from:
+        workflow.created_from_workflow_id = workflow_remap.get(old_parent_id)
+    return workflow_remap
 
 
 def _purge_artifacts(uids: list[str]) -> None:
@@ -1403,7 +1683,7 @@ async def import_project(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> ProjectDetail:
-    """Import a .spectrapy archive to create a new project."""
+    """Import a .spectrapy or .sherpa archive to create a new project."""
     max_bytes = settings.max_file_size_mb * 1024 * 1024
     declared_size = getattr(file, "size", None)
     if isinstance(declared_size, int) and declared_size > max_bytes:
@@ -1436,8 +1716,20 @@ async def import_project(
 
         upload_stream = io.BytesIO(upload_bytes)
         with zipfile.ZipFile(upload_stream, "r") as zf:
-            project_json = json.loads(zf.read("project.json"))
             zip_names = set(zf.namelist())
+            is_sherpa_object = SHERPA_OBJECT_MANIFEST in zip_names
+            if is_sherpa_object:
+                validation = validate_archive_bytes(upload_bytes)
+                if not validation.get("valid"):
+                    raise HTTPException(
+                        status_code=400,
+                        detail={
+                            "message": "Invalid .sherpa object",
+                            "errors": validation.get("errors", []),
+                        },
+                    )
+
+            project_json = json.loads(zf.read(PROJECT_PAYLOAD))
 
             # Restore model artifacts from ZIP (if present)
             import uuid as _uuid
@@ -1542,9 +1834,22 @@ async def import_project(
             )
             session.add(project)
             await session.flush()
+            data_source_remap = await _restore_project_data_sources(project, project_json, session)
+            workflow_remap = await _restore_workflows_from_snapshot(
+                project,
+                user_id,
+                project_json,
+                data_source_remap,
+                session,
+            )
 
             # Recreate scripts from snapshot
             for s_data in project_json.get("scripts", []):
+                source_workflow_id = s_data.get("source_workflow_id")
+                if isinstance(source_workflow_id, int):
+                    source_workflow_id = workflow_remap.get(source_workflow_id)
+                else:
+                    source_workflow_id = None
                 script = ProjectScript(
                     project_id=project.id,
                     user_id=user_id,
@@ -1553,6 +1858,7 @@ async def import_project(
                     language=s_data.get("language", "python"),
                     code=s_data.get("code", ""),
                     priority=s_data.get("priority", 50.0),
+                    source_workflow_id=source_workflow_id,
                 )
                 session.add(script)
 
@@ -1630,9 +1936,11 @@ async def import_project(
                 project_id=project.id,
                 version_number=1,
                 created_by=user_id,
-                change_description="Imported from .spectrapy archive",
+                change_description=(
+                    "Imported from .sherpa object" if is_sherpa_object else "Imported from .spectrapy archive"
+                ),
                 snapshot=project_json,
-                include_raw_data=False,
+                include_raw_data=is_sherpa_object,
             )
             session.add(version)
             await session.commit()
@@ -1646,7 +1954,7 @@ async def import_project(
         _purge_artifacts(imported_artifact_uids)
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid .spectrapy archive: {exc}",
+            detail=f"Invalid project archive: {exc}",
         )
     except Exception:
         await session.rollback()

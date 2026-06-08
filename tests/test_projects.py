@@ -31,8 +31,11 @@ from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.project import Project
+from spectra_sherpa.app.models.project_data_source import ProjectDataSource, WorkflowDataSource
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
+from spectra_sherpa.app.models.workflow_node import WorkflowNode
 from spectra_sherpa.app.services.experiments import metadata_path_for, relative_to_data_dir, write_metadata
 
 # ── Fixtures ──────────────────────────────────────────────────────────
@@ -623,6 +626,76 @@ class TestVersioning:
 class TestExportImport:
     """Export to .spectrapy archive and import back."""
 
+    @staticmethod
+    def _project_payload_from_archive(payload: bytes) -> dict:
+        with zipfile.ZipFile(io.BytesIO(payload), "r") as zf:
+            return json.loads(zf.read("project.json"))
+
+    @staticmethod
+    def _stable_roundtrip_summary(payload: dict) -> dict:
+        source_id_to_name = {source.get("id"): source.get("display_name") for source in payload.get("data_sources", [])}
+
+        def normalize_ids(value):
+            if isinstance(value, dict):
+                normalized = {key: normalize_ids(item) for key, item in value.items()}
+                for key in ("data_source_id", "primary_data_source_id"):
+                    if normalized.get(key) in source_id_to_name:
+                        normalized[key] = source_id_to_name[normalized[key]]
+                return normalized
+            if isinstance(value, list):
+                return [source_id_to_name.get(item, normalize_ids(item)) for item in value]
+            return value
+
+        return {
+            "name": payload.get("name"),
+            "technique": payload.get("technique"),
+            "sample_type": payload.get("sample_type"),
+            "data_sources": [
+                {
+                    "display_name": source.get("display_name"),
+                    "source_type": source.get("source_type"),
+                    "source_ref": source.get("source_ref"),
+                    "fingerprint": source.get("fingerprint"),
+                    "color": source.get("color"),
+                    "metadata": source.get("metadata"),
+                    "sort_order": source.get("sort_order"),
+                }
+                for source in sorted(payload.get("data_sources", []), key=lambda item: item.get("display_name") or "")
+            ],
+            "workflows": [
+                {
+                    "name": workflow.get("name"),
+                    "status": workflow.get("status"),
+                    "technique": workflow.get("technique"),
+                    "sample_type": workflow.get("sample_type"),
+                    "primary_data_source": source_id_to_name.get(workflow.get("primary_data_source_id")),
+                    "data_sources": [source_id_to_name.get(item) for item in workflow.get("data_source_ids", [])],
+                    "nodes": [
+                        {
+                            "node_id": node.get("node_id"),
+                            "node_type": node.get("node_type"),
+                            "label": node.get("label"),
+                            "parameters": normalize_ids(node.get("parameters") or {}),
+                        }
+                        for node in sorted(workflow.get("nodes", []), key=lambda item: item.get("node_id") or "")
+                    ],
+                    "edges": [
+                        {
+                            "from_node_id": edge.get("from_node_id"),
+                            "to_node_id": edge.get("to_node_id"),
+                            "from_output": edge.get("from_output"),
+                            "to_input": edge.get("to_input"),
+                        }
+                        for edge in sorted(
+                            workflow.get("edges", []),
+                            key=lambda item: (item.get("from_node_id") or "", item.get("to_node_id") or ""),
+                        )
+                    ],
+                }
+                for workflow in sorted(payload.get("workflows", []), key=lambda item: item.get("name") or "")
+            ],
+        }
+
     @pytest.mark.anyio
     async def test_export_project(self, auth_client: AsyncClient):
         proj_resp = await auth_client.post(
@@ -647,6 +720,145 @@ class TestExportImport:
             assert project_json["name"] == "Export Me"
             assert project_json["technique"] == "FTIR"
             assert project_json["sample_type"] == "oil"
+
+    @pytest.mark.anyio
+    async def test_export_project_sherpa_object(self, auth_client: AsyncClient):
+        proj_resp = await auth_client.post(
+            "/api/v1/projects",
+            json={
+                "name": "Portable Object",
+                "technique": "FTIR",
+                "sample_type": "polymer",
+            },
+        )
+        proj_id = proj_resp.json()["id"]
+
+        resp = await auth_client.get(f"/api/v1/projects/{proj_id}/export/sherpa")
+        assert resp.status_code == 200
+        assert "Portable_Object.sherpa" in resp.headers.get("content-disposition", "")
+
+        with zipfile.ZipFile(io.BytesIO(resp.content), "r") as zf:
+            assert "project.json" in zf.namelist()
+            assert "sherpa-object.json" in zf.namelist()
+            manifest = json.loads(zf.read("sherpa-object.json"))
+            assert manifest["schema"] == "spectra_sherpa_object"
+            assert manifest["object_type"] == "project"
+            assert manifest["package_mode"] == "full"
+            assert manifest["payloads"]["members"]["project.json"]["sha256"]
+
+        validate_resp = await auth_client.post(
+            "/api/v1/projects/objects/validate",
+            files={"file": ("portable.sherpa", io.BytesIO(resp.content), "application/zip")},
+        )
+        assert validate_resp.status_code == 200
+        assert validate_resp.json()["valid"] is True
+
+    @pytest.mark.anyio
+    async def test_project_archive_exports_respect_export_policy(self, auth_client: AsyncClient, monkeypatch):
+        from spectra_sherpa.app.api.v1.routes import projects as project_routes
+
+        async def deny_export(_user, _session=None):
+            return False
+
+        proj_resp = await auth_client.post("/api/v1/projects", json={"name": "No Export"})
+        proj_id = proj_resp.json()["id"]
+        monkeypatch.setattr(project_routes, "check_export_allowed", deny_export)
+
+        spectrapy_resp = await auth_client.get(f"/api/v1/projects/{proj_id}/export")
+        sherpa_resp = await auth_client.get(f"/api/v1/projects/{proj_id}/export/sherpa")
+
+        assert spectrapy_resp.status_code == 403
+        assert sherpa_resp.status_code == 403
+
+    @pytest.mark.anyio
+    async def test_sherpa_object_endpoints_declare_auth_dependency(self):
+        import inspect
+
+        from spectra_sherpa.app.api.v1.routes import projects as project_routes
+
+        for endpoint in (project_routes.inspect_sherpa_object, project_routes.validate_sherpa_object):
+            signature = inspect.signature(endpoint)
+            assert "current_user" in signature.parameters
+
+    @pytest.mark.anyio
+    async def test_validate_sherpa_object_rejects_uncompressed_zip_bomb_guard(self, auth_client: AsyncClient):
+        original_max_size = settings.max_file_size_mb
+        object.__setattr__(settings, "max_file_size_mb", 1)
+        try:
+            archive = io.BytesIO()
+            with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+                zf.writestr("project.json", b"0" * ((1024 * 1024) + 1))
+                zf.writestr(
+                    "sherpa-object.json",
+                    json.dumps(
+                        {
+                            "schema": "spectra_sherpa_object",
+                            "object_version": "0.1",
+                            "object_type": "project",
+                            "package_mode": "full",
+                            "payloads": {"project": "project.json", "members": {}},
+                            "content_hash": "unused",
+                        }
+                    ),
+                )
+            archive.seek(0)
+
+            resp = await auth_client.post(
+                "/api/v1/projects/objects/validate",
+                files={"file": ("bomb.sherpa", archive, "application/zip")},
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["valid"] is False
+            assert any("uncompressed payload exceeds limit" in error for error in data["errors"])
+        finally:
+            object.__setattr__(settings, "max_file_size_mb", original_max_size)
+
+    @pytest.mark.anyio
+    async def test_validate_sherpa_object_rejects_unsupported_version(self, auth_client: AsyncClient):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("project.json", json.dumps({"name": "Future Object"}))
+            zf.writestr(
+                "sherpa-object.json",
+                json.dumps(
+                    {
+                        "schema": "spectra_sherpa_object",
+                        "object_version": "9.9",
+                        "object_type": "project",
+                        "package_mode": "full",
+                        "payloads": {
+                            "project": "project.json",
+                            "members": {"project.json": {"sha256": "unused", "size": 1}},
+                        },
+                        "content_hash": "unused",
+                    }
+                ),
+            )
+        archive.seek(0)
+
+        resp = await auth_client.post(
+            "/api/v1/projects/objects/validate",
+            files={"file": ("future.sherpa", archive, "application/zip")},
+        )
+        assert resp.status_code == 200
+        assert any("Unsupported .sherpa object version" in error for error in resp.json()["errors"])
+
+    @pytest.mark.anyio
+    async def test_validate_sherpa_object_rejects_parent_directory_member(self, auth_client: AsyncClient):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("..", b"unsafe")
+            zf.writestr("project.json", json.dumps({"name": "Unsafe"}))
+            zf.writestr("sherpa-object.json", json.dumps({}))
+        archive.seek(0)
+
+        resp = await auth_client.post(
+            "/api/v1/projects/objects/validate",
+            files={"file": ("unsafe.sherpa", archive, "application/zip")},
+        )
+        assert resp.status_code == 200
+        assert any("Unsafe archive member path" in error for error in resp.json()["errors"])
 
     @pytest.mark.anyio
     async def test_import_project(self, auth_client: AsyncClient):
@@ -675,6 +887,250 @@ class TestExportImport:
         assert data["name"] == "Imported Project"
         assert data["technique"] == "Raman"
         assert data["sample_type"] == "mineral"
+
+    @pytest.mark.anyio
+    async def test_import_legacy_spectrapy_recreates_expected_workflow_count(self, auth_client: AsyncClient):
+        snapshot = {
+            "name": "Legacy Workflow Project",
+            "experiments": [],
+            "workflows": [
+                {
+                    "id": 10,
+                    "name": "Legacy Sheet",
+                    "status": "draft",
+                    "nodes": [
+                        {
+                            "node_id": "source",
+                            "node_type": "data.source",
+                            "parameters": {},
+                        }
+                    ],
+                    "edges": [],
+                }
+            ],
+            "children": [],
+        }
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("project.json", json.dumps(snapshot))
+        buf.seek(0)
+
+        resp = await auth_client.post(
+            "/api/v1/projects/import",
+            files={"file": ("legacy.spectrapy", buf, "application/zip")},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert len(data["workflows"]) == 1
+        assert data["workflows"][0]["name"] == "Legacy Sheet"
+
+    @pytest.mark.anyio
+    async def test_sherpa_object_export_import_reexport_preserves_stable_workflow_payload(
+        self,
+        auth_client: AsyncClient,
+        test_session: AsyncSession,
+        test_user: User,
+    ):
+        project = Project(
+            user_id=test_user.id,
+            name="Roundtrip Project",
+            technique="FTIR",
+            sample_type="polymer",
+            metadata_={"purpose": "roundtrip"},
+        )
+        test_session.add(project)
+        await test_session.flush()
+
+        data_source = ProjectDataSource(
+            project_id=project.id,
+            display_name="Calibration File",
+            source_type="upload",
+            source_ref="calibration.csv",
+            fingerprint=f"roundtrip-{uuid.uuid4()}",
+            color="#3b82f6",
+            metadata_={"extension": ".csv"},
+            sort_order=0,
+        )
+        test_session.add(data_source)
+        await test_session.flush()
+
+        workflow = Workflow(
+            user_id=test_user.id,
+            project_id=project.id,
+            name="Roundtrip PCA",
+            status="draft",
+            technique="FTIR",
+            sample_type="polymer",
+            primary_data_source_id=data_source.id,
+            color_source="blank",
+            sheet_order=0,
+        )
+        test_session.add(workflow)
+        await test_session.flush()
+        test_session.add(WorkflowDataSource(workflow_id=workflow.id, data_source_id=data_source.id, role="primary"))
+        test_session.add_all(
+            [
+                WorkflowNode(
+                    workflow_id=workflow.id,
+                    node_id="source_1",
+                    node_type="data.source",
+                    label="Source",
+                    parameters={"data_source_id": data_source.id},
+                    position_x=0,
+                    position_y=0,
+                ),
+                WorkflowNode(
+                    workflow_id=workflow.id,
+                    node_id="pca_1",
+                    node_type="model.pca",
+                    label="PCA",
+                    parameters={"n_components": 2},
+                    position_x=240,
+                    position_y=0,
+                ),
+                WorkflowEdge(
+                    workflow_id=workflow.id,
+                    from_node_id="source_1",
+                    to_node_id="pca_1",
+                    from_output="dataset",
+                    to_input="X",
+                ),
+            ]
+        )
+        await test_session.commit()
+
+        export_resp = await auth_client.get(f"/api/v1/projects/{project.id}/export/sherpa")
+        assert export_resp.status_code == 200
+        original_summary = self._stable_roundtrip_summary(self._project_payload_from_archive(export_resp.content))
+
+        import_resp = await auth_client.post(
+            "/api/v1/projects/import",
+            files={"file": ("roundtrip.sherpa", io.BytesIO(export_resp.content), "application/zip")},
+        )
+        assert import_resp.status_code == 201
+        imported_id = import_resp.json()["id"]
+
+        reexport_resp = await auth_client.get(f"/api/v1/projects/{imported_id}/export/sherpa")
+        assert reexport_resp.status_code == 200
+        reexported_summary = self._stable_roundtrip_summary(self._project_payload_from_archive(reexport_resp.content))
+        assert reexported_summary == original_summary
+
+    @pytest.mark.anyio
+    async def test_import_sherpa_object_recreates_workflow_rows(self, auth_client: AsyncClient):
+        from spectra_sherpa.app.services.sherpa_object import build_archive
+
+        snapshot = {
+            "name": "Imported Sherpa Object",
+            "description": "Portable archive",
+            "metadata": {"lab": "Test Lab"},
+            "technique": "FTIR",
+            "sample_type": "polymer",
+            "data_sources": [
+                {
+                    "id": 12,
+                    "display_name": "Calibration spectra",
+                    "source_type": "experiment",
+                    "source_ref": "exp_001",
+                    "fingerprint": "abc123",
+                    "color": "#3b82f6",
+                    "metadata": {"role": "calibration"},
+                    "sort_order": 0,
+                }
+            ],
+            "experiments": [],
+            "workflows": [
+                {
+                    "id": 77,
+                    "name": "PCA sheet",
+                    "description": "Imported workflow",
+                    "status": "draft",
+                    "technique": "FTIR",
+                    "sample_type": "polymer",
+                    "primary_data_source_id": 12,
+                    "data_source_ids": [12],
+                    "sheet_order": 0,
+                    "nodes": [
+                        {
+                            "node_id": "source_1",
+                            "node_type": "data.source",
+                            "label": "Source",
+                            "parameters": {"data_source_id": 12},
+                            "position_x": 10,
+                            "position_y": 20,
+                        },
+                        {
+                            "node_id": "pca_1",
+                            "node_type": "model.pca",
+                            "label": "PCA",
+                            "parameters": {"n_components": 2},
+                            "position_x": 280,
+                            "position_y": 20,
+                        },
+                    ],
+                    "edges": [
+                        {
+                            "from_node_id": "source_1",
+                            "to_node_id": "pca_1",
+                            "from_output": "dataset",
+                            "to_input": "X",
+                        }
+                    ],
+                }
+            ],
+            "scripts": [],
+            "models": [],
+            "children": [],
+        }
+        archive = build_archive(project_payload=snapshot)
+
+        resp = await auth_client.post(
+            "/api/v1/projects/import",
+            files={"file": ("roundtrip.sherpa", io.BytesIO(archive), "application/zip")},
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["name"] == "Imported Sherpa Object"
+        assert len(data["data_sources"]) == 1
+        assert len(data["workflows"]) == 1
+        workflow = data["workflows"][0]
+        assert workflow["name"] == "PCA sheet"
+        assert workflow["primary_data_source_id"] == data["data_sources"][0]["id"]
+        assert workflow["data_source_ids"] == [data["data_sources"][0]["id"]]
+
+        ver_resp = await auth_client.get(f"/api/v1/projects/{data['id']}/versions")
+        assert ver_resp.json()["versions"][0]["change_description"] == "Imported from .sherpa object"
+
+    @pytest.mark.anyio
+    async def test_validate_sherpa_object_rejects_hash_mismatch(self, auth_client: AsyncClient):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("project.json", json.dumps({"name": "Tampered"}))
+            zf.writestr(
+                "sherpa-object.json",
+                json.dumps(
+                    {
+                        "schema": "spectra_sherpa_object",
+                        "object_version": "0.1",
+                        "object_type": "project",
+                        "package_mode": "full",
+                        "payloads": {
+                            "project": "project.json",
+                            "members": {"project.json": {"sha256": "bad", "size": 1}},
+                        },
+                        "content_hash": "bad",
+                    }
+                ),
+            )
+        archive.seek(0)
+
+        resp = await auth_client.post(
+            "/api/v1/projects/objects/validate",
+            files={"file": ("tampered.sherpa", archive, "application/zip")},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is False
+        assert any("SHA-256 mismatch" in error for error in data["errors"])
 
     @pytest.mark.anyio
     async def test_import_creates_initial_version(self, auth_client: AsyncClient):

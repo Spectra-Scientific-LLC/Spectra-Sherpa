@@ -34,6 +34,7 @@ except ImportError:
     HAS_SCIPY = False
     loadmat = None
 
+from spectra_sherpa.app.core.path_security import resolve_existing_file_path
 from spectra_sherpa.app.lib.scp_compat import NDDataset, require_scp, scp
 
 # Filename pattern for extracting species labels
@@ -927,14 +928,12 @@ def load_csv_as_sherpa(
     from spectra_sherpa.app.lib.axes import FeatureAxis, SampleAxis, SpectralAxis
     from spectra_sherpa.app.lib.sherpa_dataset import DomainContext, SherpaDataset, TargetContext
 
-    try:
-        filepath = Path(filepath).expanduser().resolve(strict=True)
-    except OSError as exc:
-        raise ValueError(f"CSV file does not exist: {filepath}") from exc
-    if not filepath.is_file():
-        raise ValueError(f"CSV path is not a file: {filepath}")
-    if filepath.suffix.lower() != ".csv":
-        raise ValueError(f"Unsupported CSV extension: {filepath.suffix or '<none>'}")
+    filepath = resolve_existing_file_path(
+        filepath,
+        label="CSV",
+        suffixes={".csv"},
+        restrict_to_data_dir_in_multi_user=True,
+    )
     df = pd.read_csv(filepath)
     overrides = None
     try:
