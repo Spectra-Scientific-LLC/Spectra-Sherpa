@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.12] - 2026-06-08
+## [0.5.13] - 2026-06-08
+
+## [0.5.13] - 2026-06-08
+
+### Packaging
+
+- Restored the root `LICENSE` file to canonical AGPLv3 text so GitHub can
+  recognize the public OSS repository license instead of reporting it as
+  `NOASSERTION`/Other. Project-specific copyright, notice, and disclaimer text
+  remain in `README.md`, `NOTICE.md`, and `DISCLAIMER`.
 
 ## [0.5.12] - 2026-06-08
 
