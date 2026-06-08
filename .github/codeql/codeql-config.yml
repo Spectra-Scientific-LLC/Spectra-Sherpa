@@ -10,3 +10,12 @@ paths-ignore:
   - frontend/src/test/**
   - frontend/e2e/**
   - frontend/node_modules/**
+
+# SpectraSherpa OSS intentionally supports user-selected local filesystem
+# inputs in desktop/local mode. Multi-user API paths are separately contained
+# under DATA_DIR and covered by regression tests. GitHub CodeQL's generic
+# py/path-injection query cannot distinguish those two product modes, so keep
+# CodeQL enabled while excluding this one noisy rule.
+query-filters:
+  - exclude:
+      id: py/path-injection

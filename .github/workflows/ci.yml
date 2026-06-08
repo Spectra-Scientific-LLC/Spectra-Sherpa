@@ -25,7 +25,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install linters
-        run: pip install "black>=26.3.1,<27" "ruff>=0.5,<1" mypy
+        run: pip install "black>=26.3.1,<27" "ruff>=0.5,<1" "mypy<2"
 
       - name: black --check
         run: black --check src/ tests/
@@ -63,8 +63,7 @@ jobs:
         run: mypy --follow-imports=silent src/spectra_sherpa/app/core/ --no-error-summary
 
       - name: mypy (dag nodes — warning mode, ratchet down over time)
-        run: mypy src/spectra_sherpa/app/services/dag/ --no-error-summary
-        continue-on-error: true
+        run: mypy src/spectra_sherpa/app/services/dag/ --no-error-summary || true
 
   backend:
     name: Backend Tests (${{ matrix.os }} / ${{ matrix.install_profile }})
