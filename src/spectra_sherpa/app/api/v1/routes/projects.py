@@ -1426,45 +1426,113 @@ def _model_members_for_snapshot(snapshot: dict[str, Any]) -> list[ArchiveMember]
     return members
 
 
-def _public_archive_validation_error(message: Any) -> str:
-    """Map archive-parser details to user-safe validation messages."""
+def _public_archive_validation_error_detail(message: Any) -> dict[str, str]:
+    """Map archive-parser details to stable, user-safe validation errors."""
 
     text = str(message)
     if text.startswith("Archive uncompressed payload exceeds limit"):
-        return "Archive uncompressed payload exceeds the configured upload limit."
+        return {
+            "code": "archive_uncompressed_limit_exceeded",
+            "message": "Archive uncompressed payload exceeds the configured upload limit.",
+        }
     if text.startswith("Unsupported .sherpa object version"):
-        return "Unsupported .sherpa object version."
+        return {
+            "code": "unsupported_object_version",
+            "message": "Unsupported .sherpa object version.",
+        }
     if text.startswith("Unsafe archive member path"):
-        return "Archive contains an unsafe member path."
+        return {
+            "code": "unsafe_archive_member_path",
+            "message": "Archive contains an unsafe member path.",
+        }
     if text.startswith("Missing required payload:"):
-        return "Archive is missing a required payload."
+        return {
+            "code": "missing_required_payload",
+            "message": "Archive is missing a required payload.",
+        }
     if text.startswith("Missing required manifest:"):
-        return "Archive is missing the required manifest."
+        return {
+            "code": "missing_required_manifest",
+            "message": "Archive is missing the required manifest.",
+        }
     if text.startswith("Duplicate archive member:"):
-        return "Archive contains duplicate members."
+        return {
+            "code": "duplicate_archive_member",
+            "message": "Archive contains duplicate members.",
+        }
     if text.startswith("Manifest member missing from archive:"):
-        return "Manifest references a missing archive member."
+        return {
+            "code": "manifest_member_missing",
+            "message": "Manifest references a missing archive member.",
+        }
     if text.startswith("Manifest member entry is not an object:"):
-        return "Manifest contains an invalid member entry."
+        return {
+            "code": "manifest_member_invalid",
+            "message": "Manifest contains an invalid member entry.",
+        }
     if text.startswith("SHA-256 mismatch for"):
-        return "Archive member hash does not match the manifest."
+        return {
+            "code": "archive_member_hash_mismatch",
+            "message": "Archive member hash does not match the manifest.",
+        }
     if text.startswith("Size mismatch for"):
-        return "Archive member size does not match the manifest."
+        return {
+            "code": "archive_member_size_mismatch",
+            "message": "Archive member size does not match the manifest.",
+        }
     if text.startswith("Archive member missing from manifest:"):
-        return "Archive contains a member missing from the manifest."
+        return {
+            "code": "archive_member_not_in_manifest",
+            "message": "Archive contains a member missing from the manifest.",
+        }
     if text.startswith("Manifest content_hash does not match"):
-        return "Manifest content hash does not match the archive payloads."
+        return {
+            "code": "manifest_content_hash_mismatch",
+            "message": "Manifest content hash does not match the archive payloads.",
+        }
     if text.startswith("Manifest schema must be"):
-        return "Archive manifest schema is unsupported."
+        return {
+            "code": "unsupported_manifest_schema",
+            "message": "Archive manifest schema is unsupported.",
+        }
     if text.startswith("Manifest must be"):
-        return "Archive manifest is invalid."
+        return {
+            "code": "invalid_manifest",
+            "message": "Archive manifest is invalid.",
+        }
     if text.startswith("Manifest payloads.members must be"):
-        return "Archive manifest member inventory is invalid."
+        return {
+            "code": "invalid_manifest_member_inventory",
+            "message": "Archive manifest member inventory is invalid.",
+        }
     if text.startswith("Only project .sherpa objects"):
-        return "Only project .sherpa objects are supported."
+        return {
+            "code": "unsupported_object_type",
+            "message": "Only project .sherpa objects are supported.",
+        }
     if text.startswith("Invalid ZIP archive:"):
-        return "File is not a valid ZIP archive."
-    return "Archive validation failed. Check that the file is a valid SpectraSherpa object archive."
+        return {
+            "code": "invalid_zip_archive",
+            "message": "File is not a valid ZIP archive.",
+        }
+    if text in {
+        "Archive contains invalid JSON",
+        f"{PROJECT_PAYLOAD} is not valid JSON",
+        f"{SHERPA_OBJECT_MANIFEST} is invalid JSON",
+    }:
+        return {
+            "code": "invalid_archive_json",
+            "message": "Archive contains invalid JSON.",
+        }
+    if text in {f"{PROJECT_PAYLOAD} must contain a JSON object", "Archive project payload is invalid"}:
+        return {
+            "code": "invalid_project_payload",
+            "message": "Archive project payload is invalid.",
+        }
+    return {
+        "code": "archive_validation_failed",
+        "message": "Archive validation failed. Check that the file is a valid SpectraSherpa object archive.",
+    }
 
 
 def _public_archive_report(report: dict[str, Any]) -> dict[str, Any]:
@@ -1473,7 +1541,9 @@ def _public_archive_report(report: dict[str, Any]) -> dict[str, Any]:
     public = dict(report)
     errors = public.get("errors")
     if isinstance(errors, list):
-        public["errors"] = [_public_archive_validation_error(error) for error in errors]
+        details = [_public_archive_validation_error_detail(error) for error in errors]
+        public["errors"] = [detail["message"] for detail in details]
+        public["error_details"] = details
     return public
 
 

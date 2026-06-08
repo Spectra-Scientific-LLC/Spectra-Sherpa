@@ -877,7 +877,12 @@ class TestExportImport:
         payload = resp.json()
         assert payload["valid"] is False
         assert payload["errors"]
-        assert all("line " not in error and "column " not in error for error in payload["errors"])
+        assert "error_details" in payload
+        assert {detail["code"] for detail in payload["error_details"]} == {"invalid_archive_json"}
+        response_text = resp.text.lower()
+        assert "line " not in response_text
+        assert "column " not in response_text
+        assert "expecting property name" not in response_text
 
     @pytest.mark.anyio
     async def test_inspect_sherpa_object_sanitizes_parser_details(self, auth_client: AsyncClient):
@@ -895,7 +900,12 @@ class TestExportImport:
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["errors"]
-        assert all("line " not in error and "column " not in error for error in payload["errors"])
+        assert "error_details" in payload
+        assert {detail["code"] for detail in payload["error_details"]} == {"invalid_archive_json"}
+        response_text = resp.text.lower()
+        assert "line " not in response_text
+        assert "column " not in response_text
+        assert "expecting property name" not in response_text
 
     @pytest.mark.anyio
     async def test_import_project(self, auth_client: AsyncClient):

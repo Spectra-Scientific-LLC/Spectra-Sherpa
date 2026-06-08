@@ -187,7 +187,7 @@ def inspect_archive_bytes(
                 try:
                     manifest = json.loads(zf.read(SHERPA_OBJECT_MANIFEST))
                 except json.JSONDecodeError:
-                    errors.append(f"{SHERPA_OBJECT_MANIFEST} is invalid JSON")
+                    errors.append(_safe_archive_error(SherpaObjectError(f"{SHERPA_OBJECT_MANIFEST} is invalid JSON")))
 
             project_name = None
             if has_project:
@@ -195,7 +195,7 @@ def inspect_archive_bytes(
                     project = read_project_payload(zf)
                     project_name = str(project.get("name") or "")
                 except SherpaObjectError as exc:
-                    errors.append(str(exc))
+                    errors.append(_safe_archive_error(exc))
 
             return SherpaObjectInspection(
                 valid_zip=True,
@@ -280,6 +280,10 @@ def _safe_archive_error(exc: BaseException) -> str:
         return "Archive contains invalid JSON"
     if isinstance(exc, SherpaObjectError):
         message = str(exc)
+        if message.endswith(" is not valid JSON") or message.endswith(" is invalid JSON"):
+            return "Archive contains invalid JSON"
+        if message.endswith(" must contain a JSON object"):
+            return "Archive project payload is invalid"
         if message.startswith("Unsupported .sherpa object version"):
             return "Unsupported .sherpa object version"
         if message.startswith("Archive uncompressed payload exceeds limit"):
