@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.16] - 2026-06-08
+## [0.5.17] - 2026-06-08
+
+## [0.5.17] - 2026-06-08
+
+### Release Hygiene
+
+- Excluded Vue single-file components from the OSS JavaScript/TypeScript
+  CodeQL analyzer because CodeQL 2.25.6 reports false status-page syntax
+  diagnostics on generated `*.vue.ts` work files. Frontend SFCs remain covered
+  by `vue-tsc`, production build, and npm audit gates; CodeQL continues to scan
+  the plain TypeScript frontend source.
 
 ## [0.5.16] - 2026-06-08
 
