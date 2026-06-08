@@ -7,7 +7,10 @@
 # - Optional cloud/server dependencies are listed at the bottom.
 
 fastapi>=0.120.0,<1.0.0
-starlette>=0.49.1,<1.0.0
+# FastAPI 0.120/0.121 still requires Starlette <0.50.0. SpectraSherpa adds
+# TrustedHostMiddleware at startup to mitigate the active Host-header advisory
+# until FastAPI supports the patched Starlette 1.x line.
+starlette>=0.49.1,<0.50.0
 uvicorn[standard]>=0.30.0,<0.31.0
 sqlalchemy>=2.0.31,<3.0.0
 aiosqlite>=0.20.0,<1.0.0

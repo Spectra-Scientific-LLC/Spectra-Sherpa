@@ -1,10 +1,10 @@
 [tool.poetry]
 name = "spectra-sherpa"
-version = "0.5.2"
+version = "0.5.3"
 description = "SpectraSherpa — local-first spectroscopy platform for chemometricians"
 authors = ["Spectra Scientific LLC <info@spectrascientific.ai>"]
 readme = "README.md"
-license = "AGPL-3.0-or-later"
+license = "AGPL-3.0"
 packages = [{include = "spectra_sherpa", from = "src"}]
 include = [
     { path = "src/spectra_sherpa/static/**/*", format = "wheel" },
@@ -28,7 +28,7 @@ keywords = [
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "License :: OSI Approved :: GNU Affero General Public License v3",
     "Operating System :: POSIX :: Linux",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: MacOS",
@@ -55,7 +55,10 @@ spectra-sherpa = "spectra_sherpa.cli:main"
 [tool.poetry.dependencies]
 python = ">=3.11,<3.13"
 fastapi = "^0.120.0"
-starlette = ">=0.49.1"
+# FastAPI 0.120/0.121 still constrains Starlette to <0.50.0. Keep this
+# explicit so the Host-header mitigation in SECURITY.md can be audited until
+# FastAPI supports the patched Starlette 1.x line.
+starlette = ">=0.49.1,<0.50.0"
 uvicorn = {version = "^0.30.0", extras = ["standard"]}
 sqlalchemy = "^2.0.31"
 aiosqlite = "^0.20.0"

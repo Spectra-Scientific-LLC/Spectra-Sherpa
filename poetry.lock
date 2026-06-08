@@ -5549,4 +5549,4 @@ scp = ["spectrochempy"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.13"
-content-hash = "71053edc8bf94b1cd7c79085443cd5e5e3c0910559e2f4d6e08edbc7c11476d2"
+content-hash = "020a8c27cfe2571d21f673f37e7017b086e5b65673abc386a03b0fcd80c3a60f"
