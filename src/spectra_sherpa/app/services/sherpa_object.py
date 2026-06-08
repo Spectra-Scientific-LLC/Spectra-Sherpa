@@ -77,7 +77,7 @@ def read_project_payload(zf: zipfile.ZipFile) -> dict[str, Any]:
     except KeyError as exc:
         raise SherpaObjectError(f"Archive is missing {PROJECT_PAYLOAD}") from exc
     except json.JSONDecodeError as exc:
-        raise SherpaObjectError(f"{PROJECT_PAYLOAD} is not valid JSON: {exc}") from exc
+        raise SherpaObjectError(f"{PROJECT_PAYLOAD} is not valid JSON") from exc
     if not isinstance(payload, dict):
         raise SherpaObjectError(f"{PROJECT_PAYLOAD} must contain a JSON object")
     return payload
@@ -186,8 +186,8 @@ def inspect_archive_bytes(
             if has_manifest:
                 try:
                     manifest = json.loads(zf.read(SHERPA_OBJECT_MANIFEST))
-                except json.JSONDecodeError as exc:
-                    errors.append(f"{SHERPA_OBJECT_MANIFEST} is invalid JSON: {exc}")
+                except json.JSONDecodeError:
+                    errors.append(f"{SHERPA_OBJECT_MANIFEST} is invalid JSON")
 
             project_name = None
             if has_project:
@@ -214,7 +214,7 @@ def inspect_archive_bytes(
             valid_zip=not isinstance(exc, zipfile.BadZipFile),
             has_manifest=False,
             has_project=False,
-            errors=[f"Invalid ZIP archive: {exc}" if isinstance(exc, zipfile.BadZipFile) else str(exc)],
+            errors=["Invalid ZIP archive" if isinstance(exc, zipfile.BadZipFile) else _safe_archive_error(exc)],
         )
 
 
@@ -266,13 +266,33 @@ def validate_archive_bytes(
             if manifest.get("content_hash") != recalculated_content_hash:
                 errors.append("Manifest content_hash does not match payload member inventory")
     except (json.JSONDecodeError, SherpaObjectError, ValueError) as exc:
-        errors.append(str(exc))
+        errors.append(_safe_archive_error(exc))
 
     return {
         **inspection.to_dict(),
         "valid": not errors,
         "errors": errors,
     }
+
+
+def _safe_archive_error(exc: BaseException) -> str:
+    if isinstance(exc, json.JSONDecodeError):
+        return "Archive contains invalid JSON"
+    if isinstance(exc, SherpaObjectError):
+        message = str(exc)
+        if message.startswith("Unsupported .sherpa object version"):
+            return "Unsupported .sherpa object version"
+        if message.startswith("Archive uncompressed payload exceeds limit"):
+            return "Archive uncompressed payload exceeds limit"
+        if message.startswith("Unsafe archive member path"):
+            return "Unsafe archive member path"
+        if message.startswith("Duplicate archive member"):
+            return "Duplicate archive member"
+        if message.startswith("Manifest"):
+            return message.splitlines()[0][:160]
+        if message.startswith("Missing required"):
+            return message.splitlines()[0][:160]
+    return "Archive validation failed"
 
 
 def archive_members_from_paths(paths: Iterable[tuple[str, Path]]) -> list[ArchiveMember]:

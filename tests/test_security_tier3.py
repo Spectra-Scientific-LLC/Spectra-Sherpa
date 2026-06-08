@@ -121,18 +121,56 @@ class TestUserPathContainment:
             with pytest.raises(ValueError, match="must be under the data directory"):
                 _resolve_synthetic_npz_path(outside)
 
-    def test_user_file_reader_still_allows_local_files_in_local_mode(self, tmp_path):
+    def test_restricted_user_file_reader_still_allows_local_paths_in_local_mode(self, tmp_path):
         from spectra_sherpa.app.core.path_security import resolve_existing_file_path
 
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
         outside = tmp_path / "local.csv"
         outside.write_text("x,y\n1,2\n", encoding="utf-8")
 
-        with patch("spectra_sherpa.app.core.mode_policy.is_multi_user", return_value=False):
+        with (
+            patch("spectra_sherpa.app.core.mode_policy.is_multi_user", return_value=False),
+            patch("spectra_sherpa.app.core.config.settings") as mock_settings,
+        ):
+            mock_settings.data_dir = data_dir
             resolved = resolve_existing_file_path(
                 outside,
                 label="CSV",
                 suffixes={".csv"},
                 restrict_to_data_dir_in_multi_user=True,
             )
+
+        assert resolved == outside.resolve()
+
+    def test_restricted_user_file_reader_allows_file_under_data_dir_in_multi_user_mode(self, tmp_path):
+        from spectra_sherpa.app.core.path_security import resolve_existing_file_path
+
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        inside = data_dir / "local.csv"
+        inside.write_text("x,y\n1,2\n", encoding="utf-8")
+
+        with (
+            patch("spectra_sherpa.app.core.mode_policy.is_multi_user", return_value=True),
+            patch("spectra_sherpa.app.core.config.settings") as mock_settings,
+        ):
+            mock_settings.data_dir = data_dir
+            resolved = resolve_existing_file_path(
+                inside,
+                label="CSV",
+                suffixes={".csv"},
+                restrict_to_data_dir_in_multi_user=True,
+            )
+
+        assert resolved == inside.resolve()
+
+    def test_trusted_local_file_reader_allows_unrestricted_path_with_default_flag(self, tmp_path):
+        from spectra_sherpa.app.core.path_security import resolve_existing_file_path
+
+        outside = tmp_path / "local.csv"
+        outside.write_text("x,y\n1,2\n", encoding="utf-8")
+
+        resolved = resolve_existing_file_path(outside, label="CSV", suffixes={".csv"})
 
         assert resolved == outside.resolve()

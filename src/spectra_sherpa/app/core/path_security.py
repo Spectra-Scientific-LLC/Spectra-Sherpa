@@ -2,8 +2,18 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 from pathlib import Path
+
+
+def _clean_path_text(value: str | Path, *, label: str) -> str:
+    text = str(value).strip()
+    if not text:
+        raise ValueError(f"{label} path is required.")
+    if "\x00" in text:
+        raise ValueError(f"{label} path contains an invalid NUL byte.")
+    return text
 
 
 def _display_path(value: str | Path) -> str:
@@ -12,19 +22,43 @@ def _display_path(value: str | Path) -> str:
 
 
 def _resolve_existing_path(value: str | Path, *, label: str) -> Path:
-    text = str(value).strip()
-    if not text:
-        raise ValueError(f"{label} path is required.")
-    if "\x00" in text:
-        raise ValueError(f"{label} path contains an invalid NUL byte.")
+    text = _clean_path_text(value, label=label)
 
     try:
-        # This helper is the boundary check for user-selected local files.
-        # Multi-user callers opt into a resolved data-dir containment check below.
-        # codeql[py/path-injection]
-        return Path(text).expanduser().resolve(strict=True)
+        # Intended only for trusted local-file workflows. API-exposed callers
+        # pass restrict_to_data_dir_in_multi_user=True so multi-user deployments
+        # are routed through _resolve_existing_path_under_root before strict
+        # filesystem access.
+        return Path(text).expanduser().resolve(strict=True)  # lgtm [py/path-injection]
     except OSError as exc:
         raise ValueError(f"{label} path does not exist: {_display_path(value)}") from exc
+
+
+def _resolve_existing_path_under_root(value: str | Path, root: Path, *, label: str) -> Path:
+    text = _clean_path_text(value, label=label)
+    allowed_root = root.expanduser().resolve(strict=False)
+    allowed_text = os.path.normcase(os.path.normpath(str(allowed_root)))
+
+    raw_path = Path(text).expanduser()
+    if raw_path.is_absolute():
+        candidate_text = os.path.normcase(os.path.normpath(str(raw_path)))
+    else:
+        candidate_text = os.path.normcase(os.path.normpath(os.path.join(allowed_text, str(raw_path))))
+
+    try:
+        common = os.path.commonpath([allowed_text, candidate_text])
+    except ValueError as exc:
+        raise ValueError(f"{label} path must be under the data directory ({allowed_root}). Got: {text}") from exc
+    if common != allowed_text:
+        raise ValueError(f"{label} path must be under the data directory ({allowed_root}). Got: {text}")
+
+    candidate = Path(candidate_text)
+    try:
+        resolved = candidate.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError(f"{label} path does not exist: {_display_path(value)}") from exc
+    _assert_under_root(resolved, allowed_root, label=label)
+    return resolved
 
 
 def _assert_under_root(path: Path, root: Path, *, label: str) -> None:
@@ -56,11 +90,19 @@ def resolve_existing_file_path(
     """Resolve a user-supplied existing file path and enforce app boundaries.
 
     OSS/local mode may intentionally open arbitrary local files selected by the
-    user.  Multi-user deployments must keep user-selected file operations under
+    user. Multi-user deployments must keep user-selected file operations under
     ``settings.data_dir`` so API payloads cannot escape into server paths.
     """
 
-    resolved = _resolve_existing_path(value, label=label)
+    if restrict_to_data_dir_in_multi_user:
+        data_root = _active_multi_user_data_root()
+        if data_root is not None:
+            resolved = _resolve_existing_path_under_root(value, data_root, label=label)
+        else:
+            resolved = _resolve_existing_path(value, label=label)
+    else:
+        resolved = _resolve_existing_path(value, label=label)
+
     if not resolved.is_file():
         raise ValueError(f"{label} path is not a file: {resolved}")
 
@@ -68,12 +110,6 @@ def resolve_existing_file_path(
     if allowed_suffixes and resolved.suffix.lower() not in allowed_suffixes:
         expected = ", ".join(sorted(allowed_suffixes))
         raise ValueError(f"Unsupported {label} extension: {resolved.suffix or '<none>'}; expected one of {expected}")
-
-    if restrict_to_data_dir_in_multi_user:
-        data_root = _active_multi_user_data_root()
-        if data_root is not None:
-            _assert_under_root(resolved, data_root, label=label)
-
     return resolved
 
 
@@ -85,13 +121,16 @@ def resolve_existing_directory_path(
 ) -> Path:
     """Resolve a user-supplied existing directory path and enforce boundaries."""
 
-    resolved = _resolve_existing_path(value, label=label)
-    if not resolved.is_dir():
-        raise ValueError(f"{label} path is not a directory: {resolved}")
-
     if restrict_to_data_dir_in_multi_user:
         data_root = _active_multi_user_data_root()
         if data_root is not None:
-            _assert_under_root(resolved, data_root, label=label)
+            resolved = _resolve_existing_path_under_root(value, data_root, label=label)
+        else:
+            resolved = _resolve_existing_path(value, label=label)
+    else:
+        resolved = _resolve_existing_path(value, label=label)
+
+    if not resolved.is_dir():
+        raise ValueError(f"{label} path is not a directory: {resolved}")
 
     return resolved

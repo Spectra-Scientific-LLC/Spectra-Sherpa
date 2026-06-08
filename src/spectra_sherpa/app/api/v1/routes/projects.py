@@ -1523,7 +1523,12 @@ async def inspect_sherpa_object(
     payload = await _read_upload_with_limit(file, max_bytes=max_bytes)
     if len(payload) > max_bytes:
         raise HTTPException(status_code=413, detail="Archive too large")
-    return _public_archive_report(inspect_archive_bytes(payload, max_uncompressed_bytes=max_bytes).to_dict())
+    try:
+        report = inspect_archive_bytes(payload, max_uncompressed_bytes=max_bytes).to_dict()
+    except Exception:
+        logger.warning("Unexpected .sherpa archive inspection failure", exc_info=True)
+        raise HTTPException(status_code=400, detail="Archive inspection failed") from None
+    return _public_archive_report(report)
 
 
 @router.post("/objects/validate")
@@ -1536,7 +1541,12 @@ async def validate_sherpa_object(
     payload = await _read_upload_with_limit(file, max_bytes=max_bytes)
     if len(payload) > max_bytes:
         raise HTTPException(status_code=413, detail="Archive too large")
-    return _public_archive_report(validate_archive_bytes(payload, max_uncompressed_bytes=max_bytes))
+    try:
+        report = validate_archive_bytes(payload, max_uncompressed_bytes=max_bytes)
+    except Exception:
+        logger.warning("Unexpected .sherpa archive validation failure", exc_info=True)
+        raise HTTPException(status_code=400, detail="Archive validation failed") from None
+    return _public_archive_report(report)
 
 
 def _remap_model_uids_in_snapshot(project_json: dict[str, Any], remap: dict[str, str]) -> None:

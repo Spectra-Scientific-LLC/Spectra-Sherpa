@@ -880,6 +880,24 @@ class TestExportImport:
         assert all("line " not in error and "column " not in error for error in payload["errors"])
 
     @pytest.mark.anyio
+    async def test_inspect_sherpa_object_sanitizes_parser_details(self, auth_client: AsyncClient):
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("project.json", "{not-json")
+            zf.writestr("sherpa-object.json", "{also-not-json")
+        archive.seek(0)
+
+        resp = await auth_client.post(
+            "/api/v1/projects/objects/inspect",
+            files={"file": ("invalid.sherpa", archive, "application/zip")},
+        )
+
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["errors"]
+        assert all("line " not in error and "column " not in error for error in payload["errors"])
+
+    @pytest.mark.anyio
     async def test_import_project(self, auth_client: AsyncClient):
         # Create a valid .spectrapy archive
         snapshot = {
