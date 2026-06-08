@@ -289,9 +289,9 @@ def _safe_archive_error(exc: BaseException) -> str:
         if message.startswith("Duplicate archive member"):
             return "Duplicate archive member"
         if message.startswith("Manifest"):
-            return message.splitlines()[0][:160]
+            return "Archive manifest is invalid"
         if message.startswith("Missing required"):
-            return message.splitlines()[0][:160]
+            return "Archive is missing a required payload"
     return "Archive validation failed"
 
 

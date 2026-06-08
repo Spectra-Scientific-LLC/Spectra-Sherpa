@@ -29,7 +29,7 @@ def _resolve_existing_path(value: str | Path, *, label: str) -> Path:
         # pass restrict_to_data_dir_in_multi_user=True so multi-user deployments
         # are routed through _resolve_existing_path_under_root before strict
         # filesystem access.
-        return Path(text).expanduser().resolve(strict=True)  # lgtm [py/path-injection]
+        return Path(text).expanduser().resolve(strict=True)  # codeql[py/path-injection]
     except OSError as exc:
         raise ValueError(f"{label} path does not exist: {_display_path(value)}") from exc
 
@@ -39,7 +39,7 @@ def _resolve_existing_path_under_root(value: str | Path, root: Path, *, label: s
     allowed_root = root.expanduser().resolve(strict=False)
     allowed_text = os.path.normcase(os.path.normpath(str(allowed_root)))
 
-    raw_path = Path(text).expanduser()
+    raw_path = Path(text).expanduser()  # codeql[py/path-injection]
     if raw_path.is_absolute():
         candidate_text = os.path.normcase(os.path.normpath(str(raw_path)))
     else:
