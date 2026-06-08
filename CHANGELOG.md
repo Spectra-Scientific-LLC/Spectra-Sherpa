@@ -7,7 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.8] - 2026-06-08
+## [0.5.9] - 2026-06-08
+
+## [0.5.9] - 2026-06-08
+
+### Security
+
+- Added the public CodeQL default-setup configuration so the OSS repository
+  scans source files only and ignores tests, e2e fixtures, generated frontend
+  bundles, and dependency directories.
+- Consolidated frontend API-key storage behind a single audited helper and
+  documented the local/hybrid compatibility boundary that still requires API
+  key fallback credentials.
+- Reworked metadata sidecar filenames to use deterministic SHA-256 identifiers
+  instead of user-derived path/name segments, reducing path-taint noise and
+  avoiding leakage of local filenames in sidecar paths.
+- Switched API-key cache digests from raw SHA-256 to keyed HMAC-SHA256 and
+  tightened the BYO chat endpoint validator so outbound validation requests use
+  only canonicalized, SSRF-checked URLs.
+- Added precise CodeQL suppression comments at intentional local-file and BYO
+  endpoint boundaries that remain protected by runtime containment or DNS/IP
+  validation checks.
 
 ## [0.5.8] - 2026-06-08
 
