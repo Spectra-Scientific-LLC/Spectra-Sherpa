@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 class ModelArtifactIntegrityError(RuntimeError):
     """Raised when a model artifact's arrays.npz does not match its stored hash.
 
-    Audit DATA-3: a corrupt/truncated npz must fail loud at load time
+    A corrupt/truncated npz must fail loud at load time
     rather than silently feeding wrong arrays into a prediction.
     """
 
@@ -100,7 +100,7 @@ class ModelStore:
         artifact_dir = self._artifact_dir(artifact_uid)
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
-        # Audit DATA-1: stage the full artifact (npz + manifest) into a
+        # Stage the full artifact (npz + manifest) into a
         # private temp dir on the *same filesystem*, fsync it, then
         # promote it into place with an atomic directory rename.  This
         # guarantees a reader never sees a torn artifact (npz written
@@ -163,10 +163,10 @@ class ModelStore:
         kill* (OOM / power loss) leaves the canonical dir missing and the
         ``.old-`` backup as the only complete copy.  ``.old-`` is
         therefore NOT scratch: ``reconcile_orphan_artifacts`` restores it
-        whenever the canonical artifact is absent, which is what makes
-        DATA-1's "either the old complete artifact or the new one"
-        guarantee hold across a crash (POSIX has no portable atomic
-        directory swap, so recover-on-startup is the backstop).
+        whenever the canonical artifact is absent, which is what makes the
+        "either the old complete artifact or the new one" durability guarantee
+        hold across a crash (POSIX has no portable atomic directory swap, so
+        recover-on-startup is the backstop).
         """
         if not target.exists():
             os.replace(staging, target)
@@ -206,7 +206,7 @@ class ModelStore:
     ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
         """Load both manifest and arrays.
 
-        Audit DATA-3: ``verify`` (default on) re-hashes ``arrays.npz``
+        ``verify`` (default on) re-hashes ``arrays.npz``
         and compares it to the manifest's recorded ``integrity_hash``,
         raising :class:`ModelArtifactIntegrityError` on any mismatch.
         Callers that load a model to *use* it (prediction / inspection)
@@ -473,7 +473,7 @@ async def reconcile_orphan_artifacts(
 ) -> list[str]:
     """Delete on-disk artifacts that have no ``ModelArtifact`` DB row.
 
-    Audit DATA-2 defence-in-depth.  Caught failures get a compensating
+    Orphan reconciliation defence-in-depth.  Caught failures get a compensating
     ``store.delete()`` at the call site, but a hard process kill (OOM /
     pod eviction) between ``store.save()`` and the DB commit raises no
     exception and leaves an orphan file with no DB row, never GC'd.
@@ -514,8 +514,8 @@ async def reconcile_orphan_artifacts(
         # protect it.  Recover it the instant the canonical is absent
         # (grace does not apply to recovery); only treat it as deletable
         # scratch once the canonical artifact is confirmed present.  This
-        # is what makes DATA-1's "either the old complete artifact or the
-        # new one" guarantee hold across a crash.
+        # is what makes the "either the old complete artifact or the
+        # new one" durability guarantee hold across a crash.
         if ".old-" in name:
             base_uid = name.rsplit(".old-", 1)[0]
             canonical = models_dir / base_uid

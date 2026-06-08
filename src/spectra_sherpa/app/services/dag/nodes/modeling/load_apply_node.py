@@ -235,7 +235,7 @@ class LoadApplyModelNode(Node):
         try:
             # verify=True (default): a corrupt/truncated npz raises
             # ModelArtifactIntegrityError rather than silently applying
-            # wrong arrays to new data (audit DATA-3).
+            # wrong arrays to new data.
             manifest, arrays = store.load(model_id)
         except FileNotFoundError:
             raise ValueError(f"Model artifact '{model_id}' not found")
