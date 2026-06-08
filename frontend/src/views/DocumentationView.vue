@@ -50,7 +50,7 @@ const sections: DocSection[] = [
       { title: "Cloud vs Local OSS", desc: "Choose hosted evaluation or local compute", path: "/introduction/cloud-vs-local/" },
       { title: "Current Capabilities", desc: "What is built and supported in this release", path: "/introduction/capabilities/" },
       { title: "Supported File Types", desc: "Base readers and optional SpectroChemPy formats", path: "/introduction/file-types/" },
-      { title: "License", desc: "AGPLv3, upstream terms, and BYOK responsibilities", path: "/introduction/license/" },
+      { title: "License", desc: "AGPLv3.0, upstream terms, and BYOK responsibilities", path: "/introduction/license/" },
     ],
   },
   {

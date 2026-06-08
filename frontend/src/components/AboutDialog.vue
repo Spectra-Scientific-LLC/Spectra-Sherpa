@@ -46,7 +46,7 @@
         </li>
       </ul>
 
-      <p class="about-license">Released under the GNU AGPL v3.0 or later.</p>
+      <p class="about-license">Released under the GNU AGPLv3.0.</p>
     </div>
 
     <template #footer>
