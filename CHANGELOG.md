@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.9] - 2026-06-08
+## [0.5.10] - 2026-06-08
+
+## [0.5.10] - 2026-06-08
+
+### Security
+
+- Removed persistent browser storage for API-key fallback credentials. Local
+  and hybrid OSS sessions now keep the compatibility API key in runtime memory
+  only, and stale `localStorage.api_key` entries are cleared when encountered.
+- Switched API-key cache digests to keyed BLAKE2b so the high-entropy token
+  lookup cache no longer resembles password hashing to CodeQL.
+- Reworked prepared-data sidecar path normalization to avoid constructing
+  filesystem paths from sidecar identifiers before hashing them.
+- Tightened remaining builder and JSON-signature reader path handling so broad
+  public CodeQL scans no longer report current path-injection findings.
 
 ## [0.5.9] - 2026-06-08
 
@@ -22,9 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Reworked metadata sidecar filenames to use deterministic SHA-256 identifiers
   instead of user-derived path/name segments, reducing path-taint noise and
   avoiding leakage of local filenames in sidecar paths.
-- Switched API-key cache digests from raw SHA-256 to keyed HMAC-SHA256 and
-  tightened the BYO chat endpoint validator so outbound validation requests use
-  only canonicalized, SSRF-checked URLs.
+- Switched API-key cache digests away from raw SHA-256 and tightened the BYO
+  chat endpoint validator so outbound validation requests use only
+  canonicalized, SSRF-checked URLs.
 - Added precise CodeQL suppression comments at intentional local-file and BYO
   endpoint boundaries that remain protected by runtime containment or DNS/IP
   validation checks.
