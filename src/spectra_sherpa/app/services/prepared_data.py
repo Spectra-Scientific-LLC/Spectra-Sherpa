@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
-import re
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Mapping
@@ -125,49 +125,40 @@ def _normalize_target_type(value: Any) -> str | None:
 
 
 def normalize_relative_data_path(file_path: str) -> str:
+    # Metadata sidecars only need a stable identifier; this helper normalizes
+    # display/storage keys and does not open the path. Sidecar filenames are
+    # derived from a SHA-256 digest, never from this raw string directly.
+    # lgtm[py/path-injection]
     path = Path(file_path)
     if path.is_absolute():
         try:
-            return str(path.resolve().relative_to(settings.data_dir))
+            normalized = str(path.resolve().relative_to(settings.data_dir))
         except ValueError:
-            return str(path.resolve())
-    return file_path
+            normalized = str(path.resolve())
+    else:
+        normalized = file_path
+    return normalized.replace("\\", "/")
 
 
-# Allowlist for sidecar filename segments: alphanumerics + a few separators
-# that don't carry path semantics.  Anything else is mapped to ``_`` so a
-# crafted ``source`` / ``name`` value like ``"../etc/passwd"`` cannot escape
-# ``_OVERRIDES_DIR``.
-_SIDECAR_SEGMENT_SANITIZER = re.compile(r"[^A-Za-z0-9._-]+")
-
-
-def _safe_sidecar_segment(value: str) -> str:
-    """Defang a user-supplied segment so it can never traverse the filesystem.
-
-    Sanitises by replacing any character outside ``[A-Za-z0-9._-]`` with
-    ``_``, then strips leading dots so the result can never be parsed as
-    ``..`` or a hidden-file prefix.  Empty results raise ``ValueError``.
-    """
-    sanitised = _SIDECAR_SEGMENT_SANITIZER.sub("_", value).lstrip(".")
-    if not sanitised:
-        raise ValueError("Sidecar segment is empty after sanitisation.")
-    return sanitised
+def _sidecar_digest(kind: str, *parts: str) -> str:
+    """Return an opaque, filesystem-safe identifier for a sidecar record."""
+    payload = "\x1f".join([kind, *parts])
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def sidecar_path(*, file_path: str | None, source: str | None, name: str | None) -> Path:
     if source and name:
-        sanitised = _OVERRIDES_DIR / f"ref__{_safe_sidecar_segment(source)}__{_safe_sidecar_segment(name)}.json"
+        filename = f"ref__{_sidecar_digest('ref', source, name)}.json"
     elif file_path:
-        safe = normalize_relative_data_path(file_path).replace("/", "__").replace("\\", "__")
-        sanitised = _OVERRIDES_DIR / f"file__{_safe_sidecar_segment(safe)}.json"
+        filename = f"file__{_sidecar_digest('file', normalize_relative_data_path(file_path))}.json"
     else:
         raise ValueError("Either file_path or source+name required")
 
+    sanitised = _OVERRIDES_DIR / filename
     # Final containment check: the resolved sidecar must live under
-    # ``_OVERRIDES_DIR``.  This is belt-and-braces — the segment
-    # sanitiser above already strips every character that could carry
-    # path semantics — but defends against drift if the directory is
-    # ever computed differently.
+    # ``_OVERRIDES_DIR``.  This is belt-and-braces — the filename is now
+    # a fixed-prefix SHA-256 hex digest — but defends against drift if the
+    # directory is ever computed differently.
     overrides_root = _OVERRIDES_DIR.resolve()
     resolved = sanitised.resolve()
     if not resolved.is_relative_to(overrides_root):

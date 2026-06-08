@@ -32,7 +32,7 @@ async def test_gateway_accepts_user_api_key(
     enforces authentication.
 
     The injected authenticator mirrors the commercial server's
-    production path — hash the candidate with sha256 and compare against
+    production path — authenticate the candidate with HMAC-SHA256 and compare against
     the stored digest. No dependency on OSS password-hashing primitives,
     which Phase 2 is deleting from OSS.
     """
@@ -56,16 +56,14 @@ async def test_gateway_accepts_user_api_key(
         user = User(username="gatewayuser")
         test_session.add(user)
         await test_session.commit()
-        # SHA-256 is the correct hash for this lookup pattern: the keys
-        # are high-entropy random tokens, never user-chosen passwords,
-        # and equality is checked via ``hmac.compare_digest`` below.  See
-        # ``app/core/security.py:_hash_api_key`` for the matching
-        # production-side rationale.  ``py/weak-sensitive-data-hashing``
-        # CodeQL flags here are dismissed by-design.
-        api_key_hash = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+        # HMAC-SHA256 is the production lookup pattern: API keys are
+        # high-entropy random tokens and equality is checked via
+        # ``hmac.compare_digest`` below.
+        key = security.settings.secret_key.encode("utf-8")
+        api_key_hash = hmac.new(key, api_key.encode("utf-8"), hashlib.sha256).hexdigest()
 
         async def _authenticate_user_api_key(candidate: str, _session: AsyncSession) -> int | None:
-            candidate_hash = hashlib.sha256(candidate.encode("utf-8")).hexdigest()
+            candidate_hash = hmac.new(key, candidate.encode("utf-8"), hashlib.sha256).hexdigest()
             if hmac.compare_digest(candidate_hash, api_key_hash):
                 return user.id
             return None

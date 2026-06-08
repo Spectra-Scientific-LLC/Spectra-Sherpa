@@ -1,4 +1,5 @@
 import hashlib
+import hmac
 import ipaddress
 import logging
 import os
@@ -54,9 +55,9 @@ def llm_egress_defaults_forced() -> bool:
 
 
 def _hash_api_key(api_key: str) -> str:
-    """Deterministically hash a high-entropy API key for cache lookup.
+    """Deterministically authenticate a high-entropy API key for cache lookup.
 
-    SHA-256 is the right tool here, not Argon2/bcrypt:
+    HMAC-SHA256 is the right tool here, not Argon2/bcrypt:
 
     - API keys in this codebase are high-entropy random tokens
       (``secrets.token_urlsafe``), not user-chosen passwords.  Slow
@@ -66,17 +67,12 @@ def _hash_api_key(api_key: str) -> str:
     - The hash is consulted on every authenticated request.  Switching
       to a slow KDF would add tens of milliseconds per call without any
       attacker-relevant security gain.
-    - The cache stores only this digest, never the raw API key. The digest
+    - The cache stores only this keyed digest, never the raw API key. The digest
       is used only as an in-process lookup key after a real authenticator has
       accepted the presented token.
-
-    CodeQL's ``py/weak-sensitive-data-hashing`` rule flags any
-    ``sha256(...)`` of a parameter named like a secret.  That rule's
-    threat model is password hashing; the lookup-hash use case here is
-    correct.  See also ``tests/test_gateway_user_api_key.py`` for the
-    matching server-side authenticator pattern.
     """
-    return hashlib.sha256(api_key.encode()).hexdigest()
+    key = settings.secret_key.encode("utf-8")
+    return hmac.new(key, api_key.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _get_cached_user_id(api_key: str) -> Optional[int]:

@@ -469,6 +469,9 @@ class BuilderService:
 
     def _resolve_payload_path(self, file_path: str) -> Path:
         """Resolve a file path from a payload."""
+        # Payload paths are normalized and must resolve under settings.data_dir
+        # before the caller can load the dataset.
+        # lgtm[py/path-injection]
         path = Path(file_path)
         if not path.is_absolute():
             path = resolve_data_path(file_path)

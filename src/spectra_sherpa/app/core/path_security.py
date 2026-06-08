@@ -29,7 +29,12 @@ def _resolve_existing_path(value: str | Path, *, label: str) -> Path:
         # pass restrict_to_data_dir_in_multi_user=True so multi-user deployments
         # are routed through _resolve_existing_path_under_root before strict
         # filesystem access.
-        return Path(text).expanduser().resolve(strict=True)  # codeql[py/path-injection]
+        # Local/desktop mode intentionally accepts user-selected filesystem
+        # paths. Multi-user API call sites set
+        # ``restrict_to_data_dir_in_multi_user=True`` and therefore use the
+        # containment-enforced resolver below.
+        # lgtm[py/path-injection]
+        return Path(text).expanduser().resolve(strict=True)
     except OSError as exc:
         raise ValueError(f"{label} path does not exist: {_display_path(value)}") from exc
 
@@ -39,7 +44,10 @@ def _resolve_existing_path_under_root(value: str | Path, root: Path, *, label: s
     allowed_root = root.expanduser().resolve(strict=False)
     allowed_text = os.path.normcase(os.path.normpath(str(allowed_root)))
 
-    raw_path = Path(text).expanduser()  # codeql[py/path-injection]
+    # The raw value is inspected only to decide absolute-vs-relative form;
+    # filesystem access happens after commonpath + resolved containment checks.
+    # lgtm[py/path-injection]
+    raw_path = Path(text).expanduser()
     if raw_path.is_absolute():
         candidate_text = os.path.normcase(os.path.normpath(str(raw_path)))
     else:

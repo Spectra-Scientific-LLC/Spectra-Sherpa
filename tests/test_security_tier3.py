@@ -7,39 +7,7 @@ from unittest.mock import patch
 import pytest
 
 from spectra_sherpa.app.services import prepared_data
-from spectra_sherpa.app.services.prepared_data import (
-    _safe_sidecar_segment,
-    sidecar_path,
-)
-
-
-class TestSafeSidecarSegment:
-    """``_safe_sidecar_segment`` defangs user-supplied filename segments."""
-
-    @pytest.mark.parametrize(
-        "raw,sanitised",
-        [
-            ("dataset1", "dataset1"),
-            ("nist_lib", "nist_lib"),
-            ("Sample-A.csv", "Sample-A.csv"),
-            ("foo/bar", "foo_bar"),
-            # Leading dots get stripped, runs of ``/`` collapse into a single
-            # ``_``; the resulting label is safe (no traversal possible).
-            ("../etc/passwd", "_etc_passwd"),
-            ("name with spaces", "name_with_spaces"),
-            ("héllo", "h_llo"),
-            ("/abs/path", "_abs_path"),
-            ("///", "_"),  # collapses to single underscore — no traversal
-        ],
-    )
-    def test_sanitises_user_input(self, raw, sanitised):
-        assert _safe_sidecar_segment(raw) == sanitised
-
-    def test_rejects_empty_after_sanitisation(self):
-        with pytest.raises(ValueError):
-            _safe_sidecar_segment("...")
-        with pytest.raises(ValueError):
-            _safe_sidecar_segment("")
+from spectra_sherpa.app.services.prepared_data import normalize_relative_data_path, sidecar_path
 
 
 class TestSidecarPathContainment:
@@ -63,7 +31,22 @@ class TestSidecarPathContainment:
 
     def test_round_trip_for_legitimate_input(self):
         path = sidecar_path(file_path=None, source="nist_lib", name="Sample-A")
-        assert path.name == "ref__nist_lib__Sample-A.json"
+        assert path.name.startswith("ref__")
+        assert path.name.endswith(".json")
+        digest = path.stem.removeprefix("ref__")
+        assert len(digest) == 64
+        assert all(char in "0123456789abcdef" for char in digest)
+
+    def test_file_sidecar_digest_is_separator_stable(self):
+        posix_path = "experiments/exp_001/imports/sample.csv"
+        windows_path = r"experiments\exp_001\imports\sample.csv"
+
+        assert normalize_relative_data_path(windows_path) == posix_path
+        assert sidecar_path(file_path=windows_path, source=None, name=None) == sidecar_path(
+            file_path=posix_path,
+            source=None,
+            name=None,
+        )
 
     def test_requires_at_least_one_of_file_path_or_source_name(self):
         with pytest.raises(ValueError):

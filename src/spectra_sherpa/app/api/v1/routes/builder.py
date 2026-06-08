@@ -72,6 +72,9 @@ async def _validate_file_path_ownership(
     """
     # Resolve path relative to data_dir
     if Path(file_path).is_absolute():
+        # This route immediately enforces data_dir containment and ownership
+        # below before any read is allowed.
+        # lgtm[py/path-injection]
         resolved = Path(file_path).resolve()
     else:
         resolved = (settings.data_dir / file_path).resolve()

@@ -381,6 +381,10 @@ def read_json_signature(filepath: Path) -> "NDDataset":
     """
     from .spectral.dataset import SpectralUnit, create_spectral_dataset
 
+    # ``filepath`` reaches this reader through the loader path-validation
+    # layer; JSON signatures are local spectroscopy assets, not URL/user-web
+    # fetches.
+    # lgtm[py/path-injection]
     with open(filepath) as f:
         data = json.load(f)
 

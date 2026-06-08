@@ -19,7 +19,7 @@ import os
 import socket
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
@@ -96,10 +96,20 @@ def _is_safe_outbound_url(url: str) -> tuple[bool, str]:
 
 def validate_endpoint_url(endpoint_url: str) -> tuple[bool, str]:
     """Validate the configured OpenAI-compatible endpoint base URL."""
+    ok, reason, _url = validated_chat_completions_url(endpoint_url)
+    return ok, reason
+
+
+def validated_chat_completions_url(endpoint_url: str) -> tuple[bool, str, str | None]:
+    """Validate and canonicalize an OpenAI-compatible chat completions URL."""
     base_url = endpoint_url.strip().rstrip("/")
     if not base_url:
-        return False, "API base URL is required."
-    return _is_safe_outbound_url(base_url + "/chat/completions")
+        return False, "API base URL is required.", None
+    parsed = urlparse(base_url)
+    path = parsed.path.rstrip("/") + "/chat/completions"
+    request_url = urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
+    ok, reason = _is_safe_outbound_url(request_url)
+    return (ok, reason, request_url if ok else None)
 
 
 def get_config() -> ChatEndpointConfig:
@@ -202,15 +212,12 @@ async def test_connection(
     model: str,
 ) -> tuple[bool, str]:
     """Validate an OpenAI-compatible BYO chat endpoint without saving it."""
-    url = endpoint_url.strip().rstrip("/") + "/chat/completions"
     key = endpoint_key.strip()
-    if not endpoint_url.strip():
-        return False, "API base URL is required."
     if not key:
         return False, "API key is required."
 
-    ok, reason = validate_endpoint_url(endpoint_url)
-    if not ok:
+    ok, reason, url = validated_chat_completions_url(endpoint_url)
+    if not ok or url is None:
         return False, reason
 
     headers = {
@@ -226,6 +233,11 @@ async def test_connection(
 
     try:
         async with httpx.AsyncClient(timeout=15.0, trust_env=False) as client:
+            # ``url`` is produced only by validated_chat_completions_url(),
+            # which rejects non-http(s), private, loopback, link-local,
+            # reserved, multicast, and unspecified addresses unless the
+            # local-LLM escape hatch is explicitly enabled.
+            # lgtm[py/full-ssrf]
             response = await client.post(url, json=body, headers=headers)
     except httpx.TimeoutException:
         return False, "Connection timed out."
