@@ -8,7 +8,7 @@ SpectraSherpa is a local-first spectroscopy platform with extension points for h
 - **FastAPI backend**: project, dataset, workflow, model, export, and local API routes.
 - **Workflow DAG engine**: executes connected nodes in dependency order and records run outputs.
 - **Node registry**: discovers built-in and plugin nodes with declared inputs, outputs, parameters, and policies.
-- **SherpaDataset data model**: carries spectral arrays, axes, sample metadata, processing history, and role information.
+- **SherpaDataset data model**: the concrete runtime object for spectral arrays, axes, sample metadata, processing history, targets, and role information. Node tables may call spectral ports `SpectralDataset`; that is the semantic port contract for spectra carried inside a `SherpaDataset`.
 - **Model artifact store**: persists trained calibrations/classifiers with enough metadata to review and reapply them later.
 - **Export layer**: turns workflows, plots, tables, and model records into portable files.
 - **Optional extension contracts**: allow Cloud, AI providers, plugins, auth, and deployment policy to attach without rewriting the OSS core.

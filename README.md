@@ -85,7 +85,7 @@ Everything lives inside a **Project**. Five objects make up a complete analysis 
 | Object | What it is |
 |--------|------------|
 | **Project** | The durable container grouping your datasets, workflows, runs, reports, scripts, and trained models — with versioned snapshots and provenance. |
-| **Data** | The spectra or feature tables you work on. Import instrument files into *My Dataset*, pull from reference/example datasets, or synthesize FTIR time series. |
+| **Data** | The spectra, feature tables, and pure-spectrum libraries you work on. Import instrument files, pull examples or references, or synthesize FTIR time series with custom concentration profiles; mixed sources can all be saved into *My Dataset* for reuse. |
 | **Workflow** | The analysis recipe: a drag-and-drop graph (DAG) of nodes, versioned on every save so any result traces back to the exact recipe that produced it. |
 | **Run** | One execution of a workflow — an immutable record of parameters, node status, diagnostics, and any model **Artifacts** (frozen PCA/PLS/MCR/PLS-DA/KNN/SIMCA models) it produced. |
 | **Report** | A shareable summary assembled from a workflow and its runs. Toggle sections, then export to PDF, HTML, Markdown, or JSON for publication, hand-off, or validation packages. |

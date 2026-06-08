@@ -2,7 +2,7 @@
 
 Preprocessing nodes transform spectra before modeling.
 
-Most preprocessing nodes accept one spectral matrix and return a transformed `SpectralDataset`. They record processing history so reports and exported workflows can show what happened before modeling.
+Most preprocessing nodes accept a `SpectralDataset` port and return a transformed `SpectralDataset` port. At runtime, those ports carry `SherpaDataset` objects with spectral axes and processing history, so reports and exported workflows can show what happened before modeling.
 
 ## Baseline, Smoothing, and Derivatives
 

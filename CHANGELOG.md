@@ -7,7 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.17] - 2026-06-08
+## [0.5.18] - 2026-06-08
+
+## [0.5.18] - 2026-06-08
+
+### Documentation
+
+- Clarified the distinction between `SherpaDataset` as the runtime and SDK data
+  object and `SpectralDataset` as the semantic workflow-port contract for
+  spectroscopy matrices.
+- Expanded the custom plugin-node authoring guide with a step-by-step local
+  plugin layout, SDK examples, tests, data-contract guidance, export notes, and
+  review checklist.
+- Improved the README description of My Dataset as the reusable workspace for
+  imported files, reference/example data, pure-spectrum libraries, and
+  synthesized FTIR time series.
 
 ## [0.5.17] - 2026-06-08
 
