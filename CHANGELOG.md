@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.7] - 2026-06-08
+## [0.5.8] - 2026-06-08
+
+## [0.5.8] - 2026-06-08
+
+### Security
+
+- Added stable `.sherpa` archive inspect/validate `error_details` codes while
+  preserving the existing public `errors` message list for compatibility. Raw
+  parser exception text is no longer part of either API response shape.
+- Added regression coverage asserting malformed `.sherpa` archives do not
+  expose JSON parser line/column/detail text in response bodies.
+- Added Dependabot grouping for OSS Python, frontend, and GitHub Actions
+  updates so dependency security maintenance arrives as reviewable batches
+  instead of many independent late-release PRs.
 
 ## [0.5.7] - 2026-06-08
 
