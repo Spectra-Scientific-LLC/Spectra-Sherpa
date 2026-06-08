@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from spectra_sherpa.app.core.path_security import resolve_existing_directory_path
 from spectra_sherpa.app.models.batch_prediction import BatchPrediction
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.workflow import Workflow
@@ -33,28 +34,11 @@ def validate_folder_path(folder_path: str) -> Path:
 
     Returns the resolved Path on success; raises ValueError otherwise.
     """
-    from spectra_sherpa.app.core.config import settings
-    from spectra_sherpa.app.core.mode_policy import is_multi_user
-
-    if not str(folder_path).strip():
-        raise ValueError("Folder path is required.")
-
-    try:
-        resolved = Path(folder_path).expanduser().resolve(strict=True)
-    except OSError as exc:
-        raise ValueError(f"Folder path does not exist: {folder_path}") from exc
-
-    if not resolved.is_dir():
-        raise ValueError(f"Path is not a directory: {resolved}")
-
-    if is_multi_user():
-        allowed_root = Path(settings.data_dir).resolve(strict=False)
-        try:
-            resolved.relative_to(allowed_root)
-        except ValueError:
-            raise ValueError(f"Folder path must be under the data directory " f"({allowed_root}). Got: {resolved}")
-
-    return resolved
+    return resolve_existing_directory_path(
+        folder_path,
+        label="Folder",
+        restrict_to_data_dir_in_multi_user=True,
+    )
 
 
 def discover_files(
