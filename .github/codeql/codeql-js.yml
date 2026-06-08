@@ -4,6 +4,12 @@ paths:
   - frontend/src
 
 paths-ignore:
+  # CodeQL 2.25.6 emits status-page syntax diagnostics for generated
+  # Vue SFC work files (`*.vue.ts`) even when the scan succeeds with
+  # zero alerts. Keep CodeQL on plain TypeScript sources and rely on
+  # vue-tsc/npm audit/build gates for SFC coverage until the extractor
+  # can scan these files without false diagnostic banners.
+  - frontend/src/**/*.vue
   - frontend/src/test/**
   - frontend/e2e/**
   - frontend/node_modules/**
