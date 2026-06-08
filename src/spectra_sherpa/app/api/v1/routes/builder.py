@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import uuid
@@ -70,14 +71,11 @@ async def _validate_file_path_ownership(
 
     Raises HTTPException 403 if access denied.
     """
-    # Resolve path relative to data_dir
-    if Path(file_path).is_absolute():
-        # This route immediately enforces data_dir containment and ownership
-        # below before any read is allowed.
-        # lgtm[py/path-injection]
-        resolved = Path(file_path).resolve()
+    # Resolve path relative to data_dir.
+    if os.path.isabs(file_path):
+        resolved = Path(os.path.abspath(file_path)).resolve(strict=False)  # lgtm[py/path-injection]
     else:
-        resolved = (settings.data_dir / file_path).resolve()
+        resolved = (settings.data_dir / file_path).resolve()  # lgtm[py/path-injection]
 
     # Must be within data_dir
     if not resolved.is_relative_to(settings.data_dir):

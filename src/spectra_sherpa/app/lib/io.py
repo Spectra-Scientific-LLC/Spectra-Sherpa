@@ -22,8 +22,6 @@ if TYPE_CHECKING:
     from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
 import numpy as np
-
-logger = logging.getLogger(__name__)
 import pandas as pd
 
 try:
@@ -36,6 +34,8 @@ except ImportError:
 
 from spectra_sherpa.app.core.path_security import resolve_existing_file_path
 from spectra_sherpa.app.lib.scp_compat import NDDataset, require_scp, scp
+
+logger = logging.getLogger(__name__)
 
 # Filename pattern for extracting species labels
 # The previous form ``^[A-Z0-9]+[\s_-]?.*\.CSV$`` flagged as polynomial-redos
@@ -381,11 +381,8 @@ def read_json_signature(filepath: Path) -> "NDDataset":
     """
     from .spectral.dataset import SpectralUnit, create_spectral_dataset
 
-    # ``filepath`` reaches this reader through the loader path-validation
-    # layer; JSON signatures are local spectroscopy assets, not URL/user-web
-    # fetches.
-    # lgtm[py/path-injection]
-    with open(filepath) as f:
+    validated_path = resolve_existing_file_path(filepath, label="JSON signature", suffixes={".json"})
+    with validated_path.open() as f:  # lgtm[py/path-injection]
         data = json.load(f)
 
     wavenumber = np.array(data.get("wavenumber", data.get("wavenumbers", [])), dtype=float)

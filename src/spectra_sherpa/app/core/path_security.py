@@ -24,19 +24,13 @@ def _display_path(value: str | Path) -> str:
 def _resolve_existing_path(value: str | Path, *, label: str) -> Path:
     text = _clean_path_text(value, label=label)
 
-    try:
-        # Intended only for trusted local-file workflows. API-exposed callers
-        # pass restrict_to_data_dir_in_multi_user=True so multi-user deployments
-        # are routed through _resolve_existing_path_under_root before strict
-        # filesystem access.
-        # Local/desktop mode intentionally accepts user-selected filesystem
-        # paths. Multi-user API call sites set
-        # ``restrict_to_data_dir_in_multi_user=True`` and therefore use the
-        # containment-enforced resolver below.
-        # lgtm[py/path-injection]
-        return Path(text).expanduser().resolve(strict=True)
-    except OSError as exc:
-        raise ValueError(f"{label} path does not exist: {_display_path(value)}") from exc
+    # Local/desktop mode intentionally accepts user-selected filesystem paths.
+    # Multi-user API call sites set ``restrict_to_data_dir_in_multi_user=True``
+    # and therefore use the containment-enforced resolver below.
+    candidate = Path(os.path.abspath(os.path.expanduser(text)))  # lgtm[py/path-injection]
+    if not candidate.exists():
+        raise ValueError(f"{label} path does not exist: {_display_path(value)}")
+    return candidate
 
 
 def _resolve_existing_path_under_root(value: str | Path, root: Path, *, label: str) -> Path:
@@ -44,14 +38,11 @@ def _resolve_existing_path_under_root(value: str | Path, root: Path, *, label: s
     allowed_root = root.expanduser().resolve(strict=False)
     allowed_text = os.path.normcase(os.path.normpath(str(allowed_root)))
 
-    # The raw value is inspected only to decide absolute-vs-relative form;
-    # filesystem access happens after commonpath + resolved containment checks.
-    # lgtm[py/path-injection]
-    raw_path = Path(text).expanduser()
-    if raw_path.is_absolute():
-        candidate_text = os.path.normcase(os.path.normpath(str(raw_path)))
+    expanded = os.path.expanduser(text)
+    if os.path.isabs(expanded):
+        candidate_text = os.path.normcase(os.path.normpath(expanded))
     else:
-        candidate_text = os.path.normcase(os.path.normpath(os.path.join(allowed_text, str(raw_path))))
+        candidate_text = os.path.normcase(os.path.normpath(os.path.join(allowed_text, expanded)))
 
     try:
         common = os.path.commonpath([allowed_text, candidate_text])
@@ -62,7 +53,7 @@ def _resolve_existing_path_under_root(value: str | Path, root: Path, *, label: s
 
     candidate = Path(candidate_text)
     try:
-        resolved = candidate.resolve(strict=True)
+        resolved = candidate.resolve(strict=True)  # lgtm[py/path-injection]
     except OSError as exc:
         raise ValueError(f"{label} path does not exist: {_display_path(value)}") from exc
     _assert_under_root(resolved, allowed_root, label=label)

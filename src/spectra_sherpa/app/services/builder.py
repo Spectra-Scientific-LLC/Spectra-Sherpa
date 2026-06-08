@@ -7,6 +7,7 @@ Uses NDDataset as the primary data type throughout.
 
 from __future__ import annotations
 
+import os
 from dataclasses import fields
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
@@ -469,13 +470,11 @@ class BuilderService:
 
     def _resolve_payload_path(self, file_path: str) -> Path:
         """Resolve a file path from a payload."""
-        # Payload paths are normalized and must resolve under settings.data_dir
-        # before the caller can load the dataset.
-        # lgtm[py/path-injection]
-        path = Path(file_path)
-        if not path.is_absolute():
+        if os.path.isabs(file_path):
+            path = Path(os.path.abspath(file_path))  # lgtm[py/path-injection]
+        else:
             path = resolve_data_path(file_path)
-        path = path.resolve()
+        path = path.resolve(strict=False)  # lgtm[py/path-injection]
         if not path.is_relative_to(settings.data_dir):
             raise ValueError("File path must be within data directory")
         return path

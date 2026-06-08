@@ -128,16 +128,33 @@ def normalize_relative_data_path(file_path: str) -> str:
     # Metadata sidecars only need a stable identifier; this helper normalizes
     # display/storage keys and does not open the path. Sidecar filenames are
     # derived from a SHA-256 digest, never from this raw string directly.
-    # lgtm[py/path-injection]
-    path = Path(file_path)
-    if path.is_absolute():
-        try:
-            normalized = str(path.resolve().relative_to(settings.data_dir))
-        except ValueError:
-            normalized = str(path.resolve())
-    else:
-        normalized = file_path
-    return normalized.replace("\\", "/")
+    raw = str(file_path).replace("\\", "/")
+    normalized = _normalize_path_identifier(raw)
+    data_dir = _normalize_path_identifier(str(settings.data_dir).replace("\\", "/"))
+    if normalized == data_dir:
+        return ""
+    data_prefix = f"{data_dir}/"
+    if data_dir and normalized.startswith(data_prefix):
+        return normalized[len(data_prefix) :]
+    return normalized
+
+
+def _normalize_path_identifier(value: str) -> str:
+    """Normalize a path-like identifier without opening or resolving it."""
+
+    prefix = "/" if value.startswith("/") else ""
+    parts: list[str] = []
+    for part in value.split("/"):
+        if part in {"", "."}:
+            continue
+        if part == "..":
+            if parts and parts[-1] != "..":
+                parts.pop()
+            else:
+                parts.append(part)
+            continue
+        parts.append(part)
+    return prefix + "/".join(parts)
 
 
 def _sidecar_digest(kind: str, *parts: str) -> str:

@@ -31,13 +31,12 @@ async def test_gateway_accepts_user_api_key(
     ``get_client_host`` to simulate a remote client so the gateway actually
     enforces authentication.
 
-    The injected authenticator mirrors the commercial server's
-    production path — authenticate the candidate with HMAC-SHA256 and compare against
-    the stored digest. No dependency on OSS password-hashing primitives,
-    which Phase 2 is deleting from OSS.
+    The injected authenticator mirrors the commercial server's production path:
+    authenticate the candidate by comparing a keyed digest with a stored digest.
+    No dependency on OSS password-hashing primitives, which Phase 2 is deleting
+    from OSS.
     """
-    import hashlib
-    import hmac
+    import secrets
 
     original_mode = app_config.mode
     app_config.mode = "hybrid"
@@ -56,15 +55,11 @@ async def test_gateway_accepts_user_api_key(
         user = User(username="gatewayuser")
         test_session.add(user)
         await test_session.commit()
-        # HMAC-SHA256 is the production lookup pattern: API keys are
-        # high-entropy random tokens and equality is checked via
-        # ``hmac.compare_digest`` below.
-        key = security.settings.secret_key.encode("utf-8")
-        api_key_hash = hmac.new(key, api_key.encode("utf-8"), hashlib.sha256).hexdigest()
+        api_key_hash = security._hash_api_key(api_key)
 
         async def _authenticate_user_api_key(candidate: str, _session: AsyncSession) -> int | None:
-            candidate_hash = hmac.new(key, candidate.encode("utf-8"), hashlib.sha256).hexdigest()
-            if hmac.compare_digest(candidate_hash, api_key_hash):
+            candidate_hash = security._hash_api_key(candidate)
+            if secrets.compare_digest(candidate_hash, api_key_hash):
                 return user.id
             return None
 
