@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "spectra-sherpa"
-version = "0.5.3"
+version = "0.5.4"
 description = "SpectraSherpa — local-first spectroscopy platform for chemometricians"
 authors = ["Spectra Scientific LLC <info@spectrascientific.ai>"]
 readme = "README.md"
