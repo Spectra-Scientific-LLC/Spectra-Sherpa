@@ -1,0 +1,9 @@
+name: SpectraSherpa Frontend CodeQL
+
+paths:
+  - frontend/src
+
+paths-ignore:
+  - frontend/src/test/**
+  - frontend/e2e/**
+  - frontend/node_modules/**

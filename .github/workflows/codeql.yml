@@ -23,10 +23,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language:
-          - actions
-          - javascript-typescript
-          - python
+        include:
+          - language: actions
+            config_file: .github/codeql/codeql-actions.yml
+          - language: javascript-typescript
+            config_file: .github/codeql/codeql-js.yml
+          - language: python
+            config_file: .github/codeql/codeql-python.yml
     steps:
       - uses: actions/checkout@v5
 
@@ -35,7 +38,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: none
-          config-file: .github/codeql/codeql-config.yml
+          config-file: ${{ matrix.config_file }}
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4

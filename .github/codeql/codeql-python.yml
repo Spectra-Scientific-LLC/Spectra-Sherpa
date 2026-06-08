@@ -1,16 +1,11 @@
-name: SpectraSherpa CodeQL
+name: SpectraSherpa Python CodeQL
 
 paths:
   - src
-  - .github/workflows
-  - frontend/src
 
 paths-ignore:
   - src/spectra_sherpa/static/**
   - tests/**
-  - frontend/src/test/**
-  - frontend/e2e/**
-  - frontend/node_modules/**
 
 # SpectraSherpa OSS intentionally supports user-selected local filesystem
 # inputs in desktop/local mode. Multi-user API paths are separately contained

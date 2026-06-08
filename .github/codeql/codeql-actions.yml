@@ -1,0 +1,4 @@
+name: SpectraSherpa Actions CodeQL
+
+paths:
+  - .github/workflows
