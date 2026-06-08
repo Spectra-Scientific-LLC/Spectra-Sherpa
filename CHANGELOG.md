@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.3] - 2026-06-08
+## [0.5.4] - 2026-06-08
 
 ### Added
 
@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inspect/validate helpers, API export/import endpoints, and CLI wrappers.
   Imported `.sherpa` objects now recreate workflow sheets with nodes, edges,
   and project data-source links instead of storing only a passive snapshot.
+
+### Security
+
+- Sanitized public `.sherpa` inspect/validate API error payloads so archive
+  parser details are not reflected to external users.
+- Added a malformed-Host regression test for the Starlette Host-header advisory
+  mitigation and kept the FastAPI-compatible Starlette pin documented until
+  FastAPI supports the patched Starlette 1.x line.
+- Refreshed OSS dependency metadata for `idna` and `js-cookie` so Dependabot
+  can close stale alerts after the public mirror rescan.
+- Suppressed a CodeQL false positive in the local-file path resolver with an
+  inline explanation: multi-user callers still opt into resolved
+  `settings.data_dir` containment before file access.
 
 ## [0.5.3] - 2026-06-06
 
