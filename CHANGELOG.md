@@ -7,7 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.6] - 2026-06-08
+## [0.5.7] - 2026-06-08
+
+## [0.5.7] - 2026-06-08
+
+### Security
+
+- Removed the remaining exception-derived `.sherpa` validation response
+  fragments so archive inspect/validate endpoints expose only stable public
+  error text.
+- Documented the trusted-local versus multi-user path-validation split inline
+  for CodeQL, keeping local OSS file selection flexible while preserving
+  `DATA_DIR` containment in multi-user deployments.
 
 ## [0.5.6] - 2026-06-08
 
