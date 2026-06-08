@@ -7,7 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.15] - 2026-06-08
+## [0.5.16] - 2026-06-08
+
+## [0.5.16] - 2026-06-08
+
+### Release Hygiene
+
+- Split OSS CodeQL configuration by analyzer language so JavaScript/TypeScript,
+  Python, and GitHub Actions scans each receive only their intended source
+  paths. This keeps the public security gate from reporting parser diagnostics
+  on files outside the analyzer's scope.
 
 ## [0.5.15] - 2026-06-08
 
