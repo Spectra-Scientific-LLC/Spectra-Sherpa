@@ -7,7 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.2] - 2026-06-06
+## [0.5.3] - 2026-06-08
+
+### Added
+
+- Added a beta `.sherpa` portable project object with a verifiable
+  `sherpa-object.json` manifest, SHA-256 payload inventory, offline
+  inspect/validate helpers, API export/import endpoints, and CLI wrappers.
+  Imported `.sherpa` objects now recreate workflow sheets with nodes, edges,
+  and project data-source links instead of storing only a passive snapshot.
+
+## [0.5.3] - 2026-06-06
+
+### Security
+
+- Centralized user-facing path resolution for batch prediction folders, CSV
+  loading, JCAMP-DX loading, and synthetic NPZ metadata edits. Multi-user
+  deployments now route these paths through one helper that enforces
+  `settings.data_dir` containment before file access.
+- Rewrote Host-header middleware tests to avoid URL-substring-style assertions
+  that CodeQL reports as incomplete URL sanitization.
+- Documented the temporary Starlette dependency-scanner exception in
+  `SECURITY.md`: FastAPI 0.120/0.121 still constrains Starlette below the
+  patched 1.x line, so SpectraSherpa relies on startup-installed
+  `TrustedHostMiddleware` until the upstream dependency range moves.
 
 ## [0.5.2] - 2026-06-06
 

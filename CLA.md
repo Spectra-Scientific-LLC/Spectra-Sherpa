@@ -74,7 +74,7 @@ does not affect Your right to use Your own Contributions for any purpose.
 ## 3. Outbound Licensing
 
 1. Spectra currently distributes the Project under the GNU Affero General
-   Public License, version 3.0 (or later), as designated by Spectra.
+   Public License, version 3.0, as designated by Spectra.
 2. Spectra may enforce license compliance and may offer additional or
    alternative licensing terms for the Project at Spectra's discretion.
 3. Nothing in this Agreement limits rights granted to recipients under the

@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-SpectraSherpa is released under the GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later) — see `LICENSE`.  The Python and JavaScript distributions ship a number of third-party assets and datasets that retain their own copyright and licence terms.  This file enumerates them and their attribution requirements.
+SpectraSherpa is released under the GNU Affero General Public License v3.0 (AGPL-3.0) — see `LICENSE`.  The Python and JavaScript distributions ship a number of third-party assets and datasets that retain their own copyright and licence terms.  This file enumerates them and their attribution requirements.
 
 If you redistribute SpectraSherpa (in source or binary form), retain this file alongside `LICENSE`.
 

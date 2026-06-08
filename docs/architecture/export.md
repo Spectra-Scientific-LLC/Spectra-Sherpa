@@ -72,6 +72,36 @@ spectra_deriv = savgol_derivative(spectra_snv, window_length=15, polyorder=2)
 
 It should not silently depend on UI state, hidden session data, or a database row that another user cannot access.
 
+## Portable `.sherpa` Objects
+
+The `.sherpa` object is the round-trip export path for moving a project between SpectraSherpa installs. It is a ZIP container with:
+
+- `sherpa-object.json`: object version, package mode, payload inventory, SHA-256 hashes, and project summary
+- `project.json`: project snapshot with data sources, workflow sheets, nodes, edges, scripts, and model references
+- `models/<artifact_uid>/manifest.json` and `models/<artifact_uid>/arrays.npz` when saved model artifacts are available
+
+Unlike a Python or notebook export, a `.sherpa` object is meant to be imported back into SpectraSherpa. Import creates a new project, restores project data-source records, recreates workflow sheets with their nodes and edges, imports model artifacts when present, and stores the imported payload as version 1 of the new project.
+
+The object can be inspected or validated without executing workflows:
+
+```bash
+spectra-sherpa object inspect project.sherpa
+spectra-sherpa object validate project.sherpa
+```
+
+For a running local or hosted API, the CLI can also call the project object endpoints:
+
+```bash
+spectra-sherpa object export 42 project.sherpa
+spectra-sherpa object import project.sherpa
+```
+
+Hosted APIs that require authentication can pass `--api-url` and `--token`.
+
+The current package mode is `full`. A future metadata-only mode is scaffolded in the manifest but is not yet a supported export option.
+
+Compatibility policy: the beta object reader currently accepts only exact object-version `0.1`. Treat this as the first implementation contract, not a long-term compatibility promise. Future object revisions should add an explicit min/max reader range before changing the manifest schema.
+
 ## Extension Pattern
 
 Use export extensions when a lab or partner needs a specific handoff format:

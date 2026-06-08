@@ -4,7 +4,7 @@ SpectraSherpa builds on open-source scientific software and public scientific da
 
 ## Software
 
-- SpectraSherpa OSS: AGPLv3 or later
+- SpectraSherpa OSS: AGPLv3.0
 - SpectroChemPy: `spectra-sherpa[scp]` support for Thermo OMNIC/OMNICxi `.spa`, `.spg`, `.srs`, Bruker `.opus`, Galactic `.spc`, Renishaw `.wdf`, vendor `.txt`/`.dat`, selected datasets, and coordinate-aware algorithms
 - NumPy, SciPy, pandas, scikit-learn, FastAPI, Vue, Plotly, and related infrastructure packages
 

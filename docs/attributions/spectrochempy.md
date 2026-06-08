@@ -56,4 +56,4 @@ SpectroChemPy is distributed under the [CeCILL-B Free Software License Agreement
 
 ## Boundary
 
-SpectroChemPy must remain opt-in for SpectraSherpa. Do not move it into core dependencies without a deliberate release decision that considers dependency footprint, supported reader behavior, upstream license and citation obligations, and the AGPLv3 distribution boundary for SpectraSherpa OSS.
+SpectroChemPy must remain opt-in for SpectraSherpa. Do not move it into core dependencies without a deliberate release decision that considers dependency footprint, supported reader behavior, upstream license and citation obligations, and the AGPLv3.0 distribution boundary for SpectraSherpa OSS.
