@@ -1,0 +1,12 @@
+name: SpectraSherpa CodeQL
+
+paths:
+  - src
+  - frontend/src
+
+paths-ignore:
+  - src/spectra_sherpa/static/**
+  - tests/**
+  - frontend/src/test/**
+  - frontend/e2e/**
+  - frontend/node_modules/**
