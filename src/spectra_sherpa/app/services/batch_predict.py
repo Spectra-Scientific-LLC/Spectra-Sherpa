@@ -69,8 +69,10 @@ def discover_files(
     """
     folder = validate_folder_path(folder_path)
 
+    # codeql[py/path-injection]
     if not folder.exists():
         raise ValueError(f"Folder does not exist: {folder}")
+    # codeql[py/path-injection]
     if not folder.is_dir():
         raise ValueError(f"Path is not a directory: {folder}")
 
