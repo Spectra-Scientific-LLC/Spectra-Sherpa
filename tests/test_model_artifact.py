@@ -1405,7 +1405,7 @@ class TestLoadApplyModelNode:
 
 
 # ---------------------------------------------------------------------------
-# Audit DATA-1/2/3/4: model-artifact store durability & integrity
+# Model-artifact store durability and integrity
 # ---------------------------------------------------------------------------
 
 
@@ -1427,7 +1427,7 @@ class TestModelStoreDurability:
         rng = np.random.default_rng(7)
         return {"coef": rng.standard_normal((2, 10)).astype(np.float64)}
 
-    # ── DATA-1: atomic save ──────────────────────────────────────────
+    # ── Atomic save ─────────────────────────────────────────────────
 
     def test_save_leaves_no_staging_dir(self, store, manifest, arrays):
         store.save("uid-clean", manifest, arrays)
@@ -1442,7 +1442,7 @@ class TestModelStoreDurability:
 
         # A re-save that blows up after staging the npz but before
         # promotion must leave the original artifact fully intact and
-        # leave no scratch dirs behind (audit DATA-1).
+        # leave no scratch dirs behind.
         from spectra_sherpa.app.services import model_store as ms
 
         def boom(_path):
@@ -1470,7 +1470,7 @@ class TestModelStoreDurability:
         assert store.verify_integrity("uid-rs") is True
         assert [p.name for p in store.models_dir.iterdir()] == ["uid-rs"]
 
-    # ── DATA-3: verified load ────────────────────────────────────────
+    # ── Verified load ────────────────────────────────────────────────
 
     def test_load_raises_on_corrupt_npz(self, store, manifest, arrays):
         from spectra_sherpa.app.services.model_store import ModelArtifactIntegrityError
@@ -1521,7 +1521,7 @@ class TestModelStoreDurability:
         with pytest.raises(ValueError, match="corrupt"):
             await node.execute(X_new=np.zeros((2, 3)))
 
-    # ── DATA-2: orphan reconcile ─────────────────────────────────────
+    # ── Orphan reconcile ─────────────────────────────────────────────
 
     async def test_reconcile_orphan_artifacts(self, store, test_session, test_user):
         from spectra_sherpa.app.models.model_artifact import ModelArtifact
@@ -1584,7 +1584,7 @@ class TestModelStoreDurability:
         assert not store._artifact_dir("uid-orphan-old").exists()
 
     async def test_reconcile_recovers_artifact_from_interrupted_resave(self, store, manifest, arrays, test_session):
-        """Audit DATA-1 crash safety: a hard kill between _promote's two
+        """Crash safety: a hard kill between _promote's two
         renames leaves the canonical dir gone and only ``<uid>.old-<hex>``
         (with its original, pre-grace mtime).  Reconcile must RESTORE it,
         never reap it — otherwise the sole good copy is destroyed."""
@@ -1620,7 +1620,7 @@ class TestModelStoreDurability:
         assert "uid-rs.old-deadbeef" not in removed
         assert ".staging-uid-rs-tmp" in removed
 
-    # ── DATA-4: import collision safety ──────────────────────────────
+    # ── Import collision safety ──────────────────────────────────────
 
     def test_remap_model_uids_in_snapshot(self):
         from spectra_sherpa.app.api.v1.routes.projects import (

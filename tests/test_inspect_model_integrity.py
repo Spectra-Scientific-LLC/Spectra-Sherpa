@@ -1,10 +1,9 @@
-"""H2 — GET /models/{uid}/inspect must verify integrity before returning stats.
+"""GET /models/{uid}/inspect must verify integrity before returning stats.
 
-Audit DATA-3 documents the contract: every "use the model" load path must
-re-verify the npz hash so corrupt/truncated arrays fail loud instead of
-silently feeding wrong numbers into prediction OR inspection. PR #161/#164
-left inspect_model bypassing this — load_manifest + load_arrays separately
-both skip the integrity check.
+Every "use the model" load path must re-verify the npz hash so
+corrupt/truncated arrays fail loud instead of silently feeding wrong numbers
+into prediction OR inspection. Separate load_manifest + load_arrays calls both
+skip the integrity check.
 """
 
 from __future__ import annotations
@@ -74,7 +73,7 @@ async def test_inspect_returns_stats_for_intact_artifact(auth_client, test_sessi
 
 @pytest.mark.asyncio
 async def test_inspect_returns_422_when_arrays_file_is_corrupt(auth_client, test_session, test_user: User, tmp_path):
-    """Truncating arrays.npz must surface as a 422 from inspect (audit DATA-3),
+    """Truncating arrays.npz must surface as a 422 from inspect,
     NOT a silent 200 with wrong stats."""
     artifact_uid, store = await _seed_artifact_with_files(test_session, test_user, tmp_path)
 

@@ -916,7 +916,7 @@ async def execute_workflow(
                     await session.rollback()
                 except Exception:
                     pass
-                # Audit DATA-2: the DB rows could not be committed, so
+                # The DB rows could not be committed, so
                 # these artifacts are now unreachable files on disk with
                 # no ModelArtifact row referencing them.  Compensating
                 # cleanup — delete them so a failed run can't leak orphan

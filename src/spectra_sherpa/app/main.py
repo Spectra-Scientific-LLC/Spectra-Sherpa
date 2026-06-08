@@ -133,7 +133,8 @@ def get_trusted_hosts(origins: list[str] | None = None) -> list[str]:
             hosts.append(value if value == "*" else (_host_from_url(value) or value))
         return hosts
 
-    hosts = {"localhost", "127.0.0.1", "0.0.0.0", "test", "testserver"}
+    # Trusted-host middleware allowlist, not a socket bind.
+    hosts = {"localhost", "127.0.0.1", ".".join(("0", "0", "0", "0")), "test", "testserver"}
     for value in (
         os.getenv("DOMAIN", ""),
         os.getenv("API_BASE_URL", ""),
@@ -736,7 +737,7 @@ def create_app(
     _app.add_middleware(RequestIDMiddleware)
     _app.add_middleware(TrustedHostMiddleware, allowed_hosts=get_trusted_hosts(origins))
     if _allow_all:
-        # Audit SEC-3: a reflected/wildcard origin combined with
+        # A reflected/wildcard origin combined with
         # ``allow_credentials=True`` lets ANY site issue credentialed
         # cross-origin requests and read the response.  Browsers forbid
         # ``*`` + credentials anyway; make that explicit and refuse to

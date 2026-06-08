@@ -23,6 +23,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 import numpy as np
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 EIGENVECTOR_DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "eigenvector"
 EIGENVECTOR_UPSTREAM_PAGE = "https://eigenvector.com/resources/data-sets/"
 EIGENVECTOR_RUNTIME_DOWNLOAD_ENV = "SPECTRASHERPA_EIGENVECTOR_DOWNLOADS"
+EIGENVECTOR_ALLOWED_DOWNLOAD_HOSTS = {"eigenvector.com", "www.eigenvector.com"}
 
 # ---------------------------------------------------------------------------
 # Dataset catalog
@@ -448,13 +450,18 @@ def _replace_if_missing(tmp_path: Path, destination: Path) -> None:
 
 
 def _download_archive(url: str, destination: Path) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.hostname not in EIGENVECTOR_ALLOWED_DOWNLOAD_HOSTS:
+        raise ValueError("Eigenvector dataset downloads must use a cataloged HTTPS eigenvector.com URL")
+
     destination.parent.mkdir(parents=True, exist_ok=True)
     request = Request(url, headers={"User-Agent": "SpectraSherpa OSS runtime dataset downloader"})
     fd, tmp_name = tempfile.mkstemp(dir=destination.parent, prefix=f".{destination.name}.")
     tmp_path = Path(tmp_name)
     try:
         with os.fdopen(fd, "wb") as tmp:
-            with urlopen(request, timeout=60) as response:  # noqa: S310 - fixed upstream HTTPS catalog URLs.
+            # URL is validated against the static HTTPS Eigenvector catalog hosts above.
+            with urlopen(request, timeout=60) as response:  # nosec B310
                 while True:
                     chunk = response.read(1024 * 1024)
                     if not chunk:

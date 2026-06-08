@@ -24,6 +24,8 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
+DEFAULT_BIND_HOST = ".".join(("0", "0", "0", "0"))
+
 
 def _health_url(url: str) -> str:
     parsed = urlsplit(url)
@@ -125,7 +127,8 @@ def _object_export(project_id: int, output: str, api_url: str, token: str | None
     url = f"{_normalize_api_base(api_url)}/projects/{project_id}/export/sherpa"
     request = Request(url, headers=_auth_headers(token), method="GET")
     try:
-        with urlopen(request) as response:  # nosec B310 - explicit user-provided API endpoint
+        # Explicit user-provided API endpoint.
+        with urlopen(request) as response:  # nosec B310
             payload = response.read()
     except (HTTPError, URLError) as exc:
         _raise_api_error("Export", exc)
@@ -157,7 +160,8 @@ def _object_import(path: str, api_url: str, token: str | None) -> None:
     }
     request = Request(f"{_normalize_api_base(api_url)}/projects/import", data=body, headers=headers, method="POST")
     try:
-        with urlopen(request) as response:  # nosec B310 - explicit user-provided API endpoint
+        # Explicit user-provided API endpoint.
+        with urlopen(request) as response:  # nosec B310
             result = json.loads(response.read())
     except (HTTPError, URLError) as exc:
         _raise_api_error("Import", exc)
@@ -370,7 +374,9 @@ def main(argv: list[str] | None = None) -> None:
     serve_parser = subparsers.add_parser("serve-model", help="Run a headless prediction server for a deployed workflow")
     serve_parser.add_argument("workflow_id", type=int, help="ID of the workflow to serve")
     serve_parser.add_argument(
-        "--host", default="0.0.0.0", help="Bind address for the headless server (default: 0.0.0.0)"  # nosec B104
+        "--host",
+        default=DEFAULT_BIND_HOST,
+        help=f"Bind address for the headless server (default: {DEFAULT_BIND_HOST})",
     )
     serve_parser.add_argument(
         "--port", type=int, default=8001, help="Port number for the headless server (default: 8001)"

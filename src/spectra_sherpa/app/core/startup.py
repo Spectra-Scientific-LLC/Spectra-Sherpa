@@ -614,7 +614,7 @@ async def reconcile_stale_jobs() -> None:
 async def reconcile_orphan_model_artifacts() -> None:
     """GC on-disk model artifacts left with no DB row by a hard crash.
 
-    Audit DATA-2 backstop.  ``store.save()`` writes the artifact files
+    Orphan-reconciliation backstop.  ``store.save()`` writes the artifact files
     before the ``ModelArtifact`` row is committed; caught failures get a
     compensating delete at the call site, but a hard process kill (OOM /
     pod eviction / SIGKILL) between the two leaves an orphan file with

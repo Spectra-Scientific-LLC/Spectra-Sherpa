@@ -1,4 +1,4 @@
-"""Audit DATA-8: a failed on-disk purge must not report success."""
+"""A failed on-disk purge must not report success."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ async def _seed(test_session, test_user) -> str:
 
 @pytest.fixture(autouse=True)
 def _silence_audit(monkeypatch):
-    # DATA-8 is about the purge-failure path, not auditing.
+    # This test is about the purge-failure path, not auditing.
     from spectra_sherpa.app.services import audit
 
     monkeypatch.setattr(audit.audit_emitter, "emit", lambda **_kw: None)

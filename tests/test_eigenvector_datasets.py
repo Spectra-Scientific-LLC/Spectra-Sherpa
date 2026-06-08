@@ -21,6 +21,7 @@ Run:
 from __future__ import annotations
 
 import csv
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -657,18 +658,34 @@ class TestEigenvectorLibrary:
         empty_package_data.mkdir()
         runtime_cache = tmp_path / "runtime-cache"
         catalog = dict(ev.DATASET_CATALOG["diesel_nir"])
-        catalog["archive_url"] = archive_path.as_uri()
+        catalog["archive_url"] = "https://eigenvector.com/resources/data-sets/diesel.zip"
 
         monkeypatch.setattr(ev, "EIGENVECTOR_DATA_DIR", empty_package_data)
         monkeypatch.setattr(ev, "_runtime_data_dir", lambda: runtime_cache)
         monkeypatch.setenv(ev.EIGENVECTOR_RUNTIME_DOWNLOAD_ENV, "true")
         monkeypatch.setitem(ev.DATASET_CATALOG, "diesel_nir", catalog)
 
+        def copy_archive(_url: str, destination: Path) -> None:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(archive_path, destination)
+
+        monkeypatch.setattr(ev, "_download_archive", copy_archive)
+
         result = ev.load_eigenvector_dataset("diesel_nir")
 
         assert result["spectra"].shape == (784, 401)
         assert (runtime_cache / "diesel_csv" / "diesel_spec.csv").exists()
         assert (runtime_cache / "diesel_csv" / "diesel_prop.csv").exists()
+
+    def test_runtime_download_rejects_non_catalog_https_hosts(self, tmp_path: Path):
+        """Downloader rejects monkeypatched or malformed archive URLs."""
+        import spectra_sherpa.app.lib.eigenvector as ev
+
+        with pytest.raises(ValueError, match="HTTPS eigenvector.com"):
+            ev._download_archive("https://example.com/diesel.zip", tmp_path / "diesel.zip")
+
+        with pytest.raises(ValueError, match="HTTPS eigenvector.com"):
+            ev._download_archive((tmp_path / "diesel.zip").as_uri(), tmp_path / "diesel.zip")
 
 
 # ---------------------------------------------------------------------------

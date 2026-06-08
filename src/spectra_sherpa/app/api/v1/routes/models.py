@@ -506,7 +506,7 @@ async def inspect_model(
     if model is None:
         raise HTTPException(status_code=404, detail="Model artifact not found")
 
-    # Load arrays from disk WITH integrity verification (audit DATA-3).
+    # Load arrays from disk WITH integrity verification.
     # The model_store documents inspection as a use-the-model path that
     # must fail loud on hash mismatch rather than silently render wrong
     # stats — load() enforces verify=True by default, separate
@@ -595,7 +595,7 @@ async def delete_model(
             store.delete(artifact_uid)
             logger.info("Purged model artifact %s (DB soft-deleted + disk removed)", artifact_uid)
         except (OSError, RuntimeError) as e:
-            # Audit DATA-8: previously this swallowed *every* exception
+            # Previously this swallowed *every* exception
             # with a warning and still returned 204, so a caller that
             # asked for an irreversible purge was told it succeeded while
             # the files remained — and a soft-deleted row keeps a DB
