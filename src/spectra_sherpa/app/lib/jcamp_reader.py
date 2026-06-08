@@ -208,7 +208,6 @@ def read_jcamp(filepath: str | Path) -> JCAMPData:
         suffixes=_JCAMP_EXTENSIONS,
         restrict_to_data_dir_in_multi_user=True,
     )
-    # codeql[py/path-injection]
     text = filepath.read_text(encoding="utf-8", errors="replace")
     return parse_jcamp(text)
 

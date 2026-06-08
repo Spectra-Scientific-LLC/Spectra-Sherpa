@@ -471,11 +471,9 @@ class BuilderService:
     def _resolve_payload_path(self, file_path: str) -> Path:
         """Resolve a file path from a payload."""
         if os.path.isabs(file_path):
-            # codeql[py/path-injection]
             path = Path(os.path.abspath(file_path))
         else:
             path = resolve_data_path(file_path)
-        # codeql[py/path-injection]
         path = path.resolve(strict=False)
         if not path.is_relative_to(settings.data_dir):
             raise ValueError("File path must be within data directory")

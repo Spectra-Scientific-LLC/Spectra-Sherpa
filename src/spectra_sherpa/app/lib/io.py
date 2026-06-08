@@ -382,7 +382,6 @@ def read_json_signature(filepath: Path) -> "NDDataset":
     from .spectral.dataset import SpectralUnit, create_spectral_dataset
 
     validated_path = resolve_existing_file_path(filepath, label="JSON signature", suffixes={".json"})
-    # codeql[py/path-injection]
     with validated_path.open() as f:
         data = json.load(f)
 

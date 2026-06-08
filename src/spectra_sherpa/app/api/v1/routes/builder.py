@@ -73,10 +73,8 @@ async def _validate_file_path_ownership(
     """
     # Resolve path relative to data_dir.
     if os.path.isabs(file_path):
-        # codeql[py/path-injection]
         resolved = Path(os.path.abspath(file_path)).resolve(strict=False)
     else:
-        # codeql[py/path-injection]
         resolved = (settings.data_dir / file_path).resolve()
 
     # Must be within data_dir

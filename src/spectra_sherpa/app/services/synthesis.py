@@ -803,12 +803,10 @@ def update_synthetic_npz_metadata(path: str | Path, updates: dict[str, Any]) -> 
     tmp_path = path.parent / f".{path.name}.{uuid.uuid4().hex}.tmp"
     np.savez_compressed(tmp_path, **arrays, metadata_json=np.asarray(json.dumps(metadata)))
     tmp_npz = tmp_path.with_suffix(tmp_path.suffix + ".npz")
-    # codeql[py/path-injection]
     if tmp_npz.exists():
         tmp_path = tmp_npz
     if tmp_path.parent != path.parent:
         raise ValueError("Synthetic NPZ temporary file resolved outside the artifact directory")
-    # codeql[py/path-injection]
     os.replace(tmp_path, path)
 
 
