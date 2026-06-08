@@ -7,7 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.10] - 2026-06-08
+## [0.5.11] - 2026-06-08
+
+## [0.5.11] - 2026-06-08
+
+### Security
+
+- Moved remaining intentional local-file CodeQL suppressions to the in-source
+  form that public GitHub code scanning recognizes, covering validated local
+  spectroscopy file readers, builder import paths, batch folder discovery, and
+  synthetic NPZ metadata replacement.
+- Switched the API-key cache lookup digest to the cryptography HMAC primitive
+  so the high-entropy API-key cache no longer triggers weak password-hashing
+  findings in public CodeQL.
 
 ## [0.5.10] - 2026-06-08
 
