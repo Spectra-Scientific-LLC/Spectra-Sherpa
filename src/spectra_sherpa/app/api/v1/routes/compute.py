@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends
@@ -8,6 +9,7 @@ from spectra_sherpa.app.api import deps
 from spectra_sherpa.app.models.user import User
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class ComputeRequest(BaseModel):
@@ -64,8 +66,13 @@ async def execute_compute(
             return ComputeResponse(
                 success=False, algorithm_id=request.algorithm_id, error=f"Unknown algorithm: {request.algorithm_id}"
             )
-    except Exception as e:
-        return ComputeResponse(success=False, algorithm_id=request.algorithm_id, error=str(e))
+    except Exception:
+        logger.exception("Compute request failed for algorithm %s", request.algorithm_id)
+        return ComputeResponse(
+            success=False,
+            algorithm_id=request.algorithm_id,
+            error="Compute request failed.",
+        )
 
 
 async def _process_deep_learning_baseline(data: Any, metadata: Dict[str, Any]) -> ComputeResponse:

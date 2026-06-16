@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.api.v1.routes._http_utils import attachment_headers, safe_download_stem
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.core.security import check_export_allowed
 from spectra_sherpa.app.models.user import User
@@ -65,12 +66,16 @@ async def export_workflow_to_python(
             "workflow_id": workflow_id,
             "workflow_name": workflow.name,
             "python_code": python_code,
-            "filename": f"{workflow.name.lower().replace(' ', '_')}_workflow.py",
+            "filename": f"{safe_download_stem(workflow.name, fallback='workflow', lowercase=True)}_workflow.py",
             "saved_path": str(saved_path.relative_to(settings.data_dir)),
         }
     except ValueError as e:
         # Unsupported node types or cycles — client-actionable error
-        raise HTTPException(status_code=422, detail=str(e))
+        logger.info("Workflow %s Python export rejected: %s", workflow_id, e)
+        raise HTTPException(
+            status_code=422,
+            detail="Workflow export could not be generated for this workflow.",
+        ) from None
     except Exception:
         logger.exception("Unexpected error exporting workflow %s", workflow_id)
         raise HTTPException(status_code=500, detail="Failed to export workflow. Check server logs.")
@@ -109,7 +114,7 @@ async def export_workflow_to_notebook(
         export_context = await build_workflow_export_context(workflow, session)
         notebook = generate_notebook(workflow, export_context=export_context)
         saved_path = save_jupyter_workflow_export(workflow.id, workflow.name, notebook)
-        safe_name = workflow.name.lower().replace(" ", "_")
+        safe_name = safe_download_stem(workflow.name, fallback="workflow", lowercase=True)
         return {
             "workflow_id": workflow_id,
             "workflow_name": workflow.name,
@@ -118,7 +123,11 @@ async def export_workflow_to_notebook(
             "saved_path": str(saved_path.relative_to(settings.data_dir)),
         }
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        logger.info("Workflow %s notebook export rejected: %s", workflow_id, e)
+        raise HTTPException(
+            status_code=422,
+            detail="Workflow notebook export could not be generated for this workflow.",
+        ) from None
     except Exception:
         logger.exception("Unexpected error exporting notebook for workflow %s", workflow_id)
         raise HTTPException(status_code=500, detail="Failed to export notebook. Check server logs.")
@@ -170,20 +179,24 @@ async def download_workflow_export(
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    safe_name = workflow.name.lower().replace(" ", "_")
+    safe_name = safe_download_stem(workflow.name, fallback="workflow", lowercase=True)
 
     try:
         export_context = await build_workflow_export_context(workflow, session)
         python_code = generate_python_code(workflow, export_context=export_context)
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        logger.info("Workflow %s download export rejected: %s", workflow_id, e)
+        raise HTTPException(
+            status_code=422,
+            detail="Workflow export could not be generated for this workflow.",
+        ) from None
 
     if format == "python":
         filename = f"{safe_name}_workflow.py"
         return StreamingResponse(
             BytesIO(python_code.encode("utf-8")),
             media_type="text/x-python",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers=attachment_headers(filename, fallback="workflow", lowercase=True),
         )
 
     elif format == "notebook":
@@ -198,7 +211,7 @@ async def download_workflow_export(
         return StreamingResponse(
             BytesIO(nb_bytes),
             media_type="application/x-ipynb+json",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers=attachment_headers(filename, fallback="workflow", lowercase=True),
         )
 
     elif format == "zip":
@@ -293,7 +306,7 @@ async def download_workflow_export(
         return StreamingResponse(
             buf,
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+            headers=attachment_headers(filename, fallback="workflow", lowercase=True),
         )
 
     else:

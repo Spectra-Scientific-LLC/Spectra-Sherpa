@@ -15,6 +15,7 @@ from spectra_sherpa.app.lib.adapters.scp_extractors import EXTRACT_REGISTRY
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.services.dag.io_contracts import extract_target_like
 from spectra_sherpa.app.services.dag.nodes.data.loaders import MyDatasetNode
 from spectra_sherpa.app.services.experiments import experiment_dir
 from spectra_sherpa.app.services.model_store import ModelArtifactIntegrityError, get_model_store
@@ -158,10 +159,11 @@ def apply_model_to_dataset(
     X = np.asarray(dataset.X, dtype=np.float64)
     if X.ndim == 1:
         X = X.reshape(1, -1)
-    y = np.asarray(dataset.target) if dataset.target is not None else None
+    y, target_warnings, target_metadata = _target_for_artifact(dataset, manifest)
 
     validate_feature_contract(X, dataset, manifest)
     X_scoped, y_scoped, sample_indices, warnings = _prepare_X_for_artifact(X, y, manifest, scope=scope)
+    warnings = target_warnings + warnings
     X_ready, feature_warning = _apply_feature_mask(X_scoped, dataset, manifest)
     warnings.extend(feature_warning)
     validate_prepared_feature_contract(X_ready, manifest)
@@ -178,6 +180,7 @@ def apply_model_to_dataset(
             "classes": list(getattr(extract, "classes", manifest.get("classes", [])) or []),
             "preprocessing_chain": manifest.get("preprocessing_chain", []),
             "training_data_hash": manifest.get("training_data_hash"),
+            **target_metadata,
         },
     }
 
@@ -216,6 +219,88 @@ def apply_model_to_dataset(
         return response
 
     raise ValueError(f"Model type {model_type!r} cannot be applied")
+
+
+def _artifact_selected_target(manifest: dict[str, Any]) -> str | None:
+    selected = manifest.get("selected_target")
+    if isinstance(selected, str) and selected.strip():
+        return selected.strip()
+    target_names = manifest.get("target_names")
+    if manifest.get("target_mode") == "single" and isinstance(target_names, list) and len(target_names) == 1:
+        only = target_names[0]
+        return str(only).strip() if str(only).strip() else None
+    return None
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
+
+
+def _target_for_artifact(
+    dataset: SherpaDataset,
+    manifest: dict[str, Any],
+) -> tuple[np.ndarray | None, list[str], dict[str, Any]]:
+    """Return apply-time y values interpreted with the artifact's target contract.
+
+    Training nodes persist ``selected_target``/``target_names`` in the model
+    manifest. Load & Apply must evaluate labeled data against that same target
+    instead of comparing single-target predictions to an unsliced multi-target
+    table, which otherwise silently suppresses RMSEP/R²/bias.
+    """
+    warnings: list[str] = []
+    metadata: dict[str, Any] = {}
+    selected = _artifact_selected_target(manifest)
+    manifest_targets = _string_list(manifest.get("target_names"))
+    available_targets = _string_list(manifest.get("available_target_names")) or manifest_targets
+    if selected:
+        metadata["selected_target"] = selected
+        metadata["target_mode"] = "single"
+    if manifest_targets:
+        metadata["target_names"] = manifest_targets
+    if available_targets and available_targets != manifest_targets:
+        metadata["available_target_names"] = available_targets
+
+    if dataset.target is None:
+        return None, warnings, metadata
+
+    original_context = dataset.target_context
+    if selected:
+        context_names = _string_list(getattr(original_context, "target_names", None)) if original_context else []
+        names = context_names or available_targets
+        if names and selected in names:
+            if original_context is not None:
+                dataset.target_context = original_context.model_copy(
+                    update={"target_names": names, "selected_target": selected}
+                )
+            else:
+                target_units = manifest.get("target_units")
+                dataset.target_context = TargetContext(
+                    target_type=str(manifest.get("target_type") or "continuous"),
+                    target_names=names,
+                    selected_target=selected,
+                    target_units=target_units if isinstance(target_units, str) else None,
+                )
+            try:
+                target = extract_target_like(dataset)
+                return np.asarray(target) if target is not None else None, warnings, metadata
+            finally:
+                dataset.target_context = original_context
+
+        target_arr = np.asarray(dataset.target)
+        if target_arr.ndim >= 2 and available_targets and len(available_targets) == target_arr.shape[1]:
+            idx = available_targets.index(selected) if selected in available_targets else -1
+            if idx >= 0:
+                return target_arr[:, idx], warnings, metadata
+
+        warnings.append(
+            f"Saved model was trained for target {selected!r}, but that target could not be matched in the "
+            "labeled dataset"
+        )
+
+    target = extract_target_like(dataset)
+    return np.asarray(target) if target is not None else None, warnings, metadata
 
 
 def _applicability_diagnostics(extract: Any, X_ready: np.ndarray) -> dict[str, Any] | None:

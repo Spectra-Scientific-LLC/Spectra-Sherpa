@@ -26,17 +26,24 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import sessionmaker
 
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
-from spectra_sherpa.app.models.project import Project
+from spectra_sherpa.app.models.project import Project, ProjectVersion
 from spectra_sherpa.app.models.project_data_source import ProjectDataSource, WorkflowDataSource
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
 from spectra_sherpa.app.models.workflow_node import WorkflowNode
-from spectra_sherpa.app.services.experiments import metadata_path_for, relative_to_data_dir, write_metadata
+from spectra_sherpa.app.services.experiments import (
+    ensure_experiment_dirs,
+    experiment_dir,
+    metadata_path_for,
+    relative_to_data_dir,
+    write_metadata,
+)
 
 # ── Fixtures ──────────────────────────────────────────────────────────
 
@@ -1063,6 +1070,593 @@ class TestExportImport:
         assert reexported_summary == original_summary
 
     @pytest.mark.anyio
+    async def test_sherpa_object_roundtrip_restores_uploaded_data_and_executes_imported_workflow(
+        self,
+        auth_client: AsyncClient,
+        test_session: AsyncSession,
+        test_engine,
+        test_user: User,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        import spectra_sherpa.app.db.session as db_session
+
+        test_sessionmaker = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        monkeypatch.setattr(db_session, "async_session", test_sessionmaker)
+
+        project = Project(
+            user_id=test_user.id,
+            name="Portable Data Project",
+            technique="FTIR",
+            sample_type="polymer",
+        )
+        test_session.add(project)
+        await test_session.flush()
+
+        experiment = Experiment(
+            user_id=test_user.id,
+            project_id=project.id,
+            name="Uploaded Calibration Set",
+            description="A tiny uploaded CSV used to prove project archive portability",
+            metadata_path="",
+        )
+        test_session.add(experiment)
+        await test_session.flush()
+        ensure_experiment_dirs(experiment.id)
+        metadata_file = metadata_path_for(experiment.id)
+        write_metadata(metadata_file, {"instrument": "unit-test FTIR", "source": "uploaded"})
+        experiment.metadata_path = relative_to_data_dir(metadata_file)
+
+        data_path = experiment_dir(experiment.id) / "raw" / "portable.csv"
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        data_path.write_text("Wavenumber (cm-1),sample_a,sample_b,sample_c\n1000,1,4,7\n1001,2,5,8\n1002,3,6,9\n")
+        file_row = ExperimentFile(
+            experiment_id=experiment.id,
+            file_path="raw/portable.csv",
+            file_type="csv",
+            stage="raw",
+            file_size_bytes=data_path.stat().st_size,
+        )
+        test_session.add(file_row)
+        await test_session.flush()
+
+        source_ref = f"dataset:{experiment.id}"
+        data_source = ProjectDataSource(
+            project_id=project.id,
+            display_name="Uploaded Calibration Set",
+            source_type="upload",
+            source_ref=source_ref,
+            fingerprint=source_ref,
+            color="#3b82f6",
+            metadata_={"dataset_id": experiment.id, "stage": "raw"},
+            sort_order=0,
+        )
+        test_session.add(data_source)
+        await test_session.flush()
+
+        workflow = Workflow(
+            user_id=test_user.id,
+            project_id=project.id,
+            name="Imported Data Workflow",
+            status="draft",
+            technique="FTIR",
+            sample_type="polymer",
+            primary_data_source_id=data_source.id,
+            color_source="data",
+            sheet_order=0,
+        )
+        test_session.add(workflow)
+        await test_session.flush()
+        test_session.add(WorkflowDataSource(workflow_id=workflow.id, data_source_id=data_source.id, role="primary"))
+        test_session.add_all(
+            [
+                WorkflowNode(
+                    workflow_id=workflow.id,
+                    node_id="source_1",
+                    node_type="data.my_dataset",
+                    label="My Dataset",
+                    parameters={"dataset_id": experiment.id, "stage": "raw"},
+                    position_x=0,
+                    position_y=0,
+                ),
+                WorkflowNode(
+                    workflow_id=workflow.id,
+                    node_id="scale_1",
+                    node_type="preprocess.scale",
+                    label="Mean Center",
+                    parameters={"method": "mean_center"},
+                    position_x=240,
+                    position_y=0,
+                ),
+                WorkflowEdge(
+                    workflow_id=workflow.id,
+                    from_node_id="source_1",
+                    to_node_id="scale_1",
+                    from_output="default",
+                    to_input="default",
+                ),
+            ]
+        )
+        await test_session.commit()
+
+        export_resp = await auth_client.get(f"/api/v1/projects/{project.id}/export/sherpa")
+        assert export_resp.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(export_resp.content), "r") as zf:
+            names = set(zf.namelist())
+            assert f"data/experiments/{experiment.id}/raw/portable.csv" in names
+            project_json = json.loads(zf.read("project.json"))
+            archived_file = project_json["experiments"][0]["files"][0]
+            assert archived_file["archive_status"] == "included"
+            assert archived_file["sha256"]
+
+        import_resp = await auth_client.post(
+            "/api/v1/projects/import",
+            files={"file": ("portable-data.sherpa", io.BytesIO(export_resp.content), "application/zip")},
+        )
+        assert import_resp.status_code == 201, import_resp.text
+        imported_project = import_resp.json()
+        assert imported_project["experiments"][0]["name"] == "Uploaded Calibration Set"
+        imported_experiment_id = imported_project["experiments"][0]["id"]
+        imported_workflow_id = imported_project["workflows"][0]["id"]
+        assert imported_experiment_id != experiment.id
+
+        imported_file_path = experiment_dir(imported_experiment_id) / "raw" / "portable.csv"
+        assert imported_file_path.read_text() == data_path.read_text()
+
+        data_sources_resp = await auth_client.get(f"/api/v1/projects/{imported_project['id']}/data-sources")
+        assert data_sources_resp.status_code == 200
+        imported_data_sources = data_sources_resp.json()
+        assert len(imported_data_sources) == 1
+        imported_data_source = imported_data_sources[0]
+        assert imported_data_source["display_name"] == "Uploaded Calibration Set"
+        assert imported_data_source["source_type"] == "upload"
+        assert imported_data_source["source_ref"] == f"dataset:{imported_experiment_id}"
+        assert imported_data_source["metadata"]["dataset_id"] == imported_experiment_id
+        assert imported_data_source["metadata"]["stage"] == "raw"
+
+        workflow_resp = await auth_client.get(f"/api/v1/workflows/{imported_workflow_id}")
+        assert workflow_resp.status_code == 200
+        workflow_detail = workflow_resp.json()
+        imported_source_node = next(node for node in workflow_detail["nodes"] if node["node_id"] == "source_1")
+        assert imported_source_node["parameters"]["dataset_id"] == imported_experiment_id
+
+        execute_resp = await auth_client.post(f"/api/v1/workflows/{imported_workflow_id}/execute", json={})
+        assert execute_resp.status_code == 200, execute_resp.text
+        executed = execute_resp.json()
+        assert executed["status"] == "completed", executed
+        assert executed["node_statuses"]["source_1"] == "completed"
+        assert executed["node_statuses"]["scale_1"] == "completed"
+        assert executed["results"]["source_1"]["default"]["shape"] == [3, 3]
+
+    @pytest.mark.anyio
+    async def test_sherpa_object_roundtrip_restores_child_project_tree_and_executes_child_workflow(
+        self,
+        auth_client: AsyncClient,
+        test_session: AsyncSession,
+        test_engine,
+        test_user: User,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        import spectra_sherpa.app.db.session as db_session
+
+        test_sessionmaker = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+        monkeypatch.setattr(db_session, "async_session", test_sessionmaker)
+
+        root_project = Project(
+            user_id=test_user.id,
+            name="Parent Portable Project",
+            technique="FTIR",
+            sample_type="polymer",
+        )
+        test_session.add(root_project)
+        await test_session.flush()
+        child_project = Project(
+            user_id=test_user.id,
+            parent_id=root_project.id,
+            name="Child Calibration Project",
+            technique="FTIR",
+            sample_type="polymer",
+        )
+        test_session.add(child_project)
+        await test_session.flush()
+
+        experiment = Experiment(
+            user_id=test_user.id,
+            project_id=child_project.id,
+            name="Child Uploaded Data",
+            metadata_path="",
+        )
+        test_session.add(experiment)
+        await test_session.flush()
+        ensure_experiment_dirs(experiment.id)
+        metadata_file = metadata_path_for(experiment.id)
+        write_metadata(metadata_file, {"source": "child-project"})
+        experiment.metadata_path = relative_to_data_dir(metadata_file)
+
+        data_path = experiment_dir(experiment.id) / "raw" / "child.csv"
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        data_path.write_text("Wavenumber (cm-1),sample_a,sample_b\n1000,1,3\n1001,2,4\n")
+        test_session.add(
+            ExperimentFile(
+                experiment_id=experiment.id,
+                file_path="raw/child.csv",
+                file_type="csv",
+                stage="raw",
+                file_size_bytes=data_path.stat().st_size,
+            )
+        )
+        await test_session.flush()
+
+        source_ref = f"dataset:{experiment.id}"
+        data_source = ProjectDataSource(
+            project_id=child_project.id,
+            display_name="Child Uploaded Data",
+            source_type="upload",
+            source_ref=source_ref,
+            fingerprint=source_ref,
+            color="#3b82f6",
+            metadata_={"dataset_id": experiment.id, "stage": "raw"},
+            sort_order=0,
+        )
+        test_session.add(data_source)
+        await test_session.flush()
+
+        workflow = Workflow(
+            user_id=test_user.id,
+            project_id=child_project.id,
+            name="Child Workflow",
+            status="draft",
+            technique="FTIR",
+            sample_type="polymer",
+            primary_data_source_id=data_source.id,
+            color_source="data",
+            sheet_order=0,
+        )
+        test_session.add(workflow)
+        await test_session.flush()
+        test_session.add(WorkflowDataSource(workflow_id=workflow.id, data_source_id=data_source.id, role="primary"))
+        test_session.add_all(
+            [
+                WorkflowNode(
+                    workflow_id=workflow.id,
+                    node_id="source_1",
+                    node_type="data.my_dataset",
+                    label="My Dataset",
+                    parameters={"dataset_id": experiment.id},
+                    position_x=0,
+                    position_y=0,
+                ),
+                WorkflowNode(
+                    workflow_id=workflow.id,
+                    node_id="scale_1",
+                    node_type="preprocess.scale",
+                    label="Mean Center",
+                    parameters={"method": "mean_center"},
+                    position_x=240,
+                    position_y=0,
+                ),
+                WorkflowEdge(
+                    workflow_id=workflow.id,
+                    from_node_id="source_1",
+                    to_node_id="scale_1",
+                    from_output="default",
+                    to_input="default",
+                ),
+            ]
+        )
+        await test_session.commit()
+
+        export_resp = await auth_client.get(f"/api/v1/projects/{root_project.id}/export/sherpa")
+        assert export_resp.status_code == 200
+        with zipfile.ZipFile(io.BytesIO(export_resp.content), "r") as zf:
+            names = set(zf.namelist())
+            assert f"data/experiments/{experiment.id}/raw/child.csv" in names
+            project_json = json.loads(zf.read("project.json"))
+            assert project_json["children"][0]["name"] == "Child Calibration Project"
+            assert project_json["children"][0]["experiments"][0]["files"][0]["archive_status"] == "included"
+
+        import_resp = await auth_client.post(
+            "/api/v1/projects/import",
+            files={"file": ("child-tree.sherpa", io.BytesIO(export_resp.content), "application/zip")},
+        )
+        assert import_resp.status_code == 201, import_resp.text
+        imported_root = import_resp.json()
+        assert imported_root["name"] == "Parent Portable Project"
+        assert len(imported_root["children"]) == 1
+
+        imported_child_id = imported_root["children"][0]["id"]
+        child_resp = await auth_client.get(f"/api/v1/projects/{imported_child_id}")
+        assert child_resp.status_code == 200
+        imported_child = child_resp.json()
+        assert imported_child["name"] == "Child Calibration Project"
+        assert imported_child["experiments"][0]["name"] == "Child Uploaded Data"
+        imported_experiment_id = imported_child["experiments"][0]["id"]
+        imported_workflow_id = imported_child["workflows"][0]["id"]
+
+        imported_file_path = experiment_dir(imported_experiment_id) / "raw" / "child.csv"
+        assert imported_file_path.read_text() == data_path.read_text()
+
+        workflow_resp = await auth_client.get(f"/api/v1/workflows/{imported_workflow_id}")
+        assert workflow_resp.status_code == 200
+        imported_source_node = next(node for node in workflow_resp.json()["nodes"] if node["node_id"] == "source_1")
+        assert imported_source_node["parameters"]["dataset_id"] == imported_experiment_id
+
+        execute_resp = await auth_client.post(f"/api/v1/workflows/{imported_workflow_id}/execute", json={})
+        assert execute_resp.status_code == 200, execute_resp.text
+        executed = execute_resp.json()
+        assert executed["status"] == "completed", executed
+        assert executed["node_statuses"]["source_1"] == "completed"
+        assert executed["node_statuses"]["scale_1"] == "completed"
+        assert executed["results"]["source_1"]["default"]["shape"] == [2, 2]
+
+    @pytest.mark.anyio
+    async def test_import_bundled_project_data_requires_sha_and_cleans_partial_experiment(
+        self,
+        auth_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        from spectra_sherpa.app.api.v1.routes import projects as project_routes
+
+        deleted_experiment_ids: list[int] = []
+        original_delete_experiment_files = project_routes.delete_experiment_files
+
+        def record_delete_experiment_files(experiment_id: int) -> None:
+            deleted_experiment_ids.append(experiment_id)
+            original_delete_experiment_files(experiment_id)
+
+        monkeypatch.setattr(project_routes, "delete_experiment_files", record_delete_experiment_files)
+
+        snapshot = {
+            "name": "Missing Data Hash",
+            "experiments": [
+                {
+                    "id": 42,
+                    "name": "Uploaded CSV",
+                    "metadata": {},
+                    "files": [
+                        {
+                            "id": 7,
+                            "stage": "raw",
+                            "file_path": "raw/portable.csv",
+                            "file_type": "csv",
+                            "archive_member": "data/experiments/42/raw/portable.csv",
+                        }
+                    ],
+                }
+            ],
+            "data_sources": [],
+            "workflows": [],
+            "scripts": [],
+            "models": [],
+            "children": [],
+        }
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("project.json", json.dumps(snapshot))
+            zf.writestr("data/experiments/42/raw/portable.csv", "Wavenumber,sample\n1000,1\n")
+        archive.seek(0)
+
+        resp = await auth_client.post(
+            "/api/v1/projects/import",
+            files={"file": ("missing-hash.spectrapy", archive, "application/zip")},
+        )
+
+        assert resp.status_code == 400
+        assert "missing integrity hash" in resp.text
+        assert deleted_experiment_ids
+        assert not experiment_dir(deleted_experiment_ids[0]).exists()
+
+    @pytest.mark.anyio
+    async def test_import_bundled_project_data_rejects_archive_member_redirection(self, auth_client: AsyncClient):
+        from spectra_sherpa.app.services.sherpa_object import sha256_bytes
+
+        payload = b"Wavenumber,sample\n1000,9\n"
+        snapshot = {
+            "name": "Redirected Data Member",
+            "experiments": [
+                {
+                    "id": 43,
+                    "name": "Uploaded CSV",
+                    "metadata": {},
+                    "files": [
+                        {
+                            "id": 8,
+                            "stage": "raw",
+                            "file_path": "raw/portable.csv",
+                            "file_type": "csv",
+                            "archive_member": "data/experiments/43/raw/other.csv",
+                            "sha256": sha256_bytes(payload),
+                        }
+                    ],
+                }
+            ],
+            "data_sources": [],
+            "workflows": [],
+            "scripts": [],
+            "models": [],
+            "children": [],
+        }
+        archive = io.BytesIO()
+        with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("project.json", json.dumps(snapshot))
+            zf.writestr("data/experiments/43/raw/other.csv", payload)
+        archive.seek(0)
+
+        resp = await auth_client.post(
+            "/api/v1/projects/import",
+            files={"file": ("redirected-member.spectrapy", archive, "application/zip")},
+        )
+
+        assert resp.status_code == 400
+        assert "archive member does not match" in resp.text
+
+    @pytest.mark.anyio
+    async def test_sherpa_export_deduplicates_duplicate_experiment_file_rows(
+        self,
+        auth_client: AsyncClient,
+        test_session: AsyncSession,
+        test_user: User,
+    ):
+        project = Project(user_id=test_user.id, name="Duplicate Files")
+        test_session.add(project)
+        await test_session.flush()
+
+        experiment = Experiment(user_id=test_user.id, project_id=project.id, name="Uploaded Data", metadata_path="")
+        test_session.add(experiment)
+        await test_session.flush()
+        ensure_experiment_dirs(experiment.id)
+        metadata_file = metadata_path_for(experiment.id)
+        write_metadata(metadata_file, {})
+        experiment.metadata_path = relative_to_data_dir(metadata_file)
+
+        data_path = experiment_dir(experiment.id) / "raw" / "same.csv"
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        data_path.write_text("Wavenumber,sample\n1000,1\n")
+        test_session.add_all(
+            [
+                ExperimentFile(
+                    experiment_id=experiment.id,
+                    file_path="raw/same.csv",
+                    file_type="csv",
+                    stage="raw",
+                    file_size_bytes=data_path.stat().st_size,
+                ),
+                ExperimentFile(
+                    experiment_id=experiment.id,
+                    file_path="raw/same.csv",
+                    file_type="csv",
+                    stage="raw",
+                    file_size_bytes=data_path.stat().st_size,
+                ),
+            ]
+        )
+        await test_session.commit()
+
+        resp = await auth_client.get(f"/api/v1/projects/{project.id}/export/sherpa")
+        assert resp.status_code == 200
+
+        with zipfile.ZipFile(io.BytesIO(resp.content), "r") as zf:
+            names = zf.namelist()
+            assert names.count(f"data/experiments/{experiment.id}/raw/same.csv") == 1
+            project_json = json.loads(zf.read("project.json"))
+            statuses = [file_data.get("archive_status") for file_data in project_json["experiments"][0]["files"]]
+            assert statuses.count("included") == 1
+            assert statuses.count("duplicate") == 1
+
+    @pytest.mark.anyio
+    async def test_versioned_sherpa_export_bundles_only_project_owned_experiment_files(
+        self,
+        auth_client: AsyncClient,
+        test_session: AsyncSession,
+        test_user: User,
+        user2: User,
+    ):
+        project = Project(user_id=test_user.id, name="Versioned Portable Data")
+        other_project = Project(user_id=user2.id, name="Other Project")
+        test_session.add_all([project, other_project])
+        await test_session.flush()
+
+        owned_experiment = Experiment(
+            user_id=test_user.id,
+            project_id=project.id,
+            name="Owned Upload",
+            metadata_path="",
+        )
+        other_experiment = Experiment(
+            user_id=user2.id,
+            project_id=other_project.id,
+            name="Other Upload",
+            metadata_path="",
+        )
+        test_session.add_all([owned_experiment, other_experiment])
+        await test_session.flush()
+
+        file_rows: dict[int, ExperimentFile] = {}
+        for experiment, filename, value in (
+            (owned_experiment, "owned.csv", "1"),
+            (other_experiment, "other.csv", "9"),
+        ):
+            ensure_experiment_dirs(experiment.id)
+            metadata_file = metadata_path_for(experiment.id)
+            write_metadata(metadata_file, {})
+            experiment.metadata_path = relative_to_data_dir(metadata_file)
+            data_path = experiment_dir(experiment.id) / "raw" / filename
+            data_path.parent.mkdir(parents=True, exist_ok=True)
+            data_path.write_text(f"Wavenumber,sample\n1000,{value}\n")
+            file_row = ExperimentFile(
+                experiment_id=experiment.id,
+                file_path=f"raw/{filename}",
+                file_type="csv",
+                stage="raw",
+                file_size_bytes=data_path.stat().st_size,
+            )
+            test_session.add(file_row)
+            file_rows[experiment.id] = file_row
+        await test_session.flush()
+
+        snapshot = {
+            "name": project.name,
+            "experiments": [
+                {
+                    "id": owned_experiment.id,
+                    "name": owned_experiment.name,
+                    "metadata": {},
+                    "files": [
+                        {
+                            "id": file_rows[owned_experiment.id].id,
+                            "file_path": "raw/owned.csv",
+                            "stage": "raw",
+                            "file_type": "csv",
+                            "file_size_bytes": file_rows[owned_experiment.id].file_size_bytes,
+                        }
+                    ],
+                },
+                {
+                    "id": other_experiment.id,
+                    "name": other_experiment.name,
+                    "metadata": {},
+                    "files": [
+                        {
+                            "id": file_rows[other_experiment.id].id,
+                            "file_path": "raw/other.csv",
+                            "stage": "raw",
+                            "file_type": "csv",
+                            "file_size_bytes": file_rows[other_experiment.id].file_size_bytes,
+                        }
+                    ],
+                },
+            ],
+            "data_sources": [],
+            "workflows": [],
+            "scripts": [],
+            "models": [],
+            "children": [],
+        }
+        version = ProjectVersion(
+            project_id=project.id,
+            version_number=1,
+            created_by=test_user.id,
+            change_description="Version snapshot",
+            snapshot=snapshot,
+            include_raw_data=True,
+        )
+        test_session.add(version)
+        await test_session.commit()
+
+        resp = await auth_client.get(f"/api/v1/projects/{project.id}/export/sherpa?version_id={version.id}")
+        assert resp.status_code == 200
+
+        with zipfile.ZipFile(io.BytesIO(resp.content), "r") as zf:
+            names = set(zf.namelist())
+            assert f"data/experiments/{owned_experiment.id}/raw/owned.csv" in names
+            assert f"data/experiments/{other_experiment.id}/raw/other.csv" not in names
+            project_json = json.loads(zf.read("project.json"))
+            assert project_json["archive_format"]["version"] == "0.2"
+            assert project_json["experiments"][0]["files"][0]["archive_status"] == "included"
+            assert project_json["experiments"][1]["files"][0]["archive_status"] == "not_project_owned"
+            manifest = json.loads(zf.read("sherpa-object.json"))
+            assert manifest["project_payload_version"] == "0.2"
+
+    @pytest.mark.anyio
     async def test_import_sherpa_object_recreates_workflow_rows(self, auth_client: AsyncClient):
         from spectra_sherpa.app.services.sherpa_object import build_archive
 
@@ -1214,7 +1808,7 @@ class TestExportImport:
             files={"file": ("bad.spectrapy", buf, "application/zip")},
         )
         assert resp.status_code == 400
-        assert "Invalid" in resp.json()["detail"]
+        assert resp.json()["detail"]["message"] == "Invalid project archive."
 
     @pytest.mark.anyio
     async def test_import_missing_project_json(self, auth_client: AsyncClient):

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import re
 import shutil
@@ -54,6 +56,8 @@ from spectra_sherpa.app.services.prepared_data import (
     load_prepared_data_overrides,
     save_prepared_data_overrides,
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def _validate_file_path_ownership(
@@ -156,6 +160,8 @@ class MetadataOverrideRequest(BaseModel):
     x_units: str | None = None
     y_title: str | None = None
     is_time_series: bool | None = None
+    target_mode: str | None = None
+    selected_target: str | None = None
 
 
 class DataMatrixRequest(BaseModel):
@@ -843,16 +849,17 @@ async def get_data_matrix(
         elif payload.kind == "staged":
             if not payload.staging_id:
                 raise HTTPException(status_code=400, detail="staging_id is required")
-            dataset = _file_as_sherpa(_resolve_staged_upload(payload.staging_id, current_user))
+            dataset = await asyncio.to_thread(_file_as_sherpa, _resolve_staged_upload(payload.staging_id, current_user))
         else:
             raise HTTPException(status_code=400, detail="Unsupported matrix source")
         return _matrix_response(dataset, payload)
     except HTTPException:
         raise
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        logger.info("Matrix preview rejected invalid input: %s", type(exc).__name__)
+        raise HTTPException(status_code=400, detail="Matrix preview could not parse the selected data.") from None
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Selected data file was not found.") from None
 
 
 @router.post("/upload/stage", dependencies=[Depends(demo_guard("data_upload"))])
@@ -892,10 +899,30 @@ async def stage_upload_file(
             consume_reserved_demo_upload_quota_if_needed(user_id, upload_reserved)
         else:
             release_demo_upload_quota_reservation_if_needed(user_id, upload_reserved)
+    csv_import_plan: dict[str, Any] | None = None
+    if saved_path.suffix.lower() == ".csv":
+        try:
+            from spectra_sherpa.app.lib.io import inspect_csv_import_plan
+
+            csv_import_plan = await asyncio.to_thread(inspect_csv_import_plan, saved_path)
+        except Exception as exc:
+            logger.info("CSV import inspection failed for staged upload %s: %s", staging_id, exc)
+            csv_import_plan = {
+                "layout": "unknown",
+                "layout_label": "CSV",
+                "confidence": "low",
+                "role_sequence": "",
+                "shape": {"rows": None, "columns": None, "samples": None, "features": None},
+                "axis": None,
+                "target": {"column": None, "type": None, "candidates": []},
+                "columns": [],
+                "warnings": ["Could not inspect this CSV before preview."],
+            }
     return {
         "staging_id": staging_id,
         "filename": saved_path.name,
         "size_bytes": saved_path.stat().st_size,
+        "csv_import_plan": csv_import_plan,
     }
 
 
@@ -1028,7 +1055,7 @@ async def get_file_info(
     try:
         suffix = resolved.suffix.lower()
         if suffix == ".csv":
-            sd = load_csv_as_sherpa(resolved)
+            sd = await asyncio.to_thread(load_csv_as_sherpa, resolved)
         elif suffix == ".npz":
             # Synthesis writes its output as a SpectraSherpa-signed `.npz`
             # (X + wavenumber + recipe metadata) under the "synthetic" stage.
@@ -1070,9 +1097,11 @@ async def get_file_info(
         return result
 
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.info("File inspect rejected invalid input for %s: %s", file_path, type(exc).__name__)
+        raise HTTPException(status_code=400, detail="File preview could not parse the selected data.") from None
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        logger.warning("File inspect failed for %s: %s", file_path, type(exc).__name__, exc_info=True)
+        raise HTTPException(status_code=500, detail="File preview failed.") from None
 
 
 @router.patch("/file-metadata")
@@ -1087,6 +1116,8 @@ async def update_file_metadata(
         x_units=payload.x_units,
         y_title=payload.y_title,
         is_time_series=payload.is_time_series,
+        target_mode=payload.target_mode,
+        selected_target=payload.selected_target,
     )
 
     if overrides.is_empty():
@@ -1477,5 +1508,9 @@ async def get_reference_dataset_info(source: str, name: str) -> dict[str, Any]:
             info["is_time_series"] = overrides.is_time_series
             if "metadata" in info:
                 info["metadata"]["is_time_series"] = overrides.is_time_series
+        if overrides.target_mode is not None:
+            info.setdefault("metadata", {})["target_mode"] = overrides.target_mode
+        if overrides.selected_target is not None:
+            info.setdefault("metadata", {})["selected_target"] = overrides.selected_target
 
     return info

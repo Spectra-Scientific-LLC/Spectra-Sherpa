@@ -16,11 +16,20 @@ from fastapi.responses import StreamingResponse
 
 from spectra_sherpa.app.api.deps import get_current_user
 from spectra_sherpa.app.contracts.capabilities import CHAT_ASSISTANT
+from spectra_sherpa.app.core.app_paths import get_app_data_paths
+from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.services import basic_chat
+from spectra_sherpa.app.services.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat")
+
+_chat_limiter = RateLimiter(
+    max_calls=30,
+    period_sec=3600,
+    state_path=get_app_data_paths(settings.data_dir).rate_limits_dir / "byo_chat_stream.json",
+)
 
 
 @router.post("/stream")
@@ -52,6 +61,12 @@ async def chat_stream(
                 "message": ("BYO chat endpoint not configured. " "Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY."),
             },
         )
+    user_key = f"user:{getattr(user, 'id', None) or 'anonymous'}"
+    if not _chat_limiter.allow(user_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Chat rate limit reached. Try again later.",
+        )
 
     body = await request.json()
     message = body.get("message", "")
@@ -60,8 +75,16 @@ async def chat_stream(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Missing 'message' field.",
         )
+    if not isinstance(message, str) or len(message) > basic_chat.MAX_INPUT_CHARS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Chat message is too long.",
+        )
     verbose = bool(body.get("verbose", True))
-    max_paragraphs = int(body.get("max_paragraphs", 2))
+    try:
+        max_paragraphs = max(1, min(6, int(body.get("max_paragraphs", 2))))
+    except (TypeError, ValueError):
+        max_paragraphs = 2
     metadata = body.get("metadata", None)
 
     async def _generate():

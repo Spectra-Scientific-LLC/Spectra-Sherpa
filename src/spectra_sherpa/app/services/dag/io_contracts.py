@@ -184,6 +184,9 @@ def resolve_target_names(
     if isinstance(y_raw, SherpaDataset):
         tc = getattr(y_raw, "target_context", None)
         if tc is not None and tc.target_names:
+            selected = getattr(tc, "selected_target", None)
+            if selected and selected in tc.target_names:
+                return [str(selected)]
             return list(tc.target_names)
         fa = getattr(y_raw, "feature_axis", None)
         if fa is not None and getattr(fa, "labels", None):
@@ -192,6 +195,9 @@ def resolve_target_names(
     if X_ds is not None:
         tc = getattr(X_ds, "target_context", None)
         if tc is not None and tc.target_names:
+            selected = getattr(tc, "selected_target", None)
+            if selected and selected in tc.target_names:
+                return [str(selected)]
             return list(tc.target_names)
 
     return None
@@ -341,6 +347,74 @@ def to_numpy_y(
     if expected_samples is not None and arr.shape[0] != expected_samples:
         raise ValueError(f"{name} must have {expected_samples} samples, got {arr.shape[0]}")
     return arr
+
+
+def clean_regression_target(
+    X_ds: SherpaDataset,
+    y_array: np.ndarray,
+    *,
+    model_label: str,
+    preserve_1d: bool = True,
+) -> tuple[SherpaDataset, np.ndarray]:
+    """Validate/drop non-finite regression targets while keeping X aligned.
+
+    Partial reference tables are common in spectroscopy benchmark datasets:
+    different properties may be measured for different samples. A multi-target
+    regression model needs complete rows for every target; otherwise the model
+    either crashes in sklearn or emits misleading NaN metrics. If the workflow
+    has already selected one target, rows missing that selected property are
+    dropped together with their spectra.
+    """
+    original = np.asarray(y_array, dtype=np.float64)
+    original_was_1d = original.ndim == 1
+    y_2d = original.reshape(-1, 1) if original.ndim == 1 else original
+    if y_2d.ndim != 2:
+        raise ValueError(f"y must be 1D or 2D array-like for {model_label}, got {y_2d.ndim}D")
+    target_context = getattr(X_ds, "target_context", None)
+    selected_target = getattr(target_context, "selected_target", None) if target_context is not None else None
+
+    nonfinite_mask = ~np.isfinite(y_2d)
+    row_mask = nonfinite_mask.any(axis=1)
+    if row_mask.any():
+        n_targets = int(y_2d.shape[1])
+        if n_targets > 1 and not selected_target:
+            has_any = np.isfinite(y_2d).any(axis=1)
+            has_all = np.isfinite(y_2d).all(axis=1)
+            raise ValueError(
+                "This dataset has incomplete multi-target reference values: "
+                f"{int(has_any.sum())}/{y_2d.shape[0]} samples have at least one target, "
+                f"but only {int(has_all.sum())}/{y_2d.shape[0]} have all {n_targets} targets. "
+                "Choose a single target property on the My Dataset page, or provide a fully populated "
+                f"multi-target table before training {model_label}."
+            )
+
+        valid = ~row_mask
+        if not valid.any():
+            target_hint = f" for target {selected_target!r}" if selected_target else ""
+            raise ValueError(
+                f"No complete target values are available{target_hint}. "
+                "Choose a target property with measured values or provide reference values before training."
+            )
+        y_2d = y_2d[valid]
+        X_ds = X_ds[valid, :]
+
+    if selected_target and y_2d.shape[1] == 1:
+        selected = str(selected_target)
+        if target_context is not None:
+            X_ds.target_context = target_context.model_copy(
+                update={
+                    "target_name": selected,
+                    "target_names": [selected],
+                    "selected_target": selected,
+                }
+            )
+        X_ds.meta["target_mode"] = "single"
+        X_ds.meta["selected_target"] = selected
+        X_ds.meta["target_names"] = [selected]
+
+    if preserve_1d and (original_was_1d or y_2d.shape[1] == 1):
+        return X_ds, y_2d.reshape(-1)
+    return X_ds, y_2d
 
 
 class FlattenedView:

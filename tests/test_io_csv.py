@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from spectra_sherpa.app.lib.io import load_csv_as_sherpa, stack_datasets
+from spectra_sherpa.app.lib.io import inspect_csv_import_plan, load_csv_as_sherpa, stack_datasets
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag.nodes.data.transforms import FilterSamplesNode
@@ -72,6 +72,75 @@ def test_load_csv_as_sherpa_axis_column_conditions_as_shared_x_spectra(tmp_path)
     assert dataset.sample_axis.labels == ["Aqueous PP", "15:85 AuNPs:PP AuNPs with KCl"]
     assert dataset.domain.technique == "raman"
     assert dataset.domain.data_quantity == "Intensity"
+
+
+def test_load_csv_as_sherpa_axis_column_unit_header_with_bom(tmp_path):
+    csv_path = tmp_path / "pedot.csv"
+    csv_path.write_text("\ufeffcm-1,PEDOT:PSS,PEDOT:PSS and NPs\n400,0.1,0.2\n401,0.3,0.4\n", encoding="utf-8")
+
+    dataset = load_csv_as_sherpa(csv_path)
+
+    assert dataset.data_role == "X_spectra"
+    assert dataset.X.shape == (2, 2)
+    assert dataset.feature_axis is not None
+    assert dataset.feature_axis.title == "Wavenumber"
+    assert dataset.feature_axis.units == "cm-1"
+    np.testing.assert_allclose(dataset.feature_axis.values, np.array([400.0, 401.0]))
+    assert dataset.sample_axis is not None
+    assert dataset.sample_axis.labels == ["PEDOT:PSS", "PEDOT:PSS and NPs"]
+
+
+def test_inspect_csv_import_plan_axis_column_roles(tmp_path):
+    csv_path = tmp_path / "pedot.csv"
+    csv_path.write_text("\ufeffcm-1,PEDOT:PSS,PEDOT:PSS and NPs\n400,0.1,0.2\n401,0.3,0.4\n", encoding="utf-8")
+
+    plan = inspect_csv_import_plan(csv_path)
+
+    assert plan["layout"] == "axis_column_spectra"
+    assert plan["role_sequence"] == "WFF"
+    assert plan["shape"]["samples"] == 2
+    assert plan["shape"]["features"] == 2
+    assert plan["axis"] == {"column": "cm-1", "title": "Wavenumber", "units": "cm-1"}
+
+
+def test_inspect_csv_import_plan_axis_column_reports_full_feature_count(tmp_path):
+    csv_path = tmp_path / "long_axis.csv"
+    rows = ["cm-1,A,B"]
+    rows.extend(f"{400 + idx},{0.1 + idx},{0.2 + idx}" for idx in range(150))
+    csv_path.write_text("\n".join(rows) + "\n", encoding="ascii")
+
+    plan = inspect_csv_import_plan(csv_path)
+
+    assert plan["layout"] == "axis_column_spectra"
+    assert plan["shape"]["samples"] == 2
+    assert plan["shape"]["features"] == 150
+    assert plan["shape"]["rows"] == 150
+
+
+def test_inspect_csv_import_plan_sample_rows_reports_full_sample_count(tmp_path):
+    csv_path = tmp_path / "long_matrix.csv"
+    rows = ["sample_id,1000,1001,1002"]
+    rows.extend(f"s{idx},{idx}.0,{idx + 1}.0,{idx + 2}.0" for idx in range(125))
+    csv_path.write_text("\n".join(rows) + "\n", encoding="ascii")
+
+    plan = inspect_csv_import_plan(csv_path)
+
+    assert plan["layout"] == "sample_rows_spectral_matrix"
+    assert plan["shape"]["samples"] == 125
+    assert plan["shape"]["features"] == 3
+    assert plan["shape"]["rows"] == 125
+
+
+def test_inspect_csv_import_plan_feature_table_target_roles(tmp_path):
+    csv_path = tmp_path / "features.csv"
+    csv_path.write_text("sample_id,alcohol,ash,species\ns1,1.0,2.0,A\ns2,3.0,4.0,B\n", encoding="ascii")
+
+    plan = inspect_csv_import_plan(csv_path)
+
+    assert plan["layout"] == "feature_table_with_target"
+    assert plan["role_sequence"] == "IFFT"
+    assert plan["target"]["column"] == "species"
+    assert plan["target"]["type"] == "categorical"
 
 
 def test_load_csv_as_sherpa_axis_column_layout_wins_over_feature_role(tmp_path):
@@ -195,6 +264,64 @@ async def test_filter_samples_node_selects_shared_axis_csv_condition_by_index(tm
     np.testing.assert_allclose(output.X[0], np.array([9549.0, 9538.0, 9537.0]))
     assert output.sample_axis is not None
     assert output.sample_axis.labels == ["15:85 AuNPs:PP AuNPs with KCl"]
+
+
+@pytest.mark.asyncio
+async def test_filter_samples_node_selects_explicit_checkbox_values(tmp_path):
+    csv_path = tmp_path / "raman_conditions.csv"
+    csv_path.write_text(
+        "Wavenumber (cm-1),Aqueous PP,15:85 AuNPs:PP AuNPs with KCl\n"
+        "200,2139,9549\n"
+        "201,2159,9538\n"
+        "202,2178,9537\n",
+        encoding="ascii",
+    )
+
+    dataset = load_csv_as_sherpa(csv_path)
+    node = FilterSamplesNode(
+        "filter_checkbox",
+        parameters={
+            "field": "sample_label",
+            "pattern": "",
+            "filter_values": ["15:85 AuNPs:PP AuNPs with KCl"],
+        },
+    )
+
+    output = (await node.execute(X=dataset))["default"]
+
+    assert output.X.shape == (1, 3)
+    np.testing.assert_allclose(output.X[0], np.array([9549.0, 9538.0, 9537.0]))
+    assert output.sample_axis is not None
+    assert output.sample_axis.labels == ["15:85 AuNPs:PP AuNPs with KCl"]
+
+
+@pytest.mark.asyncio
+async def test_filter_samples_node_allows_empty_explicit_checkbox_values(tmp_path):
+    csv_path = tmp_path / "raman_conditions.csv"
+    csv_path.write_text(
+        "Wavenumber (cm-1),Aqueous PP,15:85 AuNPs:PP AuNPs with KCl\n"
+        "200,2139,9549\n"
+        "201,2159,9538\n"
+        "202,2178,9537\n",
+        encoding="ascii",
+    )
+
+    dataset = load_csv_as_sherpa(csv_path)
+    node = FilterSamplesNode(
+        "filter_none",
+        parameters={
+            "field": "sample_label",
+            "pattern": "",
+            "filter_values": [],
+            "allow_empty": True,
+        },
+    )
+
+    output = (await node.execute(X=dataset))["default"]
+
+    assert output.X.shape == (0, 3)
+    assert output.sample_axis is not None
+    assert output.sample_axis.labels == []
 
 
 @pytest.mark.asyncio

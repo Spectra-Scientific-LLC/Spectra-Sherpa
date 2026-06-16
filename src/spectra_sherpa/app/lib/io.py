@@ -54,7 +54,7 @@ _CSV_AXIS_UNITS_PATTERN = re.compile(r"\((?P<units>[^)]*)\)")
 
 def _spectral_axis_info_from_header(header: str) -> tuple[str, str | None] | None:
     """Return spectral axis title/units for scientist-style CSV axis columns."""
-    cleaned = str(header).strip()
+    cleaned = str(header).lstrip("\ufeff").strip()
     lower = cleaned.lower()
     if "raman" in lower and "shift" in lower:
         title = "Raman Shift"
@@ -66,12 +66,18 @@ def _spectral_axis_info_from_header(header: str) -> tuple[str, str | None] | Non
         title = "Chemical Shift"
     elif lower in {"m/z", "mz"} or "mass-to-charge" in lower or "mass to charge" in lower:
         title = "m/z"
+    elif lower in {"cm-1", "cm^-1", "cm⁻¹", "cm−1", "1/cm"}:
+        return "Wavenumber", "cm-1"
+    elif lower in {"nm", "nanometer", "nanometers"}:
+        return "Wavelength", "nm"
+    elif lower == "ppm":
+        return "Chemical Shift", "ppm"
     else:
         return None
 
     units_match = _CSV_AXIS_UNITS_PATTERN.search(cleaned)
     units = units_match.group("units").strip() if units_match else None
-    if units in {"cm^-1", "cm⁻¹"}:
+    if units in {"cm^-1", "cm⁻¹", "cm−1"}:
         units = "cm-1"
     return title, units or None
 
@@ -82,9 +88,240 @@ def _normalize_axis_units(units: str | None) -> str | None:
     cleaned = str(units).strip()
     if not cleaned:
         return None
-    if cleaned in {"cm^-1", "cm⁻¹"}:
+    if cleaned in {"cm^-1", "cm⁻¹", "cm−1"}:
         return "cm-1"
     return cleaned
+
+
+def _clean_csv_column_name(column: Any) -> str:
+    return str(column).lstrip("\ufeff").strip()
+
+
+def _is_empty_csv_column(name: str, values: pd.Series) -> bool:
+    if not name or re.match(r"^Unnamed:\s*\d+$", name, flags=re.IGNORECASE):
+        text = values.astype(str).str.strip().str.lower()
+        return values.isna().all() or bool(text.isin({"", "nan", "none"}).all())
+    return False
+
+
+def _numeric_ratio(values: pd.Series) -> float:
+    if len(values) == 0:
+        return 0.0
+    parsed = pd.to_numeric(values, errors="coerce")
+    return float(parsed.notna().sum() / len(parsed))
+
+
+def _is_monotonic_numeric(values: pd.Series) -> bool:
+    parsed = pd.to_numeric(values, errors="coerce").dropna().to_numpy(dtype=np.float64)
+    if parsed.size < 2:
+        return False
+    diffs = np.diff(parsed)
+    return bool(np.all(diffs > 0) or np.all(diffs < 0))
+
+
+def _is_numeric_header(name: str) -> bool:
+    try:
+        float(re.sub(r"\.\d+$", "", name))
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _csv_data_row_count(filepath: Path, fallback: int) -> int:
+    """Count data rows without reading the full numeric matrix."""
+    try:
+        return int(pd.read_csv(filepath, usecols=[0]).shape[0])
+    except Exception:
+        return fallback
+
+
+def _target_hint_from_header(name: str) -> bool:
+    lower = name.lower()
+    tokens = {
+        "target",
+        "class",
+        "label",
+        "species",
+        "analyte",
+        "concentration",
+        "concentration_ppm",
+        "conc",
+        "ppm",
+        "y",
+    }
+    return lower in tokens or any(token in lower for token in ("target", "class", "label", "species", "concentration"))
+
+
+def _index_hint_from_header(name: str) -> bool:
+    lower = name.lower().replace(" ", "_").replace("-", "_")
+    return lower in {"i", "id", "idx", "index", "sample", "sample_id", "sample_name", "name", "file", "filename"}
+
+
+def inspect_csv_import_plan(filepath: Union[str, Path]) -> dict[str, Any]:
+    """Return a lightweight, UI-facing CSV role inspection plan.
+
+    This intentionally does not replace `load_csv_as_sherpa`.  It gives the
+    Upload pane evidence for choosing the right import shape and target
+    settings without trying to build a universal CSV parser.
+    """
+    filepath = resolve_existing_file_path(
+        filepath,
+        label="CSV",
+        suffixes={".csv"},
+        restrict_to_data_dir_in_multi_user=True,
+    )
+    df = pd.read_csv(filepath, nrows=100)
+    preview_rows = int(len(df.index))
+    total_rows = _csv_data_row_count(Path(filepath), preview_rows)
+    if df.empty:
+        return {
+            "layout": "empty",
+            "layout_label": "Empty CSV",
+            "confidence": "low",
+            "role_sequence": "",
+            "shape": {"rows": total_rows, "columns": int(len(df.columns)), "samples": None, "features": None},
+            "axis": None,
+            "target": {"column": None, "type": None, "candidates": []},
+            "columns": [],
+            "warnings": ["The CSV contains no preview rows."],
+        }
+
+    columns: list[dict[str, Any]] = []
+    target_candidates: list[str] = []
+    clean_to_raw: dict[str, Any] = {}
+    axis: dict[str, Any] | None = None
+
+    for idx, raw_name in enumerate(df.columns):
+        name = _clean_csv_column_name(raw_name)
+        clean_to_raw[name] = raw_name
+        values = df[raw_name]
+        numeric_ratio = _numeric_ratio(values)
+        axis_info = _spectral_axis_info_from_header(name)
+        reason = "numeric feature values"
+        role = "F"
+
+        if _is_empty_csv_column(name, values):
+            role = "E"
+            reason = "empty column"
+        elif axis_info is not None and numeric_ratio >= 0.9 and _is_monotonic_numeric(values):
+            role = "W"
+            reason = "axis header with monotonic numeric values"
+            if axis is None:
+                axis = {
+                    "column": name or str(raw_name),
+                    "title": axis_info[0],
+                    "units": axis_info[1],
+                }
+        elif idx == 0 and _index_hint_from_header(name):
+            role = "I"
+            reason = "sample or row identifier"
+        elif _target_hint_from_header(name):
+            role = "T"
+            reason = "target-like column name"
+            target_candidates.append(name)
+        elif numeric_ratio < 0.8:
+            unique_count = int(values.dropna().astype(str).nunique())
+            if idx == 0 or _index_hint_from_header(name):
+                role = "I"
+                reason = "text identifier column"
+            else:
+                role = "T"
+                reason = "non-numeric column"
+                target_candidates.append(name)
+                if unique_count > 20:
+                    reason = "text column"
+        columns.append(
+            {
+                "name": name or str(raw_name),
+                "role": role,
+                "numeric_pct": round(numeric_ratio * 100.0, 1),
+                "reason": reason,
+            }
+        )
+
+    non_empty_roles = [column["role"] for column in columns if column["role"] != "E"]
+    role_sequence = "".join(non_empty_roles)
+    warnings: list[str] = []
+    layout = "feature_table"
+    layout_label = "Feature table"
+    confidence = "medium"
+    samples: int | None = total_rows
+    features: int | None = int(sum(1 for column in columns if column["role"] == "F"))
+
+    numeric_headers_after_index = [
+        _is_numeric_header(column["name"])
+        for column in columns[1 if non_empty_roles[:1] == ["I"] else 0 :]
+        if column["role"] != "E"
+    ]
+    if role_sequence.count("W") >= 2:
+        layout = "alternating_axis_blocks"
+        layout_label = "Alternating axis/value blocks"
+        confidence = "low"
+        warnings.append("Multiple axis-like columns were found; review the file before committing.")
+    elif non_empty_roles[:1] == ["W"]:
+        layout = "axis_column_spectra"
+        layout_label = "Axis column with spectra columns"
+        confidence = "high"
+        samples = int(sum(1 for column in columns if column["role"] == "F"))
+        features = total_rows
+    elif non_empty_roles[:2] == ["I", "W"]:
+        layout = "indexed_axis_column_spectra"
+        layout_label = "Index plus axis column with spectra columns"
+        confidence = "medium"
+        samples = int(sum(1 for column in columns if column["role"] == "F"))
+        features = total_rows
+        warnings.append("The first column looks like an index before a shared spectral axis.")
+    elif numeric_headers_after_index and all(numeric_headers_after_index):
+        layout = "sample_rows_spectral_matrix"
+        layout_label = "Sample rows with spectral-variable columns"
+        confidence = "high"
+        axis_title = "Spectral Axis"
+        axis_units = None
+        if len(columns) > 1:
+            values = np.array(
+                [
+                    float(re.sub(r"\.\d+$", "", column["name"]))
+                    for column in columns
+                    if _is_numeric_header(column["name"])
+                ]
+            )
+            axis_title, axis_units = _infer_numeric_spectral_axis(filepath, values, None)
+        axis = {"column": "column headers", "title": axis_title, "units": axis_units}
+        features = int(sum(1 for column in columns if _is_numeric_header(column["name"])))
+    elif target_candidates:
+        layout = "feature_table_with_target"
+        layout_label = "Feature table with target column"
+        confidence = "medium"
+
+    target_type: str | None = None
+    target_column = target_candidates[0] if target_candidates else None
+    raw_target_column = clean_to_raw.get(target_column) if target_column else None
+    if raw_target_column is not None and raw_target_column in df.columns:
+        series = df[raw_target_column]
+        target_type = (
+            "continuous" if _numeric_ratio(series) >= 0.9 and series.nunique(dropna=True) > 8 else "categorical"
+        )
+
+    return {
+        "layout": layout,
+        "layout_label": layout_label,
+        "confidence": confidence,
+        "role_sequence": role_sequence,
+        "shape": {
+            "rows": total_rows,
+            "columns": int(len(df.columns)),
+            "samples": samples,
+            "features": features,
+        },
+        "axis": axis,
+        "target": {
+            "column": target_column,
+            "type": target_type,
+            "candidates": target_candidates[:5],
+        },
+        "columns": columns[:24],
+        "warnings": warnings,
+    }
 
 
 def _infer_numeric_spectral_axis(
@@ -1106,6 +1343,7 @@ __all__ = [
     "read_mat_file",
     "read_spectral_file",
     "load_spectrum",
+    "inspect_csv_import_plan",
     "load_csv_as_sherpa",
     "stack_datasets",
     "extract_concentration",

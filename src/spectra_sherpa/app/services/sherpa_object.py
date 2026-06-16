@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 SHERPA_OBJECT_VERSION = "0.1"
+SUPPORTED_SHERPA_OBJECT_VERSIONS = frozenset({SHERPA_OBJECT_VERSION})
 SHERPA_OBJECT_MANIFEST = "sherpa-object.json"
 PROJECT_PAYLOAD = "project.json"
 DEFAULT_MAX_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
@@ -94,12 +95,17 @@ def build_manifest(
     """Build the portable object manifest for the already-written members."""
 
     project_name = str(project_payload.get("name") or "Untitled Project")
+    archive_format = project_payload.get("archive_format")
+    project_payload_version = None
+    if isinstance(archive_format, dict):
+        project_payload_version = archive_format.get("version")
     ordered_hashes = {name: member_hashes[name] for name in sorted(member_hashes)}
     content_hash = sha256_bytes(json.dumps(ordered_hashes, sort_keys=True, separators=(",", ":")).encode("utf-8"))
     return {
         "schema": "spectra_sherpa_object",
         "object_version": SHERPA_OBJECT_VERSION,
         "object_type": object_type,
+        "project_payload_version": str(project_payload_version or "legacy"),
         "package_mode": package_mode,
         "producer": producer,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -145,6 +151,55 @@ def build_archive(
     with zipfile.ZipFile(final, "a", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(SHERPA_OBJECT_MANIFEST, json.dumps(manifest, indent=2, default=str))
     return final.getvalue()
+
+
+def write_archive_to_path(
+    path: Path,
+    *,
+    project_payload: dict[str, Any],
+    members: Iterable[ArchiveMember] = (),
+    package_mode: str = "full",
+    payload_name: str = PROJECT_PAYLOAD,
+    include_manifest: bool = True,
+) -> None:
+    """Write a project archive to disk without holding the final ZIP in memory."""
+
+    project_bytes = json.dumps(project_payload, indent=2, default=str).encode("utf-8")
+    safe_payload_name = _normalize_member_path(payload_name)
+    seen = {safe_payload_name}
+    if include_manifest:
+        seen.add(SHERPA_OBJECT_MANIFEST)
+    member_hashes: dict[str, dict[str, Any]] = {}
+    if include_manifest:
+        member_hashes[safe_payload_name] = {
+            "sha256": sha256_bytes(project_bytes),
+            "size": len(project_bytes),
+        }
+
+    with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(safe_payload_name, project_bytes)
+        for member in members:
+            safe_path = _normalize_member_path(member.path)
+            if safe_path in seen:
+                raise SherpaObjectError(f"Duplicate archive member: {safe_path}")
+            seen.add(safe_path)
+            zf.writestr(safe_path, member.data)
+            if include_manifest:
+                member_hashes[safe_path] = {
+                    "sha256": sha256_bytes(member.data),
+                    "size": len(member.data),
+                }
+
+    if not include_manifest:
+        return
+
+    manifest = build_manifest(
+        project_payload=project_payload,
+        member_hashes=member_hashes,
+        package_mode=package_mode,
+    )
+    with zipfile.ZipFile(path, "a", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(SHERPA_OBJECT_MANIFEST, json.dumps(manifest, indent=2, default=str))
 
 
 def hash_archive_members(
@@ -315,10 +370,11 @@ def _validate_manifest_shape(manifest: dict[str, Any]) -> None:
         raise SherpaObjectError("Manifest must be a JSON object")
     if manifest.get("schema") != "spectra_sherpa_object":
         raise SherpaObjectError("Manifest schema must be 'spectra_sherpa_object'")
-    if manifest.get("object_version") != SHERPA_OBJECT_VERSION:
+    object_version = manifest.get("object_version")
+    if object_version not in SUPPORTED_SHERPA_OBJECT_VERSIONS:
         raise SherpaObjectError(
-            f"Unsupported .sherpa object version {manifest.get('object_version')!r}; "
-            f"expected {SHERPA_OBJECT_VERSION!r}"
+            f"Unsupported .sherpa object version {object_version!r}; "
+            f"supported versions: {', '.join(sorted(SUPPORTED_SHERPA_OBJECT_VERSIONS))}"
         )
     if manifest.get("object_type") != "project":
         raise SherpaObjectError("Only project .sherpa objects are supported in v0")

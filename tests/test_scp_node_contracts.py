@@ -232,6 +232,51 @@ class TestShapeConventions:
 
     @_skip_no_scp
     @pytest.mark.asyncio
+    async def test_pls_provenance_preserves_training_shape_for_score_outputs(self, make_node):
+        n_samples, n_features, n_components, n_targets = 5, 401, 3, 7
+        ds = _make_spectral_dataset(
+            n_samples=n_samples,
+            n_features=n_features,
+            n_targets=n_targets,
+            target_names=[f"Property {i + 1}" for i in range(n_targets)],
+        )
+        node = make_node("model.pls", {"n_components": n_components, "cv_method": "none"})
+        result = await node.execute(X=ds)
+        outputs = result.outputs
+
+        x_scores = outputs["default"]
+        y_scores = outputs["Y_scores"]
+        vip = outputs["vip"]
+        coefficients = outputs["coefficients"]
+
+        assert x_scores.shape == (n_samples, n_components)
+        assert y_scores.shape == (n_samples, n_components)
+        assert vip.shape == (1, n_features)
+        assert coefficients.shape == (n_targets, n_features)
+
+        x_scores_history = x_scores.provenance.to_list()[-1]
+        y_scores_history = y_scores.provenance.to_list()[-1]
+        vip_history = vip.provenance.to_list()[-1]
+        coefficients_history = coefficients.provenance.to_list()[-1]
+
+        assert x_scores_history["input_shape"] == (n_samples, n_features)
+        assert x_scores_history["output_shape"] == (n_samples, n_components)
+        assert y_scores_history["input_shape"] == (n_samples, n_targets)
+        assert y_scores_history["output_shape"] == (n_samples, n_components)
+        assert vip_history["input_shape"] == (n_samples, n_features)
+        assert vip_history["output_shape"] == (1, n_features)
+        assert coefficients_history["input_shape"] == (n_samples, n_features)
+        assert coefficients_history["output_shape"] == (n_targets, n_features)
+
+        assert x_scores.meta["training_X_shape"] == [n_samples, n_features]
+        assert x_scores.meta["training_y_shape"] == [n_samples, n_targets]
+        assert x_scores.meta["output_dimensions"]["training_X"] == [n_samples, n_features]
+        assert x_scores.meta["output_dimensions"]["X_scores"] == [n_samples, n_components]
+        assert result.diagnostics["output_dimensions"]["training_X"] == [n_samples, n_features]
+        assert result.diagnostics["output_dimensions"]["coefficients"] == [n_targets, n_features]
+
+    @_skip_no_scp
+    @pytest.mark.asyncio
     async def test_pls_y_loadings_target_labels(self, make_node):
         """Y_loadings should carry target names on sample axis."""
         ds = _make_spectral_dataset(

@@ -33,10 +33,14 @@ from .io_contracts import (
     bind_X,
     bind_y,
     build_dataset_like,
+    clean_regression_target,
     coerce_to_sherpa,
     resolve_target_names,
-    to_numpy_1d,
     to_numpy_2d,
+    to_numpy_y,
+)
+from .io_contracts import (
+    to_numpy_1d as to_numpy_1d,
 )
 from .meta_helpers import add_processing_step
 from .node_base import Node
@@ -237,6 +241,10 @@ class EstimatorSpec:
         metric_fns:
             ``{name: fn(y_true, y_pred) -> float}``.  If ``None``, the
             default R² and RMSE are computed.
+        single_target:
+            Whether the estimator accepts only one target/property column.
+            Multi-target ``y`` matrices are sliced by the node's
+            ``target_index`` parameter before fitting.
         extra_imports:
             Additional import lines for the generated Python export script.
         export_lines_fn:
@@ -254,6 +262,7 @@ class EstimatorSpec:
     scale_param: str = "scale"
     post_fit_fn: Optional[Callable[..., Dict[str, Any]]] = None
     metric_fns: Optional[Dict[str, Callable]] = None
+    single_target: bool = False
     extra_imports: List[str] = field(default_factory=list)
     export_lines_fn: Optional[Callable[..., List[str]]] = None
     estimator_import: Optional[str] = None
@@ -300,6 +309,7 @@ class EstimatorSpecNode(Node):
         from sklearn.metrics import mean_squared_error, r2_score
 
         assert self.metadata is not None
+        params = self._resolve_params()
         # Bind inputs
         X_ds = bind_X(
             X,
@@ -334,19 +344,75 @@ class EstimatorSpecNode(Node):
         X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)
         y_array: Optional[np.ndarray] = None
         if y_value is not None:
-            y_array = to_numpy_1d(
+            y_array = to_numpy_y(
                 y_value,
                 name="y",
-                expected_length=X_data.shape[0],
+                expected_samples=X_data.shape[0],
                 dtype=np.float64,
             )
 
+        if self.spec.single_target and y_array is not None:
+            target_names = _resolved_target_names or []
+            original_y = np.asarray(y_array, dtype=np.float64)
+            original_n_targets = int(original_y.shape[1]) if original_y.ndim == 2 else 1
+            raw_target_index = params.get("target_index", 1)
+            try:
+                target_index = int(raw_target_index)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Target Property must be a 1-based integer index.") from exc
+            if target_index < 1 or target_index > original_n_targets:
+                available = ", ".join(target_names) if target_names else f"{original_n_targets} target(s)"
+                raise ValueError(
+                    f"Target Property {target_index} is out of range for this dataset. "
+                    f"Available targets: {available}."
+                )
+            zero_based_index = target_index - 1
+            if original_y.ndim == 2:
+                y_array = original_y[:, zero_based_index]
+            else:
+                y_array = original_y.reshape(-1)
+            selected_name = (
+                str(target_names[zero_based_index])
+                if zero_based_index < len(target_names)
+                else f"Target {target_index}"
+            )
+            params["_selected_target_index"] = zero_based_index
+            params["_selected_target_name"] = selected_name
+            params["_original_target_names"] = list(target_names) if target_names else None
+            params["_original_n_targets"] = original_n_targets
+            tc = X_ds.target_context
+            if tc is not None:
+                X_ds.target_context = tc.model_copy(
+                    update={
+                        "target_name": selected_name,
+                        "target_names": [selected_name],
+                        "selected_target": selected_name,
+                    }
+                )
+            else:
+                X_ds.target_context = TargetContext(
+                    target_type="continuous",
+                    target_name=selected_name,
+                    target_names=[selected_name],
+                    selected_target=selected_name,
+                )
+
+        if y_array is not None:
+            X_ds, y_array = clean_regression_target(
+                X_ds,
+                y_array,
+                model_label=self.metadata.label,
+                preserve_1d=True,
+            )
+            X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)
+
         # Build estimator constructor kwargs from resolved parameters
-        params = self._resolve_params()
         est_kwargs: Dict[str, Any] = {}
         for param_name, value in params.items():
             # Skip the scale toggle — it's handled separately
             if self.spec.scale and param_name == self.spec.scale_param:
+                continue
+            if param_name == "target_index" or param_name.startswith("_"):
                 continue
             kwarg_name = self.spec.param_map.get(param_name, param_name)
             est_kwargs[kwarg_name] = value

@@ -144,6 +144,60 @@ def test_apply_regression_artifact_reports_labeled_set_metrics():
     assert result["metrics"]["n_evaluated"] == 3
 
 
+def test_apply_regression_artifact_slices_labeled_multitarget_to_saved_target(tmp_path):
+    from spectra_sherpa.app.lib.adapters.scp_extractors import LinearRegressionExtract
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
+    from spectra_sherpa.app.services import model_store
+    from spectra_sherpa.app.services.model_application import apply_model_to_dataset
+
+    previous_store = model_store._store
+    try:
+        store = model_store.init_model_store(tmp_path)
+        metadata, arrays = LinearRegressionExtract(
+            coef=np.array([2.0, -1.0], dtype=np.float64),
+            intercept=np.array([0.5], dtype=np.float64),
+        ).to_artifact()
+        metadata.update(
+            {
+                "n_features": 2,
+                "target_mode": "single",
+                "selected_target": "cetane",
+                "target_names": ["cetane"],
+                "available_target_names": ["density", "cetane"],
+                "target_type": "continuous",
+            }
+        )
+        store.save("linear-selected-target", metadata, arrays)
+
+        X = np.array([[1.0, 0.0], [2.0, 1.0], [3.0, 1.5]], dtype=np.float64)
+        expected = X @ arrays["coef"].reshape(-1, 1) + arrays["intercept"]
+        y_multi = np.column_stack(
+            [
+                np.array([900.0, 901.0, 902.0], dtype=np.float64),
+                expected.ravel() + np.array([0.1, -0.2, 0.3], dtype=np.float64),
+            ]
+        )
+        residual = y_multi[:, 1] - expected.ravel()
+        ds = SherpaDataset(
+            X=X,
+            target=y_multi,
+            target_context=TargetContext(
+                target_type="continuous",
+                target_names=["density", "cetane"],
+            ),
+        )
+
+        result = apply_model_to_dataset("linear-selected-target", ds)
+
+        assert result["warnings"] == []
+        assert result["metadata"]["selected_target"] == "cetane"
+        assert result["metrics"]["n_evaluated"] == 3
+        assert result["metrics"]["rmsep"] == np.sqrt(np.mean(residual**2))
+        assert result["metrics"]["bias"] == np.mean(residual)
+    finally:
+        model_store._store = previous_store
+
+
 def test_apply_pls_artifact_reports_applicability_domain(tmp_path):
     from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
     from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset

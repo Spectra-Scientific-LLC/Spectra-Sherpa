@@ -4,18 +4,23 @@ Project API endpoints — CRUD, link/unlink, versioning, and export/import.
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import io
 import json
 import logging
 import re
+import tempfile
 import zipfile
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+from starlette.background import BackgroundTask
 
 from spectra_sherpa.app.api.deps import (
     consume_reserved_demo_upload_quota_if_needed,
@@ -26,6 +31,7 @@ from spectra_sherpa.app.api.deps import (
     require_project,
     reserve_demo_upload_quota_or_429,
 )
+from spectra_sherpa.app.api.v1.routes._http_utils import attachment_headers, safe_download_stem
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.core.security import check_export_allowed
 from spectra_sherpa.app.models.advisor_channel import AdvisorChannel
@@ -57,7 +63,18 @@ from spectra_sherpa.app.schemas.projects import (
     ScriptBrief,
     WorkflowBrief,
 )
-from spectra_sherpa.app.services.experiments import read_metadata, resolve_data_path
+from spectra_sherpa.app.services.experiments import (
+    ALLOWED_STAGES,
+    add_experiment_file,
+    delete_experiment_files,
+    ensure_experiment_dirs,
+    experiment_dir,
+    metadata_path_for,
+    read_metadata,
+    relative_to_data_dir,
+    resolve_data_path,
+    write_metadata,
+)
 from spectra_sherpa.app.services.project_data_sources import (
     effective_workflow_tab_color,
     ensure_project_advisor_channel,
@@ -66,9 +83,11 @@ from spectra_sherpa.app.services.sherpa_object import (
     PROJECT_PAYLOAD,
     SHERPA_OBJECT_MANIFEST,
     ArchiveMember,
-    build_archive,
+    SherpaObjectError,
     inspect_archive_bytes,
+    sha256_bytes,
     validate_archive_bytes,
+    write_archive_to_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -90,6 +109,9 @@ def _safe_parse_metrics(metrics_json: str | None) -> dict | None:
 
 
 _GENERIC_TEMPLATE_DATA_DESCRIPTION = "Bundled example data materialized from template"
+PROJECT_DATA_PREFIX = "data/experiments"
+PROJECT_ARCHIVE_FORMAT_VERSION = "0.2"
+PROJECT_ARCHIVE_UNCOMPRESSED_MULTIPLIER = 10
 
 
 def _first_sentence(text: str | None) -> str | None:
@@ -285,6 +307,267 @@ async def _read_upload_with_limit(file: UploadFile, *, max_bytes: int, chunk_siz
         total += len(chunk)
 
     return b"".join(chunks)
+
+
+def _as_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_archive_member_path(path: Any) -> str:
+    raw = str(path or "").replace("\\", "/").strip()
+    candidate = PurePosixPath(raw)
+    parts = [part for part in candidate.parts if part not in {"", "."}]
+    if not parts or candidate.is_absolute() or any(part == ".." for part in parts):
+        raise ValueError("Unsafe archive member path")
+    return "/".join(parts)
+
+
+def _normalize_experiment_file_path(file_path: Any, stage: Any) -> str:
+    stage_name = str(stage or "raw")
+    if stage_name not in ALLOWED_STAGES:
+        raise ValueError("Invalid experiment file stage")
+
+    raw = str(file_path or "").replace("\\", "/").strip()
+    candidate = PurePosixPath(raw)
+    parts = [part for part in candidate.parts if part not in {"", "."}]
+    if not parts or candidate.is_absolute() or any(part == ".." for part in parts):
+        raise ValueError("Unsafe experiment file path")
+    if parts[0] not in ALLOWED_STAGES:
+        parts.insert(0, stage_name)
+    return "/".join(parts)
+
+
+def _experiment_file_path(experiment_id: int, file_path: Any, stage: Any) -> tuple[str, Path]:
+    rel_path = _normalize_experiment_file_path(file_path, stage)
+    exp_dir = experiment_dir(experiment_id).resolve()
+    target_path = (exp_dir / rel_path).resolve()
+    if not target_path.is_relative_to(exp_dir):
+        raise ValueError("Unsafe experiment file path")
+    return rel_path, target_path
+
+
+def _project_data_archive_member(old_experiment_id: int, relative_file_path: str) -> str:
+    return f"{PROJECT_DATA_PREFIX}/{old_experiment_id}/{relative_file_path}"
+
+
+def _prepare_project_export_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Return an export payload copy with an explicit project archive format marker."""
+    export_snapshot = copy.deepcopy(snapshot)
+    archive_format = export_snapshot.get("archive_format")
+    if not isinstance(archive_format, dict):
+        archive_format = {}
+    archive_format.update(
+        {
+            "schema": "spectra_sherpa_project_archive",
+            "version": PROJECT_ARCHIVE_FORMAT_VERSION,
+            "data_members": PROJECT_DATA_PREFIX,
+        }
+    )
+    export_snapshot["archive_format"] = archive_format
+    return export_snapshot
+
+
+def _iter_project_snapshots(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return a pre-order list of project snapshots in an exported project tree."""
+    snapshots = [snapshot]
+    for child in snapshot.get("children", []):
+        if isinstance(child, dict):
+            snapshots.extend(_iter_project_snapshots(child))
+    return snapshots
+
+
+def _iter_snapshot_models(snapshot: dict[str, Any]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Return ``(owning_project_snapshot, model_snapshot)`` pairs for a project tree."""
+    models: list[tuple[dict[str, Any], dict[str, Any]]] = []
+    for project_snapshot in _iter_project_snapshots(snapshot):
+        for model_data in project_snapshot.get("models", []):
+            if isinstance(model_data, dict):
+                models.append((project_snapshot, model_data))
+    return models
+
+
+async def _project_experiment_ids(project_id: int, session: AsyncSession) -> set[int]:
+    project_ids = {project_id}
+    pending = [project_id]
+    while pending:
+        result = await session.execute(select(Project.id).where(Project.parent_id.in_(pending)))
+        child_ids = [child_id for child_id in result.scalars().all() if child_id not in project_ids]
+        project_ids.update(child_ids)
+        pending = child_ids
+    result = await session.execute(select(Experiment.id).where(Experiment.project_id.in_(project_ids)))
+    return set(result.scalars().all())
+
+
+def _collect_project_data_members(
+    snapshot: dict[str, Any],
+    *,
+    allowed_experiment_ids: set[int] | None = None,
+    seen_members: set[str] | None = None,
+) -> list[ArchiveMember]:
+    """Attach readable experiment files to an export snapshot as archive members."""
+    members: list[ArchiveMember] = []
+    if seen_members is None:
+        seen_members = set()
+    for experiment in snapshot.get("experiments", []):
+        if not isinstance(experiment, dict):
+            continue
+        old_experiment_id = _as_int(experiment.get("id"))
+        if old_experiment_id is None:
+            continue
+        if allowed_experiment_ids is not None and old_experiment_id not in allowed_experiment_ids:
+            for file_data in experiment.get("files", []):
+                if isinstance(file_data, dict):
+                    file_data["archive_status"] = "not_project_owned"
+            continue
+
+        for file_data in experiment.get("files", []):
+            if not isinstance(file_data, dict):
+                continue
+            try:
+                rel_path, source_path = _experiment_file_path(
+                    old_experiment_id,
+                    file_data.get("file_path"),
+                    file_data.get("stage"),
+                )
+            except ValueError:
+                file_data["archive_status"] = "unsafe_path"
+                continue
+
+            if not source_path.exists() or not source_path.is_file():
+                file_data["archive_status"] = "missing"
+                continue
+
+            data = source_path.read_bytes()
+            member_path = _project_data_archive_member(old_experiment_id, rel_path)
+            if member_path in seen_members:
+                file_data["file_path"] = rel_path
+                file_data["archive_status"] = "duplicate"
+                continue
+            seen_members.add(member_path)
+            file_data["file_path"] = rel_path
+            file_data["file_size_bytes"] = len(data)
+            file_data["sha256"] = sha256_bytes(data)
+            file_data["archive_member"] = member_path
+            file_data["archive_status"] = "included"
+            members.append(ArchiveMember(member_path, data))
+    for child in snapshot.get("children", []):
+        if isinstance(child, dict):
+            members.extend(
+                _collect_project_data_members(
+                    child,
+                    allowed_experiment_ids=allowed_experiment_ids,
+                    seen_members=seen_members,
+                )
+            )
+    return members
+
+
+def _temporary_archive_path(suffix: str) -> Path:
+    handle = tempfile.NamedTemporaryFile(prefix="spectra-project-", suffix=suffix, delete=False)
+    handle.close()
+    return Path(handle.name)
+
+
+def _cleanup_temporary_archive(path: Path) -> None:
+    path.unlink(missing_ok=True)
+
+
+def _sha256_file(path: Path) -> str:
+    return sha256_bytes(path.read_bytes())
+
+
+def _remap_source_ref(value: Any, experiment_remap: dict[int, int], file_remap: dict[int, int]) -> str | None:
+    if not isinstance(value, str) or not value:
+        return value if isinstance(value, str) else None
+    parts = value.split(":")
+    if len(parts) >= 2 and parts[0] in {"experiment", "dataset"}:
+        old_experiment_id = _as_int(parts[1])
+        if old_experiment_id in experiment_remap:
+            parts[1] = str(experiment_remap[old_experiment_id])
+    if "file" in parts:
+        file_index = parts.index("file") + 1
+        if file_index < len(parts):
+            old_file_id = _as_int(parts[file_index])
+            if old_file_id in file_remap:
+                parts[file_index] = str(file_remap[old_file_id])
+    return ":".join(parts)
+
+
+def _remap_project_local_ids(value: Any, experiment_remap: dict[int, int], file_remap: dict[int, int]) -> Any:
+    if isinstance(value, dict):
+        rewritten = {key: _remap_project_local_ids(item, experiment_remap, file_remap) for key, item in value.items()}
+        for key in ("dataset_id", "experiment_id"):
+            old_id = _as_int(rewritten.get(key))
+            if old_id in experiment_remap:
+                rewritten[key] = experiment_remap[old_id]
+        old_file_id = _as_int(rewritten.get("file_id"))
+        if old_file_id in file_remap:
+            rewritten["file_id"] = file_remap[old_file_id]
+        return rewritten
+    if isinstance(value, list):
+        return [_remap_project_local_ids(item, experiment_remap, file_remap) for item in value]
+    return value
+
+
+def _require_project_data_hash(file_data: dict[str, Any]) -> str:
+    expected_hash = file_data.get("sha256")
+    if not isinstance(expected_hash, str):
+        raise HTTPException(status_code=400, detail="Project data file is missing integrity hash")
+    normalized = expected_hash.strip().lower()
+    if len(normalized) != 64 or any(char not in "0123456789abcdef" for char in normalized):
+        raise HTTPException(status_code=400, detail="Project data file integrity hash is invalid")
+    return normalized
+
+
+def _expected_project_data_member(file_data: dict[str, Any], old_experiment_id: int, rel_path: str) -> str:
+    expected_member = _project_data_archive_member(old_experiment_id, rel_path)
+    try:
+        provided_member = _normalize_archive_member_path(file_data.get("archive_member"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid project data archive member") from exc
+    if provided_member != expected_member:
+        raise HTTPException(status_code=400, detail="Project data archive member does not match manifest path")
+    return expected_member
+
+
+def _read_archive_member_to_path(
+    zf: zipfile.ZipFile,
+    member_name: str,
+    target_path: Path,
+    *,
+    max_member_bytes: int,
+) -> int:
+    member_name = _normalize_archive_member_path(member_name)
+    if not member_name.startswith(f"{PROJECT_DATA_PREFIX}/"):
+        raise HTTPException(status_code=400, detail="Invalid project data archive member")
+
+    try:
+        info = zf.getinfo(member_name)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail="Project data file is missing from archive") from exc
+    if info.file_size > max_member_bytes:
+        raise HTTPException(status_code=413, detail="Project data file exceeds size limit")
+
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    bytes_written = 0
+    try:
+        with zf.open(info, "r") as source, target_path.open("wb") as destination:
+            while True:
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                bytes_written += len(chunk)
+                if bytes_written > max_member_bytes:
+                    raise HTTPException(status_code=413, detail="Project data file exceeds size limit")
+                destination.write(chunk)
+    except BaseException:
+        if target_path.exists():
+            target_path.unlink()
+        raise
+    return bytes_written
 
 
 async def _project_to_summary(project: Project, session: AsyncSession) -> ProjectSummary:
@@ -1139,14 +1422,27 @@ async def _build_snapshot(project: Project, session: AsyncSession) -> dict:
     )
     experiments_snap = []
     for exp in exp_result.scalars().all():
+        metadata: dict[str, Any] = {}
+        if exp.metadata_path:
+            try:
+                metadata = await asyncio.to_thread(read_metadata, resolve_data_path(exp.metadata_path))
+            except Exception:
+                logger.debug("Could not read experiment metadata for project export", exc_info=True)
         experiments_snap.append(
             {
                 "id": exp.id,
                 "name": exp.name,
                 "description": exp.description,
+                "metadata": metadata,
                 "file_count": len(exp.files),
                 "files": [
-                    {"id": f.id, "file_path": f.file_path, "stage": f.stage, "file_type": f.file_type}
+                    {
+                        "id": f.id,
+                        "file_path": f.file_path,
+                        "stage": f.stage,
+                        "file_type": f.file_type,
+                        "file_size_bytes": f.file_size_bytes,
+                    }
                     for f in exp.files
                 ],
             }
@@ -1354,7 +1650,7 @@ async def export_project(
     version_id: int | None = None,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-) -> StreamingResponse:
+) -> FileResponse:
     """Download project as a .spectrapy archive (ZIP with project.json + model artifacts)."""
     if not await check_export_allowed(current_user, session):
         raise HTTPException(status_code=403, detail="Export not permitted for this user")
@@ -1371,41 +1667,43 @@ async def export_project(
     else:
         snapshot = await _build_snapshot(project, session)
 
-    # Build ZIP archive
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("project.json", json.dumps(snapshot, indent=2, default=str))
-
-        # Include model artifact files (manifest.json + arrays.npz)
-        model_uids = [m["artifact_uid"] for m in snapshot.get("models", [])]
-        if model_uids:
-            try:
-                from spectra_sherpa.app.services.model_store import get_model_store
-
-                store = get_model_store()
-                for uid in model_uids:
-                    manifest_path = store._artifact_dir(uid) / "manifest.json"
-                    arrays_path = store._artifact_dir(uid) / "arrays.npz"
-                    if manifest_path.exists():
-                        zf.write(str(manifest_path), f"models/{uid}/manifest.json")
-                    if arrays_path.exists():
-                        zf.write(str(arrays_path), f"models/{uid}/arrays.npz")
-            except RuntimeError:
-                logger.warning("ModelStore not initialized — model files not included in export")
-
-    buf.seek(0)
-    safe_name = project.name.replace(" ", "_").replace("/", "_")
-    return StreamingResponse(
-        buf,
+    snapshot = _prepare_project_export_snapshot(snapshot)
+    allowed_ids = await _project_experiment_ids(project.id, session)
+    data_members, model_members = await _collect_project_archive_members(snapshot, allowed_experiment_ids=allowed_ids)
+    filename = f"{safe_download_stem(project.name, fallback='project')}.spectrapy"
+    archive_path = _temporary_archive_path(".spectrapy")
+    try:
+        await asyncio.to_thread(
+            write_archive_to_path,
+            archive_path,
+            project_payload=snapshot,
+            members=[*data_members, *model_members],
+            package_mode="legacy",
+            payload_name="project.json",
+            include_manifest=False,
+        )
+    except SherpaObjectError as exc:
+        _cleanup_temporary_archive(archive_path)
+        logger.warning("Could not build .spectrapy export for project %s: %s", project.id, exc)
+        raise HTTPException(status_code=500, detail="Project export archive could not be built") from exc
+    return FileResponse(
+        archive_path,
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}.spectrapy"'},
+        filename=filename,
+        headers=attachment_headers(filename, fallback="project"),
+        background=BackgroundTask(_cleanup_temporary_archive, archive_path),
     )
 
 
 def _model_members_for_snapshot(snapshot: dict[str, Any]) -> list[ArchiveMember]:
     """Collect model artifact files for a portable object."""
     members: list[ArchiveMember] = []
-    model_uids = [m["artifact_uid"] for m in snapshot.get("models", []) if m.get("artifact_uid")]
+    model_uids = []
+    for _, model_data in _iter_snapshot_models(snapshot):
+        artifact_uid = model_data.get("artifact_uid")
+        if artifact_uid:
+            model_uids.append(str(artifact_uid))
+    model_uids = list(dict.fromkeys(model_uids))
     if not model_uids:
         return members
     try:
@@ -1424,6 +1722,22 @@ def _model_members_for_snapshot(snapshot: dict[str, Any]) -> list[ArchiveMember]
         if arrays_path.exists():
             members.append(ArchiveMember(f"models/{uid}/arrays.npz", arrays_path.read_bytes()))
     return members
+
+
+async def _collect_project_archive_members(
+    snapshot: dict[str, Any],
+    *,
+    allowed_experiment_ids: set[int],
+) -> tuple[list[ArchiveMember], list[ArchiveMember]]:
+    data_members, model_members = await asyncio.gather(
+        asyncio.to_thread(
+            _collect_project_data_members,
+            snapshot,
+            allowed_experiment_ids=allowed_experiment_ids,
+        ),
+        asyncio.to_thread(_model_members_for_snapshot, snapshot),
+    )
+    return data_members, model_members
 
 
 def _public_archive_validation_error_detail(message: Any) -> dict[str, str]:
@@ -1553,7 +1867,7 @@ async def export_project_sherpa_object(
     version_id: int | None = None,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
-) -> StreamingResponse:
+) -> FileResponse:
     """Download project as a portable .sherpa object with offline-verifiable manifest."""
     if not await check_export_allowed(current_user, session):
         raise HTTPException(status_code=403, detail="Export not permitted for this user")
@@ -1570,16 +1884,29 @@ async def export_project_sherpa_object(
     else:
         snapshot = await _build_snapshot(project, session)
 
-    archive_bytes = build_archive(
-        project_payload=snapshot,
-        members=_model_members_for_snapshot(snapshot),
-        package_mode="full",
-    )
-    safe_name = project.name.replace(" ", "_").replace("/", "_")
-    return StreamingResponse(
-        io.BytesIO(archive_bytes),
+    snapshot = _prepare_project_export_snapshot(snapshot)
+    allowed_ids = await _project_experiment_ids(project.id, session)
+    data_members, model_members = await _collect_project_archive_members(snapshot, allowed_experiment_ids=allowed_ids)
+    filename = f"{safe_download_stem(project.name, fallback='project')}.sherpa"
+    archive_path = _temporary_archive_path(".sherpa")
+    try:
+        await asyncio.to_thread(
+            write_archive_to_path,
+            archive_path,
+            project_payload=snapshot,
+            members=[*model_members, *data_members],
+            package_mode="full",
+        )
+    except SherpaObjectError as exc:
+        _cleanup_temporary_archive(archive_path)
+        logger.warning("Could not build .sherpa export for project %s: %s", project.id, exc)
+        raise HTTPException(status_code=500, detail="Project export archive could not be built") from exc
+    return FileResponse(
+        archive_path,
         media_type="application/vnd.spectrasherpa.object+zip",
-        headers={"Content-Disposition": f'attachment; filename="{safe_name}.sherpa"'},
+        filename=filename,
+        headers=attachment_headers(filename, fallback="project"),
+        background=BackgroundTask(_cleanup_temporary_archive, archive_path),
     )
 
 
@@ -1639,11 +1966,16 @@ def _remap_model_uids_in_snapshot(project_json: dict[str, Any], remap: dict[str,
             params = node.get("parameters") if isinstance(node, dict) else None
             if isinstance(params, dict) and params.get("model_id") in remap:
                 params["model_id"] = remap[params["model_id"]]
+    for child in project_json.get("children", []):
+        if isinstance(child, dict):
+            _remap_model_uids_in_snapshot(child, remap)
 
 
 async def _restore_project_data_sources(
     project: Project,
     project_json: dict[str, Any],
+    experiment_remap: dict[int, int],
+    file_remap: dict[int, int],
     session: AsyncSession,
 ) -> dict[int, int]:
     """Recreate project data source rows and return old-id -> new-id map."""
@@ -1651,14 +1983,20 @@ async def _restore_project_data_sources(
     for source_data in project_json.get("data_sources", []):
         if not isinstance(source_data, dict):
             continue
+        source_ref = _remap_source_ref(source_data.get("source_ref"), experiment_remap, file_remap)
+        fingerprint = _remap_source_ref(source_data.get("fingerprint"), experiment_remap, file_remap)
+        if fingerprint == source_data.get("fingerprint") and source_data.get("fingerprint") == source_data.get(
+            "source_ref"
+        ):
+            fingerprint = source_ref
         data_source = ProjectDataSource(
             project_id=project.id,
             display_name=source_data.get("display_name") or "Imported Data Source",
             source_type=source_data.get("source_type") or "external",
-            source_ref=source_data.get("source_ref"),
-            fingerprint=source_data.get("fingerprint"),
+            source_ref=source_ref,
+            fingerprint=fingerprint,
             color=source_data.get("color") or "#3b82f6",
-            metadata_=source_data.get("metadata") or {},
+            metadata_=_remap_project_local_ids(source_data.get("metadata") or {}, experiment_remap, file_remap),
             sort_order=source_data.get("sort_order") or 0,
         )
         session.add(data_source)
@@ -1669,16 +2007,113 @@ async def _restore_project_data_sources(
     return remap
 
 
-def _remap_workflow_parameters(value: Any, data_source_remap: dict[int, int]) -> Any:
+async def _restore_project_experiments(
+    project: Project,
+    user_id: int,
+    project_json: dict[str, Any],
+    zf: zipfile.ZipFile,
+    session: AsyncSession,
+    restored_experiment_ids: list[int],
+) -> tuple[dict[int, int], dict[int, int]]:
+    """Restore project experiments and bundled files before workflow remapping."""
+    experiment_remap: dict[int, int] = {}
+    file_remap: dict[int, int] = {}
+    max_member_bytes = settings.max_file_size_mb * 1024 * 1024
+
+    for exp_data in project_json.get("experiments", []):
+        if not isinstance(exp_data, dict):
+            continue
+        experiment = Experiment(
+            user_id=user_id,
+            project_id=project.id,
+            name=exp_data.get("name") or "Imported Dataset",
+            description=exp_data.get("description"),
+            metadata_path="",
+        )
+        session.add(experiment)
+        await session.flush()
+        restored_experiment_ids.append(experiment.id)
+
+        ensure_experiment_dirs(experiment.id)
+        metadata_file = metadata_path_for(experiment.id)
+        metadata = exp_data.get("metadata") if isinstance(exp_data.get("metadata"), dict) else {}
+        write_metadata(metadata_file, metadata)
+        experiment.metadata_path = relative_to_data_dir(metadata_file)
+
+        old_experiment_id = _as_int(exp_data.get("id"))
+        if old_experiment_id is not None:
+            experiment_remap[old_experiment_id] = experiment.id
+
+        for file_data in exp_data.get("files", []):
+            if not isinstance(file_data, dict):
+                continue
+            archive_member = file_data.get("archive_member")
+            if not archive_member:
+                continue
+            if old_experiment_id is None:
+                raise HTTPException(status_code=400, detail="Project data file is missing experiment reference")
+
+            try:
+                rel_path = _normalize_experiment_file_path(file_data.get("file_path"), file_data.get("stage"))
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail="Invalid project data file path") from exc
+
+            target_path = (experiment_dir(experiment.id) / rel_path).resolve()
+            if not target_path.is_relative_to(experiment_dir(experiment.id).resolve()):
+                raise HTTPException(status_code=400, detail="Invalid project data file path")
+
+            expected_member = _expected_project_data_member(file_data, old_experiment_id, rel_path)
+            expected_hash = _require_project_data_hash(file_data)
+            bytes_written = _read_archive_member_to_path(
+                zf,
+                expected_member,
+                target_path,
+                max_member_bytes=max_member_bytes,
+            )
+            if await asyncio.to_thread(_sha256_file, target_path) != expected_hash:
+                raise HTTPException(status_code=400, detail="Project data file hash mismatch")
+
+            file_row = await add_experiment_file(
+                session=session,
+                experiment_id=experiment.id,
+                stage=str(file_data.get("stage") or "raw"),
+                file_path=rel_path,
+                file_size_bytes=bytes_written,
+                file_type=file_data.get("file_type") or target_path.suffix.lstrip(".") or None,
+                flush_only=True,
+            )
+            old_file_id = _as_int(file_data.get("id"))
+            if old_file_id is not None:
+                file_remap[old_file_id] = file_row.id
+
+    return experiment_remap, file_remap
+
+
+def _remap_workflow_parameters(
+    value: Any,
+    data_source_remap: dict[int, int],
+    experiment_remap: dict[int, int],
+    file_remap: dict[int, int],
+) -> Any:
     """Best-effort rewrite of known project-local IDs inside node parameters."""
     if isinstance(value, dict):
-        rewritten = {key: _remap_workflow_parameters(item, data_source_remap) for key, item in value.items()}
+        rewritten = {
+            key: _remap_workflow_parameters(item, data_source_remap, experiment_remap, file_remap)
+            for key, item in value.items()
+        }
         for key in ("data_source_id", "primary_data_source_id"):
             if isinstance(rewritten.get(key), int) and rewritten[key] in data_source_remap:
                 rewritten[key] = data_source_remap[rewritten[key]]
+        for key in ("dataset_id", "experiment_id"):
+            old_id = _as_int(rewritten.get(key))
+            if old_id in experiment_remap:
+                rewritten[key] = experiment_remap[old_id]
+        old_file_id = _as_int(rewritten.get("file_id"))
+        if old_file_id in file_remap:
+            rewritten["file_id"] = file_remap[old_file_id]
         return rewritten
     if isinstance(value, list):
-        return [_remap_workflow_parameters(item, data_source_remap) for item in value]
+        return [_remap_workflow_parameters(item, data_source_remap, experiment_remap, file_remap) for item in value]
     return value
 
 
@@ -1687,7 +2122,10 @@ async def _restore_workflows_from_snapshot(
     user_id: int,
     project_json: dict[str, Any],
     data_source_remap: dict[int, int],
+    experiment_remap: dict[int, int],
+    file_remap: dict[int, int],
     session: AsyncSession,
+    known_workflow_remap: dict[int, int] | None = None,
 ) -> dict[int, int]:
     """Recreate workflow rows from a project snapshot."""
     workflow_remap: dict[int, int] = {}
@@ -1756,7 +2194,12 @@ async def _restore_workflows_from_snapshot(
                     node_id=node_data.get("node_id") or "imported_node",
                     node_type=node_data.get("node_type") or "unknown",
                     label=node_data.get("label"),
-                    parameters=_remap_workflow_parameters(node_data.get("parameters") or {}, data_source_remap),
+                    parameters=_remap_workflow_parameters(
+                        node_data.get("parameters") or {},
+                        data_source_remap,
+                        experiment_remap,
+                        file_remap,
+                    ),
                     annotation=node_data.get("annotation"),
                     position_x=node_data.get("position_x"),
                     position_y=node_data.get("position_y"),
@@ -1779,9 +2222,123 @@ async def _restore_workflows_from_snapshot(
             )
 
     await session.flush()
+    combined_workflow_remap = {**(known_workflow_remap or {}), **workflow_remap}
     for workflow, old_parent_id in pending_created_from:
-        workflow.created_from_workflow_id = workflow_remap.get(old_parent_id)
+        workflow.created_from_workflow_id = combined_workflow_remap.get(old_parent_id)
     return workflow_remap
+
+
+async def _restore_scripts_from_snapshot(
+    project: Project,
+    user_id: int,
+    project_json: dict[str, Any],
+    workflow_remap: dict[int, int],
+    session: AsyncSession,
+) -> None:
+    """Recreate script rows for one project snapshot."""
+    for s_data in project_json.get("scripts", []):
+        if not isinstance(s_data, dict):
+            continue
+        source_workflow_id = s_data.get("source_workflow_id")
+        if isinstance(source_workflow_id, int):
+            source_workflow_id = workflow_remap.get(source_workflow_id)
+        else:
+            source_workflow_id = None
+        script = ProjectScript(
+            project_id=project.id,
+            user_id=user_id,
+            name=s_data.get("name", "Imported Script"),
+            description=s_data.get("description"),
+            language=s_data.get("language", "python"),
+            code=s_data.get("code", ""),
+            priority=s_data.get("priority", 50.0),
+            source_workflow_id=source_workflow_id,
+        )
+        session.add(script)
+
+
+async def _restore_project_tree_from_snapshot(
+    project_json: dict[str, Any],
+    *,
+    parent_project: Project | None,
+    user_id: int,
+    zf: zipfile.ZipFile,
+    session: AsyncSession,
+    restored_experiment_ids: list[int],
+    project_remap: dict[int, int],
+    experiment_remap: dict[int, int],
+    file_remap: dict[int, int],
+    data_source_remap: dict[int, int],
+    workflow_remap: dict[int, int],
+) -> Project:
+    """Recreate one project snapshot and all descendants."""
+    project = Project(
+        user_id=user_id,
+        parent_id=parent_project.id if parent_project is not None else None,
+        name=project_json.get("name", "Imported Project"),
+        description=project_json.get("description"),
+        metadata_=project_json.get("metadata", {}),
+        technique=project_json.get("technique"),
+        sample_type=project_json.get("sample_type"),
+    )
+    session.add(project)
+    await session.flush()
+
+    old_project_id = _as_int(project_json.get("id"))
+    if old_project_id is not None:
+        project_remap[old_project_id] = project.id
+
+    local_experiment_remap, local_file_remap = await _restore_project_experiments(
+        project,
+        user_id,
+        project_json,
+        zf,
+        session,
+        restored_experiment_ids,
+    )
+    experiment_remap.update(local_experiment_remap)
+    file_remap.update(local_file_remap)
+
+    local_data_source_remap = await _restore_project_data_sources(
+        project,
+        project_json,
+        experiment_remap,
+        file_remap,
+        session,
+    )
+    data_source_remap.update(local_data_source_remap)
+
+    local_workflow_remap = await _restore_workflows_from_snapshot(
+        project,
+        user_id,
+        project_json,
+        data_source_remap,
+        experiment_remap,
+        file_remap,
+        session,
+        known_workflow_remap=workflow_remap,
+    )
+    workflow_remap.update(local_workflow_remap)
+
+    await _restore_scripts_from_snapshot(project, user_id, project_json, workflow_remap, session)
+
+    for child in project_json.get("children", []):
+        if isinstance(child, dict):
+            await _restore_project_tree_from_snapshot(
+                child,
+                parent_project=project,
+                user_id=user_id,
+                zf=zf,
+                session=session,
+                restored_experiment_ids=restored_experiment_ids,
+                project_remap=project_remap,
+                experiment_remap=experiment_remap,
+                file_remap=file_remap,
+                data_source_remap=data_source_remap,
+                workflow_remap=workflow_remap,
+            )
+
+    return project
 
 
 def _purge_artifacts(uids: list[str]) -> None:
@@ -1816,6 +2373,10 @@ async def import_project(
 ) -> ProjectDetail:
     """Import a .spectrapy or .sherpa archive to create a new project."""
     max_bytes = settings.max_file_size_mb * 1024 * 1024
+    # Portable project archives may contain several uploaded data files plus
+    # model artifacts. Keep the per-file upload cap, but allow a bounded
+    # aggregate project archive budget for full project round trips.
+    max_archive_uncompressed_bytes = max_bytes * PROJECT_ARCHIVE_UNCOMPRESSED_MULTIPLIER
     declared_size = getattr(file, "size", None)
     if isinstance(declared_size, int) and declared_size > max_bytes:
         raise HTTPException(
@@ -1831,6 +2392,7 @@ async def import_project(
     # Artifacts written to disk during this import; purged if the
     # transaction rolls back so a failed import leaves no orphans.
     imported_artifact_uids: list[str] = []
+    imported_experiment_ids: list[int] = []
     committed = False
 
     try:
@@ -1847,18 +2409,31 @@ async def import_project(
 
         upload_stream = io.BytesIO(upload_bytes)
         with zipfile.ZipFile(upload_stream, "r") as zf:
+            total_uncompressed = sum(info.file_size for info in zf.infolist())
+            if total_uncompressed > max_archive_uncompressed_bytes:
+                raise HTTPException(
+                    status_code=413,
+                    detail=(
+                        f"Archive uncompressed payload too large ({total_uncompressed / (1024*1024):.1f} MB). "
+                        f"Maximum is {max_archive_uncompressed_bytes / (1024*1024):.0f} MB."
+                    ),
+                )
             zip_names = set(zf.namelist())
             is_sherpa_object = SHERPA_OBJECT_MANIFEST in zip_names
             if is_sherpa_object:
-                validation = validate_archive_bytes(upload_bytes)
+                validation = validate_archive_bytes(
+                    upload_bytes,
+                    max_uncompressed_bytes=max_archive_uncompressed_bytes,
+                )
                 if not validation.get("valid"):
                     raise HTTPException(
                         status_code=400,
-                        detail={
-                            "message": "Invalid .sherpa object",
-                            "errors": validation.get("errors", []),
-                        },
+                        detail={"message": "Invalid .sherpa object", **_public_archive_report(validation)},
                     )
+
+            project_info = zf.getinfo(PROJECT_PAYLOAD)
+            if project_info.file_size > max_bytes:
+                raise HTTPException(status_code=413, detail="Project payload exceeds size limit")
 
             project_json = json.loads(zf.read(PROJECT_PAYLOAD))
 
@@ -1875,11 +2450,12 @@ async def import_project(
 
             # Pre-scan: validate all model entries and compute total uncompressed size
             # before extracting anything (fail-fast on budget overflow).
-            model_entries: list[tuple[str, dict, bytes, bytes]] = []  # (uid, m_data, manifest_bytes, arrays_bytes)
-            for m_data in project_json.get("models", []):
+            model_entries: list[tuple[str, dict, int | None, bytes, bytes]] = []
+            for owner_snapshot, m_data in _iter_snapshot_models(project_json):
                 uid = m_data.get("artifact_uid")
                 if not uid:
                     continue
+                old_model_project_id = _as_int(owner_snapshot.get("id"))
 
                 # Validate artifact_uid is a proper UUID to prevent path traversal
                 try:
@@ -1944,7 +2520,7 @@ async def import_project(
                     continue
 
                 total_model_bytes_extracted += len(manifest_bytes) + arrays_nbytes
-                model_entries.append((uid, m_data, manifest_bytes, arrays_bytes))
+                model_entries.append((uid, m_data, old_model_project_id, manifest_bytes, arrays_bytes))
 
             # Total budget check across all models
             if total_model_bytes_extracted > max_total_model_bytes:
@@ -1954,44 +2530,25 @@ async def import_project(
                     f"Maximum is {max_total_model_bytes / (1024*1024):.0f} MB.",
                 )
 
-            # Create root project from snapshot
-            project = Project(
-                user_id=user_id,
-                name=project_json.get("name", "Imported Project"),
-                description=project_json.get("description"),
-                metadata_=project_json.get("metadata", {}),
-                technique=project_json.get("technique"),
-                sample_type=project_json.get("sample_type"),
-            )
-            session.add(project)
-            await session.flush()
-            data_source_remap = await _restore_project_data_sources(project, project_json, session)
-            workflow_remap = await _restore_workflows_from_snapshot(
-                project,
-                user_id,
+            # Create root project and descendants from snapshot.
+            project_remap: dict[int, int] = {}
+            experiment_remap: dict[int, int] = {}
+            file_remap: dict[int, int] = {}
+            data_source_remap: dict[int, int] = {}
+            workflow_remap: dict[int, int] = {}
+            project = await _restore_project_tree_from_snapshot(
                 project_json,
-                data_source_remap,
-                session,
+                parent_project=None,
+                user_id=user_id,
+                zf=zf,
+                session=session,
+                restored_experiment_ids=imported_experiment_ids,
+                project_remap=project_remap,
+                experiment_remap=experiment_remap,
+                file_remap=file_remap,
+                data_source_remap=data_source_remap,
+                workflow_remap=workflow_remap,
             )
-
-            # Recreate scripts from snapshot
-            for s_data in project_json.get("scripts", []):
-                source_workflow_id = s_data.get("source_workflow_id")
-                if isinstance(source_workflow_id, int):
-                    source_workflow_id = workflow_remap.get(source_workflow_id)
-                else:
-                    source_workflow_id = None
-                script = ProjectScript(
-                    project_id=project.id,
-                    user_id=user_id,
-                    name=s_data.get("name", "Imported Script"),
-                    description=s_data.get("description"),
-                    language=s_data.get("language", "python"),
-                    code=s_data.get("code", ""),
-                    priority=s_data.get("priority", 50.0),
-                    source_workflow_id=source_workflow_id,
-                )
-                session.add(script)
 
             # An archive must never overwrite an artifact that already
             # exists (on disk or in the DB) — a crafted archive could
@@ -2011,7 +2568,7 @@ async def import_project(
                 existing_db_uids = set(_dup_res.scalars().all())
 
             # Extract and import validated models
-            for uid, m_data, manifest_bytes, arrays_bytes in model_entries:
+            for uid, m_data, old_model_project_id, manifest_bytes, arrays_bytes in model_entries:
                 try:
                     from spectra_sherpa.app.services.model_store import get_model_store
 
@@ -2039,10 +2596,11 @@ async def import_project(
                     imported_artifact_uids.append(target_uid)
 
                     # Create DB record
+                    target_project_id = project_remap.get(old_model_project_id or -1, project.id)
                     model_row = ModelArtifact(
                         artifact_uid=target_uid,
                         user_id=user_id,
-                        project_id=project.id,
+                        project_id=target_project_id,
                         node_id=m_data.get("node_id", "imported"),
                         model_type=m_data.get("model_type", "unknown"),
                         name=m_data.get("name", f"Imported model {target_uid[:8]}"),
@@ -2079,21 +2637,30 @@ async def import_project(
     except HTTPException:
         await session.rollback()
         _purge_artifacts(imported_artifact_uids)
+        for experiment_id in imported_experiment_ids:
+            delete_experiment_files(experiment_id)
         raise
     except (zipfile.BadZipFile, KeyError, json.JSONDecodeError) as exc:
         await session.rollback()
         _purge_artifacts(imported_artifact_uids)
+        for experiment_id in imported_experiment_ids:
+            delete_experiment_files(experiment_id)
+        logger.warning("Invalid project archive upload rejected: %s", type(exc).__name__)
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid project archive: {exc}",
-        )
+            detail={"code": "invalid_project_archive", "message": "Invalid project archive."},
+        ) from None
     except Exception:
         await session.rollback()
         _purge_artifacts(imported_artifact_uids)
+        for experiment_id in imported_experiment_ids:
+            delete_experiment_files(experiment_id)
         raise
     except BaseException:
         await session.rollback()
         _purge_artifacts(imported_artifact_uids)
+        for experiment_id in imported_experiment_ids:
+            delete_experiment_files(experiment_id)
         raise
     finally:
         if committed:

@@ -33,6 +33,26 @@ def _normalize_filter_strings(values: list[Any], *, case_sensitive: bool) -> lis
     return normalized
 
 
+def _explicit_filter_values(value: Any) -> list[Any] | None:
+    """Return an explicit exact-selection list, preserving an empty list."""
+    if value is None:
+        return None
+    if isinstance(value, (str, bytes)):
+        return None
+    if isinstance(value, np.ndarray):
+        return value.astype(object).reshape(-1).tolist()
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    return None
+
+
+def _explicit_filter_mask(values: list[Any], selected_values: list[Any]) -> np.ndarray:
+    """Return an exact string-match mask for UI-populated checkbox selections."""
+    selected = set(_normalize_filter_strings(selected_values, case_sensitive=True))
+    value_strings = _normalize_filter_strings(values, case_sensitive=True)
+    return np.asarray([value in selected for value in value_strings], dtype=bool)
+
+
 def _sample_filter_mask(
     values: list[Any],
     *,
@@ -414,6 +434,7 @@ class FilterSamplesNode(Node):
         intensity_operator = str(params.get("intensity_operator", "gte"))
         intensity_threshold = float(params.get("intensity_threshold", 0.0))
         intensity_upper_threshold = float(params.get("intensity_upper_threshold", 1.0))
+        explicit_values = _explicit_filter_values(params.get("filter_values"))
         X_expr = inputs.get("X", inputs.get("default", "input_data"))
 
         lines: list[str] = []
@@ -472,6 +493,35 @@ class FilterSamplesNode(Node):
         lines.append(f"{indent}    if {invert!r}:")
         lines.append(f"{indent}        _filter_mask = ~_filter_mask")
         lines.append(f"{indent}    _filter_idx = np.flatnonzero(_filter_mask)")
+        if explicit_values is not None and field != "sample_index":
+            lines = [
+                f"{indent}# --- Filter Samples ({self.node_id}) ---",
+                f"{indent}_X_input = {X_expr}",
+                f"{indent}_X_data = np.asarray(getattr(_X_input, 'data', _X_input), dtype=np.float64)",
+                f"{indent}_sample_axis = getattr(_X_input, 'sample_axis', None)",
+                f"{indent}_filter_field = {field!r}",
+                f"{indent}if _filter_field == 'sample_label':",
+                f"{indent}    _filter_values = getattr(_sample_axis, 'labels', None)",
+                f"{indent}elif _filter_field == 'sample_class':",
+                f"{indent}    _filter_values = getattr(_sample_axis, 'classes', None)",
+                f"{indent}elif _filter_field == 'target':",
+                f"{indent}    _filter_values = getattr(_X_input, 'target', None)",
+                f"{indent}elif _filter_field == 'sample_table':",
+                f"{indent}    _table = getattr(_sample_axis, 'sample_table', None) or {{}}",
+                f"{indent}    _filter_values = _table.get({sample_table_column!r})",
+                f"{indent}else:",
+                f"{indent}    raise ValueError(f'Unsupported sample filter field: {{_filter_field!r}}')",
+                f"{indent}if _filter_values is None:",
+                f"{indent}    raise ValueError(f'No values available for sample filter field {{_filter_field!r}}')",
+                f"{indent}_filter_values = np.asarray(_filter_values, dtype=object).reshape(-1)",
+                f"{indent}_filter_values = ['' if v is None else str(v) for v in _filter_values]",
+                f"{indent}_selected_values = {explicit_values!r}",
+                f"{indent}_selected_values = set('' if v is None else str(v) for v in _selected_values)",
+                f"{indent}_filter_mask = np.asarray([v in _selected_values for v in _filter_values], dtype=bool)",
+                f"{indent}if {invert!r}:",
+                f"{indent}    _filter_mask = ~_filter_mask",
+                f"{indent}_filter_idx = np.flatnonzero(_filter_mask)",
+            ]
         if field == "intensity":
             lines = [
                 f"{indent}# --- Filter Samples ({self.node_id}) ---",
@@ -531,6 +581,7 @@ class FilterSamplesNode(Node):
         intensity_operator = str(self.parameters.get("intensity_operator", "gte"))
         intensity_threshold = float(self.parameters.get("intensity_threshold", 0.0))
         intensity_upper_threshold = float(self.parameters.get("intensity_upper_threshold", 1.0))
+        explicit_values = _explicit_filter_values(self.parameters.get("filter_values"))
 
         X_ds = bind_X(
             X,
@@ -556,6 +607,25 @@ class FilterSamplesNode(Node):
                 raise ValueError(
                     f"Sample filter selected 0 of {n_samples} samples. "
                     "Check the intensity threshold or enable Allow Empty Result."
+                )
+            result = _slice_dataset_rows(X_ds, X_array, indices)
+            no_filter = False
+        elif explicit_values is not None and field != "sample_index":
+            values = _sample_filter_values(
+                X_ds,
+                field=field,
+                sample_table_column=sample_table_column,
+                n_samples=n_samples,
+            )
+            mask = _explicit_filter_mask(values, explicit_values)
+            if invert:
+                mask = ~mask
+
+            indices = np.flatnonzero(mask)
+            if indices.size == 0 and not allow_empty:
+                raise ValueError(
+                    f"Sample filter selected 0 of {n_samples} samples. "
+                    "Check selected values or enable Allow Empty Result."
                 )
             result = _slice_dataset_rows(X_ds, X_array, indices)
             no_filter = False
@@ -615,6 +685,7 @@ class FilterSamplesNode(Node):
                 "intensity_operator": intensity_operator,
                 "intensity_threshold": intensity_threshold,
                 "intensity_upper_threshold": intensity_upper_threshold,
+                "filter_values": explicit_values,
             },
             node_id=self.node_id,
         )

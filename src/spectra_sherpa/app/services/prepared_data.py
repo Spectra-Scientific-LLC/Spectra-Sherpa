@@ -27,21 +27,25 @@ class PreparedDataOverrides:
     data_role: str | None = None
     target_column: str | None = None
     target_type: str | None = None
+    target_mode: str | None = None
+    selected_target: str | None = None
 
     @classmethod
     def from_mapping(cls, overrides: Mapping[str, Any] | None) -> "PreparedDataOverrides":
         if not overrides:
             return cls()
         return cls(
-            title=_normalize_text(overrides.get("title")),
-            x_title=_normalize_text(overrides.get("x_title")),
+            title=_normalize_text(overrides.get("title"), allow_empty=True),
+            x_title=_normalize_text(overrides.get("x_title"), allow_empty=True),
             x_units=_normalize_text(overrides.get("x_units"), allow_empty=True),
-            y_title=_normalize_text(overrides.get("y_title")),
+            y_title=_normalize_text(overrides.get("y_title"), allow_empty=True),
             y_units=_normalize_text(overrides.get("y_units"), allow_empty=True),
             is_time_series=_normalize_bool(overrides.get("is_time_series")),
             data_role=_normalize_data_role_value(overrides.get("data_role")),
             target_column=_normalize_text(overrides.get("target_column")),
             target_type=_normalize_target_type(overrides.get("target_type")),
+            target_mode=_normalize_target_mode(overrides.get("target_mode")),
+            selected_target=_normalize_text(overrides.get("selected_target")),
         )
 
     def to_sidecar_dict(self) -> dict[str, Any]:
@@ -64,6 +68,10 @@ class PreparedDataOverrides:
             payload["target_column"] = self.target_column
         if self.target_type is not None:
             payload["target_type"] = self.target_type
+        if self.target_mode is not None:
+            payload["target_mode"] = self.target_mode
+        if self.selected_target is not None:
+            payload["selected_target"] = self.selected_target
         return payload
 
     def to_prompt_dict(self) -> dict[str, Any]:
@@ -85,6 +93,8 @@ class PreparedDataOverrides:
                 self.data_role,
                 self.target_column,
                 self.target_type,
+                self.target_mode,
+                self.selected_target,
             )
         )
 
@@ -122,6 +132,43 @@ def _normalize_target_type(value: Any) -> str | None:
     if text not in {"continuous", "categorical"}:
         raise ValueError("target_type must be continuous, categorical, or auto")
     return text
+
+
+def _normalize_target_mode(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text or text == "auto":
+        return None
+    aliases = {
+        "single-target": "single",
+        "single_property": "single",
+        "single-property": "single",
+        "multi-target": "multi",
+        "multi_property": "multi",
+        "multi-property": "multi",
+    }
+    text = aliases.get(text, text)
+    if text not in {"single", "multi"}:
+        raise ValueError("target_mode must be single, multi, or auto")
+    return text
+
+
+def _selected_target_from_context(dataset: SherpaDataset, selected: str | None) -> str | None:
+    tc = dataset.target_context
+    names = list(tc.target_names or [])
+    if selected and (not names or selected in names):
+        return selected
+    if selected and names and selected not in names:
+        available = ", ".join(str(name) for name in names)
+        raise ValueError(f"Selected target '{selected}' is not available. Available targets: {available}.")
+    if names:
+        return str(names[0])
+    if selected:
+        return selected
+    if tc.target_name:
+        return str(tc.target_name)
+    return None
 
 
 def normalize_relative_data_path(file_path: str) -> str:
@@ -251,6 +298,23 @@ def apply_serialized_prepared_data_overrides(
         meta["target_column"] = prepared.target_column
     if prepared.target_type is not None:
         meta["target_type"] = prepared.target_type
+    if prepared.target_mode is not None:
+        meta["target_mode"] = prepared.target_mode
+    if prepared.selected_target is not None:
+        meta["selected_target"] = prepared.selected_target
+
+    if prepared.target_mode is not None or prepared.selected_target is not None:
+        target_context = result.get("target_context")
+        if isinstance(target_context, dict):
+            if prepared.target_mode == "multi":
+                target_context["selected_target"] = None
+            else:
+                names = target_context.get("target_names")
+                selected = prepared.selected_target
+                if selected is None and isinstance(names, list) and names:
+                    selected = str(names[0])
+                if selected is not None:
+                    target_context["selected_target"] = selected
     return result
 
 
@@ -320,6 +384,20 @@ def apply_dataset_prepared_data_overrides(
         dataset.meta["csv.target_column"] = prepared.target_column
     if prepared.target_type is not None:
         dataset.meta["csv.target_type"] = prepared.target_type
+    if prepared.target_mode is not None:
+        dataset.meta["target_mode"] = prepared.target_mode
+    if prepared.selected_target is not None:
+        dataset.meta["selected_target"] = prepared.selected_target
+
+    if prepared.target_mode is not None or prepared.selected_target is not None:
+        if prepared.target_mode == "multi":
+            dataset.target_context = dataset.target_context.model_copy(update={"selected_target": None})
+            dataset.meta.pop("selected_target", None)
+        else:
+            selected = _selected_target_from_context(dataset, prepared.selected_target)
+            if selected is not None:
+                dataset.target_context = dataset.target_context.model_copy(update={"selected_target": selected})
+                dataset.meta["selected_target"] = selected
 
     return dataset
 
@@ -343,6 +421,10 @@ def merge_prepared_data_overrides(overrides: list[PreparedDataOverrides]) -> Pre
             merged = replace(merged, target_column=current.target_column)
         if current.target_type is not None and merged.target_type is None:
             merged = replace(merged, target_type=current.target_type)
+        if current.target_mode is not None and merged.target_mode is None:
+            merged = replace(merged, target_mode=current.target_mode)
+        if current.selected_target is not None and merged.selected_target is None:
+            merged = replace(merged, selected_target=current.selected_target)
     return merged
 
 

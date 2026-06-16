@@ -32,7 +32,11 @@ from spectra_sherpa.app.services.encryption import decrypt_value
 from spectra_sherpa.app.services.experiments import add_experiment_file, experiment_dir
 from spectra_sherpa.app.services.file_storage import FileValidationError, sanitize_filename
 from spectra_sherpa.app.services.job_manager import job_manager
-from spectra_sherpa.app.services.prepared_data import PreparedDataOverrides, save_prepared_data_overrides
+from spectra_sherpa.app.services.prepared_data import (
+    PreparedDataOverrides,
+    load_prepared_data_overrides,
+    save_prepared_data_overrides,
+)
 from spectra_sherpa.app.services.synthesis import SynthesisError
 
 
@@ -53,6 +57,12 @@ class ExperimentDataset(BaseModel):
     description: str | None
     project_id: int | None = None
     stages: dict[str, list[dict]]
+    target_names: list[str] | None = None
+    target_mode: str | None = None
+    selected_target: str | None = None
+    target_complete_rows: int | None = None
+    target_any_rows: int | None = None
+    target_row_count: int | None = None
 
 
 class LibraryDataset(BaseModel):
@@ -669,6 +679,9 @@ def _experiment_file_payload(file_record: ExperimentFile) -> dict:
 
         dataset = load_csv_as_sherpa(experiment_dir(file_record.experiment_id) / file_record.file_path)
         feature_axis = getattr(dataset, "feature_axis", None)
+        target_context = getattr(dataset, "target_context", None)
+        target_names = list(getattr(target_context, "target_names", None) or [])
+        target = getattr(dataset, "target", None)
         payload.update(
             {
                 "shape": list(dataset.shape),
@@ -680,10 +693,42 @@ def _experiment_file_payload(file_record: ExperimentFile) -> dict:
                 "is_spectra": dataset.data_role == "X_spectra",
             }
         )
+        if target_names:
+            payload["target_names"] = [str(name) for name in target_names]
+        if target is not None:
+            target_arr = np.asarray(target, dtype=np.float64)
+            if target_arr.ndim == 1:
+                target_arr = target_arr.reshape(-1, 1)
+            if target_arr.ndim == 2:
+                finite = np.isfinite(target_arr)
+                payload["target_row_count"] = int(target_arr.shape[0])
+                payload["target_any_rows"] = int(finite.any(axis=1).sum())
+                payload["target_complete_rows"] = int(finite.all(axis=1).sum())
     except Exception:
         pass
 
     return payload
+
+
+def _experiment_target_summary(exp: Experiment, stage_payloads: dict[str, list[dict]]) -> dict:
+    raw_payloads = stage_payloads.get("raw") or []
+    target_payload = next((payload for payload in raw_payloads if payload.get("target_names")), None)
+    if target_payload is None:
+        return {}
+
+    overrides = load_prepared_data_overrides(file_path=str(experiment_dir(exp.id) / target_payload["file_path"]))
+    target_names = [str(name) for name in target_payload.get("target_names") or []]
+    selected = overrides.selected_target if overrides.selected_target in target_names else None
+    if selected is None and target_names:
+        selected = target_names[0]
+    return {
+        "target_names": target_names or None,
+        "target_mode": overrides.target_mode,
+        "selected_target": selected,
+        "target_complete_rows": target_payload.get("target_complete_rows"),
+        "target_any_rows": target_payload.get("target_any_rows"),
+        "target_row_count": target_payload.get("target_row_count"),
+    }
 
 
 @router.get("/available", response_model=AvailableDatasetsResponse)
@@ -722,9 +767,10 @@ async def list_available_datasets(
 
         # Group files by stage
         stages: dict[str, list[dict]] = {"raw": [], "preprocessed": [], "synthetic": []}
-        for file in files:
-            if file.stage in stages:
-                stages[file.stage].append(_experiment_file_payload(file))
+        stage_files = [file for file in files if file.stage in stages]
+        payloads = await asyncio.gather(*(asyncio.to_thread(_experiment_file_payload, file) for file in stage_files))
+        for file, payload in zip(stage_files, payloads):
+            stages[file.stage].append(payload)
 
         experiment_datasets.append(
             ExperimentDataset(
@@ -733,6 +779,7 @@ async def list_available_datasets(
                 description=exp.description,
                 project_id=exp.project_id,
                 stages=stages,
+                **_experiment_target_summary(exp, stages),
             )
         )
 

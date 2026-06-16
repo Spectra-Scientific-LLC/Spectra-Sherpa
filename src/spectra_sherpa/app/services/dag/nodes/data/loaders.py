@@ -257,6 +257,27 @@ class MyDatasetNode(Node):
                 description="Dataset (experiment) to load",
                 required=True,
             ),
+            NodeParameter(
+                name="target_mode",
+                label="Target Mode",
+                param_type="select",
+                default="dataset_default",
+                options=[
+                    {"label": "Use My Dataset default", "value": "dataset_default"},
+                    {"label": "Single property", "value": "single"},
+                    {"label": "Multi-target complete-case", "value": "multi"},
+                ],
+                description="How this workflow sheet interprets multi-property reference values.",
+                required=False,
+            ),
+            NodeParameter(
+                name="selected_target",
+                label="Target Property",
+                param_type="text",
+                default=None,
+                description="Property name used when Target Mode is Single property.",
+                required=False,
+            ),
         ],
         input_types=[],
         input_ports=[],
@@ -342,10 +363,11 @@ class MyDatasetNode(Node):
         if all(isinstance(item.dataset, SherpaDataset) and item.dataset.data_role == "X_features" for item in loaded):
             feature_dataset = self._concatenate_feature_tables(loaded, exp_name)
             feature_dataset = self._apply_loaded_overrides(feature_dataset, loaded)
+            feature_dataset = self._apply_node_target_selection(feature_dataset)
             add_processing_step(
                 feature_dataset,
                 "data.my_dataset",
-                {"dataset_id": dataset_id, "file_count": len(loaded)},
+                self._processing_parameters(dataset_id=dataset_id, file_count=len(loaded), dataset=feature_dataset),
                 node_id=self.node_id,
             )
             return {"default": feature_dataset, "target": feature_dataset.target}
@@ -447,7 +469,59 @@ class MyDatasetNode(Node):
                 target_names=t_names,
             )
 
+        spectra_out = self._apply_loaded_overrides(spectra_out, spectra_group)
+        spectra_out = self._apply_node_target_selection(spectra_out)
+        processing_history = getattr(spectra_out, "processing_history", None)
+        if processing_history:
+            latest_step = processing_history[-1]
+            if latest_step.operation == "data.my_dataset":
+                latest_step.parameters.update(
+                    self._processing_parameters(dataset_id=dataset_id, file_count=len(loaded), dataset=spectra_out)
+                )
         return {"default": spectra_out, "target": target_out}
+
+    def _processing_parameters(self, *, dataset_id: int, file_count: int, dataset: SherpaDataset) -> dict[str, Any]:
+        params: dict[str, Any] = {"dataset_id": dataset_id, "file_count": file_count}
+        tc = getattr(dataset, "target_context", None)
+        if tc is not None and getattr(tc, "selected_target", None):
+            params["target_mode"] = "single"
+            params["selected_target"] = tc.selected_target
+        elif self.parameters.get("target_mode") == "multi":
+            params["target_mode"] = "multi"
+        return params
+
+    def _apply_node_target_selection(self, dataset: SherpaDataset) -> SherpaDataset:
+        target_mode = str(self.parameters.get("target_mode") or "dataset_default")
+        if target_mode in {"", "dataset_default", "auto"}:
+            return dataset
+
+        tc = dataset.target_context
+        if target_mode == "multi":
+            dataset.target_context = tc.model_copy(update={"selected_target": None})
+            dataset.meta["target_mode"] = "multi"
+            dataset.meta.pop("selected_target", None)
+            return dataset
+
+        if target_mode != "single":
+            raise ValueError(f"Unsupported target mode for My Dataset: {target_mode}")
+
+        names = [str(name) for name in (tc.target_names or [])]
+        selected = str(self.parameters.get("selected_target") or "").strip()
+        if not selected and names:
+            selected = names[0]
+        if not selected:
+            raise ValueError(
+                "This My Dataset node is set to Single property, but the selected dataset has no target names."
+            )
+        if names and selected not in names:
+            available = ", ".join(names)
+            raise ValueError(
+                f"This My Dataset node selects target '{selected}', but the dataset target properties are: {available}."
+            )
+        dataset.target_context = tc.model_copy(update={"selected_target": selected})
+        dataset.meta["target_mode"] = "single"
+        dataset.meta["selected_target"] = selected
+        return dataset
 
     @staticmethod
     def _sample_labels(dataset: Any) -> list[str] | None:

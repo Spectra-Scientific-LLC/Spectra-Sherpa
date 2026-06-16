@@ -35,7 +35,7 @@ from spectra_sherpa.app.schemas.data_egress import (
     UserEgressDefaultsUpdate,
 )
 
-router = APIRouter(prefix="/egress", tags=["egress"])
+router = APIRouter(prefix="/egress", tags=["egress"], dependencies=[Depends(get_current_user)])
 
 
 # ============================================================================

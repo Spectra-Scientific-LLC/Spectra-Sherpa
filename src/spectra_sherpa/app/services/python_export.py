@@ -216,6 +216,24 @@ def _generate_prepared_override_lines(dataset_expr: str, spec: "SourceExportSpec
         lines.append(f"{indent}{dataset_expr}.is_time_series = {spec.overrides.is_time_series!r}")
         lines.append(f"{indent}{dataset_expr}.meta['is_time_series'] = {spec.overrides.is_time_series!r}")
 
+    if spec.overrides.target_mode is not None or spec.overrides.selected_target is not None:
+        if spec.overrides.target_mode == "multi":
+            lines.append(
+                f"{indent}{dataset_expr}.target_context = "
+                f"{dataset_expr}.target_context.model_copy(update={{'selected_target': None}})"
+            )
+            lines.append(f"{indent}{dataset_expr}.meta['target_mode'] = 'multi'")
+            lines.append(f"{indent}{dataset_expr}.meta.pop('selected_target', None)")
+        else:
+            selected_target = spec.overrides.selected_target
+            if selected_target is not None:
+                lines.append(
+                    f"{indent}{dataset_expr}.target_context = "
+                    f"{dataset_expr}.target_context.model_copy(update={{'selected_target': {selected_target!r}}})"
+                )
+                lines.append(f"{indent}{dataset_expr}.meta['target_mode'] = 'single'")
+                lines.append(f"{indent}{dataset_expr}.meta['selected_target'] = {selected_target!r}")
+
     return lines
 
 

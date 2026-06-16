@@ -8,7 +8,7 @@ import pytest
 pytest.importorskip("spectrochempy")
 
 from spectra_sherpa.app.lib.scp_compat import NDDataset, scp
-from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset, SpectralAxis
+from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset, SpectralAxis, TargetContext
 from spectra_sherpa.app.services.dag import node_registry
 
 
@@ -23,6 +23,40 @@ def _make_regression_dataset(
     coefficients = np.linspace(1.2, 0.3, n_features)
     y = X @ coefficients + noise * rng.normal(size=n_samples)
     return scp.NDDataset(X), y
+
+
+def _make_multitarget_regression_dataset(
+    n_samples: int = 42,
+    n_features: int = 9,
+    n_targets: int = 3,
+    noise: float = 0.01,
+    seed: int = 314,
+) -> tuple[SherpaDataset, np.ndarray, list[str]]:
+    rng = np.random.default_rng(seed)
+    X = rng.normal(size=(n_samples, n_features))
+    coefficients = rng.normal(size=(n_features, n_targets))
+    y = X @ coefficients + noise * rng.normal(size=(n_samples, n_targets))
+    target_names = [f"Property {idx + 1}" for idx in range(n_targets)]
+    dataset = SherpaDataset(
+        X=X,
+        feature_axis=SpectralAxis(values=np.linspace(900.0, 1700.0, n_features), units="nm"),
+        sample_axis=SampleAxis(labels=[f"sample-{idx + 1}" for idx in range(n_samples)]),
+        target=y,
+        target_context=TargetContext(target_type="continuous", target_names=target_names),
+        data_role="X_spectra",
+        title="multi-target calibration",
+    )
+    return dataset, y, target_names
+
+
+def _make_incomplete_multitarget_dataset() -> tuple[SherpaDataset, np.ndarray, list[str]]:
+    dataset, y, target_names = _make_multitarget_regression_dataset(n_samples=30, n_features=7, n_targets=3)
+    incomplete = y.copy()
+    incomplete[:10, 1:] = np.nan
+    incomplete[10:20, [0, 2]] = np.nan
+    incomplete[20:25, :2] = np.nan
+    dataset.target = incomplete
+    return dataset, incomplete, target_names
 
 
 def _make_cluster_dataset(seed: int = 7) -> NDDataset:
@@ -54,6 +88,61 @@ async def test_pcr_node_regression_fit():
 
 
 @pytest.mark.asyncio
+async def test_pcr_node_multitarget_preserves_target_dimensions():
+    X_dataset, y, target_names = _make_multitarget_regression_dataset()
+    node = node_registry.create_node(
+        node_type="model.pcr",
+        node_id="pcr_multitarget_test",
+        parameters={"n_components": 4, "scale": True},
+    )
+
+    result = await node.run(X=X_dataset, y=y)
+    scores_ds = result.outputs["default"]
+
+    assert scores_ds.shape == (X_dataset.shape[0], 4)
+    assert scores_ds.meta["training_X_shape"] == [X_dataset.shape[0], X_dataset.shape[1]]
+    assert scores_ds.meta["training_y_shape"] == [X_dataset.shape[0], y.shape[1]]
+    assert scores_ds.meta["output_dimensions"]["y_pred"] == [X_dataset.shape[0], y.shape[1]]
+    assert scores_ds.meta["target_names"] == target_names
+    assert len(scores_ds.meta["r2_per_target"]) == y.shape[1]
+    assert len(scores_ds.meta["rmse_per_target"]) == y.shape[1]
+
+
+@pytest.mark.asyncio
+async def test_pcr_node_rejects_incomplete_multitarget_without_selection():
+    X_dataset, _y, _target_names = _make_incomplete_multitarget_dataset()
+    node = node_registry.create_node(
+        node_type="model.pcr",
+        node_id="pcr_incomplete_target_test",
+        parameters={"n_components": 2, "scale": True},
+    )
+
+    with pytest.raises(ValueError, match="incomplete multi-target reference values"):
+        await node.run(X=X_dataset)
+
+
+@pytest.mark.asyncio
+async def test_pcr_node_selected_target_drops_incomplete_rows():
+    X_dataset, y, target_names = _make_incomplete_multitarget_dataset()
+    selected = target_names[1]
+    X_dataset.target_context = X_dataset.target_context.model_copy(update={"selected_target": selected})
+    valid_rows = int(np.isfinite(y[:, 1]).sum())
+    node = node_registry.create_node(
+        node_type="model.pcr",
+        node_id="pcr_selected_target_test",
+        parameters={"n_components": 2, "scale": True},
+    )
+
+    result = await node.run(X=X_dataset)
+    scores_ds = result.outputs["default"]
+
+    assert scores_ds.shape == (valid_rows, 2)
+    assert scores_ds.meta["training_X_shape"] == [valid_rows, X_dataset.shape[1]]
+    assert scores_ds.meta["training_y_shape"] == [valid_rows, 1]
+    assert scores_ds.meta["target_names"] == [selected]
+
+
+@pytest.mark.asyncio
 async def test_pls_node_attaches_quality_evaluation():
     X_dataset, y = _make_regression_dataset(n_samples=36, n_features=6, seed=24)
     node = node_registry.create_node(
@@ -72,6 +161,78 @@ async def test_pls_node_attaches_quality_evaluation():
     assert scores_ds.quality.latest.n_components == 3
     assert scores_ds.quality.latest.r2 is None or isinstance(scores_ds.quality.latest.r2, float)
     assert scores_ds.quality.latest.rmse is None or isinstance(scores_ds.quality.latest.rmse, float)
+
+
+@pytest.mark.asyncio
+async def test_pls_node_rejects_incomplete_multitarget_without_selection():
+    X_dataset, _y, _target_names = _make_incomplete_multitarget_dataset()
+    node = node_registry.create_node(
+        node_type="model.pls",
+        node_id="pls_incomplete_target_test",
+        parameters={"n_components": 2, "scale": True},
+    )
+
+    with pytest.raises(ValueError, match="incomplete multi-target reference values"):
+        await node.run(X=X_dataset)
+
+
+@pytest.mark.asyncio
+async def test_pls_node_selected_target_uses_single_incomplete_property():
+    X_dataset, y, target_names = _make_incomplete_multitarget_dataset()
+    selected = target_names[1]
+    X_dataset.target_context = X_dataset.target_context.model_copy(update={"selected_target": selected})
+    valid_rows = int(np.isfinite(y[:, 1]).sum())
+    node = node_registry.create_node(
+        node_type="model.pls",
+        node_id="pls_selected_target_test",
+        parameters={"n_components": 2, "scale": True},
+    )
+
+    result = await node.run(X=X_dataset)
+    scores_ds = result.outputs["default"]
+
+    assert scores_ds.shape == (valid_rows, 2)
+    assert scores_ds.meta["training_X_shape"] == [valid_rows, X_dataset.shape[1]]
+    assert scores_ds.meta["training_y_shape"] == [valid_rows, 1]
+    assert scores_ds.meta["target_names"] == [selected]
+    assert scores_ds.meta["target_mode"] == "single"
+    assert scores_ds.meta["selected_target"] == selected
+    assert scores_ds.meta["quality_summary"]["target_names"] == [selected]
+    assert scores_ds.meta["quality_summary"]["selected_target"] == selected
+    assert result.diagnostics["target_names"] == [selected]
+    assert result.diagnostics["selected_target"] == selected
+    assert result.outputs["_model_artifact"]["metadata"]["target_names"] == [selected]
+    assert result.outputs["_model_artifact"]["metadata"]["selected_target"] == selected
+    assert result.outputs["cv_predictions"]["metadata"]["selected_target"] == selected
+    assert result.outputs["Y_loadings"].shape == (1, 2)
+
+
+def test_my_dataset_node_freezes_selected_target_per_sheet():
+    X_dataset, _y, target_names = _make_incomplete_multitarget_dataset()
+    selected = target_names[2]
+    node = node_registry.create_node(
+        node_type="data.my_dataset",
+        node_id="my_dataset_selected_target_test",
+        parameters={"target_mode": "single", "selected_target": selected},
+    )
+
+    output = node._apply_node_target_selection(X_dataset)
+
+    assert output.target_context.selected_target == selected
+    assert output.meta["target_mode"] == "single"
+    assert output.meta["selected_target"] == selected
+
+
+def test_my_dataset_node_rejects_stale_selected_target():
+    X_dataset, _y, _target_names = _make_incomplete_multitarget_dataset()
+    node = node_registry.create_node(
+        node_type="data.my_dataset",
+        node_id="my_dataset_bad_target_test",
+        parameters={"target_mode": "single", "selected_target": "NoSuchProperty"},
+    )
+
+    with pytest.raises(ValueError, match="NoSuchProperty"):
+        node._apply_node_target_selection(X_dataset)
 
 
 @pytest.mark.asyncio
@@ -99,6 +260,58 @@ async def test_svr_node_regression_fit():
 
 
 @pytest.mark.asyncio
+async def test_svr_node_selects_one_target_from_multitarget_dataset():
+    X_dataset, _y, target_names = _make_multitarget_regression_dataset()
+    node = node_registry.create_node(
+        node_type="model.svr",
+        node_id="svr_single_target_test",
+        parameters={"kernel": "linear", "C": 10.0, "epsilon": 0.01, "scale": True, "target_index": 2},
+    )
+
+    result = await node.run(X=X_dataset)
+    outputs = result.outputs
+
+    assert len(outputs["y_pred"]) == X_dataset.shape[0]
+    assert len(outputs["residuals"]) == X_dataset.shape[0]
+    assert outputs["metadata"]["n_targets"] == 1
+    assert outputs["metadata"]["target_names"] == [target_names[1]]
+    assert outputs["metadata"]["selected_target_index"] == 1
+    assert outputs["metadata"]["available_target_names"] == target_names
+    assert np.asarray(outputs["metadata"]["y_pred"]).shape == (X_dataset.shape[0], 1)
+
+
+@pytest.mark.asyncio
+async def test_svr_node_selected_target_drops_incomplete_rows():
+    X_dataset, y, _target_names = _make_incomplete_multitarget_dataset()
+    valid_rows = int(np.isfinite(y[:, 1]).sum())
+    node = node_registry.create_node(
+        node_type="model.svr",
+        node_id="svr_incomplete_selected_target_test",
+        parameters={"kernel": "linear", "C": 10.0, "epsilon": 0.01, "scale": True, "target_index": 2},
+    )
+
+    result = await node.run(X=X_dataset)
+    outputs = result.outputs
+
+    assert len(outputs["y_pred"]) == valid_rows
+    assert len(outputs["residuals"]) == valid_rows
+    assert outputs["metadata"]["n_samples"] == valid_rows
+
+
+@pytest.mark.asyncio
+async def test_svr_node_rejects_out_of_range_target_index():
+    X_dataset, _y, _target_names = _make_multitarget_regression_dataset(n_targets=2)
+    node = node_registry.create_node(
+        node_type="model.svr",
+        node_id="svr_bad_target_test",
+        parameters={"kernel": "linear", "C": 1.0, "epsilon": 0.01, "scale": True, "target_index": 3},
+    )
+
+    with pytest.raises(ValueError, match="Target Property 3 is out of range"):
+        await node.run(X=X_dataset)
+
+
+@pytest.mark.asyncio
 async def test_linear_regression_node_fit():
     X_dataset, y = _make_regression_dataset(seed=99)
     node = node_registry.create_node(
@@ -119,6 +332,60 @@ async def test_linear_regression_node_fit():
     assert "intercept" in outputs
     assert "score" in outputs
     assert outputs["score"] > 0.9
+
+
+@pytest.mark.asyncio
+async def test_linear_regression_node_multitarget_preserves_target_dimensions():
+    X_dataset, _y, target_names = _make_multitarget_regression_dataset()
+    node = node_registry.create_node(
+        node_type="model.linear_regression",
+        node_id="lr_multitarget_test",
+        parameters={"fit_intercept": True},
+    )
+
+    result = await node.run(X=X_dataset)
+    outputs = result.outputs
+
+    assert np.asarray(outputs["y_pred"]).shape == (X_dataset.shape[0], len(target_names))
+    assert np.asarray(outputs["residuals"]).shape == (X_dataset.shape[0], len(target_names))
+    assert outputs["metadata"]["n_targets"] == len(target_names)
+    assert outputs["metadata"]["target_names"] == target_names
+    assert len(outputs["metadata"]["r2_per_target"]) == len(target_names)
+    assert len(outputs["metadata"]["rmse_per_target"]) == len(target_names)
+
+
+@pytest.mark.asyncio
+async def test_linear_regression_node_rejects_incomplete_multitarget_without_selection():
+    X_dataset, _y, _target_names = _make_incomplete_multitarget_dataset()
+    node = node_registry.create_node(
+        node_type="model.linear_regression",
+        node_id="lr_incomplete_target_test",
+        parameters={"fit_intercept": True},
+    )
+
+    with pytest.raises(ValueError, match="incomplete multi-target reference values"):
+        await node.run(X=X_dataset)
+
+
+@pytest.mark.asyncio
+async def test_linear_regression_node_selected_target_drops_incomplete_rows():
+    X_dataset, y, target_names = _make_incomplete_multitarget_dataset()
+    selected = target_names[1]
+    X_dataset.target_context = X_dataset.target_context.model_copy(update={"selected_target": selected})
+    valid_rows = int(np.isfinite(y[:, 1]).sum())
+    node = node_registry.create_node(
+        node_type="model.linear_regression",
+        node_id="lr_selected_target_test",
+        parameters={"fit_intercept": True},
+    )
+
+    result = await node.run(X=X_dataset)
+    outputs = result.outputs
+
+    assert len(outputs["y_pred"]) == valid_rows
+    assert len(outputs["residuals"]) == valid_rows
+    assert outputs["metadata"]["n_samples"] == valid_rows
+    assert outputs["metadata"]["target_names"] == [selected]
 
 
 @pytest.mark.asyncio

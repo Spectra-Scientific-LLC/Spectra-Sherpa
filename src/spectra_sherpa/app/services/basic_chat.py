@@ -25,6 +25,10 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
+MAX_INPUT_CHARS = 16_000
+MAX_OUTPUT_CHARS = 32_000
+MAX_TOKENS = 1_500
+
 CHAT_ENDPOINT_URL = os.getenv("CHAT_ENDPOINT_URL", "")
 CHAT_ENDPOINT_KEY = os.getenv("CHAT_ENDPOINT_KEY", "")
 CHAT_ENDPOINT_MODEL = os.getenv("CHAT_ENDPOINT_MODEL", "deepseek-chat")
@@ -153,6 +157,8 @@ async def stream_chat(
         raise ValueError(
             "BYO chat endpoint not configured. " "Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY environment variables."
         )
+    if len(message) > MAX_INPUT_CHARS:
+        raise ValueError("Chat message is too long.")
 
     config = get_config()
     url = config.url.rstrip("/") + "/chat/completions"
@@ -177,15 +183,21 @@ async def stream_chat(
         "model": config.model,
         "messages": messages,
         "stream": True,
+        "max_tokens": MAX_TOKENS,
     }
 
     async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
         async with client.stream("POST", url, json=body, headers=headers) as response:
             if response.status_code != 200:
                 text = await response.aread()
-                logger.warning("Chat endpoint returned %d: %s", response.status_code, text[:500])
+                logger.warning(
+                    "Chat endpoint returned HTTP %d with %d response bytes",
+                    response.status_code,
+                    len(text),
+                )
                 raise ValueError(f"Chat endpoint error (HTTP {response.status_code})")
 
+            output_chars = 0
             async for line in response.aiter_lines():
                 if not line.startswith("data: "):
                     continue
@@ -203,6 +215,11 @@ async def stream_chat(
                 delta = chunk.get("choices", [{}])[0].get("delta", {})
                 text = delta.get("content")
                 if text:
+                    output_chars += len(text)
+                    if output_chars > MAX_OUTPUT_CHARS:
+                        logger.warning("Chat endpoint response exceeded %d characters", MAX_OUTPUT_CHARS)
+                        yield "\n\n[Response truncated by SpectraSherpa output limit.]"
+                        return
                     yield text
 
 
