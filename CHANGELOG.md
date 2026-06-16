@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.18] - 2026-06-08
+## [0.5.19] - 2026-06-16
+
+## [0.5.19] - 2026-06-10
+
+### Data Import
+
+- Added a lightweight CSV import inspector for staged uploads that reports
+  detected column roles, likely CSV layout, axis metadata, target candidates,
+  confidence, and warnings before files are committed to My Dataset.
+- Changed Upload CSV shape handling to default to auto-detect while keeping
+  explicit Spectra / ordered-variable and Feature-table choices available as
+  prepared-data metadata overrides.
+- Recognized unit-only CSV axis headers such as `cm-1`, `cm^-1`, `cm⁻¹`,
+  `nm`, and `ppm`, including files with a UTF-8 byte-order mark.
 
 ## [0.5.18] - 2026-06-08
 

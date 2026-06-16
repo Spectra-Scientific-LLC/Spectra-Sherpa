@@ -25,7 +25,7 @@ A single open workbench for the chemometrics you actually run, built around five
 - **From exploration to production.** Export supported workflows to standalone Python or a Jupyter notebook; trained models are first-class artifacts you can batch-apply and deploy.
 - **Open and local-first.** AGPL-3.0, reads your instrument files directly (`.spg`, `.spa`, `.jdx`, `.opus`, `.mat`, …), and runs entirely on your machine with network egress **denied by default in local mode**.
 
-Built to be an open foundation that labs and instrument makers can standardize on, extend, and embed. Bundled public benchmark datasets (corn, diesel NIR, NIR shootout, and [SpectroChemPy](https://www.spectrochempy.fr/) examples) let you reproduce familiar results on day one.
+Built to be an open foundation that labs and instrument makers can standardize on, extend, and embed. Runtime catalogs can fetch public reference and teaching datasets such as Eigenvector Research examples when egress is enabled; raw Eigenvector data is not redistributed in the wheel or source distribution.
 
 ## Install & run
 
@@ -102,7 +102,7 @@ Because every step is a typed, provenance-tracked artifact, SpectraSherpa is als
 
 SpectraSherpa stands on established open science, and keeps citation guidance close to generated outputs:
 
-- **[SpectroChemPy](https://www.spectrochempy.fr/)** — spectroscopic algorithms and instrument-file readers, by Arnaud Travert and Christian Fernandez at the Laboratoire Catalyse et Spectrochimie (LCS), ENSICAEN / Université de Caen / CNRS. Licensed [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) (BSD-compatible).
+- **[SpectroChemPy](https://www.spectrochempy.fr/)** — spectroscopic algorithms and instrument-file readers, by Arnaud Travert and Christian Fernandez at the Laboratoire Catalyse et Spectrochimie (LCS), ENSICAEN / Université de Caen / CNRS. SpectroChemPy is optional, installed separately through the `scp` extra, and governed by its upstream [CeCILL-B](https://cecill.info/licences/Licence_CeCILL-B_V1-en.html) terms.
 - **[HITRAN](https://hitran.org/) / HAPI** — the high-resolution molecular spectroscopic database used by Data → Synthesis to build physically grounded FTIR line tables.
 - **[Eigenvector Research data sets](https://eigenvector.com/resources/data-sets/)** — recommended NIR/OES chemometrics teaching and validation datasets. SpectraSherpa catalogs these datasets and can download them at runtime when egress is enabled; it does not redistribute the raw Eigenvector data in the wheel.
 - **[NIST Chemistry WebBook](https://webbook.nist.gov/) (SRD 69)** and the **NIST Quantitative Infrared Database (SRD 79)** — reference IR spectra for synthesis.

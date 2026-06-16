@@ -78,9 +78,12 @@ The `.sherpa` object is the round-trip export path for moving a project between 
 
 - `sherpa-object.json`: object version, package mode, payload inventory, SHA-256 hashes, and project summary
 - `project.json`: project snapshot with data sources, workflow sheets, nodes, edges, scripts, and model references
+- `data/experiments/<id>/...`: uploaded project files needed by My Dataset workflows
 - `models/<artifact_uid>/manifest.json` and `models/<artifact_uid>/arrays.npz` when saved model artifacts are available
 
-Unlike a Python or notebook export, a `.sherpa` object is meant to be imported back into SpectraSherpa. Import creates a new project, restores project data-source records, recreates workflow sheets with their nodes and edges, imports model artifacts when present, and stores the imported payload as version 1 of the new project.
+Current full-project exports mark `project.json` with `archive_format.version: "0.2"` and mirror that value in `sherpa-object.json` as `project_payload_version`. Uploaded data files use deterministic member paths derived from their experiment ID and relative file path. During import, a bundled file is accepted only when the project payload's `archive_member` matches that deterministic path and the file's SHA-256 matches the recorded `sha256`.
+
+Unlike a Python or notebook export, a `.sherpa` object is meant to be imported back into SpectraSherpa. Import creates a new project, restores uploaded project files and their metadata, restores project data-source records, recreates workflow sheets with their nodes and edges, imports model artifacts when present, and stores the imported payload as version 1 of the new project.
 
 The object can be inspected or validated without executing workflows:
 
@@ -100,7 +103,9 @@ Hosted APIs that require authentication can pass `--api-url` and `--token`.
 
 The current package mode is `full`. A future metadata-only mode is scaffolded in the manifest but is not yet a supported export option.
 
-Compatibility policy: the beta object reader currently accepts only exact object-version `0.1`. Treat this as the first implementation contract, not a long-term compatibility promise. Future object revisions should add an explicit min/max reader range before changing the manifest schema.
+Import keeps the normal per-file upload cap for each restored data or model member. A full project archive can be larger than a single file because it may include several uploaded files plus model artifacts; the current aggregate uncompressed archive budget is ten times the configured single-file upload limit.
+
+Compatibility policy: the beta object reader currently accepts only exact object-version `0.1`; project payload revisions are distinguished by `project_payload_version`. Treat this as the first implementation contract, not a long-term compatibility promise. Future object revisions should add an explicit min/max reader range before changing the manifest schema.
 
 ## Extension Pattern
 

@@ -13,7 +13,20 @@ Data nodes introduce datasets into a workflow.
 | Load Group (`data.load_group`) | You need to stack many files from a folder into one dataset. | none | grouped spectral dataset | `folder_path`; `pattern`; `recursive`; `sort_by`; `validate_axes`; `group_title`. Requires SpectroChemPy for spectroscopy-native grouped file loading. |
 | Attach Target (`data.attach_target`) | You already have spectra and a target vector or matrix and want downstream supervised nodes to see them together. | `X: SpectralDataset`; `y: TargetMatrix` | `default: SpectralDataset` with attached targets | `target_type` such as continuous or categorical. |
 | Train/Test Split (`data.train_test_split`) | You need a simple train/test split before modeling or holdout evaluation. | `X: SpectralDataset`; `y: TargetMatrix?` | `X_train`; `X_test`; `y_train`; `y_test` | `test_size`; `split_method`; `random_seed`; `shuffle`. |
-| Filter Samples (`data.filter_samples`) | You need to subset rows by sample label, class, target, metadata, row number, or intensity rule. | `X: SpectralDataset` | filtered `SpectralDataset` | `field`; `pattern`; `match_mode`; `case_sensitive`; `invert`; sample-table and intensity threshold settings. |
+| Filter Samples (`data.filter_samples`) | You need to subset rows by sample label, class, target, metadata, row number, or intensity rule. | `X: SpectralDataset` | filtered `SpectralDataset` | Guided mode selection; row ranges; populated value lists; intensity metric, operator, and threshold; optional advanced pattern controls. |
+
+### Filter Samples
+
+Filter Samples keeps or removes rows from a connected dataset before modeling, plotting, export, or report generation. The workflow inspector reads the connected dataset and exposes the practical choices first:
+
+- **By index** for row ranges such as `1-10, 15`.
+- **By name** when sample labels are available.
+- **By class** when class labels are available.
+- **By target** when target values are attached.
+- **By metadata** when sample-table columns are available.
+- **By intensity** for simple row-wise spectral rules such as maximum intensity above a threshold.
+
+The panel previews how many samples will be kept before the workflow is run. Advanced settings remain available for regular-expression matching, inverted selection, case sensitivity, and allowing an intentionally empty result.
 
 ## Synthesis and Mixture Helpers
 
