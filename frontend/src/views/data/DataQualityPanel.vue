@@ -62,6 +62,39 @@
         </div>
       </div>
 
+      <div v-if="targetQuality" class="dq-target-quality">
+        <span class="dq-range-label">Reference Values</span>
+        <div
+          class="dq-target-card"
+          :class="{ 'dq-target-card--warning': targetQuality.partialRows > 0 || targetQuality.emptyRows > 0 }"
+        >
+          <div class="dq-target-main">
+            <strong>
+              {{ targetQuality.anyRows.toLocaleString() }} / {{ targetQuality.rowCount.toLocaleString() }}
+            </strong>
+            <span>samples have at least one reference value</span>
+          </div>
+          <div v-if="targetQuality.nTargets > 1" class="dq-target-main">
+            <strong>
+              {{ targetQuality.allRows.toLocaleString() }} / {{ targetQuality.rowCount.toLocaleString() }}
+            </strong>
+            <span>samples have all {{ targetQuality.nTargets }} target properties</span>
+          </div>
+          <p v-if="targetQuality.partialRows > 0" class="dq-target-warning">
+            Multi-target regression will use only complete rows unless you choose a single target property.
+          </p>
+          <div v-if="targetQuality.perTarget.length > 1" class="dq-target-list">
+            <span
+              v-for="item in targetQuality.perTarget"
+              :key="item.name"
+              class="dq-target-count"
+            >
+              {{ item.name }}: {{ item.count.toLocaleString() }}
+            </span>
+          </div>
+        </div>
+      </div>
+
       <!-- QC flags -->
       <div class="dq-flags">
         <span class="dq-range-label">QC Checks</span>
@@ -127,6 +160,62 @@ const targetLabels = computed(() => {
   return Array.isArray(labels) ? labels.map((label) => String(label)).filter(Boolean) : [];
 });
 
+function targetRows(target: SherpaDatasetDict["target"]): unknown[][] {
+  if (!Array.isArray(target) || target.length === 0) return [];
+  const first = target[0];
+  if (Array.isArray(first)) return target.map((row) => (Array.isArray(row) ? row : [row]));
+  return target.map((value) => [value]);
+}
+
+function hasTargetValue(value: unknown): boolean {
+  if (value == null) return false;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 && Number.isFinite(Number(trimmed));
+  }
+  return false;
+}
+
+const targetQuality = computed(() => {
+  const rows = targetRows(props.datasetDict?.target ?? null);
+  if (!rows.length) return null;
+  const nTargets = Math.max(targetLabels.value.length, ...rows.map((row) => row.length));
+  if (nTargets <= 0) return null;
+
+  let anyRows = 0;
+  let allRows = 0;
+  let partialRows = 0;
+  let emptyRows = 0;
+  const perTarget = Array.from({ length: nTargets }, (_, index) => ({
+    name: targetLabels.value[index] || `Target ${index + 1}`,
+    count: 0,
+  }));
+
+  for (const row of rows) {
+    const present = Array.from({ length: nTargets }, (_, index) => hasTargetValue(row[index]));
+    const rowAny = present.some(Boolean);
+    const rowAll = present.every(Boolean);
+    if (rowAny) anyRows += 1;
+    if (rowAll) allRows += 1;
+    if (rowAny && !rowAll) partialRows += 1;
+    if (!rowAny) emptyRows += 1;
+    present.forEach((ok, index) => {
+      if (ok) perTarget[index].count += 1;
+    });
+  }
+
+  return {
+    rowCount: rows.length,
+    nTargets,
+    anyRows,
+    allRows,
+    partialRows,
+    emptyRows,
+    perTarget,
+  };
+});
+
 const isSpectralDataset = computed(() => {
   const role = meta.value.data_role;
   if (role === "X_spectra") return true;
@@ -183,11 +272,32 @@ const qcFlags = computed<QcFlag[]>(() => {
     }
   }
   if (total > 0) {
+    const previewRows = sd.data?.length ?? 0;
+    const previewCols = Array.isArray(sd.data?.[0]) ? sd.data[0].length : 0;
+    const previewOnly = previewRows < sd.n_samples || previewCols < sd.n_features;
+    const scope = previewOnly ? " in displayed preview rows" : "";
     if (missing === 0) {
-      flags.push({ severity: "success", message: "No missing values detected" });
+      flags.push({ severity: "success", message: `No missing values detected${scope}` });
     } else {
       const pct = ((missing / total) * 100).toFixed(2);
-      flags.push({ severity: "warning", message: `${missing.toLocaleString()} missing values (${pct}%)` });
+      flags.push({ severity: "warning", message: `${missing.toLocaleString()} missing values${scope} (${pct}%)` });
+    }
+  }
+
+  if (targetQuality.value) {
+    const tq = targetQuality.value;
+    if (tq.nTargets > 1 && tq.partialRows > 0) {
+      flags.push({
+        severity: "warning",
+        message: `Reference targets are incomplete: ${tq.allRows.toLocaleString()} samples have all ${tq.nTargets} targets`,
+      });
+    } else if (tq.emptyRows > 0) {
+      flags.push({
+        severity: "warning",
+        message: `${tq.emptyRows.toLocaleString()} samples have no reference value`,
+      });
+    } else {
+      flags.push({ severity: "success", message: "Reference values detected" });
     }
   }
 
@@ -304,6 +414,63 @@ const qcFlags = computed<QcFlag[]>(() => {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.dq-target-quality {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dq-target-card {
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dq-target-card--warning {
+  border-color: #fed7aa;
+  background: #fff7ed;
+}
+
+.dq-target-main {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 0.84rem;
+  color: #334155;
+}
+
+.dq-target-main strong {
+  color: #0f172a;
+}
+
+.dq-target-warning {
+  margin: 0;
+  color: #9a3412;
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
+
+.dq-target-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-height: 96px;
+  overflow-y: auto;
+}
+
+.dq-target-count {
+  font-size: 0.72rem;
+  color: #475569;
+  background: rgba(255, 255, 255, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.38);
+  border-radius: 999px;
+  padding: 2px 7px;
 }
 
 .dq-flag-list {

@@ -23,6 +23,7 @@
           icon="pi pi-upload"
           class="p-button-outlined p-button-sm"
           :disabled="projectImportDisabled"
+          :loading="projectStore.isImporting"
           @click="triggerImport"
         />
       </ResponsiveHeaderActions>
@@ -79,7 +80,14 @@
 
         <div class="current-actions">
           <Button label="Edit" icon="pi pi-pencil" class="p-button-text p-button-sm" @click="showEditProjectDialog(activeProject)" />
-          <Button label="Export" icon="pi pi-download" class="p-button-text p-button-sm" @click="onExportProject(activeProject)" />
+          <Button
+            label="Export"
+            icon="pi pi-download"
+            class="p-button-text p-button-sm"
+            :disabled="exportInProgress"
+            :loading="exportInProgress"
+            @click="onExportProject(activeProject)"
+          />
         </div>
       </section>
 
@@ -213,7 +221,7 @@
     <input
       ref="fileInput"
       type="file"
-      accept=".spectrapy,.zip"
+      accept=".sherpa,.spectrapy,.zip"
       class="hidden-file-input"
       @change="onFileSelected"
     />
@@ -254,7 +262,7 @@ const projectStore = useProjectStore();
 const dataStore = useDataStore();
 const workflowStore = useWorkflowStore();
 const advisorStore = useAdvisorStore();
-const { appMode, isCapabilityDisabled } = useAppConfig();
+const { config: appConfig, appMode, isCapabilityDisabled } = useAppConfig();
 const { isDemoMode, uploadsLastWeek, uploadsLimitWeek, uploadsResetWeekAt, fetchQuota } = useDemoMode();
 
 const isServerBacked = computed(() => appMode.value !== "local");
@@ -275,9 +283,13 @@ const uploadDisabledMessage = computed(() => {
 });
 const dataUploadDisabled = computed(() => isCapabilityDisabled("data_upload") || uploadQuotaExhausted.value);
 const projectImportDisabled = computed(
-  () => dataUploadDisabled.value || isCapabilityDisabled("project_import"),
+  () => projectStore.isImporting || dataUploadDisabled.value || isCapabilityDisabled("project_import"),
 );
 const activeProject = computed(() => projectStore.currentProject);
+const exportInProgress = computed(
+  () => !!activeProject.value && projectStore.exportingProjectIds.includes(activeProject.value.id),
+);
+const maxProjectImportBytes = computed(() => (appConfig.value?.limits?.maxFileSizeMB ?? 200) * 1024 * 1024);
 const headerActionItems = computed(() => [
   ...(isServerBacked.value && projectStore.currentProjectId
     ? [
@@ -301,6 +313,7 @@ const headerActionItems = computed(() => [
     label: "Import",
     icon: "pi pi-upload",
     disabled: projectImportDisabled.value,
+    loading: projectStore.isImporting,
     command: triggerImport,
   },
 ]);
@@ -551,15 +564,32 @@ function triggerImport(): void {
   fileInput.value?.click();
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
+}
+
 async function onFileSelected(event: Event): Promise<void> {
   if (projectImportDisabled.value) return;
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
   if (!file) return;
+  if (file.size > maxProjectImportBytes.value) {
+    input.value = "";
+    toast.add({
+      severity: "error",
+      summary: "Import file too large",
+      detail: `Choose a project archive up to ${formatFileSize(maxProjectImportBytes.value)}.`,
+      life: 4500,
+    });
+    return;
+  }
 
   const project = await projectStore.importProject(file);
   if (project) {
-    await fetchQuota();
+    await Promise.allSettled([loadObjects(project.id), fetchQuota()]);
     toast.add({
       severity: "success",
       summary: `Imported ${project.name}`,

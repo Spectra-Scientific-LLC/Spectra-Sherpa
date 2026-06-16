@@ -34,6 +34,127 @@ const META_TOOLTIPS: Record<string, string> = {
   finite_fraction: "Fraction of numeric matrix cells that are finite and usable for numerical methods.",
 };
 
+function numericValue(value: unknown): number | undefined {
+  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function integerNumber(value: unknown): number | undefined {
+  const numberValue = numericValue(value);
+  if (numberValue === undefined) return undefined;
+  const rounded = Math.trunc(numberValue);
+  return rounded >= 0 ? rounded : undefined;
+}
+
+function shapeSampleCount(value: any): number | undefined {
+  if (Array.isArray(value?.shape)) {
+    return integerNumber(value.shape[0]);
+  }
+  return undefined;
+}
+
+function shapeFeatureCount(value: any): number | undefined {
+  if (!Array.isArray(value?.shape) || value.shape.length <= 1) return undefined;
+  const dims = value.shape.slice(1).map((dim: unknown) => integerNumber(dim));
+  if (dims.some((dim: number | undefined) => dim === undefined)) return undefined;
+  return (dims as number[]).reduce((product, dim) => product * dim, 1);
+}
+
+function dataPair(value: any): [number | undefined, number | undefined] {
+  if (Array.isArray(value?.data)) {
+    const dataRows = value.data.length;
+    const firstRow = value.data[0];
+    return [dataRows, Array.isArray(firstRow) ? firstRow.length : 1];
+  }
+  return [undefined, undefined];
+}
+
+function axisLength(axis: any): number | undefined {
+  return integerNumber(axis?.length) ?? integerNumber(axis?.n_points) ?? (
+    Array.isArray(axis?.data)
+      ? axis.data.length
+      : Array.isArray(axis?.labels)
+        ? axis.labels.length
+        : undefined
+  );
+}
+
+function trueFeatureCount(value: any, metadata: Record<string, any>): number | undefined {
+  const [, dataCols] = dataPair(value);
+  return integerNumber(value?.n_features)
+    ?? integerNumber(metadata.n_features)
+    ?? shapeFeatureCount(value)
+    ?? axisLength(value?.x_axis)
+    ?? (
+    Array.isArray(metadata.wavenumbers)
+      ? metadata.wavenumbers.length
+      : undefined
+  )
+    ?? dataCols;
+}
+
+function trueSampleCount(value: any, metadata: Record<string, any>): number | undefined {
+  const [dataRows] = dataPair(value);
+  return integerNumber(value?.n_samples)
+    ?? integerNumber(metadata.n_samples)
+    ?? shapeSampleCount(value)
+    ?? (
+    Array.isArray(metadata.sample_labels)
+      ? metadata.sample_labels.length
+      : undefined
+  )
+    ?? dataRows;
+}
+
+function numericRange(values: unknown[]): [number, number] | null {
+  const nums = values
+    .map((value) => numericValue(value))
+    .filter((value): value is number => value !== undefined);
+  return nums.length ? [Math.min(...nums), Math.max(...nums)] : null;
+}
+
+function explicitRange(axis: any, metadata: Record<string, any>): [number, number] | null {
+  const candidates = [
+    axis?.range,
+    axis?.extent,
+    metadata.x_range,
+    metadata.wavenumber_range,
+    metadata.wavelength_range,
+  ];
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate) && candidate.length >= 2) {
+      const left = numericValue(candidate[0]);
+      const right = numericValue(candidate[1]);
+      if (left !== undefined && right !== undefined) return [Math.min(left, right), Math.max(left, right)];
+    }
+  }
+  const min = numericValue(metadata.wavenumber_min ?? metadata.wavelength_min ?? metadata.x_min);
+  const max = numericValue(metadata.wavenumber_max ?? metadata.wavelength_max ?? metadata.x_max);
+  if (min !== undefined && max !== undefined) return [Math.min(min, max), Math.max(min, max)];
+  return null;
+}
+
+function xAxisRange(axis: any, metadata: Record<string, any>, featureCount: number | undefined): [number, number] | null {
+  const explicit = explicitRange(axis, metadata);
+  if (explicit) return explicit;
+  if (!Array.isArray(axis?.data)) return null;
+  if (featureCount !== undefined && axis.data.length < featureCount) return null;
+  return numericRange(axis.data);
+}
+
+function yAxisCountLabel(yTitle: unknown): string {
+  const normalized = String(yTitle || "").trim().toLowerCase();
+  if (/\b(target|targets|property|properties)\b/.test(normalized)) return "targets";
+  if (/\b(component|components|latent|lv|factor|factors)\b/.test(normalized)) return "components";
+  if (/\b(class|classes)\b/.test(normalized)) return "classes";
+  if (/\b(sample|samples|specimen|specimens)\b/.test(normalized) || normalized === "") return "samples";
+  return "entries";
+}
+
 interface UseNodeOutputDataDeps {
   nodeOutput: Ref<NodeOutput | null>;
   nodeData: Ref<any>;
@@ -196,27 +317,37 @@ export function useNodeOutputData({
   const datasetInfo = computed(() => {
     if (!hasOutput.value || !nodeOutput.value) return null;
     const primaryPort = nodeOutput.value.primary_port;
+    const primaryPortOutput = primaryPort ? (nodeOutput.value.ports?.[primaryPort] as any) : null;
     const portValue: any =
-      (primaryPort && (nodeOutput.value.ports?.[primaryPort] as any)?.value) || null;
-    const metadata: Record<string, any> = nodeOutput.value.metadata || {};
+      primaryPortOutput?.value || null;
+    const metadata: Record<string, any> = {
+      ...(portValue?.metadata || {}),
+      ...(primaryPortOutput?.metadata || {}),
+      ...(nodeOutput.value.metadata || {}),
+    };
     const info: Record<string, any> = {};
+    const featureCount = trueFeatureCount(portValue, metadata);
+    const sampleCount = trueSampleCount(portValue, metadata);
 
     const xAxis = portValue?.x_axis;
     if (xAxis?.data?.length) {
-      const nums = xAxis.data.filter(
-        (v: any) => typeof v === "number" && isFinite(v),
-      );
       info.xAxis = {
         title: xAxis.title || metadata.x_title || "Feature",
         units: xAxis.units || metadata.x_units || "",
-        points: xAxis.data.length,
-        range: nums.length ? [Math.min(...nums), Math.max(...nums)] : null,
+        points: featureCount ?? xAxis.data.length,
+        range: xAxisRange(xAxis, metadata, featureCount),
       };
     } else if (metadata.x_title || metadata.wavenumbers?.length) {
       info.xAxis = {
         title: metadata.x_title || "Feature",
         units: metadata.x_units || "",
-        points: metadata.wavenumbers?.length || metadata.n_features,
+        points: featureCount ?? metadata.wavenumbers?.length ?? metadata.n_features,
+      };
+    } else if (featureCount !== undefined) {
+      info.xAxis = {
+        title: metadata.x_title || "Feature",
+        units: metadata.x_units || "",
+        points: featureCount,
       };
     }
 
@@ -242,14 +373,20 @@ export function useNodeOutputData({
         title: yAxis.title || metadata.y_title || defaultSampleTitle,
         units: yAxis.units || metadata.y_units || "",
         labels: meaningfulLabels(yAxis.labels),
-        nSamples: yAxis.data?.length,
+        nSamples: sampleCount ?? yAxis.data?.length,
       };
     } else if (metadata.sample_labels?.length) {
       info.yAxis = {
         title: metadata.y_title || defaultSampleTitle,
         units: metadata.y_units || "",
         labels: meaningfulLabels(metadata.sample_labels),
-        nSamples: metadata.sample_labels.length,
+        nSamples: sampleCount ?? metadata.sample_labels.length,
+      };
+    } else if (sampleCount !== undefined) {
+      info.yAxis = {
+        title: metadata.y_title || defaultSampleTitle,
+        units: metadata.y_units || "",
+        nSamples: sampleCount,
       };
     }
 
@@ -379,11 +516,16 @@ export function useNodeOutputData({
       xUnits?: string;
       xPoints?: number;
       yTitle?: string;
+      yCount?: number;
+      yCountLabel?: string;
       nLabels?: number;
     }> = [];
     for (const [name, port] of Object.entries(nodeOutput.value.ports)) {
       if (name === nodeOutput.value.primary_port) continue;
       const raw = (port as any).value;
+      const portMetadata = ((port as any).metadata || raw?.metadata || {}) as Record<string, any>;
+      const yTitle = raw?.y_axis?.title || portMetadata.y_title;
+      const yCount = trueSampleCount(raw, portMetadata);
       summaries.push({
         name,
         type: (port as any).type,
@@ -391,8 +533,10 @@ export function useNodeOutputData({
         title: raw?.title,
         xTitle: raw?.x_axis?.title,
         xUnits: raw?.x_axis?.units,
-        xPoints: raw?.x_axis?.data?.length,
-        yTitle: raw?.y_axis?.title,
+        xPoints: trueFeatureCount(raw, portMetadata),
+        yTitle,
+        yCount,
+        yCountLabel: yCount !== undefined ? yAxisCountLabel(yTitle) : undefined,
         nLabels: raw?.y_axis?.labels?.length,
       });
     }
@@ -406,6 +550,8 @@ export function useNodeOutputData({
       full.ports = {};
       for (const [name, port] of Object.entries(nodeOutput.value.ports)) {
         const raw = (port as any).value;
+        const portMetadata = ((port as any).metadata || raw?.metadata || {}) as Record<string, any>;
+        const yTitle = raw?.y_axis?.title || portMetadata.y_title;
         full.ports[name] = {
           type: (port as any).type,
           shape: raw?.shape,
@@ -414,11 +560,17 @@ export function useNodeOutputData({
             ? {
                 title: raw.x_axis.title,
                 units: raw.x_axis.units,
-                points: raw.x_axis.data?.length,
+                points: trueFeatureCount(raw, portMetadata),
+                serialized_points: raw.x_axis.data?.length,
               }
             : undefined,
           y_axis: raw?.y_axis
-            ? { title: raw.y_axis.title, labels_count: raw.y_axis.labels?.length }
+            ? {
+                title: yTitle,
+                count: trueSampleCount(raw, portMetadata),
+                count_label: yAxisCountLabel(yTitle),
+                labels_count: raw.y_axis.labels?.length,
+              }
             : undefined,
           metadata: (port as any).metadata,
         };

@@ -14,11 +14,76 @@ import {
   type ReportEdge,
 } from "@/utils/reportGenerator";
 import { collectCanonicalClassificationMetrics } from "@/utils/classificationMetrics";
+import { downloadBlob } from "@/utils/download";
 import type { NodeOutput } from "@/utils/nodeOutput";
 
 declare const Plotly: {
   toImage: (el: HTMLElement, opts: { format: string; width: number; height: number }) => Promise<string>;
 };
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function numericShape(value: unknown): number[] | null {
+  if (!isRecord(value)) return null;
+  if (Array.isArray(value.shape) && value.shape.every((item) => typeof item === "number")) {
+    return value.shape;
+  }
+  if (typeof value.n_samples === "number" && typeof value.n_features === "number") {
+    return [value.n_samples, value.n_features];
+  }
+  return null;
+}
+
+function deriveTrueOutputShape(output: NodeOutput | undefined, fallback: number[] | null | undefined): number[] | null {
+  if (!output) return fallback || null;
+  const primaryPort = output.primary_port ? output.ports?.[output.primary_port] : undefined;
+  const candidates = [
+    primaryPort?.value,
+    primaryPort?.metadata,
+    output.metadata,
+    output,
+  ];
+  for (const candidate of candidates) {
+    const shape = numericShape(candidate);
+    if (shape) return shape;
+  }
+  return fallback || null;
+}
+
+const REPORT_METRIC_KEYS = [
+  "explained_variance_ratio",
+  "r2",
+  "R2",
+  "r2_cv",
+  "rmse",
+  "RMSE",
+  "rmsecv",
+  "rmsep",
+  "bias",
+  "sep",
+  "accuracy",
+  "n_components",
+  "n_clusters",
+  "n_samples",
+  "n_features",
+  "n_targets",
+  "n_evaluated",
+  "selected_target",
+  "target_mode",
+];
+
+function collectReportMetrics(source: unknown, metrics: Record<string, any>) {
+  if (!isRecord(source)) return;
+  for (const key of REPORT_METRIC_KEYS) {
+    const value = source[key];
+    if (typeof value === "number" || typeof value === "string" || Array.isArray(value)) {
+      metrics[key] = value;
+    }
+  }
+  collectCanonicalClassificationMetrics(source, metrics);
+}
 
 export function useReportExport() {
   const workflowStore = useWorkflowStore();
@@ -48,6 +113,7 @@ export function useReportExport() {
     // 2. Build report nodes from workflow store
     const reportNodes: ReportNode[] = workflowStore.nodes.map((n) => {
       const metadata = workflowStore.getNodeMetadata(n.type);
+      const output = nodeOutputs.get(String(n.id)) ?? nodeOutputs.get(n.id as any);
       return {
         nodeId: String(n.id),
         nodeType: n.type,
@@ -56,7 +122,7 @@ export function useReportExport() {
         positionX: n.x,
         positionY: n.y,
         status: n.executionState?.status,
-        outputShape: n.executionState?.output_shape || null,
+        outputShape: deriveTrueOutputShape(output, n.executionState?.output_shape),
         outputType: n.executionState?.output_type || null,
       };
     });
@@ -80,19 +146,14 @@ export function useReportExport() {
           // Extract numeric metrics from the output
           const metrics: Record<string, any> = {};
           const raw = output as any;
-          for (const key of ["explained_variance_ratio", "r2", "rmse", "accuracy", "n_components", "n_clusters"]) {
-            if (raw[key] !== undefined) metrics[key] = raw[key];
-          }
-          collectCanonicalClassificationMetrics(raw, metrics);
+          collectReportMetrics(raw, metrics);
+          collectReportMetrics(raw.metadata, metrics);
           // Also look inside ports.default or the raw data
           if (raw.ports?.default) {
             const defaultPort = raw.ports.default;
-            for (const key of Object.keys(defaultPort)) {
-              if (typeof defaultPort[key] === "number") {
-                metrics[key] = defaultPort[key];
-              }
-            }
-            collectCanonicalClassificationMetrics(defaultPort, metrics);
+            collectReportMetrics(defaultPort, metrics);
+            collectReportMetrics(defaultPort.metadata, metrics);
+            collectReportMetrics(defaultPort.value, metrics);
           }
           if (Object.keys(metrics).length > 0) {
             terminalMetrics[String(node.id)] = metrics;
@@ -116,12 +177,7 @@ export function useReportExport() {
     // 6. Generate HTML and trigger download
     const html = generateProvenanceReport(reportData);
     const blob = new Blob([html], { type: "text/html" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${workflowStore.workflowName.replace(/\s+/g, "_").toLowerCase()}_report.html`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(blob, `${workflowStore.workflowName.replace(/\s+/g, "_").toLowerCase()}_report.html`);
   }
 
   return { exportReport };

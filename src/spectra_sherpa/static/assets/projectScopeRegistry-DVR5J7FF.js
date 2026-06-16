@@ -1,0 +1,1 @@
+var e=new Set;function t(t){return e.add(t),()=>e.delete(t)}function n(){for(let t of e)try{t()}catch(e){console.warn(`[projectScope] reset callback failed`,e)}}export{n,t};

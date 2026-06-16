@@ -1,1 +1,0 @@
-var e=(e,t)=>{let n=URL.createObjectURL(e),r=document.createElement(`a`);r.href=n,r.download=t,document.body.appendChild(r),r.click(),document.body.removeChild(r),URL.revokeObjectURL(n)},t=(t,n,r)=>{e(new Blob([t],{type:r}),n)},n=(e,n)=>{t(JSON.stringify(e,null,2),n,`application/json`)};export{n,t as r,e as t};

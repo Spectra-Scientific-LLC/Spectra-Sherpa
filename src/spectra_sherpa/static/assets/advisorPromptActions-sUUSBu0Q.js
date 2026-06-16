@@ -1,1 +1,0 @@
-var e=`advisor-prompt-request`;function t(t,n){let r=t.trim();r&&window.dispatchEvent(new CustomEvent(e,{detail:{prompt:r,autoSend:n?.autoSend??!0}}))}export{t as n,e as t};

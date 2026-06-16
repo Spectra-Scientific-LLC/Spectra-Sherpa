@@ -705,6 +705,7 @@ import Tag from "primevue/tag";
 import api from "@/api/client";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 import ConcentrationCurveEditor from "@/components/ConcentrationCurveEditor.vue";
+import { downloadBlob } from "@/utils/download";
 import {
   defaultDatasetName,
   useSynthesisStore,
@@ -2173,14 +2174,7 @@ function saveAllCurves() {
     })),
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `synthesis-curves-${selectedComponents.value.length}-${Date.now()}.json`;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  downloadBlob(blob, `synthesis-curves-${selectedComponents.value.length}-${Date.now()}.json`);
 }
 
 async function loadCurves(event: Event) {

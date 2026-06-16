@@ -3,6 +3,7 @@ import { ref, computed } from "vue";
 import api from "@/api/client";
 import { useAuthStore } from "@/stores/auth";
 import { runProjectScopeResets } from "@/stores/projectScopeRegistry";
+import { downloadBlob, filenameFromContentDisposition } from "@/utils/download";
 import { getErrorMessage } from "@/utils/errors";
 
 const LAST_ACTIVE_PROJECT_PREFIX = "spectra_sherpa_last_project_";
@@ -54,6 +55,7 @@ const clearProjectScopedBrowserState = (
     /* localStorage may be unavailable in hardened browsers/tests. */
   }
 };
+
 import type {
   ProjectSummary,
   ProjectDetail,
@@ -90,6 +92,8 @@ export const useProjectStore = defineStore("project", () => {
   const versions = ref<ProjectVersionSummary[]>([]);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
+  const exportingProjectIds = ref<number[]>([]);
+  const isImporting = ref(false);
 
   // Getters
   const projectList = computed(() =>
@@ -436,27 +440,50 @@ export const useProjectStore = defineStore("project", () => {
   // ── Export / Import ───────────────────────────────────────────
 
   async function exportProject(id: number): Promise<void> {
+    if (exportingProjectIds.value.includes(id)) return;
     error.value = null;
+    exportingProjectIds.value = [...exportingProjectIds.value, id];
     try {
-      const response = await api.get(`/projects/${id}/export`, {
+      const response = await api.get(`/projects/${id}/export/sherpa`, {
         responseType: "blob",
       });
-      const url = URL.createObjectURL(response.data);
-      const a = document.createElement("a");
-      a.href = url;
       // Extract filename from content-disposition or use project name
       const disposition = response.headers["content-disposition"];
-      const match = disposition?.match(/filename="?(.+)"?/);
-      a.download = match?.[1] || "project.spectrapy";
-      a.click();
-      URL.revokeObjectURL(url);
+      downloadBlob(response.data, filenameFromContentDisposition(disposition, "project.sherpa"));
     } catch (e) {
       error.value = getErrorMessage(e);
+    } finally {
+      exportingProjectIds.value = exportingProjectIds.value.filter((projectId) => projectId !== id);
     }
   }
 
+  async function refreshImportedProjectSlices(projectId: number): Promise<void> {
+    const [
+      { useDataStore },
+      { useDataSourceStore },
+      { useExperimentStore },
+      { useRunsStore },
+    ] = await Promise.all([
+      import("@/stores/data"),
+      import("@/stores/dataSources"),
+      import("@/stores/experiment"),
+      import("@/stores/runs"),
+    ]);
+
+    const dataStore = useDataStore();
+    await Promise.allSettled([
+      dataStore.fetchExperiments(projectId),
+      dataStore.fetchCatalog(projectId),
+      useDataSourceStore().loadProjectDataSources(projectId),
+      useExperimentStore().fetchExperiments(projectId),
+      useRunsStore().fetchProjectRuns(projectId),
+    ]);
+  }
+
   async function importProject(file: File): Promise<ProjectDetail | null> {
+    if (isImporting.value) return null;
     error.value = null;
+    isImporting.value = true;
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -465,14 +492,19 @@ export const useProjectStore = defineStore("project", () => {
         formData,
         { headers: { "Content-Type": "multipart/form-data" } }
       );
+      runProjectScopeResets();
       currentProject.value = data;
       currentProjectId.value = data.id;
       writeLastActiveProjectId(useAuthStore().user?.id ?? null, data.id);
       await fetchProjects();
+      await fetchProject(data.id);
+      await refreshImportedProjectSlices(data.id);
       return data;
     } catch (e) {
       error.value = getErrorMessage(e);
       return null;
+    } finally {
+      isImporting.value = false;
     }
   }
 
@@ -484,6 +516,8 @@ export const useProjectStore = defineStore("project", () => {
     versions,
     isLoading,
     error,
+    exportingProjectIds,
+    isImporting,
 
     // Getters
     projectList,

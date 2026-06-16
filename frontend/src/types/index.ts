@@ -93,6 +93,7 @@ export interface SherpaDatasetDict {
     target_units?: string | null;
     class_names?: string[] | null;
     n_classes?: number | null;
+    selected_target?: string | null;
   };
   is_time_series?: boolean;
   metadata?: Record<string, unknown>;
@@ -202,6 +203,7 @@ export interface JobInfo {
 }
 
 export interface LlmMessage {
+  id: string;
   role: "user" | "assistant" | "system";
   content: string;
 }
@@ -215,6 +217,7 @@ export interface ConversationSummary {
 // ── Sherpa Advisor Types ──────────────────────────────────────
 
 export interface SherpaMessage {
+  id: string;
   role: "user" | "assistant" | "system";
   content: string;
   recommendations?: SherpaRecommendationPayload[];

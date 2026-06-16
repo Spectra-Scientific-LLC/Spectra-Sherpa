@@ -106,9 +106,13 @@
               v-model:x-units="editXUnits"
               v-model:y-title="editYTitle"
               v-model:is-time-series="isTimeSeriesToggle"
+              v-model:target-mode="targetMode"
+              v-model:selected-target="selectedTarget"
               :x-title-options="xTitleOptions"
               :x-units-options="xUnitsOptions"
               :y-title-options="yTitleOptions"
+              :target-options="targetOptions"
+              :show-target-controls="showTargetControls"
             />
           </div>
         </div>
@@ -201,9 +205,13 @@
               v-model:x-units="editXUnits"
               v-model:y-title="editYTitle"
               v-model:is-time-series="isTimeSeriesToggle"
+              v-model:target-mode="targetMode"
+              v-model:selected-target="selectedTarget"
               :x-title-options="xTitleOptions"
               :x-units-options="xUnitsOptions"
               :y-title-options="yTitleOptions"
+              :target-options="targetOptions"
+              :show-target-controls="showTargetControls"
             />
           </div>
         </div>
@@ -271,6 +279,8 @@ const editXTitle = ref("");
 const editXUnits = ref("");
 const editYTitle = ref("");
 const isTimeSeriesToggle = ref(false);
+const targetMode = ref<"single" | "multi">("single");
+const selectedTarget = ref("");
 
 const xUnitsOptions = computed(() => {
   const units = xUnitsMap[editXTitle.value];
@@ -302,35 +312,68 @@ const contentsSubtitle = computed(() => {
   return "Select a dataset or file from My Dataset.";
 });
 
+function targetNamesFromContext(context: unknown): string[] {
+  if (!context || typeof context !== "object") return [];
+  const record = context as Record<string, unknown>;
+  const raw = record.target_names ?? record.class_names;
+  return Array.isArray(raw) ? raw.map((item) => String(item)).filter(Boolean) : [];
+}
+
+const targetOptions = computed(() => {
+  const fileTargets = targetNamesFromContext(dataStore.fileInfo?.target_context);
+  if (fileTargets.length) return fileTargets;
+  const catalogTargets = dataStore.catalogDatasetInfo?.target_names ?? [];
+  return Array.isArray(catalogTargets) ? catalogTargets.map((item) => String(item)).filter(Boolean) : [];
+});
+
+const showTargetControls = computed(() => targetOptions.value.length > 1);
+
+function syncTargetControls(metadata: Record<string, unknown> | undefined, targetNames: string[]) {
+  const mode = metadata?.target_mode === "multi" ? "multi" : "single";
+  targetMode.value = targetNames.length > 1 ? mode : "single";
+  const savedTarget = typeof metadata?.selected_target === "string" ? metadata.selected_target : "";
+  selectedTarget.value = savedTarget && targetNames.includes(savedTarget)
+    ? savedTarget
+    : (targetNames[0] ?? "");
+}
+
 function _syncFromFileInfo(fi: { metadata?: Record<string, unknown> } | null) {
   const m = fi?.metadata as Record<string, unknown> | undefined;
   editXTitle.value = (m?.x_title ?? "") as string;
   editXUnits.value = (m?.x_units ?? "") as string;
   editYTitle.value = (m?.data_quantity ?? "") as string;
   isTimeSeriesToggle.value = !!(m?.is_time_series);
+  syncTargetControls(m, targetNamesFromContext((fi as Record<string, unknown> | null)?.target_context));
 }
 
 function _syncFromCatalog(info: CatalogDatasetInfo | null) {
+  const m = info?.metadata as Record<string, unknown> | undefined;
   editXTitle.value = (info?.x_title ?? "") as string;
   editXUnits.value = (info?.x_units ?? "") as string;
   editYTitle.value = (info?.data_quantity ?? "") as string;
-  isTimeSeriesToggle.value = !!(info?.metadata as Record<string, unknown> | undefined)?.is_time_series
+  isTimeSeriesToggle.value = !!m?.is_time_series
     || !!(info?.is_time_series);
+  syncTargetControls(m, Array.isArray(info?.target_names) ? info.target_names.map((item) => String(item)) : []);
 }
 
 watch(() => dataStore.fileInfo, _syncFromFileInfo);
 watch(() => dataStore.catalogDatasetInfo, _syncFromCatalog);
 
 async function persistMetadataOverride() {
-  const xTitle = editXTitle.value || null;
-  const xUnits = editXUnits.value || null;
-  const yTitle = editYTitle.value || null;
+  const xTitle = editXTitle.value;
+  const xUnits = editXUnits.value;
+  const yTitle = editYTitle.value;
   const isTimeSeries = isTimeSeriesToggle.value;
+  const targetNames = targetOptions.value;
+  const targetModeValue = targetNames.length > 1 ? targetMode.value : null;
+  const selectedTargetValue = targetModeValue === "single" ? (selectedTarget.value || targetNames[0] || null) : null;
   const body: Record<string, unknown> = {
     x_title: xTitle,
     x_units: xUnits,
     y_title: yTitle,
     is_time_series: isTimeSeries,
+    target_mode: targetModeValue,
+    selected_target: selectedTargetValue,
   };
 
   const catInfo = dataStore.catalogDatasetInfo;
@@ -354,6 +397,8 @@ async function persistMetadataOverride() {
         fiAny.metadata.x_units = xUnits;
         fiAny.metadata.data_quantity = yTitle;
         fiAny.metadata.is_time_series = isTimeSeries;
+        fiAny.metadata.target_mode = targetModeValue;
+        fiAny.metadata.selected_target = selectedTargetValue;
       }
       fiAny.x_title = xTitle;
       fiAny.x_units = xUnits;
@@ -366,6 +411,10 @@ async function persistMetadataOverride() {
       ciAny.x_units = xUnits;
       ciAny.data_quantity = yTitle;
       ciAny.is_time_series = isTimeSeries;
+      const ciMeta = (ciAny.metadata ?? {}) as Record<string, unknown>;
+      ciMeta.target_mode = targetModeValue;
+      ciMeta.selected_target = selectedTargetValue;
+      ciAny.metadata = ciMeta;
     }
   } catch (err) {
     console.warn("Failed to persist metadata override", err);
@@ -382,6 +431,8 @@ watch(editXTitle, schedulePersist);
 watch(editXUnits, schedulePersist);
 watch(editYTitle, schedulePersist);
 watch(isTimeSeriesToggle, schedulePersist);
+watch(targetMode, schedulePersist);
+watch(selectedTarget, schedulePersist);
 
 const sdMeta = computed(() => {
   const m = dataStore.fileInfo?.metadata as Record<string, unknown> | undefined;
@@ -391,10 +442,10 @@ const sdMeta = computed(() => {
   return {
     wavenumbers: (metadataWavenumbers.length ? metadataWavenumbers : axisData) as number[],
     labels: (m?.labels ?? m?.sample_labels ?? []) as string[],
-    x_title: editXTitle.value || (m?.x_title ?? "") as string,
-    x_units: editXUnits.value || (m?.x_units ?? "") as string,
+    x_title: editXTitle.value,
+    x_units: editXUnits.value,
     spectral_technique: (m?.spectral_technique ?? null) as string | null,
-    data_quantity: editYTitle.value || (m?.data_quantity ?? null) as string | null,
+    data_quantity: editYTitle.value,
     value_units: (m?.value_units ?? null) as string | null,
     prop_names: (m?.prop_names ?? []) as string[],
     properties: (m?.properties ?? null) as Record<string, number[]> | null,
@@ -607,11 +658,22 @@ const MetadataEditor = defineComponent({
     xUnits: { type: String, default: "" },
     yTitle: { type: String, default: "" },
     isTimeSeries: { type: Boolean, default: false },
+    targetMode: { type: String as () => "single" | "multi", default: "single" },
+    selectedTarget: { type: String, default: "" },
     xTitleOptions: { type: Array as () => string[], required: true },
     xUnitsOptions: { type: Array as () => string[], required: true },
     yTitleOptions: { type: Array as () => string[], required: true },
+    targetOptions: { type: Array as () => string[], default: () => [] },
+    showTargetControls: { type: Boolean, default: false },
   },
-  emits: ["update:xTitle", "update:xUnits", "update:yTitle", "update:isTimeSeries"],
+  emits: [
+    "update:xTitle",
+    "update:xUnits",
+    "update:yTitle",
+    "update:isTimeSeries",
+    "update:targetMode",
+    "update:selectedTarget",
+  ],
   setup(props, { emit }) {
     const row = (label: string, control: VNodeChild) =>
       h("div", { class: "meta-row" }, [h("span", { class: "meta-key" }, label), control]);
@@ -644,6 +706,28 @@ const MetadataEditor = defineComponent({
         modelValue: props.isTimeSeries,
         "onUpdate:modelValue": (value: boolean) => emit("update:isTimeSeries", value),
       })),
+      props.showTargetControls
+        ? row("Target Mode", h(Dropdown, {
+            modelValue: props.targetMode,
+            options: [
+              { label: "Single property", value: "single" },
+              { label: "Multi-target complete-case", value: "multi" },
+            ],
+            optionLabel: "label",
+            optionValue: "value",
+            class: "meta-dropdown",
+            "onUpdate:modelValue": (value: "single" | "multi") => emit("update:targetMode", value),
+          }))
+        : null,
+      props.showTargetControls && props.targetMode === "single"
+        ? row("Target Property", h(Dropdown, {
+            modelValue: props.selectedTarget,
+            options: props.targetOptions,
+            placeholder: "Select property",
+            class: "meta-dropdown",
+            "onUpdate:modelValue": (value: string) => emit("update:selectedTarget", value),
+          }))
+        : null,
     ];
   },
 });

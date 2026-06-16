@@ -7,6 +7,7 @@ import { useAdvisorStore } from "@/stores/advisor";
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
 import { getErrorMessage } from "@/utils/errors";
+import { blobFromResponseData, downloadBlob } from "@/utils/download";
 import type {
   ExperimentSummary,
   ExperimentFile,
@@ -21,6 +22,8 @@ import type {
 
 type StoryObject = Record<string, unknown>;
 const LAST_ACTIVE_EXPERIMENT_PREFIX = "spectra_sherpa_last_experiment";
+let catalogRequestSeq = 0;
+let experimentsRequestSeq = 0;
 
 const lastActiveExperimentKey = (): string => {
   const userId = useAuthStore().user?.id ?? "local";
@@ -115,6 +118,38 @@ export interface PreparedDataOverrides {
   is_time_series?: boolean | null;
 }
 
+export interface CsvImportColumnRole {
+  name: string;
+  role: "I" | "W" | "F" | "T" | "E" | "?";
+  numeric_pct?: number | null;
+  reason?: string | null;
+}
+
+export interface CsvImportPlan {
+  layout: string;
+  layout_label: string;
+  confidence: "high" | "medium" | "low" | string;
+  role_sequence: string;
+  shape: {
+    rows: number | null;
+    columns: number | null;
+    samples: number | null;
+    features: number | null;
+  };
+  axis: {
+    column?: string | null;
+    title?: string | null;
+    units?: string | null;
+  } | null;
+  target: {
+    column?: string | null;
+    type?: string | null;
+    candidates?: string[];
+  };
+  columns: CsvImportColumnRole[];
+  warnings: string[];
+}
+
 export type DataMatrixRef =
   | { kind: "reference"; source: string; name: string; overrides?: PreparedDataOverrides | null }
   | { kind: "staged"; staging_id: string; overrides?: PreparedDataOverrides | null }
@@ -194,6 +229,7 @@ export interface StagedUpload {
   staging_id: string;
   filename: string;
   size_bytes: number;
+  csv_import_plan?: CsvImportPlan | null;
 }
 
 export interface SherpaDatasetContext {
@@ -471,38 +507,56 @@ export const useDataStore = defineStore("data", () => {
   // --- Actions ---
 
   const fetchCatalog = async (projectId: number | null = currentProjectId()) => {
+    const requestSeq = ++catalogRequestSeq;
     catalogLoading.value = true;
     try {
       if (projectId == null) {
-        availableDatasets.value = { experiments: [], library: [], builder: [] };
+        if (requestSeq === catalogRequestSeq) {
+          availableDatasets.value = { experiments: [], library: [], builder: [] };
+        }
         return;
       }
       const response = await api.get<AvailableDatasets>("/datasets/available", {
         params: { project_id: projectId },
       });
+      const activeProjectId = currentProjectId();
+      if (requestSeq !== catalogRequestSeq || (activeProjectId != null && projectId !== activeProjectId)) return;
       availableDatasets.value = response.data;
     } catch (error) {
-      console.error("Failed to fetch dataset catalog:", error);
+      if (requestSeq === catalogRequestSeq) {
+        console.error("Failed to fetch dataset catalog:", error);
+      }
     } finally {
-      catalogLoading.value = false;
+      if (requestSeq === catalogRequestSeq) {
+        catalogLoading.value = false;
+      }
     }
   };
 
   const fetchExperiments = async (projectId: number | null = currentProjectId()) => {
+    const requestSeq = ++experimentsRequestSeq;
     experimentsLoading.value = true;
     try {
       if (projectId == null) {
-        experiments.value = [];
+        if (requestSeq === experimentsRequestSeq) {
+          experiments.value = [];
+        }
         return;
       }
       const response = await api.get<ExperimentSummary[]>("/experiments", {
         params: { project_id: projectId },
       });
+      const activeProjectId = currentProjectId();
+      if (requestSeq !== experimentsRequestSeq || (activeProjectId != null && projectId !== activeProjectId)) return;
       experiments.value = response.data;
     } catch (error) {
-      console.error("Failed to fetch experiments:", error);
+      if (requestSeq === experimentsRequestSeq) {
+        console.error("Failed to fetch experiments:", error);
+      }
     } finally {
-      experimentsLoading.value = false;
+      if (requestSeq === experimentsRequestSeq) {
+        experimentsLoading.value = false;
+      }
     }
   };
 
@@ -722,14 +776,7 @@ export const useDataStore = defineStore("data", () => {
     const response = await api.get(`/datasets/download/${fileId}`, {
       responseType: "blob",
     });
-    const url = window.URL.createObjectURL(new Blob([response.data]));
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", fileName);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    window.URL.revokeObjectURL(url);
+    downloadBlob(blobFromResponseData(response.data), fileName);
   };
 
   const clearInspection = () => {

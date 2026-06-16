@@ -18,6 +18,12 @@ function formatValidationDetail(detail: Array<Record<string, unknown>>): string 
   return messages.join("; ");
 }
 
+export function redactSensitiveText(value: string): string {
+  return value
+    .replace(/(authorization["':\s=]+bearer\s+)([^"',\s}]+)/gi, "$1[redacted]")
+    .replace(/(api[_-]?key["':\s=]+)([^"',\s}]+)/gi, "$1[redacted]");
+}
+
 /**
  * Check if an error is a demo upgrade prompt (403 or 429 with upgrade_url).
  *
@@ -95,7 +101,7 @@ export function getErrorMessage(
       const message = (detail as Record<string, unknown>).message;
       return typeof message === "string" && message ? message : fallback;
     }
-    return (
+    return redactSensitiveText(
       detail ||
       error.response?.data?.message ||
       error.response?.data?.error ||
@@ -105,11 +111,11 @@ export function getErrorMessage(
   }
 
   if (error instanceof Error) {
-    return error.message || fallback;
+    return redactSensitiveText(error.message || fallback);
   }
 
   if (typeof error === "string") {
-    return error;
+    return redactSensitiveText(error);
   }
 
   return fallback;

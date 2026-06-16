@@ -8,6 +8,11 @@ import { useProjectStore } from "@/stores/project";
 import { useWorkbookStore } from "@/stores/workbook";
 import { newIdempotencyKey, requestScopedSingleFlightKey, singleFlight } from "@/utils/idempotency";
 import { hasStoredApiKey, writeStoredApiKey } from "@/utils/authStorage";
+import {
+  blobFromResponseData,
+  downloadBlob,
+  filenameFromContentDisposition,
+} from "@/utils/download";
 
 // Types extracted to workflow-types.ts for module size reduction.
 // Re-exported here for backward compatibility.
@@ -986,21 +991,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
     );
 
     const contentDisposition = response.headers["content-disposition"] || "";
-    const filenameMatch = contentDisposition.match(/filename="?([^"]+)"?/);
     const safeName = (workflowName.value || "workflow").toLowerCase().replace(/\s+/g, "_");
     const extMap = { python: ".py", notebook: ".ipynb", zip: ".zip" };
     const fallbackName = `${safeName}_workflow${extMap[format] || ""}`;
-    const filename = filenameMatch ? filenameMatch[1] : fallbackName;
-
-    const blob = new Blob([response.data]);
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const filename = filenameFromContentDisposition(contentDisposition, fallbackName);
+    downloadBlob(blobFromResponseData(response.data), filename);
   }
 
   async function fetchAvailableDatasets(projectId: number | null = useProjectStore().currentProjectId): Promise<AvailableDatasets> {

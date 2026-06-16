@@ -21,6 +21,7 @@ import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useNotificationStore } from "@/stores/notification";
 import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore } from "@/stores/workflow";
+import { createMessageId } from "@/utils/messageIds";
 import type {
   ConversationSummary,
   SherpaMessage,
@@ -29,6 +30,33 @@ import type {
 } from "@/types";
 
 type SherpaState = "idle" | "syncing" | "chatting" | "error";
+
+function createSherpaMessage(
+  role: SherpaMessage["role"],
+  content: string,
+  extras?: Partial<Omit<SherpaMessage, "id" | "role" | "content">>,
+): SherpaMessage {
+  return { id: createMessageId("sherpa"), role, content, ...extras };
+}
+
+function isSherpaRole(value: unknown): value is SherpaMessage["role"] {
+  return value === "user" || value === "assistant" || value === "system";
+}
+
+function normalizeSherpaMessages(raw: unknown): SherpaMessage[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.map((m) => {
+    const message = m && typeof m === "object" ? (m as Partial<SherpaMessage>) : {};
+    return {
+      ...message,
+      id: typeof message.id === "string" && message.id ? message.id : createMessageId("sherpa"),
+      role: isSherpaRole(message.role) ? message.role : "assistant",
+      content: typeof message.content === "string" ? message.content : "",
+    };
+  });
+}
 type SherpaSyncState = "idle" | "syncing" | "error";
 type SherpaChatState = "idle" | "chatting" | "error";
 
@@ -423,11 +451,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
       response.data.conversation_id || response.data.id || conversationId,
     );
     currentConversationId.value = loadedConversationId;
-    messages.value = (response.data.messages as Array<{ role: SherpaMessage["role"]; content: string }>)
-      .map((message) => ({
-        role: message.role,
-        content: message.content,
-      }));
+    messages.value = normalizeSherpaMessages(
+      response.data.messages as Array<{ role: SherpaMessage["role"]; content: string }>,
+    );
     if (isServerBacked.value) {
       setActiveChannelTopics(
         loadedConversationId,
@@ -585,10 +611,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   }
 
   function _appendSystemMessage(content: string): void {
-    messages.value.push({
-      role: "system",
-      content,
-    });
+    messages.value.push(createSherpaMessage("system", content));
   }
 
   function _memoryScopesFromPayload(payload: SherpaEventPayload): string[] {
@@ -617,9 +640,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
   }
 
   function _createWelcomeMessage(): SherpaMessage {
-    return {
-      role: "assistant",
-      content: [
+    return createSherpaMessage(
+      "assistant",
+      [
         "Welcome to Sherpa Advisor. Quick tour:",
         "",
         "1. **Dashboard** — start a new analysis or return to recent work.",
@@ -632,7 +655,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
         "",
         "Use **Settings** for keys and integrations. Ask me as you go; I can explain choices, diagnose runs, and suggest next steps.",
       ].join("\n"),
-    };
+    );
   }
 
   function _ensureWelcomeMessage(): void {
@@ -688,7 +711,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     streamingIndex.value = messages.value.length;
     currentChatRequestId.value =
       typeof requestId === "string" && requestId.trim() ? requestId : currentChatRequestId.value;
-    messages.value.push({ role: "assistant", content: "" });
+    messages.value.push(createSherpaMessage("assistant", ""));
     _recordActivity(
       `Sherpa recovered a missing response start${_formatRequestSuffix(currentChatRequestId.value)}.`,
       {
@@ -1423,10 +1446,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
       finalizeSyncCommunication();
       lastSyncError.value = "WebSocket not connected";
       syncState.value = "error";
-      messages.value.push({
-        role: "system",
-        content: "Unable to connect to the server. Please try again.",
-      });
+      messages.value.push(
+        createSherpaMessage("system", "Unable to connect to the server. Please try again."),
+      );
       return;
     }
 
@@ -1435,11 +1457,12 @@ export const useSherpaStore = defineStore("sherpa", () => {
       finalizeSyncCommunication();
       syncState.value = "idle";
       currentSyncRequestId.value = null;
-      messages.value.push({
-        role: "system",
-        content:
+      messages.value.push(
+        createSherpaMessage(
+          "system",
           "No workflow is currently loaded. Open or create a workflow first.",
-      });
+        ),
+      );
       return;
     }
 
@@ -1447,10 +1470,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       lastSyncError.value = "WebSocket not ready";
       syncState.value = "error";
-      messages.value.push({
-        role: "system",
-        content: "Connection is not ready. Please try again in a moment.",
-      });
+      messages.value.push(
+        createSherpaMessage("system", "Connection is not ready. Please try again in a moment."),
+      );
       return;
     }
 
@@ -1496,7 +1518,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     const llm = useLlmStore();
 
-    messages.value.push({ role: "user", content: message });
+    messages.value.push(createSherpaMessage("user", message));
     const requestId = createSherpaRequestId();
     finalizeChatCommunication();
     unsubscribeChatEvents?.();
@@ -1533,10 +1555,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
       chatState.value = "idle";
       currentChatRequestId.value = null;
       pendingAdvisorNodeId.value = null;
-      messages.value.push({
-        role: "assistant",
-        content: "Unable to connect. Check the server and try again.",
-      });
+      messages.value.push(
+        createSherpaMessage("assistant", "Unable to connect. Check the server and try again."),
+      );
       return;
     }
 
@@ -1545,10 +1566,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
       chatState.value = "idle";
       currentChatRequestId.value = null;
       pendingAdvisorNodeId.value = null;
-      messages.value.push({
-        role: "system",
-        content: "Connection is not ready. Please try again in a moment.",
-      });
+      messages.value.push(
+        createSherpaMessage("system", "Connection is not ready. Please try again in a moment."),
+      );
       return;
     }
 
@@ -1656,19 +1676,22 @@ export const useSherpaStore = defineStore("sherpa", () => {
         }));
 
         if (recs.length === 0) {
-          messages.value.push({
-            role: "assistant",
-            content:
+          messages.value.push(
+            createSherpaMessage(
+              "assistant",
               "Your workflow looks good -- no specific recommendations at this time.",
-          });
+            ),
+          );
         } else {
           for (const rec of recs) {
             const pct = Math.round(rec.confidence * 100);
-            messages.value.push({
-              role: "assistant",
-              content: `**${rec.title}** (${rec.category}, ${pct}% confidence)\n\n${rec.explanation}`,
-              recommendations: [rec],
-            });
+            messages.value.push(
+              createSherpaMessage(
+                "assistant",
+                `**${rec.title}** (${rec.category}, ${pct}% confidence)\n\n${rec.explanation}`,
+                { recommendations: [rec] },
+              ),
+            );
           }
         }
         return;
@@ -1768,7 +1791,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
             notify: true,
           }
         );
-        messages.value.push({ role: "assistant", content: "" });
+        messages.value.push(createSherpaMessage("assistant", ""));
         return;
       }
 

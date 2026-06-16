@@ -48,6 +48,21 @@ describe("DataQualityPanel", () => {
     expect(wrapper.text()).toContain("Sample IDs (3)");
   });
 
+  it("labels missing-value checks as preview-scoped when the matrix is capped", () => {
+    const wrapper = mountPanel({
+      data: [
+        [1, 2, 3],
+        [4, 5, 6],
+      ],
+      n_samples: 200,
+      n_features: 3,
+      x_axis: { labels: ["a", "b", "c"] },
+      metadata: { data_role: "X_features" },
+    });
+
+    expect(wrapper.text()).toContain("No missing values detected in displayed preview rows");
+  });
+
   it("separates target labels from sample IDs for classification feature tables", () => {
     const wrapper = mount(DataQualityPanel, {
       props: {

@@ -35,6 +35,75 @@
           </div>
         </div>
       </section>
+      <section v-if="csvPlan" class="preview-section source-csv">
+        <button
+          type="button"
+          class="section-toggle"
+          :aria-expanded="!csvCollapsed"
+          :aria-controls="`source-preview-${sourceDomId}-csv`"
+          @click="csvCollapsed = !csvCollapsed"
+        >
+          <span class="section-title">
+            <i :class="['pi', csvCollapsed ? 'pi-chevron-right' : 'pi-chevron-down']"></i>
+            <span>CSV Inspector</span>
+          </span>
+          <small class="section-summary">{{ csvSummary }}</small>
+        </button>
+        <div :id="`source-preview-${sourceDomId}-csv`" v-show="!csvCollapsed" class="section-body csv-inspector-body">
+          <div class="csv-readout-grid">
+            <div class="readout">
+              <div class="readout-title">Layout</div>
+              <dl>
+                <div>
+                  <dt>Shape</dt>
+                  <dd>{{ csvPlan.layout_label || csvPlan.layout }}</dd>
+                </div>
+                <div>
+                  <dt>Roles</dt>
+                  <dd>{{ csvPlan.role_sequence || "n/a" }}</dd>
+                </div>
+                <div>
+                  <dt>Result</dt>
+                  <dd>{{ csvResultShape }}</dd>
+                </div>
+              </dl>
+            </div>
+            <div class="readout">
+              <div class="readout-title">Feature Definition</div>
+              <dl>
+                <div>
+                  <dt>X axis</dt>
+                  <dd>{{ csvAxisLabel }}</dd>
+                </div>
+                <div>
+                  <dt>Target</dt>
+                  <dd>{{ csvTargetLabel }}</dd>
+                </div>
+                <div>
+                  <dt>Confidence</dt>
+                  <dd>
+                    <span :class="['csv-confidence', `confidence-${csvPlan.confidence}`]">
+                      {{ csvPlan.confidence }}
+                    </span>
+                  </dd>
+                </div>
+              </dl>
+            </div>
+          </div>
+          <div v-if="csvPlan.warnings?.length" class="csv-warnings">
+            <div v-for="warning in csvPlan.warnings" :key="warning" class="csv-warning-row">
+              <i class="pi pi-exclamation-triangle"></i>
+              <span>{{ warning }}</span>
+            </div>
+          </div>
+          <div v-if="csvPlan.columns?.length" class="csv-column-roles">
+            <div v-for="column in csvPlan.columns" :key="column.name" class="csv-column-role">
+              <span :class="['csv-role-badge', `role-${column.role}`]">{{ column.role }}</span>
+              <span class="csv-column-name" :title="column.reason || column.name">{{ column.name }}</span>
+            </div>
+          </div>
+        </div>
+      </section>
       <section class="preview-section source-meta">
         <button
           type="button"
@@ -218,12 +287,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import InputText from "primevue/inputtext";
 import Dropdown from "primevue/dropdown";
 import ProgressSpinner from "primevue/progressspinner";
 import { getErrorMessage } from "@/utils/errors";
-import { useDataStore, type DataMatrixRef, type DataMatrixResponse, type PreparedDataOverrides } from "@/stores/data";
+import {
+  useDataStore,
+  type CsvImportPlan,
+  type DataMatrixRef,
+  type DataMatrixResponse,
+  type PreparedDataOverrides,
+} from "@/stores/data";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 import DataMatrixGrid from "./DataMatrixGrid.vue";
 import DataStatsTable from "./DataStatsTable.vue";
@@ -233,6 +308,7 @@ const props = defineProps<{
   title?: string;
   overrides?: PreparedDataOverrides;
   files?: SourcePreviewFile[];
+  csvPlan?: CsvImportPlan | null;
 }>();
 const emit = defineEmits<{ "update:overrides": [PreparedDataOverrides] }>();
 
@@ -246,6 +322,7 @@ const matrix = ref<DataMatrixResponse | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
 const filesCollapsed = ref(true);
+const csvCollapsed = ref(true);
 const metaCollapsed = ref(true);
 const dataCollapsed = ref(true);
 const viewMode = ref<"matrix" | "stats">("matrix");
@@ -298,6 +375,34 @@ const filesSummary = computed(() => {
   if (count === 1) return "1 file";
   return `${count.toLocaleString()} files`;
 });
+const csvPlan = computed(() => props.csvPlan ?? null);
+const csvSummary = computed(() => {
+  const plan = csvPlan.value;
+  if (!plan) return "";
+  const confidence = plan.confidence ? `${plan.confidence} confidence` : "review";
+  return `${plan.layout_label || plan.layout} · ${confidence}`;
+});
+const csvResultShape = computed(() => {
+  const shape = csvPlan.value?.shape;
+  if (!shape) return "n/a";
+  const samples = shape.samples ?? shape.rows;
+  const features = shape.features ?? shape.columns;
+  if (samples === null || samples === undefined || features === null || features === undefined) return "n/a";
+  return `${samples.toLocaleString()} samples x ${features.toLocaleString()} features`;
+});
+const csvAxisLabel = computed(() => {
+  const axis = csvPlan.value?.axis;
+  if (!axis) return "not detected";
+  const title = axis.title || "Axis";
+  const units = axis.units ? ` (${axis.units})` : "";
+  const column = axis.column ? ` · ${axis.column}` : "";
+  return `${title}${units}${column}`;
+});
+const csvTargetLabel = computed(() => {
+  const target = csvPlan.value?.target;
+  if (!target?.column) return "none";
+  return target.type ? `${target.column} · ${target.type}` : target.column;
+});
 const sourceIdentity = computed(() => {
   const source = props.sourceRef;
   if (!source) return "";
@@ -306,57 +411,133 @@ const sourceIdentity = computed(() => {
   return `experiment_file:${source.experiment_id}:${source.file_id}`;
 });
 const sourceDomId = computed(() => sourceIdentity.value.replace(/[^A-Za-z0-9_-]+/g, "-") || "empty");
+const matrixRequestSignature = computed(() => {
+  const overrides = props.sourceRef?.overrides ?? props.overrides ?? {};
+  return JSON.stringify({
+    source: sourceIdentity.value,
+    data_role: overrides?.data_role ?? null,
+    target_column: overrides?.target_column ?? null,
+    target_type: overrides?.target_type ?? null,
+    is_time_series: overrides?.is_time_series ?? null,
+  });
+});
+
+let suppressLocalOverrideEmit = false;
+let localOverrideSyncRun = 0;
+let matrixFetchRun = 0;
+let lastFetchedSourceIdentity = "";
+type TextOverrideKey = "title" | "x_title" | "x_units" | "y_title" | "data_role" | "target_column";
+
+function hasOwnOverride(key: keyof PreparedDataOverrides): boolean {
+  return Object.prototype.hasOwnProperty.call(props.overrides ?? {}, key);
+}
+
+function matrixFallbackForOverride(key: TextOverrideKey): string {
+  const current = matrix.value;
+  if (!current) return "";
+  if (key === "x_title") return current.x_title ?? "";
+  if (key === "x_units") return current.x_units ?? "";
+  if (key === "y_title") return current.y_title ?? "";
+  if (key === "data_role") return current.data_role ?? "";
+  return "";
+}
+
+function resolvedTextOverride(key: TextOverrideKey, fallback = ""): string {
+  const overrides = props.overrides;
+  if (overrides && Object.prototype.hasOwnProperty.call(overrides, key)) {
+    const value = overrides[key];
+    return typeof value === "string" ? value : "";
+  }
+  return fallback;
+}
+
+function addTextOverride(overrides: PreparedDataOverrides, key: TextOverrideKey, value: unknown): void {
+  const text = typeof value === "string" ? value : "";
+  const trimmed = text.trim();
+  if (trimmed) {
+    overrides[key] = trimmed;
+    return;
+  }
+  if (hasOwnOverride(key) || matrixFallbackForOverride(key).trim()) {
+    overrides[key] = "";
+  }
+}
+
+function setLocalOverrides(next: PreparedDataOverrides | undefined) {
+  const syncRun = ++localOverrideSyncRun;
+  suppressLocalOverrideEmit = true;
+  Object.assign(localOverrides, {
+    title: next?.title ?? "",
+    x_title: next?.x_title ?? "",
+    x_units: next?.x_units ?? "",
+    y_title: next?.y_title ?? "",
+    data_role: next?.data_role ?? "",
+    target_column: next?.target_column ?? "",
+    target_type: next?.target_type ?? "auto",
+    is_time_series: next?.is_time_series ?? false,
+  });
+  nextTick(() => {
+    if (syncRun === localOverrideSyncRun) {
+      suppressLocalOverrideEmit = false;
+    }
+  });
+}
 
 watch(
   () => props.overrides,
   (next) => {
-    Object.assign(localOverrides, {
-      title: next?.title ?? "",
-      x_title: next?.x_title ?? "",
-      x_units: next?.x_units ?? "",
-      y_title: next?.y_title ?? "",
-      data_role: next?.data_role ?? "",
-      target_column: next?.target_column ?? "",
-      target_type: next?.target_type ?? "auto",
-      is_time_series: next?.is_time_series ?? false,
-    });
+    setLocalOverrides(next);
   },
   { immediate: true, deep: true },
 );
 
 watch(localOverrides, () => {
+  if (suppressLocalOverrideEmit) return;
   const overrides: PreparedDataOverrides = {};
-  if (localOverrides.title?.trim()) overrides.title = localOverrides.title.trim();
-  if (localOverrides.x_title?.trim()) overrides.x_title = localOverrides.x_title.trim();
-  if (localOverrides.x_units?.trim()) overrides.x_units = localOverrides.x_units.trim();
-  if (localOverrides.y_title?.trim()) overrides.y_title = localOverrides.y_title.trim();
-  if (localOverrides.data_role?.trim()) overrides.data_role = localOverrides.data_role.trim();
-  if (localOverrides.target_column?.trim()) overrides.target_column = localOverrides.target_column.trim();
+  addTextOverride(overrides, "title", localOverrides.title);
+  addTextOverride(overrides, "x_title", localOverrides.x_title);
+  addTextOverride(overrides, "x_units", localOverrides.x_units);
+  addTextOverride(overrides, "y_title", localOverrides.y_title);
+  addTextOverride(overrides, "data_role", localOverrides.data_role);
+  addTextOverride(overrides, "target_column", localOverrides.target_column);
   if (localOverrides.target_type && localOverrides.target_type !== "auto") {
     overrides.target_type = localOverrides.target_type;
   }
-  if (localOverrides.is_time_series) overrides.is_time_series = true;
+  if (localOverrides.is_time_series || hasOwnOverride("is_time_series")) {
+    overrides.is_time_series = Boolean(localOverrides.is_time_series);
+  }
   emit("update:overrides", overrides);
 }, { deep: true });
 
 watch(
-  sourceIdentity,
+  matrixRequestSignature,
   async () => {
-    matrix.value = null;
+    const fetchRun = ++matrixFetchRun;
+    const identityChanged = sourceIdentity.value !== lastFetchedSourceIdentity;
+    if (identityChanged) matrix.value = null;
     error.value = null;
     const next = props.sourceRef;
     if (!next) return;
     loading.value = true;
     try {
-      matrix.value = await dataStore.fetchDataMatrix(next);
-      if (!localOverrides.x_title && matrix.value.x_title) localOverrides.x_title = matrix.value.x_title;
-      if (!localOverrides.x_units && matrix.value.x_units) localOverrides.x_units = matrix.value.x_units;
-      if (!localOverrides.y_title && matrix.value.y_title) localOverrides.y_title = matrix.value.y_title;
-      if (!localOverrides.data_role && matrix.value.data_role) localOverrides.data_role = matrix.value.data_role;
+      const fetched = await dataStore.fetchDataMatrix(next);
+      if (fetchRun !== matrixFetchRun) return;
+      matrix.value = fetched;
+      lastFetchedSourceIdentity = sourceIdentity.value;
+      setLocalOverrides({
+        ...props.overrides,
+        x_title: resolvedTextOverride("x_title", matrix.value.x_title || ""),
+        x_units: resolvedTextOverride("x_units", matrix.value.x_units || ""),
+        y_title: resolvedTextOverride("y_title", matrix.value.y_title || ""),
+        data_role: resolvedTextOverride("data_role", matrix.value.data_role || ""),
+      });
     } catch (err: unknown) {
+      if (fetchRun !== matrixFetchRun) return;
       error.value = getErrorMessage(err, "Could not load data preview");
     } finally {
-      loading.value = false;
+      if (fetchRun === matrixFetchRun) {
+        loading.value = false;
+      }
     }
   },
   { immediate: true },
@@ -661,6 +842,106 @@ const previewPlotLayout = computed(() => {
   font-size: 0.82rem;
 }
 
+.csv-inspector-body {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.csv-readout-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.csv-confidence {
+  text-transform: capitalize;
+  font-weight: 700;
+}
+
+.confidence-high {
+  color: var(--green-600);
+}
+
+.confidence-medium {
+  color: var(--orange-600);
+}
+
+.confidence-low {
+  color: var(--red-600);
+}
+
+.csv-warnings {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.csv-warning-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  color: var(--orange-700);
+  font-size: 0.8rem;
+}
+
+.csv-column-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.csv-column-role {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 100%;
+  padding: 0.2rem 0.45rem 0.2rem 0.25rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  background: var(--surface-ground);
+  font-size: 0.76rem;
+}
+
+.csv-role-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 4px;
+  color: #ffffff;
+  font-weight: 800;
+  font-size: 0.68rem;
+}
+
+.role-I {
+  background: #475569;
+}
+
+.role-W {
+  background: #4f46e5;
+}
+
+.role-F {
+  background: #0891b2;
+}
+
+.role-T {
+  background: #b45309;
+}
+
+.role-E,
+.role-\? {
+  background: #94a3b8;
+}
+
+.csv-column-name {
+  min-width: 0;
+  max-width: 15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .class-list {
   margin-top: 0.65rem;
   display: grid;
@@ -744,7 +1025,8 @@ const previewPlotLayout = computed(() => {
 
 @media (max-width: 900px) {
   .source-meta-grid,
-  .metadata-edit-grid {
+  .metadata-edit-grid,
+  .csv-readout-grid {
     grid-template-columns: 1fr;
   }
 }

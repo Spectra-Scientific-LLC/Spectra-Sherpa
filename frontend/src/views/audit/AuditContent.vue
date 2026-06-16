@@ -68,12 +68,17 @@ import { useRoute } from "vue-router";
 
 import { api } from "@/api";
 import { useAppConfig } from "@/composables/useAppConfig";
+import {
+  blobFromResponseData,
+  downloadBlob,
+  filenameFromContentDisposition,
+} from "@/utils/download";
 import AuditCapabilityStrip from "./AuditCapabilityStrip.vue";
 import AuditFilterChips from "./AuditFilterChips.vue";
 import AuditTimeline from "./AuditTimeline.vue";
 import ChainHealthCard from "./ChainHealthCard.vue";
 import ReportPackPanel from "./ReportPackPanel.vue";
-import { downloadBlob, extractApiErrorMessage, extractFilename } from "./auditFormatters";
+import { extractApiErrorMessage } from "./auditFormatters";
 import type {
   AuditEventResponse,
   AuditFilterForm,
@@ -249,7 +254,7 @@ async function generatePack(): Promise<void> {
       responseType: "blob",
     });
     const blob = new Blob([response.data], { type: "application/zip" });
-    downloadBlob(blob, extractFilename(response.headers["content-disposition"], "audit-report-pack.zip"));
+    downloadBlob(blob, filenameFromContentDisposition(response.headers["content-disposition"], "audit-report-pack.zip"));
 
     lastPack.value = {
       packId: response.headers["x-audit-report-pack-id"] ?? "",
@@ -281,7 +286,7 @@ async function exportAudit(format: ExportFormat): Promise<void> {
       responseType: "blob",
     });
     const fallback = `audit-export.${format}`;
-    downloadBlob(new Blob([response.data]), extractFilename(response.headers["content-disposition"], fallback));
+    downloadBlob(blobFromResponseData(response.data), filenameFromContentDisposition(response.headers["content-disposition"], fallback));
     await refreshEvents();
   } catch (err) {
     errorMessage.value = await extractApiErrorMessage(err, "Audit export failed.");

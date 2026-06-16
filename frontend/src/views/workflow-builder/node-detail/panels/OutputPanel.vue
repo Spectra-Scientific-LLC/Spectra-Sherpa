@@ -102,7 +102,7 @@
                     <span v-if="datasetInfo.xAxis.units" class="insp-units">({{ datasetInfo.xAxis.units }})</span>
                   </span>
                 </div>
-                <div v-if="datasetInfo.xAxis.points" class="inspector-item">
+                <div v-if="datasetInfo.xAxis.points !== undefined && datasetInfo.xAxis.points !== null" class="inspector-item">
                   <span class="insp-label">X Points</span>
                   <span class="insp-value">{{ datasetInfo.xAxis.points }}</span>
                 </div>
@@ -121,7 +121,7 @@
                     <span v-if="datasetInfo.yAxis.units" class="insp-units">({{ datasetInfo.yAxis.units }})</span>
                   </span>
                 </div>
-                <div v-if="datasetInfo.yAxis.nSamples" class="inspector-item">
+                <div v-if="datasetInfo.yAxis.nSamples !== undefined && datasetInfo.yAxis.nSamples !== null" class="inspector-item">
                   <span class="insp-label">Samples</span>
                   <span class="insp-value">{{ datasetInfo.yAxis.nSamples }}</span>
                 </div>
@@ -458,8 +458,8 @@
                 <div class="port-details">
                   <span v-if="port.shape">Shape: {{ port.shape.join('\u00d7') }}</span>
                   <span v-if="port.title">{{ port.title }}</span>
-                  <span v-if="port.xTitle">X: {{ port.xTitle }}<template v-if="port.xUnits"> ({{ port.xUnits }})</template><template v-if="port.xPoints">, {{ port.xPoints }} pts</template></span>
-                  <span v-if="port.yTitle">Y: {{ port.yTitle }}<template v-if="port.nLabels">, {{ port.nLabels }} labels</template></span>
+                  <span v-if="port.xTitle">X: {{ port.xTitle }}<template v-if="port.xUnits"> ({{ port.xUnits }})</template><template v-if="port.xPoints !== undefined && port.xPoints !== null">, {{ port.xPoints }} pts</template></span>
+                  <span v-if="port.yTitle">Y: {{ port.yTitle }}<template v-if="port.yCount !== undefined && port.yCount !== null">, {{ formatAxisCount(port.yCount, port.yCountLabel || 'entries') }}</template></span>
                 </div>
               </div>
             </div>
@@ -599,6 +599,15 @@ const selectedRegressionRmse = output.selectedRegressionRmse;
 const portSummaries = output.portSummaries;
 const modelId = output.modelId;
 const { getMetaTooltip, formatMetaValue } = output;
+
+function formatAxisCount(count: number, label: string): string {
+  const singular = label.endsWith("ies")
+    ? `${label.slice(0, -3)}y`
+    : label.endsWith("s")
+      ? label.slice(0, -1)
+      : label;
+  return `${count} ${count === 1 ? singular : label}`;
+}
 
 // ── Model Artifact lookup ─────────────────────────────────────────────
 // When the executor's `_process_model_artifact()` lift fires for this

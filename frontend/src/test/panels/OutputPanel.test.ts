@@ -244,6 +244,69 @@ describe("OutputPanel", () => {
     expect(wrapper.text()).toContain("Shape: 50×3");
   });
 
+  it("renders sample-axis port cardinality as samples rather than label count", () => {
+    const { wrapper } = factory({
+      portSummaries: [
+        {
+          name: "X_test",
+          type: "dataset",
+          shape: [196, 401],
+          xTitle: "Wavelength",
+          xUnits: "nm",
+          xPoints: 401,
+          yTitle: "Sample",
+          yCount: 196,
+          yCountLabel: "samples",
+          nLabels: 20,
+        },
+      ],
+      subsections: {
+        coordinates: false,
+        metadata: false,
+        processing: false,
+        provenance: false,
+        quality: false,
+        ports: true,
+      },
+    });
+
+    expect(wrapper.text()).toContain("X: Wavelength (nm), 401 pts");
+    expect(wrapper.text()).toContain("Y: Sample, 196 samples");
+    expect(wrapper.text()).not.toContain("20 labels");
+  });
+
+  it("renders explicit zero axis and sample counts", () => {
+    const { wrapper } = factory({
+      datasetInfo: {
+        xAxis: { title: "Feature", units: "", points: 0 },
+        yAxis: { title: "Sample", nSamples: 0 },
+      },
+      subsections: {
+        coordinates: true,
+        metadata: false,
+        processing: false,
+        provenance: false,
+        quality: false,
+        ports: true,
+      },
+      portSummaries: [
+        {
+          name: "empty",
+          type: "dataset",
+          xTitle: "Feature",
+          xPoints: 0,
+          yTitle: "Sample",
+          yCount: 0,
+          yCountLabel: "samples",
+        },
+      ],
+    });
+
+    expect(wrapper.text()).toContain("X Points");
+    expect(wrapper.text()).toContain("0 pts");
+    expect(wrapper.text()).toContain("0 samples");
+  });
+
   it("emits the action events from the output-actions buttons", async () => {
     const { wrapper } = factory();
     const click = (label: string) =>

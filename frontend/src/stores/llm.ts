@@ -9,9 +9,35 @@ import { useNotificationStore } from "@/stores/notification";
 import { useProjectStore } from "@/stores/project";
 import { buildAuthMessage, buildWsUrl, withCredentials } from "@/utils/ws";
 import { hasStoredApiKey, readStoredApiKey } from "@/utils/authStorage";
+import { createMessageId } from "@/utils/messageIds";
 
 const STORAGE_KEY = "llm_conversations";
 const RECORD_STORAGE_KEY = "llm_conversation_records";
+const UNINITIALIZED_PROJECT_SCOPE = Symbol("uninitialized-project-scope");
+
+function createLlmMessage(role: LlmMessage["role"], content: string): LlmMessage {
+  return { id: createMessageId("llm"), role, content };
+}
+
+function isLlmRole(value: unknown): value is LlmMessage["role"] {
+  return value === "user" || value === "assistant" || value === "system";
+}
+
+function normalizeLlmMessages(raw: unknown): LlmMessage[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.map((m) => {
+    const msg = m && typeof m === "object" ? (m as Partial<LlmMessage>) : {};
+    return {
+      id: typeof msg.id === "string" && msg.id ? msg.id : createMessageId("llm"),
+      role: isLlmRole(msg.role) ? msg.role : "assistant",
+      content: typeof msg.content === "string" ? msg.content : "",
+    };
+  });
+}
+
+type ConversationProjectScope = number | null | typeof UNINITIALIZED_PROJECT_SCOPE;
 
 interface LocalConversationRecord extends ConversationSummary {
   messages: LlmMessage[];
@@ -53,7 +79,10 @@ const loadLocalConversationRecords = (): LocalConversationRecord[] => {
   try {
     const raw = localStorage.getItem(RECORD_STORAGE_KEY);
     if (raw) {
-      return JSON.parse(raw) as LocalConversationRecord[];
+      return (JSON.parse(raw) as LocalConversationRecord[]).map((record) => ({
+        ...record,
+        messages: normalizeLlmMessages(record.messages),
+      }));
     }
   } catch (error) {
     console.error("Failed to load local conversation records:", error);
@@ -188,12 +217,13 @@ export const useLlmStore = defineStore("llm", () => {
   let socketOpenTimer: ReturnType<typeof setTimeout> | null = null;
   let authAckTimer: ReturnType<typeof setTimeout> | null = null;
   let configPollTimer: ReturnType<typeof setInterval> | null = null;
+  let localStreamAbortController: AbortController | null = null;
   const SOCKET_OPEN_TIMEOUT_MS = 5000;
   const AUTH_ACK_TIMEOUT_MS = 5000;
   const CONNECT_RETRY_ATTEMPTS = 3;
   let connectAttempt = 0;
   let authFallbackRetried = false;
-  let lastConversationProjectId: number | null = null;
+  let lastConversationProjectId: ConversationProjectScope = UNINITIALIZED_PROJECT_SCOPE;
 
   const persistLocalConversationState = (conversationId: string) => {
     const records = loadLocalConversationRecords();
@@ -353,7 +383,7 @@ export const useLlmStore = defineStore("llm", () => {
         } else if (payload.type === "llm_start") {
           currentConversationId.value = payload.conversation_id;
           streamingIndex.value = messages.value.length;
-          messages.value.push({ role: "assistant", content: "" });
+          messages.value.push(createLlmMessage("assistant", ""));
           streaming.value = true;
           updateConversationSummary(payload.conversation_id);
         } else if (payload.type === "llm_chunk") {
@@ -367,10 +397,7 @@ export const useLlmStore = defineStore("llm", () => {
           updateConversationSummary(payload.conversation_id);
         } else if (payload.type === "warning" || payload.type === "llm_warning") {
           const { message, detail } = formatChatWarning(payload as Record<string, unknown>);
-          messages.value.push({
-            role: "system",
-            content: message,
-          });
+          messages.value.push(createLlmMessage("system", message));
           notifications.add({
             source: "system",
             severity: "warning",
@@ -382,7 +409,7 @@ export const useLlmStore = defineStore("llm", () => {
           streaming.value = false;
           loading.value = false;
           const detail = payload.detail || "Streaming error.";
-          messages.value.push({ role: "assistant", content: detail });
+          messages.value.push(createLlmMessage("assistant", detail));
           emitWsTransport("message_error", detail);
         } else if (payload.type?.startsWith("sherpa_") || payload.type?.startsWith("guidance.")) {
           dispatchSherpaEvent(payload);
@@ -464,10 +491,7 @@ export const useLlmStore = defineStore("llm", () => {
         streaming.value = false;
         loading.value = false;
         streamingIndex.value = null;
-        messages.value.push({
-          role: "assistant",
-          content: "Connection lost. Please try again.",
-        });
+        messages.value.push(createLlmMessage("assistant", "Connection lost. Please try again."));
       }
       if (event.code === 1008) {
         const hadToken = !!localStorage.getItem("token");
@@ -574,7 +598,8 @@ export const useLlmStore = defineStore("llm", () => {
     // healthy but stale.
     let listResponse;
     let listFailed = false;
-    const switchingProjects = lastConversationProjectId !== null && lastConversationProjectId !== projectId;
+    const switchingProjects =
+      lastConversationProjectId !== UNINITIALIZED_PROJECT_SCOPE && lastConversationProjectId !== projectId;
     try {
       listResponse = await api.get("/llm/conversations", {
         params: { project_id: projectId },
@@ -672,20 +697,26 @@ export const useLlmStore = defineStore("llm", () => {
     if (!message.trim()) {
       return;
     }
+    if (loading.value || streaming.value) {
+      return;
+    }
 
     if (!isServerBacked.value) {
       const conversationId = currentConversationId.value || createConversationId();
       currentConversationId.value = conversationId;
       loading.value = true;
       streaming.value = true;
-      messages.value.push({ role: "user", content: message });
-      messages.value.push({ role: "assistant", content: "" });
+      messages.value.push(createLlmMessage("user", message));
+      messages.value.push(createLlmMessage("assistant", ""));
       persistLocalConversationState(conversationId);
+      localStreamAbortController?.abort();
+      localStreamAbortController = new AbortController();
 
       try {
         const response = await fetch(buildApiUrl("/chat/stream"), {
           method: "POST",
           headers: getRequestHeaders(),
+          signal: localStreamAbortController.signal,
           body: JSON.stringify({ message, metadata: metadata || null, verbose: currentConfig.value?.verbose ?? true, max_paragraphs: currentConfig.value?.max_paragraphs ?? 2 }),
         });
 
@@ -726,6 +757,9 @@ export const useLlmStore = defineStore("llm", () => {
           }
         }
       } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
         const detail =
           error instanceof Error
             ? error.message
@@ -734,9 +768,10 @@ export const useLlmStore = defineStore("llm", () => {
         if (lastMessage?.role === "assistant") {
           lastMessage.content = detail;
         } else {
-          messages.value.push({ role: "assistant", content: detail });
+          messages.value.push(createLlmMessage("assistant", detail));
         }
       } finally {
+        localStreamAbortController = null;
         loading.value = false;
         streaming.value = false;
         persistLocalConversationState(conversationId);
@@ -748,15 +783,17 @@ export const useLlmStore = defineStore("llm", () => {
       await connect();
     } catch (error) {
       console.error("Failed to connect WebSocket:", error);
-      messages.value.push({
-        role: "assistant",
-        content: "Unable to connect for streaming. Check the API key and try again.",
-      });
+      messages.value.push(
+        createLlmMessage(
+          "assistant",
+          "Unable to connect for streaming. Check the API key and try again.",
+        ),
+      );
       return;
     }
 
     loading.value = true;
-    messages.value.push({ role: "user", content: message });
+    messages.value.push(createLlmMessage("user", message));
     wsRef.value?.send(
       JSON.stringify({
         action: "llm_chat",
@@ -784,7 +821,7 @@ export const useLlmStore = defineStore("llm", () => {
         );
       }
       currentConversationId.value = conversation.id;
-      messages.value = conversation.messages.map((message) => ({ ...message }));
+      messages.value = normalizeLlmMessages(conversation.messages);
       return;
     }
     if (isServerBacked.value && projectStore.currentProjectId == null) {
@@ -796,7 +833,7 @@ export const useLlmStore = defineStore("llm", () => {
     try {
       const response = await api.get(`/llm/conversation/${encodeURIComponent(conversationId)}`, { params });
       currentConversationId.value = response.data.conversation_id;
-      messages.value = response.data.messages;
+      messages.value = normalizeLlmMessages(response.data.messages);
     } catch (err) {
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 404) {
@@ -852,6 +889,8 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const disconnect = () => {
+    localStreamAbortController?.abort();
+    localStreamAbortController = null;
     clearReconnect();
     clearSocketOpenTimer();
     clearAuthAckTimer();
@@ -922,20 +961,24 @@ export const useLlmStore = defineStore("llm", () => {
 
         console.log(`[LLM] Config changed: ${oldProviderLabel} → ${providerLabel}`);
 
-        messages.value.push({
-          role: "system",
-          content: `──── LLM engine switched to ${providerLabel} (${newConfig.model}) ────`,
-        });
+        messages.value.push(
+          createLlmMessage(
+            "system",
+            `──── LLM engine switched to ${providerLabel} (${newConfig.model}) ────`,
+          ),
+        );
       }
 
       if (verboseChanged) {
         // Add system message for verbose change
         console.log(`[LLM] Verbose mode ${newConfig.verbose ? 'enabled' : 'disabled'}`);
 
-        messages.value.push({
-          role: "system",
-          content: `──── Verbose mode ${newConfig.verbose ? 'enabled' : 'disabled'} ────`,
-        });
+        messages.value.push(
+          createLlmMessage(
+            "system",
+            `──── Verbose mode ${newConfig.verbose ? 'enabled' : 'disabled'} ────`,
+          ),
+        );
       }
     }
 

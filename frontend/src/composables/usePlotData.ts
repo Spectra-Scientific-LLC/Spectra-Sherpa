@@ -2472,6 +2472,7 @@ export function usePlotData(
     let colLabel = defaultColLabel;
     if (isMCR.value) { rowLabel = "samples"; colLabel = "components"; }
     else if (isPCA.value) { rowLabel = "observations"; colLabel = "components"; }
+    else if (isPLS.value) { rowLabel = "samples"; colLabel = "latent variables"; }
 
     const rows = data.length;
     const cols = Array.isArray(data[0]) ? data[0].length : 1;

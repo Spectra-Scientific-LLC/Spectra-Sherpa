@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
-import { getErrorMessage, isDemoUpgradeError, getDemoUpgradeInfo } from "@/utils/errors";
+import {
+  getErrorMessage,
+  isDemoUpgradeError,
+  getDemoUpgradeInfo,
+  redactSensitiveText,
+} from "@/utils/errors";
 
 function makeAxiosError(
   status: number,
@@ -81,6 +86,16 @@ describe("getErrorMessage", () => {
   it("returns fallback for non-error values", () => {
     expect(getErrorMessage(42)).toBe("An unexpected error occurred");
     expect(getErrorMessage(undefined)).toBe("An unexpected error occurred");
+  });
+});
+
+describe("redactSensitiveText", () => {
+  it("redacts API keys and bearer tokens", () => {
+    expect(
+      redactSensitiveText(
+        "X-API-Key: sk-secret Authorization: Bearer token api_key=abc",
+      ),
+    ).toBe("X-API-Key: [redacted] Authorization: Bearer [redacted] api_key=[redacted]");
   });
 });
 

@@ -2,7 +2,7 @@ import axios, { type AxiosError } from "axios";
 import { updateDemoQuotaFromRateLimit } from "@/composables/demoModeState";
 import { useNotifier } from "@/composables/useNotifier";
 import { clearStoredApiKey, readStoredApiKey } from "@/utils/authStorage";
-import { isDemoUpgradeError } from "@/utils/errors";
+import { isDemoUpgradeError, redactSensitiveText } from "@/utils/errors";
 
 // Use relative URL in production (nginx proxies to backend)
 // Use absolute URL in development for Vite dev server
@@ -116,8 +116,8 @@ function emitAsyncApiErrorNotification(error: AxiosError): void {
     try {
       extendedDetail =
         typeof error.response.data === "string"
-          ? error.response.data
-          : JSON.stringify(error.response.data, null, 2);
+          ? redactSensitiveText(error.response.data)
+          : redactSensitiveText(JSON.stringify(error.response.data, null, 2));
     } catch {
       extendedDetail = undefined;
     }

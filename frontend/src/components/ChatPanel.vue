@@ -226,8 +226,8 @@
                 </div>
                 <template v-else>
                   <div
-                    v-for="(message, idx) in store.messages"
-                    :key="idx"
+                    v-for="message in store.messages"
+                    :key="message.id"
                     class="chat-message"
                     :class="message.role"
                   >
@@ -268,8 +268,8 @@
                   </button>
                 </div>
                 <div
-                  v-for="(message, idx) in sherpaStore.messages"
-                  :key="idx"
+                  v-for="message in sherpaStore.messages"
+                  :key="message.id"
                   class="chat-message"
                   :class="message.role"
                 >
@@ -551,9 +551,15 @@ const inputPlaceholder = computed(() => {
   return "Ask about spectra, exports, or processing... (Type '/' to clear chat)";
 });
 
+const llmBusy = computed(() => store.loading || store.streaming);
+const sherpaBusy = computed(() => sherpaStore.isChatting);
+const activeTabBusy = computed(() => (activeTab.value === "llm" ? llmBusy.value : sherpaBusy.value));
+
 const inputDisabled = computed(() => {
-  if (activeTab.value === "llm") return !llmChatEnabled.value || !llmChatAllowed.value;
-  return false;
+  if (activeTab.value === "llm") {
+    return !llmChatEnabled.value || !llmChatAllowed.value || llmBusy.value;
+  }
+  return sherpaBusy.value;
 });
 
 const sherpaStatusMessage = computed(() => {
@@ -802,6 +808,8 @@ onUnmounted(() => {
   window.removeEventListener("llm-config-changed", handleConfigChange);
   window.removeEventListener("egress-defaults-changed", loadEgressDefaults);
   window.removeEventListener(ADVISOR_PROMPT_REQUEST_EVENT, handleAdvisorPromptRequest);
+  store.stopConfigPolling();
+  store.disconnect();
   sherpaStore.dispose();
 });
 
@@ -1046,6 +1054,9 @@ const sendMessage = async () => {
   if (!userMessage.value.trim()) {
     return;
   }
+  if (activeTabBusy.value) {
+    return;
+  }
 
   // Sherpa tab: send via sherpa store
   if (activeTab.value === "sherpa") {
@@ -1102,7 +1113,7 @@ const sendMessage = async () => {
 
 const sendSherpaFollowUp = async (suggestion: string) => {
   const message = suggestion.trim();
-  if (!message) {
+  if (!message || sherpaBusy.value) {
     return;
   }
   switchToSherpa();

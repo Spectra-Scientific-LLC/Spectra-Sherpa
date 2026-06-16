@@ -190,6 +190,12 @@ export interface ExperimentDataset {
   name: string;
   description: string | null;
   project_id?: number | null;
+  target_names?: string[] | null;
+  target_mode?: string | null;
+  selected_target?: string | null;
+  target_complete_rows?: number | null;
+  target_any_rows?: number | null;
+  target_row_count?: number | null;
   stages: {
     raw: DatasetFile[];
     preprocessed: DatasetFile[];

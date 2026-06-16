@@ -260,7 +260,7 @@ import Menu from "primevue/menu";
 import OverlayPanel from "primevue/overlaypanel";
 import { useToast } from "primevue/usetoast";
 import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
-import { useWorkflowStore, type WorkflowNode, type WorkflowEdge } from "@/stores/workflow";
+import { useWorkflowStore, type ExperimentDataset, type WorkflowNode, type WorkflowEdge } from "@/stores/workflow";
 import { useExperimentStore } from "@/stores/experiment";
 import { useProjectStore } from "@/stores/project";
 import { useWorkbookStore } from "@/stores/workbook";
@@ -1726,6 +1726,29 @@ const coerceNumber = (value: unknown): number | null => {
   return null;
 };
 
+const availableExperimentForDataset = (datasetId: number | null): ExperimentDataset | null => {
+  if (datasetId === null) return null;
+  return workflowStore.availableDatasets?.experiments.find(exp => exp.id === datasetId) ?? null;
+};
+
+const defaultMyDatasetTargetParams = (datasetId: number | null): Partial<ParamsMap> => {
+  const exp = availableExperimentForDataset(datasetId);
+  const targetNames = Array.isArray(exp?.target_names)
+    ? exp.target_names.map(name => String(name)).filter(Boolean)
+    : [];
+  if (targetNames.length <= 1) {
+    return { target_mode: "dataset_default", selected_target: null };
+  }
+  const mode = exp?.target_mode === "multi" ? "multi" : "single";
+  const selected = exp?.selected_target && targetNames.includes(exp.selected_target)
+    ? exp.selected_target
+    : targetNames[0];
+  return {
+    target_mode: mode,
+    selected_target: mode === "single" ? selected : null,
+  };
+};
+
 // Build initial data for workflow execution from DATA nodes
 const buildInitialData = async (): Promise<Record<string, unknown>> => {
   const initialData: Record<string, unknown> = {};
@@ -1740,6 +1763,8 @@ const buildInitialData = async (): Promise<Record<string, unknown>> => {
         initialData[String(node.id)] = {
           dataset_id: datasetId,
           source: 'experiment',
+          target_mode: node.params.target_mode,
+          selected_target: node.params.selected_target,
         };
       }
       continue;
@@ -1797,6 +1822,7 @@ const getDefaultParams = (nodeType: string): ParamsMap => {
     },
     'data.my_dataset': {
       dataset_id: defaultExperimentId,
+      ...defaultMyDatasetTargetParams(defaultExperimentId),
     },
     'data.nist_library': {
       library_id: null,

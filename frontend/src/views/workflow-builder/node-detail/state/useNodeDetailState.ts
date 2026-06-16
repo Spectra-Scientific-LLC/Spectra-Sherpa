@@ -92,6 +92,9 @@ export interface PortSummary {
   xUnits?: string;
   xPoints?: number;
   yTitle?: string;
+  yCount?: number;
+  yCountLabel?: string;
+  /** @deprecated use yCount/yCountLabel. Retained for older tests/state. */
   nLabels?: number;
 }
 

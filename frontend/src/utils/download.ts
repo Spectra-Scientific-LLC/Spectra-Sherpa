@@ -6,7 +6,36 @@ export const downloadBlob = (blob: Blob, filename: string): void => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+};
+
+export const blobFromResponseData = (
+  data: Blob | ArrayBuffer | ArrayBufferView | string,
+  mimeType?: string,
+): Blob => {
+  if (data instanceof Blob) {
+    return data;
+  }
+  return new Blob([data], mimeType ? { type: mimeType } : undefined);
+};
+
+export const filenameFromContentDisposition = (
+  disposition: string | undefined,
+  fallback: string,
+): string => {
+  if (!disposition) return fallback;
+  const encoded = disposition.match(/filename\*=UTF-8''([^;\r\n]+)/i)?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded).replace(/[\r\n]/g, "").trim() || fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  const quoted = disposition.match(/filename="([^"\r\n]*)"/i)?.[1];
+  if (quoted) return quoted.trim() || fallback;
+  const bare = disposition.match(/filename=([^;\r\n]*)/i)?.[1];
+  return bare?.trim() || fallback;
 };
 
 export const downloadText = (

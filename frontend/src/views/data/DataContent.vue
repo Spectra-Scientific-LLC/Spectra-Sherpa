@@ -340,13 +340,10 @@
                 />
               </div>
             </div>
-            <small class="field-hint">
-              For CSV files, choose spectra when columns are ordered wavelengths or wavenumbers; choose feature table
-              for iris/wine-style columns.
-            </small>
             <div class="field">
               <label>File</label>
               <FileUpload
+                ref="uploadFileUploadRef"
                 mode="basic"
                 :auto="false"
                 :accept="uploadAcceptList"
@@ -413,6 +410,7 @@
             :title="previewUploadTitle"
             :files="previewUploadFiles"
             :overrides="previewUploadOverrides"
+            :csvPlan="selectedUploadCsvPlan"
             @update:overrides="onPreviewUploadOverrides"
           />
         </section>
@@ -964,6 +962,7 @@ import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
 import {
   useDataStore,
+  type CsvImportPlan,
   type DataMatrixRef,
   type PreparedDataOverrides,
   type StagedUpload,
@@ -1004,6 +1003,7 @@ const toast = useToast();
 const route = useRoute();
 const router = useRouter();
 const synthesisPanelRef = ref<InstanceType<typeof SynthesisPanel> | null>(null);
+const uploadFileUploadRef = ref<InstanceType<typeof FileUpload> | null>(null);
 const activeExperimentMetadata = ref<Record<string, unknown> | null>(null);
 const activeTab = ref(0);
 const isGuidedExampleSession = ref(false);
@@ -1303,7 +1303,7 @@ const uploadFormatHint = computed(() => {
 });
 const deleting = ref(false);
 const uploadStage = ref("raw");
-const uploadDataRole = ref("X_spectra");
+const uploadDataRole = ref("auto");
 const uploadTargetColumn = ref("");
 const uploadTargetType = ref("auto");
 const selectedFile = ref<File | null>(null);
@@ -1318,6 +1318,11 @@ const deleteTarget = ref<ExperimentFile | null>(null);
 const importDatasetName = ref("");
 const libraryDatasetName = ref("");
 const uploadDatasetName = ref("");
+
+function clearUploadFileSelection() {
+  selectedFile.value = null;
+  (uploadFileUploadRef.value as { clear?: () => void } | null)?.clear?.();
+}
 
 const librarySourceOptions = [
   { label: "NIST", value: "nist" },
@@ -1517,7 +1522,8 @@ function defaultLibraryDatasetName(): string {
 }
 
 const uploadDataRoleOptions = [
-  { label: "Spectra (ordered axis)", value: "X_spectra" },
+  { label: "Auto-detect", value: "auto" },
+  { label: "Spectra / ordered variables", value: "X_spectra" },
   { label: "Feature table", value: "X_features" },
 ];
 
@@ -1547,6 +1553,65 @@ const previewUploadFiles = computed<SourcePreviewFile[]>(() =>
 );
 const previewUploadOverrides = computed(() =>
   selectedUploadMember.value ? uploadOverrides[selectedUploadMember.value.staging_id] ?? {} : {}
+);
+const selectedUploadCsvPlan = computed<CsvImportPlan | null>(() => selectedUploadMember.value?.csv_import_plan ?? null);
+
+let uploadControlsHydrating = false;
+let uploadControlsHydrationRun = 0;
+
+function uploadControlOverrides(member: StagedUpload, existing: PreparedDataOverrides = {}): PreparedDataOverrides {
+  const overrides: PreparedDataOverrides = {
+    ...existing,
+    title: existing.title ?? member.filename.replace(/\.[^.]+$/, ""),
+  };
+  if (uploadDataRole.value === "auto") {
+    delete overrides.data_role;
+  } else {
+    overrides.data_role = uploadDataRole.value;
+  }
+  const targetColumn = uploadTargetColumn.value.trim();
+  if (targetColumn) {
+    overrides.target_column = targetColumn;
+  } else {
+    delete overrides.target_column;
+  }
+  if (uploadTargetType.value && uploadTargetType.value !== "auto") {
+    overrides.target_type = uploadTargetType.value;
+  } else {
+    delete overrides.target_type;
+  }
+  return overrides;
+}
+
+function syncUploadControlsFromOverrides(overrides: PreparedDataOverrides | undefined) {
+  const hydrationRun = ++uploadControlsHydrationRun;
+  uploadControlsHydrating = true;
+  uploadDataRole.value = overrides?.data_role || "auto";
+  uploadTargetColumn.value = overrides?.target_column || "";
+  uploadTargetType.value = overrides?.target_type || "auto";
+  nextTick(() => {
+    if (hydrationRun === uploadControlsHydrationRun) {
+      uploadControlsHydrating = false;
+    }
+  });
+}
+
+watch(
+  () => selectedUploadMember.value?.staging_id ?? null,
+  () => {
+    const member = selectedUploadMember.value;
+    syncUploadControlsFromOverrides(member ? uploadOverrides[member.staging_id] : undefined);
+  },
+);
+
+watch(
+  [uploadDataRole, uploadTargetColumn, uploadTargetType],
+  () => {
+    if (uploadControlsHydrating) return;
+    const member = selectedUploadMember.value;
+    if (!member) return;
+    uploadOverrides[member.staging_id] = uploadControlOverrides(member, uploadOverrides[member.staging_id] ?? {});
+  },
 );
 
 const fileStages = [
@@ -2976,7 +3041,7 @@ async function onEditExperiment() {
 
 async function onFileSelect(event: { files?: File[] }) {
   if (dataUploadDisabled.value) {
-    selectedFile.value = null;
+    clearUploadFileSelection();
     return;
   }
   const file = event.files?.[0] ?? null;
@@ -2986,13 +3051,9 @@ async function onFileSelect(event: { files?: File[] }) {
     const staged = await dataStore.stageUploadFile(file);
     stagedUploadMembers.value.push(staged);
     previewUploadId.value = staged.staging_id;
-    uploadOverrides[staged.staging_id] = {
-      title: staged.filename.replace(/\.[^.]+$/, ""),
-      data_role: uploadDataRole.value,
-      target_column: uploadTargetColumn.value || null,
-      target_type: uploadTargetType.value,
-    };
+    uploadOverrides[staged.staging_id] = uploadControlOverrides(staged);
   } catch (err: unknown) {
+    clearUploadFileSelection();
     toast.add({
       severity: "error",
       summary: "Stage Failed",
@@ -3037,11 +3098,11 @@ async function onUploadFile() {
       life: 3000,
     });
     // Clear form so the next upload starts fresh.
-    selectedFile.value = null;
+    clearUploadFileSelection();
     stagedUploadMembers.value = [];
     previewUploadId.value = null;
     uploadStage.value = "raw";
-    uploadDataRole.value = "X_spectra";
+    uploadDataRole.value = "auto";
     uploadTargetColumn.value = "";
     uploadTargetType.value = "auto";
     uploadDatasetName.value = "";
@@ -3085,6 +3146,7 @@ function onPreviewUploadOverrides(overrides: PreparedDataOverrides) {
   const member = selectedUploadMember.value;
   if (!member) return;
   uploadOverrides[member.staging_id] = { ...overrides };
+  syncUploadControlsFromOverrides(overrides);
 }
 
 function confirmDeleteFile(file: ExperimentFile) {

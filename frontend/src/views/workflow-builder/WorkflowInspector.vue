@@ -283,11 +283,282 @@
                 optionValue="value"
                 placeholder="Select a dataset..."
                 appendTo="body"
-                @change="emitParams"
+                @change="onMyDatasetChanged"
               />
               <small class="param-hint">
                 All files in the selected dataset are loaded together.
               </small>
+            </div>
+            <div v-if="myDatasetTargetOptions.length > 1" class="field">
+              <label>Target Mode</label>
+              <Dropdown
+                v-model="localParams.target_mode"
+                :options="myDatasetTargetModeOptions"
+                optionLabel="label"
+                optionValue="value"
+                appendTo="body"
+                @change="onMyDatasetTargetModeChanged"
+              />
+              <small class="param-hint">
+                This setting belongs to this workflow sheet. Change it here to keep each sheet focused on a different property.
+              </small>
+            </div>
+            <div v-if="myDatasetTargetOptions.length > 1 && localParams.target_mode === 'single'" class="field">
+              <label>Target Property</label>
+              <Dropdown
+                v-model="localParams.selected_target"
+                :options="myDatasetTargetOptions"
+                optionLabel="label"
+                optionValue="value"
+                placeholder="Select target property..."
+                appendTo="body"
+                @change="emitParams"
+              />
+              <small class="param-hint">
+                Models downstream of this My Dataset node receive this univariate target.
+              </small>
+            </div>
+            <div v-if="myDatasetTargetCompleteness" class="dataset-target-note">
+              <i class="pi pi-info-circle" aria-hidden="true"></i>
+              <span>{{ myDatasetTargetCompleteness }}</span>
+            </div>
+            <div v-if="myDatasetTargetConflict" class="dataset-target-note dataset-target-note--warn">
+              <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+              <span>{{ myDatasetTargetConflict }}</span>
+            </div>
+          </template>
+
+          <!-- FILTER_SAMPLES node -->
+          <template v-else-if="selectedNodeType === 'data.filter_samples'">
+            <div class="filter-samples-panel">
+              <div v-if="!filterHasInput" class="filter-empty-state">
+                <i class="pi pi-filter" aria-hidden="true"></i>
+                <strong>Connect a dataset first</strong>
+                <span>Filter choices are populated from the dataset connected to this node.</span>
+              </div>
+
+              <template v-else>
+                <div class="filter-dataset-summary">
+                  <div>
+                    <span class="summary-kicker">Dataset</span>
+                    <strong>{{ filterSampleCount }} sample{{ filterSampleCount === 1 ? "" : "s" }}</strong>
+                  </div>
+                  <div v-if="filterFeatureCount !== null">
+                    <span class="summary-kicker">Variables</span>
+                    <strong>{{ filterFeatureCount }}</strong>
+                  </div>
+                </div>
+                <div v-if="filterMatrixPreviewOnly" class="filter-scope-warning">
+                  <i class="pi pi-info-circle" aria-hidden="true"></i>
+                  <span>
+                    This panel has only a saved preview of the upstream matrix. Index filters are still available;
+                    intensity filters need a fresh run with the full matrix in memory.
+                  </span>
+                </div>
+
+                <div class="filter-mode-grid" aria-label="Filter method">
+                  <button
+                    v-for="mode in sampleFilterModeOptions"
+                    :key="mode.value"
+                    type="button"
+                    class="filter-mode-card"
+                    :class="{ active: localParams.field === mode.value }"
+                    :disabled="!mode.enabled"
+                    @click="setSampleFilterField(mode.value)"
+                  >
+                    <i :class="mode.icon" aria-hidden="true"></i>
+                    <span class="mode-label">{{ mode.label }}</span>
+                    <span class="mode-hint">{{ mode.hint }}</span>
+                  </button>
+                </div>
+
+                <div v-if="localParams.field === 'sample_index'" class="filter-rule-card">
+                  <div class="field">
+                    <label>Rows to keep</label>
+                    <InputText
+                      v-model="localParams.pattern"
+                      :placeholder="filterSampleCount > 0 ? `1-${filterSampleCount}` : '1-10, 15'"
+                      @update:model-value="onIndexPatternChange"
+                    />
+                    <small class="param-hint">
+                      Use row numbers and ranges, such as 1-10, 15, 20-25.
+                    </small>
+                  </div>
+                  <div class="filter-quick-actions">
+                    <Button label="All" class="p-button-sm p-button-text" @click="setIndexRange('all')" />
+                    <Button label="First 10" class="p-button-sm p-button-text" @click="setIndexRange('first10')" />
+                    <Button label="Last 10" class="p-button-sm p-button-text" @click="setIndexRange('last10')" />
+                  </div>
+                </div>
+
+                <div v-else-if="localParams.field === 'intensity'" class="filter-rule-card">
+                  <div class="field">
+                    <label>Intensity metric</label>
+                    <Dropdown
+                      v-model="localParams.intensity_metric"
+                      :options="intensityMetricOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      appendTo="body"
+                      @change="onIntensityMetricChange"
+                    />
+                  </div>
+                  <div class="field">
+                    <label>Condition</label>
+                    <Dropdown
+                      v-model="localParams.intensity_operator"
+                      :options="intensityOperatorOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      appendTo="body"
+                      @change="emitParams"
+                    />
+                  </div>
+                  <div class="field">
+                    <label>Threshold</label>
+                    <InputNumber
+                      v-model="localParams.intensity_threshold"
+                      :minFractionDigits="0"
+                      :maxFractionDigits="6"
+                      @update:model-value="emitParams"
+                    />
+                    <small class="param-hint">
+                      {{ intensitySummaryText }}
+                    </small>
+                  </div>
+                  <div v-if="localParams.intensity_operator === 'between'" class="field">
+                    <label>Upper threshold</label>
+                    <InputNumber
+                      v-model="localParams.intensity_upper_threshold"
+                      :minFractionDigits="0"
+                      :maxFractionDigits="6"
+                      @update:model-value="emitParams"
+                    />
+                  </div>
+                </div>
+
+                <div v-else class="filter-rule-card">
+                  <div v-if="localParams.field === 'sample_table'" class="field">
+                    <label>Metadata column</label>
+                    <Dropdown
+                      v-model="localParams.sample_table_column"
+                      :options="sampleTableColumnOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      appendTo="body"
+                      @change="onSampleTableColumnChange"
+                    />
+                  </div>
+
+                  <div class="field">
+                    <label>{{ categoricalFilterLabel }}</label>
+                    <div class="filter-value-toolbar">
+                      <InputText
+                        v-model="filterValueSearch"
+                        class="filter-value-search"
+                        placeholder="Search available values"
+                      />
+                      <Button label="All" class="p-button-sm p-button-text" @click="selectAllFilterValues" />
+                      <Button label="None" class="p-button-sm p-button-text" @click="clearFilterValues" />
+                    </div>
+                    <div class="filter-value-list">
+                      <label
+                        v-for="option in visibleFilterValueOptions"
+                        :key="option.value"
+                        class="filter-value-row"
+                      >
+                        <Checkbox
+                          :binary="true"
+                          :model-value="isFilterValueSelected(option.value)"
+                          @change="toggleFilterValue(option.value)"
+                        />
+                        <span>{{ option.label }}</span>
+                      </label>
+                    </div>
+                    <small class="param-hint">
+                      Choices are populated from the connected dataset.
+                    </small>
+                    <small v-if="filterValueOptions.length > visibleFilterValueOptions.length" class="param-hint">
+                      Showing {{ visibleFilterValueOptions.length }} of {{ filterValueOptions.length }} values. Search to narrow the list.
+                    </small>
+                  </div>
+                </div>
+
+                <div class="filter-preview" :class="{ warning: filterPreview.empty }">
+                  <div class="filter-preview-main">
+                    <i :class="filterPreview.empty ? 'pi pi-exclamation-triangle' : 'pi pi-check-circle'" aria-hidden="true"></i>
+                    <strong>{{ filterPreview.summary }}</strong>
+                  </div>
+                  <div v-if="filterPreview.keptLabels.length" class="filter-preview-list">
+                    <span>Kept:</span>
+                    <em>{{ filterPreview.keptLabels.join(", ") }}</em>
+                  </div>
+                  <div v-if="filterPreview.excludedLabels.length" class="filter-preview-list muted">
+                    <span>Excluded:</span>
+                    <em>{{ filterPreview.excludedLabels.join(", ") }}</em>
+                  </div>
+                </div>
+
+                <Accordion class="advanced-params-accordion">
+                  <AccordionTab>
+                    <template #header>
+                      <span class="advanced-header">
+                        <i class="pi pi-cog"></i>
+                        Advanced Settings
+                      </span>
+                    </template>
+
+                    <div class="params-section">
+                      <div class="field checkbox-row">
+                        <Checkbox
+                          v-model="localParams.invert"
+                          :binary="true"
+                          inputId="filter_invert"
+                          @change="emitParams"
+                        />
+                        <label for="filter_invert">Invert selection</label>
+                      </div>
+                      <div class="field">
+                        <label>Pattern</label>
+                        <InputText
+                          v-model="localParams.pattern"
+                          placeholder="Optional text, range, or regular expression"
+                          @update:model-value="onAdvancedPatternChange"
+                        />
+                      </div>
+                      <div v-if="localParams.field !== 'sample_index' && localParams.field !== 'intensity'" class="field">
+                        <label>Match mode</label>
+                        <Dropdown
+                          v-model="localParams.match_mode"
+                          :options="sampleFilterMatchModeOptions"
+                          optionLabel="label"
+                          optionValue="value"
+                          appendTo="body"
+                          @change="onAdvancedPatternChange"
+                        />
+                      </div>
+                      <div v-if="localParams.field !== 'sample_index' && localParams.field !== 'intensity'" class="field checkbox-row">
+                        <Checkbox
+                          v-model="localParams.case_sensitive"
+                          :binary="true"
+                          inputId="filter_case_sensitive"
+                          @change="emitParams"
+                        />
+                        <label for="filter_case_sensitive">Case sensitive</label>
+                      </div>
+                      <div class="field checkbox-row">
+                        <Checkbox
+                          v-model="localParams.allow_empty"
+                          :binary="true"
+                          inputId="filter_allow_empty"
+                          @change="emitParams"
+                        />
+                        <label for="filter_allow_empty">Allow empty result</label>
+                      </div>
+                    </div>
+                  </AccordionTab>
+                </Accordion>
+              </template>
             </div>
           </template>
 
@@ -1117,17 +1388,16 @@
           <div v-if="previewData.original?.data?.length > 0" class="data-summary">
             <div class="summary-item">
               <span class="summary-label">Spectra:</span>
-              <span class="summary-value">{{ previewData.original.data.length }}</span>
+              <span class="summary-value">{{ previewPayloadSampleCount(previewData.original) }}</span>
             </div>
             <div v-if="previewData.original.data[0]?.wavenumber" class="summary-item">
               <span class="summary-label">Points:</span>
-              <span class="summary-value">{{ previewData.original.data[0].wavenumber.length }}</span>
+              <span class="summary-value">{{ previewPayloadFeatureCount(previewData.original) }}</span>
             </div>
             <div v-if="previewData.original.data[0]?.wavenumber" class="summary-item">
               <span class="summary-label">Range:</span>
               <span class="summary-value">
-                {{ Math.min(...previewData.original.data[0].wavenumber).toFixed(1) }} -
-                {{ Math.max(...previewData.original.data[0].wavenumber).toFixed(1) }} cm⁻¹
+                {{ previewPayloadRange(previewData.original) }}
               </span>
             </div>
           </div>
@@ -1146,17 +1416,16 @@
             <div v-if="previewData.processed?.data?.length > 0" class="data-summary">
               <div class="summary-item">
                 <span class="summary-label">Spectra:</span>
-                <span class="summary-value">{{ previewData.processed.data.length }}</span>
+                <span class="summary-value">{{ previewPayloadSampleCount(previewData.processed) }}</span>
               </div>
               <div v-if="previewData.processed.data[0]?.wavenumber" class="summary-item">
                 <span class="summary-label">Points:</span>
-                <span class="summary-value">{{ previewData.processed.data[0].wavenumber.length }}</span>
+                <span class="summary-value">{{ previewPayloadFeatureCount(previewData.processed) }}</span>
               </div>
               <div v-if="previewData.processed.data[0]?.wavenumber" class="summary-item">
                 <span class="summary-label">Range:</span>
                 <span class="summary-value">
-                  {{ Math.min(...previewData.processed.data[0].wavenumber).toFixed(1) }} -
-                  {{ Math.max(...previewData.processed.data[0].wavenumber).toFixed(1) }} cm⁻¹
+                  {{ previewPayloadRange(previewData.processed) }}
                 </span>
               </div>
             </div>
@@ -1286,7 +1555,7 @@ import InputText from "primevue/inputtext";
 import Slider from "primevue/slider";
 import TreeSelect from "primevue/treeselect";
 import { useToast } from "primevue/usetoast";
-import { useWorkflowStore, type WorkflowNode } from "@/stores/workflow";
+import { useWorkflowStore, type ExperimentDataset, type WorkflowNode } from "@/stores/workflow";
 import { useProjectStore } from "@/stores/project";
 import { useDemoMode } from "@/composables/useDemoMode";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
@@ -1536,6 +1805,8 @@ const NODE_ICONS: Record<string, string> = {
 
 // Local params copy for editing
 const localParams = ref<ParamsMap>({});
+const currentNodeId = ref<string | null>(null);
+const lastSyncedParamsSignature = ref("");
 
 // Validation state
 const validationErrors = ref<Array<{ param_name: string; message: string }>>([]);
@@ -1548,6 +1819,686 @@ const getParamError = (paramName: string): string | null => {
 
 // Check if parameters are valid
 const hasValidationErrors = computed(() => validationErrors.value.length > 0);
+
+const stableParamSignature = (value: unknown): string => {
+  const normalize = (item: unknown): unknown => {
+    if (Array.isArray(item)) return item.map(normalize);
+    if (item && typeof item === "object") {
+      return Object.fromEntries(
+        Object.entries(item as Record<string, unknown>)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, child]) => [key, normalize(child)])
+      );
+    }
+    return item;
+  };
+  return JSON.stringify(normalize(value ?? {}));
+};
+
+const mergedNodeParams = (node: WorkflowNode): ParamsMap => ({
+  ...getDefaultsForNodeType(node.type),
+  ...node.params,
+});
+
+const syncLocalParamsFromNode = (node: WorkflowNode, options: { force?: boolean } = {}) => {
+  const nextParams = mergedNodeParams(node);
+  const nextSignature = stableParamSignature(nextParams);
+  const localSignature = stableParamSignature(localParams.value);
+  const isDirty = localSignature !== lastSyncedParamsSignature.value;
+  if (!options.force && isDirty) return false;
+  currentNodeId.value = node.id;
+  localParams.value = nextParams;
+  lastSyncedParamsSignature.value = nextSignature;
+  return true;
+};
+
+const syncLocalParamsFromExternal = (
+  nodeType: string,
+  params: ParamsMap | undefined,
+  options: { fetchReferenceDatasets?: boolean } = {},
+) => {
+  const nextParams = { ...getDefaultsForNodeType(nodeType), ...(params || {}) };
+  const localSignature = stableParamSignature(localParams.value);
+  if (localSignature !== lastSyncedParamsSignature.value) return false;
+  localParams.value = nextParams;
+  lastSyncedParamsSignature.value = stableParamSignature(nextParams);
+  if (
+    options.fetchReferenceDatasets &&
+    (localParams.value.source === 'eigenvector' || localParams.value.source === 'sklearn')
+  ) {
+    void workflowStore.fetchReferenceDatasets();
+  }
+  return true;
+};
+
+type SampleFilterField =
+  | "sample_index"
+  | "sample_label"
+  | "sample_class"
+  | "target"
+  | "sample_table"
+  | "intensity";
+
+interface FilterModeOption {
+  value: SampleFilterField;
+  label: string;
+  hint: string;
+  icon: string;
+  enabled: boolean;
+}
+
+interface FilterValueOption {
+  label: string;
+  value: string;
+}
+
+const MAX_FILTER_VALUE_OPTIONS = 500;
+const filterValueSearch = ref("");
+
+const intensityMetricOptions = [
+  { label: "Max intensity", value: "max" },
+  { label: "Mean intensity", value: "mean" },
+  { label: "Min intensity", value: "min" },
+  { label: "Any point", value: "any" },
+  { label: "All points", value: "all" },
+];
+
+const intensityOperatorOptions = [
+  { label: ">= threshold", value: "gte" },
+  { label: "> threshold", value: "gt" },
+  { label: "<= threshold", value: "lte" },
+  { label: "< threshold", value: "lt" },
+  { label: "Between", value: "between" },
+];
+
+const sampleFilterMatchModeOptions = [
+  { label: "Contains", value: "contains" },
+  { label: "Equals", value: "equals" },
+  { label: "In list", value: "in_list" },
+  { label: "Regex", value: "regex" },
+];
+
+const filterInputOutput = computed<PortOutput | NodeOutput | null>(() => {
+  if (selectedNodeType.value !== "data.filter_samples") return null;
+  return props.inputConnections.find((conn) => conn.toPort === "X")?.data
+    || props.inputConnections[0]?.data
+    || null;
+});
+
+const filterOutputValue = (output: PortOutput | NodeOutput | null): unknown => {
+  return output && "value" in output ? output.value : null;
+};
+
+const filterInputRecord = computed<Record<string, unknown> | null>(() => {
+  return asObject(filterOutputValue(filterInputOutput.value));
+});
+
+const filterInputMetadata = computed<Record<string, unknown>>(() => {
+  return asObject(filterInputOutput.value?.metadata)
+    ?? asObject(filterInputRecord.value?.metadata)
+    ?? {};
+});
+
+const filterDataRows = computed<unknown[][]>(() => {
+  const data = filterInputOutput.value?.data;
+  if (Array.isArray(data)) {
+    return data.map((row) => (Array.isArray(row) ? row : [row]));
+  }
+  const recordData = filterInputRecord.value?.data;
+  if (Array.isArray(recordData)) {
+    return recordData.map((row) => (Array.isArray(row) ? row : [row]));
+  }
+  return [];
+});
+
+const filterHasInput = computed(() => !!filterInputOutput.value);
+
+const toStringValues = (value: unknown, expectedLength?: number): string[] => {
+  if (!Array.isArray(value)) return [];
+  const values = value.map((item) => (item === null || item === undefined ? "" : String(item)));
+  if (expectedLength !== undefined && values.length !== expectedLength) return [];
+  return values;
+};
+
+const getNestedArray = (...candidates: unknown[]): unknown[] => {
+  for (const candidate of candidates) {
+    if (Array.isArray(candidate)) return candidate;
+  }
+  return [];
+};
+
+const filterSampleCount = computed(() => {
+  const metadataCount = filterInputMetadata.value.n_samples;
+  if (typeof metadataCount === "number" && Number.isFinite(metadataCount)) return metadataCount;
+  const recordCount = filterInputRecord.value?.n_samples;
+  if (typeof recordCount === "number" && Number.isFinite(recordCount)) return recordCount;
+  return filterDataRows.value.length;
+});
+
+const filterFeatureCount = computed<number | null>(() => {
+  const metadataCount = filterInputMetadata.value.n_features;
+  if (typeof metadataCount === "number" && Number.isFinite(metadataCount)) return metadataCount;
+  const recordCount = filterInputRecord.value?.n_features;
+  if (typeof recordCount === "number" && Number.isFinite(recordCount)) return recordCount;
+  return filterDataRows.value[0]?.length ?? null;
+});
+
+const filterMatrixPreviewOnly = computed(() => {
+  const rows = filterDataRows.value.length;
+  if (rows <= 0) return false;
+  const cols = filterDataRows.value[0]?.length ?? 0;
+  const fullRows = filterSampleCount.value;
+  const fullCols = filterFeatureCount.value;
+  return rows < fullRows || (fullCols !== null && cols < fullCols);
+});
+
+const filterSampleLabels = computed(() => {
+  const record = filterInputRecord.value;
+  const yAxis = asObject(record?.y_axis) ?? asObject(record?.sample_axis);
+  const labels = toStringValues(
+    getNestedArray(
+      filterInputMetadata.value.sample_labels,
+      filterInputMetadata.value.labels,
+      yAxis?.labels,
+    ),
+    filterSampleCount.value,
+  );
+  if (labels.length) return labels;
+  return Array.from({ length: filterSampleCount.value }, (_, index) => `Sample ${index + 1}`);
+});
+
+const filterHasRealSampleLabels = computed(() => {
+  const record = filterInputRecord.value;
+  const yAxis = asObject(record?.y_axis) ?? asObject(record?.sample_axis);
+  return toStringValues(
+    getNestedArray(filterInputMetadata.value.sample_labels, filterInputMetadata.value.labels, yAxis?.labels),
+    filterSampleCount.value,
+  ).length > 0;
+});
+
+const filterSampleClasses = computed(() => {
+  const record = filterInputRecord.value;
+  const yAxis = asObject(record?.y_axis) ?? asObject(record?.sample_axis);
+  return toStringValues(
+    getNestedArray(filterInputMetadata.value.sample_classes, filterInputMetadata.value.classes, yAxis?.classes),
+    filterSampleCount.value,
+  );
+});
+
+const filterTargetValues = computed(() => {
+  const record = filterInputRecord.value;
+  return toStringValues(
+    getNestedArray(record?.target, filterInputMetadata.value.target, filterInputMetadata.value.target_values),
+    filterSampleCount.value,
+  );
+});
+
+const filterSampleTable = computed<Record<string, string[]>>(() => {
+  const record = filterInputRecord.value;
+  const yAxis = asObject(record?.y_axis) ?? asObject(record?.sample_axis);
+  const rawTable = asObject(yAxis?.sample_table) ?? asObject(filterInputMetadata.value.sample_table);
+  const table: Record<string, string[]> = {};
+  if (!rawTable) return table;
+  for (const [key, value] of Object.entries(rawTable)) {
+    const values = toStringValues(value, filterSampleCount.value);
+    if (values.length > 0) {
+      table[key] = values;
+    }
+  }
+  return table;
+});
+
+const sampleTableColumnOptions = computed(() =>
+  Object.keys(filterSampleTable.value).map((column) => ({ label: formatLabel(column), value: column })),
+);
+
+const uniqueOptions = (values: string[]): FilterValueOption[] => {
+  const seen = new Set<string>();
+  const result: FilterValueOption[] = [];
+  for (const value of values) {
+    if (seen.has(value)) continue;
+    seen.add(value);
+    result.push({ label: value || "(blank)", value });
+  }
+  return result;
+};
+
+const currentCategoricalValues = computed(() => {
+  const field = String(localParams.value.field || "sample_index");
+  if (field === "sample_label") return filterHasRealSampleLabels.value ? filterSampleLabels.value : [];
+  if (field === "sample_class") return filterSampleClasses.value;
+  if (field === "target") return filterTargetValues.value;
+  if (field === "sample_table") {
+    const column = String(localParams.value.sample_table_column || "");
+    return column ? filterSampleTable.value[column] ?? [] : [];
+  }
+  return [];
+});
+
+const filterValueOptions = computed(() => uniqueOptions(currentCategoricalValues.value));
+
+const visibleFilterValueOptions = computed(() => {
+  const query = filterValueSearch.value.trim().toLowerCase();
+  const options = query
+    ? filterValueOptions.value.filter((option) => option.label.toLowerCase().includes(query))
+    : filterValueOptions.value;
+  return options.slice(0, MAX_FILTER_VALUE_OPTIONS);
+});
+
+const categoricalFilterLabel = computed(() => {
+  const field = String(localParams.value.field || "");
+  if (field === "sample_label") return "Sample names to keep";
+  if (field === "sample_class") return "Classes to keep";
+  if (field === "target") return "Target values to keep";
+  if (field === "sample_table") return "Metadata values to keep";
+  return "Values to keep";
+});
+
+const splitFilterTerms = (pattern: string): string[] =>
+  pattern
+    .split(/[\n,]+/)
+    .map((term) => term.trim())
+    .filter(Boolean);
+
+const explicitFilterValues = (): string[] | null => {
+  const explicit = localParams.value.filter_values;
+  if (!Array.isArray(explicit)) return null;
+  return explicit.map((value) => String(value));
+};
+
+const selectedFilterValues = computed<string[]>(() => {
+  const explicit = explicitFilterValues();
+  if (explicit !== null) {
+    return explicit;
+  }
+  if (!String(localParams.value.pattern || "").trim()) {
+    return filterValueOptions.value.map((option) => option.value);
+  }
+  if (String(localParams.value.match_mode || "") === "in_list") {
+    return splitFilterTerms(String(localParams.value.pattern || ""));
+  }
+  const optionValues = filterValueOptions.value.map((option) => option.value);
+  const mask = textMask(optionValues);
+  return optionValues.filter((_, index) => mask[index]);
+});
+
+const selectedFilterValueSet = computed(() => new Set(selectedFilterValues.value));
+
+const setSelectedFilterValues = (values: string[]) => {
+  const allValues = filterValueOptions.value.map((option) => option.value);
+  const unique = Array.from(new Set(values));
+  if (unique.length === allValues.length && allValues.every((value) => unique.includes(value))) {
+    delete localParams.value.filter_values;
+    localParams.value.pattern = "";
+    localParams.value.match_mode = "in_list";
+    localParams.value.case_sensitive = false;
+  } else if (unique.length === 0) {
+    localParams.value.filter_values = [];
+    localParams.value.pattern = "";
+    localParams.value.match_mode = "in_list";
+    localParams.value.case_sensitive = false;
+  } else {
+    localParams.value.filter_values = unique;
+    localParams.value.pattern = "";
+    localParams.value.match_mode = "in_list";
+    localParams.value.case_sensitive = false;
+  }
+  emitParams();
+};
+
+const isFilterValueSelected = (value: string): boolean => selectedFilterValueSet.value.has(value);
+
+const toggleFilterValue = (value: string) => {
+  const selected = new Set(selectedFilterValues.value);
+  if (selected.has(value)) {
+    selected.delete(value);
+  } else {
+    selected.add(value);
+  }
+  setSelectedFilterValues(Array.from(selected));
+};
+
+const selectAllFilterValues = () => setSelectedFilterValues(filterValueOptions.value.map((option) => option.value));
+const clearFilterValues = () => setSelectedFilterValues([]);
+
+const numericRows = computed(() =>
+  filterDataRows.value.map((row) =>
+    row
+      .map((value) => (typeof value === "number" ? value : Number(value)))
+      .filter((value) => Number.isFinite(value)),
+  ),
+);
+
+const hasNumericIntensityData = computed(() => numericRows.value.some((row) => row.length > 0));
+
+const rowIntensityValues = (metric: string): number[] => {
+  return numericRows.value.map((row) => {
+    if (row.length === 0) return Number.NaN;
+    if (metric === "mean") return row.reduce((sum, value) => sum + value, 0) / row.length;
+    if (metric === "min") return Math.min(...row);
+    if (metric === "max") return Math.max(...row);
+    return Number.NaN;
+  });
+};
+
+const intensityReferenceValues = (metric: string): number[] => {
+  if (metric === "any" || metric === "all") {
+    return numericRows.value.flat().filter((value) => Number.isFinite(value));
+  }
+  return rowIntensityValues(metric).filter((value) => Number.isFinite(value));
+};
+
+const intensityMetricValues = computed(() => {
+  const metric = String(localParams.value.intensity_metric || "max");
+  return intensityReferenceValues(metric);
+});
+
+const intensitySummaryText = computed(() => {
+  if (filterMatrixPreviewOnly.value) {
+    return "Intensity filtering needs the full upstream matrix; rerun the workflow before setting this rule.";
+  }
+  const values = intensityMetricValues.value;
+  if (!values.length) return "No numeric intensities are available for preview.";
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  return `Available ${localParams.value.intensity_metric || "max"} range: ${min.toPrecision(5)} to ${max.toPrecision(5)}.`;
+});
+
+const sampleFilterModeOptions = computed<FilterModeOption[]>(() => [
+  {
+    value: "sample_index",
+    label: "By index",
+    hint: filterSampleCount.value ? `Rows 1-${filterSampleCount.value}` : "Rows",
+    icon: "pi pi-list",
+    enabled: filterSampleCount.value > 0,
+  },
+  {
+    value: "sample_label",
+    label: "By name",
+    hint: filterHasRealSampleLabels.value ? `${filterSampleLabels.value.length} names` : "No names",
+    icon: "pi pi-tag",
+    enabled: filterHasRealSampleLabels.value,
+  },
+  {
+    value: "sample_class",
+    label: "By class",
+    hint: filterSampleClasses.value.some((value) => value !== "")
+      ? `${uniqueOptions(filterSampleClasses.value.filter((value) => value !== "")).length} classes`
+      : "No classes",
+    icon: "pi pi-sitemap",
+    enabled: filterSampleClasses.value.some((value) => value !== ""),
+  },
+  {
+    value: "target",
+    label: "By target",
+    hint: filterTargetValues.value.some((value) => value !== "")
+      ? `${uniqueOptions(filterTargetValues.value.filter((value) => value !== "")).length} values`
+      : "No targets",
+    icon: "pi pi-bullseye",
+    enabled: filterTargetValues.value.some((value) => value !== ""),
+  },
+  {
+    value: "sample_table",
+    label: "By metadata",
+    hint: sampleTableColumnOptions.value.length ? `${sampleTableColumnOptions.value.length} fields` : "No fields",
+    icon: "pi pi-table",
+    enabled: sampleTableColumnOptions.value.length > 0,
+  },
+  {
+    value: "intensity",
+    label: "By intensity",
+    hint: filterMatrixPreviewOnly.value
+      ? "Needs full matrix"
+      : hasNumericIntensityData.value
+        ? "Spectral values"
+        : "No numeric data",
+    icon: "pi pi-chart-line",
+    enabled: hasNumericIntensityData.value && !filterMatrixPreviewOnly.value,
+  },
+]);
+
+const isFilterFieldEnabled = (field: string): field is SampleFilterField =>
+  sampleFilterModeOptions.value.some((option) => option.value === field && option.enabled);
+
+const firstEnabledFilterField = (): SampleFilterField =>
+  sampleFilterModeOptions.value.find((option) => option.enabled)?.value ?? "sample_index";
+
+const initializeFilterFieldDefaults = (field: SampleFilterField) => {
+  delete localParams.value.filter_values;
+  filterValueSearch.value = "";
+  localParams.value.field = field;
+  localParams.value.allow_empty = Boolean(localParams.value.allow_empty ?? false);
+  localParams.value.invert = Boolean(localParams.value.invert ?? false);
+
+  if (field === "sample_index") {
+    localParams.value.pattern = filterSampleCount.value > 0 ? `1-${filterSampleCount.value}` : "";
+    localParams.value.match_mode = "in_list";
+    localParams.value.case_sensitive = false;
+    return;
+  }
+
+  if (field === "intensity") {
+    localParams.value.intensity_metric = localParams.value.intensity_metric || "max";
+    localParams.value.intensity_operator = localParams.value.intensity_operator || "gte";
+    const values = intensityReferenceValues(String(localParams.value.intensity_metric || "max"));
+    if (values.length > 0) {
+      localParams.value.intensity_threshold = Math.min(...values);
+      localParams.value.intensity_upper_threshold = Math.max(...values);
+    } else {
+      localParams.value.intensity_threshold = 0;
+      localParams.value.intensity_upper_threshold = 1;
+    }
+    localParams.value.pattern = "";
+    return;
+  }
+
+  if (field === "sample_table" && !localParams.value.sample_table_column) {
+    localParams.value.sample_table_column = sampleTableColumnOptions.value[0]?.value || "";
+  }
+  localParams.value.pattern = "";
+  localParams.value.match_mode = "in_list";
+  localParams.value.case_sensitive = false;
+};
+
+const setSampleFilterField = (field: SampleFilterField) => {
+  if (!isFilterFieldEnabled(field)) return;
+  initializeFilterFieldDefaults(field);
+  emitParams();
+};
+
+const ensureSampleFilterDefaults = (emit = false) => {
+  if (selectedNodeType.value !== "data.filter_samples" || !filterHasInput.value) return;
+  const currentField = String(localParams.value.field || "");
+  if (!isFilterFieldEnabled(currentField)) {
+    initializeFilterFieldDefaults(firstEnabledFilterField());
+    if (emit) emitParams();
+    return;
+  }
+  const sampleTableColumns = sampleTableColumnOptions.value.map((option) => option.value);
+  if (
+    currentField === "sample_table"
+    && sampleTableColumns.length
+    && (!localParams.value.sample_table_column || !sampleTableColumns.includes(String(localParams.value.sample_table_column)))
+  ) {
+    localParams.value.sample_table_column = sampleTableColumns[0];
+    if (emit) emitParams();
+  }
+};
+
+const setIndexRange = (kind: "all" | "first10" | "last10") => {
+  const count = filterSampleCount.value;
+  if (count <= 0) return;
+  if (kind === "all") {
+    localParams.value.pattern = `1-${count}`;
+  } else if (kind === "first10") {
+    localParams.value.pattern = `1-${Math.min(10, count)}`;
+  } else {
+    localParams.value.pattern = `${Math.max(1, count - 9)}-${count}`;
+  }
+  localParams.value.match_mode = "in_list";
+  emitParams();
+};
+
+const onIndexPatternChange = () => {
+  localParams.value.match_mode = "in_list";
+  emitParams();
+};
+
+const onIntensityMetricChange = () => {
+  const values = intensityReferenceValues(String(localParams.value.intensity_metric || "max"));
+  if (values.length > 0) {
+    localParams.value.intensity_threshold = Math.min(...values);
+    localParams.value.intensity_upper_threshold = Math.max(...values);
+  }
+  emitParams();
+};
+
+const onSampleTableColumnChange = () => {
+  delete localParams.value.filter_values;
+  localParams.value.pattern = "";
+  localParams.value.match_mode = "in_list";
+  emitParams();
+};
+
+const onAdvancedPatternChange = () => {
+  delete localParams.value.filter_values;
+  emitParams();
+};
+
+const parseIndexPattern = (pattern: string): Set<number> => {
+  const selected = new Set<number>();
+  for (const term of splitFilterTerms(pattern)) {
+    if (term.includes("-")) {
+      const [left, right] = term.split("-", 2).map((part) => Number.parseInt(part.trim(), 10));
+      if (!Number.isFinite(left) || !Number.isFinite(right)) continue;
+      const start = Math.max(1, Math.min(left, right));
+      const stop = Math.min(filterSampleCount.value, Math.max(left, right));
+      for (let index = start; index <= stop; index += 1) {
+        selected.add(index);
+      }
+    } else {
+      const value = Number.parseInt(term, 10);
+      if (Number.isFinite(value) && value >= 1 && value <= filterSampleCount.value) {
+        selected.add(value);
+      }
+    }
+  }
+  return selected;
+};
+
+const textMask = (values: string[]): boolean[] => {
+  const pattern = String(localParams.value.pattern || "");
+  if (!pattern.trim()) return values.map(() => true);
+  const matchMode = String(localParams.value.match_mode || "contains");
+  const caseSensitive = Boolean(localParams.value.case_sensitive);
+  const normalizedValues = caseSensitive ? values : values.map((value) => value.toLowerCase());
+  const normalizedPattern = caseSensitive ? pattern : pattern.toLowerCase();
+
+  if (matchMode === "equals") return normalizedValues.map((value) => value === normalizedPattern);
+  if (matchMode === "in_list") {
+    const terms = new Set(splitFilterTerms(normalizedPattern));
+    return normalizedValues.map((value) => terms.has(value));
+  }
+  if (matchMode === "regex") {
+    try {
+      const regex = new RegExp(pattern, caseSensitive ? "" : "i");
+      return values.map((value) => regex.test(value));
+    } catch {
+      return values.map(() => false);
+    }
+  }
+  return normalizedValues.map((value) => value.includes(normalizedPattern));
+};
+
+const categoricalMask = (values: string[]): boolean[] => {
+  const explicit = explicitFilterValues();
+  if (explicit !== null) {
+    const selected = new Set(explicit);
+    return values.map((value) => selected.has(value));
+  }
+  return textMask(values);
+};
+
+const normalizeMaskLength = (mask: boolean[], count: number): boolean[] => (
+  Array.from({ length: count }, (_, index) => mask[index] === true)
+);
+
+const compareNumber = (value: number, operator: string, threshold: number, upper: number): boolean => {
+  if (!Number.isFinite(value)) return false;
+  if (operator === "gt") return value > threshold;
+  if (operator === "gte") return value >= threshold;
+  if (operator === "lt") return value < threshold;
+  if (operator === "lte") return value <= threshold;
+  if (operator === "between") {
+    const low = Math.min(threshold, upper);
+    const high = Math.max(threshold, upper);
+    return value >= low && value <= high;
+  }
+  return Math.abs(value - threshold) < Number.EPSILON;
+};
+
+const intensityMask = (): boolean[] => {
+  const metric = String(localParams.value.intensity_metric || "max");
+  const operator = String(localParams.value.intensity_operator || "gte");
+  const threshold = Number(localParams.value.intensity_threshold ?? 0);
+  const upper = Number(localParams.value.intensity_upper_threshold ?? threshold);
+  if (metric === "any" || metric === "all") {
+    return numericRows.value.map((row) => {
+      const matches = row.map((value) => compareNumber(value, operator, threshold, upper));
+      return metric === "any" ? matches.some(Boolean) : matches.length > 0 && matches.every(Boolean);
+    });
+  }
+  return rowIntensityValues(metric).map((value) => compareNumber(value, operator, threshold, upper));
+};
+
+const filterPreview = computed(() => {
+  const count = filterSampleCount.value;
+  if (!filterHasInput.value || count === 0) {
+    return { empty: true, summary: "No input samples are available.", keptLabels: [], excludedLabels: [] };
+  }
+
+  let mask: boolean[];
+  const field = String(localParams.value.field || "sample_index");
+  if (field === "sample_index") {
+    const pattern = String(localParams.value.pattern || "");
+    if (!pattern.trim()) {
+      mask = Array.from({ length: count }, () => true);
+    } else {
+      const selected = parseIndexPattern(pattern);
+      mask = Array.from({ length: count }, (_, index) => selected.has(index + 1));
+    }
+  } else if (field === "intensity") {
+    if (filterMatrixPreviewOnly.value) {
+      return {
+        empty: true,
+        summary: "Intensity filtering is disabled because only preview rows are loaded.",
+        keptLabels: [],
+        excludedLabels: [],
+      };
+    }
+    mask = intensityMask();
+  } else {
+    mask = categoricalMask(currentCategoricalValues.value);
+  }
+
+  mask = normalizeMaskLength(mask, count);
+  if (localParams.value.invert === true) {
+    mask = mask.map((value) => !value);
+  }
+
+  const labels = filterSampleLabels.value;
+  const kept = labels.filter((_, index) => mask[index]).slice(0, 5);
+  const excluded = labels.filter((_, index) => !mask[index]).slice(0, 5);
+  const keptCount = mask.filter(Boolean).length;
+  return {
+    empty: keptCount === 0,
+    summary: keptCount === 0
+      ? `No samples match this rule.`
+      : `This rule keeps ${keptCount} of ${count} samples.`,
+    keptLabels: kept,
+    excludedLabels: excluded,
+  };
+});
 
 // Check if node is a preprocessing node (eligible for preview)
 const isPreprocessingNode = computed(() => {
@@ -1698,6 +2649,52 @@ const showMetadataModal = ref(false);
 const showErrorDetails = ref(false);
 const showPreviewModal = ref(false);
 const previewData = ref<{ original: any; processed: any } | null>(null);
+
+const numericPreviewValue = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const previewPayloadMetadata = (payload: any): Record<string, unknown> => (
+  asObject(payload?.metadata) ?? {}
+);
+
+const previewPayloadSampleCount = (payload: any): number => {
+  const metadata = previewPayloadMetadata(payload);
+  return numericPreviewValue(metadata.n_samples ?? payload?.n_samples)
+    ?? (Array.isArray(payload?.data) ? payload.data.length : 0);
+};
+
+const previewPayloadFeatureCount = (payload: any): number => {
+  const metadata = previewPayloadMetadata(payload);
+  const firstWavenumbers = payload?.data?.[0]?.wavenumber;
+  return numericPreviewValue(metadata.n_features ?? payload?.n_features)
+    ?? (Array.isArray(firstWavenumbers) ? firstWavenumbers.length : 0);
+};
+
+const previewPayloadRange = (payload: any): string => {
+  const metadata = previewPayloadMetadata(payload);
+  const explicitRange = metadata.x_range;
+  if (Array.isArray(explicitRange) && explicitRange.length >= 2) {
+    const left = numericPreviewValue(explicitRange[0]);
+    const right = numericPreviewValue(explicitRange[1]);
+    if (left !== null && right !== null) return `${Math.min(left, right).toFixed(1)} - ${Math.max(left, right).toFixed(1)} cm⁻¹`;
+  }
+  const min = numericPreviewValue(metadata.wavenumber_min ?? metadata.x_min);
+  const max = numericPreviewValue(metadata.wavenumber_max ?? metadata.x_max);
+  if (min !== null && max !== null) return `${Math.min(min, max).toFixed(1)} - ${Math.max(min, max).toFixed(1)} cm⁻¹`;
+  const wavenumbers = payload?.data?.[0]?.wavenumber;
+  if (!Array.isArray(wavenumbers)) return "Unknown";
+  const values = wavenumbers
+    .map((value: unknown) => numericPreviewValue(value))
+    .filter((value: number | null): value is number => value !== null);
+  if (!values.length) return "Unknown";
+  return `${Math.min(...values).toFixed(1)} - ${Math.max(...values).toFixed(1)} cm⁻¹`;
+};
 
 // Debug: watch nodeOutput changes
 watch(() => props.nodeOutput, (output) => {
@@ -2054,8 +3051,88 @@ const myDatasetExperimentOptions = computed(() => {
   }));
 });
 
-// Track current node ID to avoid resetting params on every update
-const currentNodeId = ref<string | null>(null);
+const selectedMyDatasetExperiment = computed<ExperimentDataset | null>(() => {
+  const datasetId = Number(localParams.value.dataset_id);
+  if (!Number.isFinite(datasetId)) return null;
+  return workflowStore.availableDatasets?.experiments.find(exp => exp.id === datasetId) ?? null;
+});
+
+const myDatasetTargetNames = computed(() => {
+  const names = selectedMyDatasetExperiment.value?.target_names;
+  return Array.isArray(names) ? names.map(name => String(name)).filter(Boolean) : [];
+});
+
+const myDatasetTargetOptions = computed(() =>
+  myDatasetTargetNames.value.map(name => ({ label: name, value: name }))
+);
+
+const myDatasetTargetModeOptions = [
+  { label: "Use My Dataset default", value: "dataset_default" },
+  { label: "Single property", value: "single" },
+  { label: "Multi-target complete-case", value: "multi" },
+];
+
+const myDatasetTargetCompleteness = computed(() => {
+  const exp = selectedMyDatasetExperiment.value;
+  if (!exp || !myDatasetTargetNames.value.length) return "";
+  const total = typeof exp.target_row_count === "number" ? exp.target_row_count : null;
+  const anyRows = typeof exp.target_any_rows === "number" ? exp.target_any_rows : null;
+  const completeRows = typeof exp.target_complete_rows === "number" ? exp.target_complete_rows : null;
+  if (total == null || anyRows == null || completeRows == null) return "";
+  if (myDatasetTargetNames.value.length <= 1) {
+    return `${anyRows.toLocaleString()} / ${total.toLocaleString()} samples have reference values.`;
+  }
+  return `${anyRows.toLocaleString()} / ${total.toLocaleString()} samples have at least one target; ${completeRows.toLocaleString()} have all ${myDatasetTargetNames.value.length} targets.`;
+});
+
+const myDatasetTargetConflict = computed(() => {
+  if (localParams.value.target_mode !== "single") return "";
+  const selected = typeof localParams.value.selected_target === "string" ? localParams.value.selected_target : "";
+  if (!selected || !myDatasetTargetNames.value.length || myDatasetTargetNames.value.includes(selected)) return "";
+  return `This sheet selects "${selected}", but the selected dataset offers: ${myDatasetTargetNames.value.join(", ")}.`;
+});
+
+function myDatasetDefaultTargetParams(exp: ExperimentDataset | null): Partial<ParamsMap> {
+  const names = Array.isArray(exp?.target_names) ? exp.target_names.map(name => String(name)).filter(Boolean) : [];
+  if (names.length <= 1) return { target_mode: "dataset_default", selected_target: null };
+  const mode = exp?.target_mode === "multi" ? "multi" : "single";
+  const selected = exp?.selected_target && names.includes(exp.selected_target)
+    ? exp.selected_target
+    : names[0];
+  return {
+    target_mode: mode,
+    selected_target: mode === "single" ? selected : null,
+  };
+}
+
+function applyMyDatasetTargetDefaults(options: { overwrite?: boolean } = {}) {
+  const exp = selectedMyDatasetExperiment.value;
+  if (!exp) return;
+  const names = myDatasetTargetNames.value;
+  if (!names.length) return;
+  const shouldSetMode = options.overwrite || !localParams.value.target_mode;
+  const shouldSetTarget = options.overwrite || !localParams.value.selected_target;
+  const defaults = myDatasetDefaultTargetParams(exp);
+  if (shouldSetMode) localParams.value.target_mode = defaults.target_mode;
+  if (shouldSetTarget || localParams.value.target_mode === "multi") {
+    localParams.value.selected_target = defaults.selected_target;
+  }
+}
+
+function onMyDatasetChanged() {
+  applyMyDatasetTargetDefaults({ overwrite: true });
+  emitParams();
+}
+
+function onMyDatasetTargetModeChanged() {
+  if (localParams.value.target_mode === "single" && !localParams.value.selected_target) {
+    localParams.value.selected_target = myDatasetTargetNames.value[0] ?? null;
+  }
+  if (localParams.value.target_mode === "multi") {
+    localParams.value.selected_target = null;
+  }
+  emitParams();
+}
 
 // Helper to get defaults for a node type
 const getDefaultsForNodeType = (nodeType: string): ParamsMap => {
@@ -2074,9 +3151,7 @@ watch(() => props.selectedNode?.id, (newId, oldId) => {
   const node = props.selectedNode;
   if (node && newId !== oldId) {
     // Node selection changed - reset local params with defaults first, then stored values
-    currentNodeId.value = newId ?? null;
-    const defaults = getDefaultsForNodeType(node.type);
-    localParams.value = { ...defaults, ...node.params };
+    syncLocalParamsFromNode(node, { force: true });
     // Reconstruct selectedDatasetKey from params if available
     const ref = asObject(node.params.dataset_ref);
     if (node.type === 'data.source' && ref) {
@@ -2092,9 +3167,10 @@ watch(() => props.selectedNode?.id, (newId, oldId) => {
         selectedDatasetKey.value = libraryId ? `lib-${libraryId}` : null;
       }
     } else if (node.type === 'data.my_dataset') {
-      // Params (dataset_id, file_id, stage) are set directly via localParams — no key needed
-      if (!localParams.value.stage) {
-        localParams.value.stage = 'raw';
+      // Params (dataset_id, file_id) are set directly via localParams — no key needed.
+      applyMyDatasetTargetDefaults();
+      if (!node.params.target_mode && localParams.value.target_mode) {
+        emitParams();
       }
     } else {
       selectedDatasetKey.value = null;
@@ -2107,9 +3183,32 @@ watch(() => props.selectedNode?.id, (newId, oldId) => {
     // Node deselected
     currentNodeId.value = null;
     localParams.value = {};
+    lastSyncedParamsSignature.value = "";
     selectedDatasetKey.value = null;
   }
 }, { immediate: true });
+
+watch(
+  () => props.selectedNode?.params,
+  () => {
+    const node = props.selectedNode;
+    if (!node || node.id !== currentNodeId.value) return;
+    syncLocalParamsFromNode(node);
+  },
+  { deep: true },
+);
+
+watch(
+  () => [
+    selectedNodeType.value,
+    filterSampleCount.value,
+    filterHasRealSampleLabels.value,
+    filterSampleClasses.value.some((value) => value !== ""),
+    filterTargetValues.value.some((value) => value !== ""),
+    sampleTableColumnOptions.value.map((option) => option.value).join("\u0001"),
+  ],
+  () => ensureSampleFilterDefaults(true),
+);
 
 // Handle dataset selection change
 const onDatasetSelect = (nodeData: Record<string, unknown>) => {
@@ -2409,7 +3508,9 @@ const emitParams = () => {
   if (props.selectedNode) {
     // Validate before emitting
     validateParams();
-    emit('update-params', props.selectedNode.id, { ...localParams.value });
+    const params = { ...localParams.value };
+    lastSyncedParamsSignature.value = stableParamSignature(params);
+    emit('update-params', props.selectedNode.id, params);
   }
 };
 
@@ -2744,10 +3845,10 @@ const handleStorageChange = (event: StorageEvent) => {
           currentWorkflowId == null ||
           Number(messageWorkflowId) === Number(currentWorkflowId))
       ) {
-        // Update local params with defaults merged with saved values
-        const defaults = getDefaultsForNodeType(updatedData.type || props.selectedNode?.type || '');
-        localParams.value = { ...defaults, ...updatedData.params };
-        emitParams();
+        syncLocalParamsFromExternal(
+          updatedData.type || props.selectedNode?.type || '',
+          updatedData.params,
+        );
       }
     } catch (e) {
       console.error('Failed to parse updated node data:', e);
@@ -2773,13 +3874,11 @@ const handleBroadcastMessage = async (event: MessageEvent) => {
       workflowStore.workflowId == null ||
       Number(workflowId) === Number(workflowStore.workflowId))
   ) {
-    // Update local params with defaults merged with saved values
-    const defaults = getDefaultsForNodeType(nodeType || props.selectedNode?.type || '');
-    localParams.value = { ...defaults, ...params };
-    if (localParams.value.source === 'eigenvector' || localParams.value.source === 'sklearn') {
-      void workflowStore.fetchReferenceDatasets();
-    }
-    emitParams();
+    syncLocalParamsFromExternal(
+      nodeType || props.selectedNode?.type || '',
+      params,
+      { fetchReferenceDatasets: true },
+    );
   }
 };
 
@@ -3021,6 +4120,25 @@ onUnmounted(() => {
   margin-top: 4px;
 }
 
+.dataset-target-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(99, 102, 241, 0.24);
+  border-radius: 6px;
+  background: rgba(99, 102, 241, 0.1);
+  color: #c7d2fe;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.dataset-target-note--warn {
+  border-color: rgba(245, 158, 11, 0.32);
+  background: rgba(245, 158, 11, 0.12);
+  color: #fde68a;
+}
+
 .no-params {
   color: #64748b;
   font-size: 0.8rem;
@@ -3042,6 +4160,247 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.filter-samples-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.filter-empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  text-align: center;
+  padding: 18px 12px;
+  color: #94a3b8;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px dashed #475569;
+  border-radius: 6px;
+}
+
+.filter-empty-state i {
+  color: #818cf8;
+  font-size: 1.25rem;
+}
+
+.filter-empty-state span {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.filter-dataset-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.filter-dataset-summary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 9px 10px;
+  background: rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(129, 140, 248, 0.22);
+  border-radius: 6px;
+}
+
+.summary-kicker {
+  color: #94a3b8;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.filter-dataset-summary strong {
+  color: #e0e7ff;
+  font-size: 0.9rem;
+}
+
+.filter-mode-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.filter-scope-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 11px;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 6px;
+  background: rgba(59, 130, 246, 0.1);
+  color: #bfdbfe;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.filter-scope-warning i {
+  margin-top: 1px;
+}
+
+.filter-mode-card {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  grid-template-areas:
+    "icon label"
+    "icon hint";
+  column-gap: 8px;
+  row-gap: 1px;
+  width: 100%;
+  min-height: 58px;
+  padding: 9px 10px;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.filter-mode-card:hover:not(:disabled) {
+  border-color: rgba(129, 140, 248, 0.6);
+  background: rgba(30, 41, 59, 0.72);
+}
+
+.filter-mode-card.active {
+  border-color: #818cf8;
+  box-shadow: inset 0 0 0 1px rgba(129, 140, 248, 0.35);
+  background: rgba(67, 56, 202, 0.22);
+}
+
+.filter-mode-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.filter-mode-card i {
+  grid-area: icon;
+  align-self: start;
+  margin-top: 2px;
+  color: #a5b4fc;
+  font-size: 0.9rem;
+}
+
+.mode-label {
+  grid-area: label;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+.mode-hint {
+  grid-area: hint;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  line-height: 1.2;
+}
+
+.filter-rule-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid #334155;
+  border-radius: 6px;
+}
+
+.filter-quick-actions,
+.filter-value-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.filter-value-search {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.filter-value-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 180px;
+  overflow: auto;
+  padding: 5px;
+  background: rgba(2, 6, 23, 0.35);
+  border: 1px solid rgba(51, 65, 85, 0.9);
+  border-radius: 6px;
+}
+
+.filter-value-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 4px 6px;
+  color: #cbd5e1;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.filter-value-row:hover {
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.filter-value-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(16, 185, 129, 0.08);
+  border: 1px solid rgba(16, 185, 129, 0.26);
+  border-radius: 6px;
+  color: #d1fae5;
+}
+
+.filter-preview.warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.35);
+  color: #fde68a;
+}
+
+.filter-preview-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+}
+
+.filter-preview-list {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.72rem;
+  color: #a7f3d0;
+}
+
+.filter-preview.warning .filter-preview-list {
+  color: #fcd34d;
+}
+
+.filter-preview-list.muted {
+  color: #94a3b8;
+}
+
+.filter-preview-list em {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-style: normal;
 }
 
 /* Dataset field styling */

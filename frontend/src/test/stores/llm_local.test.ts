@@ -107,8 +107,16 @@ describe("LLM Store local BYO chat", () => {
     );
     expect(llm.currentConversationId).toBeTruthy();
     expect(llm.messages).toEqual([
-      { role: "user", content: "Explain PCA" },
-      { role: "assistant", content: "Hello world" },
+      expect.objectContaining({
+        id: expect.any(String),
+        role: "user",
+        content: "Explain PCA",
+      }),
+      expect.objectContaining({
+        id: expect.any(String),
+        role: "assistant",
+        content: "Hello world",
+      }),
     ]);
     expect(llm.conversations).toHaveLength(1);
 
@@ -117,8 +125,16 @@ describe("LLM Store local BYO chat", () => {
     await llm.loadConversation(conversationId);
 
     expect(llm.messages).toEqual([
-      { role: "user", content: "Explain PCA" },
-      { role: "assistant", content: "Hello world" },
+      expect.objectContaining({
+        id: expect.any(String),
+        role: "user",
+        content: "Explain PCA",
+      }),
+      expect.objectContaining({
+        id: expect.any(String),
+        role: "assistant",
+        content: "Hello world",
+      }),
     ]);
 
     await llm.deleteConversation(conversationId);

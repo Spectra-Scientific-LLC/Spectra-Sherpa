@@ -2,6 +2,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import api from "@/api/client";
+import { blobFromResponseData, downloadBlob } from "@/utils/download";
 import type {
   BlendResponse,
   CurvePoint,
@@ -167,13 +168,7 @@ export const useBuilderStore = defineStore("builder", () => {
       const response = await api.get(`/datasets/download/${fileId}`, {
         responseType: "blob",
       });
-      const url = window.URL.createObjectURL(new Blob([response.data]));
-      const link = document.createElement("a");
-      link.href = url;
-      link.setAttribute("download", fileName);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      downloadBlob(blobFromResponseData(response.data), fileName);
     } catch (error) {
       console.error("Download failed:", error);
       throw error;

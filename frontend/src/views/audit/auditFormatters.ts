@@ -32,20 +32,6 @@ export function renderEventState(event: AuditEventRecord): string {
   );
 }
 
-export function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  URL.revokeObjectURL(url);
-}
-
-export function extractFilename(disposition: string | undefined, fallback: string): string {
-  const match = disposition?.match(/filename="([^"]+)"/);
-  return match?.[1] ?? fallback;
-}
-
 function formatDetail(detail: unknown): string | null {
   if (typeof detail === "string") return detail;
   if (detail && typeof detail === "object" && "message" in detail) {
