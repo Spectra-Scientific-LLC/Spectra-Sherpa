@@ -50,6 +50,9 @@ def build_model_artifact(
     # --- Training data identity ---
     _enrich_with_training_data_hash(metadata, input_dataset)
 
+    # --- Target identity ---
+    _enrich_with_target_info(metadata, input_dataset)
+
     # --- Metrics ---
     if metrics:
         metadata["metrics"] = metrics
@@ -196,3 +199,29 @@ def _enrich_with_training_data_hash(metadata: dict, dataset: Any) -> None:
         metadata["training_data_hash"] = h.hexdigest()
     except Exception:
         logger.debug("Could not compute training_data_hash", exc_info=True)
+
+
+def _enrich_with_target_info(metadata: dict, dataset: Any) -> None:
+    """Record target interpretation used for supervised artifacts."""
+    tc = getattr(dataset, "target_context", None)
+    if tc is None:
+        return
+    target_names = getattr(tc, "target_names", None)
+    normalized_names = [str(name) for name in target_names] if target_names else []
+    selected_target = getattr(tc, "selected_target", None)
+    if selected_target:
+        selected = str(selected_target)
+        metadata["selected_target"] = selected
+        metadata["target_mode"] = "single"
+        metadata["target_names"] = [selected]
+        if normalized_names:
+            metadata["available_target_names"] = normalized_names
+    elif normalized_names:
+        metadata["target_names"] = normalized_names
+        metadata["target_mode"] = "multi"
+    target_type = getattr(tc, "target_type", None)
+    if target_type:
+        metadata["target_type"] = str(target_type)
+    target_units = getattr(tc, "target_units", None)
+    if target_units:
+        metadata["target_units"] = str(target_units)

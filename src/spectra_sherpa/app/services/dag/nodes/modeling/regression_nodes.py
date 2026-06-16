@@ -25,9 +25,10 @@ from ...io_contracts import (
     attach_evaluation,
     bind_X,
     bind_y,
+    clean_regression_target,
     resolve_target_names,
-    to_numpy_1d,
     to_numpy_2d,
+    to_numpy_y,
 )
 from ...node_base import (
     Node,
@@ -53,6 +54,59 @@ from sklearn.linear_model import LinearRegression
 from sklearn.svm import SVR
 
 from ...spec_nodes import EstimatorSpec, EstimatorSpecNode
+
+
+def _as_target_matrix(values: np.ndarray) -> np.ndarray:
+    arr = np.asarray(values, dtype=np.float64)
+    if arr.ndim == 1:
+        return arr.reshape(-1, 1)
+    return arr
+
+
+def _target_metric_lists(y_true: np.ndarray, y_pred: np.ndarray) -> tuple[list[float], list[float]]:
+    from sklearn.metrics import mean_squared_error, r2_score
+
+    y_true_2d = _as_target_matrix(y_true)
+    y_pred_2d = _as_target_matrix(y_pred)
+    r2_values: list[float] = []
+    rmse_values: list[float] = []
+    for idx in range(y_true_2d.shape[1]):
+        r2_values.append(float(r2_score(y_true_2d[:, idx], y_pred_2d[:, idx])))
+        rmse_values.append(float(np.sqrt(mean_squared_error(y_true_2d[:, idx], y_pred_2d[:, idx]))))
+    return r2_values, rmse_values
+
+
+def _target_names_from_context(X_ds, n_targets: int, params: dict[str, Any] | None = None) -> list[str]:
+    params = params or {}
+    selected_name = params.get("_selected_target_name")
+    if selected_name:
+        return [str(selected_name)]
+    tc = getattr(X_ds, "target_context", None)
+    if tc is not None and tc.target_names and len(tc.target_names) == n_targets:
+        return [str(name) for name in tc.target_names]
+    if tc is not None and tc.target_name and n_targets == 1:
+        return [str(tc.target_name)]
+    return [f"Target {idx + 1}" for idx in range(n_targets)]
+
+
+def _target_identity_metadata(X_ds, target_names: list[str]) -> dict[str, Any]:
+    tc = getattr(X_ds, "target_context", None)
+    selected = getattr(tc, "selected_target", None) if tc is not None else None
+    metadata: dict[str, Any] = {"target_names": target_names}
+    if selected:
+        metadata["target_mode"] = "single"
+        metadata["selected_target"] = str(selected)
+    elif target_names:
+        metadata["target_mode"] = "multi" if len(target_names) > 1 else "single"
+        if len(target_names) == 1:
+            metadata["selected_target"] = target_names[0]
+    target_type = getattr(tc, "target_type", None) if tc is not None else None
+    if target_type:
+        metadata["target_type"] = str(target_type)
+    target_units = getattr(tc, "target_units", None) if tc is not None else None
+    if target_units:
+        metadata["target_units"] = str(target_units)
+    return metadata
 
 
 @register_node
@@ -246,7 +300,15 @@ class PCRNode(Node):
         )
 
         X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)
-        y_array = to_numpy_1d(y_value, name="y", expected_length=X_data.shape[0], dtype=np.float64)
+        y_array = to_numpy_y(y_value, name="y", expected_samples=X_data.shape[0], dtype=np.float64)
+        X_ds, y_array = clean_regression_target(
+            X_ds,
+            y_array,
+            model_label="PCR",
+            preserve_1d=False,
+        )
+        X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)
+        y_matrix = _as_target_matrix(y_array)
 
         n_components = self.parameters.get("n_components", 3)
         scale = self.parameters.get("scale", True)
@@ -278,6 +340,8 @@ class PCRNode(Node):
         y_pred = model.predict(X_data)
         r2 = r2_score(y_array, y_pred)
         rmse = float(np.sqrt(mean_squared_error(y_array, y_pred)))
+        y_pred_matrix = _as_target_matrix(y_pred)
+        r2_per_target, rmse_per_target = _target_metric_lists(y_matrix, y_pred_matrix)
 
         X_scores = model.named_steps["pca"].transform(model.named_steps["scaler"].transform(X_data))
 
@@ -349,27 +413,48 @@ class PCRNode(Node):
         inherit_origin_flags(X_ds, scores_dataset)
         inherit_origin_flags(X_ds, loadings_dataset)
 
-        target_names = _resolved_target_names
+        target_names = _resolved_target_names or _target_names_from_context(X_ds, y_matrix.shape[1])
+        target_identity = _target_identity_metadata(X_ds, target_names)
+        intercept_values = np.asarray(regressor.intercept_, dtype=np.float64).reshape(-1)
+        intercept: float | list[float]
+        intercept = float(intercept_values[0]) if intercept_values.size == 1 else intercept_values.tolist()
 
         # Store only scientific metadata that coordinates can't carry
         scores_dataset.meta.update(
             {
                 "n_components": n_components,
+                "n_samples": int(X_data.shape[0]),
+                "n_features": int(X_data.shape[1]),
+                "n_targets": int(y_matrix.shape[1]),
+                "training_X_shape": [int(X_data.shape[0]), int(X_data.shape[1])],
+                "training_y_shape": [int(y_matrix.shape[0]), int(y_matrix.shape[1])],
+                "output_dimensions": {
+                    "training_X": [int(X_data.shape[0]), int(X_data.shape[1])],
+                    "training_y": [int(y_matrix.shape[0]), int(y_matrix.shape[1])],
+                    "scores": list(scores_dataset.shape),
+                    "loadings": list(loadings_dataset.shape),
+                    "y_pred": list(y_pred_matrix.shape),
+                    "y_true": list(y_matrix.shape),
+                },
                 "explained_variance_ratio": evr.tolist(),
                 "label_categories": label_categories,
                 "r2": float(r2),
                 "rmse": rmse,
                 "coef": regressor.coef_.tolist(),
-                "intercept": float(regressor.intercept_),
-                "y_pred": [[v] for v in y_pred.tolist()],
-                "y_true": [[v] for v in y_array.tolist()],
-                "target_names": target_names,
-                "r2_per_target": [float(r2)],
-                "rmse_per_target": [rmse],
+                "intercept": intercept,
+                "y_pred": y_pred_matrix.tolist(),
+                "y_true": y_matrix.tolist(),
+                **target_identity,
+                "r2_per_target": r2_per_target,
+                "rmse_per_target": rmse_per_target,
                 "quality_summary": {
                     "n_components": int(n_components),
                     "r2": float(r2),
                     "rmse": float(rmse),
+                    "n_samples": int(X_data.shape[0]),
+                    "n_features": int(X_data.shape[1]),
+                    "n_targets": int(y_matrix.shape[1]),
+                    **target_identity,
                     "explained_variance_ratio": evr.tolist(),
                 },
             }
@@ -417,6 +502,13 @@ def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
     svr = model.named_steps["estimator"] if hasattr(model, "named_steps") else model
 
     y_pred = model.predict(X_data)
+    y_true_2d = _as_target_matrix(y_array)
+    y_pred_2d = _as_target_matrix(y_pred)
+    r2_per_target, rmse_per_target = _target_metric_lists(y_true_2d, y_pred_2d)
+    r2 = r2_per_target[0]
+    rmse = rmse_per_target[0]
+    target_names = _target_names_from_context(X_ds, y_true_2d.shape[1], params)
+    target_identity = _target_identity_metadata(X_ds, target_names)
 
     # Extract sample labels from input data for categorical coloring
     sample_labels = None
@@ -451,31 +543,24 @@ def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
     if sample_labels is None:
         sample_labels = [f"Sample {i+1}" for i in range(n_observations)]
 
-    # Get target names from X_ds.target_context
-    target_names = None
-    tc = X_ds.target_context
-    if tc is not None and tc.target_names:
-        target_names = tc.target_names
-
-    r2 = float(model.score(X_data, y_array)) if y_array is not None else None
-    rmse = float(np.sqrt(np.mean((y_array - y_pred) ** 2))) if y_array is not None else None
-
     from ._artifact_builder import build_model_artifact
 
     return {
         "support_vectors": svr.support_vectors_.tolist(),
-        "data": [[float(yt), float(yh)] for yt, yh in zip(y_array, y_pred)],
+        "data": [[float(yt), float(yh)] for yt, yh in zip(y_true_2d[:, 0], y_pred_2d[:, 0])],
         "_model_artifact": build_model_artifact(
             SVRExtract.from_sklearn(model),
             X_ds,
             node_id=node_id,
-            metrics={"r2": float(r2) if r2 is not None else None, "rmse": rmse},
+            metrics={"r2": r2, "rmse": rmse},
         ),
         "metadata": {
             "type": "SVR",
             "output_type": "regression",
             "n_observations": n_observations,
+            "n_samples": int(X_data.shape[0]),
             "n_features": X_data.shape[1],
+            "n_targets": 1,
             "kernel": params.get("kernel", "rbf"),
             "C": params.get("C", 1.0),
             "epsilon": params.get("epsilon", 0.1),
@@ -484,16 +569,24 @@ def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
             "rmse": rmse,
             "sample_labels": sample_labels,
             "label_categories": label_categories,
-            "y_true": [[v] for v in y_array.tolist()],
-            "y_pred": [[v] for v in y_pred.tolist()],
-            "target_names": target_names,
-            "r2_per_target": [r2],
-            "rmse_per_target": [rmse],
+            "y_true": y_true_2d.tolist(),
+            "y_pred": y_pred_2d.tolist(),
+            **target_identity,
+            "selected_target_index": params.get("_selected_target_index", 0),
+            "selected_target_name": target_names[0],
+            "available_target_names": params.get("_original_target_names"),
+            "r2_per_target": r2_per_target,
+            "rmse_per_target": rmse_per_target,
             "quality_summary": {
-                "r2": float(r2) if r2 is not None else None,
-                "rmse": float(rmse) if rmse is not None else None,
+                "r2": r2,
+                "rmse": rmse,
                 "kernel": str(params.get("kernel", "rbf")),
                 "C": float(params.get("C", 1.0)),
+                "n_samples": int(X_data.shape[0]),
+                "n_features": int(X_data.shape[1]),
+                "n_targets": 1,
+                "target": target_names[0],
+                **target_identity,
             },
         },
     }
@@ -578,6 +671,19 @@ class SVRNode(EstimatorSpecNode):
                 category="advanced",
             ),
             NodeParameter(
+                name="target_index",
+                label="Target Property",
+                param_type="number",
+                default=1,
+                min_value=1,
+                step=1,
+                description=(
+                    "1-based target/property column to model when the dataset contains multiple reference properties"
+                ),
+                required=True,
+                category="basic",
+            ),
+            NodeParameter(
                 name="scale",
                 label="Scale Data",
                 param_type="boolean",
@@ -616,17 +722,17 @@ class SVRNode(EstimatorSpecNode):
             ),
             PortMetadata(
                 name="predictions",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
                 required=True,
                 label="Predictions",
-                description="Predicted values (y_pred)",
+                description="Predicted target values (n_samples × n_targets)",
             ),
             PortMetadata(
                 name="residuals",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
                 required=True,
                 label="Residuals",
-                description="Regression residuals (y_true - y_pred)",
+                description="Regression residuals (y_true - y_pred; n_samples × n_targets)",
             ),
         ],
     )
@@ -635,6 +741,7 @@ class SVRNode(EstimatorSpecNode):
         estimator_class=SVR,
         scale=True,
         scale_param="scale",
+        single_target=True,
         post_fit_fn=_svr_post_fit,
         estimator_import="from sklearn.svm import SVR",
     )
@@ -642,18 +749,53 @@ class SVRNode(EstimatorSpecNode):
 
 def _lr_post_fit(model, X_data, y_array, X_ds, params, node_id):
     fit_intercept = params.get("fit_intercept", True)
+    y_pred = model.predict(X_data)
+    y_true_2d = _as_target_matrix(y_array)
+    y_pred_2d = _as_target_matrix(y_pred)
+    r2_per_target, rmse_per_target = _target_metric_lists(y_true_2d, y_pred_2d)
+    target_names = _target_names_from_context(X_ds, y_true_2d.shape[1], params)
+    target_identity = _target_identity_metadata(X_ds, target_names)
+    intercept_values = np.asarray(model.intercept_, dtype=np.float64).reshape(-1)
+    intercept: float | list[float]
+    intercept = float(intercept_values[0]) if intercept_values.size == 1 else intercept_values.tolist()
+    score = float(model.score(X_data, y_array))
+    rmse = float(np.sqrt(np.mean((y_true_2d - y_pred_2d) ** 2)))
     from ._artifact_builder import build_model_artifact
 
     return {
         "coef": model.coef_.tolist(),
-        "intercept": model.intercept_ if fit_intercept else 0,
-        "score": model.score(X_data, y_array),
+        "intercept": intercept if fit_intercept else 0.0,
+        "score": score,
         "_model_artifact": build_model_artifact(
             LinearRegressionExtract.from_sklearn(model),
             X_ds,
             node_id=node_id,
-            metrics={"r2": float(model.score(X_data, y_array))},
+            metrics={"r2": score, "rmse": rmse},
         ),
+        "metadata": {
+            "type": "LinearRegression",
+            "output_type": "regression",
+            "n_observations": int(X_data.shape[0]),
+            "n_samples": int(X_data.shape[0]),
+            "n_features": int(X_data.shape[1]),
+            "n_targets": int(y_true_2d.shape[1]),
+            "fit_intercept": bool(fit_intercept),
+            "r2": score,
+            "rmse": rmse,
+            **target_identity,
+            "y_true": y_true_2d.tolist(),
+            "y_pred": y_pred_2d.tolist(),
+            "r2_per_target": r2_per_target,
+            "rmse_per_target": rmse_per_target,
+            "quality_summary": {
+                "r2": score,
+                "rmse": rmse,
+                "n_samples": int(X_data.shape[0]),
+                "n_features": int(X_data.shape[1]),
+                "n_targets": int(y_true_2d.shape[1]),
+                **target_identity,
+            },
+        },
     }
 
 

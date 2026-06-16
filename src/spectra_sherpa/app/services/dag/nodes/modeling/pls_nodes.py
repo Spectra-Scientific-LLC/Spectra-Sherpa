@@ -10,10 +10,7 @@ from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.lib.sherpa_dataset import (
-    EvaluationResult,
-    SherpaDataset,
-)
+from spectra_sherpa.app.lib.sherpa_dataset import EvaluationResult
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
@@ -25,6 +22,7 @@ from ...io_contracts import (
     attach_evaluation,
     bind_X,
     bind_y,
+    clean_regression_target,
     resolve_target_names,
     to_numpy_y,
 )
@@ -84,6 +82,52 @@ def _cv_preprocessing_leakage_warning(dataset: Any) -> str | None:
         f"to the full matrix ({', '.join(leaking_ops)}). Treat RMSECV/R2CV as post-preprocessing CV, not "
         "fold-replayed pipeline CV; use Nested CV for leakage-safe model selection."
     )
+
+
+def _ensure_target_matrix(
+    data: Any,
+    *,
+    expected_samples: int,
+    expected_targets: int,
+    name: str,
+) -> np.ndarray:
+    """Normalize PLS target-like outputs to (n_samples, n_targets)."""
+    arr = np.asarray(data, dtype=np.float64)
+    if arr.ndim == 0:
+        raise ValueError(f"{name}: expected target matrix, got scalar")
+    if arr.ndim == 1:
+        if expected_targets != 1 or arr.shape[0] != expected_samples:
+            raise ValueError(f"{name}: shape {arr.shape} cannot be aligned to ({expected_samples}, {expected_targets})")
+        return arr.reshape(-1, 1)
+    if arr.ndim != 2:
+        raise ValueError(f"{name}: expected 1D or 2D target matrix, got {arr.ndim}D")
+    if arr.shape == (expected_samples, expected_targets):
+        return arr
+    if arr.shape == (expected_targets, expected_samples):
+        return arr.T
+    if expected_targets == 1 and arr.size == expected_samples:
+        return arr.reshape(-1, 1)
+    raise ValueError(f"{name}: shape {arr.shape} cannot be aligned to ({expected_samples}, {expected_targets})")
+
+
+def _target_identity_metadata(X_ds: Any, target_names: list[str]) -> dict[str, Any]:
+    tc = getattr(X_ds, "target_context", None)
+    selected = getattr(tc, "selected_target", None) if tc is not None else None
+    metadata: dict[str, Any] = {"target_names": target_names}
+    if selected:
+        metadata["target_mode"] = "single"
+        metadata["selected_target"] = str(selected)
+    elif target_names:
+        metadata["target_mode"] = "multi" if len(target_names) > 1 else "single"
+        if len(target_names) == 1:
+            metadata["selected_target"] = target_names[0]
+    target_type = getattr(tc, "target_type", None) if tc is not None else None
+    if target_type:
+        metadata["target_type"] = str(target_type)
+    target_units = getattr(tc, "target_units", None) if tc is not None else None
+    if target_units:
+        metadata["target_units"] = str(target_units)
+    return metadata
 
 
 @register_node
@@ -396,26 +440,18 @@ class PLSNode(Node):
         )
 
         y_array = to_numpy_y(y_value, name="y", expected_samples=X_ds.shape[0], dtype=np.float64)
-        # PLS expects 2D y: (n_samples, n_targets)
-        y_2d = y_array.reshape(-1, 1) if y_array.ndim == 1 else y_array
+        X_ds, y_2d = clean_regression_target(
+            X_ds,
+            y_array,
+            model_label="PLS",
+            preserve_1d=False,
+        )
         n_targets = y_2d.shape[1]
 
-        # Drop rows where the target contains NaN (e.g. diesel_nir partial properties)
-        nan_mask = np.isnan(y_2d).any(axis=1)
-        if nan_mask.any():
-            valid = ~nan_mask
-            n_dropped = int(nan_mask.sum())
-            logger.warning(
-                "[PLS Node] Dropped %d/%d samples with NaN target values. "
-                "If your dataset has multiple property columns, consider selecting a specific "
-                "y_column to avoid partial data loss.",
-                n_dropped,
-                y_2d.shape[0],
-            )
-            y_2d = y_2d[valid]
-            # Rebuild X_ds with valid rows so sample_axis stays consistent with scores shape
-            _prev_meta = X_ds.meta.copy() if X_ds.meta else {}
-            X_ds = SherpaDataset(X=X_ds.X[valid], feature_axis=X_ds.get_feature_axis(), extra=_prev_meta)
+        training_X_shape = tuple(int(dim) for dim in X_ds.shape)
+        training_y_shape = tuple(int(dim) for dim in y_2d.shape)
+        target_names = _resolved_target_names or [f"Target {i + 1}" for i in range(n_targets)]
+        target_identity = _target_identity_metadata(X_ds, target_names)
 
         X_ndd = to_nddataset(X_ds)
         y_dataset = scp.NDDataset(y_2d)
@@ -445,7 +481,21 @@ class PLSNode(Node):
         extracted = PLSExtract.from_scp(pls, X_ndd, Y_ndd=y_dataset)
 
         X_scores_data = extracted.x_scores
+        if X_scores_data is not None:
+            X_scores_data = _ensure_orientation(
+                np.asarray(X_scores_data, dtype=np.float64),
+                expected_rows=X_ds.shape[0],
+                expected_cols=n_components,
+                name="X_scores",
+            )
         Y_scores_data = extracted.y_scores
+        if Y_scores_data is not None:
+            Y_scores_data = _ensure_orientation(
+                np.asarray(Y_scores_data, dtype=np.float64),
+                expected_rows=X_ds.shape[0],
+                expected_cols=n_components,
+                name="Y_scores",
+            )
         X_loadings_data = extracted.x_loadings
         Y_loadings_data = extracted.y_loadings
         coef_data = extracted.coef
@@ -461,12 +511,12 @@ class PLSNode(Node):
                 y_pred_raw.data if hasattr(y_pred_raw, "data") else y_pred_raw,
                 dtype=np.float64,
             )
-            if y_pred.ndim == 1:
-                y_pred_train = y_pred.reshape(-1, 1)
-            elif y_pred.ndim > 1 and y_2d.shape[1] == 1:
-                y_pred_train = y_pred.reshape(-1, 1)
-            else:
-                y_pred_train = y_pred
+            y_pred_train = _ensure_target_matrix(
+                y_pred,
+                expected_samples=X_ds.shape[0],
+                expected_targets=n_targets,
+                name="y_pred",
+            )
             if y_2d.shape[1] == 1:
                 # Single-target: flatten for metrics
                 y_flat = y_2d.ravel()
@@ -500,8 +550,7 @@ class PLSNode(Node):
                     "r2_per_target": [float(v) for v in r2_per_target],
                     "rmse_per_target": rmse_per_target,
                 }
-            if _resolved_target_names:
-                regression_meta["target_names"] = _resolved_target_names
+            regression_meta.update(target_identity)
         except Exception:
             logger.debug("[PLS Node] Could not compute calibration R2/RMSE from predictions", exc_info=True)
 
@@ -575,9 +624,12 @@ class PLSNode(Node):
                         continue
                     cv_model = SKPLSRegression(n_components=n_components, scale=scale)
                     cv_model.fit(X_cv[train_idx], y_cv[train_idx])
-                    pred = np.asarray(cv_model.predict(X_cv[test_idx]), dtype=np.float64)
-                    if pred.ndim == 1:
-                        pred = pred.reshape(-1, 1)
+                    pred = _ensure_target_matrix(
+                        cv_model.predict(X_cv[test_idx]),
+                        expected_samples=int(test_idx.shape[0]),
+                        expected_targets=n_targets,
+                        name="y_pred_cv_fold",
+                    )
                     y_pred_cv[test_idx] = pred
 
                 # Per-target + mean aggregates; ignore samples that never got
@@ -609,8 +661,7 @@ class PLSNode(Node):
                     }
                     if cv_warning:
                         cv_meta["warning"] = cv_warning
-                    if _resolved_target_names:
-                        cv_meta["target_names"] = _resolved_target_names
+                    cv_meta.update(target_identity)
                     logger.info(
                         "[PLS Node] CV (%s, %d folds): mean R²_cv=%.4f, RMSECV=%.4f",
                         cv_method,
@@ -821,13 +872,19 @@ class PLSNode(Node):
                 )
 
         # Add processing history to SherpaDataset outputs
+        training_shape_parameters = {
+            "n_components": n_components,
+            "training_X_shape": list(training_X_shape),
+            "training_y_shape": list(training_y_shape),
+        }
         if X_scores_dataset is not None:
             copy_processing_history(X_ds, X_scores_dataset)
             add_processing_step(
                 X_scores_dataset,
                 "model.pls.x_scores",
-                {"n_components": n_components},
+                training_shape_parameters,
                 node_id=self.node_id,
+                input_shape=training_X_shape,
             )
 
         if Y_scores_dataset is not None:
@@ -835,8 +892,9 @@ class PLSNode(Node):
             add_processing_step(
                 Y_scores_dataset,
                 "model.pls.y_scores",
-                {"n_components": n_components},
+                training_shape_parameters,
                 node_id=self.node_id,
+                input_shape=training_y_shape,
             )
 
         if X_loadings_dataset is not None:
@@ -844,8 +902,9 @@ class PLSNode(Node):
             add_processing_step(
                 X_loadings_dataset,
                 "model.pls.x_loadings",
-                {"n_components": n_components},
+                training_shape_parameters,
                 node_id=self.node_id,
+                input_shape=training_X_shape,
             )
 
         if Y_loadings_dataset is not None:
@@ -853,19 +912,27 @@ class PLSNode(Node):
             add_processing_step(
                 Y_loadings_dataset,
                 "model.pls.y_loadings",
-                {"n_components": n_components},
+                training_shape_parameters,
                 node_id=self.node_id,
+                input_shape=training_y_shape,
             )
         if vip_dataset is not None:
             copy_processing_history(X_ds, vip_dataset)
-            add_processing_step(vip_dataset, "model.pls.vip", {"n_components": n_components}, node_id=self.node_id)
+            add_processing_step(
+                vip_dataset,
+                "model.pls.vip",
+                training_shape_parameters,
+                node_id=self.node_id,
+                input_shape=training_X_shape,
+            )
         if coefficients_dataset is not None:
             copy_processing_history(X_ds, coefficients_dataset)
             add_processing_step(
                 coefficients_dataset,
                 "model.pls.coefficients",
-                {"n_components": n_components},
+                training_shape_parameters,
                 node_id=self.node_id,
+                input_shape=training_X_shape,
             )
 
         # Propagate dataset-level flags. Scores rows are samples (preserve
@@ -895,6 +962,25 @@ class PLSNode(Node):
             meta_dict = {
                 "type": "PLS",
                 "n_components": n_components,
+                "n_samples": int(X_ds.shape[0]),
+                "n_features": int(X_ds.shape[1]),
+                "n_targets": int(n_targets),
+                **target_identity,
+                "training_X_shape": list(training_X_shape),
+                "training_y_shape": list(training_y_shape),
+                "output_dimensions": {
+                    "training_X": list(training_X_shape),
+                    "training_y": list(training_y_shape),
+                    "X_scores": list(X_scores_dataset.shape) if X_scores_dataset is not None else None,
+                    "X_loadings": list(X_loadings_dataset.shape) if X_loadings_dataset is not None else None,
+                    "Y_scores": list(Y_scores_dataset.shape) if Y_scores_dataset is not None else None,
+                    "Y_loadings": list(Y_loadings_dataset.shape) if Y_loadings_dataset is not None else None,
+                    "coefficients": list(coefficients_dataset.shape) if coefficients_dataset is not None else None,
+                    "vip": list(vip_dataset.shape) if vip_dataset is not None else None,
+                    "y_pred": list(y_pred_train.shape) if y_pred_train is not None else None,
+                    "y_true": list(y_2d.shape),
+                    "y_pred_cv": list(y_pred_cv.shape) if y_pred_cv is not None else None,
+                },
                 "pc_labels": lv_labels,  # LV labels (no EVR for PLS, so store explicitly)
                 "label_categories": label_categories,
                 "r2": pls_r2,
@@ -928,6 +1014,10 @@ class PLSNode(Node):
                 meta_dict["t2_q_method"] = "pomerantsev_dd_moments"
                 meta_dict["t2_q_confidence"] = 0.95
             quality_summary: dict = {"n_components": int(n_components)}
+            quality_summary["n_samples"] = int(X_ds.shape[0])
+            quality_summary["n_features"] = int(X_ds.shape[1])
+            quality_summary["n_targets"] = int(n_targets)
+            quality_summary.update(target_identity)
             if pls_r2 is not None:
                 quality_summary["r2"] = float(pls_r2)
             if pls_rmse is not None:
@@ -985,22 +1075,24 @@ class PLSNode(Node):
             artifact_metrics["t2_q_confidence"] = 0.95
             artifact_metrics["n_t2_outliers"] = int(np.sum(t2_values > t2_limit)) if t2_limit is not None else None
             artifact_metrics["n_q_outliers"] = int(np.sum(q_values > q_limit)) if q_limit is not None else None
+        artifact_metrics.update(target_identity)
 
         cv_prediction_plot = None
         if y_pred_cv is not None:
+            cv_plot_metadata = {
+                "r2_test": pls_r2_cv,
+                "rmse_test": pls_rmsecv,
+                "split": "cross_validation",
+                "cv_method": cv_method,
+                **target_identity,
+            }
             if y_2d.shape[1] == 1:
                 cv_prediction_plot = {
                     "type": "predicted_vs_actual",
                     "data": np.column_stack([y_2d.ravel(), y_pred_cv.ravel()]).tolist(),
-                    "metadata": {
-                        "r2_test": pls_r2_cv,
-                        "rmse_test": pls_rmsecv,
-                        "split": "cross_validation",
-                        "cv_method": cv_method,
-                    },
+                    "metadata": cv_plot_metadata,
                 }
             else:
-                target_names = _resolved_target_names or [f"Target {i + 1}" for i in range(y_2d.shape[1])]
                 cv_prediction_plot = {
                     "type": "predicted_vs_actual",
                     "series": [
@@ -1011,13 +1103,7 @@ class PLSNode(Node):
                         }
                         for j in range(y_2d.shape[1])
                     ],
-                    "metadata": {
-                        "target_names": target_names,
-                        "r2_test": pls_r2_cv,
-                        "rmse_test": pls_rmsecv,
-                        "split": "cross_validation",
-                        "cv_method": cv_method,
-                    },
+                    "metadata": cv_plot_metadata,
                 }
 
         return NodeResult(
@@ -1054,6 +1140,25 @@ class PLSNode(Node):
                 "cv_is_pipeline_safe": cv_is_pipeline_safe if pls_r2_cv is not None else None,
                 "cv_warning": cv_warning,
                 "n_components": n_components,
+                "n_samples": int(X_ds.shape[0]),
+                "n_features": int(X_ds.shape[1]),
+                "n_targets": int(n_targets),
+                **target_identity,
+                "training_X_shape": list(training_X_shape),
+                "training_y_shape": list(training_y_shape),
+                "output_dimensions": {
+                    "training_X": list(training_X_shape),
+                    "training_y": list(training_y_shape),
+                    "X_scores": list(X_scores_dataset.shape) if X_scores_dataset is not None else None,
+                    "X_loadings": list(X_loadings_dataset.shape) if X_loadings_dataset is not None else None,
+                    "Y_scores": list(Y_scores_dataset.shape) if Y_scores_dataset is not None else None,
+                    "Y_loadings": list(Y_loadings_dataset.shape) if Y_loadings_dataset is not None else None,
+                    "coefficients": list(coefficients_dataset.shape) if coefficients_dataset is not None else None,
+                    "vip": list(vip_dataset.shape) if vip_dataset is not None else None,
+                    "y_pred": list(y_pred_train.shape) if y_pred_train is not None else None,
+                    "y_true": list(y_2d.shape),
+                    "y_pred_cv": list(y_pred_cv.shape) if y_pred_cv is not None else None,
+                },
                 "t2_limit": float(t2_limit) if t2_limit is not None else None,
                 "q_limit": float(q_limit) if q_limit is not None else None,
                 "n_t2_outliers": (
