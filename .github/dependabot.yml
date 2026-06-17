@@ -7,9 +7,18 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     groups:
-      oss-python:
+      oss-python-patch-minor:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      # Major runtime dependency updates need targeted compatibility work and
+      # should not be generated as broad Dependabot maintenance groups.
+      - dependency-name: "*"
+        update-types:
+          - "version-update:semver-major"
     labels:
       - "dependencies"
       - "oss"
@@ -20,15 +29,23 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     groups:
-      oss-frontend:
+      oss-frontend-patch-minor:
         patterns:
           - "*"
+        update-types:
+          - "minor"
+          - "patch"
     ignore:
-      # openapi-typescript 7.x still declares TypeScript ^5.x; keep Dependabot
-      # from bundling an unmergeable TypeScript 6 major update into this group.
-      - dependency-name: "typescript"
+      # Frontend major updates routinely require migration work; keep them out
+      # of broad grouped maintenance PRs so they can be handled intentionally.
+      - dependency-name: "*"
         update-types:
           - "version-update:semver-major"
+      # monaco-editor >=0.54 currently pulls a DOMPurify range that fails the
+      # runtime npm audit gate; revisit when Monaco ships a patched dependency.
+      - dependency-name: "monaco-editor"
+        versions:
+          - ">=0.54.0"
     labels:
       - "dependencies"
       - "oss"
