@@ -695,6 +695,54 @@
         ],
         "title": "CodeGenRequest"
       },
+      "CompactConversationResponse": {
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "title": "Conversation Id"
+          },
+          "compacted": {
+            "type": "boolean",
+            "title": "Compacted"
+          },
+          "message_count": {
+            "type": "integer",
+            "title": "Message Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "compacted",
+          "message_count"
+        ],
+        "title": "CompactConversationResponse"
+      },
+      "DataStoryRequest": {
+        "properties": {
+          "dataset_info": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Dataset Info"
+          },
+          "additional_context": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Additional Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dataset_info"
+        ],
+        "title": "DataStoryRequest"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -910,6 +958,19 @@
         "type": "object",
         "title": "LLMConfigUpdate"
       },
+      "LLMResponse": {
+        "properties": {
+          "response": {
+            "type": "string",
+            "title": "Response"
+          }
+        },
+        "type": "object",
+        "required": [
+          "response"
+        ],
+        "title": "LLMResponse"
+      },
       "PeakIdRequest": {
         "properties": {
           "wavenumbers": {
@@ -971,6 +1032,13 @@
           "type": {
             "type": "string",
             "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
         "type": "object",
@@ -980,29 +1048,6 @@
           "type"
         ],
         "title": "ValidationError"
-      },
-      "CompactConversationResponse": {
-        "properties": {
-          "conversation_id": {
-            "type": "string",
-            "title": "Conversation Id"
-          },
-          "compacted": {
-            "type": "boolean",
-            "title": "Compacted"
-          },
-          "message_count": {
-            "type": "integer",
-            "title": "Message Count"
-          }
-        },
-        "type": "object",
-        "required": [
-          "conversation_id",
-          "compacted",
-          "message_count"
-        ],
-        "title": "CompactConversationResponse"
       },
       "ConversationDetail": {
         "properties": {
@@ -1063,44 +1108,6 @@
           "updated_at"
         ],
         "title": "ConversationSummary"
-      },
-      "DataStoryRequest": {
-        "properties": {
-          "dataset_info": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Dataset Info"
-          },
-          "additional_context": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Additional Context"
-          }
-        },
-        "type": "object",
-        "required": [
-          "dataset_info"
-        ],
-        "title": "DataStoryRequest"
-      },
-      "LLMResponse": {
-        "properties": {
-          "response": {
-            "type": "string",
-            "title": "Response"
-          }
-        },
-        "type": "object",
-        "required": [
-          "response"
-        ],
-        "title": "LLMResponse"
       },
       "MessageOut": {
         "properties": {

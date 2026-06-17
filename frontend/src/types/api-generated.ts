@@ -221,6 +221,24 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** CompactConversationResponse */
+        CompactConversationResponse: {
+            /** Conversation Id */
+            conversation_id: string;
+            /** Compacted */
+            compacted: boolean;
+            /** Message Count */
+            message_count: number;
+        };
+        /** DataStoryRequest */
+        DataStoryRequest: {
+            /** Dataset Info */
+            dataset_info: {
+                [key: string]: unknown;
+            };
+            /** Additional Context */
+            additional_context?: string | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -293,6 +311,11 @@ export interface components {
             /** Verbose */
             verbose?: boolean | null;
         };
+        /** LLMResponse */
+        LLMResponse: {
+            /** Response */
+            response: string;
+        };
         /** PeakIdRequest */
         PeakIdRequest: {
             /** Wavenumbers */
@@ -315,15 +338,10 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
-        };
-        /** CompactConversationResponse */
-        CompactConversationResponse: {
-            /** Conversation Id */
-            conversation_id: string;
-            /** Compacted */
-            compacted: boolean;
-            /** Message Count */
-            message_count: number;
+            /** Input */
+            input?: unknown;
+            /** Context */
+            ctx?: Record<string, never>;
         };
         /** ConversationDetail */
         ConversationDetail: {
@@ -342,20 +360,6 @@ export interface components {
             title?: string | null;
             /** Updated At */
             updated_at: string;
-        };
-        /** DataStoryRequest */
-        DataStoryRequest: {
-            /** Dataset Info */
-            dataset_info: {
-                [key: string]: unknown;
-            };
-            /** Additional Context */
-            additional_context?: string | null;
-        };
-        /** LLMResponse */
-        LLMResponse: {
-            /** Response */
-            response: string;
         };
         /** MessageOut */
         MessageOut: {
