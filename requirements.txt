@@ -6,11 +6,11 @@
 # - For fully reproducible environments, prefer Poetry lockfiles.
 # - Optional cloud/server dependencies are listed at the bottom.
 
-fastapi>=0.120.0,<1.0.0
+fastapi>=0.137.0,<0.138.0
 # FastAPI 0.120/0.121 still requires Starlette <0.50.0. SpectraSherpa adds
 # TrustedHostMiddleware at startup to mitigate the active Host-header advisory
 # until FastAPI supports the patched Starlette 1.x line.
-starlette>=0.49.1,<0.50.0
+starlette>=1.3.1,<1.4.0
 uvicorn[standard]>=0.30.0,<0.31.0
 sqlalchemy>=2.0.31,<3.0.0
 aiosqlite>=0.20.0,<1.0.0
@@ -18,7 +18,7 @@ alembic>=1.13.2,<2.0.0
 pydantic>=2.7.4,<3.0.0
 python-multipart>=0.0.32,<0.1.0
 python-dotenv>=1.0.1,<2.0.0
-cryptography>=46.0.5,<48.0.0
+cryptography>=48.0.1,<49.0.0
 httpx>=0.27.0,<0.28.0
 urllib3>=2.7.0,<3.0.0
 idna>=3.15,<4.0.0
