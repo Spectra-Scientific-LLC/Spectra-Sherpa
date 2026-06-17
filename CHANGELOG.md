@@ -9,8 +9,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.25] - 2026-06-17
 
-## [0.5.25] - 2026-06-17
-
 ### Fixed
 
 - Shipped the frontend binary download fix that copies typed-array response
