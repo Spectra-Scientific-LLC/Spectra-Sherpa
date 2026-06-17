@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.26] - 2026-06-17
+
+### Release Hygiene
+
+- Published a fresh OSS package from the validated `0.5.25` repair baseline so
+  the latest public tag, package metadata, and bundled frontend assets are
+  aligned again.
+
 ## [0.5.25] - 2026-06-17
 
 ### Fixed
