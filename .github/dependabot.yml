@@ -23,6 +23,12 @@ updates:
       oss-frontend:
         patterns:
           - "*"
+    ignore:
+      # openapi-typescript 7.x still declares TypeScript ^5.x; keep Dependabot
+      # from bundling an unmergeable TypeScript 6 major update into this group.
+      - dependency-name: "typescript"
+        update-types:
+          - "version-update:semver-major"
     labels:
       - "dependencies"
       - "oss"
