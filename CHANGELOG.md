@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.21] - 2026-06-16
+
+### Release Hygiene
+
+- Synchronized the public OSS test helper formatting with merged monorepo main
+  so the public export matches the post-merge source tree.
+
 ## [0.5.20] - 2026-06-16
 
 ### Security
