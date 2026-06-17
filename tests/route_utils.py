@@ -17,4 +17,3 @@ def iter_effective_api_routes(routes: Iterable[Any], prefix: str = "") -> Iterat
         include_context = getattr(route, "include_context", None)
         if original_router is not None and include_context is not None:
             yield from iter_effective_api_routes(original_router.routes, f"{prefix}{include_context.prefix}")
-
