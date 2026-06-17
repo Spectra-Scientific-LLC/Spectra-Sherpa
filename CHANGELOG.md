@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.19] - 2026-06-16
+## [0.5.20] - 2026-06-16
+
+### Security
+
+- Updated FastAPI, Starlette, and cryptography to patched ranges so the OSS
+  dependency scan no longer relies on the previous Starlette Host-header
+  mitigation exception.
 
 ## [0.5.19] - 2026-06-10
 

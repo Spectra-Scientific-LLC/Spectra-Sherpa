@@ -26,13 +26,10 @@ This policy covers the open-source **SpectraSherpa** core (this repository). The
 
 ## Dependency Scanner Notes
 
-GitHub may show a Starlette Host-header advisory while FastAPI still constrains
-Starlette to the pre-1.0 line (`starlette<0.50.0` in FastAPI 0.120/0.121). The
-OSS app mitigates this class at startup by installing Starlette's
-`TrustedHostMiddleware` with an allowlist derived from `TRUSTED_HOSTS`,
-`DOMAIN`, `API_BASE_URL`, and configured CORS origins. Maintainers should keep
-the Dependabot alert open or dismiss it with that mitigation note, then remove
-this exception once FastAPI supports the patched Starlette 1.x line.
+The OSS app installs Starlette's `TrustedHostMiddleware` at startup with an
+allowlist derived from `TRUSTED_HOSTS`, `DOMAIN`, `API_BASE_URL`, and configured
+CORS origins. Dependency scans should stay on the patched FastAPI/Starlette
+line; do not reintroduce a Starlette pre-1.0 pin without a fresh advisory review.
 
 ## Response Timeline
 
