@@ -9,6 +9,16 @@ export const downloadBlob = (blob: Blob, filename: string): void => {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 };
 
+const toBlobPart = (data: ArrayBuffer | ArrayBufferView | string): BlobPart => {
+  if (ArrayBuffer.isView(data)) {
+    const source = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+    const copy = new ArrayBuffer(source.byteLength);
+    new Uint8Array(copy).set(source);
+    return copy;
+  }
+  return data;
+};
+
 export const blobFromResponseData = (
   data: Blob | ArrayBuffer | ArrayBufferView | string,
   mimeType?: string,
@@ -16,7 +26,7 @@ export const blobFromResponseData = (
   if (data instanceof Blob) {
     return data;
   }
-  return new Blob([data], mimeType ? { type: mimeType } : undefined);
+  return new Blob([toBlobPart(data)], mimeType ? { type: mimeType } : undefined);
 };
 
 export const filenameFromContentDisposition = (
