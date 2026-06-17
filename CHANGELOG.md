@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.22] - 2026-06-16
+
+### Release Hygiene
+
+- Rebuilt the bundled frontend static assets after the 0.5.21 package version
+  bump so the committed bundle matches the public frontend source.
+
 ## [0.5.21] - 2026-06-16
 
 ### Release Hygiene
