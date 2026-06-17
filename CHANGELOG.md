@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.24] - 2026-06-16
+
+### Release Hygiene
+
+- Split Dependabot OSS Python and frontend maintenance updates into
+  patch/minor groups, held broad semver-major update groups for targeted
+  migration work, and held Monaco versions that currently fail the runtime
+  DOMPurify audit gate.
+
 ## [0.5.23] - 2026-06-16
 
 ### Release Hygiene
