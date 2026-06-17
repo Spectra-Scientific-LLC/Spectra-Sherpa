@@ -7,7 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.5.24] - 2026-06-16
+## [0.5.25] - 2026-06-17
+
+## [0.5.25] - 2026-06-17
+
+### Fixed
+
+- Shipped the frontend binary download fix that copies typed-array response
+  slices into fresh `ArrayBuffer` instances before `Blob` creation, preventing
+  corrupt `.sherpa` archive downloads in Safari/WebKit-style implementations.
+
+### Security
+
+- Updated optional HITRAN transitive dependencies to patched `bleach` and
+  `tornado` releases so users who install `spectra-sherpa[hitran]` receive
+  the current advisory fixes.
+- Forced the frontend OpenAPI generator toolchain to use patched `js-yaml`
+  `4.2.x` without restoring a Redocly package override.
 
 ### Release Hygiene
 
