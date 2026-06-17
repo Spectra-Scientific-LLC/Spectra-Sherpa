@@ -12,11 +12,12 @@ from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.main import app
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
+from tests.route_utils import iter_effective_api_routes
 
 
 def _find_route(path: str, method: str = "POST") -> APIRoute:
-    for route in app.routes:
-        if isinstance(route, APIRoute) and route.path == path and method in route.methods:
+    for effective_path, route in iter_effective_api_routes(app.routes):
+        if effective_path == path and method in route.methods:
             return route
     raise AssertionError(f"Route not found: {method} {path}")
 

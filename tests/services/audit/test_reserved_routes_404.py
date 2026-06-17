@@ -26,6 +26,8 @@ Why pin this:
 
 from __future__ import annotations
 
+from tests.route_utils import iter_effective_api_routes
+
 EXPECTED_OSS_AUDIT_ROUTES: set[tuple[frozenset[str], str]] = {
     (frozenset({"GET"}), "/api/v1/audit/events"),
 }
@@ -42,8 +44,7 @@ def test_oss_audit_router_binds_only_events_endpoint():
     from spectra_sherpa.app.main import app
 
     actual: set[tuple[frozenset[str], str]] = set()
-    for route in app.routes:
-        path = getattr(route, "path", None)
+    for path, route in iter_effective_api_routes(app.routes):
         methods = getattr(route, "methods", None)
         if not path or not methods:
             continue

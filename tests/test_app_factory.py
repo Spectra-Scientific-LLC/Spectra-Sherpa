@@ -14,8 +14,17 @@ from spectra_sherpa.app.api.v1 import api as api_v1
 from spectra_sherpa.app.ws_actions import LLM_CHAT, SHERPA_SYNC
 
 
-def _paths(routes) -> set[str]:
-    return {route.path for route in routes}
+def _paths(routes, prefix: str = "") -> set[str]:
+    paths: set[str] = set()
+    for route in routes:
+        if hasattr(route, "path"):
+            paths.add(f"{prefix}{route.path}")
+            continue
+        original_router = getattr(route, "original_router", None)
+        include_context = getattr(route, "include_context", None)
+        if original_router is not None and include_context is not None:
+            paths.update(_paths(original_router.routes, f"{prefix}{include_context.prefix}"))
+    return paths
 
 
 def _sync_event(events: list[str], name: str) -> Callable[..., None]:
