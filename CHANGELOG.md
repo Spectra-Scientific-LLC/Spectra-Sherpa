@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.23] - 2026-06-16
+
+### Release Hygiene
+
+- Updated the standalone and monorepo Dependabot frontend policy to hold
+  TypeScript major updates until the OpenAPI generator toolchain supports
+  TypeScript 6.
+
 ## [0.5.22] - 2026-06-16
 
 ### Release Hygiene
