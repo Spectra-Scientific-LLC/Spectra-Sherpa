@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "spectra-sherpa"
-version = "0.5.26"
+version = "0.5.27"
 description = "SpectraSherpa — local-first spectroscopy platform for chemometricians"
 authors = ["Spectra Scientific LLC <info@spectrascientific.ai>"]
 readme = "README.md"
@@ -72,7 +72,7 @@ scipy = "^1.13.1"
 pandas = "^2.2.2"
 beautifulsoup4 = "^4.12.3"
 scikit-learn = "^1.5.0"
-pypdf = "^6.12.0"
+pypdf = ">=6.13.3,<7.0.0"
 jsonschema = "^4.20.0"
 # greenlet is required at runtime by SQLAlchemy 2.x async on every platform —
 # AsyncEngine.connect() bridges sync internals via greenlet_spawn regardless of
