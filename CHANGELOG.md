@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.27] - 2026-06-17
+
+### Added
+
+- Added the public two-tier `spectra_sherpa.sdk` namespaces for data import,
+  preprocessing, PCA exploration, and PLS regression, plus SDK-style Python
+  workflow export with standalone export still available as an explicit mode.
+  PCA and PLS wrappers are import-safe in base installs but require the
+  optional `[scp]` extra at execution time.
+
 ## [0.5.26] - 2026-06-17
 
 ### Release Hygiene
