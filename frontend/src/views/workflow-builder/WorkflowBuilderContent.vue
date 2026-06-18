@@ -1379,22 +1379,22 @@ const saveTrialParams = async (nodeId: string, params: Record<string, unknown>) 
   await closeActiveTrialTab();
 };
 
-const exportToPython = async () => {
+const exportToPython = async (mode: "sdk" | "standalone" = "sdk") => {
   try {
-    // Get Python code from backend API
-    const pythonCode = await workflowStore.exportToPython();
+    const pythonCode = await workflowStore.exportToPython(mode);
 
     // Create download
+    const suffix = mode === "standalone" ? "_standalone" : "";
     downloadText(
       pythonCode,
-      `${workflowStore.workflowName.replace(/\s+/g, '_').toLowerCase()}.py`,
+      `${workflowStore.workflowName.replace(/\s+/g, "_").toLowerCase()}${suffix}.py`,
       'text/plain',
     );
 
     toast.add({
       severity: "success",
       summary: "Exported",
-      detail: "Python script downloaded",
+      detail: mode === "standalone" ? "Standalone Python script downloaded" : "SDK Python script downloaded",
       life: 2000,
     });
   } catch (err: unknown) {
@@ -1451,9 +1451,14 @@ const downloadZip = async () => {
 
 const exportMenuItems = [
   {
-    label: "Python Script (.py)",
+    label: "Python Script - SDK (.py)",
     icon: "pi pi-file",
-    command: exportToPython,
+    command: () => exportToPython("sdk"),
+  },
+  {
+    label: "Python Script - Standalone (.py)",
+    icon: "pi pi-file-export",
+    command: () => exportToPython("standalone"),
   },
   {
     label: "Jupyter Notebook (.ipynb)",

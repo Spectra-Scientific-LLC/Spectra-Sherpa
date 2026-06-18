@@ -58,6 +58,8 @@ import type {
 
 import type { NodeExecutionState } from "@/types";
 
+export type WorkflowPythonExportMode = "sdk" | "standalone";
+
 export const useWorkflowStore = defineStore("workflow", () => {
   // State
   const nodes = ref<WorkflowNode[]>([]);
@@ -962,12 +964,14 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
   }
 
-  async function exportToPython(): Promise<string> {
+  async function exportToPython(mode: WorkflowPythonExportMode = "sdk"): Promise<string> {
     if (!workflowId.value) {
       await saveWorkflow();
     }
 
-    const response = await api.get(`/workflows/${workflowId.value}/export/python`);
+    const response = await api.get(`/workflows/${workflowId.value}/export/python`, {
+      params: { mode },
+    });
     return response.data.python_code;
   }
 
@@ -980,14 +984,20 @@ export const useWorkflowStore = defineStore("workflow", () => {
     return response.data.notebook;
   }
 
-  async function downloadExport(format: "python" | "notebook" | "zip" = "python"): Promise<void> {
+  async function downloadExport(
+    format: "python" | "notebook" | "zip" = "python",
+    mode: WorkflowPythonExportMode = "sdk",
+  ): Promise<void> {
     if (!workflowId.value) {
       await saveWorkflow();
     }
 
     const response = await api.get(
-      `/workflows/${workflowId.value}/export/download?format=${format}`,
-      { responseType: "blob" },
+      `/workflows/${workflowId.value}/export/download`,
+      {
+        params: { format, mode },
+        responseType: "blob",
+      },
     );
 
     const contentDisposition = response.headers["content-disposition"] || "";
