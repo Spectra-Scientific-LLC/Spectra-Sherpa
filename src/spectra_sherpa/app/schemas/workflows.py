@@ -295,6 +295,7 @@ class WorkflowPythonExportResponse(BaseModel):
     python_code: str
     filename: str
     saved_path: str
+    export_mode: str = "sdk"
 
 
 # Node library schemas

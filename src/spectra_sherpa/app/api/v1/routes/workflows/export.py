@@ -31,6 +31,7 @@ router = APIRouter(prefix="/workflows")
 @router.get("/{workflow_id}/export/python", response_model=WorkflowPythonExportResponse)
 async def export_workflow_to_python(
     workflow_id: int,
+    mode: str = Query("sdk", pattern="^(sdk|standalone)$", description="Python export mode: sdk or standalone"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> WorkflowPythonExportResponse:
@@ -60,7 +61,7 @@ async def export_workflow_to_python(
 
     try:
         export_context = await build_workflow_export_context(workflow, session)
-        python_code = generate_python_code(workflow, export_context=export_context)
+        python_code = generate_python_code(workflow, export_context=export_context, mode=mode)
         saved_path = save_python_workflow_export(workflow.id, workflow.name, python_code)
         return {
             "workflow_id": workflow_id,
@@ -68,6 +69,7 @@ async def export_workflow_to_python(
             "python_code": python_code,
             "filename": f"{safe_download_stem(workflow.name, fallback='workflow', lowercase=True)}_workflow.py",
             "saved_path": str(saved_path.relative_to(settings.data_dir)),
+            "export_mode": mode,
         }
     except ValueError as e:
         # Unsupported node types or cycles — client-actionable error
@@ -137,6 +139,7 @@ async def export_workflow_to_notebook(
 async def download_workflow_export(
     workflow_id: int,
     format: str = Query("python", description="Export format: python, notebook, or zip"),
+    mode: str = Query("sdk", pattern="^(sdk|standalone)$", description="Python export mode: sdk or standalone"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -183,7 +186,7 @@ async def download_workflow_export(
 
     try:
         export_context = await build_workflow_export_context(workflow, session)
-        python_code = generate_python_code(workflow, export_context=export_context)
+        python_code = generate_python_code(workflow, export_context=export_context, mode=mode)
     except ValueError as e:
         logger.info("Workflow %s download export rejected: %s", workflow_id, e)
         raise HTTPException(

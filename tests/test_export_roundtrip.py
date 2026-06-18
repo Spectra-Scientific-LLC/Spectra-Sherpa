@@ -199,7 +199,7 @@ class TestNumericalRoundtrip:
             integrity_hash="test",
         )
 
-        code = generate_python_code(wf)
+        code = generate_python_code(wf, mode="standalone")
         ast.parse(code)
 
         # Execute
@@ -244,7 +244,7 @@ class TestNumericalRoundtrip:
             integrity_hash="test",
         )
 
-        code = generate_python_code(wf)
+        code = generate_python_code(wf, mode="standalone")
         ast.parse(code)
         assert "# SCP may squeeze single-target predictions to 1D; reshape to match _y_data" in code
         assert "if _y_pred.ndim == 1:" in code
@@ -263,6 +263,7 @@ class TestNumericalRoundtrip:
             r2_val = float(np.asarray(r2).flat[0])
             assert r2_val > 0.0, f"R² should be positive, got {r2_val}"
 
+    @pytest.mark.skipif(not HAS_SCP, reason="PCA execution requires SpectroChemPy (to_nddataset/SCP runtime)")
     def test_preprocess_pca_roundtrip(self):
         """Preprocessing → PCA: scores must have correct dimensionality."""
         wf = SimpleNamespace(
@@ -512,10 +513,14 @@ class TestArtifactExport:
                     node_type="data.source",
                     parameters={"source": "sklearn", "sklearn_dataset": "iris"},
                 ),
-                SimpleNamespace(node_id="pca_1", node_type="model.pca", parameters={"n_components": 2}),
+                SimpleNamespace(
+                    node_id="knn_1",
+                    node_type="classification.knn",
+                    parameters={"n_neighbors": 3, "cv_folds": 3},
+                ),
             ],
             edges=[
-                SimpleNamespace(from_node_id="src_1", to_node_id="pca_1", from_output="default", to_input="default"),
+                SimpleNamespace(from_node_id="src_1", to_node_id="knn_1", from_output="default", to_input="X"),
             ],
             integrity_hash="test",
         )
@@ -540,7 +545,7 @@ class TestArtifactExport:
             with zipfile.ZipFile(zip_path) as zf:
                 names = zf.namelist()
                 assert len(names) > 0
-                # Should contain CSV files for PCA outputs
+                # Should contain CSV files for model outputs
                 csv_files = [n for n in names if n.endswith(".csv")]
                 assert len(csv_files) > 0
         finally:

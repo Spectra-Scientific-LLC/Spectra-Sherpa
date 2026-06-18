@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.services.dag.graph_utils import Edge, build_input_map, topological_sort
@@ -30,10 +30,20 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+ExportMode = Literal["sdk", "standalone"]
+_EXPORT_MODES: frozenset[str] = frozenset({"sdk", "standalone"})
+
 
 def _safe_identifier(node_id: str) -> str:
     """Convert *node_id* to a valid Python identifier suffix."""
     return re.sub(r"[^a-zA-Z0-9_]", "_", node_id)
+
+
+def _validate_export_mode(mode: str) -> ExportMode:
+    normalized = mode.lower().strip()
+    if normalized not in _EXPORT_MODES:
+        raise ValueError(f"Unsupported Python export mode: {mode!r}. Expected 'sdk' or 'standalone'.")
+    return normalized  # type: ignore[return-value]
 
 
 # ── Variable naming ──────────────────────────────────────────────
@@ -417,10 +427,330 @@ def validate_export(workflow: Workflow) -> list[ExportValidationError]:
     return errors
 
 
+def _first_input_expr(inputs: dict[str, str | list[str]]) -> str | None:
+    for value in inputs.values():
+        if isinstance(value, list):
+            # Multi-input fan-in has no single SDK wrapper shape yet; fall back to standalone node export.
+            return None
+        return value
+    return None
+
+
+def _append_kw(parts: list[str], name: str, value, default) -> None:
+    if value != default:
+        parts.append(f"{name}={value!r}")
+
+
+def _sdk_preprocess_call(node, inputs: dict[str, str | list[str]]) -> str | None:
+    inp = _first_input_expr(inputs)
+    if inp is None:
+        return None
+
+    params = dict(getattr(node, "parameters", {}) or {})
+    node_type = node.metadata.node_type
+
+    if node_type == "preprocess.normalize":
+        method = params.get("method", "snv")
+        if method == "snv":
+            return f"ss.preprocess.snv({inp})"
+        if method == "msc":
+            parts = [inp]
+            _append_kw(parts, "reference", params.get("reference", "mean"), "mean")
+            return f"ss.preprocess.msc({', '.join(parts)})"
+        return None
+
+    if node_type == "preprocess.smooth":
+        if params.get("method", "savitzky_golay") != "savitzky_golay":
+            return None
+        parts = [inp]
+        _append_kw(parts, "window", int(params.get("size", 11)), 15)
+        _append_kw(parts, "polyorder", int(params.get("order", 2)), 2)
+        return f"ss.preprocess.savgol({', '.join(parts)})"
+
+    if node_type == "preprocess.derivative":
+        if params.get("method", "savitzky_golay") != "savitzky_golay":
+            return None
+        parts = [inp]
+        _append_kw(parts, "window", int(params.get("size", 11)), 15)
+        _append_kw(parts, "polyorder", int(params.get("order", 2)), 2)
+        _append_kw(parts, "deriv", int(params.get("deriv", 1)), 0)
+        return f"ss.preprocess.savgol({', '.join(parts)})"
+
+    if node_type == "baseline.penalized_ls":
+        if params.get("method", "als") != "als":
+            return None
+        parts = [inp]
+        _append_kw(parts, "lam", float(params.get("lam", 1e5)), 1e5)
+        _append_kw(parts, "p", float(params.get("p", 0.01)), 0.01)
+        _append_kw(parts, "max_iter", int(params.get("max_iter", 50)), 50)
+        _append_kw(parts, "tol", float(params.get("tol", 1e-6)), 1e-6)
+        return f"ss.preprocess.baseline_als({', '.join(parts)})"
+
+    if node_type == "preprocess.scale":
+        method = params.get("method", "mean_center")
+        if method == "mean_center":
+            return f"ss.preprocess.mean_center({inp})"
+        if method == "autoscale":
+            parts = [inp]
+            _append_kw(parts, "center", bool(params.get("center", True)), True)
+            return f"ss.preprocess.autoscale({', '.join(parts)})"
+        return None
+
+    return None
+
+
+def _sdk_model_call(node, inputs: dict[str, str | list[str]]) -> str | None:
+    params = dict(getattr(node, "parameters", {}) or {})
+    node_type = node.metadata.node_type
+
+    if node_type == "model.pca":
+        inp = inputs.get("default", inputs.get("X"))
+        if not isinstance(inp, str):
+            return None
+        parts = [inp]
+        _append_kw(parts, "n_components", params.get("n_components", 2), 2)
+        _append_kw(parts, "standardized", bool(params.get("standardized", False)), False)
+        _append_kw(parts, "scaled", bool(params.get("scaled", False)), False)
+        return f"ss.explore.pca({', '.join(parts)})"
+
+    if node_type == "model.pls":
+        X_expr = inputs.get("X", inputs.get("default"))
+        y_expr = inputs.get("y")
+        if not isinstance(X_expr, str):
+            return None
+        parts = [X_expr]
+        if isinstance(y_expr, str):
+            parts.append(f"y={y_expr}")
+        _append_kw(parts, "n_components", int(params.get("n_components", 3)), 3)
+        _append_kw(parts, "scale", bool(params.get("scale", False)), False)
+        _append_kw(parts, "cv_method", params.get("cv_method", "k-fold"), "k-fold")
+        _append_kw(parts, "cv_folds", int(params.get("cv_folds", 5)), 5)
+        return f"ss.regression.pls({', '.join(parts)})"
+
+    return None
+
+
+def _generate_sdk_source_lines(
+    node_id: str,
+    node,
+    spec: "WorkflowExportContext | None",
+    indent: str,
+) -> list[str] | None:
+    source_spec = spec.source_spec_for(node_id) if spec is not None else None
+    if source_spec is not None and source_spec.loader_mode == "single_file" and source_spec.bundle_files:
+        bundle_file = source_spec.bundle_files[0]
+        safe_id = _safe_identifier(node_id)
+        lines = [
+            f"{indent}# --- Data Source ({node_id}) via SpectraSherpa SDK ---",
+            f"{indent}_bundle_path_{safe_id} = os.path.join(DATA_DIR, {bundle_file.bundle_relative_path!r})",
+            f"{indent}_ds = ss.data.read_csv(_bundle_path_{safe_id})",
+            f"{indent}results['{node_id}'] = _ds",
+        ]
+        return _inject_prepared_override_lines(lines, node_id, source_spec, indent)
+
+    return None
+
+
+def _generate_sdk_node_python_lines(
+    node_id: str,
+    node,
+    edges: list[Edge],
+    dict_output_nodes: frozenset[str],
+    indent: str,
+    use_scp: bool,
+    export_context: "WorkflowExportContext | None" = None,
+    strict: bool = False,
+) -> list[str]:
+    input_map = build_input_map(node_id, edges, dict_output_nodes=dict_output_nodes)
+    if not input_map:
+        source_lines = _generate_sdk_source_lines(node_id, node, export_context, indent)
+        if source_lines is not None:
+            return source_lines
+
+    sdk_call = _sdk_preprocess_call(node, input_map)
+    if sdk_call is None:
+        sdk_call = _sdk_model_call(node, input_map)
+    if sdk_call is not None:
+        return [
+            f"{indent}# SDK wrapper: {node.metadata.node_type}",
+            f"{indent}results['{node_id}'] = {sdk_call}",
+        ]
+
+    if strict:
+        raise ValueError(f"Node {node_id} ({node.metadata.node_type}) has no SDK export wrapper")
+
+    fallback = _generate_node_python_lines(
+        node_id,
+        node,
+        edges,
+        dict_output_nodes,
+        indent,
+        use_scp,
+        export_context,
+    )
+    return [
+        f"{indent}# No SDK wrapper is registered for {node.metadata.node_type}; using standalone export.",
+        *fallback,
+    ]
+
+
+def _generate_sdk_python_code(
+    workflow: Workflow,
+    export_context: "WorkflowExportContext | None" = None,
+    *,
+    strict_sdk: bool = False,
+) -> str:
+    edges = [
+        Edge(
+            from_node=e.from_node_id,
+            to_node=e.to_node_id,
+            from_output=e.from_output or "default",
+            to_input=e.to_input or "default",
+        )
+        for e in workflow.edges
+    ]
+    node_ids = [n.node_id for n in workflow.nodes]
+    execution_order = topological_sort(node_ids, edges)
+
+    node_map = {}
+    node_type_map = {}
+    node_label_map = {}
+    for wf_node in workflow.nodes:
+        node_map[wf_node.node_id] = node_registry.create_node(wf_node.node_type, wf_node.node_id, wf_node.parameters)
+        node_type_map[wf_node.node_id] = wf_node.node_type
+        try:
+            meta = node_registry.get_metadata(wf_node.node_type)
+            node_label_map[wf_node.node_id] = meta.label
+        except (KeyError, AttributeError):
+            node_label_map[wf_node.node_id] = wf_node.node_type
+
+    use_scp = HAS_SCP
+    extra_imports: set[str] = set()
+    for node in node_map.values():
+        for imp in node.python_extra_imports:
+            extra_imports.add(imp)
+
+    nodes_with_incoming = {e.to_node for e in edges}
+    dict_output_nodes = frozenset(
+        nid for nid, node in node_map.items() if nid in nodes_with_incoming and node.exported_output_ports() is not None
+    )
+
+    raw_func_names = [
+        (nid, _derive_function_name(nid, node_type_map[nid], node_label_map.get(nid, ""))) for nid in execution_order
+    ]
+    func_names = _deduplicate_names(raw_func_names)
+
+    indent = "    "
+    lines: list[str] = []
+
+    lines.append('"""')
+    lines.append(f"Generated workflow: {workflow.name}")
+    lines.append("")
+    lines.append("Export mode: sdk")
+    if workflow.description:
+        lines.append("")
+        lines.append(workflow.description)
+    if hasattr(workflow, "integrity_hash") and workflow.integrity_hash:
+        lines.append("")
+        lines.append(f"Integrity Hash: {workflow.integrity_hash}")
+    lines.append('"""')
+    lines.append("")
+    lines.append("import os")
+    lines.append("")
+    lines.append("import numpy as np")
+    if use_scp:
+        lines.append("import spectrochempy as scp")
+        lines.append("from spectrochempy import NDDataset")
+    lines.append("import spectra_sherpa.sdk as ss")
+    lines.append("from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext")
+    lines.append("from spectra_sherpa.app.services.export_utils import export_artifacts")
+    lines.append("")
+
+    base_imports = {
+        "import numpy as np",
+        "import os",
+        "import spectra_sherpa.sdk as ss",
+        "from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext",
+        "from spectra_sherpa.app.services.export_utils import export_artifacts",
+    }
+    if use_scp:
+        base_imports |= {"import spectrochempy as scp", "from spectrochempy import NDDataset"}
+    for imp in sorted(extra_imports - base_imports):
+        if not use_scp and "spectrochempy" in imp:
+            continue
+        lines.append(imp)
+    if extra_imports - base_imports:
+        lines.append("")
+
+    data_env_var = export_context.data_env_var if export_context is not None else "SHERPA_DATA_DIR"
+    lines.append("# Data directory - defaults to ./data, override with SHERPA_DATA_DIR")
+    lines.append("DATA_DIR = os.environ.get(")
+    lines.append(f"    {data_env_var!r},")
+    lines.append('    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")')
+    lines.append('    if "__file__" in dir() else os.path.join(os.getcwd(), "data"),')
+    lines.append(")")
+    lines.append("")
+    lines.append("")
+
+    for step_idx, node_id in enumerate(execution_order):
+        node = node_map[node_id]
+        fn_name = func_names[node_id]
+        label = node_label_map.get(node_id, node_type_map[node_id])
+        lines.append(f"def {fn_name}(results):")
+        lines.append(f'{indent}"""Step {step_idx + 1}: {label}."""')
+        lines.extend(
+            _generate_sdk_node_python_lines(
+                node_id,
+                node,
+                edges,
+                dict_output_nodes,
+                indent,
+                use_scp,
+                export_context,
+                strict=strict_sdk,
+            )
+        )
+        lines.append("")
+        lines.append("")
+
+    lines.append("def run_workflow():")
+    lines.append(f'{indent}"""Execute the workflow and return all intermediate results."""')
+    lines.append(f"{indent}results = {{}}")
+    lines.append("")
+    for step_idx, node_id in enumerate(execution_order):
+        fn_name = func_names[node_id]
+        label = node_label_map.get(node_id, node_type_map[node_id])
+        lines.append(f"{indent}# Step {step_idx + 1}: {label}")
+        lines.append(f"{indent}{fn_name}(results)")
+        lines.append("")
+    lines.append(f"{indent}return results")
+    lines.append("")
+    lines.append("")
+
+    wf_name_safe = workflow.name.replace(" ", "_").replace("/", "_")
+    lines.append('if __name__ == "__main__":')
+    lines.append(f"{indent}results = run_workflow()")
+    lines.append("")
+    lines.append(f'{indent}print("\\nWorkflow: {workflow.name}")')
+    lines.append(f'{indent}print("=" * 60)')
+    lines.append(f"{indent}for key, value in results.items():")
+    lines.append(f"{indent}    if isinstance(value, SherpaDataset):")
+    lines.append(f'{indent}        print(f"  {{key}}: SherpaDataset {{value.shape}}")')
+    lines.append(f"{indent}    elif isinstance(value, dict):")
+    lines.append(f'{indent}        print(f"  {{key}}: {{list(value.keys())}}")')
+    lines.append(f"{indent}    else:")
+    lines.append(f'{indent}        print(f"  {{key}}: {{type(value).__name__}}")')
+    lines.append("")
+    lines.append(f"{indent}export_artifacts(results, {wf_name_safe!r})")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
 # ── Main code generator ──────────────────────────────────────────
 
 
-def generate_python_code(
+def _generate_standalone_python_code(
     workflow: Workflow,
     export_context: "WorkflowExportContext | None" = None,
 ) -> str:
@@ -624,3 +954,24 @@ def generate_python_code(
     lines.append("")
 
     return "\n".join(lines)
+
+
+def generate_python_code(
+    workflow: Workflow,
+    export_context: "WorkflowExportContext | None" = None,
+    *,
+    mode: str = "sdk",
+    strict_sdk: bool = False,
+) -> str:
+    """
+    Generate executable Python code from a workflow.
+
+    ``mode="sdk"`` is the default and emits public ``spectra_sherpa.sdk`` calls
+    for nodes covered by the SDK wrapper contract, falling back to standalone
+    node export with an explicit comment when a wrapper does not exist.
+    ``mode="standalone"`` preserves the older SDK-independent export path.
+    """
+    export_mode = _validate_export_mode(mode)
+    if export_mode == "standalone":
+        return _generate_standalone_python_code(workflow, export_context=export_context)
+    return _generate_sdk_python_code(workflow, export_context=export_context, strict_sdk=strict_sdk)

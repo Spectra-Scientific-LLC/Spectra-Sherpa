@@ -361,7 +361,7 @@ def generate_notebook(
             (propagated from ``generate_python_code``).
     """
     # Generate the full Python code (validates and creates the script)
-    python_code = generate_python_code(workflow, export_context=export_context)
+    python_code = generate_python_code(workflow, export_context=export_context, mode="standalone")
     sections = _split_python_code(python_code)
 
     # --- Also get the per-node structure from the workflow ---
