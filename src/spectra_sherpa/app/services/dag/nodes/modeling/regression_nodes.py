@@ -185,6 +185,20 @@ class PCRNode(Node):
                 label="Loadings",
                 description="PCA Loadings (n_features × n_components)",
             ),
+            PortMetadata(
+                name="y_pred",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
+                required=False,
+                label="Training Predictions",
+                description="In-sample training predictions for calibration diagnostics",
+            ),
+            PortMetadata(
+                name="y_true",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
+                required=False,
+                label="Training Targets",
+                description="Training target values aligned with y_pred",
+            ),
         ],
     )
 
@@ -487,6 +501,8 @@ class PCRNode(Node):
                 "scores": scores_dataset,  # Alias of default for the declared scores port
                 "loadings": loadings_dataset,  # NDDataset: loadings + wavenumbers (x) + PC coords (y)
                 "model": model,  # Model port for downstream use
+                "y_pred": y_pred_matrix,
+                "y_true": y_matrix,
                 "_model_artifact": artifact,
             },
             diagnostics={
