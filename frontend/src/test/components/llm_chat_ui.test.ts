@@ -631,7 +631,7 @@ describe("ChatPanel", () => {
     expect(mocks.sherpaStore.syncWorkflow).not.toHaveBeenCalled();
   });
 
-  it("routes explicit workflow generation requests through Gen Mode tools", async () => {
+  it("does not auto-enable Gen Mode for workflow generation requests", async () => {
     mocks.appMode.value = "enterprise";
     mocks.appConfig.value = { subscription: { plan: "demo" } };
     mocks.featureFlags.chatAssistant = true;
@@ -653,7 +653,7 @@ describe("ChatPanel", () => {
 
     expect(mocks.sherpaStore.sendMessage).toHaveBeenCalledWith(
       "Can you generate a PLSDA model of the same data?",
-      true,
+      false,
     );
   });
 

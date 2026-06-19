@@ -495,9 +495,6 @@ const resolveInitialTab = (): ChatTab => {
 
 const activeTab = ref<ChatTab>(resolveInitialTab());
 
-const workflowGenerationRequestPattern =
-  /\b(generate|create|build|make|draft|propose)\b[\s\S]{0,120}\b(workflow|pipeline|sheet|model|pls-?da|pca|simca|mcr)\b/i;
-
 const quantitativeDataRequestPattern =
   /(?=.*\b(mean|average|median|std|standard deviation|variance|min|max|minimum|maximum|quartile|q1|q3|percentile|statistics?|summary stats?)\b)(?=.*\b(data|dataset|feature|features|column|columns|variable|variables|spectrum|spectra)\b)/i;
 
@@ -505,7 +502,7 @@ const shouldUseAgenticToolsForMessage = (message: string): boolean =>
   toolsActive.value ||
   (activeTab.value === "sherpa" &&
     isFeatureEnabled("sherpaAgenticTools") &&
-    (workflowGenerationRequestPattern.test(message) || quantitativeDataRequestPattern.test(message)));
+    quantitativeDataRequestPattern.test(message));
 
 const setActiveTab = (tab: ChatTab) => {
   if (tab === "sherpa" && !sherpaEnabled.value) {
