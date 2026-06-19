@@ -574,7 +574,11 @@ export const useWorkbookStore = defineStore("workbook", () => {
       persistActiveSheet();
       const nextSheet = sheets.value[nextIndex];
       if (nextSheet.kind !== "trial") {
-        await useWorkflowStore().loadWorkflow(nextSheet.workflowId);
+        const workflowStore = useWorkflowStore();
+        if (workflowStore.hasUnsavedChanges && workflowStore.workflowId !== null) {
+          await workflowStore.saveWorkflow({ createVersion: false });
+        }
+        await workflowStore.loadWorkflow(nextSheet.workflowId);
       }
       await syncAdvisorForSheet(nextSheet);
     } else {

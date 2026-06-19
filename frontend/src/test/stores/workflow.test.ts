@@ -293,6 +293,57 @@ describe("Workflow Store execution state restoration on loadWorkflow", () => {
     // lastExecutionResults and lastExecutionDiagnostics preserved.
     expect(store.lastExecutionResults).toEqual(latestRunPayload.results_summary);
     expect(store.lastExecutionDiagnostics).toEqual(latestRunPayload.diagnostics);
+    expect(store.isWorkflowStale).toBe(false);
+  });
+
+  it("sets stale from the workflow hash and latest-run hash on load", async () => {
+    const workflowPayload = {
+      id: 44,
+      name: "Modified since run",
+      description: null,
+      integrity_hash: "current-hash",
+      warnings: [],
+      nodes: [
+        { node_id: "data_1", node_type: "data.source", label: "Data", parameters: {}, position_x: 0, position_y: 0 },
+      ],
+      edges: [],
+    };
+
+    const latestRunPayload = {
+      integrity_hash: "last-run-hash",
+      executed_at: "2026-04-10T12:00:00Z",
+      node_statuses: {
+        data_1: "completed",
+      },
+      results_summary: {
+        data_1: { type: "SherpaDataset", n_samples: 150, n_features: 4 },
+      },
+      diagnostics: {},
+    };
+
+    vi.mocked(api.get).mockImplementation(async (url: string) => {
+      if (url === "/workflows/44") {
+        return { data: workflowPayload };
+      }
+      if (url === "/workflows/44/runs/latest") {
+        return { data: latestRunPayload };
+      }
+      if (url === "/workflows/nodes/library") {
+        return { data: { nodes: [], total: 0 } };
+      }
+      if (url === "/workflows/types/registry") {
+        return { data: typeRegistry };
+      }
+      throw new Error(`Unexpected GET ${url}`);
+    });
+
+    const store = useWorkflowStore();
+    store.markWorkflowStale();
+
+    await store.loadWorkflow(44);
+
+    expect(store.isWorkflowStale).toBe(true);
+    expect(store.workflowWarnings).toContain("Workflow was modified since last execution — results may be stale.");
   });
 
   it("does not restore state when there is no latest run", async () => {
@@ -334,6 +385,7 @@ describe("Workflow Store execution state restoration on loadWorkflow", () => {
     expect(dataNode?.executionState?.status).not.toBe("completed");
     expect(dataNode?.executionState?.output_shape).toBeFalsy();
     expect(store.lastExecutionResults).toBeNull();
+    expect(store.isWorkflowStale).toBe(false);
   });
 });
 
@@ -389,5 +441,55 @@ describe("Workflow Store node updates", () => {
     expect(store.hasUnsavedChanges).toBe(true);
     expect(store.isWorkflowStale).toBe(true);
     expect(store.nodes[0].params).toEqual({ n_components: 3, scale: false });
+  });
+
+  it("saves position-only canvas updates without marking a completed workflow stale", () => {
+    const store = useWorkflowStore();
+    store.nodes = [
+      {
+        id: "model_1",
+        type: "model.pca",
+        x: 0,
+        y: 0,
+        params: { n_components: 2 },
+        executionState: { status: "completed" },
+      },
+    ];
+    store.edges = [];
+    store.hasUnsavedChanges = false;
+    store.clearWorkflowStale();
+
+    store.setNodes([
+      {
+        ...store.nodes[0],
+        x: 120,
+        y: 48,
+      },
+    ]);
+
+    expect(store.hasUnsavedChanges).toBe(true);
+    expect(store.isWorkflowStale).toBe(false);
+    expect(store.nodes[0].x).toBe(120);
+    expect(store.nodes[0].executionState?.status).toBe("completed");
+  });
+
+  it("does not mark stale when edges are semantically unchanged but reordered", () => {
+    const store = useWorkflowStore();
+    store.nodes = [
+      { id: "data_1", type: "data.source", x: 0, y: 0, params: {} },
+      { id: "scale_1", type: "preprocess.scale", x: 100, y: 0, params: {} },
+      { id: "model_1", type: "model.pca", x: 200, y: 0, params: { n_components: 2 } },
+    ];
+    store.edges = [
+      { from: "data_1", to: "scale_1", fromPort: "default", toPort: "default" },
+      { from: "scale_1", to: "model_1", fromPort: "default", toPort: "default" },
+    ];
+    store.hasUnsavedChanges = false;
+    store.clearWorkflowStale();
+
+    store.setEdges([...store.edges].reverse());
+
+    expect(store.hasUnsavedChanges).toBe(true);
+    expect(store.isWorkflowStale).toBe(false);
   });
 });

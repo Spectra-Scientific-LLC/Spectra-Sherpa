@@ -127,7 +127,7 @@
 
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any -- node outputs and plot payloads vary widely across node families in this inspection view. */
-import { ref, computed, watch, onMounted, provide } from "vue";
+import { ref, computed, watch, onMounted, provide, nextTick } from "vue";
 import {
   NODE_DETAIL_STATE_KEY,
   type NodeDetailState,
@@ -203,6 +203,13 @@ const localParams = ref<Record<string, any>>({});
 const originalParams = ref<Record<string, any>>({});
 const workflowStore = useWorkflowStore();
 const projectStore = useProjectStore();
+
+const cloneParams = (params: Record<string, any>): Record<string, any> => {
+  if (typeof structuredClone === "function") {
+    return structuredClone(params);
+  }
+  return JSON.parse(JSON.stringify(params));
+};
 
 const NODE_ICONS: Record<string, string> = {
   "data.source": "📊", "data.my_dataset": "🧪", "preprocess.normalize": "📏", "preprocess.scale": "📏",
@@ -327,19 +334,29 @@ const handleCancel = () => {
   window.close();
 };
 
-const { isExecuting, broadcastParamsUpdate, handleRunTrial } = useNodeTrial({
+const { isExecuting, broadcastParamsUpdate, waitForParamsAck, handleRunTrial } = useNodeTrial({
   nodeData, localParams, nodeType, addLog, normalizeNodeOutput, toast,
 });
 
-const handleSaveAndExit = () => {
-  broadcastParamsUpdate();
+const handleSaveAndExit = async () => {
+  (document.activeElement as HTMLElement | null)?.blur();
+  await nextTick();
   if (embedded.value) {
-    emit("save", String(nodeData.value?.id ?? nodeId.value), { ...localParams.value });
-    toast.add({ severity: "success", summary: "Saved", detail: "Settings applied to the workflow", life: 1500 });
-    emit("close");
+    emit("save", String(nodeData.value?.id ?? nodeId.value), cloneParams(localParams.value));
     return;
   }
-  toast.add({ severity: "success", summary: "Saved", detail: "Settings saved successfully", life: 1500 });
+  const requestId = broadcastParamsUpdate();
+  const ack = await waitForParamsAck(requestId);
+  if (!ack.applied) {
+    toast.add({
+      severity: "warn",
+      summary: "Save Not Confirmed",
+      detail: "Couldn't reach the workflow tab. Reopen the workflow and try again.",
+      life: 6000,
+    });
+    return;
+  }
+  toast.add({ severity: "success", summary: "Saved", detail: "Settings applied to the workflow", life: 1500 });
   setTimeout(() => {
     try { window.close(); } catch { /* no-op */ }
     setTimeout(() => {
@@ -367,8 +384,8 @@ onMounted(() => {
       for (const p of nodeParams.value || []) {
         if (p.default !== undefined) defaults[p.name] = p.default;
       }
-      localParams.value = { ...defaults, ...nodeData.value.params };
-      originalParams.value = { ...localParams.value };
+      localParams.value = cloneParams({ ...defaults, ...nodeData.value.params });
+      originalParams.value = cloneParams(localParams.value);
     } catch (e) {
       console.error("Failed to parse node data from session storage:", e);
       toast.add({ severity: "error", summary: "Error", detail: "Failed to load node data", life: 3000 });

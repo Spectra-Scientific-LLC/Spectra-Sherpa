@@ -330,4 +330,60 @@ describe("Receiver side — handleBroadcastMessage → updateNode", () => {
       params: { experiment_id: 12 },
     });
   });
+
+  it("lets the sender wait for an applied ack from the workflow tab", async () => {
+    const updateNode = vi.fn();
+    const nodesRef = { value: [{ id: "source_1", params: {} }] };
+    const receiver = new FakeBroadcastChannel(BROADCAST_CHANNEL_NAME);
+    receiver.onmessage = (event) => {
+      const result = handleBroadcastMessage(event, nodesRef, updateNode, 100);
+      if (event.data?.requestId) {
+        receiver.postMessage({
+          type: "node_params_applied",
+          requestId: event.data.requestId,
+          applied: result.applied,
+          reason: result.reason ?? null,
+        });
+      }
+    };
+
+    const { api } = mountSender({
+      nodeData: { id: "source_1", type: "data.source", workflowId: 100, params: {} },
+      params: { experiment_id: 12 },
+    });
+    const requestId = api().broadcastParamsUpdate();
+    const ack = await api().waitForParamsAck(requestId);
+
+    expect(ack).toEqual({ applied: true, reason: null });
+    expect(updateNode).toHaveBeenCalledWith("source_1", {
+      params: { experiment_id: 12 },
+    });
+  });
+
+  it("reports a rejected ack when the workflow tab refuses a different-sheet update", async () => {
+    const updateNode = vi.fn();
+    const nodesRef = { value: [{ id: "source_1", params: {} }] };
+    const receiver = new FakeBroadcastChannel(BROADCAST_CHANNEL_NAME);
+    receiver.onmessage = (event) => {
+      const result = handleBroadcastMessage(event, nodesRef, updateNode, 100);
+      if (event.data?.requestId) {
+        receiver.postMessage({
+          type: "node_params_applied",
+          requestId: event.data.requestId,
+          applied: result.applied,
+          reason: result.reason ?? null,
+        });
+      }
+    };
+
+    const { api } = mountSender({
+      nodeData: { id: "source_1", type: "data.source", workflowId: 200, params: {} },
+      params: { experiment_id: 12 },
+    });
+    const requestId = api().broadcastParamsUpdate();
+    const ack = await api().waitForParamsAck(requestId);
+
+    expect(ack).toEqual({ applied: false, reason: "workflow-mismatch" });
+    expect(updateNode).not.toHaveBeenCalled();
+  });
 });

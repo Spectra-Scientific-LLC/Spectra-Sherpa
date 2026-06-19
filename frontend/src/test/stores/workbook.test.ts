@@ -22,6 +22,13 @@ const advisorStoreMock = vi.hoisted(() => ({
   switchScope: vi.fn(),
 }));
 
+const workflowStoreMock = vi.hoisted(() => ({
+  hasUnsavedChanges: false,
+  workflowId: null as number | null,
+  loadWorkflow: vi.fn(),
+  saveWorkflow: vi.fn(),
+}));
+
 vi.mock("@/stores/advisor", () => ({
   useAdvisorStore: () => advisorStoreMock,
 }));
@@ -31,12 +38,7 @@ vi.mock("@/stores/project", () => ({
 }));
 
 vi.mock("@/stores/workflow", () => ({
-  useWorkflowStore: () => ({
-    hasUnsavedChanges: false,
-    workflowId: null,
-    loadWorkflow: vi.fn(),
-    saveWorkflow: vi.fn(),
-  }),
+  useWorkflowStore: () => workflowStoreMock,
 }));
 
 const makeSheet = (overrides: Partial<WorkbookSheet> = {}): WorkbookSheet => ({
@@ -53,6 +55,10 @@ describe("useWorkbookStore", () => {
     localStorage.clear();
     advisorStoreMock.switchScope.mockResolvedValue(undefined);
     advisorStoreMock.switchScope.mockClear();
+    workflowStoreMock.hasUnsavedChanges = false;
+    workflowStoreMock.workflowId = null;
+    workflowStoreMock.loadWorkflow.mockReset();
+    workflowStoreMock.saveWorkflow.mockReset();
   });
 
   describe("setLastSelectedNodeId", () => {
@@ -311,6 +317,42 @@ describe("useWorkbookStore", () => {
         resourceId: 10,
         title: "Sheet 1",
       });
+    });
+  });
+
+  describe("trial tabs", () => {
+    it("saves pending source workflow edits before reloading after active trial close", async () => {
+      const store = useWorkbookStore();
+      store.sheets = [
+        makeSheet({ workflowId: 10, sheetOrder: 0, name: "Source" }),
+        makeSheet({
+          workflowId: -1,
+          kind: "trial",
+          trialId: "trial-10-node-1",
+          sourceWorkflowId: 10,
+          sourceNodeId: "node_1",
+          sheetOrder: 1,
+          name: "Trial",
+        }),
+      ];
+      store.activeIndex = 1;
+      workflowStoreMock.hasUnsavedChanges = true;
+      workflowStoreMock.workflowId = 10;
+
+      const calls: string[] = [];
+      workflowStoreMock.saveWorkflow.mockImplementation(async () => {
+        calls.push("save");
+        workflowStoreMock.hasUnsavedChanges = false;
+      });
+      workflowStoreMock.loadWorkflow.mockImplementation(async () => {
+        calls.push("load");
+      });
+
+      await store.closeTrialTab("trial-10-node-1");
+
+      expect(calls).toEqual(["save", "load"]);
+      expect(workflowStoreMock.saveWorkflow).toHaveBeenCalledWith({ createVersion: false });
+      expect(workflowStoreMock.loadWorkflow).toHaveBeenCalledWith(10);
     });
   });
 });

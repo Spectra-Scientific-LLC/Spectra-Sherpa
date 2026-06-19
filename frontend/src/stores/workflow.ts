@@ -101,7 +101,14 @@ export const useWorkflowStore = defineStore("workflow", () => {
       return null;
     }
     const normalized = status.toLowerCase();
-    if (normalized === "completed" || normalized === "complete" || normalized === "success" || normalized === "succeeded") {
+    if (
+      normalized === "completed" ||
+      normalized === "complete" ||
+      normalized === "success" ||
+      normalized === "succeeded" ||
+      normalized === "done" ||
+      normalized === "finished"
+    ) {
       return "completed";
     }
     if (normalized === "error" || normalized === "failed" || normalized === "failure") {
@@ -447,6 +454,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
       currentTemplateId.value = null;
       hasUnsavedChanges.value = false;
+      lastExecutionResults.value = null;
+      lastExecutionDiagnostics.value = {};
+      isWorkflowStale.value = false;
 
       // Load latest auto-saved execution results (survives page refresh)
       try {
@@ -481,12 +491,15 @@ export const useWorkflowStore = defineStore("workflow", () => {
             }
           }
 
-          // Mark stale if workflow changed since last execution
-          if (
+          const staleSinceLastExecution = Boolean(
             data.integrity_hash &&
-            runResp.data.integrity_hash &&
-            data.integrity_hash !== runResp.data.integrity_hash
-          ) {
+              runResp.data.integrity_hash &&
+              data.integrity_hash !== runResp.data.integrity_hash,
+          );
+          isWorkflowStale.value = staleSinceLastExecution;
+
+          // Warn if workflow changed since last execution.
+          if (staleSinceLastExecution) {
             workflowWarnings.value = [
               ...workflowWarnings.value,
               "Workflow was modified since last execution — results may be stale.",
@@ -1416,6 +1429,39 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const valuesEqual = (left: unknown, right: unknown): boolean =>
     stableStringify(left) === stableStringify(right);
 
+  const canonicalNodeForStaleCheck = (node: WorkflowNode): UnknownRecord => ({
+    node_id: node.id,
+    node_type: node.type,
+    parameters: node.params || {},
+  });
+
+  const canonicalEdgeForStaleCheck = (edge: WorkflowEdge): UnknownRecord => ({
+    from_node_id: edge.from,
+    to_node_id: edge.to,
+    from_output: edge.fromPort || "default",
+    to_input: edge.toPort || "default",
+  });
+
+  const canonicalWorkflowForStaleCheck = (
+    candidateNodes: WorkflowNode[],
+    candidateEdges: WorkflowEdge[] = edges.value,
+  ): string =>
+    stableStringify({
+      nodes: candidateNodes
+        .map(canonicalNodeForStaleCheck)
+        .sort((left, right) => String(left.node_id).localeCompare(String(right.node_id))),
+      edges: candidateEdges
+        .map(canonicalEdgeForStaleCheck)
+        .sort((left, right) =>
+          [
+            String(left.from_node_id).localeCompare(String(right.from_node_id)),
+            String(left.to_node_id).localeCompare(String(right.to_node_id)),
+            String(left.from_output).localeCompare(String(right.from_output)),
+            String(left.to_input).localeCompare(String(right.to_input)),
+          ].find((comparison) => comparison !== 0) ?? 0,
+        ),
+    });
+
   function updateNode(nodeId: string, updates: Partial<WorkflowNode>) {
     const node = nodes.value.find((n) => n.id === nodeId);
     if (node) {
@@ -1651,18 +1697,23 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   function setNodes(newNodes: WorkflowNode[]) {
+    const previousCanonical = canonicalWorkflowForStaleCheck(nodes.value);
     // Initialize execution state for all nodes
     for (const node of newNodes) {
       if (!node.executionState) {
         node.executionState = { status: "pending" };
       }
     }
+    const nextCanonical = canonicalWorkflowForStaleCheck(newNodes);
     nodes.value = newNodes;
     hasUnsavedChanges.value = true;
-    markWorkflowStale();
+    if (previousCanonical !== nextCanonical) {
+      markWorkflowStale();
+    }
   }
 
   function setEdges(newEdges: WorkflowEdge[]) {
+    const previousCanonical = canonicalWorkflowForStaleCheck(nodes.value);
     edges.value = newEdges.map((edge) => {
       const validation = validateEdge(edge);
       return {
@@ -1672,8 +1723,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
         dataType: validation.dataType || null,
       };
     });
+    const nextCanonical = canonicalWorkflowForStaleCheck(nodes.value);
     hasUnsavedChanges.value = true;
-    markWorkflowStale();
+    if (previousCanonical !== nextCanonical) {
+      markWorkflowStale();
+    }
   }
 
   return {

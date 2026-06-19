@@ -780,8 +780,19 @@ const createNodeId = (nodeType: string, existingNodes: WorkflowNode[] = workflow
 
 // Handle BroadcastChannel messages from NodeDetailView.
 // DetailView is send-only for `node_params_updated` (fired on Save and Exit).
-const handleBroadcastMessage = (event: MessageEvent) =>
-  _handleBroadcastMessage(event, nodes, workflowStore.updateNode, workflowStore.workflowId);
+const handleBroadcastMessage = (event: MessageEvent) => {
+  const result = _handleBroadcastMessage(event, nodes, workflowStore.updateNode, workflowStore.workflowId);
+  if (event.data?.type === "node_params_updated" && event.data?.requestId && broadcastChannel.value) {
+    broadcastChannel.value.postMessage({
+      type: "node_params_applied",
+      requestId: event.data.requestId,
+      nodeId: event.data.nodeId,
+      workflowId: event.data.workflowId ?? null,
+      applied: result.applied,
+      reason: result.reason ?? null,
+    });
+  }
+};
 
 // Load supporting data for the workflow bench
 onMounted(async () => {
@@ -835,8 +846,10 @@ onUnmounted(() => {
 watch(() => workflowStore.nodes.length, (newLength, oldLength) => {
   // Only clear selection if nodes were removed or workflow was cleared
   if (newLength < oldLength || newLength === 0) {
-    nodeOutputs.value.clear();
-    selectedNode.value = null;
+    const nodeIds = new Set(workflowStore.nodes.map((node) => node.id));
+    if (selectedNode.value && !nodeIds.has(selectedNode.value.id)) {
+      selectedNode.value = null;
+    }
   }
 });
 
@@ -996,9 +1009,15 @@ const hydrateNodeOutputsFromRunResults = (results: Record<string, unknown> | nul
   if (!results) {
     return;
   }
-  const nextOutputs = new Map(nodeOutputs.value);
+  const currentNodeIds = new Set(nodes.value.map((node) => node.id));
+  const nextOutputs = new Map(
+    Array.from(nodeOutputs.value.entries()).filter(([nodeId]) => currentNodeIds.has(nodeId)),
+  );
   let changed = false;
   for (const [nodeId, result] of Object.entries(results)) {
+    if (!currentNodeIds.has(nodeId)) {
+      continue;
+    }
     const output = buildOutputForNode(nodeId, result);
     if (!hasRenderableOutput(output)) {
       continue;
@@ -1012,6 +1031,23 @@ const hydrateNodeOutputsFromRunResults = (results: Record<string, unknown> | nul
       workbookStore.activeSheet.nodeOutputsCache = new Map(nextOutputs);
     }
   }
+};
+
+const restoreNodeOutputsForActiveSheet = () => {
+  const currentNodeIds = new Set(nodes.value.map((node) => node.id));
+  const restoredOutputs = new Map<string, NodeOutput>();
+  const cachedOutputs = workbookStore.activeSheet?.kind !== "trial"
+    ? workbookStore.activeSheet?.nodeOutputsCache
+    : null;
+
+  for (const [nodeId, output] of cachedOutputs ?? []) {
+    if (currentNodeIds.has(nodeId)) {
+      restoredOutputs.set(nodeId, output);
+    }
+  }
+
+  nodeOutputs.value = restoredOutputs;
+  hydrateNodeOutputsFromRunResults(workflowStore.lastExecutionResults as Record<string, unknown> | null);
 };
 
 watch(
@@ -1161,6 +1197,7 @@ const initializeWorkbook = async () => {
     await workbookStore.loadSheets(targetProjectId);
     restoreWorkflowDraftSnapshot();
     resetCanvasUi();
+    restoreNodeOutputsForActiveSheet();
 
     if (workflowStore.workflowWarnings.length > 0) {
       for (const warning of workflowStore.workflowWarnings) {
@@ -1220,6 +1257,7 @@ const switchWorkbookSheet = async (index: number) => {
     restoreWorkflowDraftSnapshot();
     if (workbookStore.activeSheet?.kind !== "trial") {
       resetCanvasUi();
+      restoreNodeOutputsForActiveSheet();
       
       const lastSelectedId = workbookStore.activeSheet?.lastSelectedNodeId;
       if (lastSelectedId) {
@@ -1227,11 +1265,6 @@ const switchWorkbookSheet = async (index: number) => {
         if (restoredNode) {
           selectedNode.value = restoredNode;
         }
-      }
-
-      // Restore cached outputs for this sheet
-      if (workbookStore.activeSheet?.nodeOutputsCache) {
-        nodeOutputs.value = new Map(workbookStore.activeSheet.nodeOutputsCache);
       }
     }
     if (wasDirty) {
@@ -1375,8 +1408,26 @@ const closeActiveTrialTab = async () => {
 };
 
 const saveTrialParams = async (nodeId: string, params: Record<string, unknown>) => {
-  workflowStore.updateNode(nodeId, { params });
-  await closeActiveTrialTab();
+  try {
+    workflowStore.updateNode(nodeId, { params });
+    if (workflowStore.hasUnsavedChanges && workflowStore.workflowId !== null) {
+      await workflowStore.saveWorkflow({ createVersion: false });
+    }
+    toast.add({
+      severity: "success",
+      summary: "Saved",
+      detail: "Settings applied to the workflow",
+      life: 1500,
+    });
+    await closeActiveTrialTab();
+  } catch (err: unknown) {
+    toast.add({
+      severity: "error",
+      summary: "Save Failed",
+      detail: getErrorMessage(err, "Unable to save trial settings"),
+      life: 4000,
+    });
+  }
 };
 
 const exportToPython = async (mode: "sdk" | "standalone" = "sdk") => {

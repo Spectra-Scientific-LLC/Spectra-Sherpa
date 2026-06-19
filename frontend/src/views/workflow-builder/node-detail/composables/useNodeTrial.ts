@@ -6,6 +6,11 @@ import api from "@/api/client";
 export const STORAGE_KEY = "node_detail_data";
 export const BROADCAST_CHANNEL_NAME = "workflow_node_updates";
 
+interface ParamsAck {
+  applied: boolean;
+  reason?: string | null;
+}
+
 type AddLog = (
   type: "info" | "success" | "error" | "warn",
   message: string,
@@ -33,10 +38,19 @@ export function useNodeTrial({
 }: UseNodeTrialDeps) {
   const isExecuting = ref(false);
   const broadcastChannel = ref<BroadcastChannel | null>(null);
+  const pendingAcks = new Map<string, (ack: ParamsAck) => void>();
+  const completedAcks = new Map<string, ParamsAck>();
+  const issuedRequestIds = new Set<string>();
 
   const broadcastParamsUpdate = () => {
+    const requestId =
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `node-params-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    issuedRequestIds.add(requestId);
     const updateMessage = {
       type: "node_params_updated",
+      requestId,
       nodeId: nodeData.value?.id,
       nodeType: nodeData.value?.type,
       workflowId: nodeData.value?.workflowId ?? null,
@@ -74,6 +88,42 @@ export function useNodeTrial({
       // BroadcastChannel already delivered the params to the main tab.
       console.warn("[NodeDetailView] sessionStorage broadcast failed:", err);
     }
+
+    return requestId;
+  };
+
+  const waitForParamsAck = (requestId: string, timeoutMs = 2000): Promise<ParamsAck> =>
+    new Promise((resolve) => {
+      const completed = completedAcks.get(requestId);
+      if (completed) {
+        completedAcks.delete(requestId);
+        resolve(completed);
+        return;
+      }
+      const timeout = window.setTimeout(() => {
+        pendingAcks.delete(requestId);
+        resolve({ applied: false, reason: "timeout" });
+      }, timeoutMs);
+      pendingAcks.set(requestId, (ack) => {
+        window.clearTimeout(timeout);
+        resolve(ack);
+      });
+    });
+
+  const handleBroadcastAck = (event: MessageEvent) => {
+    const { type, requestId, applied, reason } = event.data || {};
+    if (type !== "node_params_applied" || typeof requestId !== "string") {
+      return;
+    }
+    const resolve = pendingAcks.get(requestId);
+    if (!resolve) {
+      if (issuedRequestIds.has(requestId)) {
+        completedAcks.set(requestId, { applied: Boolean(applied), reason });
+      }
+      return;
+    }
+    pendingAcks.delete(requestId);
+    resolve({ applied: Boolean(applied), reason });
   };
 
   const handleRunTrial = async () => {
@@ -217,12 +267,19 @@ export function useNodeTrial({
   onMounted(() => {
     try {
       broadcastChannel.value = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
+      broadcastChannel.value.onmessage = handleBroadcastAck;
     } catch (e) {
       console.warn("[NodeDetailView] BroadcastChannel not supported:", e);
     }
   });
 
   onUnmounted(() => {
+    for (const resolve of pendingAcks.values()) {
+      resolve({ applied: false, reason: "unmounted" });
+    }
+    pendingAcks.clear();
+    completedAcks.clear();
+    issuedRequestIds.clear();
     if (broadcastChannel.value) {
       broadcastChannel.value.close();
       broadcastChannel.value = null;
@@ -233,6 +290,7 @@ export function useNodeTrial({
     isExecuting,
     broadcastChannel,
     broadcastParamsUpdate,
+    waitForParamsAck,
     handleRunTrial,
   };
 }
