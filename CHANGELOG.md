@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.28] - 2026-06-19
+
+### Security
+
+- Updated the optional HITRAN/Jupyter lockfile path to `jupyter-server` 2.20.0
+  and made the public dependency audit hard-fail on vulnerable direct and
+  frontend runtime manifests, with reviewed `pip-audit` suppressions and
+  warning-mode coverage for optional all-extras dependency trees.
+
 ## [0.5.27] - 2026-06-17
 
 ### Added
