@@ -79,6 +79,11 @@ async def test_pcr_node_regression_fit():
     result = await node.run(X=X_dataset, y=y)
     outputs = result.outputs
 
+    output_ports = {port.name for port in node.metadata.output_ports or []}
+    assert {"y_pred", "y_true"}.issubset(output_ports)
+    assert outputs["y_pred"].shape == (X_dataset.shape[0], 1)
+    assert outputs["y_true"].shape == (X_dataset.shape[0], 1)
+
     scores_ds = outputs["default"]
     assert scores_ds.shape == (X_dataset.shape[0], 7)
     assert scores_ds.meta["r2"] > 0.8
