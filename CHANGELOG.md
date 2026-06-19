@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.29] - 2026-06-19
+
+### Fixed
+
+- Fixed workflow state retention so run readiness, Quick Plot outputs, and
+  Save-and-Exit parameter edits survive sheet switches, reloads, trial closes,
+  and popup detail edits.
+
 ## [0.5.28] - 2026-06-19
 
 ### Security
