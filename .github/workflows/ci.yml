@@ -249,7 +249,6 @@ jobs:
   security:
     name: Security Scan
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
@@ -258,25 +257,21 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Install scanners
-        run: pip install bandit pip-audit
+        run: pip install bandit pip-audit poetry poetry-plugin-export
 
       - name: Bandit (medium+ severity)
         run: bandit -r src/ -ll -q
 
-      - name: pip-audit (dependency CVEs)
-        run: |
-          pip install poetry poetry-plugin-export
-          poetry export -f requirements.txt --without-hashes --extras cloud -o /tmp/requirements.txt
-          # Starlette 1.0.1 fixes GHSA-86qp-5c8j-p5mr / CVE-2026-48710, but
-          # FastAPI currently constrains Starlette below 0.50.  SpectraSherpa
-          # mitigates the Host-header issue with TrustedHostMiddleware until
-          # FastAPI can consume the patched Starlette range.
-          pip-audit \
-            --ignore-vuln PYSEC-2026-161 \
-            --ignore-vuln CVE-2026-48710 \
-            --ignore-vuln GHSA-86qp-5c8j-p5mr \
-            -r /tmp/requirements.txt
+      - name: Dependency audit (public manifests)
+        run: python scripts/audit_dependencies.py --repo . --all-extras-mode warn
 
   docs:
     name: Docs Build & Hygiene

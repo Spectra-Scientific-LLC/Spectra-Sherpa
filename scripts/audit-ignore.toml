@@ -1,0 +1,15 @@
+# Reviewed pip-audit suppressions for the public Spectra-Sherpa dependency gate.
+#
+# Add entries only when an advisory is understood, cannot be fixed immediately,
+# and the release should proceed with a documented risk decision. Every entry
+# must include a non-empty id and reason; expires is optional but recommended.
+#
+# Example:
+#
+# [[pip-audit.ignore]]
+# id = "GHSA-xxxx-yyyy-zzzz"
+# reason = "Optional extra only; vulnerable code path is not used by Spectra-Sherpa."
+# expires = "2026-07-31"
+
+[pip-audit]
+ignore = []
