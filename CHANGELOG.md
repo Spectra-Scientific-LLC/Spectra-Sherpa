@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.30] - 2026-06-26
+
+### Stable Release
+
+- Marked Spectra Sherpa OSS `0.5.30` as the stable public release, including
+  the production/stable package classifier for PyPI metadata.
+
+### Security
+
+- Updated the optional HITRAN/Jupyter lockfile path to `jupyterlab` 4.5.9,
+  fixing GHSA-vmhf-c436-hxj4 in the public OSS `poetry.lock` manifest.
+
+### Release Hygiene
+
+- Disabled automatic Dependabot version-update pull requests for the OSS
+  Python, frontend, and GitHub Actions surfaces so dependency upgrades are
+  handled through intentional compatibility-reviewed releases while GitHub
+  Dependabot alerts can remain enabled for visibility.
+
 ## [0.5.29] - 2026-06-19
 
 ### Fixed

@@ -13,3 +13,4 @@ please open an issue — attribution is a release gate, not an
 afterthought, and a missing name is a bug.
 
 ## People
+- dependabot[bot] <49699333+dependabot[bot]@users.noreply.github.com>
