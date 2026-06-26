@@ -393,10 +393,10 @@ const csvResultShape = computed(() => {
 const csvAxisLabel = computed(() => {
   const axis = csvPlan.value?.axis;
   if (!axis) return "not detected";
-  const title = axis.title || "Axis";
+  const title = axis.title || "";
   const units = axis.units ? ` (${axis.units})` : "";
   const column = axis.column ? ` · ${axis.column}` : "";
-  return `${title}${units}${column}`;
+  return `${title}${units}${column}` || "not detected";
 });
 const csvTargetLabel = computed(() => {
   const target = csvPlan.value?.target;
@@ -607,9 +607,9 @@ const previewPlotData = computed(() => {
 
 const previewPlotLayout = computed(() => {
   const current = matrix.value;
-  const xTitle = localOverrides.x_title || current?.x_title || "Feature";
+  const xTitle = localOverrides.x_title || current?.x_title || "";
   const xUnits = localOverrides.x_units || current?.x_units || "";
-  const yTitle = localOverrides.y_title || current?.y_title || "Intensity";
+  const yTitle = localOverrides.y_title || current?.y_title || "";
   const isSpectra = !!current && (current.is_spectra || current.data_role === "X_spectra");
   return {
     title: { text: isSpectra ? "Spectra Preview" : "Feature Distributions", font: { size: 14 } },

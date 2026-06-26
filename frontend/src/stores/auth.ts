@@ -23,6 +23,7 @@ interface UserCapabilities {
 interface User {
     id: number
     username: string
+    principalKind?: 'human' | 'service' | string
     is_active?: boolean
     /**
      * Per-user capability flags. Absent in local mode (OSS Actor

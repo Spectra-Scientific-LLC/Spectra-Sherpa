@@ -13,6 +13,10 @@ function setScope(userId: number, projectId: number) {
 }
 
 describe("synthesis store state retention", () => {
+  function oversizedAxis(length = 90_000) {
+    return Array.from({ length }, (_, index) => 1.23456789012345e100 + index);
+  }
+
   beforeEach(() => {
     localStorage.clear();
     setActivePinia(createPinia());
@@ -93,7 +97,7 @@ describe("synthesis store state retention", () => {
   it("trims oversized preview data before saving to browser storage", () => {
     setScope(7, 101);
     const store = useSynthesisStore();
-    const largeAxis = Array.from({ length: 450_000 }, (_, index) => index);
+    const largeAxis = oversizedAxis();
     store.previewResult = {
       source: "nist_quant_ir",
       wavenumber: largeAxis,
@@ -117,7 +121,7 @@ describe("synthesis store state retention", () => {
   it("marks loaded spectra as refetchable when storage must trim spectra", () => {
     setScope(7, 101);
     const store = useSynthesisStore();
-    const largeAxis = Array.from({ length: 450_000 }, (_, index) => index);
+    const largeAxis = oversizedAxis();
     store.selectedComponents = [
       {
         id: "nist_quant_ir:co2",

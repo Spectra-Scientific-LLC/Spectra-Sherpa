@@ -64,7 +64,7 @@ const topSpacerHeight = computed(() => startRow.value * rowHeight);
 const bottomSpacerHeight = computed(() => Math.max(0, props.matrix.matrix.length - endRow.value) * rowHeight);
 const xTitle = computed(() => {
   if (props.matrix.x_title && props.matrix.x_units) return `${props.matrix.x_title} (${props.matrix.x_units})`;
-  return props.matrix.x_title || "Feature";
+  return props.matrix.x_title || "";
 });
 
 function onScroll() {

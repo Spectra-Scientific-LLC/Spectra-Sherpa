@@ -837,7 +837,7 @@ export const useDataStore = defineStore("data", () => {
         source: string;
         wavenumber: number[];
         intensity: number[];
-        y_quantity: string;
+        y_quantity?: string | null;
         y_units?: string | null;
         resolution_cm1?: number | null;
         apodization?: string | null;

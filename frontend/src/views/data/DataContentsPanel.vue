@@ -506,16 +506,13 @@ const previewPlotData = computed(() => {
 });
 
 const xAxisLabel = computed(() => {
-  const { x_title, x_units, spectral_technique } = sdMeta.value;
+  const { x_title, x_units } = sdMeta.value;
   if (x_title && x_units) return `${x_title} (${x_units})`;
   if (x_title) return x_title;
-  const tech = (spectral_technique ?? "").toUpperCase();
-  if (tech === "IR" || tech === "NIR") return "Wavenumber (cm\u207B\u00B9)";
-  if (tech === "RAMAN") return "Raman Shift (cm\u207B\u00B9)";
-  return "Feature";
+  return "";
 });
 
-const yAxisLabel = computed(() => sdMeta.value.data_quantity || sdMeta.value.value_units || "Intensity");
+const yAxisLabel = computed(() => sdMeta.value.data_quantity || sdMeta.value.value_units || "");
 
 const previewPlotLayout = computed(() => ({
   title: { text: "Spectra Preview", font: { size: 14 } },
@@ -546,7 +543,7 @@ const boxPlotData = computed(() => {
 const boxPlotLayout = computed(() => ({
   title: { text: "Property Distributions", font: { size: 14 } },
   xaxis: { title: "Property" },
-  yaxis: { title: sdMeta.value.value_units || sdMeta.value.x_title || "Value" },
+  yaxis: { title: sdMeta.value.value_units || sdMeta.value.x_title || "" },
   autosize: true,
   height: 400,
   margin: { t: 40, r: 20, b: 50, l: 60 },
@@ -579,8 +576,8 @@ const catalogPreviewPlotLayout = computed(() => {
   const xUnits = editXUnits.value || info?.x_units || "";
   return {
     title: { text: "Spectra Preview", font: { size: 14 } },
-    xaxis: { title: xTitle && xUnits ? `${xTitle} (${xUnits})` : xTitle || "Feature", autorange: true as const },
-    yaxis: { title: editYTitle.value || info?.data_quantity || "Intensity" },
+    xaxis: { title: xTitle && xUnits ? `${xTitle} (${xUnits})` : xTitle, autorange: true as const },
+    yaxis: { title: editYTitle.value || info?.data_quantity || "" },
     autosize: true,
     height: 380,
     margin: { t: 40, r: 20, b: 50, l: 60 },
@@ -608,7 +605,7 @@ const catalogBoxPlotData = computed(() => {
 const catalogBoxPlotLayout = computed(() => ({
   title: { text: "Feature Distributions", font: { size: 14 } },
   xaxis: { title: "Feature" },
-  yaxis: { title: editYTitle.value || "Value" },
+  yaxis: { title: editYTitle.value || "" },
   autosize: true,
   height: 400,
   margin: { t: 40, r: 20, b: 80, l: 60 },

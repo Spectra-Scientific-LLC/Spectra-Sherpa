@@ -1811,7 +1811,9 @@ const activeLibraryPreviewMeta = computed(() => {
   const n = spectrum.wavenumber.length;
   const min = Math.min(...spectrum.wavenumber);
   const max = Math.max(...spectrum.wavenumber);
-  return `${n} pts · ${min.toFixed(2)}-${max.toFixed(2)} cm^-1 · ${spectrum.y_quantity}`;
+  return [ `${n} pts`, `${min.toFixed(2)}-${max.toFixed(2)} cm^-1`, spectrum.y_quantity ]
+    .filter((part): part is string => typeof part === "string" && part.length > 0)
+    .join(" · ");
 });
 
 const libraryPreviewPlotData = computed(() => {
@@ -2087,8 +2089,8 @@ function nistSpectrumToPayload(entry: LibraryRow, spectrum: NistLibrarySpectrumR
     source: "nist_quant_ir",
     wavenumber: spectrum.x,
     intensity: spectrum.y,
-    y_quantity: spectrum.y_title || "Intensity",
-    y_units: spectrum.y_units || "",
+    y_quantity: spectrum.y_title || null,
+    y_units: spectrum.y_units || null,
     resolution_cm1: null,
     apodization: null,
     cached: true,
