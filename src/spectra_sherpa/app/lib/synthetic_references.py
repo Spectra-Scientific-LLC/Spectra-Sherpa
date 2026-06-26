@@ -67,6 +67,13 @@ def _read_json_field(data: dict[str, Any], key: str) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def load_synthetic_reference_dataset(name: str) -> dict[str, Any]:
     path = synthetic_reference_path(name)
     if not path.exists():
@@ -93,6 +100,18 @@ def load_synthetic_reference_as_sherpa(name: str) -> SherpaDataset:
     S = np.asarray(data.get("S"), dtype=float)
 
     recipe = _read_json_field(data, "recipe_json")
+    x_title = _optional_text(metadata.get("x_title")) or _optional_text(catalog.get("x_title"))
+    x_units = (
+        _optional_text(metadata.get("x_units"))
+        or _optional_text(data.get("feature_units"))
+        or _optional_text(catalog.get("x_units"))
+    )
+    value_units = (
+        _optional_text(metadata.get("value_units"))
+        or _optional_text(data.get("units"))
+        or _optional_text(catalog.get("value_units"))
+    )
+    data_quantity = _optional_text(metadata.get("data_quantity")) or _optional_text(catalog.get("data_quantity"))
     extra: dict[str, Any] = {
         "source": "synthetic_reference",
         "reference_name": name,
@@ -101,10 +120,8 @@ def load_synthetic_reference_as_sherpa(name: str) -> SherpaDataset:
         "ground_truth.spectra_names": target_names,
         "ground_truth.spectra_units": ground_truth.get("S_units"),
         "ground_truth.spectra_x": wavenumber.tolist(),
-        "ground_truth.spectra_x_title": str(metadata.get("x_title") or catalog.get("x_title") or "Wavenumber"),
-        "ground_truth.spectra_x_units": str(
-            metadata.get("x_units") or data.get("feature_units") or catalog.get("x_units") or "cm^-1"
-        ),
+        "ground_truth.spectra_x_title": x_title,
+        "ground_truth.spectra_x_units": x_units,
         "component_ids": (
             ground_truth.get("component_ids") if isinstance(ground_truth.get("component_ids"), list) else None
         ),
@@ -114,8 +131,8 @@ def load_synthetic_reference_as_sherpa(name: str) -> SherpaDataset:
         X=X,
         feature_axis=SpectralAxis(
             values=wavenumber,
-            title=str(metadata.get("x_title") or catalog.get("x_title") or "Wavenumber"),
-            units=str(metadata.get("x_units") or data.get("feature_units") or catalog.get("x_units") or "cm^-1"),
+            title=x_title,
+            units=x_units,
         ),
         sample_axis=SampleAxis(
             labels=sample_labels if sample_labels else [f"sample_{index + 1}" for index in range(X.shape[0])],
@@ -126,14 +143,14 @@ def load_synthetic_reference_as_sherpa(name: str) -> SherpaDataset:
             target_type="continuous",
             target_name="synthetic concentration",
             target_names=target_names,
-            target_units=str(data.get("concentration_units") or "ppm"),
+            target_units=_optional_text(data.get("concentration_units")),
         ),
         extra=extra,
         title=str(metadata.get("title") or catalog["label"]),
-        units=str(metadata.get("value_units") or data.get("units") or catalog.get("value_units") or "absorbance"),
+        units=value_units,
         domain=DomainContext(
-            technique=str(metadata.get("spectral_technique") or catalog.get("technique") or "FTIR"),
-            data_quantity=str(metadata.get("data_quantity") or catalog.get("data_quantity") or "Absorbance"),
+            technique=_optional_text(metadata.get("spectral_technique")) or _optional_text(catalog.get("technique")),
+            data_quantity=data_quantity,
         ),
         data_role=str(metadata.get("data_role") or "X_spectra"),
         is_time_series=bool(metadata.get("is_time_series", False)),

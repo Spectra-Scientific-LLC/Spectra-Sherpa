@@ -39,8 +39,8 @@ class SynthesisSpectrumResponse(BaseModel):
     source: SynthesisSource
     wavenumber: list[float] = Field(..., min_length=2, max_length=200_000)
     intensity: list[float] = Field(..., min_length=2, max_length=200_000)
-    y_quantity: str
-    y_units: str
+    y_quantity: str | None = None
+    y_units: str | None = None
     resolution_cm1: float | None = None
     apodization: str | None = None
     cached: bool = False
@@ -71,8 +71,8 @@ class SynthesisSpectrum(BaseModel):
     source: SynthesisSource
     wavenumber: list[float] = Field(..., min_length=2, max_length=200_000)
     intensity: list[float] = Field(..., min_length=2, max_length=200_000)
-    units: str = "absorbance"
-    y_quantity: str = "absorption_coefficient"
+    units: str | None = None
+    y_quantity: str | None = None
     y_units: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
@@ -80,7 +80,7 @@ class SynthesisSpectrum(BaseModel):
     def _same_length(self) -> SynthesisSpectrum:
         if len(self.wavenumber) != len(self.intensity):
             raise ValueError("wavenumber and intensity must have the same length")
-        quantity = self.y_quantity.strip().lower()
+        quantity = (self.y_quantity or "").strip().lower()
         units = (self.y_units or "").strip().lower().replace("µ", "u")
         if self.source == "nist_quant_ir":
             if quantity not in {"absorption_coefficient", "decadic_absorption_coefficient"}:

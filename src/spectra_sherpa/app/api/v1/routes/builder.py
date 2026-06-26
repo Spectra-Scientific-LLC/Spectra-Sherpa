@@ -279,33 +279,33 @@ def _load_synthetic_npz_as_sherpa(path: Path) -> Any:
     except (ValueError, TypeError):
         pass
 
-    title = str(embedded_meta.get("title") or path.stem)
-    value_units = str(embedded_meta.get("value_units") or data.get("units") or "absorbance")
+    title = _optional_text(embedded_meta.get("title")) or path.stem
+    value_units = _optional_text(embedded_meta.get("value_units")) or _optional_text(data.get("units"))
+    x_title = _optional_text(embedded_meta.get("x_title"))
+    x_units = _optional_text(embedded_meta.get("x_units")) or _optional_text(data.get("feature_units"))
+    y_title = _optional_text(embedded_meta.get("y_title"))
+    data_quantity = _optional_text(embedded_meta.get("data_quantity"))
     return SherpaDataset(
         X=X,
         feature_axis=SpectralAxis(
             values=wavenumber,
-            title=str(embedded_meta.get("x_title") or "Wavenumber"),
-            units=str(embedded_meta.get("x_units") or data.get("feature_units") or "cm^-1"),
+            title=x_title,
+            units=x_units,
         ),
-        sample_axis=(
-            SampleAxis(labels=sample_labels, title=str(embedded_meta.get("y_title") or "Sample"))
-            if sample_labels
-            else None
-        ),
+        sample_axis=(SampleAxis(labels=sample_labels, title=y_title) if sample_labels else None),
         target=C,
         target_context=TargetContext(
             target_type="continuous",
             target_name="synthetic concentration",
             target_names=target_names,
-            target_units=str(data.get("concentration_units") or "ppm"),
+            target_units=_optional_text(data.get("concentration_units")),
         ),
         extra=extra,
         title=title,
         units=value_units,
         domain=DomainContext(
-            technique=str(embedded_meta.get("spectral_technique") or "FTIR"),
-            data_quantity=str(embedded_meta.get("data_quantity") or "Absorbance"),
+            technique=_optional_text(embedded_meta.get("spectral_technique")),
+            data_quantity=data_quantity,
         ),
         data_role=str(embedded_meta.get("data_role") or "X_spectra"),
         is_time_series=bool(embedded_meta.get("is_time_series", False)),
@@ -354,6 +354,13 @@ def _json_safe_matrix(values: np.ndarray) -> list[list[float | int | str | None]
     if np.issubdtype(values.dtype, np.number):
         return np.where(np.isfinite(values), values, None).tolist()
     return [[_json_safe_number(cell) for cell in row] for row in values.tolist()]
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _catalog_source_files(entry: dict[str, Any]) -> list[str]:
@@ -525,16 +532,19 @@ def _matrix_response(dataset: SherpaDataset, payload: DataMatrixRequest) -> dict
     finite = X[np.isfinite(X)]
     missing_total = int(X.size - finite.size)
 
-    x_title = getattr(feature_axis, "title", None) if feature_axis is not None else None
-    x_units = getattr(feature_axis, "units", None) if feature_axis is not None else None
-    y_title = getattr(sample_axis, "title", None) if sample_axis is not None else None
+    x_title = _optional_text(getattr(feature_axis, "title", None)) if feature_axis is not None else None
+    x_units = _optional_text(getattr(feature_axis, "units", None)) if feature_axis is not None else None
+    if feature_axis is None and total_cols:
+        x_title = "Index"
+    y_title = _optional_text(dataset.meta.get("data_quantity")) if isinstance(dataset.meta, dict) else None
+    y_title = y_title or _optional_text(dataset.domain.data_quantity)
 
     return {
         "shape": [total_rows, total_cols],
         "shape_label": "samples x features",
-        "x_title": x_title or ("Wavenumber" if dataset.data_role == "X_spectra" else "Feature"),
+        "x_title": x_title,
         "x_units": x_units,
-        "y_title": y_title or "Sample",
+        "y_title": y_title,
         "data_role": dataset.data_role,
         "data_modality": dataset.data_modality,
         "is_spectra": dataset.data_role == "X_spectra",
@@ -580,15 +590,16 @@ def _reference_dataset_as_sherpa(source: str, name: str) -> SherpaDataset:
             raise HTTPException(status_code=404, detail=f"Dataset '{name}' not found")
         result = load_eigenvector_dataset(name)
         catalog = result["catalog_entry"]
+        has_wavelengths = result.get("wavelengths") is not None
         return SherpaDataset(
             X=np.asarray(result["spectra"], dtype=np.float64),
             feature_axis=SpectralAxis(
                 values=(
                     np.asarray(result["wavelengths"], dtype=np.float64)
-                    if result.get("wavelengths") is not None
+                    if has_wavelengths
                     else np.arange(result["spectra"].shape[1], dtype=np.float64)
                 ),
-                title=catalog.get("x_title") or "Feature",
+                title=catalog.get("x_title") or (None if has_wavelengths else "Index"),
                 units=catalog.get("x_units"),
             ),
             sample_axis=SampleAxis(

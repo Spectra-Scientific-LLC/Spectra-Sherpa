@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -334,6 +335,11 @@ def batch_predict_env(monkeypatch, reset_quota_provider):
         return SimpleNamespace(nodes=[], versions=[], project_id=1)
 
     monkeypatch.setattr(bp, "load_workflow_with_graph", _load_wf)
+
+    async def _validate_folder(_session, folder_path, _user_id):
+        return Path(folder_path)
+
+    monkeypatch.setattr(bp, "validate_user_folder_path", _validate_folder)
 
     async def _run_batch(*_a, **_k):  # pragma: no cover - must not be reached
         raise AssertionError("run_batch_prediction reached unexpectedly")

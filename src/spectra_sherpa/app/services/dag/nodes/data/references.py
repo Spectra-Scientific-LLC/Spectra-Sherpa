@@ -21,6 +21,13 @@ from ...node_base import Node, NodeMetadata, NodeParameter, register_node
 logger = logging.getLogger(__name__)
 
 
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 @register_node
 class NISTLibraryNode(Node):
     """
@@ -96,14 +103,17 @@ class NISTLibraryNode(Node):
                 elif "nir" in data_type_lower or "near" in data_type_lower:
                     technique = "NIR"
 
-                # Map JCAMP yunits to data_quantity
-                yunits_lower = jcamp.yunits.lower()
-                if "transmit" in yunits_lower:
+                # Map JCAMP yunits to data_quantity only when the source provides it.
+                yunits = _optional_text(jcamp.yunits)
+                yunits_lower = yunits.lower() if yunits is not None else ""
+                if yunits is None:
+                    data_quantity = None
+                elif "transmit" in yunits_lower:
                     data_quantity = "Transmittance"
                 elif "absorb" in yunits_lower:
                     data_quantity = "Absorbance"
                 else:
-                    data_quantity = jcamp.yunits
+                    data_quantity = yunits
 
                 xunits = jcamp.xunits or None
                 xunits_lower = (xunits or "").lower()
@@ -111,8 +121,15 @@ class NISTLibraryNode(Node):
                     axis_title = "Raman Shift"
                 elif "nm" in xunits_lower or "micrometer" in xunits_lower or "um" in xunits_lower:
                     axis_title = "Wavelength"
-                else:
+                elif (
+                    "cm-1" in xunits_lower
+                    or "cm^-1" in xunits_lower
+                    or "cm⁻¹" in xunits_lower
+                    or "1/cm" in xunits_lower
+                ):
                     axis_title = "Wavenumber"
+                else:
+                    axis_title = None
 
                 # Build SherpaDataset directly
                 dataset = SherpaDataset(
@@ -125,7 +142,7 @@ class NISTLibraryNode(Node):
                         expected_units=xunits,
                     ),
                     title=entry.compound_name,
-                    units=data_quantity,
+                    units=yunits,
                 )
 
                 # Store NIST/JCAMP metadata in extra namespace

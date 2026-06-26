@@ -17,7 +17,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from spectra_sherpa.app import models  # noqa: F401  # Ensure metadata is populated for create_all paths.
@@ -84,6 +84,8 @@ class TestBootstrapFreshDB:
         # Verify tables exist
         inspector = sa_inspect(sync_engine)
         assert "user" in inspector.get_table_names()
+        user_columns = {column["name"] for column in inspector.get_columns("user")}
+        assert "principal_kind" in user_columns
 
         # Step 2: alembic upgrade head (should not crash)
         _run_upgrade_head(async_url)
@@ -155,6 +157,8 @@ class TestBootstrapTracked:
         inspector = sa_inspect(sync_engine)
         assert "alembic_version" in inspector.get_table_names()
         assert "user" in inspector.get_table_names()
+        user_columns = {column["name"] for column in inspector.get_columns("user")}
+        assert "principal_kind" in user_columns
 
         # custom_algo is created then dropped during the migration chain
         assert "custom_algo" not in inspector.get_table_names()
@@ -275,7 +279,7 @@ class TestTrackedLegacyAuthSplit:
 
         with Session(sync_engine) as session:
             session.add(User(username="before-upgrade"))
-            with pytest.raises(IntegrityError):
+            with pytest.raises(SQLAlchemyError):
                 session.flush()
             session.rollback()
 
@@ -287,6 +291,7 @@ class TestTrackedLegacyAuthSplit:
         assert columns["is_superuser"]["nullable"] is True
         assert columns["login_count"]["nullable"] is True
         assert columns["email"]["nullable"] is True
+        assert columns["principal_kind"]["nullable"] is False
 
         with Session(sync_engine) as session:
             user = User(username="after-upgrade")
@@ -295,7 +300,7 @@ class TestTrackedLegacyAuthSplit:
             row = (
                 session.execute(
                     text("""
-                    SELECT username, password_hash, is_superuser, login_count
+                    SELECT username, principal_kind, password_hash, is_superuser, login_count
                     FROM "user"
                     WHERE username = :username
                     """),
@@ -305,6 +310,7 @@ class TestTrackedLegacyAuthSplit:
                 .one()
             )
             assert row["username"] == "after-upgrade"
+            assert row["principal_kind"] == "human"
             assert row["password_hash"] is None
             assert row["is_superuser"] in (None, 0, False)
             assert row["login_count"] in (None, 0)
@@ -325,6 +331,7 @@ class TestLegacyAuthDefaults:
                 CREATE TABLE "user" (
                     id INTEGER PRIMARY KEY,
                     username VARCHAR(100) NOT NULL UNIQUE,
+                    principal_kind VARCHAR(32) NOT NULL DEFAULT 'human',
                     password_hash VARCHAR(255),
                     is_superuser BOOLEAN NOT NULL DEFAULT 0,
                     api_key_hash VARCHAR(255),
@@ -344,7 +351,7 @@ class TestLegacyAuthDefaults:
             row = (
                 session.execute(
                     text("""
-                    SELECT password_hash, is_superuser, login_count
+                    SELECT principal_kind, password_hash, is_superuser, login_count
                     FROM "user"
                     WHERE username = :username
                     """),
@@ -353,6 +360,7 @@ class TestLegacyAuthDefaults:
                 .mappings()
                 .one()
             )
+            assert row["principal_kind"] == "human"
             assert row["password_hash"] is None
             assert row["is_superuser"] == 0
             assert row["login_count"] == 0

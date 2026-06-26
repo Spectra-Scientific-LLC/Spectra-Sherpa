@@ -174,7 +174,7 @@ def test_unknown_units_are_not_relabelled_as_absorbance():
         ensure_absorbance(ds)
 
 
-def test_matrix_csv_keeps_unknown_numeric_axis_generic(tmp_path):
+def test_matrix_csv_leaves_unknown_numeric_axis_blank(tmp_path):
     from spectra_sherpa.app.lib.io import load_csv_as_sherpa
 
     path = tmp_path / "generic_sensor_export.csv"
@@ -182,11 +182,11 @@ def test_matrix_csv_keeps_unknown_numeric_axis_generic(tmp_path):
 
     ds = load_csv_as_sherpa(path)
 
-    assert ds.feature_axis.title == "Spectral Axis"
+    assert ds.feature_axis.title is None
     assert ds.feature_axis.units is None
 
 
-def test_matrix_csv_infers_nir_wavelength_axis_from_filename(tmp_path):
+def test_matrix_csv_does_not_infer_axis_from_filename(tmp_path):
     from spectra_sherpa.app.lib.io import load_csv_as_sherpa
 
     path = tmp_path / "diesel_nir.csv"
@@ -194,8 +194,8 @@ def test_matrix_csv_infers_nir_wavelength_axis_from_filename(tmp_path):
 
     ds = load_csv_as_sherpa(path)
 
-    assert ds.feature_axis.title == "Wavelength"
-    assert ds.feature_axis.units == "nm"
+    assert ds.feature_axis.title is None
+    assert ds.feature_axis.units is None
 
 
 def test_interpolation_rejects_out_of_range_target_grid():

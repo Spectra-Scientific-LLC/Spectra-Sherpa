@@ -46,6 +46,13 @@ from ._utils import extract_dataset_from_result, remove_index_columns
 logger = logging.getLogger(__name__)
 
 
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 @dataclass
 class _LoadedDataset:
     dataset: Any
@@ -596,8 +603,10 @@ class MyDatasetNode(Node):
         dataset.set_extra("ground_truth.spectra_units", item.ground_truth_spectra_units)
         if item.ground_truth_spectra_x is not None:
             dataset.set_extra("ground_truth.spectra_x", np.asarray(item.ground_truth_spectra_x, dtype=float).tolist())
-        dataset.set_extra("ground_truth.spectra_x_title", item.ground_truth_spectra_x_title or "Wavenumber")
-        dataset.set_extra("ground_truth.spectra_x_units", item.ground_truth_spectra_x_units or "cm^-1")
+        if item.ground_truth_spectra_x_title is not None:
+            dataset.set_extra("ground_truth.spectra_x_title", item.ground_truth_spectra_x_title)
+        if item.ground_truth_spectra_x_units is not None:
+            dataset.set_extra("ground_truth.spectra_x_units", item.ground_truth_spectra_x_units)
 
     @staticmethod
     def _apply_loaded_overrides(dataset: SherpaDataset, loaded: list[_LoadedDataset]) -> SherpaDataset:
@@ -1040,13 +1049,13 @@ def _load_synthesis_npz_as_loaded_dataset(file_path: str, *, file_name: str | No
         file_path=file_path,
         embedded_target_names=target_names,
         embedded_target_data=np.asarray(payload["C"], dtype=np.float64),
-        embedded_target_units=str(payload.get("concentration_units") or "ppm"),
+        embedded_target_units=_optional_text(payload.get("concentration_units")),
         ground_truth_spectra=np.asarray(payload["S"], dtype=np.float64),
         ground_truth_spectra_names=target_names,
         ground_truth_spectra_units=ground_truth.get("S_units"),
         ground_truth_spectra_x=np.asarray(payload["wavenumber"], dtype=np.float64),
-        ground_truth_spectra_x_title=str(payload.get("metadata", {}).get("x_title") or "Wavenumber"),
-        ground_truth_spectra_x_units=str(payload.get("feature_units") or "cm^-1"),
+        ground_truth_spectra_x_title=_optional_text(payload.get("metadata", {}).get("x_title")),
+        ground_truth_spectra_x_units=_optional_text(payload.get("feature_units")),
     )
 
 
@@ -1055,20 +1064,24 @@ def _synthesis_npz_payload_to_nddataset(file_path: str, payload: dict[str, Any])
     embedded_meta = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
     dataset = scp.NDDataset(data)
     dataset.title = str(embedded_meta.get("title") or Path(file_path).stem)
-    value_units = embedded_meta.get("value_units") or payload.get("units") or "absorbance"
-    dataset.units = value_units
+    value_units = _optional_text(embedded_meta.get("value_units")) or _optional_text(payload.get("units"))
+    if value_units is not None:
+        dataset.units = value_units
     labels = payload.get("sample_labels") or [f"sample_{i + 1:03d}" for i in range(data.shape[0])]
     dataset.set_coordset(
-        y=scp.Coord(np.arange(data.shape[0]), title=str(embedded_meta.get("y_title") or "Sample"), labels=labels),
+        y=scp.Coord(np.arange(data.shape[0]), title=_optional_text(embedded_meta.get("y_title")), labels=labels),
         x=scp.Coord(
             np.asarray(payload["wavenumber"], dtype=np.float64),
-            title=str(embedded_meta.get("x_title") or "Wavenumber"),
-            units=embedded_meta.get("x_units") or payload.get("feature_units") or "cm^-1",
+            title=_optional_text(embedded_meta.get("x_title")),
+            units=_optional_text(embedded_meta.get("x_units")) or _optional_text(payload.get("feature_units")),
         ),
     )
     dataset.meta["data_role"] = embedded_meta.get("data_role") or "X_spectra"
-    dataset.meta["data_quantity"] = embedded_meta.get("data_quantity") or "Absorbance"
-    dataset.meta["value_units_label"] = str(value_units)
+    if embedded_meta.get("data_quantity") is not None:
+        dataset.meta["data_quantity"] = embedded_meta["data_quantity"]
+    if value_units is not None:
+        dataset.meta["value_units"] = value_units
+        dataset.meta["value_units_label"] = value_units
     dataset.meta["is_time_series"] = bool(embedded_meta.get("is_time_series", False))
     meta = SpectraMeta(
         provenance=DataProvenance(

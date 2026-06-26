@@ -3,6 +3,7 @@ from pydantic import BaseModel, ConfigDict
 
 class UserBase(BaseModel):
     username: str | None = None
+    principal_kind: str = "human"
     is_active: bool = True
 
 

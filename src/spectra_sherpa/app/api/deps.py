@@ -23,7 +23,7 @@ from spectra_sherpa.app.contracts.auth_resolver import (
     get_extra_user_api_key_authenticator,
 )
 from spectra_sherpa.app.db.session import async_session
-from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.user import PRINCIPAL_KIND_HUMAN, User
 
 
 def invalidate_api_key_cache(api_key: Optional[str] = None) -> None:
@@ -55,7 +55,7 @@ async def _get_or_create_local_user(session: AsyncSession) -> User:
     result = await session.execute(select(User).order_by(User.id).limit(1))
     user = cast(Optional[User], result.scalar_one_or_none())
     if not user:
-        user = User(username="local")
+        user = User(username="local", principal_kind=PRINCIPAL_KIND_HUMAN)
         session.add(user)
         await session.commit()
         await session.refresh(user)

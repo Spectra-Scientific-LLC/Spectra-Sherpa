@@ -16,7 +16,7 @@ from spectra_sherpa.app.api.deps import (
     require_project,
     reserve_demo_upload_quota_or_429,
 )
-from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.lib.data_formats import ensure_reader_available
 from spectra_sherpa.app.models.exp_version import ExpVersion
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
@@ -59,6 +59,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/experiments")
 
 
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 async def _require_experiment(session: AsyncSession, experiment_id: int, user_id: int):
     """Load experiment via service layer with ownership check."""
     experiment = await get_experiment(session, experiment_id)
@@ -86,8 +93,8 @@ def _experiment_file_summary(experiment_id: int, file_record: ExperimentFile) ->
                 "n_samples": int(X.shape[0]),
                 "n_features": int(X.shape[1]),
                 "data_role": str(metadata.get("data_role") or "X_spectra"),
-                "x_title": str(metadata.get("x_title") or "Wavenumber"),
-                "x_units": str(metadata.get("x_units") or payload.get("feature_units") or "cm^-1"),
+                "x_title": _optional_text(metadata.get("x_title")),
+                "x_units": _optional_text(metadata.get("x_units")) or _optional_text(payload.get("feature_units")),
                 "is_spectra": True,
             }
         except Exception:
@@ -286,6 +293,12 @@ async def upload_experiment_file(
         rel_path = saved_path.relative_to(exp_dir).as_posix()
         file_size = saved_path.stat().st_size
         file_type = saved_path.suffix.lstrip(".") or None
+        if app_config.site_profile == "pro":
+            from spectra_sherpa.app.contracts.hot_storage import get_hot_storage_checker
+
+            checker = get_hot_storage_checker()
+            if checker is not None:
+                await checker(session=session, user_id=user_id, incoming_bytes=file_size)
 
         try:
             prepared = PreparedDataOverrides.from_mapping(

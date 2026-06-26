@@ -94,7 +94,7 @@ class LoadedLibrarySpectrum(BaseModel):
     source: str
     wavenumber: list[float] = Field(min_length=2, max_length=50_000)
     intensity: list[float] = Field(min_length=2, max_length=50_000)
-    y_quantity: str = "Intensity"
+    y_quantity: str | None = None
     y_units: str | None = None
     resolution_cm1: float | None = None
     apodization: str | None = None
@@ -194,17 +194,19 @@ class _LibrarySpectrum(BaseModel):
     source: str
     x: list[float]
     y: list[float]
-    x_title: str = "Wavenumber"
-    x_units: str | None = "cm-1"
-    y_title: str = "Intensity"
+    x_title: str | None = None
+    x_units: str | None = None
+    y_title: str | None = None
     y_units: str | None = None
     metadata: dict[str, str | int | float | None] = Field(default_factory=dict)
 
 
-def _axis_title_from_units(units: str | None, *, fallback: str = "Wavenumber") -> str:
+def _axis_title_from_units(units: str | None, *, fallback: str | None = None) -> str | None:
     text = (units or "").lower()
     if "nm" in text or "micrometer" in text or "um" in text or "µm" in text:
         return "Wavelength"
+    if "cm-1" in text or "cm^-1" in text or "cm⁻¹" in text or "1/cm" in text:
+        return "Wavenumber"
     return fallback
 
 
@@ -213,15 +215,17 @@ def _load_nist_library_spectrum(entry: NistLibrary) -> _LibrarySpectrum:
 
     source = _library_source_path(entry.file_path)
     jcamp = read_jcamp(str(source))
-    yunits = jcamp.yunits or "Intensity"
-    yunits_lower = yunits.lower()
-    if "transmit" in yunits_lower:
+    yunits = jcamp.yunits or None
+    yunits_lower = yunits.lower() if yunits is not None else ""
+    if yunits is None:
+        y_title = None
+    elif "transmit" in yunits_lower:
         y_title = "Transmittance"
     elif "absorb" in yunits_lower:
         y_title = "Absorbance"
     else:
         y_title = yunits
-    axis_title = _axis_title_from_units(jcamp.xunits, fallback="Wavenumber")
+    axis_title = _axis_title_from_units(jcamp.xunits)
     return _LibrarySpectrum(
         component_id=f"nist:{entry.id}",
         name=entry.compound_name,
@@ -346,7 +350,8 @@ def _write_library_csv(
     y: np.ndarray,
     spectrum: _LibrarySpectrum,
 ) -> None:
-    axis_header = spectrum.x_title
+    is_index_axis = bool(x.size and np.allclose(x, np.arange(x.size, dtype=float), equal_nan=False))
+    axis_header = spectrum.x_title or ("Index" if is_index_axis else "x")
     if spectrum.x_units:
         axis_header = f"{axis_header} ({spectrum.x_units})"
     label = spectrum.name
@@ -535,7 +540,7 @@ def _library_spectrum_from_loaded_payload(payload: LoadedLibrarySpectrum) -> _Li
         y=y.tolist(),
         x_title="Wavenumber",
         x_units="cm-1",
-        y_title=payload.y_quantity or "Intensity",
+        y_title=payload.y_quantity,
         y_units=payload.y_units,
         metadata={
             "component_id": payload.component_id,

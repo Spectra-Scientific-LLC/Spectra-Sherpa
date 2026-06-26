@@ -58,6 +58,13 @@ def _json_safe(obj: Any) -> Any:
     return str(obj)
 
 
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def _format_sample_label(value: Any) -> str:
     """Convert raw sample label values to a readable string.
 
@@ -261,7 +268,8 @@ def _serialize_sherpa_dataset(
     metadata["is_spectra"] = is_spectra
     metadata["is_time_series"] = dataset.is_time_series
     metadata["spectral_technique"] = technique
-    metadata["data_quantity"] = data_quantity
+    if data_quantity is not None:
+        metadata["data_quantity"] = data_quantity
 
     # Convenience copies of axis info into metadata (frontend compat)
     if result.get("x_axis"):
@@ -271,8 +279,11 @@ def _serialize_sherpa_dataset(
             x_ax["units"] = ""
             x_units = ""
         metadata["wavenumbers"] = x_ax.get("data", [])
-        metadata["x_title"] = x_ax.get("title") or "Feature"
-        metadata["x_units"] = x_units
+        x_title = _optional_text(x_ax.get("title"))
+        if x_title is not None:
+            metadata["x_title"] = x_title
+        if x_units:
+            metadata["x_units"] = x_units
         if x_ax.get("labels"):
             metadata["feature_names"] = x_ax["labels"]
 
@@ -282,22 +293,23 @@ def _serialize_sherpa_dataset(
         if y_units == "dimensionless":
             y_ax["units"] = ""
             y_units = ""
-        metadata["y_title"] = y_ax.get("title") or "Sample"
-        metadata["y_units"] = y_units
+        y_title = _optional_text(y_ax.get("title"))
+        if y_title is not None:
+            metadata["y_title"] = y_title
+        if y_units:
+            metadata["y_units"] = y_units
         if y_ax.get("labels"):
             formatted = clean_sample_labels(y_ax["labels"], len(y_ax["labels"]), fallback_prefix="Sample")
             metadata["sample_labels"] = formatted
             metadata["labels"] = formatted
 
-    # Data units — always emit value_units so consumers don't need per-node fallbacks
+    # Data units: emit only when the dataset or source metadata defines them.
     if dataset.units and str(dataset.units) != "dimensionless":
         metadata["value_units"] = str(dataset.units)
     semantic_units = dataset.get_extra("scp.value_units_label")
     if semantic_units:
         metadata["value_units_label"] = str(semantic_units)
         metadata.setdefault("value_units", str(semantic_units))
-    # Final fallback — only if nothing above set value_units
-    metadata.setdefault("value_units", "Response")
 
     # Rich provenance from SherpaDataset.provenance
     history = dataset.provenance.to_list()

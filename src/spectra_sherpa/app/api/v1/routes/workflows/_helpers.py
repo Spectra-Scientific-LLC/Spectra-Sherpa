@@ -4,6 +4,7 @@ Shared helpers for workflow route sub-modules.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import re
@@ -604,6 +605,17 @@ async def _auto_persist_run(
             applied_artifact_uids=applied_artifact_uids or [],
             idempotency_key=idempotency_key,
         )
+        if final_status in {"completed", "partial"}:
+            durable_uid = f"run_{reservation_id}" if reservation_id is not None else f"run_{uuid4().hex}"
+            await _persist_run_output_durably_if_configured(
+                session=session,
+                user_id=user_id,
+                artifact_uid=durable_uid,
+                run_data=run_data,
+            )
+            source = dict(run_data.get("source_metadata") or {})
+            source["durable_artifact_uid"] = durable_uid
+            run_data["source_metadata"] = source
 
         if reservation_id is not None:
             # Finalize-in-place: load the reservation row and overwrite its
@@ -686,6 +698,28 @@ async def _auto_persist_run(
         except Exception:
             pass
         return None
+
+
+async def _persist_run_output_durably_if_configured(
+    *,
+    session: AsyncSession,
+    user_id: int,
+    artifact_uid: str,
+    run_data: dict[str, Any],
+) -> None:
+    from spectra_sherpa.app.contracts.durable_artifacts import get_durable_artifact_persister
+
+    persister = get_durable_artifact_persister()
+    if persister is None:
+        return
+    payload = json.dumps(run_data, default=str, sort_keys=True).encode("utf-8")
+    await persister(
+        session=session,
+        user_id=user_id,
+        artifact_uid=artifact_uid,
+        artifact_kind="completed_run_output",
+        payload=payload,
+    )
 
 
 # ---------------------------------------------------------------------------

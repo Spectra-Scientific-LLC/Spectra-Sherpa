@@ -101,6 +101,41 @@ class TestValidateFolderPath:
             with pytest.raises(ValueError, match="does not exist"):
                 validate_folder_path(str(missing))
 
+    async def test_multi_user_folder_path_must_belong_to_user_experiment(self, tmp_path: Path):
+        """Multi-user folder reads are bound to the requesting user's experiments."""
+        from spectra_sherpa.app.services.batch_predict import validate_user_folder_path
+
+        class _Result:
+            def __init__(self, values):
+                self._values = values
+
+            def scalars(self):
+                return self
+
+            def all(self):
+                return self._values
+
+        class _Session:
+            async def execute(self, _query):
+                return _Result([1])
+
+        data_dir = tmp_path / "data"
+        owned = data_dir / "experiments" / "exp_001" / "imports"
+        other = data_dir / "experiments" / "exp_002" / "imports"
+        owned.mkdir(parents=True)
+        other.mkdir(parents=True)
+
+        with (
+            patch("spectra_sherpa.app.core.mode_policy.is_multi_user", return_value=True),
+            patch("spectra_sherpa.app.core.config.settings") as mock_settings,
+            patch("spectra_sherpa.app.services.experiments.settings") as mock_experiment_settings,
+        ):
+            mock_settings.data_dir = data_dir
+            mock_experiment_settings.data_dir = data_dir
+            assert await validate_user_folder_path(_Session(), str(owned), user_id=10) == owned.resolve()
+            with pytest.raises(ValueError, match="one of your experiment directories"):
+                await validate_user_folder_path(_Session(), str(other), user_id=10)
+
 
 # ---------------------------------------------------------------------------
 # 2. discover_files exclude backward compatibility

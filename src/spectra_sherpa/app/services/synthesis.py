@@ -94,6 +94,15 @@ _NIST_APODIZATION_INDEX = {
     "norton beer strong": 20,
     "norton-beer-strong": 20,
 }
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 _NIST_RESOLUTION_INDEX = {2.0: 0, 1.0: 1, 0.5: 2, 0.25: 3, 0.125: 4}
 _HITRAN_HAPI_LOCK = asyncio.Lock()
 _MISSING = object()
@@ -716,6 +725,7 @@ def load_synthetic_npz(path: str | Path) -> dict[str, Any]:
     with np.load(path, allow_pickle=False) as data:
         if not _npz_has_synthesis_signature(data):
             raise ValueError("NPZ file is not a SpectraSherpa synthetic dataset")
+        ground_truth_json = str(data["ground_truth_json"].item())
         payload = {
             "X": np.asarray(data["X"], dtype=float),
             "wavenumber": np.asarray(data["wavenumber"], dtype=float),
@@ -725,9 +735,18 @@ def load_synthetic_npz(path: str | Path) -> dict[str, Any]:
             "feature_units": str(data["feature_units"].item()),
             "units": str(data["units"].item()),
             "recipe_json": str(data["recipe_json"].item()),
-            "ground_truth_json": str(data["ground_truth_json"].item()),
+            "ground_truth_json": ground_truth_json,
             "metadata": _read_synthesis_npz_metadata(data),
         }
+        if "concentration_units" in data.files:
+            payload["concentration_units"] = str(data["concentration_units"].item())
+        else:
+            try:
+                ground_truth = json.loads(ground_truth_json)
+                if isinstance(ground_truth, dict) and ground_truth.get("C_units") is not None:
+                    payload["concentration_units"] = str(ground_truth["C_units"])
+            except Exception:
+                pass
     return _normalize_synthetic_npz_payload(payload)
 
 
@@ -762,6 +781,7 @@ def _write_synthesis_npz(path: Path, result: SynthesisResult, *, title: str | No
         sample_labels=sample_labels,
         feature_units=np.asarray("cm^-1"),
         units=np.asarray("absorbance"),
+        concentration_units=np.asarray(str(result.ground_truth.get("C_units") or "")),
         recipe_json=np.asarray(json.dumps(result.recipe)),
         ground_truth_json=np.asarray(json.dumps(ground_truth_metadata)),
         metadata_json=np.asarray(json.dumps(metadata)),
@@ -811,7 +831,7 @@ def update_synthetic_npz_metadata(path: str | Path, updates: dict[str, Any]) -> 
 
 
 def _default_synthesis_npz_metadata(result: SynthesisResult, *, title: str | None = None) -> dict[str, Any]:
-    return {
+    metadata: dict[str, Any] = {
         "title": title,
         "source": "synthesis",
         "synthesis_source": result.source,
@@ -819,10 +839,13 @@ def _default_synthesis_npz_metadata(result: SynthesisResult, *, title: str | Non
         "x_units": "cm^-1",
         "y_title": "Sample",
         "data_quantity": "Absorbance",
-        "value_units": result.units or "absorbance",
         "data_role": "X_spectra",
         "is_time_series": False,
     }
+    value_units = _optional_text(result.units)
+    if value_units is not None:
+        metadata["value_units"] = value_units
+    return metadata
 
 
 def _read_synthesis_npz_metadata(data: np.lib.npyio.NpzFile) -> dict[str, Any]:

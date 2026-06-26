@@ -831,7 +831,7 @@ class DataSourceNode(Node):
             elif current_y is not None and hasattr(current_y, "title") and current_y.title:
                 y_title = current_y.title
             else:
-                y_title = "Sample"
+                y_title = None if current_y is not None else "Sample"
 
             # Determine x-axis (spectral/feature) title
             if spectral_axis_override:
@@ -839,7 +839,7 @@ class DataSourceNode(Node):
             elif current_x is not None and hasattr(current_x, "title") and current_x.title:
                 x_title = current_x.title
             else:
-                x_title = "Feature"
+                x_title = None if current_x is not None else "Index"
 
             if is_sherpa:
                 if current_y is not None:
@@ -892,7 +892,7 @@ class DataSourceNode(Node):
             elif aac_1d_x_coord is not None and hasattr(aac_1d_x_coord, "title") and aac_1d_x_coord.title:
                 x_title = aac_1d_x_coord.title
             else:
-                x_title = "Feature"
+                x_title = None if aac_1d_x_coord is not None else "Index"
 
             if is_sherpa:
                 if aac_1d_x_coord is not None:
@@ -983,10 +983,11 @@ class DataSourceNode(Node):
 
         if HAS_SCP:
             # Rich path: wrap in NDDataset with wavelength Coord
-            x_title = catalog.get("x_title", "Channel")
+            has_wavelengths = wavelengths is not None and len(wavelengths) == spectra.shape[1]
+            x_title = catalog.get("x_title") or (None if has_wavelengths else "Index")
             x_units = catalog.get("x_units")
 
-            if wavelengths is not None and len(wavelengths) == spectra.shape[1]:
+            if has_wavelengths:
                 x_coord = scp.Coord(
                     wavelengths,
                     title=x_title,
@@ -1016,13 +1017,10 @@ class DataSourceNode(Node):
             return dataset
 
         # No-SCP path: return SherpaDataset with proper axes
-        x_title = catalog.get("x_title", "Channel")
+        has_wavelengths = wavelengths is not None and len(wavelengths) == spectra.shape[1]
+        x_title = catalog.get("x_title") or (None if has_wavelengths else "Index")
         x_units = catalog.get("x_units")
-        x_values = (
-            wavelengths
-            if wavelengths is not None and len(wavelengths) == spectra.shape[1]
-            else np.arange(spectra.shape[1])
-        )
+        x_values = wavelengths if has_wavelengths else np.arange(spectra.shape[1])
 
         dataset = SherpaDataset(
             X=spectra,

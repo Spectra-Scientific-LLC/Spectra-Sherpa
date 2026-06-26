@@ -32,7 +32,7 @@ from spectra_sherpa.app.api.deps import (
     reserve_demo_upload_quota_or_429,
 )
 from spectra_sherpa.app.api.v1.routes._http_utils import attachment_headers, safe_download_stem
-from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.security import check_export_allowed
 from spectra_sherpa.app.models.advisor_channel import AdvisorChannel
 from spectra_sherpa.app.models.experiment import Experiment
@@ -2436,6 +2436,12 @@ async def import_project(
                 raise HTTPException(status_code=413, detail="Project payload exceeds size limit")
 
             project_json = json.loads(zf.read(PROJECT_PAYLOAD))
+            if app_config.site_profile == "pro":
+                from spectra_sherpa.app.contracts.hot_storage import get_hot_storage_checker
+
+                checker = get_hot_storage_checker()
+                if checker is not None:
+                    await checker(session=session, user_id=user_id, incoming_bytes=total_uncompressed)
 
             # Restore model artifacts from ZIP (if present)
             import uuid as _uuid

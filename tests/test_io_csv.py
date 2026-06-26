@@ -71,7 +71,7 @@ def test_load_csv_as_sherpa_axis_column_conditions_as_shared_x_spectra(tmp_path)
     assert dataset.sample_axis is not None
     assert dataset.sample_axis.labels == ["Aqueous PP", "15:85 AuNPs:PP AuNPs with KCl"]
     assert dataset.domain.technique == "raman"
-    assert dataset.domain.data_quantity == "Intensity"
+    assert dataset.domain.data_quantity is None
 
 
 def test_load_csv_as_sherpa_axis_column_unit_header_with_bom(tmp_path):

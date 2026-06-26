@@ -27,7 +27,7 @@ from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.models.background_job import BackgroundJob
 from spectra_sherpa.app.models.data_egress import UserEgressDefaults
 from spectra_sherpa.app.models.experiment import Experiment
-from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.models.user import PRINCIPAL_KIND_HUMAN, User
 from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
 from spectra_sherpa.app.services.experiments import (
     create_experiment,
@@ -482,7 +482,7 @@ async def ensure_default_user() -> None:
             result = await session.execute(select(User).limit(1))
             user = result.scalar_one_or_none()
             if user is None:
-                session.add(User(username="local"))
+                session.add(User(username="local", principal_kind=PRINCIPAL_KIND_HUMAN))
                 await session.commit()
     except OperationalError:
         logger.warning("Skipping default user creation; database not initialized.")

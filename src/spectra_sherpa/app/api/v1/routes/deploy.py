@@ -96,6 +96,7 @@ async def batch_predict(
         discover_files,
         load_workflow_with_graph,
         run_batch_prediction,
+        validate_user_folder_path,
     )
 
     workflow = await load_workflow_with_graph(session, workflow_id, current_user.id)
@@ -111,7 +112,8 @@ async def batch_predict(
 
     # Discover files
     try:
-        files = discover_files(payload.folder_path, payload.file_pattern)
+        folder_path = await validate_user_folder_path(session, payload.folder_path, current_user.id)
+        files = discover_files(str(folder_path), payload.file_pattern)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -264,11 +266,11 @@ async def create_watch(
 ) -> FolderWatchOut:
     """Create a new folder watch (starts disabled)."""
     from spectra_sherpa.app.models.workflow import Workflow
-    from spectra_sherpa.app.services.batch_predict import validate_folder_path
+    from spectra_sherpa.app.services.batch_predict import validate_user_folder_path
 
     # Validate folder path (prevents traversal in multi-user modes)
     try:
-        validate_folder_path(payload.folder_path)
+        folder_path = await validate_user_folder_path(session, payload.folder_path, current_user.id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -285,7 +287,7 @@ async def create_watch(
         user_id=current_user.id,
         workflow_id=payload.workflow_id,
         name=payload.name,
-        folder_path=payload.folder_path,
+        folder_path=str(folder_path),
         file_pattern=payload.file_pattern,
         poll_interval_sec=payload.poll_interval_sec,
         is_enabled=False,
@@ -330,17 +332,19 @@ async def update_watch(
     current_user: User = Depends(get_current_user),
 ) -> FolderWatchOut:
     """Update a folder watch configuration."""
-    from spectra_sherpa.app.services.batch_predict import validate_folder_path
+    from spectra_sherpa.app.services.batch_predict import validate_user_folder_path
 
     watch = await _get_user_watch(session, watch_id, current_user.id)
 
     if payload.folder_path is not None:
         try:
-            validate_folder_path(payload.folder_path)
+            folder_path = await validate_user_folder_path(session, payload.folder_path, current_user.id)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc))
 
     update_data = payload.model_dump(exclude_unset=True)
+    if payload.folder_path is not None:
+        update_data["folder_path"] = str(folder_path)
     for key, value in update_data.items():
         setattr(watch, key, value)
 

@@ -52,6 +52,18 @@ CONC_PATTERN = re.compile(r"\(([^()]*?)ppm", re.IGNORECASE)
 _CSV_AXIS_UNITS_PATTERN = re.compile(r"\((?P<units>[^)]*)\)")
 
 
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _new_nddataset(data: np.ndarray, *, title: str | None = None) -> "NDDataset":
+    require_scp("Generic dataset creation")
+    return scp.NDDataset(np.asarray(data, dtype=float), title=title)
+
+
 def _spectral_axis_info_from_header(header: str) -> tuple[str, str | None] | None:
     """Return spectral axis title/units for scientist-style CSV axis columns."""
     cleaned = str(header).lstrip("\ufeff").strip()
@@ -275,7 +287,7 @@ def inspect_csv_import_plan(filepath: Union[str, Path]) -> dict[str, Any]:
         layout = "sample_rows_spectral_matrix"
         layout_label = "Sample rows with spectral-variable columns"
         confidence = "high"
-        axis_title = "Spectral Axis"
+        axis_title = None
         axis_units = None
         if len(columns) > 1:
             values = np.array(
@@ -328,32 +340,21 @@ def _infer_numeric_spectral_axis(
     filepath: Union[str, Path],
     x_values: np.ndarray,
     overrides: Any | None,
-) -> tuple[str, str | None]:
+) -> tuple[str | None, str | None]:
     """Infer metadata for matrix-style spectral CSVs with numeric column headers.
 
     Numeric headers alone cannot prove whether the axis is wavenumber, Raman
     shift, wavelength, or an arbitrary feature coordinate. Prefer explicit
-    prepared-data metadata, then weak file-name hints, and otherwise keep the
-    title generic instead of laundering unknown axes into wavenumber.
+    prepared-data metadata and otherwise leave quantity/units blank for user
+    review in My Dataset.
     """
     if overrides is not None:
         override_title = getattr(overrides, "x_title", None)
         override_units = _normalize_axis_units(getattr(overrides, "x_units", None))
         if override_title or override_units:
-            return override_title or "Spectral Axis", override_units
+            return override_title or None, override_units
 
-    stem = Path(filepath).stem.lower()
-    if "raman" in stem or "shift" in stem:
-        return "Raman Shift", "cm-1"
-    if "wavenumber" in stem or "wave_number" in stem or "ftir" in stem:
-        return "Wavenumber", "cm-1"
-    if "wavelength" in stem or "wave_length" in stem:
-        return "Wavelength", "nm"
-    if "nir" in stem or "near_ir" in stem or "near-infrared" in stem:
-        return "Wavelength", "nm"
-    if x_values.size and np.nanmin(x_values) >= 4000 and np.nanmax(x_values) <= 12000:
-        return "Wavenumber", "cm-1"
-    return "Spectral Axis", None
+    return None, None
 
 
 def _load_axis_column_spectral_csv(
@@ -409,7 +410,6 @@ def _load_axis_column_spectral_csv(
             technique=technique,
             sample_type=path.stem,
             expected_units=units,
-            data_quantity="Intensity",
         ),
         extra={
             "csv.layout": "axis_column_conditions",
@@ -526,8 +526,6 @@ def read_csv_spectrum(filepath: Path) -> "NDDataset":
     NDDataset
         Spectrum with x-coordinate (wavenumber) and metadata
     """
-    from .spectral.dataset import SpectralUnit, create_spectral_dataset
-
     df = pd.read_csv(
         filepath,
         header=None,
@@ -544,12 +542,8 @@ def read_csv_spectrum(filepath: Path) -> "NDDataset":
     concentration = extract_concentration(filepath)
     pathlength = extract_pathlength(filepath)
 
-    dataset = create_spectral_dataset(
-        data=absorbance,
-        wavenumbers=wavenumber,
-        units=SpectralUnit.ABSORBANCE,
-        title=label,
-    )
+    dataset = _new_nddataset(absorbance.reshape(1, -1), title=label)
+    dataset.x = scp.Coord(wavenumber, title=None, units=None)
 
     # Add metadata
     dataset.meta["source_file"] = str(filepath)
@@ -616,8 +610,6 @@ def read_json_signature(filepath: Path) -> "NDDataset":
     NDDataset
         Spectrum with calibration in meta["calibration"]
     """
-    from .spectral.dataset import SpectralUnit, create_spectral_dataset
-
     validated_path = resolve_existing_file_path(filepath, label="JSON signature", suffixes={".json"})
     with validated_path.open() as f:
         data = json.load(f)
@@ -651,12 +643,8 @@ def read_json_signature(filepath: Path) -> "NDDataset":
 
     label = data.get("label", _extract_label_from_filename(filepath.name))
 
-    dataset = create_spectral_dataset(
-        data=absorbance,
-        wavenumbers=wavenumber,
-        units=SpectralUnit.ABSORBANCE,
-        title=label,
-    )
+    dataset = _new_nddataset(absorbance.reshape(1, -1), title=label)
+    dataset.x = scp.Coord(wavenumber, title=None, units=None)
 
     # Store calibration in metadata
     calibration = {
@@ -702,8 +690,6 @@ def read_mat_file(filepath: Path) -> List["NDDataset"]:
     """
     if not HAS_SCIPY:
         raise ImportError("scipy is required to read .mat files")
-
-    from .spectral.dataset import SpectralUnit, create_spectral_dataset
 
     mat_data = loadmat(str(filepath), squeeze_me=True, struct_as_record=False)
     label = _extract_label_from_filename(filepath.name)
@@ -765,17 +751,12 @@ def read_mat_file(filepath: Path) -> List["NDDataset"]:
 
     def _build_dataset(data: np.ndarray, title: str) -> "NDDataset":
         if not uses_generic_feature_index:
-            ds = create_spectral_dataset(
-                data=data,
-                wavenumbers=wavenumber,
-                units=SpectralUnit.ABSORBANCE,
-                title=title,
-            )
+            ds = _new_nddataset(np.asarray(data, dtype=float).reshape(1, -1), title=title)
+            ds.x = scp.Coord(np.asarray(wavenumber, dtype=float), title=None, units=None)
         else:
             require_scp("MATLAB dataset fallback")
             ds = scp.NDDataset(np.asarray(data, dtype=float), title=title)
             ds.x = scp.Coord(np.asarray(wavenumber, dtype=float), title="Index")
-            ds.units = SpectralUnit.DIMENSIONLESS.value
             ds.meta["x_label"] = "Index"
             ds.meta["x_unit"] = ""
             ds.meta["data_type"] = "generic"
@@ -859,22 +840,24 @@ def read_spectral_file(filepath: Path) -> "NDDataset":
     return dataset
 
 
-def _axis_title_from_jcamp_units(units: str | None) -> str:
+def _axis_title_from_jcamp_units(units: str | None) -> str | None:
     text = (units or "").lower()
     if "nm" in text or "micrometer" in text or "um" in text or "µm" in text:
         return "Wavelength"
     if "raman" in text:
         return "Raman Shift"
-    return "Wavenumber"
+    if "cm-1" in text or "cm^-1" in text or "cm⁻¹" in text or "1/cm" in text:
+        return "Wavenumber"
+    return None
 
 
-def _intensity_title_from_units(units: str | None) -> str:
+def _intensity_title_from_units(units: str | None) -> str | None:
     text = (units or "").lower()
     if "transmit" in text:
         return "Transmittance"
     if "absorb" in text:
         return "Absorbance"
-    return units or "Intensity"
+    return _optional_text(units)
 
 
 def load_jcamp_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
@@ -987,7 +970,7 @@ def load_numpy_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
         labels = None
 
     feature_axis = (
-        SpectralAxis(values=feature_values, title="Spectral Axis", units=None)
+        SpectralAxis(values=feature_values, title=None, units=None)
         if feature_values is not None
         else FeatureAxis(labels=[str(i) for i in range(n_features)], title="Features")
     )
@@ -995,7 +978,7 @@ def load_numpy_as_sherpa(filepath: Union[str, Path]) -> "SherpaDataset":
         X=X,
         feature_axis=feature_axis,
         sample_axis=SampleAxis(labels=labels, title="Samples") if labels else None,
-        domain=DomainContext(data_quantity="Intensity"),
+        domain=DomainContext(),
         title=path.stem,
         extra={
             "source_file": str(path),
@@ -1098,8 +1081,6 @@ def stack_datasets(datasets: List["NDDataset"]) -> "NDDataset":
     data = np.vstack([ds.data.reshape(1, -1) for ds in datasets])
     labels = [ds.title for ds in datasets]
 
-    from .spectral.dataset import SpectralUnit, create_spectral_dataset
-
     ref_title = str(ref_coord.title) if getattr(ref_coord, "title", None) else None
     ref_units = str(ref_coord.units) if getattr(ref_coord, "units", None) else ""
     is_generic_axis = not ref_units or ref_units == "dimensionless" or (ref_title or "").strip().lower() == "index"
@@ -1117,18 +1098,20 @@ def stack_datasets(datasets: List["NDDataset"]) -> "NDDataset":
             title="Samples",
             labels=[str(label) for label in labels],
         )
-        result.units = SpectralUnit.DIMENSIONLESS.value
         result.meta["x_label"] = ref_title or "Index"
         result.meta["x_unit"] = ref_units or ""
         result.meta["data_type"] = "generic"
     else:
-        result = create_spectral_dataset(
-            data=data,
-            wavenumbers=ref_wn,
-            sample_labels=labels,
-            units=SpectralUnit.ABSORBANCE,
-            title="Stacked Spectra",
+        result = _new_nddataset(data, title="Stacked Spectra")
+        result.x = scp.Coord(ref_wn, title=ref_title, units=ref_units or None)
+        result.y = scp.Coord(
+            np.arange(len(labels), dtype=float),
+            title="Samples",
+            labels=[str(label) for label in labels],
         )
+        ref_data_units = _optional_text(getattr(datasets[0], "units", None))
+        if ref_data_units and ref_data_units != "dimensionless":
+            result.units = ref_data_units
 
     return result
 
@@ -1276,7 +1259,7 @@ def load_csv_as_sherpa(
             X=data,
             feature_axis=SpectralAxis(values=wavelengths, title=axis_title, units=axis_units),
             sample_axis=SampleAxis(labels=sample_labels) if sample_labels else None,
-            domain=DomainContext(expected_units=axis_units, data_quantity="Intensity"),
+            domain=DomainContext(expected_units=axis_units),
             extra=extra,
             title=title,
             data_role="X_spectra",
