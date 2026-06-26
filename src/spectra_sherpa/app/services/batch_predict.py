@@ -20,6 +20,7 @@ from sqlalchemy.orm import selectinload
 from spectra_sherpa.app.core.path_security import resolve_existing_directory_path
 from spectra_sherpa.app.models.batch_prediction import BatchPrediction
 from spectra_sherpa.app.models.execution_run import ExecutionRun
+from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.workflow import Workflow
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,35 @@ def validate_folder_path(folder_path: str) -> Path:
         label="Folder",
         restrict_to_data_dir_in_multi_user=True,
     )
+
+
+async def validate_user_folder_path(session: AsyncSession, folder_path: str, user_id: int) -> Path:
+    """Validate a folder path and, in multi-user modes, bind it to the user.
+
+    Server-side folder watches and batch predictions can read every file in the
+    configured folder. In multi-user deployments, accepting any path under the
+    shared DATA_DIR would let one tenant ingest another tenant's experiment
+    files if they guessed the directory. Require the folder to live under one
+    of the requesting user's experiment directories.
+    """
+    folder = validate_folder_path(folder_path)
+
+    from spectra_sherpa.app.core.mode_policy import is_multi_user
+    from spectra_sherpa.app.services.experiments import experiment_dir
+
+    if not is_multi_user():
+        return folder
+
+    result = await session.execute(select(Experiment.id).where(Experiment.user_id == user_id))
+    for experiment_id in result.scalars().all():
+        root = experiment_dir(int(experiment_id)).resolve()
+        try:
+            folder.relative_to(root)
+            return folder
+        except ValueError:
+            continue
+
+    raise ValueError("Folder must be under one of your experiment directories")
 
 
 def discover_files(

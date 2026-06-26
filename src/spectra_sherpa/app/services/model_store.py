@@ -13,6 +13,7 @@ exactly what's in a model without loading the arrays.
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
 import os
@@ -20,6 +21,7 @@ import shutil
 import tempfile
 import time
 import uuid as _uuid
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -388,6 +390,12 @@ async def persist_model_artifact_records(
         if artifact_uid in existing_uids:
             logger.info("ModelArtifact %s already exists — skipping", artifact_uid)
             continue
+        await _persist_model_artifact_durably_if_configured(
+            session=session,
+            user_id=user_id,
+            artifact_uid=artifact_uid,
+            artifact_dir=art.get("artifact_dir", ""),
+        )
         default_name = f"{model_type.upper()} — {artifact_uid[:8]}"
         display_name = art.get("display_name")
         if not display_name and run_name:
@@ -457,6 +465,39 @@ async def persist_model_artifact_records(
         )
 
     return rows
+
+
+async def _persist_model_artifact_durably_if_configured(
+    *,
+    session: Any,
+    user_id: int,
+    artifact_uid: str,
+    artifact_dir: str,
+) -> None:
+    from spectra_sherpa.app.contracts.durable_artifacts import get_durable_artifact_persister
+
+    persister = get_durable_artifact_persister()
+    if persister is None:
+        return
+    payload = _zip_artifact_dir(Path(artifact_dir))
+    await persister(
+        session=session,
+        user_id=user_id,
+        artifact_uid=f"model_{artifact_uid}",
+        artifact_kind="model_artifact",
+        payload=payload,
+    )
+
+
+def _zip_artifact_dir(path: Path) -> bytes:
+    if not path.is_dir():
+        raise FileNotFoundError(f"Model artifact directory not found: {path}")
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for child in sorted(path.iterdir()):
+            if child.is_file():
+                archive.write(child, arcname=child.name)
+    return buffer.getvalue()
 
 
 # Default grace window for orphan reconciliation.  Disk artifacts younger
