@@ -1,6 +1,8 @@
+import { SHERPA_RESPONSE_TIMEOUT_MS, SHERPA_SYNC_TIMEOUT_MS } from "@/lib/sherpaTimeouts";
+import { installAdvisorTransport } from "@/lib/advisorTransport";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-import { reactive } from "vue";
+import { reactive, ref } from "vue";
 import { dispatchSherpaEvent } from "@/lib/sherpaEvents";
 
 const mockApi = vi.hoisted(() => ({
@@ -15,6 +17,16 @@ const mockWs = {
   send: vi.fn(),
 };
 
+const mockAppConfig = ref<Record<string, unknown>>({});
+const mockTransport = { prepareContext: vi.fn(), loadConversation: vi.fn(), deleteConversation: vi.fn(), confirmProposal: vi.fn() };
+let disposeTransport: (() => void) | undefined;
+const mockAppMode = ref("enterprise");
+const mockSiteProfile = ref("demo");
+
+vi.mock("@/composables/useAppConfig", () => ({
+  useAppConfig: () => ({ appMode: mockAppMode, siteProfile: mockSiteProfile, appConfig: mockAppConfig }),
+}));
+
 const mockLlmStore = reactive({
   wsRef: mockWs as unknown as WebSocket,
   connect: vi.fn<() => Promise<void>>(),
@@ -23,6 +35,9 @@ const mockLlmStore = reactive({
 
 const mockWorkflowStore = reactive({
   workflowId: 5,
+  executionEvidenceScope: "live_full", restoredRunId: 5,
+  isWorkflowStale: false,
+  lastExecutionParams: {} as Record<string, Record<string, unknown>>,
   workflowName: "Test workflow",
   workflowDescription: "Test description",
   currentTemplateId: "template-1",
@@ -30,9 +45,12 @@ const mockWorkflowStore = reactive({
   edges: [] as Array<Record<string, unknown>>,
   lastExecutionResults: null as Record<string, Record<string, unknown>> | null,
   lastExecutionDiagnostics: {} as Record<string, Record<string, unknown>>,
+  lastExecutionPresentations: {} as Record<string, unknown>,
   executeStoredWorkflow: vi.fn(),
+  loadWorkflow: vi.fn(async () => undefined),
+  hasUnsavedChanges: false,
   getNodeMetadata: vi.fn((nodeType: string) => {
-    if (nodeType === "model.pls") {
+    if (nodeType === "model.fitted_pls") {
       return {
         label: "PLS",
         description: "Partial least squares model",
@@ -46,7 +64,7 @@ const mockWorkflowStore = reactive({
         ],
       };
     }
-    if (nodeType === "data.source") {
+    if (nodeType === "data.file_load") {
       return {
         label: "Load Data",
         description: "Dataset source",
@@ -59,14 +77,18 @@ const mockWorkflowStore = reactive({
 });
 
 const mockDataStore = reactive({
+  captureAdvisorDatasetContext: vi.fn<() => Record<string, unknown> | null>(() => null),
   catalogDatasetInfo: null as Record<string, unknown> | null,
   fileInfo: null as Record<string, unknown> | null,
 });
 
 const mockAdvisorStore = reactive({
   activeChannelId: 10 as number | null,
+  activeNodeId: null as number | null,
   get activeChannel() {
-    return mockAdvisorStore.channels.find((item) => item.id === mockAdvisorStore.activeChannelId) ?? null;
+    return (
+      mockAdvisorStore.channels.find((item) => item.id === mockAdvisorStore.activeChannelId) ?? null
+    );
   },
   channels: [
     {
@@ -138,13 +160,11 @@ vi.mock("@/stores/data", () => ({
       ? xAxis.data.filter((value): value is number => typeof value === "number")
       : [];
     return {
-      dataset_id:
-        typeof datasetInfo.dataset_id === "string" ? datasetInfo.dataset_id : null,
+      dataset_id: typeof datasetInfo.dataset_id === "string" ? datasetInfo.dataset_id : null,
       label: typeof datasetInfo.label === "string" ? datasetInfo.label : null,
       source: typeof datasetInfo.source === "string" ? datasetInfo.source : null,
       dataset_name: typeof datasetInfo.name === "string" ? datasetInfo.name : null,
-      description:
-        typeof datasetInfo.description === "string" ? datasetInfo.description : null,
+      description: typeof datasetInfo.description === "string" ? datasetInfo.description : null,
       n_samples: typeof datasetInfo.n_samples === "number" ? datasetInfo.n_samples : null,
       n_features: typeof datasetInfo.n_features === "number" ? datasetInfo.n_features : null,
       is_time_series:
@@ -187,8 +207,7 @@ vi.mock("@/stores/data", () => ({
           : typeof metadata.data_quantity === "string"
             ? metadata.data_quantity
             : null,
-      value_units:
-        typeof metadata.value_units === "string" ? metadata.value_units : null,
+      value_units: typeof metadata.value_units === "string" ? metadata.value_units : null,
       feature_names: Array.isArray(datasetInfo.feature_names)
         ? (datasetInfo.feature_names as string[])
         : null,
@@ -198,9 +217,7 @@ vi.mock("@/stores/data", () => ({
       metadata_summary: {
         data_type: typeof metadata.data_type === "string" ? metadata.data_type : null,
         spectral_technique:
-          typeof metadata.spectral_technique === "string"
-            ? metadata.spectral_technique
-            : null,
+          typeof metadata.spectral_technique === "string" ? metadata.spectral_technique : null,
         file_name: null,
         has_wavenumber_axis: xData.length > 0,
       },
@@ -238,6 +255,9 @@ const emitSherpa = (payload: Record<string, unknown>) => {
 
 describe("Sherpa Store communication state", () => {
   beforeEach(() => {
+  disposeTransport?.();
+  mockAppConfig.value = {};
+  disposeTransport = installAdvisorTransport(mockTransport);
     vi.useFakeTimers();
     setActivePinia(createPinia());
     mockWs.send.mockReset();
@@ -248,6 +268,8 @@ describe("Sherpa Store communication state", () => {
     mockLlmStore.connect.mockReset();
     mockLlmStore.connect.mockResolvedValue(undefined);
     mockLlmStore.connectionStatus = "connected";
+    mockAppMode.value = "enterprise";
+    mockSiteProfile.value = "demo";
     mockWorkflowStore.workflowId = 5;
     mockWorkflowStore.workflowName = "Test workflow";
     mockWorkflowStore.workflowDescription = "Test description";
@@ -260,6 +282,7 @@ describe("Sherpa Store communication state", () => {
     mockWorkflowStore.getNodeMetadata.mockClear();
     mockDataStore.catalogDatasetInfo = null;
     mockDataStore.fileInfo = null;
+    mockDataStore.captureAdvisorDatasetContext.mockReset().mockReturnValue(null);
     mockAdvisorStore.activeChannelId = 10;
     mockAdvisorStore.channels = [
       {
@@ -291,8 +314,62 @@ describe("Sherpa Store communication state", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.runOnlyPendingTimers();
     vi.useRealTimers();
+  });
+
+  it("clears Pro chat at a project boundary and ignores a pending old-project list", async () => {
+    mockSiteProfile.value = "pro";
+    const { useProjectStore } = await import("@/stores/project");
+    const { runProjectScopeResets } = await import("@/stores/projectScopeRegistry");
+    const projects = useProjectStore();
+    projects.currentProjectId = 42;
+    const store = useSherpaStore();
+    store.currentConversationId = "project-a";
+    store.messages.push({ id: "a-result", role: "assistant", content: "Project A private result" });
+    let resolveList!: (value: unknown) => void;
+    mockApi.get.mockImplementationOnce(() => new Promise((resolve) => { resolveList = resolve; }));
+    const pending = store.refreshConversations(42);
+    runProjectScopeResets();
+    projects.currentProjectId = 43;
+    expect(store.currentConversationId).toBeNull();
+    expect(store.messages.some((m) => m.content.includes("Project A private result"))).toBe(false);
+    resolveList({ data: [{ id: "project-a", title: "Old project" }] });
+    await pending;
+    expect(store.conversations).toEqual([]);
+    store.dispose();
+  });
+
+  it("uses the shared request path with a server-resolved worksheet reference on Pro", async () => {
+    mockSiteProfile.value = "pro";
+    const { useProjectStore } = await import("@/stores/project");
+    useProjectStore().currentProjectId = 42;
+    const store = useSherpaStore();
+    await store.sendMessage("Explain scaling", true);
+    const sent = JSON.parse(mockWs.send.mock.calls.at(-1)![0]);
+    expect(sent.action).toBe("sherpa_chat_with_tools");
+    expect(sent.payload.workflow_context.workflow_id).toBe(5);
+    expect(sent.payload.advisor_node_id).toBeNull();
+    expect(sent.payload.project_id).toBe(useProjectStore().currentProjectId);
+    dispatchSherpaEvent({ type: "sherpa_chat_start", request_id: sent.payload.request_id });
+    dispatchSherpaEvent({ type: "sherpa_chat_chunk", request_id: sent.payload.request_id, chunk: "Qualified response" });
+    dispatchSherpaEvent({ type: "sherpa_chat_done", request_id: sent.payload.request_id, conversation_id: "qualified-chat" });
+    expect(store.messages.some((message) => message.content === "Qualified response")).toBe(true);
+    store.dispose();
+  });
+
+  it("captures the current dataset masks at chat-send time", async () => {
+    const sherpa = useSherpaStore();
+    const snapshot = {
+      schema: "spectra-my-dataset-advisor/1",
+      datasets: [{ experiment_id: 4, row_mask: [true, false] }],
+    };
+    mockDataStore.captureAdvisorDatasetContext.mockReturnValue(snapshot);
+    await sherpa.sendMessage("Explain my current selection");
+    const message = JSON.parse(mockWs.send.mock.calls[0][0] as string);
+    expect(message.payload.workflow_context.dataset_context.my_dataset).toEqual(snapshot);
+    expect(mockDataStore.captureAdvisorDatasetContext).toHaveBeenCalledTimes(1);
   });
 
   it("shows a delayed status notification when Sherpa chat is still preparing", async () => {
@@ -305,7 +382,7 @@ describe("Sherpa Store communication state", () => {
     expect(sherpa.state).toBe("chatting");
     expect(notifications.notifications[0]?.title).toBe("Sherpa Advisor");
     expect(notifications.notifications[0]?.message).toBe(
-      "Sherpa request sent. Waiting for server acknowledgement."
+      "Sherpa request sent. Waiting for server acknowledgement.",
     );
   });
 
@@ -355,8 +432,8 @@ describe("Sherpa Store communication state", () => {
     expect(sherpa.messages.at(-1)?.role).toBe("assistant");
     expect(
       notifications.notifications.some(
-        (notification) => notification.message === "Sherpa Advisor is preparing a response."
-      )
+        (notification) => notification.message === "Sherpa Advisor is preparing a response.",
+      ),
     ).toBe(false);
 
     sherpa.dispose();
@@ -377,21 +454,23 @@ describe("Sherpa Store communication state", () => {
     expect(sherpa.chatState).toBe("idle");
   });
 
-  it("resets the chat timeout when Sherpa activity continues", async () => {
+  it("keeps the absolute one-minute deadline despite Sherpa activity", async () => {
     const sherpa = useSherpaStore();
     sherpa.init();
 
-    await sherpa.sendMessage("Does it make sense to use MCR-ALS upon non-time-series spectra data?");
+    await sherpa.sendMessage(
+      "Does it make sense to use MCR-ALS upon non-time-series spectra data?",
+    );
     emitSherpa({ type: SHERPA_WS_EVENT.chatStart, request_id: lastRequestId() });
 
-    await vi.advanceTimersByTimeAsync(119_000);
+    await vi.advanceTimersByTimeAsync(SHERPA_RESPONSE_TIMEOUT_MS - 1_000);
     emitSherpa({
       type: SHERPA_WS_EVENT.chatChunk,
       request_id: lastRequestId(),
       chunk: "Yes, it can.",
     });
 
-    await vi.advanceTimersByTimeAsync(119_000);
+    await vi.advanceTimersByTimeAsync(500);
     expect(sherpa.state).toBe("chatting");
     expect(sherpa.messages.some((m) => m.content.includes("timed out"))).toBe(false);
 
@@ -414,7 +493,7 @@ describe("Sherpa Store communication state", () => {
           kind: "closed",
           detail: "Connection lost during Sherpa request. Please try again.",
         },
-      })
+      }),
     );
 
     expect(sherpa.state).toBe("idle");
@@ -435,7 +514,7 @@ describe("Sherpa Store communication state", () => {
     expect(mockLlmStore.connect).toHaveBeenCalledOnce();
     expect(mockWs.send).toHaveBeenCalledOnce();
     const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
-    expect(payload.action).toBe("sherpa_chat");
+    expect(payload.action).toBe("sherpa_chat_with_tools");
     expect(payload.payload.workflow_id).toBeNull();
     expect(payload.payload.workflow_context.workflow_id).toBeNull();
   });
@@ -455,12 +534,108 @@ describe("Sherpa Store communication state", () => {
     expect(payload.payload.history).toBeUndefined();
   });
 
+  it("uses only the explicitly installed context transport for bounded disclosure", async () => {
+    mockAppMode.value = "test_product";
+    mockAppConfig.value = { advisorContextPolicy: "receipt" };
+    const context = { disclosure_receipt: { public_id: "receipt-1" }, workflow_descriptor: { node_count: 1 } };
+    mockTransport.prepareContext.mockResolvedValueOnce(context);
+    const sherpa = useSherpaStore();
+    await sherpa.sendMessage("Should I use PCA?");
+    expect(mockTransport.prepareContext).toHaveBeenCalledWith(5);
+    const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
+    expect(payload.payload.workflow_context).toEqual(context);
+    expect(JSON.stringify(payload.payload.workflow_context)).not.toContain("results_summary");
+  });
+
+  it("never falls back to broad context when product disclosure is refused", async () => {
+    mockAppMode.value = "test_product";
+    mockAppConfig.value = { advisorContextPolicy: "receipt" };
+    mockTransport.prepareContext.mockRejectedValueOnce(new Error("Disclosure not confirmed"));
+    const sherpa = useSherpaStore();
+    await sherpa.sendMessage("Should I use PCA?");
+    expect(mockWs.send).not.toHaveBeenCalled();
+    expect(sherpa.messages.at(-1)?.content).toContain("not confirmed");
+  });
+
+  it.each([false, true])("opens a proposed draft without browser execution (autoExecute=%s)", async (preference) => {
+    mockWorkflowBuilderConfigStore.autoExecute = preference;
+    const sherpa = useSherpaStore();
+    await sherpa.sendMessage("Create a PCA workflow", true);
+    emitSherpa({
+      type: SHERPA_WS_EVENT.workflowProposed,
+      request_id: lastRequestId(),
+      new_workflow_id: 30,
+      suggested_name: "PCA draft",
+      conversation_id: "conv-ai",
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockWorkbookStore.selectWorkflowSheet).toHaveBeenCalledWith(30);
+    expect(mockWorkflowStore.executeStoredWorkflow).not.toHaveBeenCalled();
+  });
+
+  it("waits for proposed-sheet navigation before restoring an immediately completed exact run", async () => {
+    let finishNavigation!: () => void;
+    mockWorkbookStore.selectWorkflowSheet.mockImplementationOnce(async () => {
+      await new Promise<void>((resolve) => { finishNavigation = resolve; });
+      mockWorkflowStore.workflowId = 30;
+    });
+    const sherpa = useSherpaStore();
+    await sherpa.sendMessage("Create a workflow and run it");
+    const requestId = lastRequestId();
+    emitSherpa({ type: SHERPA_WS_EVENT.workflowProposed, request_id: requestId,
+      new_workflow_id: 30, suggested_name: "Draft", conversation_id: "conv-ai" });
+    emitSherpa({ type: SHERPA_WS_EVENT.chatDone, request_id: requestId,
+      execution_result: { workflow_id: 30, run_id: 99, status: "completed" } });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(mockWorkflowStore.loadWorkflow).not.toHaveBeenCalled();
+    finishNavigation();
+    for (let step = 0; step < 8; step++) await Promise.resolve();
+    expect(mockWorkflowStore.loadWorkflow).toHaveBeenCalledWith(30, 99);
+    expect(sherpa.messages.some((item) => item.content.includes("empty response"))).toBe(false);
+  });
+
+  it("previews a product proposal and applies it only after explicit confirmation", async () => {
+    mockAppMode.value = "test_product";
+    mockAppConfig.value = { advisorContextPolicy: "receipt" };
+    mockTransport.prepareContext.mockResolvedValueOnce({ disclosure_receipt: { public_id: "receipt" } });
+    const sherpa = useSherpaStore();
+    await sherpa.sendMessage("Create a PCA alternative", true);
+    const requestId = lastRequestId();
+    const proposal = {
+      proposal_id: "00000000-0000-4000-8000-000000000043",
+      proposal_digest: "e".repeat(64),
+      suggested_name: "PCA alternative",
+      human_explanation: "A separate workflow for review.",
+      dag_spec: { nodes: [{ id: "pca_1" }], edges: [] },
+    };
+    emitSherpa({
+      type: SHERPA_WS_EVENT.workflowProposalPreview,
+      request_id: requestId,
+      proposal,
+    });
+
+    expect(sherpa.pendingProductProposal).toEqual({ proposal, sourceWorkflowId: 5 });
+    expect(mockWorkbookStore.selectWorkflowSheet).not.toHaveBeenCalled();
+    expect(mockWorkflowStore.executeStoredWorkflow).not.toHaveBeenCalled();
+
+    mockTransport.confirmProposal.mockResolvedValueOnce(88);
+    await sherpa.confirmProductProposal();
+
+    expect(mockTransport.confirmProposal).toHaveBeenCalledWith(5, proposal);
+    expect(mockWorkbookStore.refreshSheets).toHaveBeenCalledOnce();
+    expect(mockWorkbookStore.selectWorkflowSheet).toHaveBeenCalledWith(88);
+    expect(mockWorkflowStore.executeStoredWorkflow).not.toHaveBeenCalled();
+    expect(sherpa.pendingProductProposal).toBeNull();
+  });
+
   it("includes execution results in Sherpa workflow context for metric questions", async () => {
     const sherpa = useSherpaStore();
     mockWorkflowStore.nodes = [
       {
         id: "data_1",
-        type: "data.source",
+        type: "data.file_load",
         x: 0,
         y: 0,
         params: { experiment_id: 42 },
@@ -468,7 +643,7 @@ describe("Sherpa Store communication state", () => {
       },
       {
         id: "pls_1",
-        type: "model.pls",
+        type: "model.fitted_pls",
         x: 250,
         y: 0,
         params: { n_components: 3 },
@@ -536,12 +711,96 @@ describe("Sherpa Store communication state", () => {
     });
   });
 
+  it("refuses legacy plot claims until an executed contract is available", async () => {
+    const sherpa = useSherpaStore();
+    mockWorkflowStore.nodes = [
+      {
+        id: "pca_1",
+        type: "model.pca",
+        x: 0,
+        y: 0,
+        params: { n_components: "2" },
+        executionState: { status: "completed" },
+      },
+    ];
+    mockWorkflowStore.edges = [];
+    mockWorkflowStore.lastExecutionResults = {
+      pca_1: {
+        default: {
+          type: "SherpaDataset",
+          data: [
+            [-2.68, -0.32],
+            [2.39, 0.35],
+          ],
+          n_samples: 150,
+          n_features: 2,
+          metadata: {
+            type: "PCA",
+            isPCA: true,
+            pc_labels: ["PC1 (92.5%)", "PC2 (5.3%)"],
+            explained_variance_ratio: [0.925, 0.053],
+            n_components: 2,
+            label_categories: ["setosa", "versicolor", "virginica"],
+          },
+        },
+        loadings: {
+          type: "SherpaDataset",
+          data: [
+            [0.36, -0.08, 0.86, 0.36],
+            [0.66, 0.73, -0.18, -0.08],
+          ],
+          title: "PCA Loadings",
+          x_axis: {
+            title: "Property",
+            units: "",
+            data: [0, 1, 2, 3],
+            labels: [
+              "sepal length (cm)",
+              "sepal width (cm)",
+              "petal length (cm)",
+              "petal width (cm)",
+            ],
+          },
+          metadata: { data_quantity: "PCA loading" },
+        },
+      },
+    };
+
+    await sherpa.sendMessage("explain the plot in the Loadings node", true);
+
+    const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
+    const nodes = payload.payload.workflow_context.nodes;
+    expect(nodes).toHaveLength(1);
+    const plotStates = nodes[0].plot_states;
+    expect(Array.isArray(plotStates)).toBe(true);
+
+    // Historical results without an execution contract cannot authorize plot claims.
+    expect(plotStates).toHaveLength(1);
+    expect(plotStates[0].refusal_reason).toMatch(/no presentation contract/);
+    expect(plotStates[0].x_axis).toBeNull();
+    const presentation = {presentation_id:"saved",label:"Saved responses",kind:"classification_responses",source_ports:["default"],modes:["plot"],description:""};
+    mockWorkflowStore.lastExecutionPresentations = {pca_1: {
+      schema_version:"spectrasherpa-executed-presentation/1",contract_digest:"a".repeat(64),
+      contract:{schema_version:"spectrasherpa-node-presentation/1",default_presentation:"saved",presentations:[presentation]},
+      presentations:[{...presentation,content_categories:[]}],
+    }};
+    sherpa.stopAnalysis();
+    await sherpa.sendMessage("explain the saved response plot", true);
+    const typed = JSON.parse(mockWs.send.mock.calls.at(-1)![0] as string).payload.workflow_context.nodes[0].plot_states;
+    expect(typed[0].presentation_kind).toBe("classification_responses");
+    expect(typed[0].contract_digest).toBe("a".repeat(64));
+    expect(typed[0].traces).toBeNull();
+    mockWorkflowStore.lastExecutionPresentations = {};
+
+
+  });
+
   it("falls back to inspected file metadata for Sherpa dataset context", async () => {
     const sherpa = useSherpaStore();
     mockWorkflowStore.nodes = [
       {
         id: "data_1",
-        type: "data.source",
+        type: "data.file_load",
         x: 0,
         y: 0,
         params: {},
@@ -568,6 +827,15 @@ describe("Sherpa Store communication state", () => {
 
     const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
     expect(payload.payload.workflow_context.dataset_context).toEqual({
+      analysis_context: {
+        schema: "spectra-analysis-context/1",
+        captured_at: expect.any(String),
+        project_id: null,
+        sheet: null,
+        selection: null,
+        authority:
+          "The active workflow sheet and current My Dataset selection are the input authority. Treat this context as sheet-scoped and do not reuse settings from another sheet.",
+      },
       dataset_id: null,
       label: null,
       source: null,
@@ -600,7 +868,7 @@ describe("Sherpa Store communication state", () => {
     mockWorkflowStore.nodes = [
       {
         id: "data_1",
-        type: "data.source",
+        type: "data.file_load",
         x: 0,
         y: 0,
         label: "Load Data",
@@ -638,6 +906,15 @@ describe("Sherpa Store communication state", () => {
 
     const payload = JSON.parse(mockWs.send.mock.calls[0][0] as string);
     expect(payload.payload.workflow_context.dataset_context).toEqual({
+      analysis_context: {
+        schema: "spectra-analysis-context/1",
+        captured_at: expect.any(String),
+        project_id: null,
+        sheet: null,
+        selection: null,
+        authority:
+          "The active workflow sheet and current My Dataset selection are the input authority. Treat this context as sheet-scoped and do not reuse settings from another sheet.",
+      },
       dataset_id: "wine-dataset-1",
       label: "wine",
       source: "sklearn",
@@ -682,7 +959,7 @@ describe("Sherpa Store communication state", () => {
     mockWorkflowStore.nodes = [
       {
         id: "data_1",
-        type: "data.source",
+        type: "data.file_load",
         x: 0,
         y: 0,
         label: "Load Data",
@@ -693,7 +970,7 @@ describe("Sherpa Store communication state", () => {
     mockWorkflowStore.lastExecutionResults = {
       data_1: {
         // Multi-output wrapper — this is what ``serialize_result`` emits
-        // for ``data.source`` nodes whose outputs dict has ``{default,
+        // for ``data.file_load`` nodes whose outputs dict has ``{default,
         // target}`` keys.
         default: {
           type: "SherpaDataset",
@@ -793,7 +1070,7 @@ describe("Sherpa Store communication state", () => {
       },
     });
 
-    await vi.advanceTimersByTimeAsync(121_000);
+    await vi.advanceTimersByTimeAsync(SHERPA_RESPONSE_TIMEOUT_MS + 1_000);
 
     expect(sherpa.state).toBe("idle");
     expect(sherpa.messages.at(-1)?.content).toContain("97%");
@@ -806,18 +1083,20 @@ describe("Sherpa Store communication state", () => {
       },
     ]);
     expect(
-      notifications.notifications.some((notification) =>
-        notification.message.includes("Sherpa tool started")
-        && notification.message.includes("describe_node")
-        && notification.message.includes("server 4.2s, +4.2s")
-      )
+      notifications.notifications.some(
+        (notification) =>
+          notification.message.includes("Sherpa tool started") &&
+          notification.message.includes("describe_node") &&
+          notification.message.includes("server 4.2s, +4.2s"),
+      ),
     ).toBe(true);
     expect(
-      notifications.notifications.some((notification) =>
-        notification.message.includes("Sherpa response received")
-        && notification.message.includes("The model accuracy is 97%.")
-        && notification.message.includes("server 6.2s, +0.6s")
-      )
+      notifications.notifications.some(
+        (notification) =>
+          notification.message.includes("Sherpa response received") &&
+          notification.message.includes("The model accuracy is 97%.") &&
+          notification.message.includes("server 6.2s, +0.6s"),
+      ),
     ).toBe(true);
 
     sherpa.dispose();
@@ -853,6 +1132,130 @@ describe("Sherpa Store communication state", () => {
     sherpa.dispose();
   });
 
+  it("does not allow server configuration to extend the one-minute deadline", async () => {
+    mockAppConfig.value = { limits: { sherpaResponseTimeoutMs: 600_000 } };
+    const sherpa = useSherpaStore();
+    sherpa.init();
+    await sherpa.sendMessage("Explain my PCA result");
+    const requestId = lastRequestId();
+    emitSherpa({ type: SHERPA_WS_EVENT.chatStart, request_id: requestId });
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(sherpa.state).toBe("idle");
+    emitSherpa({ type: SHERPA_WS_EVENT.chatChunk, request_id: requestId, chunk: "Completed scientific answer" });
+    emitSherpa({ type: SHERPA_WS_EVENT.chatDone, request_id: requestId });
+    expect(sherpa.state).toBe("idle");
+    expect(sherpa.messages.some((message) => message.content.includes("Completed scientific answer"))).toBe(false);
+    sherpa.dispose();
+  });
+
+  it("cannot send an old sync after Stop and a replacement sync", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+    let release!: () => void;
+    mockLlmStore.connect.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    const old = sherpa.syncWorkflow();
+    sherpa.stopAnalysis();
+    await sherpa.syncWorkflow();
+    const sent = mockWs.send.mock.calls.length;
+    release();
+    await old;
+    expect(mockWs.send.mock.calls.length).toBe(sent);
+    expect(sherpa.isSyncing).toBe(true);
+    sherpa.stopAnalysis();
+    sherpa.dispose();
+  });
+
+  it.each([false, true])("does not open or fail a stopped proposal when sheet refresh finishes late (reject=%s)", async (reject) => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+    await sherpa.sendMessage("Create a PCA workflow");
+    let release!: () => void;
+    mockWorkbookStore.refreshSheets.mockImplementationOnce(() => new Promise<void>((resolve, fail) => { release = () => reject ? fail(new Error("old refresh failed")) : resolve(); }));
+    emitSherpa({ type: SHERPA_WS_EVENT.workflowProposed, request_id: lastRequestId(), new_workflow_id: 999, conversation_id: "stale-conversation" });
+    expect(mockWorkbookStore.refreshSheets).toHaveBeenCalledOnce();
+    sherpa.stopAnalysis();
+    await sherpa.sendMessage("Explain PLS");
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mockWorkbookStore.selectWorkflowSheet).not.toHaveBeenCalled();
+    expect(sherpa.currentConversationId).not.toBe("stale-conversation");
+    expect(sherpa.isChatting).toBe(true);
+    sherpa.stopAnalysis();
+    sherpa.dispose();
+  });
+
+  it("does not clear a new request when a previous run refresh finishes late", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+    await sherpa.sendMessage("Run my workflow");
+    let release!: () => void;
+    mockWorkflowStore.loadWorkflow.mockImplementationOnce(() => new Promise<void>((resolve) => { release = resolve; }));
+    emitSherpa({ type: SHERPA_WS_EVENT.chatDone, request_id: lastRequestId(), execution_result: { workflow_id: 5, run_id: 88, status: "completed" } });
+    expect(mockWorkflowStore.loadWorkflow).toHaveBeenCalled();
+    await sherpa.sendMessage("Explain PLS");
+    const replacementId = lastRequestId();
+    release();
+    await vi.advanceTimersByTimeAsync(0);
+    emitSherpa({ type: SHERPA_WS_EVENT.chatStart, request_id: replacementId });
+    emitSherpa({ type: SHERPA_WS_EVENT.chatChunk, request_id: replacementId, chunk: "New answer" });
+    expect(sherpa.messages.at(-1)?.content).toBe("New answer");
+    expect(sherpa.isChatting).toBe(true);
+    sherpa.stopAnalysis();
+    sherpa.dispose();
+  });
+
+  it("keeps sync active on heartbeats and stops at its original deadline", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+    await sherpa.syncWorkflow();
+    const id = lastRequestId();
+    for (const elapsed of [15, 30, 45]) {
+      await vi.advanceTimersByTimeAsync(15_000);
+      emitSherpa({ type: SHERPA_WS_EVENT.status, request_id: id, payload: { heartbeat: true, elapsed_seconds: elapsed, detail: "Reviewing workflow." } });
+      expect(sherpa.isSyncing).toBe(true);
+      expect(sherpa.analysisStatus).toContain(`${elapsed}s`);
+    }
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(sherpa.isSyncing).toBe(false);
+    sherpa.dispose();
+  });
+
+  it("stops the exact request, ignores late replies and allows a new question", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+    await sherpa.sendMessage("Explain PCA");
+    const stoppedId = lastRequestId();
+    sherpa.stopAnalysis();
+    expect(JSON.parse(mockWs.send.mock.calls.at(-1)![0] as string)).toEqual({ action: "cancel_request", request_id: stoppedId });
+    expect(sherpa.isChatting).toBe(false);
+    expect(sherpa.analysisStatus).toBe("");
+    emitSherpa({ type: SHERPA_WS_EVENT.chatStart, request_id: stoppedId });
+    emitSherpa({ type: SHERPA_WS_EVENT.chatChunk, request_id: stoppedId, chunk: "late reply" });
+    expect(sherpa.messages.some((m) => m.content.includes("late reply"))).toBe(false);
+    await sherpa.sendMessage("Explain PLS");
+    expect(lastRequestId()).not.toBe(stoppedId);
+    expect(sherpa.isChatting).toBe(true);
+    emitSherpa({ type: SHERPA_WS_EVENT.chatDone, request_id: lastRequestId() });
+    expect(sherpa.isChatting).toBe(false);
+    sherpa.dispose();
+  });
+
+  it("updates the in-place status at 15 seconds without extending the deadline", async () => {
+    const sherpa = useSherpaStore();
+    sherpa.init();
+    await sherpa.sendMessage("Explain PCA");
+    const id = lastRequestId();
+    for (const elapsed of [15, 30, 45]) {
+      await vi.advanceTimersByTimeAsync(15_000);
+      emitSherpa({ type: SHERPA_WS_EVENT.status, request_id: id, payload: { heartbeat: true, elapsed_seconds: elapsed, detail: "Waiting for the model response." } });
+      expect(sherpa.analysisStatus).toContain(`${elapsed}s`);
+      expect(sherpa.isChatting).toBe(true);
+    }
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(sherpa.isChatting).toBe(false);
+    sherpa.dispose();
+  });
+
   it("logs the last visible Sherpa activity when chat times out", async () => {
     const sherpa = useSherpaStore();
     const notifications = useNotificationStore();
@@ -867,11 +1270,11 @@ describe("Sherpa Store communication state", () => {
       tool_name: "describe_node",
     });
 
-    await vi.advanceTimersByTimeAsync(120_000);
+    await vi.advanceTimersByTimeAsync(SHERPA_RESPONSE_TIMEOUT_MS);
 
     expect(sherpa.state).toBe("idle");
     expect(notifications.notifications[0]?.message).toContain(
-      "Sherpa Advisor timed out while waiting for tool: describe_node"
+      "Sherpa Advisor timed out while waiting for tool: describe_node",
     );
 
     sherpa.dispose();
@@ -882,11 +1285,11 @@ describe("Sherpa Store communication state", () => {
     const notifications = useNotificationStore();
 
     await sherpa.sendMessage("Explain my PCA result");
-    await vi.advanceTimersByTimeAsync(120_000);
+    await vi.advanceTimersByTimeAsync(SHERPA_RESPONSE_TIMEOUT_MS);
 
     expect(sherpa.state).toBe("idle");
     expect(notifications.notifications[0]?.message).toContain(
-      "Sherpa Advisor timed out before the server acknowledged the request."
+      "Sherpa Advisor timed out before the server acknowledged the request.",
     );
   });
 
@@ -909,17 +1312,18 @@ describe("Sherpa Store communication state", () => {
       },
     });
 
-    await vi.advanceTimersByTimeAsync(120_000);
+    await vi.advanceTimersByTimeAsync(SHERPA_RESPONSE_TIMEOUT_MS);
 
     expect(sherpa.state).toBe("idle");
     expect(
-      notifications.notifications.some((notification) =>
-        notification.message.includes("Sherpa server acknowledged the request.")
-        && notification.message.includes("server 1.2s, +1.2s")
-      )
+      notifications.notifications.some(
+        (notification) =>
+          notification.message.includes("Sherpa server acknowledged the request.") &&
+          notification.message.includes("server 1.2s, +1.2s"),
+      ),
     ).toBe(true);
     expect(notifications.notifications[0]?.message).toContain(
-      "Sherpa Advisor timed out. Last activity: Sherpa server acknowledged the request."
+      "Sherpa Advisor timed out. Last activity: Sherpa server acknowledged the request.",
     );
 
     sherpa.dispose();
@@ -942,16 +1346,16 @@ describe("Sherpa Store communication state", () => {
     });
 
     expect(sherpa.lastSyncError).toBe(
-      "Demo Sherpa interaction limit reached (200 interactions per session)"
+      "Demo Sherpa interaction limit reached (200 interactions per session)",
     );
     expect(sherpa.messages.at(-1)?.content).toBe(
-      "Demo Sherpa interaction limit reached (200 interactions per session)\nRemaining: 0\nUsage resets after 24 hours of inactivity."
+      "Demo Sherpa interaction limit reached (200 interactions per session)\nRemaining: 0\nUsage resets after 24 hours of inactivity.",
     );
     expect(notifications.notifications[0]?.message).toBe(
-      "Demo Sherpa interaction limit reached (200 interactions per session) Remaining: 0 Usage resets after 24 hours of inactivity."
+      "Demo Sherpa interaction limit reached (200 interactions per session) Remaining: 0 Usage resets after 24 hours of inactivity.",
     );
     expect(notifications.notifications[0]?.detail).toBe(
-      "Remaining: 0\nUsage resets after 24 hours of inactivity."
+      "Remaining: 0\nUsage resets after 24 hours of inactivity.",
     );
   });
 
@@ -967,9 +1371,7 @@ describe("Sherpa Store communication state", () => {
       },
     });
 
-    expect(sherpa.messages.at(-1)?.content).toBe(
-      "Sherpa Advisor recorded your decision."
-    );
+    expect(sherpa.messages.at(-1)?.content).toBe("Sherpa Advisor recorded your decision.");
 
     sherpa.dispose();
   });
@@ -1007,8 +1409,8 @@ describe("Sherpa Store communication state", () => {
     expect(sherpa.messages.at(-1)?.content).toBe("PC1 explains most of the variance.");
     expect(
       notifications.notifications.some((notification) =>
-        notification.message.includes("Sherpa recovered a missing response start")
-      )
+        notification.message.includes("Sherpa recovered a missing response start"),
+      ),
     ).toBe(true);
 
     sherpa.dispose();
@@ -1031,7 +1433,7 @@ describe("Sherpa Store communication state", () => {
     });
 
     expect(sherpa.messages.at(-1)?.content).toContain(
-      "Sherpa tool failed (timeout): describe_node."
+      "Sherpa tool failed (timeout): describe_node.",
     );
 
     sherpa.dispose();
@@ -1050,13 +1452,12 @@ describe("Sherpa Store communication state", () => {
       payload: {
         connected: true,
         stage: "tool_round_limit",
-        detail: "Sherpa exhausted 2 tool rounds and is making a final response without more tool calls.",
+        detail:
+          "Sherpa exhausted 2 tool rounds and is making a final response without more tool calls.",
       },
     });
 
-    expect(sherpa.messages.at(-1)?.content).toContain(
-      "Sherpa exhausted 2 tool rounds"
-    );
+    expect(sherpa.messages.at(-1)?.content).toContain("Sherpa exhausted 2 tool rounds");
 
     sherpa.dispose();
   });
@@ -1091,8 +1492,8 @@ describe("Sherpa Store communication state", () => {
     expect(rendered).toContain("deepseek-chat");
     expect(
       notifications.notifications.some((notification) =>
-        notification.message.includes("deepseek-chat")
-      )
+        notification.message.includes("deepseek-chat"),
+      ),
     ).toBe(true);
 
     // Negative: never expose supplier base URL / API key / env-var name
@@ -1107,11 +1508,11 @@ describe("Sherpa Store communication state", () => {
     const notifications = useNotificationStore();
 
     await sherpa.syncWorkflow();
-    await vi.advanceTimersByTimeAsync(180_000);
+    await vi.advanceTimersByTimeAsync(SHERPA_SYNC_TIMEOUT_MS);
 
     expect(sherpa.state).toBe("idle");
     expect(notifications.notifications[0]?.message).toBe(
-      "Sherpa sync timed out. The service may be unavailable."
+      "Sherpa sync timed out. The service may be unavailable.",
     );
   });
 
@@ -1137,10 +1538,10 @@ describe("Sherpa Store communication state", () => {
 
     expect(sherpa.state).toBe("error");
     expect(sherpa.messages.at(-1)?.content).toContain(
-      "Sherpa event handling failed: Sherpa chat chunk payload was missing text."
+      "Sherpa event handling failed: Sherpa chat chunk payload was missing text.",
     );
     expect(notifications.notifications[0]?.message).toContain(
-      "Sherpa event handling failed: Sherpa chat chunk payload was missing text."
+      "Sherpa event handling failed: Sherpa chat chunk payload was missing text.",
     );
   });
 
@@ -1160,10 +1561,10 @@ describe("Sherpa Store communication state", () => {
     return (parsed?.payload?.workflow_context as Record<string, unknown>) ?? null;
   };
 
-  it("sends effective node parameters (defaults merged with overrides)", async () => {
+  it("sends retained effective parameters instead of current registry defaults", async () => {
     // Simulate a node with a user override that leaves another param unset.
     mockWorkflowStore.getNodeMetadata.mockImplementation((nodeType: string) => {
-      if (nodeType === "selection.sample_partition") {
+      if (nodeType === "data.train_test_split") {
         return {
           label: "Sample Partition",
           description: "Split data",
@@ -1180,13 +1581,14 @@ describe("Sherpa Store communication state", () => {
     mockWorkflowStore.nodes = [
       {
         id: "partition_1",
-        type: "selection.sample_partition",
+        type: "data.train_test_split",
         params: { test_size: 0.25 }, // user override; method and random_seed not set
         executionState: { status: "completed" },
       },
     ];
 
     const sherpa = useSherpaStore();
+    mockWorkflowStore.lastExecutionParams = {partition_1:{test_size:0.25,method:"stratified",random_seed:17}};
     await sherpa.sendMessage("what is the partition config");
 
     const ctx = getLastSyncPayload();
@@ -1199,7 +1601,8 @@ describe("Sherpa Store communication state", () => {
     expect(params.test_size).toBe(0.25);
     // Defaults filled in so the server-side context builder shows all params
     expect(params.method).toBe("stratified");
-    expect(params.random_seed).toBe(42);
+    expect(params.random_seed).toBe(17);
+    mockWorkflowStore.lastExecutionParams = {};
   });
 
   it("preserves scientific scalars and salient_features in results_summary", async () => {
@@ -1262,6 +1665,23 @@ describe("Sherpa Store communication state", () => {
     expect(metadata.deep_nested).toBeUndefined();
   });
 
+  it("projects merged PeakTable fields into chemistry context without a separate output", async () => {
+    mockWorkflowStore.nodes = [{ id: "peak", type: "analysis.peak_finding", params: {} }];
+    mockWorkflowStore.lastExecutionResults = {
+      peak: { peaks: {
+        data: [{ median_pos: 1206, detection_fraction: 1, label: "consensus peak (155/155 samples)" }],
+        metadata: { method: "peak_finding", x_units: "nm", selection_context: { n_samples: 155, technique: "NIR" } },
+      } },
+    };
+    await useSherpaStore().sendMessage("explain these peaks");
+    const summary = (getLastSyncPayload()?.results_summary as Record<string, Record<string, unknown>>)?.peak;
+    expect(summary.salient_features).toMatchObject({
+      method: "peak_finding", x_units: "nm",
+      features: [{ position: 1206, importance: 1, label: "consensus peak (155/155 samples)" }],
+      selection_context: { n_samples: 155, technique: "NIR" },
+    });
+  });
+
   it("adopts conversation_id from Sherpa chat start events", async () => {
     const sherpa = useSherpaStore();
     sherpa.init();
@@ -1291,7 +1711,10 @@ describe("Sherpa Store communication state", () => {
             title: "Mother SIMCA",
             messages: [
               { role: "user", content: "Build an alternative." },
-              { role: "assistant", content: "Generated alternative → opened as Sheet 'AI PLS-DA'." },
+              {
+                role: "assistant",
+                content: "Generated alternative → opened as Sheet 'AI PLS-DA'.",
+              },
             ],
           },
         };
@@ -1323,9 +1746,7 @@ describe("Sherpa Store communication state", () => {
     expect(sherpa.messages.map((item) => item.content).join("\n")).toContain(
       "Generated alternative",
     );
-    expect(sherpa.messages.map((item) => item.content).join("\n")).not.toContain(
-      "dummy-coded",
-    );
+    expect(sherpa.messages.map((item) => item.content).join("\n")).not.toContain("dummy-coded");
     expect(sherpa.conversations.map((item) => item.id)).toEqual(["conv-parent"]);
 
     await sherpa.loadConversation("conv-ai");
@@ -1481,11 +1902,16 @@ describe("Sherpa Store communication state", () => {
           description: "Classification model",
           output_type: "PLSModel",
           parameters: [
-            { name: "n_components", label: "Components", description: "Latent variables", default: 2 },
+            {
+              name: "n_components",
+              label: "Components",
+              description: "Latent variables",
+              default: 2,
+            },
           ],
         };
       }
-      if (nodeType === "data.source") {
+      if (nodeType === "data.file_load") {
         return {
           label: "Load Data",
           description: "Dataset source",
@@ -1498,9 +1924,13 @@ describe("Sherpa Store communication state", () => {
     mockWorkflowStore.nodes = [
       {
         id: "data_1",
-        type: "data.source",
+        type: "data.file_load",
         params: {},
-        executionState: { status: "completed", output_shape: [150, 4], output_type: "SherpaDataset" },
+        executionState: {
+          status: "completed",
+          output_shape: [150, 4],
+          output_type: "SherpaDataset",
+        },
       },
       {
         id: "model_1",

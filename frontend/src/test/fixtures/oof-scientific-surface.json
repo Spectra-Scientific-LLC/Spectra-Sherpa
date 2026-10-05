@@ -1,0 +1,31 @@
+{
+  "schema_version": "spectrasherpa-out-of-fold-evidence/1",
+  "producer": {
+    "operation_id": "selection.nested_cv",
+    "implementation_id": "spectrasherpa.selection.nested_cv",
+    "execution_contract_digest": "e3865b06d8e63127bc174a7589ad80522f2146ba3170b0c6ffd66ce229299d01",
+    "node_id": "audit_nested_cv"
+  },
+  "task_type": "regression",
+  "observations": [1, 2, 3, 4],
+  "predictions": [1.1, 1.9, 3.2, 3.8],
+  "fold_assignments": [0, 0, 1, 1],
+  "split_plan": {
+    "schema_version": "spectra-split-plan/1",
+    "method": "kfold",
+    "n_samples": 4,
+    "grouped": false,
+    "folds": [
+      {
+        "train": [2, 3],
+        "test": [0, 1]
+      },
+      {
+        "train": [0, 1],
+        "test": [2, 3]
+      }
+    ]
+  },
+  "split_plan_digest": "bcf8de7d72a13c62d0dd36bdc5da86bfccc09d8fe8d5d627bb9967771dd2179d",
+  "evidence_sha256": "0814686d8b58ccfd31835ee05c737781d2c900a20487bb540827d99c6732d3d5"
+}

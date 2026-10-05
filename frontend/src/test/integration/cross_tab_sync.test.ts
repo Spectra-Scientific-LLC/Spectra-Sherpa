@@ -348,7 +348,7 @@ describe("Receiver side — handleBroadcastMessage → updateNode", () => {
     };
 
     const { api } = mountSender({
-      nodeData: { id: "source_1", type: "data.source", workflowId: 100, params: {} },
+      nodeData: { id: "source_1", type: "data.file_load", workflowId: 100, params: {} },
       params: { experiment_id: 12 },
     });
     const requestId = api().broadcastParamsUpdate();
@@ -377,7 +377,7 @@ describe("Receiver side — handleBroadcastMessage → updateNode", () => {
     };
 
     const { api } = mountSender({
-      nodeData: { id: "source_1", type: "data.source", workflowId: 200, params: {} },
+      nodeData: { id: "source_1", type: "data.file_load", workflowId: 200, params: {} },
       params: { experiment_id: 12 },
     });
     const requestId = api().broadcastParamsUpdate();

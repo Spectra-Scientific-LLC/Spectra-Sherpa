@@ -1,6 +1,13 @@
 <template>
   <div class="api-keys-container">
-    <!-- App Authentication Key — local and hybrid only (not enterprise managed-auth) -->
+    <div v-if="appConfig?.features?.credentialStorage === false" class="key-section" role="status">
+      <strong>Saved API keys are unavailable on this computer.</strong>
+      <p class="description">
+        The operating system's credential protection could not be used, so Spectra Sherpa will not
+        store or use API keys. Analysis still works; features that need a saved key stay disabled.
+      </p>
+    </div>
+    <!-- App Authentication Key — local and explicitly composed products only (not enterprise managed-auth) -->
     <div v-if="isFeatureEnabled('apiTokenSettings')" class="key-section">
       <div class="section-header">
         <h3>App Authentication Key</h3>
@@ -40,7 +47,7 @@
       </div>
     </div>
 
-    <!-- BYO Chat Config — local/OSS mode only. Uses CHAT_ENDPOINT_URL/KEY/MODEL env vars. -->
+    <!-- BYO Chat Config — local/OSS mode only. -->
     <div v-if="appMode === 'local'" class="key-section">
       <div class="section-header">
         <h3>BYO Chat Configuration</h3>
@@ -49,7 +56,7 @@
       </div>
       <p class="description">
         Configure your local BYO Chat provider for OSS mode.
-        DeepSeek is preconfigured but you can change to another OpenAI-compatible provider.
+        Choose an OpenAI-compatible provider, Anthropic's native Messages API, or a local Ollama server.
         Settings are saved to your local <code>.env</code> file.
       </p>
 
@@ -92,15 +99,15 @@
 
       <div class="field">
         <label for="byo-key">
-          {{ byoProviderLabel }} API Key
-          <span v-if="byoChatConfigured" class="saved-indicator"><i class="pi pi-check-circle" /> Saved</span>
+          {{ byoRequiresKey ? `${byoProviderLabel} API Key` : "API Key (not required for Ollama)" }}
+          <span v-if="byoCanReuseSavedKey" class="saved-indicator"><i class="pi pi-check-circle" /> Saved</span>
         </label>
         <div class="password-input-wrapper">
           <InputText
             id="byo-key"
             v-model="byoKey"
             :type="showByoKey ? 'text' : 'password'"
-            :placeholder="byoChatConfigured ? 'Leave empty to keep existing key' : `Enter your ${byoProviderLabel} API key`"
+            :placeholder="byoCanReuseSavedKey ? 'Leave empty to keep existing key' : `Enter your ${byoProviderLabel} API key`"
             class="key-input"
             autocomplete="off"
           />
@@ -111,10 +118,21 @@
           />
         </div>
         <small class="hint">
-          <span v-if="!byoChatConfigured">
+          <span v-if="byoRequiresKey && !byoCanReuseSavedKey && byoProviderUrl">
             Get your API key from
             <a :href="byoProviderUrl" target="_blank" rel="noopener">{{ byoProviderUrl }}</a>
           </span>
+          <span v-else-if="!byoRequiresKey">Ollama does not use an API key.</span>
+        </small>
+      </div>
+
+      <div class="field">
+        <div class="switch-field">
+          <InputSwitch v-model="byoAllowPrivateEndpoint" inputId="byo-allow-private-endpoint" />
+          <label for="byo-allow-private-endpoint">Allow a private or loopback model endpoint</label>
+        </div>
+        <small class="hint">
+          Required for Ollama on localhost. Enable only for a model server you trust; this relaxes the endpoint SSRF guard.
         </small>
       </div>
 
@@ -152,7 +170,7 @@
           label="Save LLM Configuration"
           icon="pi pi-save"
           :loading="savingByo"
-          :disabled="(!byoChatConfigured && !byoKey.trim()) || savingByo || testingByo"
+          :disabled="byoNeedsKey || savingByo || testingByo"
           @click="saveByoChatConfig"
         />
         <Button
@@ -160,7 +178,7 @@
           icon="pi pi-bolt"
           class="p-button-outlined"
           :loading="testingByo"
-          :disabled="testingByo || (!byoChatConfigured && !byoKey.trim())"
+          :disabled="testingByo || byoNeedsKey"
           @click="testByoChatConnection"
         />
       </div>
@@ -441,12 +459,16 @@ import api from "@/api/client";
 import { readStoredApiKey, writeStoredApiKey } from "@/utils/authStorage";
 import { useAppConfig } from "@/composables/useAppConfig";
 
+const props = defineProps<{ hitranOnly?: boolean }>();
+
 // Capability gate: only show the LLM-config surface when the server has
 // announced sherpaAdvisor support. Per /llm-config and /llm/*
 // live on the commercial server only; OSS-only installs would 404 here.
 const { isFeatureEnabled, appMode, appConfig } = useAppConfig();
 const isDemoMode = computed(() => Boolean(appConfig.value?.demo));
-const canConfigureLlm = computed(() => isFeatureEnabled("sherpaAdvisor") && !isDemoMode.value);
+const canConfigureLlm = computed(
+  () => !props.hitranOnly && isFeatureEnabled("sherpaAdvisor") && !isDemoMode.value,
+);
 
 interface SavedKeyInfo {
   service_name: string;
@@ -484,14 +506,23 @@ const hasLlmKey = ref(false);
 const byoProviders = [
   { label: "DeepSeek", value: "deepseek" },
   { label: "OpenAI", value: "openai" },
+  { label: "Anthropic (Claude)", value: "anthropic" },
   { label: "Ollama (local)", value: "ollama" },
   { label: "Custom", value: "custom" },
 ];
 const byoProviderDefaults: Record<string, { url: string; model: string }> = {
   deepseek: { url: "https://api.deepseek.com/v1", model: "deepseek-chat" },
   openai: { url: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  anthropic: { url: "https://api.anthropic.com", model: "claude-sonnet-4-6" },
   ollama: { url: "http://localhost:11434/v1", model: "llama3" },
   custom: { url: "", model: "" },
+};
+const byoProviderTransports: Record<string, string> = {
+  deepseek: "openai_compatible",
+  openai: "openai_compatible",
+  anthropic: "anthropic",
+  ollama: "ollama",
+  custom: "openai_compatible",
 };
 const byoProvider = ref("deepseek");
 const byoUrl = ref("https://api.deepseek.com/v1");
@@ -499,6 +530,10 @@ const byoModel = ref("deepseek-chat");
 const byoKey = ref("");
 const showByoKey = ref(false);
 const byoChatConfigured = ref(false);
+const byoHasSavedKey = ref(false);
+const byoSavedTransportProvider = ref("");
+const byoSavedEndpointUrl = ref("");
+const byoAllowPrivateEndpoint = ref(false);
 const byoVerbose = ref(localStorage.getItem("llm_verbose") !== "false");
 const byoMaxParagraphs = ref(parseInt(localStorage.getItem("llm_max_paragraphs") ?? "2", 10) || 2);
 const byoMessage = ref("");
@@ -513,9 +548,21 @@ watch(byoUrl, (val) => localStorage.setItem("llm_url", val));
 watch(byoModel, (val) => localStorage.setItem("llm_model", val));
 
 const byoProviderLabel = computed(() => byoProviders.find(p => p.value === byoProvider.value)?.label ?? "LLM");
+const byoTransportProvider = computed(() => byoProviderTransports[byoProvider.value] ?? "openai_compatible");
+const byoRequiresKey = computed(() => byoTransportProvider.value !== "ollama");
+const normalizedByoEndpoint = (url: string) => url.trim().replace(/\/+$/, "");
+const byoCanReuseSavedKey = computed(() =>
+  byoHasSavedKey.value
+  && byoTransportProvider.value === byoSavedTransportProvider.value
+  && normalizedByoEndpoint(byoUrl.value) === normalizedByoEndpoint(byoSavedEndpointUrl.value),
+);
+const byoNeedsKey = computed(() =>
+  byoRequiresKey.value && !byoKey.value.trim() && !byoCanReuseSavedKey.value,
+);
 const byoProviderUrls: Record<string, string> = {
   deepseek: "https://platform.deepseek.com/api_keys",
   openai: "https://platform.openai.com/api-keys",
+  anthropic: "https://console.anthropic.com/settings/keys",
   ollama: "http://localhost:11434",
   custom: "",
 };
@@ -533,13 +580,23 @@ const loadByoChatConfig = async () => {
   try {
     const res = await api.get("/config/byo-chat-config");
     byoChatConfigured.value = res.data.configured;
+    byoHasSavedKey.value = Boolean(res.data.has_key);
+    byoSavedTransportProvider.value = res.data.provider || "openai_compatible";
+    byoSavedEndpointUrl.value = res.data.endpoint_url || "";
+    byoAllowPrivateEndpoint.value = Boolean(res.data.allow_private_endpoint);
     if (res.data.endpoint_url) byoUrl.value = res.data.endpoint_url;
     if (res.data.model) byoModel.value = res.data.model;
-    // Auto-select provider from URL
-    for (const [key, defaults] of Object.entries(byoProviderDefaults)) {
-      if (key !== "custom" && res.data.endpoint_url?.includes(new URL(defaults.url).hostname)) {
-        byoProvider.value = key;
-        break;
+    if (res.data.provider === "anthropic" || res.data.provider === "ollama") {
+      byoProvider.value = res.data.provider;
+    } else {
+      // OpenAI-compatible URLs share one transport; keep a helpful vendor
+      // label when the endpoint matches a known default.
+      byoProvider.value = "custom";
+      for (const [key, defaults] of Object.entries(byoProviderDefaults)) {
+        if (key !== "custom" && res.data.endpoint_url?.includes(new URL(defaults.url).hostname)) {
+          byoProvider.value = key;
+          break;
+        }
       }
     }
   } catch {
@@ -552,7 +609,7 @@ const saveByoChatConfig = async () => {
   byoError.value = "";
   savingByo.value = true;
   try {
-    if (!byoChatConfigured.value && !byoKey.value.trim()) {
+    if (byoNeedsKey.value) {
       byoError.value = "API key is required.";
       return;
     }
@@ -560,8 +617,13 @@ const saveByoChatConfig = async () => {
       endpoint_url: byoUrl.value.trim(),
       endpoint_key: byoKey.value.trim(),
       model: byoModel.value.trim() || "deepseek-chat",
+      provider: byoTransportProvider.value,
+      allow_private_endpoint: byoAllowPrivateEndpoint.value,
     });
     byoChatConfigured.value = true;
+    byoHasSavedKey.value = Boolean(byoKey.value.trim()) || byoCanReuseSavedKey.value;
+    byoSavedTransportProvider.value = byoTransportProvider.value;
+    byoSavedEndpointUrl.value = byoUrl.value.trim();
     byoKey.value = "";
     localStorage.setItem("llm_verbose", byoVerbose.value ? "true" : "false");
     localStorage.setItem("llm_max_paragraphs", String(byoMaxParagraphs.value));
@@ -583,6 +645,8 @@ const testByoChatConnection = async () => {
       endpoint_url: byoUrl.value.trim(),
       endpoint_key: byoKey.value.trim(),
       model: byoModel.value.trim() || "deepseek-chat",
+      provider: byoTransportProvider.value,
+      allow_private_endpoint: byoAllowPrivateEndpoint.value,
     };
     const response = await api.post("/config/byo-chat-config/test", payload);
     if (!response.data.success) {
@@ -595,6 +659,9 @@ const testByoChatConnection = async () => {
     // validates the credentials, it does not write them to .env / os.environ.
     await api.post("/config/byo-chat-config", payload);
     byoChatConfigured.value = true;
+    byoHasSavedKey.value = Boolean(byoKey.value.trim()) || byoCanReuseSavedKey.value;
+    byoSavedTransportProvider.value = byoTransportProvider.value;
+    byoSavedEndpointUrl.value = byoUrl.value.trim();
     byoKey.value = "";
     localStorage.setItem("llm_verbose", byoVerbose.value ? "true" : "false");
     localStorage.setItem("llm_max_paragraphs", String(byoMaxParagraphs.value));

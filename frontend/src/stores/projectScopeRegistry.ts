@@ -14,6 +14,9 @@
 // once) participate — that's the desired behaviour: a store with no live
 // instance has no state to reset.
 
+import { shallowRef } from "vue";
+
+export const activeProjectScope = shallowRef<number | null>(null);
 const callbacks = new Set<() => void>();
 
 /**

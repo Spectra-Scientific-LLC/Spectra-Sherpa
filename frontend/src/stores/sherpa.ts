@@ -1,4 +1,9 @@
+import { sherpaResponseTimeoutMs } from "@/lib/sherpaTimeouts";
+import { requireAdvisorTransport } from "@/lib/advisorTransport";
+import { SCIENTIFIC_QUERY_REFUSAL, recordScientificQueryOutcome } from "@/lib/scientificQueryGuidance";
+import { attentionSnapshot } from "@/lib/sherpaAttention";
 /* eslint-disable @typescript-eslint/no-explicit-any -- assistant sync payloads intentionally preserve flexible node parameter/result shapes. */
+import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import { defineStore } from "pinia";
 import { computed, ref, watch, type WatchStopHandle } from "vue";
 import api from "@/api/client";
@@ -17,11 +22,13 @@ import {
 import { useAdvisorStore } from "@/stores/advisor";
 import { useLlmStore } from "@/stores/llm";
 import { useWorkbookStore } from "@/stores/workbook";
-import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useNotificationStore } from "@/stores/notification";
 import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore } from "@/stores/workflow";
+import { summarizeProposalReceipt } from "@/utils/proposalReceipt";
 import { createMessageId } from "@/utils/messageIds";
+import { bindAdvisorExecutionContext } from "@/utils/advisorExecutionContext";
+import { summarizeNodePlots } from "@/utils/plotStateSummary";
 import type {
   ConversationSummary,
   SherpaMessage,
@@ -81,6 +88,11 @@ export interface ToolEvent {
   result?: unknown;
 }
 
+export interface ProductWorkflowProposalPreview {
+  proposal: Record<string, any>;
+  sourceWorkflowId: number;
+}
+
 const STORAGE_KEY = "sherpa_conversations";
 const RESUME_RECAP_LAST_SEEN_PREFIX = "spectra_sherpa_project_recap_last_seen_";
 const RESUME_RECAP_DISMISSED_PREFIX = "spectra_sherpa_project_recap_dismissed_";
@@ -106,7 +118,9 @@ const persistConversations = (items: ConversationSummary[]) => {
 };
 
 export const useSherpaStore = defineStore("sherpa", () => {
-  const { appMode } = useAppConfig();
+  const { appMode, siteProfile, appConfig } = useAppConfig();
+  const boundedContext = computed(() => appConfig.value?.advisorContextPolicy === "receipt");
+  const qualified = computed(() => appMode.value === "enterprise" && siteProfile?.value === "pro");
   const projectStore = useProjectStore();
   const messages = ref<SherpaMessage[]>([]);
   const isServerBacked = computed(() => appMode.value !== "local");
@@ -138,6 +152,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   const lastPeaksResult = ref<PeaksResult | null>(null);
   const lastCodeResult = ref<CodeResult | null>(null);
   const activeTools = ref<ToolEvent[]>([]);
+  const pendingProductProposal = ref<ProductWorkflowProposalPreview | null>(null);
   const subscriptionRequired = ref<string | null>(null);
   const subscriptionUpgradeUrl = ref<string | null>(null);
   const lastActivitySummary = ref<string | null>(null);
@@ -148,10 +163,12 @@ export const useSherpaStore = defineStore("sherpa", () => {
   // R1 canonical routing — captured at sendMessage time so a sheet
   // switch mid-stream cannot rebind the conversation to the wrong scope.
   const pendingAdvisorNodeId = ref<number | null>(null);
+  const pendingWorkflowId = ref<number | null>(null);
   const conversationSnapshots = new Map<
     string,
     { messages: SherpaMessage[]; summary: ConversationSummary }
   >();
+  const analysisStatus = ref("");
   let chatCommunicationTimer: ReturnType<typeof setTimeout> | null = null;
   let syncCommunicationTimer: ReturnType<typeof setTimeout> | null = null;
   let activeChatTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -238,7 +255,16 @@ export const useSherpaStore = defineStore("sherpa", () => {
     }
   }
 
+  let conversationIndexRequest = 0;
   async function refreshConversations(projectId = projectStore.currentProjectId): Promise<void> {
+    const indexRequest = ++conversationIndexRequest;
+    if (qualified.value) {
+      if (!projectId) { conversations.value = []; return; }
+      const response = await api.get(`/commercial/projects/${projectId}/conversations`);
+      if (indexRequest === conversationIndexRequest && projectId === projectStore.currentProjectId) conversations.value = response.data;
+      return;
+    }
+
     if (!isServerBacked.value) {
       conversations.value = loadConversations();
       return;
@@ -259,9 +285,11 @@ export const useSherpaStore = defineStore("sherpa", () => {
     }
 
     try {
-      const response = await api.get(`/llm/conversation/${activeConversationId}`, {
-        params: { project_id: projectId },
-      });
+      const response = boundedContext.value
+        ? await requireAdvisorTransport().loadConversation(activeConversationId)
+        : await api.get(`/llm/conversation/${activeConversationId}`, {
+            params: { project_id: projectId },
+          });
       const loadedConversationId = String(
         response.data.conversation_id || response.data.id || activeConversationId,
       );
@@ -399,7 +427,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
     persistConversations(conversations.value);
   }
 
+  let conversationLoadRequest = 0;
   async function loadConversation(conversationId: string): Promise<void> {
+    const request = ++conversationLoadRequest;
+    const projectId = projectStore.currentProjectId;
     if (conversationId === currentConversationId.value && messages.value.length > 0) {
       if (isServerBacked.value) {
         setActiveChannelTopics(conversationId);
@@ -419,11 +450,16 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     let response;
     try {
-      response = await api.get(`/llm/conversation/${conversationId}`, { params });
+      response = qualified.value
+        ? await api.get(`/commercial/projects/${projectId}/conversations/${conversationId}`)
+        : boundedContext.value
+        ? await requireAdvisorTransport().loadConversation(conversationId)
+        : await api.get(`/llm/conversation/${conversationId}`, { params });
     } catch (err) {
+      if (request !== conversationLoadRequest || projectId !== projectStore.currentProjectId) return;
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 404) {
-        if (isServerBacked.value && restoreConversationSnapshot(conversationId)) {
+        if (!qualified.value && isServerBacked.value && restoreConversationSnapshot(conversationId)) {
           console.warn(
             "[sherpa] conversation detail 404 during channel switch — restored in-memory worksheet conversation:",
             { conversationId },
@@ -447,6 +483,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
       throw err;
     }
 
+    if (request !== conversationLoadRequest || projectId !== projectStore.currentProjectId) return;
     const loadedConversationId = String(
       response.data.conversation_id || response.data.id || conversationId,
     );
@@ -482,7 +519,11 @@ export const useSherpaStore = defineStore("sherpa", () => {
       throw new Error("Select a project before deleting a Sherpa conversation.");
     }
 
-    await api.delete(`/llm/conversation/${conversationId}`, { params });
+    if (boundedContext.value) {
+      await requireAdvisorTransport().deleteConversation(conversationId);
+    } else {
+      await api.delete(`/llm/conversation/${conversationId}`, { params });
+    }
     conversations.value = conversations.value.filter((item) => item.id !== conversationId);
     if (!isServerBacked.value) {
       persistConversations(conversations.value);
@@ -679,6 +720,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   }
 
   function startNewConversation(): void {
+    ++conversationLoadRequest;
     snapshotCurrentConversation();
     finalizeChatCommunication();
     finalizeSyncCommunication();
@@ -693,6 +735,16 @@ export const useSherpaStore = defineStore("sherpa", () => {
     lastActivitySummary.value = null;
     _ensureWelcomeMessage();
   }
+
+  registerProjectScopeReset(() => {
+    if (!qualified.value) return;
+    ++conversationIndexRequest;
+    startNewConversation();
+    // An old project snapshot must never satisfy a later 404 or same-ID load.
+    conversationSnapshots.clear();
+    conversations.value = [];
+    resumeRecap.value = null;
+  });
 
   function _currentStartedToolName(): string | null {
     for (let index = activeTools.value.length - 1; index >= 0; index -= 1) {
@@ -750,10 +802,12 @@ export const useSherpaStore = defineStore("sherpa", () => {
   }
 
   function scheduleActiveChatTimeout(): void {
-    clearActiveChatTimeout();
+    // Absolute deadline: acknowledgments, heartbeats and tool activity cannot reset it.
+    if (activeChatTimeout !== null) return;
     const expectedRequestId = currentChatRequestId.value;
     activeChatTimeout = window.setTimeout(() => {
       if (chatState.value === "chatting" && currentChatRequestId.value === expectedRequestId) {
+        sendInterrupt(expectedRequestId);
         const timedOutBeforeAck = !chatServerAcknowledged.value;
         const inFlightTool = _currentStartedToolName();
         finalizeChatCommunication();
@@ -777,7 +831,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
         unsubscribeChatEvents?.();
         unsubscribeChatEvents = null;
       }
-    }, 120_000);
+    }, sherpaResponseTimeoutMs());
   }
 
   function noteChatActivity(): void {
@@ -813,11 +867,13 @@ export const useSherpaStore = defineStore("sherpa", () => {
   function finalizeChatCommunication(): void {
     clearChatCommunicationTimer();
     clearActiveChatTimeout();
+    analysisStatus.value = "";
   }
 
   function finalizeSyncCommunication(): void {
     clearSyncCommunicationTimer();
     clearActiveSyncTimeout();
+    if (chatState.value !== "chatting") analysisStatus.value = "";
   }
 
   function recoverFromTransport(detail: string): void {
@@ -896,7 +952,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     /**
      * Unwrap a multi-output node's serialized result to the dataset-bearing
-     * port.  Multi-output nodes (``data.source``, ``model.*``) serialize to
+     * port. Multi-output nodes (for example ``data.file_load`` and ``model.*``) serialize to
      * ``{default: {...SherpaDataset fields...}, target: ..., ...}``, so the
      * dataset identity lives at ``result.default``, not at the top level.
      * Single-output nodes that serialize directly as a SherpaDataset have
@@ -1056,6 +1112,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
         parameters: effectiveParams,
         result_shape: resultShape,
         result_statistics: null,
+        // Saved typed projections at default selection (not the current open plot) —
+        // grounds "explain the plot" answers in the real plot state instead of
+        // textbook defaults. Null when the node has no executed result.
+        plot_states: hasPersistedResult ? summarizeNodePlots(rawResult, workflow.lastExecutionPresentations?.[String(n.id)], workflow.lastExecutionResultDescriptors?.[String(n.id)]) : null,
         description: meta?.description ?? null,
         param_descriptions: paramDescriptions,
         output_type: outputType,
@@ -1245,6 +1305,21 @@ export const useSherpaStore = defineStore("sherpa", () => {
         // Scientific fields from the top level of the result.
         Object.assign(summary, pickScientificFields(result));
 
+        // PeakTable owns the computed consensus results. Project the existing
+        // fields into the chat context schema; this is not a workflow output.
+        const peaks = toObject(result.peaks);
+        const peakMetadata = toObject(peaks?.metadata);
+        if (peakMetadata?.method === "peak_finding" && Array.isArray(peaks?.data)) {
+          summary.salient_features = {
+            ...peakMetadata,
+            features: peaks.data.map((row: Record<string, unknown>) => ({
+              position: row.median_pos,
+              importance: row.detection_fraction,
+              label: row.label,
+            })),
+          };
+        }
+
         // Scientific fields from the nested metadata block.
         const metadata = result.metadata;
         if (metadata && typeof metadata === "object") {
@@ -1345,15 +1420,51 @@ export const useSherpaStore = defineStore("sherpa", () => {
         break;
       }
     }
+    const myDataset = dataStore.captureAdvisorDatasetContext?.() ?? null;
+    const workbookStore = useWorkbookStore();
+    const activeSheet = workbookStore.activeSheet;
+    const analysisContext = {
+      schema: "spectra-analysis-context/1",
+      captured_at: new Date().toISOString(),
+      project_id: projectStore.currentProjectId,
+      sheet: activeSheet
+        ? {
+            workflow_id: activeSheet.workflowId,
+            name: activeSheet.name,
+            purpose: activeSheet.purpose,
+            sheet_order: activeSheet.sheetOrder,
+          }
+        : null,
+      selection: myDataset,
+      authority:
+        "The active workflow sheet and current My Dataset selection are the input authority. " +
+        "Treat this context as sheet-scoped and do not reuse settings from another sheet.",
+    };
+    // Input authority (contract section 1) is what the user loaded: explored catalog
+    // metadata, the active file inspection, and the data store's own capture. It is
+    // disclosed even when execution interpretation is refused, so it must exclude
+    // derivedDatasetIdentity, which is read out of lastExecutionResults and is
+    // execution evidence that a stale draft may no longer describe.
+    const current_input_context =
+      summarizedDatasetContext || myDataset
+        ? {
+          ...(summarizedDatasetContext ?? emptyDatasetContext()),
+          analysis_context: analysisContext,
+          ...(myDataset ? { my_dataset: myDataset } : {}),
+        }
+        : null;
     const dataset_context =
-      summarizedDatasetContext || derivedDatasetIdentity
+      summarizedDatasetContext || derivedDatasetIdentity || myDataset
         ? {
           ...(summarizedDatasetContext ?? emptyDatasetContext()),
           ...(derivedDatasetIdentity ?? {}),
+          analysis_context: analysisContext,
+          ...(myDataset ? { my_dataset: myDataset } : {}),
         }
         : null;
 
-    return {
+    return bindAdvisorExecutionContext({
+      active_attention: attentionSnapshot(),
       workflow_id: workflow.workflowId,
       workflow_name: workflow.workflowName,
       workflow_description: workflow.workflowDescription || null,
@@ -1369,7 +1480,19 @@ export const useSherpaStore = defineStore("sherpa", () => {
           : null,
       results_summary,
       dataset_context,
-    };
+    }, {
+      isWorkflowStale: workflow.isWorkflowStale,
+      executionEvidenceScope: workflow.executionEvidenceScope,
+      restoredEvidenceNotice: workflow.restoredEvidenceNotice,
+      lastExecutionResults: workflow.lastExecutionResults,
+      restoredRunId: workflow.restoredRunId,
+      lastExecutionParams: workflow.lastExecutionParams,
+      currentInputContext: current_input_context,
+    });
+  }
+
+  async function prepareProductWorkflowContext(workflowId: number | null): Promise<Record<string, unknown> | null> {
+    return requireAdvisorTransport().prepareContext(workflowId);
   }
 
   // ── actions ────────────────────────────────────────────────
@@ -1436,13 +1559,29 @@ export const useSherpaStore = defineStore("sherpa", () => {
     unsubscribeSyncEvents?.();
     unsubscribeSyncEvents = null;
     syncState.value = "syncing";
+    analysisStatus.value = "Analysis in progress. Hit stop to interrupt";
     lastSyncError.value = null;
-    currentSyncRequestId.value = createSherpaRequestId();
+    const requestId = createSherpaRequestId();
+    currentSyncRequestId.value = requestId;
     _recordActivity("Workflow sync requested.", { notify: true });
     scheduleSyncCommunicationNotice();
+    clearActiveSyncTimeout();
+    const expectedRequestId = requestId;
+    activeSyncTimeout = window.setTimeout(() => {
+      if (syncState.value === "syncing" && currentSyncRequestId.value === expectedRequestId) {
+        sendInterrupt(currentSyncRequestId.value);
+        syncState.value = "idle";
+        currentSyncRequestId.value = null;
+        unsubscribeSyncEvents?.();
+        unsubscribeSyncEvents = null;
+        _notifySherpa("Sherpa sync timed out. The service may be unavailable.", "warning");
+        _appendSystemMessage("Sherpa sync timed out. The service may be unavailable.");
+      }
+    }, sherpaResponseTimeoutMs(true));
     try {
       await llm.connect();
     } catch {
+      if (currentSyncRequestId.value !== requestId) return;
       finalizeSyncCommunication();
       lastSyncError.value = "WebSocket not connected";
       syncState.value = "error";
@@ -1452,6 +1591,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
       return;
     }
 
+    if (currentSyncRequestId.value !== requestId) return;
     const workflow = useWorkflowStore();
     if (!workflow.workflowId) {
       finalizeSyncCommunication();
@@ -1466,6 +1606,29 @@ export const useSherpaStore = defineStore("sherpa", () => {
       return;
     }
 
+    let syncPayload: Record<string, unknown>;
+    try {
+      syncPayload = boundedContext.value
+        ? {
+            workflow_id: workflow.workflowId,
+            workflow_context: await prepareProductWorkflowContext(workflow.workflowId),
+          }
+        : buildSyncPayload();
+    } catch (error: any) {
+      if (currentSyncRequestId.value !== requestId) return;
+      finalizeSyncCommunication();
+      syncState.value = "idle";
+      currentSyncRequestId.value = null;
+      messages.value.push(
+        createSherpaMessage(
+          "system",
+          error?.response?.data?.detail || error?.message || "Product workflow disclosure was refused.",
+        ),
+      );
+      return;
+    }
+
+    if (currentSyncRequestId.value !== requestId) return;
     const ws = getWs();
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       lastSyncError.value = "WebSocket not ready";
@@ -1494,27 +1657,43 @@ export const useSherpaStore = defineStore("sherpa", () => {
         action: SHERPA_WS_ACTION.sync,
         payload: {
           request_id: currentSyncRequestId.value,
-          ...buildSyncPayload(),
+          ...syncPayload,
         },
       })
     );
 
-    clearActiveSyncTimeout();
-    const expectedRequestId = currentSyncRequestId.value;
-    activeSyncTimeout = window.setTimeout(() => {
-      if (syncState.value === "syncing" && currentSyncRequestId.value === expectedRequestId) {
-        syncState.value = "idle";
-        currentSyncRequestId.value = null;
-        unsubscribeSyncEvents?.();
-        unsubscribeSyncEvents = null;
-        _notifySherpa("Sherpa sync timed out. The service may be unavailable.", "warning");
-        _appendSystemMessage("Sherpa sync timed out. The service may be unavailable.");
-      }
-    }, 180_000);
+
   }
 
-  async function sendMessage(message: string, useTools = false): Promise<void> {
-    if (!message.trim()) return;
+  function sendInterrupt(requestId: string | null): void {
+    const ws = getWs();
+    if (requestId && ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: "cancel_request", request_id: requestId }));
+    }
+  }
+
+  function stopAnalysis(): void {
+    if (chatState.value !== "chatting" && syncState.value !== "syncing") return;
+    sendInterrupt(currentChatRequestId.value);
+    sendInterrupt(currentSyncRequestId.value);
+    finalizeChatCommunication();
+    finalizeSyncCommunication();
+    unsubscribeChatEvents?.();
+    unsubscribeChatEvents = null;
+    unsubscribeSyncEvents?.();
+    unsubscribeSyncEvents = null;
+    chatState.value = "idle";
+    syncState.value = "idle";
+    currentChatRequestId.value = null;
+    currentSyncRequestId.value = null;
+    pendingAdvisorNodeId.value = null;
+    streamingIndex.value = null;
+    activeTools.value = [];
+    _appendSystemMessage("Analysis interrupted. Any completed workflow or run has been preserved.");
+  }
+
+  async function sendMessage(message: string, _legacyUseTools?: boolean): Promise<void> {
+    if (!message.trim() || chatState.value === "chatting") return;
 
     const llm = useLlmStore();
 
@@ -1526,18 +1705,20 @@ export const useSherpaStore = defineStore("sherpa", () => {
     currentChatRequestId.value = requestId;
     const advisorStoreSnapshot = useAdvisorStore();
     pendingAdvisorNodeId.value = advisorStoreSnapshot.activeNodeId;
+    pendingProductProposal.value = null;
     _recordActivity(`User asked Sherpa: ${_truncateForLog(message)}`, {
       notify: true,
       detail: message,
     });
 
     chatState.value = "chatting";
+    analysisStatus.value = "Analysis in progress. Hit stop to interrupt";
     activeTools.value = [];
     chatServerAcknowledged.value = false;
     subscriptionRequired.value = null;
     subscriptionUpgradeUrl.value = null;
     _recordActivity(
-      `Sherpa request queued via ${useTools ? "Gen Mode" : "chat"}${_formatRequestSuffix(requestId)}.`,
+      `Sherpa request queued${_formatRequestSuffix(requestId)}.`,
       {
         notify: true,
       }
@@ -1546,11 +1727,33 @@ export const useSherpaStore = defineStore("sherpa", () => {
     scheduleActiveChatTimeout();
 
     const workflow = useWorkflowStore();
+    pendingWorkflowId.value = workflow.workflowId;
+    let workflowContext: Record<string, unknown> | null;
+    try {
+      workflowContext = boundedContext.value
+        ? await prepareProductWorkflowContext(workflow.workflowId)
+        : buildSyncPayload();
+    } catch (error: any) {
+      if (currentChatRequestId.value !== requestId) return;
+      finalizeChatCommunication();
+      chatState.value = "idle";
+      currentChatRequestId.value = null;
+      pendingAdvisorNodeId.value = null;
+      messages.value.push(
+        createSherpaMessage(
+          "system",
+          error?.response?.data?.detail || error?.message || "Product workflow disclosure was refused.",
+        ),
+      );
+      return;
+    }
+    if (currentChatRequestId.value !== requestId) return;
     let ws: WebSocket | null = null;
     try {
       await llm.connect();
       ws = getWs();
     } catch {
+      if (currentChatRequestId.value !== requestId) return;
       finalizeChatCommunication();
       chatState.value = "idle";
       currentChatRequestId.value = null;
@@ -1572,11 +1775,25 @@ export const useSherpaStore = defineStore("sherpa", () => {
       return;
     }
 
+    if (currentChatRequestId.value !== requestId) return;
     _recordActivity(`Sherpa request sent${_formatRequestSuffix(requestId)}.`, {
       notify: true,
     });
 
-    unsubscribeChatEvents = subscribeSherpaEvents(handleChatEvent, {
+    // A fast server run may finish while the proposed sheet is still loading.
+    // Preserve event order across that asynchronous navigation boundary.
+    let proposalQueue: Promise<void> | null = null;
+    unsubscribeChatEvents = subscribeSherpaEvents((payload) => {
+      if (proposalQueue) {
+        proposalQueue = proposalQueue.then(() => handleChatEvent(payload));
+        return proposalQueue;
+      }
+      if (payload.type === SHERPA_WS_EVENT.workflowProposed) {
+        proposalQueue = handleChatEvent(payload);
+        return proposalQueue;
+      }
+      return handleChatEvent(payload);
+    }, {
       requestId,
       types: [
         SHERPA_WS_EVENT.chatStart,
@@ -1587,6 +1804,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
         SHERPA_WS_EVENT.toolStart,
         SHERPA_WS_EVENT.toolResult,
         SHERPA_WS_EVENT.workflowProposed,
+        SHERPA_WS_EVENT.workflowProposalPreview,
         SHERPA_WS_EVENT.subscriptionRequired,
         SHERPA_WS_EVENT.error,
       ],
@@ -1594,9 +1812,10 @@ export const useSherpaStore = defineStore("sherpa", () => {
 
     ws.send(
       JSON.stringify({
-        action: getSherpaChatAction(useTools),
+        action: getSherpaChatAction(true),
         payload: {
           request_id: requestId,
+          active_attention: attentionSnapshot(),
           message,
           // R1 canonical routing key.  Server resolves to topic →
           // conversation_id internally.  Legacy conversation_id field
@@ -1605,7 +1824,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
           conversation_id: currentConversationId.value,
           project_id: projectStore.currentProjectId,
           workflow_id: workflow.workflowId,
-          workflow_context: buildSyncPayload(),
+          workflow_context: workflowContext,
         },
       })
     );
@@ -1620,10 +1839,15 @@ export const useSherpaStore = defineStore("sherpa", () => {
   // ── WebSocket message handlers ─────────────────────────────
 
   function handleSyncEvent(payload: SherpaEventPayload): void {
+    if (payload.request_id && payload.request_id !== currentSyncRequestId.value) return;
     try {
       _validateSherpaPayload(payload);
 
       if (payload.type === SHERPA_WS_EVENT.status) {
+        if (payload.payload?.heartbeat) {
+          analysisStatus.value = `Analysis in progress. Hit stop to interrupt · ${Number(payload.payload.elapsed_seconds || 0)}s — ${payload.payload.detail || "Reviewing workflow."}`;
+          return;
+        }
         const connected = payload.payload?.connected;
         if (connected && payload.payload?.stage === "analyzing") {
           syncState.value = "syncing";
@@ -1772,11 +1996,13 @@ export const useSherpaStore = defineStore("sherpa", () => {
   }
 
   async function handleChatEvent(payload: SherpaEventPayload): Promise<void> {
+    if (payload.request_id && payload.request_id !== currentChatRequestId.value) return;
+    const eventRequestId = currentChatRequestId.value;
     try {
       _validateSherpaPayload(payload);
 
       if (payload.type === SHERPA_WS_EVENT.chatStart) {
-        finalizeChatCommunication();
+        clearChatCommunicationTimer();
         chatState.value = "chatting";
         chatServerAcknowledged.value = true;
         currentChatRequestId.value =
@@ -1845,6 +2071,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
           streamingIndex.value !== null
             ? messages.value[streamingIndex.value]?.content ?? ""
             : "";
+        if (response.trim()) recordScientificQueryOutcome(response.trim() !== SCIENTIFIC_QUERY_REFUSAL);
         const memoryScopes = _memoryScopesFromPayload(payload);
         if (
           memoryScopes.length > 0
@@ -1870,7 +2097,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
               detail: response,
             }
           );
-        } else {
+        } else if (!(payload as any).execution_result) {
           const emptyMessage = `Sherpa returned an empty response${_formatRequestSuffix(payload.request_id)}${_formatTimingSuffix(payload.timing)}.`;
           _recordActivity(emptyMessage, {
             notify: true,
@@ -1879,6 +2106,15 @@ export const useSherpaStore = defineStore("sherpa", () => {
           _appendSystemMessage(
             "Sherpa returned an empty response. The request may have been truncated or produced no visible output."
           );
+        }
+        const execution = (payload as any).execution_result;
+        if (execution && typeof execution === "object") {
+          const workflowStore = useWorkflowStore();
+          _appendSystemMessage(`Workflow execution: ${String(execution.status)}${execution.run_id ? ` (run ${execution.run_id})` : ""}.${execution.error ? ` ${typeof execution.error === "string" ? execution.error : JSON.stringify(execution.error)}` : ""}`);
+          if (execution.run_id && workflowStore.workflowId === execution.workflow_id && !workflowStore.hasUnsavedChanges) {
+            await workflowStore.loadWorkflow(execution.workflow_id, execution.run_id);
+            if (currentChatRequestId.value !== eventRequestId) return;
+          }
         }
         currentChatRequestId.value = null;
         pendingAdvisorNodeId.value = null;
@@ -1890,6 +2126,11 @@ export const useSherpaStore = defineStore("sherpa", () => {
         chatServerAcknowledged.value = true;
         currentChatRequestId.value =
           typeof payload.request_id === "string" ? payload.request_id : currentChatRequestId.value;
+        if (payload.payload?.heartbeat) {
+          const elapsed = Number(payload.payload.elapsed_seconds || 0);
+          analysisStatus.value = `Analysis in progress. Hit stop to interrupt · ${elapsed}s — ${payload.payload.detail || "Waiting for the model response."}`;
+          return;
+        }
         const stage = String(payload.payload?.stage || "unknown");
         const detail =
           typeof payload.payload?.detail === "string" ? payload.payload.detail : null;
@@ -1972,10 +2213,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
         const parentConversationId = (payload as any).parent_conversation_id;
 
         const workbookStore = useWorkbookStore();
-        const workflowStore = useWorkflowStore();
-        const configStore = useWorkflowBuilderConfigStore();
-
         await workbookStore.refreshSheets();
+        if (currentChatRequestId.value !== eventRequestId) return;
 
         // Conversation → topic binding is handled server-side via
         // ``_persist_advisor_node_conversation`` after every chat turn,
@@ -1992,11 +2231,25 @@ export const useSherpaStore = defineStore("sherpa", () => {
         }
         if (Number.isFinite(newWorkflowId)) {
           await workbookStore.selectWorkflowSheet(newWorkflowId);
-          if (configStore.autoExecute) {
-            void workflowStore.executeStoredWorkflow(newWorkflowId);
-          }
+          if (currentChatRequestId.value !== eventRequestId) return;
+          // Proposal events describe drafts. Execution requires server-owned
+          // authority pinned to the admitted definition.
         }
-        _appendSystemMessage(`Generated alternative → opened as Sheet '${suggestedName}'.`);
+        _appendSystemMessage(`Generated alternative → opened as Sheet '${suggestedName}'.\n${summarizeProposalReceipt((payload as any).proposal_receipt)}`);
+        noteChatActivity();
+        return;
+      }
+
+      if (payload.type === SHERPA_WS_EVENT.workflowProposalPreview) {
+        chatServerAcknowledged.value = true;
+        const proposal = (payload as any).proposal;
+        const sourceWorkflowId = pendingWorkflowId.value;
+        if (!proposal || typeof proposal !== "object" || sourceWorkflowId == null) {
+          _appendSystemMessage("Sherpa's workflow proposal could not be bound to the source sheet.");
+          return;
+        }
+        pendingProductProposal.value = { proposal, sourceWorkflowId };
+        _appendSystemMessage("Sherpa prepared a workflow proposal. Review the exact preview before applying it.");
         noteChatActivity();
         return;
       }
@@ -2105,6 +2358,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
         pendingAdvisorNodeId.value = null;
       }
     } catch (error) {
+      if (currentChatRequestId.value !== eventRequestId) return;
       const message =
         error instanceof Error ? error.message : "Unknown Sherpa chat event error.";
       finalizeChatCommunication();
@@ -2259,6 +2513,22 @@ export const useSherpaStore = defineStore("sherpa", () => {
     _openUpgradeUrl(subscriptionUpgradeUrl.value);
   }
 
+  async function confirmProductProposal(): Promise<void> {
+    const pending = pendingProductProposal.value;
+    if (!pending) return;
+    const workflowId = await requireAdvisorTransport().confirmProposal(pending.sourceWorkflowId, pending.proposal);
+    pendingProductProposal.value = null;
+    const workbookStore = useWorkbookStore();
+    await workbookStore.refreshSheets();
+    await workbookStore.selectWorkflowSheet(workflowId);
+    _appendSystemMessage("Confirmed proposal → opened as a new workflow sheet. It has not been executed.");
+  }
+
+  function rejectProductProposal(): void {
+    pendingProductProposal.value = null;
+    _appendSystemMessage("Workflow proposal dismissed without changing the project.");
+  }
+
   return {
     messages,
     conversations,
@@ -2272,13 +2542,17 @@ export const useSherpaStore = defineStore("sherpa", () => {
     lastPeaksResult,
     lastCodeResult,
     activeTools,
+    pendingProductProposal,
     subscriptionRequired,
     subscriptionUpgradeUrl,
     resumeRecap,
     maybeLoadResumeRecap,
     dismissResumeRecap,
     syncWorkflow,
+    prepareProductWorkflowContext,
     sendMessage,
+    stopAnalysis,
+    analysisStatus,
     clearMessages,
     startNewConversation,
     refreshConversations,
@@ -2286,6 +2560,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
     loadConversation,
     deleteConversation,
     openSubscriptionUpgrade,
+    confirmProductProposal,
+    rejectProductProposal,
     init,
     dispose,
   };

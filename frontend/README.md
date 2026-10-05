@@ -87,10 +87,12 @@ whenever the OpenAPI spec changes (the server provides
 ## Build Output
 
 Vite builds directly into `../src/spectra_sherpa/static/` (not `dist/`).
-This is configured in `vite.config.ts`. The built assets are committed to the repo
-so the Python package serves them without a separate build step.
+This is configured in `vite.config.ts`. The directory is ignored: CI, Docker,
+and release workflows regenerate it from the pinned lockfile and qualify the
+result before packaging.
 
-After changing frontend code, run `npm run build` and commit the updated static assets.
+After changing frontend code, run `npm run build` to test the production bundle.
+Commit only the frontend source and lockfile changes, never the generated output.
 
 ## Type Checking
 

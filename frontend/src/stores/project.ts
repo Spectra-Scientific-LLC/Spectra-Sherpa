@@ -1,17 +1,75 @@
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import api from "@/api/client";
 import { useAuthStore } from "@/stores/auth";
-import { runProjectScopeResets } from "@/stores/projectScopeRegistry";
+import { activeProjectScope, runProjectScopeResets } from "@/stores/projectScopeRegistry";
 import { downloadBlob, filenameFromContentDisposition } from "@/utils/download";
 import { getErrorMessage } from "@/utils/errors";
 
 const LAST_ACTIVE_PROJECT_PREFIX = "spectra_sherpa_last_project_";
-const DATA_ACTIVE_TAB_PREFIX = "spectra_sherpa_data_active_tab_v2";
+const DATA_ACTIVE_TAB_PREFIX = "spectra_sherpa_data_active_tab_v3";
+const PREVIOUS_DATA_ACTIVE_TAB_PREFIX = "spectra_sherpa_data_active_tab_v2";
 const LEGACY_DATA_ACTIVE_TAB_PREFIX = "spectra_sherpa_data_active_tab";
 const DATA_DRAFT_PREFIX = "spectra_sherpa_data_draft_v1";
 const LAST_ACTIVE_EXPERIMENT_PREFIX = "spectra_sherpa_last_experiment";
 const SYNTHESIS_STATE_PREFIX = "spectra_sherpa_synthesis_state_v1";
+
+export interface CanonicalProjectSourceBinding {
+  workflow_id: number;
+  source_node_id: string;
+  integrity_hash: string;
+  status: "ready_for_application" | "dependency_blocked";
+}
+
+export interface ProjectReferenceArtifactRequirement {
+  artifact_id: string;
+  artifact_size_bytes: number;
+  artifact_sha256: string;
+  provider: string;
+  provider_page: string;
+  download_url: string;
+}
+
+interface ProjectReferenceRebindDetail {
+  code: "project_reference_rebind_required";
+  message: string;
+  required_artifacts: ProjectReferenceArtifactRequirement[];
+}
+
+function projectReferenceRebindDetail(error: unknown): ProjectReferenceRebindDetail | null {
+  if (typeof error !== "object" || error === null || !("response" in error)) return null;
+  const response = (error as { response?: { status?: number; data?: { detail?: unknown } } }).response;
+  if (response?.status !== 409) return null;
+  const detail = response.data?.detail;
+  if (typeof detail !== "object" || detail === null || Array.isArray(detail)) return null;
+  const candidate = detail as Record<string, unknown>;
+  if (
+    candidate.code !== "project_reference_rebind_required" ||
+    typeof candidate.message !== "string" ||
+    !Array.isArray(candidate.required_artifacts)
+  ) {
+    return null;
+  }
+  const requirements = candidate.required_artifacts.filter(
+    (item): item is ProjectReferenceArtifactRequirement =>
+      typeof item === "object" &&
+      item !== null &&
+      typeof (item as Record<string, unknown>).artifact_id === "string" &&
+      typeof (item as Record<string, unknown>).artifact_size_bytes === "number" &&
+      typeof (item as Record<string, unknown>).artifact_sha256 === "string" &&
+      typeof (item as Record<string, unknown>).provider === "string" &&
+      typeof (item as Record<string, unknown>).provider_page === "string" &&
+      typeof (item as Record<string, unknown>).download_url === "string",
+  );
+  if (requirements.length !== candidate.required_artifacts.length || requirements.length === 0) {
+    return null;
+  }
+  return {
+    code: "project_reference_rebind_required",
+    message: candidate.message,
+    required_artifacts: requirements,
+  };
+}
 
 // "local" is the canonical sentinel for "no signed-in user" across every
 // project-scoped localStorage key in the SPA (see also workbook.ts,
@@ -47,6 +105,7 @@ const clearProjectScopedBrowserState = (
   const scopeUserId = userId ?? "local";
   try {
     localStorage.removeItem(`${DATA_ACTIVE_TAB_PREFIX}_${scopeUserId}_${projectId}`);
+    localStorage.removeItem(`${PREVIOUS_DATA_ACTIVE_TAB_PREFIX}_${scopeUserId}_${projectId}`);
     localStorage.removeItem(`${LEGACY_DATA_ACTIVE_TAB_PREFIX}_${scopeUserId}_${projectId}`);
     localStorage.removeItem(`${DATA_DRAFT_PREFIX}:${scopeUserId}:${projectId}`);
     localStorage.removeItem(`${LAST_ACTIVE_EXPERIMENT_PREFIX}_${scopeUserId}_${projectId}`);
@@ -64,6 +123,7 @@ import type {
   ProjectVersionSummary,
   ProjectScriptSummary,
   ProjectScriptDetail,
+  ImportedApplicationIdentity,
 } from "@/types";
 
 // Format date for display
@@ -87,13 +147,22 @@ const formatDate = (iso: string): string => {
 export const useProjectStore = defineStore("project", () => {
   // State
   const projects = ref<ProjectSummary[]>([]);
+  const archivedProjects = ref<ProjectSummary[]>([]);
   const currentProjectId = ref<number | null>(null);
+  watch(currentProjectId, (id) => { activeProjectScope.value = id; }, { immediate: true, flush: "sync" });
   const currentProject = ref<ProjectDetail | null>(null);
   const versions = ref<ProjectVersionSummary[]>([]);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
   const exportingProjectIds = ref<number[]>([]);
+  const lastExportOmittedModels = ref(0);
   const isImporting = ref(false);
+  // Kept separately from ProjectDetail because the follow-up fetch used to
+  // hydrate the project is intentionally a normal project response. This
+  // preserves the one-time import hand-off until ProjectContent navigates to
+  // Deploy with the selected application.
+  const lastImportedApplication = ref<ImportedApplicationIdentity | null>(null);
+  const referenceRebindRequirements = ref<ProjectReferenceArtifactRequirement[]>([]);
 
   // Getters
   const projectList = computed(() =>
@@ -109,16 +178,13 @@ export const useProjectStore = defineStore("project", () => {
       script_count: p.script_count,
       model_count: p.model_count,
       children_count: p.children_count,
-    }))
+    })),
   );
 
   const recentProjects = computed(() =>
     [...projects.value]
-      .sort(
-        (a, b) =>
-          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-      )
-      .slice(0, 5)
+      .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+      .slice(0, 5),
   );
 
   const activeProjectTitle = computed(() => currentProject.value?.name ?? "No Project");
@@ -135,6 +201,16 @@ export const useProjectStore = defineStore("project", () => {
       error.value = getErrorMessage(e);
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  async function fetchArchivedProjects(): Promise<void> {
+    error.value = null;
+    try {
+      const { data } = await api.get<ProjectSummary[]>("/projects", { params: { archived: true } });
+      archivedProjects.value = data;
+    } catch (e) {
+      error.value = getErrorMessage(e);
     }
   }
 
@@ -190,10 +266,40 @@ export const useProjectStore = defineStore("project", () => {
     }
   }
 
-  async function deleteProject(id: number): Promise<boolean> {
+  async function archiveProject(id: number): Promise<boolean> {
     error.value = null;
     try {
-      await api.delete(`/projects/${id}`);
+      await api.post(`/projects/${id}/archive`);
+      if (currentProjectId.value === id) {
+        currentProjectId.value = null;
+        currentProject.value = null;
+        writeLastActiveProjectId(useAuthStore().user?.id ?? null, null);
+        runProjectScopeResets();
+      }
+      await Promise.all([fetchProjects(), fetchArchivedProjects()]);
+      return true;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return false;
+    }
+  }
+
+  async function restoreProject(id: number): Promise<boolean> {
+    error.value = null;
+    try {
+      await api.post(`/projects/${id}/restore`);
+      await Promise.all([fetchProjects(), fetchArchivedProjects()]);
+      return true;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return false;
+    }
+  }
+
+  async function deleteProject(id: number, confirmName: string): Promise<boolean> {
+    error.value = null;
+    try {
+      await api.delete(`/projects/${id}`, { params: { confirm_name: confirmName } });
       const wasActive = currentProjectId.value === id;
       if (wasActive) {
         currentProjectId.value = null;
@@ -205,7 +311,7 @@ export const useProjectStore = defineStore("project", () => {
         runProjectScopeResets();
       }
       clearProjectScopedBrowserState(useAuthStore().user?.id ?? null, id);
-      await fetchProjects();
+      await Promise.all([fetchProjects(), fetchArchivedProjects()]);
       return true;
     } catch (e) {
       error.value = getErrorMessage(e);
@@ -255,7 +361,7 @@ export const useProjectStore = defineStore("project", () => {
     error.value = null;
     try {
       const { data } = await api.post<ProjectDetail>(
-        `/projects/${projectId}/experiments/${experimentId}`
+        `/projects/${projectId}/experiments/${experimentId}`,
       );
       if (currentProjectId.value === projectId) currentProject.value = data;
       await fetchProjects();
@@ -264,11 +370,12 @@ export const useProjectStore = defineStore("project", () => {
     }
   }
 
-  async function unlinkExperiment(projectId: number, experimentId: number): Promise<void> {
+  async function unlinkExperiment(projectId: number, experimentId: number, destinationProjectId?: number): Promise<void> {
     error.value = null;
     try {
       const { data } = await api.delete<ProjectDetail>(
-        `/projects/${projectId}/experiments/${experimentId}`
+        `/projects/${projectId}/experiments/${experimentId}`,
+        { params: { destination_project_id: destinationProjectId } },
       );
       if (currentProjectId.value === projectId) currentProject.value = data;
       await fetchProjects();
@@ -281,7 +388,7 @@ export const useProjectStore = defineStore("project", () => {
     error.value = null;
     try {
       const { data } = await api.post<ProjectDetail>(
-        `/projects/${projectId}/workflows/${workflowId}`
+        `/projects/${projectId}/workflows/${workflowId}`,
       );
       if (currentProjectId.value === projectId) currentProject.value = data;
       await fetchProjects();
@@ -290,11 +397,12 @@ export const useProjectStore = defineStore("project", () => {
     }
   }
 
-  async function unlinkWorkflow(projectId: number, workflowId: number): Promise<void> {
+  async function unlinkWorkflow(projectId: number, workflowId: number, destinationProjectId?: number): Promise<void> {
     error.value = null;
     try {
       const { data } = await api.delete<ProjectDetail>(
-        `/projects/${projectId}/workflows/${workflowId}`
+        `/projects/${projectId}/workflows/${workflowId}`,
+        { params: { destination_project_id: destinationProjectId } },
       );
       if (currentProjectId.value === projectId) currentProject.value = data;
       await fetchProjects();
@@ -318,7 +426,7 @@ export const useProjectStore = defineStore("project", () => {
     projects.value = projects.value.map((summary) =>
       summary.id === project.id
         ? { ...summary, workflow_count: Math.max(0, summary.workflow_count - 1) }
-        : summary
+        : summary,
     );
   }
 
@@ -328,7 +436,7 @@ export const useProjectStore = defineStore("project", () => {
     error.value = null;
     try {
       const { data } = await api.get<{ versions: ProjectVersionSummary[]; total: number }>(
-        `/projects/${id}/versions`
+        `/projects/${id}/versions`,
       );
       versions.value = data.versions;
     } catch (e) {
@@ -338,13 +446,9 @@ export const useProjectStore = defineStore("project", () => {
 
   // ── Scripts ──────────────────────────────────────────────────
 
-  async function fetchScripts(
-    projectId: number
-  ): Promise<ProjectScriptSummary[]> {
+  async function fetchScripts(projectId: number): Promise<ProjectScriptSummary[]> {
     try {
-      const { data } = await api.get<ProjectScriptSummary[]>(
-        `/projects/${projectId}/scripts`
-      );
+      const { data } = await api.get<ProjectScriptSummary[]>(`/projects/${projectId}/scripts`);
       return data;
     } catch (e) {
       error.value = getErrorMessage(e);
@@ -354,13 +458,19 @@ export const useProjectStore = defineStore("project", () => {
 
   async function createScript(
     projectId: number,
-    payload: { name: string; description?: string; code: string; language?: string; priority?: number }
+    payload: {
+      name: string;
+      description?: string;
+      code: string;
+      language?: string;
+      priority?: number;
+    },
   ): Promise<ProjectScriptDetail | null> {
     error.value = null;
     try {
       const { data } = await api.post<ProjectScriptDetail>(
         `/projects/${projectId}/scripts`,
-        payload
+        payload,
       );
       if (currentProjectId.value === projectId) await fetchProject(projectId);
       return data;
@@ -372,13 +482,13 @@ export const useProjectStore = defineStore("project", () => {
 
   async function generateScript(
     projectId: number,
-    payload: { workflow_id: number; name: string; description?: string; priority?: number }
+    payload: { workflow_id: number; name: string; description?: string; priority?: number },
   ): Promise<ProjectScriptDetail | null> {
     error.value = null;
     try {
       const { data } = await api.post<ProjectScriptDetail>(
         `/projects/${projectId}/scripts/generate`,
-        payload
+        payload,
       );
       if (currentProjectId.value === projectId) await fetchProject(projectId);
       return data;
@@ -390,11 +500,11 @@ export const useProjectStore = defineStore("project", () => {
 
   async function fetchScript(
     projectId: number,
-    scriptId: number
+    scriptId: number,
   ): Promise<ProjectScriptDetail | null> {
     try {
       const { data } = await api.get<ProjectScriptDetail>(
-        `/projects/${projectId}/scripts/${scriptId}`
+        `/projects/${projectId}/scripts/${scriptId}`,
       );
       return data;
     } catch (e) {
@@ -406,13 +516,13 @@ export const useProjectStore = defineStore("project", () => {
   async function updateScript(
     projectId: number,
     scriptId: number,
-    payload: { name?: string; description?: string; code?: string; priority?: number }
+    payload: { name?: string; description?: string; code?: string; priority?: number },
   ): Promise<ProjectScriptDetail | null> {
     error.value = null;
     try {
       const { data } = await api.put<ProjectScriptDetail>(
         `/projects/${projectId}/scripts/${scriptId}`,
-        payload
+        payload,
       );
       if (currentProjectId.value === projectId) await fetchProject(projectId);
       return data;
@@ -422,10 +532,7 @@ export const useProjectStore = defineStore("project", () => {
     }
   }
 
-  async function deleteScript(
-    projectId: number,
-    scriptId: number
-  ): Promise<boolean> {
+  async function deleteScript(projectId: number, scriptId: number): Promise<boolean> {
     error.value = null;
     try {
       await api.delete(`/projects/${projectId}/scripts/${scriptId}`);
@@ -442,6 +549,7 @@ export const useProjectStore = defineStore("project", () => {
   async function exportProject(id: number): Promise<void> {
     if (exportingProjectIds.value.includes(id)) return;
     error.value = null;
+    lastExportOmittedModels.value = 0;
     exportingProjectIds.value = [...exportingProjectIds.value, id];
     try {
       const response = await api.get(`/projects/${id}/export/sherpa`, {
@@ -449,6 +557,8 @@ export const useProjectStore = defineStore("project", () => {
       });
       // Extract filename from content-disposition or use project name
       const disposition = response.headers["content-disposition"];
+      const omitted = Number(response.headers["x-spectra-project-model-omissions"] ?? 0);
+      lastExportOmittedModels.value = Number.isSafeInteger(omitted) && omitted > 0 ? omitted : 0;
       downloadBlob(response.data, filenameFromContentDisposition(disposition, "project.sherpa"));
     } catch (e) {
       error.value = getErrorMessage(e);
@@ -458,17 +568,13 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   async function refreshImportedProjectSlices(projectId: number): Promise<void> {
-    const [
-      { useDataStore },
-      { useDataSourceStore },
-      { useExperimentStore },
-      { useRunsStore },
-    ] = await Promise.all([
-      import("@/stores/data"),
-      import("@/stores/dataSources"),
-      import("@/stores/experiment"),
-      import("@/stores/runs"),
-    ]);
+    const [{ useDataStore }, { useDataSourceStore }, { useExperimentStore }, { useRunsStore }] =
+      await Promise.all([
+        import("@/stores/data"),
+        import("@/stores/dataSources"),
+        import("@/stores/experiment"),
+        import("@/stores/runs"),
+      ]);
 
     const dataStore = useDataStore();
     await Promise.allSettled([
@@ -480,18 +586,45 @@ export const useProjectStore = defineStore("project", () => {
     ]);
   }
 
-  async function importProject(file: File): Promise<ProjectDetail | null> {
+  const campaignTrustRequired = ref(false);
+
+  async function importProject(
+    file: File,
+    referenceFiles: File[] = [],
+    destination?: { subscription_id: number; workspace_id: number | null },
+    publisherTrust?: { file: File; confirmed: boolean },
+  ): Promise<ProjectDetail | null> {
     if (isImporting.value) return null;
     error.value = null;
+    campaignTrustRequired.value = false;
+    referenceRebindRequirements.value = [];
+    lastImportedApplication.value = null;
     isImporting.value = true;
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const { data } = await api.post<ProjectDetail>(
-        "/projects/import",
-        formData,
-        { headers: { "Content-Type": "multipart/form-data" } }
-      );
+      if (publisherTrust) {
+        formData.append("publisher_trust_anchors", publisherTrust.file);
+        formData.append("publisher_trust_confirmed", String(publisherTrust.confirmed));
+      }
+      if (destination) {
+        formData.append("commercial_subscription_id", String(destination.subscription_id));
+        if (destination.workspace_id !== null) formData.append("commercial_workspace_id", String(destination.workspace_id));
+      }
+      for (const referenceFile of referenceFiles) {
+        formData.append("reference_files", referenceFile);
+      }
+      const { data } = await api.post<ProjectDetail>("/projects/import", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      lastImportedApplication.value = data.application ?? (data.application_handle
+        ? {
+            handle: data.application_handle,
+            origin: "portable",
+            project_id: data.id,
+            workflow_id: Number((data.metadata?.canonical_project as Record<string, unknown> | undefined)?.application_workflow_id || 0),
+          }
+        : null);
       runProjectScopeResets();
       currentProject.value = data;
       currentProjectId.value = data.id;
@@ -501,23 +634,62 @@ export const useProjectStore = defineStore("project", () => {
       await refreshImportedProjectSlices(data.id);
       return data;
     } catch (e) {
-      error.value = getErrorMessage(e);
+      campaignTrustRequired.value = (e as any)?.response?.data?.detail?.code === "campaign_publisher_trust_required";
+      const rebind = projectReferenceRebindDetail(e);
+      if (rebind) {
+        referenceRebindRequirements.value = rebind.required_artifacts;
+        error.value = rebind.message;
+      } else {
+        error.value = getErrorMessage(e);
+      }
       return null;
     } finally {
       isImporting.value = false;
     }
   }
 
+  async function bindCanonicalProjectSource(
+    workflowId: number,
+    source: { experimentId: number; fileId: number; stage: string; assetId?: string | null },
+  ): Promise<CanonicalProjectSourceBinding | null> {
+    error.value = null;
+    try {
+      const { data } = await api.put<CanonicalProjectSourceBinding>(
+        `/workflows/${workflowId}/canonical-source`,
+        {
+          experiment_id: source.experimentId,
+          file_id: source.fileId,
+          stage: source.stage,
+          ...(source.assetId ? { asset_id: source.assetId } : {}),
+        },
+      );
+      if (currentProjectId.value !== null) {
+        await Promise.all([
+          fetchProject(currentProjectId.value),
+          refreshImportedProjectSlices(currentProjectId.value),
+        ]);
+      }
+      return data;
+    } catch (e) {
+      error.value = getErrorMessage(e);
+      return null;
+    }
+  }
+
   return {
     // State
     projects,
+    archivedProjects,
     currentProjectId,
     currentProject,
     versions,
     isLoading,
     error,
     exportingProjectIds,
+    lastExportOmittedModels,
     isImporting,
+    lastImportedApplication,
+    referenceRebindRequirements,
 
     // Getters
     projectList,
@@ -526,9 +698,12 @@ export const useProjectStore = defineStore("project", () => {
 
     // CRUD
     fetchProjects,
+    fetchArchivedProjects,
     fetchProject,
     createProject,
     updateProject,
+    archiveProject,
+    restoreProject,
     deleteProject,
     selectProject,
     loadProjectContext,
@@ -556,5 +731,7 @@ export const useProjectStore = defineStore("project", () => {
     // Export / Import
     exportProject,
     importProject,
+    campaignTrustRequired,
+    bindCanonicalProjectSource,
   };
 });

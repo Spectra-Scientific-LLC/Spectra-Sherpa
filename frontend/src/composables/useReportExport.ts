@@ -14,8 +14,10 @@ import {
   type ReportEdge,
 } from "@/utils/reportGenerator";
 import { collectCanonicalClassificationMetrics } from "@/utils/classificationMetrics";
+import { reportRows } from "@/utils/reportValues";
 import { downloadBlob } from "@/utils/download";
 import type { NodeOutput } from "@/utils/nodeOutput";
+import { scientificPlotImageTargets } from "@/composables/useScientificPlotProjection";
 
 declare const Plotly: {
   toImage: (el: HTMLElement, opts: { format: string; width: number; height: number }) => Promise<string>;
@@ -72,13 +74,27 @@ const REPORT_METRIC_KEYS = [
   "n_evaluated",
   "selected_target",
   "target_mode",
+  "target_names",
+  "target_units",
+  "units",
+  "r2_per_target",
+  "rmse_per_target",
+  "per_target",
+  "per_fold_mse",
+  "per_fold_rmse",
+  "per_fold_n_samples",
+  "n_folds",
+  "metric_scope",
+  "evidence_scope",
+  "mae",
+  "q2",
 ];
 
 function collectReportMetrics(source: unknown, metrics: Record<string, any>) {
   if (!isRecord(source)) return;
   for (const key of REPORT_METRIC_KEYS) {
     const value = source[key];
-    if (typeof value === "number" || typeof value === "string" || Array.isArray(value)) {
+    if (reportRows(value).length) {
       metrics[key] = value;
     }
   }
@@ -95,10 +111,10 @@ export function useReportExport() {
     // 1. Capture plot images from Plotly chart containers
     const plotImages = new Map<string, string>();
 
-    if (plotRefs && typeof Plotly !== "undefined") {
-      for (const [nodeId, el] of plotRefs) {
+    if (typeof Plotly !== "undefined") {
+      for (const { nodeId, element } of scientificPlotImageTargets(plotRefs)) {
         try {
-          const dataUrl = await Plotly.toImage(el, {
+          const dataUrl = await Plotly.toImage(element, {
             format: "png",
             width: 800,
             height: 400,

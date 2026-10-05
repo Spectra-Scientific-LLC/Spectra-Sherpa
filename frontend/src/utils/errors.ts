@@ -87,6 +87,18 @@ export function getDemoUpgradeInfo(error: unknown): DemoUpgradeInfo | null {
   return null;
 }
 
+/**
+ * Extract the structured error code from an object `detail` body, e.g.
+ * `{"code": "trial_dataset_authority_superseded", "message": "..."}`.
+ */
+export function getErrorCode(error: unknown): string | null {
+  if (!axios.isAxiosError<ErrorBody>(error)) return null;
+  const detail = error.response?.data?.detail;
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) return null;
+  const code = (detail as Record<string, unknown>).code;
+  return typeof code === "string" && code ? code : null;
+}
+
 export function getErrorMessage(
   error: unknown,
   fallback = "An unexpected error occurred",
@@ -99,7 +111,14 @@ export function getErrorMessage(
     // Handle object detail (demo 403/429)
     if (typeof detail === "object" && detail !== null) {
       const message = (detail as Record<string, unknown>).message;
-      return typeof message === "string" && message ? message : fallback;
+      const issues = detail.code === "workflow_preflight_failed" && Array.isArray(detail.issues)
+        ? detail.issues.flatMap((issue) => {
+            if (!issue || typeof issue !== "object" || typeof issue.message !== "string") return [];
+            const location = [issue.node_id, issue.port].filter((part) => typeof part === "string" && part).join(" / ");
+            return [location ? `${location}: ${issue.message}` : issue.message];
+          })
+        : [];
+      return redactSensitiveText(issues.length ? issues.join("; ") : typeof message === "string" && message ? message : fallback);
     }
     return redactSensitiveText(
       detail ||

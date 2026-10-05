@@ -5,9 +5,9 @@ import { useAuthStore } from "@/stores/auth";
 
 // OSS owns the core routes. Managed-auth routes (/login, /register,
 // /admin) are contributed dynamically at boot by the server-provided
-// modules (`/ui/auth.js`, `/ui/admin.js`). In local mode and in
-// hybrid-without-server, those routes are simply unregistered —
-// navigating to them falls through to the SPA catchall / 404 view.
+// modules (`/ui/auth.js`, `/ui/admin.js`). An unregistered managed-auth
+// URL is never public: the guard below redirects it to `/login` rather than
+// allowing the unauthenticated application shell to render.
 
 const routes = [
   { path: "/", redirect: "/dashboard" },
@@ -40,6 +40,11 @@ const routes = [
     meta: { standalone: true },
   },
   {
+    path: "/project/provenance",
+    component: () => import("@/views/project/ProjectProvenanceView.vue"),
+    meta: { standalone: true },
+  },
+  {
     path: "/data",
     component: () => import("@/views/data/DataContent.vue"),
     meta: { nav: "data" },
@@ -54,7 +59,12 @@ const routes = [
     component: () => import("@/views/models/ModelsContent.vue"),
     meta: { nav: "runs" },
   },
-  { path: "/models", redirect: "/runs" },
+  {
+    path: "/runs/:runId",
+    component: () => import("@/views/models/ModelsContent.vue"),
+    meta: { nav: "runs" },
+  },
+  { path: "/models", redirect: (to: RouteLocation) => ({ path: "/runs", query: { ...to.query, tab: "models" } }) },
   {
     path: "/workflow/node/:nodeId",
     component: () => import("@/views/workflow-builder/NodeDetailView.vue"),
@@ -89,7 +99,10 @@ const routes = [
 
   // --- Legacy redirects ---
   { path: "/workspace", redirect: "/dashboard" },
-  { path: "/workspace/node/:nodeId", redirect: (to: RouteLocation) => `/workflow/node/${to.params.nodeId}` },
+  {
+    path: "/workspace/node/:nodeId",
+    redirect: (to: RouteLocation) => `/workflow/node/${to.params.nodeId}`,
+  },
   { path: "/operations/:rest(.*)", redirect: "/workflow" },
   { path: "/templates", redirect: "/dashboard" },
   { path: "/workflows/:pathMatch(.*)*", redirect: "/workflow" },
@@ -125,23 +138,20 @@ router.beforeEach(async (to, from, next) => {
     return next();
   }
 
-  // Hybrid mode: loopback clients get implicit local identity via
+  // Explicit product policy: loopback clients get implicit local identity via
   // /auth/me. Remote clients fall through to the server-registered
   // login route if it exists.
-  if (appMode.value === "hybrid") {
+  if (config.value?.implicitIdentity === true) {
     if (!authStore.user && !authStore.isAuthenticated) {
-      await authStore.initHybridUser();
+      await authStore.initializeActor();
     }
     if (authStore.user) {
       return next();
     }
   }
 
-  // Public / auth routes are added dynamically by the server module.
-  // If we got here and the path has the `public` meta flag, allow
-  // through; if the user is not authenticated, redirect to /login
-  // (either the server-registered route, or the SPA catchall when no
-  // server module has registered it — fail-closed behavior).
+  // Public / auth routes are added dynamically by the server module. Only a
+  // route that actually carries the `public` meta authority is public.
   if (to.meta.public) {
     if (authStore.isAuthenticated && (to.path === "/login" || to.path === "/register")) {
       return next("/");
@@ -150,13 +160,12 @@ router.beforeEach(async (to, from, next) => {
   }
 
   if (!authStore.isAuthenticated) {
-    // If the user is already trying to reach /login (either because the
-    // server auth module has registered that route, or because this is
-    // the fail-closed state where no server module has registered),
-    // don't redirect again — let the navigation complete. The server
-    // module handles the rest; if it's absent, the SPA catchall shows
-    // the fail-closed error view.
-    if (to.path === "/login" || to.path === "/register") {
+    // `/login` may be the initial unmatched navigation while the managed auth
+    // module registers it at boot. Allow it to avoid a redirect loop. In
+    // contrast, `/register` must have been registered with `meta.public`; an
+    // unregistered `/register` means the deployment closed registration and
+    // must redirect to Login instead of rendering the app shell.
+    if (to.path === "/login") {
       return next();
     }
     return next("/login");

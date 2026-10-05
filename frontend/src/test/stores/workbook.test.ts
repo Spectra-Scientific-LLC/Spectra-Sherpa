@@ -27,6 +27,7 @@ const workflowStoreMock = vi.hoisted(() => ({
   workflowId: null as number | null,
   loadWorkflow: vi.fn(),
   saveWorkflow: vi.fn(),
+  clearWorkflow: vi.fn(),
 }));
 
 vi.mock("@/stores/advisor", () => ({
@@ -44,6 +45,7 @@ vi.mock("@/stores/workflow", () => ({
 const makeSheet = (overrides: Partial<WorkbookSheet> = {}): WorkbookSheet => ({
   workflowId: 1,
   name: "Sheet 1",
+  purpose: "analysis",
   tabColor: null,
   sheetOrder: 0,
   ...overrides,
@@ -59,6 +61,7 @@ describe("useWorkbookStore", () => {
     workflowStoreMock.workflowId = null;
     workflowStoreMock.loadWorkflow.mockReset();
     workflowStoreMock.saveWorkflow.mockReset();
+    workflowStoreMock.clearWorkflow.mockReset();
   });
 
   describe("setLastSelectedNodeId", () => {
@@ -88,6 +91,121 @@ describe("useWorkbookStore", () => {
       store.setLastSelectedNodeId(99, "node_xyz");
 
       expect(store.sheets[0].lastSelectedNodeId).toBeUndefined();
+    });
+  });
+
+  describe("canonical starter templates", () => {
+    it("ignores a previous project's sheet response after a newer load starts", async () => {
+      const store = useWorkbookStore();
+      let resolveFirstLoad!: (value: { data: Array<Record<string, unknown>> }) => void;
+      const firstLoad = new Promise<{ data: Array<Record<string, unknown>> }>((resolve) => {
+        resolveFirstLoad = resolve;
+      });
+      apiMock.get
+        .mockReturnValueOnce(firstLoad)
+        .mockResolvedValueOnce({
+          data: [
+            {
+              id: 22,
+              name: "Project 2 Sheet",
+              purpose: "analysis",
+              tab_color: null,
+              sheet_order: 0,
+              node_count: 1,
+            },
+          ],
+        });
+      workflowStoreMock.loadWorkflow.mockResolvedValue(undefined);
+
+      const projectOneLoad = store.loadSheets(1);
+      const projectTwoLoad = store.loadSheets(2);
+      await projectTwoLoad;
+      resolveFirstLoad({
+        data: [
+          {
+            id: 11,
+            name: "Project 1 Sheet",
+            purpose: "analysis",
+            tab_color: null,
+            sheet_order: 0,
+            node_count: 1,
+          },
+        ],
+      });
+      await projectOneLoad;
+
+      expect(store.projectId).toBe(2);
+      expect(store.sheets.map((sheet) => sheet.workflowId)).toEqual([22]);
+      expect(workflowStoreMock.loadWorkflow).toHaveBeenCalledOnce();
+      expect(workflowStoreMock.loadWorkflow).toHaveBeenCalledWith(22);
+    });
+
+    it("does not create a blank sheet while a selected starter is pending", async () => {
+      const store = useWorkbookStore();
+      apiMock.get.mockResolvedValueOnce({ data: [] });
+
+      await store.loadSheets(5, { createIfEmpty: false });
+
+      expect(store.sheets).toEqual([]);
+      expect(apiMock.post).not.toHaveBeenCalled();
+      expect(workflowStoreMock.clearWorkflow).toHaveBeenCalledOnce();
+    });
+
+    it("refreshes every atomically created sheet and opens the primary workflow", async () => {
+      const store = useWorkbookStore();
+      store.projectId = 5;
+      store.sheets = [makeSheet({ workflowId: 10, name: "Existing", sheetOrder: 0 })];
+      store.activeIndex = 0;
+
+      apiMock.post.mockResolvedValueOnce({
+        data: { id: 20, name: "PLS Calibration", purpose: "analysis", sheet_order: 1, node_count: 7 },
+      });
+      apiMock.get.mockResolvedValueOnce({
+        data: [
+          { id: 10, name: "Existing", purpose: "analysis", tab_color: null, sheet_order: 0, node_count: 0 },
+          { id: 20, name: "PLS Calibration", purpose: "analysis", tab_color: null, sheet_order: 1, node_count: 7 },
+          {
+            id: 21,
+            name: "PLS Calibration — Harness-only PLS Candidate Authority",
+            purpose: "managed_candidate_authority",
+            tab_color: null,
+            sheet_order: 2,
+            node_count: 3,
+          },
+        ],
+      });
+
+      const primary = await store.openTemplateAsSheet(4, "PLS Calibration", {
+        launchMode: "user",
+        dataBindings: {
+          data_1: {
+            experimentId: 143,
+            displayName: "Synthetic Atmospheric FTIR",
+            allFiles: true,
+          },
+        },
+      });
+
+      expect(apiMock.post).toHaveBeenCalledWith(
+        "/workflow-templates/4/instantiate",
+        expect.objectContaining({
+          data_bindings: expect.objectContaining({
+            data_1: expect.objectContaining({
+              experiment_id: 143,
+              display_name: "Synthetic Atmospheric FTIR",
+            }),
+          }),
+        }),
+      );
+      expect(store.sheets.map((sheet) => sheet.workflowId)).toEqual([10, 20, 21]);
+      expect(store.sheets.map((sheet) => sheet.purpose)).toEqual([
+        "analysis",
+        "analysis",
+        "managed_candidate_authority",
+      ]);
+      expect(primary.workflowId).toBe(20);
+      expect(store.activeSheet?.workflowId).toBe(20);
+      expect(workflowStoreMock.loadWorkflow).toHaveBeenCalledWith(20);
     });
   });
 

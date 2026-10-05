@@ -43,6 +43,29 @@ describe("useAppVersion", () => {
     expect(mocks.get).toHaveBeenCalledTimes(1);
   });
 
+  it("shows the last six deployment SHA characters, preserving leading zeros", async () => {
+    const commit = "abcdef".repeat(5) + "abcd002676";
+    mocks.get.mockResolvedValue({ data: { backend_version: "0.6.0", build_commit: commit } });
+    const { useAppVersion } = await reloadComposable();
+    const version = useAppVersion();
+    await nextTick();
+    await nextTick();
+    expect(version.buildCommit.value).toBe(commit);
+    expect(version.deploymentSuffix.value).toBe("002676");
+  });
+
+  it.each([undefined, "", "main", "abcdef", "0".repeat(40)])(
+    "does not invent a deployment revision from %s",
+    async (commit) => {
+      mocks.get.mockResolvedValue({ data: { backend_version: "0.6.0", build_commit: commit } });
+      const { useAppVersion } = await reloadComposable();
+      const version = useAppVersion();
+      await nextTick();
+      await nextTick();
+      expect(version.deploymentSuffix.value).toBeNull();
+    },
+  );
+
   it("flags drift when frontend and backend differ in major.minor", async () => {
     // Frontend constant is whatever package.json carries; pick a backend
     // version with a guaranteed-different major to assert drift.

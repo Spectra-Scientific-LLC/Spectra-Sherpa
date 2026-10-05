@@ -6,9 +6,7 @@ import { isDemoUpgradeError, redactSensitiveText } from "@/utils/errors";
 
 // Use relative URL in production (nginx proxies to backend)
 // Use absolute URL in development for Vite dev server
-const defaultBaseUrl = import.meta.env.DEV
-  ? "http://127.0.0.1:8000/api/v1"
-  : "/api/v1";
+const defaultBaseUrl = import.meta.env.DEV ? "http://127.0.0.1:8000/api/v1" : "/api/v1";
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || defaultBaseUrl,
@@ -142,7 +140,7 @@ function emitAsyncApiErrorNotification(error: AxiosError): void {
  *
  * Supports two auth mechanisms:
  * 1. JWT Bearer token (for user login in cloud/enterprise modes)
- * 2. X-API-Key (for machine-to-machine in hybrid mode)
+ * 2. X-API-Key (for machine-to-machine in managed deployments)
  *
  * JWT takes precedence if both are present.
  */
@@ -155,9 +153,11 @@ api.interceptors.request.use((config) => {
     config.headers["Authorization"] = `Bearer ${token}`;
   }
 
-  // Also add API key if present (for hybrid mode M2M auth)
+  // Send one credential: a stale machine key must not replace the JWT actor.
   const apiKey = readStoredApiKey();
-  if (apiKey) {
+  if (token) {
+    config.headers.delete("X-API-Key");
+  } else if (apiKey) {
     config.headers["X-API-Key"] = apiKey;
   }
 
@@ -172,6 +172,27 @@ api.interceptors.request.use((config) => {
  *   emit notification center events (toasts remain unchanged in calling views).
  * - 401: expired JWT — clear credentials and redirect to login.
  */
+api.interceptors.response.use(
+  async (response) => {
+    const path = normalizeUrlPath(response.config.url);
+    if (/^\/(?:llm|sherpa)\//.test(path) && typeof response.data?.response === "string") {
+      const { recordScientificQueryOutcome, SCIENTIFIC_QUERY_REFUSAL } = await import("@/lib/scientificQueryGuidance");
+      if (response.data.response.trim()) recordScientificQueryOutcome(response.data.response.trim() !== SCIENTIFIC_QUERY_REFUSAL);
+    } else if (path === "/harness/managed-workflow-proposals" && response.data?.status === "accepted") {
+      const { recordScientificQueryOutcome } = await import("@/lib/scientificQueryGuidance");
+      recordScientificQueryOutcome(true);
+    }
+    return response;
+  },
+  async (error) => {
+    if (error.response?.data?.detail?.code === "scientific_query_rejected") {
+      const { recordScientificQueryOutcome } = await import("@/lib/scientificQueryGuidance");
+      recordScientificQueryOutcome(false);
+    }
+    return Promise.reject(error);
+  },
+);
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
@@ -190,7 +211,9 @@ api.interceptors.response.use(
     if (axios.isAxiosError(error) && isAsyncErrorCandidate(error)) {
       const status = error.response?.status ?? 0;
       const shouldNotify =
-        status === 0 || status >= 500 || (status === 404 && normalizeUrlPath(error.config?.url).startsWith("/jobs"));
+        status === 0 ||
+        status >= 500 ||
+        (status === 404 && normalizeUrlPath(error.config?.url).startsWith("/jobs"));
       if (shouldNotify) {
         emitAsyncApiErrorNotification(error);
       }
@@ -211,16 +234,23 @@ api.interceptors.response.use(
     }
 
     if (error.response?.status === 401) {
-      const path = window.location.pathname;
-      // Don't redirect if on login or register page (avoid loop / breaking registration UX)
-      if (!path.startsWith("/login") && !path.startsWith("/register")) {
-        localStorage.removeItem("token");
-        clearStoredApiKey();
-        window.location.href = "/login";
-      }
+      expireBrowserSession();
     }
     return Promise.reject(error);
-  }
+  },
 );
+
+// Shared logout path. Session probes call this only after confirming that
+// their connection and credential are still current.
+export function expireBrowserSession(): void {
+  const path = window.location.pathname;
+  if (!path.startsWith("/login") && !path.startsWith("/register")) {
+    localStorage.removeItem("token");
+    clearStoredApiKey();
+    window.location.href = `/login?reason=session-expired&return_to=${encodeURIComponent(
+      `${window.location.pathname}${window.location.search}${window.location.hash}`,
+    )}`;
+  }
+}
 
 export default api;

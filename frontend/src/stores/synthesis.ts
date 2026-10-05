@@ -56,6 +56,12 @@ export interface SpectrumPayload {
   resolution_cm1?: number | null;
   apodization?: string | null;
   cached?: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+/** Preserve provider identity, units and custody when building a synthesis request. */
+export function spectrumForSynthesis(spectrum: SpectrumPayload) {
+  return { ...spectrum, metadata: spectrum.metadata || {} };
 }
 
 export interface ControlPoint {

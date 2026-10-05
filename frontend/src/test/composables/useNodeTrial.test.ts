@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ref, defineComponent, h } from "vue";
+import { createPinia, setActivePinia } from "pinia";
+import { useWorkflowStore } from "@/stores/workflow";
 import { mount } from "@vue/test-utils";
 import {
   useNodeTrial,
@@ -19,6 +21,7 @@ class FakeChannel {
 }
 
 beforeEach(() => {
+  setActivePinia(createPinia());
   postMock.mockReset();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (globalThis as any).BroadcastChannel = FakeChannel;
@@ -35,14 +38,14 @@ function harness(opts: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   params?: Record<string, any>;
   addLog?: ReturnType<typeof vi.fn>;
+  validateTrial?: () => void;
   normalizeNodeOutput?: ReturnType<typeof vi.fn>;
 }) {
   const nodeData = ref(opts.nodeData);
   const localParams = ref(opts.params ?? {});
   const nodeType = ref("model.pca");
   const addLog = opts.addLog ?? vi.fn();
-  const normalizeNodeOutput =
-    opts.normalizeNodeOutput ?? vi.fn((r) => ({ data: r, metadata: {} }));
+  const normalizeNodeOutput = opts.normalizeNodeOutput ?? vi.fn((r) => ({ data: r, metadata: {} }));
   const toast = makeToast();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let api: any;
@@ -54,6 +57,7 @@ function harness(opts: {
         nodeType,
         addLog,
         normalizeNodeOutput,
+        validateTrial: opts.validateTrial ?? (() => undefined),
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         toast: toast as any,
       });
@@ -66,7 +70,10 @@ function harness(opts: {
 
 describe("useNodeTrial", () => {
   it("broadcastParamsUpdate writes to sessionStorage with merged params", () => {
-    const { api } = harness({ nodeData: { id: 7, type: "model.pca", params: { x: 1 } }, params: { x: 2 } });
+    const { api } = harness({
+      nodeData: { id: 7, type: "model.pca", params: { x: 1 } },
+      params: { x: 2 },
+    });
     api().broadcastParamsUpdate();
     const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "{}");
     expect(saved.id).toBe(7);
@@ -93,7 +100,11 @@ describe("useNodeTrial", () => {
   it("handleRunTrial posts a trial payload and normalizes the result on success", async () => {
     postMock.mockResolvedValueOnce({ data: { status: "ok", result: { foo: "bar" } } });
     const normalizeNodeOutput = vi.fn(() => ({ data: [[1, 2]], metadata: {} }));
-    const { api, normalizeNodeOutput: n, nodeData } = harness({
+    const {
+      api,
+      normalizeNodeOutput: n,
+      nodeData,
+    } = harness({
       nodeData: {
         id: 1,
         type: "model.pca",
@@ -109,8 +120,8 @@ describe("useNodeTrial", () => {
       "/workflows/trial/execute",
       expect.objectContaining({ target_node_id: "1", trial_params: { n_components: 3 } }),
     );
-    expect(n).toHaveBeenCalledWith({ foo: "bar" });
-    expect(nodeData.value.output).toEqual({ data: [[1, 2]], metadata: {} });
+    expect(n).toHaveBeenCalledWith({ foo: "bar" }, undefined, undefined);
+    expect(nodeData.value.output).toEqual({ data: [[1, 2]], metadata: { diagnostics: {} } });
   });
 
   it("handleRunTrial surfaces API errors via toast + log", async () => {
@@ -126,5 +137,78 @@ describe("useNodeTrial", () => {
     await api().handleRunTrial();
     expect(addLog).toHaveBeenCalledWith("error", "Trial failed", "boom");
     expect(toast.add).toHaveBeenCalledWith(expect.objectContaining({ severity: "error" }));
+  });
+});
+
+describe("trial scientific input fidelity", () => {
+  it("guards the handler itself before posting an invalid numeric draft", async () => {
+    const { api, toast } = harness({
+      nodeData: {
+        id: "peaks",
+        type: "analysis.peak_finding",
+        workflowNodes: [{ id: "peaks", type: "analysis.peak_finding", params: {} }],
+      },
+      params: { prominence: "1e-" },
+      validateTrial: () => {
+        const store = useWorkflowStore();
+        store.nodeLibrary.set("analysis.peak_finding", {
+          node_type: "analysis.peak_finding",
+          label: "Peak Finding",
+          category: "exploratory",
+          description: "",
+          input_types: [],
+          output_type: "dict",
+          parameters: [
+            {
+              name: "prominence",
+              label: "Prominence",
+              param_type: "number",
+              default: null,
+              required: false,
+            },
+          ],
+        });
+        store.assertNumericExecutionInputs(
+          "peaks",
+          { prominence: "1e-" },
+          [{ id: "peaks", type: "analysis.peak_finding", label: "Peaks", x: 0, y: 0, params: {} }],
+          [],
+        );
+      },
+    });
+    await api().handleRunTrial();
+    expect(postMock).not.toHaveBeenCalled();
+    expect(toast.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: "error",
+        detail: "Peaks: Prominence must be a finite number",
+      }),
+    );
+  });
+
+  it("attaches this trial's exact execution diagnostics and clears stale evidence on an older response", async () => {
+    const diagnostics = {
+      scipy_version: "1.17.1",
+      scipy_find_peaks_call: "scipy.signal.find_peaks(spectrum, height=None, prominence=0.5)",
+    };
+    postMock.mockResolvedValueOnce({
+      data: { status: "completed", result: { peaks: [] }, diagnostics },
+    });
+    const { api, nodeData } = harness({
+      nodeData: {
+        id: "peaks",
+        type: "analysis.peak_finding",
+        workflowNodes: [{ id: "peaks", type: "analysis.peak_finding", params: {} }],
+      },
+      normalizeNodeOutput: vi.fn(() => ({
+        data: [],
+        metadata: { diagnostics: { scipy_version: "stale" } },
+      })),
+    });
+    await api().handleRunTrial();
+    expect(nodeData.value.output.metadata.diagnostics).toEqual(diagnostics);
+    postMock.mockResolvedValueOnce({ data: { status: "completed", result: { peaks: [] } } });
+    await api().handleRunTrial();
+    expect(nodeData.value.output.metadata.diagnostics).toEqual({});
   });
 });

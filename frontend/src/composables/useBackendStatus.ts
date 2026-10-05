@@ -1,10 +1,8 @@
-import { ref } from 'vue';
-import api from '@/api/client';
+import { ref } from "vue";
+import api from "@/api/client";
 
 const backendConnected = ref(true);
-const backendDegraded = ref(false);
 const checkingStatus = ref(false);
-const pluginFailureCount = ref(0);
 let healthCheckInterval: number | null = null;
 let firstBackendFailureAt: number | null = null;
 
@@ -14,22 +12,12 @@ const BACKEND_UNREACHABLE_GRACE_MS = 60000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function probeHealth(): Promise<{ connected: boolean; degraded: boolean; pluginFailureCount: number }> {
+async function probeHealth(): Promise<{ connected: boolean }> {
   try {
-    const response = await api.get("/health", { timeout: 3000 });
-    const status = response.data?.status;
-    const pluginFailureCount = Number.isFinite(response.data?.plugin_failure_count)
-      ? Number(response.data.plugin_failure_count)
-      : Array.isArray(response.data?.plugin_failures)
-        ? response.data.plugin_failures.length
-        : 0;
-    return {
-      connected: true,
-      degraded: status === "degraded",
-      pluginFailureCount,
-    };
+    await api.get("/health", { timeout: 3000 });
+    return { connected: true };
   } catch {
-    return { connected: false, degraded: false, pluginFailureCount: 0 };
+    return { connected: false };
   }
 }
 
@@ -41,8 +29,6 @@ export function useBackendStatus() {
       if (initial.connected) {
         firstBackendFailureAt = null;
         backendConnected.value = true;
-        backendDegraded.value = initial.degraded;
-        pluginFailureCount.value = initial.pluginFailureCount;
         console.log("[BackendStatus] Backend connection established");
         return;
       }
@@ -54,8 +40,6 @@ export function useBackendStatus() {
         if (retry.connected) {
           firstBackendFailureAt = null;
           backendConnected.value = true;
-          backendDegraded.value = retry.degraded;
-          pluginFailureCount.value = retry.pluginFailureCount;
           console.log(`[BackendStatus] Backend recovered on retry ${attempt}`);
           return;
         }
@@ -74,8 +58,6 @@ export function useBackendStatus() {
       }
 
       backendConnected.value = false;
-      backendDegraded.value = false;
-      pluginFailureCount.value = 0;
       console.error("[BackendStatus] Backend unreachable after retries");
     } finally {
       checkingStatus.value = false;
@@ -101,9 +83,7 @@ export function useBackendStatus() {
 
   return {
     backendConnected,
-    backendDegraded,
     checkingStatus,
-    pluginFailureCount,
     checkBackendStatus,
     startHealthCheck,
     stopHealthCheck,

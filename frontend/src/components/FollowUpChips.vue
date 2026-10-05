@@ -7,7 +7,7 @@
       type="button"
       @click="$emit('select', suggestion)"
     >
-      {{ suggestion }}
+      <span aria-hidden="true">👉</span> {{ suggestion }}
     </button>
   </div>
 </template>

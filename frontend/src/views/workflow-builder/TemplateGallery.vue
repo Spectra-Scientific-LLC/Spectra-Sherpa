@@ -4,10 +4,16 @@ import Button from "primevue/button";
 import ProgressSpinner from "primevue/progressspinner";
 import Message from "primevue/message";
 import { useWorkflowStore, type WorkflowTemplate } from "@/stores/workflow";
-import type { DataModality } from "@/stores/workflow-types";
+import type {
+  CompatibilityStatus,
+  DataModality,
+  DatasetCompatibilityDecision,
+} from "@/stores/workflow-types";
 
 const props = defineProps<{
   selectedTemplateId?: number | null;
+  selectedDatasetId?: string | null;
+  requireDatasetSelection?: boolean;
   showHeader?: boolean;
 }>();
 
@@ -18,7 +24,20 @@ const emit = defineEmits<{
 const workflowStore = useWorkflowStore();
 const selectedModality = ref<"all" | DataModality>("all");
 
-const templateStatus = (template: WorkflowTemplate) => template.status || template.template_data.status || "ready";
+const templateStatus = (template: WorkflowTemplate) => template.status;
+
+const isTemplateDisabled = (template: WorkflowTemplate): boolean =>
+  templateStatus(template) !== "ready" ||
+  (props.requireDatasetSelection === true && !props.selectedDatasetId) ||
+  (!!props.selectedDatasetId && decisionFor(template)?.status !== "compatible");
+
+const templateStatusLabel = (template: WorkflowTemplate) =>
+  ({
+    ready: "ready",
+    pending_data: "pending data",
+    pending_qualification: "pending qualification",
+    wip: "work in progress",
+  })[template.status];
 
 const modalityMeta: Record<DataModality, { label: string; icon: string; tooltip: string }> = {
   spectra: {
@@ -53,6 +72,41 @@ const templateModalities = (template: WorkflowTemplate): DataModality[] => {
   return ["spectra"];
 };
 
+type CompatibilityDisplayGroup =
+  | CompatibilityStatus
+  | "needs_target"
+  | "needs_source"
+  | "unavailable";
+
+const compatibilityGroupMeta: Record<CompatibilityDisplayGroup, { label: string; order: number }> =
+  {
+    compatible: { label: "Available", order: 0 },
+    needs_target: { label: "Needs target or class labels", order: 1 },
+    needs_source: { label: "Needs another data source", order: 2 },
+    needs_input: { label: "Needs input", order: 3 },
+    incompatible: { label: "Not compatible", order: 4 },
+    pending: { label: "Pending qualification", order: 5 },
+    unavailable: { label: "Temporarily unavailable", order: 6 },
+  };
+
+const compatibilityDisplayGroup = (
+  decision: DatasetCompatibilityDecision | null,
+): CompatibilityDisplayGroup | null => {
+  if (!decision) return null;
+  return decision.display_group;
+};
+
+const decisionFor = (template: WorkflowTemplate): DatasetCompatibilityDecision | null => {
+  if (!props.selectedDatasetId) return null;
+  return workflowStore.compatibilityDecision(props.selectedDatasetId, template.slug);
+};
+
+const decisionMessage = (template: WorkflowTemplate): string | null => {
+  const decision = decisionFor(template);
+  if (!decision || decision.status === "compatible") return null;
+  return decision.reasons[0]?.message || "This dataset does not meet the analysis requirements.";
+};
+
 const groupedTemplates = computed(() => {
   const groups = new Map<string, WorkflowTemplate[]>();
   const visibleTemplates = workflowStore.availableTemplates.filter((template) => {
@@ -63,7 +117,8 @@ const groupedTemplates = computed(() => {
   });
 
   for (const template of visibleTemplates) {
-    const category = template.category || "other";
+    const decision = decisionFor(template);
+    const category = compatibilityDisplayGroup(decision) || template.category || "other";
     if (!groups.has(category)) {
       groups.set(category, []);
     }
@@ -71,10 +126,20 @@ const groupedTemplates = computed(() => {
   }
 
   return Array.from(groups.entries())
-    .sort(([left], [right]) => left.localeCompare(right))
+    .sort(([left], [right]) => {
+      if (props.selectedDatasetId) {
+        return (
+          (compatibilityGroupMeta[left as CompatibilityDisplayGroup]?.order ?? 99) -
+          (compatibilityGroupMeta[right as CompatibilityDisplayGroup]?.order ?? 99)
+        );
+      }
+      return left.localeCompare(right);
+    })
     .map(([category, templates]) => ({
       category,
-      label: category.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()),
+      label: props.selectedDatasetId
+        ? compatibilityGroupMeta[category as CompatibilityDisplayGroup]?.label || category
+        : category.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase()),
       templates: [...templates].sort((left, right) => left.name.localeCompare(right.name)),
     }));
 });
@@ -83,7 +148,10 @@ onMounted(async () => {
   // Always re-fetch to pick up backend template updates (e.g. new data_roles)
   if (!workflowStore.templatesLoading) {
     try {
-      await workflowStore.fetchTemplates();
+      await Promise.all([
+        workflowStore.fetchTemplates(undefined, true),
+        workflowStore.fetchCompatibilityMatrix(),
+      ]);
     } catch {
       // Store owns the error state shown below.
     }
@@ -95,7 +163,10 @@ onMounted(async () => {
   <div class="template-gallery">
     <div v-if="props.showHeader !== false" class="gallery-header">
       <h3>Analysis Starters</h3>
-      <p>Choose a validated analysis starter instead of rebuilding common chemometric workflows by hand.</p>
+      <p>
+        Choose a validated analysis starter instead of rebuilding common chemometric workflows by
+        hand.
+      </p>
       <div class="modality-filters" aria-label="Filter templates by data shape">
         <Button
           v-for="filter in modalityFilters"
@@ -108,16 +179,17 @@ onMounted(async () => {
       </div>
     </div>
 
+    <small v-if="props.selectedDatasetId" class="compatibility-scope-note">
+      Availability confirms structural inputs. Scientific sufficiency is checked when the workflow
+      runs.
+    </small>
+
     <div v-if="workflowStore.templatesLoading" class="gallery-state">
       <ProgressSpinner style="width: 36px; height: 36px" />
       <span>Loading analysis starters...</span>
     </div>
 
-    <Message
-      v-else-if="workflowStore.templatesError"
-      severity="error"
-      :closable="false"
-    >
+    <Message v-else-if="workflowStore.templatesError" severity="error" :closable="false">
       {{ workflowStore.templatesError }}
     </Message>
 
@@ -127,11 +199,7 @@ onMounted(async () => {
     </div>
 
     <div v-else class="template-groups">
-      <section
-        v-for="group in groupedTemplates"
-        :key="group.category"
-        class="template-group"
-      >
+      <section v-for="group in groupedTemplates" :key="group.category" class="template-group">
         <div class="group-header">
           <h4>{{ group.label }}</h4>
           <span>{{ group.templates.length }}</span>
@@ -159,17 +227,23 @@ onMounted(async () => {
                   </span>
                 </div>
                 <span class="template-status" :class="templateStatus(template)">
-                  {{ templateStatus(template) }}
+                  {{ templateStatusLabel(template) }}
                 </span>
               </div>
               <p>{{ template.description }}</p>
+              <p v-if="template.status !== 'ready'" class="template-status-detail">
+                {{ template.status_detail }}
+              </p>
+              <p v-else-if="decisionMessage(template)" class="template-status-detail">
+                {{ decisionMessage(template) }}
+              </p>
             </div>
             <Button
               label="Start"
               icon="pi pi-arrow-right"
               icon-pos="right"
               class="p-button-outlined"
-              :disabled="templateStatus(template) !== 'ready'"
+              :disabled="isTemplateDisabled(template)"
               @click="emit('select', template)"
             />
           </article>
@@ -226,6 +300,11 @@ onMounted(async () => {
   flex-direction: column;
 }
 
+.template-status-detail {
+  color: var(--orange-300);
+  font-size: 0.82rem;
+}
+
 .template-groups {
   display: flex;
   flex-direction: column;
@@ -269,7 +348,11 @@ onMounted(async () => {
   border: 1px solid var(--surface-border);
   border-radius: 12px;
   background: var(--surface-card);
-  transition: border-color 120ms ease, box-shadow 120ms ease, background-color 120ms ease, transform 120ms ease;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    background-color 120ms ease,
+    transform 120ms ease;
 }
 
 .template-card:hover {

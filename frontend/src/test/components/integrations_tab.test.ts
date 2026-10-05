@@ -1,7 +1,7 @@
 /* eslint-disable vue/one-component-per-file */
-import { flushPromises, mount } from '@vue/test-utils';
-import { defineComponent } from 'vue';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushPromises, mount } from "@vue/test-utils";
+import { defineComponent } from "vue";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   loadConfig: vi.fn().mockResolvedValue(true),
@@ -12,14 +12,12 @@ const mocks = vi.hoisted(() => ({
   appConfig: {
     __v_isRef: true,
     value: {
-      mode: 'enterprise',
-      subscription: { plan: 'demo' },
+      mode: "enterprise",
+      subscription: { plan: "demo" },
       features: {
         apiTokenSettings: false,
-        cloudOffload: false,
         chatAssistant: false,
         sherpaAdvisor: false,
-        pluginSystem: true,
         nistDownloads: false,
         sherpaPeakId: false,
         sherpaCodeGen: false,
@@ -32,43 +30,43 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('primevue/usetoast', () => ({
+vi.mock("primevue/usetoast", () => ({
   useToast: () => ({
     add: mocks.toastAdd,
   }),
 }));
 
-vi.mock('@/composables/useAppConfig', () => ({
+vi.mock("@/composables/useAppConfig", () => ({
   useAppConfig: () => ({
     appConfig: mocks.appConfig,
-    siteProfile: { __v_isRef: true, value: 'enterprise' },
+    siteProfile: { __v_isRef: true, value: "enterprise" },
     loadConfig: mocks.loadConfig,
     isFeatureEnabled: mocks.isFeatureEnabled,
   }),
 }));
 
-vi.mock('@/api/client', () => ({
+vi.mock("@/api/client", () => ({
   default: {
     get: mocks.apiGet,
     post: mocks.apiPost,
   },
 }));
 
-vi.mock('@/composables/useDemoMode', () => ({
+vi.mock("@/composables/useDemoMode", () => ({
   useDemoMode: () => ({
     isDemoMode: { value: false },
   }),
 }));
 
 const ButtonStub = defineComponent({
-  name: 'PrimeButton',
+  name: "PrimeButton",
   inheritAttrs: false,
   props: {
-    label: { type: String, default: '' },
+    label: { type: String, default: "" },
     disabled: { type: Boolean, default: false },
     loading: { type: Boolean, default: false },
   },
-  emits: ['click'],
+  emits: ["click"],
   template: `
     <button
       v-bind="$attrs"
@@ -82,12 +80,12 @@ const ButtonStub = defineComponent({
 });
 
 const InputTextStub = defineComponent({
-  name: 'InputText',
+  name: "InputText",
   inheritAttrs: false,
   props: {
-    modelValue: { type: String, default: '' },
+    modelValue: { type: String, default: "" },
   },
-  emits: ['update:modelValue'],
+  emits: ["update:modelValue"],
   template: `
     <input
       v-bind="$attrs"
@@ -98,24 +96,24 @@ const InputTextStub = defineComponent({
 });
 
 const TagStub = defineComponent({
-  name: 'Tag',
+  name: "Tag",
   props: {
-    value: { type: String, default: '' },
+    value: { type: String, default: "" },
   },
   template: '<span class="tag-stub">{{ value }}</span>',
 });
 
 const DialogStub = defineComponent({
-  name: 'PrimeDialog',
+  name: "PrimeDialog",
   props: {
     visible: { type: Boolean, default: false },
   },
   template: '<div v-if="visible"><slot /><slot name="footer" /></div>',
 });
 
-import IntegrationsTab from '@/views/settings/IntegrationsTab.vue';
+import IntegrationsTab from "@/views/settings/IntegrationsTab.vue";
 
-describe('IntegrationsTab', () => {
+describe("IntegrationsTab", () => {
   beforeEach(() => {
     mocks.loadConfig.mockResolvedValue(true);
     mocks.isFeatureEnabled.mockReturnValue(true);
@@ -123,14 +121,12 @@ describe('IntegrationsTab', () => {
     mocks.apiPost.mockReset();
     mocks.apiGet.mockReset();
     mocks.appConfig.value = {
-      mode: 'enterprise',
-      subscription: { plan: 'demo' },
+      mode: "enterprise",
+      subscription: { plan: "demo" },
       features: {
         apiTokenSettings: false,
-        cloudOffload: false,
         chatAssistant: false,
         sherpaAdvisor: false,
-        pluginSystem: true,
         nistDownloads: false,
         sherpaPeakId: false,
         sherpaCodeGen: false,
@@ -142,34 +138,34 @@ describe('IntegrationsTab', () => {
     };
 
     mocks.apiGet.mockImplementation((url: string) => {
-      if (url === '/config/spectrasherpa') {
+      if (url === "/config/spectrasherpa") {
         return Promise.resolve({
           data: {
-            serverUrl: 'https://demo.example.com',
-            apiKey: 'ss_demo_1234',
+            serverUrl: "https://demo.example.com",
+            apiKey: "ss_demo_1234",
             configured: true,
-            source: 'environment',
+            source: "environment",
           },
         });
       }
-      if (url === '/config/spectrasherpa/user') {
+      if (url === "/config/spectrasherpa/user") {
         return Promise.resolve({
           data: {
-            label: 'Demo Deployment',
-            plan: 'demo',
-            plan_status: 'active',
-            entitlements: ['chat'],
+            label: "Demo Deployment",
+            plan: "demo",
+            plan_status: "active",
+            entitlements: ["chat"],
           },
         });
       }
-      if (url === '/config/spectrasherpa/keys') {
+      if (url === "/config/spectrasherpa/keys") {
         return Promise.resolve({
           data: {
-            keys: [{ provider: 'openai', display_name: 'OpenAI', model: 'gpt-5', available: true }],
+            keys: [{ provider: "openai", display_name: "OpenAI", model: "gpt-5", available: true }],
           },
         });
       }
-      if (url === '/egress/defaults') {
+      if (url === "/egress/defaults") {
         return Promise.resolve({
           data: {
             allow_llm_chat: true,
@@ -185,44 +181,31 @@ describe('IntegrationsTab', () => {
     });
   });
 
-  it('shows Validate Connection for configured enterprise deployments and validates on click', async () => {
+  it("exposes privacy controls without loading product enrollment routes", async () => {
+    const wrapper = mount(IntegrationsTab);
+    await flushPromises();
+    expect(wrapper.text()).toContain("NIST WebBook Queries");
+    expect(wrapper.text()).toContain("HITRAN/HAPI Queries");
+    expect(wrapper.text()).not.toContain("Validate Connection");
+    expect(mocks.apiGet.mock.calls.map(([url]) => url)).toEqual(["/egress/defaults"]);
+  });
+
+  it("never offers or probes a hosted-service connection in the desktop app", async () => {
+    mocks.appConfig.value = { ...mocks.appConfig.value, mode: "local", desktop: true };
     const wrapper = mount(IntegrationsTab, {
       global: {
-        stubs: {
-          InputText: InputTextStub,
-          Button: ButtonStub,
-          Tag: TagStub,
-          Dialog: DialogStub,
-        },
+        stubs: { InputText: InputTextStub, Button: ButtonStub, Tag: TagStub, Dialog: DialogStub },
       },
     });
 
     await flushPromises();
 
-    expect(wrapper.text()).toContain('Validate Connection');
-    expect(wrapper.text()).toContain('Refresh');
-    expect(wrapper.text()).not.toContain('Test Connection');
-    expect(wrapper.text()).toContain('NIST WebBook Queries');
-    expect(wrapper.text()).toContain('HITRAN/HAPI Queries');
-
-    const validateButton = wrapper.findAll('button').find((button) => button.text().includes('Validate Connection'));
-    expect(validateButton).toBeDefined();
-
-    await validateButton!.trigger('click');
-    await flushPromises();
-
-    const userCalls = mocks.apiGet.mock.calls.filter(([url]) => url === '/config/spectrasherpa/user');
-    const keyCalls = mocks.apiGet.mock.calls.filter(([url]) => url === '/config/spectrasherpa/keys');
-
-    expect(userCalls).toHaveLength(2);
-    expect(keyCalls).toHaveLength(2);
-    expect(wrapper.text()).toContain('Connection successful!');
-    expect(wrapper.text()).toContain('Deployment: Demo Deployment');
-    expect(wrapper.text()).toContain('Plan: demo');
-    expect(wrapper.text()).toContain('1 managed LLM provider(s) available');
+    expect(wrapper.text()).not.toContain("SpectraSherpa Cloud");
+    expect(wrapper.text()).toContain("It does not connect to Spectra Scientific services.");
+    expect(mocks.apiGet.mock.calls.map(([url]) => url)).toEqual(["/egress/defaults"]);
   });
 
-  it('can render only Data & Privacy without loading deployment connection state', async () => {
+  it("can render only Data & Privacy without loading deployment connection state", async () => {
     const wrapper = mount(IntegrationsTab, {
       props: { privacyOnly: true },
       global: {
@@ -237,13 +220,13 @@ describe('IntegrationsTab', () => {
 
     await flushPromises();
 
-    expect(wrapper.text()).toContain('Data & Privacy');
-    expect(wrapper.text()).toContain('NIST WebBook Queries');
-    expect(wrapper.text()).toContain('HITRAN/HAPI Queries');
-    expect(wrapper.text()).not.toContain('Connect to a SpectraSherpa Cloud server');
-    expect(wrapper.text()).not.toContain('Connect & Enable Hybrid');
-    expect(wrapper.text()).not.toContain('Validate Connection');
-    expect(mocks.apiGet).not.toHaveBeenCalledWith('/config/spectrasherpa');
-    expect(mocks.apiGet).toHaveBeenCalledWith('/egress/defaults');
+    expect(wrapper.text()).toContain("Data & Privacy");
+    expect(wrapper.text()).toContain("NIST WebBook Queries");
+    expect(wrapper.text()).toContain("HITRAN/HAPI Queries");
+    expect(wrapper.text()).not.toContain("Connect to a SpectraSherpa Cloud server");
+    expect(wrapper.text()).not.toContain("Connect & Enable Hybrid");
+    expect(wrapper.text()).not.toContain("Validate Connection");
+    expect(mocks.apiGet).not.toHaveBeenCalledWith("/config/spectrasherpa");
+    expect(mocks.apiGet).toHaveBeenCalledWith("/egress/defaults");
   });
 });

@@ -44,6 +44,7 @@ vi.mock("@/stores/notification", () => ({
 }));
 
 import { useLlmStore } from "@/stores/llm";
+import { clearStoredApiKey, writeStoredApiKey } from "@/utils/authStorage";
 
 const encoder = new TextEncoder();
 
@@ -83,7 +84,19 @@ describe("LLM Store local BYO chat", () => {
     } else {
       delete (globalThis as { fetch?: typeof fetch }).fetch;
     }
+    clearStoredApiKey();
     vi.clearAllMocks();
+  });
+
+  it.each([true, false])("uses one streaming credential with bearer present=%s", async (hasBearer) => {
+    mocks.featureFlags.chatAssistant = true;
+    if (hasBearer) localStorage.setItem("token", "alice-token");
+    writeStoredApiKey("bob-key");
+    fetchMock.mockResolvedValue(makeSseResponse({ type: "done" }));
+    await useLlmStore().sendMessage("Explain PCA");
+    const headers = new Headers(fetchMock.mock.calls[0][1].headers);
+    expect(headers.get("Authorization")).toBe(hasBearer ? "Bearer alice-token" : null);
+    expect(headers.get("X-API-Key")).toBe(hasBearer ? null : "bob-key");
   });
 
   it("streams local chat over /chat/stream and persists browser-local history", async () => {
@@ -160,5 +173,39 @@ describe("LLM Store local BYO chat", () => {
       verbose: true,
       max_paragraphs: 2,
     });
+  });
+});
+
+
+describe("LLM Store hosted configuration", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    localStorage.clear();
+    mocks.appMode.value = "enterprise";
+    mocks.apiGet.mockReset();
+  });
+  afterEach(() => { mocks.appMode.value = "local"; });
+
+  it("reads the registered configuration contract without a debug endpoint", async () => {
+    mocks.apiGet.mockResolvedValue({ data: {
+      features: { chatAssistant: true }, configStatus: "ok",
+      llms: { anthropic: { enabled: true, model: "test-model" } },
+    } });
+    const store = useLlmStore();
+    await store.checkConfigChange();
+    expect(mocks.apiGet).toHaveBeenCalledWith("/config");
+    expect(store.configStatus).toBe("configured");
+    expect(store.currentConfig).toMatchObject({ provider: "anthropic", model: "test-model", base_url: "" });
+  });
+
+  it.each([
+    { features: { chatAssistant: false }, configStatus: "ok" },
+    { features: { chatAssistant: true }, configStatus: "degraded" },
+  ])("refuses to claim readiness when unavailable: %j", async (data) => {
+    mocks.apiGet.mockResolvedValue({ data });
+    const store = useLlmStore();
+    await store.checkConfigChange();
+    expect(store.configStatus).toBe("unavailable");
+    expect(store.currentConfig).toBeNull();
   });
 });

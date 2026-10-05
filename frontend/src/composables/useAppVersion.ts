@@ -14,6 +14,8 @@ import { api } from "@/api";
 const frontendVersion = __SHERPA_FRONTEND_VERSION__;
 
 const backendVersion = ref<string | null>(null);
+const buildCommit = ref<string | null>(null);
+const deploymentSuffix = computed(() => buildCommit.value?.slice(-6) ?? null);
 const loadError = ref<string | null>(null);
 let inflight: Promise<void> | null = null;
 
@@ -22,12 +24,20 @@ async function loadBackendVersion(): Promise<void> {
   if (inflight) return inflight;
   inflight = (async () => {
     try {
-      const response = await api.get<{ backend_version: string }>("/version");
+      const response = await api.get<{ backend_version: string; build_commit?: string }>(
+        "/version",
+      );
       backendVersion.value = response.data.backend_version;
+      const commit = response.data.build_commit;
+      buildCommit.value =
+        typeof commit === "string" && /^[0-9a-f]{40}$/i.test(commit) && !/^0+$/.test(commit)
+          ? commit.toLowerCase()
+          : null;
       loadError.value = null;
     } catch (err: unknown) {
       loadError.value = err instanceof Error ? err.message : "Failed to load backend version";
       backendVersion.value = null;
+      buildCommit.value = null;
     } finally {
       inflight = null;
     }
@@ -59,6 +69,8 @@ export function useAppVersion() {
   return {
     frontendVersion,
     backendVersion: readonly(backendVersion),
+    buildCommit: readonly(buildCommit),
+    deploymentSuffix,
     loadError: readonly(loadError),
     versionDrift,
     reload: () => loadBackendVersion(),

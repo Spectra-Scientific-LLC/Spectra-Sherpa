@@ -18,7 +18,6 @@ function factory(props: Partial<InstanceType<typeof SettingsPanel>["$props"]> = 
     global: {
       stubs: {
         Transition: false,
-        InputNumber: true,
         InputText: true,
         InputSwitch: true,
         Dropdown: true,
@@ -90,9 +89,8 @@ describe("SettingsPanel", () => {
     await w.find('button[aria-label="Reset to Defaults"]').trigger("click");
     expect(w.emitted("reset")).toBeTruthy();
 
-    // InputNumber v-model bridge: simulate update:model-value from the stub
-    const input = w.findComponent({ name: "InputNumber" });
-    input.vm.$emit("update:model-value", 5);
+    // Use the real numeric editor, including its native input-to-value bridge.
+    await w.get("input#x").setValue("5");
     expect(w.emitted("updateParam")).toEqual([["x", 5]]);
   });
 

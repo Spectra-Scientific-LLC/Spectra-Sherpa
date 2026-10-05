@@ -708,6 +708,7 @@ import ConcentrationCurveEditor from "@/components/ConcentrationCurveEditor.vue"
 import { downloadBlob } from "@/utils/download";
 import {
   defaultDatasetName,
+  spectrumForSynthesis,
   useSynthesisStore,
   type ComponentSummary,
   type ControlPoint,
@@ -1640,6 +1641,9 @@ async function loadSources() {
   try {
     const response = await api.get("/synthesis/sources");
     sources.value = response.data.sources || [];
+    if (sources.value.length && !sources.value.some(source => source.id === settings.source)) {
+      settings.source = sources.value[0].id;
+    }
   } catch (err) {
     toast.add({
       severity: "warn",
@@ -1799,6 +1803,10 @@ function spectrumParams(component: SelectedComponent): Record<string, string | n
     params.resolution_cm1 = settings.resolution_cm1;
     params.wavenumber_min = settings.wavenumber_min;
     params.wavenumber_max = settings.wavenumber_max;
+    params.temperature_k = settings.temperature_k;
+    params.pressure_atm = settings.pressure_atm;
+  }
+  if (isHitranSource(settings.source)) {
     params.temperature_k = settings.temperature_k;
     params.pressure_atm = settings.pressure_atm;
   }
@@ -2017,24 +2025,9 @@ function buildRequestPayload() {
   return {
     settings: settingsPayload,
     components: selectedComponents.value.map((component) => ({
-      component_id: component.id,
+      component_id: component.spectrum!.component_id,
       name: component.name,
-      spectrum: {
-        component_id: component.id,
-        name: component.name,
-        source: settings.source,
-        wavenumber: component.spectrum!.wavenumber,
-        intensity: component.spectrum!.intensity,
-        units: "absorbance",
-        y_quantity:
-          settings.source === "nist_quant_ir"
-            ? "decadic_absorption_coefficient"
-            : "absorption_cross_section",
-        y_units:
-          settings.source === "nist_quant_ir"
-            ? "ppm^-1 m^-1"
-            : "cm^2 molecule^-1",
-      },
+      spectrum: spectrumForSynthesis(component.spectrum!),
       concentration_max_ppm: Number(component.concentration_max_ppm),
       // Canonical normalized form: y∈[0,1] shape + per-species ppm
       // multiplier. The backend resolves shape×multiplier centrally, so the

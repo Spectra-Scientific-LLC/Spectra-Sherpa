@@ -1,6 +1,9 @@
 <template>
   <section class="chat-panel" :class="{ compact, collapsed }">
     <div class="chat-panel__inner">
+      <p v-if="qualified" role="status">{{ advisorStatusMessage }}</p>
+      <Button v-if="qualified && availability?.write && !availability.chat_privacy_configured"
+        label="Allow metadata and workflow disclosure" :loading="enablingDisclosure" @click="enableQualificationDisclosure" />
       <!-- Panel Top Bar with Tab Toggle -->
       <div class="panel-topbar">
         <div v-if="showTabToggle" class="tab-toggle">
@@ -32,7 +35,16 @@
           >
             {{ sherpaScopeBreadcrumb }}
           </span>
-          <div v-if="activeTab === 'sherpa'" class="sherpa-conversation-picker">
+          <div v-if="qualified && activeTab === 'sherpa'" class="sherpa-conversation-picker">
+            <select aria-label="Project conversations" :value="sherpaStore.currentConversationId ?? ''"
+              @focus="sherpaStore.refreshConversations()"
+              @change="sherpaStore.loadConversation(($event.target as HTMLSelectElement).value)">
+              <option value="" disabled>Select a conversation</option>
+              <option v-for="conversation in sherpaStore.conversations" :key="conversation.id" :value="conversation.id">{{ conversation.title }}</option>
+            </select>
+            <Button label="New conversation" class="p-button-text p-button-sm" @click="sherpaStore.startNewConversation()" />
+          </div>
+          <div v-if="!qualified && activeTab === 'sherpa'" class="sherpa-conversation-picker">
             <Button
               icon="pi pi-list"
               label="Topics"
@@ -135,23 +147,13 @@
           </Menu>
           <!-- Sherpa refresh (only on Sherpa tab) -->
           <Button
-            v-if="activeTab === 'sherpa'"
+            v-if="!qualified && activeTab === 'sherpa'"
             icon="pi pi-refresh"
             class="p-button-text p-button-sm llm-settings-btn"
             :loading="sherpaStore.isSyncing"
             aria-label="Re-sync workflow"
             @click="sherpaStore.syncWorkflow()"
             v-tooltip.bottom="'Re-sync workflow'"
-          />
-          <!-- Gen Mode toggle (Sherpa tab, subscription-gated) -->
-          <Button
-            v-if="activeTab === 'sherpa' && isFeatureEnabled('sherpaAgenticTools')"
-            :icon="toolsActive ? 'pi pi-wrench' : 'pi pi-wrench'"
-            class="p-button-text p-button-sm"
-            :class="{ 'tools-active-btn': toolsActive }"
-            aria-label="Toggle Gen Mode"
-            @click="toolsActive = !toolsActive"
-            v-tooltip.bottom="toolsActive ? 'Gen Mode enabled' : 'Enable Gen Mode'"
           />
           <Button
             v-if="activeTab === 'llm'"
@@ -239,6 +241,7 @@
                       class="chat-bubble chat-bubble--md"
                     >
                       <ChatMarkdown :source="message.content" :supplier="llmSupplier" />
+                      <FollowUpChips :suggestions="splitFollowUps(message.content).suggestions" @select="sendLlmFollowUp" />
                     </div>
                     <div v-else class="chat-bubble">{{ message.content }}</div>
                   </div>
@@ -289,13 +292,13 @@
                     />
                     <FollowUpChips
                       v-if="message.role === 'assistant'"
-                      :suggestions="message.followUps"
+                      :suggestions="message.followUps?.length ? message.followUps : splitFollowUps(message.content).suggestions"
                       @select="sendSherpaFollowUp"
                     />
                   </div>
                 </div>
                 <div v-if="sherpaStore.isSyncing" class="chat-message assistant">
-                  <div class="chat-bubble">Analyzing workflow...</div>
+                  <div class="chat-bubble" role="status" aria-live="polite">{{ sherpaStore.analysisStatus || "Analysis in progress. Hit stop to interrupt" }}</div>
                 </div>
                 <div
                   v-for="tool in activeSherpaTools"
@@ -310,12 +313,54 @@
                     }}
                   </div>
                 </div>
+                <div
+                  v-if="sherpaStore.pendingProductProposal"
+                  class="product-proposal-card"
+                >
+                  <div class="product-proposal-card__eyebrow">Workflow proposal · preview only</div>
+                  <strong>{{ productProposalName }}</strong>
+                  <p>{{ productProposalExplanation }}</p>
+                  <div class="product-proposal-card__facts">
+                    <span>{{ productProposalNodeCount }} nodes</span>
+                    <span>{{ productProposalEdgeCount }} edges</span>
+                    <span :title="productProposalDigest">Digest {{ productProposalDigest.slice(0, 12) }}…</span>
+                  </div>
+                  <div class="product-proposal-card__operations">
+                    <span>Operations:</span>
+                    <code>{{ productProposalOperations.join(" → ") }}</code>
+                  </div>
+                  <details class="product-proposal-card__details">
+                    <summary>Review exact DAG and parameters</summary>
+                    <pre>{{ productProposalDag }}</pre>
+                  </details>
+                  <p class="product-proposal-card__notice">
+                    Applying creates a new sheet with provenance. It does not change or execute the current workflow.
+                  </p>
+                  <div class="product-proposal-card__actions">
+                    <Button
+                      label="Apply as new sheet"
+                      size="small"
+                      :loading="confirmingProductProposal"
+                      @click="confirmProductProposal"
+                    />
+                    <Button
+                      label="Dismiss"
+                      size="small"
+                      text
+                      :disabled="confirmingProductProposal"
+                      @click="sherpaStore.rejectProductProposal()"
+                    />
+                  </div>
+                </div>
                 <div v-if="sherpaStatusMessage" class="chat-message assistant">
-                  <div class="chat-bubble">{{ sherpaStatusMessage }}</div>
+                  <div class="chat-bubble" role="status" aria-live="polite">{{ sherpaStatusMessage }}</div>
                 </div>
               </template>
             </div>
 
+            <div v-if="activeTab === 'llm' && llmBusy" class="chat-message assistant" role="status" aria-live="polite">
+              <div class="chat-bubble">{{ store.analysisStatus || "Analysis in progress. Hit stop to interrupt" }}</div>
+            </div>
             <div class="chat-input-shell">
               <div
                 v-if="
@@ -340,10 +385,11 @@
                   :disabled="inputDisabled"
                   @keyup.enter="sendMessage"
                 />
-                <Button
-                  icon="pi pi-send"
-                  @click="sendMessage"
+                <ChatRequestButton
+                  :busy="canStopAnalysis"
                   :disabled="!userMessage.trim() || inputDisabled"
+                  @stop="stopAnalysis"
+                  @send="sendMessage"
                 />
               </div>
             </div>
@@ -362,7 +408,9 @@ import InputText from "primevue/inputtext";
 import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
 
+import ChatRequestButton from "@/components/ChatRequestButton.vue";
 import ChatMarkdown from "@/components/ChatMarkdown.vue";
+import { splitFollowUps } from "@/utils/followUps";
 import FollowUpChips from "@/components/FollowUpChips.vue";
 import MemoryAttribution from "@/components/MemoryAttribution.vue";
 import { useAdvisorStore } from "@/stores/advisor";
@@ -373,6 +421,7 @@ import { useWorkflowStore } from "@/stores/workflow";
 import { useProjectStore } from "@/stores/project";
 import { useAuthStore } from "@/stores/auth";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useProjectAvailability } from "@/composables/useProjectAvailability";
 import { useDemoMode } from "@/composables/useDemoMode";
 import {
   ADVISOR_PROMPT_REQUEST_EVENT,
@@ -380,6 +429,8 @@ import {
 } from "@/lib/advisorPromptActions";
 import { formatDateTime } from "@/utils/format";
 import { getErrorMessage } from "@/utils/errors";
+import { bindAdvisorExecutionContext } from "@/utils/advisorExecutionContext";
+import { summarizeNodePlots } from "@/utils/plotStateSummary";
 import api from "@/api/client";
 
 const props = withDefaults(
@@ -407,7 +458,23 @@ const workflowStore = useWorkflowStore();
 const projectStore = useProjectStore();
 const authStore = useAuthStore();
 const toast = useToast();
+const { qualified, availability, error: availabilityError, refresh: refreshAvailability } = useProjectAvailability();
+const enablingDisclosure = ref(false);
+async function enableQualificationDisclosure() {
+  enablingDisclosure.value = true;
+  try {
+    await api.put("/egress/defaults", { allow_llm_chat: true, allow_llm_context: true });
+    await api.post("/egress/permissions/bulk", { permissions: [
+      { data_type: "metadata", destination: "llm_context", allowed: true },
+      { data_type: "workflows", destination: "llm_context", allowed: true },
+    ] });
+    await refreshAvailability();
+  } catch {
+    availabilityError.value = "Disclosure settings could not be updated. Try again in Settings.";
+  } finally { enablingDisclosure.value = false; }
+}
 const { appMode, appConfig, isFeatureEnabled, reloadConfig } = useAppConfig();
+const boundedContext = computed(() => appConfig.value?.advisorContextPolicy === "receipt");
 const { isDemoMode } = useDemoMode();
 const isCreatingSherpaTopic = ref(false);
 
@@ -443,8 +510,26 @@ const sherpaScopeBreadcrumb = computed<string | null>(() => {
 const userMessage = ref("");
 const messageContainer = ref<HTMLDivElement | null>(null);
 const hadRealtime = ref(false);
-const toolsActive = ref(false);
 const llmChatAllowed = ref(true);
+const confirmingProductProposal = ref(false);
+
+const productProposal = computed<Record<string, any> | null>(() =>
+  sherpaStore.pendingProductProposal?.proposal ?? null,
+);
+const productProposalName = computed(() => String(productProposal.value?.suggested_name || "Alternative workflow"));
+const productProposalExplanation = computed(() => String(productProposal.value?.human_explanation || ""));
+const productProposalNodeCount = computed(() =>
+  Array.isArray(productProposal.value?.dag_spec?.nodes) ? productProposal.value.dag_spec.nodes.length : 0,
+);
+const productProposalEdgeCount = computed(() =>
+  Array.isArray(productProposal.value?.dag_spec?.edges) ? productProposal.value.dag_spec.edges.length : 0,
+);
+const productProposalDigest = computed(() => String(productProposal.value?.proposal_digest || ""));
+const productProposalOperations = computed(() => {
+  const nodes = productProposal.value?.dag_spec?.nodes;
+  return Array.isArray(nodes) ? nodes.map((node: any) => String(node?.type || "unknown")) : [];
+});
+const productProposalDag = computed(() => JSON.stringify(productProposal.value?.dag_spec ?? {}, null, 2));
 
 const scrollToBottom = async () => {
   await nextTick();
@@ -457,17 +542,26 @@ const scrollToBottom = async () => {
 
 type ChatTab = "llm" | "sherpa";
 
-const sherpaEnabled = computed(() => isFeatureEnabled("sherpaAdvisor"));
+const sherpaEnabled = computed(() => qualified.value || isFeatureEnabled("sherpaAdvisor"));
 const llmChatEnabled = computed(() => isFeatureEnabled("chatAssistant"));
-const showLlmTab = computed(() => !(isDemoMode.value && sherpaEnabled.value));
+const showLlmTab = computed(() => !qualified.value && !(isDemoMode.value && sherpaEnabled.value));
 const showTabToggle = computed(() => showLlmTab.value && sherpaEnabled.value);
 const chatTabLabel = computed(() => (appMode.value === "local" ? "BYO Chat" : "Chat"));
 const activeTabLabel = computed(() =>
   activeTab.value === "sherpa" ? "Sherpa Advisor" : chatTabLabel.value,
 );
 const hasSherpaSubscription = computed(
-  () => (appConfig.value?.subscription?.plan || "none") !== "none",
+  () => qualified.value ? !!availability.value?.chat : boundedContext.value ? isFeatureEnabled("sherpaAdvisor") : (appConfig.value?.subscription?.plan || "none") !== "none",
 );
+const advisorStatusMessage = computed(() => {
+  if (availabilityError.value) return availabilityError.value;
+  if (!availability.value?.chat) {
+    return "Advisor requires project access, a configured provider, and metadata/workflow disclosure enabled in Data & Privacy.";
+  }
+  return appConfig.value?.capabilities?.governedTools
+    ? "Project advisor uses qualified project context and may propose governed tools. Scientific results remain subject to the qualification shown for each action."
+    : "Project advisor uses qualified project context. Governed numerical tools are unavailable for this deployment.";
+});
 const hasExecutionResults = computed(
   () => Object.keys(workflowStore.lastExecutionResults || {}).length > 0,
 );
@@ -494,15 +588,6 @@ const resolveInitialTab = (): ChatTab => {
 };
 
 const activeTab = ref<ChatTab>(resolveInitialTab());
-
-const quantitativeDataRequestPattern =
-  /(?=.*\b(mean|average|median|std|standard deviation|variance|min|max|minimum|maximum|quartile|q1|q3|percentile|statistics?|summary stats?)\b)(?=.*\b(data|dataset|feature|features|column|columns|variable|variables|spectrum|spectra)\b)/i;
-
-const shouldUseAgenticToolsForMessage = (message: string): boolean =>
-  toolsActive.value ||
-  (activeTab.value === "sherpa" &&
-    isFeatureEnabled("sherpaAgenticTools") &&
-    quantitativeDataRequestPattern.test(message));
 
 const setActiveTab = (tab: ChatTab) => {
   if (tab === "sherpa" && !sherpaEnabled.value) {
@@ -537,6 +622,7 @@ const handleAdvisorPromptRequest = async (event: Event) => {
 };
 
 const inputPlaceholder = computed(() => {
+  if (qualified.value) return "Ask about this project and workflow setup...";
   if (activeTab.value === "sherpa") {
     if (workflowStore.workflowId && !hasExecutionResults.value) {
       return "Run the workflow first, then ask Sherpa about the results...";
@@ -556,32 +642,16 @@ const inputDisabled = computed(() => {
   if (activeTab.value === "llm") {
     return !llmChatEnabled.value || !llmChatAllowed.value || llmBusy.value;
   }
-  return sherpaBusy.value;
+  return sherpaBusy.value || (qualified.value && !availability.value?.chat);
 });
 
-const sherpaStatusMessage = computed(() => {
-  if (!sherpaStore.isChatting) {
-    return null;
-  }
-
-  const lastMessage =
-    sherpaStore.messages.length > 0 ? sherpaStore.messages[sherpaStore.messages.length - 1] : null;
-  const hasRunningTools = sherpaStore.activeTools.some((tool) => tool.status === "started");
-
-  if (!lastMessage || lastMessage.role !== "assistant") {
-    return hasRunningTools
-      ? `Sherpa Advisor is running ${sherpaStore.activeTools.find((tool) => tool.status === "started")?.tool_name || "a tool"}...`
-      : "Contacting Sherpa Advisor...";
-  }
-
-  if (!lastMessage.content.trim()) {
-    return hasRunningTools
-      ? `Sherpa Advisor is running ${sherpaStore.activeTools.find((tool) => tool.status === "started")?.tool_name || "a tool"}...`
-      : "Sherpa Advisor is preparing a response...";
-  }
-
-  return null;
-});
+const canStopAnalysis = computed(() => activeTab.value === "sherpa"
+  ? sherpaStore.isChatting || sherpaStore.isSyncing
+  : llmBusy.value);
+const stopAnalysis = () => activeTab.value === "sherpa" ? sherpaStore.stopAnalysis() : store.stopAnalysis();
+const sherpaStatusMessage = computed(() => sherpaStore.isChatting
+  ? sherpaStore.analysisStatus || "Analysis in progress. Hit stop to interrupt"
+  : null);
 
 const activeSherpaTools = computed(() =>
   sherpaStore.activeTools.filter((tool) => tool.status === "started"),
@@ -785,13 +855,9 @@ onMounted(async () => {
     experimentStore.fetchExperiments();
     sherpaStore.init();
     await loadEgressDefaults();
-    await sherpaStore.refreshConversations(projectStore.currentProjectId);
-    await sherpaStore.maybeLoadResumeRecap(projectStore.currentProjectId);
     if (appMode.value === "local") {
       // Local mode derives chat readiness from /config rather than server-owned /llm/debug/config.
       await store.checkConfigChange();
-    } else {
-      await store.refreshConversations(projectStore.currentProjectId);
     }
   }
 
@@ -855,14 +921,18 @@ watch(
 );
 
 watch(
-  () => projectStore.currentProjectId,
-  async (projectId) => {
+  () => [appConfig.value, authStore.user?.id, projectStore.currentProjectId] as const,
+  async ([config, userId, projectId]) => {
+    // Wait for deployment authority before choosing a conversation API. Pro
+    // has no legacy LLM tab and must never refresh that hidden conversation index.
+    if (!config || (!userId && appMode.value !== "local")) return;
     await sherpaStore.refreshConversations(projectId);
     await sherpaStore.maybeLoadResumeRecap(projectId);
-    if (appMode.value !== "local") {
+    if (showLlmTab.value && appMode.value !== "local") {
       await store.refreshConversations(projectId);
     }
   },
+  { immediate: true },
 );
 
 // ── Connection status toasts ─────────────────────────────────
@@ -972,6 +1042,10 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
       parameters: n.params || {},
       result_shape: resultShape,
       result_statistics: resultStatistics,
+      // Saved typed projections at default selection (not the current open plot) —
+      // grounds "explain the plot" answers in the real plot state instead of
+      // textbook defaults. Null when the node has no executed result.
+      plot_states: hasPersistedResult ? summarizeNodePlots(rawResult, workflowStore.lastExecutionPresentations?.[String(n.id)], workflowStore.lastExecutionResultDescriptors?.[String(n.id)]) : null,
       // V2 fields
       description: meta?.description ?? null,
       param_descriptions: paramDescriptions,
@@ -1031,7 +1105,7 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
     }
   }
 
-  return {
+  return bindAdvisorExecutionContext({
     workflow_id: workflowId ?? null,
     workflow_name: workflowName,
     workflow_description: workflowDescription || null,
@@ -1042,7 +1116,7 @@ function buildWorkflowChatContext(): Record<string, unknown> | null {
     n_features: nFeatures,
     diagnostics: Object.keys(lastExecutionDiagnostics).length > 0 ? lastExecutionDiagnostics : null,
     results_summary: resultsSummary,
-  };
+  }, workflowStore);
 }
 
 // ── Send message (dispatches to active tab's store) ──────────
@@ -1071,8 +1145,7 @@ const sendMessage = async () => {
     }
     const messageBody = userMessage.value;
     userMessage.value = "";
-    const useAgenticTools = shouldUseAgenticToolsForMessage(messageBody);
-    await sherpaStore.sendMessage(messageBody, useAgenticTools);
+    await sherpaStore.sendMessage(messageBody);
     return;
   }
 
@@ -1090,13 +1163,28 @@ const sendMessage = async () => {
   }
 
   const metadata: Record<string, unknown> = {};
-  if (experimentStore.experiments.length > 0) {
+  // Product mode is disclosure-led. Broad experiment and local-project
+  // objects are valid only for the ordinary in-process chat path.
+  if (!boundedContext.value && experimentStore.experiments.length > 0) {
     metadata.experiments = experimentStore.experiments;
   }
-  if (projectStore.currentProjectId != null) {
+  if (!boundedContext.value && projectStore.currentProjectId != null) {
     metadata.project_id = projectStore.currentProjectId;
   }
-  const wfCtx = buildWorkflowChatContext();
+  let wfCtx: Record<string, unknown> | null;
+  try {
+    wfCtx = boundedContext.value
+      ? await sherpaStore.prepareProductWorkflowContext(workflowStore.workflowId)
+      : buildWorkflowChatContext();
+  } catch (error: unknown) {
+    toast.add({
+      severity: "warn",
+      summary: "Workflow context not shared",
+      detail: getErrorMessage(error, "Product workflow disclosure was refused."),
+      life: 4500,
+    });
+    return;
+  }
   if (wfCtx) {
     metadata.workflow_context = wfCtx;
   }
@@ -1108,13 +1196,42 @@ const sendMessage = async () => {
   userMessage.value = "";
 };
 
+const sendLlmFollowUp = async (suggestion: string) => {
+  if (llmBusy.value) return;
+  userMessage.value = suggestion;
+  await sendMessage();
+};
+
 const sendSherpaFollowUp = async (suggestion: string) => {
   const message = suggestion.trim();
   if (!message || sherpaBusy.value) {
     return;
   }
   switchToSherpa();
-  await sherpaStore.sendMessage(message, toolsActive.value);
+  await sherpaStore.sendMessage(message);
+};
+
+const confirmProductProposal = async () => {
+  if (!sherpaStore.pendingProductProposal || confirmingProductProposal.value) return;
+  confirmingProductProposal.value = true;
+  try {
+    await sherpaStore.confirmProductProposal();
+    toast.add({
+      severity: "success",
+      summary: "Workflow proposal applied",
+      detail: "A new, unexecuted workflow sheet was created with Product Advisor provenance.",
+      life: 3500,
+    });
+  } catch (error: unknown) {
+    toast.add({
+      severity: "error",
+      summary: "Proposal not applied",
+      detail: getErrorMessage(error, "The proposal could not be confirmed."),
+      life: 5000,
+    });
+  } finally {
+    confirmingProductProposal.value = false;
+  }
 };
 
 // ── Conversation management (LLM tab) ───────────────────────
@@ -1790,6 +1907,85 @@ const collapsed = computed(() => props.collapsed);
   background: #ede9fe;
 }
 
+.product-proposal-card {
+  margin: 0.5rem 0.75rem;
+  padding: 0.875rem;
+  border: 1px solid var(--primary-color);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--primary-color) 6%, var(--surface-card));
+}
+
+.product-proposal-card__eyebrow {
+  margin-bottom: 0.35rem;
+  color: var(--primary-color);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.product-proposal-card p {
+  margin: 0.45rem 0;
+  color: var(--text-color-secondary);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.product-proposal-card__facts,
+.product-proposal-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.product-proposal-card__facts {
+  font-size: 0.75rem;
+  color: var(--text-color-secondary);
+}
+
+.product-proposal-card__operations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.55rem;
+  color: var(--text-color-secondary);
+  font-size: 0.75rem;
+}
+
+.product-proposal-card__operations code {
+  overflow-wrap: anywhere;
+}
+
+.product-proposal-card__details {
+  margin-top: 0.6rem;
+  font-size: 0.78rem;
+}
+
+.product-proposal-card__details summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.product-proposal-card__details pre {
+  max-height: 16rem;
+  margin: 0.5rem 0 0;
+  padding: 0.6rem;
+  overflow: auto;
+  border-radius: 0.4rem;
+  background: var(--surface-ground);
+  font-size: 0.7rem;
+  white-space: pre-wrap;
+}
+
+.product-proposal-card__notice {
+  font-weight: 600;
+}
+
+.product-proposal-card__actions {
+  margin-top: 0.7rem;
+}
+
 .chat-bubble--md {
   white-space: normal;
 }
@@ -1925,7 +2121,7 @@ const collapsed = computed(() => props.collapsed);
   background: transparent !important;
 }
 
-/* Gen Mode tool progress */
+/* Server-authorized tool progress */
 .tool-progress {
   display: flex;
   align-items: center;

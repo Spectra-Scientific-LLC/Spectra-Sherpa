@@ -5,7 +5,8 @@ import {
   resolvePortPayload,
 } from "@/views/workflow-builder/node-detail/composables/useNodeOutput";
 
-vi.mock("@/utils/nodeOutput", () => ({
+vi.mock("@/utils/nodeOutput", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/utils/nodeOutput")>(),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   buildNodeOutput: (result: any, ports: any) => ({ result, ports }),
 }));

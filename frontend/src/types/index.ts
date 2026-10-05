@@ -27,6 +27,30 @@ export interface ExperimentFile {
   x_title?: string | null;
   x_units?: string | null;
   is_spectra?: boolean | null;
+  target_names?: string[] | null;
+  target_types?: Record<string, "continuous" | "categorical"> | null;
+}
+
+export interface ScientificAsset {
+  asset_id: string;
+  title?: string | null;
+  shape: number[];
+  dimension_roles: string[];
+  data_role: string;
+  x_title?: string | null;
+  x_units?: string | null;
+  data_quantity?: string | null;
+  value_units?: string | null;
+  warnings: string[];
+}
+
+export interface ExperimentFileAssets {
+  format_id: string;
+  variant: string;
+  parser_id: string;
+  parser_version: string;
+  source_sha256: string;
+  assets: ScientificAsset[];
 }
 
 export interface VersionInfo {
@@ -58,33 +82,27 @@ export interface SpectrumPayload {
   pathlength_m?: number | null;
 }
 
-export interface PreprocessResponse {
-  status: string;
-  data: SpectrumPayload[];
-  metadata?: Record<string, unknown> | null;
-}
-
 /** SherpaDataset.to_dict() output — same shape used by overlay in NodeDetailView. */
 export interface SherpaDatasetDict {
   type?: string;
-  data: (number | null)[][];
+  version?: string;
+  dataset_id?: string;
+  shape?: number[];
+  ndim?: number;
+  /** API data may be n-D; consumers must inspect `shape`/`ndim` before treating rows as 2-D. */
+  data: any[];
   n_samples: number;
   n_features: number;
   title?: string;
   units?: string;
   data_role?: string | null;
-  x_axis?: {
-    data?: number[];
-    labels?: string[];
-    title?: string;
-    units?: string;
+  x_axis?: import("@/utils/datasetAxisSets").DatasetAxisWire;
+  y_axis?: import("@/utils/datasetAxisSets").DatasetAxisWire & {
+    classes?: unknown[];
+    exclusion_reasons?: Array<string | null>;
   };
-  y_axis?: {
-    data?: number[];
-    labels?: string[];
-    title?: string;
-    units?: string;
-  };
+  sample_axis?: import("@/utils/datasetAxisSets").DatasetAxisWire;
+  inner_axes?: Record<string, import("@/utils/datasetAxisSets").DatasetAxisWire>;
   target?: unknown[] | unknown[][] | null;
   target_context?: {
     target_type?: string | null;
@@ -95,37 +113,194 @@ export interface SherpaDatasetDict {
     n_classes?: number | null;
     selected_target?: string | null;
   };
+  domain?: {
+    technique?: string | null;
+    instrument?: string | null;
+    expected_units?: string | null;
+    data_quantity?: string | null;
+  };
   is_time_series?: boolean;
+  descriptive?: Record<string, unknown>;
+  source_identity?: Record<string, unknown>;
+  source_history?: Record<string, unknown>;
+  layout?: Record<string, unknown>;
+  scientific_projection?: Record<string, unknown>;
+  manifest?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
+  analysis_readiness?: DatasetAnalysisReadiness;
+  analysis_binding?: {
+    revision: string;
+    sample_table_file_id: number;
+    selected_target: string;
+    target_type: "continuous" | "categorical";
+  };
 }
 
-export interface PreprocessSettings {
-  align_wavenumbers: boolean;
-  wavenumber_alignment_method: string;
-  wavenumber_alignment_tolerance: number;
-  wavenumber_merge_tolerance: number;
-  filter_direction?: "wavenumber" | "time";
-  apply_cosmic_ray_removal: boolean;
-  cosmic_ray_window: number;
-  cosmic_ray_zscore: number;
-  apply_savgol: boolean;
-  savgol_window: number;
-  savgol_polyorder: number;
-  apply_range_limit: boolean;
-  min_wavenumber?: number | null;
-  max_wavenumber?: number | null;
-  apply_clip_floor: boolean;
-  clip_floor: number;
-  apply_scale: boolean;
-  scale_max_to: number;
+export interface AcquisitionPlan {
+  schema_version: "spectrasherpa-acquisition-plan/3";
+  experiment_id: number;
+  plate_format_id: "plate-96";
+  plate_format_label: string;
+  capacity: number;
+  revision: string;
+  samples: PlannedSample[];
+  mixtures: PlannedMixture[];
+  factors: PlannedFactor[];
+  wells: AcquisitionPlanWell[];
+  acquisition_order: AcquisitionOrderStep[];
+  matching: AcquisitionMatching;
 }
 
-export interface BlendResponse {
-  status: string;
-  wavenumbers: number[];
-  times: number[];
-  absorbance_matrix: number[][];
-  statistics: Record<string, number>;
+export interface PlannedSample {
+  sample_id: string;
+  source_specimen_uid: string | null;
+  name: string;
+  sample_type: string | null;
+  notes: string | null;
+}
+
+export interface MixtureComponent {
+  sample_id: string;
+  amount: number;
+  unit: string;
+}
+
+export interface PlannedMixture {
+  mixture_id: string;
+  name: string | null;
+  basis: string;
+  notes: string | null;
+  components: MixtureComponent[];
+}
+
+export interface PlannedFactor {
+  factor_id: string;
+  name: string;
+  scope: string;
+  factor_type: string;
+  unit: string | null;
+  levels: Array<string | number | boolean | null>;
+}
+
+export interface AcquisitionPlanWell {
+  well_position: string;
+  planned_sample_label: string | null;
+  sample_id: string | null;
+  mixture_id: string | null;
+  factor_values: Record<string, string | number | boolean | null>;
+}
+
+export interface AcquisitionOrderStep {
+  sequence_order: number;
+  factor_id: string;
+  level_value: string;
+  path: string | null;
+  batch: number | null;
+  file_count: number | null;
+}
+
+export interface AcquisitionMatch {
+  sequence_order: number;
+  filename: string | null;
+  folder: string | null;
+  timestamp: number | null;
+  date: string | null;
+  batch: number | null;
+  sample_id: string | null;
+  well_position: string | null;
+  special: string | null;
+  factor_values: Record<string, string | number | boolean | null>;
+}
+
+export interface AcquisitionMatching {
+  rules: Record<string, unknown>;
+  matches: AcquisitionMatch[];
+}
+
+export interface MeasuredSampleTableEditor {
+  schema_version: "spectrasherpa.sample-table-editor/1";
+  source_file_id: number;
+  revision: string;
+  sample_table_file_id: number;
+  selected_target: string;
+  target_definitions: Array<{
+    name: string;
+    type: "continuous" | "categorical";
+  }>;
+  annotation_columns: string[];
+  plate_format_id: "plate-96";
+  rows: Array<{
+    row_index: number;
+    source_file_id: number;
+    sample_id: string;
+    include: boolean;
+    targets: Record<string, string>;
+    plate_id: string;
+    well: string;
+    annotations: Record<string, string>;
+  }>;
+}
+
+export interface DatasetAnalysisReadinessReason {
+  code: string;
+  message: string;
+  role: string | null;
+}
+
+export interface DatasetAnalysisReadinessDecision {
+  template_slug: string;
+  template_name: string;
+  category: string;
+  display_status:
+    | "compatible"
+    | "needs_target"
+    | "needs_source"
+    | "incompatible"
+    | "pending"
+    | "unavailable";
+  status: "compatible" | "needs_input" | "incompatible" | "pending";
+  reason_codes: string[];
+  reasons: DatasetAnalysisReadinessReason[];
+}
+
+export interface DatasetAnalysisReadiness {
+  schema_version: "spectra-sherpa-dataset-analysis-readiness/1";
+  scope: "structural";
+  status: "ready" | "partial" | "unavailable";
+  profile: {
+    primary_role: string;
+    modality: "spectra" | "features" | "hsi";
+    technique: string;
+    target_type: "continuous" | "categorical" | "ordinal" | null;
+    target_fields: string[];
+    identity_fields: string[];
+    group_fields: string[];
+    ordered_samples: boolean;
+  } | null;
+  template_count: number;
+  counts: Record<
+    "compatible" | "needs_target" | "needs_source" | "incompatible" | "pending" | "unavailable",
+    number
+  >;
+  decisions: DatasetAnalysisReadinessDecision[];
+  diagnostics: Array<{ code: string; message: string; detail: string }>;
+}
+
+/** One selected file or aggregate package admitted to a display-only plot. */
+export interface DatasetPlotMember {
+  fileId: number | null;
+  fileName: string;
+  dataset: SherpaDatasetDict;
+}
+
+/** One packaged dataset contributing selected members to the shared plot. */
+export interface DatasetPlotSource {
+  experimentId: number;
+  name: string;
+  members: DatasetPlotMember[];
+  selectedFileCount: number;
+  totalFileCount: number;
+  selectedFileNames?: string[];
 }
 
 export interface CurvePoint {
@@ -251,27 +426,81 @@ export type NodeExecutionStatus = "pending" | "running" | "completed" | "error" 
 export interface NodeParameterMetadata {
   name: string;
   label: string;
-  param_type: "number" | "boolean" | "select" | "text";
+  param_type: "number" | "boolean" | "select" | "text" | "string_list";
   default?: unknown;
   min_value?: number;
   max_value?: number;
+  max_value_reason?: string;
   step?: number;
   options?: Array<{ label: string; value: unknown }>;
   description?: string;
   required: boolean;
-  category?: "basic" | "advanced";  // Parameter complexity level
-  visible_when?: Record<string, string[]>;  // Conditional visibility rules
+  category?: "basic" | "advanced" | "internal"; // Internal bindings are populated by custody/import, not scientists.
+  visible_when?: Record<string, string[]>; // Conditional visibility rules
 }
 
 // Port metadata for node inputs/outputs
 export interface NodePortMetadata {
-  name: string;  // Port identifier (e.g., "X_train", "y_class", "model")
-  type_ref: string;  // Canonical type URI from backend type registry
+  name: string; // Port identifier (e.g., "X_train", "y_class", "model")
+  type_ref: string; // Canonical type URI from backend type registry
   required: boolean;
-  label: string;  // Display label (e.g., "Training Spectra")
+  label: string; // Display label (e.g., "Training Spectra")
   description?: string;
-  variadic?: boolean;  // True = accepts multiple incoming edges (list input)
-  accepted_data_roles?: string[] | null;  // Dataset roles accepted by this port
+  variadic?: boolean; // True = accepts multiple incoming edges (list input)
+  accepted_data_roles?: string[] | null; // Dataset roles accepted by this port
+}
+
+// Exact immutable execution contract supplied by the live node registry.
+// An absent contract means that the node is local-only and cannot enter a
+// managed campaign; the UI does not infer authority from a node name.
+export interface NodeExecutionContract {
+  digest: string;
+  payload: Record<string, unknown>;
+}
+
+export type ScientificPresentationMode = "model_summary" | "plot" | "record" | "table";
+
+export interface ScientificPresentation {
+  presentation_id: string;
+  label: string;
+  kind: string;
+  source_ports: string[];
+  modes: ScientificPresentationMode[];
+  description: string;
+}
+
+export interface NodePresentationContractPayload {
+  schema_version: "spectrasherpa-node-presentation/1";
+  default_presentation: string;
+  presentations: ScientificPresentation[];
+}
+
+export interface NodePresentationContract {
+  digest: string;
+  payload: NodePresentationContractPayload;
+}
+
+export interface NodeDependencyReadiness {
+  ready: boolean;
+  blockers: string[];
+  remediation: string[];
+}
+
+export interface NodeCatalogClassification {
+  contract_status: string;
+  runtime_family: string;
+  lifecycle_kind: string;
+  typed_port_status: string;
+  managed_optimization_eligible: boolean;
+  reason: string;
+}
+
+export interface NodeManagedOptimizationProfile {
+  profile_id: string;
+  profile_version: string;
+  profile_digest: string;
+  eligible: boolean;
+  reason: string;
 }
 
 // Node metadata from backend
@@ -281,11 +510,17 @@ export interface NodeTypeMetadata {
   label: string;
   description: string;
   parameters: NodeParameterMetadata[];
-  input_types: string[];  // Legacy - for backwards compatibility
-  output_type: string;  // Legacy - for backwards compatibility
-  input_ports?: NodePortMetadata[];  // Named input ports (if multi-input node)
-  output_ports?: NodePortMetadata[];  // Named output ports (if multi-output node)
-  diagnostics?: string[];  // Diagnostic metric names emitted by this node
+  input_types: string[]; // Legacy - for backwards compatibility
+  output_type: string; // Legacy - for backwards compatibility
+  input_ports?: NodePortMetadata[]; // Named input ports (if multi-input node)
+  output_ports?: NodePortMetadata[]; // Named output ports (if multi-output node)
+  diagnostics?: string[]; // Diagnostic metric names emitted by this node
+  execution_contract?: NodeExecutionContract | null;
+  presentation_contract?: NodePresentationContract | null;
+  dependency_readiness?: NodeDependencyReadiness;
+  requires_scp?: boolean;
+  catalog_classification?: NodeCatalogClassification;
+  managed_optimization_profile?: NodeManagedOptimizationProfile;
 }
 
 // Node library response from backend
@@ -293,16 +528,20 @@ export interface NodeLibraryResponse {
   nodes: NodeTypeMetadata[];
   total: number;
   version?: string; // Backend API version for cache invalidation
+  contract_schema_version?: string;
+  registry_digest?: string;
+  cache_identity?: string;
 }
 
 // Node execution state (stored per node in workflow)
 export interface NodeExecutionState {
   status: NodeExecutionStatus;
   error_message?: string | null;
-  error_details?: string | null;  // Full stack trace for "Show Details"
-  last_executed?: string | null;  // ISO timestamp
-  output_shape?: number[] | null;  // e.g., [1000, 50] for dimensions
-  output_type?: string | null;  // e.g., "NDDataset", "PCA"
+  error_details?: string | null; // Full stack trace for "Show Details"
+  last_executed?: string | null; // ISO timestamp
+  output_shape?: number[] | null; // e.g., [1000, 50] for dimensions
+  output_shape_label?: string | null; // scientific material represented by output_shape
+  output_type?: string | null; // e.g., "SherpaDataset", "PCA"
 }
 
 // Validation error
@@ -330,19 +569,53 @@ export interface ExecutionRunSummary {
   labels: string[] | null;
   source_type: string | null;
   source_metadata: Record<string, unknown> | null;
-  model_ids: string[] | null;
+  produced_artifact_uids: string[] | null;
   run_kind: "training" | "batch_inference" | "data" | "other" | string;
-  applied_artifact_uids: string[] | null;
+  attempted_artifact_uids: string[] | null;
+  succeeded_artifact_uids: string[] | null;
 }
 
 export interface ExecutionRunDetail extends ExecutionRunSummary {
+  environment_snapshot?: Record<string, unknown> | null;
   user_id: number;
   diagnostics: Record<string, Record<string, unknown>> | null;
   node_statuses: Record<string, string> | null;
 }
 
+export type RunListItem = Pick<
+  ExecutionRunSummary,
+  | "id"
+  | "project_id"
+  | "workflow_id"
+  | "workflow_version_id"
+  | "name"
+  | "status"
+  | "run_kind"
+  | "executed_at"
+  | "created_at"
+  | "labels"
+  | "produced_artifact_uids"
+  | "attempted_artifact_uids"
+  | "succeeded_artifact_uids"
+> & { display_name?: string | null; workflow_name?: string | null };
+
+export type EvaluationSelections = Record<number, { node_id: string; presentation_id: string }>;
+
+export interface ComparisonResultPair {
+  left_run_id: number;
+  right_run_id: number;
+  kind: string;
+  left: Array<{ node_id: string; presentation_id: string; kind: string; source_ports: string[] }>;
+  right: Array<{ node_id: string; presentation_id: string; kind: string; source_ports: string[] }>;
+  requires_pairing: boolean;
+  state: "comparable" | "incompatible" | "insufficient_evidence";
+  reason: string;
+}
+
 export interface ComparisonResult {
+  result_pairs?: ComparisonResultPair[];
   runs: ExecutionRunDetail[];
+  rankable_metric_keys?: string[];
   metric_keys: string[];
   diff: Record<string, Record<string, unknown>>;
 }
@@ -359,6 +632,7 @@ export interface BatchPredictionResult {
   error_message: string | null;
   processing_time_ms: number | null;
   model_id: string | null;
+  retained_node_ids?: string[];
   created_at: string;
 }
 
@@ -366,10 +640,18 @@ export interface FolderWatch {
   id: number;
   user_id: number;
   workflow_id: number;
+  artifact_uid?: string | null;
+  canonical_artifact_id?: number | null;
+  canonical_plan_digest?: string | null;
+  uncertainty_record?: Record<string, unknown> | null;
+  uncertainty_population?: string | null;
+  workflow_version_id?: number | null;
   name: string;
   folder_path: string;
   file_pattern: string;
   poll_interval_sec: number;
+  settle_time_seconds: number;
+  asset_id: string | null;
   is_enabled: boolean;
   processed_files: Record<string, string> | null;
   last_poll_at: string | null;
@@ -378,16 +660,38 @@ export interface FolderWatch {
   updated_at: string | null;
 }
 
-export interface BatchPredictRequest {
-  folder_path: string;
-  file_pattern?: string;
-  run_name?: string;
+/**
+ * One releaseable application target on the Deploy surface.
+ *
+ * `application_id` is the stable release handle on current servers. The
+ * `artifact:<uid>` and `canonical:<id>` forms remain compatibility identities
+ * while older Workbenches roll forward to the release registry.
+ */
+export interface DeployApplication {
+  campaign_validation_recorded?: boolean;
+  application_id: string;
+  application_handle?: string | null;
+  origin: "saved_run" | "portable";
+  name: string;
+  workflow_id: number;
+  workflow_version_id: number | null;
+  artifact_uid: string | null;
+  canonical_artifact_id: number | null;
+  artifact_digest?: string | null;
+  source_run_id?: number | null;
+  deploy_ready: boolean;
+  refusal?: string | null;
 }
 
-export interface BatchPredictResponse {
-  job_id: number;
-  run_id: number;
-  message: string;
+/** Identity returned by a canonical import for the Deploy hand-off. */
+export interface ImportedApplicationIdentity {
+  handle: string;
+  origin: "campaign_solution" | "saved_run" | "portable" | string;
+  project_id: number;
+  workflow_id: number;
+  artifact_digest?: string | null;
+  application_plan_digest?: string | null;
+  status?: string | null;
 }
 
 // ── Projects ────────────────────────────────────────────────────────
@@ -407,6 +711,7 @@ export interface ProjectSummary {
   version_count: number;
   created_at: string;
   updated_at: string;
+  archived_at?: string | null;
 }
 
 export interface ExperimentBrief {
@@ -422,6 +727,7 @@ export interface WorkflowBrief {
   name: string;
   description: string | null;
   status: string;
+  purpose: "analysis" | "managed_candidate_authority";
   integrity_hash: string | null;
   tab_color?: string | null;
   sheet_order?: number;
@@ -506,6 +812,9 @@ export interface ProjectScriptDetail extends ProjectScriptSummary {
 
 export interface ProjectDetail extends ProjectSummary {
   metadata: Record<string, unknown>;
+  /** Present when this response created a deployable application. */
+  application?: ImportedApplicationIdentity | null;
+  application_handle?: string | null;
   experiments: ExperimentBrief[];
   data_sources: ProjectDataSource[];
   workflows: WorkflowBrief[];
@@ -516,6 +825,8 @@ export interface ProjectDetail extends ProjectSummary {
 }
 
 export interface ProjectCreate {
+  commercial_subscription_id?: number;
+  commercial_workspace_id?: number | null;
   name: string;
   description?: string | null;
   parent_id?: number | null;

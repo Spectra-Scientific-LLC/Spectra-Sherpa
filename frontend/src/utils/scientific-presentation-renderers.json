@@ -1,0 +1,100 @@
+{
+  "schema_version": "spectrasherpa-scientific-presentation-renderers/1",
+  "plot_kinds": {
+    "categorical_labels": {
+      "strategy": "category_counts",
+      "plots": [{ "key": "scientific_category_counts", "label": "Category Counts" }]
+    },
+    "confusion_matrix": {
+      "strategy": "confusion_matrix",
+      "plots": [{ "key": "scientific_confusion_matrix", "label": "Confusion Matrix" }]
+    },
+    "classification_responses": {
+      "strategy": "classification_responses",
+      "plots": [{ "key": "scientific_classification_responses", "label": "Class Response Heatmap" }]
+    },
+    "loading_matrix": {
+      "strategy": "component_loadings",
+      "plots": [{ "key": "scientific_component_loadings", "label": "Loadings" }]
+    },
+    "out_of_fold_evidence": {
+      "strategy": "out_of_fold_regression",
+      "plots": [{ "key": "scientific_out_of_fold", "label": "Out-of-Fold Predictions" }]
+    },
+    "pca_explained_variance": {
+      "strategy": "pca_explained_variance",
+      "plots": [{ "key": "scientific_pca_explained_variance", "label": "Scree Plot" }]
+    },
+    "pca_loadings": {
+      "strategy": "pca_loadings",
+      "plots": [{ "key": "scientific_pca_loadings", "label": "PCA Loadings" }]
+    },
+    "pca_scores": {
+      "strategy": "pca_scores",
+      "plots": [{ "key": "scientific_pca_scores", "label": "PCA Score Map" }]
+    },
+    "pls_explained_variance": {
+      "strategy": "pls_explained_variance",
+      "plots": [{ "key": "scientific_pls_explained_variance", "label": "X/Y Explained Variance" }]
+    },
+    "pls_loadings": {
+      "strategy": "pls_loadings",
+      "plots": [{ "key": "scientific_pls_loadings", "label": "PLS X Loadings" }]
+    },
+    "pls_scores": {
+      "strategy": "pls_scores",
+      "plots": [{ "key": "scientific_pls_scores", "label": "PLS Score Map" }]
+    },
+    "plsda_loadings": {
+      "strategy": "plsda_loadings",
+      "plots": [{ "key": "scientific_plsda_loadings", "label": "PLS-DA X Loadings" }]
+    },
+    "plsda_scores": {
+      "strategy": "plsda_scores",
+      "plots": [{ "key": "scientific_plsda_scores", "label": "PLS-DA Score Map" }]
+    },
+    "peak_table": {
+      "strategy": "peak_table",
+      "plots": [{ "key": "scientific_peak_table", "label": "Detected Peaks" }]
+    },
+    "regression_coefficients": {
+      "strategy": "regression_coefficients",
+      "plots": [{ "key": "scientific_regression_coefficients", "label": "Regression Coefficients" }]
+    },
+    "regression_comparison": {
+      "strategy": "regression_comparison",
+      "plots": [{ "key": "scientific_regression_comparison", "label": "Predicted vs Reference" }]
+    },
+    "salient_features": {
+      "strategy": "salient_features",
+      "plots": [{ "key": "scientific_salient_features", "label": "Salient Features" }]
+    },
+    "score_matrix": {
+      "strategy": "component_scores",
+      "plots": [{ "key": "scientific_component_scores", "label": "Scores" }]
+    },
+    "spectral_dataset": {
+      "strategy": "spectral_dataset",
+      "plots": [
+        { "key": "scientific_spectral_overlay", "label": "Data Overlay" },
+        { "key": "scientific_spectral_heatmap", "label": "Heatmap" }
+      ]
+    },
+    "t2_q_diagnostics": {
+      "strategy": "t2_q_diagnostics",
+      "plots": [{ "key": "scientific_t2_q_diagnostics", "label": "T² vs Q" }]
+    },
+    "time_series": {
+      "strategy": "time_series",
+      "plots": [{ "key": "scientific_time_series", "label": "Time Series" }]
+    },
+    "variable_profile": {
+      "strategy": "variable_profile",
+      "plots": [{ "key": "scientific_variable_profile", "label": "Variable Profile" }]
+    },
+    "visualization": {
+      "strategy": "declared_visualization",
+      "plots": [{ "key": "scientific_visualization", "label": "Visualization" }]
+    }
+  }
+}

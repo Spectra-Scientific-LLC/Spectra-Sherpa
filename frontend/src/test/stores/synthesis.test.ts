@@ -3,7 +3,7 @@ import { createPinia, setActivePinia } from "pinia";
 
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
-import { useSynthesisStore } from "@/stores/synthesis";
+import { spectrumForSynthesis, useSynthesisStore } from "@/stores/synthesis";
 
 function setScope(userId: number, projectId: number) {
   const authStore = useAuthStore();
@@ -160,5 +160,20 @@ describe("synthesis store state retention", () => {
     const restored = useSynthesisStore();
     expect(restored.selectedComponents[0].spectrum).toBeNull();
     expect(restored.selectedComponents[0].spectrum_storage_trimmed).toBe(true);
+  });
+});
+
+
+describe("HITRAN provider custody round trip", () => {
+  it("preserves selected cross-section identity, scientific values, units and receipt", () => {
+    const spectrum = {
+      component_id: "hitran_xsec:benzene#3", name: "Benzene", source: "hitran_xsec" as const,
+      wavenumber: [1000, 1001], intensity: [1e-22, 2e-22],
+      y_quantity: "absorption_cross_section", y_units: "cm^2 molecule^-1",
+      metadata: { managed_hitran_receipt: { digest: "digest", mac: "mac", conditions: { temperature_k: 293, pressure_atm: 1 } } },
+    };
+    const request = JSON.parse(JSON.stringify(spectrumForSynthesis(spectrum)));
+    expect(request).toEqual(spectrum);
+    expect(request.component_id).toBe("hitran_xsec:benzene#3");
   });
 });

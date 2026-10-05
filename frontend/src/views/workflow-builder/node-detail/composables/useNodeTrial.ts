@@ -1,6 +1,10 @@
 import { ref, onMounted, onUnmounted, type Ref } from "vue";
 import type { ToastServiceMethods } from "primevue/toastservice";
 import type { NodeOutput } from "@/utils/nodeOutput";
+import type {
+  ExecutedPresentationRecord,
+  NodeScientificValueDescriptors,
+} from "@/stores/workflow-types";
 import api from "@/api/client";
 
 export const STORAGE_KEY = "node_detail_data";
@@ -23,8 +27,12 @@ interface UseNodeTrialDeps {
   localParams: Ref<Record<string, unknown>>;
   nodeType: Ref<string>;
   addLog: AddLog;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  normalizeNodeOutput: (result: any) => NodeOutput;
+  normalizeNodeOutput: (
+    result: unknown,
+    descriptors?: NodeScientificValueDescriptors | null,
+    presentation?: ExecutedPresentationRecord | null,
+  ) => NodeOutput;
+  validateTrial: () => void;
   toast: ToastServiceMethods;
 }
 
@@ -34,6 +42,7 @@ export function useNodeTrial({
   nodeType,
   addLog,
   normalizeNodeOutput,
+  validateTrial,
   toast,
 }: UseNodeTrialDeps) {
   const isExecuting = ref(false);
@@ -140,13 +149,12 @@ export function useNodeTrial({
     });
 
     try {
+      validateTrial();
       const workflowNodes = nodeData.value.workflowNodes || [];
       const workflowEdges = nodeData.value.workflowEdges || [];
 
       if (workflowNodes.length === 0) {
-        throw new Error(
-          "No workflow nodes found. Please reopen from the workflow inspector.",
-        );
+        throw new Error("No workflow nodes found. Please reopen from the workflow inspector.");
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -169,7 +177,7 @@ export function useNodeTrial({
       if (nodeData.value.inputData?.experiment_id) {
         const inputConnections = nodeData.value.inputConnections || [];
         for (const conn of inputConnections) {
-          if (conn.nodeType === "data.source") {
+          if (conn.nodeType === "data.file_load") {
             initialData[String(conn.nodeId)] = {
               experiment_id: nodeData.value.inputData.experiment_id,
               source: nodeData.value.inputData.source || "experiment",
@@ -216,8 +224,15 @@ export function useNodeTrial({
       }
 
       if (response.data.result) {
-        const output = normalizeNodeOutput(response.data.result);
+        const output = normalizeNodeOutput(
+          response.data.result,
+          response.data.result_descriptor,
+          response.data.result_presentation,
+        );
 
+        // Diagnostics are execution evidence, not editable settings. Replace them
+        // with this response's record rather than carrying a previous run forward.
+        output.metadata = { ...output.metadata, diagnostics: response.data.diagnostics ?? {} };
         nodeData.value = {
           ...nodeData.value,
           output: output,
@@ -249,8 +264,7 @@ export function useNodeTrial({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       isExecuting.value = false;
-      const message =
-        error?.response?.data?.detail || error?.message || String(error);
+      const message = error?.response?.data?.detail || error?.message || String(error);
       addLog("error", "Trial failed", message);
       toast.add({
         severity: "error",

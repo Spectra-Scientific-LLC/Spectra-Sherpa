@@ -4,9 +4,8 @@ import api from "@/api/client";
 import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import type {
   ExecutionRunSummary,
+  RunListItem,
   ComparisonResult,
-  BatchPredictRequest,
-  BatchPredictResponse,
   BatchPredictionResult,
 } from "@/types";
 
@@ -22,20 +21,32 @@ interface SaveRunPayload {
   integrity_hash?: string;
   executed_at: string;
   labels?: string[];
-  model_ids?: string[];
+  produced_artifact_uids?: string[];
   run_kind?: string;
-  applied_artifact_uids?: string[];
+  attempted_artifact_uids?: string[];
+  succeeded_artifact_uids?: string[];
 }
+
+export type RunSortField = "name" | "status" | "run_kind" | "executed_at";
+export type RunSortOrder = "asc" | "desc";
 
 export const useRunsStore = defineStore("runs", () => {
   // State
-  const runs = ref<ExecutionRunSummary[]>([]);
+  const runs = ref<RunListItem[]>([]);
   const runsLoading = ref(false);
+  const total = ref(0);
+  const loadError = ref<string | null>(null);
+  let listRequest = 0;
+  let comparisonRequest = 0;
   const selectedRunIds = ref<Set<number>>(new Set());
   const comparison = ref<ComparisonResult | null>(null);
   const comparisonLoading = ref(false);
 
   function resetProjectScope(): void {
+    ++listRequest;
+    ++comparisonRequest;
+    total.value = 0;
+    loadError.value = null;
     runs.value = [];
     runsLoading.value = false;
     selectedRunIds.value = new Set();
@@ -53,33 +64,61 @@ export const useRunsStore = defineStore("runs", () => {
 
   // Actions
   async function fetchRuns(workflowId: number): Promise<void> {
+    const request = ++listRequest;
     runsLoading.value = true;
     try {
       const response = await api.get<{ runs: ExecutionRunSummary[]; total: number }>(
         `/workflows/${workflowId}/runs`
       );
+      if (request !== listRequest) return;
       runs.value = response.data.runs;
+      total.value = response.data.total;
     } catch (error) {
       console.error("Failed to fetch runs:", error);
-      runs.value = [];
+      if (request === listRequest) runs.value = [];
     } finally {
-      runsLoading.value = false;
+      if (request === listRequest) runsLoading.value = false;
     }
   }
 
-  async function fetchProjectRuns(projectId: number): Promise<void> {
+  async function fetchProjectRuns(
+    projectId: number,
+    offset = 0,
+    kind?: string,
+    artifactUid?: string,
+    sortBy: RunSortField = "executed_at",
+    sortOrder: RunSortOrder = "desc",
+  ): Promise<void> {
+    const request = ++listRequest;
+    clearSelection();
     runsLoading.value = true;
+    loadError.value = null;
     try {
-      const response = await api.get<{ runs: ExecutionRunSummary[]; total: number }>(
+      const response = await api.get<{ runs: RunListItem[]; total: number }>(
         "/runs",
-        { params: { project_id: projectId } }
+        {
+          params: {
+            project_id: projectId,
+            limit: 50,
+            offset,
+            kind: kind === "all" ? undefined : kind,
+            artifact_uid: artifactUid,
+            sort_by: sortBy,
+            sort_order: sortOrder,
+          },
+        }
       );
+      if (request !== listRequest) return;
       runs.value = response.data.runs;
+      total.value = response.data.total;
     } catch (error) {
+      if (request !== listRequest) return;
       console.error("Failed to fetch project runs:", error);
       runs.value = [];
+      total.value = 0;
+      loadError.value = "Could not load run history. Retry to refresh.";
     } finally {
-      runsLoading.value = false;
+      if (request === listRequest) runsLoading.value = false;
     }
   }
 
@@ -87,6 +126,8 @@ export const useRunsStore = defineStore("runs", () => {
     workflowId: number,
     payload: SaveRunPayload
   ): Promise<ExecutionRunSummary> {
+    if (!Number.isInteger(payload.run_id) || Number(payload.run_id) <= 0)
+      throw new Error("The displayed run identity is required to save a run.");
     const response = await api.post<ExecutionRunSummary>(
       `/workflows/${workflowId}/runs`,
       payload
@@ -131,19 +172,22 @@ export const useRunsStore = defineStore("runs", () => {
 
   async function compareProjectRuns(
     projectId: number,
-    runIds: number[]
+    runIds: number[],
+    evaluationSelections: import('@/types').EvaluationSelections = {},
   ): Promise<ComparisonResult> {
+    const request = ++comparisonRequest;
     comparisonLoading.value = true;
+    comparison.value = null;
     try {
       const response = await api.post<ComparisonResult>(
         "/runs/compare",
-        { run_ids: runIds },
+        { run_ids: runIds, evaluation_selections: evaluationSelections },
         { params: { project_id: projectId } }
       );
-      comparison.value = response.data;
+      if (request === comparisonRequest) comparison.value = response.data;
       return response.data;
     } finally {
-      comparisonLoading.value = false;
+      if (request === comparisonRequest) comparisonLoading.value = false;
     }
   }
 
@@ -158,18 +202,19 @@ export const useRunsStore = defineStore("runs", () => {
   }
 
   function clearSelection(): void {
+    ++comparisonRequest;
+    comparisonLoading.value = false;
     selectedRunIds.value = new Set();
     comparison.value = null;
   }
 
-  async function startBatchRun(
-    workflowId: number,
-    request: BatchPredictRequest
-  ): Promise<BatchPredictResponse> {
-    const response = await api.post<BatchPredictResponse>(
-      `/deploy/workflows/${workflowId}/predict/batch`,
-      request
-    );
+  async function reclaimStorage(): Promise<{
+    removed_files: number;
+    used_bytes: number;
+    quota_bytes: number;
+    grace_seconds: number;
+  }> {
+    const response = await api.post("/runs/storage/reclaim");
     return response.data;
   }
 
@@ -200,9 +245,12 @@ export const useRunsStore = defineStore("runs", () => {
   }
 
   return {
+    reclaimStorage,
     // State
     runs,
     runsLoading,
+    total,
+    loadError,
     selectedRunIds,
     comparison,
     comparisonLoading,
@@ -221,7 +269,6 @@ export const useRunsStore = defineStore("runs", () => {
     compareProjectRuns,
     toggleRunSelection,
     clearSelection,
-    startBatchRun,
     fetchPredictions,
     updateLabels,
     resetProjectScope,

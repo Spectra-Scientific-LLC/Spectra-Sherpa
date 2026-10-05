@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AxiosError, type AxiosResponse, type InternalAxiosRequestConfig } from "axios";
 import {
+  getErrorCode,
   getErrorMessage,
   isDemoUpgradeError,
   getDemoUpgradeInfo,
@@ -86,6 +87,30 @@ describe("getErrorMessage", () => {
   it("returns fallback for non-error values", () => {
     expect(getErrorMessage(42)).toBe("An unexpected error occurred");
     expect(getErrorMessage(undefined)).toBe("An unexpected error occurred");
+  });
+});
+
+describe("getErrorCode", () => {
+  it("extracts code from an object detail", () => {
+    const err = makeAxiosError(409, {
+      detail: { code: "trial_dataset_authority_superseded", message: "Outdated" },
+    });
+    expect(getErrorCode(err)).toBe("trial_dataset_authority_superseded");
+  });
+
+  it("returns null for string or array detail", () => {
+    expect(getErrorCode(makeAxiosError(400, { detail: "Bad" }))).toBeNull();
+    expect(getErrorCode(makeAxiosError(422, { detail: [{ msg: "x" }] }))).toBeNull();
+  });
+
+  it("returns null when detail has no string code", () => {
+    expect(getErrorCode(makeAxiosError(403, { detail: { message: "No code" } }))).toBeNull();
+    expect(getErrorCode(makeAxiosError(500, { detail: { code: 42 } }))).toBeNull();
+  });
+
+  it("returns null for non-axios errors", () => {
+    expect(getErrorCode(new Error("nope"))).toBeNull();
+    expect(getErrorCode(null)).toBeNull();
   });
 });
 

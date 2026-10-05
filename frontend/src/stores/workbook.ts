@@ -5,21 +5,26 @@ import { useAdvisorStore } from "@/stores/advisor";
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore } from "@/stores/workflow";
+import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import type {
   TemplateDataBinding,
   TemplateExampleBinding,
   TemplateLaunchMode,
   WorkflowListItem,
+  WorkflowPurpose,
 } from "@/stores/workflow-types";
 import type { NodeOutput } from "@/utils/nodeOutput";
 
 export interface WorkbookSheet {
   workflowId: number;
   name: string;
+  purpose: WorkflowPurpose;
   tabColor: string | null;
   tabColorOverride?: string | null;
   colorSource?: "blank" | "ai" | "data" | "manual";
   primaryDataSourceId?: number | null;
+  primaryDataSourceName?: string | null;
+  dataOrigin?: "current" | "example" | null;
   dataSourceIds?: number[];
   advisorChannelId?: number | null;
   createdFromTemplateName?: string | null;
@@ -47,9 +52,7 @@ const activeSheetKey = (projectId: number): string => {
   return `spectra_sherpa_active_sheet_${userId}_${projectId}`;
 };
 
-const QUOTA_RECOVERY_PREFIXES = [
-  "spectra_sherpa_workflow_draft_v1:",
-];
+const QUOTA_RECOVERY_PREFIXES = ["spectra_sherpa_workflow_draft_v1:"];
 
 const pruneTransientStorageForQuota = (): void => {
   try {
@@ -79,10 +82,13 @@ const readActiveSheetWorkflowId = (targetProjectId: number): number | null => {
 const toSheet = (item: WorkflowListItem): WorkbookSheet => ({
   workflowId: item.id,
   name: item.name,
+  purpose: item.purpose,
   tabColor: item.tab_color ?? null,
   tabColorOverride: item.tab_color_override ?? null,
   colorSource: item.color_source ?? (item.tab_color ? "manual" : "blank"),
   primaryDataSourceId: item.primary_data_source_id ?? null,
+  primaryDataSourceName: item.primary_data_source_name ?? null,
+  dataOrigin: item.data_origin ?? null,
   dataSourceIds: item.data_source_ids ?? [],
   advisorChannelId: item.advisor_channel_id ?? null,
   createdFromTemplateName: item.created_from_template_name ?? null,
@@ -93,6 +99,7 @@ const toSheet = (item: WorkflowListItem): WorkbookSheet => ({
 });
 
 export const useWorkbookStore = defineStore("workbook", () => {
+  let sheetLoadGeneration = 0;
   const sheets = ref<WorkbookSheet[]>([]);
   const activeIndex = ref(0);
   const projectId = ref<number | null>(null);
@@ -101,11 +108,23 @@ export const useWorkbookStore = defineStore("workbook", () => {
 
   const activeSheet = computed(() => sheets.value[activeIndex.value] ?? null);
   const activeTrialSheet = computed(() =>
-    activeSheet.value?.kind === "trial" ? activeSheet.value : null
+    activeSheet.value?.kind === "trial" ? activeSheet.value : null,
   );
 
+  function resetProjectScope(): void {
+    sheetLoadGeneration += 1;
+    sheets.value = [];
+    activeIndex.value = 0;
+    projectId.value = null;
+    isLoading.value = false;
+    trialCounter.value = 0;
+  }
+
+  registerProjectScopeReset(resetProjectScope);
+
   function persistActiveSheet(): void {
-    if (projectId.value === null || !activeSheet.value || activeSheet.value.kind === "trial") return;
+    if (projectId.value === null || !activeSheet.value || activeSheet.value.kind === "trial")
+      return;
     const key = activeSheetKey(projectId.value);
     const value = String(activeSheet.value.workflowId);
     try {
@@ -129,7 +148,9 @@ export const useWorkbookStore = defineStore("workbook", () => {
     const advisorStore = useAdvisorStore();
     const sourceSheet =
       sheet.kind === "trial" && sheet.sourceWorkflowId
-        ? sheets.value.find((item) => item.kind !== "trial" && item.workflowId === sheet.sourceWorkflowId)
+        ? sheets.value.find(
+            (item) => item.kind !== "trial" && item.workflowId === sheet.sourceWorkflowId,
+          )
         : sheet;
     if (!sourceSheet || sourceSheet.kind === "trial") return;
 
@@ -174,6 +195,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
       name,
       description: "",
       status: "draft",
+      purpose: "analysis",
       project_id: projectId.value,
       tab_color: null,
       color_source: "blank",
@@ -183,31 +205,43 @@ export const useWorkbookStore = defineStore("workbook", () => {
     return toSheet(response.data);
   }
 
-  async function loadSheets(targetProjectId: number): Promise<void> {
+  async function loadSheets(
+    targetProjectId: number,
+    options: { createIfEmpty?: boolean } = {},
+  ): Promise<void> {
+    const loadGeneration = ++sheetLoadGeneration;
     const workflowStore = useWorkflowStore();
     isLoading.value = true;
     try {
       projectId.value = targetProjectId;
       let loadedSheets = await fetchSheets(targetProjectId);
-      if (loadedSheets.length === 0) {
+      if (loadGeneration !== sheetLoadGeneration) return;
+      if (loadedSheets.length === 0 && options.createIfEmpty !== false) {
         loadedSheets = [await createSheetRecord("Sheet 1")];
+        if (loadGeneration !== sheetLoadGeneration) return;
       }
 
       sheets.value = loadedSheets;
       const savedWorkflowId = readActiveSheetWorkflowId(targetProjectId);
-      const savedIndex = savedWorkflowId !== null
-        ? sheets.value.findIndex((sheet) => sheet.workflowId === savedWorkflowId)
-        : -1;
+      const savedIndex =
+        savedWorkflowId !== null
+          ? sheets.value.findIndex((sheet) => sheet.workflowId === savedWorkflowId)
+          : -1;
       activeIndex.value = savedIndex >= 0 ? savedIndex : 0;
       persistActiveSheet();
 
       const sheet = activeSheet.value;
       if (sheet) {
         await workflowStore.loadWorkflow(sheet.workflowId);
+        if (loadGeneration !== sheetLoadGeneration) return;
         await syncAdvisorForSheet(sheet);
+      } else {
+        workflowStore.clearWorkflow();
       }
     } finally {
-      isLoading.value = false;
+      if (loadGeneration === sheetLoadGeneration) {
+        isLoading.value = false;
+      }
     }
   }
 
@@ -249,7 +283,10 @@ export const useWorkbookStore = defineStore("workbook", () => {
     await syncAdvisorForSheet(target);
   }
 
-  async function selectWorkflowSheet(workflowId: number, targetProjectId = projectId.value): Promise<void> {
+  async function selectWorkflowSheet(
+    workflowId: number,
+    targetProjectId = projectId.value,
+  ): Promise<void> {
     if (targetProjectId === null) {
       throw new Error("Project is required before selecting a workflow sheet");
     }
@@ -293,10 +330,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
   // workflow_version as a brand-new sheet in the same project.  The original
   // workflow + its version history are untouched, so users can compare-side
   // by-side or copy nodes between sheets.
-  async function openVersionAsSheet(
-    workflowId: number,
-    versionId: number,
-  ): Promise<WorkbookSheet> {
+  async function openVersionAsSheet(workflowId: number, versionId: number): Promise<WorkbookSheet> {
     const response = await api.post<WorkflowListItem>(
       `/workflows/${workflowId}/versions/${versionId}/open-as-new-sheet`,
     );
@@ -307,10 +341,8 @@ export const useWorkbookStore = defineStore("workbook", () => {
   }
 
   // Instantiate a curated template as a new sheet in the current project.
-  // Always uses launch_mode=example so the template's bundled / certified
-  // dataset auto-materializes — the v0.4.x picker doesn't yet collect
-  // user-supplied data bindings.  The backend rejects templates that have
-  // no example data with a 400 we surface as a toast.
+  // The caller decides whether to use certified example data or explicit
+  // current-project data bindings.
   async function openTemplateAsSheet(
     templateId: number,
     workflowName: string,
@@ -336,19 +368,24 @@ export const useWorkbookStore = defineStore("workbook", () => {
             {
               source: binding.source ?? "experiment",
               experiment_id: binding.experimentId,
+              display_name: binding.displayName ?? null,
               file_id: binding.fileId ?? null,
+              file_ids: binding.fileIds ?? null,
+              all_files: binding.allFiles ?? false,
               stage: binding.stage ?? "raw",
               target_binding: binding.targetBinding
                 ? {
                     source: binding.targetBinding.source ?? "experiment",
                     experiment_id: binding.targetBinding.experimentId,
-                    file_id: binding.targetBinding.fileId ?? null,
+                    file_id: binding.targetBinding.fileId,
                     stage: binding.targetBinding.stage ?? "raw",
+                    target_authority: binding.targetBinding.targetAuthority ?? null,
                   }
                 : null,
-              target_type: binding.targetType ?? null,
+              target_authority: binding.targetAuthority ?? null,
+              group_column: binding.groupColumn ?? null,
             },
-          ])
+          ]),
         ),
         example_bindings: Object.fromEntries(
           Object.entries(options.exampleBindings || {}).map(([key, binding]) => [
@@ -357,14 +394,30 @@ export const useWorkbookStore = defineStore("workbook", () => {
               source: binding.source,
               dataset_name: binding.datasetName,
             },
-          ])
+          ]),
         ),
       },
     );
-    const sheet = toSheet(response.data);
-    sheets.value.push(sheet);
-    await switchSheet(sheets.value.length - 1);
-    return sheet;
+    const primaryWorkflowId = response.data.id;
+
+    // A canonical starter template may atomically create more than one
+    // persisted sheet. Refresh from the project authority instead of assuming
+    // the single response row is the complete template result.
+    await refreshSheets();
+    const primaryIndex = sheets.value.findIndex((item) => item.workflowId === primaryWorkflowId);
+    if (primaryIndex < 0) {
+      throw new Error("Instantiated workflow is not available in the project workbook");
+    }
+    if (primaryIndex === activeIndex.value) {
+      const workflowStore = useWorkflowStore();
+      const primarySheet = sheets.value[primaryIndex];
+      persistActiveSheet();
+      await workflowStore.loadWorkflow(primarySheet.workflowId);
+      await syncAdvisorForSheet(primarySheet);
+    } else {
+      await switchSheet(primaryIndex);
+    }
+    return sheets.value[primaryIndex];
   }
 
   async function renameSheet(workflowId: number, newName: string): Promise<void> {
@@ -531,6 +584,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
       sourceWorkflowId,
       sourceNodeId,
       name: `Trial: ${trialData?.label || sourceNodeId || "Node"}`,
+      purpose: sourceSheet?.purpose ?? "analysis",
       tabColor,
       tabColorOverride: null,
       colorSource: "data",
@@ -566,7 +620,9 @@ export const useWorkbookStore = defineStore("workbook", () => {
     }
 
     const sourceIndex = sheet.sourceWorkflowId
-      ? sheets.value.findIndex((item) => item.kind !== "trial" && item.workflowId === sheet.sourceWorkflowId)
+      ? sheets.value.findIndex(
+          (item) => item.kind !== "trial" && item.workflowId === sheet.sourceWorkflowId,
+        )
       : -1;
     const nextIndex = sourceIndex >= 0 ? sourceIndex : Math.min(index, sheets.value.length - 1);
     if (nextIndex >= 0) {

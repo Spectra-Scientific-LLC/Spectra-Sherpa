@@ -27,7 +27,11 @@ export const formatDiagnosticLabel = (key: string): string =>
     .replace(/_/g, " ")
     .replace(/\b\w/g, (match) => match.toUpperCase())
     .replace(/\bCv\b/g, "CV")
+    .replace(/\bMae\b/g, "MAE")
     .replace(/\bRmse\b/g, "RMSE")
+    .replace(/\bRer\b/g, "RER")
+    .replace(/\bR2\b/g, "R²")
+    .replace(/\bSep\b/g, "SEP")
     .replace(/\bSnr\b/g, "SNR")
     .replace(/\bSpe\b/g, "SPE");
 

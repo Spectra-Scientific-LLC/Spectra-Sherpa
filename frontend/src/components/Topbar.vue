@@ -40,8 +40,23 @@
     </div>
 
     <div class="topbar-center">
-      <!-- Status Indicators (Traffic Lights) -->
-      <div class="status-indicators">
+      <!-- Basic availability; detailed provenance is shown separately. -->
+      <div class="provenance-indicators" aria-label="Current project availability">
+        <button
+          v-for="record in provenanceLights"
+          :key="record.kind"
+          type="button"
+          class="status-light"
+          :class="`status-${availabilityState(record) === 'healthy' ? 'green' : availabilityState(record) === 'faulty' ? 'red' : 'gray'}`"
+          :aria-label="provenanceTooltip(record)"
+          :title="provenanceTooltip(record)"
+          @click="router.push('/project/provenance')"
+        >
+          <span class="status-tooltip">{{ provenanceTooltip(record) }}</span>
+        </button>
+      </div>
+      <!-- System readiness is separate from project evidence. -->
+      <div class="status-indicators" aria-label="System readiness">
         <div
           class="status-light"
           :class="backendStatus.class"
@@ -51,26 +66,6 @@
           :title="backendStatus.tooltip"
         >
           <span class="status-tooltip">{{ backendStatus.tooltip }}</span>
-        </div>
-        <div
-          class="status-light"
-          :class="dataStatus.class"
-          role="img"
-          tabindex="0"
-          :aria-label="dataStatus.tooltip"
-          :title="dataStatus.tooltip"
-        >
-          <span class="status-tooltip">{{ dataStatus.tooltip }}</span>
-        </div>
-        <div
-          class="status-light"
-          :class="workflowStatus.class"
-          role="img"
-          tabindex="0"
-          :aria-label="workflowStatus.tooltip"
-          :title="workflowStatus.tooltip"
-        >
-          <span class="status-tooltip">{{ workflowStatus.tooltip }}</span>
         </div>
         <div
           class="status-light"
@@ -153,7 +148,7 @@ import { useToast } from "primevue/usetoast";
 import { useProjectStore } from "@/stores/project";
 import { useNotificationStore } from "@/stores/notification";
 import { useWorkflowStore } from "@/stores/workflow";
-import { useExperimentStore } from "@/stores/experiment";
+import { availabilityDetail, availabilityState, useProjectProvenanceStore, type ProjectProvenanceRecord } from "@/stores/projectProvenance";
 import { useLlmStore } from "@/stores/llm";
 import { useAuthStore } from "@/stores/auth";
 import { useRouter } from "vue-router";
@@ -180,7 +175,7 @@ const projectStore = useProjectStore();
 const notificationStore = useNotificationStore();
 const { notifySystemEvent } = useNotifier();
 const workflowStore = useWorkflowStore();
-const experimentStore = useExperimentStore();
+const provenanceStore = useProjectProvenanceStore();
 const llmStore = useLlmStore();
 const authStore = useAuthStore();
 const router = useRouter();
@@ -246,24 +241,19 @@ const backendStatus = computed(() => {
   return { class: "status-red status-pulse", tooltip: "Backend: Server offline" };
 });
 
-const dataStatus = computed(() => {
-  const hasExperiments = experimentStore.experiments.length > 0;
-  const hasNodeOutput = workflowStore.nodes.some((n) => n.executionState?.status === "completed");
-  if (hasExperiments || hasNodeOutput) {
-    return { class: "status-green", tooltip: "Data: Loaded" };
-  }
-  return { class: "status-gray", tooltip: "Data: No data loaded" };
-});
-
-const workflowStatus = computed(() => {
-  if (workflowStore.nodes.length === 0) {
-    return { class: "status-gray", tooltip: "Workflow: Empty canvas" };
-  }
-  if (workflowStore.hasUnsavedChanges) {
-    return { class: "status-yellow", tooltip: "Workflow: Unsaved changes" };
-  }
-  return { class: "status-green", tooltip: "Workflow: Ready" };
-});
+const provenanceKinds = ["source", "dataset", "workflow", "run", "environment", "model", "campaign", "package"] as const;
+const provenanceLabels = ["Source", "Dataset", "Workflow", "Run", "Environment", "Model", "Campaign", "Package"];
+const activeProvenance = computed(() => provenanceStore.projectId === projectStore.currentProjectId ? provenanceStore.summary : null);
+const provenanceLights = computed<ProjectProvenanceRecord[]>(() => provenanceKinds.map((kind, index) =>
+  activeProvenance.value?.records.find((record) => record.kind === kind) ?? {
+    kind, label: provenanceLabels[index], state: provenanceStore.error ? "faulty" : "missing",
+    name: null, digest: null, record_id: null,
+    detail: provenanceStore.error ?? "No active evidence in this project.",
+    destination: "/project/provenance",
+  },
+));
+const provenanceTooltip = (record: ProjectProvenanceRecord): string =>
+  `${record.label}: ${availabilityDetail(record)}${activeProvenance.value?.verified_at ? ` • checked ${new Date(activeProvenance.value.verified_at).toLocaleTimeString()}` : ""}`;
 
 const llmStatus = computed(() => {
   if (llmStore.connectionStatus === "connected") {
@@ -298,17 +288,27 @@ const syncLocalLlmPolling = () => {
   }
 };
 
+const refreshProjectEvidence = () => {
+  if (projectStore.currentProjectId != null) void provenanceStore.refresh(projectStore.currentProjectId, false);
+};
+
 onMounted(() => {
   syncLocalLlmPolling();
+  // Deep links must populate the selector even when Dashboard/Project was never opened.
+  if (authStore.user || appMode.value === "local") void projectStore.fetchProjects();
   window.addEventListener("llm-config-changed", handleLlmConfigChange);
+  window.addEventListener("focus", refreshProjectEvidence);
 });
 
 onUnmounted(() => {
   llmStore.stopConfigPolling();
   window.removeEventListener("llm-config-changed", handleLlmConfigChange);
+  window.removeEventListener("focus", refreshProjectEvidence);
 });
 
 watch(appMode, syncLocalLlmPolling);
+watch(() => projectStore.currentProjectId, (id) => { void provenanceStore.refresh(id); }, { immediate: true });
+watch(() => router.currentRoute.value.fullPath, refreshProjectEvidence);
 
 const computeStatus = computed(() => {
   return { class: "status-blue", tooltip: "Compute: Local" };
@@ -350,11 +350,28 @@ watch(backendConnected, (connected) => {
 
 const getProjectName = (projectId: number): string => {
   const project = projectStore.projectList.find((p) => p.id === projectId);
-  return project?.name || "Unknown Project";
+  return project?.name ||
+    (projectStore.currentProject?.id === projectId ? projectStore.currentProject.name : "Unknown Project");
 };
 
 const onProjectChange = async () => {
   if (selectedProjectId.value) {
+    const previousProjectId = projectStore.currentProjectId;
+    if (selectedProjectId.value === previousProjectId) return;
+    if (workflowStore.hasUnsavedChanges && workflowStore.workflowId !== null) {
+      try {
+        await workflowStore.saveWorkflow({ createVersion: false });
+      } catch {
+        selectedProjectId.value = previousProjectId;
+        toast.add({
+          severity: "error",
+          summary: "Project Switch Stopped",
+          detail: "The active workflow could not be saved. Your project was not changed.",
+          life: 5000,
+        });
+        return;
+      }
+    }
     await projectStore.selectProject(selectedProjectId.value);
     const project = projectStore.currentProject;
     if (project) {
@@ -367,7 +384,6 @@ const onProjectChange = async () => {
     }
   }
 };
-
 </script>
 
 <style scoped>
@@ -376,7 +392,7 @@ const onProjectChange = async () => {
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  background: #ffffff;
+  background: #fefbff;
   border-bottom: 1px solid #e2e8f0;
   height: 56px;
   gap: 16px;
@@ -418,6 +434,22 @@ const onProjectChange = async () => {
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+.provenance-indicators {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  background: #eef7fb;
+  border: 1px solid #b7d7e7;
+  border-radius: 20px;
+}
+
+.provenance-indicators .status-light {
+  border: 0;
+  padding: 0;
+  flex: 0 0 14px;
 }
 
 .topbar-right {
@@ -567,6 +599,11 @@ const onProjectChange = async () => {
    on transitional states (connecting, offline). */
 .status-green {
   background: #16a34a;
+}
+
+.status-indicators .status-light:nth-child(1).status-green,
+.status-indicators .status-light:nth-child(2).status-green {
+  background: #33b857;
 }
 
 .status-yellow {

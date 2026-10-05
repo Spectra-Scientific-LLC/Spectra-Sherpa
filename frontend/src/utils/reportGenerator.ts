@@ -1,3 +1,8 @@
+import { reportNodePlotsHtml, type ReportNodePlotSection } from "./reportNodePlots";
+import type { ValidationFigure } from "@/utils/validationReportPlots";
+import type { ReportProjectEvidenceSnapshot } from "@/stores/report";
+import { reportRows, reportGroups, formatReportValue } from "./reportValues";
+import { scientificSummaryHtml } from "./scientificReportSummary";
 /* eslint-disable @typescript-eslint/no-explicit-any -- report generation walks mixed workflow metadata/metric payloads for presentation only. */
 /**
  * Provenance report generator — produces self-contained HTML from workflow
@@ -26,7 +31,24 @@ export interface ReportEdge {
   toInput: string;
 }
 
+export interface ReportRegressionResult {
+  node_id: string;
+  source_port: string;
+  target: string;
+  units: string;
+  role: string;
+  reference_min: number;
+  reference_max: number;
+  reference_sd: number | null;
+  reference_mean?: number;
+  observations?: { sample: string; reference: number; predicted: number }[];
+  metrics: Record<string, number | string | null>;
+  bias_definition: string;
+}
+
 export interface RunReportEntry {
+  node_plots?: ReportNodePlotSection[];
+  validation_summary?: { schema_version: string; run_id: number; rows: { label: string; value: string }[]; figures?: ValidationFigure[]; regression_results?: ReportRegressionResult[] };
   id: number;
   name: string;
   status: string;
@@ -37,11 +59,66 @@ export interface RunReportEntry {
   node_statuses: Record<string, string> | null;
   integrity_hash: string | null;
   labels: string[] | null;
+  evidence_notice?: string;
+  workflow_identity?: {
+    project_id: number | null;
+    workflow_id: number;
+    template_name: string | null;
+    template_version: string | null;
+    source_name: string | null;
+    source_origin: "current" | "example" | null;
+  };
+  evidence_gaps?: Array<{
+    node_id: string;
+    output: string;
+    role?: string | null;
+    state: "reduced" | "missing" | "unverified";
+    category: "reduced" | "session_only" | "storage_limit" | "unavailable" | "unverified";
+    reason: string;
+    recovery: string;
+  }>;
+  selection_provenance?: {
+    state: "exact" | "unavailable";
+    reason: string | null;
+    executor_user_id: number;
+    workflow_version_id: number | null;
+    revisions: Array<{
+      revision_number: number;
+      source_node_id: string;
+      created_by: number;
+      created_at: string;
+      reason: string | null;
+      selection: {
+        dataset_name: string;
+        selected_file_ids: number[] | null;
+        target_authority: { column: string; target_type: string; units: string | null } | null;
+        group_column: string | null;
+        scientific_collection_sha256: string;
+      };
+    }>;
+    scientific_receipts: Array<{
+      node_id: string;
+      scientific_digest: string;
+      shape: number[];
+      selection_lineage?: Array<{
+        node_id: string | null;
+        operation: "data.filter_samples";
+        parameters: Record<string, unknown>;
+        selected_index_ranges: number[][];
+        selected_indices_sha256: string;
+        input_shape: number[] | null;
+        output_shape: number[] | null;
+      }>;
+    }>;
+  };
+  saved_definition?: { nodes: { node_id: string; label?: string; node_type: string }[] } | null;
 }
 
 export interface ReportComparison {
   metric_keys: string[];
   diff: Record<string, Record<string, unknown>>;
+  rankable_metrics?: string[];
+  result_pairs?: { state: string; reason: string }[];
 }
 
 export interface ReportSections {
@@ -54,6 +131,7 @@ export interface ReportSections {
 }
 
 export interface ReportData {
+  reportMode?: "summary" | "detailed";
   workflowName: string;
   workflowDescription: string | null;
   integrityHash: string | null;
@@ -70,6 +148,15 @@ export interface ReportData {
   comparison?: ReportComparison | null;
   narrativeMarkdown?: string | null;
   sections?: ReportSections;
+  workflowIdentity?: {
+    project_id: number | null;
+    workflow_id: number;
+    template_name: string | null;
+    template_version: string | null;
+    source_name: string | null;
+    source_origin: "current" | "example" | null;
+  };
+  projectEvidence?: ReportProjectEvidenceSnapshot | null;
 }
 
 function escapeHtml(text: string): string {
@@ -80,61 +167,80 @@ function escapeHtml(text: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function projectEvidenceHtml(snapshot: ReportProjectEvidenceSnapshot | null | undefined): string {
+  if (!snapshot) return "";
+  const note = "Project evidence captured at report generation. These are current project records, not proof that every record belongs to the selected report runs.";
+  let html = `<h2>Project evidence</h2><p>${escapeHtml(note)}</p>`;
+  html += `<p>Captured ${escapeHtml(snapshot.capturedAt)} · Project ${escapeHtml(String(snapshot.projectId ?? "unavailable"))}</p>`;
+  if (snapshot.state !== "available") return html + `<p>${escapeHtml(snapshot.reason ?? "Evidence unavailable.")}</p>`;
+  html += `<table class="connection-table"><tr><th>Record</th><th>State</th><th>Active name</th><th>Digest</th></tr>`;
+  for (const record of snapshot.records) {
+    html += `<tr><td>${escapeHtml(record.label)}</td><td>${escapeHtml(record.state)}</td>`;
+    html += `<td>${escapeHtml(record.name ?? "Not recorded")}</td><td class="hash">${escapeHtml(record.digest ?? "—")}</td></tr>`;
+  }
+  return html + "</table>";
+}
+
 function buildStyleSheet(): string {
   return `
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #0f172a; color: #e2e8f0; line-height: 1.6;
+      background: #ffffff; color: #334155; line-height: 1.6;
       max-width: 1000px; margin: 0 auto; padding: 40px 24px;
     }
-    h1 { font-size: 1.8rem; color: #f8fafc; margin-bottom: 8px; }
-    h2 { font-size: 1.3rem; color: #f8fafc; margin: 32px 0 16px; border-bottom: 1px solid #334155; padding-bottom: 8px; }
-    h3 { font-size: 1.05rem; color: #cbd5e1; margin: 20px 0 10px; }
+    h1 { font-size: 1.8rem; color: #172033; margin-bottom: 8px; }
+    h2 { font-size: 1.3rem; color: #172033; margin: 32px 0 16px; border-bottom: 1px solid #cbd5e1; padding-bottom: 8px; }
+    h3 { font-size: 1.15rem; font-weight: 700; color: #172033; margin: 28px 0 14px; padding: 10px 14px; background: #f8fafc; border-left: 4px solid #2563eb; }
+    h3 small { display: block; font-size: 0.8rem; font-weight: 400; margin-top: 4px; }
+    .report-figure { margin: 16px 0 24px; padding: 14px; border: 1px solid #64748b; border-radius: 6px; break-inside: avoid; }
+    .report-figure h4 { font-size: 1rem; margin: 0 0 12px; }
+    .report-figure img, .report-figure svg { width: 100%; height: auto; display: block; background: white; }
+    .report-figure figcaption { margin-top: 10px; font-size: 0.8rem; line-height: 1.5; }
     .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
-    .meta-item { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px; }
+    .meta-item { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px; }
     .meta-label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
-    .meta-value { font-size: 0.95rem; color: #f8fafc; margin-top: 4px; }
-    .hash { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.8rem; color: #4ade80; word-break: break-all; }
-    .node-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin: 12px 0; }
+    .meta-value { font-size: 0.95rem; color: #172033; margin-top: 4px; }
+    .hash { font-family: 'JetBrains Mono', 'Fira Code', monospace; font-size: 0.8rem; color: #15803d; word-break: break-all; }
+    .node-card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin: 12px 0; }
     .node-header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
     .node-type-badge { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
-    .badge-data { background: rgba(59,130,246,0.2); color: #60a5fa; }
-    .badge-preprocess { background: rgba(168,85,247,0.2); color: #c084fc; }
-    .badge-model { background: rgba(34,197,94,0.2); color: #4ade80; }
-    .badge-output { background: rgba(251,146,60,0.2); color: #fb923c; }
-    .badge-other { background: rgba(148,163,184,0.2); color: #94a3b8; }
+    .badge-data { background: rgba(59,130,246,0.2); color: #2563eb; }
+    .badge-preprocess { background: rgba(168,85,247,0.2); color: #7e22ce; }
+    .badge-model { background: rgba(34,197,94,0.2); color: #15803d; }
+    .badge-output { background: rgba(251,146,60,0.2); color: #c2410c; }
+    .badge-other { background: rgba(148,163,184,0.2); color: #475569; }
     .params-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    .params-table th, .params-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #1e293b; font-size: 0.85rem; }
+    .params-table th, .params-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #f8fafc; font-size: 0.85rem; }
     .params-table th { color: #64748b; font-weight: 500; }
-    .params-table td { color: #e2e8f0; }
-    .params-table code { background: #0f172a; padding: 1px 4px; border-radius: 3px; font-size: 0.8rem; }
+    .params-table td { color: #334155; }
+    .params-table code { background: #ffffff; padding: 1px 4px; border-radius: 3px; font-size: 0.8rem; }
     .connection-table { width: 100%; border-collapse: collapse; }
-    .connection-table th, .connection-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #334155; font-size: 0.85rem; }
-    .connection-table th { background: #1e293b; color: #64748b; }
-    .connection-table td { color: #e2e8f0; }
+    .connection-table th, .connection-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #cbd5e1; font-size: 0.85rem; }
+    .connection-table th { background: #f8fafc; color: #64748b; }
+    .connection-table td { color: #334155; }
     .plot-gallery { display: grid; grid-template-columns: 1fr; gap: 16px; margin: 16px 0; }
-    .plot-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; overflow: hidden; }
+    .plot-card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; }
     .plot-card img { width: 100%; display: block; }
-    .plot-card .plot-caption { padding: 8px 12px; font-size: 0.85rem; color: #94a3b8; }
-    .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #334155; font-size: 0.8rem; color: #64748b; text-align: center; }
-    .run-card { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 16px; margin: 12px 0; }
+    .plot-card .plot-caption { padding: 8px 12px; font-size: 0.85rem; color: #475569; }
+    .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #cbd5e1; font-size: 0.8rem; color: #64748b; text-align: center; }
+    .run-card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 16px; margin: 12px 0; }
     .run-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
     .status-badge { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; }
-    .status-completed { background: rgba(34,197,94,0.2); color: #4ade80; }
-    .status-error { background: rgba(239,68,68,0.2); color: #f87171; }
-    .status-partial { background: rgba(251,191,36,0.2); color: #fbbf24; }
-    .status-running { background: rgba(59,130,246,0.2); color: #60a5fa; }
+    .status-completed { background: rgba(34,197,94,0.2); color: #15803d; }
+    .status-error { background: rgba(239,68,68,0.2); color: #b91c1c; }
+    .status-partial { background: rgba(251,191,36,0.2); color: #92400e; }
+    .status-running { background: rgba(59,130,246,0.2); color: #2563eb; }
     .comparison-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-    .comparison-table th, .comparison-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #334155; font-size: 0.85rem; }
-    .comparison-table th { background: #1e293b; color: #64748b; font-weight: 500; }
-    .comparison-table td { color: #e2e8f0; }
-    .metric-best { color: #4ade80; font-weight: 600; }
-    .delta-positive { color: #60a5fa; font-weight: 500; }
-    .delta-negative { color: #f87171; font-weight: 500; }
-    .narrative-section { background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 20px 24px; margin: 16px 0; line-height: 1.8; font-size: 0.9rem; }
+    .comparison-table th, .comparison-table td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #cbd5e1; font-size: 0.85rem; }
+    .comparison-table th { background: #f8fafc; color: #64748b; font-weight: 500; }
+    .comparison-table td { color: #334155; }
+    .metric-best { color: #15803d; font-weight: 600; }
+    .delta-positive { color: #2563eb; font-weight: 500; }
+    .delta-negative { color: #b91c1c; font-weight: 500; }
+    .narrative-section { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 20px 24px; margin: 16px 0; line-height: 1.8; font-size: 0.9rem; }
     .narrative-section p { margin-bottom: 12px; }
-    .label-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; background: rgba(59,130,246,0.2); color: #60a5fa; margin-right: 4px; }
+    .label-tag { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 0.7rem; background: rgba(59,130,246,0.2); color: #2563eb; margin-right: 4px; }
     @media print {
       @page { size: A4; margin: 14mm; }
       body {
@@ -150,6 +256,7 @@ function buildStyleSheet(): string {
         color: #111827;
       }
       h2 { border-bottom-color: #d1d5db; page-break-after: avoid; break-after: avoid; }
+      h3 { background: #eaf1fa; border-left-color: #2563eb; break-after: avoid; }
       .node-card, .meta-item, .plot-card, .run-card, .narrative-section {
         background: #fff;
         border-color: #d1d5db;
@@ -201,20 +308,12 @@ function getStatusClass(status: string): string {
 }
 
 function formatMetricValue(value: unknown): string {
-  if (value === null || value === undefined) return "\u2014";
-  if (typeof value === "number") {
-    return Number.isInteger(value) ? String(value) : value.toFixed(4);
-  }
-  if (Array.isArray(value)) {
-    const preview = value.slice(0, 3).map((v) => (typeof v === "number" ? v.toFixed(2) : String(v)));
-    return `[${preview.join(", ")}${value.length > 3 ? "..." : ""}]`;
-  }
-  return String(value);
+  return formatReportValue(value);
 }
 
 function buildNodeSection(node: ReportNode, plotImage?: string): string {
   const badge = getBadgeClass(node.nodeType);
-  const params = Object.entries(node.parameters || {});
+  const params = reportRows(node.parameters);
 
   let html = `<div class="node-card">
     <div class="node-header">
@@ -230,7 +329,7 @@ function buildNodeSection(node: ReportNode, plotImage?: string): string {
   if (params.length > 0) {
     html += `<table class="params-table"><tr><th>Parameter</th><th>Value</th></tr>`;
     for (const [key, value] of params) {
-      const displayValue = typeof value === "object" ? JSON.stringify(value) : String(value);
+      const displayValue = value;
       html += `<tr><td><code>${escapeHtml(key)}</code></td><td>${escapeHtml(displayValue)}</td></tr>`;
     }
     html += `</table>`;
@@ -246,9 +345,7 @@ function buildNodeSection(node: ReportNode, plotImage?: string): string {
 
 function buildRunSection(run: RunReportEntry, nodes: ReportNode[]): string {
   const statusClass = getStatusClass(run.status);
-  const dateStr = run.executed_at
-    ? new Date(run.executed_at).toLocaleString()
-    : "Unknown date";
+  const dateStr = run.executed_at ? new Date(run.executed_at).toLocaleString() : "Unknown date";
 
   let html = `<div class="run-card">
     <div class="run-header">
@@ -267,12 +364,84 @@ function buildRunSection(run: RunReportEntry, nodes: ReportNode[]): string {
   }
 
   // Results summary as metrics table
+  html += `<p>Saved run ${run.id}</p>`;
+  if (run.validation_summary?.schema_version === 'spectrasherpa-readable-validation/1' && run.validation_summary.run_id === run.id) {
+    html += '<h4>Validation summary</h4><table class="params-table">';
+    for (const row of run.validation_summary.rows) {
+      html += `<tr><th>${escapeHtml(row.label)}</th><td>${escapeHtml(row.value)}</td></tr>`;
+    }
+    html += '</table>';
+  }
+  html += reportNodePlotsHtml(run);
+  if (run.workflow_identity) {
+    const identity = run.workflow_identity;
+    const origin = identity.source_origin === "example"
+      ? "Bundled example"
+      : identity.source_origin === "current"
+        ? "Current project data"
+        : "Not recorded";
+    html += `<p>Run source: ${escapeHtml(identity.source_name || "Not recorded")} (${escapeHtml(origin)})</p>`;
+  }
+  if (run.evidence_notice) html += `<p>${escapeHtml(run.evidence_notice)}</p>`;
+  if (run.evidence_gaps?.length) {
+    html += `<h4>Incomplete durable evidence</h4><ul>`;
+    for (const gap of run.evidence_gaps) {
+      const node = nodes.find((item) => item.nodeId === gap.node_id);
+      const label = `${node?.label || gap.node_id} · ${gap.role || gap.output}`;
+      html += `<li><strong>${escapeHtml(label)}</strong> (${escapeHtml(gap.category.replace(/_/g, " "))}): ${escapeHtml(gap.reason)} ${escapeHtml(gap.recovery)}</li>`;
+    }
+    html += `</ul>`;
+  }
+  const provenance = run.selection_provenance;
+  html += `<h4>Data selection and lineage</h4>`;
+  if (!provenance || provenance.state !== "exact") {
+    html += `<p>${escapeHtml(provenance?.reason || "Selection provenance is unavailable for this run.")}</p>`;
+  } else {
+    html += `<p>Workflow version ${escapeHtml(String(provenance.workflow_version_id ?? "unsaved"))}; executed by user ${escapeHtml(String(provenance.executor_user_id))}.</p>`;
+    for (const revision of provenance.revisions) {
+      const selection = revision.selection;
+      const target = selection.target_authority
+        ? `${selection.target_authority.column} (${selection.target_authority.target_type}${selection.target_authority.units ? `, ${selection.target_authority.units}` : ""})`
+        : "None";
+      const receipt = provenance.scientific_receipts.find(
+        (item) => item.node_id === revision.source_node_id,
+      );
+      const output = receipt ? ` → shape ${receipt.shape.join(" × ")}` : "";
+      html += `<div class="node-card"><strong>${escapeHtml(selection.dataset_name)}</strong>`;
+      html += `<p>${escapeHtml(selection.dataset_name)} → selection revision ${revision.revision_number}${escapeHtml(output)} → run ${run.id} → report</p>`;
+      html += `<table class="params-table">`;
+      html += `<tr><th>Source node</th><td>${escapeHtml(revision.source_node_id)}</td></tr>`;
+      html += `<tr><th>Selection author</th><td>User ${escapeHtml(String(revision.created_by))} at ${escapeHtml(revision.created_at)}</td></tr>`;
+      html += `<tr><th>Files</th><td>${escapeHtml(selection.selected_file_ids?.join(", ") || "All admitted files")}</td></tr>`;
+      html += `<tr><th>Target</th><td>${escapeHtml(target)}</td></tr>`;
+      html += `<tr><th>Group</th><td>${escapeHtml(selection.group_column || "None")}</td></tr>`;
+      html += `<tr><th>Scientific identity</th><td><code>${escapeHtml(selection.scientific_collection_sha256)}</code></td></tr>`;
+      html += `<tr><th>Change reason</th><td>${escapeHtml(revision.reason || "No reason supplied")}</td></tr>`;
+      html += `</table></div>`;
+    }
+    const filters = provenance.scientific_receipts.flatMap((receipt) =>
+      (receipt.selection_lineage || []).map((lineage) => ({ receipt, lineage })),
+    );
+    if (filters.length) {
+      html += `<h5>Executed sample filters</h5><table class="params-table"><tr><th>Node</th><th>Rule</th><th>Rows</th><th>Exact row receipt</th></tr>`;
+      for (const { receipt, lineage } of filters) {
+        const ranges = lineage.selected_index_ranges
+          .map(([start, end]) => (start === end ? String(start + 1) : `${start + 1}-${end + 1}`))
+          .join(", ");
+        html += `<tr><td>${escapeHtml(lineage.node_id || receipt.node_id)}</td>`;
+        html += `<td><code>${escapeHtml(JSON.stringify(lineage.parameters))}</code></td>`;
+        html += `<td>${escapeHtml(ranges || "All input rows")}</td>`;
+        html += `<td><code>${escapeHtml(lineage.selected_indices_sha256)}</code></td></tr>`;
+      }
+      html += `</table>`;
+    }
+  }
   const allMetrics: [string, string, unknown][] = [];
-  for (const [nodeId, metrics] of Object.entries(run.results_summary)) {
+  for (const [nodeId, metrics] of reportGroups(run.results_summary)) {
     if (typeof metrics === "object" && metrics !== null) {
-      for (const [key, value] of Object.entries(metrics)) {
+      for (const [key, value] of metrics) {
         const nodeLabel =
-          nodes.find((n) => n.nodeId === nodeId)?.label || nodeId;
+          run.saved_definition?.nodes.find((n) => n.node_id === nodeId)?.label || nodeId;
         allMetrics.push([nodeLabel, key, value]);
       }
     }
@@ -291,15 +460,15 @@ function buildRunSection(run: RunReportEntry, nodes: ReportNode[]): string {
 }
 
 function buildDiagnosticsSection(run: RunReportEntry, nodes: ReportNode[]): string {
-  if (!run.diagnostics || Object.keys(run.diagnostics).length === 0) return "";
+  const groups = reportGroups(run.diagnostics);
+  if (!groups.length) return "";
 
   let html = `<h3>${escapeHtml(run.name)} — Diagnostics</h3>`;
-  for (const [nodeId, diag] of Object.entries(run.diagnostics)) {
-    if (typeof diag !== "object" || diag === null || Object.keys(diag).length === 0) continue;
+  for (const [nodeId, diag] of groups) {
     const nodeLabel = nodes.find((n) => n.nodeId === nodeId)?.label || nodeId;
     html += `<div class="node-card"><strong>${escapeHtml(nodeLabel)}</strong>`;
     html += `<table class="params-table"><tr><th>Key</th><th>Value</th></tr>`;
-    for (const [key, value] of Object.entries(diag)) {
+    for (const [key, value] of diag) {
       html += `<tr><td><code>${escapeHtml(key)}</code></td><td>${escapeHtml(formatMetricValue(value))}</td></tr>`;
     }
     html += `</table></div>`;
@@ -309,13 +478,14 @@ function buildDiagnosticsSection(run: RunReportEntry, nodes: ReportNode[]): stri
 
 const HIGHER_IS_BETTER = new Set(["r2", "accuracy", "explained_variance", "silhouette_score"]);
 
-function buildComparisonSection(
-  runs: RunReportEntry[],
-  comparison: ReportComparison
-): string {
-  if (comparison.metric_keys.length === 0) return "";
+function buildComparisonSection(runs: RunReportEntry[], comparison: ReportComparison): string {
+  if (!comparison.metric_keys.some((key) => runs.some((run) => formatMetricValue(comparison.diff[key]?.[String(run.id)])))) return "";
 
-  let html = `<table class="comparison-table"><tr><th>Metric</th>`;
+  let html = comparison.rankable_metrics?.length
+    ? ""
+    : "<p>Evaluation compatibility is not established. Results are not ranked.</p>";
+  for (const pair of comparison.result_pairs ?? []) html += `<p>${escapeHtml(pair.reason)}</p>`;
+  html += `<table class="comparison-table"><tr><th>Metric</th>`;
   for (const run of runs) {
     html += `<th>${escapeHtml(run.name)}</th>`;
   }
@@ -323,26 +493,28 @@ function buildComparisonSection(
   html += `</tr>`;
 
   for (const key of comparison.metric_keys) {
+    if (!runs.some((run) => formatMetricValue(comparison.diff[key]?.[String(run.id)]))) continue;
     const metricName = key.split(".").pop() || key;
     const values = comparison.diff[key] || {};
     const numericVals: { runId: string; val: number }[] = [];
     for (const [runId, val] of Object.entries(values)) {
-      if (typeof val === "number" && !isNaN(val)) {
+      if (typeof val === "number" && Number.isFinite(val)) {
         numericVals.push({ runId, val });
       }
     }
 
     // Find best
     const higherBetter = HIGHER_IS_BETTER.has(metricName);
+    const rankable = comparison.rankable_metrics?.includes(key) === true;
     let bestRunId: string | null = null;
-    if (numericVals.length >= 2) {
+    if (rankable && numericVals.length >= 2) {
       const sorted = [...numericVals].sort((a, b) =>
-        higherBetter ? b.val - a.val : a.val - b.val
+        higherBetter ? b.val - a.val : a.val - b.val,
       );
       bestRunId = sorted[0].runId;
     }
 
-    html += `<tr><td><code>${escapeHtml(metricName)}</code></td>`;
+    html += `<tr><td><code>${escapeHtml(key)}</code></td>`;
     for (const run of runs) {
       const val = values[String(run.id)];
       const isBest = bestRunId === String(run.id);
@@ -351,10 +523,11 @@ function buildComparisonSection(
     }
 
     // Delta for 2-run comparison
-    if (runs.length === 2 && numericVals.length === 2) {
-      const delta = numericVals[1].val - numericVals[0].val;
+    if (rankable && runs.length === 2 && numericVals.length === 2) {
+      const delta = Number(values[String(runs[1].id)]) - Number(values[String(runs[0].id)]);
       const sign = delta > 0 ? "+" : "";
-      const cls = delta > 0 ? "delta-positive" : delta < 0 ? "delta-negative" : "";
+      const improvement = higherBetter ? delta : -delta;
+      const cls = improvement > 0 ? "delta-positive" : improvement < 0 ? "delta-negative" : "";
       const formatted = Number.isInteger(delta) ? String(delta) : delta.toFixed(4);
       html += `<td class="${cls}">${sign}${formatted}</td>`;
     } else if (runs.length === 2) {
@@ -397,6 +570,7 @@ export function generateProvenanceReport(data: ReportData): string {
     technique,
     sampleType,
     runs,
+    workflowIdentity,
     comparison,
     narrativeMarkdown,
     sections,
@@ -428,9 +602,19 @@ export function generateProvenanceReport(data: ReportData): string {
     html += `<p style="color:#94a3b8;margin-bottom:16px">${escapeHtml(workflowDescription)}</p>`;
   }
 
+  if (data.reportMode === "summary") {
+    html += scientificSummaryHtml(data);
+    html += projectEvidenceHtml(data.projectEvidence);
+    html += (data.runs ?? []).map(reportNodePlotsHtml).join("");
+    if (showNarrative && narrativeMarkdown) {
+      html += `<h2>AI Summary (optional)</h2><div class="narrative-section">${markdownToSimpleHtml(narrativeMarkdown)}</div>`;
+    }
+    return html + `<div class="footer">Generated by SpectraSherpa — ${escapeHtml(generatedAt)}</div></body></html>`;
+  }
+
   // AI Narrative (placed at top if available — executive summary)
   if (showNarrative && narrativeMarkdown) {
-    html += `<h2>Summary</h2><div class="narrative-section">${markdownToSimpleHtml(narrativeMarkdown)}</div>`;
+    html += `<h2>AI Summary</h2><div class="narrative-section">${markdownToSimpleHtml(narrativeMarkdown)}</div>`;
   }
 
   // Metadata grid
@@ -438,6 +622,13 @@ export function generateProvenanceReport(data: ReportData): string {
     <div class="meta-item"><div class="meta-label">Generated</div><div class="meta-value">${escapeHtml(generatedAt)}</div></div>
     <div class="meta-item"><div class="meta-label">Nodes</div><div class="meta-value">${nodes.length}</div></div>
     <div class="meta-item"><div class="meta-label">Connections</div><div class="meta-value">${edges.length}</div></div>`;
+
+  if (workflowIdentity) {
+    html += `<div class="meta-item"><div class="meta-label">Workflow sheet</div><div class="meta-value">#${escapeHtml(String(workflowIdentity.workflow_id))}</div></div>`;
+    html += `<div class="meta-item"><div class="meta-label">Project</div><div class="meta-value">${escapeHtml(workflowIdentity.project_id == null ? "Not recorded" : `#${workflowIdentity.project_id}`)}</div></div>`;
+    html += `<div class="meta-item"><div class="meta-label">Data source</div><div class="meta-value">${escapeHtml(workflowIdentity.source_name || "Not recorded")}</div></div>`;
+    html += `<div class="meta-item"><div class="meta-label">Data origin</div><div class="meta-value">${escapeHtml(workflowIdentity.source_origin === "example" ? "Bundled example" : workflowIdentity.source_origin === "current" ? "Current project data" : "Not recorded")}</div></div>`;
+  }
 
   if (technique) {
     html += `<div class="meta-item"><div class="meta-label">Technique</div><div class="meta-value">${escapeHtml(technique)}</div></div>`;
@@ -449,6 +640,7 @@ export function generateProvenanceReport(data: ReportData): string {
     html += `<div class="meta-item" style="grid-column: 1/-1"><div class="meta-label">Integrity Hash (SHA-256)</div><div class="meta-value hash">${escapeHtml(integrityHash)}</div></div>`;
   }
   html += `</div>`;
+  html += projectEvidenceHtml(data.projectEvidence);
 
   // Connections table
   if (showConnections && edges.length > 0) {
@@ -466,6 +658,9 @@ export function generateProvenanceReport(data: ReportData): string {
   // Node details in topological order
   if (showPipeline) {
     html += `<h2>Pipeline Steps</h2>`;
+    if (hasUnresolvedReportConnections(nodes, edges)) {
+      html += `<p>Some saved connections have no retained node definition. All available steps are shown; pipeline order is not fully verified.</p>`;
+    }
     for (const node of sorted) {
       const plotImage = plotImages.get(node.nodeId);
       html += buildNodeSection(node, plotImage);
@@ -473,7 +668,7 @@ export function generateProvenanceReport(data: ReportData): string {
 
     // Plot gallery for remaining images not covered in node sections
     const standalonePlots = Array.from(plotImages.entries()).filter(
-      ([nodeId]) => !sorted.find((n) => n.nodeId === nodeId)
+      ([nodeId]) => !sorted.find((n) => n.nodeId === nodeId),
     );
     if (standalonePlots.length > 0) {
       html += `<h2>Additional Plots</h2><div class="plot-gallery">`;
@@ -485,14 +680,15 @@ export function generateProvenanceReport(data: ReportData): string {
   }
 
   // Terminal metrics (from live workflow execution — backward compat)
-  if (Object.keys(terminalMetrics).length > 0) {
+  const terminalGroups = reportGroups(terminalMetrics);
+  if (showResults && terminalGroups.length) {
     html += `<h2>Results</h2>`;
-    for (const [nodeId, metrics] of Object.entries(terminalMetrics)) {
+    for (const [nodeId, rows] of terminalGroups) {
       const node = nodes.find((n) => n.nodeId === nodeId);
       html += `<h3>${escapeHtml(node?.label || nodeId)}</h3>`;
       html += `<table class="params-table"><tr><th>Metric</th><th>Value</th></tr>`;
-      for (const [key, value] of Object.entries(metrics as Record<string, any>)) {
-        const displayValue = typeof value === "number" ? value.toFixed(6) : String(value);
+      for (const [key, value] of rows) {
+        const displayValue = value;
         html += `<tr><td><code>${escapeHtml(key)}</code></td><td>${escapeHtml(displayValue)}</td></tr>`;
       }
       html += `</table>`;
@@ -509,9 +705,7 @@ export function generateProvenanceReport(data: ReportData): string {
 
   // Diagnostics
   if (showDiagnostics && runs && runs.length > 0) {
-    const hasDiagnostics = runs.some(
-      (r) => r.diagnostics && Object.keys(r.diagnostics).length > 0
-    );
+    const hasDiagnostics = runs.some((r) => reportGroups(r.diagnostics).length > 0);
     if (hasDiagnostics) {
       html += `<h2>Diagnostics</h2>`;
       for (const run of runs) {
@@ -522,8 +716,8 @@ export function generateProvenanceReport(data: ReportData): string {
 
   // Run comparison
   if (showComparison && comparison && runs && runs.length >= 2) {
-    html += `<h2>Run Comparison</h2>`;
-    html += buildComparisonSection(runs, comparison);
+    const comparisonHtml = buildComparisonSection(runs, comparison);
+    if (comparisonHtml) html += `<h2>Run Comparison</h2>${comparisonHtml}`;
   }
 
   // Footer
@@ -538,6 +732,11 @@ export function generateProvenanceReport(data: ReportData): string {
 }
 
 /** Topological sort using Kahn's algorithm */
+export function hasUnresolvedReportConnections(nodes: ReportNode[], edges: ReportEdge[]): boolean {
+  const ids = new Set(nodes.map((node) => node.nodeId));
+  return edges.some((edge) => !ids.has(edge.fromNodeId) || !ids.has(edge.toNodeId));
+}
+
 export function topologicalSort(nodes: ReportNode[], edges: ReportEdge[]): ReportNode[] {
   const nodeMap = new Map(nodes.map((n) => [n.nodeId, n]));
   const inDegree = new Map<string, number>();
@@ -549,6 +748,7 @@ export function topologicalSort(nodes: ReportNode[], edges: ReportEdge[]): Repor
   }
 
   for (const edge of edges) {
+    if (!nodeMap.has(edge.fromNodeId) || !nodeMap.has(edge.toNodeId)) continue;
     inDegree.set(edge.toNodeId, (inDegree.get(edge.toNodeId) || 0) + 1);
     adjacency.get(edge.fromNodeId)?.push(edge.toNodeId);
   }
@@ -571,5 +771,7 @@ export function topologicalSort(nodes: ReportNode[], edges: ReportEdge[]): Repor
     }
   }
 
-  return result;
+  // Incomplete or cyclic historical definitions must not erase retained steps.
+  const visited = new Set(result.map((node) => node.nodeId));
+  return [...result, ...nodes.filter((node) => !visited.has(node.nodeId))];
 }

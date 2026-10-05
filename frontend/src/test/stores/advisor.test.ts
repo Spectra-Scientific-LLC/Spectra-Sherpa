@@ -3,6 +3,10 @@ import { createPinia, setActivePinia } from "pinia";
 import api from "@/api/client";
 import { useAdvisorStore } from "@/stores/advisor";
 
+const profile = vi.hoisted(() => ({ value: "local" }));
+vi.mock("@/composables/useAppConfig", () => ({ useAppConfig: () => ({
+  appMode: { value: profile.value === "pro" ? "enterprise" : "local" }, siteProfile: profile,
+}) }));
 vi.mock("@/api/client", () => ({
   default: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
 }));
@@ -18,6 +22,7 @@ vi.mock("@/stores/sherpa", () => ({
 
 describe("useAdvisorStore", () => {
   beforeEach(() => {
+    profile.value = "local";
     setActivePinia(createPinia());
     vi.mocked(api.get).mockReset();
     vi.mocked(api.post).mockReset();
@@ -26,6 +31,15 @@ describe("useAdvisorStore", () => {
     sherpaStoreMock.startNewConversation.mockReset();
   });
 
+  it("does not start an unqualified Pro memory scope or replace project chat", async () => {
+    profile.value = "pro";
+    const store = useAdvisorStore();
+    expect(await store.switchScope({ projectId: 5, tabKey: "data", subscopeKey: "files" })).toBeNull();
+    expect(store.activeNodeId).toBeNull();
+    expect(store.topics).toEqual([]);
+    expect(api.post).not.toHaveBeenCalled();
+    expect(sherpaStoreMock.startNewConversation).not.toHaveBeenCalled();
+  });
   it("loads an existing sheet channel conversation on workflow switch", async () => {
     const store = useAdvisorStore();
     store.setFromProjectDetail(5, [

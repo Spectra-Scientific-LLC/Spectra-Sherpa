@@ -1,207 +1,289 @@
 <template>
-  <section class="page-content">
+  <section class="page-content report-content">
     <!-- Header -->
-    <header class="tab-header">
-      <h1>Report</h1>
-      <ResponsiveHeaderActions
-        v-if="reportStore.isReady || reportStore.selectedWorkflowId"
-        :items="reportHeaderActionItems"
-      >
-        <Button
-          v-if="reportStore.selectedWorkflowId"
-          label="Audit"
-          icon="pi pi-shield"
-          class="p-button-sm p-button-outlined"
-          @click="openWorkflowAudit"
-        />
-        <Button
-          v-if="reportStore.isReady"
-          ref="exportBtnRef"
-          label="Export"
-          icon="pi pi-download"
-          class="p-button-sm"
-          @click="toggleExportMenu"
-        />
-        <Menu ref="exportMenuRef" :model="exportMenuItems" :popup="true" />
-      </ResponsiveHeaderActions>
-    </header>
+    <WorkspaceHeader title="Report" :actions="reportHeaderActionItems">
+      <Button
+        v-if="linkedRunId"
+        label="Run"
+        icon="pi pi-arrow-left"
+        class="p-button-sm p-button-text"
+        @click="openLinkedRun"
+      />
+      <Button
+        v-if="auditWorkflowId"
+        label="Audit"
+        icon="pi pi-shield"
+        class="p-button-sm p-button-outlined"
+        @click="openWorkflowAudit"
+      />
+      <Button
+        v-if="reportStore.isReady"
+        ref="exportBtnRef"
+        label="Export"
+        icon="pi pi-download"
+        class="p-button-sm"
+        @click="toggleExportMenu"
+      />
+      <Menu ref="exportMenuRef" :model="exportMenuItems" :popup="true" />
+    </WorkspaceHeader>
+    <WorkspaceContext label="Report context">
+      <WorkspaceContextItem :label="sectionTitle" :value="contextTitle">
+        {{
+          reportStore.reportData
+            ? `${reportStore.reportData.runs?.length || 0} retained runs`
+            : "Choose report inputs"
+        }}
+      </WorkspaceContextItem>
+    </WorkspaceContext>
+    <div v-if="reportStore.error" class="error-banner" role="alert">{{ reportStore.error }}</div>
+    <WorkspaceTabs v-model="activeTab" :tab-ids="tabIds">
+      <TabPanel header="Setup">
+        <p v-if="reportStore.workflowsError" role="alert">
+          {{ reportStore.workflowsError }}
+          <Button label="Retry" @click="reportStore.fetchWorkflows()" />
+        </p>
+        <p v-if="reportStore.runsError" role="alert">
+          {{ reportStore.runsError }}
+          <Button
+            label="Retry"
+            @click="
+              reportStore.selectedWorkflowId &&
+              reportStore.fetchRunsForWorkflow(reportStore.selectedWorkflowId)
+            "
+          />
+        </p>
+        <!-- Configuration bar -->
+        <div class="report-config">
+          <div class="config-field">
+            <label for="report-workflow">Workflow</label>
+            <Dropdown
+              inputId="report-workflow"
+              v-model="reportStore.selectedWorkflowId"
+              :options="reportStore.workflows"
+              optionLabel="display_label"
+              optionValue="id"
+              placeholder="Select a workflow..."
+              class="w-full"
+              :loading="reportStore.workflowsLoading"
+              @change="onWorkflowChange"
+            />
+          </div>
 
-    <!-- Configuration bar -->
-    <div class="report-config">
-      <div class="config-field">
-        <label for="report-workflow">Workflow</label>
-        <Dropdown
-          inputId="report-workflow"
-          v-model="reportStore.selectedWorkflowId"
-          :options="reportStore.workflows"
-          optionLabel="name"
-          optionValue="id"
-          placeholder="Select a workflow..."
-          class="w-full"
-          :loading="reportStore.workflowsLoading"
-          @change="onWorkflowChange"
-        />
-      </div>
+          <div class="config-field">
+            <label for="report-runs">Execution Runs (optional)</label>
+            <Dropdown
+              inputId="report-runs"
+              v-model="selectedRunProxy"
+              :options="runDropdownOptions"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Select runs..."
+              class="w-full"
+              :disabled="!reportStore.selectedWorkflowId || reportStore.runsLoading"
+              :loading="reportStore.runsLoading"
+            />
+          </div>
 
-      <div class="config-field">
-        <label for="report-runs">Execution Runs (optional)</label>
-        <Dropdown
-          inputId="report-runs"
-          v-model="selectedRunProxy"
-          :options="runDropdownOptions"
-          optionLabel="label"
-          optionValue="value"
-          placeholder="Select runs..."
-          class="w-full"
-          :disabled="!reportStore.selectedWorkflowId || reportStore.runsLoading"
-          :loading="reportStore.runsLoading"
-        />
-        <div v-if="reportStore.selectedRunIds.length > 0" class="selected-runs-chips">
-          <Tag
-            v-for="runId in reportStore.selectedRunIds"
-            :key="runId"
-            :value="getRunName(runId)"
-            severity="info"
-            class="run-chip"
-            icon="pi pi-times"
-            @click="removeRun(runId)"
+          <div class="config-field">
+            <label for="report-mode">Report length</label>
+            <Dropdown
+              inputId="report-mode"
+              v-model="reportStore.reportMode"
+              :options="reportModeOptions"
+              optionLabel="label"
+              optionValue="value"
+              class="w-full"
+            />
+          </div>
+          <div class="config-actions">
+            <Button
+              label="Generate Report"
+              icon="pi pi-file"
+              :loading="reportStore.loading"
+              :disabled="!reportStore.selectedWorkflowId"
+              @click="generateReport"
+            />
+          </div>
+          <div
+            v-if="reportStore.selectedRunIds.length"
+            class="selected-runs-chips"
+            aria-label="Selected execution runs"
+          >
+            <span>Selected runs</span>
+            <button
+              v-for="runId in reportStore.selectedRunIds"
+              :key="runId"
+              type="button"
+              class="run-chip"
+              :aria-label="`Remove ${getRunName(runId)}`"
+              @click="removeRun(runId)"
+            >
+              {{ getRunName(runId) }} <i class="pi pi-times" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="report-options">
+            <p class="report-mode-help">
+              {{
+                reportStore.reportMode === "summary"
+                  ? "Key results and context from selected runs, without AI."
+                  : "All retained results, settings, diagnostics, and execution evidence."
+              }}
+            </p>
+            <label class="row-level-option">
+              <input type="checkbox" v-model="reportStore.includeRowLevelPlots" />
+              <span>Include complete target lists and node plots</span>
+            </label>
+          </div>
+        </div>
+      </TabPanel>
+      <TabPanel header="Preview">
+        <p v-if="reportStore.isStale" class="message warning" role="status">
+          Setup has changed; this preview and its exports retain the previously generated report.
+        </p>
+        <details v-if="reportStore.reportData">
+          <summary>Details</summary>
+          <p>
+            Workflow {{ reportStore.reportData.workflow_id }} · Runs
+            {{ reportStore.reportData.runs?.map((run) => run.id).join(", ") || "None" }}
+          </p>
+          <p v-if="reportStore.generatedSelection">
+            Generated {{ reportStore.generatedSelection.generatedAt }}
+          </p>
+        </details>
+        <details v-if="historicalExecutableExport" class="execution-export-scope">
+          <summary>Export scope</summary>
+          <p>
+            Python and notebook export of saved executions is unavailable. Export this report as
+            HTML, Markdown or JSON to retain its saved evidence. Use the workflow editor to export
+            the current authored graph; it is not a replay of this saved run.
+          </p>
+        </details>
+        <!-- Section toggles -->
+        <div v-if="reportStore.isReady" class="section-toggles">
+          <template v-if="(reportStore.generatedSelection?.reportMode || reportStore.reportMode) === 'detailed'">
+            <ToggleButton
+              v-model="reportStore.sections.pipelineDetails"
+              onLabel="Workflow"
+              offLabel="Workflow"
+              onIcon="pi pi-check"
+              offIcon="pi pi-times"
+              class="toggle-chip"
+            />
+            <ToggleButton
+              v-model="reportStore.sections.connections"
+              onLabel="Connections"
+              offLabel="Connections"
+              onIcon="pi pi-check"
+              offIcon="pi pi-times"
+              class="toggle-chip"
+            />
+            <ToggleButton
+              v-model="reportStore.sections.executionResults"
+              onLabel="Results"
+              offLabel="Results"
+              onIcon="pi pi-check"
+              offIcon="pi pi-times"
+              class="toggle-chip"
+              :disabled="!reportStore.hasRuns"
+            />
+            <ToggleButton
+              v-model="reportStore.sections.diagnostics"
+              onLabel="Diagnostics"
+              offLabel="Diagnostics"
+              onIcon="pi pi-check"
+              offIcon="pi pi-times"
+              class="toggle-chip"
+              :disabled="!reportStore.hasRuns"
+            />
+            <ToggleButton
+              v-model="reportStore.sections.runComparison"
+              onLabel="Comparison"
+              offLabel="Comparison"
+              onIcon="pi pi-check"
+              offIcon="pi pi-times"
+              class="toggle-chip"
+              :disabled="!reportStore.hasComparison"
+            />
+          </template>
+          <ToggleButton
+            v-model="reportStore.sections.aiNarrative"
+            onLabel="AI Summary"
+            offLabel="AI Summary"
+            onIcon="pi pi-check"
+            offIcon="pi pi-times"
+            class="toggle-chip"
+            :disabled="!llmAvailable"
+            @change="onNarrativeToggle"
+          />
+          <ProgressSpinner
+            v-if="reportStore.narrativeLoading"
+            style="width: 20px; height: 20px"
+            strokeWidth="4"
           />
         </div>
-      </div>
 
-      <div class="config-actions">
-        <Button
-          label="Generate Report"
-          icon="pi pi-refresh"
-          :loading="reportStore.loading"
-          :disabled="!reportStore.selectedWorkflowId"
-          @click="reportStore.fetchReportData()"
+        <MemoryAttribution
+          v-if="reportStore.narrativeText"
+          :scopes="reportStore.narrativeMemoryScopes"
         />
-      </div>
-    </div>
 
-    <!-- Section toggles -->
-    <div v-if="reportStore.isReady" class="section-toggles">
-      <ToggleButton
-        v-model="reportStore.sections.pipelineDetails"
-        onLabel="Workflow"
-        offLabel="Workflow"
-        onIcon="pi pi-check"
-        offIcon="pi pi-times"
-        class="toggle-chip"
-      />
-      <ToggleButton
-        v-model="reportStore.sections.connections"
-        onLabel="Connections"
-        offLabel="Connections"
-        onIcon="pi pi-check"
-        offIcon="pi pi-times"
-        class="toggle-chip"
-      />
-      <ToggleButton
-        v-model="reportStore.sections.executionResults"
-        onLabel="Results"
-        offLabel="Results"
-        onIcon="pi pi-check"
-        offIcon="pi pi-times"
-        class="toggle-chip"
-        :disabled="!reportStore.hasRuns"
-      />
-      <ToggleButton
-        v-model="reportStore.sections.diagnostics"
-        onLabel="Diagnostics"
-        offLabel="Diagnostics"
-        onIcon="pi pi-check"
-        offIcon="pi pi-times"
-        class="toggle-chip"
-        :disabled="!reportStore.hasRuns"
-      />
-      <ToggleButton
-        v-model="reportStore.sections.runComparison"
-        onLabel="Comparison"
-        offLabel="Comparison"
-        onIcon="pi pi-check"
-        offIcon="pi pi-times"
-        class="toggle-chip"
-        :disabled="!reportStore.hasComparison"
-      />
-      <ToggleButton
-        v-model="reportStore.sections.aiNarrative"
-        onLabel="AI Summary"
-        offLabel="AI Summary"
-        onIcon="pi pi-check"
-        offIcon="pi pi-times"
-        class="toggle-chip"
-        :disabled="!llmAvailable"
-        @change="onNarrativeToggle"
-      />
-      <ProgressSpinner
-        v-if="reportStore.narrativeLoading"
-        style="width: 20px; height: 20px"
-        strokeWidth="4"
-      />
-    </div>
+        <!-- Loading state -->
+        <div v-if="reportStore.loading" class="loading-state">
+          <ProgressSpinner style="width: 40px; height: 40px" />
+          <span>Generating report...</span>
+        </div>
 
-    <!-- Error state -->
-    <div v-if="reportStore.error" class="error-banner">
-      <i class="pi pi-exclamation-triangle"></i>
-      <span>{{ reportStore.error }}</span>
-    </div>
+        <!-- Live preview -->
+        <div v-else-if="reportStore.isReady" class="report-preview-container">
+          <iframe
+            ref="previewFrame"
+            title="Report preview"
+            :srcdoc="previewHtml"
+            sandbox="allow-same-origin"
+            class="preview-iframe"
+          />
+        </div>
 
-    <MemoryAttribution
-      v-if="reportStore.narrativeText"
-      :scopes="reportStore.narrativeMemoryScopes"
-    />
-
-    <!-- Loading state -->
-    <div v-if="reportStore.loading" class="loading-state">
-      <ProgressSpinner style="width: 40px; height: 40px" />
-      <span>Generating report...</span>
-    </div>
-
-    <!-- Live preview -->
-    <div v-else-if="reportStore.isReady" class="report-preview-container">
-      <iframe
-        ref="previewFrame"
-        :srcdoc="previewHtml"
-        sandbox="allow-same-origin"
-        class="preview-iframe"
-      />
-    </div>
-
-    <!-- Empty state -->
-    <div v-else class="empty-state">
-      <i class="pi pi-file-pdf empty-icon"></i>
-      <h3>Select a workflow to generate a report</h3>
-      <p>
-        Choose a workflow above, optionally select execution runs to include,
-        then click Generate Report. You can toggle sections and export in
-        multiple formats.
-      </p>
-    </div>
-
-    <ValidationWalkthroughPanel
-      :workflow-id="reportStore.selectedWorkflowId"
-      :audit-config="auditConfig"
-      @open-audit="openWorkflowAudit"
-    />
+        <!-- Empty state -->
+        <div v-else class="empty-state">
+          <i class="pi pi-file-pdf empty-icon"></i>
+          <h3>Select a workflow to generate a report</h3>
+          <p>Select inputs in Setup, then generate the report.</p>
+        </div>
+      </TabPanel>
+      <TabPanel header="ISO Validation">
+        <p>
+          Review retained validation evidence against your declared method; this is not
+          certification.
+        </p>
+        <ValidationWalkthroughPanel
+          :workflow-id="reportStore.selectedWorkflowId"
+          :audit-config="auditConfig"
+          @open-audit="openWorkflowAudit"
+        />
+      </TabPanel>
+    </WorkspaceTabs>
   </section>
 </template>
 
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any -- report view bridges backend report payloads into export-generator types. */
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, watch } from "vue";
 import Dropdown from "primevue/dropdown";
 import Button from "primevue/button";
-import Tag from "primevue/tag";
 import ToggleButton from "primevue/togglebutton";
 import ProgressSpinner from "primevue/progressspinner";
 import Menu from "primevue/menu";
 import { useToast } from "primevue/usetoast";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 
 import MemoryAttribution from "@/components/MemoryAttribution.vue";
-import ResponsiveHeaderActions from "@/components/ResponsiveHeaderActions.vue";
+import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
+import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
+import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
+import TabPanel from "primevue/tabpanel";
+import { focusSection } from "@/lib/sherpaAttention";
 import ValidationWalkthroughPanel from "@/views/report/ValidationWalkthroughPanel.vue";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useProjectStore } from "@/stores/project";
@@ -219,17 +301,37 @@ import { downloadBlob, downloadText, downloadJson } from "@/utils/download";
 import api from "@/api/client";
 
 const reportStore = useReportStore();
+const reportModeOptions = [
+  { label: "Short summary", value: "summary" },
+  { label: "Detailed report", value: "detailed" },
+];
 const projectStore = useProjectStore();
 const advisorStore = useAdvisorStore();
 const toast = useToast();
 const router = useRouter();
+const route = useRoute();
 const { isFeatureEnabled, appConfig } = useAppConfig();
 const auditConfig = computed(() => appConfig.value?.audit);
 
-// R4 — Single-scope Sherpa Advisor routing for the Report tab.
-// Today's Report UI has no subtabs; the active scope is always
-// ``report.draft``.  When the report editor grows ``Figures`` and
-// ``Export`` subtabs we can switch this to a TabView watcher.
+const tabIds = ["setup", "preview", "validation"] as const;
+const activeTab = ref<string>("setup");
+const sectionTitle = computed(
+  () =>
+    ({ setup: "Setup", preview: "Preview", validation: "ISO Validation" })[activeTab.value] ||
+    "Setup",
+);
+const contextTitle = computed(() =>
+  activeTab.value === "preview" && reportStore.reportData
+    ? reportStore.reportData.name
+    : reportStore.workflows.find((item) => item.id === reportStore.selectedWorkflowId)?.name ||
+      "No workflow selected",
+);
+watch(activeTab, (section) => focusSection(section), { immediate: true });
+async function generateReport(): Promise<void> {
+  await reportStore.fetchReportData();
+  if (!disposed && reportStore.isReady) activeTab.value = "preview";
+}
+// All presentation sections retain the existing report memory; section is attention.
 async function syncAdvisorForReport(): Promise<void> {
   const projectId = projectStore.currentProjectId;
   if (projectId == null) return;
@@ -248,13 +350,14 @@ async function syncAdvisorForReport(): Promise<void> {
 watch(
   () => projectStore.currentProjectId,
   (next) => {
-    if (next != null) void syncAdvisorForReport();
+    if (next != null) {
+      void syncAdvisorForReport();
+      if (reportMounted) void reportStore.fetchWorkflows();
+    }
   },
 );
 
-// Section defaults are "show all that apply" — when the report becomes
-// ready with AI Summary already toggled on, fetch the narrative once so
-// the section has content instead of an empty placeholder.
+// AI is opt-in and independent of the deterministic scientific summary.
 watch(
   () => reportStore.isReady,
   (ready) => {
@@ -304,16 +407,34 @@ function removeRun(runId: number): void {
   reportStore.selectedRunIds = reportStore.selectedRunIds.filter((id) => id !== runId);
 }
 
+const auditWorkflowId = computed(() =>
+  activeTab.value === "preview" && reportStore.reportData
+    ? reportStore.reportData.workflow_id
+    : reportStore.selectedWorkflowId,
+);
 function openWorkflowAudit(): void {
-  if (!reportStore.selectedWorkflowId) return;
+  if (!auditWorkflowId.value) return;
   void router.push({
     path: "/audit",
     query: {
       scope_type: "Workflow",
-      scope_id: String(reportStore.selectedWorkflowId),
+      scope_id: String(auditWorkflowId.value),
       target_type: "Workflow",
-      target_id: String(reportStore.selectedWorkflowId),
+      target_id: String(auditWorkflowId.value),
     },
+  });
+}
+
+const linkedRunId = computed(() => {
+  const runId = Number(route.query.run);
+  return Number.isSafeInteger(runId) && runId > 0 ? runId : null;
+});
+
+function openLinkedRun(): void {
+  if (!linkedRunId.value || projectStore.currentProjectId == null) return;
+  void router.push({
+    path: `/runs/${linkedRunId.value}`,
+    query: { project: String(projectStore.currentProjectId) },
   });
 }
 
@@ -325,7 +446,7 @@ function buildReportData(): ReportData | null {
   const nodes: ReportNode[] = rd.nodes.map((n) => ({
     nodeId: n.node_id,
     nodeType: n.node_type,
-    label: n.label,
+    label: n.label || n.node_type,
     parameters: n.parameters as Record<string, any>,
     positionX: n.position_x,
     positionY: n.position_y,
@@ -339,10 +460,11 @@ function buildReportData(): ReportData | null {
   }));
 
   return {
+    reportMode: reportStore.generatedSelection?.reportMode || reportStore.reportMode,
     workflowName: rd.name,
     workflowDescription: rd.description,
     integrityHash: rd.integrity_hash,
-    generatedAt: new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC",
+    generatedAt: reportStore.generatedSelection?.generatedAt || "Generation time unavailable",
     nodes,
     edges,
     plotImages: new Map(),
@@ -353,6 +475,8 @@ function buildReportData(): ReportData | null {
     comparison: rd.comparison,
     narrativeMarkdown: reportStore.narrativeText,
     sections: { ...reportStore.sections },
+    workflowIdentity: rd.workflow_identity,
+    projectEvidence: reportStore.projectEvidenceSnapshot,
   };
 }
 
@@ -364,10 +488,7 @@ const previewHtml = computed(() => {
 
 // Workflow change handler
 async function onWorkflowChange(): Promise<void> {
-  reportStore.reportData = null;
   reportStore.selectedRunIds = [];
-  reportStore.narrativeText = null;
-  reportStore.narrativeMemoryScopes = [];
   selectedRunProxy.value = null;
 
   if (reportStore.selectedWorkflowId) {
@@ -384,14 +505,22 @@ async function onNarrativeToggle(): Promise<void> {
         severity: "warn",
         summary: "Narrative Unavailable",
         detail:
-          reportStore.narrativeError ||
-          "Could not generate AI narrative. Check LLM configuration.",
+          reportStore.narrativeError || "Could not generate AI narrative. Check LLM configuration.",
         life: 5000,
       });
       reportStore.sections.aiNarrative = false;
     }
   }
 }
+
+// Executable export endpoints consume current authored graphs, not retained run definitions.
+// Guard both menus and action handlers so selection changes cannot substitute a graph.
+const historicalExecutableExport = computed(
+  () =>
+    !!linkedRunId.value ||
+    reportStore.selectedRunIds.length > 0 ||
+    (reportStore.reportData?.runs?.length ?? 0) > 0,
+);
 
 // Export menu
 function toggleExportMenu(event: Event): void {
@@ -436,7 +565,12 @@ const exportMenuItems = computed(() => [
       const html = previewHtml.value;
       if (!html) return;
       downloadBlob(new Blob([html], { type: "text/html" }), getExportFilename("html"));
-      toast.add({ severity: "success", summary: "Exported", detail: "HTML report downloaded", life: 3000 });
+      toast.add({
+        severity: "success",
+        summary: "Exported",
+        detail: "HTML report downloaded",
+        life: 3000,
+      });
     },
   },
   {
@@ -447,61 +581,108 @@ const exportMenuItems = computed(() => [
       if (!data) return;
       const md = generateMarkdownReport(data);
       downloadText(md, getExportFilename("md"), "text/markdown");
-      toast.add({ severity: "success", summary: "Exported", detail: "Markdown report downloaded", life: 3000 });
+      toast.add({
+        severity: "success",
+        summary: "Exported",
+        detail: "Markdown report downloaded",
+        life: 3000,
+      });
     },
   },
   {
-    label: "JSON Data",
+    label: "JSON Data (full evidence)",
     icon: "pi pi-database",
     command: () => {
       if (!reportStore.reportData) return;
-      downloadJson(reportStore.reportData, getExportFilename("json"));
-      toast.add({ severity: "success", summary: "Exported", detail: "JSON data downloaded", life: 3000 });
+      downloadJson(
+        { ...reportStore.reportData, report_presentation: reportStore.generatedSelection,
+          project_evidence_at_generation: reportStore.projectEvidenceSnapshot },
+        getExportFilename("json"),
+      );
+      toast.add({
+        severity: "success",
+        summary: "Exported",
+        detail: "JSON data downloaded",
+        life: 3000,
+      });
     },
   },
   {
     separator: true,
   },
   {
-    label: "Python Script",
-    icon: "pi pi-external-link",
-    disabled: !reportStore.selectedWorkflowId,
-    command: () => {
-      if (!reportStore.selectedWorkflowId) return;
-      window.open(
-        `/api/v1/workflows/${reportStore.selectedWorkflowId}/export/python`,
-        "_blank"
-      );
+    label: "Python Script (current workflow)",
+    icon: "pi pi-code",
+    disabled: !reportStore.selectedWorkflowId || historicalExecutableExport.value,
+    command: async () => {
+      if (!reportStore.selectedWorkflowId || historicalExecutableExport.value) return;
+      const workflowId = reportStore.selectedWorkflowId;
+      try {
+        const resp = await api.get(`/workflows/${workflowId}/export/python`);
+        // A user may switch to a historical report while the request is in flight.
+        if (historicalExecutableExport.value || reportStore.selectedWorkflowId !== workflowId)
+          return;
+        downloadText(
+          resp.data.python_code,
+          `${String(resp.data.workflow_name || "workflow").replace(/\s+/g, "_")}.py`,
+          "text/x-python",
+        );
+      } catch {
+        toast.add({
+          severity: "error",
+          summary: "Failed",
+          detail: "Python export failed",
+          life: 3000,
+        });
+      }
     },
   },
   {
-    label: "Jupyter Notebook",
+    label: "Jupyter Notebook (current workflow)",
     icon: "pi pi-book",
-    disabled: !reportStore.selectedWorkflowId,
+    disabled: !reportStore.selectedWorkflowId || historicalExecutableExport.value,
     command: async () => {
-      if (!reportStore.selectedWorkflowId) return;
+      if (!reportStore.selectedWorkflowId || historicalExecutableExport.value) return;
+      const workflowId = reportStore.selectedWorkflowId;
       try {
-        const resp = await api.get(
-          `/workflows/${reportStore.selectedWorkflowId}/export/notebook`
-        );
-        const safeName = (resp.data.workflow_name || "workflow")
-          .replace(/\s+/g, "_")
-          .toLowerCase();
+        const resp = await api.get(`/workflows/${workflowId}/export/notebook`);
+        if (historicalExecutableExport.value || reportStore.selectedWorkflowId !== workflowId)
+          return;
+        const safeName = (resp.data.workflow_name || "workflow").replace(/\s+/g, "_").toLowerCase();
         downloadText(
           JSON.stringify(resp.data.notebook, null, 1),
           `${safeName}_workflow.ipynb`,
-          "application/x-ipynb+json"
+          "application/x-ipynb+json",
         );
-        toast.add({ severity: "success", summary: "Exported", detail: "Notebook downloaded", life: 3000 });
+        toast.add({
+          severity: "success",
+          summary: "Exported",
+          detail: "Notebook downloaded",
+          life: 3000,
+        });
       } catch {
-        toast.add({ severity: "error", summary: "Failed", detail: "Notebook export failed", life: 3000 });
+        toast.add({
+          severity: "error",
+          summary: "Failed",
+          detail: "Notebook export failed",
+          life: 3000,
+        });
       }
     },
   },
 ]);
 
 const reportHeaderActionItems = computed(() => [
-  ...(reportStore.selectedWorkflowId
+  ...(linkedRunId.value
+    ? [
+        {
+          label: "Run",
+          icon: "pi pi-arrow-left",
+          command: openLinkedRun,
+        },
+      ]
+    : []),
+  ...(auditWorkflowId.value
     ? [
         {
           label: "Audit",
@@ -521,8 +702,53 @@ const reportHeaderActionItems = computed(() => [
     : []),
 ]);
 
-onMounted(() => {
-  reportStore.fetchWorkflows();
+let disposed = false;
+let reportMounted = false;
+onBeforeUnmount(() => {
+  disposed = true;
+});
+onMounted(async () => {
+  const initialPath = route.fullPath;
+  const isCurrent = () => !disposed && route.fullPath === initialPath;
+  const workflowId = Number(route.query.workflow);
+  const runId = Number(route.query.run);
+  const linkedProjectId = Number(route.query.project);
+  if (
+    Number.isSafeInteger(linkedProjectId) &&
+    linkedProjectId > 0 &&
+    linkedProjectId !== projectStore.currentProjectId
+  ) {
+    await projectStore.selectProject(linkedProjectId);
+  } else {
+    await projectStore.ensureProjectForBrowserTab();
+  }
+  if (!isCurrent()) return;
+  reportMounted = true;
+  await reportStore.fetchWorkflows();
+  if (!isCurrent()) return;
+  const section = String(route.query.tab || "setup");
+  if (tabIds.includes(section as (typeof tabIds)[number])) activeTab.value = section;
+  if (
+    !Number.isSafeInteger(workflowId) ||
+    workflowId < 1 ||
+    !Number.isSafeInteger(runId) ||
+    runId < 1
+  )
+    return;
+  if (linkedProjectId !== projectStore.currentProjectId) {
+    toast.add({
+      severity: "error",
+      summary: "Report unavailable",
+      detail: "Select the project that owns this run.",
+    });
+    return;
+  }
+  reportStore.selectedWorkflowId = workflowId;
+  reportStore.selectedRunIds = [runId];
+  await reportStore.fetchReportData();
+  if (!isCurrent() || reportStore.selectedWorkflowId !== workflowId) return;
+  if (reportStore.isReady) activeTab.value = "preview";
+  await reportStore.fetchRunsForWorkflow(workflowId);
 });
 </script>
 
@@ -530,9 +756,12 @@ onMounted(() => {
 .page-content {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
   padding: 0 1rem;
   color: var(--text-color);
+}
+
+:global(.content:has(.report-content)) {
+  background: #e4e0fa;
 }
 
 .header-actions {
@@ -541,25 +770,27 @@ onMounted(() => {
 }
 
 .report-config {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 16px;
-  align-items: flex-end;
-  flex-wrap: wrap;
+  align-items: end;
+  padding: 20px;
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  background: var(--surface-card);
 }
 
 .config-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  min-width: 220px;
-  flex: 1;
-  max-width: 320px;
+  min-width: 0;
 }
 
 .config-field label {
   font-size: 0.85rem;
   font-weight: 500;
-  color: #475569;
+  color: var(--text-color-secondary);
 }
 
 .config-actions {
@@ -568,15 +799,96 @@ onMounted(() => {
 }
 
 .selected-runs-chips {
+  grid-column: 1 / -1;
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: var(--text-color-secondary);
 }
 
 .run-chip {
-  font-size: 0.7rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
+  padding: 6px 10px;
+  border: 1px solid var(--surface-border);
+  border-radius: 16px;
+  background: var(--surface-hover);
+  color: var(--primary-color);
+  font: inherit;
   cursor: pointer;
+}
+
+.report-options {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  text-align: left;
+}
+.report-mode-help {
+  margin: 0;
+  color: var(--text-color-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+.row-level-option {
+  display: flex;
+  justify-content: flex-start;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  font-size: 0.85rem;
+  color: var(--text-color);
+  cursor: pointer;
+}
+.row-level-option input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  padding: 0;
+  margin: 2px 0 0;
+}
+.row-level-option span {
+  min-width: 0;
+}
+.row-level-option small {
+  color: var(--text-color-secondary);
+}
+.config-field :deep(.p-dropdown) {
+  min-height: 42px;
+}
+.config-field :deep(.p-dropdown-label) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.config-actions :deep(.p-button) {
+  min-height: 42px;
+  white-space: nowrap;
+}
+.run-chip:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+}
+@media (max-width: 1100px) {
+  .report-config {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .report-config {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 12px;
+  }
+  .config-actions :deep(.p-button) {
+    width: 100%;
+  }
 }
 
 .section-toggles {
@@ -619,11 +931,11 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   padding: 48px;
-  color: #64748b;
+  color: var(--text-color-secondary);
 }
 
 .report-preview-container {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--surface-border);
   border-radius: 8px;
   overflow: hidden;
   flex: 1;
@@ -635,7 +947,7 @@ onMounted(() => {
   height: 100%;
   min-height: 500px;
   border: none;
-  background: #0f172a;
+  background: var(--surface-card);
 }
 
 .empty-state {
@@ -654,14 +966,14 @@ onMounted(() => {
 
 .empty-state h3 {
   margin: 0;
-  color: #334155;
+  color: var(--text-color);
   font-size: 1.1rem;
 }
 
 .empty-state p {
   margin: 0;
   max-width: 480px;
-  color: #64748b;
+  color: var(--text-color-secondary);
   font-size: 0.9rem;
   line-height: 1.6;
 }

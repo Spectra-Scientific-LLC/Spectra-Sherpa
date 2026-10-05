@@ -64,26 +64,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/llm/peak-id": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Llm Peak Id
-         * @description Identify spectral peaks.
-         */
-        post: operations["llm_peak_id_api_v1_llm_peak_id_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/llm/code-gen": {
         parameters: {
             query?: never;
@@ -316,13 +296,6 @@ export interface components {
             /** Response */
             response: string;
         };
-        /** PeakIdRequest */
-        PeakIdRequest: {
-            /** Wavenumbers */
-            wavenumbers: number[];
-            /** Absorbance */
-            absorbance: number[];
-        };
         /** ReportRequest */
         ReportRequest: {
             /** Experiment */
@@ -534,39 +507,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    llm_peak_id_api_v1_llm_peak_id_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["PeakIdRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LLMResponse"];
                 };
             };
             /** @description Validation Error */

@@ -1,3 +1,4 @@
+import { sherpaResponseTimeoutMs } from "@/lib/sherpaTimeouts";
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";
@@ -6,11 +7,13 @@ import { SHERPA_WS_ACTION, SHERPA_WS_EVENT } from "@/lib/sherpaWs";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
-import { getErrorMessage } from "@/utils/errors";
+import { getErrorCode, getErrorMessage } from "@/utils/errors";
 import { blobFromResponseData, downloadBlob } from "@/utils/download";
 import type {
   ExperimentSummary,
   ExperimentFile,
+  ExperimentFileAssets,
+  ScientificAsset,
   SherpaDatasetDict,
 } from "@/types";
 import type {
@@ -24,6 +27,7 @@ type StoryObject = Record<string, unknown>;
 const LAST_ACTIVE_EXPERIMENT_PREFIX = "spectra_sherpa_last_experiment";
 let catalogRequestSeq = 0;
 let experimentsRequestSeq = 0;
+let experimentSelectionRequestSeq = 0;
 
 const lastActiveExperimentKey = (): string => {
   const userId = useAuthStore().user?.id ?? "local";
@@ -79,6 +83,7 @@ export interface CatalogDatasetInfo {
   task_type?: string | null;
   x_title?: string | null;
   x_units?: string | null;
+  x_quantity?: string | null;
   data_quantity?: string | null;
   wavelength_min?: number | null;
   wavelength_max?: number | null;
@@ -100,10 +105,11 @@ export interface CatalogDatasetInfo {
 }
 
 export interface ReferenceCatalog {
+  builtin: ReferenceDatasetOption[];
+  registered: ReferenceDatasetOption[];
   synthetic: ReferenceDatasetOption[];
   eigenvector: ReferenceDatasetOption[];
   oes: ReferenceDatasetOption[];
-  spectrochempy: ReferenceDatasetOption[];
   sklearn: ReferenceDatasetOption[];
 }
 
@@ -116,11 +122,18 @@ export interface PreparedDataOverrides {
   target_column?: string | null;
   target_type?: string | null;
   is_time_series?: boolean | null;
+  csv_layout?: string | null;
+}
+
+export interface CsvLayoutOption {
+  value: string;
+  label: string;
+  description: string;
 }
 
 export interface CsvImportColumnRole {
   name: string;
-  role: "I" | "W" | "F" | "T" | "E" | "?";
+  role: "I" | "W" | "F" | "P" | "M" | "T" | "E" | "?";
   numeric_pct?: number | null;
   reason?: string | null;
 }
@@ -148,12 +161,28 @@ export interface CsvImportPlan {
   };
   columns: CsvImportColumnRole[];
   warnings: string[];
+  recommended_layout?: string | null;
+  layout_options?: CsvLayoutOption[];
+  requires_confirmation?: boolean;
+  delimiter?: string | null;
+  decimal?: string | null;
 }
 
 export type DataMatrixRef =
-  | { kind: "reference"; source: string; name: string; overrides?: PreparedDataOverrides | null }
-  | { kind: "staged"; staging_id: string; overrides?: PreparedDataOverrides | null }
-  | { kind: "experiment_file"; experiment_id: number; file_id: number; overrides?: PreparedDataOverrides | null };
+  | { kind: "reference"; source: string; name: string; project_id?: number | null; overrides?: PreparedDataOverrides | null }
+  | {
+      kind: "staged";
+      staging_id: string;
+      asset_id?: string | null;
+      overrides?: PreparedDataOverrides | null;
+    }
+  | {
+      kind: "experiment_file";
+      experiment_id: number;
+      file_id: number;
+      asset_id?: string | null;
+      overrides?: PreparedDataOverrides | null;
+    };
 
 export interface DataMatrixColumnStat {
   label: string;
@@ -193,10 +222,17 @@ export interface DataMatrixTargetSummary {
 }
 
 export interface DataMatrixResponse {
-  shape: [number, number];
+  kind?: "matrix_2d" | "nd_dataset";
+  shape: number[];
+  rank?: number;
   shape_label: string;
+  dimension_roles?: string[];
+  projection_required?: boolean;
+  projection_message?: string;
+  dataset_preview?: Record<string, unknown>;
   x_title: string | null;
   x_units: string | null;
+  x_quantity?: string | null;
   y_title: string | null;
   data_role: string;
   data_modality: string;
@@ -228,8 +264,26 @@ export interface DataMatrixResponse {
 export interface StagedUpload {
   staging_id: string;
   filename: string;
+  source_name?: string;
   size_bytes: number;
   csv_import_plan?: CsvImportPlan | null;
+  suggested_overrides?: PreparedDataOverrides;
+  format_id: string;
+  variant: string;
+  assets: ScientificAsset[];
+}
+
+export interface StagedUploadBatch {
+  file_count: number;
+  total_size_bytes: number;
+  files: StagedUpload[];
+  refused_count: number;
+  refusals: StagedUploadRefusal[];
+}
+
+export interface StagedUploadRefusal {
+  source_name: string;
+  reason: string;
 }
 
 export interface SherpaDatasetContext {
@@ -299,12 +353,13 @@ function summarizeForDataStory(datasetInfo: StoryObject): StoryObject {
     task_type: datasetInfo.task_type ?? null,
     // Dataset type flags — critical for template selection
     is_time_series: datasetInfo.is_time_series ?? metadata.is_time_series ?? null,
-    is_spectra: datasetInfo.is_spectra ?? datasetInfo.is_spectroscopic ?? metadata.is_spectra ?? null,
+    is_spectra:
+      datasetInfo.is_spectra ?? datasetInfo.is_spectroscopic ?? metadata.is_spectra ?? null,
     x_axis: {
       title: datasetInfo.x_title ?? xAxis.title ?? metadata.x_title ?? null,
       units: datasetInfo.x_units ?? xAxis.units ?? metadata.x_units ?? null,
-      min: xData.length ? xData[0] : datasetInfo.wavelength_min ?? null,
-      max: xData.length ? xData[xData.length - 1] : datasetInfo.wavelength_max ?? null,
+      min: xData.length ? xData[0] : (datasetInfo.wavelength_min ?? null),
+      max: xData.length ? xData[xData.length - 1] : (datasetInfo.wavelength_max ?? null),
     },
     y_axis: {
       title: datasetInfo.data_quantity ?? metadata.data_quantity ?? null,
@@ -335,7 +390,7 @@ function summarizeForDataStory(datasetInfo: StoryObject): StoryObject {
 }
 
 export function summarizeDatasetForSherpaContext(
-  datasetInfo: StoryObject | null | undefined
+  datasetInfo: StoryObject | null | undefined,
 ): SherpaDatasetContext | null {
   if (!datasetInfo) {
     return null;
@@ -345,40 +400,24 @@ export function summarizeDatasetForSherpaContext(
   const xAxis = asObject(datasetInfo.x_axis);
   const fileMetadata = asObject(datasetInfo.file_metadata);
   const xData = Array.isArray(xAxis.data)
-    ? xAxis.data.filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+    ? xAxis.data.filter(
+        (value): value is number => typeof value === "number" && Number.isFinite(value),
+      )
     : [];
-  const source =
-    datasetInfo.source ??
-    datasetInfo.name ??
-    fileMetadata.name ??
-    null;
+  const source = datasetInfo.source ?? datasetInfo.name ?? fileMetadata.name ?? null;
   const technique =
-    datasetInfo.technique ??
-    metadata.spectral_technique ??
-    metadata.domain_technique ??
-    null;
+    datasetInfo.technique ?? metadata.spectral_technique ?? metadata.domain_technique ?? null;
   const xTitle =
-    datasetInfo.x_title ??
-    xAxis.title ??
-    metadata.x_title ??
-    metadata.spectral_x_title ??
-    null;
+    datasetInfo.x_title ?? xAxis.title ?? metadata.x_title ?? metadata.spectral_x_title ?? null;
   const xUnits =
-    datasetInfo.x_units ??
-    xAxis.units ??
-    metadata.x_units ??
-    metadata.spectral_x_units ??
-    null;
+    datasetInfo.x_units ?? xAxis.units ?? metadata.x_units ?? metadata.spectral_x_units ?? null;
   const dataQuantity =
     datasetInfo.data_quantity ??
     datasetInfo.units ??
     metadata.data_quantity ??
     metadata.y_title ??
     null;
-  const valueUnits =
-    metadata.value_units ??
-    metadata.y_units ??
-    null;
+  const valueUnits = metadata.value_units ?? metadata.y_units ?? null;
   const datasetName =
     typeof datasetInfo.name === "string"
       ? datasetInfo.name
@@ -388,16 +427,14 @@ export function summarizeDatasetForSherpaContext(
           ? metadata["catalog.dataset_name"]
           : null;
   const featureNames =
-    asStringList(datasetInfo.feature_names) ??
-    asStringList(metadata.feature_names);
+    asStringList(datasetInfo.feature_names) ?? asStringList(metadata.feature_names);
   const targetNames =
     asStringList(datasetInfo.target_names) ??
     asStringList(metadata.target_names) ??
     asStringList(metadata.prop_names);
 
   return {
-    dataset_id:
-      typeof datasetInfo.dataset_id === "string" ? datasetInfo.dataset_id : null,
+    dataset_id: typeof datasetInfo.dataset_id === "string" ? datasetInfo.dataset_id : null,
     label:
       typeof datasetInfo.label === "string"
         ? datasetInfo.label
@@ -408,12 +445,9 @@ export function summarizeDatasetForSherpaContext(
             : null,
     source: typeof source === "string" ? source : null,
     dataset_name: datasetName,
-    description:
-      typeof datasetInfo.description === "string" ? datasetInfo.description : null,
-    n_samples:
-      typeof datasetInfo.n_samples === "number" ? datasetInfo.n_samples : null,
-    n_features:
-      typeof datasetInfo.n_features === "number" ? datasetInfo.n_features : null,
+    description: typeof datasetInfo.description === "string" ? datasetInfo.description : null,
+    n_samples: typeof datasetInfo.n_samples === "number" ? datasetInfo.n_samples : null,
+    n_features: typeof datasetInfo.n_features === "number" ? datasetInfo.n_features : null,
     is_time_series:
       typeof datasetInfo.is_time_series === "boolean"
         ? datasetInfo.is_time_series
@@ -448,14 +482,10 @@ export function summarizeDatasetForSherpaContext(
     feature_names: featureNames,
     target_names: targetNames,
     metadata_summary: {
-      data_type:
-        typeof metadata.data_type === "string" ? metadata.data_type : null,
+      data_type: typeof metadata.data_type === "string" ? metadata.data_type : null,
       spectral_technique:
-        typeof metadata.spectral_technique === "string"
-          ? metadata.spectral_technique
-          : null,
-      file_name:
-        typeof fileMetadata.name === "string" ? fileMetadata.name : null,
+        typeof metadata.spectral_technique === "string" ? metadata.spectral_technique : null,
+      file_name: typeof fileMetadata.name === "string" ? fileMetadata.name : null,
       has_wavenumber_axis: xData.length > 0,
     },
   };
@@ -465,22 +495,48 @@ export const useDataStore = defineStore("data", () => {
   // Dataset catalog (from /datasets/available)
   const availableDatasets = ref<AvailableDatasets | null>(null);
   const catalogLoading = ref(false);
+  const catalogError = ref<string | null>(null);
 
   // Experiment list (from /experiments)
   const experiments = ref<ExperimentSummary[]>([]);
   const experimentsLoading = ref(false);
+  const experimentsError = ref<string | null>(null);
+  // Only a successful list response for the current project can justify an
+  // inferred focus. A retained list from a failed project switch cannot.
+  let experimentsProjectId: number | null = null;
 
   // Selected experiment files
   const activeExperimentId = ref<number | null>(null);
   const experimentFiles = ref<ExperimentFile[]>([]);
   const experimentFilesLoading = ref(false);
+  // Set when the files request is refused (e.g. a superseded trial authority on
+  // the managed demo server) so the UI can say so instead of showing "No files".
+  const experimentFilesRefusal = ref<{ code: string | null; message: string } | null>(null);
 
   // File inspection
   const activeFileId = ref<number | null>(null);
   const activeFilePath = ref<string | null>(null);
   const fileInfo = ref<SherpaDatasetDict | null>(null);
+  let advisorDatasetProvider: (() => Record<string, unknown>) | null = null;
+  let advisorDatasetScope = "";
+  const advisorScope = () => `${useAuthStore().user?.id}:${useProjectStore().currentProjectId}`;
+  function registerAdvisorDatasetContext(provider: () => Record<string, unknown>): () => void {
+    advisorDatasetProvider = provider;
+    advisorDatasetScope = advisorScope();
+    return () => {
+      if (advisorDatasetProvider !== provider) return;
+      const snapshot = captureAdvisorDatasetContext();
+      advisorDatasetProvider = snapshot ? () => snapshot : null;
+    };
+  }
+  function captureAdvisorDatasetContext(): Record<string, unknown> | null {
+    if (advisorDatasetScope !== advisorScope()) return null;
+    return advisorDatasetProvider ? JSON.parse(JSON.stringify(advisorDatasetProvider())) : null;
+  }
   const fileInfoLoading = ref(false);
   const fileInfoError = ref<string | null>(null);
+  let fileInfoRequest = 0;
+  let fileInfoAbort: AbortController | null = null;
 
   // Reference dataset catalog + exploration
   const referenceCatalog = ref<ReferenceCatalog | null>(null);
@@ -496,11 +552,9 @@ export const useDataStore = defineStore("data", () => {
 
   // Computed
   const experimentDatasets = computed<ExperimentDataset[]>(
-    () => availableDatasets.value?.experiments ?? []
+    () => availableDatasets.value?.experiments ?? [],
   );
-  const libraryDatasets = computed<LibraryDataset[]>(
-    () => availableDatasets.value?.library ?? []
-  );
+  const libraryDatasets = computed<LibraryDataset[]>(() => availableDatasets.value?.library ?? []);
 
   const currentProjectId = () => useProjectStore().currentProjectId;
 
@@ -509,6 +563,7 @@ export const useDataStore = defineStore("data", () => {
   const fetchCatalog = async (projectId: number | null = currentProjectId()) => {
     const requestSeq = ++catalogRequestSeq;
     catalogLoading.value = true;
+    catalogError.value = null;
     try {
       if (projectId == null) {
         if (requestSeq === catalogRequestSeq) {
@@ -520,10 +575,15 @@ export const useDataStore = defineStore("data", () => {
         params: { project_id: projectId },
       });
       const activeProjectId = currentProjectId();
-      if (requestSeq !== catalogRequestSeq || (activeProjectId != null && projectId !== activeProjectId)) return;
+      if (
+        requestSeq !== catalogRequestSeq ||
+        (activeProjectId != null && projectId !== activeProjectId)
+      )
+        return;
       availableDatasets.value = response.data;
     } catch (error) {
-      if (requestSeq === catalogRequestSeq) {
+      if (requestSeq === catalogRequestSeq && projectId === currentProjectId()) {
+        catalogError.value = "Dataset catalog could not be loaded.";
         console.error("Failed to fetch dataset catalog:", error);
       }
     } finally {
@@ -535,7 +595,9 @@ export const useDataStore = defineStore("data", () => {
 
   const fetchExperiments = async (projectId: number | null = currentProjectId()) => {
     const requestSeq = ++experimentsRequestSeq;
+    experimentsProjectId = null;
     experimentsLoading.value = true;
+    experimentsError.value = null;
     try {
       if (projectId == null) {
         if (requestSeq === experimentsRequestSeq) {
@@ -547,10 +609,16 @@ export const useDataStore = defineStore("data", () => {
         params: { project_id: projectId },
       });
       const activeProjectId = currentProjectId();
-      if (requestSeq !== experimentsRequestSeq || (activeProjectId != null && projectId !== activeProjectId)) return;
+      if (
+        requestSeq !== experimentsRequestSeq ||
+        (activeProjectId != null && projectId !== activeProjectId)
+      )
+        return;
       experiments.value = response.data;
+      experimentsProjectId = projectId;
     } catch (error) {
-      if (requestSeq === experimentsRequestSeq) {
+      if (requestSeq === experimentsRequestSeq && projectId === currentProjectId()) {
+        experimentsError.value = "Project datasets could not be loaded.";
         console.error("Failed to fetch experiments:", error);
       }
     } finally {
@@ -561,19 +629,35 @@ export const useDataStore = defineStore("data", () => {
   };
 
   const selectExperiment = async (experimentId: number) => {
+    const requestSeq = ++experimentSelectionRequestSeq;
+    clearInspection();
+    clearCatalogExploration();
     activeExperimentId.value = experimentId;
+    experimentFiles.value = [];
+    experimentFilesRefusal.value = null;
     writeLastActiveExperimentId(experimentId);
     experimentFilesLoading.value = true;
     try {
-      const response = await api.get<ExperimentFile[]>(
-        `/experiments/${experimentId}/files`
-      );
+      const response = await api.get<ExperimentFile[]>(`/experiments/${experimentId}/files`);
+      if (requestSeq !== experimentSelectionRequestSeq || activeExperimentId.value !== experimentId)
+        return;
       experimentFiles.value = response.data;
     } catch (error) {
-      console.error("Failed to fetch experiment files:", error);
-      experimentFiles.value = [];
+      if (
+        requestSeq === experimentSelectionRequestSeq &&
+        activeExperimentId.value === experimentId
+      ) {
+        console.error("Failed to fetch experiment files:", error);
+        experimentFiles.value = [];
+        experimentFilesRefusal.value = {
+          code: getErrorCode(error),
+          message: getErrorMessage(error, "The dataset's files could not be loaded."),
+        };
+      }
     } finally {
-      experimentFilesLoading.value = false;
+      if (requestSeq === experimentSelectionRequestSeq) {
+        experimentFilesLoading.value = false;
+      }
     }
   };
 
@@ -596,7 +680,7 @@ export const useDataStore = defineStore("data", () => {
 
   const updateExperiment = async (
     experimentId: number,
-    payload: { name?: string; description?: string | null; metadata?: Record<string, unknown> }
+    payload: { name?: string; description?: string | null; metadata?: Record<string, unknown> },
   ) => {
     const response = await api.put(`/experiments/${experimentId}`, payload);
     await Promise.all([fetchExperiments(), fetchCatalog()]);
@@ -608,7 +692,9 @@ export const useDataStore = defineStore("data", () => {
     let fallbackExperimentId: number | null = null;
 
     if (deletingActiveExperiment) {
-      const currentIndex = experiments.value.findIndex((experiment) => experiment.id === experimentId);
+      const currentIndex = experiments.value.findIndex(
+        (experiment) => experiment.id === experimentId,
+      );
       if (currentIndex >= 0) {
         fallbackExperimentId =
           experiments.value[currentIndex + 1]?.id ??
@@ -638,11 +724,20 @@ export const useDataStore = defineStore("data", () => {
   };
 
   const restoreActiveExperimentForCurrentProject = async () => {
-    if (activeExperimentId.value !== null) {
+    if (
+      activeExperimentId.value !== null &&
+      experiments.value.some((experiment) => experiment.id === activeExperimentId.value)
+    ) {
       return;
     }
     if (experiments.value.length === 0) {
       await fetchExperiments();
+    }
+    if (
+      activeExperimentId.value !== null &&
+      !experiments.value.some((experiment) => experiment.id === activeExperimentId.value)
+    ) {
+      clearActiveExperimentSelection();
     }
     const remembered = readLastActiveExperimentId();
     if (
@@ -650,12 +745,24 @@ export const useDataStore = defineStore("data", () => {
       experiments.value.some((experiment) => experiment.id === remembered)
     ) {
       await selectExperiment(remembered);
+    } else if (
+      currentProjectId() != null &&
+      experimentsProjectId === currentProjectId() &&
+      experiments.value.length === 1
+    ) {
+      // A new browser has no remembered focus. The sole dataset is unambiguous;
+      // multiple datasets still require the user's choice.
+      await selectExperiment(experiments.value[0].id);
     }
   };
 
   const clearActiveExperimentSelection = () => {
+    experimentSelectionRequestSeq += 1;
+    clearInspection();
+    clearCatalogExploration();
     activeExperimentId.value = null;
     experimentFiles.value = [];
+    experimentFilesLoading.value = false;
   };
 
   const uploadFile = async (
@@ -666,7 +773,8 @@ export const useDataStore = defineStore("data", () => {
       dataRole?: string | null;
       targetColumn?: string | null;
       targetType?: string | null;
-    }
+      refresh?: boolean;
+    },
   ) => {
     const form = new FormData();
     form.append("file", file);
@@ -680,11 +788,13 @@ export const useDataStore = defineStore("data", () => {
     if (options?.targetType && options.targetType !== "auto") {
       form.append("target_type", options.targetType);
     }
-    await api.post(`/experiments/${experimentId}/files`, form, {
+    const response = await api.post<ExperimentFile>(`/experiments/${experimentId}/files`, form, {
       headers: { "Content-Type": "multipart/form-data" },
     });
-    // Refresh file list and catalog
-    await Promise.all([selectExperiment(experimentId), fetchCatalog()]);
+    if (options?.refresh !== false) {
+      await Promise.all([selectExperiment(experimentId), fetchCatalog()]);
+    }
+    return response.data;
   };
 
   const fetchDataMatrix = async (ref: DataMatrixRef): Promise<DataMatrixResponse> => {
@@ -695,7 +805,18 @@ export const useDataStore = defineStore("data", () => {
   const stageUploadFile = async (file: File): Promise<StagedUpload> => {
     const form = new FormData();
     form.append("file", file);
+    if (currentProjectId() != null) form.append("project_id", String(currentProjectId()));
     const response = await api.post<StagedUpload>("/builder/upload/stage", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+    });
+    return response.data;
+  };
+
+  const stageUploadBatch = async (files: File[]): Promise<StagedUploadBatch> => {
+    const form = new FormData();
+    for (const file of files) form.append("files", file, file.name);
+    if (currentProjectId() != null) form.append("project_id", String(currentProjectId()));
+    const response = await api.post<StagedUploadBatch>("/builder/upload/stage-batch", form, {
       headers: { "Content-Type": "multipart/form-data" },
     });
     return response.data;
@@ -729,46 +850,145 @@ export const useDataStore = defineStore("data", () => {
     }
   };
 
-  const inspectFile = async (fileId: number, filePath: string, experimentId?: number) => {
+  const fetchFileAssets = async (
+    experimentId: number,
+    fileId: number,
+  ): Promise<ExperimentFileAssets> => {
+    fileInfoError.value = null;
+    try {
+      const response = await api.get<ExperimentFileAssets>(
+        `/experiments/${experimentId}/files/${fileId}/scientific-assets`,
+      );
+      return response.data;
+    } catch (error: unknown) {
+      fileInfoError.value = getErrorMessage(error, "Failed to inspect scientific results");
+      throw error;
+    }
+  };
+
+  const inspectFile = async (
+    fileId: number,
+    filePath: string,
+    experimentId?: number,
+    assetId?: string | null,
+  ) => {
+    const request = ++fileInfoRequest;
+    fileInfoAbort?.abort();
+    const controller = new AbortController();
+    fileInfoAbort = controller;
+    clearCatalogExploration();
     activeFileId.value = fileId;
     activeFilePath.value = filePath;
     fileInfoLoading.value = true;
-    fileInfo.value = null;
     fileInfoError.value = null;
     try {
       const body: Record<string, unknown> = { file_path: filePath };
       if (experimentId != null) body.experiment_id = experimentId;
-      const response = await api.post<SherpaDatasetDict>("/builder/file-info", body);
-      fileInfo.value = response.data;
+      if (assetId) body.asset_id = assetId;
+      const response = await api.post<SherpaDatasetDict>("/builder/file-info", body, {
+        signal: controller.signal,
+      });
+      if (request === fileInfoRequest) fileInfo.value = response.data;
       return response.data;
     } catch (error: unknown) {
-      fileInfo.value = null;
-      fileInfoError.value = getErrorMessage(error, "Failed to inspect file");
+      if (request === fileInfoRequest) {
+        fileInfoError.value = getErrorMessage(error, "Failed to inspect file");
+      }
       throw error;
     } finally {
-      fileInfoLoading.value = false;
+      if (request === fileInfoRequest) {
+        fileInfoLoading.value = false;
+        fileInfoAbort = null;
+      }
     }
   };
 
-  const inspectExperimentRawFiles = async (experimentId: number) => {
+  /** Change the curve/file focus without replacing the admitted collection preview. */
+  const activateFile = (fileId: number, filePath: string) => {
+    activeFileId.value = fileId;
+    activeFilePath.value = filePath;
+  };
+
+  const bindDatasetAnalysisCsv = async (payload: {
+    sourceFileId: number;
+    sampleTableFileId: number;
+    expectedRevision: string | null;
+    selectedTarget: string;
+    targetType: "continuous" | "categorical";
+  }) => {
+    const response = await api.post("/builder/analysis-binding", {
+      source_file_id: payload.sourceFileId,
+      sample_table_file_id: payload.sampleTableFileId,
+      expected_revision: payload.expectedRevision,
+      selected_target: payload.selectedTarget,
+      target_type: payload.targetType,
+    });
+    return response.data;
+  };
+
+  const unbindDatasetAnalysisCsv = async (
+    sourceFileId: number,
+    expectedRevision: string,
+  ) => {
+    const response = await api.delete(`/builder/analysis-binding/${sourceFileId}`, {
+      params: { expected_revision: expectedRevision },
+    });
+    return response.data;
+  };
+
+  const inspectExperimentRawFiles = async (
+    experimentId: number,
+    assetId?: string | null,
+    fileIds?: number[] | null,
+  ) => {
+    const request = ++fileInfoRequest;
+    fileInfoAbort?.abort();
+    const controller = new AbortController();
+    fileInfoAbort = controller;
     activeFileId.value = null;
     activeFilePath.value = null;
     fileInfoLoading.value = true;
-    fileInfo.value = null;
     fileInfoError.value = null;
     clearCatalogExploration();
     try {
-      const response = await api.post<SherpaDatasetDict>("/builder/file-info", {
-        experiment_id: experimentId,
-      });
-      fileInfo.value = response.data;
+      const response = await api.post<SherpaDatasetDict>(
+        "/builder/file-info",
+        {
+          experiment_id: experimentId,
+          ...(assetId ? { asset_id: assetId } : {}),
+          ...(fileIds?.length ? { file_ids: fileIds } : {}),
+        },
+        { signal: controller.signal },
+      );
+      if (request === fileInfoRequest) {
+        fileInfo.value = response.data;
+        // A one-file selection is still an inspectable source file. Preserve
+        // that identity so dependent panels can retrieve the full matrix and
+        // other file-scoped metadata instead of treating the response as a
+        // multi-file aggregate with no active source.
+        const stage = response.data.metadata?.contents_stage ?? "raw";
+        const sourceFiles = experimentFiles.value.filter((file) =>
+          fileIds?.length ? fileIds.includes(file.id) : file.stage === stage,
+        );
+        const soleFileId = fileIds?.length === 1
+          ? fileIds[0]
+          : !fileIds?.length && activeExperimentId.value === experimentId && sourceFiles.length === 1
+            ? sourceFiles[0].id
+            : null;
+        activeFileId.value = soleFileId;
+        activeFilePath.value = sourceFiles.find((file) => file.id === soleFileId)?.file_path ?? null;
+      }
       return response.data;
     } catch (error: unknown) {
-      fileInfo.value = null;
-      fileInfoError.value = getErrorMessage(error, "Failed to inspect dataset contents");
+      if (request === fileInfoRequest) {
+        fileInfoError.value = getErrorMessage(error, "Failed to inspect dataset contents");
+      }
       throw error;
     } finally {
-      fileInfoLoading.value = false;
+      if (request === fileInfoRequest) {
+        fileInfoLoading.value = false;
+        fileInfoAbort = null;
+      }
     }
   };
 
@@ -780,6 +1000,10 @@ export const useDataStore = defineStore("data", () => {
   };
 
   const clearInspection = () => {
+    fileInfoRequest += 1;
+    fileInfoAbort?.abort();
+    fileInfoAbort = null;
+    fileInfoLoading.value = false;
     activeFileId.value = null;
     activeFilePath.value = null;
     fileInfo.value = null;
@@ -792,9 +1016,7 @@ export const useDataStore = defineStore("data", () => {
     referenceCatalogLoading.value = true;
     referenceCatalogError.value = null;
     try {
-      const response = await api.get<ReferenceCatalog>(
-        "/builder/reference-datasets"
-      );
+      const response = await api.get<ReferenceCatalog>("/builder/reference-datasets");
       referenceCatalog.value = response.data;
     } catch (error: unknown) {
       console.error("Failed to fetch reference catalog:", error);
@@ -806,49 +1028,85 @@ export const useDataStore = defineStore("data", () => {
 
   const importReferenceDatasets = async (
     experimentId: number,
-    datasets: Array<{ source: string; name: string; overrides?: PreparedDataOverrides | null }>
+    datasets: Array<{ source: string; name: string; overrides?: PreparedDataOverrides | null }>,
   ) => {
-    const response = await api.post(
-      `/experiments/${experimentId}/import-reference`,
-      { datasets }
-    );
+    const response = await api.post(`/experiments/${experimentId}/import-reference`, { datasets });
+    const admittedExperimentId = response.data.experiment_id ?? experimentId;
     // Refresh file list and experiment list to reflect new files
-    await Promise.all([selectExperiment(experimentId), fetchExperiments(), fetchCatalog()]);
-    return response.data;
+    // The server has committed. A display refresh must not turn this into an
+    // import refusal and cause the caller to delete the admitted dataset.
+    await Promise.allSettled([selectExperiment(admittedExperimentId), fetchExperiments(), fetchCatalog()]);
+    return response.data as {
+      imported: number;
+      files: ExperimentFile[];
+      experiment_id?: number | null;
+      reused_existing?: boolean;
+      initial_file_ids?: number[];
+    };
+  };
+
+  const importRegisteredReference = async (
+    experimentId: number,
+    authority: { projectionId?: string; packageId?: string },
+    files: File | File[],
+  ) => {
+    const form = new FormData();
+    if (authority.packageId) form.append("package_id", authority.packageId);
+    else if (authority.projectionId) form.append("projection_id", authority.projectionId);
+    else throw new Error("Registered reference import requires a projection or package identity");
+    for (const file of Array.isArray(files) ? files : [files]) {
+      form.append("file", file, file.name);
+    }
+    const response = await api.post(
+      `/experiments/${experimentId}/import-registered-reference`,
+      form,
+      { headers: { "Content-Type": "multipart/form-data" } },
+    );
+    const admittedExperimentId = response.data.experiment_id ?? experimentId;
+    await Promise.allSettled([selectExperiment(admittedExperimentId), fetchExperiments(), fetchCatalog()]);
+    return response.data as {
+      imported: number;
+      files: ExperimentFile[];
+      experiment_id?: number | null;
+      reused_existing?: boolean;
+      initial_file_ids: number[];
+    };
   };
 
   const importLibraryDatasets = async (
     experimentId: number,
-    payload: {
-      source?: "nist" | "hitran" | "hitran_xsec";
-      library_ids?: number[];
-      component_ids?: string[];
-      component_specs?: Array<{
-        component_id: string;
-        resolution_cm1?: number | null;
-        wavenumber_min?: number | null;
-        wavenumber_max?: number | null;
-        temperature_k?: number | null;
-        pressure_atm?: number | null;
-      }>;
-      spectra?: Array<{
-        component_id: string;
-        name: string;
-        source: string;
-        wavenumber: number[];
-        intensity: number[];
-        y_quantity?: string | null;
-        y_units?: string | null;
-        resolution_cm1?: number | null;
-        apodization?: string | null;
-      }>;
-      range_mode?: "common" | "widest";
-      resolution_cm1?: number | null;
-      wavenumber_min?: number | null;
-      wavenumber_max?: number | null;
-      temperature_k?: number | null;
-      pressure_atm?: number | null;
-    } | number[]
+    payload:
+      | {
+          source?: "nist" | "hitran" | "hitran_xsec";
+          library_ids?: number[];
+          component_ids?: string[];
+          component_specs?: Array<{
+            component_id: string;
+            resolution_cm1?: number | null;
+            wavenumber_min?: number | null;
+            wavenumber_max?: number | null;
+            temperature_k?: number | null;
+            pressure_atm?: number | null;
+          }>;
+          spectra?: Array<{
+            component_id: string;
+            name: string;
+            source: string;
+            wavenumber: number[];
+            intensity: number[];
+            y_quantity?: string | null;
+            y_units?: string | null;
+            resolution_cm1?: number | null;
+            apodization?: string | null;
+          }>;
+          range_mode?: "common" | "widest";
+          resolution_cm1?: number | null;
+          wavenumber_min?: number | null;
+          wavenumber_max?: number | null;
+          temperature_k?: number | null;
+          pressure_atm?: number | null;
+        }
+      | number[],
   ) => {
     const requestPayload = Array.isArray(payload)
       ? { experiment_id: experimentId, library_ids: payload }
@@ -864,17 +1122,22 @@ export const useDataStore = defineStore("data", () => {
     catalogDatasetLoading.value = true;
     catalogDatasetInfo.value = null;
     catalogDatasetError.value = null;
+    // Capture the project for this request; a late reply cannot populate a
+    // different project's source preview after the user switches context.
+    const projectId = currentProjectId();
     // Clear file inspection so Explore tab shows catalog card
     clearInspection();
     try {
       const response = await api.get<CatalogDatasetInfo>(
-        `/builder/reference-datasets/${source}/${name}`
+        `/builder/reference-datasets/${source}/${name}`,
+        { params: { project_id: projectId } },
       );
+      if (currentProjectId() !== projectId) return;
       catalogDatasetInfo.value = response.data;
     } catch (error: unknown) {
-      catalogDatasetError.value = getErrorMessage(error, "Failed to load dataset info");
+      if (currentProjectId() === projectId) catalogDatasetError.value = getErrorMessage(error, "Failed to load dataset info");
     } finally {
-      catalogDatasetLoading.value = false;
+      if (currentProjectId() === projectId) catalogDatasetLoading.value = false;
     }
   };
 
@@ -901,7 +1164,7 @@ export const useDataStore = defineStore("data", () => {
       }
 
       const summarized = summarizeForDataStory(datasetInfo as StoryObject);
-      dataStoryText.value = "";  // Show progressive text as chunks arrive
+      dataStoryText.value = ""; // Show progressive text as chunks arrive
       dataStoryMemoryScopes.value = [];
 
       const result = await new Promise<string>((resolve, reject) => {
@@ -911,54 +1174,60 @@ export const useDataStore = defineStore("data", () => {
           const partial = dataStoryText.value;
           if (partial) {
             // Got partial text — resolve with what we have
-            console.warn(`Data story timeout after 180s, returning ${partial.length} chars of partial text`);
+            console.warn(
+              `Data story timeout after 180s, returning ${partial.length} chars of partial text`,
+            );
             resolve(partial);
           } else {
-            reject(new Error(
-              "Data story generation timed out (180s, 0 chunks received). " +
-              "Check server logs: docker compose logs backend | grep data_story"
-            ));
-          }
-        }, 180_000);
-
-        const unsubscribe = subscribeSherpaEvents((payload) => {
-          if (payload.type === SHERPA_WS_EVENT.dataStoryChunk) {
-            // Stream chunks progressively into the UI
-            dataStoryText.value = `${dataStoryText.value ?? ""}${typeof payload.text === "string" ? payload.text : ""}`;
-          } else if (payload.type === SHERPA_WS_EVENT.dataStoryResult) {
-            cleanup();
-            dataStoryMemoryScopes.value = Array.isArray(payload.memory_scopes)
-              ? payload.memory_scopes.map((scope) => String(scope)).filter(Boolean)
-              : [];
-            resolve(
-              typeof payload.response === "string"
-                ? payload.response
-                : (dataStoryText.value ?? "")
+            reject(
+              new Error(
+                "Data story generation timed out (180s, 0 chunks received). " +
+                  "Check server logs: docker compose logs backend | grep data_story",
+              ),
             );
-          } else if (payload.type === SHERPA_WS_EVENT.dataStoryError) {
-            cleanup();
-            const diag = payload.diagnostics;
-            const detail = payload.detail || "Data story generation failed";
-            const diagRecord =
-              diag && typeof diag === "object" ? diag : null;
-            const diagSummary = diag
-              ? ` [stage=${String(diagRecord?.stage ?? "?")}, elapsed=${String(diagRecord?.elapsed_s ?? "?")}s, provider=${String(diagRecord?.provider ?? "?")}]`
-              : "";
-            console.error("Data story error:", detail, diag);
-            reject(new Error(detail + diagSummary));
-          } else if (payload.type === SHERPA_WS_EVENT.subscriptionRequired) {
-            cleanup();
-            reject(new Error("Subscription required for Data Story generation."));
           }
-        }, {
-          requestId,
-          types: [
-            SHERPA_WS_EVENT.dataStoryChunk,
-            SHERPA_WS_EVENT.dataStoryResult,
-            SHERPA_WS_EVENT.dataStoryError,
-            SHERPA_WS_EVENT.subscriptionRequired,
-          ],
-        });
+        }, sherpaResponseTimeoutMs());
+
+        const unsubscribe = subscribeSherpaEvents(
+          (payload) => {
+            if (payload.type === SHERPA_WS_EVENT.dataStoryChunk) {
+              // Stream chunks progressively into the UI
+              dataStoryText.value = `${dataStoryText.value ?? ""}${typeof payload.text === "string" ? payload.text : ""}`;
+            } else if (payload.type === SHERPA_WS_EVENT.dataStoryResult) {
+              cleanup();
+              dataStoryMemoryScopes.value = Array.isArray(payload.memory_scopes)
+                ? payload.memory_scopes.map((scope) => String(scope)).filter(Boolean)
+                : [];
+              resolve(
+                typeof payload.response === "string"
+                  ? payload.response
+                  : (dataStoryText.value ?? ""),
+              );
+            } else if (payload.type === SHERPA_WS_EVENT.dataStoryError) {
+              cleanup();
+              const diag = payload.diagnostics;
+              const detail = payload.detail || "Data story generation failed";
+              const diagRecord = diag && typeof diag === "object" ? diag : null;
+              const diagSummary = diag
+                ? ` [stage=${String(diagRecord?.stage ?? "?")}, elapsed=${String(diagRecord?.elapsed_s ?? "?")}s, provider=${String(diagRecord?.provider ?? "?")}]`
+                : "";
+              console.error("Data story error:", detail, diag);
+              reject(new Error(detail + diagSummary));
+            } else if (payload.type === SHERPA_WS_EVENT.subscriptionRequired) {
+              cleanup();
+              reject(new Error("Subscription required for Data Story generation."));
+            }
+          },
+          {
+            requestId,
+            types: [
+              SHERPA_WS_EVENT.dataStoryChunk,
+              SHERPA_WS_EVENT.dataStoryResult,
+              SHERPA_WS_EVENT.dataStoryError,
+              SHERPA_WS_EVENT.subscriptionRequired,
+            ],
+          },
+        );
 
         const cleanup = () => {
           clearTimeout(timeout);
@@ -975,7 +1244,7 @@ export const useDataStore = defineStore("data", () => {
               advisor_node_id: advisorStore.activeNodeId,
               project_id: projectStore.currentProjectId,
             },
-          })
+          }),
         );
       });
 
@@ -985,7 +1254,7 @@ export const useDataStore = defineStore("data", () => {
       dataStoryMemoryScopes.value = [];
       dataStoryText.value = getErrorMessage(
         error,
-        "Unable to generate data story. Check your LLM configuration."
+        "Unable to generate data story. Check your LLM configuration.",
       );
     } finally {
       dataStoryLoading.value = false;
@@ -1001,13 +1270,18 @@ export const useDataStore = defineStore("data", () => {
 
   return {
     // State
+    registerAdvisorDatasetContext,
+    captureAdvisorDatasetContext,
     availableDatasets,
     catalogLoading,
+    catalogError,
     experiments,
     experimentsLoading,
+    experimentsError,
     activeExperimentId,
     experimentFiles,
     experimentFilesLoading,
+    experimentFilesRefusal,
     activeFileId,
     activeFilePath,
     fileInfo,
@@ -1040,14 +1314,20 @@ export const useDataStore = defineStore("data", () => {
     uploadFile,
     fetchDataMatrix,
     stageUploadFile,
+    stageUploadBatch,
     deleteStagedUpload,
     commitStagedUploads,
     deleteFile,
     inspectFile,
+    activateFile,
+    unbindDatasetAnalysisCsv,
+    bindDatasetAnalysisCsv,
     inspectExperimentRawFiles,
+    fetchFileAssets,
     downloadFile,
     clearInspection,
     fetchReferenceCatalog,
+    importRegisteredReference,
     importReferenceDatasets,
     importLibraryDatasets,
     exploreCatalogDataset,

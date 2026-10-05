@@ -9,20 +9,36 @@
     </div>
     <Transition name="collapse">
       <div v-if="expanded" class="section-content">
-        <div v-if="!hasOutput" class="empty-section">
+        <div v-if="presentationError" class="empty-section presentation-error">
+          <i class="pi pi-exclamation-triangle" />
+          <p>Scientific result unavailable</p>
+          <small>{{ presentationError }}</small>
+        </div>
+        <div v-else-if="!hasOutput" class="empty-section">
           <i class="pi pi-box" />
           <p>No output data available</p>
           <small>Execute this node to generate output data.</small>
         </div>
         <div v-else class="output-content">
+          <div v-if="presentationOptions.length > 1" class="detail-output-port-selector">
+            <label for="detail-scientific-presentation">Scientific result</label>
+            <Dropdown
+              id="detail-scientific-presentation"
+              v-model="selectedPresentationId"
+              :options="presentationOptions"
+              optionLabel="label"
+              optionValue="value"
+            />
+          </div>
+          <RepeatedValidationSummary :record="outputMetadata.repeated_validation" />
           <!-- Output stats -->
           <div class="info-grid">
             <div class="info-item" v-if="outputData?.rows !== undefined">
-              <label>Rows</label>
+              <label>{{ outputData.rowLabel || "Rows" }}</label>
               <span>{{ outputData.rows }}</span>
             </div>
             <div class="info-item" v-if="outputData?.cols !== undefined">
-              <label>Columns</label>
+              <label>{{ outputData.colLabel || "Columns" }}</label>
               <span>{{ outputData.cols }}</span>
             </div>
             <div class="info-item" v-if="outputData?.type">
@@ -31,7 +47,43 @@
             </div>
             <div class="info-item" v-if="outputData?.range">
               <label>Value Range</label>
-              <span>{{ outputData.range[0].toFixed(3) }} - {{ outputData.range[1].toFixed(3) }}</span>
+              <span
+                >{{ outputData.range[0].toFixed(3) }} - {{ outputData.range[1].toFixed(3) }}</span
+              >
+            </div>
+            <template v-if="evaluationAuthority">
+              <div class="info-item evaluation-authority-item">
+                <label>Evaluation Scope</label>
+                <span>
+                  {{ evaluationAuthority.roleLabel }}
+                  <code class="authority-code">{{ evaluationAuthority.role }}</code>
+                </span>
+              </div>
+              <div class="info-item evaluation-authority-item">
+                <label>Lineage Qualification</label>
+                <span>
+                  {{ evaluationAuthority.qualificationLabel }}
+                  <code class="authority-code">{{ evaluationAuthority.qualification }}</code>
+                </span>
+              </div>
+              <div
+                v-if="evaluationAuthority.population"
+                class="info-item evaluation-authority-item"
+              >
+                <label>Evaluated Population</label>
+                <span>{{ evaluationAuthority.population }}</span>
+              </div>
+              <div
+                v-if="evaluationAuthority.fittedPopulations"
+                class="info-item evaluation-authority-item"
+              >
+                <label>Fitted Population</label>
+                <span>{{ evaluationAuthority.fittedPopulations }}</span>
+              </div>
+            </template>
+            <div v-if="foldValidation" class="info-item evaluation-authority-item fold-validation-item">
+              <label>Validation Folds</label>
+              <span>{{ foldValidation }}</span>
             </div>
           </div>
 
@@ -46,7 +98,11 @@
                 <i class="pi pi-compass" />
                 Dataset Coordinates
               </span>
-              <i :class="outputSubsections.coordinates ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <i
+                :class="
+                  outputSubsections.coordinates ? 'pi pi-chevron-down' : 'pi pi-chevron-right'
+                "
+              />
             </button>
             <div v-if="outputSubsections.coordinates" class="inspector-grid">
               <div v-if="datasetInfo.title" class="inspector-item">
@@ -78,7 +134,9 @@
                 <span class="insp-value">
                   {{ datasetInfo.target.type }}
                   <span v-if="datasetInfo.target.names?.length" class="insp-units">
-                    ({{ datasetInfo.target.names.length }} field{{ datasetInfo.target.names.length === 1 ? '' : 's' }})
+                    ({{ datasetInfo.target.names.length }} field{{
+                      datasetInfo.target.names.length === 1 ? "" : "s"
+                    }})
                   </span>
                 </span>
               </div>
@@ -99,17 +157,23 @@
                   <span class="insp-label">X-Axis</span>
                   <span class="insp-value">
                     {{ datasetInfo.xAxis.title }}
-                    <span v-if="datasetInfo.xAxis.units" class="insp-units">({{ datasetInfo.xAxis.units }})</span>
+                    <span v-if="datasetInfo.xAxis.units" class="insp-units"
+                      >({{ datasetInfo.xAxis.units }})</span
+                    >
                   </span>
                 </div>
-                <div v-if="datasetInfo.xAxis.points !== undefined && datasetInfo.xAxis.points !== null" class="inspector-item">
+                <div
+                  v-if="datasetInfo.xAxis.points !== undefined && datasetInfo.xAxis.points !== null"
+                  class="inspector-item"
+                >
                   <span class="insp-label">X Points</span>
                   <span class="insp-value">{{ datasetInfo.xAxis.points }}</span>
                 </div>
                 <div v-if="datasetInfo.xAxis.range" class="inspector-item">
                   <span class="insp-label">X Range</span>
                   <span class="insp-value mono">
-                    {{ datasetInfo.xAxis.range[0].toFixed(1) }} &ndash; {{ datasetInfo.xAxis.range[1].toFixed(1) }}
+                    {{ datasetInfo.xAxis.range[0].toFixed(1) }} &ndash;
+                    {{ datasetInfo.xAxis.range[1].toFixed(1) }}
                   </span>
                 </div>
               </template>
@@ -118,10 +182,17 @@
                   <span class="insp-label">Y-Axis</span>
                   <span class="insp-value">
                     {{ datasetInfo.yAxis.title }}
-                    <span v-if="datasetInfo.yAxis.units" class="insp-units">({{ datasetInfo.yAxis.units }})</span>
+                    <span v-if="datasetInfo.yAxis.units" class="insp-units"
+                      >({{ datasetInfo.yAxis.units }})</span
+                    >
                   </span>
                 </div>
-                <div v-if="datasetInfo.yAxis.nSamples !== undefined && datasetInfo.yAxis.nSamples !== null" class="inspector-item">
+                <div
+                  v-if="
+                    datasetInfo.yAxis.nSamples !== undefined && datasetInfo.yAxis.nSamples !== null
+                  "
+                  class="inspector-item"
+                >
                   <span class="insp-label">Samples</span>
                   <span class="insp-value">{{ datasetInfo.yAxis.nSamples }}</span>
                 </div>
@@ -157,7 +228,10 @@
                         </tr>
                       </tbody>
                     </table>
-                    <span v-if="datasetInfo.yAxis.labels.length > labelPreviewLimit" class="insp-more">
+                    <span
+                      v-if="datasetInfo.yAxis.labels.length > labelPreviewLimit"
+                      class="insp-more"
+                    >
                       (+{{ datasetInfo.yAxis.labels.length - labelPreviewLimit }} more)
                     </span>
                   </div>
@@ -168,23 +242,17 @@
 
           <!-- Metadata -->
           <div v-if="Object.keys(outputMetadata).length" class="inspector-section metadata-section">
-            <button
-              type="button"
-              class="inspector-toggle"
-              @click="$emit('toggleSub', 'metadata')"
-            >
+            <button type="button" class="inspector-toggle" @click="$emit('toggleSub', 'metadata')">
               <span class="inspector-toggle-title">
                 <i class="pi pi-database" />
                 Metadata
               </span>
-              <i :class="outputSubsections.metadata ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <i
+                :class="outputSubsections.metadata ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+              />
             </button>
             <div v-if="outputSubsections.metadata" class="metadata-grid">
-              <div
-                v-for="(value, key) in outputMetadata"
-                :key="key"
-                class="metadata-item"
-              >
+              <div v-for="(value, key) in outputMetadata" :key="key" class="metadata-item">
                 <span class="meta-key">
                   {{ key }}:
                   <i
@@ -209,21 +277,25 @@
                 <i class="pi pi-history" />
                 Processing History
               </span>
-              <i :class="outputSubsections.processing ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <i
+                :class="outputSubsections.processing ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+              />
             </button>
             <div v-if="outputSubsections.processing" class="processing-timeline">
-              <div
-                v-for="(step, index) in processingHistory"
-                :key="index"
-                class="timeline-item"
-              >
+              <div v-for="(step, index) in processingHistory" :key="index" class="timeline-item">
                 <span class="step-number">{{ index + 1 }}</span>
                 <div class="step-content">
                   <span class="step-operation">
-                    {{ typeof step === 'string' ? step : (step.op_id || step.operation || 'Unknown') }}
+                    {{
+                      typeof step === "string" ? step : step.op_id || step.operation || "Unknown"
+                    }}
                   </span>
                   <div
-                    v-if="typeof step === 'object' && step.parameters && Object.keys(step.parameters).length > 0"
+                    v-if="
+                      typeof step === 'object' &&
+                      step.parameters &&
+                      Object.keys(step.parameters).length > 0
+                    "
                     class="step-params"
                   >
                     <span
@@ -239,8 +311,12 @@
                     v-if="typeof step === 'object' && (step.input_shape || step.output_shape)"
                     class="step-shapes"
                   >
-                    <span v-if="step.input_shape" class="shape-badge">In: {{ step.input_shape?.join('\u00d7') }}</span>
-                    <span v-if="step.output_shape" class="shape-badge">Out: {{ step.output_shape?.join('\u00d7') }}</span>
+                    <span v-if="step.input_shape" class="shape-badge"
+                      >In: {{ step.input_shape?.join("\u00d7") }}</span
+                    >
+                    <span v-if="step.output_shape" class="shape-badge"
+                      >Out: {{ step.output_shape?.join("\u00d7") }}</span
+                    >
                   </div>
                 </div>
               </div>
@@ -258,7 +334,9 @@
                 <i class="pi pi-sitemap" />
                 Provenance
               </span>
-              <i :class="outputSubsections.provenance ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <i
+                :class="outputSubsections.provenance ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+              />
             </button>
             <div v-if="outputSubsections.provenance" class="inspector-grid">
               <div v-if="provenanceInfo.source_type" class="inspector-item">
@@ -268,7 +346,7 @@
               <div v-if="provenanceInfo.operations?.length" class="inspector-item wide">
                 <span class="insp-label">Operations</span>
                 <span class="insp-value mono">
-                  {{ provenanceInfo.operations.join(' \u2192 ') }}
+                  {{ provenanceInfo.operations.join(" \u2192 ") }}
                 </span>
               </div>
               <div v-if="provenanceInfo.last_modified" class="inspector-item">
@@ -276,10 +354,7 @@
                 <span class="insp-value">{{ provenanceInfo.last_modified }}</span>
               </div>
               <template v-for="(val, key) in provenanceInfo.extras" :key="key">
-                <div
-                  v-if="typeof val !== 'object'"
-                  class="inspector-item"
-                >
+                <div v-if="typeof val !== 'object'" class="inspector-item">
                   <span class="insp-label">{{ key }}</span>
                   <span class="insp-value">{{ val }}</span>
                 </div>
@@ -289,21 +364,20 @@
 
           <!-- Quality Summary -->
           <div v-if="qualitySummary" class="inspector-section">
-            <button
-              type="button"
-              class="inspector-toggle"
-              @click="$emit('toggleSub', 'quality')"
-            >
+            <button type="button" class="inspector-toggle" @click="$emit('toggleSub', 'quality')">
               <span class="inspector-toggle-title">
                 <i class="pi pi-check-circle" />
                 Quality
               </span>
-              <i :class="outputSubsections.quality ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <i
+                :class="outputSubsections.quality ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
+              />
             </button>
             <div v-if="outputSubsections.quality" class="inspector-grid">
+              <div v-if="qualitySummary.qualification" class="inspector-item wide">{{ qualitySummary.qualification }}</div>
               <!-- Regression-specific controls -->
               <div
-                v-if="isRegressionNode && regressionTargetOptions.length > 1"
+                v-if="isRegressionComparison && regressionTargetOptions.length > 1"
                 class="inspector-item wide"
               >
                 <span class="insp-label">Target Metric</span>
@@ -321,19 +395,19 @@
               </div>
               <div v-if="qualitySummary.latest_r2 != null" class="inspector-item">
                 <span class="insp-label">R&sup2;</span>
-                <span class="insp-value">{{ Number(qualitySummary.latest_r2).toFixed(4) }}</span>
+                <span class="insp-value">{{ scientificNumber(Number(qualitySummary.latest_r2), { decimalPlaces: 4 }) }}</span>
               </div>
               <div v-if="qualitySummary.latest_rmse != null" class="inspector-item">
                 <span class="insp-label">RMSE</span>
-                <span class="insp-value">{{ Number(qualitySummary.latest_rmse).toFixed(4) }}</span>
+                <span class="insp-value">{{ scientificNumber(Number(qualitySummary.latest_rmse), { decimalPlaces: 4 }) }}</span>
               </div>
               <div v-if="selectedRegressionR2 != null" class="inspector-item">
                 <span class="insp-label">Selected R&sup2;</span>
-                <span class="insp-value">{{ Number(selectedRegressionR2).toFixed(4) }}</span>
+                <span class="insp-value">{{ scientificNumber(Number(selectedRegressionR2), { decimalPlaces: 4 }) }}</span>
               </div>
               <div v-if="selectedRegressionRmse != null" class="inspector-item">
                 <span class="insp-label">Selected RMSE</span>
-                <span class="insp-value">{{ Number(selectedRegressionRmse).toFixed(4) }}</span>
+                <span class="insp-value">{{ scientificNumber(Number(selectedRegressionRmse), { decimalPlaces: 4 }) }}</span>
               </div>
               <div v-if="qualitySummary.n_evaluations" class="inspector-item">
                 <span class="insp-label">Evaluations</span>
@@ -364,13 +438,20 @@
                 <i class="pi pi-bookmark" />
                 Saved Model Artifact
               </span>
-              <i :class="outputSubsections.modelArtifact ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+              <i
+                :class="
+                  outputSubsections.modelArtifact ? 'pi pi-chevron-down' : 'pi pi-chevron-right'
+                "
+              />
             </button>
             <div v-if="outputSubsections.modelArtifact" class="model-artifact">
               <div v-if="artifactLoading" class="model-artifact__status">
                 <i class="pi pi-spin pi-spinner" /> Loading artifact metadata…
               </div>
-              <div v-else-if="artifactError" class="model-artifact__status model-artifact__status--error">
+              <div
+                v-else-if="artifactError"
+                class="model-artifact__status model-artifact__status--error"
+              >
                 <i class="pi pi-exclamation-triangle" /> {{ artifactError }}
                 <span class="model-artifact__uid">{{ modelId }}</span>
               </div>
@@ -386,11 +467,7 @@
                   </div>
                   <div v-if="artifact.source_run_id != null" class="inspector-item">
                     <span class="insp-label">Source Run</span>
-                    <button
-                      type="button"
-                      class="insp-value artifact-link"
-                      @click="openSourceRun"
-                    >
+                    <button type="button" class="insp-value artifact-link" @click="openSourceRun">
                       #{{ artifact.source_run_id }}
                     </button>
                   </div>
@@ -438,11 +515,7 @@
 
           <!-- Secondary Port Outputs -->
           <div v-if="portSummaries.length > 0" class="inspector-section">
-            <button
-              type="button"
-              class="inspector-toggle"
-              @click="$emit('toggleSub', 'ports')"
-            >
+            <button type="button" class="inspector-toggle" @click="$emit('toggleSub', 'ports')">
               <span class="inspector-toggle-title">
                 <i class="pi pi-share-alt" />
                 Output Ports
@@ -452,14 +525,34 @@
             <div v-if="outputSubsections.ports" class="port-summaries">
               <div v-for="port in portSummaries" :key="port.name" class="port-summary-card">
                 <div class="port-header">
-                  <span class="port-name">{{ port.name }}</span>
+                  <span class="port-name">{{ port.label || port.name }}</span>
+                  <span v-if="port.label" class="port-name">({{ port.name }})</span>
                   <span v-if="port.type" class="port-type-badge">{{ port.type }}</span>
                 </div>
                 <div class="port-details">
-                  <span v-if="port.shape">Shape: {{ port.shape.join('\u00d7') }}</span>
+                  <span v-if="port.dimensions?.length">
+                    {{
+                      port.dimensions
+                        .map(
+                          (dimension) => `${dimension.size} ${dimension.role.replace(/_/g, " ")}`,
+                        )
+                        .join(" × ")
+                    }}
+                  </span>
+                  <span v-else-if="port.shape">Shape: {{ port.shape.join("\u00d7") }}</span>
                   <span v-if="port.title">{{ port.title }}</span>
-                  <span v-if="port.xTitle">X: {{ port.xTitle }}<template v-if="port.xUnits"> ({{ port.xUnits }})</template><template v-if="port.xPoints !== undefined && port.xPoints !== null">, {{ port.xPoints }} pts</template></span>
-                  <span v-if="port.yTitle">Y: {{ port.yTitle }}<template v-if="port.yCount !== undefined && port.yCount !== null">, {{ formatAxisCount(port.yCount, port.yCountLabel || 'entries') }}</template></span>
+                  <span v-if="port.xTitle"
+                    >X: {{ port.xTitle }}<template v-if="port.xUnits"> ({{ port.xUnits }})</template
+                    ><template v-if="port.xPoints !== undefined && port.xPoints !== null"
+                      >, {{ port.xPoints }} pts</template
+                    ></span
+                  >
+                  <span v-if="port.yTitle"
+                    >Y: {{ port.yTitle
+                    }}<template v-if="port.yCount !== undefined && port.yCount !== null"
+                      >, {{ formatAxisCount(port.yCount, port.yCountLabel || "entries") }}</template
+                    ></span
+                  >
                 </div>
               </div>
             </div>
@@ -476,20 +569,21 @@
 
           <div class="output-actions">
             <Button
+              v-if="nodeType !== 'output.export'"
               label="View Data Table"
               icon="pi pi-table"
               class="p-button-outlined"
               @click="$emit('openDataTable')"
             />
             <Button
-              v-if="nodeType !== 'output.data_table'"
+              v-if="nodeType !== 'output.export'"
               label="Quick Plot"
               icon="pi pi-chart-line"
               class="p-button-outlined"
               @click="$emit('openQuickPlot')"
             />
             <Button
-              label="Export CSV"
+              :label="nodeType === 'output.export' ? 'Download Prepared File' : 'Export CSV'"
               icon="pi pi-download"
               class="p-button-outlined"
               @click="$emit('exportOutput')"
@@ -513,11 +607,6 @@
                 :style="{ minWidth: '80px' }"
               />
             </DataTable>
-          </div>
-
-          <div v-if="peakIdSummary" class="analysis-summary">
-            <h4>Summary</h4>
-            <p>{{ peakIdSummary }}</p>
           </div>
 
           <div v-if="pcaDiagnosticsPreview.length" class="preview-table">
@@ -545,6 +634,8 @@
 </template>
 
 <script setup lang="ts">
+import RepeatedValidationSummary from "@/components/results/RepeatedValidationSummary.vue";
+import { scientificNumber } from "@/utils/scientificEncoding";
 import { computed, inject, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import Button from "primevue/button";
@@ -556,8 +647,6 @@ import { collectCanonicalClassificationMetrics } from "@/utils/classificationMet
 import { getErrorMessage } from "@/utils/errors";
 import type { OutputSubsection } from "../composables/useNodeSections";
 import { NODE_DETAIL_STATE_KEY } from "../state/useNodeDetailState";
-
-
 
 defineProps<{
   expanded: boolean;
@@ -576,9 +665,12 @@ defineEmits<{
 // Canonical state — the shell provides this via provide/inject.
 const state = inject(NODE_DETAIL_STATE_KEY);
 if (!state) {
-  throw new Error("OutputPanel must be rendered inside NodeDetailView (missing NODE_DETAIL_STATE_KEY)");
+  throw new Error(
+    "OutputPanel must be rendered inside NodeDetailView (missing NODE_DETAIL_STATE_KEY)",
+  );
 }
 const { output, writable } = state;
+const selectedPresentationId = writable.selectedPresentationId;
 
 // Re-expose under the names the template uses. Refs auto-unwrap in template.
 const outputSummary = output.summary;
@@ -592,13 +684,62 @@ const labelPreviewLimit = output.labelPreviewLimit;
 const processingHistory = output.processingHistory;
 const provenanceInfo = output.provenance;
 const qualitySummary = output.quality;
-const isRegressionNode = output.isRegressionNode;
+const presentationOptions = output.presentationOptions;
+const presentationError = output.presentationError;
+const isRegressionComparison = output.isRegressionComparison;
 const regressionTargetOptions = output.regressionTargetOptions;
 const selectedRegressionR2 = output.selectedRegressionR2;
 const selectedRegressionRmse = output.selectedRegressionRmse;
 const portSummaries = output.portSummaries;
 const modelId = output.modelId;
 const { getMetaTooltip, formatMetaValue } = output;
+
+const recordValue = (value: unknown): Record<string, unknown> | null =>
+  value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+
+const authorityLabel = (value: string): string =>
+  value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(" ");
+
+const populationPath = (value: unknown): string | null =>
+  Array.isArray(value) && value.every((item) => typeof item === "string")
+    ? value.join(" · ")
+    : null;
+
+const evaluationAuthority = computed(() => {
+  const authority = recordValue(outputMetadata.value.population_authority);
+  if (!authority) return null;
+  const role = typeof authority.role === "string" ? authority.role : null;
+  const qualification =
+    typeof authority.qualification === "string" ? authority.qualification : null;
+  if (!role || !qualification) return null;
+  const fitted = Array.isArray(authority.fitted_populations)
+    ? authority.fitted_populations
+        .map(populationPath)
+        .filter((value): value is string => value !== null)
+        .join("; ")
+    : "";
+  return {
+    role,
+    roleLabel: authorityLabel(role),
+    qualification,
+    qualificationLabel: authorityLabel(qualification),
+    population: populationPath(authority.population),
+    fittedPopulations: fitted || null,
+  };
+});
+
+// A sheet opened from a campaign candidate is scored on the campaign's folds.
+const foldValidation = computed(() => {
+  const scope = recordValue(outputMetadata.value.fold_validation);
+  if (!scope || typeof scope.n_folds !== "number" || typeof scope.origin !== "string") return null;
+  return `${scope.n_folds} cross-validation folds; protocol from ${scope.origin}. ${typeof scope.comparison_notice === "string" ? scope.comparison_notice : "Original sample identity is not verified."} Each sample predicted by a model not trained on it`;
+});
 
 function formatAxisCount(count: number, label: string): string {
   const singular = label.endsWith("ies")
@@ -666,9 +807,10 @@ const artifactHeadlineMetric = computed<{ label: string; value: string } | null>
   for (const { key, label } of HEADLINE_METRIC_KEYS) {
     const value = flattenedMetrics[key];
     if (typeof value === "number" && Number.isFinite(value)) {
-      const formatted = Math.abs(value) >= 10
-        ? value.toFixed(2)
-        : value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+      const formatted =
+        Math.abs(value) >= 10
+          ? value.toFixed(2)
+          : value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
       return { label, value: formatted };
     }
   }
@@ -792,9 +934,11 @@ const formatQualityValue = (val: unknown): string => {
     return val < 0.01 ? val.toExponential(3) : val.toFixed(4);
   }
   if (Array.isArray(val)) {
-    const preview = val.slice(0, 6).map((v: unknown) =>
-      typeof v === "number" ? (v < 0.01 ? v.toExponential(2) : v.toFixed(3)) : String(v)
-    );
+    const preview = val
+      .slice(0, 6)
+      .map((v: unknown) =>
+        typeof v === "number" ? (v < 0.01 ? v.toExponential(2) : v.toFixed(3)) : String(v),
+      );
     const suffix = val.length > 6 ? `, \u2026 (${val.length})` : "";
     return `[${preview.join(", ")}${suffix}]`;
   }
@@ -806,11 +950,6 @@ const formatQualityValue = (val: unknown): string => {
 const outputPreview = computed(() => output.preview.value.rows);
 const outputPreviewColumns = computed(() => output.preview.value.columns);
 const outputDataSummary = computed(() => output.preview.value.summary);
-const peakIdSummary = computed(() => {
-  if (state.plots.value.nodeTypeKey !== "analysis.peak_id") return "";
-  const summary = outputMetadata.value?.summary;
-  return typeof summary === "string" ? summary.trim() : "";
-});
 const pcaDiagnosticsPreview = computed(() => output.pcaDiagnostics.value.rows);
 const pcaDiagnosticsColumns = computed(() => output.pcaDiagnostics.value.columns);
 const pcaDiagSummary = computed(() => output.pcaDiagnostics.value.summary);
@@ -836,10 +975,23 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   cursor: pointer;
   transition: background 0.15s;
 }
-.section-header:hover { background: rgba(51, 65, 85, 0.5); }
-.section-title { display: flex; align-items: center; gap: 12px; }
-.section-title i { font-size: 0.85rem; color: #64748b; }
-.section-title h2 { margin: 0; font-size: 1.1rem; font-weight: 600; }
+.section-header:hover {
+  background: rgba(51, 65, 85, 0.5);
+}
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.section-title i {
+  font-size: 0.85rem;
+  color: #64748b;
+}
+.section-title h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
 .section-badge {
   padding: 4px 10px;
   background: #334155;
@@ -847,11 +999,22 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   font-size: 0.75rem;
   color: #94a3b8;
 }
-.section-content { padding: 20px; border-top: 1px solid #334155; }
+.section-content {
+  padding: 20px;
+  border-top: 1px solid #334155;
+}
 .collapse-enter-active,
-.collapse-leave-active { transition: all 0.2s ease; overflow: hidden; }
+.collapse-leave-active {
+  transition: all 0.2s ease;
+  overflow: hidden;
+}
 .collapse-enter-from,
-.collapse-leave-to { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+.collapse-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+}
 .empty-section {
   display: flex;
   flex-direction: column;
@@ -860,11 +1023,25 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   text-align: center;
   color: #64748b;
 }
-.empty-section i { font-size: 2.5rem; margin-bottom: 16px; color: #475569; }
-.empty-section p { margin: 0 0 8px; font-size: 1rem; }
-.empty-section small { color: #475569; font-size: 0.85rem; }
+.empty-section i {
+  font-size: 2.5rem;
+  margin-bottom: 16px;
+  color: #475569;
+}
+.empty-section p {
+  margin: 0 0 8px;
+  font-size: 1rem;
+}
+.empty-section small {
+  color: #475569;
+  font-size: 0.85rem;
+}
 
-.output-content { display: flex; flex-direction: column; gap: 18px; }
+.output-content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
 .info-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -884,7 +1061,21 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.info-item span { font-size: 0.95rem; color: #f8fafc; font-weight: 500; }
+.info-item span {
+  font-size: 0.95rem;
+  color: #f8fafc;
+  font-weight: 500;
+}
+.evaluation-authority-item {
+  border: 1px solid #334155;
+}
+.authority-code {
+  display: block;
+  margin-top: 3px;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-weight: 500;
+}
 
 /* Inspector sections (coordinates / metadata / processing / provenance / quality / ports) */
 .inspector-section {
@@ -907,26 +1098,51 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   cursor: pointer;
   font-size: 0.9rem;
 }
-.inspector-toggle:hover { color: #f8fafc; }
-.inspector-toggle-title { display: flex; align-items: center; gap: 8px; font-weight: 500; }
-.inspector-toggle-title i { color: #64748b; }
+.inspector-toggle:hover {
+  color: #f8fafc;
+}
+.inspector-toggle-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+.inspector-toggle-title i {
+  color: #64748b;
+}
 .inspector-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
   margin-top: 10px;
 }
-.inspector-item { display: flex; flex-direction: column; gap: 3px; }
-.inspector-item.wide { grid-column: 1 / -1; }
+.inspector-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.inspector-item.wide {
+  grid-column: 1 / -1;
+}
 .insp-label {
   font-size: 0.7rem;
   color: #64748b;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.insp-value { font-size: 0.9rem; color: #f8fafc; }
-.insp-value.mono { font-family: "JetBrains Mono", monospace; font-size: 0.85rem; }
-.insp-units { color: #64748b; font-size: 0.85rem; margin-left: 4px; }
+.insp-value {
+  font-size: 0.9rem;
+  color: #f8fafc;
+}
+.insp-value.mono {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.85rem;
+}
+.insp-units {
+  color: #64748b;
+  font-size: 0.85rem;
+  margin-left: 4px;
+}
 .artifact-link {
   align-self: flex-start;
   padding: 0;
@@ -951,7 +1167,10 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.insp-label-table-wrap { overflow-x: auto; max-width: 100%; }
+.insp-label-table-wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
 .insp-label-table {
   width: 100%;
   border-collapse: collapse;
@@ -965,10 +1184,24 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   font-weight: 500;
   border-bottom: 1px solid #1e293b;
 }
-.insp-label-table td { padding: 4px 8px; color: #cbd5e1; }
-.insp-label-table .label-row-index { color: #64748b; font-variant-numeric: tabular-nums; }
-.insp-label-table .label-cell { font-family: "JetBrains Mono", monospace; font-size: 0.75rem; }
-.insp-more { display: block; margin-top: 6px; color: #64748b; font-size: 0.8rem; }
+.insp-label-table td {
+  padding: 4px 8px;
+  color: #cbd5e1;
+}
+.insp-label-table .label-row-index {
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+.insp-label-table .label-cell {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.75rem;
+}
+.insp-more {
+  display: block;
+  margin-top: 6px;
+  color: #64748b;
+  font-size: 0.8rem;
+}
 
 /* Saved Model Artifact section (training nodes only). Mirrors the
    inspector-section visual but reserves a primary-accent leading stripe
@@ -1035,7 +1268,12 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   min-width: 0;
   word-break: break-word;
 }
-.meta-info-icon { color: #475569; font-size: 0.75rem; cursor: help; flex-shrink: 0; }
+.meta-info-icon {
+  color: #475569;
+  font-size: 0.75rem;
+  cursor: help;
+  flex-shrink: 0;
+}
 .meta-value {
   font-size: 0.85rem;
   color: #f8fafc;
@@ -1071,8 +1309,16 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   font-size: 0.75rem;
   font-weight: 600;
 }
-.step-content { display: flex; flex-direction: column; gap: 6px; }
-.step-operation { color: #f8fafc; font-size: 0.9rem; font-weight: 500; }
+.step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.step-operation {
+  color: #f8fafc;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
 .step-params {
   display: flex;
   flex-wrap: wrap;
@@ -1086,7 +1332,10 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   font-size: 0.75rem;
   font-family: "JetBrains Mono", monospace;
 }
-.step-shapes { display: flex; gap: 6px; }
+.step-shapes {
+  display: flex;
+  gap: 6px;
+}
 .shape-badge {
   padding: 2px 6px;
   background: rgba(59, 130, 246, 0.15);
@@ -1115,7 +1364,11 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   align-items: center;
   margin-bottom: 6px;
 }
-.port-name { color: #f8fafc; font-weight: 500; font-size: 0.9rem; }
+.port-name {
+  color: #f8fafc;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
 .port-type-badge {
   padding: 2px 6px;
   background: rgba(168, 85, 247, 0.15);
@@ -1133,8 +1386,15 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   font-size: 0.8rem;
 }
 
-.full-meta-action { display: flex; justify-content: flex-start; }
-.output-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.full-meta-action {
+  display: flex;
+  justify-content: flex-start;
+}
+.output-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .preview-datatable :deep(.p-datatable-wrapper) {
   background: #0f172a;
   border-radius: 6px;
@@ -1187,5 +1447,7 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   font-size: 0.9rem;
   line-height: 1.5;
 }
-.detail-target-dropdown { width: 100%; }
+.detail-target-dropdown {
+  width: 100%;
+}
 </style>

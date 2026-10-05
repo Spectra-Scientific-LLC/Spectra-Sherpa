@@ -1,7 +1,7 @@
 <template>
   <div class="workflow-toolbar" :class="{ collapsed: isCollapsed }">
     <div class="toolbar-header">
-      <h3 v-if="!isCollapsed">Add Nodes</h3>
+      <h3 v-if="!isCollapsed">{{ viewMode === 'add' ? 'Add Nodes' : 'Node Catalog' }}</h3>
       <button
         type="button"
         class="collapse-toggle"
@@ -14,7 +14,26 @@
       </button>
     </div>
 
-    <div v-if="!isCollapsed" class="toolbar-content">
+    <div v-if="!isCollapsed" class="toolbar-mode-tabs" aria-label="Node toolbar mode">
+      <button
+        type="button"
+        :class="{ active: viewMode === 'add' }"
+        data-testid="toolbar-mode-add"
+        @click="setViewMode('add')"
+      >
+        Add
+      </button>
+      <button
+        type="button"
+        :class="{ active: viewMode === 'catalog' }"
+        data-testid="toolbar-mode-catalog"
+        @click="setViewMode('catalog')"
+      >
+        Catalog
+      </button>
+    </div>
+
+    <div v-if="!isCollapsed && viewMode === 'add'" class="toolbar-content">
       <!-- Search category - always first, auto-focused on mount -->
       <div class="section section-search" data-testid="section-search">
         <div class="section-header static">
@@ -108,7 +127,15 @@
       </div>
     </div>
 
-    <div v-if="!isCollapsed" class="toolbar-help">
+    <div v-else-if="!isCollapsed" class="toolbar-content catalog-shell">
+      <NodeCatalogPanel
+        :nodes="catalogNodes"
+        :addable-node-types="addableNodeTypes"
+        @add-node="addNode"
+      />
+    </div>
+
+    <div v-if="!isCollapsed && viewMode === 'add'" class="toolbar-help">
       <h4>How to use</h4>
       <ol>
         <li>Add nodes from above</li>
@@ -143,8 +170,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue';
 import { useWorkflowStore } from '@/stores/workflow';
+import {
+  NODE_CATEGORY_LABELS,
+  NODE_CATEGORY_ORDER,
+  nodeCategoryLabel,
+} from '@/utils/nodeCatalogTaxonomy';
 import { getNodeVisualColorClass } from '@/utils/nodeVisuals';
 import type { NodeTypeMetadata } from '@/types';
+import NodeCatalogPanel from './NodeCatalogPanel.vue';
 
 interface NodeConfig {
   label: string;
@@ -168,6 +201,7 @@ interface SearchHit {
 const emit = defineEmits<{
   (e: 'add-node', nodeType: string): void;
   (e: 'toggle-collapsed', collapsed: boolean): void;
+  (e: 'view-mode', mode: 'add' | 'catalog'): void;
 }>();
 
 const workflowStore = useWorkflowStore();
@@ -184,6 +218,7 @@ const searchQuery = ref<string>('');
 const isCollapsed = ref<boolean>(false);
 
 const searchInputRef = ref<HTMLInputElement | null>(null);
+const viewMode = ref<'add' | 'catalog'>('add');
 
 // Floating hover tooltip state: the currently hovered node and the screen
 // coordinates at which to render the tooltip. Cleared on mouseleave.
@@ -226,10 +261,8 @@ onMounted(async () => {
 // Icon mappings by canonical node_type
 const NODE_ICONS: Record<string, string> = {
   // Data
-  'data.source': '📊',
   'data.file_load': '📂',
   'data.load_group': '🗂️',
-  'data.my_dataset': '🧪',
   'data.nist_library': '📚',
   'data.filter_samples': '🔎',
   'data.train_test_split': '✂️',
@@ -253,7 +286,9 @@ const NODE_ICONS: Record<string, string> = {
   'preprocess.osc': '⊥',
   'preprocess.emsc': '📐',
   'transfer.pds': '🔄',
-  'transfer.sbc': '📐',
+  'transfer.sws': '📐',
+  'transfer.ds': '🔁',
+  'transfer.apply_fitted': '🧰',
   'time_series.moving_window': '🕒',
   'time_series.trend_removal': '📉',
   // Exploratory
@@ -265,10 +300,9 @@ const NODE_ICONS: Record<string, string> = {
   'model.nmf': '📊',
   'model.ica': '⚡',
   'analysis.peak_finding': '⛰️',
-  'analysis.peak_id': '🔬',
   // Regression
-  'model.pls': '📈',
-  'model.pls_predict': '🎯',
+  'model.fitted_pls': '📈',
+  'model.apply_fitted_pls': '🎯',
   'model.pcr': '🧮',
   'model.svr': '🧲',
   'model.linear_regression': '📉',
@@ -286,19 +320,20 @@ const NODE_ICONS: Record<string, string> = {
   'classification.plsda': '🎯',
   'classification.knn': '👥',
   'classification.simca': '🎲',
-  'classification.predict': '🔮',
+  'classification.apply_knn': '🔮',
+  'classification.apply_plsda': '🔮',
+  'classification.apply_simca': '🔮',
   // Output
   'output.plot': '📈',
   'output.contour': '🗺️',
   'output.data_table': '📋',
   'output.export': '💾',
   // Selection & Design
-  'selection.sample_partition': '🎯',
   'selection.variable_select': '🔬',
   'selection.ipls': '📊',
   'selection.cars': '🏎️',
   'selection.spa': '📐',
-  'selection.uve': '🧹',
+  'selection.mcuve': '🧹',
   'selection.stability': '🔒',
   'selection.nested_cv': '🔄',
   'selection.audit': '📋',
@@ -307,36 +342,6 @@ const NODE_ICONS: Record<string, string> = {
   'deploy.input': '📥',
   'deploy.output': '📤',
 };
-
-// Category display names
-const CATEGORY_LABELS: Record<string, string> = {
-  data: 'Data',
-  synthesis: 'Synthesis',
-  preprocessing: 'Preprocessing',
-  selection: 'Selection & Design',
-  exploratory: 'Exploratory',
-  regression: 'Regression',
-  classification: 'Classification',
-  clustering: 'Clustering',
-  validation: 'Validation',
-  output: 'Output',
-  deploy: 'Deployment',
-};
-
-// Ordered list of built-in category keys — drives v-for render order.
-const BUILTIN_CATEGORY_ORDER: string[] = [
-  'data',
-  'synthesis',
-  'preprocessing',
-  'selection',
-  'exploratory',
-  'regression',
-  'classification',
-  'clustering',
-  'validation',
-  'output',
-  'deploy',
-];
 
 /**
  * Normalize whitespace on a node description and return the full text.
@@ -359,14 +364,20 @@ const metadataToConfig = (metadata: NodeTypeMetadata): NodeConfig => {
 };
 
 // Built-in category keys handled by the canonical template sections
-const BUILTIN_CATEGORIES = new Set(BUILTIN_CATEGORY_ORDER);
+const BUILTIN_CATEGORIES = new Set(NODE_CATEGORY_ORDER);
 
 const HIDDEN_PALETTE_NODE_TYPES = new Set([
-  'data.source',
   'data.file_load',
   'data.load_group',
   'data.nist_library',
 ]);
+
+const catalogNodes = computed<NodeTypeMetadata[]>(() => [...workflowStore.nodeLibrary.values()]);
+const addableNodeTypes = computed<string[]>(() =>
+  catalogNodes.value
+    .map((metadata) => metadata.node_type)
+    .filter((nodeType) => !HIDDEN_PALETTE_NODE_TYPES.has(nodeType)),
+);
 
 // Dynamically group nodes by category from backend
 const nodesByCategory = computed(() => {
@@ -395,9 +406,7 @@ const extraCategories = computed<CategoryGroup[]>(() => {
   const extras: CategoryGroup[] = [];
   for (const [category, nodes] of Object.entries(nodesByCategory.value)) {
     if (!BUILTIN_CATEGORIES.has(category) && Object.keys(nodes).length > 0) {
-      const label = category
-        .replace(/_/g, ' ')
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+      const label = nodeCategoryLabel(category);
       extras.push({ key: category, label, nodes });
     }
   }
@@ -406,9 +415,9 @@ const extraCategories = computed<CategoryGroup[]>(() => {
 
 // Full ordered list of categories shown in the toolbar (built-in first, extras last).
 const allCategories = computed<CategoryGroup[]>(() => {
-  const builtin: CategoryGroup[] = BUILTIN_CATEGORY_ORDER.map((key) => ({
+  const builtin: CategoryGroup[] = NODE_CATEGORY_ORDER.map((key) => ({
     key,
-    label: CATEGORY_LABELS[key],
+    label: NODE_CATEGORY_LABELS[key],
     nodes: nodesByCategory.value[key] || {},
   }));
   return [...builtin, ...extraCategories.value];
@@ -474,6 +483,16 @@ const addNode = (nodeType: string) => {
   searchQuery.value = '';
   // Dismiss any floating tooltip that was showing for this button.
   hoveredNode.value = null;
+};
+
+const setViewMode = async (mode: 'add' | 'catalog') => {
+  viewMode.value = mode;
+  hoveredNode.value = null;
+  emit('view-mode', mode);
+  if (mode === 'add') {
+    await nextTick();
+    searchInputRef.value?.focus();
+  }
 };
 
 /**
@@ -598,6 +617,34 @@ defineExpose({ summarizePurpose });
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.toolbar-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 8px 12px 0;
+}
+
+.toolbar-mode-tabs button {
+  border: 1px solid #334155;
+  border-radius: 5px;
+  padding: 6px;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.74rem;
+}
+
+.toolbar-mode-tabs button.active {
+  border-color: #3b82f6;
+  background: rgba(59, 130, 246, 0.16);
+  color: #dbeafe;
+}
+
+.catalog-shell {
+  min-height: 0;
 }
 
 /* Section wrapper */

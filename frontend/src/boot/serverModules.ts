@@ -1,3 +1,13 @@
+import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
+import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
+import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
+import api from "@/api/client";
+import { installProjectCollections, type ProjectCollectionsLoader } from "@/lib/projectCollections";
+import { installAdvisorTransport, type AdvisorTransport } from "@/lib/advisorTransport";
+import { useAdvisorStore } from "@/stores/advisor";
+import type { ScopeArgs } from "@/lib/advisorMemoryAdapter";
+import { focusOptimization, focusSection } from "@/lib/sherpaAttention";
 /**
  * Boot-time loader for server-provided frontend modules.
  *
@@ -10,6 +20,7 @@
  *   /ui/admin.js  — AdminView, /admin route registration. Loaded
  *                   lazily once user identity resolves and
  *                   `user.capabilities.admin === true`.
+ * Optional versioned modules are published through `uiExtensions`.
  *
  * Each module exports a single `register(ctx)` function. This loader
  * calls it with a live host context built from the OSS router, auth
@@ -33,11 +44,17 @@ import type { Router, RouteRecordRaw } from "vue-router";
 import { storeToRefs } from "pinia";
 
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useTopbarMenu, type TopbarMenuItem } from "@/composables/useTopbarMenu";
 import {
-  useTopbarMenu,
-  type TopbarMenuItem,
-} from "@/composables/useTopbarMenu";
+  usePrimaryNavigation,
+  type PrimaryNavigationItem,
+} from "@/composables/usePrimaryNavigation";
 import { useAuthStore } from "@/stores/auth";
+import { activeProjectScope } from "@/stores/projectScopeRegistry";
+import {
+  CONTEXTUAL_ACTIONS_VERSION, registerContextualActions, removeContextualActions, invalidateActionContext,
+  type ContextualAction,
+} from "@/composables/useContextualActions";
 
 export interface ServerModuleShell {
   component: Component;
@@ -75,9 +92,7 @@ export const serverModuleLoadFailed = ref<null | {
  * so the shell can surface a less-intrusive banner if it wants to;
  * the app stays fully navigable regardless.
  */
-export const nonCriticalModuleLoadFailures = ref<
-  Array<{ module: string; error: unknown }>
->([]);
+export const nonCriticalModuleLoadFailures = ref<Array<{ module: string; error: unknown }>>([]);
 
 /**
  * Re-export the shape that server modules expect — kept in sync with
@@ -100,10 +115,22 @@ interface HostAuthStoreBridge {
 }
 
 interface HostContext {
+  workspaceComponents: Record<"Header" | "Context" | "ContextItem" | "Tabs", Component>;
+  api: typeof api;
+  reloadConfig(): Promise<unknown>;
+  installAdvisorTransport(transport: AdvisorTransport): void;
+  /** Tell the side-chat Advisor which campaign/candidate the scientist is looking at. */
+  focusOptimization(campaignId: string | null, candidateId?: string | null): void;
+  focusSection(section: string): void;
+  setAdvisorScope(args: ScopeArgs): Promise<void>;
   router: Router;
   authStore: HostAuthStoreBridge;
   topbarMenu: {
     addItems(items: TopbarMenuItem[], contributorId?: string): void;
+    removeItems(contributorId: string): void;
+  };
+  primaryNavigation: {
+    addItems(items: PrimaryNavigationItem[], contributorId?: string): void;
     removeItems(contributorId: string): void;
   };
   appConfig: Record<string, unknown>;
@@ -111,9 +138,19 @@ interface HostContext {
   addRoute(route: RouteRecordRaw): void;
   mountShell(component: Component, contributorId?: string): void;
   unmountShells(contributorId: string): void;
+  extensions: {
+    version: number;
+    projectId: number | null;
+    signal: AbortSignal;
+    isCurrent(): boolean;
+    addActions(actions: ContextualAction[]): void;
+    setProjectCollections(loader: ProjectCollectionsLoader): void;
+    onDispose(cleanup: () => void): void;
+  };
 }
 
 interface ServerModule {
+  contextualActionsVersion?: number;
   register?: (ctx: HostContext) => void | Promise<void>;
   default?: (ctx: HostContext) => void | Promise<void>;
 }
@@ -131,34 +168,122 @@ function buildContext(
   contributorId: string,
   router: Router,
   appConfig: Record<string, unknown>,
+  scope?: RegistrationScope,
 ): HostContext {
   const authStore = useAuthStore();
   const { user, token } = storeToRefs(authStore);
   return {
+    workspaceComponents: { Header: markRaw(WorkspaceHeader), Context: markRaw(WorkspaceContext), ContextItem: markRaw(WorkspaceContextItem), Tabs: markRaw(WorkspaceTabs) },
+    api,
+    reloadConfig: () => useAppConfig().loadConfig(true),
+    installAdvisorTransport: (transport) => {
+      if (!scope?.current()) return;
+      scope.cleanups.push(installAdvisorTransport(transport));
+    },
+    focusSection: (section) => { if (scope?.current()) focusSection(section); },
+    setAdvisorScope: async (args) => {
+      if (!scope?.current() || args.projectId !== activeProjectScope.value) return;
+      await useAdvisorStore().switchScope(args);
+    },
+    focusOptimization: (campaignId, candidateId) => {
+      if (scope && !scope.current()) return;
+      focusOptimization(campaignId, candidateId);
+    },
     router,
     authStore: {
       user: user as Ref<ReturnType<typeof useAuthStore>["user"]>,
       token: token as Ref<ReturnType<typeof useAuthStore>["token"]>,
       clearCredentials: authStore.clearCredentials,
     },
-    topbarMenu: useTopbarMenu(),
+    topbarMenu: scope ? {
+      addItems: (items) => { if (scope.current()) useTopbarMenu().addItems(items, contributorId); },
+      removeItems: () => useTopbarMenu().removeItems(contributorId),
+    } : useTopbarMenu(),
+    primaryNavigation: scope
+      ? {
+          addItems: (items) => {
+            if (scope.current())
+              usePrimaryNavigation().addItems(items, contributorId);
+          },
+          removeItems: () =>
+            usePrimaryNavigation().removeItems(contributorId),
+        }
+      : usePrimaryNavigation(),
     appConfig,
     contributorId,
-    addRoute: (route) => router.addRoute(route),
+    addRoute: (route) => {
+      if (scope && !scope.current()) return;
+      const before = route.beforeEnter ? (Array.isArray(route.beforeEnter) ? route.beforeEnter : [route.beforeEnter]) : [];
+      const remove = router.addRoute(scope ? {
+        ...route, beforeEnter: [() => scope.current() ? true : "/", ...before],
+      } as RouteRecordRaw : route);
+      scope?.cleanups.push(() => {
+        const active = router.currentRoute.value.matched.some((item) => item.name === route.name && route.name != null);
+        remove();
+        if (active) void router.replace("/").catch(() => undefined);
+      });
+    },
     mountShell: (component, id) => {
+      if (scope && !scope.current()) return;
       serverModuleShells.value.push({
         // markRaw: Vue components are already immutable; wrapping
         // them in reactivity is wasteful and triggers a devtools warning.
         component: markRaw(component),
-        contributorId: id ?? contributorId,
+        contributorId: scope ? contributorId : id ?? contributorId,
       });
     },
     unmountShells: (id) => {
       serverModuleShells.value = serverModuleShells.value.filter(
-        (entry) => entry.contributorId !== id,
+        (entry) => entry.contributorId !== (scope ? contributorId : id),
       );
     },
+    extensions: {
+      version: CONTEXTUAL_ACTIONS_VERSION,
+      projectId: activeProjectScope.value,
+      signal: scope?.controller.signal ?? new AbortController().signal,
+      isCurrent: () => scope?.current() ?? true,
+      addActions: (actions) => {
+        if (!scope) throw new Error("Contextual actions require a versioned extension registration");
+        registerContextualActions(contributorId, actions, scope.current);
+      },
+      setProjectCollections: (loader) => {
+        if (!scope?.current()) return;
+        scope.cleanups.push(installProjectCollections(async (projectId) => {
+          if (!scope.current() || projectId !== activeProjectScope.value) return [];
+          const result = await loader(projectId);
+          return scope.current() && projectId === activeProjectScope.value ? result : [];
+        }));
+      },
+      onDispose: (cleanup) => {
+        if (!scope) throw new Error("Disposal requires a versioned extension registration");
+        if (scope.current()) scope.cleanups.push(cleanup);
+        else cleanup();
+      },
+    },
   };
+}
+
+interface RegistrationScope {
+  controller: AbortController;
+  current(): boolean;
+  cleanups: Array<() => void>;
+}
+
+const extensionScopes = new Map<string, RegistrationScope>();
+let stopExtensions: (() => void) | undefined;
+
+function disposeExtension(id: string): void {
+  const scope = extensionScopes.get(id);
+  if (!scope) return;
+  extensionScopes.delete(id);
+  scope.controller.abort();
+  removeContextualActions(id);
+  useTopbarMenu().removeItems(id);
+  usePrimaryNavigation().removeItems(id);
+  serverModuleShells.value = serverModuleShells.value.filter((item) => item.contributorId !== id);
+  for (const cleanup of scope.cleanups.reverse()) {
+    try { cleanup(); } catch (error) { console.warn(`[boot] extension cleanup failed (${id})`, error); }
+  }
 }
 
 /**
@@ -181,7 +306,7 @@ let serverStylesInjected = false;
 function ensureServerStylesheet(): void {
   if (serverStylesInjected) return;
   if (typeof document === "undefined") return;
-  if (document.querySelector('link[data-server-styles]')) {
+  if (document.querySelector("link[data-server-styles]")) {
     serverStylesInjected = true;
     return;
   }
@@ -201,17 +326,21 @@ async function loadAndRegister(
   importModule: ImportModuleFn,
   failClosed: boolean,
   reresolveCurrentRoute: boolean,
+  scope?: RegistrationScope,
 ): Promise<boolean> {
   ensureServerStylesheet();
   try {
     const mod = await importModule(url);
+    if (scope && !scope.current()) return false;
+    if (scope && mod.contextualActionsVersion !== CONTEXTUAL_ACTIONS_VERSION) {
+      throw new Error(`Unsupported contextual action contract from ${url}`);
+    }
     const register = mod.register ?? mod.default;
     if (typeof register !== "function") {
-      throw new Error(
-        `Server module ${url} did not export a register() function`,
-      );
+      throw new Error(`Server module ${url} did not export a register() function`);
     }
-    await register(buildContext(contributorId, router, appConfig));
+    await register(buildContext(contributorId, router, appConfig, scope));
+    if (scope && !scope.current()) return false;
 
     // vue-router resolves the initial navigation when `app.use(router)`
     // installs the plugin — BEFORE bootServerModules has a chance to
@@ -233,15 +362,14 @@ async function loadAndRegister(
       } catch (err) {
         // Re-resolve can throw on guard-driven redirects; that's
         // fine — the navigation still completes.
-        console.warn(
-          `[boot] re-resolve after addRoute(${url}) failed:`,
-          err,
-        );
+        console.warn(`[boot] re-resolve after addRoute(${url}) failed:`, err);
       }
     }
     console.info(`[boot] loaded server module ${url}`);
     return true;
   } catch (error) {
+    if (scope && !scope.current()) return false;
+    if (scope) disposeExtension(contributorId);
     console.error(`[boot] failed to load server module ${url}:`, error);
     if (failClosed) {
       serverModuleLoadFailed.value = { module: url, error };
@@ -280,11 +408,14 @@ export interface BootServerModulesOptions {
  */
 export function __resetServerModulesForTests(): void {
   adminLoaded = false;
+  stopExtensions?.();
+  stopExtensions = undefined;
+  for (const id of extensionScopes.keys()) disposeExtension(id);
+  invalidateActionContext();
+  usePrimaryNavigation().clear();
   serverStylesInjected = false;
   if (typeof document !== "undefined") {
-    document
-      .querySelectorAll('link[data-server-styles]')
-      .forEach((node) => node.remove());
+    document.querySelectorAll("link[data-server-styles]").forEach((node) => node.remove());
   }
   serverModuleShells.value = [];
   serverModuleLoadFailed.value = null;
@@ -331,10 +462,75 @@ export async function bootServerModules(
     );
   }
 
+  const identity = useAuthStore();
+  if (config.value?.implicitIdentity === true && !identity.user) await identity.initializeActor();
+  stopExtensions?.();
+  stopExtensions = undefined;
+  const extensionRegistrationKey = (): string => JSON.stringify([
+    identity.user?.id,
+    identity.user?.capabilities,
+    activeProjectScope.value,
+    config.value?.uiExtensions,
+    config.value?.features,
+  ]);
+  const registerConfiguredExtensions = async (): Promise<void> => {
+    for (const id of extensionScopes.keys()) disposeExtension(id);
+    invalidateActionContext();
+
+    const entries = config.value?.uiExtensions ?? [];
+    if (!Array.isArray(entries) || entries.length > 8) return;
+    const registrationKey = extensionRegistrationKey();
+    const registrations: Array<Promise<boolean>> = [];
+    for (const entry of entries) {
+      if (entry?.bootstrap !== true && (!identity.user || config.value?.mode === "local")) continue;
+      if (!entry || typeof entry.id !== "string" || typeof entry.url !== "string"
+        || !/^[a-z][a-z0-9-]{0,63}$/.test(entry.id)
+        || !/^\/ui\/[a-z][a-z0-9-]*\.js$/.test(entry.url)
+        || entry.contractVersion !== CONTEXTUAL_ACTIONS_VERSION) {
+        const failure = { module: "uiExtensions", error: "Invalid extension descriptor" };
+        if (entry?.required === true) serverModuleLoadFailed.value = failure;
+        else nonCriticalModuleLoadFailures.value.push(failure);
+        continue;
+      }
+      const id = `extension:${entry.id}`;
+      const scope: RegistrationScope = {
+        controller: new AbortController(), cleanups: [],
+        current: () => extensionScopes.get(id) === scope
+          && !scope.controller.signal.aborted
+          && extensionRegistrationKey() === registrationKey,
+      };
+      extensionScopes.set(id, scope);
+      registrations.push(loadAndRegister(
+        entry.url,
+        id,
+        router,
+        config.value as unknown as Record<string, unknown>,
+        importModule,
+        entry.required === true,
+        reresolveCurrentRoute,
+        scope,
+      ));
+    }
+    await Promise.all(registrations);
+  };
+
+  // The first extension registration is part of boot. Dynamic routes must be
+  // present before app.use(router) resolves a bookmarked managed URL.
+  const initialRegistrationKey = extensionRegistrationKey();
+  await registerConfiguredExtensions();
+  if (extensionRegistrationKey() !== initialRegistrationKey) {
+    await registerConfiguredExtensions();
+  }
+  stopExtensions = watch(
+    extensionRegistrationKey,
+    () => { void registerConfiguredExtensions(); },
+    { flush: "sync" },
+  );
+
   // User-level: admin UI module. Lazily loaded when the host user
   // resolves with capabilities.admin. Watched rather than eagerly
   // loaded because identity may not be known at boot time (e.g.
-  // hybrid mode calls /auth/me asynchronously). NOT fail-closed:
+  // a product runtime calls /auth/me asynchronously). NOT fail-closed:
   // a bundle fetch failure here should hide admin UI, not brick
   // the whole product for admin users.
   const authStore = useAuthStore();

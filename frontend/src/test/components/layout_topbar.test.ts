@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file */
 import { enableAutoUnmount, mount } from "@vue/test-utils";
-import { defineComponent, nextTick } from "vue";
+import { defineComponent, reactive, nextTick } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -12,9 +12,7 @@ const mocks = vi.hoisted(() => ({
   },
   hasLLMConfigured: { __v_isRef: true, value: false },
   backendConnected: { __v_isRef: true, value: true },
-  backendDegraded: { __v_isRef: true, value: false },
   checkingStatus: { __v_isRef: true, value: false },
-  pluginFailureCount: { __v_isRef: true, value: 0 },
   toastAdd: vi.fn(),
   routerPush: vi.fn(),
   notifySystemEvent: vi.fn(),
@@ -41,6 +39,7 @@ const mocks = vi.hoisted(() => ({
     currentProjectId: 1,
     currentProject: { id: 1, name: "Demo Project" },
     projectList: [{ id: 1, name: "Demo Project", modified: "2026-03-16" }],
+    fetchProjects: vi.fn().mockResolvedValue(undefined),
     selectProject: vi.fn(),
     createProject: vi.fn(),
     updateProject: vi.fn(),
@@ -53,9 +52,17 @@ const mocks = vi.hoisted(() => ({
   workflowStore: {
     nodes: [] as Array<Record<string, unknown>>,
     hasUnsavedChanges: false,
+    workflowId: null as number | null,
+    saveWorkflow: vi.fn(),
   },
   experimentStore: {
     experiments: [] as Array<Record<string, unknown>>,
+  },
+  provenanceStore: {
+    projectId: null as number | null,
+    summary: null as null | { verified_at: string; records: Array<Record<string, unknown>> },
+    error: null,
+    refresh: vi.fn().mockResolvedValue(undefined),
   },
   llmStore: {
     connectionStatus: "disconnected",
@@ -74,6 +81,7 @@ vi.mock("vue-router", async () => {
     }),
     useRouter: () => ({
       push: mocks.routerPush,
+      currentRoute: { value: { fullPath: "/" } },
     }),
   };
 });
@@ -96,9 +104,7 @@ vi.mock("@/composables/useAppConfig", () => ({
 vi.mock("@/composables/useBackendStatus", () => ({
   useBackendStatus: () => ({
     backendConnected: mocks.backendConnected,
-    backendDegraded: mocks.backendDegraded,
     checkingStatus: mocks.checkingStatus,
-    pluginFailureCount: mocks.pluginFailureCount,
     checkBackendStatus: mocks.checkBackendStatus,
     startHealthCheck: mocks.startHealthCheck,
     stopHealthCheck: mocks.stopHealthCheck,
@@ -124,7 +130,12 @@ vi.mock("@/stores/job", () => ({
 }));
 
 vi.mock("@/stores/project", () => ({
-  useProjectStore: () => mocks.projectStore,
+  useProjectStore: () => reactive(mocks.projectStore),
+}));
+
+vi.mock("@/stores/projectProvenance", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/stores/projectProvenance")>(),
+  useProjectProvenanceStore: () => mocks.provenanceStore,
 }));
 
 vi.mock("@/stores/notification", () => ({
@@ -162,19 +173,20 @@ const DropdownStub = defineComponent({
   inheritAttrs: false,
   props: {
     modelValue: { type: [Number, String, null], default: null },
+    options: { type: Array, default: () => [] },
   },
   emits: ["update:modelValue", "change"],
-  template: "<div v-bind=\"$attrs\"><slot name=\"value\" :value=\"modelValue\" /></div>",
+  template: '<div v-bind="$attrs"><slot name="value" :value="modelValue" /></div>',
 });
 
 const MenuStub = defineComponent({
   name: "PrimeMenu",
-  template: "<div class=\"menu-stub\"><slot /></div>",
+  template: '<div class="menu-stub"><slot /></div>',
 });
 
 const RouterViewStub = defineComponent({
   name: "RouterView",
-  template: "<div data-test=\"router-view\" />",
+  template: '<div data-test="router-view" />',
 });
 
 const TopbarStub = defineComponent({
@@ -184,7 +196,7 @@ const TopbarStub = defineComponent({
     chatCollapsed: { type: Boolean, default: false },
     showChatToggle: { type: Boolean, default: true },
   },
-  template: "<div data-test=\"topbar-stub\" />",
+  template: '<div data-test="topbar-stub" />',
 });
 
 const ChatPanelStub = defineComponent({
@@ -193,7 +205,7 @@ const ChatPanelStub = defineComponent({
     compact: { type: Boolean, default: false },
     collapsed: { type: Boolean, default: false },
   },
-  template: "<div data-test=\"chat-panel-stub\" />",
+  template: '<div data-test="chat-panel-stub" />',
 });
 
 const SidebarStub = defineComponent({
@@ -201,7 +213,7 @@ const SidebarStub = defineComponent({
   props: {
     collapsed: { type: Boolean, default: false },
   },
-  template: "<div data-test=\"sidebar-stub\" />",
+  template: '<div data-test="sidebar-stub" />',
 });
 
 vi.mock("@/components/SherpaUpgradeModal.vue", () => ({
@@ -347,6 +359,14 @@ describe("MainLayout chat panel defaults", () => {
     expect(wrapper.findComponent(ChatPanelStub).exists()).toBe(false);
   });
 
+  it("does not start guidance when hosted configuration does not advertise it", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = { features: { sherpaGuidance: false } };
+    mount(MainLayout, mainLayoutMountOptions);
+    await nextTick();
+    await nextTick();
+    expect(mocks.guidanceStart).not.toHaveBeenCalled();
+  });
   it("starts guidance after authenticated server-backed config is ready", async () => {
     mocks.appMode.value = "enterprise";
     mocks.appConfig.value = { features: { sherpaGuidance: true } };
@@ -478,13 +498,77 @@ describe("Topbar action hover labels", () => {
     mocks.projectStore.currentProjectId = 1;
     mocks.authStore.user = { id: 7, username: "alice", capabilities: { admin: false } };
     mocks.appMode.value = "local";
+    mocks.workflowStore.workflowId = null;
+    mocks.workflowStore.nodes = [];
+    mocks.workflowStore.hasUnsavedChanges = false;
+    mocks.workflowStore.saveWorkflow.mockReset();
+    mocks.workflowStore.saveWorkflow.mockResolvedValue(undefined);
+    mocks.projectStore.selectProject.mockReset();
+    mocks.projectStore.fetchProjects.mockReset();
+    mocks.projectStore.fetchProjects.mockResolvedValue(undefined);
+    mocks.projectStore.projectList = [{ id: 1, name: "Demo Project", modified: "2026-03-16" }];
+    mocks.experimentStore.experiments = [];
+    mocks.provenanceStore.projectId = null;
+    mocks.provenanceStore.summary = null;
+    mocks.provenanceStore.error = null;
+  });
+
+  it("loads selector choices for a cold deep link and preserves the loaded project name", async () => {
+    mocks.projectStore.projectList = [];
+    mocks.projectStore.fetchProjects.mockImplementationOnce(async () => {
+      reactive(mocks.projectStore).projectList = [{ id: 1, name: "Loaded project", modified: "2026-09-22" }];
+    });
+    const wrapper = mountTopbar(true);
+    await nextTick();
+    expect(mocks.projectStore.fetchProjects).toHaveBeenCalledOnce();
+    expect(wrapper.text()).not.toContain("Unknown Project");
+    expect(wrapper.findComponent(DropdownStub).props("options")).toEqual(mocks.projectStore.projectList);
+  });
+
+  it("saves a dirty workflow before switching projects", async () => {
+    mocks.workflowStore.workflowId = 144;
+    mocks.workflowStore.hasUnsavedChanges = true;
+    mocks.projectStore.currentProject = { id: 2, name: "Second Project" };
+    const wrapper = mountTopbar(true);
+    const dropdown = wrapper.findComponent(DropdownStub);
+
+    await dropdown.vm.$emit("update:modelValue", 2);
+    await dropdown.vm.$emit("change");
+    await nextTick();
+
+    expect(mocks.workflowStore.saveWorkflow).toHaveBeenCalledWith({ createVersion: false });
+    expect(mocks.projectStore.selectProject).toHaveBeenCalledWith(2);
+    expect(mocks.workflowStore.saveWorkflow.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.projectStore.selectProject.mock.invocationCallOrder[0],
+    );
+  });
+
+  it("keeps the current project when a dirty workflow cannot be saved", async () => {
+    mocks.workflowStore.workflowId = 144;
+    mocks.workflowStore.hasUnsavedChanges = true;
+    mocks.workflowStore.saveWorkflow.mockRejectedValueOnce(new Error("save failed"));
+    const wrapper = mountTopbar(true);
+    const dropdown = wrapper.findComponent(DropdownStub);
+
+    await dropdown.vm.$emit("update:modelValue", 2);
+    await dropdown.vm.$emit("change");
+    await nextTick();
+
+    expect(mocks.projectStore.selectProject).not.toHaveBeenCalled();
+    expect(mocks.toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: "Project Switch Stopped" }),
+    );
   });
 
   it("adds descriptive titles to the action icons to the right of the status lights", () => {
     const wrapper = mountTopbar(true);
 
-    expect(wrapper.get('[aria-label="Toggle chat panel"]').attributes("title")).toBe("Open chat panel");
-    expect(wrapper.get('[aria-label="Notifications"]').attributes("title")).toBe("Open notifications");
+    expect(wrapper.get('[aria-label="Toggle chat panel"]').attributes("title")).toBe(
+      "Open chat panel",
+    );
+    expect(wrapper.get('[aria-label="Notifications"]').attributes("title")).toBe(
+      "Open notifications",
+    );
     expect(wrapper.get('[aria-label="User menu"]').attributes("title")).toBe("Open user menu");
   });
 
@@ -501,6 +585,37 @@ describe("Topbar action hover labels", () => {
   it("updates the chat toggle label when the chat panel is open", () => {
     const wrapper = mountTopbar(false);
 
-    expect(wrapper.get('[aria-label="Toggle chat panel"]').attributes("title")).toBe("Collapse chat panel");
+    expect(wrapper.get('[aria-label="Toggle chat panel"]').attributes("title")).toBe(
+      "Collapse chat panel",
+    );
+  });
+
+  it.each([
+    ["source", "Source", "missing"],
+    ["dataset", "Dataset", "missing"],
+    ["model", "Calibrated model", "faulty"],
+  ])("shows available %s green despite incomplete provenance", (kind, label, state) => {
+    mocks.provenanceStore.projectId = 1;
+    mocks.provenanceStore.summary = {
+      verified_at: "2026-10-04T00:00:00Z",
+      records: [{ kind, label, state, name: "Corn M5", digest: null, detail: "No selection link",
+        availability: { state: "healthy", detail: "Available in project." } }],
+    };
+
+    const wrapper = mountTopbar(true);
+
+    expect(wrapper.get(`.provenance-indicators [aria-label^="${label}: Available in project."]`).classes()).toContain("status-green");
+    expect(wrapper.get('.status-indicators [aria-label="Backend: Connected"]').classes()).toContain("status-green");
+  });
+
+  it("shows unavailable model files red even with healthy provenance", () => {
+    mocks.provenanceStore.projectId = 1;
+    mocks.provenanceStore.summary = {
+      verified_at: "2026-10-04T00:00:00Z",
+      records: [{ kind: "model", label: "Calibrated model", state: "healthy", name: "PLS",
+        availability: { state: "faulty", detail: "Model files missing." } }],
+    };
+    const wrapper = mountTopbar(true);
+    expect(wrapper.get('.provenance-indicators [aria-label^="Calibrated model: Model files missing."]').classes()).toContain("status-red");
   });
 });

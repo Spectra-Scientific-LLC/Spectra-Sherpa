@@ -36,9 +36,11 @@ interface OutputOverrides {
   processingHistory?: any;
   provenance?: any;
   quality?: any;
-  isRegressionNode?: boolean;
+  isRegressionComparison?: boolean;
   regressionTargetOptions?: { label: string; value: number }[];
   regressionTargetIdx?: number;
+  presentationOptions?: { label: string; value: string }[];
+  presentationError?: string | null;
   portSummaries?: any[];
   preview?: { rows: any[]; columns: { field: string; header: string }[]; summary: string };
   pcaDiagnostics?: { rows: any[]; columns: { field: string; header: string }[]; summary: string };
@@ -70,12 +72,14 @@ function makeState(overrides: OutputOverrides = {}): NodeDetailState {
       processingHistory: ref(overrides.processingHistory ?? null),
       provenance: ref(overrides.provenance ?? null),
       quality: ref(overrides.quality ?? null),
+      presentationOptions: ref(overrides.presentationOptions ?? []),
+      presentationError: ref(overrides.presentationError ?? null),
       portSummaries: ref(overrides.portSummaries ?? []),
       preview: computed(() => overrides.preview ?? { rows: [], columns: [], summary: "" }),
       pcaDiagnostics: computed(
         () => overrides.pcaDiagnostics ?? { rows: [], columns: [], summary: "" },
       ),
-      isRegressionNode: ref(overrides.isRegressionNode ?? false),
+      isRegressionComparison: ref(overrides.isRegressionComparison ?? false),
       regressionTargetOptions: ref(overrides.regressionTargetOptions ?? []),
       selectedRegressionR2: ref(null),
       selectedRegressionRmse: ref(null),
@@ -84,14 +88,25 @@ function makeState(overrides: OutputOverrides = {}): NodeDetailState {
       formatMetaValue: (v: unknown) => String(v),
     },
     plots: ref({
-      hasOutput: false, availablePlots: [], nodeTypeKey: "",
-      isPCAOutput: false, isPreprocessingNode: false, isDataNode: false,
-      isSpectraData: false, isGenericDataNode: false, nodeOutput: null,
-      contourClickPoint: null, pcaAxisOptions: [], regressionTargetOptions: [],
-      spectraDisplayOptions: [], genericDisplayOptions: [], featureOptions: [],
+      hasOutput: false,
+      availablePlots: [],
+      nodeTypeKey: "",
+      isPCAOutput: false,
+      isPreprocessingNode: false,
+      isDataNode: false,
+      isSpectraData: false,
+      isGenericDataNode: false,
+      nodeOutput: null,
+      contourClickPoint: null,
+      pcaAxisOptions: [],
+      regressionTargetOptions: [],
+      spectraDisplayOptions: [],
+      genericDisplayOptions: [],
+      featureOptions: [],
       holdoutVisualization: null,
     }),
     writable: {
+      selectedPresentationId: ref(null),
       pcaXAxis: ref(0),
       pcaYAxis: ref(1),
       plsdaLoadingsViewMode: ref("lines"),
@@ -175,6 +190,70 @@ describe("OutputPanel", () => {
     expect(wrapper.text()).toContain("50");
     expect(wrapper.text()).toContain("PCA scores");
     expect(wrapper.text()).toContain("-1.500 - 1.500");
+  });
+
+  it("uses scientific evidence labels when the output is not a matrix", () => {
+    const { wrapper } = factory({
+      data: {
+        rows: 50,
+        cols: 61,
+        rowLabel: "spectra",
+        colLabel: "peak detections",
+        type: "visualization",
+      },
+    });
+    expect(wrapper.text()).toContain("spectra");
+    expect(wrapper.text()).toContain("peak detections");
+    expect(wrapper.text()).not.toContain("Columns");
+  });
+
+  it("shows graph-verified held-out evaluation authority in the scientific result", () => {
+    const { wrapper } = factory({
+      metadata: {
+        role: "held_out_test",
+        population_authority: {
+          role: "held_out_test",
+          qualification: "graph_verified",
+          population: ["split", "test"],
+          fitted_populations: [["split", "train"]],
+        },
+      },
+    });
+
+    expect(wrapper.text()).toContain("Evaluation Scope");
+    expect(wrapper.text()).toContain("Held Out Test");
+    expect(wrapper.text()).toContain("held_out_test");
+    expect(wrapper.text()).toContain("Lineage Qualification");
+    expect(wrapper.text()).toContain("Graph Verified");
+    expect(wrapper.text()).toContain("graph_verified");
+    expect(wrapper.text()).toContain("Evaluated Population");
+    expect(wrapper.text()).toContain("split · test");
+    expect(wrapper.text()).toContain("Fitted Population");
+    expect(wrapper.text()).toContain("split · train");
+    expect(wrapper.text()).not.toContain("Validation Folds");
+  });
+
+  it("names the campaign folds a candidate sheet was cross-validated with", () => {
+    const { wrapper } = factory({
+      metadata: {
+        population_authority: {
+          role: "cross_validation",
+          qualification: "fold_executor_verified",
+          population: null,
+          fitted_populations: [],
+        },
+        fold_validation: {
+          scope: "cross_validation",
+          origin: "campaign-1 · candidate-012",
+          n_folds: 5,
+        },
+      },
+    });
+
+    expect(wrapper.text()).toContain("Cross Validation");
+    expect(wrapper.text()).toContain("Fold Executor Verified");
+    expect(wrapper.text()).toContain("Validation Folds");
+    expect(wrapper.text()).toContain("5 cross-validation folds; protocol from campaign-1 · candidate-012. Original sample identity is not verified. Each sample predicted by a model not trained on it");
   });
 
   it("emits toggleSub with the correct subsection key", async () => {
@@ -309,8 +388,7 @@ describe("OutputPanel", () => {
 
   it("emits the action events from the output-actions buttons", async () => {
     const { wrapper } = factory();
-    const click = (label: string) =>
-      wrapper.find(`button[aria-label="${label}"]`).trigger("click");
+    const click = (label: string) => wrapper.find(`button[aria-label="${label}"]`).trigger("click");
     await click("View Full Metadata (JSON)");
     await click("View Data Table");
     await click("Quick Plot");
@@ -323,7 +401,7 @@ describe("OutputPanel", () => {
 
   it("mutating regressionTargetIdx via the shared writable ref propagates to the state object", async () => {
     const { wrapper, state } = factory({
-      isRegressionNode: true,
+      isRegressionComparison: true,
       regressionTargetOptions: [
         { label: "all", value: -1 },
         { label: "target 0", value: 0 },
@@ -343,4 +421,14 @@ describe("OutputPanel", () => {
     await wrapper.vm.$nextTick();
     expect(state.writable.regressionTargetIdx.value).toBe(0);
   });
+  it("shows metric qualification and preserves tiny nonzero errors", () => {
+    const { wrapper } = factory({
+      quality: { latest_rmse: 1e-9, qualification: "Per-response metrics only" },
+      subsections: { coordinates: false, metadata: false, processing: false,
+        provenance: false, quality: true, ports: false },
+    });
+    expect(wrapper.text()).toContain("Per-response metrics only");
+    expect(wrapper.text()).toContain("1.0000e-9");
+  });
+
 });

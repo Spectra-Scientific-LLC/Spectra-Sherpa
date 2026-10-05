@@ -148,7 +148,7 @@ describe("project store coordinates project-scoped resets", () => {
     vi.mocked(api.delete).mockResolvedValueOnce({ data: null });
     vi.mocked(api.get).mockResolvedValueOnce({ data: [] }); // fetchProjects after delete
 
-    await project.deleteProject(9);
+    await project.deleteProject(9, "Active Project");
     expect(runs.runs).toEqual([]);
 
     // Now seed again and delete a non-active project
@@ -157,7 +157,7 @@ describe("project store coordinates project-scoped resets", () => {
     vi.mocked(api.delete).mockResolvedValueOnce({ data: null });
     vi.mocked(api.get).mockResolvedValueOnce({ data: [] });
 
-    await project.deleteProject(11);
+    await project.deleteProject(11, "Other Project");
     expect(runs.runs).toHaveLength(1);
   });
 });

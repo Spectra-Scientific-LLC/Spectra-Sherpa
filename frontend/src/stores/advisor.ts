@@ -17,7 +17,8 @@ import type { AdvisorChannel } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 
 export const useAdvisorStore = defineStore("advisor", () => {
-  const { appMode } = useAppConfig();
+  const { appMode, siteProfile } = useAppConfig();
+  const memoryUnavailable = computed(() => appMode.value === "enterprise" && siteProfile?.value === "pro");
   const isServerBacked = computed(() => appMode.value !== "local");
 
   // R1 canonical state — drives all future routing.  ``advisor_node_id``
@@ -33,6 +34,7 @@ export const useAdvisorStore = defineStore("advisor", () => {
   const activeChannelId = ref<number | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
+  let scopeRequest = 0;
 
   const activeNodeId = computed(() => activeNode.value?.id ?? null);
   const activeChannel = computed(
@@ -43,6 +45,7 @@ export const useAdvisorStore = defineStore("advisor", () => {
   );
 
   function resetProjectScope(): void {
+    ++scopeRequest;
     activeNode.value = null;
     topics.value = [];
     activeTopicId.value = null;
@@ -69,6 +72,12 @@ export const useAdvisorStore = defineStore("advisor", () => {
    * back.  All graph traversal is server-side.
    */
   async function switchScope(args: ScopeArgs): Promise<MemoryNode | null> {
+    if (memoryUnavailable.value) {
+      // Pro chat uses its retained, project-authorized conversation directly.
+      // Memory scopes have separate custody and are not an admitted capability.
+      resetProjectScope();
+      return null;
+    }
     // Pre-check: the requested scope must belong to the project the user
     // currently has loaded. The backend still authoritatively rejects
     // cross-project scopes (the memory adapter is project-scoped on the
@@ -85,11 +94,19 @@ export const useAdvisorStore = defineStore("advisor", () => {
       return null;
     }
 
+    if (activeNode.value?.project_id === args.projectId && activeNode.value.tab_key === args.tabKey
+      && activeNode.value.subscope_key === args.subscopeKey) return activeNode.value;
+    const request = ++scopeRequest;
+    activeNode.value = null;
+    topics.value = [];
+    activeTopicId.value = null;
+    useSherpaStore().startNewConversation();
     isLoading.value = true;
     error.value = null;
     try {
       const adapter = getAdvisorMemoryAdapter(isServerBacked.value);
       const envelope = await adapter.switchScope(args);
+      if (request !== scopeRequest) return null;
       _applyScopeEnvelope(envelope);
       projectId.value = args.projectId;
 
@@ -99,6 +116,7 @@ export const useAdvisorStore = defineStore("advisor", () => {
         try {
           await sherpaStore.loadConversation(activeTopic.conversation_id);
         } catch (err) {
+          if (request !== scopeRequest) return null;
           console.warn("[advisor] Could not load topic conversation; starting fresh", err);
           sherpaStore.startNewConversation();
         }
@@ -107,10 +125,11 @@ export const useAdvisorStore = defineStore("advisor", () => {
       }
       return envelope.active_node;
     } catch (err) {
+      if (request !== scopeRequest) return null;
       error.value = getErrorMessage(err);
       return null;
     } finally {
-      isLoading.value = false;
+      if (request === scopeRequest) isLoading.value = false;
     }
   }
 

@@ -13,7 +13,7 @@ function makeStore(overrides: Partial<Fake> = {}): Fake {
   return {
     isLoadingNodeLibrary: false,
     nodeLibraryLoadError: null,
-    nodeLibrary: new Map([["data.source", {}]]),
+    nodeLibrary: new Map([["data.file_load", {}]]),
     validateNodeParams: () => [],
     ...overrides,
   };
@@ -32,7 +32,7 @@ describe("useNodeValidation", () => {
 
   it("skips validation while node library is loading", () => {
     const store = makeStore({ isLoadingNodeLibrary: true, validateNodeParams: () => [{ param_name: "x", message: "bad" }] });
-    const nodeType = computed(() => "data.source");
+    const nodeType = computed(() => "data.file_load");
     const params = ref({});
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const v = useNodeValidation(store as any, nodeType, params);
@@ -42,7 +42,7 @@ describe("useNodeValidation", () => {
 
   it("skips validation when node library failed to load", () => {
     const store = makeStore({ nodeLibraryLoadError: new Error("fail"), validateNodeParams: () => [{ param_name: "x", message: "bad" }] });
-    const nodeType = computed(() => "data.source");
+    const nodeType = computed(() => "data.file_load");
     const params = ref({});
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const v = useNodeValidation(store as any, nodeType, params);

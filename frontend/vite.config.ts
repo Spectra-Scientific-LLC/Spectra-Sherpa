@@ -11,14 +11,29 @@ const frontendPkg = JSON.parse(
   readFileSync(path.resolve(__dirname, "package.json"), "utf-8"),
 );
 
+// CI performs a second clean build outside the package tree and compares the
+// complete byte inventory with the package-targeted build. Keeping the override
+// explicit also lets release tooling generate assets without ever tracking
+// Vite output in git.
+const staticOutDir = process.env.SHERPA_FRONTEND_OUT_DIR
+  ? path.resolve(process.env.SHERPA_FRONTEND_OUT_DIR)
+  : path.resolve(__dirname, "../src/spectra_sherpa/static");
+
 export default defineConfig({
   plugins: [vue()],
   define: {
     __SHERPA_FRONTEND_VERSION__: JSON.stringify(frontendPkg.version),
   },
   build: {
-    outDir: path.resolve(__dirname, "../src/spectra_sherpa/static"),
+    outDir: staticOutDir,
     emptyOutDir: true,
+    // Vite injects preload lists after chunk hashing. Cyclic dependency
+    // traversal can enumerate the same URLs differently across platforms.
+    modulePreload: { resolveDependencies: (_filename, dependencies) => [...dependencies].sort() },
+    // CSS preload traversal is not covered by resolveDependencies. One shared
+    // stylesheet keeps its order stable across platforms and route histories;
+    // page JavaScript remains lazy-loaded.
+    cssCodeSplit: false,
     // Avoid Lightning CSS's platform-specific optional native package in CI.
     // esbuild minification is deterministic for the committed OSS static bundle
     // and removes a flaky post-merge failure mode on Ubuntu runners.

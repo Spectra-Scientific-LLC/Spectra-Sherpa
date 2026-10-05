@@ -1,13 +1,30 @@
 <template>
   <section class="source-preview">
-    <div v-if="!sourceRef" class="preview-empty">
+    <div v-if="!sourceRef && !acquisitionRequired" class="preview-empty">
       <i class="pi pi-table"></i>
       <span>Select a data source name to preview the matrix and metadata before adding it.</span>
     </div>
+    <template v-else-if="acquisitionRequired">
+      <header class="source-preview-title">
+        <strong class="meta-name" :title="title">{{ title }}</strong>
+      </header>
+      <div class="preview-acquisition" role="status">
+        <i class="pi pi-file-import" aria-hidden="true"></i>
+        <div>
+          <strong>Provider file required</strong>
+          <span>
+            Import the downloaded provider ZIP to inspect its exact files, matrix, metadata, and
+            plots.
+          </span>
+        </div>
+      </div>
+    </template>
     <template v-else>
       <header class="source-preview-title">
         <strong class="meta-name" :title="title">{{ title }}</strong>
-        <small v-if="matrix">{{ matrix.shape[0].toLocaleString() }} samples x {{ matrix.shape[1].toLocaleString() }} features</small>
+        <small v-if="matrix">{{
+          matrix.shape.map((value) => value.toLocaleString()).join(" × ")
+        }}</small>
       </header>
       <section class="preview-section source-files">
         <button
@@ -23,7 +40,11 @@
           </span>
           <small class="section-summary">{{ filesSummary }}</small>
         </button>
-        <div :id="`source-preview-${sourceDomId}-files`" v-show="!filesCollapsed" class="section-body">
+        <div
+          :id="`source-preview-${sourceDomId}-files`"
+          v-show="!filesCollapsed"
+          class="section-body"
+        >
           <div v-if="previewFiles.length" class="preview-files-list">
             <div v-for="file in previewFiles" :key="file.key" class="preview-file-row">
               <span class="preview-file-name" :title="file.name">{{ file.name }}</span>
@@ -49,7 +70,24 @@
           </span>
           <small class="section-summary">{{ csvSummary }}</small>
         </button>
-        <div :id="`source-preview-${sourceDomId}-csv`" v-show="!csvCollapsed" class="section-body csv-inspector-body">
+        <div
+          :id="`source-preview-${sourceDomId}-csv`"
+          v-show="!csvCollapsed"
+          class="section-body csv-inspector-body"
+        >
+          <div v-if="csvLayoutOptions.length" class="field csv-layout-field">
+            <label>CSV interpretation</label>
+            <Dropdown
+              v-model="localOverrides.csv_layout"
+              :options="csvLayoutOptions"
+              optionLabel="label"
+              optionValue="value"
+            />
+            <small>
+              This supplier-neutral interpretation is saved with the source and reused by previews,
+              workflows, exports, and imports.
+            </small>
+          </div>
           <div class="csv-readout-grid">
             <div class="readout">
               <div class="readout-title">Layout</div>
@@ -99,9 +137,16 @@
           <div v-if="csvPlan.columns?.length" class="csv-column-roles">
             <div v-for="column in csvPlan.columns" :key="column.name" class="csv-column-role">
               <span :class="['csv-role-badge', `role-${column.role}`]">{{ column.role }}</span>
-              <span class="csv-column-name" :title="column.reason || column.name">{{ column.name }}</span>
+              <span class="csv-column-name" :title="column.reason || column.name">{{
+                column.name
+              }}</span>
             </div>
           </div>
+          <small v-if="csvPlan.columns?.length" class="csv-role-legend">
+            Admitted mapping: I identity · W coordinate · F model feature · P reference property ·
+            M sample metadata · T explicit target. Only F columns contribute to the displayed
+            feature count.
+          </small>
         </div>
       </section>
       <section class="preview-section source-meta">
@@ -118,7 +163,11 @@
           </span>
           <small class="section-summary">Editable labels and target settings</small>
         </button>
-        <div :id="`source-preview-${sourceDomId}-metadata`" v-show="!metaCollapsed" class="section-body">
+        <div
+          :id="`source-preview-${sourceDomId}-metadata`"
+          v-show="!metaCollapsed"
+          class="section-body"
+        >
           <div class="source-meta-grid">
             <div v-if="matrix" class="readout">
               <div class="readout-title">Matrix</div>
@@ -133,7 +182,10 @@
                 </div>
                 <div>
                   <dt>Range</dt>
-                  <dd>{{ formatStat(matrix.stats.summary.global_min) }} to {{ formatStat(matrix.stats.summary.global_max) }}</dd>
+                  <dd>
+                    {{ formatStat(matrix.stats.summary.global_min) }} to
+                    {{ formatStat(matrix.stats.summary.global_max) }}
+                  </dd>
                 </div>
               </dl>
             </div>
@@ -154,7 +206,11 @@
                 </div>
               </dl>
               <div v-if="matrix.target.classes?.length" class="class-list">
-                <div v-for="item in matrix.target.classes" :key="`${item.value}-${item.label}`" class="class-row">
+                <div
+                  v-for="item in matrix.target.classes"
+                  :key="`${item.value}-${item.label}`"
+                  class="class-row"
+                >
                   <span class="class-code">{{ item.value }}</span>
                   <span class="class-label">{{ item.label }}</span>
                   <span class="class-count">{{ item.count.toLocaleString() }}</span>
@@ -186,7 +242,9 @@
                 :options="dataRoleOptions"
                 optionLabel="label"
                 optionValue="value"
+                placeholder="Choose target type"
               />
+              <small class="field-help">Required before using a supervised analysis starter.</small>
             </div>
             <div class="field">
               <label>Target column</label>
@@ -216,12 +274,22 @@
             <i :class="['pi', dataCollapsed ? 'pi-chevron-right' : 'pi-chevron-down']"></i>
             <span>Data Matrix / Stats</span>
           </span>
-          <small v-if="matrix?.truncated" class="section-summary">
-            Showing {{ matrix.rows_shown.toLocaleString() }} x {{ matrix.cols_shown.toLocaleString() }}
+          <small v-if="matrix?.truncated && !isNdPreview" class="section-summary">
+            Showing {{ matrix.rows_shown.toLocaleString() }} x
+            {{ matrix.cols_shown.toLocaleString() }}
           </small>
         </button>
-        <div :id="`source-preview-${sourceDomId}-matrix`" v-show="!dataCollapsed" class="section-body">
-          <div class="preview-mode-row" role="radiogroup" aria-label="Preview display mode">
+        <div
+          :id="`source-preview-${sourceDomId}-matrix`"
+          v-show="!dataCollapsed"
+          class="section-body"
+        >
+          <div
+            v-if="!isNdPreview"
+            class="preview-mode-row"
+            role="radiogroup"
+            aria-label="Preview display mode"
+          >
             <label
               v-for="option in viewOptions"
               :key="option.value"
@@ -238,10 +306,11 @@
               <span>{{ option.label }}</span>
             </label>
           </div>
-          <div v-if="matrix?.truncated" class="preview-toolbar-note">
+          <div v-if="matrix?.truncated && !isNdPreview" class="preview-toolbar-note">
             <span class="truncate-note">
-              Showing {{ matrix.rows_shown.toLocaleString() }} x {{ matrix.cols_shown.toLocaleString() }}
-              of {{ matrix.total_rows.toLocaleString() }} x {{ matrix.total_cols.toLocaleString() }}.
+              Showing {{ matrix.rows_shown.toLocaleString() }} x
+              {{ matrix.cols_shown.toLocaleString() }} of {{ matrix.total_rows.toLocaleString() }} x
+              {{ matrix.total_cols.toLocaleString() }}.
             </span>
           </div>
           <div v-if="loading" class="preview-loading">
@@ -251,6 +320,19 @@
           <div v-else-if="error" class="preview-error">
             <i class="pi pi-exclamation-triangle"></i>
             <span>{{ error }}</span>
+          </div>
+          <div v-else-if="matrix && isNdPreview" class="nd-preview-notice" role="status">
+            <i class="pi pi-box"></i>
+            <div>
+              <strong>Native {{ matrix.rank }}-D dataset</strong>
+              <p>{{ matrix.projection_message }}</p>
+              <dl>
+                <div v-for="(size, index) in matrix.shape" :key="index">
+                  <dt>{{ matrix.dimension_roles?.[index] || `dimension ${index}` }}</dt>
+                  <dd>{{ size.toLocaleString() }}</dd>
+                </div>
+              </dl>
+            </div>
           </div>
           <DataStatsTable v-else-if="matrix && viewMode === 'stats'" :matrix="matrix" />
           <DataMatrixGrid v-else-if="matrix" :matrix="matrix" />
@@ -279,8 +361,14 @@
         />
         <div v-else class="plot-empty">
           <i class="pi pi-chart-line"></i>
-          <span>No numeric preview plot is available for this source.</span>
+          <span v-if="isNdPreview"
+            >Project explicit inner dimensions before requesting a 2-D graph.</span
+          >
+          <span v-else>No numeric preview plot is available for this source.</span>
         </div>
+        <p v-if="previewScope" class="plot-population-disclosure" role="status">
+          {{ previewScope }}
+        </p>
       </section>
     </template>
   </section>
@@ -292,6 +380,7 @@ import InputText from "primevue/inputtext";
 import Dropdown from "primevue/dropdown";
 import ProgressSpinner from "primevue/progressspinner";
 import { getErrorMessage } from "@/utils/errors";
+import { shouldReverseFeatureAxis } from "@/utils/plotLabels";
 import {
   useDataStore,
   type CsvImportPlan,
@@ -309,6 +398,7 @@ const props = defineProps<{
   overrides?: PreparedDataOverrides;
   files?: SourcePreviewFile[];
   csvPlan?: CsvImportPlan | null;
+  acquisitionRequired?: boolean;
 }>();
 const emit = defineEmits<{ "update:overrides": [PreparedDataOverrides] }>();
 
@@ -321,7 +411,7 @@ const dataStore = useDataStore();
 const matrix = ref<DataMatrixResponse | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
-const filesCollapsed = ref(true);
+const filesCollapsed = ref(false);
 const csvCollapsed = ref(true);
 const metaCollapsed = ref(true);
 const dataCollapsed = ref(true);
@@ -331,8 +421,16 @@ const viewOptions: { label: string; value: "matrix" | "stats" }[] = [
   { label: "Stats", value: "stats" },
 ];
 const PLOT_COLORS = [
-  "#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed",
-  "#db2777", "#0891b2", "#ea580c", "#0d9488", "#4f46e5",
+  "#2563eb",
+  "#dc2626",
+  "#16a34a",
+  "#d97706",
+  "#7c3aed",
+  "#db2777",
+  "#0891b2",
+  "#ea580c",
+  "#0d9488",
+  "#4f46e5",
 ];
 const plotConfig = { responsive: true, displaylogo: false, displayModeBar: true };
 const dataRoleOptions = [
@@ -340,7 +438,8 @@ const dataRoleOptions = [
   { label: "Feature table", value: "X_features" },
 ];
 const targetTypeOptions = [
-  { label: "Auto", value: "auto" },
+  // Legacy prepared data may still report an inferred "auto" type, but new
+  // supervised selections must state their target semantics explicitly.
   { label: "Categorical", value: "categorical" },
   { label: "Continuous", value: "continuous" },
 ];
@@ -351,11 +450,13 @@ const localOverrides = reactive<PreparedDataOverrides>({
   y_title: "",
   data_role: "",
   target_column: "",
-  target_type: "auto",
+  target_type: "",
   is_time_series: false,
+  csv_layout: "",
 });
 
 const title = computed(() => props.title || "Dataset preview");
+const isNdPreview = computed(() => matrix.value?.kind === "nd_dataset");
 const previewFiles = computed(() =>
   (props.files ?? [])
     .map((file, index) => {
@@ -367,7 +468,7 @@ const previewFiles = computed(() =>
         extension: normalizeExtension(file.extension ?? extensionFromName(name)),
       };
     })
-    .filter((file): file is { key: string; name: string; extension: string } => file !== null)
+    .filter((file): file is { key: string; name: string; extension: string } => file !== null),
 );
 const filesSummary = computed(() => {
   const count = previewFiles.value.length;
@@ -376,6 +477,7 @@ const filesSummary = computed(() => {
   return `${count.toLocaleString()} files`;
 });
 const csvPlan = computed(() => props.csvPlan ?? null);
+const csvLayoutOptions = computed(() => csvPlan.value?.layout_options ?? []);
 const csvSummary = computed(() => {
   const plan = csvPlan.value;
   if (!plan) return "";
@@ -387,7 +489,8 @@ const csvResultShape = computed(() => {
   if (!shape) return "n/a";
   const samples = shape.samples ?? shape.rows;
   const features = shape.features ?? shape.columns;
-  if (samples === null || samples === undefined || features === null || features === undefined) return "n/a";
+  if (samples === null || samples === undefined || features === null || features === undefined)
+    return "n/a";
   return `${samples.toLocaleString()} samples x ${features.toLocaleString()} features`;
 });
 const csvAxisLabel = computed(() => {
@@ -407,10 +510,12 @@ const sourceIdentity = computed(() => {
   const source = props.sourceRef;
   if (!source) return "";
   if (source.kind === "reference") return `reference:${source.source}:${source.name}`;
-  if (source.kind === "staged") return `staged:${source.staging_id}`;
-  return `experiment_file:${source.experiment_id}:${source.file_id}`;
+  if (source.kind === "staged") return `staged:${source.staging_id}:${source.asset_id ?? "auto"}`;
+  return `experiment_file:${source.experiment_id}:${source.file_id}:${source.asset_id ?? "auto"}`;
 });
-const sourceDomId = computed(() => sourceIdentity.value.replace(/[^A-Za-z0-9_-]+/g, "-") || "empty");
+const sourceDomId = computed(
+  () => sourceIdentity.value.replace(/[^A-Za-z0-9_-]+/g, "-") || "empty",
+);
 const matrixRequestSignature = computed(() => {
   const overrides = props.sourceRef?.overrides ?? props.overrides ?? {};
   return JSON.stringify({
@@ -419,6 +524,7 @@ const matrixRequestSignature = computed(() => {
     target_column: overrides?.target_column ?? null,
     target_type: overrides?.target_type ?? null,
     is_time_series: overrides?.is_time_series ?? null,
+    csv_layout: overrides?.csv_layout ?? null,
   });
 });
 
@@ -451,7 +557,11 @@ function resolvedTextOverride(key: TextOverrideKey, fallback = ""): string {
   return fallback;
 }
 
-function addTextOverride(overrides: PreparedDataOverrides, key: TextOverrideKey, value: unknown): void {
+function addTextOverride(
+  overrides: PreparedDataOverrides,
+  key: TextOverrideKey,
+  value: unknown,
+): void {
   const text = typeof value === "string" ? value : "";
   const trimmed = text.trim();
   if (trimmed) {
@@ -473,8 +583,9 @@ function setLocalOverrides(next: PreparedDataOverrides | undefined) {
     y_title: next?.y_title ?? "",
     data_role: next?.data_role ?? "",
     target_column: next?.target_column ?? "",
-    target_type: next?.target_type ?? "auto",
+    target_type: next?.target_type ?? "",
     is_time_series: next?.is_time_series ?? false,
+    csv_layout: next?.csv_layout ?? props.csvPlan?.recommended_layout ?? "",
   });
   nextTick(() => {
     if (syncRun === localOverrideSyncRun) {
@@ -491,23 +602,30 @@ watch(
   { immediate: true, deep: true },
 );
 
-watch(localOverrides, () => {
-  if (suppressLocalOverrideEmit) return;
-  const overrides: PreparedDataOverrides = {};
-  addTextOverride(overrides, "title", localOverrides.title);
-  addTextOverride(overrides, "x_title", localOverrides.x_title);
-  addTextOverride(overrides, "x_units", localOverrides.x_units);
-  addTextOverride(overrides, "y_title", localOverrides.y_title);
-  addTextOverride(overrides, "data_role", localOverrides.data_role);
-  addTextOverride(overrides, "target_column", localOverrides.target_column);
-  if (localOverrides.target_type && localOverrides.target_type !== "auto") {
-    overrides.target_type = localOverrides.target_type;
-  }
-  if (localOverrides.is_time_series || hasOwnOverride("is_time_series")) {
-    overrides.is_time_series = Boolean(localOverrides.is_time_series);
-  }
-  emit("update:overrides", overrides);
-}, { deep: true });
+watch(
+  localOverrides,
+  () => {
+    if (suppressLocalOverrideEmit) return;
+    const overrides: PreparedDataOverrides = {};
+    addTextOverride(overrides, "title", localOverrides.title);
+    addTextOverride(overrides, "x_title", localOverrides.x_title);
+    addTextOverride(overrides, "x_units", localOverrides.x_units);
+    addTextOverride(overrides, "y_title", localOverrides.y_title);
+    addTextOverride(overrides, "data_role", localOverrides.data_role);
+    addTextOverride(overrides, "target_column", localOverrides.target_column);
+    if (localOverrides.target_type && localOverrides.target_type !== "auto") {
+      overrides.target_type = localOverrides.target_type;
+    }
+    if (localOverrides.is_time_series || hasOwnOverride("is_time_series")) {
+      overrides.is_time_series = Boolean(localOverrides.is_time_series);
+    }
+    if (localOverrides.csv_layout) {
+      overrides.csv_layout = localOverrides.csv_layout;
+    }
+    emit("update:overrides", overrides);
+  },
+  { deep: true },
+);
 
 watch(
   matrixRequestSignature,
@@ -599,10 +717,30 @@ const previewPlotData = computed(() => {
     y: current.matrix
       .map((row) => numericCell(row[colIdx] ?? null))
       .filter((value): value is number => value !== null),
-    name: label || `Feature ${current.col_start + colIdx + 1}`,
+    name: `${label || `Feature ${current.col_start + colIdx + 1}`} (n=${current.matrix.filter((row) => numericCell(row[colIdx] ?? null) !== null).length})`,
     marker: { color: PLOT_COLORS[colIdx % PLOT_COLORS.length] },
     boxpoints: false,
+    meta: {
+      finite_count: current.matrix.filter((row) => numericCell(row[colIdx] ?? null) !== null)
+        .length,
+    },
   }));
+});
+
+const previewScope = computed(() => {
+  const current = matrix.value;
+  if (!current || isNdPreview.value || !current.matrix.length) return "";
+  const spectral = current.is_spectra || current.data_role === "X_spectra";
+  const shownRows = spectral ? Math.min(current.matrix.length, 50) : current.matrix.length;
+  const shownCols = spectral ? current.cols_shown : Math.min(current.cols_shown, 40);
+  const cells = current.matrix.slice(0, shownRows).flatMap((row) => row.slice(0, shownCols));
+  const missing = cells.filter((value) => numericCell(value) === null).length;
+  return (
+    `Plot shows first ${shownRows} of ${current.matrix.length} available preview rows and first ${shownCols} of ${current.cols_shown} preview features (${current.total_rows} source rows, ${current.total_cols} source features). ` +
+    (spectral
+      ? `${missing} missing/nonfinite cells remain gaps; no interpolation.`
+      : `${cells.length - missing} finite values across displayed features; ${missing} missing/nonfinite cells omitted from distributions. Each feature uses its own finite-value count.`)
+  );
 });
 
 const previewPlotLayout = computed(() => {
@@ -613,7 +751,16 @@ const previewPlotLayout = computed(() => {
   const isSpectra = !!current && (current.is_spectra || current.data_role === "X_spectra");
   return {
     title: { text: isSpectra ? "Spectra Preview" : "Feature Distributions", font: { size: 14 } },
-    xaxis: { title: xUnits ? `${xTitle} (${xUnits})` : xTitle, autorange: true },
+    xaxis: {
+      title: xUnits ? `${xTitle} (${xUnits})` : xTitle,
+      autorange: shouldReverseFeatureAxis({
+        title: xTitle,
+        units: xUnits,
+        quantity: current?.x_quantity ?? undefined,
+      })
+        ? "reversed"
+        : true,
+    },
     yaxis: { title: yTitle },
     autosize: true,
     height: 340,
@@ -649,6 +796,32 @@ const previewPlotLayout = computed(() => {
 
 .preview-error {
   color: var(--red-600);
+}
+
+.preview-acquisition {
+  align-items: flex-start;
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  color: var(--text-color-secondary);
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.preview-acquisition > i {
+  color: var(--primary-color);
+  font-size: 1.1rem;
+  margin-top: 0.1rem;
+}
+
+.preview-acquisition > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.preview-acquisition strong {
+  color: var(--text-color);
 }
 
 .source-preview-title {
@@ -739,6 +912,13 @@ const previewPlotLayout = computed(() => {
   width: 100%;
 }
 
+.field-help {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--text-color-secondary);
+  font-size: 0.78rem;
+}
+
 /* Long single-token filenames must wrap inside the meta column instead of
    overflowing across the grid gap onto the Matrix/Stats toggle. */
 .meta-name {
@@ -800,6 +980,9 @@ const previewPlotLayout = computed(() => {
 .preview-files-list {
   display: grid;
   gap: 0.45rem;
+  max-height: 14rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
 }
 
 .preview-file-row {
@@ -925,6 +1108,14 @@ const previewPlotLayout = computed(() => {
   background: #0891b2;
 }
 
+.role-P {
+  background: #7c3aed;
+}
+
+.role-M {
+  background: #0f766e;
+}
+
 .role-T {
   background: #b45309;
 }
@@ -940,6 +1131,11 @@ const previewPlotLayout = computed(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.csv-role-legend {
+  color: var(--text-color-secondary);
+  line-height: 1.4;
 }
 
 .class-list {
@@ -993,6 +1189,46 @@ const previewPlotLayout = computed(() => {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
+}
+
+.nd-preview-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  background: var(--surface-ground);
+}
+
+.nd-preview-notice p {
+  margin: 0.3rem 0 0.7rem;
+  color: var(--text-color-secondary);
+}
+
+.nd-preview-notice dl {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.nd-preview-notice dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  background: var(--surface-card);
+}
+
+.nd-preview-notice dt {
+  color: var(--text-color-secondary);
+}
+
+.nd-preview-notice dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .preview-mode-row {

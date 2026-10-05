@@ -1,0 +1,85 @@
+{
+  "plot_type": "scatter",
+  "data": [
+    {
+      "x": [
+        1.0,
+        2.0
+      ],
+      "y": [
+        1.1,
+        1.8
+      ],
+      "text": [
+        "A",
+        "B"
+      ],
+      "customdata": [
+        [
+          -0.10000000000000009,
+          "held_out_test"
+        ],
+        [
+          0.19999999999999996,
+          "held_out_test"
+        ]
+      ],
+      "type": "scatter",
+      "mode": "markers",
+      "marker": {
+        "size": 8,
+        "opacity": 0.75
+      },
+      "name": "density",
+      "hovertemplate": "Sample %{text}<br>Reference: %{x:.4f}<br>Predicted: %{y:.4f}<br>Residual: %{customdata[0]:.4f}<br>Role: %{customdata[1]}<extra>%{fullData.name}</extra>"
+    },
+    {
+      "x": [
+        0.95,
+        2.05
+      ],
+      "y": [
+        0.95,
+        2.05
+      ],
+      "type": "scatter",
+      "mode": "lines",
+      "line": {
+        "color": "#94a3b8",
+        "dash": "dash",
+        "width": 1.5
+      },
+      "name": "1:1 Line",
+      "showlegend": false,
+      "hoverinfo": "skip"
+    }
+  ],
+  "layout": {
+    "title": "Predicted vs Reference \u2014 density \u00b7 held out test",
+    "xaxis": {
+      "title": "Reference \u2014 density",
+      "range": [
+        0.95,
+        2.05
+      ],
+      "constrain": "domain"
+    },
+    "yaxis": {
+      "title": "Predicted \u2014 density",
+      "range": [
+        0.95,
+        2.05
+      ],
+      "scaleanchor": "x",
+      "scaleratio": 1,
+      "constrain": "domain"
+    },
+    "showlegend": false
+  },
+  "metadata": {
+    "source_schema": "spectrasherpa-regression-comparison/1",
+    "n_rows": 2,
+    "n_targets": 1,
+    "role": "held_out_test"
+  }
+}

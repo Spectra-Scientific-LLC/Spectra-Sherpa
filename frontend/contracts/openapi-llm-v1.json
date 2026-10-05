@@ -37,7 +37,7 @@
             "HTTPBearer": []
           },
           {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": []
           }
         ]
       },
@@ -84,7 +84,7 @@
             "HTTPBearer": []
           },
           {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": []
           }
         ]
       },
@@ -104,7 +104,7 @@
             "HTTPBearer": []
           },
           {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": []
           }
         ]
       },
@@ -151,7 +151,7 @@
             "HTTPBearer": []
           },
           {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": []
           }
         ]
       }
@@ -198,10 +198,12 @@
         },
         "security": [
           {
-            "HTTPBearer": []
+            "HTTPBearer": [],
+            "DeploymentKeyHeader": []
           },
           {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": [],
+            "DeploymentKeyHeader": []
           }
         ]
       }
@@ -246,60 +248,12 @@
         },
         "security": [
           {
-            "HTTPBearer": []
+            "HTTPBearer": [],
+            "DeploymentKeyHeader": []
           },
           {
-            "APIKeyHeader": []
-          }
-        ]
-      }
-    },
-    "/api/v1/llm/peak-id": {
-      "post": {
-        "tags": [
-          "llm"
-        ],
-        "summary": "Llm Peak Id",
-        "description": "Identify spectral peaks.",
-        "operationId": "llm_peak_id_api_v1_llm_peak_id_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PeakIdRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LLMResponse"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          },
-          {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": [],
+            "DeploymentKeyHeader": []
           }
         ]
       }
@@ -346,10 +300,12 @@
         },
         "security": [
           {
-            "HTTPBearer": []
+            "HTTPBearer": [],
+            "DeploymentKeyHeader": []
           },
           {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": [],
+            "DeploymentKeyHeader": []
           }
         ]
       }
@@ -396,10 +352,12 @@
         },
         "security": [
           {
-            "HTTPBearer": []
+            "HTTPBearer": [],
+            "DeploymentKeyHeader": []
           },
           {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": [],
+            "DeploymentKeyHeader": []
           }
         ]
       }
@@ -444,10 +402,12 @@
         },
         "security": [
           {
-            "HTTPBearer": []
+            "HTTPBearer": [],
+            "DeploymentKeyHeader": []
           },
           {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": [],
+            "DeploymentKeyHeader": []
           }
         ]
       }
@@ -462,10 +422,12 @@
         "operationId": "list_conversations_api_v1_llm_conversations_get",
         "security": [
           {
-            "HTTPBearer": []
+            "HTTPBearer": [],
+            "DeploymentKeyHeader": []
           },
           {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": [],
+            "DeploymentKeyHeader": []
           }
         ],
         "parameters": [
@@ -524,10 +486,12 @@
         "operationId": "get_conversation_api_v1_llm_conversation__conversation_id__get",
         "security": [
           {
-            "HTTPBearer": []
+            "HTTPBearer": [],
+            "DeploymentKeyHeader": []
           },
           {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": [],
+            "DeploymentKeyHeader": []
           }
         ],
         "parameters": [
@@ -573,10 +537,12 @@
         "operationId": "delete_conversation_api_v1_llm_conversation__conversation_id__delete",
         "security": [
           {
-            "HTTPBearer": []
+            "HTTPBearer": [],
+            "DeploymentKeyHeader": []
           },
           {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": [],
+            "DeploymentKeyHeader": []
           }
         ],
         "parameters": [
@@ -617,10 +583,12 @@
         "operationId": "compact_conversation_api_v1_llm_conversation__conversation_id__compact_post",
         "security": [
           {
-            "HTTPBearer": []
+            "HTTPBearer": [],
+            "DeploymentKeyHeader": []
           },
           {
-            "APIKeyHeader": []
+            "UserAPIKeyHeader": [],
+            "DeploymentKeyHeader": []
           }
         ],
         "parameters": [
@@ -971,30 +939,6 @@
         ],
         "title": "LLMResponse"
       },
-      "PeakIdRequest": {
-        "properties": {
-          "wavenumbers": {
-            "items": {
-              "type": "number"
-            },
-            "type": "array",
-            "title": "Wavenumbers"
-          },
-          "absorbance": {
-            "items": {
-              "type": "number"
-            },
-            "type": "array",
-            "title": "Absorbance"
-          }
-        },
-        "type": "object",
-        "required": [
-          "wavenumbers",
-          "absorbance"
-        ],
-        "title": "PeakIdRequest"
-      },
       "ReportRequest": {
         "properties": {
           "experiment": {
@@ -1133,7 +1077,12 @@
         "type": "http",
         "scheme": "bearer"
       },
-      "APIKeyHeader": {
+      "UserAPIKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      },
+      "DeploymentKeyHeader": {
         "type": "apiKey",
         "in": "header",
         "name": "X-Deployment-Key"

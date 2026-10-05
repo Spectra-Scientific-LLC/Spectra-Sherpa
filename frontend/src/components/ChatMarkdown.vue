@@ -12,6 +12,7 @@ import { computed } from "vue";
 import katex from "katex";
 import texmath from "markdown-it-texmath";
 import VueMarkdown from "vue-markdown-render";
+import { splitFollowUps } from "@/utils/followUps";
 import { normalizeMathMarkdown } from "@/utils/mathMarkdown";
 
 import "katex/dist/katex.min.css";
@@ -21,7 +22,7 @@ const props = defineProps<{
   supplier?: string;
 }>();
 
-const normalizedSource = computed(() => normalizeMathMarkdown(props.source, props.supplier));
+const normalizedSource = computed(() => normalizeMathMarkdown(splitFollowUps(props.source).text, props.supplier));
 
 const markdownOptions = {
   breaks: true,

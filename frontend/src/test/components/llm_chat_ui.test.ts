@@ -1,6 +1,6 @@
 /* eslint-disable vue/one-component-per-file */
 import { flushPromises, mount } from "@vue/test-utils";
-import { defineComponent } from "vue";
+import { defineComponent, reactive, ref } from "vue";
 import type { Component, PropType } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -8,8 +8,9 @@ const mocks = vi.hoisted(() => ({
   appMode: { __v_isRef: true, value: "local" as string },
   appConfig: {
     __v_isRef: true,
-    value: { subscription: { plan: "none" } } as Record<string, unknown>,
+    value: { subscription: { plan: "none" } } as Record<string, unknown> | null,
   },
+  siteProfile: { __v_isRef: true, value: null as string | null },
   isDemoMode: { __v_isRef: true, value: false },
   featureFlags: {
     chatAssistant: false,
@@ -38,6 +39,8 @@ const mocks = vi.hoisted(() => ({
     lastError: null as string | null,
     currentConfig: null as Record<string, unknown> | null,
     connect: vi.fn(),
+    disconnect: vi.fn(),
+    stopConfigPolling: vi.fn(),
     refreshConversations: vi.fn(),
     checkConfigChange: vi.fn(),
     sendMessage: vi.fn(),
@@ -52,6 +55,8 @@ const mocks = vi.hoisted(() => ({
     state: "idle",
     isSyncing: false,
     isChatting: false,
+    analysisStatus: "",
+    stopAnalysis: vi.fn(),
     activeTools: [] as Array<Record<string, unknown>>,
     subscriptionRequired: null as string | null,
     subscriptionUpgradeUrl: null as string | null,
@@ -68,6 +73,7 @@ const mocks = vi.hoisted(() => ({
     loadConversation: vi.fn(),
     deleteConversation: vi.fn(),
     openSubscriptionUpgrade: vi.fn(),
+    prepareProductWorkflowContext: vi.fn(),
   },
   advisorStore: {
     activeChannelId: null as number | null,
@@ -128,6 +134,7 @@ vi.mock("@/composables/useAppConfig", () => ({
   useAppConfig: () => ({
     appMode: mocks.appMode,
     appConfig: mocks.appConfig,
+    siteProfile: mocks.siteProfile,
     isFeatureEnabled: (feature: string) => Boolean(mocks.featureFlags[feature]),
     reloadConfig: vi.fn().mockResolvedValue(true),
   }),
@@ -286,6 +293,12 @@ const mountWithUiStubs = (component: Component) =>
 describe("ChatPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.assign(mocks, {
+      appConfig: ref({ subscription: { plan: "none" } }),
+      appMode: ref("local"),
+      siteProfile: ref(null),
+      projectStore: reactive({ currentProjectId: 42 }),
+    });
     mocks.appMode.value = "local";
     mocks.appConfig.value = { subscription: { plan: "none" } };
     mocks.isDemoMode.value = false;
@@ -311,10 +324,12 @@ describe("ChatPanel", () => {
     mocks.sherpaStore.state = "idle";
     mocks.sherpaStore.isSyncing = false;
     mocks.sherpaStore.isChatting = false;
+    mocks.sherpaStore.analysisStatus = "";
     mocks.sherpaStore.activeTools = [];
     mocks.sherpaStore.subscriptionRequired = null;
     mocks.sherpaStore.subscriptionUpgradeUrl = null;
     mocks.sherpaStore.resumeRecap = null;
+    mocks.sherpaStore.prepareProductWorkflowContext.mockReset();
     mocks.sherpaStore.maybeLoadResumeRecap.mockReset();
     mocks.sherpaStore.dismissResumeRecap.mockReset();
     mocks.advisorStore.activeChannelId = null;
@@ -323,8 +338,52 @@ describe("ChatPanel", () => {
     mocks.advisorStore.activeNode = null;
     mocks.advisorStore.topics = [];
     mocks.workflowStore.workflowId = null;
+    mocks.workflowStore.nodes = [];
+    mocks.workflowStore.edges = [];
     mocks.workflowStore.lastExecutionResults = {};
+    mocks.experimentStore.experiments = [];
+    mocks.projectStore.currentProjectId = 42;
     mocks.authStore.user = { id: 7, username: "alice" };
+  });
+
+  it("uses only project conversations on Pro mount and project switch", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.siteProfile.value = "pro";
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+    expect(mocks.sherpaStore.refreshConversations).toHaveBeenCalledWith(42);
+    expect(mocks.llmStore.refreshConversations).not.toHaveBeenCalled();
+    mocks.projectStore.currentProjectId = 43;
+    await flushPromises();
+    expect(mocks.sherpaStore.refreshConversations).toHaveBeenCalledWith(43);
+    expect(mocks.llmStore.refreshConversations).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("waits for deployment config before selecting conversation authority", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.appConfig.value = null;
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+    expect(mocks.sherpaStore.refreshConversations).not.toHaveBeenCalled();
+    expect(mocks.llmStore.refreshConversations).not.toHaveBeenCalled();
+    mocks.siteProfile.value = "pro";
+    mocks.appConfig.value = { siteProfile: "pro" };
+    await flushPromises();
+    expect(mocks.sherpaStore.refreshConversations).toHaveBeenCalledWith(42);
+    expect(mocks.llmStore.refreshConversations).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("retains the visible legacy conversation index in Product", async () => {
+    mocks.appMode.value = "test_product";
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+    expect(mocks.llmStore.refreshConversations).toHaveBeenCalledWith(42);
+    mocks.projectStore.currentProjectId = 43;
+    await flushPromises();
+    expect(mocks.llmStore.refreshConversations).toHaveBeenCalledWith(43);
+    wrapper.unmount();
   });
 
   it("shows local BYO endpoint setup copy in local mode", async () => {
@@ -336,7 +395,7 @@ describe("ChatPanel", () => {
   });
 
   it("shows subscription-required copy and hides local settings in non-local mode without chat access", async () => {
-    mocks.appMode.value = "hybrid";
+    mocks.appMode.value = "test_product";
     mocks.appConfig.value = { subscription: { plan: "none" } };
     mocks.featureFlags.chatAssistant = false;
 
@@ -357,6 +416,35 @@ describe("ChatPanel", () => {
 
     expect(wrapper.text()).toContain("Chat is unavailable for this deployment.");
     expect(wrapper.find(".llm-settings-btn").exists()).toBe(false);
+  });
+
+  it("does not attach broad experiment or project context to test_product LLM chat", async () => {
+    mocks.appMode.value = "test_product";
+    mocks.appConfig.value = { subscription: { plan: "pro" }, advisorContextPolicy: "receipt" };
+    mocks.featureFlags.chatAssistant = true;
+    mocks.workflowStore.workflowId = 12;
+    mocks.workflowStore.nodes = [{ id: "data", type: "data.file_load", params: { path: "/private/a.spa" } }];
+    mocks.experimentStore.experiments = [{ id: 99, name: "Private spectra" }];
+    mocks.projectStore.currentProjectId = 42;
+    const confirmed = {
+      schema: "spectra-test_product-advisor-context/1",
+      disclosure_receipt: { public_id: "hdr_example" },
+    };
+    mocks.sherpaStore.prepareProductWorkflowContext.mockResolvedValue(confirmed);
+
+    const wrapper = mountWithUiStubs(ChatPanel);
+    await flushPromises();
+    const input = wrapper.find("input");
+    await input.setValue("Review this workflow");
+    await input.trigger("keyup.enter");
+    await flushPromises();
+
+    expect(mocks.llmStore.sendMessage).toHaveBeenCalledWith("Review this workflow", {
+      workflow_context: confirmed,
+    });
+    expect(JSON.stringify(mocks.llmStore.sendMessage.mock.calls)).not.toContain("Private spectra");
+    expect(JSON.stringify(mocks.llmStore.sendMessage.mock.calls)).not.toContain("/private/a.spa");
+    expect(JSON.stringify(mocks.llmStore.sendMessage.mock.calls)).not.toContain('"project_id":42');
   });
 
   it("shows privacy-gated message before provider/subscription messages when chat access is disabled", async () => {
@@ -547,7 +635,7 @@ describe("ChatPanel", () => {
     expect(mocks.sherpaStore.startNewConversation).toHaveBeenCalledTimes(1);
   });
 
-  it("shows a contacting status while Sherpa chat is waiting for acceptance", async () => {
+  it("shows the interrupt prompt and an enabled Stop while waiting for acceptance", async () => {
     mocks.appMode.value = "enterprise";
     mocks.isDemoMode.value = true;
     mocks.appConfig.value = { subscription: { plan: "demo" } };
@@ -560,7 +648,11 @@ describe("ChatPanel", () => {
     const wrapper = mountWithUiStubs(ChatPanel);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Contacting Sherpa Advisor...");
+    expect(wrapper.text()).toContain("Analysis in progress. Hit stop to interrupt");
+    const stop = wrapper.get('[aria-label="Stop analysis"]');
+    expect(stop.attributes("disabled")).toBeUndefined();
+    await stop.trigger("click");
+    expect(mocks.sherpaStore.stopAnalysis).toHaveBeenCalledOnce();
   });
 
   it("renders a dismissible Sherpa session recap card outside the chat turns", async () => {
@@ -587,7 +679,7 @@ describe("ChatPanel", () => {
     expect(mocks.sherpaStore.dismissResumeRecap).toHaveBeenCalled();
   });
 
-  it("shows a preparing status instead of an empty assistant bubble", async () => {
+  it("shows the server progress status instead of an empty assistant bubble", async () => {
     mocks.appMode.value = "enterprise";
     mocks.isDemoMode.value = true;
     mocks.appConfig.value = { subscription: { plan: "demo" } };
@@ -598,12 +690,14 @@ describe("ChatPanel", () => {
       { role: "user", content: "tell me about PCA" },
       { role: "assistant", content: "" },
     ];
+    mocks.sherpaStore.analysisStatus =
+      "Analysis in progress. Hit stop to interrupt · 15s — Waiting for the model response.";
     mocks.sherpaStore.activeTools = [];
 
     const wrapper = mountWithUiStubs(ChatPanel);
     await flushPromises();
 
-    expect(wrapper.text()).toContain("Sherpa Advisor is preparing a response...");
+    expect(wrapper.text()).toContain(mocks.sherpaStore.analysisStatus);
     expect(wrapper.findAll(".chat-message.assistant .chat-bubble")).toHaveLength(1);
   });
 
@@ -631,7 +725,7 @@ describe("ChatPanel", () => {
     expect(mocks.sherpaStore.syncWorkflow).not.toHaveBeenCalled();
   });
 
-  it("does not auto-enable Gen Mode for workflow generation requests", async () => {
+  it("sends workflow requests without a Gen Mode control or browser classifier", async () => {
     mocks.appMode.value = "enterprise";
     mocks.appConfig.value = { subscription: { plan: "demo" } };
     mocks.featureFlags.chatAssistant = true;
@@ -647,17 +741,17 @@ describe("ChatPanel", () => {
     await sherpaTab!.trigger("click");
     await flushPromises();
 
+    expect(wrapper.find('[aria-label="Toggle Gen Mode"]').exists()).toBe(false);
     const input = wrapper.find("input");
     await input.setValue("Can you generate a PLSDA model of the same data?");
     await input.trigger("keyup.enter");
 
     expect(mocks.sherpaStore.sendMessage).toHaveBeenCalledWith(
       "Can you generate a PLSDA model of the same data?",
-      false,
     );
   });
 
-  it("routes quantitative dataset questions through Gen Mode tools", async () => {
+  it("sends quantitative questions through the same server-owned request path", async () => {
     mocks.appMode.value = "enterprise";
     mocks.appConfig.value = { subscription: { plan: "demo" } };
     mocks.featureFlags.chatAssistant = true;
@@ -679,7 +773,6 @@ describe("ChatPanel", () => {
 
     expect(mocks.sherpaStore.sendMessage).toHaveBeenCalledWith(
       "Give me the median of each feature",
-      true,
     );
   });
 

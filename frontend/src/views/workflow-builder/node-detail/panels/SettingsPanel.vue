@@ -44,17 +44,15 @@
               {{ param.description }}
             </small>
 
-            <InputNumber
+            <ScientificNumberInput
               v-if="param.type === 'number'"
               :model-value="localParams[param.name]"
               @update:model-value="(v) => $emit('updateParam', param.name, v)"
               :id="param.name"
               :min="param.min"
               :max="param.max"
-              :step="param.step || 1"
-              :minFractionDigits="param.step && param.step < 1 ? 2 : 0"
-              :maxFractionDigits="param.step && param.step < 1 ? 4 : 0"
-              :placeholder="param.required ? '' : 'Optional input'"
+              :step="param.step"
+              :required="param.required"
               class="full-width"
               :class="{ 'p-invalid': getParamError(param.name) }"
             />
@@ -138,7 +136,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import Button from "primevue/button";
-import InputNumber from "primevue/inputnumber";
+import ScientificNumberInput from "@/components/common/ScientificNumberInput.vue";
 import InputText from "primevue/inputtext";
 import InputSwitch from "primevue/inputswitch";
 import Dropdown from "primevue/dropdown";

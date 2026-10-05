@@ -46,6 +46,10 @@ describe("diagnostics formatting", () => {
 
   it("formats common scientific abbreviations in labels", () => {
     expect(formatDiagnosticLabel("cv_rmse")).toBe("CV RMSE");
+    expect(formatDiagnosticLabel("mae")).toBe("MAE");
+    expect(formatDiagnosticLabel("r2")).toBe("R²");
+    expect(formatDiagnosticLabel("sep")).toBe("SEP");
+    expect(formatDiagnosticLabel("rer")).toBe("RER");
     expect(formatDiagnosticLabel("snr_before")).toBe("SNR Before");
     expect(formatDiagnosticLabel("hotelling_t2_limit")).toBe("Hotelling T2 Limit");
   });

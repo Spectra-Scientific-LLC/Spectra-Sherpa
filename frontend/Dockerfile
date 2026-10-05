@@ -1,22 +1,28 @@
+# Build context is the spectra-sherpa package root:
+#
+#   docker build -f frontend/Dockerfile .
+
 # Build Stage
-FROM node:20-slim as build-stage
+FROM node:22-slim AS build-stage
 
-WORKDIR /app
+WORKDIR /build/spectra-sherpa/frontend
 
-COPY package*.json ./
-RUN npm install
+COPY frontend/package*.json ./
+RUN npm ci
 
-COPY . .
-# Vite outputs to ../src/spectra_sherpa/static (resolves to /src/spectra_sherpa/static in container)
+COPY frontend ./
+COPY src/spectra_sherpa/data/plate_formats_v1.json \
+    /build/spectra-sherpa/src/spectra_sherpa/data/plate_formats_v1.json
+# Vite outputs to ../src/spectra_sherpa/static within the package tree.
 RUN npm run build
 
 # Production Stage
-FROM nginx:stable-alpine as production-stage
+FROM nginx:stable-alpine AS production-stage
 
-COPY --from=build-stage /src/spectra_sherpa/static /usr/share/nginx/html
+COPY --from=build-stage /build/spectra-sherpa/src/spectra_sherpa/static /usr/share/nginx/html
 
 # Copy custom nginx config
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

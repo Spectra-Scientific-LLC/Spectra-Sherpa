@@ -25,6 +25,8 @@ import type { OutputSubsection } from "../composables/useNodeSections";
 export interface OutputStats {
   rows?: number;
   cols?: number;
+  rowLabel?: string;
+  colLabel?: string;
   type?: string;
   range?: number[] | null;
 }
@@ -75,6 +77,7 @@ export interface ProvenanceInfo {
 }
 
 export interface QualitySummary {
+  qualification?: string | null;
   latest_model_type?: string;
   latest_r2?: number;
   latest_rmse?: number;
@@ -85,8 +88,11 @@ export interface QualitySummary {
 
 export interface PortSummary {
   name: string;
+  label?: string;
+  displayLabel: string;
   type?: string;
   shape?: number[];
+  dimensions?: Array<{ role: string; size: number; labels?: string[] }>;
   title?: string;
   xTitle?: string;
   xUnits?: string;
@@ -116,10 +122,12 @@ export interface OutputSlice {
   processingHistory: Ref<ProcessingStep[] | null>;
   provenance: Ref<ProvenanceInfo | null>;
   quality: Ref<QualitySummary | null>;
+  presentationOptions: Ref<Array<{ label: string; value: string }>>;
+  presentationError: Ref<string | null>;
   portSummaries: Ref<PortSummary[]>;
   preview: Ref<PreviewTable>;
   pcaDiagnostics: Ref<PreviewTable>;
-  isRegressionNode: Ref<boolean>;
+  isRegressionComparison: Ref<boolean>;
   regressionTargetOptions: Ref<{ label: string; value: number }[]>;
   selectedRegressionR2: Ref<number | null>;
   selectedRegressionRmse: Ref<number | null>;
@@ -144,122 +152,27 @@ export interface OutputSlice {
 // When adding a new plot family, add its slice interface here and include
 // it in the intersection at the bottom.
 
-export interface PlotMetaSlice {
-  hasOutput: boolean;
-  availablePlots: string[];
-  nodeTypeKey: string;
-  isPCAOutput: boolean;
-  isPreprocessingNode: boolean;
-  isDataNode: boolean;
-  isSpectraData: boolean;
-  isGenericDataNode: boolean;
-  nodeOutput: NodeOutput | null;
-  contourClickPoint:
-    | { sampleIdx: number; wavenumberIdx: number; wavenumber: number }
-    | null;
-  pcaAxisOptions: { label: string; value: number }[];
-  regressionTargetOptions: { label: string; value: number }[];
-  spectraDisplayOptions: { label: string; value: string }[];
-  genericDisplayOptions: { label: string; value: string }[];
-  featureOptions: { label: string; value: number }[];
-  holdoutVisualization: Record<string, any> | null;
-  scoreColorOptions: { label: string; value: string }[];
-}
-
-export interface PcaPlotSlice {
-  pcaScoresData: any[]; pcaScoresLayout: Record<string, any>; pcaScoresConfig: Record<string, any>;
-  pcaBiplotData: any[]; pcaBiplotLayout: Record<string, any>;
-  pcaLoadingsData: any[]; pcaLoadingsLayout: Record<string, any>; pcaLoadingsConfig: Record<string, any>;
-  pcaScreeData: any[]; pcaScreeLayout: Record<string, any>;
-  pcaDiagnosticsData: any[]; pcaDiagnosticsLayout: Record<string, any>;
-}
-
-export interface McrPlotSlice {
-  mcrConcentrationData: any[]; mcrConcentrationLayout: Record<string, any>;
-  mcrSpectraData: any[]; mcrSpectraLayout: Record<string, any>;
-  mcrValidationScatterData: any[]; mcrValidationScatterLayout: Record<string, any>;
-  mcrValidationSpectrumData: any[]; mcrValidationSpectrumLayout: Record<string, any>;
-  mcrOriginalContourData: any[]; mcrOriginalContourLayout: Record<string, any>;
-  mcrReconstructedContourData: any[]; mcrReconstructedContourLayout: Record<string, any>;
-  mcrResidualContourData: any[]; mcrResidualContourLayout: Record<string, any>;
-}
-
-export interface EfaPlotSlice {
-  efaEigenvalueData: any[]; efaEigenvalueLayout: Record<string, any>;
-}
-
-export interface PlsPlotSlice {
-  plsScoresData: any[]; plsScoresLayout: Record<string, any>;
-  plsLoadingsData: any[]; plsLoadingsLayout: Record<string, any>;
-}
-
-export interface ClassificationPlotSlice {
-  classificationScoresData: any[]; classificationScoresLayout: Record<string, any>;
-  plsdaLoadingsData: any[]; plsdaLoadingsLayout: Record<string, any>;
-  plsdaVipData: any[]; plsdaVipLayout: Record<string, any>;
-  plsdaConfusionTrainData: any[]; plsdaConfusionTrainLayout: Record<string, any>;
-  plsdaConfusionCVData: any[]; plsdaConfusionCVLayout: Record<string, any>;
-  classificationAccuracyData: any[]; classificationAccuracyLayout: Record<string, any>;
-}
-
-export interface RegressionPlotSlice {
-  regressionCorrelationData: any[]; regressionCorrelationLayout: Record<string, any>;
-}
-
-export interface OverviewPlotSlice {
-  hcaDendrogramData: any[]; hcaDendrogramLayout: Record<string, any>;
-  peakFindingPlotData: any[]; peakFindingPlotLayout: Record<string, any>;
-  libraryComparePlotData: any[]; libraryComparePlotLayout: Record<string, any>;
-  plotNodeData: any[]; plotNodeLayout: Record<string, any>; plotNodeWarning: string;
-}
-
-export interface SpectraPlotSlice {
-  spectraOverlayData: any[]; spectraOverlayLayout: Record<string, any>;
-  spectraContourData: any[]; spectraContourLayout: Record<string, any>;
-  horizontalSliceData: any[]; horizontalSliceLayout: Record<string, any>;
-  verticalSliceData: any[]; verticalSliceLayout: Record<string, any>;
-}
-
-export interface GenericPlotSlice {
-  genericBoxPlotData: any[]; genericBoxPlotLayout: Record<string, any>;
-  genericScatterData: any[]; genericScatterLayout: Record<string, any>;
-}
-
-export interface DiagnosticsPlotSlice {
-  clusterScatterData: any[]; clusterScatterLayout: Record<string, any>;
-  outlierChartData: any[]; outlierChartLayout: Record<string, any>;
-  holdoutConfusionData: any[]; holdoutConfusionLayout: Record<string, any>;
-  holdoutRegressionData: any[]; holdoutRegressionLayout: Record<string, any>;
-  statsPlotData: any[]; statsPlotLayout: Record<string, any>;
-}
-
-export type PlotDataBag = PlotMetaSlice &
-  PcaPlotSlice &
-  McrPlotSlice &
-  EfaPlotSlice &
-  PlsPlotSlice &
-  ClassificationPlotSlice &
-  RegressionPlotSlice &
-  OverviewPlotSlice &
-  SpectraPlotSlice &
-  GenericPlotSlice &
-  DiagnosticsPlotSlice;
-
-// ── Writable refs (edited via v-model emit pairs from panels) ───────────
+export type * from "@/types/scientificPlotProjection";
+import type { PlotDataBag } from "@/types/scientificPlotProjection";
 
 export interface WritableSlice {
+  selectedPresentationId: Ref<string | null>;
   pcaXAxis: Ref<number>;
   pcaYAxis: Ref<number>;
   scoreColorMode: Ref<string>;
+  sampleColorField: Ref<string>;
+  sampleSymbolField: Ref<string>;
+  selectedFeatureScale: Ref<string>;
+  selectedFeatureLabels: Ref<string>;
+  selectedFeatureTitle: Ref<string>;
+  selectedSampleLabels: Ref<string>;
   plsdaLoadingsViewMode: Ref<"lines" | "biplot">;
   regressionTargetIdx: Ref<number>;
   spectraDisplayMode: Ref<"overlay" | "contour">;
   genericDisplayMode: Ref<"boxplot" | "scatter">;
   featureXAxis: Ref<number>;
   featureYAxis: Ref<number>;
-  contourClickPoint: Ref<
-    { sampleIdx: number; wavenumberIdx: number; wavenumber: number } | null
-  >;
+  contourClickPoint: Ref<{ sampleIdx: number; wavenumberIdx: number; wavenumber: number } | null>;
 }
 
 // ── Top-level state boundary ────────────────────────────────────────────
@@ -271,6 +184,4 @@ export interface NodeDetailState {
   plotSections: Ref<Record<string, boolean>>;
 }
 
-export const NODE_DETAIL_STATE_KEY: InjectionKey<NodeDetailState> = Symbol(
-  "NodeDetailState",
-);
+export const NODE_DETAIL_STATE_KEY: InjectionKey<NodeDetailState> = Symbol("NodeDetailState");

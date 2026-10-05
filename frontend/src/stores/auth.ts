@@ -1,3 +1,4 @@
+import { resetScientificQueryGuidance } from "@/lib/scientificQueryGuidance";
 /**
  * OSS auth store — identity-only.
  *
@@ -13,7 +14,7 @@ import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
 import api from '@/api/client'
-import { clearStoredApiKey, hasStoredApiKey } from '@/utils/authStorage'
+import { clearStoredApiKey } from '@/utils/authStorage'
 
 /** Per-user capability flags populated by the server's /auth/me response. */
 interface UserCapabilities {
@@ -51,9 +52,10 @@ export const useAuthStore = defineStore('auth', () => {
     /**
      * Clear stale auth artifacts without navigating. Called when
      * switching to a mode that doesn't need JWT (e.g. local,
-     * loopback hybrid) and by the server auth module's logout flow.
+     * loopback product) and by the server auth module's logout flow.
      */
     function clearCredentials() {
+        resetScientificQueryGuidance();
         token.value = null
         user.value = null
         localStorage.removeItem('token')
@@ -61,19 +63,16 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     /**
-     * Hybrid bootstrap — resolve implicit loopback identity via the
-     * OSS-compat `/auth/me`. Clears any stale credentials first so
-     * a prior enterprise session doesn't taint the hybrid handshake.
+     * Product bootstrap — resolve implicit loopback identity via the
+     * OSS-compat `/auth/me`. The backend validates any retained credentials;
+     * remote callers must not lose the API key needed to authenticate.
      */
-    async function initHybridUser() {
-        if (token.value || localStorage.getItem('token') || hasStoredApiKey()) {
-            clearCredentials()
-        }
+    async function initializeActor() {
         try {
             const response = await api.get('/auth/me')
             user.value = response.data
         } catch {
-            console.warn('Could not fetch hybrid user profile')
+            console.warn('Could not fetch product user profile')
         }
     }
 
@@ -82,6 +81,6 @@ export const useAuthStore = defineStore('auth', () => {
         user,
         isAuthenticated,
         clearCredentials,
-        initHybridUser,
+        initializeActor,
     }
 })

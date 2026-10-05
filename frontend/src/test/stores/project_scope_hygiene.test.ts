@@ -48,6 +48,10 @@ describe("L3 — saveWorkflow refuses to create an orphan workflow", () => {
     const project = useProjectStore();
     project.currentProjectId = 42;
     apiMock.post.mockResolvedValueOnce({ data: { id: 100, integrity_hash: "h" } });
+    // saveWorkflow refreshes the persisted preflight immediately after
+    // create/update; give it a benign response so it doesn't crash on the
+    // second, un-queued call.
+    apiMock.post.mockResolvedValueOnce({ data: { workflow_id: 100, is_valid: true, issues: [], semantic_edges: [] } });
 
     await workflow.saveWorkflow();
 
@@ -62,6 +66,7 @@ describe("L3 — saveWorkflow refuses to create an orphan workflow", () => {
     const project = useProjectStore();
     project.currentProjectId = 42;
     apiMock.post.mockResolvedValueOnce({ data: { id: 100, integrity_hash: "h" } });
+    apiMock.post.mockResolvedValueOnce({ data: { workflow_id: 100, is_valid: true, issues: [], semantic_edges: [] } });
 
     await workflow.saveWorkflow({ projectId: 99 });
 

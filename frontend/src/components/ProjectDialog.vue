@@ -21,6 +21,17 @@
         </small>
       </div>
 
+      <div v-if="needsWorkspace" class="field">
+        <label for="project-workspace">Workspace</label>
+        <Dropdown
+inputId="project-workspace" v-model="selectedWorkspace"
+          :options="workspaceOptions" optionLabel="label" :loading="workspacesLoading"
+          placeholder="Choose a workspace" />
+        <small v-if="workspaceError" class="p-error">{{ workspaceError }}</small>
+        <small v-else-if="!workspacesLoading && !workspaceOptions.length" class="p-error">
+          No workspace is currently available for project creation.
+        </small>
+      </div>
       <div class="field">
         <label for="project-description">Description</label>
         <Textarea
@@ -75,6 +86,7 @@
         <Button
           :label="isEditMode ? 'Save Changes' : 'Create Project'"
           :icon="isEditMode ? 'pi pi-check' : 'pi pi-plus'"
+          :disabled="needsWorkspace && (workspacesLoading || !selectedWorkspace)"
           @click="onSubmit"
         />
       </div>
@@ -90,6 +102,8 @@ import InputText from "primevue/inputtext";
 import Textarea from "primevue/textarea";
 import Dropdown from "primevue/dropdown";
 import type { ProjectSummary } from "@/types";
+import { api } from "@/api";
+import { useAppConfig } from "@/composables/useAppConfig";
 
 const techniqueOptions = ["FTIR", "Raman", "NMR", "UV-Vis", "NIR", "XRF", "MS"];
 
@@ -108,6 +122,8 @@ export interface ProjectFormData {
   description: string;
   technique: string | null;
   sample_type: string | null;
+  commercial_subscription_id?: number;
+  commercial_workspace_id?: number | null;
 }
 
 const emit = defineEmits<{
@@ -122,6 +138,34 @@ const dialogVisible = computed({
 });
 
 const isEditMode = computed(() => !!props.editProject);
+
+const { appMode, siteProfile } = useAppConfig();
+const needsWorkspace = computed(() => !isEditMode.value && appMode.value === "enterprise" && siteProfile.value === "pro");
+interface WorkspaceOption { subscription_id: number; workspace_id: number | null; label: string }
+const workspaceOptions = ref<WorkspaceOption[]>([]);
+const selectedWorkspace = ref<WorkspaceOption | null>(null);
+const workspacesLoading = ref(false);
+const workspaceError = ref("");
+let optionsRequest = 0;
+watch([() => props.visible, needsWorkspace], async ([visible, needed]) => {
+  const request = ++optionsRequest;
+  selectedWorkspace.value = null;
+  workspaceOptions.value = [];
+  workspaceError.value = "";
+  workspacesLoading.value = false;
+  if (!visible || !needed) return;
+  workspacesLoading.value = true;
+  try {
+    const { data } = await api.get<{ options: WorkspaceOption[] }>("/commercial/projects/options");
+    if (request !== optionsRequest) return;
+    workspaceOptions.value = data.options;
+    if (data.options.length === 1) selectedWorkspace.value = data.options[0];
+  } catch {
+    if (request === optionsRequest) workspaceError.value = "Unable to load workspaces. Reopen this dialog to retry.";
+  } finally {
+    if (request === optionsRequest) workspacesLoading.value = false;
+  }
+}, { immediate: true });
 
 const form = ref({
   name: "",
@@ -177,7 +221,7 @@ const formatDate = (dateStr?: string): string => {
 const onSubmit = () => {
   submitted.value = true;
 
-  if (!form.value.name.trim()) {
+  if (!form.value.name.trim() || (needsWorkspace.value && !selectedWorkspace.value)) {
     return;
   }
 
@@ -191,6 +235,10 @@ const onSubmit = () => {
   if (isEditMode.value) {
     emit("update", data);
   } else {
+    if (needsWorkspace.value && selectedWorkspace.value) {
+      data.commercial_subscription_id = selectedWorkspace.value.subscription_id;
+      data.commercial_workspace_id = selectedWorkspace.value.workspace_id;
+    }
     emit("create", data);
   }
 

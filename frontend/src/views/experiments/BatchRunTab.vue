@@ -1,16 +1,49 @@
 <template>
   <div class="batch-run-tab">
-    <div v-if="isDemoMode" class="feature-preflight feature-preflight--error">
-      <i class="pi pi-lock"></i>
-      <span>Batch inference is disabled in demo mode.</span>
-    </div>
+    <PrivateBatchUpload v-if="effectiveArtifactUids.length === 1" :artifact-uid="effectiveArtifactUids[0]!" @completed="emit('completed', $event)" />
     <div class="batch-form">
       <div class="selection-summary">
-        <span class="eyebrow">Selected artifacts</span>
-        <strong>{{ artifactUids.length }}</strong>
-        <small v-if="artifactUids.length">Ready for batch inference.</small>
-        <small v-else>Select one or more artifacts in the Artifacts tab.</small>
+        <span class="eyebrow">Selected models</span>
+        <strong>{{ effectiveArtifactUids.length }}</strong>
+        <small v-if="effectiveArtifactUids.length">Ready for batch prediction.</small>
+        <small v-else>Select one or more fitted models.</small>
       </div>
+
+      <div v-if="modelOptions.length" class="form-field">
+        <label for="batch-models">Models</label>
+        <MultiSelect
+          inputId="batch-models"
+          v-model="selectedArtifactUids"
+          :options="modelOptions"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Select fitted models"
+          display="chip"
+          class="w-full"
+          :disabled="submitting"
+        />
+      </div>
+
+      <div v-if="requiresAssetSelection" class="form-field">
+        <label for="batch-scientific-asset">Scientific Result</label>
+        <Dropdown
+          inputId="batch-scientific-asset"
+          v-model="selectedAssetId"
+          :disabled="submitting || selectedDatasetViewId != null"
+          :options="batchAssetOptions"
+          optionLabel="title"
+          optionValue="asset_id"
+          placeholder="Select the exact result for every source file"
+          class="w-full"
+        >
+          <template #option="{ option }">
+            <span>{{ option.title || option.asset_id }} · {{ option.asset_id }} · {{ option.shape.join(" × ") }}</span>
+          </template>
+        </Dropdown>
+        <small v-if="!assetSelectionError">The selected result identity is applied consistently to every file in this dataset.</small>
+      </div>
+
+      <p v-if="assetSelectionError && selectedDatasetViewId == null" role="alert" class="asset-error">{{ assetSelectionError }}</p>
 
       <div class="form-row">
         <div class="form-field">
@@ -18,6 +51,7 @@
           <Dropdown
             inputId="batch-dataset"
             v-model="selectedExperimentId"
+            :disabled="submitting"
             :options="experiments"
             optionLabel="name"
             optionValue="id"
@@ -25,12 +59,28 @@
             class="w-full"
             :loading="loadingExperiments"
           />
+          <small>Uses raw source files, or synthetic files when raw files are unavailable.</small>
+        </div>
+        <div v-if="selectedExperimentId != null" class="form-field">
+          <label for="batch-dataset-definition">Definition</label>
+          <Dropdown
+            inputId="batch-dataset-definition"
+            v-model="selectedDatasetViewId"
+            :disabled="submitting"
+            :options="savedViewOptions"
+            optionLabel="name"
+            optionValue="id"
+            class="w-full"
+            :loading="loadingDatasetViews"
+          />
+          <small v-if="datasetViewsError" role="alert">{{ datasetViewsError }}</small>
         </div>
         <div class="form-field">
           <label for="batch-scope">Scope</label>
           <Dropdown
             inputId="batch-scope"
             v-model="scope"
+            :disabled="submitting || selectedDatasetViewId != null"
             :options="scopeOptions"
             optionLabel="label"
             optionValue="value"
@@ -60,7 +110,7 @@
 
       <div class="form-actions">
         <Button
-          label="Start Batch Run"
+          label="Run Batch"
           icon="pi pi-play"
           :loading="submitting"
           :disabled="!canSubmit"
@@ -72,23 +122,32 @@
     <div class="batch-info">
       <i class="pi pi-info-circle"></i>
       <p>
-        Batch Run applies the selected saved artifacts to the same durable My Dataset.
+        Batch applies the selected fitted models to the chosen durable My Dataset.
         Feature-count and feature-axis contracts are validated before predictions are saved.
+        Select up to eight models; the combined display is limited to 100,000 values. Larger inputs are refused without truncation.
       </p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
 import InputText from "primevue/inputtext";
+import MultiSelect from "primevue/multiselect";
 import { useToast } from "primevue/usetoast";
 import api from "@/api/client";
-import { useDemoMode } from "@/composables/useDemoMode";
+import PrivateBatchUpload from "./PrivateBatchUpload.vue";
 import { useProjectStore } from "@/stores/project";
-import type { ExecutionRunSummary, ExperimentDetail, ExperimentSummary } from "@/types";
+import type {
+  ExecutionRunSummary,
+  ExperimentDetail,
+  ExperimentFile,
+  ExperimentFileAssets,
+  ExperimentSummary,
+  ScientificAsset,
+} from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 
 interface BatchArtifactSummary {
@@ -115,11 +174,9 @@ interface BatchRunResponse {
 
 const props = withDefaults(
   defineProps<{
-    artifactUids?: string[];
     artifacts?: BatchArtifactSummary[];
   }>(),
   {
-    artifactUids: () => [],
     artifacts: () => [],
   },
 );
@@ -130,41 +187,70 @@ const emit = defineEmits<{
 
 const projectStore = useProjectStore();
 const toast = useToast();
-const { isDemoMode } = useDemoMode();
 
 const experiments = ref<ExperimentSummary[]>([]);
 const loadingExperiments = ref(false);
 const selectedExperimentId = ref<number | null>(null);
+type SavedDatasetView = { id: number; name: string; selection: { stage: "raw" | "preprocessed" | "synthetic"; asset_id: string | null } };
+const savedDatasetViews = ref<SavedDatasetView[]>([]);
+const selectedDatasetViewId = ref<number | null>(null);
+const loadingDatasetViews = ref(false);
+const datasetViewsError = ref("");
+const savedViewOptions = computed(() => [{ id: null, name: "Default" }, ...savedDatasetViews.value]);
 const scope = ref("all");
+const selectedStage = ref<"raw" | "preprocessed" | "synthetic">("raw");
 const runName = ref("");
 const submitting = ref(false);
+const selectedArtifactUids = ref<string[]>([]);
 const selectedExperimentDetail = ref<ExperimentDetail | null>(null);
 const loadingExperimentDetail = ref(false);
+const selectedAssetId = ref<string | null>(null);
+const batchAssetOptions = ref<ScientificAsset[]>([]);
+const requiresAssetSelection = ref(false);
+const assetSelectionError = ref("");
+let experimentRequest = 0;
+let detailRequest = 0;
+let datasetViewRequest = 0;
+onBeforeUnmount(() => { ++experimentRequest; ++detailRequest; ++datasetViewRequest; });
 
 const scopeOptions = [
-  { label: "All samples", value: "all" },
-  { label: "Training samples", value: "train" },
-  { label: "Test samples", value: "test" },
+  { label: "Included samples", value: "all" },
+  { label: "Included training samples", value: "train" },
+  { label: "Included test samples", value: "test" },
 ];
 
+const modelOptions = computed(() => props.artifacts.map((artifact) => ({
+  label: artifact.display_name || artifact.name,
+  value: artifact.artifact_uid,
+})));
+const effectiveArtifactUids = computed(() => selectedArtifactUids.value);
+const selectedArtifacts = computed(() => {
+  const selected = new Set(effectiveArtifactUids.value);
+  return props.artifacts.filter((artifact) => selected.has(artifact.artifact_uid));
+});
+
 const suggestedName = computed(() => {
-  const count = props.artifactUids.length;
+  const count = effectiveArtifactUids.value.length;
   return count > 0
-    ? `Batch inference — ${count} artifact${count === 1 ? "" : "s"}`
-    : "Batch inference";
+    ? `Batch prediction — ${count} model${count === 1 ? "" : "s"}`
+    : "Batch prediction";
 });
 
 const canSubmit = computed(
   () =>
-    props.artifactUids.length > 0 &&
+    effectiveArtifactUids.value.length > 0 && effectiveArtifactUids.value.length <= 8 &&
     selectedExperimentId.value != null &&
-    !submitting.value &&
-    !isDemoMode.value,
+    !loadingExperiments.value && !loadingExperimentDetail.value &&
+    selectedExperimentDetail.value != null &&
+    (selectedDatasetViewId.value != null || !requiresAssetSelection.value || Boolean(selectedAssetId.value)) &&
+    (selectedDatasetViewId.value != null || !assetSelectionError.value) &&
+    !loadingDatasetViews.value &&
+    !submitting.value,
 );
 
 const artifactFeatureCounts = computed(() => {
   const counts = new Set<number>();
-  for (const artifact of props.artifacts) {
+  for (const artifact of selectedArtifacts.value) {
     if (Number.isFinite(artifact.n_features)) counts.add(Number(artifact.n_features));
   }
   return [...counts].sort((a, b) => a - b);
@@ -184,13 +270,14 @@ const featurePreflightSeverity = computed<"info" | "warn">(() => {
 });
 
 const featurePreflightMessage = computed(() => {
+  if (selectedDatasetViewId.value != null) return "The saved definition's exact source and included cohort will be verified before prediction.";
   if (loadingExperimentDetail.value) return "Checking dataset feature count...";
   const artifactCounts = artifactFeatureCounts.value;
-  if (props.artifactUids.length > 0 && props.artifacts.length === 0) {
-    return "Selected artifact metadata is unavailable in this view; the server will validate feature contracts before saving.";
+  if (effectiveArtifactUids.value.length > 0 && selectedArtifacts.value.length === 0) {
+    return "Selected model metadata is unavailable in this view; the server will validate feature contracts before saving.";
   }
   if (artifactCounts.length > 1) {
-    return `Selected artifacts have different fitted feature counts (${artifactCounts.join(", ")}). This can be valid after preprocessing or feature selection; the server will validate each full feature contract.`;
+    return `Selected models have different fitted feature counts (${artifactCounts.join(", ")}). This can be valid after preprocessing or feature selection; the server will validate each full feature contract.`;
   }
   if (selectedExperimentId.value == null || artifactCounts.length === 0) return "";
   const datasetCount = selectedExperimentFeatureCount.value;
@@ -198,7 +285,7 @@ const featurePreflightMessage = computed(() => {
     return "Dataset feature count is not available for preflight; the server will validate the full feature contract before saving.";
   }
   if (artifactCounts[0] !== datasetCount) {
-    return `Selected artifact's fitted feature count (${artifactCounts[0]}) differs from the dataset feature count (${datasetCount}). This can be valid after feature selection; the server will validate before saving.`;
+    return `The fitted model feature count (${artifactCounts[0]}) differs from the dataset feature count (${datasetCount}). This can be valid after feature selection; the server will validate before saving.`;
   }
   return `Feature-count preflight passed (${datasetCount} features).`;
 });
@@ -209,17 +296,57 @@ watch(
   () => projectStore.currentProjectId,
   () => {
     selectedExperimentId.value = null;
+    selectedArtifactUids.value = [];
+    runName.value = "";
     selectedExperimentDetail.value = null;
     void fetchExperiments();
   },
 );
 
 watch(selectedExperimentId, (experimentId) => {
+  ++detailRequest;
+  loadingExperimentDetail.value = false;
   selectedExperimentDetail.value = null;
-  if (experimentId != null) void fetchExperimentDetail(experimentId);
+  selectedAssetId.value = null;
+  batchAssetOptions.value = [];
+  requiresAssetSelection.value = false;
+  assetSelectionError.value = "";
+  selectedDatasetViewId.value = null;
+  savedDatasetViews.value = [];
+  ++datasetViewRequest;
+  if (experimentId != null) {
+    void fetchExperimentDetail(experimentId);
+    void fetchDatasetViews(experimentId);
+  }
+}, { flush: "sync" });
+
+watch(selectedDatasetViewId, (viewId) => {
+  const view = savedDatasetViews.value.find((candidate) => candidate.id === viewId);
+  if (!view) return;
+  scope.value = "all";
+  selectedStage.value = view.selection.stage;
+  selectedAssetId.value = view.selection.asset_id;
 });
 
+async function fetchDatasetViews(experimentId: number): Promise<void> {
+  const request = ++datasetViewRequest;
+  loadingDatasetViews.value = true;
+  datasetViewsError.value = "";
+  try {
+    const response = await api.get<SavedDatasetView[]>(`/experiments/${experimentId}/dataset-views`);
+    if (request === datasetViewRequest && selectedExperimentId.value === experimentId) {
+      if (!Array.isArray(response.data)) throw new Error("Saved definition list is invalid.");
+      savedDatasetViews.value = response.data;
+    }
+  } catch (error) {
+    if (request === datasetViewRequest) datasetViewsError.value = getErrorMessage(error, "Saved definitions are unavailable.");
+  } finally {
+    if (request === datasetViewRequest) loadingDatasetViews.value = false;
+  }
+}
+
 async function fetchExperiments(): Promise<void> {
+  const request = ++experimentRequest;
   loadingExperiments.value = true;
   try {
     const projectId = projectStore.currentProjectId;
@@ -230,8 +357,10 @@ async function fetchExperiments(): Promise<void> {
     const response = await api.get<ExperimentSummary[]>("/experiments", {
       params: { project_id: projectId },
     });
+    if (request !== experimentRequest || projectId !== projectStore.currentProjectId) return;
     experiments.value = response.data;
   } catch (err) {
+    if (request !== experimentRequest) return;
     experiments.value = [];
     toast.add({
       severity: "error",
@@ -240,19 +369,52 @@ async function fetchExperiments(): Promise<void> {
       life: 4000,
     });
   } finally {
-    loadingExperiments.value = false;
+    if (request === experimentRequest) loadingExperiments.value = false;
   }
 }
 
 async function fetchExperimentDetail(experimentId: number): Promise<void> {
+  const request = ++detailRequest;
+  const projectId = projectStore.currentProjectId;
+  const current = () => request === detailRequest && experimentId === selectedExperimentId.value && projectId === projectStore.currentProjectId;
   loadingExperimentDetail.value = true;
   try {
-    const response = await api.get<ExperimentDetail>(`/experiments/${experimentId}`);
-    selectedExperimentDetail.value = response.data;
-  } catch {
+    const [detailResponse, filesResponse] = await Promise.all([
+      api.get<ExperimentDetail>(`/experiments/${experimentId}`),
+      api.get<ExperimentFile[]>(`/experiments/${experimentId}/files`, { params: { stage: "raw" } }),
+    ]);
+    if (!current()) return;
+    if (selectedDatasetViewId.value == null) selectedStage.value = filesResponse.data.length ? "raw" : "synthetic";
+    const files = filesResponse.data.length ? filesResponse.data : (await api.get<ExperimentFile[]>(
+      `/experiments/${experimentId}/files`, { params: { stage: "synthetic" } },
+    )).data;
+    if (!current()) return;
+    if (!files.length) throw new Error("Dataset has no importable source files.");
+    const inventories = await Promise.all(
+      files.map((file) =>
+        api.get<ExperimentFileAssets>(`/experiments/${experimentId}/files/${file.id}/scientific-assets`),
+      ),
+    );
+    const inventoryValues = inventories.map((response) => response.data);
+    if (!current()) return;
+    selectedExperimentDetail.value = detailResponse.data;
+    requiresAssetSelection.value = inventoryValues.some((inventory) => inventory.assets.length > 1);
+    if (requiresAssetSelection.value) {
+      const commonIds = inventoryValues.reduce<Set<string>>((common, inventory, index) => {
+        const ids = new Set(inventory.assets.map((asset) => asset.asset_id));
+        return index === 0 ? ids : new Set([...common].filter((assetId) => ids.has(assetId)));
+      }, new Set<string>());
+      batchAssetOptions.value = (inventoryValues[0]?.assets ?? []).filter((asset) => commonIds.has(asset.asset_id));
+      assetSelectionError.value = batchAssetOptions.value.length
+        ? ""
+        : "Files in this dataset do not share one scientific result identity. Split them into compatible datasets before batch inference.";
+    }
+  } catch (err) {
+    if (!current()) return;
     selectedExperimentDetail.value = null;
+    assetSelectionError.value = getErrorMessage(err, "Scientific result inventory could not be loaded.");
   } finally {
-    loadingExperimentDetail.value = false;
+    if (current()) loadingExperimentDetail.value = false;
   }
 }
 
@@ -281,16 +443,20 @@ function extractFeatureCount(metadata: Record<string, unknown> | null): number |
 async function handleSubmit(): Promise<void> {
   if (!canSubmit.value || selectedExperimentId.value == null) return;
   submitting.value = true;
+  const projectId = projectStore.currentProjectId;
   try {
     const response = await api.post<BatchRunResponse>("/runs/batch", {
-      artifact_uids: props.artifactUids,
+      artifact_uids: effectiveArtifactUids.value,
       dataset: {
         experiment_id: selectedExperimentId.value,
-        stage: "raw",
+        stage: selectedStage.value,
+        asset_id: selectedDatasetViewId.value == null ? selectedAssetId.value : null,
       },
+      ...(selectedDatasetViewId.value != null ? { dataset_view_id: selectedDatasetViewId.value } : {}),
       scope: scope.value,
       run_name: runName.value.trim() || suggestedName.value,
     });
+    if (projectId !== projectStore.currentProjectId) return;
     const failures = response.data.results.filter((result) => result.status === "failed");
     if (response.data.run) {
       emit("completed", response.data.run);
@@ -304,7 +470,7 @@ async function handleSubmit(): Promise<void> {
             ? "Batch run partially saved"
             : "Batch run failed",
       detail: failures.length
-        ? `${failures.length} artifact${failures.length === 1 ? "" : "s"} failed. ${
+        ? `${failures.length} model${failures.length === 1 ? "" : "s"} failed. ${
             response.data.run?.name ?? "No run was saved."
           }`
         : response.data.run?.name ?? "No run was saved.",
@@ -314,7 +480,7 @@ async function handleSubmit(): Promise<void> {
     toast.add({
       severity: "error",
       summary: "Batch run failed",
-      detail: getErrorMessage(err, "Could not apply selected artifacts."),
+      detail: getErrorMessage(err, "Could not apply the selected models."),
       life: 6000,
     });
   } finally {
@@ -378,6 +544,10 @@ async function handleSubmit(): Promise<void> {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
+}
+
+.asset-error {
+  color: var(--red-700, #b91c1c);
 }
 
 .form-actions {

@@ -11,6 +11,7 @@
  */
 
 import { computed, watch, type Ref } from "vue";
+import { regressionMetricPresentation, regressionMetricQualification } from "@/utils/regressionMetricPresentation";
 import {
   buildLabelTable,
   compactSampleLabel,
@@ -19,6 +20,10 @@ import {
   splitLabelByDelimiter,
 } from "@/utils/sampleLabels";
 import type { NodeOutput } from "@/utils/nodeOutput";
+import {
+  isProjectedScientificKind,
+  scientificEvidenceShape,
+} from "@/utils/scientificPresentation";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -29,9 +34,12 @@ const META_TOOLTIPS: Record<string, string> = {
   t2_p95: "95th percentile of Hotelling's T²; common control limit for outliers.",
   spe_mean: "Mean Squared Prediction Error (SPE/Q residuals) across samples.",
   spe_p95: "95th percentile of SPE; common control limit for residual outliers.",
-  data_role: "Canonical dataset role: X_spectra has an ordered spectral axis; X_features is a multivariate feature table.",
-  "sherpa.data_role": "Canonical dataset role: X_spectra has an ordered spectral axis; X_features is a multivariate feature table.",
-  finite_fraction: "Fraction of numeric matrix cells that are finite and usable for numerical methods.",
+  data_role:
+    "Canonical dataset role: X_spectra has an ordered spectral axis; X_features is a multivariate feature table.",
+  "sherpa.data_role":
+    "Canonical dataset role: X_spectra has an ordered spectral axis; X_features is a multivariate feature table.",
+  finite_fraction:
+    "Fraction of numeric matrix cells that are finite and usable for numerical methods.",
 };
 
 function numericValue(value: unknown): number | undefined {
@@ -74,40 +82,38 @@ function dataPair(value: any): [number | undefined, number | undefined] {
 }
 
 function axisLength(axis: any): number | undefined {
-  return integerNumber(axis?.length) ?? integerNumber(axis?.n_points) ?? (
-    Array.isArray(axis?.data)
+  return (
+    integerNumber(axis?.length) ??
+    integerNumber(axis?.n_points) ??
+    (Array.isArray(axis?.data)
       ? axis.data.length
       : Array.isArray(axis?.labels)
         ? axis.labels.length
-        : undefined
+        : undefined)
   );
 }
 
 function trueFeatureCount(value: any, metadata: Record<string, any>): number | undefined {
   const [, dataCols] = dataPair(value);
-  return integerNumber(value?.n_features)
-    ?? integerNumber(metadata.n_features)
-    ?? shapeFeatureCount(value)
-    ?? axisLength(value?.x_axis)
-    ?? (
-    Array.isArray(metadata.wavenumbers)
-      ? metadata.wavenumbers.length
-      : undefined
-  )
-    ?? dataCols;
+  return (
+    integerNumber(value?.n_features) ??
+    integerNumber(metadata.n_features) ??
+    shapeFeatureCount(value) ??
+    axisLength(value?.x_axis) ??
+    (Array.isArray(metadata.wavenumbers) ? metadata.wavenumbers.length : undefined) ??
+    dataCols
+  );
 }
 
 function trueSampleCount(value: any, metadata: Record<string, any>): number | undefined {
   const [dataRows] = dataPair(value);
-  return integerNumber(value?.n_samples)
-    ?? integerNumber(metadata.n_samples)
-    ?? shapeSampleCount(value)
-    ?? (
-    Array.isArray(metadata.sample_labels)
-      ? metadata.sample_labels.length
-      : undefined
-  )
-    ?? dataRows;
+  return (
+    integerNumber(value?.n_samples) ??
+    integerNumber(metadata.n_samples) ??
+    shapeSampleCount(value) ??
+    (Array.isArray(metadata.sample_labels) ? metadata.sample_labels.length : undefined) ??
+    dataRows
+  );
 }
 
 function numericRange(values: unknown[]): [number, number] | null {
@@ -129,7 +135,8 @@ function explicitRange(axis: any, metadata: Record<string, any>): [number, numbe
     if (Array.isArray(candidate) && candidate.length >= 2) {
       const left = numericValue(candidate[0]);
       const right = numericValue(candidate[1]);
-      if (left !== undefined && right !== undefined) return [Math.min(left, right), Math.max(left, right)];
+      if (left !== undefined && right !== undefined)
+        return [Math.min(left, right), Math.max(left, right)];
     }
   }
   const min = numericValue(metadata.wavenumber_min ?? metadata.wavelength_min ?? metadata.x_min);
@@ -138,7 +145,11 @@ function explicitRange(axis: any, metadata: Record<string, any>): [number, numbe
   return null;
 }
 
-function xAxisRange(axis: any, metadata: Record<string, any>, featureCount: number | undefined): [number, number] | null {
+function xAxisRange(
+  axis: any,
+  metadata: Record<string, any>,
+  featureCount: number | undefined,
+): [number, number] | null {
   const explicit = explicitRange(axis, metadata);
   if (explicit) return explicit;
   if (!Array.isArray(axis?.data)) return null;
@@ -147,11 +158,14 @@ function xAxisRange(axis: any, metadata: Record<string, any>, featureCount: numb
 }
 
 function yAxisCountLabel(yTitle: unknown): string {
-  const normalized = String(yTitle || "").trim().toLowerCase();
+  const normalized = String(yTitle || "")
+    .trim()
+    .toLowerCase();
   if (/\b(target|targets|property|properties)\b/.test(normalized)) return "targets";
   if (/\b(component|components|latent|lv|factor|factors)\b/.test(normalized)) return "components";
   if (/\b(class|classes)\b/.test(normalized)) return "classes";
-  if (/\b(sample|samples|specimen|specimens)\b/.test(normalized) || normalized === "") return "samples";
+  if (/\b(sample|samples|specimen|specimens)\b/.test(normalized) || normalized === "")
+    return "samples";
   return "entries";
 }
 
@@ -215,17 +229,11 @@ export function useNodeOutputData({
     if (!nodeOutput.value) return false;
     const hasData =
       nodeOutput.value.data &&
-      (Array.isArray(nodeOutput.value.data)
-        ? nodeOutput.value.data.length > 0
-        : true);
-    const hasPlots =
-      nodeOutput.value.plots &&
-      Object.keys(nodeOutput.value.plots).length > 0;
+      (Array.isArray(nodeOutput.value.data) ? nodeOutput.value.data.length > 0 : true);
+    const hasPlots = nodeOutput.value.plots && Object.keys(nodeOutput.value.plots).length > 0;
     // Visualization nodes may have layout in metadata even when trace data was
     // stripped for sessionStorage transfer (large spectral plots).
-    const hasMeta =
-      nodeOutput.value.metadata &&
-      Object.keys(nodeOutput.value.metadata).length > 0;
+    const hasMeta = nodeOutput.value.metadata && Object.keys(nodeOutput.value.metadata).length > 0;
     return !!hasData || !!hasPlots || !!hasMeta;
   });
 
@@ -237,6 +245,10 @@ export function useNodeOutputData({
 
   const outputSummary = computed(() => {
     if (!hasOutput.value) return "";
+    const evidenceShape = scientificEvidenceShape(nodeOutput.value);
+    if (evidenceShape) {
+      return `${evidenceShape.rows} ${evidenceShape.rowLabel} · ${evidenceShape.cols} ${evidenceShape.colLabel}`;
+    }
     const data = nodeOutput.value?.data;
     if (Array.isArray(data)) {
       const rows = data.length;
@@ -251,6 +263,17 @@ export function useNodeOutputData({
 
   const outputData = computed(() => {
     if (!hasOutput.value) return null;
+    const evidenceShape = scientificEvidenceShape(nodeOutput.value);
+    if (evidenceShape) {
+      return {
+        rows: evidenceShape.rows,
+        cols: evidenceShape.cols,
+        rowLabel: evidenceShape.rowLabel,
+        colLabel: evidenceShape.colLabel,
+        type: "visualization",
+        range: null,
+      };
+    }
     const data = nodeOutput.value!.data;
     const metadata: Record<string, any> = nodeOutput.value!.metadata || {};
 
@@ -288,11 +311,24 @@ export function useNodeOutputData({
     const filtered: Record<string, any> = {};
 
     const structuredKeys = [
-      "data", "wavenumbers", "x_axis", "sample_labels", "labels",
-      "processing_history", "provenance", "quality_summary",
-      "x_title", "x_units", "y_title", "y_units",
-      "data_type", "is_spectra", "spectral_technique", "data_quantity",
-      "value_units", "value_units_label",
+      "data",
+      "wavenumbers",
+      "x_axis",
+      "sample_labels",
+      "labels",
+      "processing_history",
+      "provenance",
+      "quality_summary",
+      "x_title",
+      "x_units",
+      "y_title",
+      "y_units",
+      "data_type",
+      "is_spectra",
+      "spectral_technique",
+      "data_quantity",
+      "value_units",
+      "value_units_label",
     ];
 
     for (const [key, value] of Object.entries(metadata)) {
@@ -318,8 +354,7 @@ export function useNodeOutputData({
     if (!hasOutput.value || !nodeOutput.value) return null;
     const primaryPort = nodeOutput.value.primary_port;
     const primaryPortOutput = primaryPort ? (nodeOutput.value.ports?.[primaryPort] as any) : null;
-    const portValue: any =
-      primaryPortOutput?.value || null;
+    const portValue: any = primaryPortOutput?.value || null;
     const metadata: Record<string, any> = {
       ...(portValue?.metadata || {}),
       ...(primaryPortOutput?.metadata || {}),
@@ -351,9 +386,7 @@ export function useNodeOutputData({
       };
     }
 
-    const defaultSampleTitle = metadata.is_time_series
-      ? "Scan / Time Index"
-      : "Sample";
+    const defaultSampleTitle = metadata.is_time_series ? "Scan / Time Index" : "Sample";
     const isTrivialIndexLabels = (labels: unknown): boolean => {
       if (!Array.isArray(labels) || labels.length === 0) return true;
       return labels.every((raw, i) => {
@@ -409,7 +442,10 @@ export function useNodeOutputData({
             : String(dataRole);
       if (dataRole === "X_features") info.isFeatureTable = true;
     }
-    const targetContext = portValue?.target_context || metadata.target_context || metadata.source_metadata?.target_context;
+    const targetContext =
+      portValue?.target_context ||
+      metadata.target_context ||
+      metadata.source_metadata?.target_context;
     const hasTarget =
       portValue?.target != null ||
       metadata.has_target === true ||
@@ -450,7 +486,12 @@ export function useNodeOutputData({
       if (!Array.isArray(hist)) continue;
       for (const step of hist) {
         const key = typeof step === "string" ? step : JSON.stringify(step);
-        if (!combined.some((existing) => (typeof existing === "string" ? existing : JSON.stringify(existing)) === key)) {
+        if (
+          !combined.some(
+            (existing) =>
+              (typeof existing === "string" ? existing : JSON.stringify(existing)) === key,
+          )
+        ) {
           combined.push(step);
         }
       }
@@ -466,7 +507,9 @@ export function useNodeOutputData({
       .filter((prov): prov is Record<string, any> => !!prov && typeof prov === "object");
     if (provenanceBlocks.length === 0) return null;
     const operations = Array.from(
-      new Set(provenanceBlocks.flatMap((prov) => (Array.isArray(prov.operations) ? prov.operations : []))),
+      new Set(
+        provenanceBlocks.flatMap((prov) => (Array.isArray(prov.operations) ? prov.operations : [])),
+      ),
     );
     const prov = provenanceBlocks[0];
     const extras: Record<string, unknown> = {};
@@ -483,16 +526,32 @@ export function useNodeOutputData({
     };
   });
 
-  const QUALITY_KNOWN_KEYS = new Set(["latest_model_type", "latest_r2", "latest_rmse", "n_evaluations"]);
+  const QUALITY_KNOWN_KEYS = new Set([
+    "latest_model_type",
+    "latest_r2",
+    "latest_rmse",
+    "n_evaluations",
+    "legacy_aggregate_evidence",
+    "metric_summary_scope",
+    "metric_qualification_message",
+  ]);
 
   const qualitySummary = computed(() => {
-    const qs = firstMetadataValue(["quality_summary"]) as Record<string, any> | undefined;
-    if (!qs || typeof qs !== "object") return null;
+    const raw = firstMetadataValue(["quality_summary"]) as Record<string, any> | undefined;
+    if (!raw || typeof raw !== "object") return null;
+    const context = {
+      n_targets: firstMetadataValue(["n_targets", "target_count"]),
+      target_names: firstMetadataValue(["target_names"]),
+      quality_summary: raw,
+    };
+    const qs = regressionMetricPresentation(context).quality_summary as Record<string, any>;
+    const qualification = regressionMetricQualification(context);
     const extras: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(qs)) {
       if (!QUALITY_KNOWN_KEYS.has(k)) extras[k] = v;
     }
     return {
+      qualification,
       latest_model_type: qs.latest_model_type as string | undefined,
       latest_r2: qs.latest_r2 as number | undefined,
       latest_rmse: qs.latest_rmse as number | undefined,
@@ -501,16 +560,19 @@ export function useNodeOutputData({
     };
   });
 
-  const isRegressionNode = computed(() =>
-    ["model.pls", "model.pcr", "model.svr"].includes(nodeTypeKey.value),
+  const isRegressionComparison = computed(() =>
+    isProjectedScientificKind(nodeOutput.value, "regression_comparison"),
   );
 
   const portSummaries = computed(() => {
     if (!nodeOutput.value?.ports) return [];
     const summaries: Array<{
       name: string;
+      label?: string;
+      displayLabel: string;
       type?: string;
       shape?: number[];
+      dimensions?: Array<{ role: string; size: number; labels?: string[] }>;
       title?: string;
       xTitle?: string;
       xUnits?: string;
@@ -521,15 +583,18 @@ export function useNodeOutputData({
       nLabels?: number;
     }> = [];
     for (const [name, port] of Object.entries(nodeOutput.value.ports)) {
-      if (name === nodeOutput.value.primary_port) continue;
       const raw = (port as any).value;
+      const descriptor = (port as any).descriptor;
       const portMetadata = ((port as any).metadata || raw?.metadata || {}) as Record<string, any>;
       const yTitle = raw?.y_axis?.title || portMetadata.y_title;
       const yCount = trueSampleCount(raw, portMetadata);
       summaries.push({
         name,
-        type: (port as any).type,
-        shape: raw?.shape,
+        label: descriptor?.label,
+        displayLabel: descriptor?.label ? `${descriptor.label} (${name})` : name,
+        type: descriptor?.scientific_kind || (port as any).type,
+        shape: descriptor?.shape ?? raw?.shape,
+        dimensions: descriptor?.dimensions,
         title: raw?.title,
         xTitle: raw?.x_axis?.title,
         xUnits: raw?.x_axis?.units,
@@ -631,9 +696,7 @@ export function useNodeOutputData({
   const isPCAOutput = computed(() => {
     const metadata = nodeOutput.value?.metadata || {};
     return (
-      nodeTypeKey.value === "model.pca" ||
-      metadata.type === "model.pca" ||
-      metadata.isPCA === true
+      nodeTypeKey.value === "model.pca" || metadata.type === "model.pca" || metadata.isPCA === true
     );
   });
 
@@ -703,9 +766,7 @@ export function useNodeOutputData({
       ? labels.map((label: string) => splitLabelByDelimiter(label, labelDelimiter))
       : [];
     const maxLabelParts =
-      splitLabels.length > 0
-        ? Math.max(...splitLabels.map((parts: string[]) => parts.length))
-        : 0;
+      splitLabels.length > 0 ? Math.max(...splitLabels.map((parts: string[]) => parts.length)) : 0;
     const useSplitLabelColumns = !!labelDelimiter && maxLabelParts > 1;
 
     return data.slice(0, previewRowLimit).map((row: any, i: number) => {
@@ -756,9 +817,7 @@ export function useNodeOutputData({
     const pcLabels: any[] = metadata.pc_labels || [];
     const mcrLabels: any[] = metadata.labels || [];
     const featureNames: any[] = metadata.feature_names || [];
-    const columnNames: string[] = Array.isArray(metadata.column_names)
-      ? metadata.column_names
-      : [];
+    const columnNames: string[] = Array.isArray(metadata.column_names) ? metadata.column_names : [];
     const xTitle = metadata.x_title || "";
     const isPCA = metadata.type === "model.pca" || metadata.isPCA;
     const isMCR = metadata.type === "model.mcr_als";
@@ -864,9 +923,30 @@ export function useNodeOutputData({
     return [];
   });
 
-  const regressionTargetOptions = computed(() => {
+  const regressionTargetOptions = computed<Array<{ label: string; value: number }>>(() => {
+    if (!isRegressionComparison.value) return [];
     const metadata = nodeOutput.value?.metadata || {};
-    const yTrue = metadata.y_true;
+    const comparison = nodeOutput.value?.presentation_value as any;
+    const comparisonMetadata = comparison?.metadata || {};
+    const comparisonNames = Array.isArray(comparisonMetadata.target_names)
+      ? comparisonMetadata.target_names
+      : Array.isArray(comparison?.data)
+        ? Array.from(
+            new Set(
+              comparison.data
+                .map((row: any) => row?.target)
+                .filter((value: unknown): value is string => typeof value === "string" && value.length > 0),
+            ),
+          )
+        : [];
+    if (comparisonNames.length > 0) {
+      return comparisonNames.map((name: string, index: number) => ({ label: name, value: index }));
+    }
+    const connectedTarget = nodeData.value?.inputConnections?.find(
+      (connection: any) => connection?.toPort === "y",
+    );
+    const connectedPayload = resolvePortPayload(connectedTarget?.data);
+    const yTrue = metadata.y_true ?? connectedPayload?.data ?? connectedTarget?.data?.data;
     if (!Array.isArray(yTrue) || yTrue.length === 0) return [];
     const nTargets = Array.isArray(yTrue[0]) ? yTrue[0].length : 1;
     const names = regressionTargetNames.value;
@@ -921,7 +1001,7 @@ export function useNodeOutputData({
     processingHistory,
     provenanceInfo,
     qualitySummary,
-    isRegressionNode,
+    isRegressionComparison,
     isPCAOutput,
     portSummaries,
     fullMetadataJson,

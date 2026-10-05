@@ -256,7 +256,7 @@ let disposeWorkflowMetadataRefresh: (() => void) | null = null;
 const initWorkflowMetadataRefresh = async () => {
   const workflowStore = useWorkflowStore();
 
-  // Skip initial fetch when not authenticated (enterprise/hybrid mode).
+  // Skip initial fetch when not authenticated (managed mode).
   // The node library will be fetched once the user logs in and views load.
   const token = localStorage.getItem("token");
   if (!token && !hasStoredApiKey()) {

@@ -32,6 +32,7 @@
         Action Required ({{ store.actionRequired.length }})
       </button>
       <button
+        v-if="guidanceEnabled"
         class="notif-tab guidance-tab"
         :class="{ active: activeTab === 'guidance' }"
         @click="activeTab = 'guidance'"
@@ -194,6 +195,7 @@ import {
   useNotificationStore,
   type AppNotification,
 } from "@/stores/notification";
+import { useAppConfig } from "@/composables/useAppConfig";
 import { useGuidanceStore } from "@/stores/guidance";
 
 const props = defineProps<{
@@ -206,6 +208,8 @@ const emit = defineEmits<{
 
 const store = useNotificationStore();
 const guidance = useGuidanceStore();
+const { isFeatureEnabled } = useAppConfig();
+const guidanceEnabled = computed(() => isFeatureEnabled("sherpaGuidance"));
 const activeTab = ref<"all" | "action" | "guidance">("all");
 const expandedId = ref<string | null>(null);
 const copiedId = ref<string | null>(null);
@@ -267,6 +271,7 @@ async function copyNotification(n: AppNotification) {
 }
 
 function refreshGuidance() {
+  if (!guidanceEnabled.value) return;
   void guidance.loadNotifications({ includeDismissed: true, limit: 100 });
 }
 
@@ -280,6 +285,10 @@ function guidanceStatus(n: GuidanceNotification): string {
   if (n.shown_at) return "shown";
   return n.source;
 }
+
+watch(guidanceEnabled, (enabled) => {
+  if (!enabled && activeTab.value === "guidance") activeTab.value = "all";
+});
 
 watch(
   () => [visible.value, activeTab.value] as const,

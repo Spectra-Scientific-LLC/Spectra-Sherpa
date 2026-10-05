@@ -6,7 +6,7 @@
  * tests cover only the OSS-owned guard behavior:
  *
  *  1. Local mode — bypass all authentication
- *  2. Hybrid mode — loopback user resolved via /auth/me, remote falls
+ *  2. Explicit product mode — loopback user resolved via /auth/me, remote falls
  *     through to the (server-registered or absent) /login
  *  3. Enterprise / unauthenticated — redirect to /login
  *  4. Enterprise / authenticated — allow protected routes
@@ -33,7 +33,7 @@ const { mockAppMode, mockLoadConfig } = vi.hoisted(() => ({
 
 vi.mock("@/composables/useAppConfig", () => ({
   useAppConfig: () => ({
-    config: { value: null },
+    config: { get value() { return mockAppMode.value === "test_product" ? { implicitIdentity: true } : null; } },
     appMode: mockAppMode,
     loadConfig: mockLoadConfig,
   }),
@@ -115,6 +115,13 @@ describe("Router auth guard (OSS routes)", () => {
       expect(await navigateTo("/data")).toBe("/login");
     });
 
+    it("redirects an unregistered /register route → /login", async () => {
+      // The server adds /register only while the observation signup window is
+      // open. When it is absent, this URL must not bypass the auth guard and
+      // render the unauthenticated application shell.
+      expect(await navigateTo("/register")).toBe("/login");
+    });
+
     it("fails closed when config load fails", async () => {
       mockLoadConfig.mockResolvedValueOnce(false);
       expect(await navigateTo("/workflow")).toBe("/login");
@@ -136,9 +143,9 @@ describe("Router auth guard (OSS routes)", () => {
     });
   });
 
-  describe("hybrid mode", () => {
+  describe("test_product mode", () => {
     beforeEach(() => {
-      mockAppMode.value = "hybrid";
+      mockAppMode.value = "test_product";
     });
 
     it("loopback client: allows navigation when /auth/me resolves", async () => {

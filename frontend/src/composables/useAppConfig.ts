@@ -96,11 +96,6 @@ const egressEnabled = computed(() => config.value?.egressEnabled ?? false)
 const registrationEnabled = computed(() => config.value?.registrationEnabled ?? false)
 
 /**
- * Check if registration requires an access code header
- */
-const registrationRequiresCode = computed(() => config.value?.registrationRequiresCode ?? false)
-
-/**
  * Config delivery status for degraded server-backed modes.
  */
 const configStatus = computed(() => config.value?.configStatus ?? 'ok')
@@ -152,7 +147,6 @@ export function useAppConfig() {
     siteProfile,
     egressEnabled,
     registrationEnabled,
-    registrationRequiresCode,
     configStatus,
     configError,
     isFeatureEnabled,

@@ -1,4 +1,10 @@
-import { readStoredApiKey } from "@/utils/authStorage";
+import api, { expireBrowserSession } from "@/api/client";
+import {
+  clearStoredToken,
+  hasStoredApiKey,
+  hasStoredToken,
+  readStoredApiKey,
+} from "@/utils/authStorage";
 
 export const buildWsUrl = (): string => {
   // In development, use explicit API URL
@@ -39,15 +45,77 @@ export const withCredentials = (wsUrl: string): string => {
 
 /**
  * Build an authentication message to send as the first WebSocket frame.
- * The backend expects `{type: "authenticate", token, api_key}` for explicit
- * remote WebSocket authentication.
+ * Send one credential authority. An explicitly configured API key retains its
+ * historical precedence over a stored browser token.
  */
 export const buildAuthMessage = (): string => {
   const token = localStorage.getItem("token");
   const apiKey = readStoredApiKey();
   return JSON.stringify({
     type: "authenticate",
-    token: token || null,
+    token: apiKey ? null : token || null,
     api_key: apiKey || null,
   });
+};
+
+/** A policy close is not proof that the browser credential is invalid. */
+export type WsPolicyCloseResolution =
+  | "retry-with-api-key"
+  | "session-confirmed"
+  | "session-unconfirmed"
+  | "session-rejected"
+  | "no-credentials"
+  | "cancelled";
+
+export const WS_SESSION_PROBE_TIMEOUT_MS = 5_000;
+
+export const resolveWsPolicyClose = async (
+  signal?: AbortSignal,
+): Promise<WsPolicyCloseResolution> => {
+  if (signal?.aborted) return "cancelled";
+  if (!hasStoredToken()) return "no-credentials";
+  if (hasStoredApiKey()) {
+    clearStoredToken();
+    return "retry-with-api-key";
+  }
+  const token = localStorage.getItem("token");
+  const controller = new AbortController();
+  let cancelWait!: () => void;
+  const cancelled = new Promise<null>((resolve) => {
+    cancelWait = () => { controller.abort(); resolve(null); };
+  });
+  signal?.addEventListener("abort", cancelWait, { once: true });
+  const deadline = setTimeout(cancelWait, WS_SESSION_PROBE_TIMEOUT_MS);
+  try {
+    const response = await Promise.race([
+      api.get("/auth/me", {
+        signal: controller.signal,
+        timeout: WS_SESSION_PROBE_TIMEOUT_MS,
+        // Handle 401 here, before the global interceptor can expire a newer
+        // session on behalf of a cancelled or superseded connection.
+        validateStatus: (status: number) => status === 401 || (status >= 200 && status < 300),
+      }),
+      cancelled,
+    ]);
+    if (signal?.aborted) return "cancelled";
+    // Renewal is not a disconnect: the current connection must retry with
+    // its new credential rather than leave the handshake unresolved.
+    if (token !== localStorage.getItem("token")) return "session-unconfirmed";
+    if (!response || controller.signal.aborted) return "session-unconfirmed";
+    if (response.status === 401) {
+      expireBrowserSession();
+      return "session-rejected";
+    }
+    return "session-confirmed";
+  } catch {
+    if (signal?.aborted) return "cancelled";
+    // Renewal is not a disconnect: the current connection must retry with
+    // its new credential rather than leave the handshake unresolved.
+    if (token !== localStorage.getItem("token")) return "session-unconfirmed";
+    // A transport/server failure cannot invalidate a credential.
+    return "session-unconfirmed";
+  } finally {
+    clearTimeout(deadline);
+    signal?.removeEventListener("abort", cancelWait);
+  }
 };

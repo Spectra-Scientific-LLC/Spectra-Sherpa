@@ -38,16 +38,10 @@ const makeNode = (overrides: Partial<NodeTypeMetadata> & Pick<NodeTypeMetadata, 
 
 const seedLibrary: NodeTypeMetadata[] = [
   makeNode({
-    node_type: "data.my_dataset",
+    node_type: "data.train_test_split",
     category: "data",
-    label: "My Dataset",
-    description: "Load the selected My Dataset into the workflow.",
-  }),
-  makeNode({
-    node_type: "data.source",
-    category: "data",
-    label: "Data Source",
-    description: "Legacy source node kept for saved workflows.",
+    label: "Train/Test Split",
+    description: "Create a reproducible calibration and validation split with aligned targets.",
   }),
   makeNode({
     node_type: "data.file_load",
@@ -86,10 +80,28 @@ const seedLibrary: NodeTypeMetadata[] = [
     description: "Normalize spectra to unit area or vector length.",
   }),
   makeNode({
-    node_type: "model.pls",
+    node_type: "model.fitted_pls",
     category: "regression",
-    label: "PLS Regression",
-    description: "Partial Least Squares regression for quantitative prediction tasks.",
+    label: "Fit PLS1 / PLS2 Regression (SIMPLS)",
+    description: "Fit a contract-bound de Jong SIMPLS regression model.",
+  }),
+  makeNode({
+    node_type: "transfer.pds",
+    category: "transfer",
+    label: "Piecewise Direct Standardization",
+    description: "Fit a calibration transfer between paired instruments.",
+  }),
+  makeNode({
+    node_type: "time_series.moving_window",
+    category: "time_series",
+    label: "Moving Window",
+    description: "Create explicit moving windows over ordered samples.",
+  }),
+  makeNode({
+    node_type: "diagnostics.regression_evaluator",
+    category: "validation",
+    label: "Reference Regression Evaluator (v2)",
+    description: "Compare predictions with explicit reference values.",
   }),
   makeNode({
     node_type: "output.plot",
@@ -165,13 +177,13 @@ describe("WorkflowToolbar", () => {
       expect(wrapper.get('[data-testid="section-nodes-regression"]').classes()).toContain("expanded");
     });
 
-    it("shows only My Dataset in Data while keeping Synthetic Curve under Synthesis", async () => {
+    it("shows canonical data transforms while source binding remains in Analysis Starter", async () => {
       const wrapper = await mountToolbar();
 
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
       const dataSection = wrapper.get('[data-testid="section-nodes-data"]');
-      expect(dataSection.html()).toContain("My Dataset");
-      expect(dataSection.find('[data-testid="node-button-data.source"]').exists()).toBe(false);
+      expect(dataSection.html()).toContain("Train/Test Split");
+      expect(dataSection.find('[data-testid="node-button-data.train_test_split"]').exists()).toBe(true);
       expect(dataSection.find('[data-testid="node-button-data.file_load"]').exists()).toBe(false);
       expect(dataSection.find('[data-testid="node-button-data.load_group"]').exists()).toBe(false);
       expect(dataSection.find('[data-testid="node-button-data.nist_library"]').exists()).toBe(false);
@@ -179,6 +191,18 @@ describe("WorkflowToolbar", () => {
       await wrapper.get('[data-testid="section-header-synthesis"]').trigger("click");
       const synthesisSection = wrapper.get('[data-testid="section-nodes-synthesis"]');
       expect(synthesisSection.find('[data-testid="node-button-data.synthetic_curve"]').exists()).toBe(true);
+    });
+
+    it("keeps transfer, time-series, regression, and validation operations in named families", async () => {
+      const wrapper = await mountToolbar();
+
+      expect(wrapper.get('[data-testid="section-header-transfer"]').text()).toContain("Calibration Transfer");
+      expect(wrapper.get('[data-testid="section-header-time_series"]').text()).toContain("Time Series");
+      expect(wrapper.get('[data-testid="section-header-validation"]').text()).toContain("Validation & Diagnostics");
+      expect(wrapper.get('[data-testid="section-nodes-transfer"]').html()).toContain("Piecewise Direct Standardization");
+      expect(wrapper.get('[data-testid="section-nodes-time_series"]').html()).toContain("Moving Window");
+      expect(wrapper.get('[data-testid="section-nodes-regression"]').html()).toContain("Fit PLS1 / PLS2 Regression (SIMPLS)");
+      expect(wrapper.get('[data-testid="section-nodes-validation"]').html()).toContain("Reference Regression Evaluator");
     });
   });
 
@@ -197,16 +221,16 @@ describe("WorkflowToolbar", () => {
       const results = wrapper.get('[data-testid="toolbar-search-results"]');
       expect(results.html()).toContain("Smooth");
       // Should NOT contain unrelated labels.
-      expect(results.html()).not.toContain("PLS Regression");
-      expect(results.html()).not.toContain("Data Source");
+      expect(results.html()).not.toContain("Fit PLS1 / PLS2 Regression");
+      expect(results.html()).not.toContain("Train/Test Split");
     });
 
-    it("hides legacy ingestion nodes from palette search", async () => {
+    it("hides source-binding nodes from palette search", async () => {
       const wrapper = await mountToolbar();
       const input = wrapper.get('[data-testid="toolbar-search-input"]');
 
-      await input.setValue("data.source");
-      expect(wrapper.get('[data-testid="toolbar-search-empty"]').text()).toContain("data.source");
+      await input.setValue("data.file_load");
+      expect(wrapper.get('[data-testid="toolbar-search-empty"]').text()).toContain("data.file_load");
 
       await input.setValue("NIST");
       expect(wrapper.get('[data-testid="toolbar-search-empty"]').text()).toContain("NIST");
@@ -217,7 +241,7 @@ describe("WorkflowToolbar", () => {
       const input = wrapper.get('[data-testid="toolbar-search-input"]');
 
       await input.setValue("PLS");
-      expect(wrapper.get('[data-testid="toolbar-search-results"]').html()).toContain("PLS Regression");
+      expect(wrapper.get('[data-testid="toolbar-search-results"]').html()).toContain("Fit PLS1 / PLS2 Regression (SIMPLS)");
 
       await input.setValue("output.plot");
       expect(wrapper.get('[data-testid="toolbar-search-results"]').html()).toContain("Plot");
@@ -280,16 +304,16 @@ describe("WorkflowToolbar", () => {
       const wrapper = await mountToolbar();
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
 
-      const button = wrapper.get('[data-testid="node-button-data.my_dataset"]');
+      const button = wrapper.get('[data-testid="node-button-data.train_test_split"]');
       await button.trigger("mouseenter");
 
       const tooltip = wrapper.get('[data-testid="node-hover-tooltip"]');
       // Full description (from seedLibrary), no 7-word ellipsis.
       expect(tooltip.text()).toContain(
-        "Load the selected My Dataset into the workflow."
+        "Create a reproducible calibration and validation split with aligned targets."
       );
       // Label rendered as tooltip title.
-      expect(tooltip.get(".node-tooltip-title").text()).toBe("My Dataset");
+      expect(tooltip.get(".node-tooltip-title").text()).toBe("Train/Test Split");
       // > 9 words proves the 7-word cap is gone.
       const words = tooltip.get(".node-tooltip-body").text().split(/\s+/).filter(Boolean);
       expect(words.length).toBeGreaterThan(6);
@@ -298,7 +322,7 @@ describe("WorkflowToolbar", () => {
     it("hides the tooltip on mouseleave", async () => {
       const wrapper = await mountToolbar();
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
-      const button = wrapper.get('[data-testid="node-button-data.my_dataset"]');
+      const button = wrapper.get('[data-testid="node-button-data.train_test_split"]');
 
       await button.trigger("mouseenter");
       expect(wrapper.find('[data-testid="node-hover-tooltip"]').exists()).toBe(true);
@@ -311,7 +335,7 @@ describe("WorkflowToolbar", () => {
       const wrapper = await mountToolbar();
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
 
-      const button = wrapper.get('[data-testid="node-button-data.my_dataset"]');
+      const button = wrapper.get('[data-testid="node-button-data.train_test_split"]');
       stubRect(button.element as HTMLElement, { top: 150, left: 20, right: 200, bottom: 180, width: 180, height: 30 });
 
       await button.trigger("mouseenter");
@@ -327,7 +351,7 @@ describe("WorkflowToolbar", () => {
       const wrapper = await mountToolbar();
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
 
-      const button = wrapper.get('[data-testid="node-button-data.my_dataset"]');
+      const button = wrapper.get('[data-testid="node-button-data.train_test_split"]');
       // Force the button to sit near the right edge of a narrow viewport.
       Object.defineProperty(window, "innerWidth", { value: 400, configurable: true });
       stubRect(button.element as HTMLElement, { top: 100, left: 180, right: 380, bottom: 130, width: 200, height: 30 });
@@ -353,7 +377,7 @@ describe("WorkflowToolbar", () => {
       const wrapper = await mountToolbar();
       await wrapper.get('[data-testid="section-header-data"]').trigger("click");
 
-      const button = wrapper.get('[data-testid="node-button-data.my_dataset"]');
+      const button = wrapper.get('[data-testid="node-button-data.train_test_split"]');
       await button.trigger("mouseenter");
       expect(wrapper.find('[data-testid="node-hover-tooltip"]').exists()).toBe(true);
 
@@ -426,6 +450,27 @@ describe("WorkflowToolbar", () => {
       const events = wrapper.emitted("add-node");
       expect(events).toBeTruthy();
       expect(events?.[0]).toEqual(["preprocess.normalize"]);
+    });
+  });
+
+  describe("canonical catalog mode", () => {
+    it("shows every registry entry, including source-bound nodes hidden from the Add palette", async () => {
+      const wrapper = await mountToolbar();
+      await wrapper.get('[data-testid="toolbar-mode-catalog"]').trigger("click");
+
+      expect(wrapper.findAll(".catalog-card")).toHaveLength(seedLibrary.length);
+      expect(wrapper.find('[data-testid="catalog-node-data.file_load"]').exists()).toBe(true);
+      expect(wrapper.find('[data-testid="catalog-add-data.file_load"]').exists()).toBe(false);
+      expect(wrapper.emitted("view-mode")?.at(-1)).toEqual(["catalog"]);
+    });
+
+    it("returns to the compact add palette without changing its search behavior", async () => {
+      const wrapper = await mountToolbar();
+      await wrapper.get('[data-testid="toolbar-mode-catalog"]').trigger("click");
+      await wrapper.get('[data-testid="toolbar-mode-add"]').trigger("click");
+
+      expect(wrapper.get('[data-testid="toolbar-search-input"]').exists()).toBe(true);
+      expect(wrapper.emitted("view-mode")?.at(-1)).toEqual(["add"]);
     });
   });
 });

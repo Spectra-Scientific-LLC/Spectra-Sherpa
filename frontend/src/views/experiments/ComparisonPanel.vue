@@ -6,7 +6,7 @@
         Comparing {{ runs.length }} checked runs
       </span>
       <Button
-        label="Back to Run History"
+        label="Back to History"
         icon="pi pi-arrow-left"
         class="p-button-text p-button-sm"
         @click="$emit('back')"
@@ -15,129 +15,58 @@
 
     <div v-if="runs.length === 0" class="comparison-empty">
       <i class="pi pi-info-circle"></i>
-      <span>Check runs from Run History to compare them.</span>
+      <span>Check runs in History to compare them.</span>
     </div>
 
     <template v-else>
-      <section class="comparison-section">
-        <div class="section-heading">
-          <h3>Run Context</h3>
-          <p>Which model version was run, when it ran, and what artifact lineage it produced.</p>
-        </div>
-        <DataTable :value="runContextRows" stripedRows size="small" class="comparison-table">
-          <Column field="label" header="" style="width: 170px; font-weight: 600" />
-          <Column v-for="run in runs" :key="run.id" :header="run.name" style="min-width: 160px">
-            <template #body="{ data }">
-              <span :class="{ muted: data.values[String(run.id)] === '—' }">
-                {{ data.values[String(run.id)] }}
-              </span>
-            </template>
-          </Column>
-        </DataTable>
-      </section>
+      <p v-if="!rankableMetrics?.length" class="qualification-note" role="status">
+        Differences are arithmetic only; ranking requires matching evaluation evidence.
+      </p>
 
-      <section class="comparison-section">
-        <div class="section-heading">
-          <h3>Data & Partition</h3>
-          <p>Run comparability starts with the same data shape and the same training/test split.</p>
-        </div>
-        <DataTable :value="dataPartitionRows" stripedRows size="small" class="comparison-table">
-          <Column field="label" header="" style="width: 170px; font-weight: 600" />
-          <Column v-for="run in runs" :key="run.id" :header="run.name" style="min-width: 160px">
-            <template #body="{ data }">
-              <span :class="{ muted: data.values[String(run.id)] === '—' }">
-                {{ data.values[String(run.id)] }}
-              </span>
-            </template>
-          </Column>
-        </DataTable>
-      </section>
-
-      <section class="comparison-section">
-        <div class="section-heading">
-          <h3>Workflow Nodes</h3>
-          <p>The active node path for each checked run. Differences here explain most metric changes.</p>
-        </div>
-        <div class="node-compare-grid">
-          <article v-for="run in runs" :key="run.id" class="node-run-card">
-            <strong>{{ run.name }}</strong>
-            <div class="node-chip-list">
-              <span
-                v-for="node in nodeSummaries[String(run.id)]"
-                :key="node.id"
-                class="node-chip"
-                :title="node.id"
+      <div class="matrix-scroll">
+        <table class="comparison-matrix">
+          <thead>
+            <tr>
+              <th scope="col">Measure</th>
+              <th v-for="run in runs" :key="run.id" scope="col">{{ run.name }}</th>
+              <th v-if="runs.length === 2" scope="col" title="Second run minus first run">Delta (2 − 1)</th>
+            </tr>
+          </thead>
+          <tbody v-for="section in comparisonSections" :key="section.title">
+            <tr class="matrix-section-row">
+              <th :colspan="runs.length + (runs.length === 2 ? 2 : 1)" scope="rowgroup">
+                {{ section.title }}
+              </th>
+            </tr>
+            <tr v-for="row in section.rows" :key="`${section.title}:${row.label}`">
+              <th scope="row">{{ row.label }}</th>
+              <td
+                v-for="run in runs"
+                :key="run.id"
+                :class="matrixCellClass(row, run.id)"
               >
-                {{ node.label }}
-              </span>
-              <span v-if="nodeSummaries[String(run.id)]?.length === 0" class="muted">No nodes captured</span>
-            </div>
-          </article>
-        </div>
-      </section>
-
-      <section class="comparison-section">
-        <div class="section-heading">
-          <h3>Run Results</h3>
-          <p>Scientist-facing performance and diagnostic scalars parsed from the saved run outputs.</p>
-        </div>
-        <DataTable :value="metricRows" stripedRows size="small" class="comparison-table">
-          <template #empty>
-            <div class="comparison-empty-inline">
-              No comparable scalar result metrics were found for these runs.
-            </div>
-          </template>
-          <Column field="metric" header="Metric" style="width: 180px; font-weight: 600">
-            <template #body="{ data }">
-              <span class="metric-name">{{ formatMetricName(data.metric) }}</span>
-            </template>
-          </Column>
-          <Column v-for="run in runs" :key="run.id" :header="run.name" style="min-width: 130px">
-            <template #body="{ data }">
-              <span :class="cellClass(data, run.id)">
-                {{ formatValue(data.values[String(run.id)]) }}
-              </span>
-            </template>
-          </Column>
-          <Column v-if="runs.length === 2" header="Delta" style="width: 120px">
-            <template #body="{ data }">
-              <span :class="deltaClass(data)">
-                {{ formatDelta(data.delta) }}
-              </span>
-            </template>
-          </Column>
-        </DataTable>
-      </section>
-
-      <section class="comparison-section">
-        <div class="section-heading">
-          <h3>Settings Differences</h3>
-          <p>Only parameters that differ across checked runs are shown.</p>
-        </div>
-        <DataTable
-          v-if="paramDiffRows.length > 0"
-          :value="paramDiffRows"
-          stripedRows
-          size="small"
-          class="comparison-table"
-        >
-          <Column field="label" header="Setting" style="width: 220px; font-weight: 600" />
-          <Column v-for="run in runs" :key="run.id" :header="run.name" style="min-width: 140px">
-            <template #body="{ data }">
-              <code>{{ data.values[String(run.id)] }}</code>
-            </template>
-          </Column>
-        </DataTable>
-        <p v-else class="no-diff">All captured parameters are identical across checked runs.</p>
-      </section>
+                <code v-if="row.code">{{ row.values[String(run.id)] }}</code>
+                <template v-else>{{ row.values[String(run.id)] }}</template>
+              </td>
+              <td v-if="runs.length === 2" :class="row.metric ? deltaClass(row.metric) : ''">
+                {{ row.metric ? displayDelta(row.metric) : formatDelta(row.delta ?? null) }}
+              </td>
+            </tr>
+            <tr v-if="section.rows.length === 0">
+              <td :colspan="runs.length + (runs.length === 2 ? 2 : 1)" class="matrix-empty">
+                {{ section.empty }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
+import { scientificNumber } from "@/utils/scientificEncoding";
 import { computed } from "vue";
-import DataTable from "primevue/datatable";
-import Column from "primevue/column";
 import Button from "primevue/button";
 import type { ExecutionRunDetail } from "@/types";
 
@@ -145,11 +74,10 @@ const props = defineProps<{
   runs: ExecutionRunDetail[];
   metricKeys: string[];
   diff: Record<string, Record<string, unknown>>;
+  rankableMetrics?: string[];
 }>();
 
-defineEmits<{
-  back: [];
-}>();
+defineEmits<{ back: [] }>();
 
 const HIGHER_IS_BETTER = new Set([
   "accuracy",
@@ -381,6 +309,7 @@ const METRIC_DISPLAY_ORDER = [
 ];
 
 interface ComparisonRow {
+  delta?: number | null;
   label: string;
   values: Record<string, string>;
 }
@@ -402,13 +331,25 @@ interface NodeSummary {
   label: string;
 }
 
+interface MatrixRow extends ComparisonRow {
+  changed: boolean;
+  code?: boolean;
+  metric?: MetricRow;
+}
+
+interface MatrixSection {
+  title: string;
+  rows: MatrixRow[];
+  empty: string;
+}
+
 const runContextRows = computed<ComparisonRow[]>(() => [
   makeRow("Run time", (run) => formatTimestamp(run.executed_at)),
   makeRow("Model version", (run) => formatModelVersion(run)),
   makeRow("Workflow version", (run) => formatWorkflowVersion(run)),
   makeRow("Run kind", (run) => formatRunKind(run.run_kind)),
   makeRow("Status", (run) => run.status || "—"),
-  makeRow("Artifacts", (run) => formatArtifactList(run.model_ids)),
+  makeRow("Produced models", (run) => formatArtifactList(run.produced_artifact_uids)),
 ]);
 
 const dataPartitionRows = computed<ComparisonRow[]>(() => [
@@ -472,6 +413,7 @@ const paramDiffRows = computed<ComparisonRow[]>(() => {
     if (new Set(serialized).size <= 1) continue;
     rows.push({
       label: formatSettingPath(path),
+      delta: numericalDelta(rawValues),
       values: Object.fromEntries(
         props.runs.map((run, idx) => [String(run.id), formatParamValue(rawValues[idx])]),
       ),
@@ -479,6 +421,67 @@ const paramDiffRows = computed<ComparisonRow[]>(() => {
   }
   return rows;
 });
+
+const workflowRows = computed<ComparisonRow[]>(() => [
+  makeRow("Captured nodes (unordered; topology unavailable)", (run) => {
+    const nodes = nodeSummaries.value[String(run.id)] || [];
+    return nodes.length ? nodes.map((node) => node.label).join("; ") : "—";
+  }),
+]);
+
+const comparisonSections = computed<MatrixSection[]>(() => [
+  matrixSection("Run context", runContextRows.value, "No run context captured."),
+  matrixSection("Data & partition", dataPartitionRows.value, "No partition evidence captured."),
+  matrixSection("Workflow", workflowRows.value, "No workflow nodes captured."),
+  {
+    title: "Results",
+    rows: metricRows.value.map((metric) => ({
+      label: formatMetricName(metric.metric),
+      values: Object.fromEntries(
+        props.runs.map((run) => [
+          String(run.id),
+          formatValue(metric.values[String(run.id)]),
+        ]),
+      ),
+      changed: rowValuesDiffer(metric.values),
+      metric,
+    })),
+    empty: "No comparable scalar results.",
+  },
+  {
+    title: "Changed settings",
+    rows: paramDiffRows.value.map((row) => ({ ...row, changed: true, code: true })),
+    empty: "No setting differences.",
+  },
+]);
+
+function matrixSection(
+  title: string,
+  rows: ComparisonRow[],
+  empty: string,
+): MatrixSection {
+  return {
+    title,
+    rows: rows.map((row) => ({ ...row, changed: rowValuesDiffer(row.values) })),
+    empty,
+  };
+}
+
+function rowValuesDiffer(values: Record<string, unknown>): boolean {
+  return new Set(
+    props.runs.map((run) => JSON.stringify(values[String(run.id)])),
+  ).size > 1;
+}
+
+function matrixCellClass(row: MatrixRow, runId: number): string {
+  const value = row.values[String(runId)];
+  if (value === "—") return "muted";
+  if (row.metric) {
+    const ranked = cellClass(row.metric, runId);
+    if (ranked) return ranked;
+  }
+  return row.changed ? "difference-neutral" : "";
+}
 
 function makeRow(label: string, getter: (run: ExecutionRunDetail) => string): ComparisonRow {
   return {
@@ -496,7 +499,7 @@ function buildMetricRow(metric: string, values: Record<string, unknown>): Metric
 
   let delta: number | null = null;
   if (props.runs.length === 2 && numericValues.length === 2) {
-    delta = numericValues[1].val - numericValues[0].val;
+    delta = numericalDelta(numericValues.map(item => item.val));
   }
 
   let bestRunId: string | null = null;
@@ -539,6 +542,7 @@ function formatMetricName(key: string): string {
   const parts = key.split(".");
   if (parts.length <= 1) return metricLabel;
   const nodeId = parts.slice(0, -1).join(".");
+  if (nodeId === "qualified_cv") return `Bound cross-validation · ${metricLabel}`;
   return `${formatNodeId(nodeId)} · ${metricLabel}`;
 }
 
@@ -549,23 +553,35 @@ function metricNameFromKey(key: string): string {
 function formatValue(val: unknown): string {
   if (val === undefined || val === null) return "—";
   if (typeof val === "number") {
-    return Number.isInteger(val) ? String(val) : val.toFixed(4);
+    return Number.isInteger(val) ? String(val) : scientificNumber(val, { decimalPlaces: 4 });
   }
   return String(val);
+}
+
+function displayDelta(row: { metric: string; delta: number | null }): string {
+  return formatDelta(row.delta);
+}
+
+function numericalDelta(values: unknown[]): number | null {
+  if (values.length !== 2 || !values.every(value => typeof value === "number" && Number.isFinite(value))) return null;
+  const difference = (values[1] as number) - (values[0] as number);
+  return Number.isFinite(difference) ? difference : null;
 }
 
 function formatDelta(delta: number | null): string {
   if (delta === null) return "—";
   const sign = delta > 0 ? "+" : "";
-  return `${sign}${Number.isInteger(delta) ? delta : delta.toFixed(4)}`;
+  return `${sign}${Number.isInteger(delta) ? delta : scientificNumber(delta, { decimalPlaces: 4 })}`;
 }
 
 function cellClass(row: MetricRow, runId: number): string {
+  if (!props.rankableMetrics?.includes(row.metric)) return "";
   if (row.bestRunId === String(runId)) return "metric-best";
   return "";
 }
 
 function deltaClass(row: MetricRow): string {
+  if (!props.rankableMetrics?.includes(row.metric)) return "";
   if (row.delta === null) return "";
   if (row.delta === 0) return "delta-zero";
   const higherBetter = HIGHER_IS_BETTER.has(metricNameFromKey(row.metric));
@@ -605,7 +621,13 @@ function formatRunKind(kind: string | null | undefined): string {
 }
 
 function formatModelVersion(run: ExecutionRunDetail): string {
-  const ids = [...new Set([...(run.model_ids ?? []), ...(run.applied_artifact_uids ?? [])])];
+  const ids = [
+    ...new Set([
+      ...(run.produced_artifact_uids ?? []),
+      ...(run.attempted_artifact_uids ?? []),
+      ...(run.succeeded_artifact_uids ?? []),
+    ]),
+  ];
   if (ids.length === 0) return "—";
   if (ids.length === 1) return shortUid(ids[0]);
   return `${ids.length} artifacts: ${ids.slice(0, 2).map(shortUid).join(", ")}${ids.length > 2 ? "..." : ""}`;
@@ -660,13 +682,16 @@ function inferPartition(run: ExecutionRunDetail): string {
 }
 
 function inferSplitSettings(run: ExecutionRunDetail): string {
-  const values = collectKeysDeep(run.params_snapshot, ["test_size", "split_method", "random_seed", "shuffle"]);
-  const parts: string[] = [];
-  if (values.split_method != null) parts.push(String(values.split_method));
-  if (typeof values.test_size === "number") parts.push(`${(values.test_size * 100).toFixed(0)}% test`);
-  if (values.random_seed != null) parts.push(`seed ${values.random_seed}`);
-  if (values.shuffle != null) parts.push(`shuffle ${values.shuffle ? "on" : "off"}`);
-  return parts.length > 0 ? parts.join(" · ") : "—";
+  const settings = Object.entries(run.params_snapshot ?? {}).flatMap(([nodeId, value]) => {
+    if (!isRecord(value) || !("test_size" in value || "split_method" in value)) return [];
+    const parts: string[] = [];
+    if (value.split_method != null) parts.push(`method ${String(value.split_method)}`);
+    if (typeof value.test_size === "number") parts.push(`test_size ${value.test_size}`);
+    if (value.random_seed != null) parts.push(`seed ${value.random_seed}`);
+    if (value.shuffle != null) parts.push(`shuffle ${String(value.shuffle)}`);
+    return [`${nodeId}: ${parts.join(" · ")}`];
+  });
+  return settings.length ? settings.join("; ") : "Unavailable in recorded node parameters";
 }
 
 function inferPartitionShape(run: ExecutionRunDetail): { train: DataShape; test: DataShape } {
@@ -728,14 +753,6 @@ function findFirstStringByKey(value: unknown, keys: string[], depth = 0): string
   return null;
 }
 
-function collectKeysDeep(value: unknown, keys: string[], depth = 0, out: Record<string, unknown> = {}): Record<string, unknown> {
-  if (depth > 5 || !isRecord(value)) return out;
-  for (const key of keys) {
-    if (out[key] === undefined && key in value) out[key] = value[key];
-  }
-  for (const child of Object.values(value)) collectKeysDeep(child, keys, depth + 1, out);
-  return out;
-}
 
 function findBestShape(value: unknown, depth = 0): DataShape | null {
   if (depth > 5) return null;
@@ -751,8 +768,9 @@ function findBestShape(value: unknown, depth = 0): DataShape | null {
 
 function findShapeByLikelyKey(value: unknown, keyHints: string[], depth = 0): DataShape | null {
   if (depth > 5 || !isRecord(value)) return null;
+  const normalizedHints = new Set(keyHints.map((hint) => hint.toLowerCase()));
   for (const [key, child] of Object.entries(value)) {
-    if (keyHints.some((hint) => key.toLowerCase().includes(hint.toLowerCase()))) {
+    if (normalizedHints.has(key.toLowerCase())) {
       const shape = findBestShape(child);
       if (shape) return shape;
     }
@@ -766,11 +784,12 @@ function findShapeByLikelyKey(value: unknown, keyHints: string[], depth = 0): Da
 
 function findArrayLengthByLikelyKey(value: unknown, keyHints: string[], depth = 0): number | null {
   if (depth > 5 || !isRecord(value)) return null;
+  const normalizedHints = new Set(keyHints.map((hint) => hint.toLowerCase()));
   for (const [key, child] of Object.entries(value)) {
-    if (keyHints.some((hint) => key.toLowerCase().includes(hint.toLowerCase())) && Array.isArray(child)) {
+    if (normalizedHints.has(key.toLowerCase()) && Array.isArray(child)) {
       return child.length;
     }
-    if (keyHints.some((hint) => key.toLowerCase().includes(hint.toLowerCase())) && isRecord(child)) {
+    if (normalizedHints.has(key.toLowerCase()) && isRecord(child)) {
       const length = child.n_samples ?? child.length;
       if (typeof length === "number") return length;
     }
@@ -808,7 +827,7 @@ function shapeFromValue(value: unknown): DataShape {
 .comparison-panel {
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 14px;
 }
 
 .comparison-header {
@@ -844,34 +863,15 @@ function shapeFromValue(value: unknown): DataShape {
   font-size: 2rem;
 }
 
-.comparison-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.section-heading {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.section-heading h3 {
+.qualification-note {
   margin: 0;
-  color: #334155;
-  font-size: 0.95rem;
-  font-weight: 650;
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid #60a5fa;
+  background: #eff6ff;
+  color: #1e40af;
+  font-size: 0.8rem;
 }
 
-.section-heading p {
-  margin: 0;
-  color: #64748b;
-  font-size: 0.82rem;
-}
-
-.comparison-table {
-  font-size: 0.84rem;
-}
 
 .comparison-empty-inline {
   padding: 1rem;
@@ -886,6 +886,12 @@ function shapeFromValue(value: unknown): DataShape {
 .metric-best {
   color: #15803d;
   font-weight: 650;
+}
+
+.difference-neutral {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 550;
 }
 
 .delta-positive {
@@ -903,43 +909,60 @@ function shapeFromValue(value: unknown): DataShape {
   color: #94a3b8;
 }
 
-.node-compare-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 10px;
+.matrix-scroll {
+  overflow-x: auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
 }
 
-.node-run-card {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.node-run-card strong {
+.comparison-matrix {
+  width: 100%;
+  min-width: 680px;
+  border-collapse: collapse;
   color: #334155;
-  font-size: 0.88rem;
+  font-size: 0.8rem;
 }
 
-.node-chip-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.comparison-matrix th,
+.comparison-matrix td {
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: top;
 }
 
-.node-chip {
-  max-width: 100%;
-  padding: 3px 8px;
-  overflow: hidden;
-  border: 1px solid #dbe4ef;
-  border-radius: 999px;
-  color: #475569;
+.comparison-matrix thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 650;
+}
+
+.comparison-matrix thead th:first-child,
+.comparison-matrix tbody th[scope="row"] {
+  width: 180px;
+  min-width: 180px;
+}
+
+.comparison-matrix tbody th[scope="row"] {
+  background: #fff;
+  font-weight: 600;
+}
+
+.matrix-section-row th {
+  padding-block: 0.45rem;
+  border-top: 2px solid #94a3b8;
+  background: #e2e8f0;
+  color: #1e293b;
   font-size: 0.75rem;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+.matrix-empty {
+  color: #64748b;
+  font-style: italic;
 }
 
 code {
@@ -950,9 +973,4 @@ code {
   font-size: 0.78rem;
 }
 
-.no-diff {
-  margin: 0;
-  color: #64748b;
-  font-size: 0.85rem;
-}
 </style>

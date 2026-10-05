@@ -28,9 +28,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import datasourceWineFixture from "../../../../tests/fixtures/node_serialization/datasource_sklearn_wine.json";
-import datasourceCornFixture from "../../../../tests/fixtures/node_serialization/datasource_eigenvector_corn_m5.json";
-import holdoutMultitargetFixture from "../../../../tests/fixtures/node_serialization/holdout_regression_multitarget.json";
+import fileLoadFixture from "../../../../tests/fixtures/node_serialization/file_load_canonical_result.json";
+import regressionEvaluatorFixture from "../../../../tests/fixtures/node_serialization/regression_evaluator_single_target.json";
 import dataTableMetricsFixture from "../../../../tests/fixtures/node_serialization/data_table_per_target_metrics.json";
 
 // Type is intentionally loose — these JSON files are the single source
@@ -41,16 +40,14 @@ type FixturePayload = {
   serialized: Record<string, any>;
 };
 
-const wine = datasourceWineFixture as FixturePayload;
-const corn = datasourceCornFixture as FixturePayload;
-const holdout = holdoutMultitargetFixture as FixturePayload;
+const fileLoad = fileLoadFixture as FixturePayload;
+const regressionEvaluator = regressionEvaluatorFixture as FixturePayload;
 const dataTable = dataTableMetricsFixture as FixturePayload;
 
 describe("Node serialization contract — all fixtures parse cleanly", () => {
   it.each([
-    ["datasource_sklearn_wine", wine],
-    ["datasource_eigenvector_corn_m5", corn],
-    ["holdout_regression_multitarget", holdout],
+    ["file_load_canonical_result", fileLoad],
+    ["regression_evaluator_single_target", regressionEvaluator],
     ["data_table_per_target_metrics", dataTable],
   ])("%s has _spec and serialized payload", (name, fixture) => {
     expect(fixture._spec).toBe(name);
@@ -59,7 +56,7 @@ describe("Node serialization contract — all fixtures parse cleanly", () => {
   });
 });
 
-describe("Contract: data.source sklearn wine (multi-output wrapper)", () => {
+describe("Contract: canonical data.file_load result (multi-output wrapper)", () => {
   // This fixture is the canary for the PR #16 bug: the data-source node
   // serializes as ``{default: SherpaDataset, target: ndarray}``, not as
   // a flat SherpaDataset at the top level.  Frontend consumers that
@@ -67,7 +64,7 @@ describe("Contract: data.source sklearn wine (multi-output wrapper)", () => {
   // silently see ``undefined`` — they must unwrap ``default`` first.
 
   it("has a multi-output wrapper with default and target keys", () => {
-    const s = wine.serialized;
+    const s = fileLoad.serialized;
     expect(Object.keys(s)).toEqual(expect.arrayContaining(["default", "target"]));
     expect(s.default).toBeDefined();
     expect(typeof s.default).toBe("object");
@@ -76,7 +73,7 @@ describe("Contract: data.source sklearn wine (multi-output wrapper)", () => {
   it("does NOT expose dataset identity at the top level", () => {
     // If any of these appear at the top level, the serializer shape has
     // changed and the unwrap logic needs to be revisited.
-    const s = wine.serialized;
+    const s = fileLoad.serialized;
     expect(s.title).toBeUndefined();
     expect(s.backend).toBeUndefined();
     expect(s.extra).toBeUndefined();
@@ -85,54 +82,30 @@ describe("Contract: data.source sklearn wine (multi-output wrapper)", () => {
   });
 
   it("carries the SherpaDataset type marker on default", () => {
-    expect(wine.serialized.default.type).toBe("SherpaDataset");
+    expect(fileLoad.serialized.default.type).toBe("SherpaDataset");
   });
 
   it("exposes the real dataset identity fields on default", () => {
-    const ds = wine.serialized.default;
-    expect(ds.title).toBe("wine");
-    expect(ds.backend).toBe("sklearn");
-    expect(ds.n_samples).toBe(178);
-    expect(ds.n_features).toBe(13);
+    const ds = fileLoad.serialized.default;
+    expect(ds.title).toBe("canonical-file-load");
+    expect(ds.backend).toBe("numpy");
+    expect(ds.n_samples).toBe(40);
+    expect(ds.n_features).toBe(6);
   });
 
-  it("carries sklearn metadata in default.extra", () => {
-    const extra = wine.serialized.default.extra;
+  it("carries canonical persisted-source identity fields in default.extra", () => {
+    const extra = fileLoad.serialized.default.extra;
     expect(extra).toBeDefined();
-    expect(extra["sklearn.dataset_name"]).toBe("wine");
-    // sklearn.target_names should be a real list of class names.
-    expect(Array.isArray(extra["sklearn.target_names"])).toBe(true);
-    expect(extra["sklearn.target_names"]).toEqual([
-      "class_0",
-      "class_1",
-      "class_2",
-    ]);
+    expect(extra["source.experiment_id"]).toBe(17);
+    expect(extra["source.file_id"]).toBe(23);
   });
 
-  it("carries feature names in default.metadata.feature_names", () => {
-    const meta = wine.serialized.default.metadata;
-    expect(meta).toBeDefined();
-    expect(Array.isArray(meta.feature_names)).toBe(true);
-    expect(meta.feature_names.length).toBe(13);
-    // Spot-check the well-known wine feature names.
-    expect(meta.feature_names).toEqual(
-      expect.arrayContaining([
-        "alcohol",
-        "malic_acid",
-        "ash",
-        "flavanoids",
-        "color_intensity",
-        "proline",
-      ])
-    );
-  });
-
-  it("carries target_context.class_names on default", () => {
-    const tc = wine.serialized.default.target_context;
+  it("carries explicit continuous target context on default", () => {
+    const tc = fileLoad.serialized.default.target_context;
     expect(tc).toBeDefined();
-    expect(tc.target_type).toBe("categorical");
-    expect(tc.n_classes).toBe(3);
-    expect(tc.class_names).toEqual(["class_0", "class_1", "class_2"]);
+    expect(tc.target_type).toBe("continuous");
+    expect(tc.target_names).toEqual(["Moisture"]);
+    expect(tc.selected_target).toBe("Moisture");
   });
 
   it("summarizes bulk data arrays instead of inlining them", () => {
@@ -140,117 +113,78 @@ describe("Contract: data.source sklearn wine (multi-output wrapper)", () => {
     // descriptors to keep fixture files small.  This test documents
     // and locks in that behaviour — if future fixtures inline the raw
     // data, they'll blow up to > 1 MB and this test fails.
-    const ds = wine.serialized.default;
+    const ds = fileLoad.serialized.default;
     expect(ds.data).toMatchObject({
       __array_summary__: true,
-      shape: [178, 13],
+      shape: [40, 6],
     });
-    expect(wine.serialized.target).toMatchObject({
+    expect(fileLoad.serialized.target).toMatchObject({
       __array_summary__: true,
-      shape: [178],
+      shape: [40],
     });
   });
 });
 
-describe("Contract: data.source eigenvector corn_m5 (continuous multi-target)", () => {
-  // Eigenvector datasets use continuous reference properties in
-  // ``target_context.target_names`` rather than ``class_names``.  This
-  // fixture exercises the path PR #13's per-target HoldoutEvaluation
-  // relies on.
-
-  it("has the same multi-output wrapper shape as wine", () => {
-    const s = corn.serialized;
-    expect(Object.keys(s)).toEqual(expect.arrayContaining(["default", "target"]));
-    expect(s.default.type).toBe("SherpaDataset");
-  });
-
-  it("carries the 80x700 NIR shape on default", () => {
-    const ds = corn.serialized.default;
-    expect(ds.n_samples).toBe(80);
-    expect(ds.n_features).toBe(700);
-  });
-
-  it("exposes continuous reference properties in target_context.target_names", () => {
-    const tc = corn.serialized.default.target_context;
-    expect(tc.target_type).toBe("continuous");
-    expect(tc.target_names).toEqual([
-      "Moisture",
-      "Oil",
-      "Protein",
-      "Starch",
-    ]);
-  });
-});
-
-describe("Contract: HoldoutEvaluation regression (named ports)", () => {
-  // PR #13 introduced per-target metrics and the
-  // ``visualization.series`` multi-target shape.  The Inspector Quick
-  // Plot / View Data buttons depend on ``metrics`` being the primary
-  // port (first in output_ports) and on ``visualization`` carrying
-  // ``series`` instead of the legacy ``data: number[][]``.
-
-  it("has named ports and no default port", () => {
-    const s = holdout.serialized;
-    expect(Object.keys(s)).toEqual(
-      expect.arrayContaining(["metrics", "visualization", "predictions", "evaluation"])
+describe("Contract: canonical regression evaluator", () => {
+  it("has the closed default metric record and comparison ports", () => {
+    const s = regressionEvaluator.serialized;
+    expect(Object.keys(s)).toEqual(["default", "comparison"]);
+    expect(Object.keys(s.default).sort()).toEqual(
+      [
+        "bias",
+        "intercept",
+        "mae",
+        "n_samples",
+        "r2",
+        "registry_version",
+        "rer",
+        "rmse",
+        "sep",
+        "slope",
+        "task_type",
+      ].sort()
     );
-    expect(s.default).toBeUndefined();
   });
 
-  it("metrics.data is a list of per-target row dicts, not a numeric matrix", () => {
-    const metrics = holdout.serialized.metrics;
-    expect(Array.isArray(metrics.data)).toBe(true);
-    expect(metrics.data.length).toBe(4);
-    for (const row of metrics.data) {
-      expect(typeof row).toBe("object");
-      expect(row.target).toBeDefined();
-      expect(typeof row.RMSEP).toBe("number");
-      expect(typeof row.R2).toBe("number");
+  it("binds scalar regression metrics to the versioned registry", () => {
+    const metrics = regressionEvaluator.serialized.default;
+    expect(metrics.task_type).toBe("regression");
+    expect(metrics.registry_version).toBe("2");
+    expect(metrics.n_samples).toBe(20);
+    for (const key of ["rmse", "mae", "bias", "r2", "sep", "slope", "intercept", "rer"]) {
+      expect(typeof metrics[key]).toBe("number");
     }
   });
 
-  it("metrics.data rows carry real reference property names", () => {
-    const targets = holdout.serialized.metrics.data.map((r: any) => r.target);
-    expect(targets).toEqual(["Moisture", "Oil", "Protein", "Starch"]);
-  });
-
-  it("metrics.metadata carries target_names and n_targets", () => {
-    const meta = holdout.serialized.metrics.metadata;
-    expect(meta.n_targets).toBe(4);
-    expect(meta.target_names).toEqual(["Moisture", "Oil", "Protein", "Starch"]);
-    expect(meta.aggregate).toBe("mean_across_targets");
-  });
-
-  it("visualization uses series (not data) for multi-target", () => {
-    const viz = holdout.serialized.visualization;
-    expect(viz.type).toBe("predicted_vs_actual");
-    expect(Array.isArray(viz.series)).toBe(true);
-    expect(viz.series.length).toBe(4);
-    // Legacy ``data: number[][]`` should NOT be present for multi-target
-    // — the presence check guards against a regression back to the old
-    // flat shape that would break PlotNode._plot_predicted_vs_actual.
-    expect(viz.data).toBeUndefined();
-  });
-
-  it("each visualization series has name/actual/predicted arrays", () => {
-    for (const s of holdout.serialized.visualization.series) {
-      expect(typeof s.name).toBe("string");
-      // Actual/predicted may be array summaries (if the fixture grew
-      // over the summarize threshold) or plain arrays — accept both.
-      const isArraySummary = (v: any) => v && v.__array_summary__ === true;
-      const isPlainArray = Array.isArray;
-      expect(isArraySummary(s.actual) || isPlainArray(s.actual)).toBe(true);
-      expect(isArraySummary(s.predicted) || isPlainArray(s.predicted)).toBe(true);
+  it("carries a closed predicted-versus-actual comparison table", () => {
+    const { default: metrics, comparison } = regressionEvaluator.serialized;
+    expect(comparison.schema_version).toBe("spectrasherpa-regression-comparison/1");
+    expect(comparison.shape).toEqual([metrics.n_samples, 6]);
+    expect(Array.isArray(comparison.data)).toBe(true);
+    expect(comparison.data).toHaveLength(metrics.n_samples);
+    for (const row of comparison.data) {
+      expect(Object.keys(row)).toEqual([
+        "sample",
+        "target",
+        "reference",
+        "predicted",
+        "residual",
+        "role",
+      ]);
+      expect(row.residual).toBeCloseTo(row.reference - row.predicted, 12);
+      // Explicit arrays alone do not establish an independent held-out population.
+      expect(row.role).toBe("unqualified_evaluation");
     }
-  });
-
-  it("metrics port also has top-level aggregate keys", () => {
-    const m = holdout.serialized.metrics;
-    expect(typeof m.mean_across_targets).toBe("object");
-    expect(typeof m.mean_across_targets.RMSEP).toBe("number");
-    expect(typeof m.mean_across_targets.R2).toBe("number");
-    expect(m.n_samples).toBe(20);
-    expect(m.n_targets).toBe(4);
+    expect(comparison.metadata).toMatchObject({
+      n_samples: metrics.n_samples,
+      n_targets: 1,
+      role: "unqualified_evaluation",
+      residual_definition: "reference_minus_predicted",
+    });
+    expect(comparison.statistics.schema_version).toBe("spectrasherpa-regression-statistics/1");
+    expect(comparison.statistics.targets[0].metrics).toMatchObject({
+      n_samples: metrics.n_samples, rmse: metrics.rmse, r2: metrics.r2,
+    });
   });
 });
 

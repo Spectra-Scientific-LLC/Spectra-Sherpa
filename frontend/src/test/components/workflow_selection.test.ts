@@ -18,6 +18,23 @@ describe('WorkflowCanvas Selection & Multi-Drag', () => {
 
   const mockEdges: WorkflowEdge[] = [];
 
+  it('keeps the scroll and SVG surface beyond the last output node', async () => {
+    const wrapper = mount(WorkflowCanvas, {
+      props: {
+        nodes: [{ ...mockNodes[0], x: 1850, y: 2100 }],
+        edges: mockEdges,
+        nodeOutputs: new Map(),
+      },
+    });
+    const surface = wrapper.get('.canvas-surface').element as HTMLElement;
+    expect(surface.style.minWidth).toBe('2110px');
+    expect(surface.style.minHeight).toBe('2300px');
+    await wrapper.setProps({ nodes: mockNodes });
+    expect(surface.style.minWidth).toBe('1500px');
+    expect(surface.style.minHeight).toBe('1500px');
+    wrapper.unmount();
+  });
+
   const makeNodeMetadata = (
     node_type: string,
     category: string,
@@ -37,7 +54,7 @@ describe('WorkflowCanvas Selection & Multi-Drag', () => {
     store.nodeLibrary = new Map<string, NodeTypeMetadata>([
       ["data.synthetic_curve", makeNodeMetadata("data.synthetic_curve", "synthesis", "Synthetic Curve")],
       ["model.pca", makeNodeMetadata("model.pca", "exploratory", "PCA")],
-      ["model.pls", makeNodeMetadata("model.pls", "regression", "PLS Regression")],
+      ["model.fitted_pls", makeNodeMetadata("model.fitted_pls", "regression", "PLS Regression")],
       ["classification.plsda", makeNodeMetadata("classification.plsda", "classification", "PLS-DA")],
       ["model.kmeans", makeNodeMetadata("model.kmeans", "clustering", "K-Means")],
       ["diagnostics.cross_validation", makeNodeMetadata("diagnostics.cross_validation", "validation", "Cross Validation")],
@@ -199,7 +216,7 @@ describe('WorkflowCanvas Selection & Multi-Drag', () => {
     const loadedNodes: WorkflowNode[] = [
       { id: 'synthetic', type: 'data.synthetic_curve', x: 0, y: 0, params: {} } as WorkflowNode,
       { id: 'pca', type: 'model.pca', x: 180, y: 0, params: {} } as WorkflowNode,
-      { id: 'pls', type: 'model.pls', x: 360, y: 0, params: {} } as WorkflowNode,
+      { id: 'pls', type: 'model.fitted_pls', x: 360, y: 0, params: {} } as WorkflowNode,
       { id: 'plsda', type: 'classification.plsda', x: 540, y: 0, params: {} } as WorkflowNode,
       { id: 'kmeans', type: 'model.kmeans', x: 720, y: 0, params: {} } as WorkflowNode,
       { id: 'cv', type: 'diagnostics.cross_validation', x: 900, y: 0, params: {} } as WorkflowNode,

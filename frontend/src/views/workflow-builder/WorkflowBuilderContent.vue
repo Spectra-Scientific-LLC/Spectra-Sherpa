@@ -1,26 +1,28 @@
 <template>
   <section class="workflow-builder-content">
-    <header class="tab-header">
-      <div class="section-title-row">
-        <h1>Workflows</h1>
+    <WorkspaceHeader title="Workflow" :actions="actionMenuItems">
+      <template #badge>
         <span
-          v-if="workflowBadgeText"
+          v-if="isManagedCandidateAuthority"
           class="workflow-meta-badge"
-          :title="workflowBadgeTitle"
+          title="Persisted candidate DAG for governed Harness execution; inspectable but not runnable from the canvas"
         >
-          <i :class="workflowStore.workflowHash ? 'pi pi-lock' : 'pi pi-bookmark'"></i>
-          {{ workflowBadgeText }}
+          <i class="pi pi-shield"></i>
+          Harness authority
         </span>
-      </div>
-
-      <ResponsiveHeaderActions :items="actionMenuItems">
+      </template>
         <div class="toolbar-action-group">
           <Button
             label="Analysis Starter"
             icon="pi pi-sparkles"
             class="p-button-outlined p-button-sm"
-            :disabled="isTrialTabActive"
-            @click="templatePickerVisible = true"
+            :disabled="isTrialTabActive || (pendingDataSelection && !dataSelectionReceipt)"
+            :title="
+              pendingDataSelection && !dataSelectionReceipt
+                ? 'Return to My Dataset to restore the missing selection receipt'
+                : undefined
+            "
+            @click="openTemplatePicker"
           />
           <Button
             :label="isWorkflowStale ? 'Run (Mod)' : 'Run'"
@@ -28,7 +30,15 @@
             data-action="run_workflow"
             class="p-button-outlined p-button-sm"
             :loading="isExecuting || isBatchExecuting"
-            :disabled="isTrialTabActive || nodes.length === 0 || isExecuting || isBatchExecuting"
+            :disabled="
+              isTrialTabActive ||
+              isManagedCandidateAuthority ||
+              pendingDataSelection ||
+              nodes.length === 0 ||
+              workflowParameterErrors.length > 0 ||
+              isExecuting ||
+              isBatchExecuting
+            "
             @click="onRunClick"
             :title="runButtonTitle"
           />
@@ -51,7 +61,10 @@
         <Menu ref="exportMenuRef" :model="exportMenuItems" :popup="true" />
 
         <template #after>
-          <span v-if="autosaveStatus === 'saved'" class="autosave-indicator">
+          <span v-if="autosaveStatus === 'saving'" class="autosave-indicator">
+            <i class="pi pi-spin pi-spinner"></i> Saving
+          </span>
+          <span v-else-if="autosaveStatus === 'saved'" class="autosave-indicator">
             <i class="pi pi-check"></i> Saved
           </span>
           <span
@@ -71,22 +84,29 @@
           />
           <OverlayPanel ref="settingsPanelRef">
             <div class="settings-panel-content">
-              <label class="toolbar-state-control" title="Auto-execute on connect/param change">
+              <label
+                v-if="!hasExpensiveAutoExecuteNodes"
+                class="toolbar-state-control"
+                title="Auto-execute on connect/param change for descriptive workflows"
+              >
                 <Checkbox
                   v-model="autoExecute"
                   binary
                   input-id="workflow-auto-update"
+                  :disabled="isManagedCandidateAuthority"
                   @change="onAutoExecuteChange"
                 />
                 <span>Auto update</span>
               </label>
-              <label class="toolbar-state-control" title="Run all non-trial sheets in the workbook sequentially">
-                <Checkbox
-                  v-model="runAllSheets"
-                  binary
-                  input-id="workflow-run-all"
-                />
-                <span>Run all sheets</span>
+              <small v-else class="toolbar-settings-note">
+                Modeling and selection workflows require an explicit Run.
+              </small>
+              <label
+                class="toolbar-state-control"
+                title="Run all scientist-facing analysis sheets in the workbook sequentially"
+              >
+                <Checkbox v-model="runAllSheets" binary input-id="workflow-run-all" />
+                <span>Run all analysis sheets</span>
               </label>
               <label
                 v-if="runAllSheets"
@@ -103,8 +123,69 @@
             </div>
           </OverlayPanel>
         </template>
-      </ResponsiveHeaderActions>
-    </header>
+    </WorkspaceHeader>
+
+    <p v-if="workflowContextLoading" role="status" aria-label="Loading workflow">Loading workflow…</p>
+    <p v-if="!workflowContextLoading && workflowStore.hasFoldValidationPlan" role="status" aria-label="Validated workflow export">
+      This campaign-derived sheet has a cross-validation plan. A project archive preserves the sheet, but is not a deployable campaign winner. For an application, use a signed Model package when Optimize offers one for a selected, refitted winner. Standalone Python, notebook, and ZIP exports cannot preserve this validation plan.
+    </p>
+    <aside v-if="!workflowContextLoading && workflowStore.workflowWarnings.length" role="status" aria-label="Workflow warnings">
+      <p v-for="warning in workflowStore.workflowWarnings" :key="warning">{{ warning }}</p>
+    </aside>
+
+    <section
+      v-if="!workflowContextLoading && pendingDataSelection && !dataSelectionReceipt"
+      class="workflow-data-selection pending invalid"
+      aria-label="My Dataset selection unavailable"
+      role="alert"
+    >
+      <i class="pi pi-exclamation-triangle" aria-hidden="true" />
+      <div>
+        <strong>The incoming data selection is unavailable</strong>
+        <span>
+          Its navigation receipt is missing, expired, or belongs to another browser tab. Return to
+          My Dataset and choose Next: Workflow again.
+        </span>
+      </div>
+      <Button
+        label="Return to My Dataset"
+        icon="pi pi-arrow-left"
+        class="p-button-sm p-button-outlined"
+        @click="router.push('/data?tab=my-dataset')"
+      />
+    </section>
+
+    <section
+      v-else-if="dataSelectionReceipt"
+      class="workflow-data-selection"
+      :class="{ pending: pendingDataSelection }"
+      aria-label="My Dataset selection"
+    >
+      <i :class="pendingDataSelection ? 'pi pi-clock' : 'pi pi-check-circle'" aria-hidden="true" />
+      <div>
+        <strong
+          >{{ dataSelectionFileCount }} selected file{{
+            dataSelectionFileCount === 1 ? "" : "s"
+          }}
+          selected</strong
+        >
+        <span>
+          From {{ dataSelectionReceipt.datasets.length }} dataset{{
+            dataSelectionReceipt.datasets.length === 1 ? "" : "s"
+          }}. This exact selection is waiting for Analysis Starter to create a bound sheet{{
+            dataSelectionReceipt.group
+              ? `, with ${dataSelectionReceipt.group} requested for grouping`
+              : ""
+          }}.
+        </span>
+      </div>
+      <Button
+        label="Choose Analysis Starter"
+        icon="pi pi-sparkles"
+        class="p-button-sm p-button-outlined"
+        @click="openTemplatePicker"
+      />
+    </section>
 
     <VersionHistoryDialog
       v-model:visible="versionHistoryVisible"
@@ -114,36 +195,21 @@
 
     <TemplatePickerDialog
       v-model:visible="templatePickerVisible"
-      @sheet-opened="resetDialogOpenedSheetUi"
+      :data-selection="dataSelectionReceipt"
+      :preferred-template-slug="preferredAnalysisStarterSlug"
+      @sheet-opened="onTemplateSheetOpened"
     />
 
-    <!-- Workspace context strip: 4 read-only cells that re-read on every
-         sheet switch. "Project Data" reflects the active sheet's bound
-         data sources, not the project's total. Project Record / Data
-         navigation removed (sidebar handles it). -->
-    <div class="workflow-context-strip">
-      <div class="workflow-context-item">
-        <span>Project</span>
-        <strong>{{ activeProjectName }}</strong>
-      </div>
-      <div class="workflow-context-item">
-        <span>Active Sheet</span>
-        <strong>{{ activeSheetName }}</strong>
-      </div>
-      <div class="workflow-context-item">
-        <span>Project Data</span>
-        <strong>{{ linkedDataLabel }}</strong>
-      </div>
-      <div class="workflow-context-item">
-        <span>Canvas</span>
-        <strong>{{ canvasSummaryLabel }}</strong>
-      </div>
-    </div>
+    <WorkspaceContext label="Workflow workspace context" layout="workflow">
+      <WorkspaceContextItem label="Active Sheet" :value="activeSheetName" />
+      <WorkspaceContextItem label="Active Data" :value="linkedDataLabel" :detail="linkedDataTitle" />
+      <WorkspaceContextItem label="Canvas" :value="canvasSummaryLabel" />
+    </WorkspaceContext>
 
     <!-- Execution status banner -->
     <div v-if="executionCount > 0" class="execution-banner">
       <i class="pi pi-check-circle"></i>
-      <span>Workflow executed {{ executionCount }} time{{ executionCount !== 1 ? 's' : '' }}</span>
+      <span>Workflow executed {{ executionCount }} time{{ executionCount !== 1 ? "s" : "" }}</span>
       <span v-if="lastExecutionTime" class="execution-time">Last run: {{ lastExecutionTime }}</span>
     </div>
 
@@ -160,13 +226,19 @@
     <!-- Three-column layout: Toolbar | Canvas | Inspector Sidebar -->
     <div
       class="workflow-workspace"
-      :class="{ 'inspector-open': inspectorOpen, 'toolbar-collapsed': toolbarCollapsed, 'trial-active': isTrialTabActive }"
+      :class="{
+        'inspector-open': inspectorOpen,
+        'toolbar-collapsed': toolbarCollapsed,
+        'catalog-open': toolbarCatalogOpen,
+        'trial-active': isTrialTabActive,
+      }"
     >
       <WorkflowToolbar
         v-show="!isTrialTabActive"
         :class="{ 'trial-hidden': isTrialTabActive }"
         @add-node="onAddNode"
         @toggle-collapsed="onToolbarCollapsedChange"
+        @view-mode="onToolbarViewModeChange"
       />
 
       <!-- Center: Canvas -->
@@ -177,11 +249,14 @@
           :sheets="workbookStore.sheets"
           :active-index="workbookStore.activeIndex"
           :has-unsaved-changes="workflowStore.hasUnsavedChanges"
+          :active-workflow-hash="workflowStore.workflowHash"
           @switch="switchWorkbookSheet"
           @add="addWorkbookSheet"
           @duplicate="duplicateWorkbookSheet"
-          @open-template-picker="templatePickerVisible = true"
+          @open-template-picker="openTemplatePicker"
           @rename="renameWorkbookSheet"
+          @copy-integrity="copyWorkflowIntegrity"
+          @export-png="exportSheetPng"
           @color="colorWorkbookSheet"
           @reorder="reorderWorkbookSheets"
           @delete="deleteWorkbookSheet"
@@ -196,7 +271,10 @@
         </div>
         <div
           class="canvas-container"
-          :class="{ 'with-sheet-tabs': workbookStore.sheets.length > 0, 'trial-container': isTrialTabActive }"
+          :class="{
+            'with-sheet-tabs': workbookStore.sheets.length > 0,
+            'trial-container': isTrialTabActive,
+          }"
         >
           <NodeDetailView
             v-if="workbookStore.activeTrialSheet"
@@ -239,6 +317,12 @@
         :node-output="selectedNodeOutput"
         :input-connections="selectedNodeInputConnections"
         :is-open="inspectorOpen"
+        :execution-disabled="isManagedCandidateAuthority || pendingDataSelection"
+        :execution-disabled-reason="
+          pendingDataSelection
+            ? 'Choose an Analysis Starter to bind the incoming My Dataset selection before running.'
+            : 'Managed candidate authority is inspectable here, but only the governed Harness may execute it.'
+        "
         @update-params="onUpdateParams"
         @execute-node="onExecuteNode"
         @delete-node="onDeleteNode"
@@ -246,13 +330,12 @@
         @close="onCloseInspector"
       />
     </div>
-
   </section>
 </template>
 
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any -- builder canvas mixes generic node-library metadata with loose drag/drop payloads. */
-import { ref, computed, provide, watch, onMounted, onUnmounted } from "vue";
+import { ref, computed, provide, watch, onMounted, onUnmounted, nextTick } from "vue";
 import { storeToRefs } from "pinia";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
@@ -260,7 +343,7 @@ import Menu from "primevue/menu";
 import OverlayPanel from "primevue/overlaypanel";
 import { useToast } from "primevue/usetoast";
 import { onBeforeRouteLeave, useRoute, useRouter } from "vue-router";
-import { useWorkflowStore, type ExperimentDataset, type WorkflowNode, type WorkflowEdge } from "@/stores/workflow";
+import { useWorkflowStore, type WorkflowNode, type WorkflowEdge } from "@/stores/workflow";
 import { useExperimentStore } from "@/stores/experiment";
 import { useProjectStore } from "@/stores/project";
 import { useWorkbookStore } from "@/stores/workbook";
@@ -268,7 +351,9 @@ import { useAuthStore } from "@/stores/auth";
 import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
-import ResponsiveHeaderActions from "@/components/ResponsiveHeaderActions.vue";
+import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
+import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
 import VersionHistoryDialog from "@/components/VersionHistoryDialog.vue";
 import TemplatePickerDialog from "@/components/TemplatePickerDialog.vue";
 import WorkflowToolbar from "./WorkflowToolbar.vue";
@@ -278,6 +363,17 @@ import NodeDetailView from "./NodeDetailView.vue";
 import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
 import { downloadText } from "@/utils/download";
 import { getErrorMessage } from "@/utils/errors";
+import { activeWorkflowQuery } from "@/utils/workflowDeepLink";
+import {
+  editableWorkflowGraph,
+  workflowDraftKey,
+  workflowDraftSignature,
+} from "@/utils/workflowDraft";
+import {
+  consumeDataSelectionReceipt,
+  loadDataSelectionReceipt,
+  type DataSelectionReceipt,
+} from "@/utils/workflowDataSelection";
 import { handleBroadcastMessage as _handleBroadcastMessage } from "./handleBroadcastMessage";
 
 type ParamsMap = Record<string, unknown>;
@@ -306,18 +402,164 @@ const templatePickerVisible = ref(false);
 const canvasRef = ref();
 const exportMenuRef = ref();
 const settingsPanelRef = ref();
+const RETIRED_DATA_SELECTION_STORAGE_KEY = "spectra-my-dataset-workflow-selection-v1";
+const DATA_ENTRY_MODE_KEY = "sherpa:data-entry-mode";
+const DATA_ENTRY_PROJECT_KEY = "sherpa:data-entry-project-id";
+const DATA_ENTRY_DATASET_KEY = "sherpa:data-entry-dataset-intent";
+
+type AnalysisStarterDatasetIntent = {
+  schema_version: "spectra-analysis-starter-dataset-intent/1";
+  project_id: number;
+  dataset_id: string;
+  source: string;
+  name: string;
+  label: string;
+  template_slug: string | null;
+  imported_experiment_id?: number | null;
+};
+
+function readDataSelectionReceipt(
+  options: { requireRouteFlag?: boolean } = {},
+): DataSelectionReceipt | null {
+  window.sessionStorage.removeItem(RETIRED_DATA_SELECTION_STORAGE_KEY);
+  if (options.requireRouteFlag && route.query.fromDataSelection !== "1") return null;
+  try {
+    const routeReceiptId =
+      typeof route.query.selection === "string" ? route.query.selection : null;
+    if (options.requireRouteFlag && !routeReceiptId) return null;
+    const value = loadDataSelectionReceipt(
+      options.requireRouteFlag ? routeReceiptId : null,
+    );
+    if (
+      value?.schema_version !== "spectra-my-dataset-workflow-selection/3" ||
+      typeof value.receipt_id !== "string" ||
+      !value.receipt_id ||
+      !Array.isArray(value.datasets) ||
+      value.datasets.length === 0 ||
+      !value.datasets.every((dataset) =>
+        ["raw", "preprocessed", "synthetic"].includes(dataset.stage),
+      ) ||
+      value.project_id !== projectStore.currentProjectId
+    ) {
+      return null;
+    }
+    if (
+      options.requireRouteFlag &&
+      routeReceiptId !== value.receipt_id
+    ) {
+      return null;
+    }
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+const dataSelectionReceipt = ref<DataSelectionReceipt | null>(
+  readDataSelectionReceipt({ requireRouteFlag: true }),
+);
+// A missing receipt cannot be diagnosed until the routed project has loaded.
+// Also suppress notices retained from the previous sheet during navigation.
+const workbookContextReady = ref(false);
+const workflowContextLoading = computed(() =>
+  !workbookContextReady.value || workbookStore.isLoading || workflowStore.isLoading,
+);
+const preferredAnalysisStarterSlug = ref<string | null>(null);
+const dataSelectionFileCount = computed(() =>
+  (dataSelectionReceipt.value?.datasets ?? []).reduce(
+    (total, dataset) => total + dataset.selected_file_count,
+    0,
+  ),
+);
+const pendingDataSelection = computed(() => route.query.fromDataSelection === "1");
+
+const openTemplatePicker = () => {
+  preferredAnalysisStarterSlug.value = null;
+  dataSelectionReceipt.value = readDataSelectionReceipt({
+    requireRouteFlag: pendingDataSelection.value,
+  });
+  if (pendingDataSelection.value && !dataSelectionReceipt.value) return;
+  templatePickerVisible.value = true;
+};
+
+function readAnalysisStarterIntent(): AnalysisStarterDatasetIntent | null {
+  if (
+    window.sessionStorage.getItem(DATA_ENTRY_MODE_KEY) !== "analysis-starter" ||
+    window.sessionStorage.getItem(DATA_ENTRY_PROJECT_KEY) !==
+      String(projectStore.currentProjectId ?? "")
+  ) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(DATA_ENTRY_DATASET_KEY) || "null");
+    if (
+      parsed?.schema_version !== "spectra-analysis-starter-dataset-intent/1" ||
+      parsed.project_id !== projectStore.currentProjectId ||
+      typeof parsed.dataset_id !== "string" ||
+      typeof parsed.source !== "string" ||
+      typeof parsed.name !== "string" ||
+      typeof parsed.label !== "string" ||
+      (parsed.template_slug !== null && typeof parsed.template_slug !== "string")
+    ) {
+      return null;
+    }
+    return parsed as AnalysisStarterDatasetIntent;
+  } catch {
+    return null;
+  }
+}
+
+function clearAnalysisStarterIntent(): void {
+  if (window.sessionStorage.getItem(DATA_ENTRY_MODE_KEY) !== "analysis-starter") return;
+  window.sessionStorage.removeItem(DATA_ENTRY_MODE_KEY);
+  window.sessionStorage.removeItem(DATA_ENTRY_PROJECT_KEY);
+  window.sessionStorage.removeItem(DATA_ENTRY_DATASET_KEY);
+}
+
+async function onTemplateSheetOpened(): Promise<void> {
+  resetDialogOpenedSheetUi();
+  clearAnalysisStarterIntent();
+  const query = { ...route.query };
+  if (query.fromDataSelection === "1") {
+    delete query.fromDataSelection;
+    delete query.selection;
+    await router.replace({ query });
+  }
+  if (dataSelectionReceipt.value) {
+    consumeDataSelectionReceipt(dataSelectionReceipt.value.receipt_id);
+  }
+  dataSelectionReceipt.value = null;
+  if (projectStore.currentProjectId != null) {
+    try {
+      await projectStore.fetchProject(projectStore.currentProjectId);
+    } catch {
+      // The starter has already created and bound its sheet. A transient
+      // project-summary refresh must not leave that completed handoff marked
+      // pending or restore its one-time navigation receipt.
+      console.warn("Failed to refresh project summary after opening workflow sheet");
+    }
+  }
+}
 
 // Use store for workflow state
 const nodes = computed({
   get: () => workflowStore.nodes,
-  set: (val) => workflowStore.setNodes(val)
+  set: (val) => workflowStore.setNodes(val),
 });
 const edges = computed({
   get: () => workflowStore.edges,
-  set: (val) => workflowStore.setEdges(val)
+  set: (val) => workflowStore.setEdges(val),
 });
 const hasChanges = computed(() => workflowStore.hasUnsavedChanges);
 const isWorkflowStale = computed(() => workflowStore.isWorkflowStale);
+const workflowParameterErrors = computed(() =>
+  workflowStore.nodes.flatMap((node) =>
+    workflowStore
+      .validateNodeParams(node.type, node.params)
+      .filter((error) => error.param_name !== "_metadata")
+      .map((error) => ({ ...error, nodeId: node.id })),
+  ),
+);
 
 // Local state
 const selectedNode = ref<WorkflowNode | null>(null);
@@ -329,14 +571,21 @@ const inspectorOpen = ref(false);
 const toolbarCollapsed = ref<boolean>(
   (() => {
     try {
-      return typeof localStorage !== 'undefined' && localStorage.getItem('workflow-toolbar-collapsed') === '1';
+      return (
+        typeof localStorage !== "undefined" &&
+        localStorage.getItem("workflow-toolbar-collapsed") === "1"
+      );
     } catch {
       return false;
     }
-  })()
+  })(),
 );
 const onToolbarCollapsedChange = (collapsed: boolean) => {
   toolbarCollapsed.value = collapsed;
+};
+const toolbarCatalogOpen = ref(false);
+const onToolbarViewModeChange = (mode: "add" | "catalog") => {
+  toolbarCatalogOpen.value = mode === "catalog";
 };
 const runAllSheets = ref(false); // Run all sheets on clicking 'Run'
 const continueWorkbookOnError = ref(true);
@@ -353,38 +602,38 @@ const toggleSettingsPanel = (event: Event) => {
 const handleKeyDown = (e: KeyboardEvent) => {
   // skip if the focused element is an input, textarea, or contenteditable
   const target = e.target as HTMLElement;
-  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+  if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) {
     return;
   }
 
-  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+  const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
   const isCmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
   const key = e.key.toLowerCase();
   const browserHasSelectedText = Boolean(window.getSelection()?.toString());
 
-  if (isCmdOrCtrl && key === 'c' && browserHasSelectedText) {
+  if (isCmdOrCtrl && key === "c" && browserHasSelectedText) {
     return;
   }
 
-  if (isCmdOrCtrl && key === 'c') {
+  if (isCmdOrCtrl && key === "c") {
     onCopySelection();
     e.preventDefault();
-  } else if (isCmdOrCtrl && key === 'x') {
+  } else if (isCmdOrCtrl && key === "x") {
     onCutSelection();
     e.preventDefault();
-  } else if (isCmdOrCtrl && key === 'v') {
+  } else if (isCmdOrCtrl && key === "v") {
     onPasteSelection();
     e.preventDefault();
-  } else if (isCmdOrCtrl && key === 'd') {
+  } else if (isCmdOrCtrl && key === "d") {
     onDuplicateSelection();
     e.preventDefault();
-  } else if (isCmdOrCtrl && key === 'a') {
+  } else if (isCmdOrCtrl && key === "a") {
     canvasRef.value?.selectAll();
     e.preventDefault();
-  } else if (e.key === 'Delete' || e.key === 'Backspace') {
+  } else if (e.key === "Delete" || e.key === "Backspace") {
     onDeleteSelection();
     e.preventDefault();
-  } else if (e.key === 'Escape') {
+  } else if (e.key === "Escape") {
     canvasRef.value?.clearSelection();
     e.preventDefault();
   }
@@ -393,11 +642,11 @@ const handleKeyDown = (e: KeyboardEvent) => {
 const getSelectedNodes = () => {
   if (!canvasRef.value?.selectedNodeIds) return [];
   const selectedIds = canvasRef.value.selectedNodeIds;
-  return workflowStore.nodes.filter(n => selectedIds.has(n.id));
+  return workflowStore.nodes.filter((n) => selectedIds.has(n.id));
 };
 
 const getInternalEdges = (selectedIds: Set<string>) => {
-  return workflowStore.edges.filter(e => selectedIds.has(e.from) && selectedIds.has(e.to));
+  return workflowStore.edges.filter((e) => selectedIds.has(e.from) && selectedIds.has(e.to));
 };
 
 const onCopySelection = () => {
@@ -411,10 +660,15 @@ const onCopySelection = () => {
   clipboardStore.set({
     nodes: copiedNodes,
     edges: copiedEdges,
-    sourceWorkflowId: workflowStore.workflowId
+    sourceWorkflowId: workflowStore.workflowId,
   });
 
-  toast.add({ severity: 'info', summary: 'Copied', detail: `${copiedNodes.length} node(s) copied to clipboard`, life: 2000 });
+  toast.add({
+    severity: "info",
+    summary: "Copied",
+    detail: `${copiedNodes.length} node(s) copied to clipboard`,
+    life: 2000,
+  });
 };
 
 const onCutSelection = () => {
@@ -442,7 +696,11 @@ const restoreDeletedNodes = () => {
     return;
   }
   const restoredNodeIds = new Set(restoredNodes.map((node) => node.id));
-  const existingEdges = new Set(workflowStore.edges.map((edge) => `${edge.from}->${edge.to}:${edge.fromPort || ""}:${edge.toPort || ""}`));
+  const existingEdges = new Set(
+    workflowStore.edges.map(
+      (edge) => `${edge.from}->${edge.to}:${edge.fromPort || ""}:${edge.toPort || ""}`,
+    ),
+  );
   const restoredEdges = snapshot.edges.filter((edge) => {
     if (!restoredNodeIds.has(edge.from) && !restoredNodeIds.has(edge.to)) return false;
     const key = `${edge.from}->${edge.to}:${edge.fromPort || ""}:${edge.toPort || ""}`;
@@ -456,7 +714,8 @@ const restoreDeletedNodes = () => {
   }
   nodeOutputs.value = restoredOutputs;
   if (snapshot.selectedNodeId) {
-    selectedNode.value = workflowStore.nodes.find((node) => node.id === snapshot.selectedNodeId) || null;
+    selectedNode.value =
+      workflowStore.nodes.find((node) => node.id === snapshot.selectedNodeId) || null;
     inspectorOpen.value = selectedNode.value !== null;
   }
   workflowStore.hasUnsavedChanges = true;
@@ -474,16 +733,25 @@ const deleteNodesById = (ids: Set<string>, options: { requireConfirmation?: bool
   if (ids.size === 0) return;
   const deletedNodes = workflowStore.nodes.filter((node) => ids.has(node.id));
   if (deletedNodes.length === 0) return;
-  const label = deletedNodes.length === 1 ? getNodeLabel(deletedNodes[0].type) : `${deletedNodes.length} nodes`;
-  if (requireConfirmation && !window.confirm(`Delete ${label}? You can undo this immediately after deletion.`)) {
+  const label =
+    deletedNodes.length === 1 ? getNodeLabel(deletedNodes[0].type) : `${deletedNodes.length} nodes`;
+  if (
+    requireConfirmation &&
+    !window.confirm(`Delete ${label}? You can undo this immediately after deletion.`)
+  ) {
     return;
   }
   const deletedEdges = workflowStore.edges.filter((edge) => ids.has(edge.from) || ids.has(edge.to));
-  const deletedOutputs = Array.from(nodeOutputs.value.entries()).filter(([nodeId]) => ids.has(nodeId));
-  const selectedNodeId = selectedNode.value && ids.has(selectedNode.value.id) ? selectedNode.value.id : null;
+  const deletedOutputs = Array.from(nodeOutputs.value.entries()).filter(([nodeId]) =>
+    ids.has(nodeId),
+  );
+  const selectedNodeId =
+    selectedNode.value && ids.has(selectedNode.value.id) ? selectedNode.value.id : null;
 
   workflowStore.setNodes(workflowStore.nodes.filter((node) => !ids.has(node.id)));
-  workflowStore.setEdges(workflowStore.edges.filter((edge) => !ids.has(edge.from) && !ids.has(edge.to)));
+  workflowStore.setEdges(
+    workflowStore.edges.filter((edge) => !ids.has(edge.from) && !ids.has(edge.to)),
+  );
   const nextOutputs = new Map(nodeOutputs.value);
   for (const nodeId of ids) nextOutputs.delete(nodeId);
   nodeOutputs.value = nextOutputs;
@@ -511,13 +779,13 @@ const onDeleteSelection = () => {
 };
 
 let lastPasteCount = 0;
-let lastClipboardHash = '';
+let lastClipboardHash = "";
 
 const executePaste = (payload: ClipboardPayload, isDuplicate: boolean = false) => {
   if (!payload || payload.nodes.length === 0) return;
 
   // Track paste count to increment offset
-  const hash = payload.nodes.map(n => n.id).join(',');
+  const hash = payload.nodes.map((n) => n.id).join(",");
   if (!isDuplicate) {
     if (hash === lastClipboardHash) {
       lastPasteCount++;
@@ -527,37 +795,37 @@ const executePaste = (payload: ClipboardPayload, isDuplicate: boolean = false) =
     }
   }
 
-  const offsetX = isDuplicate ? 40 : 20 + (lastPasteCount * 20);
-  const offsetY = isDuplicate ? 40 : 20 + (lastPasteCount * 20);
+  const offsetX = isDuplicate ? 40 : 20 + lastPasteCount * 20;
+  const offsetY = isDuplicate ? 40 : 20 + lastPasteCount * 20;
 
   const idMap = new Map<string, string>();
   const newNodes: WorkflowNode[] = [];
   const allNodes = [...workflowStore.nodes];
 
-  payload.nodes.forEach(oldNode => {
+  payload.nodes.forEach((oldNode) => {
     const newId = createNodeId(oldNode.type, allNodes);
     idMap.set(oldNode.id, newId);
-    
+
     const newNode = {
       ...oldNode,
       id: newId,
       x: oldNode.x + offsetX,
       y: oldNode.y + offsetY,
-      executionState: undefined // Clear state
+      executionState: undefined, // Clear state
     };
     newNodes.push(newNode);
     allNodes.push(newNode); // for next createNodeId iteration
   });
 
   const newEdges: WorkflowEdge[] = [];
-  payload.edges.forEach(oldEdge => {
+  payload.edges.forEach((oldEdge) => {
     const newFrom = idMap.get(oldEdge.from);
     const newTo = idMap.get(oldEdge.to);
     if (newFrom && newTo) {
       newEdges.push({
         ...oldEdge,
         from: newFrom,
-        to: newTo
+        to: newTo,
       });
     }
   });
@@ -567,7 +835,7 @@ const executePaste = (payload: ClipboardPayload, isDuplicate: boolean = false) =
   workflowStore.hasUnsavedChanges = true;
 
   canvasRef.value?.clearSelection();
-  newNodes.forEach(n => canvasRef.value?.selectedNodeIds.add(n.id));
+  newNodes.forEach((n) => canvasRef.value?.selectedNodeIds.add(n.id));
 
   if (newNodes.length === 1) {
     onNodeSelect(newNodes[0]);
@@ -594,7 +862,7 @@ const onDuplicateSelection = () => {
   const temporaryPayload: ClipboardPayload = {
     nodes: duplicatedNodes,
     edges: duplicatedEdges,
-    sourceWorkflowId: workflowStore.workflowId
+    sourceWorkflowId: workflowStore.workflowId,
   };
 
   executePaste(temporaryPayload, true);
@@ -605,23 +873,22 @@ const onRunNode = async (_nodeId: string) => {
 };
 
 const onViewOutput = (nodeId: string) => {
-  const node = workflowStore.nodes.find(n => n.id === nodeId);
+  const node = workflowStore.nodes.find((n) => n.id === nodeId);
   if (node) {
     onNodeSelect(node);
   }
 };
 
 // Autosave state
-const autosaveStatus = ref<'idle' | 'saving' | 'saved' | 'error'>('idle');
+const autosaveStatus = ref<"idle" | "saving" | "saved" | "error">("idle");
 const autosaveErrorMessage = ref("");
 const autosaveFailureToastShown = ref(false);
 const autosaveTimer = ref<number | null>(null);
+let autosaveInFlight: Promise<boolean> | null = null;
 const autoExecuteTimer = ref<number | null>(null);
-const autoExecuteAcceptedForExpensiveWorkflow = ref(autoExecute.value);
 const recentlyDeletedSnapshot = ref<DeletedWorkflowSnapshot | null>(null);
 const deleteUndoTimer = ref<number | null>(null);
 const AUTOSAVE_DELAY = 30000; // 30 seconds
-const WORKFLOW_DRAFT_PREFIX = "spectra_sherpa_workflow_draft_v1";
 const EXPENSIVE_AUTO_EXECUTE_TYPES = [
   "model.",
   "classification.",
@@ -643,14 +910,11 @@ type WorkflowDraftSnapshot = {
   edges: WorkflowEdge[];
 };
 
-const workflowDraftKey = (projectId: number, workflowId: number): string =>
-  `${WORKFLOW_DRAFT_PREFIX}:${authStore.user?.id ?? "local"}:${projectId}:${workflowId}`;
-
 const currentWorkflowDraftKey = (): string | null => {
   const projectId = workbookStore.projectId;
   const currentWorkflowId = workflowStore.workflowId;
   if (projectId === null || currentWorkflowId === null) return null;
-  return workflowDraftKey(projectId, currentWorkflowId);
+  return workflowDraftKey(authStore.user?.id, projectId, currentWorkflowId);
 };
 
 const clearPendingAutosave = () => {
@@ -684,10 +948,7 @@ const persistWorkflowDraftSnapshot = () => {
       projectId: workbookStore.projectId,
       workflowId: workflowStore.workflowId,
       savedAt: new Date().toISOString(),
-      workflowName: workflowStore.workflowName,
-      workflowDescription: workflowStore.workflowDescription,
-      nodes: workflowStore.nodes,
-      edges: workflowStore.edges,
+      ...editableWorkflowGraph(workflowStore),
     };
     localStorage.setItem(key, JSON.stringify(draft));
   } catch {
@@ -721,10 +982,20 @@ const restoreWorkflowDraftSnapshot = () => {
     ) {
       return;
     }
-    workflowStore.workflowName = draft.workflowName || workflowStore.workflowName;
-    workflowStore.workflowDescription = draft.workflowDescription || workflowStore.workflowDescription;
-    workflowStore.setNodes(draft.nodes);
-    workflowStore.setEdges(draft.edges);
+    const restoredGraph = editableWorkflowGraph({
+      workflowName: draft.workflowName ?? workflowStore.workflowName,
+      workflowDescription: draft.workflowDescription ?? workflowStore.workflowDescription,
+      nodes: draft.nodes,
+      edges: draft.edges,
+    });
+    if (workflowDraftSignature(restoredGraph) === workflowDraftSignature(workflowStore)) {
+      clearWorkflowDraftSnapshot();
+      return;
+    }
+    workflowStore.workflowName = restoredGraph.workflowName;
+    workflowStore.workflowDescription = restoredGraph.workflowDescription;
+    workflowStore.setNodes(restoredGraph.nodes);
+    workflowStore.setEdges(restoredGraph.edges);
     workflowStore.hasUnsavedChanges = true;
     workflowStore.markWorkflowStale();
     autosaveStatus.value = "idle";
@@ -753,21 +1024,29 @@ const handleBeforeUnload = (event: BeforeUnloadEvent) => {
   event.returnValue = "";
 };
 
-onBeforeRouteLeave((_to, _from, next) => {
-  if (
-    shouldWarnAboutUnsavedWorkflow() &&
-    !window.confirm("This workflow has unsaved edits or a failed autosave. Leave this page?")
-  ) {
-    next(false);
-    return;
+onBeforeRouteLeave(async () => {
+  persistWorkflowDraftSnapshot();
+  if (!shouldWarnAboutUnsavedWorkflow()) return true;
+  if (workflowParameterErrors.value.length > 0) return true;
+
+  clearPendingAutosave();
+  if (workflowStore.hasUnsavedChanges) {
+    const saved = await triggerAutosave(workflowStore.workflowId, workbookStore.activeIndex);
+    if (saved && !workflowStore.hasUnsavedChanges) return true;
   }
-  next();
+
+  return window.confirm(
+    "Autosave failed. Your edits are preserved in this browser but are not saved to the server. Leave this page?",
+  );
 });
 
 const sanitizeNodeIdSeed = (nodeType: string): string =>
   nodeType.replace(/[^a-zA-Z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "node";
 
-const createNodeId = (nodeType: string, existingNodes: WorkflowNode[] = workflowStore.nodes): string => {
+const createNodeId = (
+  nodeType: string,
+  existingNodes: WorkflowNode[] = workflowStore.nodes,
+): string => {
   const seed = sanitizeNodeIdSeed(nodeType);
   let counter = existingNodes.filter((node) => node.id.startsWith(`${seed}_`)).length + 1;
   let candidate = `${seed}_${counter}`;
@@ -781,8 +1060,17 @@ const createNodeId = (nodeType: string, existingNodes: WorkflowNode[] = workflow
 // Handle BroadcastChannel messages from NodeDetailView.
 // DetailView is send-only for `node_params_updated` (fired on Save and Exit).
 const handleBroadcastMessage = (event: MessageEvent) => {
-  const result = _handleBroadcastMessage(event, nodes, workflowStore.updateNode, workflowStore.workflowId);
-  if (event.data?.type === "node_params_updated" && event.data?.requestId && broadcastChannel.value) {
+  const result = _handleBroadcastMessage(
+    event,
+    nodes,
+    workflowStore.updateNode,
+    workflowStore.workflowId,
+  );
+  if (
+    event.data?.type === "node_params_updated" &&
+    event.data?.requestId &&
+    broadcastChannel.value
+  ) {
     broadcastChannel.value.postMessage({
       type: "node_params_applied",
       requestId: event.data.requestId,
@@ -809,17 +1097,50 @@ onMounted(async () => {
   try {
     broadcastChannel.value = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
     broadcastChannel.value.onmessage = handleBroadcastMessage;
-    console.log('[WorkflowBuilder] BroadcastChannel initialized');
+    console.log("[WorkflowBuilder] BroadcastChannel initialized");
   } catch (e) {
-    console.warn('[WorkflowBuilder] BroadcastChannel not supported:', e);
+    console.warn("[WorkflowBuilder] BroadcastChannel not supported:", e);
   }
 
   await initializeWorkbook();
+  workbookReadyForProjectSwitches = true;
 
-  window.addEventListener('keydown', handleKeyDown);
-  window.addEventListener('beforeunload', handleBeforeUnload);
-  window.addEventListener('pagehide', flushWorkflowDraftBeforeUnload);
-  document.addEventListener('visibilitychange', flushWorkflowDraftBeforeUnload);
+  // A copied or cold-opened workflow tab can hydrate its project only during
+  // workbook initialization. Resolve the route-scoped receipt again after
+  // that project authority is established; never accept it against a null or
+  // previously active project during module setup.
+  if (pendingDataSelection.value) {
+    dataSelectionReceipt.value = readDataSelectionReceipt({ requireRouteFlag: true });
+  }
+  workbookContextReady.value = true;
+
+  if (dataSelectionReceipt.value && route.query.fromDataSelection === "1") {
+    const starterIntent = readAnalysisStarterIntent();
+    preferredAnalysisStarterSlug.value = starterIntent?.template_slug ?? null;
+    templatePickerVisible.value = starterIntent?.template_slug !== null;
+    if (starterIntent?.template_slug === null) {
+      clearAnalysisStarterIntent();
+    }
+  }
+
+  if (route.query.addNode === "preprocess.wavenumber_align") {
+    onAddNode("preprocess.wavenumber_align");
+    const query = { ...route.query };
+    delete query.addNode;
+    await router.replace({ query });
+    toast.add({
+      severity: "info",
+      summary: "Wavenumber Align added",
+      detail:
+        "Connect the spectra to align and the reference spectrum whose grid should be retained.",
+      life: 6000,
+    });
+  }
+
+  window.addEventListener("keydown", handleKeyDown);
+  window.addEventListener("beforeunload", handleBeforeUnload);
+  window.addEventListener("pagehide", flushWorkflowDraftBeforeUnload);
+  document.addEventListener("visibilitychange", flushWorkflowDraftBeforeUnload);
 });
 
 // Clean up BroadcastChannel and autosave timer on unmount
@@ -827,56 +1148,60 @@ onUnmounted(() => {
   if (broadcastChannel.value) {
     broadcastChannel.value.close();
     broadcastChannel.value = null;
-    console.log('[WorkflowBuilder] BroadcastChannel closed');
+    console.log("[WorkflowBuilder] BroadcastChannel closed");
   }
   if (autosaveTimer.value !== null) {
     clearPendingAutosave();
   }
   clearPendingAutoExecute();
   clearDeleteUndoTimer();
-  
-  window.removeEventListener('keydown', handleKeyDown);
-  window.removeEventListener('beforeunload', handleBeforeUnload);
-  window.removeEventListener('pagehide', flushWorkflowDraftBeforeUnload);
-  document.removeEventListener('visibilitychange', flushWorkflowDraftBeforeUnload);
+
+  window.removeEventListener("keydown", handleKeyDown);
+  window.removeEventListener("beforeunload", handleBeforeUnload);
+  window.removeEventListener("pagehide", flushWorkflowDraftBeforeUnload);
+  document.removeEventListener("visibilitychange", flushWorkflowDraftBeforeUnload);
 });
 
 // Watch for store changes - only react to node count changes (add/remove)
 // NOT param changes which would reset selection during editing
-watch(() => workflowStore.nodes.length, (newLength, oldLength) => {
-  // Only clear selection if nodes were removed or workflow was cleared
-  if (newLength < oldLength || newLength === 0) {
-    const nodeIds = new Set(workflowStore.nodes.map((node) => node.id));
-    if (selectedNode.value && !nodeIds.has(selectedNode.value.id)) {
-      selectedNode.value = null;
+watch(
+  () => workflowStore.nodes.length,
+  (newLength, oldLength) => {
+    // Only clear selection if nodes were removed or workflow was cleared
+    if (newLength < oldLength || newLength === 0) {
+      const nodeIds = new Set(workflowStore.nodes.map((node) => node.id));
+      if (selectedNode.value && !nodeIds.has(selectedNode.value.id)) {
+        selectedNode.value = null;
+      }
     }
-  }
-});
+  },
+);
 
-// Autosave watcher - trigger autosave when changes are made
-watch(() => hasChanges.value, (hasChangesVal) => {
-  // Clear any existing timer
+const scheduleAutosave = () => {
   clearPendingAutosave();
+  if (!workflowStore.hasUnsavedChanges || workflowStore.workflowId === null) return;
 
-  // Only autosave if:
-  // 1. There are unsaved changes
-  // 2. We have an existing workflow (not a brand new workflow)
-  if (hasChangesVal && workflowStore.workflowId !== null) {
-    autosaveStatus.value = 'idle';
-    autosaveErrorMessage.value = "";
-    const scheduledWorkflowId = workflowStore.workflowId;
-    const scheduledSheetIndex = workbookStore.activeIndex;
+  autosaveStatus.value = "idle";
+  autosaveErrorMessage.value = "";
+  if (workflowParameterErrors.value.length > 0) return;
 
-    // Set up debounced autosave
-    autosaveTimer.value = window.setTimeout(async () => {
-      await triggerAutosave(scheduledWorkflowId, scheduledSheetIndex);
-    }, AUTOSAVE_DELAY);
-  } else if (!hasChangesVal) {
-    // No changes, reset status
-    autosaveStatus.value = 'idle';
+  autosaveFailureToastShown.value = false;
+  const scheduledWorkflowId = workflowStore.workflowId;
+  const scheduledSheetIndex = workbookStore.activeIndex;
+  autosaveTimer.value = window.setTimeout(() => {
+    void triggerAutosave(scheduledWorkflowId, scheduledSheetIndex);
+  }, AUTOSAVE_DELAY);
+};
+
+watch(
+  () => hasChanges.value,
+  (hasChangesVal) => {
+    if (hasChangesVal) return;
+    clearPendingAutosave();
+    autosaveStatus.value = "idle";
     autosaveErrorMessage.value = "";
-  }
-});
+  },
+);
 
 watch(
   [
@@ -887,6 +1212,7 @@ watch(
   ],
   () => {
     persistWorkflowDraftSnapshot();
+    scheduleAutosave();
   },
   { deep: true },
 );
@@ -914,48 +1240,73 @@ const selectedNodeOutput = computed(() => {
   return nodeOutputs.value.get(selectedNode.value.id) || null;
 });
 
-const workflowBadgeText = computed(() => {
-  return workbookStore.activeSheet?.name || workflowStore.workflowName || "";
-});
-
-const workflowBadgeTitle = computed(() => {
-  if (workflowStore.workflowHash) {
-    return `${workflowBadgeText.value} — Integrity Hash: ${workflowStore.workflowHash}`;
-  }
-  return `${workflowBadgeText.value} — no integrity hash yet`;
-});
 const isTrialTabActive = computed(() => workbookStore.activeSheet?.kind === "trial");
-
-const activeProjectName = computed(() =>
-  projectStore.currentProject?.name || "No project selected",
+const isManagedCandidateAuthority = computed(
+  () => workbookStore.activeSheet?.purpose === "managed_candidate_authority",
 );
 
-const activeSheetName = computed(() =>
-  workbookStore.activeSheet?.name || workflowStore.workflowName || "No sheet open",
+
+
+const activeSheetName = computed(
+  () => workbookStore.activeSheet?.name || workflowStore.workflowName || "No sheet open",
 );
 
-const linkedDataLabel = computed(() => {
+const activeWorkflowDataSourceIds = computed(() => {
   // Per-active-sheet count, not project total: look up the active sheet's
   // workflow in ProjectDetail.workflows and tally the data sources it binds
   // (primary_data_source_id + data_source_ids, deduped). Switching sheets
   // re-runs this computed so the strip reflects the sheet you're on.
-  const activeWorkflowId =
-    workbookStore.activeSheet?.workflowId ?? workflowStore.workflowId;
-  if (activeWorkflowId != null) {
-    const wf = projectStore.currentProject?.workflows?.find(
-      (entry) => entry.id === activeWorkflowId,
-    );
-    if (wf) {
-      const ids = new Set<number>();
-      if (wf.primary_data_source_id != null) ids.add(wf.primary_data_source_id);
-      if (wf.data_source_ids) {
-        for (const id of wf.data_source_ids) ids.add(id);
-      }
-      if (ids.size > 0) {
-        return `${ids.size} dataset${ids.size === 1 ? "" : "s"} bound`;
-      }
-      return "No datasets bound";
+  const activeWorkflowId = workbookStore.activeSheet?.workflowId ?? workflowStore.workflowId;
+  if (activeWorkflowId == null) return null;
+  const workflow = projectStore.currentProject?.workflows?.find(
+    (entry) => entry.id === activeWorkflowId,
+  );
+  if (!workflow) return null;
+
+  const ids = new Set<number>();
+  if (workflow.primary_data_source_id != null) ids.add(workflow.primary_data_source_id);
+  for (const id of workflow.data_source_ids ?? []) ids.add(id);
+  return [...ids];
+});
+
+const activeWorkflowDataSourceNames = computed(() => {
+  const ids = activeWorkflowDataSourceIds.value;
+  if (!ids?.length) return [];
+  const namesById = new Map(
+    (projectStore.currentProject?.data_sources ?? []).map((source) => [
+      source.id,
+      source.display_name,
+    ]),
+  );
+  return ids.map((id) => namesById.get(id)).filter((name): name is string => !!name);
+});
+
+const linkedDataTitle = computed(() => {
+  if (pendingDataSelection.value) {
+    const names = (dataSelectionReceipt.value?.datasets ?? [])
+      .map((dataset) => dataset.dataset_name)
+      .join(", ");
+    return names || "Incoming My Dataset selection is unavailable";
+  }
+  const names = activeWorkflowDataSourceNames.value;
+  return names.length > 0 ? names.join(", ") : linkedDataLabel.value;
+});
+
+const linkedDataLabel = computed(() => {
+  if (pendingDataSelection.value) {
+    const datasets = dataSelectionReceipt.value?.datasets ?? [];
+    if (!datasets.length) return "Pending selection unavailable";
+    if (datasets.length === 1) return `Pending: ${datasets[0].dataset_name}`;
+    return `${datasets.length} datasets pending binding`;
+  }
+  const ids = activeWorkflowDataSourceIds.value;
+  if (ids) {
+    if (ids.length === 0) return "No datasets bound";
+    const names = activeWorkflowDataSourceNames.value;
+    if (names.length === ids.length) {
+      return names.length === 1 ? names[0] : `${names[0]} + ${names.length - 1} more`;
     }
+    return `${ids.length} dataset${ids.length === 1 ? "" : "s"} bound`;
   }
   // No active sheet yet — fall back to the project's total.
   const total = projectStore.currentProject?.experiment_count ?? 0;
@@ -969,6 +1320,16 @@ const canvasSummaryLabel = computed(() => {
 });
 
 const runButtonTitle = computed(() => {
+  if (pendingDataSelection.value) {
+    return "Choose an Analysis Starter to bind the incoming My Dataset selection before running";
+  }
+  if (isManagedCandidateAuthority.value) {
+    return "Inspection only: execution requires this workflow's declared runtime";
+  }
+  const parameterError = workflowParameterErrors.value[0];
+  if (parameterError) {
+    return `Fix ${parameterError.nodeId}: ${parameterError.message}`;
+  }
   const sheetName = workbookStore.activeSheet?.name;
   const scope = sheetName ? `Run the active sheet "${sheetName}"` : "Run the active sheet";
   if (isWorkflowStale.value) {
@@ -978,13 +1339,40 @@ const runButtonTitle = computed(() => {
 });
 
 const hasExpensiveAutoExecuteNodes = computed(() =>
-  nodes.value.some((node) => EXPENSIVE_AUTO_EXECUTE_TYPES.some((prefix) => node.type.startsWith(prefix))),
+  nodes.value.some((node) =>
+    EXPENSIVE_AUTO_EXECUTE_TYPES.some((prefix) => node.type.startsWith(prefix)),
+  ),
 );
 
-const buildOutputForNode = (nodeId: string, result: unknown): NodeOutput => {
-  const node = nodes.value.find(n => n.id === nodeId);
+watch(
+  hasExpensiveAutoExecuteNodes,
+  (hasExpensiveNodes) => {
+    if (!hasExpensiveNodes) return;
+    if (autoExecute.value) {
+      autoExecute.value = false;
+      clearPendingAutoExecute();
+    }
+  },
+  { immediate: true },
+);
+
+const buildOutputForNode = (
+  nodeId: string,
+  result: unknown,
+  diagnostics?: Record<string, unknown> | null,
+): NodeOutput => {
+  const node = nodes.value.find((n) => n.id === nodeId);
   const outputPorts = node ? workflowStore.getNodeMetadata(node.type)?.output_ports : undefined;
-  return buildNodeOutput(result, outputPorts);
+  return buildNodeOutput(
+    result,
+    outputPorts,
+    diagnostics,
+    workflowStore.lastExecutionResultDescriptors[nodeId],
+    (() => {
+      const record = workflowStore.lastExecutionPresentations[nodeId];
+      return record ? { digest: record.contract_digest, payload: record.contract } : null;
+    })(),
+  );
 };
 
 const hasRenderableOutput = (output: NodeOutput): boolean => {
@@ -992,6 +1380,9 @@ const hasRenderableOutput = (output: NodeOutput): boolean => {
     return true;
   }
   if (output.plots && Object.keys(output.plots).length > 0) {
+    return true;
+  }
+  if (output.descriptor || Object.values(output.ports || {}).some((port) => port.descriptor)) {
     return true;
   }
   for (const port of Object.values(output.ports || {})) {
@@ -1006,28 +1397,23 @@ const hasRenderableOutput = (output: NodeOutput): boolean => {
 };
 
 const hydrateNodeOutputsFromRunResults = (results: Record<string, unknown> | null | undefined) => {
-  if (!results) {
-    return;
-  }
+  if (workbookStore.activeSheet?.kind === "trial") return;
   const currentNodeIds = new Set(nodes.value.map((node) => node.id));
-  const nextOutputs = new Map(
-    Array.from(nodeOutputs.value.entries()).filter(([nodeId]) => currentNodeIds.has(nodeId)),
-  );
-  let changed = false;
-  for (const [nodeId, result] of Object.entries(results)) {
+  const nextOutputs = new Map<string, NodeOutput>();
+  for (const [nodeId, result] of Object.entries(results ?? {})) {
     if (!currentNodeIds.has(nodeId)) {
       continue;
     }
-    const output = buildOutputForNode(nodeId, result);
+    const diagnostics = workflowStore.lastExecutionDiagnostics?.[nodeId] ?? null;
+    const output = buildOutputForNode(nodeId, result, diagnostics);
     if (!hasRenderableOutput(output)) {
       continue;
     }
     nextOutputs.set(nodeId, output);
-    changed = true;
   }
-  if (changed) {
+  {
     nodeOutputs.value = nextOutputs;
-    if (workbookStore.activeSheet && workbookStore.activeSheet.kind !== "trial") {
+    if (workbookStore.activeSheet) {
       workbookStore.activeSheet.nodeOutputsCache = new Map(nextOutputs);
     }
   }
@@ -1036,9 +1422,10 @@ const hydrateNodeOutputsFromRunResults = (results: Record<string, unknown> | nul
 const restoreNodeOutputsForActiveSheet = () => {
   const currentNodeIds = new Set(nodes.value.map((node) => node.id));
   const restoredOutputs = new Map<string, NodeOutput>();
-  const cachedOutputs = workbookStore.activeSheet?.kind !== "trial"
-    ? workbookStore.activeSheet?.nodeOutputsCache
-    : null;
+  const cachedOutputs =
+    workbookStore.activeSheet?.kind !== "trial"
+      ? workbookStore.activeSheet?.nodeOutputsCache
+      : null;
 
   for (const [nodeId, output] of cachedOutputs ?? []) {
     if (currentNodeIds.has(nodeId)) {
@@ -1047,12 +1434,20 @@ const restoreNodeOutputsForActiveSheet = () => {
   }
 
   nodeOutputs.value = restoredOutputs;
-  hydrateNodeOutputsFromRunResults(workflowStore.lastExecutionResults as Record<string, unknown> | null);
+  hydrateNodeOutputsFromRunResults(
+    workflowStore.lastExecutionResults as Record<string, unknown> | null,
+  );
 };
 
 watch(
-  () => workflowStore.lastExecutionResults,
-  (results) => hydrateNodeOutputsFromRunResults(results as Record<string, unknown> | null),
+  [
+    () => workflowStore.lastExecutionResults,
+    () => workflowStore.lastExecutionDiagnostics,
+    () => workflowStore.lastExecutionResultDescriptors,
+    () => workflowStore.lastExecutionPresentations,
+  ],
+  ([results]) => hydrateNodeOutputsFromRunResults(results as Record<string, unknown> | null),
+  { deep: true },
 );
 
 // Compute input connections for selected node
@@ -1060,27 +1455,30 @@ const selectedNodeInputConnections = computed(() => {
   if (!selectedNode.value) return [];
 
   // Find edges pointing to this node (edge.to is the target node id)
-  const incomingEdges = edges.value.filter(e => e.to === selectedNode.value!.id);
+  const incomingEdges = edges.value.filter((e) => e.to === selectedNode.value!.id);
 
-  return incomingEdges.map(edge => {
-    const sourceNode = nodes.value.find(n => n.id === edge.from);
+  return incomingEdges.map((edge) => {
+    const sourceNode = nodes.value.find((n) => n.id === edge.from);
     const sourceOutput = sourceNode ? nodeOutputs.value.get(sourceNode.id) : null;
     const fromPort = edge.fromPort || sourceOutput?.primary_port || "default";
-    const portOutput = sourceOutput?.ports?.[fromPort] || sourceOutput;
+    // Never substitute a different primary output for an unavailable named port.
+    const portOutput = sourceOutput?.ports && Object.keys(sourceOutput.ports).length > 0
+      ? sourceOutput.ports[fromPort] ?? null
+      : sourceOutput;
 
     return {
       nodeId: edge.from,
-      nodeType: sourceNode?.type || 'Unknown',
-      nodeLabel: sourceNode ? getNodeLabel(sourceNode.type) : 'Unknown',
+      nodeType: sourceNode?.type || "Unknown",
+      nodeLabel: sourceNode ? getNodeLabel(sourceNode.type) : "Unknown",
       port: fromPort,
-      toPort: edge.toPort || 'default',  // Include input port name for multi-input nodes
+      toPort: edge.toPort || "default", // Include input port name for multi-input nodes
       data: portOutput || null,
     };
   });
 });
 
 // Provide workflow context to child components
-provide('workflowContext', {
+provide("workflowContext", {
   nodes,
   edges,
   selectedNode,
@@ -1100,55 +1498,68 @@ const resetDialogOpenedSheetUi = () => {
   inspectorOpen.value = false;
 };
 
-const triggerAutosave = async (expectedWorkflowId?: number | null, expectedSheetIndex?: number) => {
+const triggerAutosave = async (
+  expectedWorkflowId?: number | null,
+  expectedSheetIndex?: number,
+): Promise<boolean> => {
   autosaveTimer.value = null;
+  if (autosaveInFlight) return autosaveInFlight;
   if (
     expectedWorkflowId != null &&
-    (workflowStore.workflowId !== expectedWorkflowId || workbookStore.activeIndex !== expectedSheetIndex)
+    (workflowStore.workflowId !== expectedWorkflowId ||
+      workbookStore.activeIndex !== expectedSheetIndex)
   ) {
-    autosaveStatus.value = 'idle';
-    return;
+    autosaveStatus.value = "idle";
+    return true;
   }
   if (workflowStore.workflowId === null && nodes.value.length === 0 && edges.value.length === 0) {
-    return;
+    return true;
   }
 
-  const isNewWorkflow = workflowStore.workflowId === null;
-  autosaveStatus.value = 'saving';
-  try {
-    const savedId = await workflowStore.saveWorkflow({
-      createVersion: false,
-      projectId: workbookStore.projectId,
-    });
-    if (isNewWorkflow && workbookStore.projectId !== null) {
-      await workbookStore.refreshSheets();
-      await workbookStore.selectWorkflowSheet(savedId);
-    }
-    clearWorkflowDraftSnapshot();
-    autosaveStatus.value = 'saved';
-    autosaveErrorMessage.value = "";
-    autosaveFailureToastShown.value = false;
-    console.log('[WorkflowBuilder] Autosaved workflow');
-
-    // Reset autosave indicator after 5 seconds
-    setTimeout(() => {
-      if (autosaveStatus.value === 'saved' && !hasChanges.value) {
-        autosaveStatus.value = 'idle';
-      }
-    }, 5000);
-  } catch (err: unknown) {
-    autosaveStatus.value = 'error';
-    autosaveErrorMessage.value = getErrorMessage(err, "Autosave failed");
-    console.error('[WorkflowBuilder] Autosave failed:', err);
-    if (!autosaveFailureToastShown.value) {
-      toast.add({
-        severity: "error",
-        summary: "Autosave Failed",
-        detail: "Your edits are kept as a local draft. Run or save again before leaving.",
-        life: 6000,
+  autosaveInFlight = (async () => {
+    const isNewWorkflow = workflowStore.workflowId === null;
+    autosaveStatus.value = "saving";
+    try {
+      const savedId = await workflowStore.saveWorkflow({
+        createVersion: false,
+        projectId: workbookStore.projectId,
       });
-      autosaveFailureToastShown.value = true;
+      if (isNewWorkflow && workbookStore.projectId !== null) {
+        await workbookStore.refreshSheets();
+        await workbookStore.selectWorkflowSheet(savedId);
+      }
+      autosaveStatus.value = "saved";
+      autosaveErrorMessage.value = "";
+      autosaveFailureToastShown.value = false;
+      console.log("[WorkflowBuilder] Autosaved workflow");
+
+      setTimeout(() => {
+        if (autosaveStatus.value === "saved" && !hasChanges.value) {
+          autosaveStatus.value = "idle";
+        }
+      }, 5000);
+      return true;
+    } catch (err: unknown) {
+      autosaveStatus.value = "error";
+      autosaveErrorMessage.value = getErrorMessage(err, "Autosave failed");
+      console.error("[WorkflowBuilder] Autosave failed:", err);
+      if (!autosaveFailureToastShown.value) {
+        toast.add({
+          severity: "error",
+          summary: "Autosave Failed",
+          detail: "Your edits are kept as a local draft. Edit again to retry saving.",
+          life: 6000,
+        });
+        autosaveFailureToastShown.value = true;
+      }
+      return false;
     }
+  })();
+
+  try {
+    return await autosaveInFlight;
+  } finally {
+    autosaveInFlight = null;
   }
 };
 
@@ -1194,7 +1605,18 @@ const initializeWorkbook = async () => {
     }
 
     await projectStore.selectProject(targetProjectId);
-    await workbookStore.loadSheets(targetProjectId);
+    const pendingStarter = readAnalysisStarterIntent();
+    await workbookStore.loadSheets(targetProjectId, {
+      createIfEmpty: pendingStarter?.template_slug == null,
+    });
+    if (route.query.workflow_id !== undefined) {
+      const requestedId = Number(route.query.workflow_id);
+      const requestedIndex = workbookStore.sheets.findIndex(sheet => sheet.workflowId === requestedId);
+      if (!Number.isSafeInteger(requestedId) || requestedIndex < 0) {
+        throw new Error("The requested workflow is not available in this project.");
+      }
+      await workbookStore.switchSheet(requestedIndex);
+    }
     restoreWorkflowDraftSnapshot();
     resetCanvasUi();
     restoreNodeOutputsForActiveSheet();
@@ -1218,7 +1640,7 @@ const initializeWorkbook = async () => {
     });
   } catch (err: unknown) {
     const message = getErrorMessage(err, "Unable to load workflow sheets");
-    console.error('[WorkflowBuilder] Workbook load failed:', err);
+    console.error("[WorkflowBuilder] Workbook load failed:", err);
     toast.add({
       severity: "error",
       summary: "Workbook Load Failed",
@@ -1226,6 +1648,80 @@ const initializeWorkbook = async () => {
       life: 5000,
     });
   }
+};
+
+let workbookReadyForProjectSwitches = false;
+let projectWorkbookLoadGeneration = 0;
+
+watch(
+  () => projectStore.currentProjectId,
+  async (projectId) => {
+    if (
+      !workbookReadyForProjectSwitches ||
+      projectId === null ||
+      projectId === workbookStore.projectId
+    ) {
+      return;
+    }
+
+    const loadGeneration = ++projectWorkbookLoadGeneration;
+    clearPendingAutosave();
+    clearPendingAutoExecute();
+    resetDialogOpenedSheetUi();
+    workflowStore.clearWorkflow();
+
+    try {
+      await workbookStore.loadSheets(projectId);
+      if (
+        loadGeneration !== projectWorkbookLoadGeneration ||
+        projectStore.currentProjectId !== projectId
+      ) {
+        return;
+      }
+      try {
+        await experimentStore.fetchExperiments(projectId);
+      } catch {
+        console.warn("Failed to load experiments for selected workflow project");
+      }
+      restoreWorkflowDraftSnapshot();
+      restoreNodeOutputsForActiveSheet();
+      toast.add({
+        severity: "info",
+        summary: "Workbook Loaded",
+        detail: `Loaded "${workbookStore.activeSheet?.name || workflowStore.workflowName}"`,
+        life: 3000,
+      });
+    } catch (err: unknown) {
+      if (loadGeneration !== projectWorkbookLoadGeneration) return;
+      const message = getErrorMessage(err, "Unable to load workflow sheets");
+      console.error("[WorkflowBuilder] Project workbook load failed:", err);
+      toast.add({
+        severity: "error",
+        summary: "Workbook Load Failed",
+        detail: message,
+        life: 5000,
+      });
+    }
+  },
+);
+
+const exportingPng = ref(false);
+const exportSheetPng = async (index: number) => {
+  if (exportingPng.value) return;
+  const sheet = workbookStore.sheets[index];
+  if (!sheet || sheet.kind === "trial") return;
+  exportingPng.value = true;
+  try {
+    if (index !== workbookStore.activeIndex) await switchWorkbookSheet(index);
+    await nextTick();
+    if (workbookStore.activeSheet?.workflowId !== sheet.workflowId || !canvasRef.value) {
+      throw new Error("Open this workflow sheet before exporting its canvas.");
+    }
+    await canvasRef.value.exportPng(sheet.name);
+    toast.add({ severity: "success", summary: "Canvas exported", detail: "PNG download started.", life: 3000 });
+  } catch (error) {
+    toast.add({ severity: "error", summary: "PNG export failed", detail: error instanceof Error ? error.message : String(error), life: 5000 });
+  } finally { exportingPng.value = false; }
 };
 
 const switchWorkbookSheet = async (index: number) => {
@@ -1242,8 +1738,7 @@ const switchWorkbookSheet = async (index: number) => {
   // Capture dirtiness + previous sheet name before the switch — switchSheet()
   // autosaves silently with createVersion=false, so without this the user would
   // see no feedback that their edits were persisted before navigation.
-  const wasDirty =
-    workflowStore.hasUnsavedChanges && workflowStore.workflowId !== null;
+  const wasDirty = workflowStore.hasUnsavedChanges && workflowStore.workflowId !== null;
   const previousSheetName = workbookStore.activeSheet?.name ?? "previous sheet";
   clearPendingAutosave();
 
@@ -1258,10 +1753,10 @@ const switchWorkbookSheet = async (index: number) => {
     if (workbookStore.activeSheet?.kind !== "trial") {
       resetCanvasUi();
       restoreNodeOutputsForActiveSheet();
-      
+
       const lastSelectedId = workbookStore.activeSheet?.lastSelectedNodeId;
       if (lastSelectedId) {
-        const restoredNode = nodes.value.find(n => n.id === lastSelectedId);
+        const restoredNode = nodes.value.find((n) => n.id === lastSelectedId);
         if (restoredNode) {
           selectedNode.value = restoredNode;
         }
@@ -1274,6 +1769,23 @@ const switchWorkbookSheet = async (index: number) => {
         detail: `Saved "${previousSheetName}" before switching`,
         life: 2000,
       });
+    }
+    const nextQuery = activeWorkflowQuery(
+      route.query,
+      workbookStore.projectId,
+      workbookStore.activeSheet?.workflowId ?? null,
+    );
+    if (nextQuery) {
+      try {
+        await router.replace({ path: route.path, query: nextQuery });
+      } catch {
+        toast.add({
+          severity: "warn",
+          summary: "Workflow Link Not Updated",
+          detail: "The sheet changed, but this URL may still open the previous sheet after a reload.",
+          life: 5000,
+        });
+      }
     }
   } catch (err: unknown) {
     toast.add({
@@ -1378,7 +1890,11 @@ const openTrialTab = async (nodeData: any) => {
     return;
   }
   try {
-    await workbookStore.openTrialTab(nodeData, sourceWorkflowId, workbookStore.activeSheet?.tabColor ?? null);
+    await workbookStore.openTrialTab(
+      nodeData,
+      sourceWorkflowId,
+      workbookStore.activeSheet?.tabColor ?? null,
+    );
   } catch (err: unknown) {
     toast.add({
       severity: "error",
@@ -1430,29 +1946,30 @@ const saveTrialParams = async (nodeId: string, params: Record<string, unknown>) 
   }
 };
 
-const exportToPython = async (mode: "sdk" | "standalone" = "sdk") => {
+const exportToPython = async () => {
   try {
-    const pythonCode = await workflowStore.exportToPython(mode);
+    const pythonCode = await workflowStore.exportToPython();
 
-    // Create download
-    const suffix = mode === "standalone" ? "_standalone" : "";
     downloadText(
       pythonCode,
-      `${workflowStore.workflowName.replace(/\s+/g, "_").toLowerCase()}${suffix}.py`,
-      'text/plain',
+      `${workflowStore.workflowName.replace(/\s+/g, "_").toLowerCase()}.py`,
+      "text/plain",
     );
 
     toast.add({
       severity: "success",
       summary: "Exported",
-      detail: mode === "standalone" ? "Standalone Python script downloaded" : "SDK Python script downloaded",
+      detail: "Canonical workflow Python script downloaded",
       life: 2000,
     });
   } catch (err: unknown) {
     toast.add({
       severity: "error",
       summary: "Export Failed",
-      detail: getErrorMessage(err, "Export failed — check that the workflow is saved and the backend is running"),
+      detail: getErrorMessage(
+        err,
+        "Export failed — check that the workflow is saved and the backend is running",
+      ),
       life: 5000,
     });
   }
@@ -1500,16 +2017,33 @@ const downloadZip = async () => {
   }
 };
 
-const exportMenuItems = [
+const exportValidatedProject = async () => {
+  const projectId = projectStore.currentProjectId;
+  if (projectId == null) {
+    toast.add({ severity: "error", summary: "Export Failed", detail: "Select a project before exporting this validated sheet.", life: 5000 });
+    return;
+  }
+  await projectStore.exportProject(projectId);
+  if (projectStore.error) {
+    toast.add({ severity: "error", summary: "Export Failed", detail: projectStore.error, life: 5000 });
+  } else if (projectStore.lastExportOmittedModels > 0) {
+    toast.add({ severity: "warn", summary: "Partial project archive exported", detail: `${projectStore.lastExportOmittedModels} saved model artifact(s) lacked portable training-source provenance and were omitted. The sheet remains, but workflows using those models may need retraining. This is not a deployable winner package.`, life: 9000 });
+  } else {
+    toast.add({ severity: "success", summary: "Project archive exported", detail: "This preserves the sheet, not a campaign winner application.", life: 4000 });
+  }
+};
+
+const exportMenuItems = computed(() => workflowStore.hasFoldValidationPlan ? [
   {
-    label: "Python Script - SDK (.py)",
-    icon: "pi pi-file",
-    command: () => exportToPython("sdk"),
+    label: "Project archive (.sherpa) — not a winner package",
+    icon: "pi pi-download",
+    command: exportValidatedProject,
   },
+] : [
   {
-    label: "Python Script - Standalone (.py)",
-    icon: "pi pi-file-export",
-    command: () => exportToPython("standalone"),
+    label: "Canonical Workflow Python (.py)",
+    icon: "pi pi-file",
+    command: exportToPython,
   },
   {
     label: "Jupyter Notebook (.ipynb)",
@@ -1524,21 +2058,27 @@ const exportMenuItems = [
     icon: "pi pi-box",
     command: downloadZip,
   },
-];
+]);
 
 const actionMenuItems = computed(() => [
   {
     label: "Analysis Starter",
     icon: "pi pi-sparkles",
-    disabled: isTrialTabActive.value,
-    command: () => {
-      templatePickerVisible.value = true;
-    },
+    disabled:
+      isTrialTabActive.value || (pendingDataSelection.value && !dataSelectionReceipt.value),
+    command: openTemplatePicker,
   },
   {
     label: isWorkflowStale.value ? "Run (Mod)" : "Run",
     icon: "pi pi-play",
-    disabled: isTrialTabActive.value || nodes.value.length === 0 || isExecuting.value || isBatchExecuting.value,
+    disabled:
+      isTrialTabActive.value ||
+      isManagedCandidateAuthority.value ||
+      pendingDataSelection.value ||
+      nodes.value.length === 0 ||
+      workflowParameterErrors.value.length > 0 ||
+      isExecuting.value ||
+      isBatchExecuting.value,
     command: onRunClick,
   },
   {
@@ -1556,7 +2096,7 @@ const actionMenuItems = computed(() => [
     label: "Export",
     icon: "pi pi-download",
     disabled: isTrialTabActive.value,
-    items: exportMenuItems,
+    items: exportMenuItems.value,
   },
   {
     label: "Audit",
@@ -1583,25 +2123,31 @@ const toggleExportMenu = (event: Event) => {
   exportMenuRef.value?.toggle(event);
 };
 
+const copyWorkflowIntegrity = async (hash: string) => {
+  try {
+    await navigator.clipboard.writeText(hash);
+    toast.add({
+      severity: "success",
+      summary: "Integrity SHA Copied",
+      detail: hash,
+      life: 2500,
+    });
+  } catch {
+    toast.add({
+      severity: "error",
+      summary: "Copy Failed",
+      detail: "The workflow integrity SHA could not be copied.",
+      life: 3500,
+    });
+  }
+};
+
 // Auto-execute toggle handler
 const onAutoExecuteChange = () => {
-  if (autoExecute.value && hasExpensiveAutoExecuteNodes.value) {
-    const confirmed = window.confirm(
-      "Auto update reruns modeling and selection workflows after connections or parameter edits. Enable it for this workflow?",
-    );
-    if (!confirmed) {
-      autoExecute.value = false;
-      autoExecuteAcceptedForExpensiveWorkflow.value = false;
-      toast.add({
-        severity: "info",
-        summary: "Auto-Execute Disabled",
-        detail: "Manual execution mode - click Run when you are ready.",
-        life: 3000,
-      });
-      return;
-    }
+  if (isManagedCandidateAuthority.value || hasExpensiveAutoExecuteNodes.value) {
+    autoExecute.value = false;
+    return;
   }
-  autoExecuteAcceptedForExpensiveWorkflow.value = autoExecute.value;
   toast.add({
     severity: "info",
     summary: autoExecute.value ? "Auto-Execute Enabled" : "Auto-Execute Disabled",
@@ -1616,16 +2162,16 @@ const onAutoExecuteChange = () => {
 };
 
 const scheduleAutoExecute = (delayMs: number) => {
-  if (!autoExecute.value || isExecuting.value || isBatchExecuting.value) return;
-  if (hasExpensiveAutoExecuteNodes.value && !autoExecuteAcceptedForExpensiveWorkflow.value) {
-    toast.add({
-      severity: "warn",
-      summary: "Auto-Execute Paused",
-      detail: "This workflow includes modeling or selection nodes. Enable Auto update from settings to rerun automatically.",
-      life: 4000,
-    });
+  if (
+    !autoExecute.value ||
+    hasExpensiveAutoExecuteNodes.value ||
+    isManagedCandidateAuthority.value ||
+    pendingDataSelection.value ||
+    isExecuting.value ||
+    isBatchExecuting.value ||
+    workflowParameterErrors.value.length > 0
+  )
     return;
-  }
   clearPendingAutoExecute();
   autoExecuteTimer.value = window.setTimeout(() => {
     autoExecuteTimer.value = null;
@@ -1633,7 +2179,32 @@ const scheduleAutoExecute = (delayMs: number) => {
   }, delayMs);
 };
 
+const focusFirstWorkflowParameterError = (): boolean => {
+  const parameterError = workflowParameterErrors.value[0];
+  if (!parameterError) return false;
+  selectedNode.value =
+    workflowStore.nodes.find((node) => node.id === parameterError.nodeId) ?? selectedNode.value;
+  inspectorOpen.value = true;
+  toast.add({
+    severity: "warn",
+    summary: "Fix Workflow Parameters",
+    detail: `${parameterError.nodeId}: ${parameterError.message}`,
+    life: 4000,
+  });
+  return true;
+};
+
 const onRunClick = async () => {
+  if (pendingDataSelection.value) {
+    toast.add({
+      severity: "info",
+      summary: "Data selection is waiting for a sheet",
+      detail: "Choose an Analysis Starter to bind the selected dataset, views, target, and groups.",
+      life: 4500,
+    });
+    return;
+  }
+  if (focusFirstWorkflowParameterError()) return;
   if (runAllSheets.value) {
     await executeWorkbook();
   } else {
@@ -1652,7 +2223,9 @@ const executeWorkbook = async () => {
       await workflowStore.saveWorkflow({ createVersion: false });
     }
 
-    const workflowSheets = workbookStore.sheets.filter((sheet) => sheet.kind !== "trial");
+    const workflowSheets = workbookStore.sheets.filter(
+      (sheet) => sheet.kind !== "trial" && sheet.purpose === "analysis",
+    );
     toast.add({
       severity: "info",
       summary: "Running Workbook",
@@ -1685,7 +2258,9 @@ const executeWorkbook = async () => {
     if (failures.length > 0) {
       toast.add({
         severity: continueWorkbookOnError.value ? "warn" : "error",
-        summary: continueWorkbookOnError.value ? "Workbook Complete With Errors" : "Workbook Stopped",
+        summary: continueWorkbookOnError.value
+          ? "Workbook Complete With Errors"
+          : "Workbook Stopped",
         detail: `${completed} succeeded, ${failures.length} failed: ${failures.join(", ")}`,
         life: 6000,
       });
@@ -1704,42 +2279,15 @@ const executeWorkbook = async () => {
 
 // Execute workflow via backend API
 const executeWorkflow = async () => {
+  if (isManagedCandidateAuthority.value || pendingDataSelection.value) return;
+  if (focusFirstWorkflowParameterError()) return;
   isExecuting.value = true;
 
   try {
-    // Build initial data from DATA nodes using experiment store
-    const initialData = await buildInitialData();
-
     // Execute via backend DAG executor
-    const response = await workflowStore.executeWorkflow(initialData);
+    const response = await workflowStore.executeWorkflow({});
 
-    // Convert backend results to frontend node outputs format
-    const outputs = new Map<string, NodeOutput>();
-    for (const [nodeId, result] of Object.entries(response.results)) {
-      const output = buildOutputForNode(nodeId, result);
-      const diagnostics = response.diagnostics?.[nodeId];
-      if (diagnostics && typeof diagnostics === "object") {
-        output.metadata = {
-          ...output.metadata,
-          diagnostics,
-        };
-      }
-      // Debug: log what we're receiving from backend
-      console.log(`[Workflow] Node ${nodeId} result:`, {
-        hasData: !!output.data,
-        dataType: Array.isArray(output.data) ? 'array' : typeof output.data,
-        dataLength: Array.isArray(output.data) ? output.data.length : 'N/A',
-        keys: Object.keys(result || {}),
-      });
-
-      outputs.set(nodeId, output);
-    }
-
-    // Assign new Map for proper Vue reactivity
-    nodeOutputs.value = outputs;
-    if (workbookStore.activeSheet && workbookStore.activeSheet.kind !== "trial") {
-      workbookStore.activeSheet.nodeOutputsCache = new Map(outputs);
-    }
+    // The run-results watcher owns outputs/cache from the accepted store snapshot.
     executionCount.value++;
     lastExecutionTime.value = new Date().toLocaleTimeString();
 
@@ -1759,6 +2307,7 @@ const executeWorkflow = async () => {
       });
     }
   } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
     const message = getErrorMessage(error);
     toast.add({
       severity: "error",
@@ -1771,85 +2320,12 @@ const executeWorkflow = async () => {
   }
 };
 
-const coerceNumber = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-  if (typeof value === "string" && value.trim() !== "") {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-};
-
-const availableExperimentForDataset = (datasetId: number | null): ExperimentDataset | null => {
-  if (datasetId === null) return null;
-  return workflowStore.availableDatasets?.experiments.find(exp => exp.id === datasetId) ?? null;
-};
-
-const defaultMyDatasetTargetParams = (datasetId: number | null): Partial<ParamsMap> => {
-  const exp = availableExperimentForDataset(datasetId);
-  const targetNames = Array.isArray(exp?.target_names)
-    ? exp.target_names.map(name => String(name)).filter(Boolean)
-    : [];
-  if (targetNames.length <= 1) {
-    return { target_mode: "dataset_default", selected_target: null };
-  }
-  const mode = exp?.target_mode === "multi" ? "multi" : "single";
-  const selected = exp?.selected_target && targetNames.includes(exp.selected_target)
-    ? exp.selected_target
-    : targetNames[0];
-  return {
-    target_mode: mode,
-    selected_target: mode === "single" ? selected : null,
-  };
-};
-
-// Build initial data for workflow execution from DATA nodes
-const buildInitialData = async (): Promise<Record<string, unknown>> => {
-  const initialData: Record<string, unknown> = {};
-
-  // Find source DATA nodes
-  const dataNodes = nodes.value.filter(n => n.type === 'data.source' || n.type === 'data.my_dataset');
-
-  for (const node of dataNodes) {
-    if (node.type === 'data.my_dataset') {
-      const datasetId = coerceNumber(node.params.dataset_id);
-      if (datasetId !== null) {
-        initialData[String(node.id)] = {
-          dataset_id: datasetId,
-          source: 'experiment',
-          target_mode: node.params.target_mode,
-          selected_target: node.params.selected_target,
-        };
-      }
-      continue;
-    }
-    const experimentId = coerceNumber(node.params.experiment_id);
-    if (experimentId !== null) {
-      initialData[String(node.id)] = {
-        experiment_id: experimentId,
-        source: node.params.source || 'experiment',
-      };
-    } else if (node.params.source) {
-      // Pass all node params to the backend, including file_path
-      initialData[String(node.id)] = {
-        source: typeof node.params.source === "string" ? node.params.source : "file",
-        file_path: typeof node.params.file_path === "string" ? node.params.file_path : "",
-        format: typeof node.params.format === "string" ? node.params.format : "csv",
-      };
-    }
-  }
-
-  return initialData;
-};
-
 // Event handlers
 const onAddNode = (nodeType: string) => {
   const newNode: WorkflowNode = {
     id: createNodeId(nodeType),
     type: nodeType,
-    x: 100 + (workflowStore.nodes.length * 40) % 400,
+    x: 100 + ((workflowStore.nodes.length * 40) % 400),
     y: 100 + Math.floor(workflowStore.nodes.length / 4) * 120,
     params: getDefaultParams(nodeType),
   };
@@ -1858,93 +2334,13 @@ const onAddNode = (nodeType: string) => {
 };
 
 const getDefaultParams = (nodeType: string): ParamsMap => {
-  // Get first available experiment ID for DATA nodes
-  const projectExperiments = projectStore.currentProjectId == null
-    ? experimentStore.experiments
-    : experimentStore.experiments.filter(
-        (experiment) => experiment.project_id === projectStore.currentProjectId,
-      );
-  const defaultExperimentId = projectExperiments.length > 0
-    ? projectExperiments[0].id
-    : null;
-
-  const defaults: Record<string, ParamsMap> = {
-    // Data Source nodes
-    'data.source': {
-      source: 'file',  // Default to file so users can enter path directly
-      file_path: '',
-      experiment_id: defaultExperimentId,
-      format: 'csv',
-    },
-    'data.my_dataset': {
-      dataset_id: defaultExperimentId,
-      ...defaultMyDatasetTargetParams(defaultExperimentId),
-    },
-    'data.nist_library': {
-      library_id: null,
-      compound_name: '',
-    },
-    'data.synthetic_curve': {
-      curve_type: 'sigmoid',
-      n_points: 100,
-      max_concentration: 1.0,
-      center: 0.5,
-      width: 0.1,
-    },
-    // Synthesis nodes
-    'synthesis.species': {
-      species_name: 'Species',
-      molar_absorptivity: 1.0,
-    },
-    'synthesis.blend': {
-      n_timepoints: 100,
-      model_type: 'linear',
-      pathlength: 0.01,
-      noise_level: 0.01,
-    },
-    'synthesis.merge': {
-      align_wavenumbers: true,
-    },
-    // Preprocessing nodes
-    'preprocess.normalize': { method: 'snv' },
-    'preprocess.scale': { method: 'mean_center' },
-    'baseline.penalized_ls': { method: 'als', lam: 100000, p: 0.001 },
-    'preprocess.smooth': { method: 'savitzky_golay', size: 15, order: 2 },
-    'preprocess.cosmic_ray': { window: 5, zscore: 3.0 },
-    'preprocess.clip_range': { min_wavenumber: 400, max_wavenumber: 4000 },
-    // Analysis nodes - use backend parameter names directly (n_components)
-    'model.pca': { n_components: "5", standardized: false, scaled: false },
-    'model.pls': { n_components: 3, scale: false },
-    'model.mcr_als': {
-      n_components: 3,
-      max_iter: 200,
-      tol: 0.00001,
-      normSpec: 'euclid',
-      non_negative_C: true,
-      non_negative_St: true,
-    },
-    'model.efa': { n_components: 10, direction: 'both' },
-    'model.pcr': { n_components: 3, scale: true },
-    'model.svr': { kernel: 'rbf', C: 1.0, epsilon: 0.1, gamma: 'scale', degree: 3, coef0: 0.0, scale: true },
-    'model.kmeans': { n_clusters: 3, n_init: 10, max_iter: 300, random_state: 42 },
-    'model.dbscan': { eps: 0.5, min_samples: 5, metric: 'euclidean' },
-    'model.hca': { n_clusters: 3, linkage: 'ward', metric: 'euclidean' },
-    'model.simplisma': { n_components: 3, noise: 3 },
-    'stats.summary': {},
-    'analysis.peak_id': { compound: '' },
-    'analysis.compare_library': { top_n: 10, library_filter: '' },
-    // Classification nodes
-    'classification.plsda': { n_components: 3, scale: false },
-    'classification.knn': { n_neighbors: 5, metric: 'euclidean' },
-    'classification.simca': { n_components: 3, confidence_level: 0.95 },
-    // Output nodes
-    'output.plot': { plot_type: 'spectra' },
-    'output.contour': { colorscale: 'Viridis', plot_type: 'heatmap', reverse_x: false, transpose: false },
-    'output.export': { filename: 'output.csv', format: 'csv' },
-    // Legacy
-    'analysis.peak_finding': { method: 'find_peaks', prominence: 0.01 },
-  };
-  return defaults[nodeType] || {};
+  const defaults: ParamsMap = {};
+  for (const parameter of workflowStore.getNodeMetadata(nodeType)?.parameters ?? []) {
+    if (parameter.default != null) {
+      defaults[parameter.name] = JSON.parse(JSON.stringify(parameter.default));
+    }
+  }
+  return defaults;
 };
 
 const onNodesUpdate = (updatedNodes: WorkflowNode[]) => {
@@ -1981,10 +2377,15 @@ watch(
     setTimeout(() => {
       canvasRef.value?.centerNode?.(nodeId);
     }, 320);
-  }
+  },
 );
 
-const onNodeConnect = (connection: { from: string; to: string; fromPort?: string; toPort?: string }) => {
+const onNodeConnect = (connection: {
+  from: string;
+  to: string;
+  fromPort?: string;
+  toPort?: string;
+}) => {
   workflowStore.addEdge(connection);
 
   // Auto-execute if enabled
@@ -2014,10 +2415,7 @@ const stableStringify = (value: unknown): string => {
   return JSON.stringify(value);
 };
 
-const stripUndefinedAndDefaultParams = (
-  nodeType: string,
-  params: ParamsMap,
-): ParamsMap => {
+const stripUndefinedAndDefaultParams = (nodeType: string, params: ParamsMap): ParamsMap => {
   const metadataDefaults: ParamsMap = {};
   const metadata = workflowStore.getNodeMetadata(nodeType);
   for (const param of metadata?.parameters || []) {
@@ -2060,38 +2458,15 @@ const onUpdateParams = (nodeId: string, params: ParamsMap) => {
 };
 
 const onExecuteNode = async (nodeId: string) => {
-  const node = nodes.value.find(n => n.id === nodeId);
+  if (isManagedCandidateAuthority.value || pendingDataSelection.value) return;
+  const node = nodes.value.find((n) => n.id === nodeId);
   if (!node) return;
 
   try {
-    // Always build initial data - any node may depend on DATA nodes
-    const initialData = await buildInitialData();
-
     // Execute single node via backend
-    const response = await workflowStore.executeNode(nodeId, initialData);
+    const response = await workflowStore.executeNode(nodeId, {});
 
-    // Update outputs - create new Map for proper Vue reactivity
-    const newOutputs = new Map(nodeOutputs.value);
-    for (const [nId, result] of Object.entries(response.results)) {
-      const output = buildOutputForNode(nId, result);
-      const diagnostics = response.diagnostics?.[nId];
-      if (diagnostics && typeof diagnostics === "object") {
-        output.metadata = {
-          ...output.metadata,
-          diagnostics,
-        };
-      }
-      // Debug: log what we're receiving from backend
-      console.log(`[Workflow] Node ${nId} result:`, {
-        hasData: !!output.data,
-        dataType: Array.isArray(output.data) ? 'array' : typeof output.data,
-        dataLength: Array.isArray(output.data) ? output.data.length : 'N/A',
-        firstRowType: Array.isArray(output.data) && output.data[0] ? (Array.isArray(output.data[0]) ? 'array' : typeof output.data[0]) : 'N/A',
-        keys: Object.keys(result || {}),
-      });
-      newOutputs.set(nId, output);
-    }
-    nodeOutputs.value = newOutputs;
+    // The run-results watcher replaces all outputs/cache, including partial runs.
 
     if (response.error) {
       toast.add({
@@ -2109,6 +2484,7 @@ const onExecuteNode = async (nodeId: string) => {
       });
     }
   } catch (error: unknown) {
+    if (error instanceof DOMException && error.name === "AbortError") return;
     const message = getErrorMessage(error);
     toast.add({
       severity: "error",
@@ -2143,6 +2519,10 @@ const onDeleteNode = (nodeId: string) => {
   line-height: 1.5;
 }
 
+:global(.content:has(.workflow-builder-content)) {
+  background: #e4e0fa;
+}
+
 .section-title-row {
   display: flex;
   align-items: center;
@@ -2150,47 +2530,6 @@ const onDeleteNode = (nodeId: string) => {
   min-width: 0;
 }
 
-/* Context strip: 4 read-only cells, hairline-only — no boxed background,
-   vertical hairlines between cells, hairline below. */
-.workflow-context-strip {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0;
-  align-items: center;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--surface-border);
-  margin-bottom: 1rem;
-}
-
-.workflow-context-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
-  padding: 0 1rem;
-  border-right: 1px solid var(--surface-border);
-}
-
-.workflow-context-item:first-child {
-  padding-left: 0;
-}
-
-.workflow-context-item span {
-  color: var(--text-color-secondary);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.workflow-context-item strong {
-  overflow: hidden;
-  color: var(--text-color);
-  font-size: 1rem;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 
 .workflow-meta-badge {
@@ -2201,7 +2540,7 @@ const onDeleteNode = (nodeId: string) => {
   background: rgba(34, 197, 94, 0.15);
   border: 1px solid rgba(34, 197, 94, 0.3);
   border-radius: 4px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 0.75rem;
   color: #4ade80;
   cursor: help;
@@ -2236,7 +2575,6 @@ const onDeleteNode = (nodeId: string) => {
   width: 108px;
 }
 
-
 .header-actions :deep(.toolbar-action-btn.p-button) {
   height: 34px;
   font-size: 0.8rem;
@@ -2258,8 +2596,9 @@ const onDeleteNode = (nodeId: string) => {
   display: none;
 }
 
-.header-actions :deep(.toolbar-settings-btn.p-button) {
-  width: 34px;
+.workflow-builder-content :deep(.toolbar-settings-btn.p-button) {
+  width: 2.25rem;
+  min-height: 2.25rem;
   padding: 0;
 }
 
@@ -2331,6 +2670,13 @@ const onDeleteNode = (nodeId: string) => {
   padding: 8px 4px;
 }
 
+.toolbar-settings-note {
+  max-width: 240px;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
 .execution-banner {
   display: flex;
   align-items: center;
@@ -2382,6 +2728,16 @@ const onDeleteNode = (nodeId: string) => {
 /* Three-column layout when inspector is open */
 .workflow-workspace.inspector-open {
   grid-template-columns: 200px 1fr 320px;
+}
+
+/* The canonical catalog carries complete scientific detail and therefore
+   expands deliberately; the compact Add palette retains its 200px column. */
+.workflow-workspace.catalog-open:not(.toolbar-collapsed) {
+  grid-template-columns: minmax(360px, 34vw) 1fr;
+}
+
+.workflow-workspace.catalog-open.inspector-open:not(.toolbar-collapsed) {
+  grid-template-columns: minmax(340px, 30vw) 1fr 320px;
 }
 
 /* Collapsed toolbar: shrink the left column to just the chevron strip. */
@@ -2458,8 +2814,12 @@ const onDeleteNode = (nodeId: string) => {
 }
 
 @keyframes sheet-skeleton-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .canvas-container.trial-container {
@@ -2470,6 +2830,43 @@ const onDeleteNode = (nodeId: string) => {
 .canvas-container > * {
   flex: 1 1 auto;
   min-height: 100%;
+}
+
+.workflow-data-selection {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0 0 0.8rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--surface-border);
+  border-left: 4px solid var(--green-500);
+  border-radius: 8px;
+  background: var(--surface-card);
+}
+
+.workflow-data-selection > i {
+  color: var(--green-600);
+}
+
+.workflow-data-selection.pending {
+  border-left-color: var(--orange-500);
+}
+
+.workflow-data-selection.pending > i {
+  color: var(--orange-600);
+}
+
+.workflow-data-selection > div {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.workflow-data-selection span {
+  color: var(--text-color-secondary);
+  font-size: 0.8rem;
 }
 
 .run-name-form {
@@ -2490,18 +2887,37 @@ const onDeleteNode = (nodeId: string) => {
   .workflow-workspace.toolbar-collapsed.inspector-open {
     grid-template-columns: 44px 1fr 280px;
   }
+  .workflow-workspace.catalog-open.inspector-open:not(.toolbar-collapsed) {
+    grid-template-columns: 320px 1fr 280px;
+  }
 }
 
 @media (max-width: 900px) {
-  .workflow-context-strip {
-    grid-template-columns: 1fr;
-  }
 
   .workflow-workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(120px, 180px) minmax(120px, 1fr);
+    overflow-x: auto;
   }
+
   .workflow-workspace.inspector-open {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(120px, 180px) minmax(120px, 1fr) 260px;
+  }
+
+  .workflow-workspace.toolbar-collapsed {
+    grid-template-columns: 44px minmax(120px, 1fr);
+  }
+
+  .workflow-workspace.toolbar-collapsed.inspector-open {
+    grid-template-columns: 44px minmax(120px, 1fr) 260px;
+  }
+
+  .workflow-workspace.catalog-open:not(.toolbar-collapsed),
+  .workflow-workspace.catalog-open.inspector-open:not(.toolbar-collapsed) {
+    grid-template-columns: minmax(220px, 280px) minmax(120px, 1fr);
+  }
+
+  .workflow-workspace.catalog-open.inspector-open:not(.toolbar-collapsed) {
+    grid-template-columns: minmax(220px, 280px) minmax(120px, 1fr) 260px;
   }
 }
 
@@ -2522,5 +2938,4 @@ const onDeleteNode = (nodeId: string) => {
   font-weight: 600;
   color: #1e293b;
 }
-
 </style>

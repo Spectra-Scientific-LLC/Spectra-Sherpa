@@ -48,13 +48,13 @@ const nodeLibraryResponse: NodeLibraryResponse = {
   total: 3,
   nodes: [
     {
-      node_type: "data.source",
+      node_type: "data.file_load",
       category: "data",
       label: "Data Source",
       description: "",
       parameters: [],
       input_types: [],
-      output_type: "NDDataset",
+      output_type: "SherpaDataset",
       output_ports: [
         { name: "default", label: "Dataset", type_ref: datasetType, required: true },
       ],
@@ -65,7 +65,7 @@ const nodeLibraryResponse: NodeLibraryResponse = {
       label: "PCA",
       description: "",
       parameters: [],
-      input_types: ["NDDataset"],
+      input_types: ["SherpaDataset"],
       output_type: "PCAModel",
       input_ports: [
         { name: "default", label: "Input Data", type_ref: datasetType, required: true },
@@ -75,12 +75,12 @@ const nodeLibraryResponse: NodeLibraryResponse = {
       ],
     },
     {
-      node_type: "model.pls",
+      node_type: "model.fitted_pls",
       category: "regression",
       label: "PLS",
       description: "",
       parameters: [],
-      input_types: ["NDDataset"],
+      input_types: ["SherpaDataset"],
       output_type: "PLSModel",
       input_ports: [
         { name: "default", label: "Input Data", type_ref: datasetType, required: true },
@@ -101,7 +101,7 @@ const baseWorkflowPayload = {
   nodes: [
     {
       node_id: "data_1",
-      node_type: "data.source",
+      node_type: "data.file_load",
       label: "Data Source",
       parameters: { source: "example" },
       position_x: 100,
@@ -212,6 +212,24 @@ describe("Workflow sheet frontend consistency", () => {
           },
         };
       }
+      if (/^\/workflows\/\d+\/preflight$/.test(url)) {
+        return {
+          data: {
+            workflow_id: 0,
+            is_valid: true,
+            issues: [],
+            semantic_edges: [
+              {
+                from_node_id: "data_1",
+                from_output: "default",
+                to_node_id: "model_1",
+                to_input: "default",
+                status: "typed_valid",
+              },
+            ],
+          },
+        };
+      }
       throw new Error(`Unexpected POST ${url}`);
     });
 
@@ -239,7 +257,7 @@ describe("Workflow sheet frontend consistency", () => {
     expect(workflowStore.workflowId).toBe(20);
 
     workflowStore.updateNode("model_1", {
-      type: "model.pls",
+      type: "model.fitted_pls",
       params: { n_components: 2, validation: "venetian_blinds" },
     });
     workflowStore.setEdges([]);
@@ -250,7 +268,7 @@ describe("Workflow sheet frontend consistency", () => {
       toPort: "default",
     });
 
-    expect(workflowStore.nodes.find((node) => node.id === "model_1")?.type).toBe("model.pls");
+    expect(workflowStore.nodes.find((node) => node.id === "model_1")?.type).toBe("model.fitted_pls");
     expect(workflowStore.edges).toEqual([
       expect.objectContaining({
         from: "data_1",
@@ -270,7 +288,7 @@ describe("Workflow sheet frontend consistency", () => {
         nodes: expect.arrayContaining([
           expect.objectContaining({
             node_id: "model_1",
-            node_type: "model.pls",
+            node_type: "model.fitted_pls",
             parameters: { n_components: 2, validation: "venetian_blinds" },
           }),
         ]),
@@ -284,12 +302,15 @@ describe("Workflow sheet frontend consistency", () => {
         ],
       }),
     );
-    // executeStoredWorkflow wraps the call with a fresh Idempotency-Key
-    // header per request (REM-4). The key value is opaque; we only assert
-    // the URL + body + that some Idempotency-Key was sent.
+    // Execution must bind the exact reviewed/saved graph, including the edited
+    // model type and edge, as well as an opaque per-request idempotency key.
+    const saved = vi.mocked(api.put).mock.calls.find(([url]) => url === "/workflows/20")?.[1] as {
+      nodes: unknown[]; edges: unknown[];
+    };
+    expect(saved).toBeDefined();
     expect(api.post).toHaveBeenCalledWith(
       "/workflows/20/execute",
-      { initial_data: {} },
+      { initial_data: {}, expected_definition: {nodes:saved.nodes, edges:saved.edges} },
       expect.objectContaining({
         headers: expect.objectContaining({
           "Idempotency-Key": expect.any(String),
@@ -304,4 +325,24 @@ describe("Workflow sheet frontend consistency", () => {
     expect(workflowStore.nodes.find((node) => node.id === "model_1")?.executionState?.status).toBe("completed");
     expect(workbookStore.activeSheet?.executionStatus).toBe("success");
   });
+  it("qualifies retained results as stale when a migration invalidates the live graph hash", async () => {
+    const originalGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation(async (url: string, ...args: unknown[]) => {
+      if (url === "/workflows/10") {
+        return { data: { ...baseWorkflowPayload, integrity_hash: null, warnings: ["Review classifier validation"] } };
+      }
+      if (url === "/workflows/10/runs/latest") {
+        return { data: { id: 42, integrity_hash: "historical-hash", results_summary: { historical: true }, node_statuses: {} } };
+      }
+      return originalGet(url, ...args);
+    });
+    const workflow = useWorkflowStore();
+    await workflow.loadWorkflow(10);
+    expect(workflow.isWorkflowStale).toBe(true);
+    expect(workflow.restoredRunId).toBe(42);
+    expect(workflow.lastExecutionResults).toEqual({ historical: true });
+    expect(workflow.workflowWarnings).toContain("Review classifier validation");
+    expect(workflow.workflowWarnings.some((message) => message.includes("unverified"))).toBe(true);
+  });
+
 });

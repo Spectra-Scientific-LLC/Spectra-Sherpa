@@ -19,7 +19,7 @@ const FEATURE_LABELS: Record<string, string> = {
   sherpaPeakId: 'Peak Identification',
   sherpaCodeGen: 'Code Generation',
   sherpaWriteReport: 'Report Writing',
-  sherpaAgenticTools: 'Gen Mode',
+  sherpaAgenticTools: 'Workflow assistance',
   sherpaFullContext: 'Full DAG Context',
   sherpaAdvisor: 'Sherpa Advisor',
 }

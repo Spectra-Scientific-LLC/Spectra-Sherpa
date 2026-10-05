@@ -11,11 +11,15 @@
 export interface AxisMetadata {
   title?: string;
   units?: string;
+  quantity?: string;
+  axis_type?: string;
 }
 
 export interface PlotMetadata {
   x_title?: string;
   x_units?: string;
+  x_quantity?: string;
+  x_axis_type?: string;
   y_title?: string;
   y_units?: string;
   value_units?: string;
@@ -24,6 +28,19 @@ export interface PlotMetadata {
   loadings_axis_units?: string;
   wavenumbers?: number[];
   feature_names?: string[];
+}
+
+/**
+ * Reverse only absolute wavenumber. Raman shift shares cm-1 units but follows
+ * increasing-shift convention, so units alone are never sufficient evidence.
+ */
+export function shouldReverseFeatureAxis(metadata?: AxisMetadata | null): boolean {
+  if (!metadata) return false;
+  const declared = (metadata.axis_type || metadata.quantity || "").trim().toLowerCase();
+  if (declared) return declared === "wavenumber";
+  const title = (metadata.title || "").trim().toLowerCase().replace(/-/g, " ");
+  if (title.includes("raman shift")) return false;
+  return title.includes("wavenumber") || title.includes("wave number");
 }
 
 /**

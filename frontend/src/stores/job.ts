@@ -2,10 +2,9 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";
 import type { JobInfo } from "@/types";
-import { buildAuthMessage, buildWsUrl, withCredentials } from "@/utils/ws";
+import { buildAuthMessage, buildWsUrl, resolveWsPolicyClose, withCredentials } from "@/utils/ws";
 import { useAuthStore } from "@/stores/auth";
 import { useNotifier } from "@/composables/useNotifier";
-import { hasStoredApiKey } from "@/utils/authStorage";
 
 export const useJobStore = defineStore("job", () => {
   const authStore = useAuthStore();
@@ -23,6 +22,24 @@ export const useJobStore = defineStore("job", () => {
   const reconnectAttempts = ref(0);
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let allowReconnect = true;
+  let connectionGeneration = 0;
+  let policyCloseController: AbortController | null = null;
+
+  const cancelPolicyProbe = () => {
+    policyCloseController?.abort();
+    policyCloseController = null;
+  };
+
+  const resolveCurrentPolicyClose = async (generation: number) => {
+    cancelPolicyProbe();
+    const controller = new AbortController();
+    policyCloseController = controller;
+    const resolution = await resolveWsPolicyClose(controller.signal);
+    if (policyCloseController === controller) policyCloseController = null;
+    if (generation !== connectionGeneration || controller.signal.aborted || !allowReconnect) return null;
+    return resolution;
+  };
+
   let pendingConnect: Promise<void> | null = null;
 
   const jobMap = computed(() => {
@@ -92,14 +109,14 @@ export const useJobStore = defineStore("job", () => {
 
   const connect = (): Promise<void> => {
     if (wsRef.value && wsRef.value.readyState === WebSocket.OPEN) {
-      connected.value = true;
-      connectionStatus.value = "connected";
       return Promise.resolve();
     }
     if (wsRef.value && wsRef.value.readyState === WebSocket.CONNECTING) {
       return pendingConnect || Promise.resolve();
     }
     clearReconnect();
+    cancelPolicyProbe();
+    const generation = ++connectionGeneration;
     allowReconnect = true;
     connectionStatus.value = "connecting";
     lastError.value = null;
@@ -108,21 +125,23 @@ export const useJobStore = defineStore("job", () => {
     wsRef.value = socket;
 
     socket.addEventListener("open", () => {
-      connected.value = true;
-      connectionStatus.value = "connected";
-      reconnectAttempts.value = 0;
-      // Authenticate via first message instead of URL query params
+      if (generation !== connectionGeneration) return;
       socket.send(buildAuthMessage());
-      const userChannel = authStore.user?.id
-        ? `jobs:${authStore.user.id}`
-        : "jobs";
-      socket.send(JSON.stringify({ action: "subscribe", channel: userChannel }));
-      fetchJobs().catch(() => undefined);
     });
 
     socket.addEventListener("message", async (event) => {
+      if (generation !== connectionGeneration) return;
       try {
         const payload = JSON.parse(event.data);
+        if (payload?.type === "authenticated") {
+          connected.value = true;
+          connectionStatus.value = "connected";
+          reconnectAttempts.value = 0;
+          const userChannel = authStore.user?.id ? `jobs:${authStore.user.id}` : "jobs";
+          socket.send(JSON.stringify({ action: "subscribe", channel: userChannel }));
+          fetchJobs().catch(() => undefined);
+          return;
+        }
         if (payload?.type === "ping") {
           socket.send(JSON.stringify({ action: "pong" }));
           return;
@@ -167,39 +186,47 @@ export const useJobStore = defineStore("job", () => {
     });
 
     socket.addEventListener("close", (event) => {
+      if (generation !== connectionGeneration) return;
       connected.value = false;
       wsRef.value = null;
       connectionStatus.value = "disconnected";
       if (event.code === 1008) {
-        // Stale token may have caused the rejection.  Clear it and retry
-        // once if an api_key is still available as fallback credential.
-        const hadToken = !!localStorage.getItem("token");
-        if (hadToken) {
-          localStorage.removeItem("token");
-        }
-        if (hadToken && hasStoredApiKey()) {
-          reconnectAttempts.value = 0;
-          scheduleReconnect();
-          return;
-        }
-        lastError.value = "Unauthorized. Check your credentials.";
-        allowReconnect = false;
+        // 1008 conflates credential rejection with policy closures (managed
+        // trial pause, live-session revalidation). Never discard the stored
+        // session speculatively: confirm it over HTTP first — the api
+        // client's shared logout path handles confirmed rejection.
+        void resolveCurrentPolicyClose(generation).then((resolution) => {
+          if (!resolution || resolution === "cancelled") return;
+          if (resolution === "retry-with-api-key") {
+            reconnectAttempts.value = 0;
+            scheduleReconnect();
+            return;
+          }
+          if (resolution === "session-confirmed" || resolution === "session-unconfirmed") {
+            lastError.value = "Live updates paused by server policy. Reconnecting.";
+            scheduleReconnect();
+            return;
+          }
+          lastError.value = "Unauthorized. Check your credentials.";
+          allowReconnect = false;
+        });
         return;
       }
       scheduleReconnect();
     });
 
     socket.addEventListener("error", () => {
+      if (generation !== connectionGeneration) return;
       lastError.value = "WebSocket error.";
     });
 
     pendingConnect = new Promise((resolve, reject) => {
       const handleOpen = () => {
-        pendingConnect = null;
+        if (generation === connectionGeneration) pendingConnect = null;
         resolve();
       };
       const handleClose = (event: CloseEvent) => {
-        pendingConnect = null;
+        if (generation === connectionGeneration) pendingConnect = null;
         reject(
           new Error(
             event.code === 1008 ? "Unauthorized WebSocket connection." : "WebSocket closed."
@@ -214,6 +241,8 @@ export const useJobStore = defineStore("job", () => {
   };
 
   const disconnect = () => {
+    connectionGeneration += 1;
+    cancelPolicyProbe();
     allowReconnect = false;
     clearReconnect();
     wsRef.value?.close();

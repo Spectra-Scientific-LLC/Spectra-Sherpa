@@ -1,18 +1,20 @@
 <template>
-  <Dialog
+  <component
+    :is="embedded ? 'section' : Dialog"
     v-model:visible="visible"
     :header="title"
-    :style="{ width: '85vw', maxWidth: '1200px' }"
+    :style="embedded ? { width: '100%', minWidth: '0' } : { width: '85vw', maxWidth: '1200px', maxHeight: 'calc(100vh - 24px)' }"
     modal
     :draggable="false"
     class="quick-plot-modal"
+    :class="{ 'embedded-plot': embedded }"
   >
     <div class="plot-container">
       <!-- Plot controls bar -->
       <div class="plot-controls">
         <!-- Plot type selector -->
-        <div class="control-group">
-          <label>Plot Type</label>
+        <div v-if="!tableOnly" class="control-group">
+          <label>{{ selectedPlotKey.startsWith('table_column:') ? 'Column' : 'Plot Type' }}</label>
           <Dropdown
             v-model="selectedPlotKey"
             :options="availablePlots"
@@ -25,7 +27,7 @@
         <!-- Axis selectors (PCA/PLS/Classification scores and biplot) -->
         <template v-if="showAxisControls">
           <div class="control-group">
-            <label>X Axis</label>
+            <label>Horizontal Component</label>
             <Dropdown
               v-model="xAxis"
               :options="axisOptions"
@@ -35,7 +37,7 @@
             />
           </div>
           <div class="control-group">
-            <label>Y Axis</label>
+            <label>Vertical Component</label>
             <Dropdown
               v-model="yAxis"
               :options="axisOptions"
@@ -138,22 +140,36 @@
           <span class="stat-item">
             <strong>{{ dataShape.rows }}</strong> {{ dataShape.rowLabel }}
           </span>
-          <span class="stat-item">
+          <span v-if="dataShape.cols > 0" class="stat-item">
             <strong>{{ dataShape.cols }}</strong> {{ dataShape.colLabel }}
           </span>
-          <span v-if="dataShape.range" class="stat-item">
-            Range: <strong>{{ dataShape.range[0].toFixed(2) }}</strong> - <strong>{{ dataShape.range[1].toFixed(2) }}</strong>
+          <!-- A table can mix positions and magnitudes: its overall range has no common unit. -->
+          <span v-if="dataShape.range && !selectedPlotKey.startsWith('table_column:')" class="stat-item">
+            Range: <strong>{{ scientificNumber(dataShape.range[0]) }}</strong> - <strong>{{ scientificNumber(dataShape.range[1]) }}</strong>
           </span>
         </div>
 
         <!-- View toggle: Plot vs Data Table -->
         <div class="control-group view-toggle">
           <Button
-            :icon="viewMode === 'plot' ? 'pi pi-chart-line' : 'pi pi-table'"
-            :label="viewMode === 'plot' ? 'Plot' : 'Data'"
-            :class="['p-button-outlined', 'p-button-sm', viewMode === 'plot' ? 'p-button-primary' : 'p-button-secondary']"
+            v-if="!tableOnly"
+            :icon="viewMode === 'plot' ? 'pi pi-table' : 'pi pi-chart-line'"
+            :label="
+              viewMode === 'plot'
+                ? plotSampling?.plottedTableOnly
+                  ? 'View Plotted Data'
+                  : 'View Data'
+                : 'View Plot'
+            "
+            class="p-button-outlined p-button-sm"
             @click="toggleViewMode"
-            :title="viewMode === 'plot' ? 'Switch to Data Table' : 'Switch to Plot'"
+            :title="
+              viewMode === 'plot'
+                ? plotSampling?.plottedTableOnly
+                  ? 'Inspect plotted traces only'
+                  : 'Switch to Data Table'
+                : 'Switch to Plot'
+            "
           />
         </div>
 
@@ -166,24 +182,60 @@
         />
       </div>
 
+      <div v-if="plotSampling" class="plot-sampling-disclosure" role="status">
+        <strong>Sampled plot:</strong> {{ plotSampling.shown }} of {{ plotSampling.total }}
+        {{ plotSampling.sourceNoun }} ({{ plotSampling.percent }}%) are shown;
+        {{ plotSampling.omitted }} are unplotted.
+        {{ plotSampling.selectionDescription }}
+        <template v-if="plotSampling.plottedTableOnly"
+          >This result's Data view contains only these traces. Open the upstream source dataset or a
+          complete-matrix export to inspect all samples.</template
+        >
+        <template v-else
+          >The Data view retains the complete available result; its table paging is
+          separate.</template
+        >
+      </div>
+
+      <div v-if="metadataGroupingError || explicitGroupingError" class="plot-grouping-notice" role="status">
+        <i class="pi pi-info-circle" aria-hidden="true" />
+        <span>{{ metadataGroupingError || explicitGroupingError }}</span> Showing the score rows without metadata coloring.
+      </div>
+
+      <div v-if="comparisonNotices" class="plot-grouping-notice" role="status">
+        <span>Original (immediate node input): {{ comparisonNotices[0] }}<br />Preprocessed: {{ comparisonNotices[1] }}<br />{{ plotLayout.meta.comparison_scale_notice }}</span>
+      </div>
+
       <!-- Plotly chart -->
+      <p v-if="downloadError" role="alert">{{ downloadError }}</p>
       <div v-if="viewMode === 'plot'" ref="plotContainerEl" class="plotly-container">
         <PlotlyChart
+          ref="plotChart"
           v-if="displayPlotData.length > 0"
           :data="displayPlotData"
           :layout="displayPlotLayout"
           :config="PLOT_CONFIG"
+          :style="plotCanvasStyle"
         />
         <div v-else class="empty-plot">
           <i class="pi pi-chart-line" />
-          <p>No data to display</p>
-          <small>Execute the node first to see results</small>
+          <p :role="plotRefusal ? 'alert' : undefined">{{ plotRefusal || "No data to display" }}</p>
+          <small v-if="!plotRefusal">{{
+            embedded
+              ? "No retained table is available for this output."
+              : "Execute the node first to see results"
+          }}</small>
         </div>
       </div>
 
       <!-- Data Table -->
       <div v-else class="data-table-container">
         <span v-if="dataPreviewSummary" class="data-summary">{{ dataPreviewSummary }}</span>
+        <div v-if="embedded && totalFeatureColumns > 10" class="feature-paging">
+          <Button icon="pi pi-angle-left" aria-label="Previous feature columns" :disabled="featureOffset === 0" @click="featureOffset = Math.max(0, featureOffset - 10)" />
+          <span>Columns {{ featureOffset + 1 }}–{{ Math.min(featureOffset + 10, totalFeatureColumns) }} of {{ totalFeatureColumns }}</span>
+          <Button icon="pi pi-angle-right" aria-label="Next feature columns" :disabled="featureOffset + 10 >= totalFeatureColumns" @click="featureOffset += 10" />
+        </div>
         <DataTable
           v-if="dataPreview.length > 0"
           :value="dataPreview"
@@ -201,17 +253,24 @@
             :style="{ minWidth: '80px', maxWidth: '150px' }"
           />
         </DataTable>
-        <div v-else class="empty-plot">
+        <Paginator v-if="embedded && previewTotalRows > previewRowLimit" :first="previewFirst" :rows="previewRowLimit" :total-records="previewTotalRows" @page="previewFirst = $event.first" />
+        <div v-if="dataPreview.length === 0" class="empty-plot">
           <i class="pi pi-table" />
-          <p>No data to display</p>
-          <small>Execute the node first to see results</small>
+          <p :role="plotRefusal ? 'alert' : undefined">{{ plotRefusal || "No data to display" }}</p>
+          <small v-if="!plotRefusal">{{
+            embedded
+              ? "No retained table is available for this output."
+              : "Execute the node first to see results"
+          }}</small>
         </div>
       </div>
     </div>
-  </Dialog>
+  </component>
 </template>
 
 <script setup lang="ts">
+import { scientificNumber } from "@/utils/scientificEncoding";
+import { scientificPlotRefusal } from "@/utils/scientificPlotState";
 /* eslint-disable @typescript-eslint/no-explicit-any -- quick-plot consumes generic backend visualization payloads. */
 import { ref, computed, watch } from "vue";
 import Dialog from "primevue/dialog";
@@ -219,22 +278,34 @@ import Dropdown from "primevue/dropdown";
 import Button from "primevue/button";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
+import Paginator from "primevue/paginator";
 import PlotlyChart from "@/components/PlotlyChart.vue";
-import { usePlotData, PLOT_CONFIG } from "@/composables/usePlotData";
+import {
+  useQuickPlotProjection,
+  PLOT_CONFIG,
+  type QuickPlotSelection,
+} from "@/composables/useScientificPlotProjection";
+import { t2QDiagnosticRows } from "@/utils/scientificPlots";
+import { isProjectedScientificKind } from "@/utils/scientificPresentation";
 import {
   normalizeSampleLabel,
   compactSampleLabel,
   detectLabelDelimiter,
   splitLabelByDelimiter,
 } from "@/utils/sampleLabels";
+import { metadataGroupingState } from "@/utils/sampleMetadataGrouping";
 import { scaleLibraryTraceToSamplePeaks } from "@/utils/libraryTraceScaling";
 
 interface Props {
+  embedded?: boolean;
+  tableOnly?: boolean;
   modelValue: boolean;
   nodeOutput: any;
   nodeType: string;
   nodeLabel: string;
   nodeInput?: any;
+  nodeInputs?: Record<string, any>;
+  plotSelection?: QuickPlotSelection;
 }
 
 const props = defineProps<Props>();
@@ -249,10 +320,57 @@ const visible = computed({
 
 const title = computed(() => `${props.nodeLabel} - Output Visualization`);
 
+const explicitGroupingError = computed(() => {
+  if (!props.nodeType.startsWith("model.")) return "";
+  const scores = props.nodeOutput?.data;
+  if (!Array.isArray(scores) || scores.length === 0) return "";
+  const value = props.nodeOutput?.presentation_value ?? props.nodeOutput?.ports?.scores?.value;
+  const grouping = metadataGroupingState(value?.y_axis, scores.length);
+  return grouping.kind === "invalid" ? grouping.message : "";
+});
+
+const plotRefusal = computed(() => scientificPlotRefusal(plotLayout.value));
+const comparisonNotices = computed(() => plotLayout.value?.meta?.comparison_notices);
+
+const plotSampling = computed(() => {
+  const population = (plotLayout.value as any)?.meta?.display_population;
+  if (
+    population?.method === "first_rows" &&
+    (population.total > population.shown || population.excluded > 0)
+  ) {
+    return {
+      shown: population.shown,
+      total: population.total,
+      omitted: population.total - population.shown,
+      percent: ((100 * population.shown) / population.total).toFixed(1),
+      sourceNoun: comparisonNotices.value ? "active preprocessed result rows" : "active result rows",
+      selectionDescription: `Traces are the first active rows in retained order. ${population.excluded ?? 0} of ${population.available ?? population.total} retained rows are excluded by the sample mask.`,
+      plottedTableOnly: false,
+    };
+  }
+  if (props.nodeType !== "output.plot") return null;
+  const visualization = props.nodeOutput?.ports?.visualization?.value;
+  const metadata = visualization?.metadata ?? props.nodeOutput?.metadata;
+  if (metadata?.subsampled !== true) return null;
+  const shown = Number(metadata.shown_traces);
+  const total = Number(metadata.n_samples);
+  if (!Number.isInteger(shown) || !Number.isInteger(total) || shown < 1 || total <= shown) return null;
+  return {
+    plottedTableOnly: true,
+    selectionDescription: "Traces were selected at evenly spaced source rows.",
+    shown,
+    total,
+    omitted: total - shown,
+    percent: (100 * shown / total).toFixed(1),
+    sourceNoun: visualization?.plot_type === "spectra" ? "source spectra" : "source samples",
+  };
+});
+
 // Use the shared plot composable (same functions as Detailed View)
 const nodeOutputRef = computed(() => props.nodeOutput);
 const nodeTypeRef = computed(() => props.nodeType);
 const nodeInputRef = computed(() => props.nodeInput);
+const nodeInputsRef = computed(() => props.nodeInputs || {});
 
 const {
   availablePlots,
@@ -271,7 +389,8 @@ const {
   plotData,
   plotLayout,
   dataShape,
-} = usePlotData(nodeOutputRef, nodeTypeRef, nodeInputRef);
+  metadataGroupingError,
+} = useQuickPlotProjection(nodeOutputRef, nodeTypeRef, nodeInputRef, nodeInputsRef, props.plotSelection);
 
 type LibraryCompareCandidate = {
   rank?: number;
@@ -373,7 +492,8 @@ const showLibraryCompareControls = computed(() =>
 );
 
 const selectedLibraryAlignmentStatus = computed(() => {
-  const candidate = selectedLibraryCandidateRecords.value[0] ?? filteredLibraryCompareCandidates.value[0];
+  const candidate =
+    selectedLibraryCandidateRecords.value[0] ?? filteredLibraryCompareCandidates.value[0];
   if (!candidate) return null;
   const aligned = candidate.grid_aligned !== false;
   const spacing = formatSpacing(candidate.alignment_spacing);
@@ -402,14 +522,14 @@ watch(
       selectedLibrarySample.value = options[0].value;
     }
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 watch(
   () => selectedLibrarySample.value,
   () => {
     selectedLibraryCandidateKeys.value = [];
-  }
+  },
 );
 
 watch(
@@ -426,7 +546,7 @@ watch(
     }
     selectedLibraryCandidateKeys.value = nextKeys;
   },
-  { immediate: true }
+  { immediate: true },
 );
 
 const libraryCompareQuickPlotData = computed(() => {
@@ -448,7 +568,7 @@ const libraryCompareQuickPlotData = computed(() => {
       y: sampleY,
       name: firstCandidate.sample || "Sample",
       line: { color: "#f8fafc", width: 2 },
-    }
+    },
   ];
   for (const candidate of candidates) {
     const libraryTraceIndex = Number(candidate?.library_trace_index ?? candidate?.library_index);
@@ -471,7 +591,8 @@ const libraryCompareQuickPlotData = computed(() => {
 });
 
 const libraryCompareQuickPlotLayout = computed(() => {
-  const candidate = selectedLibraryCandidateRecords.value[0] ?? filteredLibraryCompareCandidates.value[0];
+  const candidate =
+    selectedLibraryCandidateRecords.value[0] ?? filteredLibraryCompareCandidates.value[0];
   const backendLayout = props.nodeOutput?.plots?.library_compare_candidates?.layout || {};
   return {
     ...plotLayout.value,
@@ -488,22 +609,64 @@ const libraryCompareQuickPlotLayout = computed(() => {
 });
 
 const displayPlotData = computed(() => {
-  if (props.nodeType === "analysis.compare_library" && libraryCompareQuickPlotData.value.length > 0) {
+  if (
+    props.nodeType === "analysis.compare_library" &&
+    libraryCompareQuickPlotData.value.length > 0
+  ) {
     return libraryCompareQuickPlotData.value;
   }
   return plotData.value;
 });
 
 const displayPlotLayout = computed(() => {
-  if (props.nodeType === "analysis.compare_library" && libraryCompareQuickPlotData.value.length > 0) {
+  if (
+    props.nodeType === "analysis.compare_library" &&
+    libraryCompareQuickPlotData.value.length > 0
+  ) {
     return libraryCompareQuickPlotLayout.value;
   }
   return plotLayout.value;
 });
 
+const plotCanvasStyle = computed(() => {
+  const requestedHeight = Number(displayPlotLayout.value?.height);
+  if (Number.isFinite(requestedHeight) && requestedHeight > 640) {
+    return {
+      height: `${requestedHeight}px`,
+      minHeight: `${requestedHeight}px`,
+    };
+  }
+  return {
+    height: "100%",
+    minHeight: "320px",
+  };
+});
+
 // View mode toggle
-const viewMode = ref<"plot" | "data">("plot");
+const viewMode = ref<"plot" | "data">(props.tableOnly ? "data" : "plot");
+watch(() => props.tableOnly, (tableOnly) => { viewMode.value = tableOnly ? "data" : "plot"; });
 const previewRowLimit = 100;
+const previewFirst = ref(0);
+const featureOffset = ref(0);
+const usePlottedTable = computed(() => !props.tableOnly && (selectedPlotKey.value !== availablePlots.value[0]?.key
+  || isProjectedScientificKind(props.nodeOutput, "variable_profile")));
+const totalFeatureColumns = computed(() => !usePlottedTable.value && Array.isArray(props.nodeOutput?.data?.[0]) ? props.nodeOutput.data[0].length : 0);
+const previewTotalRows = computed(() => {
+  if (usePlottedTable.value) return plottedPointPreview.value.total;
+  if (isProjectedScientificKind(props.nodeOutput, "t2_q_diagnostics")) return t2QDiagnosticRows(props.nodeOutput?.presentation_value, props.nodeOutput?.metadata || {}).length;
+  const data = props.nodeOutput?.data;
+  if (!Array.isArray(data) || !data.length) return plottedPointPreview.value.total;
+  return props.nodeType === "analysis.compare_library" && selectedLibrarySample.value
+    ? data.filter((row: any) => String(row?.sample ?? "") === selectedLibrarySample.value).length : data.length;
+});
+watch(() => [props.nodeOutput, selectedPlotKey.value, selectedLibrarySample.value], () => { previewFirst.value = 0; featureOffset.value = 0; });
+
+watch(
+  () => props.modelValue,
+  (isVisible) => {
+    if (isVisible) viewMode.value = props.tableOnly ? "data" : "plot";
+  },
+);
 
 function toggleViewMode() {
   viewMode.value = viewMode.value === "plot" ? "data" : "plot";
@@ -511,12 +674,12 @@ function toggleViewMode() {
 
 function formatHqi(value?: number): string {
   if (!Number.isFinite(Number(value))) return "n/a";
-  return Number(value).toFixed(1);
+  return scientificNumber(Number(value));
 }
 
 function formatSpacing(value?: number | null): string {
   if (!Number.isFinite(Number(value))) return "";
-  return Number(value).toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+  return scientificNumber(Number(value));
 }
 
 function libraryCandidateKey(candidate: LibraryCompareCandidate): string {
@@ -544,22 +707,61 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
 }
 
 // Data preview for table view
+const plottedPointPreview = computed(() => {
+  const rows: Record<string, unknown>[] = [];
+  let total = 0;
+  for (const trace of plotData.value ?? []) {
+    if (!Array.isArray(trace.x) || !Array.isArray(trace.y)) continue;
+    if (Array.isArray(trace.z)) {
+      for (let y = 0; y < trace.y.length; y += 1) {
+        for (let x = 0; x < trace.x.length; x += 1) {
+          if (total >= previewFirst.value && rows.length < previewRowLimit) rows.push({ _index: total + 1, series: trace.name ?? "", x: trace.x[x], y: trace.y[y], value: trace.z[y]?.[x] });
+          total += 1;
+        }
+      }
+      continue;
+    }
+    const count = Math.min(trace.x.length, trace.y.length);
+    const start = Math.max(0, previewFirst.value - total);
+    for (let index = start; index < count && rows.length < previewRowLimit; index += 1) {
+      rows.push({ _index: total + index + 1, series: trace.name ?? "", x: trace.x[index], y: trace.y[index] });
+    }
+    total += count;
+  }
+  return { rows, total };
+});
+
 const dataPreview = computed(() => {
+  if (usePlottedTable.value) return plottedPointPreview.value.rows;
   const data = props.nodeOutput?.data;
   const metadata = props.nodeOutput?.metadata || {};
-  if (!data || !Array.isArray(data)) return [];
+  if (isProjectedScientificKind(props.nodeOutput, "t2_q_diagnostics")) {
+    return t2QDiagnosticRows(props.nodeOutput?.presentation_value, metadata)
+      .slice(previewFirst.value, previewFirst.value + previewRowLimit)
+      .map((row, index) => ({
+        _index: previewFirst.value + index + 1,
+        sample: row.sample,
+        t2: row.t2,
+        q: row.q,
+        outlier: row.outlier ? "Yes" : "No",
+      }));
+  }
+  if (!Array.isArray(data) || data.length === 0) return plottedPointPreview.value.rows;
 
   if (data.length > 0 && typeof data[0] === "object" && !Array.isArray(data[0])) {
     const rows = props.nodeType === "analysis.compare_library" && selectedLibrarySample.value
       ? data.filter((row: any) => String(row?.sample ?? "") === selectedLibrarySample.value)
       : data;
-    return rows.slice(0, previewRowLimit).map((row: any, i: number) => ({
-      _index: i + 1,
+    return rows.slice(previewFirst.value, previewFirst.value + previewRowLimit).map((row: any, i: number) => ({
+      _index: previewFirst.value + i + 1,
       ...row,
     }));
   }
 
-  const labelsRaw = metadata.sample_labels || metadata.labels || [];
+  const isPlsVariance = isProjectedScientificKind(props.nodeOutput, "pls_explained_variance");
+  const labelsRaw = isPlsVariance
+    ? data.map((_: unknown, index: number) => `LV ${index + 1}`)
+    : metadata.sample_labels || metadata.labels || [];
   const labels = Array.isArray(labelsRaw)
     ? labelsRaw.map((label: any) => normalizeSampleLabel(label))
     : [];
@@ -572,7 +774,8 @@ const dataPreview = computed(() => {
     : 0;
   const useSplitColumns = !!delimiter && maxParts > 1;
 
-  return data.slice(0, previewRowLimit).map((row: any, i: number) => {
+  return data.slice(previewFirst.value, previewFirst.value + previewRowLimit).map((row: any, rowIndex: number) => {
+    const i = previewFirst.value + rowIndex;
     const obj: any = { _index: i + 1, _label_full: labels[i] || "" };
     if (labels.length > 0) {
       if (useSplitColumns) {
@@ -589,19 +792,33 @@ const dataPreview = computed(() => {
       }
     }
     if (Array.isArray(row)) {
-      row.slice(0, 10).forEach((val: any, j: number) => {
-        obj[`col_${j}`] = typeof val === "number" ? val.toFixed(4) : val;
+      row.slice(featureOffset.value, featureOffset.value + 10).forEach((val: any, j: number) => {
+        obj[`col_${featureOffset.value + j}`] = typeof val === "number" ? scientificNumber(val) : val;
       });
     } else {
-      obj.value = typeof row === "number" ? row.toFixed(4) : row;
+      obj.value = typeof row === "number" ? scientificNumber(row) : row;
     }
     return obj;
   });
 });
 
 const dataPreviewSummary = computed(() => {
+  if (plotSampling.value?.plottedTableOnly && viewMode.value === "data") {
+    return `${plotSampling.value.shown} plotted traces of ${plotSampling.value.total} ${plotSampling.value.sourceNoun}; full source matrix is not in this view`;
+  }
+  if (usePlottedTable.value) return `${previewFirst.value + 1}–${Math.min(previewFirst.value + previewRowLimit, previewTotalRows.value)} of ${previewTotalRows.value} plotted points`;
+  if (props.embedded) return `${previewFirst.value + 1}–${Math.min(previewFirst.value + previewRowLimit, previewTotalRows.value)} of ${previewTotalRows.value} rows`;
+  if (isProjectedScientificKind(props.nodeOutput, "t2_q_diagnostics")) {
+    const totalRows = t2QDiagnosticRows(
+      props.nodeOutput?.presentation_value,
+      props.nodeOutput?.metadata || {},
+    ).length;
+    return `${Math.min(totalRows, previewRowLimit)} of ${totalRows} samples`;
+  }
   const data = props.nodeOutput?.data;
-  if (!data || !Array.isArray(data)) return "";
+  if (!Array.isArray(data) || data.length === 0) {
+    return `${plottedPointPreview.value.rows.length} of ${plottedPointPreview.value.total} plotted points`;
+  }
   const rows = props.nodeType === "analysis.compare_library" && selectedLibrarySample.value
     ? data.filter((row: any) => String(row?.sample ?? "") === selectedLibrarySample.value)
     : data;
@@ -621,13 +838,37 @@ const dataPreviewSummary = computed(() => {
 
 const dataPreviewColumns = computed(() => {
   if (!dataPreview.value.length) return [];
+  if (usePlottedTable.value) {
+    const title = (axis: any, fallback: string) => typeof axis?.title === "string" ? axis.title : axis?.title?.text || fallback;
+    const labels: Record<string, string> = { _index: "#", series: "Series", x: title(plotLayout.value?.xaxis, "X"), y: title(plotLayout.value?.yaxis, "Y"), value: "Value" };
+    return Object.keys(dataPreview.value[0]).map(field => ({ field, header: labels[field] || field }));
+  }
+  if (isProjectedScientificKind(props.nodeOutput, "t2_q_diagnostics")) {
+    return [
+      { field: "_index", header: "#" },
+      { field: "sample", header: "Sample" },
+      { field: "t2", header: "Hotelling T²" },
+      { field: "q", header: "Q residual (SPE)" },
+      { field: "outlier", header: "Screened outlier" },
+    ];
+  }
   const first = dataPreview.value[0] as Record<string, any>;
   const metadata = props.nodeOutput?.metadata || {};
   const pcLabels = metadata.pc_labels || [];
-  const _featureNames = metadata.feature_names || [];
+  const presentationValue = props.nodeOutput?.presentation_value;
+  const presentationDataset =
+    presentationValue && typeof presentationValue === "object" && !Array.isArray(presentationValue)
+      ? presentationValue as Record<string, any>
+      : {};
+  const featureAxis = presentationDataset.x_axis || presentationDataset.feature_axis || {};
+  const featureNames = [featureAxis.labels, featureAxis.data, featureAxis.values, metadata.feature_names]
+    .find((candidate) => Array.isArray(candidate) && candidate.length > 0) || [];
   const xTitle = metadata.x_title || "";
   const isPCA = metadata.type === "PCA" || metadata.isPCA;
   const isMCR = metadata.type === "MCR_ALS";
+  const isPlsVariance = isProjectedScientificKind(props.nodeOutput, "pls_explained_variance");
+  const isLoadingMatrix = ["pca_loadings", "pls_loadings", "plsda_loadings"]
+    .some((kind) => isProjectedScientificKind(props.nodeOutput, kind));
   const mcrLabels = Array.isArray(metadata.labels)
     ? metadata.labels.map((item: any) => normalizeSampleLabel(item)).filter((s: string) => s.length > 0)
     : [];
@@ -639,18 +880,22 @@ const dataPreviewColumns = computed(() => {
       if (key === "_index") {
         header = "#";
       } else if (key === "_label") {
-        header = "Label";
+        header = isPlsVariance ? "Latent Variable" : "Label";
       } else if (key.startsWith("_label_")) {
         const labelIdx = Number.parseInt(key.replace("_label_", ""), 10);
         header = Number.isNaN(labelIdx) ? "Label" : `Field ${labelIdx + 1}`;
       } else if (key.startsWith("col_")) {
         const colIdx = parseInt(key.replace("col_", ""));
-        if (isPCA && pcLabels[colIdx]) {
+        if (isPlsVariance) {
+          header = colIdx === 0 ? "X variance" : colIdx === 1 ? "Y variance" : `Domain ${colIdx + 1}`;
+        } else if (isLoadingMatrix && featureNames[colIdx]) {
+          header = normalizeSampleLabel(featureNames[colIdx]);
+        } else if (isPCA && pcLabels[colIdx]) {
           header = pcLabels[colIdx];
         } else if (isMCR && mcrLabels[colIdx]) {
           header = mcrLabels[colIdx];
-        } else if (_featureNames.length > colIdx) {
-          header = _featureNames[colIdx];
+        } else if (featureNames.length > colIdx) {
+          header = normalizeSampleLabel(featureNames[colIdx]);
         } else if (xTitle && xTitle !== "Feature") {
           header = `${xTitle} ${colIdx + 1}`;
         } else {
@@ -664,47 +909,79 @@ const dataPreviewColumns = computed(() => {
 // Download functionality
 const plotContainerEl = ref<HTMLElement | null>(null);
 
-function downloadPlot() {
-  const plotDiv = plotContainerEl.value?.querySelector(".js-plotly-plot") as HTMLElement;
-  const PlotlyGlobal = (window as unknown as { Plotly?: { downloadImage: (el: HTMLElement, opts: Record<string, unknown>) => void } }).Plotly;
-  if (plotDiv && PlotlyGlobal) {
-    PlotlyGlobal.downloadImage(plotDiv, {
+const plotChart = ref<InstanceType<typeof PlotlyChart> | null>(null);
+const downloadError = ref("");
+async function downloadPlot() {
+  downloadError.value = "";
+  try {
+    if (!plotChart.value) throw new Error("Open an available plot before downloading.");
+    await plotChart.value.downloadImage({
       format: "png",
       width: 1200,
-      height: 800,
+      height: Math.max(800, Number(displayPlotLayout.value?.height) || 800),
       filename: `${props.nodeLabel.replace(/\s+/g, "_")}_output`,
     });
+  } catch (error) {
+    downloadError.value =
+      error instanceof Error ? error.message : "Plot download failed. Try again.";
   }
 }
 </script>
 
 <style scoped>
+.feature-paging { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; }
+.embedded-plot .plot-controls, .embedded-plot .data-table-container { background: var(--surface-card); color: var(--text-color); }
+.embedded-plot .control-group label, .embedded-plot .stat-item, .embedded-plot .stat-item strong { color: var(--text-color); }
+.embedded-plot :deep(.p-dropdown) { background: var(--surface-card); border-color: var(--surface-border); color: var(--text-color); }
+.embedded-plot :deep(.p-dropdown-label) { color: var(--text-color); }
 .quick-plot-modal :deep(.p-dialog-content) {
   padding: 0;
   background: #0f172a;
+  overflow: hidden;
 }
 
 .plot-container {
   display: flex;
   flex-direction: column;
-  height: 70vh;
-  min-height: 500px;
+  height: min(70vh, calc(100vh - 96px));
+  min-height: min(500px, calc(100vh - 96px));
 }
 
 .plot-controls {
   display: flex;
   align-items: center;
-  gap: 20px;
-  padding: 12px 20px;
+  gap: 10px 14px;
+  padding: 10px 12px;
   background: #1e293b;
   border-bottom: 1px solid #334155;
   flex-wrap: wrap;
 }
 
+.plot-sampling-disclosure {
+  padding: 10px 14px;
+  border-bottom: 1px solid #a16207;
+  background: #422d13;
+  color: #fef3c7;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.plot-grouping-notice {
+  display: flex;
+  gap: 0.45rem;
+  align-items: flex-start;
+  padding: 0.55rem 0.8rem;
+  border-bottom: 1px solid #475569;
+  background: #1e293b;
+  color: #cbd5e1;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
 .control-group {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
 .control-group label {
@@ -714,11 +991,16 @@ function downloadPlot() {
 }
 
 .plot-type-dropdown {
-  min-width: 200px;
+  min-width: 180px;
+}
+
+.quick-plot-modal:not(.embedded-plot) .plot-controls :deep(.p-dropdown-label),
+.quick-plot-modal:not(.embedded-plot) .plot-controls :deep(.p-dropdown-trigger) {
+  color: #f1f5f9;
 }
 
 .axis-dropdown {
-  min-width: 160px;
+  min-width: 120px;
 }
 
 .species-rank-control {
@@ -804,7 +1086,7 @@ function downloadPlot() {
 
 .stats-summary {
   margin-left: auto;
-  gap: 16px;
+  gap: 10px;
 }
 
 .stat-item {
@@ -818,8 +1100,10 @@ function downloadPlot() {
 
 .plotly-container {
   flex: 1;
+  min-height: 0;
   padding: 16px;
   overflow: auto;
+  box-sizing: border-box;
 }
 
 .plotly-container :deep(.js-plotly-plot) {

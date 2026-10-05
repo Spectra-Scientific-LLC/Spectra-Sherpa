@@ -22,10 +22,7 @@
     <div ref="tabsScroller" class="sheet-tabs-scroller" @wheel.prevent="onWheel">
       <div class="sheet-tabs" @dragover.prevent>
         <template v-for="(sheet, index) in sheets" :key="sheet.workflowId">
-          <div
-            v-if="dropIndex === index"
-            class="sheet-drop-line"
-          ></div>
+          <div v-if="dropIndex === index" class="sheet-drop-line"></div>
           <button
             type="button"
             class="sheet-tab"
@@ -41,9 +38,18 @@
             @dragover.prevent
             @drop.prevent="onDrop(index)"
           >
-            <i v-if="sheet.executionStatus === 'running'" class="pi pi-spin pi-spinner status-icon"></i>
-            <i v-else-if="sheet.executionStatus === 'success'" class="pi pi-check status-icon success"></i>
-            <i v-else-if="sheet.executionStatus === 'error'" class="pi pi-times status-icon error"></i>
+            <i
+              v-if="sheet.executionStatus === 'running'"
+              class="pi pi-spin pi-spinner status-icon"
+            ></i>
+            <i
+              v-else-if="sheet.executionStatus === 'success'"
+              class="pi pi-check status-icon success"
+            ></i>
+            <i
+              v-else-if="sheet.executionStatus === 'error'"
+              class="pi pi-times status-icon error"
+            ></i>
             <span v-else-if="hasUnsavedChanges && index === activeIndex" class="dirty-dot"></span>
             <input
               v-if="editingIndex === index"
@@ -57,7 +63,12 @@
               @blur="commitRename"
             />
             <span v-else class="sheet-tab-label">
-              <i v-if="sheet.colorSource === 'ai'" class="pi pi-sparkles" style="color: #a855f7; font-size: 0.7rem; margin-right: 4px;" aria-hidden="true"></i>
+              <i
+                v-if="sheet.colorSource === 'ai'"
+                class="pi pi-sparkles"
+                style="color: #a855f7; font-size: 0.7rem; margin-right: 4px"
+                aria-hidden="true"
+              ></i>
               {{ sheet.name }}
             </span>
           </button>
@@ -91,6 +102,14 @@
         <i class="pi pi-pencil"></i>
         Rename
       </button>
+      <button v-if="canCopyIntegrity(menu.index)" type="button" @click="copyIntegrity(menu.index)">
+        <i class="pi pi-copy"></i>
+        Copy SHA
+      </button>
+      <button v-if="!isTrialSheet(menu.index)" type="button" @click="exportPng(menu.index)">
+        <i class="pi pi-image"></i>
+        Save canvas as PNG
+      </button>
       <div v-if="!isTrialSheet(menu.index)" class="sheet-menu-label">Tab Color</div>
       <div v-if="!isTrialSheet(menu.index)" class="sheet-swatches">
         <button
@@ -115,9 +134,15 @@
       </button>
     </div>
 
-    <Dialog v-model:visible="deleteDialogVisible" modal header="Delete Sheet" :style="{ width: '28rem' }">
+    <Dialog
+      v-model:visible="deleteDialogVisible"
+      modal
+      header="Delete Sheet"
+      :style="{ width: '28rem' }"
+    >
       <p class="delete-message">
-        Delete "{{ pendingDeleteSheet?.name }}"? This workflow and its execution history will be permanently deleted.
+        Delete "{{ pendingDeleteSheet?.name }}"? This workflow and its execution history will be
+        permanently deleted.
       </p>
       <template #footer>
         <Button label="Cancel" text @click="deleteDialogVisible = false" />
@@ -141,6 +166,7 @@ const props = defineProps<{
   sheets: WorkbookSheet[];
   activeIndex: number;
   hasUnsavedChanges?: boolean;
+  activeWorkflowHash?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -149,6 +175,8 @@ const emit = defineEmits<{
   duplicate: [workflowId: number];
   "open-template-picker": [];
   rename: [workflowId: number, name: string];
+  "copy-integrity": [hash: string];
+  "export-png": [index: number];
   color: [workflowId: number, color: string | null];
   reorder: [orderedIds: number[]];
   delete: [workflowId: number];
@@ -174,10 +202,12 @@ const menu = reactive({
 });
 
 const pendingDeleteSheet = computed(() =>
-  pendingDeleteIndex.value === null ? null : props.sheets[pendingDeleteIndex.value] ?? null
+  pendingDeleteIndex.value === null ? null : (props.sheets[pendingDeleteIndex.value] ?? null),
 );
 const hasTrialSheets = computed(() => props.sheets.some((sheet) => sheet.kind === "trial"));
-const workflowSheetCount = computed(() => props.sheets.filter((sheet) => sheet.kind !== "trial").length);
+const workflowSheetCount = computed(
+  () => props.sheets.filter((sheet) => sheet.kind !== "trial").length,
+);
 
 function isTrialSheet(index: number | null): boolean {
   return index !== null && props.sheets[index]?.kind === "trial";
@@ -258,7 +288,7 @@ const addMenuItems = computed(() => {
       icon: "pi pi-file",
       command: () => {
         addSheet();
-      }
+      },
     },
     {
       label: "Duplicate Current",
@@ -268,21 +298,21 @@ const addMenuItems = computed(() => {
         if (active && active.kind !== "trial") {
           emit("duplicate", active.workflowId);
         }
-      }
+      },
     },
     {
       label: "From Analysis Starter...",
       icon: "pi pi-th-large",
       command: () => {
         emit("open-template-picker");
-      }
-    }
+      },
+    },
   ];
 });
 
 function toggleAddMenu(event: Event): void {
   const active = props.sheets[props.activeIndex];
-  if (active?.kind === 'trial') {
+  if (active?.kind === "trial") {
     addSheet();
   } else {
     addMenuRef.value?.toggle(event);
@@ -308,9 +338,30 @@ function duplicate(index: number | null): void {
   if (sheet) emit("duplicate", sheet.workflowId);
 }
 
+function exportPng(index: number): void {
+  closeMenu();
+  emit("export-png", index);
+}
+
 function renameFromMenu(index: number | null): void {
   if (index === null) return;
   startRename(index);
+}
+
+function canCopyIntegrity(index: number | null): boolean {
+  return (
+    index !== null &&
+    index === props.activeIndex &&
+    !isTrialSheet(index) &&
+    typeof props.activeWorkflowHash === "string" &&
+    props.activeWorkflowHash.length > 0
+  );
+}
+
+function copyIntegrity(index: number | null): void {
+  if (!canCopyIntegrity(index) || !props.activeWorkflowHash) return;
+  emit("copy-integrity", props.activeWorkflowHash);
+  closeMenu();
 }
 
 function setColor(index: number | null, color: string): void {
@@ -354,7 +405,10 @@ function onDrop(index: number): void {
   const ordered = [...props.sheets];
   const [moved] = ordered.splice(draggedIndex.value, 1);
   ordered.splice(index, 0, moved);
-  emit("reorder", ordered.map((sheet) => sheet.workflowId));
+  emit(
+    "reorder",
+    ordered.map((sheet) => sheet.workflowId),
+  );
   draggedIndex.value = null;
   dropIndex.value = null;
 }
@@ -385,7 +439,10 @@ watch(
   },
 );
 
-watch(() => props.activeIndex, () => nextTick(updateOverflow));
+watch(
+  () => props.activeIndex,
+  () => nextTick(updateOverflow),
+);
 </script>
 
 <style scoped>

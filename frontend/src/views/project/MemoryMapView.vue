@@ -9,13 +9,7 @@
           class="p-button-outlined"
           @click="goBack"
         />
-        <Button
-          icon="pi pi-refresh"
-          class="p-button-text"
-          :loading="loading"
-          @click="() => reload()"
-          v-tooltip.bottom="'Refresh'"
-        />
+
       </ResponsiveHeaderActions>
     </header>
 
@@ -33,12 +27,13 @@
     <div v-else-if="isLocalUnavailable" class="empty-state">
       <i class="pi pi-sitemap"></i>
       <h3>Memory Map unavailable</h3>
-      <p>Memory Map is available when Sherpa Advisor memory is backed by the server.</p>
+      <p>Memory Map is not available in this deployment. Project chat remains available.</p>
     </div>
 
     <div v-else-if="error" class="error-banner">
       <i class="pi pi-exclamation-triangle"></i>
       <span>{{ error }}</span>
+      <Button label="Retry" :loading="loading" @click="() => reload()" />
     </div>
 
     <div v-else-if="graph && graph.nodes.length === 0" class="empty-state">
@@ -89,7 +84,7 @@
           >
             <div class="node-card-header">
               <span class="node-title">{{ node.title || formatSubscope(node.subscope_key) }}</span>
-              <span class="node-subscope">{{ node.subscope_key }}</span>
+              <details class="node-subscope"><summary>Details</summary>{{ node.subscope_key }}</details>
             </div>
             <div class="node-badges">
               <span class="node-badge" :title="`${node.badges.topic_count} topic${node.badges.topic_count === 1 ? '' : 's'}`">
@@ -121,7 +116,7 @@
                 class="edge-chip"
               >
                 {{ nodeLabelById(edge.source_node_id) }}
-                <span class="edge-weight">w{{ edge.weight.toFixed(1) }}</span>
+                <span class="edge-weight">{{ edge.edge_type === "derived_from" ? "Source" : `w${edge.weight.toFixed(1)}` }}</span>
               </span>
             </div>
           </div>
@@ -132,7 +127,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import Button from "primevue/button";
 import ProgressSpinner from "primevue/progressspinner";
@@ -164,12 +159,7 @@ const headerActionItems = computed(() => [
     icon: "pi pi-arrow-left",
     command: goBack,
   },
-  {
-    label: "Refresh",
-    icon: "pi pi-refresh",
-    disabled: loading.value,
-    command: () => void reload(),
-  },
+
 ]);
 
 // Tab display labels.  Order mirrors TAB_INHERITANCE_ORDER on the server.
@@ -178,12 +168,14 @@ const headerActionItems = computed(() => [
 const TAB_DISPLAY: Record<string, string> = {
   project: "Project",
   data: "Data",
-  experiments: "Runs",
+  experiments: "Runs (legacy)",
+  models: "Runs",
+  optimization: "Optimize",
   workflow: "Workflow",
   deploy: "Deploy",
   report: "Report",
 };
-const TAB_ORDER = ["project", "data", "workflow", "experiments", "deploy", "report"];
+const TAB_ORDER = ["project", "data", "workflow", "models", "experiments", "optimization", "deploy", "report"];
 
 const groupedByTab = computed(() => {
   if (!graph.value) return [];
@@ -193,7 +185,8 @@ const groupedByTab = computed(() => {
     bucket.push(node);
     buckets.set(node.tab_key, bucket);
   }
-  return TAB_ORDER.filter((tab) => buckets.has(tab)).map((tab) => ({
+  const order = [...TAB_ORDER, ...[...buckets.keys()].filter(tab => !TAB_ORDER.includes(tab)).sort()];
+  return order.filter((tab) => buckets.has(tab)).map((tab) => ({
     tab,
     nodes: buckets.get(tab)!.sort((a, b) => a.subscope_key.localeCompare(b.subscope_key)),
   }));
@@ -258,15 +251,19 @@ function formatRelative(iso: string): string {
   }
 }
 
+let requestSequence = 0;
 async function reload(projectIdOverride: number | null = null): Promise<void> {
   const id = projectIdOverride ?? projectId.value;
-  if (id === null) return;
+  const request = ++requestSequence;
+  graph.value = null;
+  if (id === null) { loading.value = false; return; }
   loading.value = true;
   error.value = null;
   isLocalUnavailable.value = false;
   try {
     const adapter = getAdvisorMemoryAdapter(isServerBacked.value);
     const data = await adapter.getMemoryMap(id);
+    if (request !== requestSequence || id !== projectId.value) return;
     graph.value = data;
     if (data === null) {
       // Local mode — Memory Map is unavailable.  This is an expected
@@ -274,9 +271,10 @@ async function reload(projectIdOverride: number | null = null): Promise<void> {
       isLocalUnavailable.value = true;
     }
   } catch (err) {
+    if (request !== requestSequence || id !== projectId.value) return;
     error.value = getErrorMessage(err, "Failed to load memory map");
   } finally {
-    loading.value = false;
+    if (request === requestSequence) loading.value = false;
   }
 }
 
@@ -284,9 +282,15 @@ function goBack(): void {
   router.push("/project");
 }
 
+let initialized = false;
+let disposed = false;
+watch(projectId, () => { if (initialized) void reload(); }, { flush: "sync" });
+onBeforeUnmount(() => { disposed = true; ++requestSequence; });
 onMounted(() => {
   void (async () => {
     const project = await projectStore.ensureProjectForBrowserTab();
+    if (disposed) return;
+    initialized = true;
     await reload(projectStore.currentProjectId ?? project?.id ?? null);
   })();
 });

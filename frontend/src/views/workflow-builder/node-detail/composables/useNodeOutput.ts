@@ -1,21 +1,27 @@
 import { computed, type Ref } from "vue";
-import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
+import { buildNodeOutput, resolvePortPayload, type NodeOutput } from "@/utils/nodeOutput";
+import type {
+  ExecutedPresentationRecord,
+  NodeScientificValueDescriptors,
+} from "@/stores/workflow-types";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function resolvePortPayload(port: any): any {
-  if (!port || typeof port !== "object") return port;
-  return "value" in port ? port.value : port;
-}
+export { resolvePortPayload } from "@/utils/nodeOutput";
 
 export function useNodeOutput(
   nodeOutput: Ref<NodeOutput | null>,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   nodeMetadata: Ref<any>,
 ) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const normalizeNodeOutput = (result: any): NodeOutput => {
+  const normalizeNodeOutput = (
+    result: unknown,
+    descriptors?: NodeScientificValueDescriptors | null,
+    presentation?: ExecutedPresentationRecord | null,
+  ): NodeOutput => {
     const outputPorts = nodeMetadata.value?.output_ports;
-    return buildNodeOutput(result, outputPorts);
+    const presentationContract = presentation
+      ? { digest: presentation.contract_digest, payload: presentation.contract }
+      : null;
+    return buildNodeOutput(result, outputPorts, null, descriptors, presentationContract);
   };
 
   const primaryOutputPayload = computed(() => {

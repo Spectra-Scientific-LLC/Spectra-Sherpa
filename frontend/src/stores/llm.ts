@@ -1,3 +1,5 @@
+import { attentionSnapshot } from "@/lib/sherpaAttention";
+import { observeQueryFilterEvent, recordScientificQueryOutcome, SCIENTIFIC_QUERY_REFUSAL } from "@/lib/scientificQueryGuidance";
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";
@@ -7,8 +9,8 @@ import { useAppConfig } from "@/composables/useAppConfig";
 import { useAuthStore } from "@/stores/auth";
 import { useNotificationStore } from "@/stores/notification";
 import { useProjectStore } from "@/stores/project";
-import { buildAuthMessage, buildWsUrl, withCredentials } from "@/utils/ws";
-import { hasStoredApiKey, readStoredApiKey } from "@/utils/authStorage";
+import { buildAuthMessage, buildWsUrl, resolveWsPolicyClose, withCredentials } from "@/utils/ws";
+import { readStoredApiKey } from "@/utils/authStorage";
 import { createMessageId } from "@/utils/messageIds";
 
 const STORAGE_KEY = "llm_conversations";
@@ -135,7 +137,7 @@ const getRequestHeaders = (): HeadersInit => {
     headers.Authorization = `Bearer ${token}`;
   }
   const apiKey = readStoredApiKey();
-  if (apiKey) {
+  if (!token && apiKey) {
     headers["X-API-Key"] = apiKey;
   }
   return headers;
@@ -211,12 +213,33 @@ export const useLlmStore = defineStore("llm", () => {
   const configStatus = ref<"unknown" | "configured" | "unavailable">("unknown");
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let allowReconnect = true;
+  let connectionGeneration = 0;
+  let policyCloseController: AbortController | null = null;
+
+  const cancelPolicyProbe = () => {
+    policyCloseController?.abort();
+    policyCloseController = null;
+  };
+
+  const resolveCurrentPolicyClose = async (generation: number) => {
+    cancelPolicyProbe();
+    const controller = new AbortController();
+    policyCloseController = controller;
+    const resolution = await resolveWsPolicyClose(controller.signal);
+    if (policyCloseController === controller) policyCloseController = null;
+    if (generation !== connectionGeneration || controller.signal.aborted || !allowReconnect) return null;
+    return resolution;
+  };
+
   let pendingConnect: Promise<void> | null = null;
   let pendingConnectResolve: (() => void) | null = null;
   let pendingConnectReject: ((error: Error) => void) | null = null;
   let socketOpenTimer: ReturnType<typeof setTimeout> | null = null;
   let authAckTimer: ReturnType<typeof setTimeout> | null = null;
   let configPollTimer: ReturnType<typeof setInterval> | null = null;
+  let activeChatRequestId: string | null = null;
+  let chatDeadline: ReturnType<typeof setTimeout> | null = null;
+  const analysisStatus = ref("");
   let localStreamAbortController: AbortController | null = null;
   const SOCKET_OPEN_TIMEOUT_MS = 5000;
   const AUTH_ACK_TIMEOUT_MS = 5000;
@@ -351,8 +374,9 @@ export const useLlmStore = defineStore("llm", () => {
       "connect_retry",
       `${detail} Retrying live connection (attempt ${connectAttempt + 1} of ${CONNECT_RETRY_ATTEMPTS}).`
     );
+    const generation = connectionGeneration;
     window.setTimeout(() => {
-      if (!pendingConnect) {
+      if (!pendingConnect || generation !== connectionGeneration || !allowReconnect) {
         return;
       }
       startConnectAttempt();
@@ -361,21 +385,39 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const startConnectAttempt = () => {
+    cancelPolicyProbe();
+    const generation = ++connectionGeneration;
     clearSocketOpenTimer();
     clearAuthAckTimer();
     connectAttempt += 1;
     connectionStatus.value = "connecting";
     const wsUrl = withCredentials(buildWsUrl());
-    wsRef.value = new WebSocket(wsUrl);
+    const socket = new WebSocket(wsUrl);
+    wsRef.value = socket;
 
-    wsRef.value.addEventListener("message", (event) => {
+    socket.addEventListener("message", (event) => {
+      if (generation !== connectionGeneration) return;
       try {
         const payload = JSON.parse(event.data);
+        if (payload.request_id && !String(payload.type).startsWith("sherpa_")
+            && payload.request_id !== activeChatRequestId) return;
+        if (payload.type === "llm_status") {
+          analysisStatus.value = `Analysis in progress. Hit stop to interrupt · ${payload.payload?.elapsed_seconds || 0}s`;
+          return;
+        }
+        if (["llm_done", "error", "llm_error"].includes(payload.type) && activeChatRequestId) {
+          if (chatDeadline) clearTimeout(chatDeadline);
+          chatDeadline = null;
+          activeChatRequestId = null;
+          analysisStatus.value = "";
+        }
+        observeQueryFilterEvent(payload);
         if (payload.type === "ping") {
           wsRef.value?.send(JSON.stringify({ action: "pong" }));
         } else if (payload.type === "pong") {
           return;
         } else if (payload.type === "authenticated") {
+          reconnectAttempts.value = 0;
           connectionStatus.value = "connected";
           emitWsTransport("auth_ack", "Server acknowledged WebSocket authentication.");
           resolvePendingConnect();
@@ -391,6 +433,9 @@ export const useLlmStore = defineStore("llm", () => {
             messages.value[streamingIndex.value].content += payload.chunk;
           }
         } else if (payload.type === "llm_done") {
+          if (streamingIndex.value !== null) {
+            recordScientificQueryOutcome(messages.value[streamingIndex.value].content.trim() !== SCIENTIFIC_QUERY_REFUSAL);
+          }
           streaming.value = false;
           loading.value = false;
           streamingIndex.value = null;
@@ -420,7 +465,8 @@ export const useLlmStore = defineStore("llm", () => {
       }
     });
 
-    wsRef.value.addEventListener("open", () => {
+    socket.addEventListener("open", () => {
+      if (generation !== connectionGeneration) return;
       clearSocketOpenTimer();
       emitWsTransport(
         "socket_open",
@@ -428,8 +474,7 @@ export const useLlmStore = defineStore("llm", () => {
           ? `Live connection opened on retry ${connectAttempt}.`
           : "Live connection opened."
       );
-      reconnectAttempts.value = 0;
-      wsRef.value?.send(buildAuthMessage());
+      socket.send(buildAuthMessage());
       emitWsTransport("auth_sent", "WebSocket authentication sent.");
       clearAuthAckTimer();
       authAckTimer = window.setTimeout(() => {
@@ -439,40 +484,58 @@ export const useLlmStore = defineStore("llm", () => {
       }, AUTH_ACK_TIMEOUT_MS);
     });
 
-    wsRef.value.addEventListener("error", () => {
+    socket.addEventListener("error", () => {
+      if (generation !== connectionGeneration) return;
       lastError.value = "WebSocket error.";
       emitWsTransport("socket_error", "Connection error while talking to the server.");
     });
 
-    wsRef.value.addEventListener("close", (event) => {
+    socket.addEventListener("close", (event) => {
+      if (generation !== connectionGeneration) return;
+      clearSocketOpenTimer();
+      clearAuthAckTimer();
       const awaitingAuth = !!pendingConnect;
       wsRef.value = null;
       connectionStatus.value = "disconnected";
 
       if (awaitingAuth) {
-        if (
-          event.code === 1008 &&
-          !authFallbackRetried &&
-          localStorage.getItem("token") &&
-          hasStoredApiKey()
-        ) {
-          localStorage.removeItem("token");
-          authFallbackRetried = true;
-          emitWsTransport(
-            "auth_retry",
-            "Retrying WebSocket authentication with API key fallback."
-          );
-          startConnectAttempt();
-          return;
-        }
-        if (event.code !== 1008 && schedulePendingConnectRetry("Initial connection failed.")) {
-          return;
-        }
         if (event.code === 1008) {
-          lastError.value = "Unauthorized. Check your credentials.";
-          allowReconnect = false;
-          emitWsTransport("unauthorized", "Authorization failed for the live connection.");
-          rejectPendingConnect(new Error("Unauthorized WebSocket connection."));
+          // 1008 conflates credential rejection with policy closures (managed
+          // trial pause, live-session revalidation). Confirm the session over
+          // HTTP before discarding any credential — the api client's 401
+          // shared logout path handles confirmed rejection.
+          void resolveCurrentPolicyClose(generation).then((resolution) => {
+            if (!resolution || resolution === "cancelled") return;
+            if (resolution === "retry-with-api-key" && !authFallbackRetried) {
+              authFallbackRetried = true;
+              emitWsTransport(
+                "auth_retry",
+                "Retrying WebSocket authentication with API key fallback."
+              );
+              startConnectAttempt();
+              return;
+            }
+            if (resolution === "session-confirmed" || resolution === "session-unconfirmed") {
+              emitWsTransport(
+                "policy_close",
+                "Server closed the live connection without rejecting the session."
+              );
+              if (schedulePendingConnectRetry("Server policy closed the connection.")) {
+                return;
+              }
+              lastError.value = "Live connection refused by server policy.";
+              allowReconnect = false;
+              rejectPendingConnect(new Error("Live connection refused by server policy."));
+              return;
+            }
+            lastError.value = "Unauthorized. Check your credentials.";
+            allowReconnect = false;
+            emitWsTransport("unauthorized", "Authorization failed for the live connection.");
+            rejectPendingConnect(new Error("Unauthorized WebSocket connection."));
+          });
+          return;
+        }
+        if (schedulePendingConnectRetry("Initial connection failed.")) {
           return;
         }
         rejectPendingConnect(
@@ -494,18 +557,25 @@ export const useLlmStore = defineStore("llm", () => {
         messages.value.push(createLlmMessage("assistant", "Connection lost. Please try again."));
       }
       if (event.code === 1008) {
-        const hadToken = !!localStorage.getItem("token");
-        if (hadToken) {
-          localStorage.removeItem("token");
-        }
-        if (hadToken && hasStoredApiKey()) {
-          reconnectAttempts.value = 0;
-          scheduleReconnect();
-          return;
-        }
-        lastError.value = "Unauthorized. Check your credentials.";
-        allowReconnect = false;
-        emitWsTransport("unauthorized", "Authorization failed for the live connection.");
+        void resolveCurrentPolicyClose(generation).then((resolution) => {
+          if (!resolution || resolution === "cancelled") return;
+          if (resolution === "retry-with-api-key") {
+            reconnectAttempts.value = 0;
+            scheduleReconnect();
+            return;
+          }
+          if (resolution === "session-confirmed" || resolution === "session-unconfirmed") {
+            emitWsTransport(
+              "policy_close",
+              "Server closed the live connection without rejecting the session."
+            );
+            scheduleReconnect();
+            return;
+          }
+          lastError.value = "Unauthorized. Check your credentials.";
+          allowReconnect = false;
+          emitWsTransport("unauthorized", "Authorization failed for the live connection.");
+        });
         return;
       }
       emitWsTransport("closed", "Connection lost while communicating with the server.");
@@ -524,8 +594,8 @@ export const useLlmStore = defineStore("llm", () => {
       connectionStatus.value = "disconnected";
       return Promise.resolve();
     }
+    if (pendingConnect) return pendingConnect;
     if (wsRef.value && wsRef.value.readyState === WebSocket.OPEN) {
-      connectionStatus.value = "connected";
       return Promise.resolve();
     }
     if (wsRef.value && wsRef.value.readyState === WebSocket.CONNECTING) {
@@ -694,6 +764,7 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const sendMessage = async (message: string, metadata?: Record<string, unknown>) => {
+    metadata = { ...metadata, active_attention: attentionSnapshot() };
     if (!message.trim()) {
       return;
     }
@@ -701,6 +772,12 @@ export const useLlmStore = defineStore("llm", () => {
       return;
     }
 
+    loading.value = true;
+    const requestId = crypto.randomUUID();
+    activeChatRequestId = requestId;
+    analysisStatus.value = "Analysis in progress. Hit stop to interrupt";
+    if (chatDeadline) clearTimeout(chatDeadline);
+    chatDeadline = setTimeout(() => stopAnalysis("Analysis timed out after one minute."), 60_000);
     if (!isServerBacked.value) {
       const conversationId = currentConversationId.value || createConversationId();
       currentConversationId.value = conversationId;
@@ -710,13 +787,14 @@ export const useLlmStore = defineStore("llm", () => {
       messages.value.push(createLlmMessage("assistant", ""));
       persistLocalConversationState(conversationId);
       localStreamAbortController?.abort();
-      localStreamAbortController = new AbortController();
+      const controller = new AbortController();
+      localStreamAbortController = controller;
 
       try {
         const response = await fetch(buildApiUrl("/chat/stream"), {
           method: "POST",
           headers: getRequestHeaders(),
-          signal: localStreamAbortController.signal,
+          signal: controller.signal,
           body: JSON.stringify({ message, metadata: metadata || null, verbose: currentConfig.value?.verbose ?? true, max_paragraphs: currentConfig.value?.max_paragraphs ?? 2 }),
         });
 
@@ -740,6 +818,7 @@ export const useLlmStore = defineStore("llm", () => {
         }
 
         for await (const payload of streamSsePayloads(response)) {
+          if (activeChatRequestId !== requestId) break;
           if (payload.type === "chunk") {
             const text = typeof payload.text === "string" ? payload.text : "";
             const lastMessage = messages.value[messages.value.length - 1];
@@ -753,10 +832,13 @@ export const useLlmStore = defineStore("llm", () => {
                 : "Chat request failed."
             );
           } else if (payload.type === "done") {
+            const answer = messages.value[messages.value.length - 1]?.content;
+            recordScientificQueryOutcome(answer !== SCIENTIFIC_QUERY_REFUSAL);
             break;
           }
         }
       } catch (error) {
+        if (activeChatRequestId !== requestId) return;
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
         }
@@ -771,10 +853,16 @@ export const useLlmStore = defineStore("llm", () => {
           messages.value.push(createLlmMessage("assistant", detail));
         }
       } finally {
-        localStreamAbortController = null;
-        loading.value = false;
-        streaming.value = false;
-        persistLocalConversationState(conversationId);
+        if (activeChatRequestId === requestId) {
+          if (chatDeadline) clearTimeout(chatDeadline);
+          chatDeadline = null;
+          activeChatRequestId = null;
+          analysisStatus.value = "";
+          localStreamAbortController = null;
+          loading.value = false;
+          streaming.value = false;
+          persistLocalConversationState(conversationId);
+        }
       }
       return;
     }
@@ -782,6 +870,8 @@ export const useLlmStore = defineStore("llm", () => {
     try {
       await connect();
     } catch (error) {
+      if (activeChatRequestId !== requestId) return;
+      stopAnalysis("Unable to connect. Please try again.");
       console.error("Failed to connect WebSocket:", error);
       messages.value.push(
         createLlmMessage(
@@ -792,11 +882,13 @@ export const useLlmStore = defineStore("llm", () => {
       return;
     }
 
+    if (activeChatRequestId !== requestId) return;
     loading.value = true;
     messages.value.push(createLlmMessage("user", message));
     wsRef.value?.send(
       JSON.stringify({
         action: "llm_chat",
+        request_id: requestId,
         message: message,
         conversation_id: currentConversationId.value,
         metadata: metadata || null,
@@ -888,7 +980,28 @@ export const useLlmStore = defineStore("llm", () => {
     messages.value = [];
   };
 
+  const stopAnalysis = (detail = "Analysis interrupted.") => {
+    const requestId = activeChatRequestId;
+    if (!requestId) return;
+    localStreamAbortController?.abort();
+    localStreamAbortController = null;
+    if (isServerBacked.value && wsRef.value?.readyState === WebSocket.OPEN) {
+      wsRef.value.send(JSON.stringify({ action: "cancel_request", request_id: requestId }));
+    }
+    if (chatDeadline) clearTimeout(chatDeadline);
+    chatDeadline = null;
+    activeChatRequestId = null;
+    analysisStatus.value = "";
+    loading.value = false;
+    streaming.value = false;
+    streamingIndex.value = null;
+    messages.value.push(createLlmMessage("assistant", detail));
+  };
+
   const disconnect = () => {
+    connectionGeneration += 1;
+    cancelPolicyProbe();
+    stopAnalysis();
     localStreamAbortController?.abort();
     localStreamAbortController = null;
     clearReconnect();
@@ -923,8 +1036,18 @@ export const useLlmStore = defineStore("llm", () => {
         : null;
     }
     try {
-      const response = await api.get("/llm/debug/config");
-      return response.data as LlmConfig;
+      // The public configuration contract exposes readiness without provider
+      // credentials. The former debug endpoint is not registered by the server.
+      const { data } = await api.get<import("@/types/config").AppConfig>("/config");
+      if (!data.features?.chatAssistant || data.configStatus === "degraded") return null;
+      const provider = Object.entries(data.llms || {}).find(([, value]) => value.enabled);
+      return {
+        provider: provider?.[0] || "hosted",
+        base_url: "",
+        model: provider?.[1].model || "server-managed",
+        verbose: localStorage.getItem("llm_verbose") !== "false",
+        max_paragraphs: parseInt(localStorage.getItem("llm_max_paragraphs") ?? "2", 10) || 2,
+      };
     } catch (error) {
       console.error("Failed to fetch LLM config:", error);
       return null;
@@ -1020,6 +1143,8 @@ export const useLlmStore = defineStore("llm", () => {
     disconnect,
     reconnect,
     sendMessage,
+    stopAnalysis,
+    analysisStatus,
     refreshConversations,
     loadConversation,
     deleteConversation,

@@ -8,7 +8,7 @@
     @mousedown="handleCanvasMouseDown"
     @contextmenu="handleCanvasContextMenu"
   >
-    <div class="canvas-surface" ref="surfaceRef">
+    <div class="canvas-surface" ref="surfaceRef" :style="surfaceStyle">
       <!-- SVG layer for edges -->
       <svg class="edges-layer">
         <defs>
@@ -39,68 +39,75 @@
         <!-- Edge lines with validation coloring -->
         <g v-for="edge in edges" :key="getEdgeKey(edge)" class="edge-group">
           <!-- Invisible thick line for easier clicking -->
-          <line
-            :x1="getNodeCenter(edge.from).x"
-            :y1="getNodeCenter(edge.from).y"
-            :x2="getNodeCenter(edge.to).x"
-            :y2="getNodeCenter(edge.to).y"
+          <path
+            :d="edgeRoutes.get(getEdgeKey(edge))?.path"
+            fill="none"
             stroke="transparent"
             stroke-width="20"
             class="edge-hit-area"
             @click="handleEdgeClick(edge)"
-            style="cursor: pointer;"
+            style="cursor: pointer"
           >
             <title>Click to delete this connection</title>
-          </line>
+          </path>
 
           <!-- Visible edge line -->
-          <line
-            :x1="getNodeCenter(edge.from).x"
-            :y1="getNodeCenter(edge.from).y"
-            :x2="getNodeCenter(edge.to).x"
-            :y2="getNodeCenter(edge.to).y"
+          <path
+            :d="edgeRoutes.get(getEdgeKey(edge))?.path"
+            fill="none"
             :stroke="edge.isValid === false ? '#ef4444' : '#10b981'"
             :stroke-width="edge.isValid === false ? 3 : 2"
             :stroke-dasharray="edge.isValid === false ? '5,5' : 'none'"
-            :marker-end="edge.isValid === false ? 'url(#arrowhead-invalid)' : 'url(#arrowhead-valid)'"
+            :marker-end="
+              edge.isValid === false ? 'url(#arrowhead-invalid)' : 'url(#arrowhead-valid)'
+            "
             class="edge-line"
-            style="pointer-events: none;"
+            style="pointer-events: none"
           >
             <!-- Tooltip for invalid edges -->
             <title v-if="edge.isValid === false && edge.validationError">
               {{ edge.validationError }}
             </title>
-          </line>
-
-          <!-- Edge type label -->
-          <text
-            v-if="edge.dataType"
-            :x="(getNodeCenter(edge.from).x + getNodeCenter(edge.to).x) / 2"
-            :y="(getNodeCenter(edge.from).y + getNodeCenter(edge.to).y) / 2 - 5"
-            class="edge-label"
-            :class="{ 'edge-label-invalid': edge.isValid === false }"
-            text-anchor="middle"
-          >
-            {{ edge.dataType }}
-          </text>
+          </path>
 
           <!-- Warning icon for invalid edges -->
           <g
             v-if="edge.isValid === false"
-            :transform="`translate(${(getNodeCenter(edge.from).x + getNodeCenter(edge.to).x) / 2}, ${(getNodeCenter(edge.from).y + getNodeCenter(edge.to).y) / 2 + 12})`"
+            :transform="`translate(${edgeRoutes.get(getEdgeKey(edge))?.label.x}, ${(edgeRoutes.get(getEdgeKey(edge))?.label.y ?? 0) + 18})`"
             class="edge-warning-icon"
           >
             <circle cx="0" cy="0" r="10" fill="#ef4444" />
-            <text x="0" y="4" text-anchor="middle" fill="white" font-size="12" font-weight="bold">!</text>
+            <text x="0" y="4" text-anchor="middle" fill="white" font-size="12" font-weight="bold">
+              !
+            </text>
             <title>{{ edge.validationError }}</title>
           </g>
+        </g>
+
+        <!-- All labels above all hit areas: crossing paths must not intercept label clicks. -->
+        <g class="edge-labels">
+          <text
+            v-for="edge in edges.filter((item) => item.dataType)"
+            :key="getEdgeKey(edge)"
+            :x="edgeRoutes.get(getEdgeKey(edge))?.label.x"
+            :y="edgeRoutes.get(getEdgeKey(edge))?.label.y"
+            class="edge-label"
+            text-anchor="middle"
+            @click.stop="handleEdgeClick(edge)"
+          >
+            {{ getEdgeLabel(edge) }}
+            <title>
+              {{ edge.fromPort || "default" }} → {{ edge.toPort || "default" }} · Click to delete
+              this connection
+            </title>
+          </text>
         </g>
 
         <!-- Connecting line preview -->
         <line
           v-if="isConnecting && mousePos"
-          :x1="getNodeCenter(connecting).x"
-          :y1="getNodeCenter(connecting).y"
+          :x1="edgeEndpoint(connecting || '', connectingFromPort || undefined, 'output').x"
+          :y1="edgeEndpoint(connecting || '', connectingFromPort || undefined, 'output').y"
           :x2="mousePos.x"
           :y2="mousePos.y"
           stroke="#10b981"
@@ -110,60 +117,60 @@
         />
       </svg>
 
-    <!-- Context Menu -->
-    <div
-      v-if="contextMenu.show"
-      class="context-menu"
-      :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
-      @click.stop
-    >
-      <template v-if="contextMenu.nodeId !== null">
-        <div class="context-menu-item" @click="runNode">
-          <i class="pi pi-play"></i>
-          <span>Run Node</span>
-        </div>
-        <div
-          class="context-menu-item"
-          :class="{ disabled: !hasOutput(contextMenu.nodeId) }"
-          @click="viewOutput"
-        >
-          <i class="pi pi-eye"></i>
-          <span>View Output</span>
-        </div>
-        <div class="context-menu-divider"></div>
-        <div class="context-menu-item" @click="cutSelection">
-          <i class="pi pi-scissors"></i>
-          <span v-if="selectedNodeIds.size > 1">Cut {{ selectedNodeIds.size }} Nodes</span>
-          <span v-else>Cut Node</span>
-        </div>
-        <div class="context-menu-item" @click="copySelection">
-          <i class="pi pi-copy"></i>
-          <span v-if="selectedNodeIds.size > 1">Copy {{ selectedNodeIds.size }} Nodes</span>
-          <span v-else>Copy Node</span>
-        </div>
-        <div class="context-menu-item" @click="pasteSelection">
-          <i class="pi pi-clipboard"></i>
-          <span>Paste</span>
-        </div>
-        <div class="context-menu-item" @click="duplicateSelection">
-          <i class="pi pi-clone"></i>
-          <span v-if="selectedNodeIds.size > 1">Duplicate {{ selectedNodeIds.size }} Nodes</span>
-          <span v-else>Duplicate Node</span>
-        </div>
-        <div class="context-menu-item danger" @click="deleteSelection">
-          <i class="pi pi-trash"></i>
-          <span v-if="selectedNodeIds.size > 1">Delete {{ selectedNodeIds.size }} Nodes</span>
-          <span v-else>Delete Node</span>
-        </div>
-      </template>
-      <template v-else>
-        <!-- Canvas background context menu -->
-        <div class="context-menu-item" @click="pasteSelection">
-          <i class="pi pi-clipboard"></i>
-          <span>Paste</span>
-        </div>
-      </template>
-    </div>
+      <!-- Context Menu -->
+      <div
+        v-if="contextMenu.show"
+        class="context-menu"
+        :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+        @click.stop
+      >
+        <template v-if="contextMenu.nodeId !== null">
+          <div class="context-menu-item" @click="runNode">
+            <i class="pi pi-play"></i>
+            <span>Run Node</span>
+          </div>
+          <div
+            class="context-menu-item"
+            :class="{ disabled: !hasOutput(contextMenu.nodeId) }"
+            @click="viewOutput"
+          >
+            <i class="pi pi-eye"></i>
+            <span>View Output</span>
+          </div>
+          <div class="context-menu-divider"></div>
+          <div class="context-menu-item" @click="cutSelection">
+            <i class="pi pi-scissors"></i>
+            <span v-if="selectedNodeIds.size > 1">Cut {{ selectedNodeIds.size }} Nodes</span>
+            <span v-else>Cut Node</span>
+          </div>
+          <div class="context-menu-item" @click="copySelection">
+            <i class="pi pi-copy"></i>
+            <span v-if="selectedNodeIds.size > 1">Copy {{ selectedNodeIds.size }} Nodes</span>
+            <span v-else>Copy Node</span>
+          </div>
+          <div class="context-menu-item" @click="pasteSelection">
+            <i class="pi pi-clipboard"></i>
+            <span>Paste</span>
+          </div>
+          <div class="context-menu-item" @click="duplicateSelection">
+            <i class="pi pi-clone"></i>
+            <span v-if="selectedNodeIds.size > 1">Duplicate {{ selectedNodeIds.size }} Nodes</span>
+            <span v-else>Duplicate Node</span>
+          </div>
+          <div class="context-menu-item danger" @click="deleteSelection">
+            <i class="pi pi-trash"></i>
+            <span v-if="selectedNodeIds.size > 1">Delete {{ selectedNodeIds.size }} Nodes</span>
+            <span v-else>Delete Node</span>
+          </div>
+        </template>
+        <template v-else>
+          <!-- Canvas background context menu -->
+          <div class="context-menu-item" @click="pasteSelection">
+            <i class="pi pi-clipboard"></i>
+            <span>Paste</span>
+          </div>
+        </template>
+      </div>
 
       <!-- Rubber-band selection box -->
       <div
@@ -173,7 +180,7 @@
           left: `${Math.min(rubberBandStart.x, rubberBandCurrent.x)}px`,
           top: `${Math.min(rubberBandStart.y, rubberBandCurrent.y)}px`,
           width: `${Math.abs(rubberBandCurrent.x - rubberBandStart.x)}px`,
-          height: `${Math.abs(rubberBandCurrent.y - rubberBandStart.y)}px`
+          height: `${Math.abs(rubberBandCurrent.y - rubberBandStart.y)}px`,
         }"
       ></div>
 
@@ -186,138 +193,149 @@
       <div
         v-for="node in nodes"
         :key="node.id"
+        :ref="(el) => observeNode(node.id, el as HTMLElement | null)"
         class="workflow-node"
         :class="{
           'is-selected': selectedNodeIds.has(node.id),
           'is-dragging': isDragging && selectedNodeIds.has(node.id),
           'is-connecting-source': connecting === node.id,
-          'is-compatible-target': isConnecting && connecting !== node.id && isNodeCompatibleTarget(node.id),
-          'is-incompatible-target': isConnecting && connecting !== node.id && !isNodeCompatibleTarget(node.id),
-          [`node-type-${getNodeCategory(node.type)}`]: true
+          'is-compatible-target':
+            isConnecting && connecting !== node.id && isNodeCompatibleTarget(node.id),
+          'is-incompatible-target':
+            isConnecting && connecting !== node.id && !isNodeCompatibleTarget(node.id),
+          [`node-type-${getNodeCategory(node.type)}`]: true,
         }"
         :style="{ left: `${node.x}px`, top: `${node.y}px` }"
         @mousedown.stop="handleNodeMouseDown($event, node.id)"
         @contextmenu.prevent="handleNodeContextMenu($event, node.id)"
       >
-      <!-- Input ports (top edge) — click a compatible port while connecting to complete the edge -->
-      <div class="input-ports">
-        <div
-          v-for="(port, idx) in getNodeInputPorts(node.type)"
-          :key="`input-${port.name}`"
-          class="port port-input"
-          :class="{
-            'port-compatible': isConnecting && isPortCompatible(node.id, port.name),
-            'port-incompatible': isConnecting && !isPortCompatible(node.id, port.name)
-          }"
-          :style="{
-            left: `${30 + idx * 20}px`,
-            backgroundColor: getPortColor(getPortCategory(port.type_ref))
-          }"
-          :title="isConnecting ? getPortCompatibilityReason(node.id, port.name) || `${port.label} (${getTypeName(port.type_ref)})` : `${port.label} (${getTypeName(port.type_ref)})`"
-          @click.stop="onInputPortClick(node.id, port.name)"
-        >
-          <span
-            v-if="isConnecting"
-            class="port-compat-indicator"
-            :class="isPortCompatible(node.id, port.name) ? 'ok' : 'bad'"
+        <!-- Input ports (top edge) — click a compatible port while connecting to complete the edge -->
+        <div class="input-ports">
+          <div
+            v-for="(port, idx) in getNodeInputPorts(node.type)"
+            :key="`input-${port.name}`"
+            class="port port-input"
+            :class="{
+              'port-compatible': isConnecting && isPortCompatible(node.id, port.name),
+              'port-incompatible': isConnecting && !isPortCompatible(node.id, port.name),
+            }"
+            :style="{
+              left: `${30 + idx * 20}px`,
+              backgroundColor: getPortColor(getPortCategory(port.type_ref)),
+            }"
+            :title="
+              isConnecting
+                ? getPortCompatibilityReason(node.id, port.name) ||
+                  `${port.label} (${getTypeName(port.type_ref)})`
+                : `${port.label} (${getTypeName(port.type_ref)})`
+            "
+            @click.stop="onInputPortClick(node.id, port.name)"
           >
-            {{ isPortCompatible(node.id, port.name) ? "✓" : "✕" }}
-          </span>
-          <div class="port-tooltip">
-            <div class="port-tooltip-label">{{ port.label }}</div>
-            <div class="port-tooltip-type">{{ getTypeName(port.type_ref) }}</div>
-            <div
-              v-if="isConnecting && getPortCompatibilityReason(node.id, port.name)"
-              class="port-tooltip-desc"
+            <span
+              v-if="isConnecting"
+              class="port-compat-indicator"
+              :class="isPortCompatible(node.id, port.name) ? 'ok' : 'bad'"
             >
-              {{ getPortCompatibilityReason(node.id, port.name) }}
+              {{ isPortCompatible(node.id, port.name) ? "✓" : "✕" }}
+            </span>
+            <div class="port-tooltip">
+              <div class="port-tooltip-label">{{ port.label }}</div>
+              <div class="port-tooltip-type">{{ getTypeName(port.type_ref) }}</div>
+              <div
+                v-if="isConnecting && getPortCompatibilityReason(node.id, port.name)"
+                class="port-tooltip-desc"
+              >
+                {{ getPortCompatibilityReason(node.id, port.name) }}
+              </div>
+              <div v-if="port.description" class="port-tooltip-desc">{{ port.description }}</div>
             </div>
-            <div v-if="port.description" class="port-tooltip-desc">{{ port.description }}</div>
           </div>
         </div>
-      </div>
 
-      <!-- Output ports (bottom edge) — click a port to start a connection from it -->
-      <div class="output-ports">
-        <div
-          v-for="(port, idx) in getNodeOutputPorts(node.type)"
-          :key="`output-${port.name}`"
-          class="port port-output"
-          :style="{
-            left: `${30 + idx * 20}px`,
-            backgroundColor: getPortColor(getPortCategory(port.type_ref))
-          }"
-          :title="`${port.label} (${getTypeName(port.type_ref)}) — click to start a connection`"
-          @click.stop="startConnect(node.id, port.name)"
-        >
-          <div class="port-tooltip">
-            <div class="port-tooltip-label">{{ port.label }}</div>
-            <div class="port-tooltip-type">{{ getTypeName(port.type_ref) }}</div>
-            <div v-if="port.description" class="port-tooltip-desc">{{ port.description }}</div>
+        <!-- Output ports (bottom edge) — click a port to start a connection from it -->
+        <div class="output-ports">
+          <div
+            v-for="(port, idx) in getNodeOutputPorts(node.type)"
+            :key="`output-${port.name}`"
+            class="port port-output"
+            :style="{
+              left: `${30 + idx * 20}px`,
+              backgroundColor: getPortColor(getPortCategory(port.type_ref)),
+            }"
+            :title="`${port.label} (${getTypeName(port.type_ref)}) — click to start a connection`"
+            @click.stop="startConnect(node.id, port.name)"
+          >
+            <div class="port-tooltip">
+              <div class="port-tooltip-label">{{ port.label }}</div>
+              <div class="port-tooltip-type">{{ getTypeName(port.type_ref) }}</div>
+              <div v-if="port.description" class="port-tooltip-desc">{{ port.description }}</div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Node header -->
-      <div class="node-header" :class="`header-${getNodeCategory(node.type)}`">
-        <span class="node-icon">{{ getNodeIcon(node.type) }}</span>
-        <span class="node-label" :title="getNodeLabel(node.type)">
-          {{ getNodeLabel(node.type) }}
-        </span>
+        <!-- Node header -->
+        <div class="node-header" :class="`header-${getNodeCategory(node.type)}`">
+          <span class="node-icon">{{ getNodeIcon(node.type) }}</span>
+          <span class="node-label" :title="node.label || getNodeLabel(node.type)">
+            {{ node.label || getNodeLabel(node.type) }}
+          </span>
+          <button class="delete-btn" @click.stop="deleteNode(node.id)" title="Delete node">
+            <i class="pi pi-times"></i>
+          </button>
+        </div>
+
+        <!-- Node body -->
+        <div class="node-body">
+          <!-- Error state -->
+          <div v-if="node.executionState?.status === 'error'" class="node-status error">
+            <i class="pi pi-times-circle"></i>
+            <span>Error</span>
+          </div>
+          <!-- Running state -->
+          <div v-else-if="node.executionState?.status === 'running'" class="node-status running">
+            <i class="pi pi-spin pi-spinner"></i>
+            <span>Running</span>
+          </div>
+          <!-- Completed state -->
+          <div
+            v-else-if="node.executionState?.status === 'completed' || nodeOutputs.has(node.id)"
+            class="node-status success"
+          >
+            <i class="pi pi-check-circle"></i>
+            <span>Completed</span>
+          </div>
+          <!-- Stale state (modified since execution) -->
+          <div v-else-if="node.executionState?.status === 'stale'" class="node-status stale">
+            <i class="pi pi-exclamation-triangle"></i>
+            <span>Stale</span>
+          </div>
+          <!-- Pending state (default) -->
+          <div v-else class="node-status pending">
+            <i class="pi pi-circle"></i>
+            <span>Pending</span>
+          </div>
+
+          <!-- Data shape badge (if available) -->
+          <div v-if="node.executionState?.output_shape" class="data-shape-badge">
+            <i class="pi pi-database"></i>
+            <span>
+              <template v-if="node.executionState.output_shape_label">
+                {{ compactShapeLabel(node.executionState.output_shape_label) }} ·
+              </template>
+              {{ formatShape(node.executionState.output_shape) }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Cancel pill — only when this node is the active connection source. -->
         <button
-          class="delete-btn"
-          @click.stop="deleteNode(node.id)"
-          title="Delete node"
+          v-if="connecting === node.id"
+          class="cancel-connect-pill"
+          @click.stop="cancelConnect"
         >
           <i class="pi pi-times"></i>
+          Cancel
         </button>
-      </div>
-
-      <!-- Node body -->
-      <div class="node-body">
-        <!-- Error state -->
-        <div v-if="node.executionState?.status === 'error'" class="node-status error">
-          <i class="pi pi-times-circle"></i>
-          <span>Error</span>
-        </div>
-        <!-- Running state -->
-        <div v-else-if="node.executionState?.status === 'running'" class="node-status running">
-          <i class="pi pi-spin pi-spinner"></i>
-          <span>Running</span>
-        </div>
-        <!-- Completed state -->
-        <div v-else-if="node.executionState?.status === 'completed' || nodeOutputs.has(node.id)" class="node-status success">
-          <i class="pi pi-check-circle"></i>
-          <span>Completed</span>
-        </div>
-        <!-- Stale state (modified since execution) -->
-        <div v-else-if="node.executionState?.status === 'stale'" class="node-status stale">
-          <i class="pi pi-exclamation-triangle"></i>
-          <span>Stale</span>
-        </div>
-        <!-- Pending state (default) -->
-        <div v-else class="node-status pending">
-          <i class="pi pi-circle"></i>
-          <span>Pending</span>
-        </div>
-
-        <!-- Data shape badge (if available) -->
-        <div v-if="node.executionState?.output_shape" class="data-shape-badge">
-          <i class="pi pi-database"></i>
-          <span>{{ formatShape(node.executionState.output_shape) }}</span>
-        </div>
-
-      </div>
-
-      <!-- Cancel pill — only when this node is the active connection source. -->
-      <button
-        v-if="connecting === node.id"
-        class="cancel-connect-pill"
-        @click.stop="cancelConnect"
-      >
-        <i class="pi pi-times"></i>
-        Cancel
-      </button>
       </div>
 
       <!-- Empty state -->
@@ -335,7 +353,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onBeforeUnmount } from "vue";
+import { routeEdges } from "@/utils/edgeRouting";
+import { saveCanvasPng } from "@/utils/canvasPng";
 import { useWorkflowStore } from "@/stores/workflow";
 import { getNodeVisualCategory } from "@/utils/nodeVisuals";
 import type { WorkflowNode, WorkflowEdge } from "@/stores/workflow";
@@ -351,30 +371,33 @@ interface Props {
 const props = defineProps<Props>();
 
 const emit = defineEmits<{
-  (e: 'update:nodes', nodes: WorkflowNode[]): void;
-  (e: 'update:edges', edges: WorkflowEdge[]): void;
-  (e: 'node-select', node: WorkflowNode | null): void;
-  (e: 'node-connect', connection: { from: string; to: string; fromPort?: string; toPort?: string }): void;
-  (e: 'connection-error', error: string): void;
-  (e: 'run-node', nodeId: string): void;
-  (e: 'view-output', nodeId: string): void;
-  (e: 'cut-selection'): void;
-  (e: 'copy-selection'): void;
-  (e: 'paste-selection'): void;
-  (e: 'duplicate-selection'): void;
-  (e: 'delete-selection'): void;
+  (e: "update:nodes", nodes: WorkflowNode[]): void;
+  (e: "update:edges", edges: WorkflowEdge[]): void;
+  (e: "node-select", node: WorkflowNode | null): void;
+  (
+    e: "node-connect",
+    connection: { from: string; to: string; fromPort?: string; toPort?: string },
+  ): void;
+  (e: "connection-error", error: string): void;
+  (e: "run-node", nodeId: string): void;
+  (e: "view-output", nodeId: string): void;
+  (e: "cut-selection"): void;
+  (e: "copy-selection"): void;
+  (e: "paste-selection"): void;
+  (e: "duplicate-selection"): void;
+  (e: "delete-selection"): void;
 }>();
 
 // Port color scheme by category
 const PORT_COLORS: Record<string, string> = {
-  dataset: '#3b82f6',  // Blue - spectral data, NDDataset
-  array: '#3b82f6',    // Blue - array types
-  target: '#f59e0b',   // Orange/amber - y values, labels
-  model: '#a855f7',    // Purple - trained models
-  number: '#10b981',   // Green - scalar values
-  visualization: '#ec4899', // Pink - plots
-  config: '#64748b',   // Gray - configuration dicts
-  default: '#64748b',  // Fallback gray
+  dataset: "#3b82f6", // Blue - canonical spectral data
+  array: "#3b82f6", // Blue - array types
+  target: "#f59e0b", // Orange/amber - y values, labels
+  model: "#a855f7", // Purple - trained models
+  number: "#10b981", // Green - scalar values
+  visualization: "#ec4899", // Pink - plots
+  config: "#64748b", // Gray - configuration dicts
+  default: "#64748b", // Fallback gray
 };
 
 // Get workflow store for node metadata
@@ -389,14 +412,14 @@ const getTypeName = (typeRef: string): string => {
 // Derive visual category from a type_ref URI using the fetched type registry.
 const getPortCategory = (typeRef: string): string => {
   const match = typeRef.match(/^spectrasherpa:\/\/types\/([A-Za-z0-9_]+)\/\d+\.\d+$/);
-  if (!match) return 'dataset';
+  if (!match) return "dataset";
   const typeName = match[1];
   // Look up in the fetched type registry (has category per type)
   const registry = workflowStore.typeRegistry;
   if (registry?.types?.[typeName]?.category) {
     return registry.types[typeName].category;
   }
-  return 'dataset'; // safe fallback
+  return "dataset"; // safe fallback
 };
 
 // Get port color based on type_ref category
@@ -421,37 +444,38 @@ const getNodeOutputPorts = (nodeType: string): NodePortMetadata[] => {
     return metadata.output_ports;
   }
   // Fallback for nodes that declare output_type but not output_ports
-  return [{
-    name: 'default',
-    type_ref: 'spectrasherpa://types/Any/1.0',
-    required: true,
-    label: 'Output',
-  }];
+  return [
+    {
+      name: "default",
+      type_ref: "spectrasherpa://types/Any/1.0",
+      required: true,
+      label: "Output",
+    },
+  ];
 };
 
 const NODE_ICONS: Record<string, string> = {
-  'data.source': '📊',
-  'data.my_dataset': '🧪',
-  'preprocess.normalize': '⚖️',
-  'preprocess.scale': '📏',
-  'baseline.penalized_ls': '📉',
-  'preprocess.smooth': '〰️',
-  'model.pca': '🔀',
-  'model.pls': '📈',
-  'model.mcr_als': '🧩',
-  'model.efa': '🔍',
-  'model.simplisma': '🎯',
-  'analysis.peak_finding': '⛰️',
-  'analysis.peak_id': '🔬',
-  'analysis.compare_library': '📚',
-  'stats.summary': '📊',
-  'output.plot': '📈',
-  'output.contour': '🗺️',
-  'output.export': '💾',
+  "data.file_load": "📂",
+  "preprocess.normalize": "⚖️",
+  "preprocess.scale": "📏",
+  "baseline.penalized_ls": "📉",
+  "preprocess.smooth": "〰️",
+  "model.pca": "🔀",
+  "model.fitted_pls": "📈",
+  "model.apply_fitted_pls": "🎯",
+  "model.mcr_als": "🧩",
+  "model.efa": "🔍",
+  "model.simplisma": "🎯",
+  "analysis.peak_finding": "⛰️",
+  "analysis.compare_library": "📚",
+  "stats.summary": "📊",
+  "output.plot": "📈",
+  "output.contour": "🗺️",
+  "output.export": "💾",
 };
 
 const getNodeIcon = (type: string): string => {
-  return NODE_ICONS[type] || '📦';
+  return NODE_ICONS[type] || "📦";
 };
 
 const getNodeLabel = (type: string): string => {
@@ -469,11 +493,18 @@ const getNodeCategory = (type: string): string => {
 
 // Format data shape for display
 const formatShape = (shape: number[]): string => {
-  if (!shape || shape.length === 0) return '';
+  if (!shape || shape.length === 0) return "";
   if (shape.length === 1) return `${shape[0]} pts`;
   if (shape.length === 2) return `${shape[0]} × ${shape[1]}`;
-  return shape.join(' × ');
+  return shape.join(" × ");
 };
+
+const compactShapeLabel = (label: string): string =>
+  label
+    .replace(/: Predicted vs Reference$/i, "")
+    .replace(/^Held-out Test: /i, "Held-out ")
+    .replace(/^Plot Data$/i, "Plot Points")
+    .trim();
 
 // Canvas state
 const canvasRef = ref<HTMLElement | null>(null);
@@ -533,7 +564,7 @@ const getPortCompatibilityReason = (targetNodeId: string, targetPortName?: strin
 const isNodeCompatibleTarget = (nodeId: string): boolean => {
   if (connecting.value === null || connecting.value === nodeId) return false;
 
-  const targetNode = props.nodes.find(n => n.id === nodeId);
+  const targetNode = props.nodes.find((n) => n.id === nodeId);
   if (!targetNode) return false;
 
   const targetMetadata = workflowStore.getNodeMetadata(targetNode.type);
@@ -542,26 +573,6 @@ const isNodeCompatibleTarget = (nodeId: string): boolean => {
   }
 
   return isPortCompatible(nodeId);
-};
-
-// Node coordinates map for O(1) lookups during edge rendering
-const nodePositionMap = computed(() => {
-  const map = new Map<string, { x: number; y: number }>();
-  for (const node of props.nodes) {
-    map.set(node.id, { x: node.x, y: node.y });
-  }
-  return map;
-});
-
-// Get node center position for edge drawing
-const getNodeCenter = (nodeId: string | null) => {
-  if (!nodeId) return { x: 0, y: 0 };
-  const pos = nodePositionMap.value.get(nodeId);
-  if (!pos) return { x: 0, y: 0 };
-  return {
-    x: pos.x + 80, // Half of node width
-    y: pos.y + 50, // Half of node height
-  };
 };
 
 // Mouse event handlers
@@ -573,12 +584,14 @@ const handleNodeMouseDown = (event: MouseEvent, nodeId: string) => {
     return;
   }
 
-  const node = props.nodes.find(n => n.id === nodeId);
+  const node = props.nodes.find((n) => n.id === nodeId);
   if (!node) return;
 
   // Skip if clicking on buttons
-  if ((event.target as HTMLElement).tagName === 'BUTTON' ||
-      (event.target as HTMLElement).closest('button')) {
+  if (
+    (event.target as HTMLElement).tagName === "BUTTON" ||
+    (event.target as HTMLElement).closest("button")
+  ) {
     return;
   }
 
@@ -606,17 +619,17 @@ const handleNodeMouseDown = (event: MouseEvent, nodeId: string) => {
 
   // Always emit single node-select for the inspector if we just clicked one
   if (selectedNodeIds.value.has(nodeId)) {
-    emit('node-select', node);
+    emit("node-select", node);
   }
 
   // Prepare for potential dragging of all selected nodes
   isDragging.value = true;
   hasDragged.value = false;
   dragOrigin.value = { x: event.clientX, y: event.clientY };
-  
+
   dragStartPositions.value.clear();
-  selectedNodeIds.value.forEach(id => {
-    const n = props.nodes.find(x => x.id === id);
+  selectedNodeIds.value.forEach((id) => {
+    const n = props.nodes.find((x) => x.id === id);
     if (n) {
       dragStartPositions.value.set(id, { x: n.x, y: n.y });
     }
@@ -633,7 +646,7 @@ const handleMouseMove = (event: MouseEvent) => {
 
   if (isRubberBanding.value) {
     rubberBandCurrent.value = { x: localX, y: localY };
-    
+
     // Compute intersection
     const rx1 = Math.min(rubberBandStart.value.x, rubberBandCurrent.value.x);
     const ry1 = Math.min(rubberBandStart.value.y, rubberBandCurrent.value.y);
@@ -643,16 +656,19 @@ const handleMouseMove = (event: MouseEvent) => {
     const isShift = event.shiftKey;
     const newSelection = isShift ? new Set(rubberBandInitialSelection.value) : new Set<string>();
 
-    props.nodes.forEach(n => {
+    props.nodes.forEach((n) => {
       // Node dimensions: 160px wide, ~100px high (approximate)
-      const nx1 = n.x, ny1 = n.y, nx2 = n.x + 160, ny2 = n.y + 100;
+      const nx1 = n.x,
+        ny1 = n.y,
+        nx2 = n.x + 160,
+        ny2 = n.y + 100;
       const intersects = !(rx2 < nx1 || rx1 > nx2 || ry2 < ny1 || ry1 > ny2);
-      
+
       if (intersects) {
         newSelection.add(n.id);
       }
     });
-    
+
     selectedNodeIds.value = newSelection;
     return;
   }
@@ -667,7 +683,7 @@ const handleMouseMove = (event: MouseEvent) => {
   }
 
   if (hasDragged.value) {
-    const updatedNodes = props.nodes.map(n => {
+    const updatedNodes = props.nodes.map((n) => {
       if (selectedNodeIds.value.has(n.id)) {
         const startPos = dragStartPositions.value.get(n.id);
         if (startPos) {
@@ -676,7 +692,7 @@ const handleMouseMove = (event: MouseEvent) => {
       }
       return n;
     });
-    emit('update:nodes', updatedNodes);
+    emit("update:nodes", updatedNodes);
   }
 };
 
@@ -685,11 +701,13 @@ const handleCanvasMouseDown = (event: MouseEvent) => {
     return;
   }
 
-  if ((event.target as HTMLElement).closest('.workflow-node') || 
-      (event.target as HTMLElement).closest('.context-menu')) {
+  if (
+    (event.target as HTMLElement).closest(".workflow-node") ||
+    (event.target as HTMLElement).closest(".context-menu")
+  ) {
     return;
   }
-  
+
   // Clicked on empty canvas -> start rubber banding
   const rect = canvasRef.value?.getBoundingClientRect();
   if (!rect) return;
@@ -700,26 +718,28 @@ const handleCanvasMouseDown = (event: MouseEvent) => {
   isRubberBanding.value = true;
   rubberBandStart.value = { x: localX, y: localY };
   rubberBandCurrent.value = { x: localX, y: localY };
-  
+
   if (event.shiftKey) {
     rubberBandInitialSelection.value = new Set(selectedNodeIds.value);
   } else {
     rubberBandInitialSelection.value = new Set();
     selectedNodeIds.value.clear();
-    emit('node-select', null);
+    emit("node-select", null);
   }
 };
 
 const handleCanvasMouseUp = () => {
   if (isRubberBanding.value) {
     isRubberBanding.value = false;
-    
+
     // If they just clicked without dragging, clear selection
-    if (rubberBandStart.value.x === rubberBandCurrent.value.x && 
-        rubberBandStart.value.y === rubberBandCurrent.value.y && 
-        !rubberBandInitialSelection.value.size) {
+    if (
+      rubberBandStart.value.x === rubberBandCurrent.value.x &&
+      rubberBandStart.value.y === rubberBandCurrent.value.y &&
+      !rubberBandInitialSelection.value.size
+    ) {
       selectedNodeIds.value.clear();
-      emit('node-select', null);
+      emit("node-select", null);
     }
   }
 
@@ -754,7 +774,7 @@ const completeConnect = (toNodeId: string, toPort?: string) => {
     const sourceNode = props.nodes.find((n) => n.id === fromNodeId);
     const targetNode = props.nodes.find((n) => n.id === toNodeId);
     if (!sourceNode || !targetNode) {
-      emit('connection-error', 'Source or target node not found');
+      emit("connection-error", "Source or target node not found");
       connecting.value = null;
       connectingFromPort.value = null;
       return;
@@ -768,18 +788,18 @@ const completeConnect = (toNodeId: string, toPort?: string) => {
     });
 
     if (!validation.isValid) {
-      emit('connection-error', validation.error || '❌ Invalid connection');
+      emit("connection-error", validation.error || "❌ Invalid connection");
       connecting.value = null;
       connectingFromPort.value = null;
       return;
     }
 
     // Connection is valid, emit the event
-    emit('node-connect', {
+    emit("node-connect", {
       from: fromNodeId,
       to: toNodeId,
       fromPort: connectingFromPort.value || undefined,
-      toPort
+      toPort,
     });
   }
   connecting.value = null;
@@ -787,16 +807,16 @@ const completeConnect = (toNodeId: string, toPort?: string) => {
 };
 
 const deleteNode = (nodeId: string) => {
-  const updatedNodes = props.nodes.filter(n => n.id !== nodeId);
-  const updatedEdges = props.edges.filter(e => e.from !== nodeId && e.to !== nodeId);
+  const updatedNodes = props.nodes.filter((n) => n.id !== nodeId);
+  const updatedEdges = props.edges.filter((e) => e.from !== nodeId && e.to !== nodeId);
 
-  emit('update:nodes', updatedNodes);
-  emit('update:edges', updatedEdges);
+  emit("update:nodes", updatedNodes);
+  emit("update:edges", updatedEdges);
 
   if (selectedNodeIds.value.has(nodeId)) {
     selectedNodeIds.value.delete(nodeId);
     if (selectedNodeIds.value.size === 0) {
-      emit('node-select', null);
+      emit("node-select", null);
     }
   }
 };
@@ -806,6 +826,87 @@ const getEdgeKey = (edge: WorkflowEdge): string => {
   const toPort = edge.toPort || "default";
   return `${edge.from}:${fromPort}->${edge.to}:${toPort}`;
 };
+
+// Measure real port centers so expanded node bodies and zoom stay aligned.
+const nodeElements = new Map<string, HTMLElement>();
+const nodeSizes = ref<Record<string, { width: number; height: number }>>({});
+// The SVG and scroll surface must cover the graph, including expanded nodes.
+// Absolute children alone extend scrolling but leave the edge layer clipped.
+const surfaceStyle = computed(() => {
+  const width = Math.max(1500, ...props.nodes.map((node) =>
+    node.x + (nodeSizes.value[node.id]?.width || 160) + 100));
+  const height = Math.max(1500, ...props.nodes.map((node) =>
+    node.y + (nodeSizes.value[node.id]?.height || 100) + 100));
+  return { minWidth: `${width}px`, minHeight: `${height}px` };
+});
+const portOffsets = ref<
+  Record<string, { input: { x: number; y: number }[]; output: { x: number; y: number }[] }>
+>({});
+const measurePorts = () => {
+  const next: typeof portOffsets.value = {};
+  const sizes: typeof nodeSizes.value = {};
+  for (const [id, element] of nodeElements) {
+    const bounds = element.getBoundingClientRect();
+    const scale = bounds.width / element.offsetWidth || 1;
+    sizes[id] = { width: element.offsetWidth, height: bounds.height / scale };
+    const centers = (selector: string) =>
+      Array.from(element.querySelectorAll(selector), (port) => {
+        const rect = port.getBoundingClientRect();
+        return {
+          x: (rect.left + rect.width / 2 - bounds.left) / scale,
+          y: (rect.top + rect.height / 2 - bounds.top) / scale,
+        };
+      });
+    next[id] = { input: centers(".port-input"), output: centers(".port-output") };
+  }
+  if (JSON.stringify(next) !== JSON.stringify(portOffsets.value)) portOffsets.value = next;
+  if (JSON.stringify(sizes) !== JSON.stringify(nodeSizes.value)) nodeSizes.value = sizes;
+};
+const nodeObserver = new ResizeObserver(measurePorts);
+const observeNode = (id: string, element: HTMLElement | null) => {
+  const previous = nodeElements.get(id);
+  if (previous === element) return;
+  if (previous) nodeObserver.unobserve(previous);
+  if (element) {
+    nodeElements.set(id, element);
+    nodeObserver.observe(element);
+  } else nodeElements.delete(id);
+};
+onBeforeUnmount(() => nodeObserver.disconnect());
+const edgeEndpoint = (id: string, port: string | undefined, direction: "input" | "output") => {
+  const node = props.nodes.find((n) => n.id === id);
+  if (!node) return { x: 0, y: 0 };
+  const ports =
+    direction === "input" ? getNodeInputPorts(node.type) : getNodeOutputPorts(node.type);
+  const index = Math.max(
+    0,
+    ports.findIndex((p) => p.name === (port || "default")),
+  );
+  const offset = portOffsets.value[id]?.[direction][index] ?? {
+    x: 36 + index * 20,
+    y: direction === "input" ? 0 : 100,
+  };
+  return { x: node.x + offset.x, y: node.y + offset.y };
+};
+const getEdgeLabel = (edge: WorkflowEdge) =>
+  `${edge.fromPort || "default"} · ${edge.dataType || ""}`;
+const edgeRoutes = computed(() =>
+  routeEdges(
+    props.edges.map((edge) => ({
+      key: getEdgeKey(edge),
+      from: edge.from,
+      to: edge.to,
+      start: edgeEndpoint(edge.from, edge.fromPort, "output"),
+      end: edgeEndpoint(edge.to, edge.toPort, "input"),
+      label: getEdgeLabel(edge),
+    })),
+    props.nodes.map((node) => ({
+      x: node.x,
+      y: node.y,
+      ...(nodeSizes.value[node.id] ?? { width: 160, height: 100 }),
+    })),
+  ),
+);
 
 const handleEdgeClick = (edge: WorkflowEdge) => {
   const targetKey = getEdgeKey(edge);
@@ -817,17 +918,19 @@ const handleEdgeClick = (edge: WorkflowEdge) => {
     }
     return true;
   });
-  emit('update:edges', updatedEdges);
+  emit("update:edges", updatedEdges);
 };
 
 // Context menu handlers
 const handleCanvasContextMenu = (event: MouseEvent) => {
   // If clicking on a node or an existing context menu, let their handlers run
-  if ((event.target as HTMLElement).closest('.workflow-node') || 
-      (event.target as HTMLElement).closest('.context-menu')) {
+  if (
+    (event.target as HTMLElement).closest(".workflow-node") ||
+    (event.target as HTMLElement).closest(".context-menu")
+  ) {
     return;
   }
-  
+
   event.preventDefault();
   const rect = canvasRef.value?.getBoundingClientRect();
   if (!rect) return;
@@ -841,9 +944,9 @@ const handleCanvasContextMenu = (event: MouseEvent) => {
 
   const closeMenu = () => {
     contextMenu.value.show = false;
-    document.removeEventListener('click', closeMenu);
+    document.removeEventListener("click", closeMenu);
   };
-  setTimeout(() => document.addEventListener('click', closeMenu), 0);
+  setTimeout(() => document.addEventListener("click", closeMenu), 0);
 };
 
 const handleNodeContextMenu = (event: MouseEvent, nodeId: string) => {
@@ -863,16 +966,16 @@ const handleNodeContextMenu = (event: MouseEvent, nodeId: string) => {
   if (!selectedNodeIds.value.has(nodeId)) {
     selectedNodeIds.value.clear();
     selectedNodeIds.value.add(nodeId);
-    const node = props.nodes.find(n => n.id === nodeId);
-    if (node) emit('node-select', node);
+    const node = props.nodes.find((n) => n.id === nodeId);
+    if (node) emit("node-select", node);
   }
 
   // Close context menu when clicking elsewhere
   const closeMenu = () => {
     contextMenu.value.show = false;
-    document.removeEventListener('click', closeMenu);
+    document.removeEventListener("click", closeMenu);
   };
-  setTimeout(() => document.addEventListener('click', closeMenu), 0);
+  setTimeout(() => document.addEventListener("click", closeMenu), 0);
 };
 
 const hasOutput = (nodeId: string | null): boolean => {
@@ -882,56 +985,59 @@ const hasOutput = (nodeId: string | null): boolean => {
 
 const runNode = () => {
   if (contextMenu.value.nodeId !== null) {
-    emit('run-node', contextMenu.value.nodeId);
+    emit("run-node", contextMenu.value.nodeId);
   }
   contextMenu.value.show = false;
 };
 
 const viewOutput = () => {
   if (contextMenu.value.nodeId !== null && hasOutput(contextMenu.value.nodeId)) {
-    emit('view-output', contextMenu.value.nodeId);
+    emit("view-output", contextMenu.value.nodeId);
   }
   contextMenu.value.show = false;
 };
 
 const cutSelection = () => {
-  emit('cut-selection');
+  emit("cut-selection");
   contextMenu.value.show = false;
 };
 
 const copySelection = () => {
-  emit('copy-selection');
+  emit("copy-selection");
   contextMenu.value.show = false;
 };
 
 const pasteSelection = () => {
-  emit('paste-selection');
+  emit("paste-selection");
   contextMenu.value.show = false;
 };
 
 const duplicateSelection = () => {
-  emit('duplicate-selection');
+  emit("duplicate-selection");
   contextMenu.value.show = false;
 };
 
 const deleteSelection = () => {
-  emit('delete-selection');
+  emit("delete-selection");
   contextMenu.value.show = false;
 };
 
 // Watch for external selection changes (if nodes are deleted externally)
-watch(() => props.nodes, () => {
-  let changed = false;
-  for (const id of selectedNodeIds.value) {
-    if (!props.nodes.some(n => n.id === id)) {
-      selectedNodeIds.value.delete(id);
-      changed = true;
+watch(
+  () => props.nodes,
+  () => {
+    let changed = false;
+    for (const id of selectedNodeIds.value) {
+      if (!props.nodes.some((n) => n.id === id)) {
+        selectedNodeIds.value.delete(id);
+        changed = true;
+      }
     }
-  }
-  if (changed && selectedNodeIds.value.size === 0) {
-    emit('node-select', null);
-  }
-});
+    if (changed && selectedNodeIds.value.size === 0) {
+      emit("node-select", null);
+    }
+  },
+);
 
 const centerNode = (nodeId: string) => {
   const node = props.nodes.find((entry) => entry.id === nodeId);
@@ -951,30 +1057,34 @@ const centerNode = (nodeId: string) => {
 };
 
 const selectAll = () => {
-  selectedNodeIds.value = new Set(props.nodes.map(n => n.id));
+  selectedNodeIds.value = new Set(props.nodes.map((n) => n.id));
 };
 
 const clearSelection = () => {
   selectedNodeIds.value.clear();
-  emit('node-select', null);
+  emit("node-select", null);
 };
 
-defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
+const exportPng = async (name: string) => {
+  if (!surfaceRef.value) throw new Error("Canvas is not ready.");
+  await saveCanvasPng(surfaceRef.value, name);
+};
+defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng });
 </script>
 
 <style scoped>
 .workflow-canvas {
+  --workflow-grid-color: #e5e7eb;
+  --workflow-grid-size: 20px;
   width: 100%;
   height: 100%;
   min-height: 100%;
   position: relative;
   overflow: auto;
   min-width: 0;
-  background:
-    linear-gradient(rgba(51, 65, 85, 0.5) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(51, 65, 85, 0.5) 1px, transparent 1px);
-  background-size: 20px 20px;
-  background-color: #1e293b;
+  background: radial-gradient(circle, var(--workflow-grid-color) 1px, transparent 1.5px);
+  background-size: var(--workflow-grid-size) var(--workflow-grid-size);
+  background-color: #fefbff;
 }
 
 .canvas-surface {
@@ -1010,20 +1120,20 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
 }
 
 .edge-line {
-  transition: stroke 0.2s, stroke-width 0.2s, filter 0.2s;
+  transition:
+    stroke 0.2s,
+    stroke-width 0.2s,
+    filter 0.2s;
 }
 
 .edge-label {
   font-size: 11px;
   font-weight: 600;
-  fill: #10b981;
-  font-family: 'SF Mono', Monaco, monospace;
-  pointer-events: none;
-  text-shadow: 0 0 4px rgba(0, 0, 0, 0.8);
-}
-
-.edge-label-invalid {
-  fill: #ef4444;
+  fill: #374151;
+  font-family: "SF Mono", Monaco, monospace;
+  pointer-events: auto;
+  cursor: pointer;
+  text-shadow: none;
 }
 
 .edge-warning-icon {
@@ -1042,7 +1152,9 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
   border-radius: 8px;
   border: 2px solid #334155;
   cursor: grab;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
   z-index: 2;
   user-select: none;
 }
@@ -1053,7 +1165,9 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
 
 .workflow-node.is-selected {
   border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4), 0 0 15px rgba(59, 130, 246, 0.2);
+  box-shadow:
+    0 0 0 3px rgba(59, 130, 246, 0.4),
+    0 0 15px rgba(59, 130, 246, 0.2);
 }
 
 .workflow-node.is-dragging {
@@ -1072,19 +1186,43 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
   color: white;
 }
 
-.header-data { background: linear-gradient(135deg, #3b82f6, #2563eb); }
-.header-synthesis { background: linear-gradient(135deg, #06b6d4, #0891b2); }
-.header-preprocess { background: linear-gradient(135deg, #22c55e, #16a34a); }
-.header-selection { background: linear-gradient(135deg, #14b8a6, #0d9488); }
-.header-exploratory { background: linear-gradient(135deg, #a855f7, #9333ea); }
-.header-regression { background: linear-gradient(135deg, #8b5cf6, #7c3aed); }
-.header-classify { background: linear-gradient(135deg, #f59e0b, #d97706); }
-.header-clustering { background: linear-gradient(135deg, #ec4899, #db2777); }
-.header-validation { background: linear-gradient(135deg, #eab308, #ca8a04); }
-.header-visualize { background: linear-gradient(135deg, #f97316, #ea580c); }
-.header-export { background: linear-gradient(135deg, #64748b, #475569); }
+.header-data {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+}
+.header-synthesis {
+  background: linear-gradient(135deg, #06b6d4, #0891b2);
+}
+.header-preprocess {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+.header-selection {
+  background: linear-gradient(135deg, #14b8a6, #0d9488);
+}
+.header-exploratory {
+  background: linear-gradient(135deg, #a855f7, #9333ea);
+}
+.header-regression {
+  background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+}
+.header-classify {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+}
+.header-clustering {
+  background: linear-gradient(135deg, #ec4899, #db2777);
+}
+.header-validation {
+  background: linear-gradient(135deg, #eab308, #ca8a04);
+}
+.header-visualize {
+  background: linear-gradient(135deg, #f97316, #ea580c);
+}
+.header-export {
+  background: linear-gradient(135deg, #64748b, #475569);
+}
 .header-plugin,
-.header-default { background: linear-gradient(135deg, #ec4899, #be185d); }
+.header-default {
+  background: linear-gradient(135deg, #ec4899, #be185d);
+}
 
 .node-icon {
   font-size: 1rem;
@@ -1108,7 +1246,9 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s, color 0.2s;
+  transition:
+    background 0.2s,
+    color 0.2s;
 }
 
 .delete-btn:hover {
@@ -1163,7 +1303,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
   font-size: 0.7rem;
   font-weight: 500;
   color: #3b82f6;
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: "SF Mono", Monaco, monospace;
 }
 
 .data-shape-badge i {
@@ -1323,7 +1463,9 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
   border-radius: 50%;
   border: 2px solid #0f172a;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
   cursor: crosshair;
   pointer-events: all;
   z-index: 10;
@@ -1402,7 +1544,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
   font-size: 0.7rem;
   font-weight: 500;
   color: #94a3b8;
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: "SF Mono", Monaco, monospace;
   letter-spacing: 0.2px;
   word-break: break-all;
 }
@@ -1445,7 +1587,8 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
 }
 
 @keyframes pulse-green {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 0 3px rgba(74, 222, 128, 0.8);
   }
   50% {
@@ -1454,7 +1597,8 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
 }
 
 @keyframes pulse-glow {
-  0%, 100% {
+  0%,
+  100% {
     box-shadow: 0 0 8px currentColor;
   }
   50% {
@@ -1489,7 +1633,13 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection });
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

@@ -30,9 +30,11 @@ vi.mock("@/composables/useAppConfig", () => ({
   }),
 }));
 
-vi.mock("@/stores/project", () => ({
-  useProjectStore: () => mocks.projectStore,
-}));
+vi.mock("@/stores/project", async () => {
+  const { reactive } = await import("vue");
+  mocks.projectStore = reactive(mocks.projectStore);
+  return { useProjectStore: () => mocks.projectStore };
+});
 
 vi.mock("@/lib/advisorMemoryAdapter", () => ({
   getAdvisorMemoryAdapter: () => mocks.adapter,
@@ -189,4 +191,32 @@ describe("MemoryMapView", () => {
 
     expect(mocks.routerPush).toHaveBeenCalledWith("/project");
   });
+  it("keeps current Runs, Optimize and legacy scopes visible without routine Refresh", async () => {
+    mocks.adapter.getMemoryMap.mockResolvedValue({ project_id: 42, nodes: ["models", "optimization", "legacy-scope"].map((tab, i) => ({
+      id: i + 1, tab_key: tab, subscope_key: "overview", node_type: "subtab", title: tab,
+      badges: { topic_count: 1, fact_count: 0, last_compaction_at: null, stale_descendant_count: 0 },
+    })), edges: [] });
+    const wrapper = mountView();
+    await flushPromises();
+    expect(wrapper.findAll(".node-card")).toHaveLength(3);
+    expect(wrapper.text()).toContain("Optimize");
+    expect(wrapper.text()).toContain("Runs");
+    expect(wrapper.findAll("button").some(b => b.text() === "Refresh")).toBe(false);
+  });
+
+  it("discards an old project's delayed response", async () => {
+    let finish!: (value: any) => void;
+    mocks.adapter.getMemoryMap.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const wrapper = mountView();
+    await flushPromises();
+    mocks.projectStore.currentProjectId = 77;
+    mocks.adapter.getMemoryMap.mockResolvedValue({ project_id: 77, nodes: [], edges: [] });
+    await flushPromises();
+    finish({ project_id: 42, nodes: [{ id: 1, tab_key: "project", subscope_key: "overview", title: "Old private scope", badges: { topic_count: 1, fact_count: 1, stale_descendant_count: 0 } }], edges: [] });
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("Old private scope");
+    expect(wrapper.text()).toContain("No memory yet");
+    wrapper.unmount();
+  });
+
 });

@@ -31,6 +31,50 @@ export function flattenClassificationMetricsContract(value: unknown): Record<str
   return Object.keys(out).length > 0 ? out : null;
 }
 
+export function primaryClassificationMetricSummary(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (record.task_type !== "classification" || !record.splits || typeof record.splits !== "object") return null;
+
+  const splits = record.splits as Record<string, unknown>;
+  const declared = typeof record.primary_split === "string" ? record.primary_split : "";
+  const primary = [declared, "test", "cv", "train"].find((name) => {
+    const candidate = splits[name];
+    return candidate && typeof candidate === "object" && !Array.isArray(candidate);
+  });
+  if (!primary) return null;
+
+  const metrics = splits[primary] as Record<string, unknown>;
+  const summary: Record<string, unknown> = {
+    task_type: "classification",
+    primary_split: primary,
+    n_classes: record.n_classes,
+    classes: record.classes,
+  };
+  const matrices = record.confusion_matrices;
+  if (matrices && typeof matrices === "object" && !Array.isArray(matrices)) {
+    const matrix = (matrices as Record<string, unknown>)[primary];
+    if (Array.isArray(matrix)) {
+      const nSamples = matrix.flatMap((row) => Array.isArray(row) ? row : []).reduce<number>(
+        (total, item) => typeof item === "number" && Number.isFinite(item) ? total + item : total,
+        0,
+      );
+      if (nSamples > 0) summary.n_samples = nSamples;
+    }
+  }
+  for (const [source, target] of [
+    ["accuracy", "accuracy"],
+    ["balanced_accuracy", "balanced_accuracy"],
+    ["precision_macro", "macro_precision"],
+    ["recall_macro", "macro_recall"],
+    ["specificity_macro", "macro_specificity"],
+    ["f1_macro", "macro_f1"],
+  ]) {
+    summary[target] = metrics[source];
+  }
+  return summary;
+}
+
 export function collectCanonicalClassificationMetrics(
   value: unknown,
   out: Record<string, unknown>,

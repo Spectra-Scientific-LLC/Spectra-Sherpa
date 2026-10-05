@@ -1,187 +1,135 @@
 <template>
   <section class="data-content">
-    <header class="tab-header">
-      <h1>Data</h1>
-      <ResponsiveHeaderActions :items="headerActionItems">
-        <Button
-          label="Refresh"
-          icon="pi pi-refresh"
-          class="p-button-text p-button-sm"
-          :loading="dataStore.catalogLoading"
-          @click="refresh"
-        />
-        <Button
-          label="Next: Workflow"
-          icon="pi pi-arrow-right"
-          iconPos="right"
-          class="p-button-sm"
-          @click="goToWorkflow"
-        />
-      </ResponsiveHeaderActions>
-    </header>
+    <WorkspaceHeader title="Data" :actions="headerActionItems">
+      <Button v-if="!workflowSelectionContextRequested" label="Workflow" icon="pi pi-arrow-right"
+        iconPos="right" class="p-button-sm" :loading="workflowHandoffBusy"
+        :disabled="workflowHandoffBusy" :title="workflowHandoffTitle" @click="goToWorkflow()" />
+    </WorkspaceHeader>
+    <WorkspaceContext label="Data workspace context">
+      <WorkspaceContextItem :label="activeSubtabLabel" :value="activeSubtabValue" aria-live="polite">
+        {{ activeSubtabDetail }}
+      </WorkspaceContextItem>
+    </WorkspaceContext>
 
-    <!-- Two-cell context strip: Project always on the left; the right cell
-         reflects only what the user is doing in the active subtab. -->
-    <div class="data-context-strip" aria-label="Data workspace context">
-      <button class="data-context-item" type="button" @click="router.push('/project')">
-        <span class="context-label">Project</span>
-        <strong>{{ activeProjectName }}</strong>
-        <small>{{ projectDataCount }} data · {{ projectWorkflowCount }} workflows</small>
-      </button>
-      <div class="data-context-item active-context" aria-live="polite">
-        <span class="context-label">{{ activeSubtabLabel }}</span>
-        <strong>{{ activeSubtabValue }}</strong>
-        <small>{{ activeSubtabDetail }}</small>
+    <section
+      v-if="workflowSelectionContextRequested"
+      class="workflow-selection-context"
+      aria-label="Workflow sheet data selection"
+    >
+      <div class="workflow-selection-heading">
+        <div>
+          <span class="context-label">Editing workflow sheet</span>
+          <strong>{{ workflowSelectionContext?.workflow_name || "Loading sheet context…" }}</strong>
+          <small>
+            {{ workflowSelectionContext?.source_node_label || workflowSourceNodeId }}
+            <template v-if="workflowSelectionContext?.current_revision">
+              · revision {{ workflowSelectionContext.current_revision.revision_number }} by
+              {{ workflowSelectionContext.current_revision.created_by_name }}
+            </template>
+          </small>
+        </div>
+        <Tag
+          :value="workflowSelectionContext?.saved_selection ? 'Sheet-specific' : 'Pending first binding'"
+          :severity="workflowSelectionContext?.saved_selection ? 'info' : 'warn'"
+        />
       </div>
-    </div>
+      <p>
+        <template v-if="workflowSelectionContext && !workflowSelectionContext.saved_selection">
+          Choose this source node's dataset, views, target, and groups.
+        </template>
+        <template v-else>
+          File filters, target, and groups apply to this source node only.
+        </template>
+      </p>
+      <details><summary>Details</summary>
+        Applying creates an immutable revision that follows the workflow run into its report.
+      </details>
+      <div v-if="workflowSelectionContextError" class="workflow-selection-error" role="alert">
+        {{ workflowSelectionContextError }}
+      </div>
+      <div class="workflow-selection-actions">
+        <InputText
+          v-model="workflowSelectionReason"
+          placeholder="Reason for this selection change (optional)"
+          aria-label="Reason for data selection change"
+        />
+        <Button
+          label="Cancel"
+          icon="pi pi-arrow-left"
+          class="p-button-text"
+          @click="returnToWorkflow"
+        />
+        <Button
+          label="Apply to this sheet"
+          icon="pi pi-check"
+          :loading="workflowSelectionApplying || workflowSelectionContextLoading"
+          :disabled="workflowSelectionContextLoading || !workflowSelectionContext"
+          @click="applyWorkflowDataSelection"
+        />
+      </div>
+    </section>
 
-    <TabView v-model:activeIndex="activeTab">
+    <WorkspaceState v-if="dataStore.catalogError" kind="error" :message="dataStore.catalogError">
+      <Button label="Retry catalog" class="p-button-sm" :loading="dataStore.catalogLoading" @click="dataStore.fetchCatalog()" />
+    </WorkspaceState>
+    <WorkspaceState v-if="dataStore.experimentsError" kind="error" :message="dataStore.experimentsError">
+      <Button label="Retry datasets" class="p-button-sm" :loading="dataStore.experimentsLoading" @click="retryExperiments" />
+    </WorkspaceState>
+
+    <WorkspaceTabs v-model="activeTabId" :tab-ids="DATA_TAB_IDS">
       <!-- ======================== IMPORT TAB ======================== -->
       <TabPanel header="Import">
+        <p v-if="qualified" role="status">
+          Import a local catalog reference or select an exact registered file you have acquired.
+          Automatic provider downloads are unavailable.
+        </p>
         <div class="source-side-layout">
-        <!-- ============ REFERENCE DATASETS (top, prominent) ============ -->
-        <div class="ref-catalog-section source-list-pane">
-          <h3 class="ref-catalog-title">
-            <i class="pi pi-database"></i>
-            Reference Datasets
-          </h3>
+          <!-- ============ REFERENCE DATASETS (top, prominent) ============ -->
+          <div class="ref-catalog-section source-list-pane">
+            <h3 class="ref-catalog-title">
+              <i class="pi pi-database"></i>
+              Reference Datasets
+            </h3>
 
-          <div v-if="dataStore.referenceCatalogLoading" class="empty-state-sm">
-            <ProgressSpinner style="width: 24px; height: 24px" />
-            Loading catalog...
-          </div>
+            <WorkspaceState v-if="dataStore.referenceCatalogLoading" kind="loading" message="Loading catalog…" />
 
-          <div v-else-if="dataStore.referenceCatalogError" class="ref-catalog-error">
-            <i class="pi pi-exclamation-triangle"></i>
-            <span>{{ dataStore.referenceCatalogError }}</span>
-            <Button
-              label="Retry"
-              icon="pi pi-refresh"
-              class="p-button-sm p-button-outlined"
-              :loading="dataStore.referenceCatalogLoading"
-              @click="dataStore.fetchReferenceCatalog()"
-            />
-          </div>
+            <WorkspaceState v-else-if="dataStore.referenceCatalogError" kind="error" :message="dataStore.referenceCatalogError">
+              <Button
+                label="Retry"
+                icon="pi pi-refresh"
+                class="p-button-sm p-button-outlined"
+                :loading="dataStore.referenceCatalogLoading"
+                @click="dataStore.fetchReferenceCatalog()"
+              />
+            </WorkspaceState>
 
-          <div v-else-if="dataStore.referenceCatalog" class="ref-catalog-groups">
-            <!-- Spectra Scientific synthetic benchmarks -->
-            <Panel
-              :toggleable="true"
-              :collapsed="syntheticCollapsed"
-              @update:collapsed="syntheticCollapsed = $event"
-              class="ref-group-panel"
-            >
-              <template #header>
-                <span class="ref-panel-header">
-                  <i class="pi pi-sparkles"></i>
-                  Spectra Scientific Synthetic Benchmarks
-                  <Tag :value="String(dataStore.referenceCatalog.synthetic.length)" severity="info" rounded />
-                </span>
-              </template>
-              <div
-                v-for="ds in dataStore.referenceCatalog.synthetic"
-                :key="ds.name"
-                class="ref-dataset-item"
-                :class="{ selected: selectedRefDatasets.has(dsKey(ds)), previewed: previewRefKey === dsKey(ds) }"
-                @click="previewReferenceDataset(ds)"
+            <div v-else-if="dataStore.referenceCatalog" class="ref-catalog-groups">
+              <Panel
+                v-if="dataStore.referenceCatalog.builtin.length"
+                :toggleable="true"
+                :collapsed="builtinCollapsed"
+                @update:collapsed="builtinCollapsed = $event"
+                class="ref-group-panel"
               >
-                <Checkbox
-                  :modelValue="selectedRefDatasets.has(dsKey(ds))"
-                  :binary="true"
-                  @click.stop
-                  @update:model-value="toggleRefDataset(ds)"
-                />
-                <span class="ref-ds-label">{{ ds.label }}</span>
-                <Tag :value="ds.technique" severity="info" class="ref-ds-tag" />
-              </div>
-            </Panel>
-
-            <!-- Eigenvector -->
-            <Panel
-              :toggleable="true"
-              :collapsed="eigenvectorCollapsed"
-              @update:collapsed="eigenvectorCollapsed = $event"
-              class="ref-group-panel"
-            >
-              <template #header>
-                <span class="ref-panel-header">
-                  <i class="pi pi-chart-bar"></i>
-                  Eigenvector Research (NIR)
-                  <Tag :value="String(dataStore.referenceCatalog.eigenvector.length)" severity="info" rounded />
-                </span>
-              </template>
-              <div
-                v-for="ds in dataStore.referenceCatalog.eigenvector"
-                :key="ds.name"
-                class="ref-dataset-item"
-                :class="{ selected: selectedRefDatasets.has(dsKey(ds)), previewed: previewRefKey === dsKey(ds) }"
-                @click="previewReferenceDataset(ds)"
-              >
-                <Checkbox
-                  :modelValue="selectedRefDatasets.has(dsKey(ds))"
-                  :binary="true"
-                  @click.stop
-                  @update:model-value="toggleRefDataset(ds)"
-                />
-                <span class="ref-ds-label">{{ ds.label }}</span>
-                <Tag :value="ds.technique" severity="info" class="ref-ds-tag" />
-              </div>
-            </Panel>
-
-            <!-- OES Datasets -->
-            <Panel
-              v-if="dataStore.referenceCatalog?.oes?.length"
-              :toggleable="true"
-              :collapsed="oesCollapsed"
-              @update:collapsed="oesCollapsed = $event"
-              class="ref-group-panel"
-            >
-              <template #header>
-                <span class="ref-panel-header">
-                  <i class="pi pi-bolt"></i>
-                  OES Datasets
-                  <Tag :value="String(dataStore.referenceCatalog.oes.length)" severity="info" rounded />
-                </span>
-              </template>
-              <div
-                v-for="ds in dataStore.referenceCatalog.oes"
-                :key="ds.name"
-                class="ref-dataset-item"
-                :class="{ selected: selectedRefDatasets.has(dsKey(ds)), previewed: previewRefKey === dsKey(ds) }"
-                @click="previewReferenceDataset(ds)"
-              >
-                <Checkbox
-                  :modelValue="selectedRefDatasets.has(dsKey(ds))"
-                  :binary="true"
-                  @click.stop
-                  @update:model-value="toggleRefDataset(ds)"
-                />
-                <span class="ref-ds-label">{{ ds.label }}</span>
-                <Tag :value="ds.technique" severity="info" class="ref-ds-tag" />
-              </div>
-            </Panel>
-
-            <!-- SpectroChemPy -->
-            <Panel
-              :toggleable="true"
-              :collapsed="scpCollapsed"
-              @update:collapsed="scpCollapsed = $event"
-              class="ref-group-panel"
-            >
-              <template #header>
-                <span class="ref-panel-header">
-                  <i class="pi pi-wave-pulse"></i>
-                  SpectroChemPy Datasets
-                  <Tag :value="String(dataStore.referenceCatalog.spectrochempy.length)" severity="info" rounded />
-                </span>
-              </template>
-              <template v-for="cat in scpCategories" :key="cat">
-                <div class="ref-scp-category">{{ scpCategoryLabel(cat) }}</div>
+                <template #header>
+                  <span class="ref-panel-header">
+                    <i class="pi pi-box"></i>
+                    Built-in reference data
+                    <Tag
+                      :value="String(dataStore.referenceCatalog.builtin.length)"
+                      severity="info"
+                      rounded
+                    />
+                  </span>
+                </template>
                 <div
-                  v-for="ds in scpByCategory(cat)"
+                  v-for="ds in dataStore.referenceCatalog.builtin"
                   :key="ds.name"
                   class="ref-dataset-item"
-                  :class="{ selected: selectedRefDatasets.has(dsKey(ds)), previewed: previewRefKey === dsKey(ds) }"
+                  :class="{
+                    selected: selectedRefDatasets.has(dsKey(ds)),
+                    previewed: previewRefKey === dsKey(ds),
+                  }"
                   @click="previewReferenceDataset(ds)"
                 >
                   <Checkbox
@@ -191,90 +139,266 @@
                     @update:model-value="toggleRefDataset(ds)"
                   />
                   <span class="ref-ds-label">{{ ds.label }}</span>
-                  <Tag :value="ds.technique" severity="info" class="ref-ds-tag" />
                 </div>
-              </template>
-            </Panel>
+              </Panel>
 
-            <!-- sklearn -->
-            <Panel
-              :toggleable="true"
-              :collapsed="sklearnCollapsed"
-              @update:collapsed="sklearnCollapsed = $event"
-              class="ref-group-panel"
-            >
-              <template #header>
-                <span class="ref-panel-header">
-                  <i class="pi pi-cog"></i>
-                  Scikit-learn Datasets
-                  <Tag :value="String(dataStore.referenceCatalog.sklearn.length)" severity="info" rounded />
-                </span>
-              </template>
-              <div
-                v-for="ds in dataStore.referenceCatalog.sklearn"
-                :key="ds.name"
-                class="ref-dataset-item"
-                :class="{ selected: selectedRefDatasets.has(dsKey(ds)), previewed: previewRefKey === dsKey(ds) }"
-                @click="previewReferenceDataset(ds)"
+              <!-- Spectra Scientific synthetic benchmarks -->
+              <Panel
+                v-if="dataStore.referenceCatalog.synthetic.length"
+                :toggleable="true"
+                :collapsed="syntheticCollapsed"
+                @update:collapsed="syntheticCollapsed = $event"
+                class="ref-group-panel"
               >
-                <Checkbox
-                  :modelValue="selectedRefDatasets.has(dsKey(ds))"
-                  :binary="true"
-                  @click.stop
-                  @update:model-value="toggleRefDataset(ds)"
-                />
-                <span class="ref-ds-label">{{ ds.label }}</span>
-                <Tag :value="ds.technique" severity="info" class="ref-ds-tag" />
-              </div>
-            </Panel>
-          </div>
+                <template #header>
+                  <span class="ref-panel-header">
+                    <i class="pi pi-sparkles"></i>
+                    Spectra Scientific Synthetic Benchmarks
+                    <Tag
+                      :value="String(dataStore.referenceCatalog.synthetic.length)"
+                      severity="info"
+                      rounded
+                    />
+                  </span>
+                </template>
+                <div
+                  v-for="ds in dataStore.referenceCatalog.synthetic"
+                  :key="ds.name"
+                  class="ref-dataset-item"
+                  :class="{
+                    selected: selectedRefDatasets.has(dsKey(ds)),
+                    previewed: previewRefKey === dsKey(ds),
+                  }"
+                  @click="previewReferenceDataset(ds)"
+                >
+                  <Checkbox
+                    :modelValue="selectedRefDatasets.has(dsKey(ds))"
+                    :binary="true"
+                    @click.stop
+                    @update:model-value="toggleRefDataset(ds)"
+                  />
+                  <span class="ref-ds-label">{{ ds.label }}</span>
+                </div>
+              </Panel>
 
-          <!-- Action bar -->
-          <div class="ref-action-bar" v-if="selectedRefDatasets.size > 0">
-            <span class="ref-selection-count">{{ selectedRefDatasets.size }} selected</span>
-            <div class="selected-member-rows">
-              <div v-for="member in selectedReferenceMembers" :key="member.key" class="selected-member-row">
-                <span>{{ member.label }}</span>
-                <Button
-                  icon="pi pi-times"
-                  class="p-button-text p-button-sm p-button-rounded"
-                  title="Remove"
-                  @click="removeReferenceSelection(member.key)"
+              <!-- sklearn -->
+              <Panel
+                v-if="dataStore.referenceCatalog.sklearn.length"
+                :toggleable="true"
+                :collapsed="sklearnCollapsed"
+                @update:collapsed="sklearnCollapsed = $event"
+                class="ref-group-panel"
+              >
+                <template #header>
+                  <span class="ref-panel-header">
+                    <i class="pi pi-cog"></i>
+                    scikit-learn datasets
+                    <Tag
+                      :value="String(dataStore.referenceCatalog.sklearn.length)"
+                      severity="info"
+                      rounded
+                    />
+                  </span>
+                </template>
+                <div
+                  v-for="ds in dataStore.referenceCatalog.sklearn"
+                  :key="ds.name"
+                  class="ref-dataset-item"
+                  :class="{
+                    selected: selectedRefDatasets.has(dsKey(ds)),
+                    previewed: previewRefKey === dsKey(ds),
+                  }"
+                  @click="previewReferenceDataset(ds)"
+                >
+                  <Checkbox
+                    :modelValue="selectedRefDatasets.has(dsKey(ds))"
+                    :binary="true"
+                    @click.stop
+                    @update:model-value="toggleRefDataset(ds)"
+                  />
+                  <span class="ref-ds-label">{{ ds.label }}</span>
+                </div>
+              </Panel>
+
+              <Panel
+                v-if="visibleRegisteredReferences.length"
+                :toggleable="true"
+                :collapsed="registeredCollapsed"
+                @update:collapsed="registeredCollapsed = $event"
+                class="ref-group-panel"
+              >
+                <template #header>
+                  <span class="ref-panel-header">
+                    <i class="pi pi-verified"></i>
+                    User-acquired Eigenvector datasets
+                    <Tag
+                      :value="String(userAcquiredReferenceDatasets.length)"
+                      severity="info"
+                      rounded
+                    />
+                  </span>
+                </template>
+                <p class="reference-acquisition-help" role="status">
+                  These datasets are not bundled or downloaded automatically by this catalog. Get
+                  the original ZIP file from the provider page, then choose “Import downloaded
+                  file”. Importing a file you already have works offline.
+                </p>
+                <article
+                  v-for="ds in userAcquiredReferenceDatasets"
+                  :key="ds.name"
+                  class="registered-reference-card"
+                >
+                  <div class="registered-reference-card__heading">
+                    <div>
+                      <strong>{{ ds.label }}</strong>
+                      <small>{{ conciseTechnicalSummary(ds) }}</small>
+                    </div>
+                  </div>
+                  <div class="registered-reference-card__actions">
+                    <a
+                      v-if="ds.provider_page"
+                      :href="ds.provider_page"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      :aria-label="`${ds.label}: provider page (opens in a new tab)`"
+                      >Provider page</a
+                    >
+                    <Button
+                      label="Import downloaded file"
+                      icon="pi pi-file-import"
+                      class="p-button-sm"
+                      :loading="registeredImportState[ds.name]?.status === 'importing'"
+                      :disabled="registeredImportBusy"
+                      @click="selectRegisteredReferenceFile(ds)"
+                    />
+                  </div>
+                  <small
+                    v-if="registeredImportState[ds.name]?.message"
+                    class="registered-reference-card__status"
+                    :class="registeredImportState[ds.name]?.status"
+                    role="status"
+                  >
+                    {{ registeredImportState[ds.name]?.message }}
+                  </small>
+                </article>
+                <input
+                  ref="registeredReferenceInputRef"
+                  class="visually-hidden-file-input"
+                  type="file"
+                  accept=".zip,application/zip"
+                  multiple
+                  aria-hidden="true"
+                  tabindex="-1"
+                  @change="onRegisteredReferenceSelection"
+                />
+              </Panel>
+
+              <Panel
+                v-if="legacyReferenceDatasets.length"
+                :toggleable="true"
+                :collapsed="legacyCollapsed"
+                @update:collapsed="legacyCollapsed = $event"
+                class="ref-group-panel"
+              >
+                <template #header>
+                  <span class="ref-panel-header">
+                    <i class="pi pi-folder-open"></i>
+                    Additional scientific source catalog
+                    <Tag :value="String(legacyReferenceDatasets.length)" severity="info" rounded />
+                  </span>
+                </template>
+                <article
+                  v-for="ds in legacyReferenceDatasets"
+                  :key="dsKey(ds)"
+                  class="registered-reference-card"
+                >
+                  <div class="registered-reference-card__heading">
+                    <div>
+                      <strong>{{ ds.label }}</strong>
+                      <small>{{ legacySourceRequirement(ds) }}</small>
+                    </div>
+                  </div>
+                  <div class="registered-reference-card__actions">
+                    <a
+                      v-if="ds.requires_runtime_download && ds.download_page"
+                      :href="ds.download_page"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      :aria-label="`${ds.label}: provider page (opens in a new tab)`"
+                      >Provider page</a
+                    >
+                    <Button
+                      v-if="ds.requires_runtime_download"
+                      label="Open file upload"
+                      icon="pi pi-file-import"
+                      class="p-button-sm p-button-outlined"
+                      @click="openLegacyReferenceUpload(ds)"
+                    />
+                    <Button
+                      v-else
+                      label="Select bundled source"
+                      icon="pi pi-check"
+                      class="p-button-sm p-button-outlined"
+                      @click="toggleRefDataset(ds)"
+                    />
+                  </div>
+                </article>
+              </Panel>
+            </div>
+
+            <!-- Action bar -->
+            <div class="ref-action-bar" v-if="selectedRefDatasets.size > 0">
+              <span class="ref-selection-count">{{ selectedRefDatasets.size }} selected</span>
+              <div class="selected-member-rows">
+                <div
+                  v-for="member in selectedReferenceMembers"
+                  :key="member.key"
+                  class="selected-member-row"
+                >
+                  <span>{{ member.label }}</span>
+                  <Button
+                    icon="pi pi-times"
+                    class="p-button-text p-button-sm p-button-rounded"
+                    title="Remove"
+                    @click="removeReferenceSelection(member.key)"
+                  />
+                </div>
+              </div>
+              <div class="field ref-action-name">
+                <label for="import-dataset-name">Dataset name</label>
+                <InputText
+                  id="import-dataset-name"
+                  v-model="importDatasetName"
+                  :placeholder="defaultImportDatasetName()"
                 />
               </div>
-            </div>
-            <div class="field ref-action-name">
-              <label for="import-dataset-name">Dataset name</label>
-              <InputText
-                id="import-dataset-name"
-                v-model="importDatasetName"
-                :placeholder="defaultImportDatasetName()"
+              <Button
+                label="Add to My Dataset"
+                icon="pi pi-plus"
+                data-action="import_data"
+                class="p-button-sm"
+                :loading="importing"
+                @click="onImportSelectedDatasets"
               />
             </div>
-            <Button
-              label="Add to My Dataset"
-              icon="pi pi-plus"
-              data-action="import_data"
-              class="p-button-sm"
-              :loading="importing"
-              @click="onImportSelectedDatasets"
-            />
           </div>
+          <KeepAlive>
+            <DatasetSourcePreview
+              v-if="activeTab === TAB_IMPORT"
+              class="source-preview-pane"
+              :sourceRef="previewRefSource"
+              :title="previewRefTitle"
+              :files="previewRefFiles"
+              :overrides="previewRefOverrides"
+              :acquisition-required="previewRefDataset?.source === 'registered'"
+              @update:overrides="onPreviewRefOverrides"
+            />
+          </KeepAlive>
         </div>
-        <DatasetSourcePreview
-          class="source-preview-pane"
-          :sourceRef="previewRefSource"
-          :title="previewRefTitle"
-          :files="previewRefFiles"
-          :overrides="previewRefOverrides"
-          @update:overrides="onPreviewRefOverrides"
-        />
-        </div>
-
       </TabPanel>
 
       <!-- ======================== SYNTHESIS TAB ======================== -->
-      <TabPanel>
+      <TabPanel :disabled="qualified">
         <!-- #header slot is required so the open_synthesis click target
              (used by Sherpa Advisor's action ontology) lives on the tab
              header. Add the `p-tabview-title` class explicitly so the
@@ -284,144 +408,263 @@
         <template #header>
           <span class="p-tabview-title" data-action="open_synthesis">Synthesis</span>
         </template>
-        <SynthesisPanel ref="synthesisPanelRef" @saved="onSynthesisSaved" />
+        <KeepAlive>
+          <SynthesisPanel
+            v-if="!qualified && activeTab === TAB_SYNTHESIS"
+            ref="synthesisPanelRef"
+            @saved="onSynthesisSaved"
+          />
+        </KeepAlive>
       </TabPanel>
 
       <!-- ======================== UPLOAD TAB ======================== -->
       <TabPanel header="Upload">
         <section class="upload-panel source-side-layout">
           <div class="source-list-pane">
-          <div v-if="dataUploadDisabled" class="upload-disabled-notice">
-            {{ uploadDisabledMessage }}
-          </div>
-          <div class="upload-form">
-            <div class="field">
-              <label>Stage</label>
-              <Dropdown
-                v-model="uploadStage"
-                :options="stageOptions"
-                optionLabel="label"
-                optionValue="value"
-                placeholder="Select stage"
-                class="upload-stage"
-                :disabled="dataUploadDisabled"
-              />
-            </div>
-            <div class="upload-shape-grid">
-              <div class="field">
-                <label>CSV data shape</label>
-                <Dropdown
-                  v-model="uploadDataRole"
-                  :options="uploadDataRoleOptions"
-                  optionLabel="label"
-                  optionValue="value"
-                  class="upload-shape-control"
-                  :disabled="dataUploadDisabled"
-                />
-              </div>
-              <div class="field">
-                <label>Target column</label>
-                <InputText
-                  v-model.trim="uploadTargetColumn"
-                  placeholder="Optional column name"
-                  class="upload-shape-control"
-                  :disabled="dataUploadDisabled"
-                />
-              </div>
-              <div class="field">
-                <label>Target type</label>
-                <Dropdown
-                  v-model="uploadTargetType"
-                  :options="uploadTargetTypeOptions"
-                  optionLabel="label"
-                  optionValue="value"
-                  class="upload-shape-control"
-                  :disabled="dataUploadDisabled"
-                />
-              </div>
-            </div>
-            <div class="field">
-              <label>File</label>
-              <FileUpload
-                ref="uploadFileUploadRef"
-                mode="basic"
-                :auto="false"
-                :accept="uploadAcceptList"
-                :maxFileSize="52428800"
-                chooseLabel="Choose File"
-                :disabled="dataUploadDisabled"
-                @select="onFileSelect"
-              />
-              <small class="field-hint">
-                {{ uploadFormatHint }}
-              </small>
-              <div v-if="disabledUploadFormats.length" class="upload-format-chips" aria-label="SCP-only formats">
-                <span
-                  v-for="format in disabledUploadFormats"
-                  :key="format.key"
-                  class="upload-format-chip disabled"
-                  :title="disabledUploadFormatTitle(format)"
-                >
-                  {{ format.name }}
-                </span>
-              </div>
-            </div>
-            <div v-if="stagedUploadMembers.length" class="selected-member-rows upload-members">
-              <div
-                v-for="member in stagedUploadMembers"
-                :key="member.staging_id"
-                class="selected-member-row"
-                :class="{ previewed: previewUploadId === member.staging_id }"
-                @click="previewUploadMember(member.staging_id)"
-              >
-                <span>{{ member.filename }}</span>
-                <Button
-                  icon="pi pi-trash"
-                  class="p-button-text p-button-sm p-button-rounded p-button-danger"
-                  title="Remove"
-                  @click.stop="removeStagedUpload(member.staging_id)"
-                />
-              </div>
-            </div>
-            <div class="upload-action">
-              <div class="field upload-name">
-                <label for="upload-dataset-name">Dataset name</label>
-                <InputText
-                  id="upload-dataset-name"
-                  v-model="uploadDatasetName"
-                  :placeholder="defaultUploadDatasetName()"
-                  :disabled="dataUploadDisabled"
-                />
-              </div>
+            <div v-if="dataUploadDisabled" class="upload-disabled-notice" :role="availabilityError ? 'alert' : 'status'">
+              <span>{{ uploadDisabledMessage }}</span>
               <Button
-                label="Add to My Dataset"
-                icon="pi pi-plus"
-                data-action="import_data"
-                :disabled="dataUploadDisabled || stagedUploadMembers.length === 0"
-                :loading="uploading"
-                @click="onUploadFile"
+                v-if="qualified && availabilityError && !isCapabilityDisabled('data_upload')"
+                label="Retry access check"
+                icon="pi pi-refresh"
+                :disabled="availabilityLoading"
+                @click="refreshAvailability"
               />
             </div>
+            <div class="upload-form">
+              <div class="upload-intro">
+                <div>
+                  <h3>Add scientific files</h3>
+                  <p>
+                    Select files, a whole folder, or a ZIP. Every admitted spectrum is previewed
+                    before it is added.
+                  </p>
+                </div>
+                <Tag
+                  v-if="stagedUploadMembers.length"
+                  :value="`${stagedUploadMembers.length} ready`"
+                  severity="success"
+                />
+              </div>
+              <div class="upload-source-actions" aria-label="Choose scientific sources">
+                <Button
+                  label="Choose sources"
+                  icon="pi pi-folder-open"
+                  :disabled="dataUploadDisabled"
+                  aria-haspopup="true"
+                  aria-controls="upload-source-menu"
+                  @click="toggleUploadSourceMenu"
+                />
+                <Menu
+                  id="upload-source-menu"
+                  ref="uploadSourceMenuRef"
+                  :model="uploadSourceMenuItems"
+                  :popup="true"
+                />
+                <input
+                  ref="uploadFilesInputRef"
+                  class="visually-hidden-file-input"
+                  type="file"
+                  :accept="uploadAcceptList"
+                  multiple
+                  aria-hidden="true"
+                  tabindex="-1"
+                  @change="onNativeFileSelection"
+                />
+                <input
+                  ref="uploadFolderInputRef"
+                  class="visually-hidden-file-input"
+                  type="file"
+                  multiple
+                  webkitdirectory=""
+                  directory=""
+                  aria-hidden="true"
+                  tabindex="-1"
+                  @change="onNativeFileSelection"
+                />
+              </div>
+              <small class="field-hint"
+                >Choose files or a folder. ZIPs expand automatically; supported members load and
+                refused members are reported below.</small
+              >
+              <div v-if="stagedUploadMembers.length" class="selected-member-rows upload-members">
+                <div
+                  v-for="member in stagedUploadMembers"
+                  :key="member.staging_id"
+                  class="selected-member-row"
+                  :class="{ previewed: previewUploadId === member.staging_id }"
+                  @click="previewUploadMember(member.staging_id)"
+                >
+                  <span>
+                    <strong>{{ member.filename }}</strong>
+                    <small v-if="member.source_name && member.source_name !== member.filename">{{
+                      member.source_name
+                    }}</small>
+                    <small v-if="stagedUploadErrors[member.staging_id]" class="upload-cleanup-error">
+                      {{ stagedUploadErrors[member.staging_id] }}
+                    </small>
+                  </span>
+                  <Button
+                    icon="pi pi-trash"
+                    class="p-button-text p-button-sm p-button-rounded p-button-danger"
+                    title="Remove"
+                    @click.stop="removeStagedUpload(member.staging_id)"
+                  />
+                </div>
+              </div>
+              <details v-if="uploadRefusals.length" class="upload-refusals" open>
+                <summary>
+                  {{ uploadRefusals.length }} source{{ uploadRefusals.length === 1 ? "" : "s" }}
+                  not loaded
+                </summary>
+                <ul>
+                  <li
+                    v-for="(refusal, index) in uploadRefusals"
+                    :key="`${index}:${refusal.source_name}`"
+                  >
+                    <strong>{{ refusal.source_name }}</strong>
+                    <span>{{ refusal.reason }}</span>
+                  </li>
+                </ul>
+              </details>
+              <div
+                v-if="selectedUploadAssetWarnings.length"
+                class="scientific-asset-warning"
+                role="status"
+                aria-label="Scientific import warning"
+              >
+                <i class="pi pi-exclamation-triangle" aria-hidden="true" />
+                <div>
+                  <div v-for="warning in selectedUploadAssetWarnings" :key="warning">
+                    {{ warning }}
+                  </div>
+                </div>
+              </div>
+              <Panel
+                :toggleable="true"
+                :collapsed="uploadOptionsCollapsed"
+                @update:collapsed="uploadOptionsCollapsed = $event"
+                class="upload-options-panel"
+              >
+                <template #header>
+                  <span class="upload-options-heading">
+                    <i class="pi pi-sliders-h"></i>
+                    Import options and details
+                  </span>
+                </template>
+                <div class="field">
+                  <label>Stage</label>
+                  <Dropdown
+                    v-model="uploadStage"
+                    :options="stageOptions"
+                    optionLabel="label"
+                    optionValue="value"
+                    placeholder="Select stage"
+                    class="upload-stage"
+                    :disabled="dataUploadDisabled"
+                  />
+                </div>
+                <div v-if="selectionHasCsv" class="upload-shape-grid">
+                  <div class="field">
+                    <label>CSV data shape</label>
+                    <Dropdown
+                      v-model="uploadDataRole"
+                      :options="uploadDataRoleOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      class="upload-shape-control"
+                      :disabled="dataUploadDisabled"
+                      placeholder="Choose target type"
+                    />
+                    <small class="field-help">Required before using a supervised analysis starter.</small>
+                  </div>
+                  <div class="field">
+                    <label>Target column</label>
+                    <InputText
+                      v-model.trim="uploadTargetColumn"
+                      placeholder="Optional column name"
+                      class="upload-shape-control"
+                      :disabled="dataUploadDisabled"
+                    />
+                  </div>
+                  <div class="field">
+                    <label>Target type</label>
+                    <Dropdown
+                      v-model="uploadTargetType"
+                      :options="uploadTargetTypeOptions"
+                      optionLabel="label"
+                      optionValue="value"
+                      class="upload-shape-control"
+                      :disabled="dataUploadDisabled"
+                    />
+                  </div>
+                </div>
+                <div
+                  v-if="selectedUploadMember && selectedUploadMember.assets.length > 1"
+                  class="field"
+                >
+                  <label for="upload-scientific-asset">Scientific result to preview</label>
+                  <Dropdown
+                    inputId="upload-scientific-asset"
+                    v-model="uploadAssetIds[selectedUploadMember.staging_id]"
+                    :options="selectedUploadMember.assets"
+                    optionLabel="title"
+                    optionValue="asset_id"
+                    placeholder="Select the exact result"
+                    class="w-full"
+                  >
+                    <template #option="{ option }">
+                      <span
+                        >{{ option.title || option.asset_id }} ·
+                        {{ option.shape.join(" × ") }}</span
+                      >
+                    </template>
+                  </Dropdown>
+                </div>
+                <small class="field-hint">{{ uploadFormatHint }}</small>
+              </Panel>
+              <div class="upload-action">
+                <div class="field upload-name">
+                  <label for="upload-dataset-name">Dataset name</label>
+                  <InputText
+                    id="upload-dataset-name"
+                    v-model="uploadDatasetName"
+                    :placeholder="defaultUploadDatasetName()"
+                    :disabled="dataUploadDisabled"
+                  />
+                </div>
+                <Button
+                  label="Add to My Dataset"
+                  icon="pi pi-plus"
+                  data-action="import_data"
+                  :disabled="dataUploadDisabled || stagedUploadMembers.length === 0"
+                  :loading="uploading"
+                  @click="onUploadFile"
+                />
+              </div>
+            </div>
           </div>
-          </div>
-          <DatasetSourcePreview
-            class="source-preview-pane"
-            :sourceRef="previewUploadSource"
-            :title="previewUploadTitle"
-            :files="previewUploadFiles"
-            :overrides="previewUploadOverrides"
-            :csvPlan="selectedUploadCsvPlan"
-            @update:overrides="onPreviewUploadOverrides"
-          />
+          <KeepAlive>
+            <DatasetSourcePreview
+              v-if="activeTab === TAB_UPLOAD"
+              class="source-preview-pane"
+              :sourceRef="previewUploadSource"
+              :title="previewUploadTitle"
+              :files="previewUploadFiles"
+              :overrides="previewUploadOverrides"
+              :csvPlan="selectedUploadCsvPlan"
+              @update:overrides="onPreviewUploadOverrides"
+            />
+          </KeepAlive>
         </section>
       </TabPanel>
 
       <!-- ======================== LIBRARY TAB ======================== -->
-      <TabPanel>
+      <TabPanel :disabled="qualified">
         <template #header>
           <span class="p-tabview-title" data-action="open_library">Library</span>
         </template>
-        <section class="library-panel">
+        <section v-if="!qualified" class="library-panel">
           <div class="library-header">
             <div>
               <h3 class="library-title">
@@ -429,8 +672,8 @@
                 Reference Library
               </h3>
               <p>
-                Search local reference entries and packaged compound records. Use Import for datasets
-                you want to copy into My Dataset.
+                Search local reference entries and packaged compound records. Use Import for
+                datasets you want to copy into My Dataset.
               </p>
             </div>
             <span class="library-count">{{ filteredLibrary.length }} entries</span>
@@ -452,7 +695,11 @@
               <i class="pi pi-search" />
               <InputText
                 v-model="librarySearch"
-                :placeholder="isHitranLibrarySource(librarySource) ? 'Search HITRAN species...' : 'Search compounds...'"
+                :placeholder="
+                  isHitranLibrarySource(librarySource)
+                    ? 'Search HITRAN species...'
+                    : 'Search compounds...'
+                "
                 class="p-inputtext-sm"
                 style="width: 100%"
                 @keyup.enter="searchHitranLibrary"
@@ -479,29 +726,61 @@
             <div v-if="librarySource === 'hitran'" class="hitran-settings-row">
               <div class="field compact-field">
                 <label for="library-resolution">Resolution</label>
-                <InputNumber inputId="library-resolution" v-model="libraryResolutionCm1" :min="0.001" :maxFractionDigits="4" :useGrouping="false" />
+                <InputNumber
+                  inputId="library-resolution"
+                  v-model="libraryResolutionCm1"
+                  :min="0.001"
+                  :maxFractionDigits="4"
+                  :useGrouping="false"
+                />
               </div>
               <div class="field compact-field">
                 <label for="library-wmin">Min cm^-1</label>
-                <InputNumber inputId="library-wmin" v-model="libraryWavenumberMin" :min="1" :useGrouping="false" />
+                <InputNumber
+                  inputId="library-wmin"
+                  v-model="libraryWavenumberMin"
+                  :min="1"
+                  :useGrouping="false"
+                />
               </div>
               <div class="field compact-field">
                 <label for="library-wmax">Max cm^-1</label>
-                <InputNumber inputId="library-wmax" v-model="libraryWavenumberMax" :min="2" :useGrouping="false" />
+                <InputNumber
+                  inputId="library-wmax"
+                  v-model="libraryWavenumberMax"
+                  :min="2"
+                  :useGrouping="false"
+                />
               </div>
               <div class="field compact-field">
                 <label for="library-temperature">Temperature (K)</label>
-                <InputNumber inputId="library-temperature" v-model="libraryTemperatureK" :min="50" :max="5000" :maxFractionDigits="2" :useGrouping="false" />
+                <InputNumber
+                  inputId="library-temperature"
+                  v-model="libraryTemperatureK"
+                  :min="50"
+                  :max="5000"
+                  :maxFractionDigits="2"
+                  :useGrouping="false"
+                />
               </div>
               <div class="field compact-field">
                 <label for="library-pressure">Pressure (atm)</label>
-                <InputNumber inputId="library-pressure" v-model="libraryPressureAtm" :min="0.000001" :maxFractionDigits="6" :useGrouping="false" />
+                <InputNumber
+                  inputId="library-pressure"
+                  v-model="libraryPressureAtm"
+                  :min="0.000001"
+                  :maxFractionDigits="6"
+                  :useGrouping="false"
+                />
               </div>
             </div>
           </div>
           <div class="synthesis-note warn" v-if="isHitranLibrarySource(librarySource)">
             <i class="pi pi-info-circle" />
-            <span>HITRAN spectra are fetched live when needed and require your own HITRAN API key in Settings > API Keys.</span>
+            <span
+              >HITRAN spectra are fetched live when needed and require your own HITRAN API key in
+              Settings > API Keys.</span
+            >
           </div>
           <DataTable
             :value="filteredLibrary"
@@ -512,7 +791,7 @@
             class="library-table"
           >
             <template #empty>
-              <div class="empty-state-sm">No library entries</div>
+              <div class="empty-state-sm">{{ dataStore.catalogError ? "Catalog unavailable" : "No library entries" }}</div>
             </template>
             <Column header="Review / Basket" style="width: 210px">
               <template #body="{ data }">
@@ -531,8 +810,16 @@
                     :label="libraryBasketButtonLabel(data)"
                     class="p-button-sm p-button-text"
                     data-action="library_add_to_basket"
-                    :disabled="!librarySpectra[data.key] || selectedLibraryKeys.has(data.key) || hitranLibraryImportActive"
-                    :title="librarySpectra[data.key] ? 'Add to the library basket' : 'Load spectrum before adding to the library basket'"
+                    :disabled="
+                      !librarySpectra[data.key] ||
+                      selectedLibraryKeys.has(data.key) ||
+                      hitranLibraryImportActive
+                    "
+                    :title="
+                      librarySpectra[data.key]
+                        ? 'Add to the library basket'
+                        : 'Load spectrum before adding to the library basket'
+                    "
                     @click="addLibraryToBasket(data)"
                   />
                   <Tag
@@ -546,7 +833,10 @@
                     class="library-spectrum-progress"
                     aria-live="polite"
                   >
-                    <ProgressBar :value="librarySpectrumProgress[data.key].progress" :showValue="false" />
+                    <ProgressBar
+                      :value="librarySpectrumProgress[data.key].progress"
+                      :showValue="false"
+                    />
                     <small>
                       {{ librarySpectrumProgress[data.key].progress }}%
                       {{ librarySpectrumProgress[data.key].message || "Loading spectrum" }}
@@ -558,7 +848,11 @@
             <Column field="compound_name" header="Compound" :sortable="true" />
             <Column field="formula" header="Formula" :sortable="true" style="width: 100px" />
             <Column field="cas_number" header="CAS Number" :sortable="true" style="width: 140px" />
-            <Column v-if="librarySource === 'hitran_xsec'" header="Measurement" style="min-width: 260px">
+            <Column
+              v-if="librarySource === 'hitran_xsec'"
+              header="Measurement"
+              style="min-width: 260px"
+            >
               <template #body="{ data }">
                 <Dropdown
                   v-model="data.selected_xsec_option"
@@ -573,9 +867,14 @@
             </Column>
             <Column field="resolution" header="Resolution" style="width: 100px" />
             <Column field="source_label" header="Database" style="width: 110px" />
-            <Column field="file_path" header="File" style="width: 160px" v-if="librarySource === 'nist'">
+            <Column
+              field="file_path"
+              header="File"
+              style="width: 160px"
+              v-if="librarySource === 'nist'"
+            >
               <template #body="{ data }">
-                <span class="file-size">{{ data.file_path.split('/').pop() }}</span>
+                <span class="file-size">{{ data.file_path.split("/").pop() }}</span>
               </template>
             </Column>
           </DataTable>
@@ -603,7 +902,9 @@
                 class="selected-member-row"
               >
                 <span>{{ member.label }}</span>
-                <small v-if="member.detail" class="selected-member-detail">{{ member.detail }}</small>
+                <small v-if="member.detail" class="selected-member-detail">{{
+                  member.detail
+                }}</small>
                 <Tag
                   v-if="libraryMemberStatus(member.key)"
                   :value="libraryMemberStatus(member.key)"
@@ -628,11 +929,17 @@
             </div>
             <div v-if="activeLibraryImportJob" class="library-import-progress" aria-live="polite">
               <Tag
-                :value="activeLibraryImportJob.status === 'pending' ? 'In queue' : activeLibraryImportJob.status"
+                :value="
+                  activeLibraryImportJob.status === 'pending'
+                    ? 'In queue'
+                    : activeLibraryImportJob.status
+                "
                 :severity="libraryJobSeverity"
               />
               <span>{{ activeLibraryImportJob.progress }}%</span>
-              <span>{{ activeLibraryImportJob.progress_message || 'Preparing HITRAN import' }}</span>
+              <span>{{
+                activeLibraryImportJob.progress_message || "Preparing HITRAN import"
+              }}</span>
             </div>
             <Button
               :label="libraryImportButtonLabel"
@@ -647,16 +954,28 @@
         </section>
       </TabPanel>
 
+      <!-- ======================== MULTI-WELL TAB ======================== -->
+      <TabPanel header="Multi-well">
+        <MultiWellAcquisitionPanel
+          :experiment-id="dataStore.activeExperimentId"
+          :experiment-name="selectedExperimentName"
+          :experiment-options="dataStore.experiments"
+          :source-file-id="dataStore.activeFileId"
+          :sync-refresh-revision="measuredSamplesRevision"
+          @select-experiment="onAcquisitionExperimentSelect"
+        />
+      </TabPanel>
+
       <!-- ======================== MY DATASET TAB ======================== -->
-      <!-- Persistent store. The four left-group source tabs all funnel
-           into the dataset selected here via "Add to My Dataset" actions.
-           Right-justified in the tab strip to mark the source / store
-           distinction. -->
-      <TabPanel header="My Dataset">
+      <!-- Persistent dataset collection; all source tabs feed this view. -->
+      <TabPanel header="My Dataset" :headerStyle="{ marginLeft: 'auto' }">
         <div class="my-dataset-section">
           <p class="my-dataset-summary">
-            {{ dataStore.experiments.length }} dataset{{ dataStore.experiments.length === 1 ? "" : "s" }}
-            containing {{ totalExperimentFiles }} file{{ totalExperimentFiles === 1 ? "" : "s" }} from Import, Synthesis, Upload, and Library.
+            {{ dataStore.experiments.length }} dataset{{
+              dataStore.experiments.length === 1 ? "" : "s"
+            }}
+            containing {{ totalExperimentFiles }} file{{ totalExperimentFiles === 1 ? "" : "s" }}
+            from Import, Synthesis, Upload, and Library.
           </p>
 
           <div class="load-panels">
@@ -665,10 +984,11 @@
               <div class="panel-heading">
                 <div>
                   <strong>Packaged Datasets</strong>
-                  <span>One package can contain one or many files.</span>
+                  <span>{{ plotSelectionSummary }}</span>
                 </div>
               </div>
               <DataTable
+                v-if="!dataStore.experimentsError"
                 :value="dataStore.experiments"
                 :loading="dataStore.experimentsLoading"
                 selectionMode="single"
@@ -677,7 +997,7 @@
                 dataKey="id"
                 :rows="20"
                 scrollable
-                scrollHeight="170px"
+                scrollHeight="flex"
                 size="small"
                 stripedRows
                 class="exp-table"
@@ -685,6 +1005,27 @@
                 <template #empty>
                   <div class="empty-state-sm">No datasets yet</div>
                 </template>
+                <Column header="Preview" style="width: 68px">
+                  <template #header>
+                    <PlotSelectionCheckbox
+                      :checked="allExperimentsPlotted"
+                      :partial="someExperimentsPlotted"
+                      :disabled="dataStore.experiments.length === 0"
+                      label="Preview all packaged datasets"
+                      title="Preview all packaged datasets"
+                      @toggle="onPlotAllExperiments"
+                    />
+                  </template>
+                  <template #body="{ data }">
+                    <PlotSelectionCheckbox
+                      :checked="isExperimentFullyPlotted(data.id)"
+                      :partial="isExperimentPartlyPlotted(data.id)"
+                      :label="`Preview ${data.name}`"
+                      :title="`Include ${data.name} in the data preview`"
+                      @toggle="(checked) => onPlotExperimentToggle(data, checked)"
+                    />
+                  </template>
+                </Column>
                 <Column field="name" header="Name" :sortable="true">
                   <template #body="{ data }">
                     <button
@@ -696,7 +1037,7 @@
                     </button>
                   </template>
                 </Column>
-                <Column field="file_count" header="Files" :sortable="true" style="width: 70px" />
+                <Column field="file_count" header="Views" :sortable="true" style="width: 70px" />
                 <Column header="Created" :sortable="true" style="width: 145px">
                   <template #body="{ data }">
                     {{ formatDate(data.created_at) }}
@@ -725,13 +1066,22 @@
               </DataTable>
             </div>
 
-            <!-- Files panel (right) -->
+            <!-- Scientist-selectable data views (right) -->
             <div class="files-panel">
               <div class="panel-heading">
                 <div>
-                  <strong>Files in Dataset</strong>
+                  <strong>Data Views</strong>
                   <span>{{ selectedExperimentName }}</span>
                 </div>
+                <PlotSelectionCheckbox
+                  v-if="selectedExperiment"
+                  :checked="isExperimentFullyPlotted(selectedExperiment.id)"
+                  :partial="isExperimentPartlyPlotted(selectedExperiment.id)"
+                  :disabled="dataStore.experimentFiles.length === 0"
+                  :label="`Preview all files in ${selectedExperimentName}`"
+                  :title="`Preview all files in ${selectedExperimentName}`"
+                  @toggle="onActiveExperimentPlotToggle"
+                />
               </div>
               <div v-if="!dataStore.activeExperimentId" class="empty-state">
                 <i class="pi pi-arrow-left"></i>
@@ -743,6 +1093,18 @@
                 <span>Loading files...</span>
               </div>
 
+              <div v-else-if="dataStore.experimentFilesRefusal" class="empty-state">
+                <i class="pi pi-exclamation-triangle"></i>
+                <span>{{ dataStore.experimentFilesRefusal.message }}</span>
+                <small
+                  v-if="
+                    dataStore.experimentFilesRefusal.code === 'trial_dataset_authority_superseded'
+                  "
+                >
+                  Remove this packaged dataset and import the reviewed provider file again.
+                </small>
+              </div>
+
               <div v-else-if="dataStore.experimentFiles.length === 0" class="empty-state">
                 <i class="pi pi-inbox"></i>
                 <span>No files in this dataset</span>
@@ -750,15 +1112,8 @@
               </div>
 
               <div v-else class="file-groups">
-                <div
-                  v-for="stage in fileStages"
-                  :key="stage.key"
-                  class="file-stage"
-                >
-                  <div
-                    v-if="filesForStage(stage.key).length > 0"
-                    class="stage-section"
-                  >
+                <div v-for="stage in fileStages" :key="stage.key" class="file-stage">
+                  <div v-if="filesForStage(stage.key).length > 0" class="stage-section">
                     <h4 class="stage-header">
                       <i :class="stage.icon"></i>
                       {{ stage.label }} ({{ filesForStage(stage.key).length }})
@@ -769,14 +1124,22 @@
                         :key="file.id"
                         class="file-row"
                         :class="{ selected: dataStore.activeFileId === file.id }"
+                        :title="fileRowHoverText(file)"
+                        :aria-label="fileRowAccessibleLabel(file)"
                         role="button"
                         tabindex="0"
                         @click="onInspectFile(file)"
                         @keydown.enter.prevent="onInspectFile(file)"
                         @keydown.space.prevent="onInspectFile(file)"
                       >
+                        <PlotSelectionCheckbox
+                          :checked="isFilePlotted(file)"
+                          :label="`Preview ${extractFileName(file.file_path)}`"
+                          :title="`Include ${extractFileName(file.file_path)} in the data preview`"
+                          @toggle="(checked) => onPlotFileToggle(file, checked)"
+                        />
                         <div class="file-info">
-                          <span class="file-name">{{ extractFileName(file.file_path) }}</span>
+                          <span class="file-name">{{ dataViewLabel(file) }}</span>
                           <span v-if="formatDatasetFileShape(file)" class="file-size">
                             {{ formatDatasetFileShape(file) }}
                           </span>
@@ -786,10 +1149,19 @@
                         </div>
                         <div class="file-actions">
                           <Button
+                            v-if="registeredPackageView(file.file_path)"
+                            label="Use only"
+                            class="p-button-text p-button-sm"
+                            :title="`Use only ${dataViewLabel(file)} for preview and workflow modeling`"
+                            @click.stop="useOnlyDataView(file)"
+                          />
+                          <Button
                             icon="pi pi-download"
                             class="p-button-text p-button-sm p-button-rounded"
                             title="Download"
-                            @click.stop="dataStore.downloadFile(file.id, extractFileName(file.file_path))"
+                            @click.stop="
+                              dataStore.downloadFile(file.id, extractFileName(file.file_path))
+                            "
                           />
                           <Button
                             icon="pi pi-trash"
@@ -803,9 +1175,84 @@
                   </div>
                 </div>
               </div>
+              <aside
+                v-if="activePackageViewNames.length"
+                class="active-view-set"
+                aria-live="polite"
+              >
+                <strong>Workflow view set:</strong>
+                <span>{{ activePackageViewSummary }}</span>
+                <small v-if="activePackageViewNames.length > 1">
+                  These package views have different feature spaces and cannot be combined as one
+                  ordinary workflow source. Choose <b>Use only</b> beside one view.
+                </small>
+                <small v-else>
+                  This is the single view used for preview and workflow modeling. Clicking a file
+                  name changes inspection focus only.
+                </small>
+                <small v-if="activeProviderRoleSummary">
+                  {{ activeProviderRoleSummary }} These source roles remain descriptive metadata;
+                  no calibration, test, normal, or fault role is imposed on a new workflow.
+                </small>
+              </aside>
             </div>
           </div>
-          <div v-if="canReopenSynthesisRecipe || canReopenLibraryBasket" class="builder-reopen-actions">
+          <SelectedSpectraPlotPanel
+            :plot-datasets="plotDatasetSources"
+            :plot-dataset-count="plottedExperimentIds.length"
+            :plot-file-count="plottedFileCount"
+            :plot-datasets-loading="plotDatasetsLoading"
+            :plot-datasets-error="plotDatasetsError"
+            :active-experiment-id="dataStore.activeExperimentId"
+            :active-file-name="
+              dataStore.activeFilePath ? extractFileName(dataStore.activeFilePath) : null
+            "
+            @harmonize="goToWorkflow('preprocess.wavenumber_align')"
+          />
+          <DataContentsPanel
+            :active-dataset-name="selectedExperimentName"
+            :selected-file-count="activeSelectedFileCount"
+            :selected-file-names="activeSelectedFileNames"
+            :initial-analysis-target="requestedAnalysisSelection.target"
+            :initial-analysis-group="requestedAnalysisSelection.group"
+            :analysis-selection-hydrated="analysisSelectionHydrated"
+            :analysis-selection-status="analysisSelectionStatus"
+            @analysis-choice="onAnalysisChoice"
+            @analysis-selection-commit="onAnalysisSelectionCommit"
+            @measured-samples-published="measuredSamplesRevision += 1"
+          />
+          <CollectionDefinitionPanel
+            v-if="dataStore.activeExperimentId"
+            :experiment-id="dataStore.activeExperimentId"
+            :refresh-key="collectionDefinitionRefreshKey"
+            :file-types="activeCollectionFileTypes"
+            :allow-definition-import="!activeDatasetIsGoverned"
+            :governed-source="activeDatasetIsGoverned"
+            @changed="onCollectionDefinitionChanged"
+          />
+          <section v-if="dataStore.activeExperimentId" class="dataset-view-registry" aria-label="Saved dataset definitions">
+            <div class="panel-heading">
+              <strong>Saved definitions</strong>
+              <span>Exact source, included samples, target and group</span>
+            </div>
+            <div v-if="datasetViewError" role="alert">{{ datasetViewError }}</div>
+            <div class="dataset-view-actions">
+              <Button label="Show Default" class="p-button-sm p-button-outlined" :disabled="datasetViewBusy" @click="showDefaultDatasetView" />
+              <InputText v-model="newDatasetViewName" aria-label="New dataset definition name" placeholder="New definition name" maxlength="120" />
+              <Button label="Save as new" class="p-button-sm" :loading="datasetViewBusy" :disabled="!newDatasetViewName.trim() || !analysisSelectionHydrated || dataStore.fileInfoLoading" @click="saveDatasetView" />
+            </div>
+            <ul class="dataset-view-list">
+              <li v-for="view in datasetViews" :key="view.id">
+                <span>{{ view.name }}</span>
+                <Button label="Show" class="p-button-sm p-button-text" :disabled="datasetViewBusy" @click="showDatasetView(view)" />
+                <Button label="Delete" class="p-button-sm p-button-text p-button-danger" :disabled="datasetViewBusy" @click="deleteDatasetView(view)" />
+              </li>
+            </ul>
+          </section>
+          <div
+            v-if="canReopenSynthesisRecipe || canReopenLibraryBasket"
+            class="builder-reopen-actions"
+          >
             <Button
               v-if="canReopenSynthesisRecipe"
               label="Reopen Synthesis Recipe"
@@ -821,11 +1268,47 @@
               @click="reopenSelectedLibraryBasket"
             />
           </div>
-          <DataContentsPanel />
+          <div
+            v-if="pendingInspection && inspectionAssets.length > 1"
+            class="inspection-asset-selector"
+          >
+            <label for="inspection-scientific-asset">Scientific result</label>
+            <Dropdown
+              inputId="inspection-scientific-asset"
+              v-model="inspectionAssetId"
+              :options="inspectionAssets"
+              optionLabel="title"
+              optionValue="asset_id"
+              placeholder="Select the exact result to inspect"
+              class="w-full"
+              @change="onInspectionAssetChange"
+            >
+              <template #option="{ option }">
+                <span
+                  >{{ option.title || option.asset_id }} · {{ option.asset_id }} ·
+                  {{ option.shape.join(" × ") }}</span
+                >
+              </template>
+            </Dropdown>
+            <small
+              >The same exact result identity is used by preview, workflows, and model
+              application.</small
+            >
+          </div>
+          <div
+            v-if="inspectionWarnings.length"
+            class="scientific-asset-warning"
+            role="status"
+            aria-label="Scientific import warning"
+          >
+            <i class="pi pi-exclamation-triangle" aria-hidden="true" />
+            <div>
+              <div v-for="warning in inspectionWarnings" :key="warning">{{ warning }}</div>
+            </div>
+          </div>
         </div>
       </TabPanel>
-
-    </TabView>
+    </WorkspaceTabs>
 
     <!-- ======================== DIALOGS ======================== -->
 
@@ -860,22 +1343,12 @@
         </div>
       </div>
       <template #footer>
-        <Button
-          label="Cancel"
-          class="p-button-text"
-          @click="showEditDatasetDialog = false"
-        />
-        <Button
-          label="Save"
-          icon="pi pi-check"
-          :loading="editingExp"
-          @click="onEditExperiment"
-        />
+        <Button label="Cancel" class="p-button-text" @click="showEditDatasetDialog = false" />
+        <Button label="Save" icon="pi pi-check" :loading="editingExp" @click="onEditExperiment" />
       </template>
     </Dialog>
 
     <!-- Upload File dialog removed — Upload is now its own subtab. -->
-
 
     <!-- Delete Confirmation -->
     <Dialog
@@ -887,14 +1360,11 @@
     >
       <p>
         Are you sure you want to delete
-        <strong>{{ deleteTarget ? extractFileName(deleteTarget.file_path) : '' }}</strong>?
+        <strong>{{ deleteTarget ? extractFileName(deleteTarget.file_path) : "" }}</strong
+        >?
       </p>
       <template #footer>
-        <Button
-          label="Cancel"
-          class="p-button-text"
-          @click="showDeleteDialog = false"
-        />
+        <Button label="Cancel" class="p-button-text" @click="showDeleteDialog = false" />
         <Button
           label="Delete"
           icon="pi pi-trash"
@@ -920,11 +1390,7 @@
         and all its files?
       </p>
       <template #footer>
-        <Button
-          label="Cancel"
-          class="p-button-text"
-          @click="showDeleteExpDialog = false"
-        />
+        <Button label="Cancel" class="p-button-text" @click="showDeleteExpDialog = false" />
         <Button
           label="Delete"
           icon="pi pi-trash"
@@ -941,7 +1407,6 @@
 <script setup lang="ts">
 import { ref, reactive, computed, nextTick, onMounted, onBeforeUnmount, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import TabView from "primevue/tabview";
 import TabPanel from "primevue/tabpanel";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
@@ -952,13 +1417,14 @@ import InputText from "primevue/inputtext";
 import Textarea from "primevue/textarea";
 import Dropdown from "primevue/dropdown";
 import InputNumber from "primevue/inputnumber";
-import FileUpload from "primevue/fileupload";
+import Menu from "primevue/menu";
 import Panel from "primevue/panel";
 import ProgressSpinner from "primevue/progressspinner";
 import ProgressBar from "primevue/progressbar";
 import Tag from "primevue/tag";
 import api from "@/api/client";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useProjectAvailability } from "@/composables/useProjectAvailability";
 import { useDemoMode } from "@/composables/useDemoMode";
 import {
   useDataStore,
@@ -966,66 +1432,442 @@ import {
   type DataMatrixRef,
   type PreparedDataOverrides,
   type StagedUpload,
+  type StagedUploadRefusal,
 } from "@/stores/data";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
-import { getErrorMessage } from "@/utils/errors";
+import { useProjectProvenanceStore } from "@/stores/projectProvenance";
+import { useWorkflowStore } from "@/stores/workflow";
+import { getErrorCode, getErrorMessage } from "@/utils/errors";
 import { useToast } from "primevue/usetoast";
-import type { ExperimentFile, ExperimentSummary, JobInfo } from "@/types";
+import type {
+  DatasetAnalysisReadiness,
+  DatasetPlotSource,
+  ExperimentFile,
+  ExperimentFileAssets,
+  ExperimentSummary,
+  JobInfo,
+  ScientificAsset,
+  SherpaDatasetDict,
+} from "@/types";
 import type { ReferenceDatasetOption } from "@/stores/workflow";
-import ResponsiveHeaderActions from "@/components/ResponsiveHeaderActions.vue";
+import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
+import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
+import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
+import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
+import PlotSelectionCheckbox from "@/components/data/PlotSelectionCheckbox.vue";
 import DataContentsPanel from "./DataContentsPanel.vue";
+import SelectedSpectraPlotPanel from "./SelectedSpectraPlotPanel.vue";
+import CollectionDefinitionPanel, {
+  type CollectionDefinitionReceipt,
+} from "./CollectionDefinitionPanel.vue";
 import DatasetSourcePreview from "./DatasetSourcePreview.vue";
 import SynthesisPanel from "./SynthesisPanel.vue";
+import MultiWellAcquisitionPanel from "./MultiWellAcquisitionPanel.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 import type { SpectrumPayload } from "@/stores/synthesis";
+import { alignedSpectrumIdentities, selectedDatasetRows } from "@/utils/multiDatasetOverlay";
+import {
+  captureDatasetSelection,
+  captureLoadedDatasetSelection,
+} from "@/utils/myDatasetAdvisorContext";
+import {
+  createDataSelectionReceiptId,
+  storeDataSelectionReceipt,
+  type DataSelectionReceipt,
+} from "@/utils/workflowDataSelection";
+import {
+  clearRetainedInspection,
+  retainedInspection,
+  retainedDatasetWorkspace,
+} from "@/utils/retainedInspection";
 
 const DATA_ENTRY_MODE_KEY = "sherpa:data-entry-mode";
 const DATA_ENTRY_PROJECT_KEY = "sherpa:data-entry-project-id";
-const DATA_ACTIVE_TAB_PREFIX = "spectra_sherpa_data_active_tab_v2";
+const DATA_ENTRY_DATASET_KEY = "sherpa:data-entry-dataset-intent";
+const DATA_ACTIVE_TAB_PREFIX = "spectra_sherpa_data_active_tab_v3";
 const DATA_DRAFT_PREFIX = "spectra_sherpa_data_draft_v1";
+const MAX_PLOTTED_DATASETS = 12;
 const TAB_IMPORT = 0;
 const TAB_SYNTHESIS = 1;
 const TAB_UPLOAD = 2;
 const TAB_LIBRARY = 3;
-const TAB_MY_DATASET = 4;
+const TAB_MULTI_WELL = 4;
+const TAB_MY_DATASET = 5;
+
+interface AnalysisStarterDatasetIntent {
+  schema_version: "spectra-analysis-starter-dataset-intent/1";
+  project_id: number;
+  dataset_id: string;
+  source: string;
+  name: string;
+  label: string;
+  template_slug?: string | null;
+  /** Set after the selected reference has been admitted into My Dataset. */
+  imported_experiment_id?: number | null;
+}
+
+interface WorkflowSourceSelection {
+  experiment_id: number;
+  dataset_name: string;
+  stage: "raw" | "preprocessed" | "synthetic";
+  selected_file_ids: number[] | null;
+  asset_id: string | null;
+  source_manifest_sha256: string;
+  collection_definition_sha256: string | null;
+  scientific_collection_sha256: string;
+  target_authority: {
+    schema_version: "spectrasherpa-target-authority/1";
+    column: string;
+    target_type: "categorical" | "continuous";
+    units: string | null;
+    source_digest: string;
+  } | null;
+  group_column: string | null;
+  dataset_view_id?: number | null;
+  dataset_view_sha256?: string | null;
+}
+
+interface WorkflowDataSelectionRevision {
+  id: number;
+  revision_number: number;
+  created_by_name: string;
+  created_at: string;
+  reason: string | null;
+  selection: WorkflowSourceSelection;
+}
+
+interface WorkflowDataSelectionContext {
+  workflow_id: number;
+  workflow_name: string;
+  source_node_id: string;
+  source_node_label: string;
+  project_id: number | null;
+  current_revision: WorkflowDataSelectionRevision | null;
+  saved_selection: WorkflowSourceSelection | null;
+}
 
 const appConfigApi = useAppConfig();
-const appConfig = computed(() => appConfigApi.config?.value ?? appConfigApi.appConfig?.value ?? null);
+const {
+  qualified, availability, error: availabilityError,
+  loading: availabilityLoading, refresh: refreshAvailability,
+} = useProjectAvailability();
+const appConfig = computed(
+  () => appConfigApi.config?.value ?? appConfigApi.appConfig?.value ?? null,
+);
 const { isCapabilityDisabled } = appConfigApi;
-const { isDemoMode, uploadsLastWeek, uploadsLimitWeek, uploadsResetWeekAt, fetchQuota } = useDemoMode();
+const { isDemoMode, uploadsLastWeek, uploadsLimitWeek, uploadsResetWeekAt, fetchQuota } =
+  useDemoMode();
 const dataStore = useDataStore();
 const authStore = useAuthStore();
 const projectStore = useProjectStore();
+const provenanceStore = useProjectProvenanceStore();
+const workflowStore = useWorkflowStore();
 const advisorStore = useAdvisorStore();
 const toast = useToast();
 const route = useRoute();
 const router = useRouter();
+const workflowContextId = computed(() => queryNumber(route.query.workflow));
+const workflowSourceNodeId = computed(() =>
+  typeof route.query.source_node === "string" ? route.query.source_node : "",
+);
+const workflowSelectionContextRequested = computed(
+  () => workflowContextId.value !== null && Boolean(workflowSourceNodeId.value),
+);
+const workflowSelectionContext = ref<WorkflowDataSelectionContext | null>(null);
+const workflowSelectionContextLoading = ref(false);
+const workflowSelectionContextError = ref<string | null>(null);
+const workflowSelectionApplying = ref(false);
+const workflowSelectionReason = ref("");
 const synthesisPanelRef = ref<InstanceType<typeof SynthesisPanel> | null>(null);
-const uploadFileUploadRef = ref<InstanceType<typeof FileUpload> | null>(null);
+const uploadSourceMenuRef = ref<InstanceType<typeof Menu> | null>(null);
+const uploadFilesInputRef = ref<HTMLInputElement | null>(null);
+const uploadFolderInputRef = ref<HTMLInputElement | null>(null);
+const registeredReferenceInputRef = ref<HTMLInputElement | null>(null);
+
 const activeExperimentMetadata = ref<Record<string, unknown> | null>(null);
+type PlotFileRef = Pick<ExperimentFile, "id" | "file_path" | "stage">;
+type PlotFileSelection = PlotFileRef[] | null;
+const plotFileSelections = ref<Record<number, PlotFileSelection>>({});
+type AnalysisChoice = {
+  target: string;
+  targetType: "categorical" | "continuous" | null;
+  targetUnits: string | null;
+  sourceDigest: string | null;
+  group: string;
+  readiness: DatasetAnalysisReadiness | null;
+};
+
+type DatasetView = {
+  id: number;
+  name: string;
+  selection_sha256: string;
+  selection: {
+    selected_file_ids: number[] | null;
+    stage: "raw" | "preprocessed" | "synthetic";
+    asset_id: string | null;
+    target_authority: {
+      column: string;
+      target_type: "categorical" | "continuous";
+      units: string | null;
+      source_digest: string;
+    } | null;
+    group_column: string | null;
+    source_manifest_sha256: string;
+    collection_definition_sha256: string | null;
+    scientific_collection_sha256: string | null;
+  };
+};
+const datasetViews = ref<DatasetView[]>([]);
+const selectedDatasetView = ref<DatasetView | null>(null);
+const datasetViewError = ref<string | null>(null);
+const datasetViewBusy = ref(false);
+const newDatasetViewName = ref("");
+const exactInspectionSelection = ref(false);
+let datasetViewLoadRequest = 0;
+
+async function refreshDatasetViews(experimentId: number | null): Promise<void> {
+  const request = ++datasetViewLoadRequest;
+  datasetViews.value = [];
+  datasetViewError.value = null;
+  if (experimentId == null) return;
+  try {
+    const response = await api.get<DatasetView[]>(`/experiments/${experimentId}/dataset-views`);
+    if (request === datasetViewLoadRequest) datasetViews.value = response.data;
+  } catch (error) {
+    if (request === datasetViewLoadRequest) datasetViewError.value = getErrorMessage(error, "Saved definitions are unavailable.");
+  }
+}
+
+watch(() => dataStore.activeExperimentId, (id) => {
+  selectedDatasetView.value = null;
+  void refreshDatasetViews(id);
+}, { immediate: true });
+
+async function saveDatasetView(): Promise<void> {
+  const experimentId = dataStore.activeExperimentId;
+  if (experimentId == null) return;
+  datasetViewBusy.value = true;
+  datasetViewError.value = null;
+  try {
+    const selection = plotFileSelections.value[experimentId];
+    const fileIds = Array.isArray(selection) ? selection.map((file) => file.id) : null;
+    const defaultStage = dataStore.experimentFiles.some((file) => file.stage === "raw") ? "raw" : "synthetic";
+    const sourceFiles = fileIds == null
+      ? dataStore.experimentFiles.filter((file) => file.stage === defaultStage)
+      : dataStore.experimentFiles.filter((file) => fileIds.includes(file.id));
+    const stage = sourceFiles[0]?.stage;
+    if (stage !== "raw" && stage !== "preprocessed" && stage !== "synthetic") {
+      throw new Error("Select an available dataset source first.");
+    }
+    if (sourceFiles.some((file) => file.stage !== stage)) throw new Error("Save one data stage at a time.");
+    const choice = analysisChoice.value;
+    const targetAuthority = choice.target && choice.targetType && choice.sourceDigest
+      ? { schema_version: "spectrasherpa-target-authority/1", column: choice.target,
+          target_type: choice.targetType, units: choice.targetUnits, source_digest: choice.sourceDigest }
+      : null;
+    const created = await api.post<DatasetView>(`/experiments/${experimentId}/dataset-views`, {
+      name: newDatasetViewName.value.trim(), stage,
+      selected_file_ids: fileIds, asset_id: inspectionAssetId.value,
+      target_authority: targetAuthority, group_column: choice.group || null,
+    });
+    newDatasetViewName.value = "";
+    await refreshDatasetViews(experimentId);
+    if (projectStore.currentProjectId != null) {
+      await api.post(`/projects/${projectStore.currentProjectId}/choices`, {
+        kind: "dataset", experiment_id: experimentId, dataset_view_id: created.data.id,
+      });
+      selectedDatasetView.value = created.data;
+      await provenanceStore.refresh(projectStore.currentProjectId);
+    }
+  } catch (error) {
+    datasetViewError.value = getErrorMessage(error, "Could not save the exact dataset definition.");
+  } finally {
+    datasetViewBusy.value = false;
+  }
+}
+
+async function showDatasetView(view: DatasetView): Promise<void> {
+  const experimentId = dataStore.activeExperimentId;
+  if (experimentId == null) return;
+  datasetViewBusy.value = true;
+  datasetViewError.value = null;
+  try {
+    const response = await api.get<DatasetView>(`/experiments/${experimentId}/dataset-views/${view.id}`);
+    const saved = response.data.selection;
+    const fileIds = saved.selected_file_ids;
+    const selected = fileIds == null ? null : fileIds.map((id) => {
+      const file = dataStore.experimentFiles.find((candidate) => candidate.id === id);
+      if (!file) throw new Error("A saved source file is no longer available.");
+      return { id: file.id, file_path: file.file_path, stage: file.stage };
+    });
+    setExperimentPlotSelection(experimentId, selected);
+    ++analysisSelectionRequest;
+    const authority = saved.target_authority;
+    analysisChoice.value = {
+      target: authority?.column ?? "", targetType: authority?.target_type ?? null,
+      targetUnits: authority?.units ?? null, sourceDigest: authority?.source_digest ?? null,
+      group: saved.group_column ?? "", readiness: null,
+    };
+    requestedAnalysisSelection.value = { target: analysisChoice.value.target, group: analysisChoice.value.group };
+    analysisSelectionHydrated.value = true;
+    analysisSelectionStatus.value = "idle";
+    await showExperimentContents(experimentId, null, saved.asset_id, true);
+    await loadPlottedDatasets();
+    if (projectStore.currentProjectId != null) {
+      await api.post(`/projects/${projectStore.currentProjectId}/choices`, {
+        kind: "dataset", experiment_id: experimentId, dataset_view_id: view.id,
+      });
+      await provenanceStore.refresh(projectStore.currentProjectId);
+    }
+    selectedDatasetView.value = response.data;
+  } catch (error) {
+    datasetViewError.value = getErrorMessage(error, "This saved definition cannot be shown.");
+  } finally {
+    datasetViewBusy.value = false;
+  }
+}
+
+async function showDefaultDatasetView(): Promise<void> {
+  const experimentId = dataStore.activeExperimentId;
+  if (experimentId == null) return;
+  datasetViewError.value = null;
+  selectedDatasetView.value = null;
+  const registered = dataStore.experimentFiles.filter((file) => registeredPackageView(file.file_path));
+  const first = registered.length > 1 ? registered[0] : null;
+  setExperimentPlotSelection(experimentId, first
+    ? [{ id: first.id, file_path: first.file_path, stage: first.stage }] : null);
+  await refreshActiveExperimentMetadata(experimentId);
+  await showExperimentContents(experimentId);
+  await loadPlottedDatasets();
+  if (projectStore.currentProjectId != null) {
+    try {
+      await api.post(`/projects/${projectStore.currentProjectId}/choices`, {
+        kind: "dataset", experiment_id: experimentId,
+        stage: first?.stage ?? (dataStore.experimentFiles.some((file) => file.stage === "raw") ? "raw" : "synthetic"),
+        selected_file_ids: first ? [first.id] : null,
+        asset_id: inspectionAssetId.value,
+      });
+      await provenanceStore.refresh(projectStore.currentProjectId);
+    } catch (error) {
+      datasetViewError.value = getErrorMessage(error, "Default is displayed, but its active choice could not be recorded.");
+    }
+  }
+}
+
+async function deleteDatasetView(view: DatasetView): Promise<void> {
+  const experimentId = dataStore.activeExperimentId;
+  if (experimentId == null || !window.confirm(`Delete saved definition "${view.name}"? Its source data will remain.`)) return;
+  datasetViewBusy.value = true;
+  datasetViewError.value = null;
+  try {
+    await api.delete(`/experiments/${experimentId}/dataset-views/${view.id}`);
+    if (selectedDatasetView.value?.id === view.id) selectedDatasetView.value = null;
+    await refreshDatasetViews(experimentId);
+  } catch (error) {
+    datasetViewError.value = getErrorMessage(error, "Could not delete this definition.");
+  } finally {
+    datasetViewBusy.value = false;
+  }
+}
+
+const analysisChoice = ref<AnalysisChoice>({
+  target: "",
+  targetType: null,
+  targetUnits: null,
+  sourceDigest: null,
+  group: "",
+  readiness: null,
+});
+const analysisSelectionHydrated = ref(false);
+// Saved/user intent must survive temporary empty projections during hydration.
+const requestedAnalysisSelection = ref({ target: "", group: "" });
+const analysisSelectionStatus = ref<"loading" | "idle" | "saving" | "saved" | "error">("loading");
+let analysisSelectionRequest = 0;
+const workflowHandoffBusy = computed(
+  () =>
+    activeTab.value === TAB_MY_DATASET &&
+    dataStore.activeExperimentId != null &&
+    (dataStore.fileInfoLoading || analysisChoice.value.readiness === null),
+);
+const workflowHandoffTitle = computed(() =>
+  workflowHandoffBusy.value
+    ? dataStore.fileInfoError ||
+      "Inspecting the active dataset before choosing an analysis starter."
+    : "Choose an analysis starter for the current data.",
+);
+const plottedExperimentIds = computed(() =>
+  dataStore.experiments
+    .filter((experiment) =>
+      Object.prototype.hasOwnProperty.call(plotFileSelections.value, experiment.id),
+    )
+    .map((experiment) => experiment.id),
+);
+const plotDatasetSources = ref<DatasetPlotSource[]>([]);
+const plotDatasetsLoading = ref(false);
+const plotDatasetsError = ref<string | null>(null);
+const fileSampleLabelsByExperiment = ref<Record<number, Record<string, string[]>>>({});
+const fileSampleLabelRequests = new Map<number, Promise<void>>();
+let plotDatasetRequest = 0;
+let contentsInspectionRequest = 0;
+let experimentFocusRequest = 0;
+const fileAssetInventoryCache = new Map<string, Promise<ExperimentFileAssets>>();
+let residentDatasets = retainedDatasetWorkspace(
+  dataStore,
+  `${authStore.user?.id}:${projectStore.currentProjectId}`,
+);
+const DATA_TAB_IDS = ["import", "synthesis", "upload", "library", "multi-well", "my-dataset"] as const;
 const activeTab = ref(0);
+const activeTabId = computed({
+  get: () => DATA_TAB_IDS[activeTab.value] ?? "import",
+  set: (id: string) => {
+    const index = DATA_TAB_IDS.indexOf(id as typeof DATA_TAB_IDS[number]);
+    if (index < 0) return;
+    activeTab.value = index;
+    onDataTabSelected(index);
+  },
+});
+const measuredSamplesRevision = ref(0);
 const isGuidedExampleSession = ref(false);
 const headerActionItems = computed(() => [
-  {
-    label: "Refresh",
-    icon: "pi pi-refresh",
-    disabled: dataStore.catalogLoading,
-    command: refresh,
-  },
-  {
-    label: "Next: Workflow",
-    icon: "pi pi-arrow-right",
-    command: goToWorkflow,
-  },
+  ...(workflowSelectionContextRequested.value
+    ? []
+    : [
+        {
+          label: "Workflow",
+          icon: "pi pi-arrow-right",
+          disabled: workflowHandoffBusy.value,
+          command: () => goToWorkflow(),
+        },
+      ]),
 ]);
+const uploadSourceMenuItems = [
+  {
+    label: "Files or ZIP",
+    icon: "pi pi-file-import",
+    command: () => openUploadFilesPicker(),
+  },
+  {
+    label: "Folder",
+    icon: "pi pi-folder-open",
+    command: () => openUploadFolderPicker(),
+  },
+];
 
 // R3 — Sherpa Advisor scope routing for the Data tab.  The UI now has
 // clearer Data workspace tabs, while the server still owns the stable
 // memory vocabulary (`load`, `explore`, `synthesis`).
-const DATA_SUBSCOPE_KEYS = ["load", "synthesis", "load", "load", "explore"] as const;
-const DATA_SUBSCOPE_TITLES = ["Import", "Synthesis", "Upload", "Library", "Contents"] as const;
+const DATA_SUBSCOPE_KEYS = ["load", "synthesis", "load", "load", "explore", "explore"] as const;
+const DATA_SUBSCOPE_TITLES = [
+  "Import",
+  "Synthesis",
+  "Upload",
+  "Library",
+  "Multi-well",
+  "Contents",
+] as const;
 
 type LibrarySource = "nist" | "hitran" | "hitran_xsec";
 type LibraryRangeMode = "common" | "widest";
@@ -1101,10 +1943,9 @@ interface DataDraftSnapshot {
     overrides: Record<string, PreparedDataOverrides>;
     dataset_name: string;
     collapsed: {
+      builtin?: boolean;
+      registered?: boolean;
       synthetic: boolean;
-      eigenvector: boolean;
-      oes: boolean;
-      spectrochempy: boolean;
       sklearn: boolean;
     };
   };
@@ -1121,6 +1962,9 @@ interface DataDraftSnapshot {
     selected_keys: string[];
     selected_rows: Record<string, LibraryRow>;
   };
+  my_dataset?: {
+    plot_file_selections: Record<number, PlotFileSelection>;
+  };
 }
 
 function dataActiveTabStorageKey(): string {
@@ -1130,9 +1974,12 @@ function dataActiveTabStorageKey(): string {
 }
 
 function dataDraftStorageKey(): string {
+  const workflowScope = workflowSelectionContextRequested.value
+    ? `:workflow-${workflowContextId.value}:source-${workflowSourceNodeId.value}`
+    : "";
   return `${DATA_DRAFT_PREFIX}:${authStore.user?.id ?? "local"}:${
     projectStore.currentProjectId ?? "no-project"
-  }`;
+  }${workflowScope}`;
 }
 
 function restoreActiveDataTab(): void {
@@ -1181,6 +2028,7 @@ watch(activeTab, () => {
 watch(
   () => projectStore.currentProjectId,
   async (next, prev) => {
+    residentDatasets = retainedDatasetWorkspace(dataStore, `${authStore.user?.id}:${next}`);
     // Skip the initial boot resolution (null/undefined -> id). onMounted
     // already owns first-load setup (restoreActiveDataTab +
     // restoreActiveExperimentForCurrentProject + applyRouteExploreState).
@@ -1194,10 +2042,27 @@ watch(
     persistDataDraftNow(currentDataDraftStorageKey);
     currentDataDraftStorageKey = dataDraftStorageKey();
     restoreActiveDataTab();
+    plotFileSelections.value = {};
+    analysisChoice.value = {
+      target: "",
+      targetType: null,
+      targetUnits: null,
+      sourceDigest: null,
+      group: "",
+      readiness: null,
+    };
     restoreDataDraft(currentDataDraftStorageKey);
+    plotDatasetSources.value = [];
+    plotDatasetsError.value = null;
+    plotDatasetRequest += 1;
+    contentsInspectionRequest += 1;
+    fileAssetInventoryCache.clear();
+    residentDatasets.clear();
     dataStore.clearActiveExperimentSelection();
     await Promise.all([dataStore.fetchCatalog(), dataStore.fetchExperiments()]);
     await dataStore.restoreActiveExperimentForCurrentProject();
+    if (activeTab.value === TAB_MY_DATASET) await ensureInitialContentsSelection();
+    await loadPlottedDatasets();
     if (next != null) void syncAdvisorForDataSubtab();
   },
 );
@@ -1206,10 +2071,54 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  releaseAdvisorDatasetContext?.();
   persistDataDraftNow();
   stopLibraryImportPolling();
   clearLibrarySpectrumLoadQueue();
 });
+
+let releaseAdvisorDatasetContext: (() => void) | undefined;
+function registerAdvisorDatasetContext(): void {
+  releaseAdvisorDatasetContext?.();
+  releaseAdvisorDatasetContext = dataStore.registerAdvisorDatasetContext?.(() => ({
+    schema: "spectra-my-dataset-advisor/1",
+    authority:
+      "Current My Dataset selection; prior workflow result shapes are not current selection counts.",
+    captured_at: new Date().toISOString(),
+    project_id: projectStore.currentProjectId,
+    active_experiment_id: dataStore.activeExperimentId,
+    loading: plotDatasetsLoading.value || dataStore.fileInfoLoading,
+    selection_error: plotDatasetsError.value,
+    analysis_choice: { ...analysisChoice.value, hydrated: analysisSelectionHydrated.value },
+    datasets: dataStore.experiments.map((experiment) => ({
+      experiment_id: experiment.id,
+      name: experiment.name,
+      selected: hasExperimentPlotSelection(experiment.id),
+      total_files: experiment.file_count,
+      plot_members:
+        plotDatasetSources.value
+          .find((source) => source.experimentId === experiment.id)
+          ?.members.map((member) => ({
+            file_id: member.fileId,
+            file_name: member.fileName,
+            ...captureDatasetSelection(
+              member.dataset,
+              plotDatasetSources.value.find((source) => source.experimentId === experiment.id)
+                ?.selectedFileNames ?? null,
+            ),
+          })) ?? [],
+      ...captureLoadedDatasetSelection(
+        residentDatasets.get(experiment.id) ??
+          (experiment.id === dataStore.activeExperimentId ? dataStore.fileInfo : null),
+        plotFileSelections.value[experiment.id]?.map((file) => file.file_path) ??
+          (plotFileSelections.value[experiment.id] === null ? null : undefined),
+        plotDatasetSources.value.find((source) => source.experimentId === experiment.id),
+      ),
+    })),
+  }));
+}
+onMounted(registerAdvisorDatasetContext);
+watch(() => projectStore.currentProjectId, registerAdvisorDatasetContext);
 
 // --- Load tab state ---
 const librarySearch = ref("");
@@ -1229,7 +2138,9 @@ const activeLibraryImportJob = ref<JobInfo | null>(null);
 const activeLibraryImportExperimentId = ref<number | null>(null);
 const librarySpectra = reactive<Record<string, SpectrumPayload>>({});
 const librarySpectrumLoadingKeys = reactive(new Set<string>());
-const librarySpectrumProgress = reactive<Record<string, { progress: number; message: string | null }>>({});
+const librarySpectrumProgress = reactive<
+  Record<string, { progress: number; message: string | null }>
+>({});
 const librarySpectrumLoadQueue = ref<LibrarySpectrumQueueItem[]>([]);
 const activeLibrarySpectrumLoadKey = ref<string | null>(null);
 const activeLibraryPreviewKey = ref<string | null>(null);
@@ -1237,12 +2148,19 @@ let libraryImportPollTimer: ReturnType<typeof window.setInterval> | null = null;
 const selectedRefDatasets = reactive(new Set<string>());
 const previewRefKey = ref<string | null>(null);
 const refOverrides = reactive<Record<string, PreparedDataOverrides>>({});
-const syntheticCollapsed = ref(false);
-const eigenvectorCollapsed = ref(false);
-const oesCollapsed = ref(false);
-const scpCollapsed = ref(true);
+const builtinCollapsed = ref(true);
+const registeredCollapsed = ref(true);
+const syntheticCollapsed = ref(true);
 const sklearnCollapsed = ref(true);
+const legacyCollapsed = ref(true);
 const importing = ref(false);
+const pendingRegisteredReference = ref<ReferenceDatasetOption | null>(null);
+const registeredImportState = reactive<
+  Record<string, { status: "importing" | "ready" | "error"; message: string }>
+>({});
+const registeredImportBusy = computed(() =>
+  Object.values(registeredImportState).some((state) => state.status === "importing"),
+);
 const importingLibrary = ref(false);
 const showEditDatasetDialog = ref(false);
 const showDeleteDialog = ref(false);
@@ -1255,62 +2173,89 @@ const editExpDescription = ref("");
 const editSubmitted = ref(false);
 const editingExp = ref(false);
 const uploading = ref(false);
-const uploadQuotaExhausted = computed(() => (
-  isDemoMode.value
-  && uploadsLastWeek.value !== null
-  && uploadsLimitWeek.value > 0
-  && uploadsLimitWeek.value < 999999
-  && uploadsLastWeek.value >= uploadsLimitWeek.value
-));
+const uploadQuotaExhausted = computed(
+  () =>
+    isDemoMode.value &&
+    uploadsLastWeek.value !== null &&
+    uploadsLimitWeek.value > 0 &&
+    uploadsLimitWeek.value < 999999 &&
+    uploadsLastWeek.value >= uploadsLimitWeek.value,
+);
 const uploadDisabledMessage = computed(() => {
   if (isCapabilityDisabled("data_upload")) return "File upload is disabled for this deployment.";
   if (uploadQuotaExhausted.value) {
-    const reset = uploadsResetWeekAt.value ? new Date(uploadsResetWeekAt.value).toLocaleString() : "later";
+    const reset = uploadsResetWeekAt.value
+      ? new Date(uploadsResetWeekAt.value).toLocaleString()
+      : "later";
     return `Demo upload limit reached. Your next upload is available ${reset}.`;
+  }
+  if (qualified.value) {
+    if (projectStore.currentProjectId == null) return "Select or create a project to upload data.";
+    if (availabilityLoading.value) return "Checking project access…";
+    if (availabilityError.value) return availabilityError.value;
+    if (!availability.value?.write) {
+      return "This project is read-only. Upload to a project where you have write access.";
+    }
   }
   return "";
 });
-const dataUploadDisabled = computed(() => isCapabilityDisabled("data_upload") || uploadQuotaExhausted.value);
+const dataUploadDisabled = computed(
+  () => (qualified.value && !availability.value?.write) || isCapabilityDisabled("data_upload") || uploadQuotaExhausted.value,
+);
 const uploadDataFormats = computed(() => appConfig.value?.dataFormats ?? null);
-const uploadScpInstallCommand = computed(() => uploadDataFormats.value?.installScpCommand ?? "pip install spectra-sherpa[scp]");
 const uploadAcceptList = computed(() => {
+  if (uploadDataFormats.value?.acceptedFilenamePatterns?.length) return "";
   const accepted = uploadDataFormats.value?.acceptedExtensions;
-  if (accepted?.length) return accepted.join(",");
-  return ".csv,.mat,.jdx,.dx,.npy,.npz";
+  return accepted?.join(",") ?? "";
 });
 const availableUploadFormats = computed(() => {
   const formats = uploadDataFormats.value?.formats;
-  if (!formats?.length) return ["CSV", "MAT", "JCAMP-DX", "NumPy"];
+  if (!formats?.length) return [];
   return formats.filter((format) => format.available).map((format) => format.name);
 });
 const disabledUploadFormats = computed(() => {
   const formats = uploadDataFormats.value?.formats ?? [];
   return formats.filter((format) => !format.available);
 });
-function disabledUploadFormatTitle(format: { name: string; unsupportedReason?: string; requiresScp?: boolean }): string {
-  if (format.unsupportedReason) return format.unsupportedReason;
-  if (format.requiresScp) return `${format.name} requires ${uploadScpInstallCommand.value}`;
-  return `${format.name} is not available in this deployment.`;
-}
 const uploadFormatHint = computed(() => {
   const supported = availableUploadFormats.value.join(", ");
   const disabled = disabledUploadFormats.value;
-  if (!disabled.length) return `Supported: ${supported} (max 50 MB)`;
+  const resourceHint =
+    "50 MB upload limit. Dense CSV/JCAMP text has a decoded-data safety limit; use NPY/NPZ for large numeric matrices";
+  if (!disabled.length) return `Supported: ${supported} (${resourceHint})`;
   const hints: string[] = [];
-  if (disabled.some((format) => format.requiresScp)) hints.push(`vendor formats require ${uploadScpInstallCommand.value}`);
-  if (disabled.some((format) => format.requiresExport)) hints.push("OMNICxi/Paradigm containers require spectrum export first");
-  return `Supported: ${supported} (max 50 MB). ${hints.join("; ")}.`;
+  if (disabled.some((format) => format.unsupportedReason && !format.requiresExport)) {
+    hints.push("additional vendor readers are pending native qualification");
+  }
+  if (disabled.some((format) => format.requiresExport))
+    hints.push("OMNICxi/Paradigm containers require spectrum export first");
+  return `Supported: ${supported} (${resourceHint}). ${hints.join("; ")}.`;
 });
 const deleting = ref(false);
 const uploadStage = ref("raw");
 const uploadDataRole = ref("auto");
 const uploadTargetColumn = ref("");
-const uploadTargetType = ref("auto");
+const uploadTargetType = ref("");
+const uploadOptionsCollapsed = ref(true);
 const selectedFile = ref<File | null>(null);
 const stagedUploadMembers = ref<StagedUpload[]>([]);
+const stagedUploadErrors = reactive<Record<string, string>>({});
+const uploadRefusals = ref<StagedUploadRefusal[]>([]);
+const selectionHasCsv = computed(() =>
+  stagedUploadMembers.value.some((member) => member.format_id === "csv"),
+);
 const previewUploadId = ref<string | null>(null);
 const uploadOverrides = reactive<Record<string, PreparedDataOverrides>>({});
+const uploadAssetIds = reactive<Record<string, string | null>>({});
 const deleteTarget = ref<ExperimentFile | null>(null);
+const inspectionAssets = ref<ScientificAsset[]>([]);
+const inspectionAssetId = ref<string | null>(null);
+const inspectionWarnings = ref<string[]>([]);
+const pendingInspection = ref<
+  | { kind: "file"; experimentId: number; file: ExperimentFile }
+  | { kind: "experiment"; experimentId: number }
+  | null
+>(null);
 
 // Inline "Dataset name" inputs on Import + Upload subtabs. Mirror the
 // Synthesis pattern: name the new My Dataset before clicking "Add to
@@ -1321,7 +2266,8 @@ const uploadDatasetName = ref("");
 
 function clearUploadFileSelection() {
   selectedFile.value = null;
-  (uploadFileUploadRef.value as { clear?: () => void } | null)?.clear?.();
+  if (uploadFilesInputRef.value) uploadFilesInputRef.value.value = "";
+  if (uploadFolderInputRef.value) uploadFolderInputRef.value.value = "";
 }
 
 const librarySourceOptions = [
@@ -1338,7 +2284,10 @@ function cloneJson<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-function replaceReactiveRecord<T>(target: Record<string, T>, source: Record<string, T> | undefined): void {
+function replaceReactiveRecord<T>(
+  target: Record<string, T>,
+  source: Record<string, T> | undefined,
+): void {
   for (const key of Object.keys(target)) {
     delete target[key];
   }
@@ -1382,7 +2331,9 @@ function objectOrNull(value: unknown): Record<string, unknown> | null {
 function applyLibraryDraft(libraryDraft: DataDraftSnapshot["library"] | undefined): void {
   if (!libraryDraft) return;
   librarySource.value = isLibrarySource(libraryDraft.source) ? libraryDraft.source : "nist";
-  libraryRangeMode.value = isLibraryRangeMode(libraryDraft.range_mode) ? libraryDraft.range_mode : "widest";
+  libraryRangeMode.value = isLibraryRangeMode(libraryDraft.range_mode)
+    ? libraryDraft.range_mode
+    : "widest";
   librarySearch.value = stringOrEmpty(libraryDraft.search);
   libraryDatasetName.value = stringOrEmpty(libraryDraft.dataset_name);
   libraryResolutionCm1.value = finiteNumber(libraryDraft.resolution_cm1, 0.1);
@@ -1410,10 +2361,9 @@ function dataDraftSnapshot(): DataDraftSnapshot {
       overrides: cloneJson(refOverrides),
       dataset_name: importDatasetName.value,
       collapsed: {
+        builtin: builtinCollapsed.value,
+        registered: registeredCollapsed.value,
         synthetic: syntheticCollapsed.value,
-        eigenvector: eigenvectorCollapsed.value,
-        oes: oesCollapsed.value,
-        spectrochempy: scpCollapsed.value,
         sklearn: sklearnCollapsed.value,
       },
     },
@@ -1430,6 +2380,9 @@ function dataDraftSnapshot(): DataDraftSnapshot {
       selected_keys: Array.from(selectedLibraryKeys),
       selected_rows: cloneJson(selectedLibraryRows),
     },
+    my_dataset: {
+      plot_file_selections: cloneJson(plotFileSelections.value),
+    },
   };
 }
 
@@ -1440,18 +2393,45 @@ function applyDataDraft(raw: unknown): void {
   try {
     const importDraft = draft.import;
     if (importDraft) {
-      replaceReactiveSet(selectedRefDatasets, importDraft.selected_keys);
-      previewRefKey.value = typeof importDraft.preview_key === "string" ? importDraft.preview_key : null;
+      const selectedKey = Array.isArray(importDraft.selected_keys)
+        ? importDraft.selected_keys.find((value) => typeof value === "string" && value.trim())
+        : null;
+      replaceReactiveSet(selectedRefDatasets, selectedKey ? [selectedKey] : []);
+      previewRefKey.value =
+        typeof importDraft.preview_key === "string" ? importDraft.preview_key : null;
       replaceReactiveRecord(refOverrides, importDraft.overrides);
       importDatasetName.value = stringOrEmpty(importDraft.dataset_name);
-      syntheticCollapsed.value = Boolean(importDraft.collapsed?.synthetic);
-      eigenvectorCollapsed.value = Boolean(importDraft.collapsed?.eigenvector);
-      oesCollapsed.value = Boolean(importDraft.collapsed?.oes);
-      scpCollapsed.value = importDraft.collapsed?.spectrochempy ?? true;
+      builtinCollapsed.value = importDraft.collapsed?.builtin ?? true;
+      registeredCollapsed.value = importDraft.collapsed?.registered ?? true;
+      syntheticCollapsed.value = importDraft.collapsed?.synthetic ?? true;
       sklearnCollapsed.value = importDraft.collapsed?.sklearn ?? true;
     }
 
     applyLibraryDraft(draft.library);
+    if (draft.my_dataset) {
+      const restoredSelections: Record<number, PlotFileSelection> = {};
+      for (const [rawExperimentId, rawSelection] of Object.entries(
+        draft.my_dataset.plot_file_selections ?? {},
+      )) {
+        const experimentId = Number(rawExperimentId);
+        if (!Number.isInteger(experimentId) || experimentId < 1) continue;
+        if (rawSelection === null) {
+          restoredSelections[experimentId] = null;
+          continue;
+        }
+        if (!Array.isArray(rawSelection)) continue;
+        const files = rawSelection.filter(
+          (file): file is PlotFileRef =>
+            Boolean(file) &&
+            Number.isInteger(Number(file.id)) &&
+            Number(file.id) > 0 &&
+            typeof file.file_path === "string" &&
+            Boolean(file.file_path),
+        );
+        if (files.length) restoredSelections[experimentId] = files;
+      }
+      plotFileSelections.value = restoredSelections;
+    }
   } finally {
     dataDraftHydrating = false;
   }
@@ -1489,13 +2469,9 @@ function scheduleDataDraftPersist(): void {
 
 function defaultImportDatasetName(): string {
   if (selectedRefDatasets.size === 0) return "Imported references";
-  // Use the first selected dataset's label as a sensible default; multi-select
-  // appends " (+N more)" so the count is obvious before saving.
   const first = Array.from(selectedRefDatasets)[0];
   const [, ...rest] = first.split("::");
-  const label = rest.join("::");
-  if (selectedRefDatasets.size === 1) return label;
-  return `${label} (+${selectedRefDatasets.size - 1} more)`;
+  return referenceByKey(first)?.label ?? rest.join("::");
 }
 
 function defaultUploadDatasetName(): string {
@@ -1528,38 +2504,63 @@ const uploadDataRoleOptions = [
 ];
 
 const uploadTargetTypeOptions = [
-  { label: "Auto", value: "auto" },
   { label: "Categorical", value: "categorical" },
   { label: "Continuous", value: "continuous" },
 ];
 
-const selectedUploadMember = computed(() =>
-  stagedUploadMembers.value.find((member) => member.staging_id === previewUploadId.value) ??
-  stagedUploadMembers.value[0] ??
-  null
+const selectedUploadMember = computed(
+  () =>
+    stagedUploadMembers.value.find((member) => member.staging_id === previewUploadId.value) ??
+    stagedUploadMembers.value[0] ??
+    null,
 );
+function uniqueAssetWarnings(assets: ScientificAsset[]): string[] {
+  return [
+    ...new Set(assets.flatMap((asset) => asset.warnings ?? []).filter((warning) => warning.trim())),
+  ];
+}
+const selectedUploadAssetWarnings = computed(() => {
+  const member = selectedUploadMember.value;
+  if (!member) return [];
+  const selectedId = uploadAssetIds[member.staging_id] ?? null;
+  if (selectedId) {
+    const selected = member.assets.find((asset) => asset.asset_id === selectedId);
+    return selected ? uniqueAssetWarnings([selected]) : [];
+  }
+  return uniqueAssetWarnings(member.assets);
+});
 const previewUploadSource = computed<DataMatrixRef | null>(() => {
   const member = selectedUploadMember.value;
   if (!member) return null;
+  const assetId = uploadAssetIds[member.staging_id] ?? null;
+  if (member.assets.length > 1 && !assetId) return null;
   return {
     kind: "staged",
     staging_id: member.staging_id,
+    asset_id: assetId,
     overrides: uploadOverrides[member.staging_id] ?? null,
   };
 });
 const previewUploadTitle = computed(() => selectedUploadMember.value?.filename ?? "Upload preview");
 const previewUploadFiles = computed<SourcePreviewFile[]>(() =>
-  selectedUploadMember.value ? sourcePreviewFilesFromNames([selectedUploadMember.value.filename]) : []
+  selectedUploadMember.value
+    ? sourcePreviewFilesFromNames([selectedUploadMember.value.filename])
+    : [],
 );
 const previewUploadOverrides = computed(() =>
-  selectedUploadMember.value ? uploadOverrides[selectedUploadMember.value.staging_id] ?? {} : {}
+  selectedUploadMember.value ? (uploadOverrides[selectedUploadMember.value.staging_id] ?? {}) : {},
 );
-const selectedUploadCsvPlan = computed<CsvImportPlan | null>(() => selectedUploadMember.value?.csv_import_plan ?? null);
+const selectedUploadCsvPlan = computed<CsvImportPlan | null>(
+  () => selectedUploadMember.value?.csv_import_plan ?? null,
+);
 
 let uploadControlsHydrating = false;
 let uploadControlsHydrationRun = 0;
 
-function uploadControlOverrides(member: StagedUpload, existing: PreparedDataOverrides = {}): PreparedDataOverrides {
+function uploadControlOverrides(
+  member: StagedUpload,
+  existing: PreparedDataOverrides = {},
+): PreparedDataOverrides {
   const overrides: PreparedDataOverrides = {
     ...existing,
     title: existing.title ?? member.filename.replace(/\.[^.]+$/, ""),
@@ -1588,7 +2589,7 @@ function syncUploadControlsFromOverrides(overrides: PreparedDataOverrides | unde
   uploadControlsHydrating = true;
   uploadDataRole.value = overrides?.data_role || "auto";
   uploadTargetColumn.value = overrides?.target_column || "";
-  uploadTargetType.value = overrides?.target_type || "auto";
+  uploadTargetType.value = overrides?.target_type || "";
   nextTick(() => {
     if (hydrationRun === uploadControlsHydrationRun) {
       uploadControlsHydrating = false;
@@ -1604,15 +2605,15 @@ watch(
   },
 );
 
-watch(
-  [uploadDataRole, uploadTargetColumn, uploadTargetType],
-  () => {
-    if (uploadControlsHydrating) return;
-    const member = selectedUploadMember.value;
-    if (!member) return;
-    uploadOverrides[member.staging_id] = uploadControlOverrides(member, uploadOverrides[member.staging_id] ?? {});
-  },
-);
+watch([uploadDataRole, uploadTargetColumn, uploadTargetType], () => {
+  if (uploadControlsHydrating) return;
+  const member = selectedUploadMember.value;
+  if (!member) return;
+  uploadOverrides[member.staging_id] = uploadControlOverrides(
+    member,
+    uploadOverrides[member.staging_id] ?? {},
+  );
+});
 
 const fileStages = [
   { key: "raw", label: "Contents", icon: "pi pi-file" },
@@ -1628,35 +2629,127 @@ const stageOptions = [
 
 const selectedExperiment = computed(() => {
   if (!dataStore.activeExperimentId) return null;
-  return (
-    dataStore.experiments.find((e) => e.id === dataStore.activeExperimentId) ??
-    null
-  );
+  return dataStore.experiments.find((e) => e.id === dataStore.activeExperimentId) ?? null;
 });
 
-const activeProjectName = computed(() =>
-  projectStore.currentProject?.name ?? "No project selected"
+const allExperimentsPlotted = computed(
+  () =>
+    dataStore.experiments.length > 0 &&
+    dataStore.experiments
+      .slice(0, MAX_PLOTTED_DATASETS)
+      .every((experiment) => plotFileSelections.value[experiment.id] === null),
+);
+const someExperimentsPlotted = computed(
+  () => plottedExperimentIds.value.length > 0 && !allExperimentsPlotted.value,
+);
+const plottedFileCount = computed(() =>
+  dataStore.experiments.reduce((total, experiment) => {
+    if (!Object.prototype.hasOwnProperty.call(plotFileSelections.value, experiment.id)) {
+      return total;
+    }
+    const selection = plotFileSelections.value[experiment.id];
+    return total + (selection === null ? experiment.file_count : selection.length);
+  }, 0),
+);
+const activeSelectedFileCount = computed(() => {
+  const experimentId = dataStore.activeExperimentId;
+  if (experimentId == null || !hasExperimentPlotSelection(experimentId)) return 0;
+  const selection = plotFileSelections.value[experimentId];
+  return selection === null ? (selectedExperiment.value?.file_count ?? 0) : selection.length;
+});
+const activeSelectedFiles = computed(() => {
+  const experimentId = dataStore.activeExperimentId;
+  if (experimentId == null || !hasExperimentPlotSelection(experimentId)) return [];
+  const selection = plotFileSelections.value[experimentId];
+  if (selection === null) return dataStore.experimentFiles;
+  const selectedIds = new Set(selection.map((file) => file.id));
+  return dataStore.experimentFiles.filter((file) => selectedIds.has(file.id));
+});
+const activeSelectedFileNames = computed(() =>
+  activeSelectedFiles.value.map((file) => extractFileName(file.file_path)),
+);
+function restoreResidentInspection(dataset: SherpaDatasetDict): void {
+  dataStore.clearInspection();
+  dataStore.fileInfo = dataset;
+  const files = activeSelectedFiles.value.length
+    ? activeSelectedFiles.value
+    : dataStore.experimentFiles.filter((file) =>
+        file.stage === (dataset.metadata?.contents_stage ?? "raw"),
+      );
+  if (files.length === 1) dataStore.activateFile(files[0].id, files[0].file_path);
+}
+const activePackageViewNames = computed(() =>
+  activeSelectedFiles.value
+    .map((file) => registeredPackageView(file.file_path))
+    .filter((value): value is string => value !== null),
+);
+const activePackageViewSummary = computed(() => {
+  const views = activeSelectedFiles.value.flatMap((file) => {
+    const label = registeredPackageView(file.file_path);
+    if (!label) return [];
+    if (typeof file.n_samples !== "number") return [label];
+    return [
+      `${label} (${file.n_samples.toLocaleString()} row${file.n_samples === 1 ? "" : "s"})`,
+    ];
+  });
+  return views.length ? views.join(", ") : "No package view selected";
+});
+const activeProviderRoleSummary = computed(() => {
+  const roleValues = dataStore.fileInfo?.sample_axis?.sample_table?.analysis_role;
+  if (!Array.isArray(roleValues)) return null;
+  const counts = new Map<string, number>();
+  for (const value of roleValues) {
+    const role = String(value).trim();
+    if (role) counts.set(role, (counts.get(role) ?? 0) + 1);
+  }
+  if (!counts.size) return null;
+  return `Provider row roles: ${[...counts].map(([role, count]) => `${role} (${count})`).join(", ")}.`;
+});
+
+const plotSelectionSummary = computed(() => {
+  if (plottedFileCount.value === 0) return "Choose datasets or files.";
+  return `${plottedFileCount.value} file${plottedFileCount.value === 1 ? "" : "s"} selected.`;
+});
+
+const selectedExperimentName = computed(
+  () => selectedExperiment.value?.name ?? "No dataset selected",
 );
 
-const projectDataCount = computed(() =>
-  projectStore.currentProject?.experiment_count ??
-  projectStore.currentProject?.experiments.length ??
-  0
+const selectedExperimentFileCount = computed(
+  () => selectedExperiment.value?.file_count ?? dataStore.experimentFiles.length,
 );
 
-const projectWorkflowCount = computed(() =>
-  projectStore.currentProject?.workflow_count ??
-  projectStore.currentProject?.workflows.length ??
-  0
+const collectionDefinitionRefreshKey = computed(() =>
+  dataStore.experimentFiles
+    .map((file) => `${file.id}:${file.stage}:${file.file_size_bytes ?? 0}`)
+    .join("|"),
 );
 
-const selectedExperimentName = computed(() =>
-  selectedExperiment.value?.name ?? "No dataset selected"
-);
+const activeCollectionFileTypes = computed(() => [
+  ...new Set(
+    dataStore.experimentFiles
+      .map((file) => file.file_type?.trim().toUpperCase())
+      .filter((value): value is string => Boolean(value)),
+  ),
+]);
 
-const selectedExperimentFileCount = computed(() =>
-  selectedExperiment.value?.file_count ?? dataStore.experimentFiles.length
-);
+const activeDatasetIsGoverned = computed(() => {
+  const datasetId = dataStore.fileInfo?.dataset_id;
+  const sourceCollection = objectOrNull(dataStore.fileInfo?.metadata?.source_collection);
+  const sourceIdentity = objectOrNull(dataStore.fileInfo?.source_identity);
+  const sourceKind = stringOrEmpty(activeExperimentMetadata.value?.source_kind);
+  return (
+    (typeof datasetId === "string" && datasetId.startsWith("builtin:")) ||
+    sourceCollection?.source === "builtin" ||
+    (typeof sourceCollection?.dataset_id === "string" &&
+      sourceCollection.dataset_id.startsWith("builtin:")) ||
+    sourceKind === "user_acquired_registered_reference" ||
+    sourceKind === "builtin_reference" ||
+    sourceIdentity?.source_kind === "user_acquired_registered_reference" ||
+    typeof activeExperimentMetadata.value?.reference_projection_id === "string" ||
+    typeof activeExperimentMetadata.value?.reference_package_id === "string"
+  );
+});
 
 const activeExperimentBuilderState = computed(() => {
   const metadata = activeExperimentMetadata.value;
@@ -1687,12 +2780,14 @@ const canReopenSynthesisRecipe = computed(() => inspectedSynthesisRecipe.value !
 const canReopenLibraryBasket = computed(() => savedLibraryDraft.value !== null);
 
 const totalExperimentFiles = computed(() =>
-  dataStore.experiments.reduce((total, experiment) => total + (experiment.file_count ?? 0), 0)
+  dataStore.experiments.reduce((total, experiment) => total + (experiment.file_count ?? 0), 0),
 );
 
 const inspectedDatasetShape = computed(() => {
   if (dataStore.fileInfo) {
-    return `${dataStore.fileInfo.n_samples} samples × ${dataStore.fileInfo.n_features} features`;
+    const selected = activeSelectedFileNames.value;
+    const rows = selected.length ? selectedDatasetRows(dataStore.fileInfo, selected) : null;
+    return `${rows?.length ?? dataStore.fileInfo.n_samples} samples × ${dataStore.fileInfo.n_features} features`;
   }
   if (dataStore.catalogDatasetInfo?.n_samples || dataStore.catalogDatasetInfo?.n_features) {
     return `${dataStore.catalogDatasetInfo.n_samples ?? "?"} samples × ${dataStore.catalogDatasetInfo.n_features ?? "?"} features`;
@@ -1703,13 +2798,15 @@ const inspectedDatasetShape = computed(() => {
 const syntheticFileCount = computed(() => filesForStage("synthetic").length);
 
 const synthesisStateLabel = computed(() =>
-  syntheticFileCount.value > 0 ? `${syntheticFileCount.value} synthetic file${syntheticFileCount.value === 1 ? "" : "s"}` : "Ready to generate"
+  syntheticFileCount.value > 0
+    ? `${syntheticFileCount.value} synthetic file${syntheticFileCount.value === 1 ? "" : "s"}`
+    : "Ready to generate",
 );
 
 const synthesisStateDetail = computed(() =>
   selectedExperiment.value
     ? "Create time-series mixtures for downstream models"
-    : "Select or create a dataset record first"
+    : "Select or create a dataset record first",
 );
 
 // Two-cell context strip: which subtab am I on, and what should the
@@ -1722,44 +2819,73 @@ const synthesisStateDetail = computed(() =>
 //   4 My Dataset                                (store + contents, right)
 const activeSubtabLabel = computed(() => {
   switch (activeTab.value) {
-    case TAB_IMPORT: return "Import";
-    case TAB_SYNTHESIS: return "Synthesis";
-    case TAB_UPLOAD: return "Upload";
-    case TAB_LIBRARY: return "Library";
-    case TAB_MY_DATASET: return "My Dataset";
-    default: return "—";
+    case TAB_IMPORT:
+      return "Import";
+    case TAB_SYNTHESIS:
+      return "Synthesis";
+    case TAB_UPLOAD:
+      return "Upload";
+    case TAB_LIBRARY:
+      return "Library";
+    case TAB_MULTI_WELL:
+      return "Multi-well";
+    case TAB_MY_DATASET:
+      return "My Dataset";
+    default:
+      return "—";
   }
 });
 
 const activeSubtabValue = computed(() => {
   switch (activeTab.value) {
-    case TAB_IMPORT: return "Reference catalog";
-    case TAB_SYNTHESIS: return synthesisStateLabel.value;
-    case TAB_UPLOAD: return dataStore.activeExperimentId
-      ? `Add to ${selectedExperimentName.value}`
-      : "Pick a dataset first";
-    case TAB_LIBRARY: return selectedLibraryKeys.size
-      ? `${selectedLibraryKeys.size} in basket`
-      : "Pure compound library";
-    case TAB_MY_DATASET: return selectedExperimentName.value;
-    default: return "—";
+    case TAB_IMPORT:
+      return "Reference catalog";
+    case TAB_SYNTHESIS:
+      return synthesisStateLabel.value;
+    case TAB_UPLOAD:
+      return dataStore.activeExperimentId
+        ? `Add to ${selectedExperimentName.value}`
+        : "Pick a dataset first";
+    case TAB_LIBRARY:
+      return selectedLibraryKeys.size
+        ? `${selectedLibraryKeys.size} in basket`
+        : "Pure compound library";
+    case TAB_MULTI_WELL:
+      return dataStore.activeExperimentId ? selectedExperimentName.value : "Pick a dataset first";
+    case TAB_MY_DATASET:
+      return selectedExperimentName.value;
+    default:
+      return "—";
   }
 });
 
 const activeSubtabDetail = computed(() => {
   switch (activeTab.value) {
-    case TAB_IMPORT: return "Browse reference datasets — Add to My Dataset";
-    case TAB_SYNTHESIS: return synthesisStateDetail.value;
-    case TAB_UPLOAD: return selectedFile.value
-      ? `Ready to add ${selectedFile.value.name}`
-      : stagedUploadMembers.value.length
-        ? `${stagedUploadMembers.value.length} staged file${stagedUploadMembers.value.length === 1 ? "" : "s"}`
-      : "Stage + file → Add to My Dataset";
-    case TAB_LIBRARY: return selectedLibraryKeys.size
-      ? "Review basket — Add to My Dataset"
-      : "Browse pure-compound reference spectra";
-    case TAB_MY_DATASET: return inspectedDatasetShape.value || `${selectedExperimentFileCount.value} file${selectedExperimentFileCount.value === 1 ? "" : "s"}`;
-    default: return "";
+    case TAB_IMPORT:
+      return qualified.value
+        ? "Local catalog references and exact registered uploads"
+        : "Browse reference datasets — Add to My Dataset";
+    case TAB_SYNTHESIS:
+      return synthesisStateDetail.value;
+    case TAB_UPLOAD:
+      return selectedFile.value
+        ? `Ready to add ${selectedFile.value.name}`
+        : stagedUploadMembers.value.length
+          ? `${stagedUploadMembers.value.length} staged file${stagedUploadMembers.value.length === 1 ? "" : "s"}`
+          : "Stage + file → Add to My Dataset";
+    case TAB_LIBRARY:
+      return selectedLibraryKeys.size
+        ? "Review basket — Add to My Dataset"
+        : "Browse pure-compound reference spectra";
+    case TAB_MULTI_WELL:
+      return "Multi-well experiment acquisition plan";
+    case TAB_MY_DATASET:
+      return (
+        inspectedDatasetShape.value ||
+        `${selectedExperimentFileCount.value} file${selectedExperimentFileCount.value === 1 ? "" : "s"}`
+      );
+    default:
+      return "";
   }
 });
 
@@ -1773,7 +2899,7 @@ const nistLibraryRows = computed<LibraryRow[]>(() =>
     resolution: entry.resolution,
     source_label: "NIST",
     file_path: entry.file_path,
-  }))
+  })),
 );
 
 function isHitranLibrarySource(source: LibrarySource): boolean {
@@ -1785,7 +2911,7 @@ const activeLibraryRows = computed<LibraryRow[]>(() =>
     ? hitranLibraryRows.value
     : librarySource.value === "hitran_xsec"
       ? hitranXsecLibraryRows.value
-      : nistLibraryRows.value
+      : nistLibraryRows.value,
 );
 
 const filteredLibrary = computed<LibraryRow[]>(() => {
@@ -1796,7 +2922,7 @@ const filteredLibrary = computed<LibraryRow[]>(() => {
     (d) =>
       d.compound_name.toLowerCase().includes(q) ||
       d.cas_number.toLowerCase().includes(q) ||
-      (d.formula || "").toLowerCase().includes(q)
+      (d.formula || "").toLowerCase().includes(q),
   );
 });
 
@@ -1811,7 +2937,7 @@ const activeLibraryPreviewMeta = computed(() => {
   const n = spectrum.wavenumber.length;
   const min = Math.min(...spectrum.wavenumber);
   const max = Math.max(...spectrum.wavenumber);
-  return [ `${n} pts`, `${min.toFixed(2)}-${max.toFixed(2)} cm^-1`, spectrum.y_quantity ]
+  return [`${n} pts`, `${min.toFixed(2)}-${max.toFixed(2)} cm^-1`, spectrum.y_quantity]
     .filter((part): part is string => typeof part === "string" && part.length > 0)
     .join(" · ");
 });
@@ -1871,7 +2997,8 @@ function dedupeNistRowsByCompound(rows: LibraryRow[]): LibraryRow[] {
 function formatRange(values?: [number, number] | null, suffix = ""): string {
   if (!values || values.length !== 2) return "blank";
   const [low, high] = values;
-  const body = Math.abs(low - high) < 1e-9 ? formatNumber(low) : `${formatNumber(low)}-${formatNumber(high)}`;
+  const body =
+    Math.abs(low - high) < 1e-9 ? formatNumber(low) : `${formatNumber(low)}-${formatNumber(high)}`;
   return suffix ? `${body} ${suffix}` : body;
 }
 
@@ -1883,14 +3010,19 @@ function formatNumber(value?: number | null): string {
 function hitranXsecOptionLabel(option: HitranXsecOption, index: number): string {
   const temp = formatRange(option.temperature_k, "K");
   const pressure = formatRange(option.pressure_torr, "Torr");
-  const resolution = option.resolution_cm1 ? `${formatNumber(option.resolution_cm1)} cm^-1` : "blank res.";
+  const resolution = option.resolution_cm1
+    ? `${formatNumber(option.resolution_cm1)} cm^-1`
+    : "blank res.";
   const broadener = option.broadener || "blank broadener";
   return `${index + 1}. T ${temp} · p ${pressure} · ${resolution} · ${broadener}`;
 }
 
 function hitranXsecOptionChoices(entry: LibraryRow): Array<{ label: string; value: number }> {
   const options = entry.xsec_options?.length ? entry.xsec_options : [{}];
-  return options.map((option, index) => ({ label: hitranXsecOptionLabel(option, index), value: index }));
+  return options.map((option, index) => ({
+    label: hitranXsecOptionLabel(option, index),
+    value: index,
+  }));
 }
 
 const selectedLibraryMembers = computed(() =>
@@ -1900,12 +3032,13 @@ const selectedLibraryMembers = computed(() =>
       key: entry.key,
       label: libraryLabel(entry),
       detail: libraryBasketDetail(entry),
-    }))
+    })),
 );
 
-const hitranLibraryImportActive = computed(() =>
-  activeLibraryImportJob.value !== null &&
-  ["pending", "running"].includes(activeLibraryImportJob.value.status)
+const hitranLibraryImportActive = computed(
+  () =>
+    activeLibraryImportJob.value !== null &&
+    ["pending", "running"].includes(activeLibraryImportJob.value.status),
 );
 
 const libraryImportButtonLabel = computed(() => {
@@ -2023,7 +3156,7 @@ function freezeLibrarySettings(entry: LibraryRow): LibraryFrozenSettings {
       entry.source === "hitran_xsec"
         ? `${String(entry.component_id)}#${entry.selected_xsec_option ?? 0}`
         : entry.component_id,
-    xsec_option: entry.source === "hitran_xsec" ? entry.selected_xsec_option ?? 0 : null,
+    xsec_option: entry.source === "hitran_xsec" ? (entry.selected_xsec_option ?? 0) : null,
     points: spectrum?.wavenumber?.length ?? null,
     y_quantity: spectrum?.y_quantity ?? null,
     y_units: spectrum?.y_units ?? null,
@@ -2043,7 +3176,7 @@ function freezeLibrarySettings(entry: LibraryRow): LibraryFrozenSettings {
       ? (option.temperature_k[0] + option.temperature_k[1]) / 2
       : null;
     settings.pressure_atm = option.pressure_torr
-      ? ((option.pressure_torr[0] + option.pressure_torr[1]) / 2) / 760
+      ? (option.pressure_torr[0] + option.pressure_torr[1]) / 2 / 760
       : null;
   }
   if (spectrum?.wavenumber?.length) {
@@ -2074,7 +3207,11 @@ function libraryBasketDetail(entry: LibraryRow): string {
     if (settings.temperature_k) parts.push(`${formatNumber(settings.temperature_k)} K`);
     if (settings.pressure_atm) parts.push(`${formatNumber(settings.pressure_atm)} atm`);
   }
-  if (entry.source === "hitran_xsec" && settings.xsec_option !== null && settings.xsec_option !== undefined) {
+  if (
+    entry.source === "hitran_xsec" &&
+    settings.xsec_option !== null &&
+    settings.xsec_option !== undefined
+  ) {
     parts.push(`measurement ${settings.xsec_option + 1}`);
   }
   if (settings.points) parts.push(`${settings.points} pts`);
@@ -2082,7 +3219,10 @@ function libraryBasketDetail(entry: LibraryRow): string {
   return parts.join(" · ");
 }
 
-function nistSpectrumToPayload(entry: LibraryRow, spectrum: NistLibrarySpectrumResponse): SpectrumPayload {
+function nistSpectrumToPayload(
+  entry: LibraryRow,
+  spectrum: NistLibrarySpectrumResponse,
+): SpectrumPayload {
   return {
     component_id: spectrum.component_id,
     name: spectrum.name || entry.compound_name,
@@ -2108,7 +3248,9 @@ async function pollLibrarySpectrumLoadJob(jobId: number, entry: LibraryRow): Pro
     };
     if (status === "completed") return response.data;
     if (status === "failed" || status === "cancelled") {
-      throw new Error(response.data.error_message || response.data.progress_message || "Spectrum load failed");
+      throw new Error(
+        response.data.error_message || response.data.progress_message || "Spectrum load failed",
+      );
     }
   }
 }
@@ -2116,7 +3258,9 @@ async function pollLibrarySpectrumLoadJob(jobId: number, entry: LibraryRow): Pro
 async function fetchLibrarySpectrum(entry: LibraryRow): Promise<SpectrumPayload> {
   if (entry.source === "nist") {
     if (entry.id == null) throw new Error("NIST library row is missing an id");
-    const response = await api.get<NistLibrarySpectrumResponse>(`/datasets/library/${entry.id}/spectrum`);
+    const response = await api.get<NistLibrarySpectrumResponse>(
+      `/datasets/library/${entry.id}/spectrum`,
+    );
     return nistSpectrumToPayload(entry, response.data);
   }
 
@@ -2129,7 +3273,9 @@ async function fetchLibrarySpectrum(entry: LibraryRow): Promise<SpectrumPayload>
   }>("/synthesis/spectrum/load", params);
   if (loadResponse.data.spectrum) return loadResponse.data.spectrum;
   if (!loadResponse.data.queued || !loadResponse.data.job_id) {
-    throw new Error(loadResponse.data.message || "Spectrum load did not return a spectrum or job id.");
+    throw new Error(
+      loadResponse.data.message || "Spectrum load did not return a spectrum or job id.",
+    );
   }
   librarySpectrumProgress[entry.key] = {
     progress: 0,
@@ -2146,7 +3292,11 @@ async function loadLibrarySpectrum(entry: LibraryRow): Promise<void> {
     return;
   }
   if (librarySpectrumLoadingKeys.has(entry.key) || isLibrarySpectrumQueued(entry)) return;
-  if (isHitranLibrarySource(entry.source) && activeLibrarySpectrumLoadKey.value && activeLibrarySpectrumLoadKey.value !== entry.key) {
+  if (
+    isHitranLibrarySource(entry.source) &&
+    activeLibrarySpectrumLoadKey.value &&
+    activeLibrarySpectrumLoadKey.value !== entry.key
+  ) {
     await queueLibrarySpectrumLoad(entry);
     return;
   }
@@ -2254,7 +3404,9 @@ async function searchHitranLibrary() {
         cas_number: component.cas || "",
         resolution:
           librarySource.value === "hitran_xsec"
-            ? (firstOption.resolution_cm1 ? `${formatNumber(firstOption.resolution_cm1)} cm^-1` : "measured")
+            ? firstOption.resolution_cm1
+              ? `${formatNumber(firstOption.resolution_cm1)} cm^-1`
+              : "measured"
             : `${libraryResolutionCm1.value} cm^-1`,
         source_label: librarySource.value === "hitran_xsec" ? "HITRAN X-section" : "HITRAN LBL",
         xsec_options: options,
@@ -2284,20 +3436,82 @@ function filesForStage(stage: string): ExperimentFile[] {
 
 // --- Reference dataset selection ---
 
+const visibleRegisteredReferences = computed<ReferenceDatasetOption[]>(() => {
+  const registered = dataStore.referenceCatalog?.registered ?? [];
+  const packages = new Set<string>();
+  return registered.flatMap((dataset) => {
+    const packaged = dataset.dataset_package;
+    if (!packaged) return [dataset];
+    if (packages.has(packaged.package_id)) return [];
+    packages.add(packaged.package_id);
+    return [
+      {
+        ...dataset,
+        name: packaged.package_id,
+        label: packaged.package_title,
+        description: packaged.package_description,
+        technical_summary:
+          packaged.package_id === "eigenvector-cgl-nir-v1"
+            ? "One 231-sample NIR view retains Casein, Glucose, Lactate, and Moisture measurements; the provider calibration/test assignment is visible as metadata and is not imposed on new models."
+            : packaged.package_id === "eigenvector-corn-v1"
+              ? "Three aligned NIR instrument views (M5, MP5, and MP6) share 80 specimens and Moisture, Oil, Protein, and Starch annotations; M5 starts selected."
+              : packaged.package_id === "eigenvector-diesel-d4052-v1"
+                ? "Three NIR cohorts contain 122 low-level A, 121 low-level B, and 20 high-level measurements with paired D4052 density results; low-level A starts selected and cross-set specimen alignment is not assumed."
+                : packaged.package_id === "eigenvector-nir-shootout-v1"
+                  ? "Six NIR data views span calibration, test, and validation cohorts on two instruments, with Weight, Hardness, and Assay annotations; calibration instrument 1 starts selected."
+                  : packaged.package_id === "eigenvector-metal-etch-v1"
+                    ? "Three complementary process views contain 21 machine-sensor variables, 129 OES wavelengths, and 71 RF-monitor variables; OES starts selected and cross-view row alignment is not assumed."
+                    : dataset.technical_summary,
+      },
+    ];
+  });
+});
+
+const userAcquiredReferenceDatasets = computed<ReferenceDatasetOption[]>(() => {
+  return visibleRegisteredReferences.value;
+});
+
+const legacyReferenceDatasets = computed<ReferenceDatasetOption[]>(() => {
+  const catalog = dataStore.referenceCatalog;
+  if (!catalog) return [];
+  return [...catalog.eigenvector, ...catalog.oes];
+});
+
 const allReferenceDatasets = computed<ReferenceDatasetOption[]>(() => {
   const catalog = dataStore.referenceCatalog;
   if (!catalog) return [];
   return [
+    ...catalog.builtin,
     ...catalog.synthetic,
-    ...catalog.eigenvector,
-    ...catalog.oes,
-    ...catalog.spectrochempy,
     ...catalog.sklearn,
+    ...userAcquiredReferenceDatasets.value,
+    ...legacyReferenceDatasets.value,
   ];
 });
 
+function legacySourceRequirement(dataset: ReferenceDatasetOption): string {
+  if (dataset.requires_runtime_download) {
+    return "Provider file required. Download it outside Sherpa, upload the exact local file, then choose its dataset view. This catalog card does not select a view for you.";
+  }
+  return "Bundled with this deployment and available without network egress.";
+}
+
+function openLegacyReferenceUpload(dataset: ReferenceDatasetOption) {
+  previewRefKey.value = dsKey(dataset);
+  activeTab.value = TAB_UPLOAD;
+  persistActiveDataTab();
+}
+
+function conciseTechnicalSummary(dataset: ReferenceDatasetOption): string {
+  if (dataset.source === "builtin" && dataset.name === "lavender-essential-oil-v1") {
+    return "33 FTIR spectra with specimen, botanical group, and authenticity labels.";
+  }
+  if (dataset.technical_summary?.trim()) return dataset.technical_summary.trim();
+  return "Qualified reference data for native Sherpa analysis.";
+}
+
 function dsKey(ds: { source?: string; name: string }): string {
-  return `${ds.source || "spectrochempy"}::${ds.name}`;
+  return `${ds.source || "unknown"}::${ds.name}`;
 }
 
 function referenceByKey(key: string): ReferenceDatasetOption | null {
@@ -2311,21 +3525,29 @@ const selectedReferenceMembers = computed(() =>
       key,
       label: dataset?.label ?? key.split("::").slice(1).join("::"),
     };
-  })
+  }),
 );
 
-const previewRefDataset = computed(() => previewRefKey.value ? referenceByKey(previewRefKey.value) : null);
+const previewRefDataset = computed(() =>
+  previewRefKey.value ? referenceByKey(previewRefKey.value) : null,
+);
 const previewRefSource = computed<DataMatrixRef | null>(() => {
   const dataset = previewRefDataset.value;
-  if (!dataset) return null;
+  if (!dataset || dataset.source === "registered") return null;
   return {
     kind: "reference",
-    source: dataset.source || "spectrochempy",
+    project_id: projectStore.currentProjectId,
+    source: dataset.source || "unknown",
     name: dataset.name,
     overrides: refOverrides[dsKey(dataset)] ?? null,
   };
 });
-const previewRefTitle = computed(() => previewRefDataset.value?.label ?? "Reference preview");
+const previewRefTitle = computed(() => {
+  const dataset = previewRefDataset.value;
+  const intent = pendingAnalysisStarterIntent();
+  if (dataset?.source === "registered" && intent) return intent.label;
+  return dataset?.label ?? "Reference preview";
+});
 const previewRefFiles = computed<SourcePreviewFile[]>(() => {
   const dataset = previewRefDataset.value;
   if (!dataset) return [];
@@ -2334,15 +3556,18 @@ const previewRefFiles = computed<SourcePreviewFile[]>(() => {
   return [];
 });
 const previewRefOverrides = computed(() =>
-  previewRefKey.value ? refOverrides[previewRefKey.value] ?? {} : {}
+  previewRefKey.value ? (refOverrides[previewRefKey.value] ?? {}) : {},
 );
 
 function toggleRefDataset(ds: ReferenceDatasetOption) {
   const key = dsKey(ds);
   if (selectedRefDatasets.has(key)) {
     selectedRefDatasets.delete(key);
+    if (previewRefKey.value === key) previewRefKey.value = null;
   } else {
+    selectedRefDatasets.clear();
     selectedRefDatasets.add(key);
+    previewRefKey.value = key;
   }
 }
 
@@ -2363,16 +3588,28 @@ function onPreviewRefOverrides(overrides: PreparedDataOverrides) {
   refOverrides[previewRefKey.value] = { ...overrides };
 }
 
-async function onImportSelectedDatasets() {
-  if (selectedRefDatasets.size === 0) return;
+function isDefiniteImportRefusal(error: unknown): boolean {
+  const status = (error as { response?: { status?: number } } | null)?.response?.status;
+  return status !== undefined && [400, 403, 404, 409, 413, 422].includes(status);
+}
+
+async function onImportSelectedDatasets(): Promise<boolean> {
+  if (selectedRefDatasets.size === 0) return false;
   importing.value = true;
+  let createdExperimentId: number | null = null;
+  const starterIntent = pendingAnalysisStarterIntent();
   try {
     // Synthesis-style flow: each click creates a new My Dataset with the
     // typed name (or a sensible default if blank), then ingests the
     // selected references into it. The user no longer has to pre-create a
     // dataset via the dialog.
     const name = importDatasetName.value.trim() || defaultImportDatasetName();
-    const created = await dataStore.createExperiment(name, undefined, projectStore.currentProjectId);
+    const created = await dataStore.createExperiment(
+      name,
+      undefined,
+      projectStore.currentProjectId,
+    );
+    createdExperimentId = created.id;
     await dataStore.selectExperiment(created.id);
 
     const datasets = Array.from(selectedRefDatasets).map((key) => {
@@ -2380,10 +3617,31 @@ async function onImportSelectedDatasets() {
       return { source, name: rest.join("::"), overrides: refOverrides[key] ?? null };
     });
     const result = await dataStore.importReferenceDatasets(created.id, datasets);
+    const admittedExperimentId = result.experiment_id ?? created.id;
+    if (admittedExperimentId !== created.id) {
+      await dataStore.deleteExperiment(created.id);
+    }
+    createdExperimentId = null;
+    if (starterIntent) {
+      // Persist completion as soon as the server returns the admitted
+      // experiment. Preview refreshes are UI work and must not make a
+      // committed import look retryable on the next route visit.
+      try {
+        window.sessionStorage.setItem(
+          DATA_ENTRY_DATASET_KEY,
+          JSON.stringify({ ...starterIntent, imported_experiment_id: admittedExperimentId }),
+        );
+      } catch {
+        // Session storage is an enhancement; the dataset remains durable.
+      }
+    }
+    await dataStore.selectExperiment(admittedExperimentId);
     toast.add({
       severity: "success",
       summary: "Import Complete",
-      detail: `Imported ${result.imported} file(s) into "${name}"`,
+      detail: result.reused_existing
+        ? `This reference is already in My Dataset. The existing dataset is open.`
+        : `Imported ${result.imported} file(s) into "${name}"`,
       life: 3000,
     });
     selectedRefDatasets.clear();
@@ -2391,16 +3649,130 @@ async function onImportSelectedDatasets() {
     await refreshProjectContext();
     activeTab.value = TAB_MY_DATASET;
     persistActiveDataTab();
-    await showExperimentContents(created.id);
+    await showExperimentContents(admittedExperimentId);
+    return true;
   } catch (err: unknown) {
+    if (createdExperimentId !== null && isDefiniteImportRefusal(err)) {
+      try {
+        await dataStore.deleteExperiment(createdExperimentId);
+      } catch {
+        // Preserve the original failure.
+      }
+    }
     toast.add({
       severity: "error",
       summary: "Import Failed",
       detail: getErrorMessage(err, "Failed to import datasets"),
       life: 5000,
     });
+    return false;
   } finally {
     importing.value = false;
+  }
+}
+
+function selectRegisteredReferenceFile(dataset: ReferenceDatasetOption): void {
+  pendingRegisteredReference.value = dataset;
+  if (registeredReferenceInputRef.value) {
+    registeredReferenceInputRef.value.value = "";
+    registeredReferenceInputRef.value.click();
+  }
+}
+
+async function onRegisteredReferenceSelection(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  const dataset = pendingRegisteredReference.value;
+  input.value = "";
+  pendingRegisteredReference.value = null;
+  if (!files.length || !dataset) return;
+
+  const requiredFiles = dataset.dataset_package?.artifact_ids.length ?? 1;
+  if (files.length !== requiredFiles) {
+    const message = `${dataset.label} requires exactly ${requiredFiles} downloaded provider file${requiredFiles === 1 ? "" : "s"}; select them together.`;
+    registeredImportState[dataset.name] = { status: "error", message };
+    toast.add({
+      severity: "warn",
+      summary: "Select Complete Package",
+      detail: message,
+      life: 6000,
+    });
+    return;
+  }
+
+  registeredImportState[dataset.name] = {
+    status: "importing",
+    message: `Verifying ${files.length} provider file${files.length === 1 ? "" : "s"} — importing ${dataset.label}`,
+  };
+  let createdExperimentId: number | null = null;
+  try {
+    const packaged = dataset.dataset_package;
+    const created = await dataStore.createExperiment(
+      dataset.label,
+      dataset.description || undefined,
+      projectStore.currentProjectId,
+      {
+        source_kind: "user_acquired_registered_reference",
+        ...(packaged
+          ? { reference_package_id: packaged.package_id }
+          : { reference_projection_id: dataset.name }),
+        provider: dataset.provider,
+      },
+    );
+    createdExperimentId = created.id;
+    const result = await dataStore.importRegisteredReference(
+      created.id,
+      packaged ? { packageId: packaged.package_id } : { projectionId: dataset.name },
+      files,
+    );
+    const admittedExperimentId = result.experiment_id ?? created.id;
+    if (admittedExperimentId !== created.id) {
+      await dataStore.deleteExperiment(created.id);
+    }
+    createdExperimentId = null;
+    await dataStore.selectExperiment(admittedExperimentId);
+    await refreshProjectContext();
+    activeTab.value = TAB_MY_DATASET;
+    persistActiveDataTab();
+    const initialFileIds = result.initial_file_ids ?? [];
+    await showExperimentContents(admittedExperimentId, initialFileIds[0] ?? null);
+    if (initialFileIds.length) {
+      const initialIds = new Set(initialFileIds);
+      const initialViews = result.files
+        .filter((entry) => initialIds.has(entry.id))
+        .map(({ id, file_path, stage }) => ({ id, file_path, stage }));
+      setExperimentPlotSelection(admittedExperimentId, initialViews);
+      await loadPlottedDatasets();
+    }
+    registeredImportState[dataset.name] = {
+      status: "ready",
+      message: result.reused_existing
+        ? `Ready — opened the existing ${dataset.label} in My Dataset`
+        : `Ready — ${dataset.label} is available in My Dataset`,
+    };
+    toast.add({
+      severity: "success",
+      summary: "Reference Verified",
+      detail: result.reused_existing
+        ? `${dataset.label} was already verified. The existing dataset is open in My Dataset.`
+        : `${dataset.label} is ready in My Dataset.`,
+      life: 4000,
+    });
+  } catch (error: unknown) {
+    if (createdExperimentId !== null && isDefiniteImportRefusal(error)) {
+      try {
+        await dataStore.deleteExperiment(createdExperimentId);
+      } catch {
+        // The server owns cleanup truth; never obscure the admission refusal.
+      }
+    }
+    const message = getErrorMessage(
+      error,
+      `This file does not match the registered ${dataset.label} reference file. ` +
+        "Download it again from the Eigenvector dataset catalog. No data from the refused file was retained.",
+    );
+    registeredImportState[dataset.name] = { status: "error", message };
+    toast.add({ severity: "error", summary: "Reference Refused", detail: message, life: 7000 });
   }
 }
 
@@ -2470,7 +3842,10 @@ async function pollLibraryImportJob(jobId: number, experimentId: number, dataset
     toast.add({
       severity: "error",
       summary: status === "cancelled" ? "HITRAN Import Cancelled" : "HITRAN Import Failed",
-      detail: response.data.error_message || response.data.progress_message || "Failed to import HITRAN spectra",
+      detail:
+        response.data.error_message ||
+        response.data.progress_message ||
+        "Failed to import HITRAN spectra",
       life: 7000,
     });
   }
@@ -2493,29 +3868,42 @@ async function importLibraryRows(selectedRows: LibraryRow[]) {
   try {
     const name = libraryDatasetName.value.trim() || defaultLibraryDatasetName();
     const libraryDraft = dataDraftSnapshot().library;
-    const created = await dataStore.createExperiment(name, undefined, projectStore.currentProjectId, {
-      builder_state: {
-        kind: "library_basket",
-        version: 1,
-        title: name,
-        library: libraryDraft,
+    const created = await dataStore.createExperiment(
+      name,
+      undefined,
+      projectStore.currentProjectId,
+      {
+        builder_state: {
+          kind: "library_basket",
+          version: 1,
+          title: name,
+          library: libraryDraft,
+        },
       },
-    });
+    );
     await dataStore.selectExperiment(created.id);
 
-    const hitranRows = selectedRows.filter((entry) => isHitranLibrarySource(entry.source) && entry.component_id);
+    const hitranRows = selectedRows.filter(
+      (entry) => isHitranLibrarySource(entry.source) && entry.component_id,
+    );
     const componentSpecs = hitranRows.map((entry) => {
       const frozen = entry.frozen_settings ?? freezeLibrarySettings(entry);
       return {
         component_id:
           entry.source === "hitran_xsec"
-            ? frozen.component_id || `${String(entry.component_id)}#${entry.selected_xsec_option ?? 0}`
+            ? frozen.component_id ||
+              `${String(entry.component_id)}#${entry.selected_xsec_option ?? 0}`
             : String(entry.component_id),
-        resolution_cm1: frozen.resolution_cm1 ?? (entry.source === "hitran" ? libraryResolutionCm1.value : null),
-        wavenumber_min: frozen.wavenumber_min ?? (entry.source === "hitran" ? libraryWavenumberMin.value : null),
-        wavenumber_max: frozen.wavenumber_max ?? (entry.source === "hitran" ? libraryWavenumberMax.value : null),
-        temperature_k: frozen.temperature_k ?? (entry.source === "hitran" ? libraryTemperatureK.value : null),
-        pressure_atm: frozen.pressure_atm ?? (entry.source === "hitran" ? libraryPressureAtm.value : null),
+        resolution_cm1:
+          frozen.resolution_cm1 ?? (entry.source === "hitran" ? libraryResolutionCm1.value : null),
+        wavenumber_min:
+          frozen.wavenumber_min ?? (entry.source === "hitran" ? libraryWavenumberMin.value : null),
+        wavenumber_max:
+          frozen.wavenumber_max ?? (entry.source === "hitran" ? libraryWavenumberMax.value : null),
+        temperature_k:
+          frozen.temperature_k ?? (entry.source === "hitran" ? libraryTemperatureK.value : null),
+        pressure_atm:
+          frozen.pressure_atm ?? (entry.source === "hitran" ? libraryPressureAtm.value : null),
       };
     });
     const loadedSpectra = hitranRows
@@ -2537,12 +3925,11 @@ async function importLibraryRows(selectedRows: LibraryRow[]) {
       library_ids: selectedRows
         .filter((entry) => entry.source === "nist" && entry.id != null)
         .map((entry) => Number(entry.id)),
-      component_ids: hitranRows
-        .map((entry) =>
-          entry.source === "hitran_xsec"
-            ? `${String(entry.component_id)}#${entry.selected_xsec_option ?? 0}`
-            : String(entry.component_id)
-        ),
+      component_ids: hitranRows.map((entry) =>
+        entry.source === "hitran_xsec"
+          ? `${String(entry.component_id)}#${entry.selected_xsec_option ?? 0}`
+          : String(entry.component_id),
+      ),
       component_specs: componentSpecs,
       spectra: loadedSpectra,
       range_mode: libraryRangeMode.value,
@@ -2607,44 +3994,22 @@ async function importLibraryRows(selectedRows: LibraryRow[]) {
 
 async function onImportSelectedLibraryDatasets() {
   if (selectedLibraryKeys.size === 0) return;
-  await importLibraryRows(Object.values(selectedLibraryRows).filter((entry) => selectedLibraryKeys.has(entry.key)));
+  await importLibraryRows(
+    Object.values(selectedLibraryRows).filter((entry) => selectedLibraryKeys.has(entry.key)),
+  );
 }
 
 function onAddAllVisibleNistToBasket() {
   if (librarySource.value !== "nist") return;
-  for (const entry of dedupeNistRowsByCompound(filteredLibrary.value.filter((entry) => entry.source === "nist"))) {
+  for (const entry of dedupeNistRowsByCompound(
+    filteredLibrary.value.filter((entry) => entry.source === "nist"),
+  )) {
     selectedLibraryKeys.add(entry.key);
     selectedLibraryRows[entry.key] = { ...entry, frozen_settings: freezeLibrarySettings(entry) };
   }
   if (selectedLibraryKeys.size > 0 && !libraryDatasetName.value.trim()) {
     libraryDatasetName.value = defaultLibraryDatasetName();
   }
-}
-
-// --- SCP category helpers ---
-
-const SCP_CATEGORY_LABELS: Record<string, string> = {
-  irdata: "IR Spectroscopy",
-  ramandata: "Raman Spectroscopy",
-  galacticdata: "Galactic / SPC",
-  matlabdata: "MATLAB",
-  msdata: "Mass Spectrometry",
-  agirdata: "Agilent FTIR",
-};
-
-const scpCategories = computed(() => {
-  const scp = dataStore.referenceCatalog?.spectrochempy ?? [];
-  const cats = new Set(scp.map((d) => d.category || "other"));
-  return Array.from(cats);
-});
-
-function scpByCategory(category: string) {
-  const scp = dataStore.referenceCatalog?.spectrochempy ?? [];
-  return scp.filter((d) => (d.category || "other") === category);
-}
-
-function scpCategoryLabel(category: string): string {
-  return SCP_CATEGORY_LABELS[category] || category;
 }
 
 function queryNumber(value: unknown): number | null {
@@ -2660,8 +4025,10 @@ function routeTabIndex(value: unknown): number | null {
   if (normalized === "synthesis") return TAB_SYNTHESIS;
   if (normalized === "upload") return TAB_UPLOAD;
   if (normalized === "library") return TAB_LIBRARY;
+  if (normalized === "multi-well" || normalized === "multi_well") return TAB_MULTI_WELL;
   if (normalized === "inspect" || normalized === "explore") return TAB_MY_DATASET;
-  if (normalized === "my-dataset" || normalized === "my_dataset" || normalized === "dataset") return TAB_MY_DATASET;
+  if (normalized === "my-dataset" || normalized === "my_dataset" || normalized === "dataset")
+    return TAB_MY_DATASET;
   return null;
 }
 
@@ -2669,17 +4036,91 @@ function syncGuidedExampleSession() {
   const mode = window.sessionStorage.getItem(DATA_ENTRY_MODE_KEY);
   const projectId = window.sessionStorage.getItem(DATA_ENTRY_PROJECT_KEY);
   isGuidedExampleSession.value =
-    mode === "template-example" &&
-    projectId === String(projectStore.currentProjectId ?? "");
+    mode === "template-example" && projectId === String(projectStore.currentProjectId ?? "");
+}
+
+function pendingAnalysisStarterIntent(): AnalysisStarterDatasetIntent | null {
+  const mode = window.sessionStorage.getItem(DATA_ENTRY_MODE_KEY);
+  const projectId = window.sessionStorage.getItem(DATA_ENTRY_PROJECT_KEY);
+  if (mode !== "analysis-starter" || projectId !== String(projectStore.currentProjectId ?? "")) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(window.sessionStorage.getItem(DATA_ENTRY_DATASET_KEY) || "null");
+    if (
+      parsed?.schema_version !== "spectra-analysis-starter-dataset-intent/1" ||
+      parsed.project_id !== projectStore.currentProjectId ||
+      typeof parsed.dataset_id !== "string" ||
+      typeof parsed.source !== "string" ||
+      typeof parsed.name !== "string" ||
+      typeof parsed.label !== "string" ||
+      (parsed.imported_experiment_id != null &&
+        (!Number.isInteger(parsed.imported_experiment_id) || parsed.imported_experiment_id <= 0))
+    ) {
+      return null;
+    }
+    return parsed as AnalysisStarterDatasetIntent;
+  } catch {
+    return null;
+  }
+}
+
+function clearImportedAnalysisStarterMarker(intent: AnalysisStarterDatasetIntent): void {
+  try {
+    window.sessionStorage.setItem(
+      DATA_ENTRY_DATASET_KEY,
+      JSON.stringify({ ...intent, imported_experiment_id: null }),
+    );
+  } catch {
+    // Session storage is an enhancement; a later route can still retry.
+  }
+}
+
+function applyAnalysisStarterIntent(): boolean {
+  const intent = pendingAnalysisStarterIntent();
+  if (!intent) return false;
+
+  const intentKey = `${intent.source}::${intent.name}`;
+  const registeredSource = (dataStore.referenceCatalog?.registered ?? []).find(
+    (dataset) => dsKey(dataset) === intentKey,
+  );
+  const packageId = registeredSource?.dataset_package?.package_id;
+  const dataset =
+    referenceByKey(intentKey) ??
+    (packageId
+      ? (userAcquiredReferenceDatasets.value.find((candidate) => candidate.name === packageId) ??
+        null)
+      : null);
+
+  selectedRefDatasets.clear();
+  if (!dataset) {
+    previewRefKey.value = null;
+    return true;
+  }
+
+  const key = dsKey(dataset);
+  previewRefKey.value = key;
+  if (registeredSource || dataset.source === "registered" || dataset.source === "eigenvector") {
+    // Provider packages require the exact downloaded archive, so reveal the
+    // verified-file action without sending them through the server catalog import.
+    registeredCollapsed.value = false;
+  } else {
+    selectedRefDatasets.add(key);
+    importDatasetName.value = intent.label;
+  }
+  return true;
 }
 
 function sortFilesNewestFirst(items: ExperimentFile[]): ExperimentFile[] {
   return [...items].sort(
-    (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+    (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
   );
 }
 
-async function inspectExperimentFile(experimentId: number, fileId: number | null): Promise<boolean> {
+async function inspectExperimentFile(
+  experimentId: number,
+  fileId: number | null,
+): Promise<boolean> {
   if (
     fileId != null &&
     dataStore.activeExperimentId === experimentId &&
@@ -2704,8 +4145,8 @@ async function inspectExperimentFile(experimentId: number, fileId: number | null
     return false;
   }
 
-  dataStore.clearCatalogExploration();
-  await dataStore.inspectFile(file.id, file.file_path, experimentId);
+  await showExperimentContents(experimentId);
+  dataStore.activateFile(file.id, file.file_path);
   activeTab.value = TAB_MY_DATASET;
   persistActiveDataTab();
   return true;
@@ -2714,13 +4155,14 @@ async function inspectExperimentFile(experimentId: number, fileId: number | null
 async function inspectLatestProjectFile(): Promise<boolean> {
   if (
     projectStore.currentProjectId != null &&
-    (!projectStore.currentProject || projectStore.currentProject.id !== projectStore.currentProjectId)
+    (!projectStore.currentProject ||
+      projectStore.currentProject.id !== projectStore.currentProjectId)
   ) {
     await projectStore.fetchProject(projectStore.currentProjectId);
   }
 
   const experiments = [...(projectStore.currentProject?.experiments || [])].sort(
-    (left, right) => right.id - left.id
+    (left, right) => right.id - left.id,
   );
   for (const experiment of experiments) {
     await dataStore.selectExperiment(experiment.id);
@@ -2729,8 +4171,8 @@ async function inspectLatestProjectFile(): Promise<boolean> {
       continue;
     }
 
-    dataStore.clearCatalogExploration();
-    await dataStore.inspectFile(latestFile.id, latestFile.file_path, experiment.id);
+    await showExperimentContents(experiment.id);
+    await onInspectFile(latestFile, { updateRoute: false });
     activeTab.value = TAB_MY_DATASET;
     persistActiveDataTab();
     return true;
@@ -2758,6 +4200,18 @@ async function applyRouteExploreState() {
 
   const experimentId = queryNumber(route.query.experimentId ?? route.query.experiment);
   const fileId = queryNumber(route.query.fileId);
+  const requestedExperimentBelongsToProject =
+    experimentId == null ||
+    dataStore.experiments.some((experiment) => experiment.id === experimentId);
+
+  if (!requestedExperimentBelongsToProject) {
+    // A saved or copied deep link can outlive its project context. Keep the
+    // project-scoped selection restored above instead of replacing it with an
+    // experiment that the current project cannot admit.
+    activeTab.value = TAB_MY_DATASET;
+    persistActiveDataTab();
+    return;
+  }
 
   try {
     if (experimentId != null && fileId != null) {
@@ -2768,8 +4222,19 @@ async function applyRouteExploreState() {
     }
 
     if (experimentId != null) {
-      await dataStore.selectExperiment(experimentId);
-      await showExperimentContents(experimentId);
+      if (dataStore.activeExperimentId !== experimentId || !dataStore.fileInfo) {
+        await dataStore.selectExperiment(experimentId);
+        await showExperimentContents(experimentId);
+      }
+      const requestedViewId = queryNumber(route.query.viewId);
+      if (requestedViewId != null) {
+        await refreshDatasetViews(experimentId);
+        const requestedView = datasetViews.value.find((view) => view.id === requestedViewId);
+        if (requestedView) await showDatasetView(requestedView);
+        else datasetViewError.value = "The requested named definition is unavailable in this dataset.";
+      } else if (route.query.viewId === "default") {
+        await showDefaultDatasetView();
+      }
       activeTab.value = TAB_MY_DATASET;
       persistActiveDataTab();
       return;
@@ -2790,11 +4255,41 @@ async function applyRouteExploreState() {
 
 async function applyRouteDataState() {
   const requestedTab = routeTabIndex(route.query.tab);
+  const starterIntent = pendingAnalysisStarterIntent();
+  if (starterIntent?.imported_experiment_id != null) {
+    const importedExperiment = dataStore.experiments.find(
+      (experiment) => experiment.id === starterIntent.imported_experiment_id,
+    );
+    if (importedExperiment) {
+      activeTab.value = TAB_MY_DATASET;
+      persistActiveDataTab();
+      if (dataStore.activeExperimentId !== importedExperiment.id || !dataStore.fileInfo) {
+        await dataStore.selectExperiment(importedExperiment.id);
+        await showExperimentContents(importedExperiment.id);
+      }
+      return;
+    }
+    // A deleted dataset must not permanently suppress the starter import.
+    clearImportedAnalysisStarterMarker(starterIntent);
+  }
+  if ((requestedTab === null || requestedTab === TAB_IMPORT) && applyAnalysisStarterIntent()) {
+    activeTab.value = TAB_IMPORT;
+    persistActiveDataTab();
+    return;
+  }
   if (requestedTab !== null) {
     activeTab.value = requestedTab;
     persistActiveDataTab();
     if (requestedTab === TAB_MY_DATASET) {
       await applyRouteExploreState();
+    } else if (requestedTab === TAB_MULTI_WELL) {
+      const experimentId = queryNumber(route.query.experimentId ?? route.query.experiment);
+      if (
+        experimentId != null &&
+        dataStore.experiments.some((experiment) => experiment.id === experimentId)
+      ) {
+        await dataStore.selectExperiment(experimentId);
+      }
     }
     return;
   }
@@ -2802,8 +4297,467 @@ async function applyRouteDataState() {
   await applyRouteExploreState();
 }
 
-function goToWorkflow() {
-  router.push("/workflow");
+function onAnalysisChoice(choice: AnalysisChoice): void {
+  analysisChoice.value = choice;
+}
+
+async function loadWorkflowDataSelectionContext(): Promise<void> {
+  const workflowId = workflowContextId.value;
+  const sourceNodeId = workflowSourceNodeId.value;
+  if (workflowId === null || !sourceNodeId) return;
+  workflowSelectionContextLoading.value = true;
+  workflowSelectionContextError.value = null;
+  try {
+    const response = await api.get<WorkflowDataSelectionContext>(
+      `/workflows/${workflowId}/data-selections/${encodeURIComponent(sourceNodeId)}`,
+    );
+    const context = response.data;
+    workflowSelectionContext.value = context;
+    const saved = context.saved_selection;
+    activeTab.value = TAB_MY_DATASET;
+    persistActiveDataTab();
+    if (!saved) {
+      workflowSelectionContextError.value = null;
+      return;
+    }
+    if (!dataStore.experiments.some((experiment) => experiment.id === saved.experiment_id)) {
+      throw new Error("The dataset saved on this sheet is no longer available in this project.");
+    }
+    if (dataStore.activeExperimentId !== saved.experiment_id) {
+      await dataStore.selectExperiment(saved.experiment_id);
+    }
+    const selectedIds = saved.selected_file_ids;
+    if (selectedIds === null) {
+      setExperimentPlotSelection(saved.experiment_id, null);
+    } else {
+      const selectedIdSet = new Set(selectedIds);
+      const selectedFiles = dataStore.experimentFiles
+        .filter((file) => selectedIdSet.has(file.id))
+        .map((file) => ({ id: file.id, file_path: file.file_path, stage: file.stage }));
+      if (selectedFiles.length !== selectedIds.length) {
+        throw new Error("One or more files saved on this sheet are no longer available.");
+      }
+      setExperimentPlotSelection(saved.experiment_id, selectedFiles);
+    }
+    inspectionAssetId.value = saved.asset_id;
+    selectedDatasetView.value = null;
+    if (saved.dataset_view_id != null) {
+      try {
+        selectedDatasetView.value = (await api.get<DatasetView>(
+          `/experiments/${saved.experiment_id}/dataset-views/${saved.dataset_view_id}`,
+        )).data;
+      } catch (error) {
+        if ((error as { response?: { status?: number } })?.response?.status !== 404) throw error;
+        datasetViewError.value = "This sheet's saved definition was deleted. Its recorded source remains available; save a new definition to rebind it.";
+      }
+    }
+    requestedAnalysisSelection.value = {
+      target: saved.target_authority?.column ?? "",
+      group: saved.group_column ?? "",
+    };
+    analysisChoice.value = {
+      target: saved.target_authority?.column ?? "",
+      targetType: saved.target_authority?.target_type ?? null,
+      targetUnits: saved.target_authority?.units ?? null,
+      sourceDigest: saved.target_authority?.source_digest ?? null,
+      group: saved.group_column ?? "",
+      readiness: null,
+    };
+    analysisSelectionHydrated.value = true;
+    analysisSelectionStatus.value = "idle";
+    await showExperimentContents(saved.experiment_id, null, saved.asset_id, true);
+    await loadPlottedDatasets();
+  } catch (error: unknown) {
+    workflowSelectionContextError.value = getErrorMessage(
+      error,
+      "The workflow sheet data selection could not be loaded.",
+    );
+  } finally {
+    workflowSelectionContextLoading.value = false;
+  }
+}
+
+function returnToWorkflow(): void {
+  const workflowId = workflowContextId.value;
+  void router.push({
+    path: "/workflow",
+    query: {
+      ...(projectStore.currentProjectId
+        ? { project_id: String(projectStore.currentProjectId) }
+        : {}),
+      ...(workflowId ? { workflow_id: String(workflowId) } : {}),
+    },
+  });
+}
+
+async function applyWorkflowDataSelection(): Promise<void> {
+  const context = workflowSelectionContext.value;
+  const experimentId = dataStore.activeExperimentId;
+  if (!context || experimentId === null) return;
+  const experiment = dataStore.experiments.find((item) => item.id === experimentId);
+  const selection = workflowSelectionForExperiment(experimentId);
+  if (!experiment || selection === undefined) {
+    workflowSelectionContextError.value = "Choose the files this workflow source should use.";
+    return;
+  }
+  if (Array.isArray(selection) && new Set(selection.map((file) => file.stage)).size > 1) {
+    workflowSelectionContextError.value = "Choose files from one processing stage.";
+    return;
+  }
+  try {
+    workflowSelectionApplying.value = true;
+    workflowSelectionContextError.value = null;
+    await showExperimentContents(experimentId, null, inspectionAssetId.value, selectedDatasetView.value !== null);
+    const source = objectOrNull(dataStore.fileInfo?.metadata?.source_collection);
+    const sourceManifest = stringOrEmpty(source?.source_manifest_sha256);
+    const scientificCollection = stringOrEmpty(source?.scientific_collection_sha256);
+    if (!sourceManifest || !scientificCollection) {
+      throw new Error(
+        "The selected data does not expose the governed scientific identity required for a workflow revision.",
+      );
+    }
+    if (
+      analysisChoice.value.target &&
+      (!analysisChoice.value.targetType || !analysisChoice.value.sourceDigest)
+    ) {
+      throw new Error("The selected target authority is incomplete. Select the target again.");
+    }
+    const stage =
+      Array.isArray(selection) && selection.length
+        ? selection[0].stage
+        : context.saved_selection?.experiment_id === experimentId
+          ? context.saved_selection.stage
+          : dataStore.experimentFiles.some((file) => file.stage === "raw")
+            ? "raw"
+            : "synthetic";
+    const payloadSelection: WorkflowSourceSelection = {
+      experiment_id: experimentId,
+      dataset_name: experiment.name,
+      stage,
+      selected_file_ids: selection === null ? null : selection.map((file) => file.id),
+      asset_id: inspectionAssetId.value,
+      source_manifest_sha256: sourceManifest,
+      collection_definition_sha256: stringOrEmpty(source?.collection_definition_sha256) || null,
+      scientific_collection_sha256: scientificCollection,
+      target_authority:
+        analysisChoice.value.target &&
+        analysisChoice.value.targetType &&
+        analysisChoice.value.sourceDigest
+          ? {
+              schema_version: "spectrasherpa-target-authority/1",
+              column: analysisChoice.value.target,
+              target_type: analysisChoice.value.targetType,
+              units: analysisChoice.value.targetUnits,
+              source_digest: analysisChoice.value.sourceDigest,
+            }
+          : null,
+      group_column: analysisChoice.value.group || null,
+    };
+    const exactView = selectedDatasetView.value;
+    if (exactView &&
+      exactView.selection.selected_file_ids?.join(",") === payloadSelection.selected_file_ids?.join(",") &&
+      exactView.selection.stage === payloadSelection.stage &&
+      exactView.selection.asset_id === payloadSelection.asset_id &&
+      exactView.selection.source_manifest_sha256 === payloadSelection.source_manifest_sha256 &&
+      exactView.selection.collection_definition_sha256 === payloadSelection.collection_definition_sha256 &&
+      exactView.selection.scientific_collection_sha256 === payloadSelection.scientific_collection_sha256 &&
+      JSON.stringify(exactView.selection.target_authority) === JSON.stringify(payloadSelection.target_authority) &&
+      exactView.selection.group_column === payloadSelection.group_column) {
+      payloadSelection.dataset_view_id = exactView.id;
+      payloadSelection.dataset_view_sha256 = exactView.selection_sha256;
+    }
+    const idempotencyKey =
+      typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `data-page-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const response = await api.put<WorkflowDataSelectionRevision>(
+      `/workflows/${context.workflow_id}/data-selections/${encodeURIComponent(context.source_node_id)}`,
+      {
+        expected_revision: context.current_revision?.revision_number ?? null,
+        idempotency_key: idempotencyKey,
+        origin: "data_page",
+        reason: workflowSelectionReason.value.trim() || null,
+        selection: payloadSelection,
+      },
+    );
+    workflowSelectionContext.value = {
+      ...context,
+      current_revision: response.data,
+      saved_selection: response.data.selection,
+    };
+    toast.add({
+      severity: "success",
+      summary: "Sheet data selection applied",
+      detail: `Revision ${response.data.revision_number} is now bound to ${context.source_node_label}.`,
+      life: 3500,
+    });
+    returnToWorkflow();
+  } catch (error: unknown) {
+    workflowSelectionContextError.value = getErrorMessage(
+      error,
+      "The data selection could not be applied to this sheet.",
+    );
+    if ((error as { response?: { status?: number } })?.response?.status === 409) {
+      await loadWorkflowDataSelectionContext();
+    }
+  } finally {
+    workflowSelectionApplying.value = false;
+  }
+}
+
+async function onAnalysisSelectionCommit(choice: AnalysisChoice): Promise<void> {
+  analysisChoice.value = choice;
+  requestedAnalysisSelection.value = { target: choice.target, group: choice.group };
+  if (workflowSelectionContextRequested.value) {
+    analysisSelectionStatus.value = "idle";
+    return;
+  }
+  const experimentId = dataStore.activeExperimentId;
+  if (experimentId == null || !analysisSelectionHydrated.value) return;
+  const request = ++analysisSelectionRequest;
+  analysisSelectionStatus.value = "saving";
+  try {
+    const response = await api.put(`/experiments/${experimentId}/analysis-selection`, {
+      selected_target: choice.target || null,
+      target_type: choice.target ? choice.targetType : null,
+      group_column: choice.target && choice.group ? choice.group : null,
+      source_digest: choice.sourceDigest,
+    });
+    if (request !== analysisSelectionRequest || dataStore.activeExperimentId !== experimentId)
+      return;
+    activeExperimentMetadata.value = {
+      ...(activeExperimentMetadata.value ?? {}),
+      analysis_selection: response.data,
+    };
+    analysisSelectionStatus.value = "saved";
+  } catch (error: unknown) {
+    if (request !== analysisSelectionRequest || dataStore.activeExperimentId !== experimentId)
+      return;
+    analysisSelectionStatus.value = "error";
+    toast.add({
+      severity: "error",
+      summary: "Selection not saved",
+      detail: getErrorMessage(error, "Target and groups could not be saved with this dataset."),
+      life: 6000,
+    });
+  }
+}
+
+function workflowExperimentIds(): number[] {
+  return dataStore.activeExperimentId == null ? [] : [dataStore.activeExperimentId];
+}
+
+function workflowSelectionForExperiment(experimentId: number): PlotFileSelection {
+  if (Object.prototype.hasOwnProperty.call(plotFileSelections.value, experimentId)) {
+    return plotFileSelections.value[experimentId];
+  }
+  if (experimentId !== dataStore.activeExperimentId || dataStore.experimentFiles.length === 0) {
+    return null;
+  }
+  const preferredStage =
+    ["raw", "preprocessed", "synthetic"].find((stage) =>
+      dataStore.experimentFiles.some((file) => file.stage === stage),
+    ) ?? "raw";
+  const stageFiles = dataStore.experimentFiles.filter((file) => file.stage === preferredStage);
+  if (stageFiles.length === 0) return null;
+  if (
+    preferredStage === "raw" &&
+    selectedExperiment.value &&
+    stageFiles.length === selectedExperiment.value.file_count &&
+    new Set(stageFiles.map((file) => file.stage)).size === 1
+  ) {
+    return null;
+  }
+  return stageFiles.map(({ id, file_path, stage }) => ({ id, file_path, stage }));
+}
+
+async function goToWorkflow(addNode?: string) {
+  const experimentId = dataStore.activeExperimentId;
+  const selection = experimentId == null ? null : plotFileSelections.value[experimentId];
+  let handoffReadiness = analysisChoice.value.readiness;
+  // Local row filters are display state, never a substitute for a server-issued
+  // scientific binding. Resolve that binding once, at the Workflow boundary.
+  if (
+    experimentId != null &&
+    (analysisChoice.value.target ||
+      (residentDatasets.has(experimentId) && Array.isArray(selection)))
+  ) {
+    const workflowSelection = workflowSelectionForExperiment(experimentId);
+    const requestedTarget = analysisChoice.value.target;
+    const requestedAsset = inspectionAssetId.value;
+    try {
+      await dataStore.inspectExperimentRawFiles(
+        experimentId,
+        inspectionAssetId.value,
+        workflowSelection?.map((file) => file.id),
+      );
+      await nextTick();
+      if (
+        dataStore.activeExperimentId !== experimentId ||
+        plotFileSelections.value[experimentId] !== selection ||
+        analysisChoice.value.target !== requestedTarget ||
+        inspectionAssetId.value !== requestedAsset
+      ) {
+        toast.add({
+          severity: "info",
+          summary: "Selection changed",
+          detail: "Review the current selection before opening Workflow.",
+          life: 4000,
+        });
+        return;
+      }
+      const inspected = dataStore.fileInfo;
+      const choice = { ...analysisChoice.value };
+      const base = inspected?.analysis_readiness;
+      if (choice.target && !base?.profile) {
+        throw new Error("The selected dataset has no current analysis readiness.");
+      }
+      if (inspected && base?.profile) {
+        const profile = {
+          ...base.profile,
+          target_type: choice.target ? choice.targetType : null,
+          target_fields: choice.target ? [choice.target] : [],
+        };
+        // Reinspection starts the panel's asynchronous compatibility preview.
+        // Share that read and await it before snapshotting the workflow receipt.
+        handoffReadiness = await retainedInspection(
+          inspected,
+          `readiness:${JSON.stringify(profile)}`,
+          async () =>
+            (
+              await api.post<DatasetAnalysisReadiness>(
+                "/workflow-templates/compatibility-preview",
+                {
+                  analysis_profile: profile,
+                },
+              )
+            ).data,
+        );
+        await nextTick();
+        if (
+          dataStore.activeExperimentId !== experimentId ||
+          dataStore.fileInfo !== inspected ||
+          plotFileSelections.value[experimentId] !== selection ||
+          inspectionAssetId.value !== requestedAsset ||
+          analysisChoice.value.target !== choice.target ||
+          analysisChoice.value.targetType !== choice.targetType ||
+          analysisChoice.value.group !== choice.group
+        ) {
+          throw new Error(
+            "Selection changed. Review the current selection before opening Workflow.",
+          );
+        }
+      }
+    } catch (error) {
+      toast.add({
+        severity: "error",
+        summary: "Selection could not be prepared",
+        detail: getErrorMessage(error, "Could not bind the selected data."),
+        life: 6000,
+      });
+      return;
+    }
+  }
+  if (
+    analysisChoice.value.target &&
+    (!analysisChoice.value.targetType || !analysisChoice.value.sourceDigest)
+  ) {
+    toast.add({
+      severity: "error",
+      summary: "Target authority is incomplete",
+      detail:
+        "Re-open Analysis readiness and select the response again after the dataset identity finishes loading.",
+      life: 6000,
+    });
+    return;
+  }
+  const workflowIds = workflowExperimentIds();
+  const mixedStageDataset = workflowIds.find((experimentId) => {
+    const selection = workflowSelectionForExperiment(experimentId);
+    return Array.isArray(selection) && new Set(selection.map((file) => file.stage)).size > 1;
+  });
+  if (mixedStageDataset != null) {
+    const name =
+      dataStore.experiments.find((item) => item.id === mixedStageDataset)?.name ??
+      `Dataset ${mixedStageDataset}`;
+    toast.add({
+      severity: "warn",
+      summary: "Choose one processing stage",
+      detail: `${name} contains selected files from more than one stage. Select raw, preprocessed, or synthetic files for one workflow source.`,
+      life: 6000,
+    });
+    return;
+  }
+  const datasets: DataSelectionReceipt["datasets"] = workflowIds.map((experimentId) => {
+    const experiment = dataStore.experiments.find((item) => item.id === experimentId);
+    const selection = workflowSelectionForExperiment(experimentId);
+    return {
+      experiment_id: experimentId,
+      dataset_name: experiment?.name ?? `Dataset ${experimentId}`,
+      selection: selection === null ? "all" : "subset",
+      selected_file_count: selection === null ? (experiment?.file_count ?? 0) : selection.length,
+      file_ids: selection === null ? null : selection.map((file) => file.id),
+      file_paths: selection === null ? null : selection.map((file) => file.file_path),
+      asset_id: experimentId === dataStore.activeExperimentId ? inspectionAssetId.value : null,
+      stage: selection === null ? "raw" : selection[0].stage,
+    };
+  });
+  const receiptId = createDataSelectionReceiptId();
+  try {
+    persistDataDraftNow();
+    if (datasets.length) {
+      storeDataSelectionReceipt(
+        {
+          schema_version: "spectra-my-dataset-workflow-selection/3",
+          receipt_id: receiptId,
+          project_id: projectStore.currentProjectId,
+          datasets,
+          target_authority:
+            analysisChoice.value.target &&
+            analysisChoice.value.targetType &&
+            analysisChoice.value.sourceDigest
+              ? {
+                  schema_version: "spectrasherpa-target-authority/1",
+                  column: analysisChoice.value.target,
+                  target_type: analysisChoice.value.targetType,
+                  units: analysisChoice.value.targetUnits,
+                  source_digest: analysisChoice.value.sourceDigest,
+                }
+              : null,
+          group: analysisChoice.value.group || null,
+          analysis_readiness: handoffReadiness,
+          analysis_readiness_experiment_id: dataStore.activeExperimentId,
+        },
+      );
+    }
+  } catch {
+    toast.add({
+      severity: "error",
+      summary: "Selection could not be carried to Workflow",
+      detail:
+        "Browser storage is unavailable. Keep this page open and try again after allowing site storage.",
+      life: 6000,
+    });
+    return;
+  }
+  router.push({
+    path: "/workflow",
+    query: datasets.length
+      ? {
+          fromDataSelection: "1",
+          selection: receiptId,
+          ...(projectStore.currentProjectId ? { project_id: projectStore.currentProjectId } : {}),
+          ...(addNode ? { addNode } : {}),
+        }
+      : addNode
+        ? {
+            addNode,
+            ...(projectStore.currentProjectId ? { project_id: projectStore.currentProjectId } : {}),
+          }
+        : projectStore.currentProjectId
+          ? { project_id: projectStore.currentProjectId }
+          : {},
+  });
 }
 
 // --- Lifecycle ---
@@ -2813,28 +4767,57 @@ onMounted(async () => {
   currentDataDraftStorageKey = dataDraftStorageKey();
   restoreActiveDataTab();
   restoreDataDraft(currentDataDraftStorageKey);
-  await Promise.all([
+  const catalogsReady = Promise.allSettled([
     fetchQuota(),
-    dataStore.fetchCatalog(),
-    dataStore.fetchExperiments(),
     dataStore.fetchReferenceCatalog(),
+    ...(qualified.value ? [] : [dataStore.fetchCatalog()]),
+    workflowStore.fetchCompatibilityMatrix(),
   ]);
+  await dataStore.fetchExperiments();
+  if (pendingAnalysisStarterIntent()) await catalogsReady;
   await dataStore.restoreActiveExperimentForCurrentProject();
   syncGuidedExampleSession();
   await applyRouteDataState();
+  // New Analysis carries a reference choice, rather than merely suggesting
+  // one. Admit bundled/catalog sources automatically. Provider packages stay
+  // manual because they require the exact user-acquired archive.
+  if (pendingAnalysisStarterIntent() && selectedRefDatasets.size > 0) {
+    await onImportSelectedDatasets();
+  }
+  if (workflowSelectionContextRequested.value) {
+    await loadWorkflowDataSelectionContext();
+  }
+
+  const requestedTab = routeTabIndex(route.query.tab);
+  const sourceTabRequested =
+    (requestedTab != null && requestedTab !== TAB_MY_DATASET) ||
+    pendingAnalysisStarterIntent() != null;
 
   // Restore My Dataset when the Pinia store still has an active contents
   // exploration (i.e. the user left the Data page after inspecting a
   // reference or file). Route-driven state takes precedence.
   if (
+    !sourceTabRequested &&
     [TAB_IMPORT, TAB_SYNTHESIS].includes(activeTab.value) &&
     (dataStore.catalogDatasetInfo !== null || dataStore.fileInfo !== null)
   ) {
     activeTab.value = TAB_MY_DATASET;
   }
 
-  await ensureInitialContentsSelection();
-  if (isHitranLibrarySource(librarySource.value)) {
+  if (!sourceTabRequested) {
+    const resident =
+      dataStore.activeExperimentId == null
+        ? null
+        : residentDatasets.get(dataStore.activeExperimentId);
+    if (resident && dataStore.fileInfo !== resident) {
+      restoreResidentInspection(resident);
+    }
+    await ensureInitialContentsSelection();
+  }
+  if (plottedExperimentIds.value.length) {
+    await loadPlottedDatasets();
+  }
+  if (!qualified.value && isHitranLibrarySource(librarySource.value)) {
     void searchHitranLibrary();
   }
 });
@@ -2856,10 +4839,20 @@ watch(
 );
 
 watch(activeTab, (tabIndex) => {
+  if (qualified.value && [TAB_SYNTHESIS, TAB_LIBRARY].includes(tabIndex)) {
+    activeTab.value = TAB_MY_DATASET;
+    return;
+  }
   if (isGuidedExampleSession.value && tabIndex !== TAB_MY_DATASET) {
     activeTab.value = TAB_MY_DATASET;
   }
 });
+
+let dataTabSelectionGeneration = 0;
+function onDataTabSelected(tabIndex: number) {
+  dataTabSelectionGeneration += 1;
+  if (tabIndex === TAB_MY_DATASET) void ensureInitialContentsSelection();
+}
 
 watch(
   () => [
@@ -2873,7 +4866,7 @@ watch(
     if (librarySource.value === "hitran") {
       clearHitranLibrarySpectra();
     }
-  }
+  },
 );
 
 watch(
@@ -2882,15 +4875,24 @@ watch(
     route.query.experimentId,
     route.query.experiment,
     route.query.fileId,
+    route.query.viewId,
     route.query.focus,
     route.query.fromTemplate,
   ],
   () => {
     void applyRouteDataState();
-  }
+  },
 );
 
+async function retryExperiments() {
+  await dataStore.fetchExperiments();
+  if (!dataStore.experimentsError) await ensureInitialContentsSelection();
+}
+
 async function refresh() {
+  residentDatasets.clear();
+  fileAssetInventoryCache.clear();
+  clearRetainedInspection(dataStore.fileInfo);
   await Promise.all([
     dataStore.fetchCatalog(),
     dataStore.fetchExperiments(),
@@ -2899,6 +4901,7 @@ async function refresh() {
   if (dataStore.activeExperimentId) {
     await dataStore.selectExperiment(dataStore.activeExperimentId);
   }
+  await loadPlottedDatasets();
 }
 
 async function refreshProjectContext() {
@@ -2914,13 +4917,75 @@ async function onSynthesisSaved() {
 }
 
 async function refreshActiveExperimentMetadata(experimentId: number | null): Promise<void> {
+  const request = ++analysisSelectionRequest;
   activeExperimentMetadata.value = null;
-  if (experimentId == null) return;
+  analysisSelectionHydrated.value = false;
+  requestedAnalysisSelection.value = { target: "", group: "" };
+  analysisSelectionStatus.value = "loading";
+  analysisChoice.value = {
+    target: "",
+    targetType: null,
+    targetUnits: null,
+    sourceDigest: null,
+    group: "",
+    readiness: null,
+  };
+  if (experimentId == null) {
+    analysisSelectionHydrated.value = true;
+    analysisSelectionStatus.value = "idle";
+    return;
+  }
+  const sheetSelection = workflowSelectionContext.value?.saved_selection;
+  if (sheetSelection?.experiment_id === experimentId) {
+    analysisChoice.value = {
+      target: sheetSelection.target_authority?.column ?? "",
+      targetType: sheetSelection.target_authority?.target_type ?? null,
+      targetUnits: sheetSelection.target_authority?.units ?? null,
+      sourceDigest: sheetSelection.target_authority?.source_digest ?? null,
+      group: sheetSelection.group_column ?? "",
+      readiness: null,
+    };
+    requestedAnalysisSelection.value = {
+      target: analysisChoice.value.target,
+      group: analysisChoice.value.group,
+    };
+    analysisSelectionHydrated.value = true;
+    analysisSelectionStatus.value = "idle";
+    return;
+  }
   try {
     const response = await api.get(`/experiments/${experimentId}`);
+    if (request !== analysisSelectionRequest || dataStore.activeExperimentId !== experimentId)
+      return;
     activeExperimentMetadata.value = objectOrNull(response.data?.metadata) ?? {};
+    const saved = objectOrNull(activeExperimentMetadata.value.analysis_selection);
+    const target = stringOrEmpty(saved?.selected_target);
+    const targetType =
+      saved?.target_type === "categorical" || saved?.target_type === "continuous"
+        ? saved.target_type
+        : null;
+    analysisChoice.value = {
+      target: target && targetType ? target : "",
+      targetType: target && targetType ? targetType : null,
+      targetUnits: null,
+      sourceDigest: stringOrEmpty(saved?.source_digest) || null,
+      group: target && targetType ? stringOrEmpty(saved?.group_column) : "",
+      readiness: null,
+    };
+    requestedAnalysisSelection.value = {
+      target: analysisChoice.value.target,
+      group: analysisChoice.value.group,
+    };
+    analysisSelectionStatus.value = saved ? "saved" : "idle";
   } catch {
+    if (request !== analysisSelectionRequest || dataStore.activeExperimentId !== experimentId)
+      return;
     activeExperimentMetadata.value = null;
+    analysisSelectionStatus.value = "error";
+  } finally {
+    if (request === analysisSelectionRequest && dataStore.activeExperimentId === experimentId) {
+      analysisSelectionHydrated.value = true;
+    }
   }
 }
 
@@ -2951,38 +5016,595 @@ async function reopenSelectedLibraryBasket(): Promise<void> {
   });
 }
 
-async function showExperimentContents(experimentId: number) {
-  dataStore.clearCatalogExploration();
-  try {
-    await dataStore.inspectExperimentRawFiles(experimentId);
-  } catch {
-    // Error is stored in dataStore.fileInfoError and rendered by Contents.
+function hasExperimentPlotSelection(experimentId: number): boolean {
+  return Object.prototype.hasOwnProperty.call(plotFileSelections.value, experimentId);
+}
+
+function isExperimentFullyPlotted(experimentId: number): boolean {
+  return (
+    hasExperimentPlotSelection(experimentId) && plotFileSelections.value[experimentId] === null
+  );
+}
+
+function isExperimentPartlyPlotted(experimentId: number): boolean {
+  const selection = plotFileSelections.value[experimentId];
+  return Array.isArray(selection) && selection.length > 0;
+}
+
+function isFilePlotted(file: ExperimentFile): boolean {
+  if (dataStore.activeExperimentId == null) return false;
+  const selection = plotFileSelections.value[dataStore.activeExperimentId];
+  return selection === null || Boolean(selection?.some((candidate) => candidate.id === file.id));
+}
+
+function setExperimentPlotSelection(
+  experimentId: number,
+  selection: PlotFileSelection | undefined,
+): void {
+  const next = { ...plotFileSelections.value };
+  if (selection === undefined || (Array.isArray(selection) && selection.length === 0)) {
+    delete next[experimentId];
+  } else {
+    next[experimentId] = selection;
+  }
+  plotFileSelections.value = next;
+}
+
+async function loadPlottedDatasets(
+  prefetched = new Map<number, SherpaDatasetDict>(),
+): Promise<void> {
+  const request = ++plotDatasetRequest;
+  plotDatasetsError.value = null;
+  if (plottedExperimentIds.value.length === 0) {
+    plotDatasetSources.value = [];
+    plotDatasetsLoading.value = false;
+    return;
+  }
+  const selected = plottedExperimentIds.value
+    .map((id) => dataStore.experiments.find((experiment) => experiment.id === id))
+    .filter((experiment): experiment is ExperimentSummary => Boolean(experiment));
+  if (selected.length !== plottedExperimentIds.value.length) {
+    plotFileSelections.value = Object.fromEntries(
+      selected.map((experiment) => [experiment.id, plotFileSelections.value[experiment.id]]),
+    );
+  }
+  plotDatasetsLoading.value = true;
+  const retainedDataset = dataStore.fileInfo;
+  const readProjection = (experiment: ExperimentSummary, fileIds?: number[]) => {
+    const resident = residentDatasets.get(experiment.id);
+    const selection = plotFileSelections.value[experiment.id];
+    const assetId = experiment.id === dataStore.activeExperimentId ? inspectionAssetId.value : null;
+    if (
+      !assetId &&
+      resident &&
+      (selection === null ||
+        (Array.isArray(selection) &&
+          selectedDatasetRows(
+            resident,
+            selection.map((file) => file.file_path),
+          ) !== null))
+    ) {
+      return Promise.resolve(resident);
+    }
+    const read = async () =>
+      prefetched.get(experiment.id) ??
+      (
+        await api.post<SherpaDatasetDict>("/builder/file-info", {
+          experiment_id: experiment.id,
+          ...(fileIds ? { file_ids: fileIds } : {}),
+          ...(assetId ? { asset_id: assetId } : {}),
+        })
+      ).data;
+    const key = JSON.stringify([
+      "plot",
+      authStore.user?.id,
+      projectStore.currentProjectId,
+      experiment,
+      fileIds ?? null,
+      assetId,
+    ]);
+    return retainedDataset ? retainedInspection(retainedDataset, key, read) : read();
+  };
+  const settled = await Promise.allSettled(
+    selected.map(async (experiment): Promise<DatasetPlotSource> => {
+      const selection = plotFileSelections.value[experiment.id];
+      if (selection === null) {
+        const dataset = await readProjection(experiment);
+        cacheFileSampleLabels(experiment.id, dataset);
+        return {
+          experimentId: experiment.id,
+          name: experiment.name,
+          members: [
+            {
+              fileId: null,
+              fileName: `All ${experiment.file_count} files`,
+              dataset,
+            },
+          ],
+          selectedFileCount: experiment.file_count,
+          totalFileCount: experiment.file_count,
+        };
+      }
+      const dataset = await readProjection(
+        experiment,
+        selection.map((file) => file.id),
+      );
+      cacheFileSampleLabels(experiment.id, dataset);
+      return {
+        experimentId: experiment.id,
+        name: experiment.name,
+        ...(residentDatasets.get(experiment.id) === dataset
+          ? { selectedFileNames: selection.map((file) => file.file_path) }
+          : {}),
+        members: [
+          {
+            fileId: selection.length === 1 ? selection[0].id : null,
+            fileName:
+              selection.length === 1
+                ? extractFileName(selection[0].file_path)
+                : `${selection.length} selected files`,
+            dataset,
+          },
+        ],
+        selectedFileCount: selection.length,
+        totalFileCount: experiment.file_count,
+      };
+    }),
+  );
+  if (request !== plotDatasetRequest) return;
+  const admitted: DatasetPlotSource[] = [];
+  const refusals: string[] = [];
+  const supersededExperimentIds: number[] = [];
+  settled.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      admitted.push(result.value);
+    } else {
+      if (getErrorCode(result.reason) === "trial_dataset_authority_superseded") {
+        supersededExperimentIds.push(selected[index].id);
+      }
+      refusals.push(
+        `${selected[index].name}: ${getErrorMessage(
+          result.reason,
+          "the packaged dataset could not be inspected",
+        )}`,
+      );
+    }
+  });
+  if (supersededExperimentIds.length) {
+    const next = { ...plotFileSelections.value };
+    for (const experimentId of supersededExperimentIds) delete next[experimentId];
+    plotFileSelections.value = next;
+    toast.add({
+      severity: "warn",
+      summary: "Outdated dataset removed from plot",
+      detail:
+        "Its registered scientific authority changed. Remove that packaged dataset and import the reviewed provider file again.",
+      life: 6000,
+    });
+  }
+  plotDatasetSources.value = admitted;
+  plotDatasetsError.value = refusals.length ? `Plot refused: ${refusals.join("; ")}` : null;
+  plotDatasetsLoading.value = false;
+}
+
+async function onPlotExperimentToggle(
+  experiment: ExperimentSummary,
+  checked: boolean,
+): Promise<void> {
+  if (checked) {
+    if (
+      !hasExperimentPlotSelection(experiment.id) &&
+      plottedExperimentIds.value.length >= MAX_PLOTTED_DATASETS
+    ) {
+      toast.add({
+        severity: "warn",
+        summary: "Dataset overlay limit reached",
+        detail: `Plot at most ${MAX_PLOTTED_DATASETS} packaged datasets at once.`,
+        life: 4500,
+      });
+      return;
+    }
+    setExperimentPlotSelection(experiment.id, null);
+    if (dataStore.activeExperimentId == null) {
+      // The first explicit preview also establishes inspection focus. Subsequent
+      // comparison previews must not replace the active dataset or its metadata.
+      await onExperimentSelect(experiment, { preserveComparisons: true });
+      return;
+    }
+    const resident = residentDatasets.get(experiment.id);
+    if (
+      resident &&
+      dataStore.activeExperimentId === experiment.id &&
+      dataStore.fileInfo !== resident
+    ) {
+      restoreResidentInspection(resident);
+    }
+  } else {
+    setExperimentPlotSelection(experiment.id, undefined);
+  }
+  await loadPlottedDatasets();
+}
+
+async function onActiveExperimentPlotToggle(checked: boolean): Promise<void> {
+  if (!selectedExperiment.value) return;
+  await onPlotExperimentToggle(selectedExperiment.value, checked);
+}
+
+async function onPlotFileToggle(file: ExperimentFile, checked: boolean): Promise<void> {
+  const experimentId = dataStore.activeExperimentId;
+  if (experimentId == null) return;
+  if (
+    !hasExperimentPlotSelection(experimentId) &&
+    plottedExperimentIds.value.length >= MAX_PLOTTED_DATASETS
+  ) {
+    toast.add({
+      severity: "warn",
+      summary: "Dataset overlay limit reached",
+      detail: `Plot at most ${MAX_PLOTTED_DATASETS} packaged datasets at once.`,
+      life: 4500,
+    });
+    return;
+  }
+  const allFiles = dataStore.experimentFiles.map(({ id, file_path, stage }) => ({
+    id,
+    file_path,
+    stage,
+  }));
+  const current = plotFileSelections.value[experimentId];
+  const activeFocus =
+    dataStore.activeFileId != null && dataStore.activeFilePath
+      ? { id: dataStore.activeFileId, file_path: dataStore.activeFilePath }
+      : null;
+  let selected = current === null ? allFiles : [...(current ?? [])];
+  if (checked && !selected.some((candidate) => candidate.id === file.id)) {
+    selected.push({ id: file.id, file_path: file.file_path, stage: file.stage });
+  } else if (!checked) {
+    selected = selected.filter((candidate) => candidate.id !== file.id);
+  }
+  setExperimentPlotSelection(
+    experimentId,
+    selected.length === allFiles.length && new Set(allFiles.map((item) => item.stage)).size === 1
+      ? null
+      : selected.length
+        ? selected
+        : undefined,
+  );
+  if (selected.length === 0) {
+    contentsInspectionRequest += 1;
+    inspectionWarnings.value = [];
+    inspectionAssets.value = [];
+    inspectionAssetId.value = null;
+    pendingInspection.value = null;
+    dataStore.clearInspection();
+    await loadPlottedDatasets();
+    return;
+  }
+  const selectedPackageViews = selected
+    .map((candidate) => registeredPackageView(candidate.file_path))
+    .filter((value): value is string => value !== null);
+  if (checked && new Set(selectedPackageViews).size > 1) {
+    const heterogeneousMetalViews = selectedPackageViews.some((label) =>
+      ["Machine sensors", "Optical emission spectra", "RF-monitor variables"].includes(label),
+    );
+    toast.add({
+      severity: "warn",
+      summary: "Multiple reference views selected",
+      detail: heterogeneousMetalViews
+        ? "Metal Etch views use different feature spaces. Inspect them together as one package, but select one compatible view for an ordinary workflow; cross-view fusion is not inferred."
+        : "These views may represent different instruments or scientific cohorts. Confirm their roles before modeling; use one view for ordinary calibration or an explicit transfer/application workflow across views.",
+      life: 6500,
+    });
+  }
+  const resident = residentDatasets.get(experimentId);
+  if (
+    resident &&
+    selectedDatasetRows(
+      resident,
+      selected.map((file) => file.file_path),
+    ) !== null
+  ) {
+    if (dataStore.fileInfo !== resident) {
+      restoreResidentInspection(resident);
+    }
+    await loadPlottedDatasets();
+  } else {
+    await showExperimentContents(experimentId);
+  }
+  if (activeFocus && selected.some((candidate) => candidate.id === activeFocus.id)) {
+    dataStore.activateFile(activeFocus.id, activeFocus.file_path);
   }
 }
 
+async function useOnlyDataView(file: ExperimentFile): Promise<void> {
+  const experimentId = dataStore.activeExperimentId;
+  if (experimentId == null) return;
+  setExperimentPlotSelection(experimentId, [
+    { id: file.id, file_path: file.file_path, stage: file.stage },
+  ]);
+  await showExperimentContents(experimentId);
+  dataStore.activateFile(file.id, file.file_path);
+}
+
+async function onPlotAllExperiments(checked: boolean): Promise<void> {
+  if (!checked) {
+    plotFileSelections.value = {};
+    await loadPlottedDatasets();
+    return;
+  }
+  plotFileSelections.value = Object.fromEntries(
+    dataStore.experiments.slice(0, MAX_PLOTTED_DATASETS).map((experiment) => [experiment.id, null]),
+  );
+  if (dataStore.experiments.length > MAX_PLOTTED_DATASETS) {
+    toast.add({
+      severity: "warn",
+      summary: "Dataset overlay bounded",
+      detail: `Selected the first ${MAX_PLOTTED_DATASETS} packaged datasets.`,
+      life: 4500,
+    });
+  }
+  if (dataStore.activeExperimentId == null && dataStore.experiments.length) {
+    await onExperimentSelect(dataStore.experiments[0], { preserveComparisons: true });
+    // Inspection can be refused before it reaches the shared plot loader. That
+    // must not suppress other valid datasets in the explicit comparison.
+    if (dataStore.experimentFilesRefusal) {
+      setExperimentPlotSelection(dataStore.experiments[0].id, undefined);
+      await loadPlottedDatasets();
+    } else if (!dataStore.fileInfo) {
+      await loadPlottedDatasets();
+    }
+    return;
+  }
+  await loadPlottedDatasets();
+}
+
+async function showExperimentContents(experimentId: number, preferredFileId: number | null = null, preferredAssetId: string | null = null, exactSelection = false) {
+  exactInspectionSelection.value = exactSelection;
+  const request = ++contentsInspectionRequest;
+  dataStore.clearCatalogExploration();
+  inspectionWarnings.value = [];
+  try {
+    const plottedSelection = plotFileSelections.value[experimentId];
+    const selectedStage = preferredFileId != null
+      ? dataStore.experimentFiles.find((file) => file.id === preferredFileId)?.stage
+      : Array.isArray(plottedSelection) && plottedSelection.length
+        ? plottedSelection[0].stage
+        : dataStore.experimentFiles.some((file) => file.stage === "raw") ? "raw" : "synthetic";
+    const sourceFiles = dataStore.experimentFiles.filter((file) => file.stage === selectedStage);
+    const explicitViewSelection =
+      preferredFileId != null || (Array.isArray(plottedSelection) && plottedSelection.length > 0);
+    const selectedViewIds =
+      preferredFileId != null
+        ? [preferredFileId]
+        : Array.isArray(plottedSelection) && plottedSelection.length
+          ? plottedSelection.map((selection) => selection.id)
+          : sourceFiles.map((file) => file.id);
+    const selectedViewId =
+      explicitViewSelection && selectedViewIds.length === 1 ? selectedViewIds[0] : null;
+    const selectedViewIdSet = new Set(selectedViewIds);
+    const inspectionFiles = sourceFiles.filter((file) => selectedViewIdSet.has(file.id));
+    const registeredPackageSelection = inspectionFiles.some(
+      (file) => registeredPackageView(file.file_path) !== null,
+    );
+    const loadWholeCollection =
+      preferredFileId == null && !exactSelection && !registeredPackageSelection && sourceFiles.length > 1;
+    const inventories = await Promise.all(
+      (loadWholeCollection ? sourceFiles : inspectionFiles).map((file) => {
+        const cacheKey = `${experimentId}:${file.id}`;
+        const cached = fileAssetInventoryCache.get(cacheKey);
+        if (cached) return cached;
+        const pending = dataStore.fetchFileAssets(experimentId, file.id).catch((error) => {
+          fileAssetInventoryCache.delete(cacheKey);
+          throw error;
+        });
+        fileAssetInventoryCache.set(cacheKey, pending);
+        return pending;
+      }),
+    );
+    if (request !== contentsInspectionRequest) return;
+    inspectionWarnings.value = uniqueAssetWarnings(
+      inventories.flatMap((inventory) => inventory.assets),
+    );
+    if (inventories.some((inventory) => inventory.assets.length > 1)) {
+      const commonIds = inventories.reduce<Set<string>>((common, inventory, index) => {
+        const ids = new Set(inventory.assets.map((asset) => asset.asset_id));
+        return index === 0 ? ids : new Set([...common].filter((assetId) => ids.has(assetId)));
+      }, new Set<string>());
+      inspectionAssets.value = (inventories[0]?.assets ?? []).filter((asset) =>
+        commonIds.has(asset.asset_id),
+      );
+      inspectionAssetId.value = preferredAssetId;
+      pendingInspection.value = { kind: "experiment", experimentId };
+      dataStore.clearInspection();
+      if (!inspectionAssets.value.length) {
+        throw new Error(
+          "Files in this dataset do not share a selectable scientific result identity.",
+        );
+      }
+      if (preferredAssetId) {
+        await onInspectionAssetChange();
+        if (dataStore.fileInfo) await loadPlottedDatasets(new Map([[experimentId, dataStore.fileInfo]]));
+      }
+      return;
+    }
+    inspectionAssets.value = inventories[0]?.assets ?? [];
+    inspectionAssetId.value = preferredAssetId;
+    pendingInspection.value = null;
+    let inspectedDataset: SherpaDatasetDict;
+    if (
+      !loadWholeCollection &&
+      !registeredPackageSelection &&
+      (selectedViewId != null || inspectionFiles.length === 1)
+    ) {
+      const preferred = inspectionFiles[0];
+      if (!preferred) throw new Error("The initial data view is outside this dataset.");
+      inspectedDataset = await dataStore.inspectFile(
+        preferred.id,
+        preferred.file_path,
+        experimentId,
+        ...(preferredAssetId ? [preferredAssetId] : []),
+      );
+    } else {
+      inspectedDataset = await dataStore.inspectExperimentRawFiles(
+        experimentId,
+        preferredAssetId,
+        !loadWholeCollection && (explicitViewSelection || registeredPackageSelection)
+          ? selectedViewIds
+          : null,
+      );
+    }
+    if (request !== contentsInspectionRequest) return;
+    if (
+      loadWholeCollection &&
+      explicitViewSelection &&
+      inspectedDataset &&
+      selectedDatasetRows(
+        inspectedDataset,
+        inspectionFiles.map((file) => file.file_path),
+      ) === null
+    ) {
+      // Incomplete previews and ambiguous row provenance cannot be filtered
+      // locally. Keep the exact server projection for these exceptional views.
+      inspectedDataset = await dataStore.inspectExperimentRawFiles(
+        experimentId,
+        preferredAssetId,
+        selectedViewIds,
+      );
+      if (request !== contentsInspectionRequest) return;
+    }
+    if (
+      (loadWholeCollection || !explicitViewSelection) &&
+      !registeredPackageSelection &&
+      inspectedDataset?.data?.length === inspectedDataset?.n_samples &&
+      inspectedDataset &&
+      (!explicitViewSelection ||
+        selectedDatasetRows(
+          inspectedDataset,
+          sourceFiles.map((file) => file.file_path),
+        ) !== null)
+    ) {
+      residentDatasets.set(experimentId, inspectedDataset);
+      if (residentDatasets.size > MAX_PLOTTED_DATASETS) {
+        residentDatasets.delete(residentDatasets.keys().next().value!);
+      }
+    }
+    cacheFileSampleLabels(experimentId, inspectedDataset);
+    await loadPlottedDatasets(new Map([[experimentId, inspectedDataset]]));
+  } catch {
+    if (request !== contentsInspectionRequest) return;
+    inspectionWarnings.value = [];
+    toast.add({
+      severity: "error",
+      summary: "Scientific results unavailable",
+      detail:
+        dataStore.fileInfoError || "Could not inspect the scientific results in this dataset.",
+      life: 6000,
+    });
+  }
+}
+
+async function onCollectionDefinitionChanged(receipt: CollectionDefinitionReceipt): Promise<void> {
+  residentDatasets.delete(receipt.experiment_id);
+  if (dataStore.activeExperimentId !== receipt.experiment_id) return;
+  const attached = receipt.status === "attached";
+  const refused = receipt.status === "stale" || receipt.status === "invalid";
+  toast.add({
+    severity: attached ? "success" : refused ? "error" : "info",
+    summary: attached
+      ? "Collection definition attached"
+      : refused
+        ? "Collection definition needs attention"
+        : "Collection definition removed",
+    detail: receipt.message,
+    life: 4500,
+  });
+  dataStore.clearInspection();
+  await showExperimentContents(receipt.experiment_id);
+}
+
+let initialContentsSelectionPending: number | null = null;
 async function ensureInitialContentsSelection() {
-  if (dataStore.fileInfo || dataStore.catalogDatasetInfo || !dataStore.activeExperimentId) {
+  if (
+    initialContentsSelectionPending === dataStore.activeExperimentId ||
+    dataStore.fileInfo ||
+    dataStore.catalogDatasetInfo ||
+    dataStore.experimentFilesLoading ||
+    dataStore.experimentFilesRefusal ||
+    !dataStore.activeExperimentId
+  ) {
     return;
   }
   const hasSingleDataset = dataStore.experiments.length === 1;
   const hasSingleFile = dataStore.experimentFiles.length === 1;
-  if (hasSingleDataset && hasSingleFile) {
-    await onInspectFile(dataStore.experimentFiles[0], { updateRoute: false });
-    return;
-  }
-  if (activeTab.value === TAB_MY_DATASET) {
-    await showExperimentContents(dataStore.activeExperimentId);
+  if (activeTab.value !== TAB_MY_DATASET && !(hasSingleDataset && hasSingleFile)) return;
+
+  const experimentId = dataStore.activeExperimentId;
+  const initialTab = activeTab.value;
+  const tabGeneration = dataTabSelectionGeneration;
+  initialContentsSelectionPending = experimentId;
+  try {
+    await showExperimentContents(experimentId);
+    if (dataStore.activeExperimentId !== experimentId) return;
+    if (
+      hasSingleDataset && hasSingleFile &&
+      activeTab.value === initialTab && dataTabSelectionGeneration === tabGeneration
+    ) {
+      const file = dataStore.experimentFiles[0];
+      dataStore.activateFile(file.id, file.file_path);
+      activeTab.value = TAB_MY_DATASET;
+      persistActiveDataTab();
+    }
+  } finally {
+    if (initialContentsSelectionPending === experimentId) initialContentsSelectionPending = null;
   }
 }
 
 // --- Experiment CRUD ---
 
-async function onExperimentSelect(exp: ExperimentSummary | null) {
+async function onExperimentSelect(
+  exp: ExperimentSummary | null,
+  options: { preserveComparisons?: boolean } = {},
+) {
   if (!exp) return;
+  if (dataStore.activeExperimentId !== exp.id) selectedDatasetView.value = null;
+  const request = ++experimentFocusRequest;
+  // Dataset focus is one scientific context.  Comparison checkboxes may add
+  // other datasets while that context is stable, but choosing another dataset
+  // starts a new context and must not retain a receipt from the prior one.
+  if (!options.preserveComparisons) {
+    const retainedSelection = plotFileSelections.value[exp.id];
+    plotFileSelections.value = {};
+    plotDatasetSources.value = [];
+    plotDatasetsError.value = null;
+    plotDatasetRequest += 1;
+    contentsInspectionRequest += 1;
+    inspectionWarnings.value = [];
+    inspectionAssets.value = [];
+    inspectionAssetId.value = null;
+    pendingInspection.value = null;
+    if (retainedSelection !== undefined) {
+      setExperimentPlotSelection(exp.id, retainedSelection);
+    }
+  }
   await dataStore.selectExperiment(exp.id);
+  if (request !== experimentFocusRequest || dataStore.activeExperimentId !== exp.id) return;
+  if (dataStore.experimentFilesRefusal) return;
+  if (!hasExperimentPlotSelection(exp.id) && dataStore.experimentFiles.length > 0) {
+    const registeredViews = dataStore.experimentFiles.filter((file) =>
+      Boolean(registeredPackageView(file.file_path)),
+    );
+    if (registeredViews.length > 1) {
+      const preferred = registeredViews[0];
+      setExperimentPlotSelection(exp.id, [
+        { id: preferred.id, file_path: preferred.file_path, stage: preferred.stage },
+      ]);
+    } else {
+      setExperimentPlotSelection(exp.id, null);
+    }
+  }
   activeTab.value = TAB_MY_DATASET;
   persistActiveDataTab();
   await showExperimentContents(exp.id);
+  if (request !== experimentFocusRequest || dataStore.activeExperimentId !== exp.id) return;
   const queryWithoutFile = { ...route.query };
   delete queryWithoutFile.fileId;
   await router.replace({
@@ -2992,6 +5614,18 @@ async function onExperimentSelect(exp: ExperimentSummary | null) {
       tab: "my-dataset",
       experiment: String(exp.id),
     },
+  });
+}
+
+async function onAcquisitionExperimentSelect(experimentId: number) {
+  const experiment = dataStore.experiments.find((candidate) => candidate.id === experimentId);
+  if (!experiment) return;
+  await dataStore.selectExperiment(experiment.id);
+  activeTab.value = TAB_MULTI_WELL;
+  persistActiveDataTab();
+  await router.replace({
+    path: "/data",
+    query: { tab: "multi-well", experiment: String(experiment.id) },
   });
 }
 
@@ -3021,6 +5655,7 @@ async function onEditExperiment() {
     editExpDescription.value = "";
     editSubmitted.value = false;
     await refreshProjectContext();
+    await loadPlottedDatasets();
     toast.add({
       severity: "success",
       summary: "Dataset Updated",
@@ -3046,14 +5681,45 @@ async function onFileSelect(event: { files?: File[] }) {
     clearUploadFileSelection();
     return;
   }
-  const file = event.files?.[0] ?? null;
-  selectedFile.value = file;
-  if (!file) return;
+  const files = Array.from(event.files ?? []);
+  selectedFile.value = files[0] ?? null;
+  if (!files.length) return;
   try {
-    const staged = await dataStore.stageUploadFile(file);
-    stagedUploadMembers.value.push(staged);
-    previewUploadId.value = staged.staging_id;
-    uploadOverrides[staged.staging_id] = uploadControlOverrides(staged);
+    const staged = await dataStore.stageUploadBatch(files);
+    uploadRefusals.value.push(...staged.refusals);
+    for (const member of staged.files) {
+      stagedUploadMembers.value.push(member);
+      uploadAssetIds[member.staging_id] =
+        member.assets.length === 1 ? member.assets[0].asset_id : null;
+      uploadOverrides[member.staging_id] = uploadControlOverrides(
+        member,
+        member.suggested_overrides ?? {},
+      );
+    }
+    previewUploadId.value = staged.files[0]?.staging_id ?? previewUploadId.value;
+    clearUploadFileSelection();
+    if (staged.file_count && staged.refused_count) {
+      toast.add({
+        severity: "warn",
+        summary: "Sources Partly Ready",
+        detail: `${staged.file_count} loaded; ${staged.refused_count} not loaded. Review the receipt below.`,
+        life: 5000,
+      });
+    } else if (staged.file_count) {
+      toast.add({
+        severity: "success",
+        summary: "Sources Ready",
+        detail: `${staged.file_count} scientific file${staged.file_count === 1 ? "" : "s"} passed native parsing`,
+        life: 2500,
+      });
+    } else {
+      toast.add({
+        severity: "error",
+        summary: "No Sources Loaded",
+        detail: `${staged.refused_count} selected source${staged.refused_count === 1 ? " was" : "s were"} refused. Review the receipt below.`,
+        life: 6000,
+      });
+    }
   } catch (err: unknown) {
     clearUploadFileSelection();
     toast.add({
@@ -3063,6 +5729,25 @@ async function onFileSelect(event: { files?: File[] }) {
       life: 5000,
     });
   }
+}
+
+function toggleUploadSourceMenu(event: Event) {
+  uploadSourceMenuRef.value?.toggle(event);
+}
+
+function openUploadFilesPicker() {
+  uploadFilesInputRef.value?.click();
+}
+
+function openUploadFolderPicker() {
+  uploadFolderInputRef.value?.click();
+}
+
+async function onNativeFileSelection(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = "";
+  await onFileSelect({ files });
 }
 
 async function onUploadFile() {
@@ -3082,7 +5767,11 @@ async function onUploadFile() {
     // typed name (or the file name as default), then uploads the file into
     // it. The user no longer has to pre-create a dataset via the dialog.
     const name = uploadDatasetName.value.trim() || defaultUploadDatasetName();
-    const created = await dataStore.createExperiment(name, undefined, projectStore.currentProjectId);
+    const created = await dataStore.createExperiment(
+      name,
+      undefined,
+      projectStore.currentProjectId,
+    );
     await dataStore.selectExperiment(created.id);
     await dataStore.commitStagedUploads(
       created.id,
@@ -3101,12 +5790,14 @@ async function onUploadFile() {
     });
     // Clear form so the next upload starts fresh.
     clearUploadFileSelection();
+    for (const member of stagedUploadMembers.value) delete uploadAssetIds[member.staging_id];
     stagedUploadMembers.value = [];
+    uploadRefusals.value = [];
     previewUploadId.value = null;
     uploadStage.value = "raw";
     uploadDataRole.value = "auto";
     uploadTargetColumn.value = "";
-    uploadTargetType.value = "auto";
+    uploadTargetType.value = "";
     uploadDatasetName.value = "";
     // Refresh experiment list and project counts after auto-saving the upload.
     await Promise.all([dataStore.fetchExperiments(), refreshProjectContext()]);
@@ -3133,12 +5824,19 @@ function previewUploadMember(stagingId: string) {
 async function removeStagedUpload(stagingId: string) {
   try {
     await dataStore.deleteStagedUpload(stagingId);
-  } catch {
-    // Best-effort cleanup. Removing from the client list is enough to keep
-    // accidental commits out of the user's dataset.
+  } catch (err) {
+    stagedUploadErrors[stagingId] = getErrorMessage(
+      err,
+      "The staged file could not be removed. Retry before leaving this page.",
+    );
+    return;
   }
-  stagedUploadMembers.value = stagedUploadMembers.value.filter((member) => member.staging_id !== stagingId);
+  stagedUploadMembers.value = stagedUploadMembers.value.filter(
+    (member) => member.staging_id !== stagingId,
+  );
+  delete stagedUploadErrors[stagingId];
   delete uploadOverrides[stagingId];
+  delete uploadAssetIds[stagingId];
   if (previewUploadId.value === stagingId) {
     previewUploadId.value = stagedUploadMembers.value[0]?.staging_id ?? null;
   }
@@ -3163,12 +5861,21 @@ function confirmDeleteExperiment(experiment: ExperimentSummary) {
 
 async function onDeleteFile() {
   if (!deleteTarget.value || !dataStore.activeExperimentId) return;
+  const deletingFile = deleteTarget.value;
+  const deletingExperimentId = dataStore.activeExperimentId;
+  residentDatasets.delete(deletingExperimentId);
   deleting.value = true;
   try {
-    await dataStore.deleteFile(
-      dataStore.activeExperimentId,
-      deleteTarget.value.id
-    );
+    await dataStore.deleteFile(deletingExperimentId, deletingFile.id);
+    fileAssetInventoryCache.delete(`${deletingExperimentId}:${deletingFile.id}`);
+    const selection = plotFileSelections.value[deletingExperimentId];
+    if (Array.isArray(selection)) {
+      setExperimentPlotSelection(
+        deletingExperimentId,
+        selection.filter((file) => file.id !== deletingFile.id),
+      );
+    }
+    await loadPlottedDatasets();
     showDeleteDialog.value = false;
     deleteTarget.value = null;
     // Refresh experiment list and project counts after auto-saving the deletion.
@@ -3186,6 +5893,11 @@ async function onDeleteExperiment() {
   deletingExp.value = true;
   try {
     await dataStore.deleteExperiment(experimentId);
+    for (const cacheKey of fileAssetInventoryCache.keys()) {
+      if (cacheKey.startsWith(`${experimentId}:`)) fileAssetInventoryCache.delete(cacheKey);
+    }
+    setExperimentPlotSelection(experimentId, undefined);
+    await loadPlottedDatasets();
     showDeleteExpDialog.value = false;
     deleteExperimentTarget.value = null;
     await refreshProjectContext();
@@ -3209,8 +5921,21 @@ async function onInspectFile(file: ExperimentFile, options: { updateRoute?: bool
   persistActiveDataTab();
   await nextTick();
   dataStore.clearCatalogExploration();
+  inspectionWarnings.value = [];
   try {
-    await dataStore.inspectFile(file.id, file.file_path, experimentId);
+    // Active-row focus only controls curve emphasis. It must not replace the
+    // admitted dataset collection with a single-file preview.
+    const inventory = await dataStore.fetchFileAssets(experimentId, file.id);
+    inspectionAssets.value = inventory.assets;
+    inspectionWarnings.value = uniqueAssetWarnings(inventory.assets);
+    inspectionAssetId.value = null;
+    pendingInspection.value =
+      inventory.assets.length > 1 ? { kind: "file", experimentId, file } : null;
+    dataStore.activateFile(file.id, file.file_path);
+    if (inventory.assets.length > 1) {
+      dataStore.clearInspection();
+    }
+    void ensureFileSampleLabels(experimentId);
     activeTab.value = TAB_MY_DATASET;
     persistActiveDataTab();
     if (updateRoute) {
@@ -3225,7 +5950,45 @@ async function onInspectFile(file: ExperimentFile, options: { updateRoute?: bool
       });
     }
   } catch {
-    // Error is stored in dataStore.fileInfoError
+    inspectionWarnings.value = [];
+    toast.add({
+      severity: "error",
+      summary: "Scientific results unavailable",
+      detail: dataStore.fileInfoError || "Could not inspect the scientific results in this file.",
+      life: 6000,
+    });
+  }
+}
+
+async function onInspectionAssetChange() {
+  const selection = pendingInspection.value;
+  const assetId = inspectionAssetId.value;
+  if (!selection || !assetId) return;
+  try {
+    if (selection.kind === "file") {
+      await dataStore.inspectFile(
+        selection.file.id,
+        selection.file.file_path,
+        selection.experimentId,
+        assetId,
+      );
+      cacheFileSampleLabels(
+        selection.experimentId,
+        dataStore.fileInfo,
+        extractFileName(selection.file.file_path),
+      );
+      void ensureFileSampleLabels(selection.experimentId);
+    } else {
+      const selected = plotFileSelections.value[selection.experimentId];
+      if (exactInspectionSelection.value && Array.isArray(selected)) {
+        await dataStore.inspectExperimentRawFiles(selection.experimentId, assetId, selected.map((file) => file.id));
+      } else {
+        await dataStore.inspectExperimentRawFiles(selection.experimentId, assetId);
+      }
+      cacheFileSampleLabels(selection.experimentId, dataStore.fileInfo);
+    }
+  } catch {
+    // The store exposes the exact preview error in the Contents panel.
   }
 }
 
@@ -3246,6 +6009,112 @@ function sourcePreviewFilesFromNames(names: Array<string | null | undefined>): S
 
 function extractFileName(filePath: string): string {
   return filePath.split(/[\\/]/).pop() || filePath;
+}
+
+function registeredPackageView(filePath: string): string | null {
+  const stem = extractFileName(filePath)
+    .replace(/\.[^.]+$/, "")
+    .toLowerCase();
+  const labels: Record<string, string> = {
+    "cgl-spectra": "Complete spectra",
+    "corn-m5": "M5",
+    "corn-mp5": "MP5",
+    "corn-mp6": "MP6",
+    "diesel-high-level": "High-level set",
+    "diesel-low-level-a": "Low-level set A",
+    "diesel-low-level-b": "Low-level set B",
+    "nir-calibration-1": "Calibration — instrument 1",
+    "nir-calibration-2": "Calibration — instrument 2",
+    "nir-test-1": "Test — instrument 1",
+    "nir-test-2": "Test — instrument 2",
+    "nir-validation-1": "Validation — instrument 1",
+    "nir-validation-2": "Validation — instrument 2",
+    "metal-etch-machine": "Machine sensors",
+    "metal-etch-oes": "Optical emission spectra",
+    "metal-etch-rfm": "RF-monitor variables",
+  };
+  if (stem in labels) return labels[stem];
+  return null;
+}
+
+function dataViewLabel(file: ExperimentFile): string {
+  return registeredPackageView(file.file_path) ?? extractFileName(file.file_path);
+}
+
+function cacheFileSampleLabels(
+  experimentId: number,
+  dataset: SherpaDatasetDict | null,
+  fallbackFileName = "",
+): void {
+  if (!dataset || !Array.isArray(dataset.data) || dataset.data.length === 0) return;
+  const labelsByFile: Record<string, string[]> = {};
+  for (const { fileName, sampleLabel } of alignedSpectrumIdentities(
+    dataset,
+    dataset.data.length,
+    fallbackFileName,
+  )) {
+    if (!fileName) continue;
+    const labels = labelsByFile[fileName] ?? [];
+    if (!labels.includes(sampleLabel)) labels.push(sampleLabel);
+    labelsByFile[fileName] = labels;
+  }
+  if (!Object.keys(labelsByFile).length) return;
+  fileSampleLabelsByExperiment.value = {
+    ...fileSampleLabelsByExperiment.value,
+    [experimentId]: {
+      ...(fileSampleLabelsByExperiment.value[experimentId] ?? {}),
+      ...labelsByFile,
+    },
+  };
+}
+
+function sampleLabelsForFile(file: ExperimentFile): string[] {
+  const experimentId = dataStore.activeExperimentId;
+  if (experimentId == null) return [];
+  return fileSampleLabelsByExperiment.value[experimentId]?.[extractFileName(file.file_path)] ?? [];
+}
+
+async function ensureFileSampleLabels(experimentId: number): Promise<void> {
+  const files = dataStore.activeExperimentId === experimentId ? dataStore.experimentFiles : [];
+  const cached = fileSampleLabelsByExperiment.value[experimentId] ?? {};
+  if (
+    files.length > 0 &&
+    files.every((file) => Boolean(cached[extractFileName(file.file_path)]?.length))
+  ) {
+    return;
+  }
+  const pending = fileSampleLabelRequests.get(experimentId);
+  if (pending) return pending;
+  const request = Promise.resolve(
+    api.post<SherpaDatasetDict>("/builder/file-info", { experiment_id: experimentId }),
+  )
+    .then((response) => {
+      if (response?.data) cacheFileSampleLabels(experimentId, response.data);
+    })
+    .catch(() => undefined)
+    .finally(() => fileSampleLabelRequests.delete(experimentId));
+  fileSampleLabelRequests.set(experimentId, request);
+  return request;
+}
+
+function summarizedSampleLabels(labels: string[]): string {
+  if (labels.length <= 5) return labels.join(", ");
+  return `${labels.slice(0, 5).join(", ")} (+${labels.length - 5} more)`;
+}
+
+function fileRowHoverText(file: ExperimentFile): string | undefined {
+  const labels = sampleLabelsForFile(file);
+  if (!labels.length) return undefined;
+  const heading = labels.length === 1 ? "Sample label" : "Sample labels";
+  return `${heading}: ${summarizedSampleLabels(labels)}`;
+}
+
+function fileRowAccessibleLabel(file: ExperimentFile): string {
+  const labels = sampleLabelsForFile(file);
+  const fileName = extractFileName(file.file_path);
+  return labels.length
+    ? `${fileName}. Sample ${labels.length === 1 ? "label" : "labels"}: ${summarizedSampleLabels(labels)}`
+    : fileName;
 }
 
 function formatFileSize(bytes: number): string {
@@ -3278,6 +6147,40 @@ function formatDate(dateStr: string): string {
 </script>
 
 <style scoped>
+.dataset-view-registry {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 0.5rem;
+}
+
+.dataset-view-actions,
+.dataset-view-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.dataset-view-actions {
+  margin: 0.75rem 0;
+}
+
+.dataset-view-list {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.dataset-view-list li {
+  padding: 0.25rem 0;
+  border-top: 1px solid var(--surface-border);
+}
+
+.dataset-view-list li span {
+  flex: 1;
+  min-width: 10rem;
+}
 /*
   Page-level chrome restyled to the canonical Project / Dashboard / Models
   Zen vocabulary — hairline dividers, 0.9375rem base, 1.75rem h1 at weight
@@ -3289,11 +6192,14 @@ function formatDate(dateStr: string): string {
 .data-content {
   display: flex;
   flex-direction: column;
-  gap: 2rem;
   padding: 0 1rem;
   color: var(--text-color);
   font-size: 0.9375rem;
   line-height: 1.5;
+}
+
+:global(.content:has(.data-content)) {
+  background: #e4e0fa;
 }
 
 .header-actions {
@@ -3303,74 +6209,49 @@ function formatDate(dateStr: string): string {
   flex-shrink: 0;
 }
 
-/* Context strip: 2-cell — Project on the left (always), active-subtab
-   summary on the right (dynamic per current TabView). The right cell
-   is a div, not a button — switching subtabs happens via the TabView,
-   so the cell is informational, not actionable. */
-.data-context-strip {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 0;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--surface-border);
+.workflow-selection-context {
+  margin: 0.85rem 0 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 35%, var(--surface-border));
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--primary-color) 6%, var(--surface-card));
 }
 
-.data-context-item {
-  appearance: none;
-  background: transparent;
-  border: none;
-  border-right: 1px solid var(--surface-border);
+.workflow-selection-heading,
+.workflow-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.workflow-selection-heading {
+  justify-content: space-between;
+}
+
+.workflow-selection-heading > div {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
   gap: 0.15rem;
-  min-width: 0;
-  padding: 0.25rem 1rem 0.25rem 0;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: color 0.15s ease;
 }
 
-.data-context-item:last-child {
-  border-right: none;
-  padding-left: 1rem;
-  padding-right: 0;
-}
-
-.data-context-item.active-context {
-  cursor: default;
-}
-
-.data-context-item:not(.active-context):hover strong {
-  color: var(--primary-color);
-}
-
-.data-context-item:focus-visible {
-  outline: 1px solid var(--primary-color);
-  outline-offset: 2px;
-}
-
-.data-context-item strong {
-  color: var(--text-color);
-  font-size: 1rem;
-  font-weight: 500;
-  line-height: 1.25;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-  transition: color 0.15s ease;
-}
-
-.data-context-item small {
+.workflow-selection-heading small,
+.workflow-selection-context p {
   color: var(--text-color-secondary);
-  font-size: 0.8125rem;
-  line-height: 1.35;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
+}
+
+.workflow-selection-context p {
+  margin: 0.65rem 0;
+  font-size: 0.875rem;
+}
+
+.workflow-selection-actions .p-inputtext {
+  flex: 1 1 18rem;
+}
+
+.workflow-selection-error {
+  margin-bottom: 0.65rem;
+  color: var(--red-600);
+  font-size: 0.875rem;
 }
 
 .context-label {
@@ -3379,77 +6260,6 @@ function formatDate(dateStr: string): string {
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-}
-
-/* Zen subtab styling — strip PrimeVue TabView's boxed chrome and render
-   the tabs as a flat hairline-underline strip. Active tab gets a primary
-   underline; non-active tabs are secondary text; hover lifts to primary
-   with a half-strength underline. */
-.data-content :deep(.p-tabview) {
-  background: transparent;
-}
-
-.data-content :deep(.p-tabview-nav-container),
-.data-content :deep(.p-tabview-nav-content) {
-  background: transparent;
-}
-
-.data-content :deep(.p-tabview-nav) {
-  display: flex;
-  align-items: center;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid var(--surface-border);
-  padding: 0;
-  margin: 0;
-  list-style: none;
-}
-
-.data-content :deep(.p-tabview-nav li) {
-  margin: 0;
-  background: transparent;
-}
-
-.data-content :deep(.p-tabview-nav .p-tabview-nav-link) {
-  background: transparent !important;
-  border: none !important;
-  border-radius: 0;
-  border-bottom: 2px solid transparent !important;
-  color: var(--text-color-secondary);
-  font-size: 0.9375rem;
-  font-weight: 500;
-  padding: 0.6rem 1rem;
-  transition: color 0.15s ease, border-color 0.15s ease;
-  box-shadow: none !important;
-}
-
-.data-content :deep(.p-tabview-nav li:not(.p-disabled):not(.p-highlight) .p-tabview-nav-link:hover) {
-  color: var(--primary-color);
-  border-bottom-color: color-mix(in srgb, var(--primary-color) 40%, transparent) !important;
-}
-
-.data-content :deep(.p-tabview-nav li.p-highlight .p-tabview-nav-link) {
-  color: var(--primary-color);
-  border-bottom-color: var(--primary-color) !important;
-}
-
-/* Two-group tab layout:
-     left group  (sources)  = Import · Synthesis · Upload · Library
-     right group (store)    = My Dataset
-   `My Dataset` (the 5th nav child) gets margin-left:auto, producing the
-   visible grouping. A leading hairline marks the split. */
-.data-content :deep(.p-tabview-nav > li:nth-child(5)) {
-  margin-left: auto;
-  border-left: 1px solid var(--surface-border);
-}
-
-.data-content :deep(.p-tabview-nav > li:nth-child(5)) .p-tabview-nav-link {
-  padding-left: 1.25rem;
-}
-
-.data-content :deep(.p-tabview-panels) {
-  background: transparent;
-  padding: 1.5rem 0 0;
 }
 
 /* ---- Load tab ---- */
@@ -3472,6 +6282,10 @@ function formatDate(dateStr: string): string {
   background: var(--surface-card);
   border: 1px solid var(--surface-border);
   border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  height: 520px;
+  overflow: hidden;
   padding: 0.75rem;
 }
 
@@ -3479,6 +6293,7 @@ function formatDate(dateStr: string): string {
   align-items: flex-start;
   border-bottom: 1px solid var(--surface-border);
   display: flex;
+  flex: 0 0 auto;
   justify-content: space-between;
   margin: -0.15rem 0 0.65rem;
   padding-bottom: 0.6rem;
@@ -3505,9 +6320,17 @@ function formatDate(dateStr: string): string {
   white-space: nowrap;
 }
 
-.files-panel {
-  max-height: 260px;
-  overflow-y: auto;
+.exp-table {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.exp-table :deep(.p-datatable-wrapper) {
+  scrollbar-gutter: stable;
+}
+
+.files-panel > .empty-state {
+  flex: 1 1 auto;
 }
 
 .exp-table :deep(.p-datatable-tbody > tr.p-highlight) {
@@ -3544,7 +6367,33 @@ function formatDate(dateStr: string): string {
 .file-groups {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   gap: 12px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+  scrollbar-gutter: stable;
+}
+
+.active-view-set {
+  background: color-mix(in srgb, var(--primary-color) 7%, var(--surface-card));
+  border: 1px solid color-mix(in srgb, var(--primary-color) 25%, var(--surface-border));
+  border-radius: 6px;
+  display: grid;
+  flex: 0 0 auto;
+  gap: 0.2rem;
+  margin-top: 0.65rem;
+  padding: 0.55rem 0.65rem;
+}
+
+.active-view-set strong,
+.active-view-set span {
+  font-size: 0.8rem;
+}
+
+.active-view-set small {
+  color: var(--text-color-secondary);
+  line-height: 1.35;
 }
 
 .stage-header {
@@ -3571,6 +6420,7 @@ function formatDate(dateStr: string): string {
 /* Zen file row: no fill; hairline-bottom separator; hover lifts to
    primary text + border (no background tint). */
 .file-row {
+  gap: 0.55rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -3579,7 +6429,10 @@ function formatDate(dateStr: string): string {
   border: none;
   border-bottom: 1px solid var(--surface-border);
   border-radius: 6px;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .file-row:last-child {
@@ -3623,6 +6476,7 @@ function formatDate(dateStr: string): string {
 }
 
 .file-info {
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -4096,6 +6950,79 @@ function formatDate(dateStr: string): string {
   font-size: 0.85rem;
 }
 
+.registered-reference-catalog-link {
+  align-items: center;
+  background: var(--surface-50);
+  border-radius: 8px;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  padding: 0.75rem;
+}
+
+.registered-reference-catalog-link p {
+  color: var(--text-color-secondary);
+  font-size: 0.82rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.registered-reference-catalog-link a {
+  flex: 0 0 auto;
+}
+
+.registered-reference-card {
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  display: grid;
+  gap: 0.65rem;
+  padding: 0.85rem;
+}
+
+.registered-reference-card__heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.registered-reference-card__heading div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.registered-reference-card__heading small {
+  color: var(--text-color-secondary);
+  line-height: 1.4;
+  margin: 0;
+}
+
+.registered-reference-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.registered-reference-card__status {
+  font-weight: 600;
+}
+
+.registered-reference-card__status.ready {
+  color: var(--green-600);
+}
+
+.registered-reference-card__status.error {
+  color: var(--red-600);
+}
+
+@media (max-width: 48rem) {
+  .registered-reference-catalog-link {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
 .ref-dataset-item {
   position: relative;
   display: flex;
@@ -4107,7 +7034,10 @@ function formatDate(dateStr: string): string {
   border-bottom: 1px solid var(--surface-border);
   border-radius: 6px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
 }
 
 .ref-dataset-item:last-child {
@@ -4322,6 +7252,10 @@ function formatDate(dateStr: string): string {
 }
 
 .upload-disabled-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
   border: 1px solid #fbbf24;
   background: #fffbeb;
   color: #92400e;
@@ -4373,6 +7307,54 @@ function formatDate(dateStr: string): string {
   gap: 1rem;
 }
 
+.upload-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.upload-intro h3,
+.upload-intro p {
+  margin: 0;
+}
+
+.upload-intro p {
+  color: var(--text-color-secondary);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  margin-top: 0.25rem;
+  max-width: 38rem;
+}
+
+.upload-source-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.625rem;
+}
+
+.visually-hidden-file-input {
+  height: 1px;
+  left: -10000px;
+  overflow: hidden;
+  position: absolute;
+  top: auto;
+  width: 1px;
+}
+
+.upload-options-panel {
+  border: 1px solid var(--surface-border);
+  box-shadow: none;
+}
+
+.upload-options-heading {
+  align-items: center;
+  color: var(--text-color-secondary);
+  display: inline-flex;
+  font-size: 0.875rem;
+  gap: 0.5rem;
+}
+
 .upload-stage {
   width: 100%;
   max-width: 240px;
@@ -4397,6 +7379,59 @@ function formatDate(dateStr: string): string {
 
 .upload-members {
   margin-top: -0.25rem;
+}
+
+.upload-members .selected-member-row > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.upload-members .selected-member-row small {
+  color: var(--text-color-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-members .selected-member-row .upload-cleanup-error {
+  color: #b42318;
+  white-space: normal;
+}
+
+.upload-refusals {
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 8px;
+  color: #9a3412;
+  padding: 0.75rem 0.9rem;
+}
+
+.upload-refusals summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.upload-refusals ul {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.75rem 0 0;
+  max-height: 14rem;
+  overflow: auto;
+  padding-left: 1.15rem;
+}
+
+.upload-refusals li strong,
+.upload-refusals li span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.upload-refusals li span {
+  color: #7c2d12;
+  font-size: 0.8125rem;
+  margin-top: 0.1rem;
 }
 
 .upload-format-chips {
@@ -4500,18 +7535,57 @@ function formatDate(dateStr: string): string {
   color: #94a3b8;
 }
 
+.field-help {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.inspection-asset-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-width: 680px;
+  margin: 1rem 0;
+  padding: 0.85rem;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+}
+
+.inspection-asset-selector label {
+  font-weight: 600;
+}
+
+.inspection-asset-selector small {
+  color: var(--text-color-secondary);
+}
+
+.scientific-asset-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  max-width: 680px;
+  margin: 0.75rem 0;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.scientific-asset-warning i {
+  margin-top: 0.15rem;
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 900px) {
-  .data-context-strip {
-    grid-template-columns: 1fr 1fr;
-  }
 
-  .data-context-item:nth-child(2) {
-    border-right: 0;
-  }
 
-  .data-context-item:nth-child(-n + 2) {
-    border-bottom: 1px solid #e2e8f0;
+
+  .workflow-selection-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .load-panels {
@@ -4521,6 +7595,5 @@ function formatDate(dateStr: string): string {
   .explore-panels {
     grid-template-columns: 1fr;
   }
-
 }
 </style>

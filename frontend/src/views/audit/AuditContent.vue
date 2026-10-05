@@ -8,7 +8,7 @@
     <section v-if="!hasAnyAuditCapability" class="notice">
       <i class="pi pi-lock" aria-hidden="true"></i>
       <span>Audit capabilities are not enabled for this deployment.</span>
-      <a class="notice-action" href="mailto:support@spectrascientific.com?subject=Spectra%20Sherpa%20audit%20upgrade">
+      <a v-if="!isHostedPro" class="notice-action" href="mailto:support@spectrascientific.ai?subject=Spectra%20Sherpa%20audit%20upgrade">
         Request upgrade
       </a>
     </section>
@@ -87,10 +87,13 @@ import type {
   LastPack,
 } from "./types";
 
-const { appConfig } = useAppConfig();
+const { appConfig, appMode, siteProfile } = useAppConfig();
+const isHostedPro = computed(() => appMode?.value === "enterprise" && siteProfile?.value === "pro");
 const route = useRoute();
 
-const auditConfig = computed(() => appConfig.value?.audit);
+const auditConfig = computed(() => isHostedPro.value
+  ? { localQuery: false, fullPipeline: false, reportPack: false, exportAudited: false }
+  : appConfig.value?.audit);
 const canQuery = computed(() => Boolean(auditConfig.value?.localQuery || auditConfig.value?.fullPipeline));
 const hasAnyAuditCapability = computed(() =>
   Boolean(canQuery.value || auditConfig.value?.reportPack || auditConfig.value?.exportAudited),
@@ -308,10 +311,14 @@ onMounted(() => {
 
 <style scoped>
 .audit-page {
-  background: #f8fafc;
+  background: #e4e0fa;
   color: #0f172a;
   min-height: 100%;
   padding: 0 1rem 1.5rem;
+}
+
+:global(.content:has(.audit-page)) {
+  background: #e4e0fa;
 }
 
 .notice {

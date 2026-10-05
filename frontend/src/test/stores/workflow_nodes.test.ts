@@ -10,7 +10,7 @@ describe('Workflow node types', () => {
       'model.hca',
       'model.pcr',
       'model.svr',
-      'data.source',
+      'data.file_load',
       'preprocess.normalize',
     ]
     canonicalTypes.forEach((t) => {

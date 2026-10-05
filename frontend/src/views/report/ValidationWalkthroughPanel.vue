@@ -5,10 +5,7 @@
         <p class="eyebrow">ISO 17025</p>
         <h2>Validation Walkthrough</h2>
         <p class="walkthrough-sub">
-          A repeatable product walkthrough that exercises the Report tab,
-          filtered audit views, chain health, and report-pack generation
-          on an FTIR or Raman workflow. This is not a validated method —
-          it is the rehearsal a lab reviewer can follow.
+          Rehearse report generation, audit review and evidence export for your selected workflow.
         </p>
       </div>
       <div class="walkthrough-actions">
@@ -51,11 +48,11 @@
       <details class="walkthrough-section" open>
         <summary>Steps</summary>
         <ol>
-          <li>Open <strong>Projects</strong>.</li>
+          <li>Open <strong>Dashboard</strong>.</li>
           <li>Select or create a project named <em>ISO 17025 Example — FTIR Raman</em>.</li>
           <li>Click <strong>Audit</strong> from the project header.</li>
           <li>Confirm <strong>Chain Health</strong> shows <em>Verified</em>.</li>
-          <li>Return to <strong>Workflows</strong>.</li>
+          <li>Return to <strong>Workflow</strong>.</li>
           <li>Start from the FTIR/Raman analysis starter, or build the target workflow manually.</li>
           <li>Load the example dataset.</li>
           <li>Confirm labels/targets are visible and correct.</li>
@@ -64,10 +61,10 @@
           <li>Click <strong>Audit</strong> from the workflow header.</li>
           <li>Confirm the filtered audit timeline contains workflow create/update/run/save events.</li>
           <li>Return to <strong>Report</strong>.</li>
-          <li>Select the workflow.</li>
-          <li>Click <strong>Generate Report</strong>.</li>
+          <li>In <strong>Setup</strong>, select the workflow and saved runs.</li>
+          <li>Click <strong>Generate</strong>.</li>
           <li>Confirm the Report preview renders pipeline details and execution results.</li>
-          <li>Click <strong>Audit</strong> from the Report header (the button above).</li>
+          <li>Open <strong>ISO Validation</strong> and click <strong>Open Audit</strong>.</li>
           <li>Confirm the filtered audit view targets the same workflow id.</li>
           <li>Click <strong>Generate Pack</strong> with <em>Include PDF summary</em> checked.</li>
           <li>

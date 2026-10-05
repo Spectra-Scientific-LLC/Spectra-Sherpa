@@ -4,34 +4,53 @@
       <h1>Settings</h1>
     </header>
 
-    <!-- Demo / enterprise-managed mode: deployment settings are locked,
-         but per-user HITRAN and preferences stay editable. -->
-    <div v-if="isDemoMode" class="demo-region">
+    <!-- Hosted Pro exposes personal disclosure and acquisition preferences. -->
+    <div v-if="isHostedPro" class="demo-region">
+      <div class="demo-notice" role="status">
+        <h3>Hosted providers are managed by your operator</h3>
+        <p>Provider keys and deployment connections are not configured from this workspace.
+          Your data disclosure permissions and acquisition preferences remain editable below.</p>
+      </div>
+      <ApiKeysTab hitran-only />
+      <IntegrationsTab privacy-only />
+      <PlateFormatSettingsSection />
+      <div v-if="showGuidanceSettings" class="my-preferences">
+        <span class="eyebrow">Your Account</span>
+        <h3 class="my-preferences-title">My preferences</h3>
+        <p class="my-preferences-subtitle">
+          These settings are personal to your account and can be changed even on a managed
+          deployment.
+        </p>
+        <GuidanceSettingsSection class="pro-guidance" />
+      </div>
+    </div>
+    <div v-else-if="isDemoMode" class="demo-region">
       <div class="demo-notice">
         <div class="demo-notice-body">
           <span class="eyebrow">Managed</span>
           <h3>Deployment settings managed by administrator</h3>
           <p>
-            LLM providers and integrations are pre-configured for this
-            environment. Add your own HITRAN key below to use live HITRAN
-            synthesis; shared deployment keys are not provided for HITRAN.
+            LLM providers and integrations are pre-configured for this environment. Add your own
+            HITRAN key below to use live HITRAN synthesis; shared deployment keys are not provided
+            for HITRAN.
           </p>
           <p class="demo-hint">
-            In a self-hosted or local installation, this page also lets you
-            configure LLM providers, API keys, and data-privacy preferences.
+            In a self-hosted or local installation, this page also lets you configure LLM providers,
+            API keys, and data-privacy preferences.
           </p>
         </div>
       </div>
 
       <ApiKeysTab />
       <IntegrationsTab privacy-only />
+      <PlateFormatSettingsSection />
 
       <div v-if="showGuidanceSettings" class="my-preferences">
         <span class="eyebrow">Your Account</span>
         <h3 class="my-preferences-title">My preferences</h3>
         <p class="my-preferences-subtitle">
-          These settings are personal to your account and can be changed
-          even on a managed deployment.
+          These settings are personal to your account and can be changed even on a managed
+          deployment.
         </p>
         <GuidanceSettingsSection class="demo-guidance" />
       </div>
@@ -43,6 +62,9 @@
       </TabPanel>
       <TabPanel header="Integrations">
         <IntegrationsTab />
+      </TabPanel>
+      <TabPanel header="Data">
+        <PlateFormatSettingsSection />
       </TabPanel>
       <TabPanel v-if="showGuidanceSettings" header="Guidance">
         <GuidanceSettingsSection />
@@ -58,14 +80,16 @@ import TabPanel from "primevue/tabpanel";
 import ApiKeysTab from "./ApiKeysTab.vue";
 import GuidanceSettingsSection from "./GuidanceSettingsSection.vue";
 import IntegrationsTab from "./IntegrationsTab.vue";
+import PlateFormatSettingsSection from "./PlateFormatSettingsSection.vue";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
 
 const activeTab = ref(0);
 const { isDemoMode } = useDemoMode();
-const { appMode, isFeatureEnabled } = useAppConfig();
+const { appMode, siteProfile, isFeatureEnabled } = useAppConfig();
+const isHostedPro = computed(() => appMode.value === "enterprise" && siteProfile?.value === "pro");
 const showGuidanceSettings = computed(
-  () => appMode.value !== "local" && isFeatureEnabled("sherpaGuidance")
+  () => appMode.value !== "local" && isFeatureEnabled("sherpaGuidance"),
 );
 </script>
 
@@ -78,6 +102,10 @@ const showGuidanceSettings = computed(
   color: var(--text-color);
   font-size: 0.9375rem;
   line-height: 1.5;
+}
+
+:global(.content:has(.settings-content)) {
+  background: #e4e0fa;
 }
 
 .eyebrow {
@@ -160,16 +188,18 @@ const showGuidanceSettings = computed(
   text-align: left;
 }
 
-/* Zen tab styling — underline-only, no boxed chrome */
+/* Match the rimmed workspace subtabs. */
 .settings-tabs :deep(.p-tabview-nav) {
+  gap: 0.375rem;
   border-bottom: 1px solid var(--surface-border);
   background: transparent;
 }
 
 .settings-tabs :deep(.p-tabview-nav li .p-tabview-nav-link) {
   background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
+  border: 1px solid color-mix(in srgb, var(--text-color-secondary) 55%, var(--surface-border));
+  border-radius: 6px 6px 0 0;
+  margin-bottom: 0;
   color: var(--text-color-secondary);
   font-weight: 500;
   font-size: 0.9375rem;
@@ -178,8 +208,8 @@ const showGuidanceSettings = computed(
 
 .settings-tabs :deep(.p-tabview-nav li.p-highlight .p-tabview-nav-link) {
   color: var(--primary-color);
-  border-bottom-color: var(--primary-color);
-  background: transparent;
+  border-color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 8%, transparent);
 }
 
 .settings-tabs :deep(.p-tabview-panels) {

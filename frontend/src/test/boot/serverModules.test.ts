@@ -29,12 +29,14 @@ const { mockLoadConfig, mockConfig } = vi.hoisted(() => ({
   mockConfig: { value: null as Record<string, unknown> | null },
 }));
 
-vi.mock("@/composables/useAppConfig", () => ({
-  useAppConfig: () => ({
-    config: mockConfig,
-    loadConfig: mockLoadConfig,
-  }),
-}));
+vi.mock("@/composables/useAppConfig", async () => {
+  const { ref } = await import("vue");
+  const config = ref<Record<string, unknown> | null>(null);
+  Object.defineProperty(mockConfig, "value", {
+    get: () => config.value, set: (value) => { config.value = value; }, configurable: true,
+  });
+  return { useAppConfig: () => ({ config, loadConfig: mockLoadConfig }) };
+});
 
 import {
   __resetServerModulesForTests,
@@ -45,6 +47,10 @@ import {
   type ImportModuleFn,
 } from "@/boot/serverModules";
 import { useAuthStore } from "@/stores/auth";
+import { useProjectStore } from "@/stores/project";
+import { setActionContext, useContextualActions } from "@/composables/useContextualActions";
+import { useTopbarMenu } from "@/composables/useTopbarMenu";
+import { usePrimaryNavigation } from "@/composables/usePrimaryNavigation";
 
 const makeRouter = () =>
   createRouter({
@@ -67,8 +73,141 @@ describe("bootServerModules", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     __resetServerModulesForTests();
+    const stylesheet = document.createElement("link");
+    stylesheet.setAttribute("data-server-styles", "");
+    document.head.appendChild(stylesheet);
     mockConfig.value = null;
     mockLoadConfig.mockReset();
+    useTopbarMenu().clear();
+    usePrimaryNavigation().clear();
+  });
+
+  function extensionConfig() {
+    mockConfig.value = { mode: "enterprise", features: {},
+      uiExtensions: [{ id: "mock", url: "/ui/mock.js", contractVersion: 1 }] };
+    mockLoadConfig.mockResolvedValue(true);
+    useAuthStore().user = { id: 1, username: "scientist", capabilities: { admin: false } };
+  }
+
+  it("never requests optional modules in local OSS", async () => {
+    extensionConfig();
+    mockConfig.value!.mode = "local";
+    const importModule = vi.fn();
+    await bootServerModules(makeRouter(), { importModule });
+    expect(importModule).not.toHaveBeenCalled();
+  });
+
+  it("loads an explicitly installed bootstrap transport in local mode and disposes it", async () => {
+    extensionConfig();
+    mockConfig.value!.mode = "local";
+    mockConfig.value!.uiExtensions = [{ id: "mock", url: "/ui/mock.js", contractVersion: 1, bootstrap: true, required: true }];
+    const { requireAdvisorTransport } = await import("@/lib/advisorTransport");
+    const transport = { prepareContext: vi.fn(), loadConversation: vi.fn(), deleteConversation: vi.fn(), confirmProposal: vi.fn() };
+    await bootServerModules(makeRouter(), { importModule: async () => ({ contextualActionsVersion: 1,
+      register: (ctx) => ctx.installAdvisorTransport(transport) }) });
+    expect(requireAdvisorTransport()).toBe(transport);
+    mockConfig.value!.uiExtensions = [];
+    await flushAsync();
+    expect(() => requireAdvisorTransport()).toThrow();
+  });
+
+  it.each(["invalid-descriptor", "missing-bundle"])("refuses a required bootstrap module: %s", async (failure) => {
+    extensionConfig();
+    mockConfig.value!.mode = "local";
+    mockConfig.value!.uiExtensions = [{ id: "mock", url: failure === "invalid-descriptor" ? "/outside.js" : "/ui/mock.js",
+      contractVersion: 1, bootstrap: true, required: true }];
+    await bootServerModules(makeRouter(), { importModule: async () => { throw new Error("Unavailable"); } });
+    expect(serverModuleLoadFailed.value).not.toBeNull();
+  });
+
+  it.each([undefined, 2])("rejects incompatible module version %s", async (version) => {
+    extensionConfig();
+    const register = vi.fn();
+    await bootServerModules(makeRouter(), { importModule: async () => ({ contextualActionsVersion: version, register }) });
+    await flushAsync();
+    expect(register).not.toHaveBeenCalled();
+    expect(nonCriticalModuleLoadFailures.value).toHaveLength(1);
+    expect(serverModuleLoadFailed.value).toBeNull();
+  });
+
+  it.each(["https://outside.invalid/plugin.js", "/ui/../mock.js", "/ui/mock.js?version=1"])("rejects nonlocal descriptor %s", async (url) => {
+    extensionConfig();
+    mockConfig.value!.uiExtensions = [{ id: "mock", url, contractVersion: 1 }];
+    const importModule = vi.fn();
+    await bootServerModules(makeRouter(), { importModule });
+    expect(importModule).not.toHaveBeenCalled();
+    expect(nonCriticalModuleLoadFailures.value).toHaveLength(1);
+  });
+
+  it.each(["logout", "project", "capability", "configuration"])("disposes contributions on %s and rejects late registration", async (change) => {
+    extensionConfig();
+    const router = makeRouter();
+    const contexts: Array<Parameters<NonNullable<Awaited<ReturnType<ImportModuleFn>>["register"]>>[0]> = [];
+    const cleanup = vi.fn();
+    await bootServerModules(router, { importModule: async () => ({ contextualActionsVersion: 1, register(ctx) {
+      contexts.push(ctx);
+      ctx.addRoute({ name: "mock", path: "/mock", component: { template: "<div />" } });
+      ctx.mountShell({ template: "<div />" });
+      ctx.topbarMenu.addItems([{ label: "Mock" }]);
+      ctx.primaryNavigation.addItems([
+        { label: "Mock", to: "/mock", icon: "pi pi-circle" },
+      ]);
+      ctx.extensions.onDispose(cleanup);
+      ctx.extensions.addActions([{ id: "inspect", label: "Inspect", available: () => true, execute: vi.fn() }]);
+    } }) });
+    await flushAsync();
+    setActionContext({ surface: "run", projectId: 1, runId: 1 });
+    expect(useContextualActions().actions.value).toHaveLength(1);
+    const original = contexts[0];
+    if (change === "logout") useAuthStore().user = null;
+    else if (change === "project") useProjectStore().currentProjectId = 2;
+    else if (change === "capability") useAuthStore().user!.capabilities = { admin: false, sherpaAdvisor: true } as any;
+    else mockConfig.value!.uiExtensions = [];
+    expect(original.extensions.signal.aborted).toBe(true);
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(useContextualActions().actions.value).toHaveLength(0);
+    expect(router.hasRoute("mock")).toBe(false);
+    expect(serverModuleShells.value).toHaveLength(0);
+    expect(useTopbarMenu().items.value).toHaveLength(0);
+    expect(usePrimaryNavigation().items.value).toHaveLength(0);
+    original.addRoute({ name: "late", path: "/late", component: { template: "<div />" } });
+    original.mountShell({ template: "<div />" });
+    original.extensions.addActions([{ id: "late", label: "Late", available: () => true, execute: vi.fn() }]);
+    expect(router.hasRoute("late")).toBe(false);
+    expect(serverModuleShells.value).toHaveLength(0);
+    await flushAsync();
+    if (change === "project" || change === "capability") expect(contexts).toHaveLength(2);
+  });
+
+  it("does not register an import that finishes after logout", async () => {
+    extensionConfig();
+    let resolve!: (module: Awaited<ReturnType<ImportModuleFn>>) => void;
+    const pending = new Promise<Awaited<ReturnType<ImportModuleFn>>>((done) => { resolve = done; });
+    const register = vi.fn();
+    const boot = bootServerModules(makeRouter(), { importModule: () => pending });
+    await Promise.resolve();
+    useAuthStore().user = null;
+    resolve({ contextualActionsVersion: 1, register });
+    await boot;
+    await flushAsync();
+    expect(register).not.toHaveBeenCalled();
+  });
+
+  it("rolls back partially registered failed modules", async () => {
+    extensionConfig();
+    const router = makeRouter();
+    const cleanup = vi.fn();
+    await bootServerModules(router, { importModule: async () => ({ contextualActionsVersion: 1, register(ctx) {
+      ctx.addRoute({ name: "mock", path: "/mock", component: { template: "<div />" } });
+      ctx.topbarMenu.addItems([{ label: "Mock" }]);
+      ctx.extensions.onDispose(cleanup);
+      throw new Error("broken bundle");
+    } }) });
+    await flushAsync();
+    expect(router.hasRoute("mock")).toBe(false);
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect(useTopbarMenu().items.value).toHaveLength(0);
+    expect(serverModuleLoadFailed.value).toBeNull();
   });
 
   it("loads /ui/auth.js eagerly when features.authUI is true", async () => {
@@ -109,6 +248,32 @@ describe("bootServerModules", () => {
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 
+  it("finishes initial extension route registration before router installation", async () => {
+    extensionConfig();
+    const router = makeRouter();
+    let finishImport!: () => void;
+    const imported = new Promise<void>((resolve) => { finishImport = resolve; });
+    const boot = bootServerModules(router, {
+      reresolveCurrentRoute: false,
+      importModule: async () => {
+        await imported;
+        return {
+          contextualActionsVersion: 1,
+          register(ctx) {
+            ctx.addRoute({ name: "managed", path: "/managed", component: { template: "<div />" } });
+          },
+        };
+      },
+    });
+
+    await Promise.resolve();
+    expect(router.hasRoute("managed")).toBe(false);
+    finishImport();
+    await boot;
+
+    expect(router.hasRoute("managed")).toBe(true);
+  });
+
   it("skips /ui/auth.js when features.authUI is falsy (local-mode default)", async () => {
     mockConfig.value = { mode: "local", features: {} };
     mockLoadConfig.mockResolvedValue(true);
@@ -134,6 +299,47 @@ describe("bootServerModules", () => {
     expect(calledUrls).not.toContain("/ui/admin.js");
   });
 
+  it("loads a generic extension only when the live deployment publishes it", async () => {
+    mockConfig.value = {
+      mode: "enterprise",
+      features: {},
+      uiExtensions: [{ id: "mock", url: "/ui/mock.js", contractVersion: 1 }],
+    };
+    mockLoadConfig.mockResolvedValue(true);
+    useAuthStore().user = { id: 1, username: "scientist" };
+    const importModule = vi.fn(async () => ({ contextualActionsVersion: 1, register: vi.fn() }));
+
+    await bootServerModules(makeRouter(), { importModule });
+
+    await flushAsync();
+    expect(importModule.mock.calls.map((call) => call[0])).toContain("/ui/mock.js");
+    expect(serverModuleLoadFailed.value).toBeNull();
+  });
+
+  it("records an optional bundle failure without bricking ordinary analysis", async () => {
+    mockConfig.value = {
+      mode: "enterprise",
+      features: { authUI: true },
+      uiExtensions: [{ id: "mock", url: "/ui/mock.js", contractVersion: 1 }],
+    };
+    mockLoadConfig.mockResolvedValue(true);
+    useAuthStore().user = { id: 1, username: "scientist" };
+    const importModule = vi.fn(async (url: string) => {
+      if (url === "/ui/mock.js") throw new Error("optional bundle unavailable");
+      return { register: vi.fn() };
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    await bootServerModules(makeRouter(), { importModule });
+    await flushAsync();
+
+    expect(serverModuleLoadFailed.value).toBeNull();
+    expect(nonCriticalModuleLoadFailures.value.map((item) => item.module)).toContain(
+      "/ui/mock.js",
+    );
+    errorSpy.mockRestore();
+  });
+
   it("lazy-loads /ui/admin.js when host identity is set via the context ref", async () => {
     mockConfig.value = { mode: "enterprise", features: { authUI: true } };
     mockLoadConfig.mockResolvedValue(true);
@@ -141,7 +347,9 @@ describe("bootServerModules", () => {
     // Capture the ctx the auth module's register() would see so we can
     // drive identity through the SAME path the real server bundle uses
     // (ctx.authStore.user.value = …), not by mutating Pinia directly.
-    let capturedCtx: Parameters<NonNullable<Awaited<ReturnType<ImportModuleFn>>["register"]>>[0] | null = null;
+    let capturedCtx:
+      | Parameters<NonNullable<Awaited<ReturnType<ImportModuleFn>>["register"]>>[0]
+      | null = null;
     const importModule = vi.fn(async (url: string) => {
       if (url === "/ui/auth.js") {
         return {
@@ -215,7 +423,9 @@ describe("bootServerModules", () => {
     mockConfig.value = { mode: "enterprise", features: { authUI: true } };
     mockLoadConfig.mockResolvedValue(true);
 
-    let capturedCtx: Parameters<NonNullable<Awaited<ReturnType<ImportModuleFn>>["register"]>>[0] | null = null;
+    let capturedCtx:
+      | Parameters<NonNullable<Awaited<ReturnType<ImportModuleFn>>["register"]>>[0]
+      | null = null;
     const importModule = vi.fn(async (url: string) => {
       if (url === "/ui/auth.js") {
         return {
@@ -264,7 +474,9 @@ describe("bootServerModules", () => {
     mockConfig.value = { mode: "enterprise", features: { authUI: true } };
     mockLoadConfig.mockResolvedValue(true);
 
-    let capturedCtx: Parameters<NonNullable<Awaited<ReturnType<ImportModuleFn>>["register"]>>[0] | null = null;
+    let capturedCtx:
+      | Parameters<NonNullable<Awaited<ReturnType<ImportModuleFn>>["register"]>>[0]
+      | null = null;
     const importModule = vi.fn(async () => ({
       register: (ctx) => {
         capturedCtx = ctx;

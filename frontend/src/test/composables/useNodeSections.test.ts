@@ -29,11 +29,14 @@ describe("useNodeSections", () => {
     expect(outputSubsections.value.quality).toBe(false);
   });
 
-  it("plotSections preserves opt-in defaults (evaluationResults, clusterScatter, outlierChart = true)", () => {
+  it("plotSections opens scientist-facing result plots by default", () => {
     const { plotSections } = useNodeSections();
     expect(plotSections.value.evaluationResults).toBe(true);
     expect(plotSections.value.clusterScatter).toBe(true);
     expect(plotSections.value.outlierChart).toBe(true);
+    expect(plotSections.value.regressionCorrelation).toBe(true);
+    expect(plotSections.value.plsVip).toBe(true);
+    expect(plotSections.value.plsExplainedVariance).toBe(true);
     expect(plotSections.value.pcaScores).toBe(false);
   });
 

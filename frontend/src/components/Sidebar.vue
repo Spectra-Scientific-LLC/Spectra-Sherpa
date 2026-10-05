@@ -40,28 +40,44 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
+import { usePrimaryNavigation } from "@/composables/usePrimaryNavigation";
 
 defineProps<{
   collapsed: boolean;
 }>();
 
 const { isDemoMode } = useDemoMode();
+const { appMode, siteProfile } = useAppConfig();
+const { items: contributedMainNavItems } = usePrimaryNavigation();
 
 const mainNavItems = [
   { label: "Dashboard", to: "/dashboard", icon: "pi pi-home" },
   { label: "Project", to: "/project", icon: "pi pi-folder" },
   { label: "Data", to: "/data", icon: "pi pi-database" },
-  { label: "Workflows", to: "/workflow", icon: "pi pi-sitemap" },
+  { label: "Workflow", to: "/workflow", icon: "pi pi-sitemap" },
   { label: "Runs", to: "/runs", icon: "pi pi-history" },
   { label: "Deploy", to: "/deploy", icon: "pi pi-cloud-upload" },
   { label: "Report", to: "/report", icon: "pi pi-file-edit" },
 ];
 
-const visibleMainNavItems = mainNavItems;
+const visibleMainNavItems = computed(() => {
+  const result = [...mainNavItems];
+  for (const item of contributedMainNavItems.value) {
+    const duplicate = result.findIndex((existing) => existing.to === item.to);
+    if (duplicate >= 0) result.splice(duplicate, 1);
+    const insertion = item.before
+      ? result.findIndex((existing) => existing.to === item.before)
+      : -1;
+    result.splice(insertion >= 0 ? insertion : result.length, 0, item);
+  }
+  return result;
+});
 
 const secondaryNavItems = computed(() => [
-  { label: "Logs", to: "/logs", icon: "pi pi-list", dimInDemo: false },
+  ...(appMode.value === "enterprise" && siteProfile?.value === "pro" ? [] :
+    [{ label: "Logs", to: "/logs", icon: "pi pi-list", dimInDemo: false }]),
   { label: "Settings", to: "/settings", icon: "pi pi-sliders-h", dimInDemo: true },
   { label: "Documentation", to: "/documentation", icon: "pi pi-book", dimInDemo: false },
 ]);
@@ -69,8 +85,8 @@ const secondaryNavItems = computed(() => [
 
 <style scoped>
 .sidebar {
-  background: #1e293b;
-  color: white;
+  background: #fefbff;
+  color: #6504bd;
   display: flex;
   flex-direction: column;
   transition: width 0.2s ease;
@@ -93,7 +109,7 @@ const secondaryNavItems = computed(() => [
   padding: 0 16px;
   min-height: 56px;
   max-height: 56px;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid #e7e0ef;
 }
 
 .collapsed .sidebar-header {
@@ -112,7 +128,7 @@ const secondaryNavItems = computed(() => [
   font-size: 1.05rem;
   font-weight: 600;
   white-space: nowrap;
-  color: #f1f5f9;
+  color: #6504bd;
 }
 
 .nav-list {
@@ -136,19 +152,20 @@ const secondaryNavItems = computed(() => [
 }
 
 .nav-link:hover {
-  background: #334155;
-  color: white;
+  background: #f4edfa;
+  color: #6504bd;
 }
 
 .nav-link.router-link-active {
-  background: #3b82f6;
-  color: white;
+  background: #fefbff;
+  color: #6504bd;
 }
 
 .nav-link i {
   font-size: 1.25rem;
   width: 24px;
   text-align: center;
+  color: #6504bd;
 }
 
 .nav-label {
@@ -158,7 +175,7 @@ const secondaryNavItems = computed(() => [
 
 .nav-separator {
   margin: 12px 8px;
-  border-top: 1px solid #334155;
+  border-top: 1px solid #e7e0ef;
 }
 
 .nav-link.secondary {
@@ -170,8 +187,8 @@ const secondaryNavItems = computed(() => [
 }
 
 .nav-link.secondary.router-link-active {
-  background: #3b82f6;
-  color: white;
+  background: #fefbff;
+  color: #6504bd;
 }
 
 .collapsed .nav-link {

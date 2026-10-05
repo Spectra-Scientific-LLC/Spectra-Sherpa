@@ -19,6 +19,7 @@ const CATEGORY_TO_VISUAL: Record<string, NodeVisualCategory> = {
   data: "data",
   synthesis: "synthesis",
   preprocessing: "preprocess",
+  transfer: "preprocess",
   selection: "selection",
   exploratory: "exploratory",
   modeling: "exploratory",

@@ -1,3 +1,4 @@
+import { attentionSnapshot, type ActiveAttention } from "@/lib/sherpaAttention";
 import { onBeforeUnmount, watch } from "vue";
 import { useRoute } from "vue-router";
 import { useAppConfig } from "@/composables/useAppConfig";
@@ -17,6 +18,7 @@ interface ActivityPayload {
   scope_node_id?: number;
   idle_seconds?: number;
   occurred_at: string;
+  active_attention?: ActiveAttention;
 }
 
 export function useActivityTracker() {
@@ -52,6 +54,7 @@ export function useActivityTracker() {
     const scopeNodeId = advisorStore.activeNodeId ?? undefined;
     const payload: ActivityPayload = {
       kind,
+      active_attention: attentionSnapshot(),
       route: route.path,
       project_id: projectId,
       scope_node_id: scopeNodeId,

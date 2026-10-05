@@ -11,10 +11,24 @@
       <!-- Node header with close button -->
       <div class="inspector-header">
         <div class="node-info">
-          <span class="node-icon">{{ NODE_ICONS[selectedNodeType] || '📦' }}</span>
+          <span class="node-icon">{{ NODE_ICONS[selectedNodeType] || "📦" }}</span>
           <div class="node-details">
-            <h3>{{ selectedNode ? getNodeLabel(selectedNode.type) : 'Inspector' }}</h3>
-            <span v-if="selectedNode" class="node-id">ID: {{ selectedNode.id }}</span>
+            <h3>
+              {{
+                selectedNode ? selectedNode.label || getNodeLabel(selectedNode.type) : "Inspector"
+              }}
+            </h3>
+            <span v-if="selectedNode" class="node-id" data-testid="inspector-node-instance">
+              Instance ID: {{ selectedNode.id }}
+            </span>
+            <span
+              v-if="selectedNode"
+              class="node-type"
+              data-testid="inspector-canonical-node-type"
+              :title="selectedNode.type"
+            >
+              Canonical node: {{ selectedNode.type }}
+            </span>
           </div>
         </div>
         <div class="header-actions">
@@ -37,9 +51,27 @@
       <!-- Action buttons -->
       <div v-if="selectedNode" class="inspector-actions">
         <Button
+          v-if="selectedNodeType === 'data.collection_load'"
+          label="Configure data"
+          icon="pi pi-database"
+          class="p-button-sm p-button-outlined"
+          :loading="configuringSheetData"
+          :disabled="projectStore.currentProjectId === null || configuringSheetData"
+          title="Choose files, target, and groups for this workflow sheet"
+          data-testid="configure-sheet-data"
+          @click="configureSheetData"
+        />
+        <Button
           label="Run Node"
           icon="pi pi-play"
           class="p-button-sm inspector-action-btn"
+          :disabled="executionDisabled || hasValidationErrors"
+          :title="
+            executionDisabledReason ||
+            (hasValidationErrors
+              ? 'Resolve the parameter validation error before running'
+              : 'Run this node and its dependencies')
+          "
           @click="executeNode"
         />
         <Button
@@ -57,6 +89,18 @@
           :disabled="hasValidationErrors"
           title="Preview before/after effect of this preprocessing"
         />
+        <a
+          v-if="selectedNodeHelpUrl"
+          class="inspector-help-link"
+          :href="selectedNodeHelpUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Learn about this node (opens in a new tab)"
+          aria-label="Learn about this node (opens in a new tab)"
+          data-testid="inspector-node-help"
+        >
+          <span aria-hidden="true">?</span>
+        </a>
       </div>
 
       <!-- Node Execution Error Display -->
@@ -65,16 +109,13 @@
           <i class="pi pi-times-circle"></i>
           <div class="error-content">
             <strong>Execution Failed</strong>
-            <p>{{ selectedNode.executionState.error_message || 'An unknown error occurred' }}</p>
+            <p>{{ selectedNode.executionState.error_message || "An unknown error occurred" }}</p>
           </div>
         </div>
         <div v-if="selectedNode.executionState.error_details" class="error-details-section">
-          <button
-            class="show-details-btn"
-            @click="showErrorDetails = !showErrorDetails"
-          >
+          <button class="show-details-btn" @click="showErrorDetails = !showErrorDetails">
             <i :class="showErrorDetails ? 'pi pi-chevron-up' : 'pi pi-chevron-down'"></i>
-            {{ showErrorDetails ? 'Hide' : 'Show' }} Details
+            {{ showErrorDetails ? "Hide" : "Show" }} Details
           </button>
           <div v-if="showErrorDetails" class="error-details-content">
             <pre>{{ selectedNode.executionState.error_details }}</pre>
@@ -86,11 +127,32 @@
       <div v-if="selectedNode" class="inspector-params">
         <span class="section-label">Parameters</span>
 
+        <div
+          v-if="activeValidationGroupColumn"
+          class="group-split-guidance"
+          role="status"
+          data-testid="group-split-guidance"
+        >
+          <i class="pi pi-shield" aria-hidden="true"></i>
+          <div>
+            <strong>Validation groups active: {{ activeValidationGroupColumn }}</strong>
+            <span>
+              Random, stratified, and sequential splits hold out whole groups. Kennard–Stone,
+              DUPLEX, and SPXY select individual samples by spectral distance and cover the extremes
+              across every group instead of holding one out.
+            </span>
+          </div>
+        </div>
+
         <!-- Validation error summary -->
         <div v-if="hasValidationErrors" class="validation-summary">
           <i class="pi pi-exclamation-triangle"></i>
           <div class="validation-message">
-            <strong>{{ validationErrors.length }} validation error{{ validationErrors.length > 1 ? 's' : '' }}</strong>
+            <strong
+              >{{ validationErrors.length }} validation error{{
+                validationErrors.length > 1 ? "s" : ""
+              }}</strong
+            >
             <span>Please fix the following errors:</span>
             <ul class="validation-error-list">
               <li v-for="error in validationErrors" :key="error.param_name">
@@ -101,235 +163,8 @@
         </div>
 
         <div class="parameters-form">
-          <!-- DATA node -->
-          <template v-if="selectedNodeType === 'data.source'">
-            <!-- Source type selector -->
-            <div class="field">
-              <label>Source</label>
-              <Dropdown
-                v-model="localParams.source"
-                :options="dataSourceOptions"
-                optionLabel="label"
-                optionValue="value"
-                placeholder="Select source type"
-                appendTo="body"
-                @change="onSourceChange"
-              />
-            </div>
-
-            <!-- File path input (for 'file' source) -->
-            <div v-if="localParams.source === 'file'" class="field">
-              <label>File Path</label>
-              <InputText
-                v-model="localParams.file_path"
-                placeholder="/path/to/als2004dataset.MAT"
-                @blur="emitParams"
-              />
-              <small class="param-hint">
-                Supports: .MAT, .CSV, .JDX, .SPA, .SPC (saved on blur or Run)
-              </small>
-            </div>
-
-            <!-- Experiment/Library TreeSelect (for 'experiment' or 'library' source) -->
-            <div v-if="localParams.source === 'experiment' || localParams.source === 'library'" class="field dataset-field">
-              <label>Dataset</label>
-              <TreeSelect
-                v-model="selectedDatasetKey"
-                :options="datasetTreeNodes"
-                placeholder="Select a dataset..."
-                selectionMode="single"
-                class="dataset-tree-select"
-                @update:model-value="onDatasetSelect"
-              />
-            </div>
-
-            <!-- SpectroChemPy example selector -->
-            <div v-if="localParams.source === 'spectrochempy'" class="field">
-              <label>Example Dataset</label>
-              <Dropdown
-                v-model="localParams.example_dataset"
-                :options="scpExampleOptions"
-                placeholder="Select example"
-                appendTo="body"
-                @change="emitParams"
-              />
-            </div>
-
-            <!-- SpectroChemPy example file (dropdown populated from API) -->
-            <div v-if="localParams.source === 'spectrochempy'" class="field">
-              <label>Example File (Optional)</label>
-              <Dropdown
-                v-model="localParams.example_file"
-                :options="scpFileOptions"
-                optionLabel="label"
-                optionValue="value"
-                placeholder="Select a single file or leave empty for default"
-                :loading="isLoadingScpFiles"
-                :disabled="!localParams.example_dataset"
-                showClear
-                appendTo="body"
-                @change="emitParams"
-              />
-              <small class="param-hint">
-                Select a single file from {{ localParams.example_dataset || 'dataset' }} ({{ scpFileOptions.length }} files available).
-                Leave empty for default. <strong>For loading multiple files, use the Load Group node instead.</strong>
-              </small>
-            </div>
-
-            <!-- Sklearn dataset selector -->
-            <div v-if="localParams.source === 'sklearn'" class="field">
-              <label>Sklearn Dataset</label>
-              <Dropdown
-                v-model="localParams.sklearn_dataset"
-                :options="sklearnDatasetOptions"
-                optionLabel="label"
-                optionValue="value"
-                placeholder="Select dataset"
-                appendTo="body"
-                @change="emitParams"
-              />
-              <small class="param-hint">
-                Load standard machine learning datasets for testing PCA, classification, etc.
-              </small>
-            </div>
-
-            <!-- Eigenvector Research dataset selector -->
-            <div v-if="localParams.source === 'eigenvector'" class="field">
-              <label>Eigenvector Dataset</label>
-              <Dropdown
-                v-model="localParams.eigenvector_dataset"
-                :options="eigenvectorDatasetOptions"
-                optionLabel="label"
-                optionValue="value"
-                placeholder="Select dataset"
-                appendTo="body"
-                @change="emitParams"
-              />
-              <small class="param-hint">
-                Bundled NIR reference datasets from
-                <a href="https://eigenvector.com/resources/data-sets/" target="_blank">Eigenvector Research</a>.
-                Properties output on the Target port.
-              </small>
-            </div>
-
-            <!-- Selected dataset info -->
-            <div v-if="localParams.dataset_ref" class="field dataset-info">
-              <span class="dataset-badge" :class="localParams.dataset_ref.source">
-                {{ localParams.dataset_ref.source }}
-              </span>
-              <span class="dataset-path">{{ localParams.dataset_ref.file_path?.split('/').pop() }}</span>
-            </div>
-
-            <!-- File path display for direct file -->
-            <div v-if="localParams.source === 'file' && localParams.file_path" class="field dataset-info">
-              <span class="dataset-badge file">file</span>
-              <span class="dataset-path">{{ localParams.file_path.split('/').pop() }}</span>
-            </div>
-
-            <!-- Axis configuration section -->
-            <div class="field-group">
-              <h4 class="field-group-title">Axis Configuration</h4>
-
-              <!-- Transpose on load -->
-              <div class="field checkbox-row">
-                <Checkbox
-                  v-model="localParams.transpose_on_load"
-                  :binary="true"
-                  inputId="transpose_on_load"
-                  @change="emitParams"
-                />
-                <label for="transpose_on_load">Transpose on Load</label>
-              </div>
-              <small class="param-hint">
-                Enable if your data is (wavenumbers × samples) instead of (samples × wavenumbers)
-              </small>
-
-              <!-- Sample axis title -->
-              <div class="field">
-                <label>Sample Axis Title</label>
-                <InputText
-                  v-model="localParams.sample_axis_title"
-                  placeholder="e.g., Time, Frame, Temperature"
-                  @blur="emitParams"
-                />
-                <small class="param-hint">
-                  Title for y-axis (rows): Time, Frame #, Temperature, etc.
-                </small>
-              </div>
-
-              <!-- Spectral axis title -->
-              <div class="field">
-                <label>Spectral Axis Title</label>
-                <InputText
-                  v-model="localParams.spectral_axis_title"
-                  placeholder="e.g., Wavenumber, Wavelength"
-                  @blur="emitParams"
-                />
-                <small class="param-hint">
-                  Title for x-axis (columns): Wavenumber, Wavelength, Raman Shift, etc.
-                </small>
-              </div>
-            </div>
-          </template>
-
-          <!-- MY_DATASET node -->
-          <template v-else-if="selectedNodeType === 'data.my_dataset'">
-            <div class="field">
-              <label>Dataset</label>
-              <Dropdown
-                v-model="localParams.dataset_id"
-                :options="myDatasetExperimentOptions"
-                optionLabel="label"
-                optionValue="value"
-                placeholder="Select a dataset..."
-                appendTo="body"
-                @change="onMyDatasetChanged"
-              />
-              <small class="param-hint">
-                All files in the selected dataset are loaded together.
-              </small>
-            </div>
-            <div v-if="myDatasetTargetOptions.length > 1" class="field">
-              <label>Target Mode</label>
-              <Dropdown
-                v-model="localParams.target_mode"
-                :options="myDatasetTargetModeOptions"
-                optionLabel="label"
-                optionValue="value"
-                appendTo="body"
-                @change="onMyDatasetTargetModeChanged"
-              />
-              <small class="param-hint">
-                This setting belongs to this workflow sheet. Change it here to keep each sheet focused on a different property.
-              </small>
-            </div>
-            <div v-if="myDatasetTargetOptions.length > 1 && localParams.target_mode === 'single'" class="field">
-              <label>Target Property</label>
-              <Dropdown
-                v-model="localParams.selected_target"
-                :options="myDatasetTargetOptions"
-                optionLabel="label"
-                optionValue="value"
-                placeholder="Select target property..."
-                appendTo="body"
-                @change="emitParams"
-              />
-              <small class="param-hint">
-                Models downstream of this My Dataset node receive this univariate target.
-              </small>
-            </div>
-            <div v-if="myDatasetTargetCompleteness" class="dataset-target-note">
-              <i class="pi pi-info-circle" aria-hidden="true"></i>
-              <span>{{ myDatasetTargetCompleteness }}</span>
-            </div>
-            <div v-if="myDatasetTargetConflict" class="dataset-target-note dataset-target-note--warn">
-              <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
-              <span>{{ myDatasetTargetConflict }}</span>
-            </div>
-          </template>
-
           <!-- FILTER_SAMPLES node -->
-          <template v-else-if="selectedNodeType === 'data.filter_samples'">
+          <template v-if="selectedNodeType === 'data.filter_samples'">
             <div class="filter-samples-panel">
               <div v-if="!filterHasInput" class="filter-empty-state">
                 <i class="pi pi-filter" aria-hidden="true"></i>
@@ -341,7 +176,11 @@
                 <div class="filter-dataset-summary">
                   <div>
                     <span class="summary-kicker">Dataset</span>
-                    <strong>{{ filterSampleCount }} sample{{ filterSampleCount === 1 ? "" : "s" }}</strong>
+                    <strong
+                      >{{ filterSampleCount }} sample{{
+                        filterSampleCount === 1 ? "" : "s"
+                      }}</strong
+                    >
                   </div>
                   <div v-if="filterFeatureCount !== null">
                     <span class="summary-kicker">Variables</span>
@@ -351,8 +190,9 @@
                 <div v-if="filterMatrixPreviewOnly" class="filter-scope-warning">
                   <i class="pi pi-info-circle" aria-hidden="true"></i>
                   <span>
-                    This panel has only a saved preview of the upstream matrix. Index filters are still available;
-                    intensity filters need a fresh run with the full matrix in memory.
+                    This panel has only a saved preview of the upstream matrix. Index filters are
+                    still available; intensity filters need a fresh run with the full matrix in
+                    memory.
                   </span>
                 </div>
 
@@ -385,9 +225,21 @@
                     </small>
                   </div>
                   <div class="filter-quick-actions">
-                    <Button label="All" class="p-button-sm p-button-text" @click="setIndexRange('all')" />
-                    <Button label="First 10" class="p-button-sm p-button-text" @click="setIndexRange('first10')" />
-                    <Button label="Last 10" class="p-button-sm p-button-text" @click="setIndexRange('last10')" />
+                    <Button
+                      label="All"
+                      class="p-button-sm p-button-text"
+                      @click="setIndexRange('all')"
+                    />
+                    <Button
+                      label="First 10"
+                      class="p-button-sm p-button-text"
+                      @click="setIndexRange('first10')"
+                    />
+                    <Button
+                      label="Last 10"
+                      class="p-button-sm p-button-text"
+                      @click="setIndexRange('last10')"
+                    />
                   </div>
                 </div>
 
@@ -415,11 +267,10 @@
                     />
                   </div>
                   <div class="field">
-                    <label>Threshold</label>
-                    <InputNumber
+                    <label for="intensity-threshold">Threshold</label>
+                    <ScientificNumberInput
+                      id="intensity-threshold"
                       v-model="localParams.intensity_threshold"
-                      :minFractionDigits="0"
-                      :maxFractionDigits="6"
                       @update:model-value="emitParams"
                     />
                     <small class="param-hint">
@@ -427,11 +278,10 @@
                     </small>
                   </div>
                   <div v-if="localParams.intensity_operator === 'between'" class="field">
-                    <label>Upper threshold</label>
-                    <InputNumber
+                    <label for="intensity-upper-threshold">Upper threshold</label>
+                    <ScientificNumberInput
+                      id="intensity-upper-threshold"
                       v-model="localParams.intensity_upper_threshold"
-                      :minFractionDigits="0"
-                      :maxFractionDigits="6"
                       @update:model-value="emitParams"
                     />
                   </div>
@@ -458,8 +308,16 @@
                         class="filter-value-search"
                         placeholder="Search available values"
                       />
-                      <Button label="All" class="p-button-sm p-button-text" @click="selectAllFilterValues" />
-                      <Button label="None" class="p-button-sm p-button-text" @click="clearFilterValues" />
+                      <Button
+                        label="All"
+                        class="p-button-sm p-button-text"
+                        @click="selectAllFilterValues"
+                      />
+                      <Button
+                        label="None"
+                        class="p-button-sm p-button-text"
+                        @click="clearFilterValues"
+                      />
                     </div>
                     <div class="filter-value-list">
                       <label
@@ -478,15 +336,24 @@
                     <small class="param-hint">
                       Choices are populated from the connected dataset.
                     </small>
-                    <small v-if="filterValueOptions.length > visibleFilterValueOptions.length" class="param-hint">
-                      Showing {{ visibleFilterValueOptions.length }} of {{ filterValueOptions.length }} values. Search to narrow the list.
+                    <small
+                      v-if="filterValueOptions.length > visibleFilterValueOptions.length"
+                      class="param-hint"
+                    >
+                      Showing {{ visibleFilterValueOptions.length }} of
+                      {{ filterValueOptions.length }} values. Search to narrow the list.
                     </small>
                   </div>
                 </div>
 
                 <div class="filter-preview" :class="{ warning: filterPreview.empty }">
                   <div class="filter-preview-main">
-                    <i :class="filterPreview.empty ? 'pi pi-exclamation-triangle' : 'pi pi-check-circle'" aria-hidden="true"></i>
+                    <i
+                      :class="
+                        filterPreview.empty ? 'pi pi-exclamation-triangle' : 'pi pi-check-circle'
+                      "
+                      aria-hidden="true"
+                    ></i>
                     <strong>{{ filterPreview.summary }}</strong>
                   </div>
                   <div v-if="filterPreview.keptLabels.length" class="filter-preview-list">
@@ -526,7 +393,12 @@
                           @update:model-value="onAdvancedPatternChange"
                         />
                       </div>
-                      <div v-if="localParams.field !== 'sample_index' && localParams.field !== 'intensity'" class="field">
+                      <div
+                        v-if="
+                          localParams.field !== 'sample_index' && localParams.field !== 'intensity'
+                        "
+                        class="field"
+                      >
                         <label>Match mode</label>
                         <Dropdown
                           v-model="localParams.match_mode"
@@ -537,7 +409,12 @@
                           @change="onAdvancedPatternChange"
                         />
                       </div>
-                      <div v-if="localParams.field !== 'sample_index' && localParams.field !== 'intensity'" class="field checkbox-row">
+                      <div
+                        v-if="
+                          localParams.field !== 'sample_index' && localParams.field !== 'intensity'
+                        "
+                        class="field checkbox-row"
+                      >
                         <Checkbox
                           v-model="localParams.case_sensitive"
                           :binary="true"
@@ -562,18 +439,7 @@
             </div>
           </template>
 
-          <!-- NORMALIZE node -->
-          <template v-else-if="selectedNodeType === 'preprocess.normalize'">
-            <div class="field">
-              <label>Method</label>
-              <Dropdown
-                v-model="localParams.method"
-                :options="normalizeMethodOptions"
-                placeholder="Select method"
-                @change="emitParams"
-              />
-            </div>
-          </template>
+          <!-- NORMALIZE uses the backend's method and scoped scale/SNV parameters. -->
 
           <!-- SCALE node: uses metadata-driven rendering (generic) -->
 
@@ -587,10 +453,11 @@
                 <i
                   class="pi pi-info-circle param-info-icon"
                   v-tooltip.right="{
-                    value: 'Savitzky-Golay filter window size. Larger values produce smoother spectra but may remove fine features. Must be odd number. Typical range: 5-21.',
+                    value:
+                      'Savitzky-Golay filter window size. Larger values produce smoother spectra but may remove fine features. Must be odd number. Typical range: 5-21.',
                     showDelay: 300,
                     hideDelay: 100,
-                    class: 'scientific-tooltip'
+                    class: 'scientific-tooltip',
                   }"
                 ></i>
               </label>
@@ -602,7 +469,7 @@
                 @change="emitParams"
               />
               <small v-if="getParamError('size')" class="param-error">
-                {{ getParamError('size') }}
+                {{ getParamError("size") }}
               </small>
             </div>
             <div class="field" :class="{ 'field-error': getParamError('order') }">
@@ -611,10 +478,11 @@
                 <i
                   class="pi pi-info-circle param-info-icon"
                   v-tooltip.right="{
-                    value: 'Polynomial degree used to fit data within window. Higher order fits data more closely but may amplify noise. Typically 2-4 for spectral data.',
+                    value:
+                      'Polynomial degree used to fit data within window. Higher order fits data more closely but may amplify noise. Typically 2-4 for spectral data.',
                     showDelay: 300,
                     hideDelay: 100,
-                    class: 'scientific-tooltip'
+                    class: 'scientific-tooltip',
                   }"
                 ></i>
               </label>
@@ -626,7 +494,7 @@
                 @change="emitParams"
               />
               <small v-if="getParamError('order')" class="param-error">
-                {{ getParamError('order') }}
+                {{ getParamError("order") }}
               </small>
             </div>
           </template>
@@ -635,7 +503,18 @@
 
           <!-- PLOT node -->
           <template v-else-if="selectedNodeType === 'output.plot'">
-            <div class="field">
+            <div v-if="tablePlotColumnOptions.length" class="field">
+              <label>Column (vs. row index)</label>
+              <Dropdown
+                v-model="localParams.plot_key"
+                :options="tablePlotColumnOptions"
+                optionLabel="label"
+                optionValue="value"
+                @change="emitParams"
+              />
+              <small>Missing values are gaps; row indices are preserved.</small>
+            </div>
+            <div v-else-if="showPlotAxisParameters" class="field">
               <label>X-Axis</label>
               <Dropdown
                 v-model="localParams.x_axis"
@@ -645,7 +524,7 @@
                 @change="emitParams"
               />
             </div>
-            <div class="field">
+            <div v-if="!tablePlotColumnOptions.length && showPlotAxisParameters" class="field">
               <label>Y-Axis</label>
               <Dropdown
                 v-model="localParams.y_axis"
@@ -655,18 +534,7 @@
                 @change="emitParams"
               />
             </div>
-          </template>
-
-          <!-- EXPORT node -->
-          <template v-else-if="selectedNodeType === 'output.export'">
-            <div class="field">
-              <label>Filename</label>
-              <InputText
-                v-model="localParams.filename"
-                placeholder="output.csv"
-                @update:model-value="emitParams"
-              />
-            </div>
+            <span v-if="!tablePlotColumnOptions.length && !showPlotAxisParameters" class="no-params">No adjustable parameters</span>
           </template>
 
           <!-- STATS node -->
@@ -680,9 +548,7 @@
                 :step="10"
                 @change="emitParams"
               />
-              <small class="param-hint">
-                Number of sample rows to return in statistics
-              </small>
+              <small class="param-hint"> Number of sample rows to return in statistics </small>
             </div>
           </template>
 
@@ -738,41 +604,67 @@
                 class="field"
                 :class="{ 'field-error': getParamError(param.name) }"
               >
-                <label>
+                <label :for="`parameter-${param.name}`">
                   {{ param.label }}
                   <span v-if="param.required" class="required-indicator">*</span>
                 </label>
 
                 <!-- Number input -->
                 <template v-if="param.param_type === 'number'">
-                  <InputNumber
+                  <ScientificNumberInput
                     v-model="localParams[param.name]"
                     :min="param.min_value"
                     :max="param.max_value"
                     :step="param.step"
-                    :placeholder="param.default?.toString()"
+                    :id="`parameter-${param.name}`"
+                    :required="param.required"
                     @update:model-value="emitParams"
                   />
                 </template>
 
                 <!-- Boolean checkbox -->
                 <template v-else-if="param.param_type === 'boolean'">
-                  <Checkbox
-                    v-model="localParams[param.name]"
-                    :binary="true"
-                    @change="emitParams"
-                  />
+                  <Checkbox v-model="localParams[param.name]" :binary="true" @change="emitParams" />
                 </template>
 
                 <!-- Select dropdown -->
                 <template v-else-if="param.param_type === 'select' && param.options">
                   <Dropdown
                     v-model="localParams[param.name]"
-                    :options="normalizeOptions(param.options)"
+                    :options="parameterOptions(param)"
                     optionLabel="label"
                     optionValue="value"
+                    optionDisabled="disabled"
                     :placeholder="`Select ${param.label.toLowerCase()}`"
                     @change="emitParams"
+                  />
+                </template>
+
+                <!-- Exact string list (comma-separated, or dropdown when values are known) -->
+                <template v-else-if="param.param_type === 'string_list'">
+                  <MultiSelect
+                    v-if="selectedNodeType === 'selection.select_columns' && param.name === 'columns' && selectableFeatureColumns.length"
+                    v-model="localParams[param.name]"
+                    :options="selectableFeatureColumns"
+                    filter
+                    :maxSelectedLabels="0"
+                    selectedItemsLabel="{0} columns selected"
+                    placeholder="Select feature columns"
+                    @change="emitParams"
+                  />
+                  <MultiSelect
+                    v-else-if="param.name === 'held_out_groups' && groupValuesFromInputs"
+                    v-model="localParams[param.name]"
+                    :options="groupValuesFromInputs"
+                    placeholder="Select groups to hold out"
+                    display="chip"
+                    @change="emitParams"
+                  />
+                  <InputText
+                    v-else
+                    :model-value="stringListText(localParams[param.name])"
+                    :placeholder="param.description"
+                    @update:model-value="updateStringList(param.name, $event)"
                   />
                 </template>
 
@@ -786,7 +678,14 @@
                 </template>
 
                 <!-- Parameter description -->
-                <small v-if="param.description && !getParamError(param.name)" class="param-hint">
+                <small
+                  v-if="param.description && !getParamError(param.name)"
+                  class="param-hint"
+                  :class="{
+                    'param-warning':
+                      param.name === 'held_out_groups' && isGroupHoldoutMissingSelection,
+                  }"
+                >
                   {{ param.description }}
                 </small>
 
@@ -815,19 +714,20 @@
                     class="field"
                     :class="{ 'field-error': getParamError(param.name) }"
                   >
-                    <label>
+                    <label :for="`parameter-${param.name}`">
                       {{ param.label }}
                       <span v-if="param.required" class="required-indicator">*</span>
                     </label>
 
                     <!-- Number input -->
                     <template v-if="param.param_type === 'number'">
-                      <InputNumber
+                      <ScientificNumberInput
                         v-model="localParams[param.name]"
                         :min="param.min_value"
                         :max="param.max_value"
                         :step="param.step"
-                        :placeholder="param.default?.toString()"
+                        :id="`parameter-${param.name}`"
+                        :required="param.required"
                         @update:model-value="emitParams"
                       />
                     </template>
@@ -845,11 +745,40 @@
                     <template v-else-if="param.param_type === 'select' && param.options">
                       <Dropdown
                         v-model="localParams[param.name]"
-                        :options="normalizeOptions(param.options)"
+                        :options="parameterOptions(param)"
                         optionLabel="label"
                         optionValue="value"
+                        optionDisabled="disabled"
                         :placeholder="`Select ${param.label.toLowerCase()}`"
                         @change="emitParams"
+                      />
+                    </template>
+
+                    <!-- Exact string list (comma-separated, or dropdown when values are known) -->
+                    <template v-else-if="param.param_type === 'string_list'">
+                      <MultiSelect
+                        v-if="selectedNodeType === 'selection.select_columns' && param.name === 'columns' && selectableFeatureColumns.length"
+                        v-model="localParams[param.name]"
+                        :options="selectableFeatureColumns"
+                        filter
+                        :maxSelectedLabels="0"
+                        selectedItemsLabel="{0} columns selected"
+                        placeholder="Select feature columns"
+                        @change="emitParams"
+                      />
+                      <MultiSelect
+                        v-else-if="param.name === 'held_out_groups' && groupValuesFromInputs"
+                        v-model="localParams[param.name]"
+                        :options="groupValuesFromInputs"
+                        placeholder="Select groups to hold out"
+                        display="chip"
+                        @change="emitParams"
+                      />
+                      <InputText
+                        v-else
+                        :model-value="stringListText(localParams[param.name])"
+                        :placeholder="param.description"
+                        @update:model-value="updateStringList(param.name, $event)"
                       />
                     </template>
 
@@ -863,7 +792,14 @@
                     </template>
 
                     <!-- Parameter description -->
-                    <small v-if="param.description && !getParamError(param.name)" class="param-hint">
+                    <small
+                      v-if="param.description && !getParamError(param.name)"
+                      class="param-hint"
+                      :class="{
+                        'param-warning':
+                          param.name === 'held_out_groups' && isGroupHoldoutMissingSelection,
+                      }"
+                    >
                       {{ param.description }}
                     </small>
 
@@ -886,25 +822,15 @@
           <template v-else>
             <div class="generic-params">
               <div v-for="(value, key) in localParams" :key="key" class="field">
-                <label>{{ formatParamLabel(key) }}</label>
+                <label :for="`legacy-parameter-${key}`">{{ formatParamLabel(key) }}</label>
                 <template v-if="typeof value === 'boolean'">
-                  <Checkbox
-                    v-model="localParams[key]"
-                    :binary="true"
-                    @change="emitParams"
-                  />
+                  <Checkbox :input-id="`legacy-parameter-${key}`" v-model="localParams[key]" :binary="true" @change="emitParams" />
                 </template>
                 <template v-else-if="typeof value === 'number'">
-                  <InputNumber
-                    v-model="localParams[key]"
-                    @update:model-value="emitParams"
-                  />
+                  <ScientificNumberInput :id="`legacy-parameter-${key}`" v-model="localParams[key]" @update:model-value="emitParams" />
                 </template>
                 <template v-else>
-                  <InputText
-                    v-model="localParams[key]"
-                    @update:model-value="emitParams"
-                  />
+                  <InputText :id="`legacy-parameter-${key}`" v-model="localParams[key]" @update:model-value="emitParams" />
                 </template>
               </div>
               <span v-if="Object.keys(localParams).length === 0" class="no-params">
@@ -922,18 +848,115 @@
           <p>Execute workflow to see results</p>
         </div>
         <div v-else class="output-content">
-          <!-- Data shape summary - always show for any output -->
-          <div class="data-shape-summary">
-            <span class="shape-stat">
-              <strong>{{ nodeOutput.data?.length || 0 }}</strong> rows
+          <div v-if="presentationOptions.length > 1" class="field">
+            <label for="scientific-presentation">Scientific result</label>
+            <Dropdown
+              id="scientific-presentation"
+              v-model="selectedPresentationId"
+              :options="presentationOptions"
+              optionLabel="label"
+              optionValue="value"
+              class="scientific-result-dropdown"
+              panelClass="scientific-result-dropdown-panel"
+              appendTo="body"
+            />
+          </div>
+          <div v-if="presentationError" class="diagnostics-card diagnostics-card--error">
+            <span class="diagnostics-title">Scientific result unavailable</span>
+            <p>{{ presentationError }}</p>
+          </div>
+          <div
+            v-if="executedGroupedSplit"
+            class="diagnostics-card grouped-split-evidence"
+            data-testid="grouped-split-evidence"
+          >
+            <span class="diagnostics-title">Whole-group holdout</span>
+            <p>
+              Held out {{ executedGroupedSplit.heldOutGroups.length }} of
+              {{ executedGroupedSplit.nGroups }} groups:
+              <strong>{{ executedGroupedSplit.heldOutGroups.join(", ") }}</strong>
+            </p>
+            <span class="group-split-method">
+              {{ formatParamLabel(executedGroupedSplit.method) }} split; no held-out group is in
+              training.
             </span>
-            <span v-if="Array.isArray(nodeOutput.data?.[0])" class="shape-stat">
-              <strong>{{ nodeOutput.data[0].length }}</strong> cols
+            <span
+              v-if="executedGroupedSplit.digest"
+              class="group-split-digest"
+              :title="`Exact split-plan SHA-256: ${executedGroupedSplit.digest}`"
+            >
+              Verified split plan
             </span>
           </div>
+          <div
+            v-if="selectedNodeType === 'output.export' && preparedExportSummary"
+            class="diagnostics-card"
+          >
+            <span class="diagnostics-title">Prepared Export</span>
+            <div class="diagnostics-grid">
+              <div class="diagnostics-item">
+                <span class="diagnostics-key">File</span>
+                <span class="diagnostics-value">{{ preparedExportSummary.filename }}</span>
+              </div>
+              <div class="diagnostics-item">
+                <span class="diagnostics-key">Format</span>
+                <span class="diagnostics-value">{{ preparedExportSummary.format }}</span>
+              </div>
+              <div class="diagnostics-item">
+                <span class="diagnostics-key">Shape</span>
+                <span class="diagnostics-value">{{ preparedExportSummary.shape }}</span>
+              </div>
+              <div class="diagnostics-item">
+                <span class="diagnostics-key">Bytes</span>
+                <span class="diagnostics-value">{{ preparedExportSummary.byteLength }}</span>
+              </div>
+              <div class="diagnostics-item">
+                <span class="diagnostics-key">SHA-256</span>
+                <span class="diagnostics-value" :title="preparedExportSummary.digest">
+                  {{ preparedExportSummary.digest.slice(0, 16) }}…
+                </span>
+              </div>
+            </div>
+          </div>
+          <RepeatedValidationSummary :record="asObject(selectedPortOutput?.value)" />
+          <!-- Data shape summary - always show for any output -->
+          <div v-if="selectedNodeType !== 'output.export'" class="data-shape-summary">
+            <template v-if="selectedResultDimensions.length">
+              <span
+                v-for="dimension in selectedResultDimensions"
+                :key="dimension.role"
+                class="shape-stat"
+              >
+                <strong>{{ dimension.size }}</strong> {{ formatDimensionRole(dimension.role) }}
+              </span>
+            </template>
+            <span v-else class="shape-stat">{{ selectedResultFormLabel }}</span>
+          </div>
+
+          <div v-if="selectedOutputPreviewNotice" class="persisted-preview-notice">
+            <i class="pi pi-info-circle" aria-hidden="true"></i>
+            <span>{{ selectedOutputPreviewNotice }}</span>
+          </div>
+
+          <div v-if="selectedResultEntries.length > 0" class="diagnostics-card">
+            <span class="diagnostics-title">Selected Result Summary</span>
+            <div class="diagnostics-grid">
+              <div v-for="entry in selectedResultEntries" :key="entry.key" class="diagnostics-item">
+                <span class="diagnostics-key">{{ entry.label }}</span>
+                <span class="diagnostics-value" :title="entry.detail || entry.displayValue">
+                  {{ entry.displayValue }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <PeakExecutionDetails
+            v-if="selectedNodeType === 'analysis.peak_finding'"
+            :diagnostics="outputMetadata.diagnostics"
+          />
 
           <div v-if="diagnosticEntries.length > 0" class="diagnostics-card">
-            <span class="diagnostics-title">Diagnostics</span>
+            <span class="diagnostics-title">Scientific Diagnostics</span>
             <div class="diagnostics-grid">
               <div v-for="entry in diagnosticEntries" :key="entry.key" class="diagnostics-item">
                 <span class="diagnostics-key">{{ entry.label }}</span>
@@ -947,60 +970,89 @@
           <!-- Universal Quick Plot and View Data buttons -->
           <div class="output-actions">
             <Button
-              v-if="selectedNodeType !== 'output.data_table'"
+              v-if="selectedNodeType === 'output.export'"
+              icon="pi pi-download"
+              label="Download Prepared File"
+              class="p-button-sm p-button-outlined"
+              :disabled="!preparedExportArtifact"
+              @click="downloadPreparedExport"
+            />
+            <Button
+              v-if="
+                selectedNodeType !== 'output.export' &&
+                selectedOutputHasData &&
+                selectedOutputSupportsPlot
+              "
               icon="pi pi-chart-line"
               label="Quick Plot"
               class="p-button-sm p-button-outlined"
               @click="showQuickPlotModal = true"
-              :disabled="!nodeOutput.data || nodeOutput.data.length === 0"
             />
             <Button
+              v-if="
+                selectedNodeType !== 'output.export' &&
+                selectedOutputHasData &&
+                selectedOutputSupportsTable
+              "
               icon="pi pi-table"
               label="View Data"
               class="p-button-sm p-button-outlined"
               @click="showDataTableModal = true"
-              :disabled="!nodeOutput.data || nodeOutput.data.length === 0"
             />
+            <span
+              v-if="
+                selectedPresentation && !selectedOutputSupportsPlot && !selectedOutputSupportsTable
+              "
+              class="no-params"
+            >
+              {{ selectedResultNoninteractiveNote }}
+            </span>
           </div>
 
           <!-- Statistics output (compact inline) -->
           <template v-if="selectedNodeType === 'stats.summary' && Array.isArray(nodeOutput.data)">
             <!-- PeakFinding stats -->
             <template v-if="isPeakFindingStats">
-              <div class="stats-table" style="max-height: 200px; overflow-y: auto;">
-                <div
-                  v-for="(stat, index) in outputStatsRows"
-                  :key="index"
-                  class="stat-row"
-                >
+              <div class="stats-table" style="max-height: 200px; overflow-y: auto">
+                <div v-for="(stat, index) in outputStatsRows" :key="index" class="stat-row">
                   <span class="stat-sample">Peak {{ stat.peak }}</span>
-                  <span class="stat-value">pos: {{ typeof stat.position === 'number' ? stat.position.toFixed(1) : '—' }}</span>
-                  <span class="stat-value">σ: {{ typeof stat.pos_std === 'number' ? stat.pos_std.toFixed(2) : '—' }}</span>
-                  <span class="stat-value">h: {{ typeof stat.height === 'number' ? stat.height.toFixed(4) : '—' }}</span>
-                  <span class="stat-value">{{ stat.detected || '—' }}</span>
+                  <span class="stat-value"
+                    >pos:
+                    {{ typeof stat.position === "number" ? stat.position.toFixed(1) : "—" }}</span
+                  >
+                  <span class="stat-value"
+                    >σ: {{ typeof stat.pos_std === "number" ? stat.pos_std.toFixed(2) : "—" }}</span
+                  >
+                  <span class="stat-value"
+                    >h: {{ typeof stat.height === "number" ? stat.height.toFixed(4) : "—" }}</span
+                  >
+                  <span class="stat-value">{{ stat.detected || "—" }}</span>
                 </div>
               </div>
               <div v-if="outputMetadata.summary" class="stats-summary">
                 <span class="summary-label">Peaks:</span>
-                <span>{{ outputMetadata.summary?.n_peaks ?? 0 }} consensus peaks from {{ outputMetadata.summary?.n_samples ?? 0 }} spectra</span>
+                <span
+                  >{{ outputMetadata.summary?.n_peaks ?? 0 }} consensus peaks from
+                  {{ outputMetadata.summary?.n_samples ?? 0 }} spectra</span
+                >
               </div>
             </template>
             <!-- Standard spectral/array stats -->
             <template v-else>
-              <div class="stats-table" style="max-height: 200px; overflow-y: auto;">
-                <div
-                  v-for="(stat, index) in outputStatsRows"
-                  :key="index"
-                  class="stat-row"
-                >
-                  <span class="stat-sample">{{ stat.wavelength != null ? `λ ${stat.wavelength}` : `#${index + 1}` }}</span>
-                  <span class="stat-value">μ: {{ typeof stat.mean === 'number' ? stat.mean.toFixed(4) : '—' }}</span>
-                  <span class="stat-value">σ: {{ typeof stat.std === 'number' ? stat.std.toFixed(4) : '—' }}</span>
+              <div class="stats-table" style="max-height: 200px; overflow-y: auto">
+                <div v-for="(stat, index) in outputStatsRows" :key="index" class="stat-row">
+                  <span class="stat-sample">{{ statsRowLabel(stat, index) }}</span>
+                  <span class="stat-value"
+                    >μ: {{ typeof stat.mean === "number" ? stat.mean.toFixed(4) : "—" }}</span
+                  >
+                  <span class="stat-value"
+                    >σ: {{ typeof stat.std === "number" ? stat.std.toFixed(4) : "—" }}</span
+                  >
                 </div>
               </div>
               <div v-if="outputMetadata.summary" class="stats-summary">
                 <span class="summary-label">Overall:</span>
-                <span>{{ outputMetadata.summary.n_samples ?? 0 }} samples × {{ outputMetadata.summary.n_features ?? 0 }} features</span>
+                <span>{{ statsOverallSummary }}</span>
               </div>
             </template>
           </template>
@@ -1072,20 +1124,18 @@
           <AccordionTab header="Conditions">
             <div class="metadata-group">
               <div class="meta-field">
-                <label>Temperature (°C)</label>
-                <InputNumber
+                <label for="metadata-conditions-temperature_c">Temperature (°C)</label>
+                <ScientificNumberInput
+                  id="metadata-conditions-temperature_c"
                   v-model="localMetadata.conditions.temperature_c"
-                  placeholder="25"
                   @update:model-value="emitMetadata"
                 />
               </div>
               <div class="meta-field">
-                <label>Pressure (atm)</label>
-                <InputNumber
+                <label for="metadata-conditions-pressure_atm">Pressure (atm)</label>
+                <ScientificNumberInput
+                  id="metadata-conditions-pressure_atm"
                   v-model="localMetadata.conditions.pressure_atm"
-                  :minFractionDigits="1"
-                  :maxFractionDigits="3"
-                  placeholder="1.0"
                   @update:model-value="emitMetadata"
                 />
               </div>
@@ -1099,12 +1149,12 @@
                 />
               </div>
               <div class="meta-field">
-                <label>Humidity (%RH)</label>
-                <InputNumber
+                <label for="metadata-conditions-ambient_humidity_percent">Humidity (%RH)</label>
+                <ScientificNumberInput
+                  id="metadata-conditions-ambient_humidity_percent"
                   v-model="localMetadata.conditions.ambient_humidity_percent"
                   :min="0"
                   :max="100"
-                  placeholder="50"
                   @update:model-value="emitMetadata"
                 />
               </div>
@@ -1156,37 +1206,36 @@
           <AccordionTab header="Acquisition">
             <div class="metadata-group">
               <div class="meta-field">
-                <label>Resolution (cm⁻¹)</label>
-                <InputNumber
+                <label for="metadata-acquisition-resolution_cm">Resolution (cm⁻¹)</label>
+                <ScientificNumberInput
+                  id="metadata-acquisition-resolution_cm"
                   v-model="localMetadata.acquisition.resolution_cm"
-                  :minFractionDigits="0"
-                  :maxFractionDigits="2"
-                  placeholder="4"
                   @update:model-value="emitMetadata"
                 />
               </div>
               <div class="meta-field">
-                <label>Number of Scans</label>
-                <InputNumber
+                <label for="metadata-acquisition-n_scans">Number of Scans</label>
+                <ScientificNumberInput
+                  id="metadata-acquisition-n_scans"
+                  integer
                   v-model="localMetadata.acquisition.n_scans"
                   :min="1"
-                  placeholder="32"
                   @update:model-value="emitMetadata"
                 />
               </div>
               <div class="meta-field">
-                <label>Wavenumber Min (cm⁻¹)</label>
-                <InputNumber
+                <label for="metadata-acquisition-wavenumber_min">Wavenumber Min (cm⁻¹)</label>
+                <ScientificNumberInput
+                  id="metadata-acquisition-wavenumber_min"
                   v-model="localMetadata.acquisition.wavenumber_min"
-                  placeholder="400"
                   @update:model-value="emitMetadata"
                 />
               </div>
               <div class="meta-field">
-                <label>Wavenumber Max (cm⁻¹)</label>
-                <InputNumber
+                <label for="metadata-acquisition-wavenumber_max">Wavenumber Max (cm⁻¹)</label>
+                <ScientificNumberInput
+                  id="metadata-acquisition-wavenumber_max"
                   v-model="localMetadata.acquisition.wavenumber_max"
-                  placeholder="4000"
                   @update:model-value="emitMetadata"
                 />
               </div>
@@ -1215,12 +1264,10 @@
                 />
               </div>
               <div class="meta-field">
-                <label>Pathlength (mm)</label>
-                <InputNumber
+                <label for="metadata-cell-pathlength_mm">Pathlength (mm)</label>
+                <ScientificNumberInput
+                  id="metadata-cell-pathlength_mm"
                   v-model="localMetadata.cell.pathlength_mm"
-                  :minFractionDigits="1"
-                  :maxFractionDigits="3"
-                  placeholder="10.0"
                   @update:model-value="emitMetadata"
                 />
               </div>
@@ -1234,12 +1281,10 @@
                 />
               </div>
               <div class="meta-field">
-                <label>Cell Volume (mL)</label>
-                <InputNumber
+                <label for="metadata-cell-cell_volume_ml">Cell Volume (mL)</label>
+                <ScientificNumberInput
+                  id="metadata-cell-cell_volume_ml"
                   v-model="localMetadata.cell.cell_volume_ml"
-                  :minFractionDigits="1"
-                  :maxFractionDigits="2"
-                  placeholder="100"
                   @update:model-value="emitMetadata"
                 />
               </div>
@@ -1311,23 +1356,31 @@
       </div>
 
       <!-- Read-only Metadata View (for non-data-source nodes) -->
-      <div v-else-if="selectedNode && spectraMetadata" class="inspector-metadata readonly">
+      <div
+        v-else-if="selectedNode && spectraMetadata && selectedResultShowsMetadata"
+        class="inspector-metadata readonly"
+      >
         <span class="section-label">Metadata (read-only)</span>
         <div class="metadata-preview">
           <div v-if="spectraSpeciesNames.length" class="meta-preview-item">
             <span class="meta-key">Species:</span>
             <span class="meta-value">
-              {{ spectraSpeciesNames.join(', ') }}
+              {{ spectraSpeciesNames.join(", ") }}
             </span>
           </div>
-          <div v-if="outputMetadata.provenance?.source_type || spectraMetadata.provenance?.source_type" class="meta-preview-item">
+          <div
+            v-if="outputMetadata.provenance?.source_type || spectraMetadata.provenance?.source_type"
+            class="meta-preview-item"
+          >
             <span class="meta-key">Source:</span>
-            <span class="meta-value">{{ outputMetadata.provenance?.source_type || spectraMetadata.provenance?.source_type }}</span>
+            <span class="meta-value">{{
+              outputMetadata.provenance?.source_type || spectraMetadata.provenance?.source_type
+            }}</span>
           </div>
           <div v-if="processingOperations.length" class="meta-preview-item">
             <span class="meta-key">Processing:</span>
             <span class="meta-value processing-history">
-              {{ processingOperations.slice(-3).join(' → ') }}
+              {{ processingOperations.slice(-3).join(" → ") }}
               <span v-if="processingOperations.length > 3" class="more-ops">
                 (+{{ processingOperations.length - 3 }} more)
               </span>
@@ -1335,7 +1388,9 @@
           </div>
           <div v-if="outputMetadata.processing_history?.length" class="meta-preview-item">
             <span class="meta-key">Steps:</span>
-            <span class="meta-value">{{ outputMetadata.processing_history.length }} operations applied</span>
+            <span class="meta-value"
+              >{{ outputMetadata.processing_history.length }} operations applied</span
+            >
           </div>
           <div v-if="spectraMetadata.conditions?.temperature_c" class="meta-preview-item">
             <span class="meta-key">Temp:</span>
@@ -1359,16 +1414,17 @@
   <!-- Quick Plot Modal (Universal Plotly-based) -->
   <QuickPlotModal
     v-model="showQuickPlotModal"
-    :node-output="nodeOutput"
+    :node-output="selectedNodeOutput"
     :node-type="selectedNode?.type || ''"
     :node-label="selectedNode ? getNodeLabel(selectedNode.type) : 'Node'"
     :node-input="inputConnections.length > 0 ? inputConnections[0].data : undefined"
+    :node-inputs="quickPlotInputs"
   />
 
   <!-- Data Table Modal (Raw data viewer) -->
   <DataTableModal
     v-model="showDataTableModal"
-    :node-output="nodeOutput"
+    :node-output="selectedNodeOutput"
     :node-type="selectedNode?.type || ''"
     :node-label="selectedNode ? getNodeLabel(selectedNode.type) : 'Node'"
   />
@@ -1388,11 +1444,15 @@
           <div v-if="previewData.original?.data?.length > 0" class="data-summary">
             <div class="summary-item">
               <span class="summary-label">Spectra:</span>
-              <span class="summary-value">{{ previewPayloadSampleCount(previewData.original) }}</span>
+              <span class="summary-value">{{
+                previewPayloadSampleCount(previewData.original)
+              }}</span>
             </div>
             <div v-if="previewData.original.data[0]?.wavenumber" class="summary-item">
               <span class="summary-label">Points:</span>
-              <span class="summary-value">{{ previewPayloadFeatureCount(previewData.original) }}</span>
+              <span class="summary-value">{{
+                previewPayloadFeatureCount(previewData.original)
+              }}</span>
             </div>
             <div v-if="previewData.original.data[0]?.wavenumber" class="summary-item">
               <span class="summary-label">Range:</span>
@@ -1401,7 +1461,9 @@
               </span>
             </div>
           </div>
-          <pre v-if="previewData.original">{{ JSON.stringify(previewData.original, null, 2).substring(0, 800) }}...</pre>
+          <pre v-if="previewData.original"
+            >{{ JSON.stringify(previewData.original, null, 2).substring(0, 800) }}...</pre
+          >
         </div>
       </div>
       <div class="preview-divider"></div>
@@ -1416,11 +1478,15 @@
             <div v-if="previewData.processed?.data?.length > 0" class="data-summary">
               <div class="summary-item">
                 <span class="summary-label">Spectra:</span>
-                <span class="summary-value">{{ previewPayloadSampleCount(previewData.processed) }}</span>
+                <span class="summary-value">{{
+                  previewPayloadSampleCount(previewData.processed)
+                }}</span>
               </div>
               <div v-if="previewData.processed.data[0]?.wavenumber" class="summary-item">
                 <span class="summary-label">Points:</span>
-                <span class="summary-value">{{ previewPayloadFeatureCount(previewData.processed) }}</span>
+                <span class="summary-value">{{
+                  previewPayloadFeatureCount(previewData.processed)
+                }}</span>
               </div>
               <div v-if="previewData.processed.data[0]?.wavenumber" class="summary-item">
                 <span class="summary-label">Range:</span>
@@ -1450,20 +1516,31 @@
     </div>
     <div v-else class="metadata-modal-content">
       <!-- Instrument Metadata Section (if available) -->
-      <div v-if="outputMetadata.instrument_metadata || outputMetadata.acquisition_params" class="metadata-section">
+      <div
+        v-if="outputMetadata.instrument_metadata || outputMetadata.acquisition_params"
+        class="metadata-section"
+      >
         <h4 class="section-title">
           <i class="pi pi-cog"></i>
           Instrument &amp; Acquisition
         </h4>
         <div class="instrument-grid">
           <template v-if="outputMetadata.instrument_metadata">
-            <div v-for="(value, key) in outputMetadata.instrument_metadata" :key="'inst-' + key" class="metadata-item">
+            <div
+              v-for="(value, key) in outputMetadata.instrument_metadata"
+              :key="'inst-' + key"
+              class="metadata-item"
+            >
               <span class="item-label">{{ formatLabel(String(key)) }}:</span>
               <span class="item-value">{{ value }}</span>
             </div>
           </template>
           <template v-if="outputMetadata.acquisition_params">
-            <div v-for="(value, key) in outputMetadata.acquisition_params" :key="'acq-' + key" class="metadata-item">
+            <div
+              v-for="(value, key) in outputMetadata.acquisition_params"
+              :key="'acq-' + key"
+              class="metadata-item"
+            >
               <span class="item-label">{{ formatLabel(String(key)) }}:</span>
               <span class="item-value">{{ formatAcquisitionValue(String(key), value) }}</span>
             </div>
@@ -1472,34 +1549,54 @@
       </div>
 
       <!-- Processing History Section -->
-      <div v-if="outputMetadata.processing_history?.length || processingOperations.length" class="metadata-section">
+      <div
+        v-if="outputMetadata.processing_history?.length || processingOperations.length"
+        class="metadata-section"
+      >
         <h4 class="section-title">
           <i class="pi pi-history"></i>
           Processing History
         </h4>
         <div class="processing-timeline">
-          <div
-            v-for="(step, index) in sortedProcessingHistory"
-            :key="index"
-            class="timeline-item"
-          >
+          <div v-for="(step, index) in sortedProcessingHistory" :key="index" class="timeline-item">
             <span class="step-number">{{ index + 1 }}</span>
             <div class="step-content">
-              <span class="step-operation">{{ typeof step === 'string' ? step : (step.op_id || step.operation || 'Unknown') }}</span>
+              <span class="step-operation">{{
+                typeof step === "string" ? step : step.op_id || step.operation || "Unknown"
+              }}</span>
               <span v-if="typeof step === 'object' && step.timestamp" class="step-timestamp">
                 {{ formatStepTimestamp(step.timestamp, index) }}
               </span>
               <div v-if="typeof step === 'object' && step.node_id" class="step-node-id">
                 Node: {{ step.node_id }}
               </div>
-              <div v-if="typeof step === 'object' && step.parameters && Object.keys(step.parameters).length > 0" class="step-params">
-                <span v-for="(pVal, pKey) in step.parameters" :key="pKey" class="param-chip" v-show="pVal !== null">
+              <div
+                v-if="
+                  typeof step === 'object' &&
+                  step.parameters &&
+                  Object.keys(step.parameters).length > 0
+                "
+                class="step-params"
+              >
+                <span
+                  v-for="(pVal, pKey) in step.parameters"
+                  :key="pKey"
+                  class="param-chip"
+                  v-show="pVal !== null"
+                >
                   {{ pKey }}: {{ pVal }}
                 </span>
               </div>
-              <div v-if="typeof step === 'object' && (step.input_shape || step.output_shape)" class="step-shapes">
-                <span v-if="step.input_shape" class="shape-badge">In: {{ step.input_shape?.join('×') }}</span>
-                <span v-if="step.output_shape" class="shape-badge">Out: {{ step.output_shape?.join('×') }}</span>
+              <div
+                v-if="typeof step === 'object' && (step.input_shape || step.output_shape)"
+                class="step-shapes"
+              >
+                <span v-if="step.input_shape" class="shape-badge"
+                  >In: {{ step.input_shape?.join("×") }}</span
+                >
+                <span v-if="step.output_shape" class="shape-badge"
+                  >Out: {{ step.output_shape?.join("×") }}</span
+                >
               </div>
             </div>
           </div>
@@ -1525,14 +1622,24 @@
       </div>
 
       <!-- Per-port Metadata Section (for multi-port outputs like PCA) -->
-      <div v-if="nodeOutput.ports && Object.keys(nodeOutput.ports).length > 0" class="metadata-section">
+      <div
+        v-if="nodeOutput.ports && Object.keys(nodeOutput.ports).length > 0"
+        class="metadata-section"
+      >
         <h4 class="section-title">
           <i class="pi pi-sitemap"></i>
           Output Ports
         </h4>
-        <div v-for="(port, portName) in nodeOutput.ports" :key="String(portName)" class="port-metadata-block">
+        <div
+          v-for="(port, portName) in nodeOutput.ports"
+          :key="String(portName)"
+          class="port-metadata-block"
+        >
           <h5 class="port-metadata-title">
-            {{ portName }}<span v-if="portName === nodeOutput.primary_port" class="primary-port-tag"> (primary)</span>
+            {{ portName
+            }}<span v-if="portName === nodeOutput.primary_port" class="primary-port-tag">
+              (primary)</span
+            >
           </h5>
           <pre class="metadata-json">{{ JSON.stringify(port.metadata ?? {}, null, 2) }}</pre>
         </div>
@@ -1542,28 +1649,49 @@
 </template>
 
 <script setup lang="ts">
+import RepeatedValidationSummary from "@/components/results/RepeatedValidationSummary.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- inspector renders heterogeneous node params and outputs across the full DAG surface. */
-import { ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { toRaw, ref, computed, watch, onMounted, onUnmounted } from "vue";
 import Accordion from "primevue/accordion";
 import AccordionTab from "primevue/accordiontab";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
-import InputNumber from "primevue/inputnumber";
+import PeakExecutionDetails from "@/components/common/PeakExecutionDetails.vue";
+import ScientificNumberInput from "@/components/common/ScientificNumberInput.vue";
 import InputText from "primevue/inputtext";
+import MultiSelect from "primevue/multiselect";
+import { featureColumnOptions } from "@/utils/featureColumnOptions";
 import Slider from "primevue/slider";
-import TreeSelect from "primevue/treeselect";
 import { useToast } from "primevue/usetoast";
-import { useWorkflowStore, type ExperimentDataset, type WorkflowNode } from "@/stores/workflow";
+import { useRouter } from "vue-router";
+import { useWorkflowStore, type WorkflowNode } from "@/stores/workflow";
 import { useProjectStore } from "@/stores/project";
-import { useDemoMode } from "@/composables/useDemoMode";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
 import type { NodeOutput, PortOutput } from "@/utils/nodeOutput";
+import type { ScientificValueDescriptor } from "@/stores/workflow-types";
 import type { NodeParameterMetadata } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
+import { resolveNodeHelpUrl } from "@/utils/nodeHelp";
 import { buildDiagnosticEntries } from "@/utils/diagnostics";
+import { primaryClassificationMetricSummary } from "@/utils/classificationMetrics";
+import { t2QDiagnosticRows } from "@/utils/scientificPlots";
+import { downloadExportArtifact, extractExportArtifact } from "@/utils/exportArtifact";
+import {
+  groupColumnFromInputs,
+  groupedSplitSummary,
+  splitMethodOptions,
+  splitMethodTargetConflict,
+} from "@/utils/groupedSplit";
+import {
+  availableScientificPresentations,
+  presentationSupports,
+  presentationResolutionError,
+  projectScientificPresentation,
+  resolveScientificPresentation,
+} from "@/utils/scientificPresentation";
 
 type ParamsMap = Record<string, any>;
 
@@ -1580,29 +1708,13 @@ interface NodeParameterDefinition {
   required?: boolean;
 }
 
-interface DatasetRefData extends Record<string, unknown> {
-  source?: string;
-  experiment_id?: number;
-  stage?: string;
-  file_id?: number;
-  file_path?: string;
-  library_id?: number;
-}
-
-interface DatasetTreeNode {
-  key: string;
-  label: string;
-  selectable?: boolean;
-  children?: DatasetTreeNode[];
-  data?: DatasetRefData;
-}
-
 interface StatsRow extends Record<string, unknown> {
   sample?: string | number;
   mean?: number;
   std?: number;
   min?: number;
   max?: number;
+  pc?: number;
   // PeakFinding stats fields
   peak?: number;
   position?: number;
@@ -1615,6 +1727,9 @@ interface MetadataSummary {
   n_samples?: number;
   n_features?: number;
   n_peaks?: number;
+  n_observations?: number;
+  n_components?: number;
+  total_variance_explained?: number;
 }
 
 interface MetadataProvenance {
@@ -1652,7 +1767,7 @@ interface InputConnection {
   nodeType: string;
   nodeLabel: string;
   port: string;
-  toPort?: string;  // Input port name for multi-input nodes (e.g., "X", "y")
+  toPort?: string; // Input port name for multi-input nodes (e.g., "X", "y")
   data?: NodeOutput | PortOutput | null;
 }
 
@@ -1661,26 +1776,203 @@ interface Props {
   nodeOutput: NodeOutput | null;
   inputConnections?: InputConnection[];
   isOpen?: boolean;
+  executionDisabled?: boolean;
+  executionDisabledReason?: string;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   isOpen: false,
   inputConnections: () => [],
+  executionDisabled: false,
+  executionDisabledReason: "",
 });
 
 const emit = defineEmits<{
-  (e: 'update-params', nodeId: string, params: ParamsMap): void;
-  (e: 'execute-node', nodeId: string): void;
-  (e: 'delete-node', nodeId: string): void;
-  (e: 'open-trial', nodeData: any): void;
-  (e: 'close'): void;
+  (e: "update-params", nodeId: string, params: ParamsMap): void;
+  (e: "execute-node", nodeId: string): void;
+  (e: "delete-node", nodeId: string): void;
+  (e: "open-trial", nodeData: any): void;
+  (e: "close"): void;
 }>();
 
 const toast = useToast();
+const router = useRouter();
 const workflowStore = useWorkflowStore();
 const projectStore = useProjectStore();
-const { isDemoMode } = useDemoMode();
-const selectedNodeType = computed(() => props.selectedNode?.type || '');
+const selectedNodeType = computed(() => props.selectedNode?.type || "");
+const configuringSheetData = ref(false);
+
+async function configureSheetData(): Promise<void> {
+  const node = props.selectedNode;
+  if (!node || projectStore.currentProjectId === null) return;
+  configuringSheetData.value = true;
+  try {
+    // Blank sheets are intentionally unsaved until their first meaningful
+    // edit.  Data selection is that edit, so persist the graph first and then
+    // let the server issue the initial append-only source revision.
+    const workflowId =
+      workflowStore.workflowId ??
+      (await workflowStore.saveWorkflow({
+        createVersion: false,
+        projectId: projectStore.currentProjectId,
+      }));
+    const experimentId = Number(node.params?.experiment_id);
+    await router.push({
+      path: "/data",
+      query: {
+        tab: "my-dataset",
+        workflow: String(workflowId),
+        source_node: node.id,
+        project_id: String(projectStore.currentProjectId),
+        ...(Number.isSafeInteger(experimentId) && experimentId > 0
+          ? { experiment: String(experimentId) }
+          : {}),
+      },
+    });
+  } catch (error: unknown) {
+    toast.add({
+      severity: "error",
+      summary: "Data configuration could not open",
+      detail: getErrorMessage(error, "Save this sheet and try configuring its data again."),
+      life: 5000,
+    });
+  } finally {
+    configuringSheetData.value = false;
+  }
+}
+const nodeMetadata = computed(() => {
+  if (!props.selectedNode) return null;
+  return workflowStore.getNodeMetadata(props.selectedNode.type);
+});
+const selectedNodeHelpUrl = computed(() =>
+  resolveNodeHelpUrl(nodeMetadata.value?.execution_contract?.payload.help_reference),
+);
+const selectedPresentationId = ref<string | null>(null);
+
+const presentationOptions = computed(() =>
+  availableScientificPresentations(nodeMetadata.value, props.nodeOutput).map((item) => ({
+    value: item.presentation.presentation_id,
+    label: item.presentation.label,
+  })),
+);
+
+const selectedPresentation = computed(() =>
+  resolveScientificPresentation(nodeMetadata.value, props.nodeOutput, selectedPresentationId.value),
+);
+const presentationError = computed(() =>
+  presentationResolutionError(nodeMetadata.value, props.nodeOutput, selectedPresentationId.value),
+);
+
+const selectedPortOutput = computed<PortOutput | null>(() => {
+  return selectedPresentation.value?.portOutput ?? null;
+});
+
+const selectedScientificDescriptor = computed<ScientificValueDescriptor | null>(
+  () => selectedPortOutput.value?.descriptor ?? props.nodeOutput?.descriptor ?? null,
+);
+
+const selectedNodeOutput = computed<NodeOutput | null>(() => {
+  return projectScientificPresentation(props.nodeOutput, selectedPresentation.value);
+});
+
+const executedGroupedSplit = computed(() => {
+  if (selectedNodeType.value !== "data.train_test_split") return null;
+  return groupedSplitSummary(props.nodeOutput);
+});
+
+const selectedOutputHasData = computed(() => {
+  const output = selectedNodeOutput.value;
+  if (Array.isArray(output?.data) && output.data.length > 0) return true;
+  if (!selectedPresentation.value) return false;
+  const value = output?.presentation_value;
+  if (Array.isArray(value)) return value.length > 0;
+  if (!value || typeof value !== "object") return false;
+  return Object.values(value).some((entry) =>
+    Array.isArray(entry) ? entry.length > 0 : entry !== null && entry !== undefined,
+  );
+});
+const selectedOutputPreviewNotice = computed(() => {
+  const metadata = asObject(selectedPortOutput.value?.metadata);
+  const value = asObject(selectedPortOutput.value?.value);
+  if (
+    metadata?.persisted_preview !== true &&
+    metadata?.data_truncated !== true &&
+    value?.persisted_preview !== true &&
+    value?.data_truncated !== true
+  ) {
+    return null;
+  }
+  return "Showing a bounded persisted preview. Re-run the workflow to inspect the complete numerical result.";
+});
+const selectedOutputSupportsTable = computed(() =>
+  selectedPresentation.value
+    ? presentationSupports(selectedPresentation.value, "table")
+    : (selectedScientificDescriptor.value?.view_modes.includes("table") ??
+      selectedOutputHasData.value),
+);
+const selectedOutputSupportsPlot = computed(() => {
+  if (selectedPresentation.value) return presentationSupports(selectedPresentation.value, "plot");
+  const descriptor = selectedScientificDescriptor.value;
+  if (!descriptor) return selectedOutputHasData.value;
+  const modes = descriptor.view_modes;
+  return modes.some(
+    (mode) => mode === "plot" || mode.endsWith("_plot") || mode === "variable_profile",
+  );
+});
+const tablePlotColumnOptions = computed(() => {
+  const input = props.inputConnections[0];
+  if (selectedNodeType.value !== "output.plot" || input?.nodeType !== "output.data_table") return [];
+  const value = asObject(asObject(input.data)?.value) || asObject(input.data);
+  const names = asObject(value?.metadata)?.column_names;
+  return Array.isArray(names) ? names.map(name => ({ label: String(name), value: `column:${name}` })) : [];
+});
+const selectableFeatureColumns = computed(() => featureColumnOptions(props.inputConnections[0]?.data));
+const showPlotAxisParameters = computed(
+  () => selectedPresentation.value?.presentation.kind !== "visualization",
+);
+
+const formatDimensionRole = (role: string): string => role.replace(/_/g, " ");
+
+watch(
+  () => [
+    props.selectedNode?.id,
+    props.nodeOutput?.primary_port,
+    Object.keys(props.nodeOutput?.ports ?? {}),
+    nodeMetadata.value?.presentation_contract?.digest,
+  ],
+  () => {
+    const defaultPresentation =
+      nodeMetadata.value?.presentation_contract?.payload.default_presentation;
+    const availablePresentationIds = new Set(
+      presentationOptions.value.map((option) => option.value),
+    );
+    selectedPresentationId.value =
+      defaultPresentation && availablePresentationIds.has(defaultPresentation)
+        ? defaultPresentation
+        : (presentationOptions.value[0]?.value ?? null);
+  },
+  { immediate: true, deep: true },
+);
+const preparedExportArtifact = computed(() => extractExportArtifact(props.nodeOutput));
+
+const downloadPreparedExport = async (): Promise<void> => {
+  try {
+    const artifact = await downloadExportArtifact(preparedExportArtifact.value);
+    toast.add({
+      severity: "success",
+      summary: "Prepared export downloaded",
+      detail: `${artifact.filename} (${artifact.content_sha256.slice(0, 12)}…)`,
+      life: 3000,
+    });
+  } catch (error) {
+    toast.add({
+      severity: "error",
+      summary: "Export verification failed",
+      detail: error instanceof Error ? error.message : "Prepared export is invalid",
+      life: 5000,
+    });
+  }
+};
 
 const asObject = (value: unknown): Record<string, unknown> | null => {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -1689,12 +1981,19 @@ const asObject = (value: unknown): Record<string, unknown> | null => {
   return value as Record<string, unknown>;
 };
 
-const asKeyPart = (value: unknown): string | null => {
-  if (typeof value === "string" || typeof value === "number") {
-    return String(value);
-  }
-  return null;
-};
+const preparedExportSummary = computed(() => {
+  const artifact = asObject(preparedExportArtifact.value);
+  if (!artifact) return null;
+  const shape = Array.isArray(artifact.shape) ? artifact.shape.join(" × ") : "unknown";
+  return {
+    filename: typeof artifact.filename === "string" ? artifact.filename : "unknown",
+    format: typeof artifact.format === "string" ? artifact.format.toUpperCase() : "unknown",
+    shape,
+    byteLength:
+      typeof artifact.byte_length === "number" ? artifact.byte_length.toLocaleString() : "unknown",
+    digest: typeof artifact.content_sha256 === "string" ? artifact.content_sha256 : "unknown",
+  };
+});
 
 const getStringArray = (value: unknown): string[] => {
   if (!Array.isArray(value)) {
@@ -1704,7 +2003,7 @@ const getStringArray = (value: unknown): string[] => {
 };
 
 const outputMetadata = computed<InspectorMetadata>(() => {
-  const metadata = asObject(props.nodeOutput?.metadata);
+  const metadata = asObject(selectedNodeOutput.value?.metadata);
   return (metadata as InspectorMetadata) ?? {};
 });
 
@@ -1719,12 +2018,242 @@ const diagnosticEntries = computed(() => {
   return buildDiagnosticEntries(diagnostics);
 });
 
+const selectedResultEntries = computed(() => {
+  const resolved = selectedPresentation.value;
+  const port = selectedPortOutput.value;
+  if (!resolved || !port) return [];
+  const value = asObject(port.value);
+  const metadata = asObject(value?.metadata) ?? asObject(port.metadata) ?? {};
+  const summary: Record<string, unknown> = {};
+
+  if (resolved.presentation.kind === "regression_comparison") {
+    summary.role = metadata.role;
+    summary.samples = metadata.n_samples;
+    summary.targets = metadata.n_targets;
+    summary.residual_definition = metadata.residual_definition;
+  } else if (resolved.presentation.kind === "variable_profile") {
+    const scores = Array.isArray(port.data)
+      ? port.data.filter(
+          (item): item is number => typeof item === "number" && Number.isFinite(item),
+        )
+      : [];
+    summary.variables = scores.length;
+    summary.vip_at_or_above_one = scores.filter((score) => score >= 1).length;
+    summary.maximum_vip = scores.length > 0 ? Math.max(...scores) : null;
+  } else if (resolved.presentation.kind === "pls_explained_variance") {
+    const rows = Array.isArray(port.data) ? port.data : [];
+    const finiteRows = rows.filter(
+      (row): row is number[] =>
+        Array.isArray(row) &&
+        row.length >= 2 &&
+        row.every((item) => typeof item === "number" && Number.isFinite(item)),
+    );
+    summary.components = finiteRows.length;
+    summary.cumulative_x_variance = finiteRows.reduce((total, row) => total + row[0], 0);
+    summary.cumulative_y_variance = finiteRows.reduce((total, row) => total + row[1], 0);
+  } else if (resolved.presentation.kind === "pca_explained_variance") {
+    const values = Array.isArray(port.data)
+      ? port.data.filter(
+          (item): item is number => typeof item === "number" && Number.isFinite(item),
+        )
+      : [];
+    summary.components = values.length;
+    summary.cumulative_explained_variance = values.reduce((total, value) => total + value, 0);
+  } else if (
+    ["metric_record", "statistics_summary", "validation_result"].includes(
+      resolved.presentation.kind,
+    )
+  ) {
+    const classificationSummary = primaryClassificationMetricSummary(value);
+    if (classificationSummary) {
+      Object.assign(summary, classificationSummary);
+    } else {
+      for (const key of [
+        "task_type",
+        "registry_version",
+        "n_samples",
+        "n_targets",
+        "rmse",
+        "mae",
+        "bias",
+        "r2",
+        "sep",
+        "slope",
+        "intercept",
+        "rer",
+        "accuracy",
+        "balanced_accuracy",
+        "macro_precision",
+        "macro_recall",
+        "macro_specificity",
+        "macro_f1",
+      ]) {
+        summary[key] = value?.[key];
+      }
+    }
+  } else if (resolved.presentation.kind === "classification_responses") {
+    const rows = Array.isArray(port.data) ? port.data : [];
+    summary.calibration_samples = rows.length;
+    summary.response_classes = rows.length > 0 && Array.isArray(rows[0]) ? rows[0].length : 0;
+    summary.response_semantics = "PLS dummy-response scores, not probabilities";
+  } else if (resolved.presentation.kind === "t2_q_diagnostics") {
+    const rows = t2QDiagnosticRows(
+      selectedNodeOutput.value?.presentation_value,
+      outputMetadata.value,
+    );
+    summary.samples_screened = rows.length;
+    summary.flagged_samples = rows.filter((row) => row.outlier).length;
+    summary.maximum_t2 = rows.length > 0 ? Math.max(...rows.map((row) => row.t2)) : null;
+    summary.maximum_q = rows.length > 0 ? Math.max(...rows.map((row) => row.q)) : null;
+  } else if (resolved.presentation.kind === "model_summary") {
+    const state = asObject(value?.state) ?? {};
+    for (const key of [
+      "algorithm_id",
+      "algorithm_version",
+      "n_components",
+      "effective_n_components",
+      "reference_samples",
+      "features",
+      "targets",
+      "scale",
+    ]) {
+      summary[key] = state[key];
+    }
+    summary.serializer = value?.serializer;
+    summary.state_content_digest = value?.state_content_digest;
+  } else if (resolved.presentation.kind === "scalar") {
+    const scalar =
+      typeof port.data === "number"
+        ? port.data
+        : typeof port.value === "number"
+          ? port.value
+          : null;
+    summary[resolved.sourcePort] = scalar;
+  }
+  return buildDiagnosticEntries(summary);
+});
+
+const selectedResultDimensions = computed(() => {
+  const kind = selectedPresentation.value?.presentation.kind;
+  const data = selectedPortOutput.value?.data;
+  const descriptor = selectedScientificDescriptor.value;
+  const declaredShape =
+    descriptor?.shape_valid === true &&
+    Array.isArray(descriptor.shape) &&
+    descriptor.shape.every((size) => Number.isInteger(size) && size >= 0)
+      ? descriptor.shape
+      : null;
+  if (
+    kind === "spectral_dataset" &&
+    outputMetadata.value.scientific_matrix_role === "component_concentrations" &&
+    Array.isArray(data) &&
+    Array.isArray(data[0])
+  ) {
+    return [
+      { role: "samples", size: declaredShape?.[0] ?? data.length },
+      { role: "components", size: declaredShape?.[1] ?? data[0].length },
+    ];
+  }
+  if (
+    kind === "spectral_dataset" &&
+    outputMetadata.value.scientific_matrix_role === "component_spectra" &&
+    Array.isArray(data) &&
+    Array.isArray(data[0])
+  ) {
+    return [
+      { role: "components", size: declaredShape?.[0] ?? data.length },
+      { role: "spectral variables", size: declaredShape?.[1] ?? data[0].length },
+    ];
+  }
+  if (kind === "pca_explained_variance" && Array.isArray(data)) {
+    return [{ role: "components", size: data.length }];
+  }
+  if (kind === "variable_profile" && Array.isArray(data)) {
+    return [{ role: "features", size: data.length }];
+  }
+  if (kind === "classification_responses" && Array.isArray(data) && Array.isArray(data[0])) {
+    return [
+      { role: "calibration samples", size: data.length },
+      { role: "response classes", size: data[0].length },
+    ];
+  }
+  if (
+    kind === "spectral_dataset" &&
+    outputMetadata.value.data_role === "X_features" &&
+    Array.isArray(data) &&
+    Array.isArray(data[0])
+  ) {
+    return [
+      { role: "samples", size: data.length },
+      { role: "features", size: data[0].length },
+    ];
+  }
+  if (kind === "t2_q_diagnostics") {
+    const rows = t2QDiagnosticRows(
+      selectedNodeOutput.value?.presentation_value,
+      outputMetadata.value,
+    );
+    return [
+      { role: "samples", size: rows.length },
+      { role: "statistics", size: 2 },
+    ];
+  }
+  if (kind === "confusion_matrix" && Array.isArray(data) && Array.isArray(data[0])) {
+    return [
+      { role: "actual-class rows", size: data.length },
+      { role: "prediction-class columns", size: data[0].length },
+    ];
+  }
+  return selectedScientificDescriptor.value?.dimensions ?? [];
+});
+
+const selectedResultFormLabel = computed(() => {
+  const kind = selectedPresentation.value?.presentation.kind;
+  if (kind === "scalar") return "Scalar scientific result";
+  if (["metric_record", "statistics_summary", "validation_result"].includes(kind ?? "")) {
+    return "Structured scientific metrics";
+  }
+  if (kind?.includes("model")) return "Fitted scientific model";
+  return "Structured scientific result";
+});
+
+const selectedResultNoninteractiveNote = computed(() =>
+  selectedPresentation.value?.presentation.kind === "scalar"
+    ? "This scalar result is reported in the selected result summary above."
+    : "This fitted model record is summarized by its scientific diagnostics above.",
+);
+
+const selectedResultShowsMetadata = computed(() => {
+  const kind = selectedPresentation.value?.presentation.kind;
+  return !kind || (kind !== "scalar" && !kind.includes("model"));
+});
+
 const outputStatsRows = computed<StatsRow[]>(() => {
   if (!Array.isArray(props.nodeOutput?.data)) {
     return [];
   }
-  return props.nodeOutput.data
-    .filter((row): row is StatsRow => !!asObject(row));
+  return props.nodeOutput.data.filter((row): row is StatsRow => !!asObject(row));
+});
+
+const statsRowLabel = (stat: StatsRow, index: number): string => {
+  if (typeof stat.pc === "number" && Number.isFinite(stat.pc)) return `PC${stat.pc}`;
+  return stat.wavelength != null ? `λ ${stat.wavelength}` : `#${index + 1}`;
+};
+
+const statsOverallSummary = computed(() => {
+  const summary = outputMetadata.value.summary;
+  if (!summary) return "";
+  if (summary.n_observations != null || summary.n_components != null) {
+    const observations = summary.n_observations ?? 0;
+    const components = summary.n_components ?? 0;
+    const variance = summary.total_variance_explained;
+    const varianceLabel =
+      typeof variance === "number" && Number.isFinite(variance)
+        ? `; ${(variance * 100).toFixed(1)}% variance explained`
+        : "";
+    return `${observations} samples × ${components} components${varianceLabel}`;
+  }
+  return `${summary.n_samples ?? 0} samples × ${summary.n_features ?? 0} features`;
 });
 
 const spectraMetadata = computed<SpectraSnapshot>(() => {
@@ -1757,50 +2286,50 @@ const getNodeLabel = (nodeType: string): string => {
 
 // Close inspector
 const closeInspector = () => {
-  emit('close');
+  emit("close");
 };
 
 const NODE_ICONS: Record<string, string> = {
   // Data source
-  'data.source': '📊',
-  'data.my_dataset': '📁',
+  "data.file_load": "📂",
 
   // Preprocessing - atomic
-  'preprocess.cosmic_ray': '✨',
-  'preprocess.clip_range': '✂️',
-  'preprocess.clip_floor': '⬇️',
-  'preprocess.wavenumber_align': '📐',
-  'preprocess.scale': '📏',
-  'preprocess.normalize': '⚖️',
+  "preprocess.cosmic_ray": "✨",
+  "preprocess.clip_range": "✂️",
+  "preprocess.clip_floor": "⬇️",
+  "preprocess.wavenumber_align": "📐",
+  "preprocess.scale": "📏",
+  "preprocess.normalize": "⚖️",
 
   // Preprocessing - existing
-  'baseline.penalized_ls': '📉',
-  'baseline.rubberband': '📉',
-  'preprocess.smooth': '〰️',
-  'preprocess.derivative': '📈',
-  'preprocess.emsc': '🔧',
+  "baseline.penalized_ls": "📉",
+  "baseline.rubberband": "📉",
+  "preprocess.smooth": "〰️",
+  "preprocess.derivative": "📈",
+  "preprocess.emsc": "🔧",
 
   // Synthesis / Blend
-  'synthesis.blend': '🔀',
-  'synthesis.species': '🧬',
-  'synthesis.merge': '📚',
+  "synthesis.blend": "🔀",
+  "synthesis.species": "🧬",
+  "synthesis.merge": "📚",
 
   // Analysis
-  'model.pca': '🔀',
-  'model.pls': '📈',
-  'model.mcr_als': '🧩',
-  'model.efa': '🔬',
-  'model.simplisma': '🎯',
+  "model.pca": "🔀",
+  "model.fitted_pls": "📈",
+  "model.apply_fitted_pls": "📈",
+  "model.mcr_als": "🧩",
+  "model.efa": "🔬",
+  "model.simplisma": "🎯",
 
   // Output
-  'stats.summary': '📊',
-  'output.plot': '📈',
-  'output.contour': '🗺️',
-  'output.export': '💾',
+  "stats.summary": "📊",
+  "output.plot": "📈",
+  "output.contour": "🗺️",
+  "output.export": "💾",
 
   // Deploy
-  'deploy.input': '📥',
-  'deploy.output': '📤',
+  "deploy.input": "📥",
+  "deploy.output": "📤",
 };
 
 // Local params copy for editing
@@ -1827,7 +2356,7 @@ const stableParamSignature = (value: unknown): string => {
       return Object.fromEntries(
         Object.entries(item as Record<string, unknown>)
           .sort(([left], [right]) => left.localeCompare(right))
-          .map(([key, child]) => [key, normalize(child)])
+          .map(([key, child]) => [key, normalize(child)]),
       );
     }
     return item;
@@ -1864,7 +2393,7 @@ const syncLocalParamsFromExternal = (
   lastSyncedParamsSignature.value = stableParamSignature(nextParams);
   if (
     options.fetchReferenceDatasets &&
-    (localParams.value.source === 'eigenvector' || localParams.value.source === 'sklearn')
+    (localParams.value.source === "eigenvector" || localParams.value.source === "sklearn")
   ) {
     void workflowStore.fetchReferenceDatasets();
   }
@@ -1875,7 +2404,6 @@ type SampleFilterField =
   | "sample_index"
   | "sample_label"
   | "sample_class"
-  | "target"
   | "sample_table"
   | "intensity";
 
@@ -1920,10 +2448,21 @@ const sampleFilterMatchModeOptions = [
 
 const filterInputOutput = computed<PortOutput | NodeOutput | null>(() => {
   if (selectedNodeType.value !== "data.filter_samples") return null;
-  return props.inputConnections.find((conn) => conn.toPort === "X")?.data
-    || props.inputConnections[0]?.data
-    || null;
+  return (
+    props.inputConnections.find((conn) => conn.toPort === "X")?.data ||
+    props.inputConnections[0]?.data ||
+    null
+  );
 });
+
+const quickPlotInputs = computed<Record<string, PortOutput | NodeOutput | null>>(() =>
+  Object.fromEntries(
+    props.inputConnections.map((connection) => [
+      connection.toPort || "default",
+      connection.data ?? null,
+    ]),
+  ),
+);
 
 const filterOutputValue = (output: PortOutput | NodeOutput | null): unknown => {
   return output && "value" in output ? output.value : null;
@@ -1934,9 +2473,9 @@ const filterInputRecord = computed<Record<string, unknown> | null>(() => {
 });
 
 const filterInputMetadata = computed<Record<string, unknown>>(() => {
-  return asObject(filterInputOutput.value?.metadata)
-    ?? asObject(filterInputRecord.value?.metadata)
-    ?? {};
+  return (
+    asObject(filterInputOutput.value?.metadata) ?? asObject(filterInputRecord.value?.metadata) ?? {}
+  );
 });
 
 const filterDataRows = computed<unknown[][]>(() => {
@@ -2010,25 +2549,27 @@ const filterSampleLabels = computed(() => {
 const filterHasRealSampleLabels = computed(() => {
   const record = filterInputRecord.value;
   const yAxis = asObject(record?.y_axis) ?? asObject(record?.sample_axis);
-  return toStringValues(
-    getNestedArray(filterInputMetadata.value.sample_labels, filterInputMetadata.value.labels, yAxis?.labels),
-    filterSampleCount.value,
-  ).length > 0;
+  return (
+    toStringValues(
+      getNestedArray(
+        filterInputMetadata.value.sample_labels,
+        filterInputMetadata.value.labels,
+        yAxis?.labels,
+      ),
+      filterSampleCount.value,
+    ).length > 0
+  );
 });
 
 const filterSampleClasses = computed(() => {
   const record = filterInputRecord.value;
   const yAxis = asObject(record?.y_axis) ?? asObject(record?.sample_axis);
   return toStringValues(
-    getNestedArray(filterInputMetadata.value.sample_classes, filterInputMetadata.value.classes, yAxis?.classes),
-    filterSampleCount.value,
-  );
-});
-
-const filterTargetValues = computed(() => {
-  const record = filterInputRecord.value;
-  return toStringValues(
-    getNestedArray(record?.target, filterInputMetadata.value.target, filterInputMetadata.value.target_values),
+    getNestedArray(
+      filterInputMetadata.value.sample_classes,
+      filterInputMetadata.value.classes,
+      yAxis?.classes,
+    ),
     filterSampleCount.value,
   );
 });
@@ -2036,7 +2577,8 @@ const filterTargetValues = computed(() => {
 const filterSampleTable = computed<Record<string, string[]>>(() => {
   const record = filterInputRecord.value;
   const yAxis = asObject(record?.y_axis) ?? asObject(record?.sample_axis);
-  const rawTable = asObject(yAxis?.sample_table) ?? asObject(filterInputMetadata.value.sample_table);
+  const rawTable =
+    asObject(yAxis?.sample_table) ?? asObject(filterInputMetadata.value.sample_table);
   const table: Record<string, string[]> = {};
   if (!rawTable) return table;
   for (const [key, value] of Object.entries(rawTable)) {
@@ -2049,7 +2591,10 @@ const filterSampleTable = computed<Record<string, string[]>>(() => {
 });
 
 const sampleTableColumnOptions = computed(() =>
-  Object.keys(filterSampleTable.value).map((column) => ({ label: formatLabel(column), value: column })),
+  Object.keys(filterSampleTable.value).map((column) => ({
+    label: formatLabel(column),
+    value: column,
+  })),
 );
 
 const uniqueOptions = (values: string[]): FilterValueOption[] => {
@@ -2065,12 +2610,12 @@ const uniqueOptions = (values: string[]): FilterValueOption[] => {
 
 const currentCategoricalValues = computed(() => {
   const field = String(localParams.value.field || "sample_index");
-  if (field === "sample_label") return filterHasRealSampleLabels.value ? filterSampleLabels.value : [];
+  if (field === "sample_label")
+    return filterHasRealSampleLabels.value ? filterSampleLabels.value : [];
   if (field === "sample_class") return filterSampleClasses.value;
-  if (field === "target") return filterTargetValues.value;
   if (field === "sample_table") {
     const column = String(localParams.value.sample_table_column || "");
-    return column ? filterSampleTable.value[column] ?? [] : [];
+    return column ? (filterSampleTable.value[column] ?? []) : [];
   }
   return [];
 });
@@ -2089,7 +2634,6 @@ const categoricalFilterLabel = computed(() => {
   const field = String(localParams.value.field || "");
   if (field === "sample_label") return "Sample names to keep";
   if (field === "sample_class") return "Classes to keep";
-  if (field === "target") return "Target values to keep";
   if (field === "sample_table") return "Metadata values to keep";
   return "Values to keep";
 });
@@ -2136,12 +2680,12 @@ const setSelectedFilterValues = (values: string[]) => {
     localParams.value.filter_values = [];
     localParams.value.pattern = "";
     localParams.value.match_mode = "in_list";
-    localParams.value.case_sensitive = false;
+    localParams.value.case_sensitive = true;
   } else {
     localParams.value.filter_values = unique;
     localParams.value.pattern = "";
     localParams.value.match_mode = "in_list";
-    localParams.value.case_sensitive = false;
+    localParams.value.case_sensitive = true;
   }
   emitParams();
 };
@@ -2158,7 +2702,8 @@ const toggleFilterValue = (value: string) => {
   setSelectedFilterValues(Array.from(selected));
 };
 
-const selectAllFilterValues = () => setSelectedFilterValues(filterValueOptions.value.map((option) => option.value));
+const selectAllFilterValues = () =>
+  setSelectedFilterValues(filterValueOptions.value.map((option) => option.value));
 const clearFilterValues = () => setSelectedFilterValues([]);
 
 const numericRows = computed(() =>
@@ -2229,18 +2774,11 @@ const sampleFilterModeOptions = computed<FilterModeOption[]>(() => [
     enabled: filterSampleClasses.value.some((value) => value !== ""),
   },
   {
-    value: "target",
-    label: "By target",
-    hint: filterTargetValues.value.some((value) => value !== "")
-      ? `${uniqueOptions(filterTargetValues.value.filter((value) => value !== "")).length} values`
-      : "No targets",
-    icon: "pi pi-bullseye",
-    enabled: filterTargetValues.value.some((value) => value !== ""),
-  },
-  {
     value: "sample_table",
     label: "By metadata",
-    hint: sampleTableColumnOptions.value.length ? `${sampleTableColumnOptions.value.length} fields` : "No fields",
+    hint: sampleTableColumnOptions.value.length
+      ? `${sampleTableColumnOptions.value.length} fields`
+      : "No fields",
     icon: "pi pi-table",
     enabled: sampleTableColumnOptions.value.length > 0,
   },
@@ -2316,9 +2854,10 @@ const ensureSampleFilterDefaults = (emit = false) => {
   }
   const sampleTableColumns = sampleTableColumnOptions.value.map((option) => option.value);
   if (
-    currentField === "sample_table"
-    && sampleTableColumns.length
-    && (!localParams.value.sample_table_column || !sampleTableColumns.includes(String(localParams.value.sample_table_column)))
+    currentField === "sample_table" &&
+    sampleTableColumns.length &&
+    (!localParams.value.sample_table_column ||
+      !sampleTableColumns.includes(String(localParams.value.sample_table_column)))
   ) {
     localParams.value.sample_table_column = sampleTableColumns[0];
     if (emit) emitParams();
@@ -2419,11 +2958,15 @@ const categoricalMask = (values: string[]): boolean[] => {
   return textMask(values);
 };
 
-const normalizeMaskLength = (mask: boolean[], count: number): boolean[] => (
-  Array.from({ length: count }, (_, index) => mask[index] === true)
-);
+const normalizeMaskLength = (mask: boolean[], count: number): boolean[] =>
+  Array.from({ length: count }, (_, index) => mask[index] === true);
 
-const compareNumber = (value: number, operator: string, threshold: number, upper: number): boolean => {
+const compareNumber = (
+  value: number,
+  operator: string,
+  threshold: number,
+  upper: number,
+): boolean => {
   if (!Number.isFinite(value)) return false;
   if (operator === "gt") return value > threshold;
   if (operator === "gte") return value >= threshold;
@@ -2445,16 +2988,25 @@ const intensityMask = (): boolean[] => {
   if (metric === "any" || metric === "all") {
     return numericRows.value.map((row) => {
       const matches = row.map((value) => compareNumber(value, operator, threshold, upper));
-      return metric === "any" ? matches.some(Boolean) : matches.length > 0 && matches.every(Boolean);
+      return metric === "any"
+        ? matches.some(Boolean)
+        : matches.length > 0 && matches.every(Boolean);
     });
   }
-  return rowIntensityValues(metric).map((value) => compareNumber(value, operator, threshold, upper));
+  return rowIntensityValues(metric).map((value) =>
+    compareNumber(value, operator, threshold, upper),
+  );
 };
 
 const filterPreview = computed(() => {
   const count = filterSampleCount.value;
   if (!filterHasInput.value || count === 0) {
-    return { empty: true, summary: "No input samples are available.", keptLabels: [], excludedLabels: [] };
+    return {
+      empty: true,
+      summary: "No input samples are available.",
+      keptLabels: [],
+      excludedLabels: [],
+    };
   }
 
   let mask: boolean[];
@@ -2492,9 +3044,10 @@ const filterPreview = computed(() => {
   const keptCount = mask.filter(Boolean).length;
   return {
     empty: keptCount === 0,
-    summary: keptCount === 0
-      ? `No samples match this rule.`
-      : `This rule keeps ${keptCount} of ${count} samples.`,
+    summary:
+      keptCount === 0
+        ? `No samples match this rule.`
+        : `This rule keeps ${keptCount} of ${count} samples.`,
     keptLabels: kept,
     excludedLabels: excluded,
   };
@@ -2503,24 +3056,126 @@ const filterPreview = computed(() => {
 // Check if node is a preprocessing node (eligible for preview)
 const isPreprocessingNode = computed(() => {
   if (!props.selectedNode) return false;
-  const preprocessingTypes = ['preprocess.smooth', 'baseline.penalized_ls', 'baseline.rubberband', 'preprocess.normalize', 'preprocess.scale', 'preprocess.emsc', 'preprocess.derivative'];
+  const preprocessingTypes = [
+    "preprocess.smooth",
+    "baseline.penalized_ls",
+    "baseline.rubberband",
+    "preprocess.normalize",
+    "preprocess.scale",
+    "preprocess.emsc",
+    "preprocess.derivative",
+  ];
   return preprocessingTypes.includes(selectedNodeType.value);
-});
-
-// Get node metadata and separate basic/advanced params
-const nodeMetadata = computed(() => {
-  if (!props.selectedNode) return null;
-  return workflowStore.getNodeMetadata(props.selectedNode.type);
 });
 
 const normalizeOptions = (options: any[] | undefined): any[] | undefined => {
   if (!options) return options;
-  return options.map((opt: any) => typeof opt === 'string' ? { label: opt, value: opt } : opt);
+  return options.map((opt: any) => (typeof opt === "string" ? { label: opt, value: opt } : opt));
+};
+
+const upstreamGroupColumn = (): string | null => {
+  const selectedId = props.selectedNode?.id;
+  if (!selectedId) return null;
+  const pending = [selectedId];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const targetId = pending.shift();
+    if (!targetId || visited.has(targetId)) continue;
+    visited.add(targetId);
+    for (const edge of workflowStore.edges.filter((candidate) => candidate.to === targetId)) {
+      const source = workflowStore.nodes.find((candidate) => candidate.id === edge.from);
+      if (!source) continue;
+      const groupColumn = source.params?.group_column;
+      if (typeof groupColumn === "string" && groupColumn.trim()) return groupColumn.trim();
+      pending.push(source.id);
+    }
+  }
+  return null;
+};
+
+// Walk the same upstream chain as the group column to find the declared target
+// type, so the split node can tell whether its method suits the bound response.
+const upstreamTargetType = (): string | null => {
+  const selectedId = props.selectedNode?.id;
+  if (!selectedId) return null;
+  const pending = [selectedId];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const targetId = pending.shift();
+    if (!targetId || visited.has(targetId)) continue;
+    visited.add(targetId);
+    for (const edge of workflowStore.edges.filter((candidate) => candidate.to === targetId)) {
+      const source = workflowStore.nodes.find((candidate) => candidate.id === edge.from);
+      if (!source) continue;
+      const targetType = source.params?.target_type;
+      if (typeof targetType === "string" && targetType.trim()) return targetType.trim();
+      pending.push(source.id);
+    }
+  }
+  return null;
+};
+
+const activeTargetType = computed(() => {
+  if (selectedNodeType.value !== "data.train_test_split") return null;
+  return upstreamTargetType();
+});
+
+const activeValidationGroupColumn = computed(() => {
+  if (selectedNodeType.value !== "data.train_test_split") return null;
+  return groupColumnFromInputs(props.inputConnections) ?? upstreamGroupColumn();
+});
+
+// When a grouping column is bound and the upstream dataset carries its sample
+// table (as it does after execution), offer a dropdown of the exact group
+// values. If the table is not on the wire, fall back to the free-entry string
+// list; the planner will still validate the names and report the valid ones.
+const groupValuesFromInputs = computed((): string[] | null => {
+  const column = activeValidationGroupColumn.value;
+  if (!column) return null;
+  for (const connection of props.inputConnections ?? []) {
+    const payload = connection?.data;
+    const value =
+      payload && typeof payload === "object"
+        ? (payload as unknown as Record<string, unknown>).value
+        : payload;
+    const dataset =
+      value && typeof value === "object" ? (value as unknown as Record<string, unknown>) : null;
+    const sampleAxis =
+      dataset?.sample_axis && typeof dataset.sample_axis === "object"
+        ? (dataset.sample_axis as Record<string, unknown>)
+        : null;
+    const table = sampleAxis?.sample_table ?? dataset?.sample_table;
+    if (!Array.isArray(table)) continue;
+    const entry = table.find(
+      (item: unknown) =>
+        item && typeof item === "object" && (item as Record<string, unknown>).name === column,
+    ) as Record<string, unknown> | undefined;
+    const values = entry?.values;
+    if (!Array.isArray(values)) continue;
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const raw of values) {
+      const text = String(raw);
+      if (seen.has(text)) continue;
+      seen.add(text);
+      result.push(text);
+    }
+    return result;
+  }
+  return null;
+});
+
+const parameterOptions = (param: NodeParameterMetadata): any[] | undefined => {
+  const normalized = normalizeOptions(param.options);
+  if (param.name !== "split_method" || selectedNodeType.value !== "data.train_test_split") {
+    return normalized;
+  }
+  return splitMethodOptions(normalized, Boolean(activeValidationGroupColumn.value));
 };
 
 const mapMetadataParamNames = (
   _nodeType: string,
-  parameters: NodeParameterMetadata[]
+  parameters: NodeParameterMetadata[],
 ): NodeParameterMetadata[] => {
   return parameters;
 };
@@ -2530,29 +3185,53 @@ const mappedMetadataParams = computed(() => {
   return mapMetadataParamNames(props.selectedNode.type, nodeMetadata.value.parameters);
 });
 
+// A parameter declared visible only under certain control values does not apply
+// outside them, so the inspector hides it exactly as the node detail view does.
+// Leaving it on screen offered a setting the chosen method could not honour, and
+// leaving a stale value behind it used to make the saved graph inadmissible over
+// a field the scientist had no way to see. The node canonicalizer resets those
+// values; hiding the control is the matching half.
+const isParamVisible = (param: NodeParameterMetadata): boolean => {
+  if (!param.visible_when) return true;
+  return Object.entries(param.visible_when).every(([control, admitted]) =>
+    admitted.includes(String(localParams.value[control] ?? "")),
+  );
+};
+
 const basicParams = computed(() => {
   if (!mappedMetadataParams.value.length) return [];
-  return mappedMetadataParams.value.filter(p => !p.category || p.category === 'basic');
+  return mappedMetadataParams.value.filter(
+    (p) => (!p.category || p.category === "basic") && isParamVisible(p),
+  );
 });
 
 const advancedParams = computed(() => {
   if (!mappedMetadataParams.value.length) return [];
-  return mappedMetadataParams.value.filter(p => p.category === 'advanced');
+  return mappedMetadataParams.value.filter((p) => p.category === "advanced" && isParamVisible(p));
 });
 
 const hasAdvancedParams = computed(() => advancedParams.value.length > 0);
 
 // Processing history helpers
 const sortedProcessingHistory = computed<any[]>(() => {
-  const history = outputMetadata.value.processing_history ||
-                  outputMetadata.value.provenance?.operations ||
-                  spectraMetadata.value.provenance?.operations ||
-                  [];
+  const history =
+    outputMetadata.value.processing_history ||
+    outputMetadata.value.provenance?.operations ||
+    spectraMetadata.value.provenance?.operations ||
+    [];
   // Sort by timestamp if available
-  if (history.length > 0 && typeof history[0] === "object" && history[0] !== null && "timestamp" in history[0]) {
+  if (
+    history.length > 0 &&
+    typeof history[0] === "object" &&
+    history[0] !== null &&
+    "timestamp" in history[0]
+  ) {
     const withTimestamp = history.filter(
       (item): item is { timestamp: string } =>
-        typeof item === "object" && item !== null && "timestamp" in item && typeof item.timestamp === "string"
+        typeof item === "object" &&
+        item !== null &&
+        "timestamp" in item &&
+        typeof item.timestamp === "string",
     );
     return [...history].sort((a, b) => {
       const dateA = withTimestamp.find((item) => item === a)?.timestamp ?? "";
@@ -2595,47 +3274,47 @@ const formatStepTimestamp = (timestamp: string, _index: number): string => {
       if (daysDiff >= 1) {
         // Steps span multiple days - show full date+time
         return date.toLocaleString(undefined, {
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
         });
       }
     }
   }
   // Same day - just show time
   return date.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
   });
 };
 
 // Format snake_case keys to readable labels
 const formatLabel = (key: string): string => {
   return key
-    .replace(/_/g, ' ')
+    .replace(/_/g, " ")
     .replace(/\b\w/g, (c) => c.toUpperCase())
-    .replace(/Cm$/, '(cm⁻¹)')
-    .replace(/Khz$/, '(kHz)')
-    .replace(/^N /, 'Number of ');
+    .replace(/Cm$/, "(cm⁻¹)")
+    .replace(/Khz$/, "(kHz)")
+    .replace(/^N /, "Number of ");
 };
 
 // Format acquisition values with appropriate units
 const formatAcquisitionValue = (key: string, value: unknown): string => {
-  if (value === null || value === undefined) return '—';
+  if (value === null || value === undefined) return "—";
 
   // Add units based on key
-  if (key.includes('resolution') && typeof value === 'number') {
+  if (key.includes("resolution") && typeof value === "number") {
     return `${value} cm⁻¹`;
   }
-  if (key.includes('velocity') && typeof value === 'number') {
+  if (key.includes("velocity") && typeof value === "number") {
     return `${value} kHz`;
   }
-  if (key.includes('wavenumber') && typeof value === 'number') {
+  if (key.includes("wavenumber") && typeof value === "number") {
     return `${value.toFixed(1)} cm⁻¹`;
   }
-  if ((key === 'n_scans' || key === 'n_points') && typeof value === "number") {
+  if ((key === "n_scans" || key === "n_points") && typeof value === "number") {
     return value.toLocaleString();
   }
 
@@ -2659,21 +3338,24 @@ const numericPreviewValue = (value: unknown): number | null => {
   return null;
 };
 
-const previewPayloadMetadata = (payload: any): Record<string, unknown> => (
-  asObject(payload?.metadata) ?? {}
-);
+const previewPayloadMetadata = (payload: any): Record<string, unknown> =>
+  asObject(payload?.metadata) ?? {};
 
 const previewPayloadSampleCount = (payload: any): number => {
   const metadata = previewPayloadMetadata(payload);
-  return numericPreviewValue(metadata.n_samples ?? payload?.n_samples)
-    ?? (Array.isArray(payload?.data) ? payload.data.length : 0);
+  return (
+    numericPreviewValue(metadata.n_samples ?? payload?.n_samples) ??
+    (Array.isArray(payload?.data) ? payload.data.length : 0)
+  );
 };
 
 const previewPayloadFeatureCount = (payload: any): number => {
   const metadata = previewPayloadMetadata(payload);
   const firstWavenumbers = payload?.data?.[0]?.wavenumber;
-  return numericPreviewValue(metadata.n_features ?? payload?.n_features)
-    ?? (Array.isArray(firstWavenumbers) ? firstWavenumbers.length : 0);
+  return (
+    numericPreviewValue(metadata.n_features ?? payload?.n_features) ??
+    (Array.isArray(firstWavenumbers) ? firstWavenumbers.length : 0)
+  );
 };
 
 const previewPayloadRange = (payload: any): string => {
@@ -2682,11 +3364,13 @@ const previewPayloadRange = (payload: any): string => {
   if (Array.isArray(explicitRange) && explicitRange.length >= 2) {
     const left = numericPreviewValue(explicitRange[0]);
     const right = numericPreviewValue(explicitRange[1]);
-    if (left !== null && right !== null) return `${Math.min(left, right).toFixed(1)} - ${Math.max(left, right).toFixed(1)} cm⁻¹`;
+    if (left !== null && right !== null)
+      return `${Math.min(left, right).toFixed(1)} - ${Math.max(left, right).toFixed(1)} cm⁻¹`;
   }
   const min = numericPreviewValue(metadata.wavenumber_min ?? metadata.x_min);
   const max = numericPreviewValue(metadata.wavenumber_max ?? metadata.x_max);
-  if (min !== null && max !== null) return `${Math.min(min, max).toFixed(1)} - ${Math.max(min, max).toFixed(1)} cm⁻¹`;
+  if (min !== null && max !== null)
+    return `${Math.min(min, max).toFixed(1)} - ${Math.max(min, max).toFixed(1)} cm⁻¹`;
   const wavenumbers = payload?.data?.[0]?.wavenumber;
   if (!Array.isArray(wavenumbers)) return "Unknown";
   const values = wavenumbers
@@ -2697,75 +3381,28 @@ const previewPayloadRange = (payload: any): string => {
 };
 
 // Debug: watch nodeOutput changes
-watch(() => props.nodeOutput, (output) => {
-  if (output) {
-    console.log('[WorkflowInspector] nodeOutput updated:', {
-      hasData: !!output.data,
-      dataLength: Array.isArray(output.data) ? output.data.length : 'N/A',
-      dataType: output.data ? (Array.isArray(output.data) ? 'array' : typeof output.data) : 'none',
-      firstRow: Array.isArray(output.data) && output.data[0] ?
-        (Array.isArray(output.data[0]) ? `array[${output.data[0].length}]` : typeof output.data[0]) : 'N/A',
-    });
-  }
-}, { immediate: true });
-
-// ============================================================================
-// SPECTROCHEMPY FILE DROPDOWN STATE
-// ============================================================================
-
-// SpectroChemPy file dropdown state
-const scpFileOptions = ref<Array<{label: string; value: string; path: string}>>([]);
-const isLoadingScpFiles = ref(false);
-
-const loadSpectroChemPyFiles = async (dataset: string) => {
-  console.log(`[WorkflowInspector] Fetching files for ${dataset}...`);
-  isLoadingScpFiles.value = true;
-  try {
-    const files = await workflowStore.fetchSpectroChemPyFiles(dataset);
-    scpFileOptions.value = files;
-    console.log(`[WorkflowInspector] Loaded ${files.length} files for ${dataset}`);
-  } catch (error) {
-    console.error("[WorkflowInspector] Failed to load SpectroChemPy files:", error);
-    scpFileOptions.value = [];
-  } finally {
-    isLoadingScpFiles.value = false;
-  }
-};
-
-// Watch example_dataset to fetch files when it changes
 watch(
-  () => localParams.value.example_dataset,
-  async (newDataset, oldDataset) => {
-    console.log(`[WorkflowInspector] example_dataset changed:`, {old: oldDataset, new: newDataset, source: localParams.value.source});
-
-    if (newDataset && localParams.value.source === 'spectrochempy') {
-      // Clear example_file when dataset changes (but not on initial load if it has a value)
-      if (newDataset !== oldDataset && oldDataset !== undefined) {
-        localParams.value.example_file = "";
-      }
-
-      // Fetch available files for new dataset
-      await loadSpectroChemPyFiles(newDataset);
-    } else {
-      console.log(`[WorkflowInspector] Not fetching files - newDataset: ${newDataset}, source: ${localParams.value.source}`);
+  () => props.nodeOutput,
+  (output) => {
+    if (output) {
+      console.log("[WorkflowInspector] nodeOutput updated:", {
+        hasData: !!output.data,
+        dataLength: Array.isArray(output.data) ? output.data.length : "N/A",
+        dataType: output.data
+          ? Array.isArray(output.data)
+            ? "array"
+            : typeof output.data
+          : "none",
+        firstRow:
+          Array.isArray(output.data) && output.data[0]
+            ? Array.isArray(output.data[0])
+              ? `array[${output.data[0].length}]`
+              : typeof output.data[0]
+            : "N/A",
+      });
     }
   },
-  { immediate: true }
-);
-
-watch(
-  () => localParams.value.source,
-  async (newSource, oldSource) => {
-    if (newSource !== 'spectrochempy' || newSource === oldSource) {
-      return;
-    }
-    const dataset = localParams.value.example_dataset;
-    if (!dataset) {
-      return;
-    }
-    console.log(`[WorkflowInspector] source changed to spectrochempy, loading files for ${dataset}`);
-    await loadSpectroChemPyFiles(dataset);
-  }
+  { immediate: true },
 );
 
 // ============================================================================
@@ -2781,10 +3418,10 @@ const createEmptyMetadata = () => ({
     state?: string;
   }>,
   conditions: {
-    temperature_c: null as number | null,
-    pressure_atm: null as number | null,
+    temperature_c: null as number | string | null,
+    pressure_atm: null as number | string | null,
     purge_gas: null as string | null,
-    ambient_humidity_percent: null as number | null,
+    ambient_humidity_percent: null as number | string | null,
   },
   instrument: {
     manufacturer: null as string | null,
@@ -2793,17 +3430,17 @@ const createEmptyMetadata = () => ({
     source_type: null as string | null,
   },
   acquisition: {
-    resolution_cm: null as number | null,
-    n_scans: null as number | null,
-    wavenumber_min: null as number | null,
-    wavenumber_max: null as number | null,
+    resolution_cm: null as number | string | null,
+    n_scans: null as number | string | null,
+    wavenumber_min: null as number | string | null,
+    wavenumber_max: null as number | string | null,
     apodization: null as string | null,
   },
   cell: {
     cell_type: null as string | null,
-    pathlength_mm: null as number | null,
+    pathlength_mm: null as number | string | null,
     window_material: null as string | null,
-    cell_volume_ml: null as number | null,
+    cell_volume_ml: null as number | string | null,
   },
   audit: {
     operator: null as string | null,
@@ -2848,7 +3485,12 @@ const withMetadataDefaults = (metadataValue: unknown): SpectraMetadata => {
 const localMetadata = ref(createEmptyMetadata());
 
 // Data source node types that can edit metadata
-const DATA_SOURCE_NODES = ['data.source', 'data.nist_library', 'data.synthetic_curve', 'doe_plate'];
+const DATA_SOURCE_NODES = [
+  "data.file_load",
+  "data.nist_library",
+  "data.synthetic_curve",
+  "doe_plate",
+];
 
 const isDataSourceNode = computed(() => {
   return props.selectedNode && DATA_SOURCE_NODES.includes(selectedNodeType.value);
@@ -2859,33 +3501,75 @@ const isDataSourceNode = computed(() => {
 // ============================================================================
 
 const physicalStateOptions = [
-  'gas', 'liquid', 'solid', 'plasma', 'solution', 'film',
-  'powder', 'kbr_pellet', 'mull', 'gel', 'suspension', 'unknown'
+  "gas",
+  "liquid",
+  "solid",
+  "plasma",
+  "solution",
+  "film",
+  "powder",
+  "kbr_pellet",
+  "mull",
+  "gel",
+  "suspension",
+  "unknown",
 ];
 
-const purgeGasOptions = ['N2', 'dry_air', 'Ar', 'none'];
+const purgeGasOptions = ["N2", "dry_air", "Ar", "none"];
 
 const instrumentManufacturers = [
-  'Bruker', 'Thermo Scientific', 'Agilent', 'PerkinElmer',
-  'JASCO', 'Shimadzu', 'ABB', 'Nicolet', 'Bio-Rad'
+  "Bruker",
+  "Thermo Scientific",
+  "Agilent",
+  "PerkinElmer",
+  "JASCO",
+  "Shimadzu",
+  "ABB",
+  "Nicolet",
+  "Bio-Rad",
 ];
 
 const detectorTypeOptions = [
-  'mct', 'mct_a', 'mct_b', 'dtgs', 'dtgs_kbr', 'dtgs_pe',
-  'ingaas', 'insb', 'pbse', 'si', 'ge', 'bolometer', 'unknown'
+  "mct",
+  "mct_a",
+  "mct_b",
+  "dtgs",
+  "dtgs_kbr",
+  "dtgs_pe",
+  "ingaas",
+  "insb",
+  "pbse",
+  "si",
+  "ge",
+  "bolometer",
+  "unknown",
 ];
 
 const apodizationOptions = [
-  'Happ-Genzel', 'Boxcar', 'Blackman-Harris', 'Norton-Beer', 'triangular'
+  "Happ-Genzel",
+  "Boxcar",
+  "Blackman-Harris",
+  "Norton-Beer",
+  "triangular",
 ];
 
-const cellTypeOptions = [
-  'gas_cell', 'liquid_cell', 'demountable', 'flow_cell', 'cuvette', 'ATR'
-];
+const cellTypeOptions = ["gas_cell", "liquid_cell", "demountable", "flow_cell", "cuvette", "ATR"];
 
 const windowMaterialOptions = [
-  'kbr', 'nacl', 'caf2', 'baf2', 'znse', 'zns', 'diamond',
-  'ge', 'si', 'sapphire', 'krs5', 'agcl', 'pe', 'unknown'
+  "kbr",
+  "nacl",
+  "caf2",
+  "baf2",
+  "znse",
+  "zns",
+  "diamond",
+  "ge",
+  "si",
+  "sapphire",
+  "krs5",
+  "agcl",
+  "pe",
+  "unknown",
 ];
 
 // ============================================================================
@@ -2894,10 +3578,10 @@ const windowMaterialOptions = [
 
 const addSpecies = () => {
   localMetadata.value.species.push({
-    name: '',
-    cas_number: '',
-    molecular_formula: '',
-    state: 'unknown',
+    name: "",
+    cas_number: "",
+    molecular_formula: "",
+    state: "unknown",
   });
   emitMetadata();
 };
@@ -2909,230 +3593,24 @@ const removeSpecies = (index: number) => {
 
 const emitMetadata = () => {
   if (props.selectedNode) {
-    // Merge metadata into params
-    emit('update-params', props.selectedNode.id, {
-      ...localParams.value,
-      metadata: localMetadata.value,
-    });
+    // Keep metadata drafts in the same graph and validation path as parameters.
+    localParams.value.metadata = structuredClone(toRaw(localMetadata.value));
+    emitParams();
   }
 };
 
 // Watch for node changes to load existing metadata
-watch(() => props.selectedNode, (node) => {
-  if (node && node.params?.metadata) {
-    localMetadata.value = withMetadataDefaults(node.params.metadata);
-  } else {
-    localMetadata.value = createEmptyMetadata();
-  }
-}, { immediate: true });
-
-// Dataset selection (uses workflowStore initialized above)
-const selectedDatasetKey = ref<string | null>(null);
-
-onMounted(async () => {
-  await workflowStore.fetchAvailableDatasets();
-  // Preload reference dataset catalogs (eigenvector + sklearn) once.
-  // This keeps dropdowns in sync with backend catalogs without requiring a source toggle.
-  void workflowStore.fetchReferenceDatasets();
-});
-
-// Build TreeSelect nodes from available datasets
-const datasetTreeNodes = computed(() => {
-  const datasets = workflowStore.availableDatasets;
-  if (!datasets) return [];
-
-  const nodes: DatasetTreeNode[] = [];
-
-  // Experiments section
-  if (datasets.experiments.length > 0) {
-    const experimentNode = {
-      key: 'experiments',
-      label: `Experiments (${datasets.experiments.length})`,
-      selectable: false,
-      children: datasets.experiments.map(exp => {
-        const stageChildren: DatasetTreeNode[] = [];
-
-        // Add stages with files
-        for (const stage of ['raw', 'preprocessed', 'synthetic'] as const) {
-          const files = exp.stages[stage];
-          if (files.length > 0) {
-            stageChildren.push({
-              key: `exp-${exp.id}-${stage}`,
-              label: `${stage}/ (${files.length} file${files.length !== 1 ? 's' : ''})`,
-              selectable: false,
-              children: files.map(file => ({
-                key: `exp-${exp.id}-${stage}-${file.id}`,
-                label: `${file.file_path.split('/').pop() || file.file_path}${datasetFileShapeSummary(file)}`,
-                data: {
-                  source: 'experiment',
-                  experiment_id: exp.id,
-                  stage: stage,
-                  file_id: file.id,
-                  file_path: file.file_path,
-                },
-              })),
-            });
-          }
-        }
-
-        return {
-          key: `exp-${exp.id}`,
-          label: `exp_${String(exp.id).padStart(3, '0')}: ${exp.name}`,
-          selectable: false,
-          children: stageChildren,
-        };
-      }),
-    };
-    nodes.push(experimentNode);
-  }
-
-  // Library section
-  if (datasets.library.length > 0) {
-    const libraryNode = {
-      key: 'library',
-      label: `NIST Library (${datasets.library.length})`,
-      selectable: false,
-      children: datasets.library.map(entry => ({
-        key: `lib-${entry.id}`,
-        label: `${entry.compound_name} (${entry.cas_number})`,
-        data: {
-          source: 'library',
-          library_id: entry.id,
-          compound_name: entry.compound_name,
-          cas_number: entry.cas_number,
-          file_path: entry.file_path,
-        },
-      })),
-    };
-    nodes.push(libraryNode);
-  }
-
-  // Builder outputs section (placeholder)
-  if (datasets.builder.length > 0) {
-    const builderNode = {
-      key: 'builder',
-      label: `Builder Outputs (${datasets.builder.length})`,
-      selectable: false,
-      children: datasets.builder.map((output, idx) => ({
-        key: `builder-${idx}`,
-        label: typeof output.name === "string" ? output.name : `Output ${idx + 1}`,
-        data: {
-          source: 'builder',
-          ...output,
-        },
-      })),
-    };
-    nodes.push(builderNode);
-  }
-
-  return nodes;
-});
-
-function datasetFileShapeSummary(file: {
-  n_samples?: number | null;
-  n_features?: number | null;
-  is_spectra?: boolean | null;
-}): string {
-  if (typeof file.n_samples !== 'number' || typeof file.n_features !== 'number') {
-    return '';
-  }
-  const sampleLabel = file.is_spectra ? 'spectra' : 'samples';
-  const featureLabel = file.is_spectra ? 'points' : 'features';
-  return ` · ${file.n_samples} ${sampleLabel} × ${file.n_features} ${featureLabel}`;
-}
-
-// My Dataset node: flat experiment options for simple Dropdown
-const myDatasetExperimentOptions = computed(() => {
-  const datasets = workflowStore.availableDatasets;
-  if (!datasets) return [];
-  return datasets.experiments.map(exp => ({
-    label: exp.name,
-    value: exp.id,
-  }));
-});
-
-const selectedMyDatasetExperiment = computed<ExperimentDataset | null>(() => {
-  const datasetId = Number(localParams.value.dataset_id);
-  if (!Number.isFinite(datasetId)) return null;
-  return workflowStore.availableDatasets?.experiments.find(exp => exp.id === datasetId) ?? null;
-});
-
-const myDatasetTargetNames = computed(() => {
-  const names = selectedMyDatasetExperiment.value?.target_names;
-  return Array.isArray(names) ? names.map(name => String(name)).filter(Boolean) : [];
-});
-
-const myDatasetTargetOptions = computed(() =>
-  myDatasetTargetNames.value.map(name => ({ label: name, value: name }))
+watch(
+  () => props.selectedNode,
+  (node) => {
+    if (node && node.params?.metadata) {
+      localMetadata.value = withMetadataDefaults(node.params.metadata);
+    } else {
+      localMetadata.value = createEmptyMetadata();
+    }
+  },
+  { immediate: true },
 );
-
-const myDatasetTargetModeOptions = [
-  { label: "Use My Dataset default", value: "dataset_default" },
-  { label: "Single property", value: "single" },
-  { label: "Multi-target complete-case", value: "multi" },
-];
-
-const myDatasetTargetCompleteness = computed(() => {
-  const exp = selectedMyDatasetExperiment.value;
-  if (!exp || !myDatasetTargetNames.value.length) return "";
-  const total = typeof exp.target_row_count === "number" ? exp.target_row_count : null;
-  const anyRows = typeof exp.target_any_rows === "number" ? exp.target_any_rows : null;
-  const completeRows = typeof exp.target_complete_rows === "number" ? exp.target_complete_rows : null;
-  if (total == null || anyRows == null || completeRows == null) return "";
-  if (myDatasetTargetNames.value.length <= 1) {
-    return `${anyRows.toLocaleString()} / ${total.toLocaleString()} samples have reference values.`;
-  }
-  return `${anyRows.toLocaleString()} / ${total.toLocaleString()} samples have at least one target; ${completeRows.toLocaleString()} have all ${myDatasetTargetNames.value.length} targets.`;
-});
-
-const myDatasetTargetConflict = computed(() => {
-  if (localParams.value.target_mode !== "single") return "";
-  const selected = typeof localParams.value.selected_target === "string" ? localParams.value.selected_target : "";
-  if (!selected || !myDatasetTargetNames.value.length || myDatasetTargetNames.value.includes(selected)) return "";
-  return `This sheet selects "${selected}", but the selected dataset offers: ${myDatasetTargetNames.value.join(", ")}.`;
-});
-
-function myDatasetDefaultTargetParams(exp: ExperimentDataset | null): Partial<ParamsMap> {
-  const names = Array.isArray(exp?.target_names) ? exp.target_names.map(name => String(name)).filter(Boolean) : [];
-  if (names.length <= 1) return { target_mode: "dataset_default", selected_target: null };
-  const mode = exp?.target_mode === "multi" ? "multi" : "single";
-  const selected = exp?.selected_target && names.includes(exp.selected_target)
-    ? exp.selected_target
-    : names[0];
-  return {
-    target_mode: mode,
-    selected_target: mode === "single" ? selected : null,
-  };
-}
-
-function applyMyDatasetTargetDefaults(options: { overwrite?: boolean } = {}) {
-  const exp = selectedMyDatasetExperiment.value;
-  if (!exp) return;
-  const names = myDatasetTargetNames.value;
-  if (!names.length) return;
-  const shouldSetMode = options.overwrite || !localParams.value.target_mode;
-  const shouldSetTarget = options.overwrite || !localParams.value.selected_target;
-  const defaults = myDatasetDefaultTargetParams(exp);
-  if (shouldSetMode) localParams.value.target_mode = defaults.target_mode;
-  if (shouldSetTarget || localParams.value.target_mode === "multi") {
-    localParams.value.selected_target = defaults.selected_target;
-  }
-}
-
-function onMyDatasetChanged() {
-  applyMyDatasetTargetDefaults({ overwrite: true });
-  emitParams();
-}
-
-function onMyDatasetTargetModeChanged() {
-  if (localParams.value.target_mode === "single" && !localParams.value.selected_target) {
-    localParams.value.selected_target = myDatasetTargetNames.value[0] ?? null;
-  }
-  if (localParams.value.target_mode === "multi") {
-    localParams.value.selected_target = null;
-  }
-  emitParams();
-}
 
 // Helper to get defaults for a node type
 const getDefaultsForNodeType = (nodeType: string): ParamsMap => {
@@ -3147,46 +3625,22 @@ const getDefaultsForNodeType = (nodeType: string): ParamsMap => {
 };
 
 // Watch for selected node changes - only reset params when node ID changes
-watch(() => props.selectedNode?.id, (newId, oldId) => {
-  const node = props.selectedNode;
-  if (node && newId !== oldId) {
-    // Node selection changed - reset local params with defaults first, then stored values
-    syncLocalParamsFromNode(node, { force: true });
-    // Reconstruct selectedDatasetKey from params if available
-    const ref = asObject(node.params.dataset_ref);
-    if (node.type === 'data.source' && ref) {
-      if (ref.source === 'experiment') {
-        const experimentId = asKeyPart(ref.experiment_id);
-        const stage = asKeyPart(ref.stage);
-        const fileId = asKeyPart(ref.file_id);
-        selectedDatasetKey.value = experimentId && stage && fileId
-          ? `exp-${experimentId}-${stage}-${fileId}`
-          : null;
-      } else if (ref.source === 'library') {
-        const libraryId = asKeyPart(ref.library_id);
-        selectedDatasetKey.value = libraryId ? `lib-${libraryId}` : null;
-      }
-    } else if (node.type === 'data.my_dataset') {
-      // Params (dataset_id, file_id) are set directly via localParams — no key needed.
-      applyMyDatasetTargetDefaults();
-      if (!node.params.target_mode && localParams.value.target_mode) {
-        emitParams();
-      }
-    } else {
-      selectedDatasetKey.value = null;
+watch(
+  () => props.selectedNode?.id,
+  (newId, oldId) => {
+    const node = props.selectedNode;
+    if (node && newId !== oldId) {
+      // Node selection changed - reset local params with defaults first, then stored values
+      syncLocalParamsFromNode(node, { force: true });
+    } else if (!node) {
+      // Node deselected
+      currentNodeId.value = null;
+      localParams.value = {};
+      lastSyncedParamsSignature.value = "";
     }
-
-    if (localParams.value.source === 'eigenvector' || localParams.value.source === 'sklearn') {
-      void workflowStore.fetchReferenceDatasets();
-    }
-  } else if (!node) {
-    // Node deselected
-    currentNodeId.value = null;
-    localParams.value = {};
-    lastSyncedParamsSignature.value = "";
-    selectedDatasetKey.value = null;
-  }
-}, { immediate: true });
+  },
+  { immediate: true },
+);
 
 watch(
   () => props.selectedNode?.params,
@@ -3204,196 +3658,26 @@ watch(
     filterSampleCount.value,
     filterHasRealSampleLabels.value,
     filterSampleClasses.value.some((value) => value !== ""),
-    filterTargetValues.value.some((value) => value !== ""),
     sampleTableColumnOptions.value.map((option) => option.value).join("\u0001"),
   ],
   () => ensureSampleFilterDefaults(true),
 );
 
-// Handle dataset selection change
-const onDatasetSelect = (nodeData: Record<string, unknown>) => {
-  if (!nodeData) return;
-
-  // Find the selected node's data
-  const findNodeData = (nodes: DatasetTreeNode[], key: string): DatasetRefData | null => {
-    for (const node of nodes) {
-      if (node.key === key && node.data) {
-        return node.data;
-      }
-      if (node.children) {
-        const found = findNodeData(node.children, key);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
-
-  const selectedKey = Object.keys(nodeData)[0];
-  const data = findNodeData(datasetTreeNodes.value, selectedKey);
-
-  if (data) {
-    localParams.value.dataset_ref = data;
-    // Also set legacy fields for backward compatibility
-    localParams.value.source = data.source;
-    if (data.source === 'experiment') {
-      localParams.value.experiment_id = data.experiment_id;
-      localParams.value.stage = data.stage;
-      localParams.value.file_id = data.file_id;
-      localParams.value.file_path = data.file_path;
-    } else if (data.source === 'library') {
-      localParams.value.library_id = data.library_id;
-      localParams.value.file_path = data.file_path;
-    }
-    emitParams();
-  }
-};
-
-// Get selected dataset label for display
-const _selectedDatasetLabel = computed(() => {
-  if (!selectedDatasetKey.value) return 'Select a dataset...';
-
-  const findLabel = (nodes: DatasetTreeNode[], key: string): string | null => {
-    for (const node of nodes) {
-      if (node.key === key) {
-        return node.label;
-      }
-      if (node.children) {
-        const found = findLabel(node.children, key);
-        if (found) return found;
-      }
-    }
-    return null;
-  };
-
-  return findLabel(datasetTreeNodes.value, selectedDatasetKey.value) || 'Select a dataset...';
-});
-
-const normalizeMethodOptions = ['mean', 'median', 'snv', 'msc'];
-
-// DATA node source options — keep reference/file paths only in the primary selector.
-// Legacy sources remain executable for existing workflows but are not listed here.
-const allDataSourceOptions = [
-  { label: 'Direct File', value: 'file' },
-  { label: 'SpectroChemPy Dataset', value: 'spectrochempy' },
-  { label: 'Sklearn Dataset', value: 'sklearn' },
-  { label: 'Eigenvector Dataset', value: 'eigenvector' },
-];
-const dataSourceOptions = computed(() => {
-  const options = (
-    isDemoMode.value
-      ? allDataSourceOptions.filter(o => o.value !== 'file')
-      : allDataSourceOptions
-  ).map(option => ({ ...option }));
-
-  // Preserve editability for legacy workflows that still carry old source values.
-  const currentSource = localParams.value.source;
-  if (typeof currentSource === 'string' && currentSource.trim() !== '' &&
-      !options.some(option => option.value === currentSource)) {
-    options.push({ label: `Legacy: ${currentSource}`, value: currentSource });
-  }
-
-  return options;
-});
-
-const getSelectedDatasetFallback = (value: unknown): Array<{label: string; value: string}> => {
-  if (typeof value === 'string' && value.trim() !== '') {
-    return [{ label: value, value }];
-  }
-  return [];
-};
-
-// Sklearn dataset options (fetched dynamically from API)
-const sklearnDatasetOptions = computed(() => {
-  const cached = workflowStore.sklearnDatasetCache;
-  if (cached.length > 0) return cached;
-  // Avoid hardcoded catalog drift: keep currently-selected value visible until cache loads.
-  return getSelectedDatasetFallback(localParams.value.sklearn_dataset);
-});
-
-// Eigenvector Research public dataset options (fetched dynamically from API)
-const eigenvectorDatasetOptions = computed(() => {
-  const cached = workflowStore.eigenvectorDatasetCache;
-  if (cached.length > 0) return cached;
-  // Avoid hardcoded catalog drift: keep currently-selected value visible until cache loads.
-  return getSelectedDatasetFallback(localParams.value.eigenvector_dataset);
-});
-
-// Dynamic dataset options from API (populated on initial file fetch)
-const scpExampleOptions = computed(() => {
-  const datasets = workflowStore.availableSpectroChemPyDatasets;
-  // Fall back to known datasets if cache is empty (pre-fetch)
-  return datasets.length > 0 ? datasets : [
-    'irdata',
-    'ramandata',
-    'galacticdata',
-    'agirdata',
-    'matlabdata',
-    'msdata',
-  ];
-});
-
-// Handle source type change
-const onSourceChange = () => {
-  // Clear source-specific params when changing source
-  if (localParams.value.source === 'file') {
-    localParams.value.experiment_id = undefined;
-    localParams.value.file_id = undefined;
-    localParams.value.dataset_ref = undefined;
-  } else if (localParams.value.source === 'experiment') {
-    localParams.value.file_path = undefined;
-  } else if (localParams.value.source === 'library') {
-    localParams.value.file_path = undefined;
-    localParams.value.experiment_id = undefined;
-    localParams.value.file_id = undefined;
-  } else if (localParams.value.source === 'spectrochempy') {
-    localParams.value.file_path = undefined;
-    localParams.value.experiment_id = undefined;
-    localParams.value.file_id = undefined;
-    localParams.value.dataset_ref = undefined;
-    if (!localParams.value.example_dataset) {
-      localParams.value.example_dataset = 'irdata';
-    }
-  } else if (localParams.value.source === 'sklearn') {
-    localParams.value.file_path = undefined;
-    localParams.value.experiment_id = undefined;
-    localParams.value.file_id = undefined;
-    localParams.value.dataset_ref = undefined;
-    localParams.value.example_dataset = undefined;
-    if (!localParams.value.sklearn_dataset) {
-      localParams.value.sklearn_dataset = 'iris';
-    }
-    void workflowStore.fetchReferenceDatasets();
-  } else if (localParams.value.source === 'eigenvector') {
-    localParams.value.file_path = undefined;
-    localParams.value.experiment_id = undefined;
-    localParams.value.file_id = undefined;
-    localParams.value.dataset_ref = undefined;
-    localParams.value.example_dataset = undefined;
-    localParams.value.sklearn_dataset = undefined;
-    if (!localParams.value.eigenvector_dataset) {
-      localParams.value.eigenvector_dataset = 'diesel_nir';
-    }
-    void workflowStore.fetchReferenceDatasets();
-  }
-  emitParams();
-};
 
 // Contour plot options
-const colorscaleOptions = ['Viridis', 'Hot', 'RdBu', 'Blues', 'Greys', 'Jet', 'Spectral'];
-const contourPlotTypeOptions = ['heatmap', 'contour', 'surface'];
+const colorscaleOptions = ["Viridis", "Hot", "RdBu", "Blues", "Greys", "Jet", "Spectral"];
+const contourPlotTypeOptions = ["heatmap", "contour", "surface"];
 
 // Helper to format parameter labels (snake_case -> Title Case)
 const formatParamLabel = (key: string): string => {
   return key
-    .split('_')
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 };
 
 const axisOptions = computed(() => {
-  const firstRow = Array.isArray(props.nodeOutput?.data?.[0])
-    ? props.nodeOutput.data[0]
-    : [];
+  const firstRow = Array.isArray(props.nodeOutput?.data?.[0]) ? props.nodeOutput.data[0] : [];
   const numFeatures = Math.max((firstRow.length || 1) - 1, 1);
   const isPCA = outputMetadata.value.isPCA;
   return Array.from({ length: numFeatures }, (_, i) => ({
@@ -3405,9 +3689,17 @@ const axisOptions = computed(() => {
 // Should show scatter plot
 const _shouldShowPlot = computed(() => {
   if (!props.selectedNode || !props.nodeOutput) return false;
-  return ['output.plot', 'model.pca', 'data.source', 'preprocess.normalize', 'preprocess.scale'].includes(selectedNodeType.value) &&
-         Array.isArray(props.nodeOutput.data) &&
-         props.nodeOutput.data.length > 0;
+  return (
+    [
+      "output.plot",
+      "model.pca",
+      "data.file_load",
+      "preprocess.normalize",
+      "preprocess.scale",
+    ].includes(selectedNodeType.value) &&
+    Array.isArray(props.nodeOutput.data) &&
+    props.nodeOutput.data.length > 0
+  );
 });
 
 // Calculate plot points
@@ -3418,8 +3710,8 @@ const _plotPoints = computed(() => {
   const xIdx = localParams.value.x_axis ?? 0;
   const yIdx = localParams.value.y_axis ?? 1;
 
-  const xValues = data.map((row) => row[xIdx]).filter((v): v is number => typeof v === 'number');
-  const yValues = data.map((row) => row[yIdx]).filter((v): v is number => typeof v === 'number');
+  const xValues = data.map((row) => row[xIdx]).filter((v): v is number => typeof v === "number");
+  const yValues = data.map((row) => row[yIdx]).filter((v): v is number => typeof v === "number");
 
   if (xValues.length === 0 || yValues.length === 0) return [];
 
@@ -3429,9 +3721,9 @@ const _plotPoints = computed(() => {
   const yMax = Math.max(...yValues);
 
   const colors: Record<string, string> = {
-    'setosa': '#ef4444',
-    'versicolor': '#3b82f6',
-    'virginica': '#22c55e',
+    setosa: "#ef4444",
+    versicolor: "#3b82f6",
+    virginica: "#22c55e",
   };
 
   return data.map((row) => {
@@ -3444,7 +3736,7 @@ const _plotPoints = computed(() => {
     return {
       x,
       y,
-      color: colors[labelKey] || '#94a3b8',
+      color: colors[labelKey] || "#94a3b8",
     };
   });
 });
@@ -3457,8 +3749,8 @@ const _plotPointsFull = computed(() => {
   const xIdx = localParams.value.x_axis ?? 0;
   const yIdx = localParams.value.y_axis ?? 1;
 
-  const xValues = data.map((row) => row[xIdx]).filter((v): v is number => typeof v === 'number');
-  const yValues = data.map((row) => row[yIdx]).filter((v): v is number => typeof v === 'number');
+  const xValues = data.map((row) => row[xIdx]).filter((v): v is number => typeof v === "number");
+  const yValues = data.map((row) => row[yIdx]).filter((v): v is number => typeof v === "number");
 
   if (xValues.length === 0 || yValues.length === 0) return [];
 
@@ -3468,9 +3760,9 @@ const _plotPointsFull = computed(() => {
   const yMax = Math.max(...yValues);
 
   const colors: Record<string, string> = {
-    'setosa': '#ef4444',
-    'versicolor': '#3b82f6',
-    'virginica': '#22c55e',
+    setosa: "#ef4444",
+    versicolor: "#3b82f6",
+    virginica: "#22c55e",
   };
 
   // Scale to fit in 600x400 viewBox with margins (60px left, 20px right, 50px top/bottom)
@@ -3484,7 +3776,7 @@ const _plotPointsFull = computed(() => {
     return {
       x,
       y,
-      color: colors[labelKey] || '#3b82f6',
+      color: colors[labelKey] || "#3b82f6",
     };
   });
 });
@@ -3496,27 +3788,105 @@ const validateParams = () => {
     return;
   }
 
-  // Run validation using workflow store
-  validationErrors.value = workflowStore.validateNodeParams(
-    props.selectedNode.type,
-    localParams.value
+  const errors = workflowStore.validateNodeParams(props.selectedNode.type, localParams.value);
+  const targetConflict = splitMethodTargetConflict(
+    selectedNodeType.value === "data.train_test_split"
+      ? String(localParams.value.split_method ?? "")
+      : null,
+    activeTargetType.value,
   );
+  if (targetConflict) {
+    errors.push({ param_name: "split_method", message: targetConflict });
+  }
+  // Named group holdout needs a grouping column on the input dataset. The
+  // absence of a selected group is treated as a soft hint, not a validation
+  // error, so the user can switch methods and fill the holdout list without
+  // being blocked by the "local draft" save behavior.
+  if (
+    selectedNodeType.value === "data.train_test_split" &&
+    String(localParams.value.split_method ?? "") === "group_holdout" &&
+    !activeValidationGroupColumn.value
+  ) {
+    errors.push({
+      param_name: "split_method",
+      message:
+        "Group holdout requires a grouping column bound to the input dataset; select one in the dataset's target and grouping fields.",
+    });
+  }
+  validationErrors.value = errors;
 };
 
+// string_list parameters store an exact list; the editor presents it as one
+// comma-separated line and parses it back the same way.
+const stringListText = (value: unknown): string =>
+  Array.isArray(value) ? value.map(String).join(", ") : String(value ?? "");
+
+const updateStringList = (name: string, text: string | undefined) => {
+  localParams.value[name] = (text ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  emitParams();
+};
+
+// A named group holdout is not complete until at least one group is selected.
+// Keep this as a soft hint (yellow) rather than a hard validation error so the
+// user can draft the method choice before naming the groups, and so saving
+// does not produce the "local draft" toast before they have finished editing.
+const isGroupHoldoutMissingSelection = computed(
+  () =>
+    selectedNodeType.value === "data.train_test_split" &&
+    String(localParams.value.split_method ?? "") === "group_holdout" &&
+    (!Array.isArray(localParams.value.held_out_groups) ||
+      localParams.value.held_out_groups.length === 0),
+);
+
+watch(
+  () => [
+    props.selectedNode?.id,
+    activeValidationGroupColumn.value,
+    activeTargetType.value,
+    localParams.value.split_method,
+  ],
+  () => validateParams(),
+  { immediate: true },
+);
+
 // Emit params update
+// Return the declared default for every parameter the current control values put
+// out of scope, so a setting left behind by an earlier choice does not travel on
+// in the saved graph behind a control that is no longer shown. The node
+// canonicalizer applies the same rule as the single authority; doing it here keeps
+// what is stored equal to what will run.
+const resetParamsOutOfScope = (params: ParamsMap): ParamsMap => {
+  const next = { ...params };
+  for (const parameter of mappedMetadataParams.value) {
+    if (!parameter.visible_when) continue;
+    const inScope = Object.entries(parameter.visible_when).every(([control, admitted]) =>
+      admitted.includes(String(next[control] ?? "")),
+    );
+    if (!inScope && parameter.default !== undefined) next[parameter.name] = parameter.default;
+  }
+  return next;
+};
+
 const emitParams = () => {
   if (props.selectedNode) {
+    const scoped = resetParamsOutOfScope(localParams.value);
+    if (stableParamSignature(scoped) !== stableParamSignature(localParams.value)) {
+      localParams.value = scoped;
+    }
     // Validate before emitting
     validateParams();
     const params = { ...localParams.value };
     lastSyncedParamsSignature.value = stableParamSignature(params);
-    emit('update-params', props.selectedNode.id, params);
+    emit("update-params", props.selectedNode.id, params);
   }
 };
 
 // Execute node
 const executeNode = () => {
-  if (props.selectedNode) {
+  if (props.selectedNode && !props.executionDisabled) {
     // Validate before execution
     validateParams();
 
@@ -3526,16 +3896,16 @@ const executeNode = () => {
     }
 
     // Emit params first to ensure latest values are saved before execution
-    emit('update-params', props.selectedNode.id, { ...localParams.value });
+    emit("update-params", props.selectedNode.id, resetParamsOutOfScope(localParams.value));
     // Then execute
-    emit('execute-node', props.selectedNode.id);
+    emit("execute-node", props.selectedNode.id);
   }
 };
 
 // Delete node
 const deleteNode = () => {
   if (props.selectedNode) {
-    emit('delete-node', props.selectedNode.id);
+    emit("delete-node", props.selectedNode.id);
   }
 };
 
@@ -3547,10 +3917,10 @@ const runPreview = async () => {
   validateParams();
   if (validationErrors.value.length > 0) {
     toast.add({
-      severity: 'error',
-      summary: 'Validation Error',
-      detail: 'Please fix parameter errors before previewing',
-      life: 3000
+      severity: "error",
+      summary: "Validation Error",
+      detail: "Please fix parameter errors before previewing",
+      life: 3000,
     });
     return;
   }
@@ -3560,10 +3930,10 @@ const runPreview = async () => {
     const inputConn = props.inputConnections[0];
     if (!inputConn || !inputConn.data) {
       toast.add({
-        severity: 'warn',
-        summary: 'No Input Data',
-        detail: 'This node needs input data to preview. Run the previous node first.',
-        life: 4000
+        severity: "warn",
+        summary: "No Input Data",
+        detail: "This node needs input data to preview. Run the previous node first.",
+        life: 4000,
       });
       return;
     }
@@ -3571,7 +3941,7 @@ const runPreview = async () => {
     // Store original data
     previewData.value = {
       original: inputConn.data,
-      processed: null
+      processed: null,
     };
 
     // Show modal with loading state
@@ -3581,12 +3951,12 @@ const runPreview = async () => {
     const nodeIdStr = String(props.selectedNode.id);
     const result = await workflowStore.executeTrial(nodeIdStr, localParams.value);
 
-    if (result.status === 'error') {
+    if (result.status === "error") {
       toast.add({
-        severity: 'error',
-        summary: 'Preview Failed',
-        detail: result.error || 'Could not generate preview',
-        life: 5000
+        severity: "error",
+        summary: "Preview Failed",
+        detail: result.error || "Could not generate preview",
+        life: 5000,
       });
       showPreviewModal.value = false;
       return;
@@ -3594,14 +3964,13 @@ const runPreview = async () => {
 
     // Store processed data
     previewData.value.processed = result.result;
-
   } catch (error: unknown) {
-    console.error('[WorkflowInspector] Preview error:', error);
+    console.error("[WorkflowInspector] Preview error:", error);
     toast.add({
-      severity: 'error',
-      summary: 'Preview Error',
-      detail: getErrorMessage(error, 'Failed to generate preview'),
-      life: 5000
+      severity: "error",
+      summary: "Preview Error",
+      detail: getErrorMessage(error, "Failed to generate preview"),
+      life: 5000,
     });
     showPreviewModal.value = false;
   }
@@ -3613,15 +3982,6 @@ const STORAGE_KEY = "node_detail_data";
 const openToRunTrials = () => {
   if (!props.selectedNode) return;
 
-  // Build input connections with icons and labels
-  const inputConns = props.inputConnections.map(conn => ({
-    nodeId: conn.nodeId,
-    icon: NODE_ICONS[conn.nodeType] || '📦',
-    label: conn.nodeLabel,
-    port: conn.port,
-    toPort: conn.toPort,  // Include input port name for multi-input nodes
-  }));
-
   // Build input data summary from first connected node's output
   let inputData = null;
   if (props.inputConnections.length > 0) {
@@ -3629,25 +3989,27 @@ const openToRunTrials = () => {
     if (firstInput.data?.data) {
       const data = firstInput.data.data;
       inputData = {
-        shape: Array.isArray(data) ? [data.length, Array.isArray(data[0]) ? data[0].length : 1] : null,
+        shape: Array.isArray(data)
+          ? [data.length, Array.isArray(data[0]) ? data[0].length : 1]
+          : null,
         source: `${firstInput.nodeLabel} (${firstInput.nodeType})`,
-        dataType: Array.isArray(data) ? 'dataset' : typeof data,
+        dataType: Array.isArray(data) ? "dataset" : typeof data,
         data: data, // Include actual data for preview
       };
     }
   }
 
   // Get workflow nodes and edges from the store for isolated trial execution.
-  const workflowNodes = workflowStore.nodes.map(node => ({
+  const workflowNodes = workflowStore.nodes.map((node) => ({
     id: node.id,
     type: node.type,
     params: node.params || {},
   }));
-  const workflowEdges = workflowStore.edges.map(edge => ({
+  const workflowEdges = workflowStore.edges.map((edge) => ({
     from: edge.from,
     to: edge.to,
-    fromPort: edge.fromPort || 'default',
-    toPort: edge.toPort || 'default',
+    fromPort: edge.fromPort || "default",
+    toPort: edge.toPort || "default",
   }));
 
   // Pick the ports we want to preserve across reduced-tier fallbacks.
@@ -3655,7 +4017,15 @@ const openToRunTrials = () => {
   // PCA/PLS/PLSDA; St/H/A for MCR/NMF/ICA/SIMPLISMA). They're all small
   // matrices (n_components × n_features) and stripping them makes those
   // plots render empty even when the primary payload fits.
-  const PRESERVED_PORT_NAMES = new Set(["loadings", "St", "H", "A"]);
+  const PRESERVED_PORT_NAMES = new Set([
+    "loadings",
+    "St",
+    "H",
+    "A",
+    ...(nodeMetadata.value?.presentation_contract?.payload.presentations.flatMap(
+      (presentation) => presentation.source_ports,
+    ) ?? []),
+  ]);
 
   const buildReducedPorts = (
     level: "full" | "primary" | "minimal",
@@ -3688,12 +4058,12 @@ const openToRunTrials = () => {
     if (level === "minimal" && metadata) {
       const lightMetadata = { ...metadata };
       // Remove large arrays from PCA metadata (loadings can be very large)
-      if (nt.includes('pca')) {
+      if (nt.includes("pca")) {
         delete lightMetadata.loadings;
         delete lightMetadata.wavenumbers;
       }
       // Remove large arrays from decomposition methods
-      if (['model.simplisma', 'model.nmf', 'model.ica', 'model.mcr_als'].includes(nt)) {
+      if (["model.simplisma", "model.nmf", "model.ica", "model.mcr_als"].includes(nt)) {
         delete lightMetadata.St;
         delete lightMetadata.H;
         delete lightMetadata.A;
@@ -3711,28 +4081,49 @@ const openToRunTrials = () => {
     return {
       id: props.selectedNode.id,
       type: props.selectedNode.type,
-      label: getNodeLabel(props.selectedNode.type),
+      label: props.selectedNode.label || getNodeLabel(props.selectedNode.type),
       workflowId: workflowStore.workflowId,
       params: { ...localParams.value },
-      output: props.nodeOutput ? {
-        // For output.* nodes in reduced tiers, top-level data duplicates
-        // the Plotly traces already stripped from metadata — omit it too.
-        data: (includeData && !(level !== "full" && nt.startsWith("output.")))
-          ? props.nodeOutput.data : null,
-        metadata: metadata,
-        plots: props.nodeOutput.plots || null,
-        ports: buildReducedPorts(level, props.nodeOutput.ports),
-        primary_port: props.nodeOutput.primary_port || null,
-        // Carry the executor-lifted artifact UID through to sessionStorage
-        // so the NodeDetailView's "Saved Model Artifact" section can render
-        // (gated on `v-if="modelId"` after the OutputPanel inject chain).
-        // Without this, the section is invisible on every run regardless of
-        // whether the artifact was actually persisted.
-        model_id: props.nodeOutput.model_id ?? null,
-      } : null,
+      output: props.nodeOutput
+        ? {
+            // For output.* nodes in reduced tiers, top-level data duplicates
+            // the Plotly traces already stripped from metadata — omit it too.
+            data:
+              includeData && !(level !== "full" && nt.startsWith("output."))
+                ? props.nodeOutput.data
+                : null,
+            metadata: metadata,
+            plots: props.nodeOutput.plots || null,
+            // Detailed View must receive the same authoritative shape and
+            // content-category projection shown by the Inspector.
+            descriptor: props.nodeOutput.descriptor ?? null,
+            ports: buildReducedPorts(level, props.nodeOutput.ports),
+            primary_port: props.nodeOutput.primary_port || null,
+            // Carry the executor-lifted artifact UID through to sessionStorage
+            // so the NodeDetailView's "Saved Model Artifact" section can render
+            // (gated on `v-if="modelId"` after the OutputPanel inject chain).
+            // Without this, the section is invisible on every run regardless of
+            // whether the artifact was actually persisted.
+            model_id: props.nodeOutput.model_id ?? null,
+          }
+        : null,
+      presentationContract: nodeMetadata.value?.presentation_contract ?? null,
+      selectedPresentationId: selectedPresentation.value?.presentation.presentation_id ?? null,
       // Include input connections with their data
-      inputConnections: inputConns,
-      inputData: includeData ? inputData : (inputData ? { ...inputData, data: null } : null),
+      inputConnections: props.inputConnections.map((conn) => ({
+        nodeId: conn.nodeId,
+        nodeType: conn.nodeType,
+        icon: NODE_ICONS[conn.nodeType] || "📦",
+        label: conn.nodeLabel,
+        port: conn.port,
+        toPort: conn.toPort,
+        // Embedded trial sheets are an in-memory workbench surface. Retain
+        // each typed input payload at the full tier so plot adapters can join
+        // a model's predictions to the actual target connected at `y`.
+        // Reduced/session-storage tiers intentionally omit these arrays.
+        data: level === "full" ? (conn.data ?? null) : null,
+      })),
+      inputData: includeData ? inputData : inputData ? { ...inputData, data: null } : null,
       // Include param definitions for the settings form
       paramDefinitions: getParamDefinitions(props.selectedNode.type),
       // Include full workflow context for isolated trial execution.
@@ -3748,7 +4139,7 @@ const openToRunTrials = () => {
 
 const mapMetadataParams = (
   _nodeType: string,
-  parameters: NodeParameterMetadata[]
+  parameters: NodeParameterMetadata[],
 ): NodeParameterDefinition[] => {
   return parameters.map((param) => {
     return {
@@ -3774,58 +4165,164 @@ const getParamDefinitions = (nodeType: string): NodeParameterDefinition[] => {
   }
 
   const definitions: Record<string, NodeParameterDefinition[]> = {
-    'data.source': [
-      { name: 'source', label: 'Source', type: 'select', options: dataSourceOptions.value },
-      { name: 'file_path', label: 'File Path', type: 'text' },
-      { name: 'transpose_on_load', label: 'Transpose on Load', type: 'boolean', default: false },
-      { name: 'sample_axis_title', label: 'Sample Axis Title', type: 'text', default: 'Sample' },
-      { name: 'spectral_axis_title', label: 'Spectral Axis Title', type: 'text', default: 'Wavenumber' },
+    "baseline.penalized_ls": [
+      {
+        name: "lam",
+        label: "Lambda (λ)",
+        type: "number",
+        min: 1000,
+        max: 1000000,
+        step: 1000,
+        default: 100000,
+      },
+      {
+        name: "p",
+        label: "Asymmetry (p)",
+        type: "number",
+        min: 0.001,
+        max: 0.1,
+        step: 0.001,
+        default: 0.001,
+      },
     ],
-    'preprocess.normalize': [
-      { name: 'method', label: 'Method', type: 'select', options: normalizeMethodOptions.map(m => ({ label: m, value: m })) },
+    "preprocess.smooth": [
+      {
+        name: "window",
+        label: "Window Size",
+        type: "number",
+        min: 5,
+        max: 51,
+        step: 2,
+        default: 11,
+      },
+      {
+        name: "poly",
+        label: "Polynomial Order",
+        type: "number",
+        min: 1,
+        max: 5,
+        step: 1,
+        default: 2,
+      },
     ],
-    'baseline.penalized_ls': [
-      { name: 'lam', label: 'Lambda (λ)', type: 'number', min: 1000, max: 1000000, step: 1000, default: 100000 },
-      { name: 'p', label: 'Asymmetry (p)', type: 'number', min: 0.001, max: 0.1, step: 0.001, default: 0.001 },
+    "model.pca": [
+      {
+        name: "n_components",
+        label: "Number of Components",
+        type: "text",
+        default: "5",
+        description:
+          "Number of components: integer (e.g., '5'), 'mle' (auto-select via Maximum Likelihood), or float 0-1 (e.g., '0.95' for 95% variance)",
+      },
+      {
+        name: "standardized",
+        label: "Standardize (mean center + unit variance)",
+        type: "boolean",
+        default: false,
+      },
+      { name: "scaled", label: "Scale (unit variance)", type: "boolean", default: false },
     ],
-    'preprocess.smooth': [
-      { name: 'window', label: 'Window Size', type: 'number', min: 5, max: 51, step: 2, default: 11 },
-      { name: 'poly', label: 'Polynomial Order', type: 'number', min: 1, max: 5, step: 1, default: 2 },
+    "model.fitted_pls": [
+      {
+        name: "n_components",
+        label: "Number of Components",
+        type: "number",
+        min: 1,
+        max: 15,
+        step: 1,
+        default: 3,
+      },
     ],
-    'model.pca': [
-      { name: 'n_components', label: 'Number of Components', type: 'text', default: "5", description: "Number of components: integer (e.g., '5'), 'mle' (auto-select via Maximum Likelihood), or float 0-1 (e.g., '0.95' for 95% variance)" },
-      { name: 'standardized', label: 'Standardize (mean center + unit variance)', type: 'boolean', default: false },
-      { name: 'scaled', label: 'Scale (unit variance)', type: 'boolean', default: false },
+    "model.mcr_als": [
+      {
+        name: "n_components",
+        label: "Number of Components",
+        type: "number",
+        min: 1,
+        max: 10,
+        step: 1,
+        default: 3,
+      },
+      {
+        name: "normSpec",
+        label: "Spectra Normalization",
+        type: "select",
+        default: "euclid",
+        options: [
+          { label: "Euclidean norm", value: "euclid" },
+          { label: "Maximum intensity", value: "max" },
+          { label: "None", value: "none" },
+        ],
+      },
+      {
+        name: "max_iter",
+        label: "Maximum Iterations",
+        type: "number",
+        min: 10,
+        max: 1000,
+        step: 10,
+        default: 200,
+      },
+      {
+        name: "tol",
+        label: "Convergence Tolerance",
+        type: "number",
+        min: 1e-8,
+        step: 1e-6,
+        default: 1e-5,
+      },
+      {
+        name: "non_negative_C",
+        label: "Non-negative Concentrations",
+        type: "boolean",
+        default: true,
+      },
+      { name: "non_negative_St", label: "Non-negative Spectra", type: "boolean", default: true },
+      {
+        name: "validation_target_index",
+        label: "Validation Target",
+        type: "number",
+        min: 1,
+        step: 1,
+        default: 1,
+      },
+      {
+        name: "validation_component_index",
+        label: "Validation MCR Component",
+        type: "number",
+        min: 1,
+        step: 1,
+        default: 1,
+      },
     ],
-    'model.pls': [
-      { name: 'n_components', label: 'Number of Components', type: 'number', min: 1, max: 15, step: 1, default: 3 },
+    "stats.summary": [
+      {
+        name: "max_samples",
+        label: "Max Samples",
+        type: "number",
+        min: 10,
+        max: 500,
+        step: 10,
+        default: 50,
+      },
     ],
-    'model.mcr_als': [
-      { name: 'n_components', label: 'Number of Components', type: 'number', min: 1, max: 10, step: 1, default: 3 },
-      { name: 'normSpec', label: 'Spectra Normalization', type: 'select', default: 'euclid', options: [
-        { label: 'Euclidean norm', value: 'euclid' },
-        { label: 'Maximum intensity', value: 'max' },
-        { label: 'None', value: 'none' },
-      ] },
-      { name: 'max_iter', label: 'Maximum Iterations', type: 'number', min: 10, max: 1000, step: 10, default: 200 },
-      { name: 'tol', label: 'Convergence Tolerance', type: 'number', min: 1e-8, step: 1e-6, default: 1e-5 },
-      { name: 'non_negative_C', label: 'Non-negative Concentrations', type: 'boolean', default: true },
-      { name: 'non_negative_St', label: 'Non-negative Spectra', type: 'boolean', default: true },
-      { name: 'validation_target_index', label: 'Validation Target', type: 'number', min: 1, step: 1, default: 1 },
-      { name: 'validation_component_index', label: 'Validation MCR Component', type: 'number', min: 1, step: 1, default: 1 },
+    "output.contour": [
+      {
+        name: "colorscale",
+        label: "Color Scale",
+        type: "select",
+        options: colorscaleOptions.map((c) => ({ label: c, value: c })),
+      },
+      {
+        name: "plot_type",
+        label: "Plot Type",
+        type: "select",
+        options: contourPlotTypeOptions.map((t) => ({ label: t, value: t })),
+      },
+      { name: "reverse_x", label: "Reverse X-axis", type: "boolean", default: true },
+      { name: "transpose", label: "Transpose Data", type: "boolean", default: false },
     ],
-    'stats.summary': [
-      { name: 'max_samples', label: 'Max Samples', type: 'number', min: 10, max: 500, step: 10, default: 50 },
-    ],
-    'output.contour': [
-      { name: 'colorscale', label: 'Color Scale', type: 'select', options: colorscaleOptions.map(c => ({ label: c, value: c })) },
-      { name: 'plot_type', label: 'Plot Type', type: 'select', options: contourPlotTypeOptions.map(t => ({ label: t, value: t })) },
-      { name: 'reverse_x', label: 'Reverse X-axis', type: 'boolean', default: true },
-      { name: 'transpose', label: 'Transpose Data', type: 'boolean', default: false },
-    ],
-    'output.export': [
-      { name: 'filename', label: 'Filename', type: 'text', default: 'output.csv' },
-    ],
+    "output.export": [{ name: "filename", label: "Filename", type: "text", default: "output.csv" }],
   };
 
   return definitions[nodeType] || [];
@@ -3846,12 +4343,12 @@ const handleStorageChange = (event: StorageEvent) => {
           Number(messageWorkflowId) === Number(currentWorkflowId))
       ) {
         syncLocalParamsFromExternal(
-          updatedData.type || props.selectedNode?.type || '',
+          updatedData.type || props.selectedNode?.type || "",
           updatedData.params,
         );
       }
     } catch (e) {
-      console.error('Failed to parse updated node data:', e);
+      console.error("Failed to parse updated node data:", e);
     }
   }
 };
@@ -3868,35 +4365,33 @@ const handleBroadcastMessage = async (event: MessageEvent) => {
   // Only handle param updates for the currently selected node
   // (Execution requests are handled by WorkflowBuilderContent)
   if (
-    type === 'node_params_updated' &&
+    type === "node_params_updated" &&
     nodeId === props.selectedNode?.id &&
     (workflowId == null ||
       workflowStore.workflowId == null ||
       Number(workflowId) === Number(workflowStore.workflowId))
   ) {
-    syncLocalParamsFromExternal(
-      nodeType || props.selectedNode?.type || '',
-      params,
-      { fetchReferenceDatasets: true },
-    );
+    syncLocalParamsFromExternal(nodeType || props.selectedNode?.type || "", params, {
+      fetchReferenceDatasets: true,
+    });
   }
 };
 
 onMounted(() => {
-  window.addEventListener('storage', handleStorageChange);
+  window.addEventListener("storage", handleStorageChange);
 
   // Set up BroadcastChannel for more reliable cross-tab communication
   try {
-    broadcastChannel.value = new BroadcastChannel('workflow_node_updates');
+    broadcastChannel.value = new BroadcastChannel("workflow_node_updates");
     broadcastChannel.value.onmessage = handleBroadcastMessage;
   } catch {
     // BroadcastChannel not supported in this browser
-    console.warn('BroadcastChannel not supported, falling back to storage events only');
+    console.warn("BroadcastChannel not supported, falling back to storage events only");
   }
 });
 
 onUnmounted(() => {
-  window.removeEventListener('storage', handleStorageChange);
+  window.removeEventListener("storage", handleStorageChange);
 
   if (broadcastChannel.value) {
     broadcastChannel.value.close();
@@ -3915,7 +4410,9 @@ onUnmounted(() => {
   flex-direction: column;
   overflow-y: auto;
   overflow-x: hidden;
-  transition: width 0.3s ease, opacity 0.3s ease;
+  transition:
+    width 0.3s ease,
+    opacity 0.3s ease;
 }
 
 .workflow-inspector.hidden {
@@ -3992,9 +4489,16 @@ onUnmounted(() => {
   text-overflow: ellipsis;
 }
 
+.node-type,
 .node-id {
   font-size: 0.7rem;
   color: #64748b;
+}
+
+.node-type {
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
 }
 
 .header-actions {
@@ -4043,6 +4547,32 @@ onUnmounted(() => {
 
 .inspector-actions .p-button {
   flex: 1;
+}
+
+.inspector-help-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  width: 32px;
+  min-height: 31px;
+  padding: 0;
+  border: 1px solid #3b82f6;
+  border-radius: 6px;
+  color: #ffffff;
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.inspector-help-link:hover,
+.inspector-help-link:focus-visible {
+  border-color: #60a5fa;
+  background: rgba(59, 130, 246, 0.18);
+  color: #ffffff;
+  outline: none;
 }
 
 /* Parameters section - vertical */
@@ -4115,6 +4645,15 @@ onUnmounted(() => {
   font-size: 0.7rem;
   color: #64748b;
   background: rgba(255, 255, 255, 0.05);
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+
+.param-warning {
+  font-size: 0.7rem;
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
   padding: 4px 8px;
   border-radius: 4px;
   margin-top: 4px;
@@ -4449,7 +4988,7 @@ onUnmounted(() => {
 .dataset-path {
   font-size: 0.8rem;
   color: #94a3b8;
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: "SF Mono", Monaco, monospace;
 }
 
 /* TreeSelect styling for dark theme */
@@ -4527,6 +5066,83 @@ onUnmounted(() => {
   gap: 12px;
 }
 
+.scientific-result-dropdown {
+  width: 100%;
+  min-width: 0;
+}
+
+.scientific-result-dropdown :deep(.p-dropdown-label) {
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+:global(.scientific-result-dropdown-panel .p-dropdown-item) {
+  justify-content: flex-start;
+  text-align: left;
+  white-space: normal;
+}
+
+.persisted-preview-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  color: #bfdbfe;
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.group-split-guidance {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid #2563eb;
+  border-radius: 6px;
+  background: rgb(30 64 175 / 18%);
+  color: #dbeafe;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.group-split-guidance i {
+  margin-top: 0.12rem;
+  color: #60a5fa;
+}
+
+.group-split-guidance div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.grouped-split-evidence p {
+  margin: 0.35rem 0;
+  color: #e2e8f0;
+  line-height: 1.4;
+}
+
+.group-split-method,
+.group-split-digest {
+  display: block;
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+
+.group-split-digest {
+  width: fit-content;
+  margin-top: 0.35rem;
+  border-bottom: 1px dotted #64748b;
+  cursor: help;
+}
+
 /* Data shape summary */
 .data-shape-summary {
   display: flex;
@@ -4580,14 +5196,14 @@ onUnmounted(() => {
 .diagnostics-key {
   font-size: 0.8rem;
   color: #94a3b8;
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: "SF Mono", Monaco, monospace;
 }
 
 .diagnostics-value {
   font-size: 0.8rem;
   color: #f8fafc;
   text-align: right;
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: "SF Mono", Monaco, monospace;
   max-width: 55%;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4617,7 +5233,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: "SF Mono", Monaco, monospace;
   font-size: 0.7rem;
   max-height: 200px;
   overflow-y: auto;
@@ -4733,7 +5349,9 @@ onUnmounted(() => {
   border: 1px solid #334155;
   padding: 6px;
   cursor: pointer;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -4950,7 +5568,7 @@ onUnmounted(() => {
 }
 
 .meta-value.processing-history {
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: "SF Mono", "Consolas", monospace;
   font-size: 0.75rem;
   color: #94a3b8;
 }
@@ -5087,7 +5705,7 @@ onUnmounted(() => {
 
 .error-details-content pre {
   margin: 0;
-  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-family: "SF Mono", Monaco, "Courier New", monospace;
   font-size: 0.7rem;
   line-height: 1.4;
   color: #fca5a5;
@@ -5275,7 +5893,7 @@ onUnmounted(() => {
 
 .preview-content pre {
   margin: 0;
-  font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+  font-family: "SF Mono", Monaco, "Courier New", monospace;
   font-size: 0.7rem;
   color: #e2e8f0;
   line-height: 1.4;
@@ -5333,7 +5951,7 @@ onUnmounted(() => {
 .summary-value {
   color: #e2e8f0;
   font-weight: 600;
-  font-family: 'SF Mono', Monaco, monospace;
+  font-family: "SF Mono", Monaco, monospace;
 }
 
 /* Preview dialog custom styling */
@@ -5494,7 +6112,7 @@ onUnmounted(() => {
 .step-operation {
   color: #e2e8f0;
   font-weight: 500;
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: "SF Mono", "Consolas", monospace;
   font-size: 0.85rem;
 }
 
@@ -5530,7 +6148,7 @@ onUnmounted(() => {
   border-radius: 4px;
   font-size: 0.7rem;
   color: #94a3b8;
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: "SF Mono", "Consolas", monospace;
 }
 
 .step-node-id {
@@ -5552,7 +6170,7 @@ onUnmounted(() => {
   border-radius: 3px;
   font-size: 0.65rem;
   color: #60a5fa;
-  font-family: 'SF Mono', 'Consolas', monospace;
+  font-family: "SF Mono", "Consolas", monospace;
 }
 
 /* Instrument metadata grid */

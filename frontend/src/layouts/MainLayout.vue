@@ -33,12 +33,16 @@
       </button>
     </div>
 
-    <div v-else-if="backendDegraded" class="backend-warning-banner">
-      <i class="pi pi-exclamation-circle"></i>
+    <div v-if="sessionExpiryWarning" class="session-expiry-banner" role="status">
+      <i class="pi pi-clock"></i>
       <span>
-        Some plugins failed to load{{ pluginFailureCount ? ` (${pluginFailureCount})` : "" }}.
-        Workflow nodes from those plugins may be unavailable until the backend is fixed.
+        Your session expires in {{ sessionMinutesRemaining }}
+        {{ sessionMinutesRemaining === 1 ? "minute" : "minutes" }}. Finish or save current edits,
+        then sign in again to continue without losing your place.
       </span>
+      <button class="retry-btn" :disabled="renewingSession" @click="renewSessionNow">
+        {{ renewingSession ? "Renewing…" : "Renew session" }}
+      </button>
     </div>
 
     <Sidebar :collapsed="effectiveNavCollapsed" />
@@ -85,6 +89,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { setAttentionWindow } from "@/lib/sherpaAttention";
 import { useRoute } from "vue-router";
 import ChatPanel from "@/components/ChatPanel.vue";
 import GuidanceGlowOverlay from "@/components/guidance/GuidanceGlowOverlay.vue";
@@ -104,13 +109,17 @@ import { useGuidance } from "@/composables/useGuidance";
 import { useViewport } from "@/composables/useViewport";
 import { useAuthStore } from "@/stores/auth";
 import { useJobStore } from "@/stores/job";
+import { useSessionRenewal } from "@/composables/useSessionRenewal";
+import { sessionExpiryMinutesRemaining } from "@/utils/sessionExpiry";
 
-const { appMode, appConfig } = useAppConfig();
+const { appMode, appConfig, siteProfile } = useAppConfig();
 const guidance = useGuidance();
 const activityTracker = useActivityTracker();
 const authStore = useAuthStore();
 const jobStore = useJobStore();
+const sessionRenewal = useSessionRenewal();
 const route = useRoute();
+watch(() => route.fullPath, () => setAttentionWindow(route.path), { immediate: true });
 
 const readBooleanPreference = (key: string, defaultValue: boolean): boolean => {
   const rawValue = localStorage.getItem(key);
@@ -126,6 +135,31 @@ const chatWidth = ref(360);
 const isResizing = ref(false);
 const layoutMounted = ref(false);
 const guidanceRuntimeStarted = ref(false);
+const sessionMinutesRemaining = ref<number | null>(null);
+const renewingSession = ref(false);
+let sessionExpiryTimer: number | null = null;
+const sessionExpiryWarning = computed(
+  () => sessionMinutesRemaining.value !== null && sessionMinutesRemaining.value <= 5,
+);
+
+const updateSessionExpiry = () => {
+  sessionMinutesRemaining.value = sessionExpiryMinutesRemaining(localStorage.getItem("token"));
+};
+
+const renewSessionNow = async () => {
+  if (renewingSession.value) return;
+  renewingSession.value = true;
+  sessionRenewal.noteActivity();
+  try {
+    const renewed = await sessionRenewal.maybeRenew();
+    updateSessionExpiry();
+    if (renewed) return;
+    localStorage.removeItem("token");
+    window.location.href = `/login?reason=session-renewal&return_to=${encodeURIComponent(route.fullPath)}`;
+  } finally {
+    renewingSession.value = false;
+  }
+};
 const guidanceRuntimeStarting = ref(false);
 const isPublicRoute = computed(() => Boolean(route.meta.public));
 const isStandaloneRoute = computed(() => Boolean(route.meta.standalone));
@@ -139,15 +173,8 @@ const navDrawerOpen = ref(false);
 const effectiveNavCollapsed = computed(() => isNarrow.value || navCollapsed.value);
 
 // Backend connection status
-const {
-  backendConnected,
-  backendDegraded,
-  checkingStatus,
-  pluginFailureCount,
-  checkBackendStatus,
-  startHealthCheck,
-  stopHealthCheck,
-} = useBackendStatus();
+const { backendConnected, checkingStatus, checkBackendStatus, startHealthCheck, stopHealthCheck } =
+  useBackendStatus();
 
 const clampChatWidth = (value: number) => {
   const minWidth = 280;
@@ -295,6 +322,10 @@ watch(
 
 onMounted(() => {
   layoutMounted.value = true;
+  sessionRenewal.start();
+  updateSessionExpiry();
+  sessionExpiryTimer = window.setInterval(updateSessionExpiry, 15_000);
+  window.addEventListener("storage", updateSessionExpiry);
   if (localStorage.getItem("chatCollapsed") === null) {
     localStorage.setItem("chatCollapsed", "true");
   }
@@ -313,6 +344,9 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  sessionRenewal.stop();
+  if (sessionExpiryTimer !== null) window.clearInterval(sessionExpiryTimer);
+  window.removeEventListener("storage", updateSessionExpiry);
   window.removeEventListener("mousemove", onResizeMove);
   window.removeEventListener("mouseup", stopResize);
   window.removeEventListener("resize", handleWindowResize);
@@ -329,8 +363,10 @@ watch(chatWidth, (value) => {
 // background job progress (batch predict, folder watches) reaches the UI.
 // Use authStore.user (not isAuthenticated) to avoid connecting with a stale
 // localStorage token before /auth/me validates it.
-watch([backendConnected, () => authStore.user], ([isConnected, user]) => {
-  if (isConnected && (user || appMode.value === "local")) {
+watch([backendConnected, () => authStore.user, () => siteProfile?.value], ([isConnected, user, profile]) => {
+  if (appMode.value === "enterprise" && profile === "pro") {
+    jobStore.disconnect();
+  } else if (isConnected && (user || appMode.value === "local")) {
     jobStore.connect().catch(() => undefined);
   } else {
     jobStore.disconnect();
@@ -371,6 +407,32 @@ watch([backendConnected, () => authStore.user], ([isConnected, user]) => {
   gap: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   animation: slideDown 0.3s ease-out;
+}
+
+.session-expiry-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: white;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.session-expiry-banner .retry-btn {
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
 }
 
 @keyframes slideDown {
@@ -455,7 +517,8 @@ watch([backendConnected, () => authStore.user], ([isConnected, user]) => {
 
 /* Adjust app layout when banners are shown */
 .app-shell:has(.backend-status-banner),
-.app-shell:has(.backend-warning-banner) {
+.app-shell:has(.backend-warning-banner),
+.app-shell:has(.session-expiry-banner) {
   padding-top: 48px;
 }
 </style>

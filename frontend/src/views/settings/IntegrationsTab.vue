@@ -1,187 +1,6 @@
 <template>
   <div class="integrations-tab">
-    <div v-if="!privacyOnly" class="info-callout">
-      <i class="pi pi-info-circle"></i>
-      <span>
-        <strong>Looking to set up DeepSeek, OpenAI, or another LLM provider?</strong>
-        Go to the <strong>API Keys</strong> tab — the BYO Chat configuration section is there.
-        This page is for connecting to a SpectraSherpa Cloud server instance (enterprise / hybrid mode).
-      </span>
-    </div>
-
-    <div v-if="!privacyOnly" class="section">
-      <div class="section-header">
-        <h3>SpectraSherpa Cloud</h3>
-        <Tag v-if="connectionStatus" :severity="connectionSeverity" :value="connectionLabel" />
-      </div>
-      <p class="muted-text">
-        Connect to a SpectraSherpa Cloud server for managed LLM keys, cloud sync, and hybrid identity linking.
-      </p>
-
-      <div class="connection-panel">
-        <div v-if="!isConfigured" class="setup-form">
-          <div class="field">
-            <label for="server-url">Server URL</label>
-            <InputText
-              id="server-url"
-              v-model="serverUrl"
-              placeholder="https://your-server.example.com"
-              :disabled="testing || connecting || modeSwitchLocked"
-            />
-          </div>
-
-          <div class="field">
-            <label for="api-key">API Key</label>
-            <div class="p-inputgroup">
-              <InputText
-                id="api-key"
-                v-model="apiKey"
-                :type="showKey ? 'text' : 'password'"
-                placeholder="ss_..."
-                :disabled="testing || connecting || modeSwitchLocked"
-              />
-              <Button
-                :icon="showKey ? 'pi pi-eye-slash' : 'pi pi-eye'"
-                @click="showKey = !showKey"
-                class="p-button-secondary"
-                :disabled="testing || connecting || modeSwitchLocked"
-              />
-            </div>
-            <small class="help-text">
-              The server host must be in the allowlist (set via <code>SPECTRASHERPA_ALLOWED_HOSTS</code> env var).
-            </small>
-          </div>
-
-          <div class="actions">
-            <Button
-              label="Test Connection"
-              icon="pi pi-check-circle"
-              @click="testConnection"
-              :loading="testing"
-              :disabled="!canSubmitCredentials || modeSwitchLocked"
-              class="p-button-secondary"
-            />
-            <Button
-              label="Connect & Enable Hybrid"
-              icon="pi pi-cloud"
-              @click="activateHybrid"
-              :loading="connecting"
-              :disabled="!canSubmitCredentials || modeSwitchLocked"
-              class="p-button-success"
-            />
-          </div>
-
-          <div v-if="modeSwitchLocked" class="env-notice small">
-            <i class="pi pi-lock"></i>
-            <span>Mode switching is disabled in enterprise mode.</span>
-          </div>
-        </div>
-
-        <div v-else class="connected-info">
-          <div class="info-grid">
-            <div class="info-item">
-              <span class="label">Server</span>
-              <span class="value">{{ config.serverUrl }}</span>
-            </div>
-            <div class="info-item">
-              <span class="label">API Key</span>
-              <span class="value">{{ maskedKey }}</span>
-            </div>
-            <div class="info-item" v-if="userInfo?.email">
-              <span class="label">Account</span>
-              <span class="value">{{ userInfo.email }}</span>
-            </div>
-            <div class="info-item" v-if="typeof userInfo?.llm_quota === 'number'">
-              <span class="label">Quota</span>
-              <span class="value">{{ userInfo.llm_quota }} requests/hour</span>
-            </div>
-            <div class="info-item" v-if="subscriptionPlan">
-              <span class="label">Plan</span>
-              <Tag :severity="planSeverity" :value="planLabel" />
-            </div>
-          </div>
-
-          <div class="sherpa-features" v-if="subscriptionPlan">
-            <h4>Sherpa Capabilities</h4>
-            <div class="feature-list">
-              <div v-for="feat in sherpaFeatureList" :key="feat.key" class="feature-item">
-                <i
-                  :class="feat.enabled ? 'pi pi-check-circle' : 'pi pi-lock'"
-                  :style="{ color: feat.enabled ? 'var(--green-500)' : 'var(--text-color-secondary)' }"
-                ></i>
-                <span :class="{ 'feature-disabled': !feat.enabled }">{{ feat.label }}</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="managed-keys" v-if="managedKeys.length">
-            <h4>Available LLM Providers</h4>
-            <div class="key-list">
-              <div v-for="key in managedKeys" :key="key.provider" class="key-item">
-                <i class="pi pi-check-circle" style="color: var(--green-500)"></i>
-                <span>{{ key.display_name }}</span>
-                <Tag severity="info" :value="key.model" size="small" />
-              </div>
-            </div>
-          </div>
-
-          <div class="actions">
-            <Button
-              label="Validate Connection"
-              icon="pi pi-check-circle"
-              @click="validateConfiguredConnection"
-              :loading="validating"
-              class="p-button-secondary"
-            />
-            <Button
-              label="Refresh"
-              icon="pi pi-refresh"
-              @click="refreshConnection"
-              :loading="refreshing"
-              class="p-button-secondary"
-            />
-            <Button
-              label="Disconnect & Return Local"
-              icon="pi pi-power-off"
-              @click="deactivateHybrid"
-              :loading="disconnecting"
-              :disabled="modeSwitchLocked"
-              class="p-button-danger"
-            />
-          </div>
-
-          <div v-if="modeSwitchLocked" class="env-notice small">
-            <i class="pi pi-lock"></i>
-            <span>Disconnect is disabled in enterprise mode.</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="!privacyOnly && appMode" class="section">
-      <h3>Application Mode</h3>
-      <div class="mode-panel">
-        <div class="mode-info">
-          <Tag :severity="modeSeverity" :value="modeLabel" size="large" />
-          <p class="mode-description">{{ modeDescription }}</p>
-        </div>
-        <div class="mode-features" v-if="appMode === 'hybrid'">
-          <div class="feature">
-            <i class="pi pi-cloud"></i>
-            <span>Managed LLM Keys</span>
-          </div>
-          <div class="feature">
-            <i class="pi pi-sync"></i>
-            <span>Cloud Sync</span>
-          </div>
-          <div class="feature">
-            <i class="pi pi-server"></i>
-            <span>Local Compute</span>
-          </div>
-        </div>
-      </div>
-    </div>
-
+    <p v-if="appConfig?.desktop">Local desktop application. It does not connect to Spectra Scientific services.</p>
     <!-- Data & Privacy -->
     <div class="section">
       <h3>Data &amp; Privacy</h3>
@@ -211,7 +30,9 @@
             <div class="toggle-info">
               <strong>Share Workflow Context with Sherpa</strong>
               <p v-if="contextToggleReason">{{ contextToggleReason }}</p>
-              <p v-else>Allow workflow structure, parameters, and execution summaries to be sent to Sherpa for context-aware chat.</p>
+              <p v-else>
+                Allow the Advisor to use workflow context. Your deployment controls which information is included.
+              </p>
             </div>
             <InputSwitch v-model="privacyForm.allow_llm_context" :disabled="!contextToggleEnabled" @change="savePrivacy" />
           </div>
@@ -234,10 +55,17 @@
 
           <div class="toggle-row">
             <div class="toggle-info">
-              <strong>Data Export</strong>
-              <p>Allow downloading processed spectra and results to your browser.</p>
+              <strong>Data Export (managed deployments)</strong>
+              <p>
+                Allow browser downloads of processed spectra, results, and project files in managed deployments.
+                Local installations always allow exports.
+              </p>
             </div>
-            <InputSwitch v-model="privacyForm.allow_export" @change="savePrivacy" />
+            <InputSwitch
+              v-model="privacyForm.allow_export"
+              :disabled="appMode === 'local'"
+              @change="savePrivacy"
+            />
           </div>
 
           <div class="toggle-row" v-if="showSyncOption">
@@ -260,58 +88,21 @@
       </div>
     </div>
 
-    <Dialog v-if="!privacyOnly" v-model:visible="showTestResult" header="Connection Test" modal :style="{ width: '420px' }">
-      <div class="test-result">
-        <div v-if="testResult?.success" class="success">
-          <i class="pi pi-check-circle"></i>
-          <div class="details">
-            <p><strong>Connection successful!</strong></p>
-            <p v-if="testResult.deployment?.label">Deployment: {{ testResult.deployment.label }}</p>
-            <p v-if="testResult.deployment?.plan">Plan: {{ testResult.deployment.plan }}</p>
-            <p v-if="testResult.user">Logged in as: {{ testResult.user.email || testResult.user.username }}</p>
-            <p v-if="testResult.keys?.length">{{ testResult.keys.length }} managed LLM provider(s) available</p>
-          </div>
-        </div>
-        <div v-else class="error">
-          <i class="pi pi-times-circle"></i>
-          <div class="details">
-            <p><strong>Connection failed</strong></p>
-            <p>{{ testResult?.error || 'Unknown error' }}</p>
-          </div>
-        </div>
-      </div>
-      <template #footer>
-        <Button label="Close" @click="showTestResult = false" />
-      </template>
-    </Dialog>
   </div>
 </template>
-
 <script setup lang="ts">
-/* eslint-disable @typescript-eslint/no-explicit-any -- provider config responses are heterogeneous until normalized by the backend. */
 import axios from 'axios';
-import { ref, reactive, computed, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
 import api from '@/api/client';
-import { useToast } from 'primevue/usetoast';
 import { useAppConfig } from '@/composables/useAppConfig';
 import { useDemoMode } from '@/composables/useDemoMode';
 import { getErrorMessage } from '@/utils/errors';
-
-import InputText from 'primevue/inputtext';
 import InputSwitch from 'primevue/inputswitch';
-import Button from 'primevue/button';
-import Tag from 'primevue/tag';
-import Dialog from 'primevue/dialog';
 
-const props = withDefaults(defineProps<{ privacyOnly?: boolean }>(), {
-  privacyOnly: false,
-});
-const privacyOnly = computed(() => props.privacyOnly);
-
-const toast = useToast();
+defineProps<{ privacyOnly?: boolean }>();
 const { appConfig, loadConfig, isFeatureEnabled } = useAppConfig();
+const appMode = computed(() => appConfig.value?.mode);
 const { isDemoMode } = useDemoMode();
-
 // --- Data & Privacy state ---
 const privacyLoading = ref(true);
 const privacyLoadError = ref('');
@@ -375,96 +166,13 @@ async function savePrivacy() {
   }
 }
 
-const serverUrl = ref('');
-const apiKey = ref('');
-const showKey = ref(false);
-const testing = ref(false);
-const validating = ref(false);
-const connecting = ref(false);
-const disconnecting = ref(false);
-const refreshing = ref(false);
-const showTestResult = ref(false);
-const testResult = ref<any>(null);
 
-const config = ref<any>(null);
-const userInfo = ref<any>(null);
-const managedKeys = ref<any[]>([]);
-const connectionStatus = ref<'connected' | 'disconnected' | 'error' | null>(null);
-
-const isConfigured = computed(() => Boolean(config.value?.configured));
-const canSubmitCredentials = computed(() => Boolean(serverUrl.value.trim() && apiKey.value.trim()));
-const appMode = computed(() => appConfig.value?.mode);
-const modeSwitchLocked = computed(() => appMode.value === 'enterprise');
-
-const maskedKey = computed(() => {
-  if (!config.value?.apiKey) return '';
-  return config.value.apiKey;
-});
-
-const connectionSeverity = computed(() => {
-  if (connectionStatus.value === 'connected') return 'success';
-  if (connectionStatus.value === 'error') return 'danger';
-  return 'secondary';
-});
-
-const connectionLabel = computed(() => {
-  if (connectionStatus.value === 'connected') return 'Connected';
-  if (connectionStatus.value === 'error') return 'Error';
-  return 'Not Connected';
-});
-
-const modeSeverity = computed(() => {
-  if (appMode.value === 'hybrid') return 'info';
-  if (appMode.value === 'enterprise') return 'warning';
-  return 'secondary';
-});
-
-const modeLabel = computed(() => {
-  const mode = appMode.value || 'local';
-  return mode.charAt(0).toUpperCase() + mode.slice(1) + ' Mode';
-});
-
-const subscriptionPlan = computed(() => appConfig.value?.subscription?.plan || null);
-
-const planSeverity = computed(() => {
-  const plan = subscriptionPlan.value;
-  if (plan === 'pro' || plan === 'team') return 'success';
-  if (plan === 'demo') return 'info';
-  return 'secondary';
-});
-
-const planLabel = computed(() => {
-  const plan = subscriptionPlan.value;
-  if (!plan || plan === 'none') return 'No Plan';
-  return plan.charAt(0).toUpperCase() + plan.slice(1);
-});
-
-const sherpaFeatureList = computed(() => [
-  { key: 'sherpaPeakId', label: 'Peak Identification', enabled: isFeatureEnabled('sherpaPeakId') },
-  { key: 'sherpaCodeGen', label: 'Code Generation', enabled: isFeatureEnabled('sherpaCodeGen') },
-  { key: 'sherpaWriteReport', label: 'Report Writing', enabled: isFeatureEnabled('sherpaWriteReport') },
-  { key: 'sherpaAgenticTools', label: 'Gen Mode', enabled: isFeatureEnabled('sherpaAgenticTools') },
-  { key: 'sherpaFullContext', label: 'Full DAG Context', enabled: isFeatureEnabled('sherpaFullContext') },
-]);
-
-const modeDescription = computed(() => {
-  if (appMode.value === 'hybrid') {
-    return 'Local compute with SpectraSherpa cloud for managed LLM keys and sync.';
-  }
-  if (appMode.value === 'enterprise') {
-    return 'Cloud-hosted enterprise deployment with full auth and rate limits.';
-  }
-  return 'Fully local deployment. Connect SpectraSherpa to enable hybrid mode.';
-});
-
+onUnmounted(() => { if (privacySaveTimer) clearTimeout(privacySaveTimer); });
 onMounted(async () => {
   await loadConfig();
-  if (!privacyOnly.value) {
-    await loadConnectionState();
-  }
-
   // Load privacy settings
-  showSyncOption.value = appMode.value !== 'local';
+  // Managed deployments may expose a separate synchronization permission.
+  showSyncOption.value = appMode.value === 'enterprise' && appConfig.value?.siteProfile !== 'pro';
   if (isDemoMode.value) {
     privacyForm.allow_llm_chat = true;
     privacyForm.allow_llm_context = true;
@@ -482,6 +190,9 @@ onMounted(async () => {
       privacyForm.allow_hitran_queries = data.allow_hitran_queries ?? false;
       privacyForm.allow_export = data.allow_export ?? false;
       privacyForm.allow_spectrasherpa_sync = data.allow_spectrasherpa_sync ?? false;
+      if (appConfig.value?.advisorContextPolicy === 'receipt') {
+        privacyForm.allow_spectrasherpa_sync = false;
+      }
     }
   } catch (err: unknown) {
     if (!axios.isAxiosError(err) || err.response?.status !== 404) {
@@ -491,177 +202,7 @@ onMounted(async () => {
     privacyLoading.value = false;
   }
 });
-
-const loadConnectionState = async () => {
-  try {
-    const response = await api.get('/config/spectrasherpa');
-    config.value = response.data;
-
-    if (config.value?.configured) {
-      connectionStatus.value = 'connected';
-      await refreshConnection();
-      return;
-    }
-
-    userInfo.value = null;
-    managedKeys.value = [];
-    connectionStatus.value = 'disconnected';
-  } catch {
-    userInfo.value = null;
-    managedKeys.value = [];
-    connectionStatus.value = 'disconnected';
-  }
-};
-
-const testConnection = async () => {
-  testing.value = true;
-  try {
-    const response = await api.post('/config/spectrasherpa/test', {
-      server_url: serverUrl.value.trim(),
-      api_key: apiKey.value.trim(),
-    });
-
-    testResult.value = response.data;
-    showTestResult.value = true;
-  } catch (error: any) {
-    testResult.value = {
-      success: false,
-      error: error.response?.data?.detail || 'Connection test failed',
-    };
-    showTestResult.value = true;
-  } finally {
-    testing.value = false;
-  }
-};
-
-const fetchConfiguredConnectionDetails = async () => {
-  const userResponse = await api.get('/config/spectrasherpa/user');
-  const keysResponse = await api.get('/config/spectrasherpa/keys');
-
-  if (userResponse.data?.error) {
-    throw new Error(userResponse.data.error);
-  }
-  if (keysResponse.data?.error) {
-    throw new Error(keysResponse.data.error);
-  }
-
-  return {
-    deployment: userResponse.data,
-    keys: Array.isArray(keysResponse.data?.keys) ? keysResponse.data.keys : [],
-  };
-};
-
-const validateConfiguredConnection = async () => {
-  validating.value = true;
-  try {
-    const details = await fetchConfiguredConnectionDetails();
-    userInfo.value = details.deployment;
-    managedKeys.value = details.keys;
-    connectionStatus.value = 'connected';
-    testResult.value = {
-      success: true,
-      ...details,
-    };
-  } catch (error: any) {
-    userInfo.value = null;
-    managedKeys.value = [];
-    connectionStatus.value = 'error';
-    testResult.value = {
-      success: false,
-      error: error?.message || 'Connection validation failed',
-    };
-  } finally {
-    showTestResult.value = true;
-    validating.value = false;
-  }
-};
-
-const activateHybrid = async () => {
-  connecting.value = true;
-  try {
-    const response = await api.post('/config/activate-hybrid', {
-      server_url: serverUrl.value.trim(),
-      api_key: apiKey.value.trim(),
-    });
-
-    apiKey.value = '';
-    await loadConfig();
-    await loadConnectionState();
-
-    toast.add({
-      severity: 'success',
-      summary: 'Hybrid Enabled',
-      detail: response.data?.secret_key_generated
-        ? 'Hybrid mode activated. SECRET_KEY was generated and persisted.'
-        : 'Hybrid mode activated successfully.',
-      life: 3500,
-    });
-  } catch (error: any) {
-    connectionStatus.value = 'error';
-    toast.add({
-      severity: 'error',
-      summary: 'Activation Failed',
-      detail: error.response?.data?.detail || 'Unable to activate hybrid mode.',
-      life: 4500,
-    });
-  } finally {
-    connecting.value = false;
-  }
-};
-
-const deactivateHybrid = async () => {
-  if (!window.confirm('Disconnect SpectraSherpa and return to local mode?')) {
-    return;
-  }
-
-  disconnecting.value = true;
-  try {
-    await api.post('/config/deactivate-hybrid');
-
-    await loadConfig();
-    await loadConnectionState();
-
-    toast.add({
-      severity: 'success',
-      summary: 'Disconnected',
-      detail: 'Hybrid mode disabled. Running in local mode.',
-      life: 3000,
-    });
-  } catch (error: any) {
-    toast.add({
-      severity: 'error',
-      summary: 'Disconnect Failed',
-      detail: error.response?.data?.detail || 'Unable to disable hybrid mode.',
-      life: 4500,
-    });
-  } finally {
-    disconnecting.value = false;
-  }
-};
-
-const refreshConnection = async () => {
-  refreshing.value = true;
-  try {
-    const details = await fetchConfiguredConnectionDetails();
-    userInfo.value = details.deployment;
-    managedKeys.value = details.keys;
-    connectionStatus.value = 'connected';
-  } catch {
-    userInfo.value = null;
-    managedKeys.value = [];
-    connectionStatus.value = 'error';
-    toast.add({
-      severity: 'warn',
-      summary: 'Warning',
-      detail: 'Failed to refresh connection status',
-      life: 3000,
-    });
-  } finally {
-    refreshing.value = false;
-  }
-};
 </script>
-
 <style scoped>
 .integrations-tab {
   display: flex;

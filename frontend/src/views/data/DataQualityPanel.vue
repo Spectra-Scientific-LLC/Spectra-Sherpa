@@ -1,7 +1,8 @@
 <template>
   <div class="dq-panel">
     <div class="dq-header">
-      <i class="pi pi-check-circle"></i>
+      <span v-if="priorityLabel" class="dq-priority-label">{{ priorityLabel }}</span>
+      <i v-else class="pi pi-check-circle"></i>
       <span>Data Quality Summary</span>
     </div>
 
@@ -16,36 +17,6 @@
     </div>
 
     <div v-else class="dq-content">
-      <!-- Labels -->
-      <div v-if="sampleLabels.length > 0" class="dq-labels">
-        <span class="dq-range-label">
-          Sample IDs ({{ sampleLabels.length }})
-        </span>
-        <div class="dq-label-list" :class="{ 'dq-label-list--expanded': labelsExpanded }">
-          <Tag
-            v-for="label in visibleLabels"
-            :key="label"
-            :value="label"
-            severity="info"
-            class="dq-label-tag"
-          />
-          <span
-            v-if="hiddenLabelCount > 0 && !labelsExpanded"
-            class="dq-label-toggle"
-            @click="labelsExpanded = true"
-          >
-            +{{ hiddenLabelCount }} more
-          </span>
-          <span
-            v-if="labelsExpanded && sampleLabels.length > LABEL_PREVIEW_COUNT"
-            class="dq-label-toggle"
-            @click="labelsExpanded = false"
-          >
-            Show less
-          </span>
-        </div>
-      </div>
-
       <div v-if="targetLabels.length > 0" class="dq-labels">
         <span class="dq-range-label">
           Target labels ({{ targetLabels.length }})
@@ -62,33 +33,46 @@
         </div>
       </div>
 
+      <div v-if="classLabels.length" class="dq-labels">
+        <span class="dq-range-label">Class labels ({{ classLabels.length }})</span>
+        <div class="dq-label-list">
+          <Tag v-for="label in classLabels" :key="label" :value="label" severity="success" />
+        </div>
+      </div>
       <div v-if="targetQuality" class="dq-target-quality">
         <span class="dq-range-label">Reference Values</span>
         <div
           class="dq-target-card"
-          :class="{ 'dq-target-card--warning': targetQuality.partialRows > 0 || targetQuality.emptyRows > 0 }"
+          :class="{
+            'dq-target-card--warning': targetQuality.partialRows > 0 || targetQuality.emptyRows > 0,
+          }"
         >
           <div class="dq-target-main">
             <strong>
-              {{ targetQuality.anyRows.toLocaleString() }} / {{ targetQuality.rowCount.toLocaleString() }}
+              {{ targetQuality.anyRows.toLocaleString() }} /
+              {{ targetQuality.rowCount.toLocaleString() }}
             </strong>
             <span>samples have at least one reference value</span>
           </div>
           <div v-if="targetQuality.nTargets > 1" class="dq-target-main">
             <strong>
-              {{ targetQuality.allRows.toLocaleString() }} / {{ targetQuality.rowCount.toLocaleString() }}
+              {{ targetQuality.allRows.toLocaleString() }} /
+              {{ targetQuality.rowCount.toLocaleString() }}
             </strong>
             <span>samples have all {{ targetQuality.nTargets }} target properties</span>
           </div>
-          <p v-if="targetQuality.partialRows > 0" class="dq-target-warning">
-            Multi-target regression will use only complete rows unless you choose a single target property.
+          <p
+            v-if="
+              targetQuality.partialRows > 0 &&
+              datasetDict?.target_context?.target_type !== 'categorical'
+            "
+            class="dq-target-warning"
+          >
+            Multi-target regression will use only complete rows unless you choose a single target
+            property.
           </p>
           <div v-if="targetQuality.perTarget.length > 1" class="dq-target-list">
-            <span
-              v-for="item in targetQuality.perTarget"
-              :key="item.name"
-              class="dq-target-count"
-            >
+            <span v-for="item in targetQuality.perTarget" :key="item.name" class="dq-target-count">
               {{ item.name }}: {{ item.count.toLocaleString() }}
             </span>
           </div>
@@ -99,14 +83,12 @@
       <div class="dq-flags">
         <span class="dq-range-label">QC Checks</span>
         <div class="dq-flag-list">
-          <div
-            v-for="flag in qcFlags"
-            :key="flag.message"
-            class="dq-flag"
-          >
+          <div v-for="flag in qcFlags" :key="flag.message" class="dq-flag">
             <Tag
               :severity="flag.severity"
-              :value="flag.severity === 'success' ? 'OK' : flag.severity === 'warning' ? 'WARN' : 'INFO'"
+              :value="
+                flag.severity === 'success' ? 'OK' : flag.severity === 'warning' ? 'WARN' : 'INFO'
+              "
               class="dq-flag-badge"
             />
             <span class="dq-flag-message">{{ flag.message }}</span>
@@ -118,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import Tag from "primevue/tag";
 import ProgressSpinner from "primevue/progressspinner";
 import type { SherpaDatasetDict } from "@/types";
@@ -127,12 +109,31 @@ const props = withDefaults(
   defineProps<{
     datasetDict: SherpaDatasetDict | null;
     loading?: boolean;
+    priorityLabel?: string;
+    selectedRowIndexes?: number[] | null;
   }>(),
-  { loading: false }
+  { loading: false, priorityLabel: "", selectedRowIndexes: null },
 );
 
-const labelsExpanded = ref(false);
-const LABEL_PREVIEW_COUNT = 5;
+function selectedRows<T>(rows: T[]): T[] {
+  return props.selectedRowIndexes
+    ? props.selectedRowIndexes
+        .filter((index) => index >= 0 && index < rows.length)
+        .map((index) => rows[index])
+    : rows;
+}
+
+// Scan the loaded matrix once. Checkbox changes aggregate these small row
+// summaries, not the spectral matrix again.
+const rowQuality = computed(() =>
+  (props.datasetDict?.data ?? []).map((row) => {
+    const values = Array.isArray(row) ? row : [];
+    return {
+      total: values.length,
+      missing: values.filter((value) => value == null || !Number.isFinite(value)).length,
+    };
+  }),
+);
 
 const meta = computed(() => {
   const m = props.datasetDict?.metadata as Record<string, unknown> | undefined;
@@ -149,15 +150,19 @@ const meta = computed(() => {
 
 const targetUnits = computed(() => props.datasetDict?.target_context?.target_units ?? "");
 const sampleLabels = computed(() => {
-  if (meta.value.labels.length) return meta.value.labels;
+  if (meta.value.labels.length) return selectedRows(meta.value.labels);
   const yLabels = props.datasetDict?.y_axis?.labels;
-  return Array.isArray(yLabels) ? yLabels.map((label) => String(label)) : [];
+  return Array.isArray(yLabels) ? selectedRows(yLabels).map((label) => String(label)) : [];
 });
-
 const targetLabels = computed(() => {
   const context = props.datasetDict?.target_context;
-  const labels = context?.target_names ?? context?.class_names ?? meta.value.target_class_names;
+  const labels = context?.target_names ?? (context?.target_name ? [context.target_name] : []);
   return Array.isArray(labels) ? labels.map((label) => String(label)).filter(Boolean) : [];
+});
+
+const classLabels = computed(() => {
+  const labels = props.datasetDict?.target_context?.class_names ?? meta.value.target_class_names;
+  return Array.isArray(labels) ? labels.map(String) : [];
 });
 
 function targetRows(target: SherpaDatasetDict["target"]): unknown[][] {
@@ -172,13 +177,14 @@ function hasTargetValue(value: unknown): boolean {
   if (typeof value === "number") return Number.isFinite(value);
   if (typeof value === "string") {
     const trimmed = value.trim();
+    if (props.datasetDict?.target_context?.target_type === "categorical") return trimmed.length > 0;
     return trimmed.length > 0 && Number.isFinite(Number(trimmed));
   }
   return false;
 }
 
 const targetQuality = computed(() => {
-  const rows = targetRows(props.datasetDict?.target ?? null);
+  const rows = selectedRows(targetRows(props.datasetDict?.target ?? null));
   if (!rows.length) return null;
   const nTargets = Math.max(targetLabels.value.length, ...rows.map((row) => row.length));
   if (nTargets <= 0) return null;
@@ -223,15 +229,6 @@ const isSpectralDataset = computed(() => {
   return meta.value.is_spectra || meta.value.wavenumbers.length > 1;
 });
 
-const visibleLabels = computed(() => {
-  if (labelsExpanded.value) return sampleLabels.value;
-  return sampleLabels.value.slice(0, LABEL_PREVIEW_COUNT);
-});
-
-const hiddenLabelCount = computed(() =>
-  Math.max(0, sampleLabels.value.length - LABEL_PREVIEW_COUNT)
-);
-
 interface QcFlag {
   severity: "success" | "warning" | "info";
   message: string;
@@ -246,7 +243,8 @@ const qcFlags = computed<QcFlag[]>(() => {
   const featureLabel = isSpectralDataset.value ? "spectral variables" : "features";
 
   // Sample count
-  if (sd.n_samples >= 3) {
+  const sampleCount = props.selectedRowIndexes?.length ?? sd.n_samples;
+  if (sampleCount >= 3) {
     flags.push({ severity: "success", message: `Multiple ${sampleLabel} loaded` });
   } else {
     flags.push({
@@ -257,7 +255,10 @@ const qcFlags = computed<QcFlag[]>(() => {
 
   // Feature count
   if (sd.n_features >= 2) {
-    flags.push({ severity: "success", message: `${sd.n_features.toLocaleString()} ${featureLabel} detected` });
+    flags.push({
+      severity: "success",
+      message: `${sd.n_features.toLocaleString()} ${featureLabel} detected`,
+    });
   } else {
     flags.push({ severity: "warning", message: "Only one feature detected" });
   }
@@ -265,22 +266,25 @@ const qcFlags = computed<QcFlag[]>(() => {
   // Missing/non-finite values
   let total = 0;
   let missing = 0;
-  for (const row of sd.data ?? []) {
-    for (const value of row ?? []) {
-      total += 1;
-      if (value == null || !Number.isFinite(value)) missing += 1;
-    }
+  const selectedQuality = selectedRows(rowQuality.value);
+  for (const row of selectedQuality) {
+    if (!row) continue;
+    total += row.total;
+    missing += row.missing;
   }
   if (total > 0) {
-    const previewRows = sd.data?.length ?? 0;
+    const previewRows = selectedQuality.length;
     const previewCols = Array.isArray(sd.data?.[0]) ? sd.data[0].length : 0;
-    const previewOnly = previewRows < sd.n_samples || previewCols < sd.n_features;
+    const previewOnly = previewRows < sampleCount || previewCols < sd.n_features;
     const scope = previewOnly ? " in displayed preview rows" : "";
     if (missing === 0) {
       flags.push({ severity: "success", message: `No missing values detected${scope}` });
     } else {
       const pct = ((missing / total) * 100).toFixed(2);
-      flags.push({ severity: "warning", message: `${missing.toLocaleString()} missing values${scope} (${pct}%)` });
+      flags.push({
+        severity: "warning",
+        message: `${missing.toLocaleString()} missing values${scope} (${pct}%)`,
+      });
     }
   }
 
@@ -316,9 +320,10 @@ const qcFlags = computed<QcFlag[]>(() => {
   if (sampleLabels.value.length === 0) {
     flags.push({
       severity: "info",
-      message: targetLabels.value.length
-        ? "No sample IDs detected; target labels are available"
-        : "No sample IDs detected",
+      message:
+        targetLabels.value.length || classLabels.value.length
+          ? "No sample IDs detected; target labels are available"
+          : "No sample IDs detected",
     });
   }
 
@@ -346,6 +351,18 @@ const qcFlags = computed<QcFlag[]>(() => {
 
 .dq-header i {
   color: #3b82f6;
+}
+
+.dq-priority-label {
+  align-items: center;
+  background: #2563eb;
+  border-radius: 999px;
+  color: #ffffff;
+  display: inline-flex;
+  font-size: 0.75rem;
+  height: 1.5rem;
+  justify-content: center;
+  width: 1.5rem;
 }
 
 .dq-loading,

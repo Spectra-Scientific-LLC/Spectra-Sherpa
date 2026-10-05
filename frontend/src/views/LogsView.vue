@@ -7,11 +7,14 @@
           label="Refresh"
           icon="pi pi-refresh"
           class="p-button-sm p-button-text"
+          :disabled="isHostedPro"
           @click="fetchLogs"
         />
       </ResponsiveHeaderActions>
     </header>
-    <div class="logs-list">
+    <p v-if="isHostedPro" role="status">Server logs are available to the deployment operator. Contact your operator for hosted diagnostics.</p>
+    <ChatExchangeHistory v-if="appMode === 'local'" />
+    <div v-if="!isHostedPro" class="logs-list">
       <div v-if="error" class="logs-error">{{ error }}</div>
       <div v-for="entry in logs" :key="entry.timestamp" class="log-entry">
         <strong>{{ entry.level }}</strong>
@@ -23,16 +26,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
+import { useAppConfig } from "@/composables/useAppConfig";
 import Button from "primevue/button";
 
 import ResponsiveHeaderActions from "@/components/ResponsiveHeaderActions.vue";
+import ChatExchangeHistory from "@/components/ChatExchangeHistory.vue";
 import api from "@/api/client";
+
+const { appMode, siteProfile } = useAppConfig();
+const isHostedPro = computed(() => appMode.value === "enterprise" && siteProfile?.value === "pro");
 
 const logs = ref<Array<{ timestamp: string; level: string; message: string }>>([]);
 const error = ref("");
 
 const fetchLogs = async () => {
+  if (isHostedPro.value) return;
   error.value = "";
   try {
     const response = await api.get("/logs");
@@ -42,9 +51,9 @@ const fetchLogs = async () => {
   }
 };
 
-const headerActionItems = [
-  { label: "Refresh", icon: "pi pi-refresh", command: fetchLogs },
-];
+const headerActionItems = computed(() => [
+  { label: "Refresh", icon: "pi pi-refresh", command: fetchLogs, disabled: isHostedPro.value },
+]);
 </script>
 
 <style scoped>
@@ -55,6 +64,10 @@ const headerActionItems = [
   height: 100%;
   padding: 0 1rem 1rem;
   overflow: auto;
+}
+
+:global(.content:has(.logs-content)) {
+  background: #e4e0fa;
 }
 
 .logs-list {

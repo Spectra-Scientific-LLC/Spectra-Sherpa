@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
 import api from "@/api/client";
-import { clearStoredApiKey, writeStoredApiKey } from "@/utils/authStorage";
+import { clearStoredApiKey, readStoredApiKey, writeStoredApiKey } from "@/utils/authStorage";
 
 vi.mock("@/api/client", () => ({
   default: {
@@ -51,21 +51,21 @@ describe("OSS auth store (identity-only, post-v0.4.1)", () => {
     });
   });
 
-  describe("initHybridUser", () => {
+  describe("initializeActor", () => {
     it("accepts minimal actor payload from OSS /auth/me", async () => {
       vi.mocked(api.get).mockResolvedValueOnce({
         data: { id: 7, username: "implicit-user", is_active: true },
       });
       const store = useAuthStore();
 
-      await store.initHybridUser();
+      await store.initializeActor();
 
       expect(api.get).toHaveBeenCalledWith("/auth/me");
       expect(store.user).toEqual({ id: 7, username: "implicit-user", is_active: true });
       expect(store.isAuthenticated).toBe(true);
     });
 
-    it("clears stale tokens before calling /auth/me", async () => {
+    it("preserves credentials for server validation when resolving a product actor", async () => {
       localStorage.setItem("token", "stale-jwt");
       writeStoredApiKey("stale-key");
       vi.mocked(api.get).mockResolvedValueOnce({
@@ -73,17 +73,17 @@ describe("OSS auth store (identity-only, post-v0.4.1)", () => {
       });
       const store = useAuthStore();
 
-      await store.initHybridUser();
+      await store.initializeActor();
 
-      expect(localStorage.getItem("token")).toBeNull();
-      expect(localStorage.getItem("api_key")).toBeNull();
+      expect(localStorage.getItem("token")).toBe("stale-jwt");
+      expect(readStoredApiKey()).toBe("stale-key");
     });
 
     it("tolerates /auth/me failure (warns, leaves user null)", async () => {
       vi.mocked(api.get).mockRejectedValueOnce(new Error("remote, no loopback"));
       const store = useAuthStore();
 
-      await store.initHybridUser();
+      await store.initializeActor();
 
       expect(store.user).toBeNull();
     });

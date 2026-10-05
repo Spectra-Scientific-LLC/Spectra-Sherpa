@@ -1,9 +1,9 @@
 <template>
   <footer class="app-footer" :class="{ 'app-footer-drift': versionDrift }">
     <span class="app-footer-brand">SpectraSherpa</span>
-    <span class="app-footer-sep">·</span>
     <span class="app-footer-version" :title="versionTooltip">
-      FE {{ frontendVersion }} · BE {{ backendVersion ?? "—" }}
+      FE {{ frontendVersion }} - BE {{ backendVersion ?? "—"
+      }}<template v-if="deploymentSuffix"> ({{ deploymentSuffix }})</template>
     </span>
     <span v-if="versionDrift" class="app-footer-drift-badge" :title="driftTooltip">
       <i class="pi pi-exclamation-triangle"></i> bundle drift
@@ -15,13 +15,17 @@
 import { computed } from "vue";
 import { useAppVersion } from "@/composables/useAppVersion";
 
-const { frontendVersion, backendVersion, versionDrift } = useAppVersion();
+const { frontendVersion, backendVersion, buildCommit, deploymentSuffix, versionDrift } =
+  useAppVersion();
 
 const versionTooltip = computed(() => {
   if (backendVersion.value === null) {
     return `Frontend bundle ${frontendVersion}; backend version unavailable.`;
   }
-  return `Frontend bundle ${frontendVersion}; backend ${backendVersion.value}.`;
+  return (
+    `Frontend bundle ${frontendVersion}; backend ${backendVersion.value}.` +
+    (buildCommit.value ? ` Deployment: ${buildCommit.value}` : " Deployment revision unavailable.")
+  );
 });
 
 const driftTooltip = computed(
@@ -50,10 +54,6 @@ const driftTooltip = computed(
   color: #4b5563;
 }
 
-.app-footer-sep {
-  color: #d1d5db;
-}
-
 .app-footer-version {
   font-family: "SF Mono", "Monaco", "Menlo", "Courier New", monospace;
   font-size: 0.7rem;
@@ -65,8 +65,7 @@ const driftTooltip = computed(
   border-top-color: #fde68a;
 }
 
-.app-footer-drift .app-footer-brand,
-.app-footer-drift .app-footer-sep {
+.app-footer-drift .app-footer-brand {
   color: #92400e;
 }
 

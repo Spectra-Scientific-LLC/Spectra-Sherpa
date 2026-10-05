@@ -7,7 +7,7 @@
           AI
         </div>
       </div>
-      <button class="guidance-toast__close" type="button" aria-label="Dismiss" @click="guidance.dismiss">
+      <button class="guidance-toast__close" type="button" aria-label="Dismiss" @click="dismiss">
         ×
       </button>
       <h2>{{ toast.title }}</h2>
@@ -17,11 +17,11 @@
           v-if="actionLabel"
           class="guidance-toast__primary"
           type="button"
-          @click="guidance.clickAction"
+          @click="clickAction"
         >
           {{ actionLabel }}
         </button>
-        <button class="guidance-toast__quiet" type="button" @click="guidance.dontShowAgain">
+        <button v-if="!scientificQuerySuggestion" class="guidance-toast__quiet" type="button" @click="guidance.dontShowAgain">
           Don't show again
         </button>
       </div>
@@ -30,13 +30,26 @@
 </template>
 
 <script setup lang="ts">
+import { scientificQuerySuggestion } from "@/lib/scientificQueryGuidance";
+import { requestAdvisorPrompt } from "@/lib/advisorPromptActions";
 import { computed } from "vue";
 import { resolveGuidanceAction } from "@/lib/actionOntology";
 import { useGuidanceStore } from "@/stores/guidance";
 
 const guidance = useGuidanceStore();
-const toast = computed(() => guidance.activeToast);
+const toast = computed(() => scientificQuerySuggestion.value
+  ? { title: "Sherpa Advisor Guidance", body: `Try: ${scientificQuerySuggestion.value}`, source: "rule", action_id: null }
+  : guidance.activeToast);
+function dismiss(): void {
+  if (scientificQuerySuggestion.value) scientificQuerySuggestion.value = null;
+  else guidance.dismiss();
+}
+function clickAction(): void {
+  if (scientificQuerySuggestion.value) requestAdvisorPrompt(scientificQuerySuggestion.value, { autoSend: false });
+  else void guidance.clickAction();
+}
 const actionLabel = computed(() => {
+  if (scientificQuerySuggestion.value) return "Ask Sherpa";
   const action = resolveGuidanceAction(toast.value?.action_id);
   return action?.label ?? null;
 });
