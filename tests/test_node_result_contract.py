@@ -432,10 +432,15 @@ class TestDecompositionNodesEmitDiagnostics:
 
         rng = np.random.default_rng(4)
         X = np.abs(rng.normal(0, 1, (20, 30))) + 0.1
+        # This synthetic acquisition has a declared temporal evolution order.
+        from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis
+
+        dataset = SherpaDataset(X=X, sample_axis=SampleAxis(values=np.arange(20), title="Elapsed time", units="s"))
+        dataset.is_time_series = True
         await _assert_node_result(
             node_type="model.efa",
             parameters={"n_components": 10},
-            kwargs={"input_data": SherpaDataset(X=X)},
+            kwargs={"input_data": dataset},
             required_diagnostic_keys={"n_components"},
         )
 

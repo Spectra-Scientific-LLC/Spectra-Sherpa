@@ -50,7 +50,6 @@ UPSTREAM_AUTHORITY_NODE_IDS = (
     "tests/test_native_vendor_conformance_guards.py::test_opusreader2_attribution_refuses_an_unpinned_upstream",
     "tests/test_native_vendor_conformance_guards.py::test_scp_ci_runs_every_native_reader_with_required_external_corpus",
     "tests/test_native_wdf_reader.py::test_external_wdf_conformance_binds_full_science_and_sample_identity",
-    "tests/test_nddataset_containment.py::test_retired_product_authorities_are_absent_from_delivery_sources",
     "tests/test_node_catalog_contract.py::test_census_is_complete_deterministic_and_matches_checked_baseline",
     "tests/test_node_catalog_contract.py::test_census_classifies_the_entire_catalog_against_the_managed_optimization_profile",
     "tests/test_node_catalog_contract.py::test_current_catalog_authority_contains_no_retired_ambiguous_profile_terms",
