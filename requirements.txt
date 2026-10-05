@@ -12,23 +12,26 @@ fastapi>=0.137.0,<0.138.0
 # until FastAPI supports the patched Starlette 1.x line.
 starlette>=1.3.1,<1.4.0
 uvicorn[standard]>=0.30.0,<0.31.0
-sqlalchemy>=2.0.31,<3.0.0
+sqlalchemy>=2.0.31,<3.0.0,!=2.1.0
 aiosqlite>=0.20.0,<1.0.0
 alembic>=1.13.2,<2.0.0
 pydantic>=2.7.4,<3.0.0
 python-multipart>=0.0.32,<0.1.0
 python-dotenv>=1.0.1,<2.0.0
-cryptography>=48.0.1,<49.0.0
-httpx>=0.27.0,<0.28.0
+cryptography>=50.0.0,<51.0.0
+httpx>=0.27.0,<0.29.0
 urllib3>=2.7.0,<3.0.0
 idna>=3.15,<4.0.0
 
-numpy>=1.26.4,<2.0.0
-scipy>=1.13.1,<2.0.0
+# The managed scientific profile attests these three at exactly these versions;
+# any other version makes every canonical validation graph refuse to execute.
+# Keep them in step with pyproject.toml and poetry.lock.
+numpy==1.26.4
+scipy==1.17.1
+h5py==3.16.0
 pandas>=2.2.2,<3.0.0
-scikit-learn>=1.5.0,<2.0.0
-beautifulsoup4>=4.12.3,<5.0.0
-pypdf>=6.13.3,<7.0.0
+scikit-learn==1.9.0
+pypdf>=6.19.0,<7.0.0
 jsonschema>=4.20.0,<5.0.0
 greenlet>=3.0.0,<4.0.0
 
@@ -36,14 +39,19 @@ greenlet>=3.0.0,<4.0.0
 # OSS no longer issues, validates, or hashes credentials — that's the
 # responsibility of managed-auth server extensions.
 
-# Optional: spectral file I/O via SpectroChemPy (CeCILL-B license, not AGPL-compatible)
+# Optional: exact EFA, MCR-ALS, and SIMPLISMA matrix adapter via SpectroChemPy
+# (CeCILL-B license; this extra adds no file readers or dataset catalog)
 # Install with: pip install spectra-sherpa[scp]
-# spectrochempy>=0.8.1,<0.9.0
+# spectrochempy==0.8.1
 
 # LLM provider SDKs are intentionally not listed here. The OSS package exposes
 # contracts for LLM-backed features; provider implementations are supplied by
 # extensions.
 
-# Optional: server deployment extras (install with: pip install spectra-sherpa[cloud])
+# Optional: NIST WebBook acquisition (stored references remain readable without it)
+# Install with: pip install spectra-sherpa[nist]
+# beautifulsoup4>=4.12.3,<5.0.0
+
+# Optional: PostgreSQL server deployment (install with: pip install spectra-sherpa[postgres])
 # asyncpg>=0.29.0,<0.30.0
 # gunicorn>=22.0.0,<23.0.0

@@ -19,3 +19,5 @@ How were these changes tested?
 - [ ] Tests pass (`pytest`)
 - [ ] Docs updated (if applicable)
 - [ ] CLA signed ([Individual](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/blob/main/CLA.md) or [Entity](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/blob/main/CLA-entity.md) — the bot will prompt you)
+
+- [ ] Canonical nodes declare their artifact lifecycle; model coverage proves fit → saved Run → Artifacts → reopen → Deploy → application, with explicit cohort-only exceptions. See `docs/developers/scientific-result-surface-contract.md`.

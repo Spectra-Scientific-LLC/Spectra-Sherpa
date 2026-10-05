@@ -1,50 +1,46 @@
 #!/usr/bin/env python3
-"""Enforce one-way dependency: OSS must never import the server package.
+"""Enforce one-way dependency: OSS never imports a private product package.
 
-Guarded imports (inside ``try: ... except ImportError``) are allowed —
-these are runtime feature probes, not hard dependencies.
-
-Usage (CI):
-    python scripts/check_import_boundary.py
-
-Exit code 0 = clean, 1 = violations found.
+Even guarded imports violate explicit composition. Private products install
+neutral core hooks; installing a private package must not activate it.
 """
 
 from __future__ import annotations
 
-import re
+import ast
 import sys
 from pathlib import Path
 
 # Root of the OSS source tree to scan.
 OSS_SRC = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa"
 
-FORBIDDEN_MODULE = "spectrasherpa_" + "server"
-FORBIDDEN_RE = re.compile(rf"^\s*(from|import)\s+{FORBIDDEN_MODULE}\b")
-
-
-def _is_inside_try_except(lines: list[str], lineno: int) -> bool:
-    """Heuristic: walk backwards up to 5 lines looking for a bare ``try:``."""
-    for i in range(lineno - 1, max(lineno - 6, -1), -1):
-        stripped = lines[i].strip()
-        if stripped == "try:":
-            return True
-        if stripped and not stripped.startswith("#"):
-            # Stop at the first non-comment, non-blank line that isn't try:
-            break
-    return False
+FORBIDDEN_MODULES = {"spectrasherpa_" + "server", "spectra_" + "hybrid", "spectra_" + "hybrid_contracts"}
 
 
 def check_file(path: Path) -> list[str]:
+    source = path.read_text(encoding="utf-8")
     violations: list[str] = []
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except (OSError, UnicodeDecodeError):
-        return violations
-    for lineno_0, line in enumerate(lines):
-        if FORBIDDEN_RE.search(line):
-            if not _is_inside_try_except(lines, lineno_0):
-                violations.append(f"{path}:{lineno_0 + 1}: {line.strip()}")
+    for node in ast.walk(ast.parse(source, filename=str(path))):
+        names = (
+            [alias.name for alias in node.names]
+            if isinstance(node, ast.Import)
+            else [node.module or ""] if isinstance(node, ast.ImportFrom) else []
+        )
+        if (
+            isinstance(node, ast.Call)
+            and (
+                isinstance(node.func, ast.Name)
+                and node.func.id == "__import__"
+                or isinstance(node.func, ast.Attribute)
+                and node.func.attr == "import_module"
+            )
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            names.append(node.args[0].value)
+        if any(name.split(".")[0] in FORBIDDEN_MODULES for name in names):
+            violations.append(f"{path}:{node.lineno}: private product import")
     return violations
 
 
@@ -58,7 +54,7 @@ def main() -> int:
         violations.extend(check_file(py_file))
 
     if violations:
-        print("Import boundary violations (OSS must not import the server package):\n")
+        print("Import boundary violations (OSS must not import private product packages):\n")
         for v in violations:
             print(f"  {v}")
         print(f"\n{len(violations)} violation(s) found.")

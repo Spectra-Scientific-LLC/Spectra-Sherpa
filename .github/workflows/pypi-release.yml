@@ -1,89 +1,244 @@
 name: Publish to PyPI
 
-# Manual PyPI release.
-#
-# Run this only after the maintainer has reviewed the public tag and wants a
-# stable PyPI release. The job rebuilds the package FROM THAT EXACT TAG and
-# uploads it to PyPI via Trusted Publishing (OIDC — no API token is stored
-# anywhere). What lands on PyPI is therefore byte-identical to the reviewed
-# public source (`git clone` of this repo at the tag).
-#
-# ONE-TIME SETUP (PyPI side — required, or this fails closed and nothing
-# is published):
-#   PyPI -> project "spectra-sherpa" -> Publishing -> add a Trusted Publisher
-#     Owner:       Spectra-Scientific-LLC
-#     Repository:  Spectra-Sherpa
-#     Workflow:    pypi-release.yml
-#     Environment: (leave blank)
+# Manual, approval-gated stable publication from one exact public release tag.
+# The build job has no OIDC authority. It builds one wheel/sdist pair and binds
+# their hashes to the tag commit. Twelve clean jobs install those exact bytes:
+# wheel + sdist, Python 3.11 + 3.12, Ubuntu + macOS + Windows. Only after every
+# row passes can the pypi environment reviewer authorize the separate OIDC job
+# to upload the same GitHub artifact. The publish job never checks out source,
+# builds code, or installs build dependencies.
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Public release tag to publish, e.g. spectra-sherpa-v0.5.2"
+        description: "Exact public release tag, e.g. spectra-sherpa-v0.6.0"
         required: true
         type: string
       confirm:
-        description: "Type publish to release to PyPI"
+        description: "Type publish to build, qualify, and request PyPI approval"
         required: true
         type: string
 
 permissions:
   contents: read
 
+concurrency:
+  group: pypi-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
-  pypi:
-    name: Build and publish to PyPI
+  build:
+    name: Build exact public-tag artifacts
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: read
-      id-token: write # required for PyPI Trusted Publishing (OIDC)
+    outputs:
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      source_commit: ${{ steps.release.outputs.source_commit }}
+      version: ${{ steps.release.outputs.version }}
     steps:
-      - name: Confirm manual PyPI publish
+      - name: Confirm manual publication request
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          DISPATCH_REF: ${{ github.ref }}
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ inputs.confirm }}" != "publish" ]; then
-            echo "::error::Set confirm=publish to publish to PyPI."
+          set -euo pipefail
+          if [ "$CONFIRM" != "publish" ]; then
+            echo "::error::Set confirm=publish to start qualification."
             exit 1
           fi
-          if ! printf '%s' "${{ inputs.tag }}" | grep -Eq '^spectra-sherpa-v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)?$'; then
-            echo "::error::Tag must look like spectra-sherpa-v0.5.2."
+          if [ "$DISPATCH_REF" != "refs/heads/main" ]; then
+            echo "::error::Stable publication must be dispatched from protected public main."
+            exit 1
+          fi
+          if ! printf '%s' "$RELEASE_TAG" | grep -Eq '^spectra-sherpa-v[0-9]+\.[0-9]+\.[0-9]+([.-][A-Za-z0-9]+)?$'; then
+            echo "::error::Tag must use the exact spectra-sherpa-vX.Y.Z form."
             exit 1
           fi
 
+      # The workflow definition comes from protected public main. Do not let
+      # checkout resolve a branch that happens to have the same text as a tag.
       - uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.tag }} # the exact spectra-sherpa-v* tag
+          fetch-depth: 1
           persist-credentials: false
 
-      - name: Set up Python
+      - name: Set up release-build Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
-      - name: Verify tag matches package version (fail closed on mismatch)
+      - name: Resolve and check out the exact tag ref
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
         run: |
-          TAG="${{ inputs.tag }}"
-          TAG="${TAG#spectra-sherpa-v}"
-          PKG=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['tool']['poetry']['version'])")
-          echo "tag=${TAG}  pyproject=${PKG}"
-          if [ "$TAG" != "$PKG" ]; then
-            echo "::error::Tag (${TAG}) does not match pyproject version (${PKG}). Refusing to publish to PyPI."
+          set -euo pipefail
+          git fetch --no-tags origin \
+            "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          git fetch --no-tags origin \
+            "+refs/heads/main:refs/remotes/origin/main"
+          source_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          git merge-base --is-ancestor "$source_commit" refs/remotes/origin/main
+          git checkout --detach "$source_commit"
+          version="${RELEASE_TAG#spectra-sherpa-v}"
+          package_version="$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['tool']['poetry']['version'])")"
+          if [ "$version" != "$package_version" ]; then
+            echo "::error::Tag version ($version) does not match pyproject version ($package_version)."
+            exit 1
+          fi
+          if [ "$(git rev-parse HEAD)" != "$source_commit" ]; then
+            echo "::error::Checkout does not equal the resolved release tag commit."
+            exit 1
+          fi
+          echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Node.js 22 from the exact public tag
+        uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Generate the frontend from its pinned lockfile
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build one wheel and one source distribution
+        run: |
+          set -euo pipefail
+          python -m pip install \
+            "build==1.4.4" \
+            "jsonschema==4.25.1" \
+            "twine==6.2.0"
+          mkdir -p release/dist
+          python -m build --outdir release/dist
+          python -m twine check release/dist/*
+          python scripts/verify_protected_benchmarks.py \
+            --package-root . \
+            --scan-root . \
+            --artifacts release/dist
+          python scripts/qualify_release_artifacts.py create-manifest \
+            --dist release/dist \
+            --output release/artifact-manifest.json \
+            --release-tag "${{ inputs.tag }}" \
+            --source-commit "${{ steps.release.outputs.source_commit }}"
+          cp scripts/qualify_release_artifacts.py release/
+
+      - name: Upload the only artifact eligible for qualification and publication
+        id: upload
+        uses: actions/upload-artifact@v7
+        with:
+          name: spectra-sherpa-${{ inputs.tag }}
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+  qualify:
+    name: Qualify ${{ matrix.kind }} (${{ matrix.os }} / Python ${{ matrix.python }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.11", "3.12"]
+        kind: [wheel, sdist]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Download the build job's exact immutable artifact
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: release
+          merge-multiple: true
+
+      - name: Set up supported Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Verify, install, and exercise the exact distribution
+        env:
+          ARTIFACT_KIND: ${{ matrix.kind }}
+          EXPECTED_VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          python release/qualify_release_artifacts.py verify-manifest \
+            --dist release/dist \
+            --manifest release/artifact-manifest.json
+          artifact="$(python release/qualify_release_artifacts.py select \
+            --dist release/dist \
+            --manifest release/artifact-manifest.json \
+            --kind "$ARTIFACT_KIND")"
+          mkdir clean-runtime
+          cd clean-runtime
+          python -m pip install "poetry-core==2.2.1"
+          python -m pip install "$artifact"
+          python -m pip uninstall --yes spectra-sherpa
+          python -m pip install \
+            --no-index \
+            --no-deps \
+            --no-build-isolation \
+            --no-cache-dir \
+            "$artifact"
+          python -m pip check
+          spectra-sherpa --help >/dev/null
+          python ../release/qualify_release_artifacts.py smoke \
+            --expected-version "$EXPECTED_VERSION"
+
+  publish:
+    name: Publish the qualified bytes with Trusted Publishing
+    needs: [build, qualify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/p/spectra-sherpa
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Refuse if the public tag moved after qualification
+        env:
+          EXPECTED_COMMIT: ${{ needs.build.outputs.source_commit }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          remote_refs="$(git ls-remote \
+            "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git" \
+            "refs/tags/${RELEASE_TAG}" \
+            "refs/tags/${RELEASE_TAG}^{}")"
+          direct="$(printf '%s\n' "$remote_refs" | awk '$2 !~ /\^\{\}$/ {print $1}')"
+          peeled="$(printf '%s\n' "$remote_refs" | awk '$2 ~ /\^\{\}$/ {print $1}')"
+          current="${peeled:-$direct}"
+          if [ -z "$current" ] || [ "$current" != "$EXPECTED_COMMIT" ]; then
+            echo "::error::Public release tag no longer resolves to the qualified commit."
             exit 1
           fi
 
-      - name: Build sdist + wheel
-        run: |
-          python -m pip install --upgrade build
-          python -m build
+      - name: Download the exact artifact that passed all twelve qualification rows
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
+          path: release
+          merge-multiple: true
 
-      - name: Validate artifacts
-        run: |
-          python -m pip install --upgrade twine
-          python -m twine check dist/*
-
-      - name: Publish to PyPI (Trusted Publishing / OIDC)
+      - name: Publish to PyPI with attestations (fail loudly on duplicates)
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          # Re-runs (transient failure / re-dispatch) must not hard-fail
-          # once a version is already on PyPI.
-          skip-existing: true
+          packages-dir: release/dist/
+          attestations: true
+          print-hash: true

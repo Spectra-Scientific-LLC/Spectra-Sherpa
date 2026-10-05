@@ -1,6 +1,7 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help setup install dev test test-all lint fmt build clean node-scaffold generate-types
+.PHONY: help setup install dev test test-fast test-science test-node qualify-node \
+	test-frontend test-all lint fmt build docs clean node-scaffold generate-types
 
 help:            ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -24,9 +25,28 @@ dev:             ## Start backend (port 8000) + frontend dev server (port 5173)
 test:            ## Run backend pytest suite
 	poetry run pytest tests/ -v --no-cov
 
-test-all:        ## Run backend tests + frontend type-check
-	poetry run pytest tests/ -v --no-cov
+test-fast:       ## Run the fast dataset, SDK, node-contract, and scaffold checks
+	poetry run pytest tests/test_sdk_imports.py tests/test_sherpa_dataset.py tests/test_node_parameter_bounds.py tests/test_connection_validator.py tests/test_scaffold_node.py --no-cov -q
+
+test-science:    ## Run scientific contracts without release or deployment machinery
+	poetry run pytest tests/test_c2_*_contract.py tests/test_sdk_validate.py tests/test_sherpa_dataset.py tests/test_fold_graph_executor.py tests/test_canonical_train_test_split.py --no-cov -q
+
+test-node:       ## Run focused evidence tests; NODE must be a canonical type such as model.pca
+	poetry run python scripts/contributor_node.py test --node "$(NODE)"
+
+qualify-node:    ## Check retained authorities and focused evidence; NODE=model.pca
+	poetry run python scripts/contributor_node.py qualify --node "$(NODE)"
+
+test-frontend:   ## Run frontend unit tests and type checking
+	cd frontend && npm run test:unit -- --run
 	cd frontend && npx vue-tsc --noEmit
+
+test-all:        ## Run backend, frontend, lint, production build, and strict docs
+	poetry run pytest tests/ -v --no-cov
+	$(MAKE) lint
+	cd frontend && npm run test:unit -- --run
+	$(MAKE) build
+	$(MAKE) docs
 
 lint:            ## Run all linters (backend + frontend)
 	poetry run black --check src/ tests/
@@ -46,6 +66,9 @@ generate-types:  ## Generate TypeScript types from OpenAPI schema
 
 build:           ## Build frontend into src/spectra_sherpa/static/
 	cd frontend && npm run build
+
+docs:            ## Build the public documentation with strict link checking
+	poetry run mkdocs build --strict
 
 clean:           ## Remove build artifacts
 	rm -rf src/spectra_sherpa/static/assets

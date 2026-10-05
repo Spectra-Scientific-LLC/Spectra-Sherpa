@@ -8,7 +8,8 @@
 #   ./scripts/rebuild_static.sh          # full build (npm ci + build)
 #   ./scripts/rebuild_static.sh --quick  # build only (skip npm ci)
 #
-# Prerequisites: Node.js 18+ and npm
+# Output is ignored by git and is consumed only by local runs or package
+# qualification. Prerequisites: Node.js 22 and npm.
 
 set -euo pipefail
 
@@ -37,4 +38,4 @@ if [[ ! -f "$STATIC_DIR/index.html" ]]; then
   exit 1
 fi
 
-echo "Done. Static assets in $STATIC_DIR are up to date."
+echo "Done. Generated static assets are ready in $STATIC_DIR."

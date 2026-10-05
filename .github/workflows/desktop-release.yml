@@ -1,0 +1,491 @@
+name: Desktop Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing reviewed spectra-sherpa version tag (candidate only; does not publish)"
+        required: true
+        type: string
+      store_candidate:
+        description: "Audit/sign every Windows PE for an EXE Store candidate (manual artifacts only)"
+        type: boolean
+        default: false
+  push:
+    tags:
+      - 'spectra-sherpa-v*'
+
+permissions: {}
+
+concurrency:
+  group: desktop-release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ubuntu:
+    # Operator may publish source/pip before scheduling signed installers.
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.DESKTOP_RELEASE_PAUSED != 'true' }}
+    name: Ubuntu AppImage qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: desktop-release
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    defaults:
+      run:
+        shell: bash
+        working-directory: .
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+        with:
+          python-version: '3.11.9'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: '22'
+      - name: Bind Ubuntu source
+        run: |
+          BUILD_COMMIT=$(git rev-parse HEAD)
+          if [ "$BUILD_COMMIT" != "$GITHUB_SHA" ]; then echo 'Tag/event identity mismatch'; exit 1; fi
+          echo "RELEASE_TAG=${{ inputs.tag || github.ref_name }}" >> "$GITHUB_ENV"
+          echo "BUILD_COMMIT=$BUILD_COMMIT" >> "$GITHUB_ENV"
+      - name: Install Ubuntu desktop prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2t64 libnss3 libatk-bridge2.0-0 libgbm1 libasound2t64 xvfb dbus-x11 gnome-keyring apparmor-utils
+      - name: Build and qualify Ubuntu AppImage
+        run: bash desktop/ubuntu/build.sh
+      - name: Retain Ubuntu evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ubuntu-desktop-evidence
+          path: ./desktop/ubuntu-evidence/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Prepare Ubuntu release identity
+        run: python desktop/release_manifest.py prepare --target ubuntu-x86_64 --tag "$RELEASE_TAG" --commit "$BUILD_COMMIT" --directory desktop/release
+      - name: Attest Ubuntu artifact
+        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018
+        with:
+          subject-path: desktop/release/*
+      - name: Retain Ubuntu artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: ubuntu-x86_64-artifact
+          path: ./desktop/release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  build:
+    needs: ubuntu
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    name: Build ${{ matrix.os }} signed release
+    runs-on: ${{ matrix.os }}
+    environment: desktop-release
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: macos-arm64
+          - os: windows-2022
+            target: windows-x86_64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
+          persist-credentials: false
+
+      - name: Bind candidate source identity
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT=$(git rev-parse HEAD)
+          if [ "$SOURCE_COMMIT" != "$GITHUB_SHA" ]; then
+            echo "::error::Dispatch this workflow from the same tag requested for the candidate; event provenance must match checkout."
+            exit 1
+          fi
+          echo "BUILD_COMMIT=$SOURCE_COMMIT" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Set up Python 3.11.9
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11.9"
+
+      - name: Set up Node 22
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+
+      - name: Build frontend
+        run: ./scripts/rebuild_static.sh
+
+      # Intel cryptography may build from source. Static linkage prevents its
+      # Homebrew OpenSSL from colliding with Python's bundled libssl.3.dylib.
+      - name: Configure isolated macOS cryptography linkage
+        if: runner.os == 'macOS'
+        run: |
+          echo "OPENSSL_STATIC=1" >> "$GITHUB_ENV"
+          echo "OPENSSL_DIR=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+          echo "PIP_NO_CACHE_DIR=1" >> "$GITHUB_ENV"
+
+      - name: Install local bundle build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .
+          python -m pip install -r desktop/requirements.txt
+
+      - name: Verify the build environment satisfies the managed runtime attestation
+        run: python desktop/verify_runtime_attestation.py --output desktop/runtime-provenance.json
+
+      - name: Build initial unsigned bundle
+        env:
+          SPECTRA_DESKTOP_NATIVE_BACKEND: "1"
+          MPLCONFIGDIR: ${{ runner.temp }}/spectra-mplconfig
+          PYINSTALLER_CONFIG_DIR: ${{ runner.temp }}/spectra-pyinstaller-config
+        run: |
+          mkdir -p "$MPLCONFIGDIR" "$PYINSTALLER_CONFIG_DIR"
+          pyinstaller --noconfirm --clean \
+            --distpath desktop/dist \
+            --workpath desktop/build \
+            desktop/spectrasherpa.spec
+          
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            EXE_PATH="desktop/dist/SpectraSherpa/SpectraSherpa.exe"
+            INTERNAL_DIR="desktop/dist/SpectraSherpa/_internal"
+            PROV_DIR="desktop/dist/SpectraSherpa/_internal"
+          else
+            EXE_PATH="desktop/dist/SpectraSherpa/SpectraSherpa"
+            INTERNAL_DIR="desktop/dist/SpectraSherpa/_internal"
+            PROV_DIR="desktop/dist/SpectraSherpa/_internal"
+          fi
+          
+          mkdir -p "$PROV_DIR"
+          # package_hashes is a real content digest over each bundled tree, so
+          # the About surface can be checked against a rebuild. An empty dict
+          # would satisfy the schema while proving nothing.
+          DATA_ROOT="${TEST_DATA_DIR:-$INTERNAL_DIR}" python - "$PROV_DIR/provenance.json" <<'PROV'
+          import hashlib, json, os, sys
+          from pathlib import Path
+
+          import spectra_sherpa
+
+          data_root = Path(os.environ["DATA_ROOT"]) / "spectra_sherpa"
+
+          def tree_digest(root: Path) -> str | None:
+              if not root.is_dir():
+                  return None
+              h = hashlib.sha256()
+              for path in sorted(p for p in root.rglob("*") if p.is_file()):
+                  h.update(path.relative_to(root).as_posix().encode())
+                  h.update(hashlib.sha256(path.read_bytes()).digest())
+              return h.hexdigest()
+
+          hashes = {
+              name: digest
+              for name, digest in (
+                  ("spectra_sherpa", tree_digest(data_root)),
+                  ("frontend_static", tree_digest(data_root / "static")),
+              )
+              if digest is not None
+          }
+          json.dump(
+              {
+                  "version": spectra_sherpa.__version__,
+                  "python_version": sys.version.split()[0],
+                  "build_commit": os.environ["BUILD_COMMIT"],
+                  "signing_identity": None,
+                  "package_hashes": hashes,
+                  "dependency_provenance": json.loads(Path("desktop/runtime-provenance.json").read_text(encoding="utf-8")),
+              },
+              open(sys.argv[1], "w"),
+          )
+          PROV
+
+          test -f "$EXE_PATH"
+          test -f "$INTERNAL_DIR/spectra_sherpa/alembic/env.py"
+          test -f "$INTERNAL_DIR/spectra_sherpa/app/types/registry.json"
+          test -f "$INTERNAL_DIR/spectra_sherpa/static/index.html"
+
+      # Check excluded modules and qualify HAPI/HAPI2 before signing.
+      - name: Verify desktop dependency boundary and HITRAN clients
+        run: |
+          python desktop/verify_optional_exclusions.py desktop/dist/SpectraSherpa
+
+      - name: Package and qualify native application
+        run: |
+          npm ci --prefix desktop/electron
+          node --test desktop/electron/test/*.test.cjs
+          npm --prefix desktop/electron run package
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            NATIVE_APP="$PWD/desktop/electron/out/SpectraSherpa-win32-x64/SpectraSherpa.exe"
+            FUSE_TARGET="$NATIVE_APP"
+          else
+            FUSE_TARGET="$PWD/desktop/electron/out/SpectraSherpa-darwin-arm64/SpectraSherpa.app"
+            NATIVE_APP="$FUSE_TARGET/Contents/MacOS/SpectraSherpa"
+          fi
+          SPECTRA_DESKTOP_SMOKE_APP="$NATIVE_APP" npm --prefix desktop/electron run smoke
+          SPECTRA_DESKTOP_SMOKE_APP="$NATIVE_APP" npm --prefix desktop/electron run smoke:lifecycle
+          node desktop/electron/harden.cjs "$FUSE_TARGET"
+          node desktop/electron/harden.cjs "$FUSE_TARGET" --verify
+          node desktop/electron/hardened-smoke.cjs "$NATIVE_APP"
+
+      - name: Azure Login (Windows)
+        if: runner.os == 'Windows'
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up Azure Code Signing (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          nuget install Microsoft.Trusted.Signing.Client -Version 1.0.60
+          $dlibPath = Resolve-Path "Microsoft.Trusted.Signing.Client.1.0.60/bin/x64/Azure.CodeSigning.Dlib.dll"
+          echo "AZURE_DLIB_PATH=$dlibPath" >> $env:GITHUB_ENV
+
+      - name: Sign Executable (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          EXPECTED_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+          ACS_ENDPOINT: ${{ vars.AZURE_ENDPOINT }}
+          ACS_ACCOUNT_NAME: ${{ vars.AZURE_ACCOUNT_NAME }}
+          ACS_CERTIFICATE_PROFILE_NAME: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
+        run: |
+          . .\desktop\windows_signing.ps1
+          $SignTool = Get-DesktopSignTool
+          $BundleRoot = "desktop\electron\out\SpectraSherpa-win32-x64"
+          
+          $EnvJson = @{
+              Endpoint = $env:ACS_ENDPOINT
+              CodeSigningAccountName = $env:ACS_ACCOUNT_NAME
+              CertificateProfileName = $env:ACS_CERTIFICATE_PROFILE_NAME
+          } | ConvertTo-Json -Compress
+          $EnvJsonPath = "$env:RUNNER_TEMP\acs_metadata.json"
+          $EnvJson | Set-Content $EnvJsonPath
+          
+          Sign-DesktopNativeExecutables -BundleRoot $BundleRoot -DlibPath $env:AZURE_DLIB_PATH -MetadataPath $EnvJsonPath -ExpectedSubject $env:EXPECTED_SUBJECT
+          if ('${{ inputs.store_candidate }}' -eq 'true') {
+            Assert-DesktopStoreBundle -BundleRoot $BundleRoot -ReceiptPath desktop/signing-evidence/windows-store-bundle.json -ExpectedSubject $env:EXPECTED_SUBJECT -SignUnsigned -DlibPath $env:AZURE_DLIB_PATH -MetadataPath $EnvJsonPath
+          }
+
+      - name: Extract Certificate Thumbprint (Windows)
+        if: runner.os == 'Windows'
+        id: cert
+        shell: pwsh
+        env:
+          EXPECTED_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+        run: |
+          . .\desktop\windows_signing.ps1
+          $Thumbprint = Assert-DesktopSignature -Path "desktop\electron\out\SpectraSherpa-win32-x64\SpectraSherpa.exe" -ExpectedSubject $env:EXPECTED_SUBJECT
+          echo "thumbprint=$Thumbprint" >> $env:GITHUB_OUTPUT
+
+      - name: Update Provenance (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ProvPath = "desktop\electron\out\SpectraSherpa-win32-x64\resources\backend\_internal\provenance.json"
+          if (Test-Path $ProvPath) {
+              $Prov = Get-Content $ProvPath | ConvertFrom-Json
+              $Prov.signing_identity = "${{ steps.cert.outputs.thumbprint }}"
+              $Prov | ConvertTo-Json -Depth 10 | Set-Content $ProvPath
+          }
+
+      - name: Install Inno Setup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./desktop/install_inno.ps1
+
+      - name: Package Windows Installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          AZURE_DLIB_PATH: ${{ env.AZURE_DLIB_PATH }}
+          ACS_ENDPOINT: ${{ vars.AZURE_ENDPOINT }}
+          ACS_ACCOUNT_NAME: ${{ vars.AZURE_ACCOUNT_NAME }}
+          ACS_CERTIFICATE_PROFILE_NAME: ${{ vars.AZURE_CERTIFICATE_PROFILE_NAME }}
+        run: |
+          $EnvJson = @{
+              Endpoint = $env:ACS_ENDPOINT
+              CodeSigningAccountName = $env:ACS_ACCOUNT_NAME
+              CertificateProfileName = $env:ACS_CERTIFICATE_PROFILE_NAME
+          } | ConvertTo-Json -Compress
+          $EnvJsonPath = "$env:RUNNER_TEMP\acs_metadata.json"
+          $EnvJson | Set-Content $EnvJsonPath
+          
+          .\desktop\build_windows.ps1 -NativeShell -Signed -DlibPath $env:AZURE_DLIB_PATH -MetadataPath $EnvJsonPath
+
+      - name: Verify Windows Installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          EXPECTED_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+        run: |
+          . ./desktop/windows_signing.ps1
+          $InstallerReceipt = Get-DesktopSignatureReceipt -Path desktop/Output/SpectraSherpa_Setup.exe -ExpectedSubject $env:EXPECTED_SUBJECT
+          $Install = Start-Process desktop/Output/SpectraSherpa_Setup.exe -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/LOG=desktop/signing-evidence/windows-install.log" -WindowStyle Hidden -Wait -PassThru
+          if ($Install.ExitCode -ne 0) { throw "Installer failed" }
+          $Location = "$env:LOCALAPPDATA\Programs\SpectraSherpa"
+          New-Item -ItemType Directory -Force desktop/signing-evidence | Out-Null
+          ./desktop/verify_windows_identity.ps1 -ExpectedInstallLocation $Location | Set-Content desktop/signing-evidence/native-install-identity.json
+          Assert-DesktopSignature -Path "$Location\SpectraSherpa.exe" -ExpectedSubject $env:EXPECTED_SUBJECT | Out-Null
+          if ('${{ inputs.store_candidate }}' -eq 'true') {
+            Assert-DesktopStoreBundle -BundleRoot $Location -ReceiptPath desktop/signing-evidence/windows-store-installed.json -ExpectedSubject $env:EXPECTED_SUBJECT
+            $Packed = @(Get-Content desktop/signing-evidence/windows-store-bundle.json -Raw | ConvertFrom-Json)
+            $Installed = @(Get-Content desktop/signing-evidence/windows-store-installed.json -Raw | ConvertFrom-Json)
+            foreach ($Record in $Packed) {
+              $Match = @($Installed | Where-Object { $_.relative_path -ceq $Record.relative_path })
+              if ($Match.Count -ne 1 -or $Match[0].sha256 -ne $Record.sha256) { throw 'Installed Store PE differs from signed bundle' }
+            }
+          }
+          $DataDir = "$env:RUNNER_TEMP\native-installed-profile"
+          node desktop/electron/hardened-smoke.cjs "$Location\SpectraSherpa.exe" $DataDir
+          if ($LASTEXITCODE -ne 0) { throw "Installed native application failed" }
+          $DefaultData = "$env:USERPROFILE\.spectra_sherpa"
+          New-Item -ItemType Directory -Force $DefaultData | Out-Null
+          $Sentinel = Join-Path $DefaultData "installer-preservation.txt"
+          $SentinelValue = [guid]::NewGuid().ToString()
+          Set-Content -LiteralPath $Sentinel -Value $SentinelValue
+          $BeforeData = @(Get-ChildItem -LiteralPath $DataDir -Recurse -File | Sort-Object FullName | Get-FileHash | Select-Object Path, Hash)
+          if ($BeforeData.Count -eq 0) { throw "No preservation evidence" }
+          $UninstallerReceipt = Get-DesktopSignatureReceipt -Path "$Location\unins000.exe" -ExpectedSubject $env:EXPECTED_SUBJECT
+          @{ installer = $InstallerReceipt; uninstaller = $UninstallerReceipt } | ConvertTo-Json -Depth 5 | Set-Content desktop/signing-evidence/windows-installer-signatures.json
+          $Uninstall = Start-Process "$Location\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/LOG=desktop/signing-evidence/windows-uninstall.log" -WindowStyle Hidden -Wait -PassThru
+          if ($Uninstall.ExitCode -ne 0) { throw "Uninstaller failed" }
+          if ((Get-Content -LiteralPath $Sentinel -Raw).Trim() -ne $SentinelValue) { throw "Silent uninstall removed user data" }
+          $AfterData = @(Get-ChildItem -LiteralPath $DataDir -Recurse -File | Sort-Object FullName | Get-FileHash | Select-Object Path, Hash)
+          if (($BeforeData | ConvertTo-Json -Compress) -ne ($AfterData | ConvertTo-Json -Compress)) { throw "Silent uninstall changed persisted workflow data" }
+          if (Test-Path "$Location\SpectraSherpa.exe") { throw "Uninstaller retained the application" }
+          @{ install_exit_code = $Install.ExitCode; uninstall_exit_code = $Uninstall.ExitCode; profile_preserved = $true } | ConvertTo-Json | Set-Content desktop/signing-evidence/windows-silent-install.json
+
+      - name: Codesign and Notarize (macOS)
+        if: runner.os == 'macOS'
+        env:
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: python desktop/sign_macos.py --native-shell
+
+      - name: Verify macOS Installer
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          hdiutil attach desktop/dist/SpectraSherpa.dmg -mountpoint /Volumes/SpectraSherpa
+          trap 'hdiutil detach /Volumes/SpectraSherpa' EXIT
+          node desktop/electron/harden.cjs /Volumes/SpectraSherpa/SpectraSherpa.app --verify
+          node desktop/electron/hardened-smoke.cjs /Volumes/SpectraSherpa/SpectraSherpa.app/Contents/MacOS/SpectraSherpa
+
+      - name: Validate required signing evidence
+        env:
+          TARGET: ${{ matrix.target }}
+          EXPECTED_SUBJECT: ${{ vars.WINDOWS_SIGNING_SUBJECT }}
+        run: python desktop/verify_signing_evidence.py --target "$TARGET"
+
+      - name: Retain signing evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: signing-evidence-${{ matrix.os }}
+          path: desktop/signing-evidence/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish artifact checksum (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd desktop/Output
+          sha256sum SpectraSherpa_Setup.exe > SpectraSherpa_Setup.exe.sha256
+          cat SpectraSherpa_Setup.exe.sha256
+
+      - name: Publish artifact checksum (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd desktop/dist
+          shasum -a 256 SpectraSherpa.dmg > SpectraSherpa.dmg.sha256
+          cat SpectraSherpa.dmg.sha256
+
+      - name: Prepare versioned artifact and identity manifest
+        env:
+          TARGET: ${{ matrix.target }}
+        run: python desktop/release_manifest.py prepare --target "$TARGET" --tag "$RELEASE_TAG" --commit "$BUILD_COMMIT" --directory desktop/release
+
+      - name: Attest final artifact provenance
+        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1
+        with:
+          subject-path: desktop/release/*
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ matrix.target }}-artifact
+          path: desktop/release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  upload:
+    permissions:
+      contents: write
+    name: Upload to Release
+    needs: [ubuntu, build]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/spectra-sherpa-v')
+    runs-on: ubuntu-22.04
+    environment: desktop-release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11.9"
+      - name: Download artifacts
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          path: artifacts
+          pattern: "*-artifact"
+      - name: Validate complete release set
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          SOURCE_COMMIT=$(git rev-parse HEAD)
+          python desktop/release_manifest.py validate --tag "$TAG" --commit "$SOURCE_COMMIT" --directory artifacts > release-assets.txt
+
+      - name: Stage complete immutable release candidate
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # Do not replace bytes already advertised to users. An interrupted
+          # draft can be inspected/deleted explicitly and this job rerun.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::A release already exists for $TAG; refusing to overwrite assets."
+            exit 1
+          fi
+          mapfile -t assets < release-assets.txt
+          gh release create "$TAG" --draft --title "$TAG" --generate-notes --verify-tag "${assets[@]}"
+          echo "Complete draft retained. Perform clean-machine signed acceptance, then publish this same draft."

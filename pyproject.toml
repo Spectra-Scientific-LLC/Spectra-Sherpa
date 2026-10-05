@@ -1,16 +1,17 @@
 [tool.poetry]
 name = "spectra-sherpa"
-version = "0.5.30"
+version = "0.6.0"
 description = "SpectraSherpa — local-first spectroscopy platform for chemometricians"
 authors = ["Spectra Scientific LLC <info@spectrascientific.ai>"]
 readme = "README.md"
 license = "AGPL-3.0"
 packages = [{include = "spectra_sherpa", from = "src"}]
 include = [
-    { path = "src/spectra_sherpa/static/**/*", format = "wheel" },
+    { path = "src/spectra_sherpa/static/**/*", format = ["sdist", "wheel"] },
     { path = "src/spectra_sherpa/data/**/*", format = ["sdist", "wheel"] },
     { path = "src/spectra_sherpa/contracts/**/*", format = "wheel" },
     { path = "NOTICE.md", format = ["sdist", "wheel"] },
+    { path = "THIRD_PARTY_LICENSES/**/*", format = ["sdist", "wheel"] },
 ]
 keywords = [
     "chemometrics",
@@ -57,22 +58,39 @@ python = ">=3.11,<3.13"
 fastapi = ">=0.137.0,<0.139.0"
 starlette = ">=1.3.1,<1.4.0"
 uvicorn = {version = ">=0.49,<0.50", extras = ["standard"]}
-sqlalchemy = "^2.0.31"
+# 2.1.0 sdist has duplicate normalized extras and fails uv metadata parsing.
+sqlalchemy = ">=2.0.31,<3.0.0,!=2.1.0"
 aiosqlite = ">=0.20,<0.23"
 alembic = "^1.13.2"
 pydantic = "^2.7.4"
 python-multipart = ">=0.0.32,<0.1"
 python-dotenv = "^1.2.2"
-cryptography = ">=48.0.1,<49.0.0"
+cryptography = ">=50.0.0,<51.0.0"
 httpx = ">=0.27,<0.29"
 urllib3 = ">=2.7.0,<3"
 idna = ">=3.15,<4"
-numpy = "^1.26.4"
-scipy = "^1.13.1"
+# Transitive via starlette and httpx, declared here only to hold a security
+# floor. anyio < 4.14.2 matched an internationalized host name against the peer
+# certificate using IDNA 2003 rather than IDNA 2008, so TLSStream.wrap() could
+# match the wrong certificate. httpcore reaches that exact call for every async
+# HTTPS request, including BYOK endpoints whose host name the user supplies.
+anyio = ">=4.14.2,<5"
+# The first-party managed scientific profile attests these three distributions at
+# exactly these versions: every canonical node contract carries them in its
+# `runtime_requirements`, and `runtime_attestation()` refuses any other version
+# at execution time. The published metadata therefore pins them instead of
+# advertising a range the runtime will reject. Widening any of them requires
+# regenerating the node execution contracts and rerunning the canonical
+# qualification in the same change.
+numpy = "1.26.4"
+scipy = "1.17.1"
+h5py = "3.16.0"
 pandas = "^2.2.2"
-beautifulsoup4 = "^4.12.3"
-scikit-learn = "^1.5.0"
-pypdf = ">=6.13.3,<7.0.0"
+plotly = ">=5.24,<7"
+beautifulsoup4 = {version = "^4.12.3", optional = true}
+# Pinned with numpy and scipy above; see the managed-profile note there.
+scikit-learn = "1.9.0"
+pypdf = ">=6.19.0,<7.0.0"
 jsonschema = "^4.20.0"
 # greenlet is required at runtime by SQLAlchemy 2.x async on every platform —
 # AsyncEngine.connect() bridges sync internals via greenlet_spawn regardless of
@@ -82,7 +100,10 @@ jsonschema = "^4.20.0"
 # lifespan startup with "No module named 'greenlet'". Declare it as a base dep
 # so the OSS standalone invariant holds on every supported platform.
 greenlet = ">=3.0"
-spectrochempy = {version = ">=0.8.1,<0.11.0", optional = true, python = ">=3.11,<3.15"}
+# The optional matrix adapter is qualified against one exact runtime. Widening
+# this pin requires rerunning the paired R1/R2 scientific-profile proof and
+# updating the three execution contracts in the same change.
+spectrochempy = {version = "0.8.1", optional = true, python = ">=3.11,<3.15"}
 hitran-api = {version = ">=1.3.0.0,<2", optional = true}
 hitran-api2 = {version = ">=0.2.2,<1", optional = true}
 asyncpg = {version = ">=0.29,<0.32", optional = true}
@@ -93,10 +114,11 @@ gunicorn = {version = "^22.0.0", optional = true}
 # CeCILL-B is incompatible with AGPL; bundling would create a license conflict.
 scp = ["spectrochempy"]
 hitran = ["hitran-api", "hitran-api2"]
-# `cloud` covers Postgres + production WSGI server. `greenlet` was previously
-# listed here as well, but SQLAlchemy async needs it for OSS local mode (SQLite
-# via aiosqlite) too — moved to base deps above.
-cloud = ["asyncpg", "gunicorn"]
+nist = ["beautifulsoup4"]
+# PostgreSQL and the production WSGI host are operator capabilities. `greenlet`
+# remains a default dependency because SQLAlchemy async also needs it for the
+# local SQLite Workbench.
+postgres = ["asyncpg", "gunicorn"]
 
 [tool.poetry.group.dev.dependencies]
 black = "^26.3.1"
@@ -121,11 +143,33 @@ line-length = 120
 src = ["src", "tests"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
+select = ["E", "F", "I", "C90"]
 ignore = [
     "E402",   # module-import-not-at-top — conditional/optional imports are by design
     "E741",   # ambiguous-variable-name — X, C, l are standard in scientific code
 ]
+
+[tool.ruff.lint.mccabe]
+# Ceiling on new/touched code, not a target. Ratchet this down as nodes are
+# repaired; do not raise it to accommodate a new violation — add a named,
+# reasoned exception below instead. See manifest.md §4.
+max-complexity = 30
+
+[tool.ruff.lint.per-file-ignores]
+# Pre-existing violators at the time this gate was added (2026-08-11).
+# Each is either core request-handling infrastructure or a prototype node
+# already scheduled for deletion/repair under the canonical-DAG program;
+# none is exempted because its complexity is acceptable, only because a
+# full-repo sweep is not this gate's job. This list must not grow.
+"src/spectra_sherpa/app/api/v1/routes/projects.py" = ["C901"]           # import_project (36) — infra, unrelated to node repair
+"src/spectra_sherpa/app/api/v1/routes/workflows/execute.py" = ["C901"]  # execute_workflow (47) — infra, needs its own review
+"src/spectra_sherpa/app/services/dag/executor.py" = ["C901"]            # _get_node_inputs (39) — core DAG infra, needs its own review
+"src/spectra_sherpa/app/services/dag/nodes/data/loaders.py" = ["C901"]  # group-load execute (35) — prototype, data.load_group is P1 in the readiness audit
+"src/spectra_sherpa/app/services/dag/nodes/modeling/library_compare_node.py" = ["C901"]  # execute (40) — analysis.compare_library, 2-star
+"src/spectra_sherpa/app/services/dag/nodes/modeling/mcr_nodes.py" = ["C901"]             # execute (43) — model.mcr_als, 1-star P1, known scientific defect
+"src/spectra_sherpa/app/services/dag/nodes/selection/ipls_node.py" = ["C901"]            # _validate_ipls_state (33) — closed-state validator; splittable, low-risk follow-up
+"src/spectra_sherpa/app/services/experiments.py" = ["C901"]             # import_reference_dataset (31) — infra
+"src/spectra_sherpa/app/services/tools/builtin/datasets.py" = ["C901"]  # compute_dataset_statistics (84) — advisor tool, unrelated to node repair
 
 [tool.black]
 target-version = ["py311"]
@@ -145,5 +189,5 @@ module = "spectra_sherpa.app.core.*"
 disallow_untyped_defs = false          # enable after fixing existing issues
 
 [build-system]
-requires = ["poetry-core"]
+requires = ["poetry-core==2.2.1"]
 build-backend = "poetry.core.masonry.api"
