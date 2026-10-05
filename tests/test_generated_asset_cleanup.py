@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import tomllib
 from pathlib import Path
@@ -53,6 +54,20 @@ def test_public_ci_regenerates_compares_and_qualifies_distributions() -> None:
     assert "compare-frontends" in public_frontend
     assert "verify-frontends" in public_frontend
     assert "git status --porcelain -- src/spectra_sherpa/static" not in public_frontend
+
+
+def test_public_scp_ci_selects_existing_compatibility_contracts() -> None:
+    source = (PACKAGE_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    job = source.split("  scp-compat:\n", 1)[1].split("  frontend:\n", 1)[0]
+    paths = set(re.findall(r"tests/[\w/]+\.py", job))
+    assert {
+        "tests/test_scp_contracts.py",
+        "tests/test_scp_node_contracts.py",
+        "tests/test_c2_scp_unmixing_contracts.py",
+        "tests/test_nddataset_containment.py",
+    } <= paths
+    for path in paths:
+        assert (PACKAGE_ROOT / path).is_file(), f"Public SCP CI names a missing test: {path}"
 
 
 def test_security_and_curated_publish_build_frontend_before_python_artifacts(monorepo_root: Path) -> None:

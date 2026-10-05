@@ -157,7 +157,10 @@ jobs:
       - name: Run SCP compatibility suite
         run: |
           poetry run pytest \
-            tests/test_scp_compat.py \
+            tests/test_scp_contracts.py \
+            tests/test_scp_node_contracts.py \
+            tests/test_c2_scp_unmixing_contracts.py \
+            tests/test_nddataset_containment.py \
             tests/test_modeling_nodes.py \
             tests/test_data_loading_golden.py \
             tests/test_notebook_export.py \
