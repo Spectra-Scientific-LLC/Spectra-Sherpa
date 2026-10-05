@@ -2,13 +2,17 @@
 
 The **Data** tab is where spectra enter SpectraSherpa. It turns your files, reference entries, examples, or generated spectra into a dataset that a workflow can analyze — and it makes the contents of that dataset visible before you commit to modeling.
 
+For the ownership and admission rules shared by local files, paid uploads,
+built-in examples, provider-hosted references, and synthetic data, see
+[Datasets and Providers](datasets-and-providers.md).
+
 ## The Data Tab at a Glance
 
 The Data tab has five areas. Four of them bring data in; the fifth is where everything lands.
 
 | Area | What it does |
 | --- | --- |
-| **Upload** | Bring in your own files (CSV, JCAMP-DX, NumPy, MAT, and vendor formats with the optional extra). |
+| **Upload** | Bring in your own CSV, JCAMP-DX, NumPy, MATLAB v4/v5/v7.3, qualified PLS_Toolbox DSO, and instrument files. |
 | **Import** | Add reference and example datasets from curated catalogs. |
 | **Synthesis** | Generate synthetic spectra, including Beer-Lambert mixtures derived from NIST or HITRAN references. |
 | **Library** | Search and import NIST and HITRAN reference spectra. |
@@ -28,28 +32,51 @@ Duplicate a workflow and keep the same dataset, or swap in a different My Datase
 
 Open **Data > Upload**, choose a file, set how it should be read, then add it to My Dataset. Stage one or more files before committing them in a batch.
 
-**Formats.** The base install reads `.csv`, JCAMP-DX (`.jdx`, `.dx`), NumPy (`.npy`, `.npz`), and `.mat`. The optional `spectra-sherpa[scp]` extra adds vendor readers — `.spa`, `.spg`, `.srs` (Thermo OMNIC), `.opus` (Bruker), `.spc` (Galactic), `.wdf` (Renishaw WiRE), and vendor `.txt`/`.dat`. See [Supported File Types](../introduction/file-types.md) for the full matrix. If you select a format that needs the extra, the app tells you to install it rather than failing later.
+**Formats.** The native registry reads `.csv`, JCAMP-DX (`.jdx`, `.dx`, `.jcamp`), NumPy (`.npy`, `.npz`), MATLAB v4/v5 and v7.3/HDF5 `.mat` workspaces, the qualified Eigenvector PLS_Toolbox DSO contract in either MATLAB storage family, qualified Galactic SPC (`.spc`), one-dimensional Bruker OPUS (`.opus` or a numeric suffix), qualified Thermo OMNIC SPA/SPG/SRS (`.spa`, `.spg`, `.srs`), and qualified Renishaw WiRE WDF (`.wdf`). OPUS, multi-object MATLAB workspaces, and independent-XYXY SPC files may contain several typed results, so choose the exact scientific result when binding the file to a workflow. DSO and WDF map data remain n-dimensional with their exact axes and topology. Installing `spectra-sherpa[scp]` does not add ingestion formats. See [Supported File Types](../introduction/file-types.md) for the current matrix and export guidance.
 
 **Options you set at upload.** For CSV especially, these determine how the numbers are interpreted:
 
 - **Stage** — `raw`, `preprocessed`, or `synthetic`. This labels where the data sits in the analysis lifecycle.
 - **CSV data shape** — choose **spectra** when the columns are ordered wavelengths or wavenumbers, or **feature table** when the columns are independent variables (for example, lab measurements). This sets the dataset's [data role](#data-semantics-that-matter) and changes how plots and axes are interpreted.
+- **CSV interpretation** — the preview recommends one closed layout: headered
+  or unheaded X/Y, using either decimal points or decimal commas. Supplier CSVs
+  may use comma, semicolon, or tab delimiters. An unheaded two-column file is
+  structurally ambiguous, so review the recommendation explicitly; the chosen
+  profile is saved with the source and replayed by workflows and exported SDK
+  code rather than being guessed again.
 - **Target column** — the column holding reference values for supervised models (concentration, property, class).
 - **Target type** — **continuous** for regression targets or **categorical** for class labels.
 
 After upload, always open the inspection panels (below) to confirm the file read the way you intended.
 
+For a DSO with more than two dimensions, the preview reports the complete
+native shape and per-dimension roles. It does not flatten the data into a
+plausible-looking matrix. Inspect the axis sets, class sets, and inclusion
+state, then add **Dimension Projection** with one explicit index for every
+inner mode before connecting a two-dimensional chemometric operation. A
+qualified two-dimensional image DSO exposes both its unfolded pixel table and
+an explicitly named image-cube result. The latter can feed a manually added
+PARAFAC node without projection; its source spatial mask is retained and
+honored. No PARAFAC analysis starter is included in 0.6.0.
+
 !!! note "Using your own data"
-    Running [Local OSS](../introduction/cloud-vs-local.md) places no limits on uploads, and your data stays on your machine. The hosted demo rate-limits and caps uploads.
+    Running [Local OSS](../introduction/cloud-vs-local.md) places no hosted
+    limits on imports, and your data stays on your machine. The 0.6 hosted
+    trial refuses customer scientific uploads and runs only its server-issued
+    starters and qualified registered references. Subscription Cloud and
+    Enterprise Hybrid have separately governed customer-data policies.
 
 ## Import Reference and Example Datasets
 
 **Data > Import** lists curated catalogs you can add with a click — ideal for learning a workflow before using your own data:
 
 - **Spectra Scientific Synthetic Benchmarks** — synthetic FTIR and atmospheric-gas sets with known ground truth, including HITRAN-derived component spectra.
-- **Eigenvector Research (NIR/OES)** — strongly recommended chemometrics examples such as corn, diesel NIR, IDRC shootout, CGL, and metal-etch OES. SpectraSherpa catalogs these datasets but does not redistribute the raw files; enable runtime downloads with `SPECTRASHERPA_EIGENVECTOR_DOWNLOADS=true` or download them from [Eigenvector Research](https://eigenvector.com/resources/data-sets/) and place them in the local cache shown by the app.
+- **Eigenvector Research (NIR/OES)** — strongly recommended chemometrics
+  examples such as corn, diesel NIR, IDRC shootout, CGL, and metal-etch OES.
+  Use the provider link on the card, then return to **Import downloaded file**.
+  SpectraSherpa does not retrieve or redistribute the source and admits the
+  reviewed reference only after exact size and SHA-256 verification.
 - **OES Datasets** — optical-emission process-monitoring data.
-- **SpectroChemPy Datasets** — example spectra bundled with the optional extra, organized by category.
 - **Scikit-learn Datasets** — tabular feature-table datasets for non-spectroscopic examples.
 
 Select one or more entries, give the dataset a name, and add it to My Dataset.
@@ -91,6 +118,15 @@ Three panels make a dataset's contents visible **before** it enters a workflow. 
 - **Files** — the file names, extensions, and reader path used, plus the data-matrix shape per file and its stage.
 - **Metadata** — sample count, variable count, technique, and the spectral **axis title and units**. Axis title/units and the data quantity are editable here when a file did not declare them.
 - **Data Matrix** — a preview of the matrix with per-column statistics (min/max/mean/std, missing fraction) and, when a target is present, its type and class breakdown. Spectra render as an overlay; feature tables render as distributions.
+
+Explicit missing values remain visible in this inspection. They are not
+silently replaced with zeros, interpolated, or imputed. A dataset containing
+them can be inspected, plotted, quality-reviewed, exported, and subsetted, but
+numerical preprocessing and fitting refuse until the scientist removes or
+repairs the affected rows or variables. When OMNIC processing history declares
+a terminal blanked interval, use `preprocess.clip_range` to retain the measured
+region before SNV, smoothing, derivatives, baseline correction, selection, or
+modeling.
 
 ## Data Semantics That Matter
 

@@ -7,11 +7,11 @@ SpectraSherpa is a local-first spectroscopy platform with extension points for h
 - **Vue frontend**: the browser UI for Data, Workflows, Reports, Admin/Cloud surfaces, and interactive plots.
 - **FastAPI backend**: project, dataset, workflow, model, export, and local API routes.
 - **Workflow DAG engine**: executes connected nodes in dependency order and records run outputs.
-- **Node registry**: discovers built-in and plugin nodes with declared inputs, outputs, parameters, and policies.
+- **Node registry**: enumerates the reviewed built-in canonical nodes with declared inputs, outputs, parameters, and policies.
 - **SherpaDataset data model**: the concrete runtime object for spectral arrays, axes, sample metadata, processing history, targets, and role information. Node tables may call spectral ports `SpectralDataset`; that is the semantic port contract for spectra carried inside a `SherpaDataset`.
 - **Model artifact store**: persists trained calibrations/classifiers with enough metadata to review and reapply them later.
 - **Export layer**: turns workflows, plots, tables, and model records into portable files.
-- **Optional extension contracts**: allow Cloud, AI providers, plugins, auth, and deployment policy to attach without rewriting the OSS core.
+- **Optional service contracts**: allow hosted policy, configured AI providers, and authentication to attach without changing scientific node authority.
 
 ```mermaid
 flowchart TB
@@ -19,7 +19,7 @@ flowchart TB
     API --> DATA[(Projects and datasets)]
     API --> DAG[Workflow DAG engine]
     DAG --> REG[Node registry]
-    REG --> NODES[Built-in and plugin nodes]
+    REG --> NODES[Shipped canonical nodes]
     DAG --> RUNS[(Run outputs)]
     DAG --> MODELS[(Model artifacts)]
     DAG --> EXPORTS[Reports and exports]
@@ -29,13 +29,13 @@ flowchart TB
 
 ## OSS and Cloud Boundary
 
-The OSS package owns the scientific platform and extension contracts. Cloud adds managed service behavior through server-side extensions and deployment configuration. The cloud docs describe hosted usage; developer implementation details belong under OSS Developers and Architecture.
+The OSS package owns the scientific platform and its closed canonical registry. Cloud adds managed service behavior through server-side composition and deployment configuration. The cloud docs describe hosted usage; developer implementation details belong under OSS Developers and Architecture.
 
 This boundary is important for users and builders:
 
 - Local OSS users get the spectroscopy workbench, workflow engine, node library, local projects, local model artifacts, exports, and optional BYOK chat support.
 - Enterprise/demo Cloud users get the managed browser deployment, account policy, centrally configured AI, Sherpa Advisor, Ambient Guidance, demo limits, and collaboration surfaces.
-- Developers can build above the OSS layer by adding nodes, exporters, providers, or deployment-specific extensions instead of forking the whole app.
+- Developers contribute scientific operations through source review as built-in canonical nodes. The installed OSS application does not discover or execute runtime plugins.
 
 ## Example: One Analysis Moving Through the System
 

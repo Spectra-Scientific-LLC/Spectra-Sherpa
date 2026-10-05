@@ -5,7 +5,97 @@ All notable changes to SpectraSherpa will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.6.0] - 2026-10-05
+
+### Security
+
+- Refreshed the core, optional, build-time, and frontend dependency locks to
+  clear the current Python and npm advisory sets while retaining the exact
+  SpectroChemPy 0.8.1 scientific-profile pin. Public CI now blocks on both
+  all-extras Python findings and full frontend lockfile findings.
+
+### Changed
+
+- Desktop installers include HAPI and HAPI2, their upstream license notices
+  and matching source archives. Builds qualify the frozen clients offline; live
+  HITRAN requests still require a personal key and explicit network permission.
+
+- SpectraSherpa no longer downloads Eigenvector Research datasets in any
+  deployment. The runtime downloader and its `EGRESS_ENABLED` /
+  `SPECTRASHERPA_EIGENVECTOR_DOWNLOADS` route are removed, along with the
+  loaders' `downloads_enabled` argument. Users obtain the files from
+  Eigenvector and place them locally; a registered archive or file is verified
+  against its recorded size and SHA-256 before it is admitted.
+- The desktop application is local-only: it cannot connect to Spectra
+  Scientific hosted services, stores API keys encrypted with an
+  OS-protected key, and adds **Application → Delete all local data…**.
+
+- Multi-well experiments now use one complete acquisition-plan aggregate for
+  planned samples, mixtures and components, factors, plate assignments, run
+  levels, matching rules, and matched acquisitions. Existing DOE content and
+  user presets migrate losslessly from the retained `retired_doe_*` namespace;
+  rollback refuses after a plan changes rather than discarding newer intent.
+  The mutable, experiment-owned `experiment_specimen` catalog is the specimen-
+  metadata authority, with stable UUID identity and unique keys within each
+  experiment. Acquisition plans retain immutable snapshots and optional typed
+  specimen provenance without tracking later catalog edits.
+- The default `spectra-sherpa` installation now formally comprises the full
+  native Workbench and supported Python SDK. SpectroChemPy, HITRAN, and NIST
+  acquisition remain independent opt-in capabilities.
+- Workbench, SDK, managed Runner, export, import, and reproduction now share
+  the one canonical typed-DAG registry and executor boundary.
+- Native Sherpa SIMPLS is the shared PLS and PLS-DA linear-algebra authority;
+  fitted artifacts use current, fail-closed serializer identities.
+
+### Added
+
+- Added the complete **Data → Multi-well** authoring and review workspace, a
+  user-owned default plate format in Settings, and an explicit measured-sample
+  synchronization lifecycle: preview a proposed table and its exact
+  differences, then deliberately publish a new immutable version.
+
+- Added native, checksum-qualified import of user-acquired registered reference
+  datasets. Provider-hosted source bytes are not bundled or retrieved by
+  Sherpa; portable workflow, Python, notebook, and project exports retain exact
+  external identities and support explicit file/directory rebinding.
+- Campaign Review reproduction can consume the scientist's exact provider-
+  acquired registered-reference artifact directly. Sherpa derives campaign
+  custody and axis authority from the signed package and qualified projection,
+  so Spectra does not need to supply a data-bearing third-party fixture.
+- Offline canonical-project inspection, comparison, byte-exact re-export, and
+  four distinct evidence outcomes: integrity, publisher authentication,
+  validation reproduction, and application reproduction.
+- Renderer-neutral canonical plot specifications with the supported default
+  Workbench and Python renderer.
+- Release, migration, and choose-your-path guidance for local, hosted, and
+  Hybrid use.
+
+### Fixed
+
+- SIMCA now uses stable row indices when optional sample-axis labels are absent,
+  with the same behavior in interactive and generated-Python execution.
+- Corrected legacy Eigenvector target labels: CGL now uses Casein, Glucose,
+  Lactate, and Moisture; NIR Shootout now uses Weight, Hardness, and Assay.
+  Pre-release CSV materializations are not silently rewritten; re-import the
+  provider source to replace one of those files.
+- Clarified that `applied_artifact_uids` is a deprecated compatibility mirror
+  of `attempted_artifact_uids` and centralized all live assignments so the two
+  columns cannot acquire different meanings.
+
+### Removed
+
+- Prototype workflow/capsule readers, schema-1 evidence compatibility,
+  arbitrary-estimator SDK validation helpers, retired SDK exports, and
+  deprecated import/configuration aliases. Current code never silently
+  translates these retired authorities.
+
+### Release Hygiene
+
+- Stable PyPI publication now resolves one exact public tag, builds one
+  SHA-256-bound wheel/source-distribution pair without upload authority,
+  clean-installs those exact artifacts across Python 3.11/3.12 on Ubuntu,
+  macOS, and Windows, and exposes OIDC only to the approval-gated upload job.
+  Duplicate versions fail loudly, and the build backend is exactly pinned.
 
 ## [0.5.30] - 2026-06-26
 

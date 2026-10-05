@@ -6,6 +6,8 @@ Use this path for OSS development.
 git clone https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
 cd Spectra-Sherpa
 poetry install --with dev
+npm --prefix frontend ci          # requires Node.js 22
+npm --prefix frontend run build
 poetry run spectra-sherpa
 ```
 

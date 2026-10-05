@@ -31,7 +31,8 @@ flowchart LR
 
 ## Example Export Bundle
 
-A good zip export for a PLS calibration might look like:
+The following is an illustrative layout, not a promise that every export
+format emits these members. A PLS calibration record might contain:
 
 ```text
 pls_moisture_calibration_export/
@@ -60,7 +61,20 @@ The important part is not the exact folder names. The important part is that val
 
 ## Python and Notebook Exports
 
-Where Python export is supported, it should reproduce the workflow with explicit parameters and clear data-source binding. Unsupported nodes should fail visibly rather than pretending to export.
+Supported Python and notebook exports describe the current workflow graph with
+explicit parameters and data-source bindings. They are not historical-run replay
+exports. Restoring a workflow version and executing it creates a new run; retained
+parameters alone cannot guarantee the same source data or runtime. Unsupported
+nodes and unavailable retained evidence must be reported explicitly.
+
+Current exports preserve both single-file and selected collection sources.
+Ordinary customer or local files are copied into the export's `data/`
+directory and can be relocated by setting `SHERPA_DATA_DIR`. A collection
+retains its exact selected members, scientist-defined sample table, target,
+and validation-group choice. User-acquired registered-reference bytes are not
+redistributed; set `SPECTRA_REFERENCE_DIR` to the exact downloaded member or
+to a bounded directory containing exactly one size-and-SHA match. The filename
+and absolute directory are never scientific authorities.
 
 For example, an exported preprocessing step should look like an explicit operation:
 
@@ -106,6 +120,26 @@ The current package mode is `full`. A future metadata-only mode is scaffolded in
 Import keeps the normal per-file upload cap for each restored data or model member. A full project archive can be larger than a single file because it may include several uploaded files plus model artifacts; the current aggregate uncompressed archive budget is ten times the configured single-file upload limit.
 
 Compatibility policy: the beta object reader currently accepts only exact object-version `0.1`; project payload revisions are distinguished by `project_payload_version`. Treat this as the first implementation contract, not a long-term compatibility promise. Future object revisions should add an explicit min/max reader range before changing the manifest schema.
+
+## Signed Campaign Review Packages and local application
+
+A managed campaign's signed review package is a different delivery contract from
+the full-project object described above, even when both use the `.sherpa`
+extension. It carries the supported selected application and retained review
+evidence. Download its publisher verification keys from the trusted managed
+service, verify/import the package in local OSS, then configure **Deploy → New
+Watch** for compatible incoming files.
+
+This handoff supports local inference without a paid account. It does not export
+the managed optimizer or promise reconstruction of every campaign candidate.
+Package verification, model/input compatibility, and scientific applicability
+are separate checks. Qualification records and report-only QC do not establish
+fitness for a new instrument or population without the required evidence.
+
+For non-redistributed reference sources, recipients supply their own exact
+provider-obtained file when reproducing work that needs that source. Ordinary
+customer files may be included when the selected export and deployment policy
+permit it. Neither package signing nor a scientific checksum grants data rights.
 
 ## Extension Pattern
 

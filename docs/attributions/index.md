@@ -5,8 +5,12 @@ SpectraSherpa builds on open-source scientific software and public scientific da
 ## Software
 
 - SpectraSherpa OSS: AGPLv3.0
-- SpectroChemPy: `spectra-sherpa[scp]` support for Thermo OMNIC/OMNICxi `.spa`, `.spg`, `.srs`, Bruker `.opus`, Galactic `.spc`, Renishaw `.wdf`, vendor `.txt`/`.dat`, selected datasets, and coordinate-aware algorithms
+- SpectroChemPy: `spectra-sherpa[scp]` support for EFA, MCR-ALS, and SIMPLISMA through a private matrix-only adapter
 - NumPy, SciPy, pandas, scikit-learn, FastAPI, Vue, Plotly, and related infrastructure packages
+- Native Thermo OMNIC reader: independently implemented bounded parser, cross-checked against `spectrochempy-omnic` 0.2.1
+- Native Renishaw WiRE WDF reader: bounded parser adapted from `renishawWiRE` 0.1.16 under its bundled MIT notice; its conformance files are redistributed in-tree under that same MIT notice
+- Open Specy: two CC-BY-4.0 vendor instrument files bundled as OMNIC and OPUS conformance fixtures (see `open-specy.md`)
+- opusreader2: eight MIT-licensed real Bruker OPUS instrument files bundled as conformance fixtures (see `opusreader2.md`)
 
 ## Scientific Data
 
@@ -16,4 +20,4 @@ SpectraSherpa builds on open-source scientific software and public scientific da
 
 ## Practical Rule
 
-When generated, downloaded, or reference spectra are used in a report, validation record, publication, or customer-facing analysis, cite the upstream scientific data source. This includes HITRAN-derived synthetic benchmark files and user-downloaded Eigenvector Research datasets. When optional software such as SpectroChemPy materially affects import, preprocessing, or modeling, cite that project too.
+When generated, downloaded, or reference spectra are used in a report, validation record, publication, or customer-facing analysis, cite the upstream scientific data source. This includes HITRAN-derived synthetic benchmark files and user-downloaded Eigenvector Research datasets. When SpectroChemPy materially affects EFA, MCR-ALS, or SIMPLISMA, cite that project too.

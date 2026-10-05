@@ -15,7 +15,7 @@ the stability surface it commits to for external packages.
 - **Model artifacts** — Train, persist, reload calibration models
 - **Python/Jupyter export** — Generate standalone scripts from any workflow
 - **Plugin system** — Custom nodes via drop-in Python files or packages
-- **BYO chat proxy** — Single-turn HTTP proxy to any OpenAI-compatible endpoint (`CHAT_ENDPOINT_URL` + `CHAT_ENDPOINT_KEY`). No vendor SDK imports, no tools, no persistence.
+- **BYO chat proxy** — Single-turn HTTP transports for OpenAI-compatible endpoints, Anthropic's native Messages API, and Ollama (`CHAT_ENDPOINT_PROVIDER`, `CHAT_ENDPOINT_URL`, `CHAT_ENDPOINT_KEY`). No vendor SDK imports, no tools, no persistence.
 - **AI Provider Protocol** — `AIServiceProvider` type surface and registry seam (`set/get/reset_sherpa_advisor`) for extension injection
 - **WebSocket dispatch** — Routing `sherpa.*` topics to the registered provider (or the `DisabledAIProvider` default when none is registered)
 - **WS event contract** — Published `sherpa-ws-v1.json` schema (package data)

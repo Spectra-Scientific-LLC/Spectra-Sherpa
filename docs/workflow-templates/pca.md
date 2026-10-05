@@ -41,7 +41,10 @@ flowchart LR
 
 ## What to Inspect
 
-- **Scores plot**: sample-to-sample structure. Color by class, batch, instrument, operator, date, or concentration when metadata is available.
+- **Scores plot**: sample-to-sample structure. Use the shared metadata selectors
+  to switch color and marker symbol among safe sample-table fields such as
+  class, batch, instrument, operator, or acquisition group. These are display
+  choices and never refit the PCA.
 - **Loadings plot**: spectral variables responsible for the score directions. Check whether the peaks/regions make chemical sense.
 - **Explained variance**: how much variation each component captures. Do not treat high explained variance alone as proof of a useful model.
 - **T2/Q diagnostics**: leverage and residual structure. Outliers are prompts for investigation, not automatic deletion.

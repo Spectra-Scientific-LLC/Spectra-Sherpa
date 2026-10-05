@@ -6,22 +6,26 @@ Start with a small, representative FTIR, NIR, Raman, or UV-VIS dataset. Ten to f
 
 Use one of:
 
-- `.csv` with one row per sample and spectral variables as columns
+- `.csv` with one row per sample and spectral variables as columns, or one
+  explicitly confirmed unheaded coordinate/intensity spectrum
 - `.jdx` or `.dx` JCAMP-DX spectra
 - `.npy` or `.npz` arrays
 - `.mat` matrix data
-- Thermo OMNIC/OMNICxi `.spa`, `.spg`, `.srs`, Bruker `.opus`, Galactic `.spc`, Renishaw `.wdf`, and vendor `.txt`/`.dat` after installing `spectra-sherpa[scp]`
+- One-dimensional Bruker OPUS, qualified Galactic SPC, qualified legacy Thermo OMNIC SPA/SPG/SRS, and qualified Renishaw WiRE WDF sources are accepted directly. If the file contains several results, choose the exact scientific result to bind. Thermo Paradigm/OMNICxi containers still require export to an admitted open format.
 
-See [Supported File Types](../introduction/file-types.md) for the full matrix, SpectroChemPy version notes, HITRAN/HAPI extra, and currently unsupported vendor containers.
+See [Supported File Types](../introduction/file-types.md) for the full matrix, optional-algorithm version notes, HITRAN/HAPI extra, and currently unsupported vendor containers.
 
 ## Import Checklist
 
 1. Open **Data > Upload**.
 2. Select the file or files.
 3. Check **Files** for the exact names and extensions received by SpectraSherpa.
-4. Check **Metadata** for inferred labels, units, and source information.
-5. Check **Data Matrix** for row count, column count, and axis direction.
-6. Save the dataset to **My Dataset** if you want to reuse it in workflows.
+4. For CSV, review the recommended interpretation. Persist the explicit
+   unheaded X/Y or decimal-comma profile when applicable.
+5. Check **Metadata** for inferred labels, units, and source information.
+6. Check **Data Matrix** for row count, column count, axis direction, and any
+   explicitly preserved missing values.
+7. Save the dataset to **My Dataset** if you want to reuse it in workflows.
 
 ## Calibration Data
 

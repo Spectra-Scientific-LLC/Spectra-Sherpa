@@ -10,21 +10,28 @@ SpectraSherpa is a free open-source spectroscopy workbench for building reproduc
 
 | Goal | Start Here |
 | --- | --- |
-| Install and run on your computer | [30 Minutes to Local Compute](onboarding/local-30-minutes.md) |
+| Install and run on your computer | [10 Minutes to Local Compute](onboarding/local-30-minutes.md) |
 | Bring in your first dataset | [Import Your First Dataset](onboarding/import-first-dataset.md) |
 | Compare cloud and local OSS | [Cloud vs Local OSS](introduction/cloud-vs-local.md) |
 | Check supported formats | [Supported File Types](introduction/file-types.md) |
 | See what is built today | [Current Capabilities](introduction/capabilities.md) |
-| Extend the project | [Developer Setup](developers/setup.md) and [Writing a Plugin Node](developers/plugin-node.md) |
+| Contribute a canonical node | [Contributing](developers/contributing.md) and [Developer Setup](developers/setup.md) |
 
 ## Two Ways to Run
 
-- **Local OSS** runs on your own machine with no login. You can inspect and modify the source, load your own data without hosted demo limits, and add optional extras for vendor readers or HITRAN/HAPI synthesis.
+- **Local OSS** runs on your own machine with no login. You can inspect and modify the source, load your own data without hosted demo limits, and add optional extras for specialized algorithms, reference data, or HITRAN/HAPI synthesis.
 - **SpectraSherpa Cloud** is the hosted enterprise/demo experience. It adds managed accounts, demo policy, Sherpa Advisor, and Ambient Guidance for users who want to evaluate the workflow in a browser.
 
 ## What Is Built Today
 
-SpectraSherpa combines a visual workflow builder, spectroscopy-aware data handling, import transparency, preprocessing, PCA, PLS, classification, SIMCA QC, MCR-ALS, peak/library workflows, model artifacts, reports, exports, NIST reference data, optional HITRAN/HAPI synthesis, and optional SpectroChemPy-backed vendor file support. The detailed scope is maintained in [Current Capabilities](introduction/capabilities.md).
+SpectraSherpa combines a visual workflow builder, spectroscopy-aware data handling, import transparency, preprocessing, PCA, PLS, classification, SIMCA QC, MCR-ALS, peak/library workflows, model artifacts, reports, exports, NIST reference data, and optional HITRAN/HAPI synthesis. Vendor readers are exposed only after native qualification; the detailed scope is maintained in [Current Capabilities](introduction/capabilities.md).
+
+The v0.6.0 validation baseline also keeps grouped and repeated validation,
+retained evidence, report figures, recorded independence evidence, and
+analytical qualification claims visibly separate. Start with [Validation and
+Model Application](chemometrics/validation-application.md) and [Reports and
+Exports](workflows/reports-exports.md) when a result needs more than an
+exploratory interpretation.
 
 ## Scientific Foundations
 

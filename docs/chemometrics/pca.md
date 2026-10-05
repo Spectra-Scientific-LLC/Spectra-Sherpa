@@ -21,3 +21,9 @@ Principal Component Analysis reduces a spectral matrix into latent variables tha
 ## Practical Interpretation
 
 Scores show sample relationships. Loadings explain which spectral regions drive those relationships. A good PCA review looks at both, not only the score plot.
+
+In the Workbench, use **Color by metadata** and **Symbol by metadata** to switch
+among available sample-table fields such as specimen, block, operator, batch,
+or an author-supplied status. The styling changes only the graph; it does not
+refit PCA or change scores. Missing or misaligned sample identity is refused
+rather than guessed from filenames or row order.

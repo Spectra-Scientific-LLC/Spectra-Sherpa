@@ -8,7 +8,10 @@ K-nearest neighbors classifies samples by distance in the selected feature space
 
 ## PLS-DA
 
-PLS-DA uses latent variables to classify labeled samples. Inspect confusion matrices, class probabilities, and CV metrics. Treat probabilities cautiously unless calibration is configured and validated.
+PLS-DA uses PLS2 latent variables to predict a 0/1 dummy response for each
+class, then assigns the class with the largest response. Inspect confusion
+matrices, class-response scores, and fold-local CV metrics. The response scores
+are not probabilities and should never be reported as calibrated confidence.
 
 ## SIMCA Classification
 

@@ -10,14 +10,28 @@ nav:
       - Current Capabilities: introduction/capabilities.md
       - Supported File Types: introduction/file-types.md
       - License: introduction/license.md
+  - Concepts:
+      - Glossary: concepts/glossary.md
   - Onboarding:
-      - 30 Minutes to Local Compute: onboarding/local-30-minutes.md
+      - Choose Your Path: onboarding/choose-your-path.md
+      - 10 Minutes to Local Compute: onboarding/local-30-minutes.md
       - Import Your First Dataset: onboarding/import-first-dataset.md
+      - Scientific Assistance: onboarding/scientific-assistance.md
+      - Canonical Workflows from Python: onboarding/python-canonical-workflows.md
+      - Migrate to 0.6: onboarding/migrate-to-0.6.md
+  - Releases:
+      - SpectraSherpa 0.6.0: releases/0.6.0.md
+  - Support:
+      - Desktop Downloads and Installation: support/local_install.md
+      - Privacy Statement: support/privacy.md
+      - "Privacy Summary: Windows": support/privacy-windows.md
   - Data Workflows:
       - Data Import: workflows/data-import.md
+      - Datasets and Providers: workflows/datasets-and-providers.md
       - Projects, Datasets, and Runs: workflows/projects-datasets-runs.md
       - Preprocessing Spectra: workflows/preprocessing.md
       - Reports and Exports: workflows/reports-exports.md
+      - Optimize a Saved Result (Demo and Pro): workflows/optimize-saved-result.md
       - Reference Libraries and Synthesis: workflows/references-synthesis.md
   - Chemometrics:
       - Overview: chemometrics/index.md
@@ -47,23 +61,44 @@ nav:
       - Peak ID and Library Comparison: workflow-templates/peaks-library.md
   - Architecture:
       - System Overview: architecture/index.md
+      - Module Map: architecture/module-map.md
+      - Code Execution Boundary: architecture/code-execution-boundary.md
       - SherpaDataset Foundation: architecture/sherpa-dataset.md
       - Workflow Execution: architecture/workflows.md
       - Model Artifacts: architecture/model-artifacts.md
-      - Plugins and Extension Points: architecture/plugins.md
       - Export Design: architecture/export.md
   - OSS Developers:
       - Developer Setup: developers/setup.md
       - Contributing: developers/contributing.md
-      - Writing a Plugin Node: developers/plugin-node.md
+      - Scientific Result Surface Contract: developers/scientific-result-surface-contract.md
+      - Analytical Qualification: developers/analytical-qualification.md
+      - Instrument QC: developers/instrument-qc.md
+      - PLS Applicability Screening: developers/pls-applicability-screening.md
+      - Prediction Uncertainty: developers/prediction-uncertainty.md
+      - Scientific Query Admission: developers/scientific-query-admission.md
+      - Adding a Scientific Node: developers/adding-a-node.md
       - LLM Provider Extension: developers/llm-provider.md
+      - SDK Validation Contract: developers/sdk-validation.md
+      - Portable Workflow Contract: developers/sdk-workflow.md
+      - Executable Workflow Capsules: developers/workflow-capsule.md
+      - Public Reproducibility Benchmark: developers/public-benchmark.md
+      - Protected Benchmark Governance: developers/protected-benchmark-governance.md
       - Testing and Release Hygiene: developers/testing-release.md
+      - Windows Portability: developers/windows-portability.md
+      - Windows and macOS Signing Runbook: developers/native-desktop-release.md
+      - Ubuntu desktop release: developers/ubuntu-desktop-release.md
   - Attributions:
       - Scientific and Software Attributions: attributions/index.md
       - SpectroChemPy: attributions/spectrochempy.md
       - Eigenvector Research: attributions/eigenvector.md
       - NIST: attributions/nist.md
       - HITRAN and HAPI: attributions/hitran.md
+      - Bruker OPUS: attributions/brukeropus.md
+      - Native OMNIC: attributions/native-omnic.md
+      - Native SPC: attributions/native-spc.md
+      - Native WDF: attributions/native-wdf.md
+      - Open Specy: attributions/open-specy.md
+      - OPUSReader2: attributions/opusreader2.md
 theme:
   name: material
   logo: assets/ss-logo.png

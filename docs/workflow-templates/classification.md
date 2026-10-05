@@ -44,7 +44,7 @@ KNN is useful when you want a simple benchmark and the preprocessing space is me
 
 Good for supervised class separation in latent-variable space.
 
-PLS-DA is useful when classes separate through spectral patterns that can be represented in latent variables. Inspect scores and class metrics together; a good-looking score plot is not enough.
+PLS-DA is useful when classes separate through spectral patterns that can be represented in latent variables. The starter sends raw train/test partitions to the fitted model so autoscaling is learned inside each validation fold and retained for test application. Inspect scores, predicted dummy-response scores, and class metrics together; a good-looking score plot is not enough. The response scores are not posterior probabilities.
 
 ## SIMCA
 
@@ -66,7 +66,7 @@ SIMCA is useful for QC or identity checks where "does not belong to this class" 
 - Replicate spectra leak across folds and inflate accuracy.
 - Class imbalance hides poor minority-class performance.
 - KNN distances are dominated by scale or baseline artifacts.
-- PLS-DA is treated as a calibration model without checking class probability behavior.
+- PLS-DA dummy-response scores are presented as probabilities or interpreted without checking class order and confusion matrices.
 - SIMCA rejects are forced into ordinary class metrics without scientific interpretation.
 
 ## Next Step

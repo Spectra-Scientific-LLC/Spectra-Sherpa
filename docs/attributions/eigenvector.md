@@ -10,25 +10,18 @@ Eigenvector Research hosts several classic chemometrics datasets that are useful
 
 These are excellent datasets for PCA, PLS calibration, classification, process monitoring, calibration transfer, and workflow export checks. SpectraSherpa strongly recommends downloading and caching them during local onboarding because they are well known in the chemometrics community and exercise realistic spectral shapes, targets, missing values, and instrument differences.
 
-## Download Model
+## User-Acquired Import Model
 
 SpectraSherpa catalogs these datasets but does **not** redistribute the raw Eigenvector files in the Python wheel or source distribution.
 
-When a user selects an Eigenvector dataset, SpectraSherpa will use a local cache if the files are already present. If runtime download is enabled, SpectraSherpa can download the upstream archive from Eigenvector Research and cache only the user's local copy.
+The **Reference Datasets** card links to the provider. The user's browser—not
+SpectraSherpa—downloads the file. **Import downloaded file** then admits only a
+registered byte identity by exact size and SHA-256. Filename and directory are
+not authorities. A nonmatching file is refused without retention.
 
-For local OSS use, we recommend enabling runtime download before the first serious workflow exercise with either:
-
-```bash
-EGRESS_ENABLED=true
-```
-
-or, for only these examples:
-
-```bash
-SPECTRASHERPA_EIGENVECTOR_DOWNLOADS=true
-```
-
-If downloads are disabled, SpectraSherpa leaves the catalog visible and reports the exact source files needed. Download the datasets from [Eigenvector Research data sets](https://eigenvector.com/resources/data-sets/) and place them under the local SpectraSherpa reference cache shown in the error message.
+This reference admission slot is not the ordinary paid/local data path. Local
+OSS, desktop, paid cloud, and Enterprise Hybrid continue to process generic
+supported files through their normal upload/import surfaces.
 
 ## Attribution
 

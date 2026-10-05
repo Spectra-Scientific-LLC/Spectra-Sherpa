@@ -10,9 +10,34 @@ If you redistribute SpectraSherpa (in source or binary form), retain this file a
 
 SpectraSherpa's Python runtime dependencies are declared in `pyproject.toml` and installed transitively from PyPI.  Each is governed by its upstream licence; none are bundled inside this distribution's source tree.
 
+- **h5py** — BSD-3-Clause, required for bounded native MATLAB v7.3/HDF5
+  container admission. SpectraSherpa uses h5py only as a storage decoder; the
+  scientific Eigenvector DataSet Object mapping remains in-tree and shared
+  with MATLAB v5.
+
 Notable optional dependency:
 
-- **SpectroChemPy** (`scp` extra) — CeCILL-B Free Software Licence Agreement.  Opt-in only.  SpectraSherpa never bundles SpectroChemPy bytecode or source; the `scp` extra triggers an install from upstream's distribution.  Users wishing to use the SpectroChemPy-backed loaders must accept CeCILL-B independently.
+- **SpectroChemPy** (`scp` extra) — CeCILL-B Free Software Licence Agreement.  Opt-in only.  SpectraSherpa never bundles SpectroChemPy bytecode or source; the `scp` extra triggers an install from upstream's distribution. It enables the explicitly adapted EFA, MCR-ALS, and SIMPLISMA operations, not vendor-file readers.
+
+Desktop HITRAN clients (pip installs continue to use the optional `hitran` extra):
+
+- **HAPI / hitran-api 1.3.0.0** — MIT, HITRAN team. Desktop installers include
+  the upstream notice and original source wheel.
+- **HAPI2 / hitran-api2 0.2.2** — GNU GPL v3. Desktop installers include the
+  upstream license and matching, unmodified source distribution. GPLv3 section
+  13 permits combination with AGPLv3. The licenses of each part still apply.
+  Retained sources, notices, version/hash manifest and rebuild directions are
+  under the bundled backend's `third_party/hitran/` directory. See
+  `desktop/README.md` for platform paths. No personal API key or downloaded
+  HITRAN line list is added to the installer by this integration.
+
+Bundled read-only parser source:
+
+- **brukeropus 1.4.3 parser concepts** — Copyright © 2024 Josh Duran, MIT. SpectraSherpa adapts the OPUS directory, parameter, data, and status-block parsing described by upstream tag `v1.4.3`, commit `af5a508cef7de8089acd27a215d644ab451257dd`. The complete retained MIT notice is bundled at `THIRD_PARTY_LICENSES/brukeropus-MIT.txt`; source-tree detail is in `docs/attributions/brukeropus.md`. The DDE control surface is not included.
+- **spc-io 0.2.1 parser concepts** — Copyright © 2023 CHARISMA H2020 project and IDEAconsult Ltd., MIT. SpectraSherpa cross-checks its native Galactic SPC layout and exponent handling against commit `855cf9bf08e847dc62759608b7b387e410af79ed`. The complete retained notice is bundled at `THIRD_PARTY_LICENSES/spc-io-MIT.txt`.
+- **spc-parser 2.1.0 parser concepts and fixture corpus** — Copyright © 2021 cheminfo, MIT. SpectraSherpa cross-checks its native Galactic SPC layout and retains independently authored conformance fixtures from commit `f770e788bd553ac8ebe6c831b4619280d083016e`. The complete retained notice is bundled at `THIRD_PARTY_LICENSES/spc-parser-MIT.txt`; source-tree detail for both SPC references is in `docs/attributions/native-spc.md`.
+- **spectrochempy-omnic 0.2.1 public reverse-engineering reference** — Copyright © 2025 LCS — Laboratoire Catalyse et Spectrochimie, Caen, France, CeCILL-B. SpectraSherpa's independently implemented bounded native OMNIC reader was cross-checked against tag `v0.2.1`, commit `2eb6b7d3964451d35eeb0c185cb99a0cc147c7cd`. No upstream source or binary is bundled or imported at runtime; source-tree detail is in `docs/attributions/native-omnic.md`.
+- **renishawWiRE 0.1.16 parser concepts** — Copyright © 2022 T.Tian, MIT. SpectraSherpa adapts the read-only WDF chunk, spectrum, coordinate, and map metadata grammar from tag `0.1.16`, commit `b84cc3c23ee977ffd84d58a49e5a9d94260ed07c`. The complete retained MIT notice is bundled at `THIRD_PARTY_LICENSES/renishawWiRE-MIT.txt`; source-tree detail is in `docs/attributions/native-wdf.md`. The optional image/plot/export surfaces are not included.
 
 ---
 
