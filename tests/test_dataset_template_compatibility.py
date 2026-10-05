@@ -347,8 +347,8 @@ def test_registered_projection_template_matrix_is_total() -> None:
     assert not any("unsupported_template_requirement" in item["reason_codes"] for item in matrix)
 
 
-def test_family_leader_interaction_matrix_is_total() -> None:
-    repository_root = Path(__file__).resolve().parents[3]
+def test_family_leader_interaction_matrix_is_total(monorepo_root: Path) -> None:
+    repository_root = monorepo_root
     specification = json.loads(
         (repository_root / "docs/evidence/chemometric-interaction-qualification-matrix.json").read_text(
             encoding="utf-8"

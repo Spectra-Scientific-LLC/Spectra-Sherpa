@@ -21,6 +21,16 @@ if TYPE_CHECKING:
 _TEST_APP_DATA_ROOT: Path | None = None
 
 
+@pytest.fixture
+def monorepo_root() -> Path:
+    """Scope private repository contracts without hiding missing evidence there."""
+    package_root = Path(__file__).resolve().parents[1]
+    root = package_root.parents[1]
+    if root / "packages" / "spectra-sherpa" != package_root:
+        pytest.skip("This contract checks monorepo-only workflows or retained evidence")
+    return root
+
+
 def _verify_environment_provenance() -> None:
     """Fail immediately if tests would run against the wrong worktree's source.
 

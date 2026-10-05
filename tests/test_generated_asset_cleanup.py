@@ -17,8 +17,8 @@ def test_vite_output_is_ignored_and_not_tracked() -> None:
     ignored = (PACKAGE_ROOT / ".gitignore").read_text(encoding="utf-8")
     assert "src/spectra_sherpa/static/" in ignored
     tracked = subprocess.run(
-        ["git", "ls-files", STATIC_PATH],
-        cwd=REPO_ROOT,
+        ["git", "ls-files", "src/spectra_sherpa/static"],
+        cwd=PACKAGE_ROOT,
         check=True,
         capture_output=True,
         text=True,
@@ -34,7 +34,7 @@ def test_wheel_and_sdist_both_admit_generated_frontend() -> None:
     assert static["format"] == ["sdist", "wheel"]
 
 
-def test_ci_regenerates_compares_and_qualifies_distributions() -> None:
+def test_monorepo_ci_regenerates_compares_and_qualifies_distributions(monorepo_root: Path) -> None:
     source = _workflow(".github/workflows/ci.yml")
     frontend = source.split("  sherpa-frontend:\n", 1)[1].split("  server-frontend:\n", 1)[0]
     assert "Refuse tracked Vite output" in frontend
@@ -43,7 +43,9 @@ def test_ci_regenerates_compares_and_qualifies_distributions() -> None:
     assert "verify-frontends" in frontend
     assert frontend.index("compare-frontends") < frontend.index("python -m build")
 
-    public_source = _workflow("packages/spectra-sherpa/.github/workflows/ci.yml")
+
+def test_public_ci_regenerates_compares_and_qualifies_distributions() -> None:
+    public_source = (PACKAGE_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     public_frontend = public_source.split("  frontend:\n", 1)[1].split("  security:\n", 1)[0]
     assert "Refuse tracked Vite output" in public_frontend
     assert "git ls-files src/spectra_sherpa/static" in public_frontend
@@ -53,7 +55,7 @@ def test_ci_regenerates_compares_and_qualifies_distributions() -> None:
     assert "git status --porcelain -- src/spectra_sherpa/static" not in public_frontend
 
 
-def test_security_and_curated_publish_build_frontend_before_python_artifacts() -> None:
+def test_security_and_curated_publish_build_frontend_before_python_artifacts(monorepo_root: Path) -> None:
     for path in (".github/workflows/oss-security-preflight.yml", ".github/workflows/oss-publish.yml"):
         source = _workflow(path)
         assert "npm ci" in source
@@ -62,7 +64,7 @@ def test_security_and_curated_publish_build_frontend_before_python_artifacts() -
         assert source.index("npm run build") < source.index("python -m build")
 
 
-def test_backend_docker_builds_and_qualifies_frontend_inside_public_wheel() -> None:
+def test_backend_docker_builds_and_qualifies_frontend_inside_public_wheel(monorepo_root: Path) -> None:
     dockerfile = (REPO_ROOT / "packages/spectra-ops/docker/Dockerfile.backend").read_text(encoding="utf-8")
     dockerignore = (REPO_ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
     assert "FROM node:22-slim AS sherpa-ui-build" in dockerfile
@@ -77,6 +79,13 @@ def test_backend_docker_builds_and_qualifies_frontend_inside_public_wheel() -> N
     assert dockerfile.index("COPY --from=sherpa-ui-build") < dockerfile.index("python -m build --wheel")
     assert STATIC_PATH in dockerignore
 
+    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    image_job = workflow.split("  staging-backend-image:\n", 1)[1]
+    assert "if: needs.changes.outputs.backend_image == 'true'" in image_job
+    assert "github.event_name == 'push'" not in image_job
+
+
+def test_public_frontend_docker_builds_from_locked_source() -> None:
     public_frontend = (PACKAGE_ROOT / "frontend/Dockerfile").read_text(encoding="utf-8")
     assert "FROM node:22-slim AS build-stage" in public_frontend
     assert "COPY frontend/package*.json ./" in public_frontend
@@ -85,11 +94,6 @@ def test_backend_docker_builds_and_qualifies_frontend_inside_public_wheel() -> N
     assert public_frontend.index("plate_formats_v1.json") < public_frontend.index("RUN npm run build")
     assert "RUN npm ci" in public_frontend
     assert "node:20" not in public_frontend
-
-    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    image_job = workflow.split("  staging-backend-image:\n", 1)[1]
-    assert "if: needs.changes.outputs.backend_image == 'true'" in image_job
-    assert "github.event_name == 'push'" not in image_job
 
 
 def test_clean_source_launch_instructions_generate_the_ignored_frontend() -> None:

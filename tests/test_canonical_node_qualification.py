@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-_TOOL_PATH = _REPOSITORY_ROOT / "packages/spectra-sherpa/tools/qualify_canonical_node_baseline.py"
+_TOOL_PATH = Path(__file__).resolve().parents[1] / "tools/qualify_canonical_node_baseline.py"
 _MANIFEST_PATH = _REPOSITORY_ROOT / "docs/evidence/canonical-node-qualification-manifest.json"
 _MACOS_RECEIPT_PATH = _REPOSITORY_ROOT / "docs/evidence/canonical-node-qualification-macos.json"
 _UBUNTU_RECEIPT_PATH = _REPOSITORY_ROOT / "docs/evidence/canonical-node-qualification-ubuntu.json"
@@ -24,7 +24,7 @@ def _load_tool() -> dict[str, object]:
     return runpy.run_path(str(_TOOL_PATH), run_name="canonical_node_qualification_test")
 
 
-def test_checked_qualification_manifest_is_current_and_total() -> None:
+def test_checked_qualification_manifest_is_current_and_total(monorepo_root: Path) -> None:
     result = subprocess.run(
         [sys.executable, str(_TOOL_PATH), "check", "--manifest", str(_MANIFEST_PATH)],
         cwd=_REPOSITORY_ROOT,
@@ -50,7 +50,9 @@ def test_checked_qualification_manifest_is_current_and_total() -> None:
     assert len(selectors) == len(set(selectors))
 
 
-def test_file_load_qualification_executes_public_native_conformance_without_private_custody() -> None:
+def test_file_load_qualification_executes_public_native_conformance_without_private_custody(
+    monorepo_root: Path,
+) -> None:
     manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
     batches = {batch["batch_id"]: batch["selectors"] for batch in manifest["test_batches"]}
     clean_room = batches["native-opus-clean-room"]
@@ -75,7 +77,7 @@ def test_file_load_qualification_executes_public_native_conformance_without_priv
     assert "poetry run pip install --no-deps --no-cache-dir --force-reinstall --editable ." in workflow
 
 
-def test_retained_pair_reproduces_and_remains_bound_to_current_node_product(monkeypatch) -> None:
+def test_retained_pair_reproduces_and_remains_bound_to_current_node_product(monkeypatch, monorepo_root: Path) -> None:
     tool = _load_tool()
     manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
     assessments = json.loads(
@@ -117,7 +119,7 @@ def test_retained_pair_reproduces_and_remains_bound_to_current_node_product(monk
     assert projection["source_revision"] == pair["source_revision"]
 
 
-def test_node_science_projection_excludes_independently_qualified_non_node_surfaces() -> None:
+def test_node_science_projection_excludes_independently_qualified_non_node_surfaces(monorepo_root: Path) -> None:
     tool = _load_tool()
     projection = tool["_current_product_projection"](
         _REPOSITORY_ROOT,
