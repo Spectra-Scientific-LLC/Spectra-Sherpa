@@ -4,15 +4,18 @@ Regression nodes: PCR, SVR, Linear Regression.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.lib.adapters.scp_extractors import LinearRegressionExtract, PCRExtract, SVRExtract
+from spectra_sherpa.app.lib import fitted_state
+from spectra_sherpa.app.lib.fitted_state import LinearRegressionExtract, PCRExtract, SVRExtract
 from spectra_sherpa.app.lib.sherpa_dataset import (
     EvaluationResult,
+    TargetContext,
 )
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
@@ -20,12 +23,20 @@ from spectra_sherpa.app.services.dag.meta_helpers import (
     inherit_origin_flags,
     inherit_sample_flags,
 )
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    TargetAccess,
+    WorkerCapability,
+)
 
 from ...io_contracts import (
     attach_evaluation,
     bind_X,
     bind_y,
-    clean_regression_target,
+    clean_regression_target_with_population,
     resolve_target_names,
     to_numpy_2d,
     to_numpy_y,
@@ -34,10 +45,12 @@ from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodePolicy,
     NodeResult,
     PortMetadata,
     register_node,
 )
+from . import _artifact_builder, regression_application
 from .core_utils import (
     create_spectral_dataset as _create_spectral_dataset,
 )
@@ -63,17 +76,24 @@ def _as_target_matrix(values: np.ndarray) -> np.ndarray:
     return arr
 
 
-def _target_metric_lists(y_true: np.ndarray, y_pred: np.ndarray) -> tuple[list[float], list[float]]:
-    from sklearn.metrics import mean_squared_error, r2_score
+def _target_metric_lists(y_true: np.ndarray, y_pred: np.ndarray) -> tuple[list[float | None], list[float]]:
+    from spectra_sherpa.sdk.validate import metrics
 
-    y_true_2d = _as_target_matrix(y_true)
-    y_pred_2d = _as_target_matrix(y_pred)
-    r2_values: list[float] = []
-    rmse_values: list[float] = []
-    for idx in range(y_true_2d.shape[1]):
-        r2_values.append(float(r2_score(y_true_2d[:, idx], y_pred_2d[:, idx])))
-        rmse_values.append(float(np.sqrt(mean_squared_error(y_true_2d[:, idx], y_pred_2d[:, idx]))))
-    return r2_values, rmse_values
+    observed, predicted = _as_target_matrix(y_true), _as_target_matrix(y_pred)
+    records = [metrics(observed[:, i], predicted[:, i]) for i in range(observed.shape[1])]
+    return [record.r2 for record in records], [record.rmse for record in records]
+
+
+def _omit_multitarget_summaries(record: dict[str, Any]) -> None:
+    """Keep per-response records; never combine dimensional response errors."""
+    for key in ("r2", "rmse", "r2_cal", "rmse_cal", "score"):
+        record.pop(key, None)
+    record["metric_summary_scope"] = "per_response_only"
+    # Explicit producer-owned containers, not arbitrary recursive payloads.
+    for key in ("quality_summary", "metrics"):
+        child = record.get(key)
+        if isinstance(child, dict):
+            _omit_multitarget_summaries(child)
 
 
 def _target_names_from_context(X_ds, n_targets: int, params: dict[str, Any] | None = None) -> list[str]:
@@ -109,6 +129,100 @@ def _target_identity_metadata(X_ds, target_names: list[str]) -> dict[str, Any]:
     return metadata
 
 
+def _regression_response_context(X_ds: Any, y_raw: Any) -> TargetContext:
+    """Identify the actual bound values, never an external dataset's own target."""
+    if y_raw is None:
+        context = X_ds.target_context
+        return context.model_copy(update={"target_names": resolve_target_names(None, X_ds) or []})
+    axis = getattr(y_raw, "feature_axis", None)
+    names = list(axis.labels) if axis is not None and axis.labels else None
+    units = getattr(y_raw, "units", None)
+    context = getattr(y_raw, "target_context", None) if getattr(y_raw, "target", None) is None else None
+    if context is not None:
+        declared_names = list(context.target_names or [])
+        if not declared_names and (context.selected_target or context.target_name):
+            declared_names = [context.selected_target or context.target_name]
+        if names and declared_names and names != declared_names:
+            raise ValueError("response data columns contradict target-context names")
+        if units and context.target_units and units != context.target_units:
+            raise ValueError("response data units contradict target-context units")
+        names = names or declared_names
+        units = units or context.target_units
+    return TargetContext(
+        target_type=context.target_type if context is not None else None,
+        target_names=names or [],
+        target_units=units,
+    )
+
+
+def _response_input_columns(X_ds: Any, y_raw: Any, n_targets: int) -> list[int]:
+    """Map the bound response columns back to the supplied response source."""
+    if y_raw is None and X_ds.target is not None:
+        context = X_ds.target_context
+        if np.asarray(X_ds.target).ndim == 2 and context.selected_target:
+            return [list(context.target_names).index(context.selected_target)]
+    return list(range(n_targets))
+
+
+def _bind_continuous_response_context(
+    X_ds: Any,
+    y_raw: Any,
+    *,
+    n_targets: int,
+) -> None:
+    """Bind the response actually fitted to the copied predictor dataset.
+
+    An explicitly connected ``y`` is the scientific authority for response
+    identity.  Predictor metadata is only a fallback when the response carries
+    no metadata of its own.  The caller passes a copied ``X_ds`` so this helper
+    cannot enrich or rewrite the scientist's source dataset.
+    """
+
+    context = _regression_response_context(X_ds, y_raw)
+    target_type = context.target_type
+    if target_type not in {None, "continuous"}:
+        raise ValueError(f"regression requires continuous targets, got {target_type!r}")
+    names = list(context.target_names or [])
+    if names and len(names) != n_targets:
+        raise ValueError(
+            "connected response metadata must name every fitted target exactly once: "
+            f"received {len(names)} name(s) for {n_targets} response column(s)"
+        )
+    if not names:
+        names = [f"Target {index + 1}" for index in range(n_targets)]
+    units = context.target_units
+    if n_targets == 1:
+        selected = str(names[0])
+        X_ds.target_context = TargetContext(
+            target_type="continuous",
+            target_name=selected,
+            target_names=[selected],
+            target_units=str(units) if units else None,
+            selected_target=selected,
+        )
+    else:
+        X_ds.target_context = TargetContext(
+            target_type="continuous",
+            target_names=[str(name) for name in names],
+            target_units=str(units) if units else None,
+        )
+
+
+def _canonical_pcr_parameters(parameters: dict[str, object]) -> dict[str, object]:
+    """Return the closed scientist-visible Principal Components Regression choices."""
+
+    if set(parameters) != {"n_components", "scale"}:
+        raise ValueError("PCR parameters must contain exactly n_components and scale")
+    components = parameters["n_components"]
+    if isinstance(components, bool) or not isinstance(components, (int, float)) or int(components) != components:
+        raise ValueError("PCR n_components must be a positive whole number")
+    if int(components) < 1:
+        raise ValueError("PCR n_components must be a positive whole number")
+    if not isinstance(parameters["scale"], bool):
+        raise ValueError("PCR scale must be boolean")
+    return {"n_components": int(components), "scale": parameters["scale"]}
+
+
 @register_node
 class PCRNode(Node):
     """
@@ -121,7 +235,10 @@ class PCRNode(Node):
         node_type="model.pcr",
         category="regression",
         label="Train PCR Regression",
-        description="Train a Principal Component Regression model for calibration",
+        description=(
+            "Fit ordinary least squares to retained PCA scores. Predictors are always centered by PCA; "
+            "optional autoscaling standardizes them to unit variance first."
+        ),
         parameters=[
             NodeParameter(
                 name="n_components",
@@ -136,15 +253,15 @@ class PCRNode(Node):
             ),
             NodeParameter(
                 name="scale",
-                label="Scale Data",
+                label="Autoscale Predictors",
                 param_type="boolean",
                 default=True,
-                description="Apply mean centering and scaling",
+                description="Scale each predictor to unit variance before the PCA centering step.",
                 required=False,
                 category="basic",
             ),
         ],
-        input_types=["NDDataset", "array"],
+        input_types=["SherpaDataset", "array"],
         output_type="dict",
         input_ports=[
             PortMetadata(
@@ -165,6 +282,13 @@ class PCRNode(Node):
         ],
         output_ports=[
             PortMetadata(
+                name="population",
+                type_ref="spectrasherpa://types/RegressionPopulation/1.0",
+                required=True,
+                label="Training population",
+                description="Original row identities, admitted rows and missing-reference exclusions",
+            ),
+            PortMetadata(
                 name="model",
                 type_ref="spectrasherpa://types/RegressionModel/1.0",
                 required=True,
@@ -183,7 +307,7 @@ class PCRNode(Node):
                 type_ref="spectrasherpa://types/LoadingMatrix/1.0",
                 required=True,
                 label="Loadings",
-                description="PCA Loadings (n_features × n_components)",
+                description="PCA Loadings (n_components × n_features)",
             ),
             PortMetadata(
                 name="y_pred",
@@ -200,6 +324,8 @@ class PCRNode(Node):
                 description="Training target values aligned with y_pred",
             ),
         ],
+        policy=NodePolicy(),
+        canonical_parameter_validator=_canonical_pcr_parameters,
     )
 
     def generate_python(
@@ -208,72 +334,20 @@ class PCRNode(Node):
         indent: str = "    ",
         use_scp: bool = True,
     ) -> list[str]:
-        """Generate Python export code for PCR regression."""
-        params = self._resolve_params()
-        n_components = params.get("n_components", 3)
-        scale = params.get("scale", True)
+        """Generate Python that calls the same PCR operation as the live DAG."""
+        del use_scp
+        X_expression = inputs.get("X", inputs.get("default", "input_data"))
+        return [
+            f"{indent}# --- Canonical Principal Components Regression ({self.node_id}) ---",
+            f"{indent}from spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes import _pcr_execute",
+            f"{indent}_pcr_result = _pcr_execute(",
+            f"{indent}    {X_expression}, {inputs.get('y', 'None')},",
+            f"{indent}    node_id={self.node_id!r}, parameters={self._resolve_params()!r},",
+            f"{indent})",
+            f"{indent}results[{self.node_id!r}] = _pcr_result.outputs",
+        ]
 
-        X_expr = inputs.get("X", inputs.get("default", "input_data"))
-        y_expr = inputs.get("y")
-
-        lines: list[str] = []
-        lines.append(f"{indent}# --- PCR ({self.node_id}) ---")
-
-        # Extract X
-        lines.append(f"{indent}_X_input = {X_expr}")
-        lines.append(f"{indent}_X_data = np.array(")
-        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
-        lines.append(f"{indent}    dtype=np.float64,")
-        lines.append(f"{indent})")
-
-        # Extract y
-        if y_expr:
-            lines.append(f"{indent}_y_raw = {y_expr}")
-            lines.append(
-                f"{indent}_y = np.array(_y_raw.data if hasattr(_y_raw, 'data') else _y_raw, dtype=np.float64).ravel()"
-            )
-        else:
-            lines.append(f"{indent}_y = np.array(")
-            lines.append(f"{indent}    _X_input.target if hasattr(_X_input, 'target') and _X_input.target is not None")
-            lines.append(f"{indent}    else _X_input.meta.get('target'),")
-            lines.append(f"{indent}    dtype=np.float64,")
-            lines.append(f"{indent}).ravel()")
-
-        # Build PCR pipeline
-        scale_str = "True" if scale else "False"
-        lines.append(f"{indent}from sklearn.decomposition import PCA as _PCA")
-        lines.append(f"{indent}from sklearn.linear_model import LinearRegression as _LR")
-        lines.append(f"{indent}from sklearn.pipeline import Pipeline as _Pipeline")
-        lines.append(f"{indent}from sklearn.preprocessing import StandardScaler as _Scaler")
-        lines.append(f"{indent}from sklearn.metrics import r2_score as _r2_score, mean_squared_error as _mse")
-        lines.append(f"{indent}_pcr = _Pipeline([")
-        lines.append(f"{indent}    ('scaler', _Scaler(with_mean={scale_str}, with_std={scale_str})),")
-        lines.append(f"{indent}    ('pca', _PCA(n_components={n_components})),")
-        lines.append(f"{indent}    ('regressor', _LR()),")
-        lines.append(f"{indent}])")
-        lines.append(f"{indent}_pcr.fit(_X_data, _y)")
-        lines.append(f"{indent}_y_pred = _pcr.predict(_X_data)")
-        lines.append(f"{indent}_r2 = _r2_score(_y, _y_pred)")
-        lines.append(f"{indent}_rmse = float(np.sqrt(_mse(_y, _y_pred)))")
-        lines.append(
-            f"{indent}_scores = _pcr.named_steps['pca'].transform(_pcr.named_steps['scaler'].transform(_X_data))"
-        )
-        lines.append(f"{indent}_loadings = _pcr.named_steps['pca'].components_")
-        lines.append(f'{indent}print(f"  PCR ({n_components} components): R²={{_r2:.4f}}, RMSE={{_rmse:.4f}}")')
-
-        # Store result
-        lines.append(f"{indent}results['{self.node_id}'] = {{")
-        lines.append(f"{indent}    'model': _pcr,")
-        lines.append(f"{indent}    'scores': _scores,")
-        lines.append(f"{indent}    'loadings': _loadings,")
-        lines.append(f"{indent}    'y_pred': _y_pred,")
-        lines.append(f"{indent}    'r2': _r2,")
-        lines.append(f"{indent}    'rmse': _rmse,")
-        lines.append(f"{indent}}}")
-
-        return lines
-
-    async def execute(self, X: Any = None, y: Any = None, **kwargs) -> Any:
+    def _execute_sync(self, X: Any = None, y: Any = None) -> NodeResult:
         """
         Execute PCR regression.
 
@@ -286,7 +360,6 @@ class PCRNode(Node):
         """
         from sklearn.decomposition import PCA as SkPCA
         from sklearn.linear_model import LinearRegression
-        from sklearn.metrics import mean_squared_error, r2_score
         from sklearn.pipeline import Pipeline
         from sklearn.preprocessing import StandardScaler
 
@@ -295,9 +368,9 @@ class PCRNode(Node):
             missing_message="Missing required input: X (spectra)",
             dataset_error_message="X must be an dataset object",
             allow_array=True,
-        )
-        # Resolve target names BEFORE bind_y strips dataset metadata
-        _resolved_target_names = resolve_target_names(y, X_ds)
+        ).copy()
+        source_digest = X_ds.scientific_digest
+        response_source = y
 
         y_value = bind_y(
             y,
@@ -315,17 +388,22 @@ class PCRNode(Node):
 
         X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)
         y_array = to_numpy_y(y_value, name="y", expected_samples=X_data.shape[0], dtype=np.float64)
-        X_ds, y_array = clean_regression_target(
+        response_columns = _response_input_columns(X_ds, response_source, _as_target_matrix(y_array).shape[1])
+        _bind_continuous_response_context(X_ds, response_source, n_targets=_as_target_matrix(y_array).shape[1])
+        X_ds, y_array, population = clean_regression_target_with_population(
             X_ds,
             y_array,
             model_label="PCR",
+            source_scientific_digest=source_digest,
+            response_input_columns=response_columns,
             preserve_1d=False,
         )
         X_data = to_numpy_2d(X_ds, name="X", dtype=np.float64)
         y_matrix = _as_target_matrix(y_array)
 
-        n_components = self.parameters.get("n_components", 3)
-        scale = self.parameters.get("scale", True)
+        parameters = _canonical_pcr_parameters(self._resolve_params())
+        n_components = int(parameters["n_components"])
+        scale = bool(parameters["scale"])
 
         max_components = min(X_data.shape[0] - 1, X_data.shape[1])
         if n_components > max_components:
@@ -340,7 +418,9 @@ class PCRNode(Node):
         logger.debug("  - y shape: %s", y_array.shape)
 
         scaler = StandardScaler(with_mean=scale, with_std=scale)
-        pca = SkPCA(n_components=n_components)
+        # ``auto`` selects randomized SVD for sufficiently wide matrices. PCR
+        # is a deterministic canonical operation, so use the exact full SVD.
+        pca = SkPCA(n_components=n_components, svd_solver="full")
         regressor = LinearRegression()
         model = Pipeline(
             [
@@ -352,10 +432,10 @@ class PCRNode(Node):
         model.fit(X_data, y_array)
 
         y_pred = model.predict(X_data)
-        r2 = r2_score(y_array, y_pred)
-        rmse = float(np.sqrt(mean_squared_error(y_array, y_pred)))
         y_pred_matrix = _as_target_matrix(y_pred)
         r2_per_target, rmse_per_target = _target_metric_lists(y_matrix, y_pred_matrix)
+        r2 = r2_per_target[0] if y_matrix.shape[1] == 1 else None
+        rmse = rmse_per_target[0] if y_matrix.shape[1] == 1 else None
 
         X_scores = model.named_steps["pca"].transform(model.named_steps["scaler"].transform(X_data))
 
@@ -376,15 +456,15 @@ class PCRNode(Node):
             except Exception:
                 label_categories = None
 
-        # Get input coordinates for NDDataset creation
+        # Get input coordinates for SherpaDataset creation
         _x_coord = X_ds.feature_axis
 
         # Build PC labels with explained variance ratio
         evr = pca.explained_variance_ratio_
-        pc_labels = [f"PC{i+1} ({evr[i]*100:.1f}%)" for i in range(n_components)]
+        pc_labels = [f"PC{i + 1} ({evr[i] * 100:.1f}%)" for i in range(n_components)]
 
         # =====================================================================
-        # Create proper NDDataset objects for scores and loadings with coordinate coupling
+        # Create proper SherpaDataset objects for scores and loadings with coordinate coupling
         # =====================================================================
 
         # Scores: shape (n_samples, n_components)
@@ -405,7 +485,7 @@ class PCRNode(Node):
             title="PCR Loadings",
         )
 
-        # Add processing history to NDDataset outputs
+        # Add processing history to SherpaDataset outputs
         copy_processing_history(X_ds, scores_dataset)
         copy_processing_history(X_ds, loadings_dataset)
         add_processing_step(
@@ -427,7 +507,7 @@ class PCRNode(Node):
         inherit_origin_flags(X_ds, scores_dataset)
         inherit_origin_flags(X_ds, loadings_dataset)
 
-        target_names = _resolved_target_names or _target_names_from_context(X_ds, y_matrix.shape[1])
+        target_names = _target_names_from_context(X_ds, y_matrix.shape[1])
         target_identity = _target_identity_metadata(X_ds, target_names)
         intercept_values = np.asarray(regressor.intercept_, dtype=np.float64).reshape(-1)
         intercept: float | list[float]
@@ -452,7 +532,7 @@ class PCRNode(Node):
                 },
                 "explained_variance_ratio": evr.tolist(),
                 "label_categories": label_categories,
-                "r2": float(r2),
+                "r2": r2,
                 "rmse": rmse,
                 "coef": regressor.coef_.tolist(),
                 "intercept": intercept,
@@ -463,23 +543,28 @@ class PCRNode(Node):
                 "rmse_per_target": rmse_per_target,
                 "quality_summary": {
                     "n_components": int(n_components),
-                    "r2": float(r2),
-                    "rmse": float(rmse),
+                    "r2": r2,
+                    "rmse": rmse,
                     "n_samples": int(X_data.shape[0]),
                     "n_features": int(X_data.shape[1]),
                     "n_targets": int(y_matrix.shape[1]),
                     **target_identity,
                     "explained_variance_ratio": evr.tolist(),
                 },
+                "evidence_scope": "training_fit_only_not_predictive_validation",
             }
         )
+        evaluation_digest = hashlib.sha256()
+        evaluation_digest.update(np.asarray(X_data, dtype="<f8").tobytes(order="C"))
+        evaluation_digest.update(np.asarray(y_matrix, dtype="<f8").tobytes(order="C"))
+        evaluation_digest.update(f"{self.node_id}:{n_components}:{int(scale)}".encode("utf-8"))
         attach_evaluation(
             scores_dataset,
             EvaluationResult(
-                evaluation_id=str(uuid.uuid4()),
+                evaluation_id=str(uuid.uuid5(uuid.NAMESPACE_OID, evaluation_digest.hexdigest())),
                 model_type="PCR",
                 n_components=n_components,
-                r2=float(r2),
+                r2=r2,
                 rmse=rmse,
             ),
         )
@@ -488,28 +573,219 @@ class PCRNode(Node):
 
         from ._artifact_builder import build_model_artifact
 
+        evidence_scope = "training_fit_only_not_predictive_validation"
         artifact = build_model_artifact(
             PCRExtract.from_sklearn(model),
             X_ds,
             node_id=self.node_id,
-            metrics={"r2": float(r2), "rmse": rmse},
+            metrics={
+                "scope": evidence_scope,
+                "r2_cal": r2,
+                "rmse_cal": rmse,
+                "per_target": [
+                    {
+                        "target_name": name,
+                        "r2_cal": target_r2,
+                        "rmse_cal": target_rmse,
+                    }
+                    for name, target_r2, target_rmse in zip(
+                        target_names,
+                        r2_per_target,
+                        rmse_per_target,
+                        strict=True,
+                    )
+                ],
+            },
         )
+        artifact["metadata"]["fitted_parameters"] = {
+            "n_components": n_components,
+            "scale": scale,
+        }
+        artifact["metadata"]["metrics_scope"] = evidence_scope
+        artifact["metadata"]["population"] = population
+        scores_dataset.meta["population"] = population
 
-        return NodeResult(
+        result = NodeResult(
             outputs={
-                "default": scores_dataset,  # NDDataset: scores + sample labels (y) + PC coords (x)
+                "default": scores_dataset,  # SherpaDataset: scores + sample labels (y) + PC coords (x)
                 "scores": scores_dataset,  # Alias of default for the declared scores port
-                "loadings": loadings_dataset,  # NDDataset: loadings + wavenumbers (x) + PC coords (y)
-                "model": model,  # Model port for downstream use
+                "loadings": loadings_dataset,  # SherpaDataset: loadings + wavenumbers (x) + PC coords (y)
+                "model": model,  # Legacy estimator; applications use the portable state below.
+                "fitted_state": regression_application.make_application_state(
+                    artifact, X_ds, response_source, operation="model.pcr", targets=y_matrix.shape[1]
+                ),
                 "y_pred": y_pred_matrix,
                 "y_true": y_matrix,
                 "_model_artifact": artifact,
+                "population": population,
             },
             diagnostics={
-                "r2": float(r2),
+                "population": population,
+                "r2": r2,
                 "rmse": rmse,
+                "r2_per_target": r2_per_target,
+                "rmse_per_target": rmse_per_target,
+                "evidence_scope": "training_fit_only_not_predictive_validation",
             },
         )
+
+        if y_matrix.shape[1] > 1:
+            _omit_multitarget_summaries(scores_dataset.meta)
+            _omit_multitarget_summaries(artifact["metadata"])
+            _omit_multitarget_summaries(result.diagnostics)
+        return result
+
+    async def execute(self, X: Any = None, y: Any = None, **kwargs: Any) -> NodeResult:
+        del kwargs
+        return _pcr_execute(X, y, node_id=self.node_id, parameters=self._resolve_params())
+
+    def fit_fitted_state(self, input_data: Any, target: Any) -> dict[str, object]:
+        """Fit and serialize the exact PCR state consumed by fold execution."""
+
+        result = self._execute_sync(input_data, target)
+        model = result.outputs["model"]
+        extracted = PCRExtract.from_sklearn(model)
+        matrix = to_numpy_2d(bind_X(input_data, allow_array=True), name="input_data", dtype=np.float64)
+        coefficient_matrix = np.asarray(extracted.reg_coef, dtype=np.float64)
+        targets = 1 if coefficient_matrix.ndim == 1 else int(coefficient_matrix.shape[0])
+        parameters = _canonical_pcr_parameters(self._resolve_params())
+        return {
+            "serializer": "spectrasherpa.model-artifact.pcr/1",
+            "n_components": extracted.n_components,
+            "scale": parameters["scale"],
+            "reference_samples": result.outputs["population"]["admitted_count"],
+            "features": int(matrix.shape[1]),
+            "targets": targets,
+            "pca_components": extracted.pca_components.tolist(),
+            "pca_mean": extracted.pca_mean.tolist(),
+            "reg_coef": extracted.reg_coef.tolist(),
+            "reg_intercept": extracted.reg_intercept.tolist(),
+            "scaler_mean": None if extracted.scaler_mean is None else extracted.scaler_mean.tolist(),
+            "scaler_scale": None if extracted.scaler_scale is None else extracted.scaler_scale.tolist(),
+        }
+
+    def apply_fitted_state(self, input_data: Any, state: Any) -> np.ndarray:
+        """Apply only the closed, dimension-checked PCR serializer schema."""
+
+        from collections.abc import Mapping
+
+        required = {
+            "serializer",
+            "n_components",
+            "scale",
+            "reference_samples",
+            "features",
+            "targets",
+            "pca_components",
+            "pca_mean",
+            "reg_coef",
+            "reg_intercept",
+            "scaler_mean",
+            "scaler_scale",
+        }
+        if not isinstance(state, Mapping) or set(state) != required:
+            raise ValueError("PCR fitted state does not use the closed serializer schema")
+        if state["serializer"] != "spectrasherpa.model-artifact.pcr/1":
+            raise ValueError("PCR fitted state has an unsupported serializer")
+        for name in ("n_components", "reference_samples", "features", "targets"):
+            value = state[name]
+            if type(value) is not int or value < 1:
+                raise ValueError(f"PCR fitted state has invalid {name}")
+        if not isinstance(state["scale"], bool):
+            raise ValueError("PCR fitted state has an invalid scale flag")
+
+        components = np.asarray(state["pca_components"], dtype=np.float64)
+        pca_mean = np.asarray(state["pca_mean"], dtype=np.float64)
+        coefficients = np.asarray(state["reg_coef"], dtype=np.float64)
+        intercept = np.asarray(state["reg_intercept"], dtype=np.float64)
+        expected_coefficient_shape = (state["targets"], state["n_components"])
+        if (
+            components.shape != (state["n_components"], state["features"])
+            or pca_mean.shape != (state["features"],)
+            or coefficients.shape != expected_coefficient_shape
+            or intercept.shape != (state["targets"],)
+        ):
+            raise ValueError("PCR fitted state dimensions are inconsistent")
+        scaler_mean = None if state["scaler_mean"] is None else np.asarray(state["scaler_mean"], dtype=np.float64)
+        scaler_scale = None if state["scaler_scale"] is None else np.asarray(state["scaler_scale"], dtype=np.float64)
+        if state["scale"]:
+            if scaler_mean is None or scaler_scale is None:
+                raise ValueError("autoscaled PCR fitted state is missing scaler state")
+            if scaler_mean.shape != (state["features"],) or scaler_scale.shape != (state["features"],):
+                raise ValueError("PCR fitted scaler dimensions are inconsistent")
+        elif scaler_mean is not None or scaler_scale is not None:
+            raise ValueError("unscaled PCR fitted state must not carry scaler state")
+        arrays = (components, pca_mean, coefficients, intercept)
+        if not all(np.isfinite(array).all() for array in arrays):
+            raise ValueError("PCR fitted state contains non-finite values")
+        if scaler_mean is not None and (
+            not np.isfinite(scaler_mean).all() or not np.isfinite(scaler_scale).all() or np.any(scaler_scale <= 0)
+        ):
+            raise ValueError("PCR fitted scaler state is invalid")
+
+        matrix = to_numpy_2d(bind_X(input_data, allow_array=True), name="input_data", dtype=np.float64)
+        if matrix.shape[1] != state["features"] or not np.isfinite(matrix).all():
+            raise ValueError("PCR apply input does not match the fitted feature contract")
+        return PCRExtract(
+            pca_components=components,
+            pca_mean=pca_mean,
+            reg_coef=coefficients,
+            reg_intercept=intercept,
+            n_components=state["n_components"],
+            scaler_mean=scaler_mean,
+            scaler_scale=scaler_scale,
+        ).predict(matrix)
+
+
+def _pcr_execute(
+    X: Any,
+    y: Any,
+    *,
+    node_id: str,
+    parameters: dict[str, object],
+) -> NodeResult:
+    """Fit one reference-faithful PCR model through the sole operation ABI."""
+
+    canonical = _canonical_pcr_parameters(parameters)
+    return PCRNode(node_id, canonical)._execute_sync(X, y)
+
+
+PCRNode.metadata.output_ports.append(
+    PortMetadata(
+        name="fitted_state",
+        type_ref="spectrasherpa://types/RegressionModel/1.0",
+        label="Fitted State",
+        description="Portable PCR state for Predict Regression.",
+    )
+)
+
+bind_stable_execution_contract(
+    PCRNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.FITTED_MODEL,
+    implementation_id="spectrasherpa.model.pcr",
+    implementation_version="1.0.0",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="filters_samples",
+    feature_effect="generates_features",
+    axis_effect="changes_axis",
+    unit_effect="changes_units",
+    resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
+    license_id="BSD-3-Clause",
+    help_reference="docs/nodes/regression.md",
+    implementation_distributions=("numpy", "scipy", "scikit-learn"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("scikit-learn", "1.9.0")),
+    citations=(
+        "Massy, Principal Components Regression in Exploratory Statistical Research, JASA 60 (1965) "
+        "234-256, DOI 10.1080/01621459.1965.10480787",
+    ),
+    implementation_modules=(fitted_state, _artifact_builder, regression_application),
+    fitted_state_serializer="spectrasherpa.model-artifact.pcr/1",
+    deterministic=True,
+    target_access=TargetAccess.FIT_ONLY,
+    group_access="none",
+)
 
 
 def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
@@ -557,19 +833,37 @@ def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
                 label_categories = None
 
     if sample_labels is None:
-        sample_labels = [f"Sample {i+1}" for i in range(n_observations)]
+        sample_labels = [f"Sample {i + 1}" for i in range(n_observations)]
 
     from ._artifact_builder import build_model_artifact
+
+    evidence_scope = "training_fit_only_not_predictive_validation"
+    artifact = build_model_artifact(
+        SVRExtract.from_sklearn(model),
+        X_ds,
+        node_id=node_id,
+        metrics={
+            "scope": evidence_scope,
+            "r2_cal": r2,
+            "rmse_cal": rmse,
+            "per_target": [
+                {
+                    "target_name": target_names[0],
+                    "r2_cal": r2,
+                    "rmse_cal": rmse,
+                }
+            ],
+        },
+    )
+    artifact["metadata"]["fitted_parameters"] = {
+        name: params[name] for name in ("kernel", "C", "epsilon", "gamma", "degree", "coef0", "target_index", "scale")
+    }
+    artifact["metadata"]["metrics_scope"] = evidence_scope
 
     return {
         "support_vectors": svr.support_vectors_.tolist(),
         "data": [[float(yt), float(yh)] for yt, yh in zip(y_true_2d[:, 0], y_pred_2d[:, 0])],
-        "_model_artifact": build_model_artifact(
-            SVRExtract.from_sklearn(model),
-            X_ds,
-            node_id=node_id,
-            metrics={"r2": r2, "rmse": rmse},
-        ),
+        "_model_artifact": artifact,
         "metadata": {
             "type": "SVR",
             "output_type": "regression",
@@ -604,8 +898,175 @@ def _svr_post_fit(model, X_data, y_array, X_ds, params, node_id):
                 "target": target_names[0],
                 **target_identity,
             },
+            "evidence_scope": "training_fit_only_not_predictive_validation",
         },
     }
+
+
+def _canonical_svr_parameters(parameters: dict[str, object]) -> dict[str, object]:
+    """Return the closed scientist-visible epsilon-SVR choices."""
+
+    expected = {"kernel", "C", "epsilon", "gamma", "degree", "coef0", "target_index", "scale"}
+    if set(parameters) != expected:
+        raise ValueError(f"SVR parameters must contain exactly {', '.join(sorted(expected))}")
+    kernel = parameters["kernel"]
+    if kernel not in {"linear", "poly", "rbf", "sigmoid"}:
+        raise ValueError("SVR kernel must be linear, poly, rbf, or sigmoid")
+    numeric: dict[str, float] = {}
+    for name in ("C", "epsilon", "coef0"):
+        value = parameters[name]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value):
+            raise ValueError(f"SVR {name} must be a finite number")
+        numeric[name] = float(value)
+    if numeric["C"] < 0.01:
+        raise ValueError("SVR C must be at least 0.01")
+    if numeric["epsilon"] < 0:
+        raise ValueError("SVR epsilon must be non-negative")
+    if numeric["coef0"] < -1:
+        raise ValueError("SVR coef0 must be at least -1")
+    if parameters["gamma"] not in {"scale", "auto"}:
+        raise ValueError("SVR gamma must be scale or auto")
+    integers: dict[str, int] = {}
+    for name in ("degree", "target_index"):
+        value = parameters[name]
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or int(value) != value or int(value) < 1:
+            raise ValueError(f"SVR {name} must be a positive whole number")
+        integers[name] = int(value)
+    if not isinstance(parameters["scale"], bool):
+        raise ValueError("SVR scale must be boolean")
+    return {
+        "kernel": kernel,
+        "C": numeric["C"],
+        "epsilon": numeric["epsilon"],
+        "gamma": parameters["gamma"],
+        "degree": integers["degree"],
+        "coef0": numeric["coef0"],
+        "target_index": integers["target_index"],
+        "scale": parameters["scale"],
+    }
+
+
+def _svr_execute(
+    X: Any,
+    y: Any,
+    *,
+    node_id: str,
+    parameters: dict[str, object],
+) -> dict[str, Any]:
+    """Fit epsilon-SVR through the sole live/export operation ABI."""
+
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    params = _canonical_svr_parameters(parameters)
+    X_ds = bind_X(X, missing_message="Train SVR Regression: missing required input X", allow_array=True).copy()
+    source_digest = X_ds.scientific_digest
+    response_context = _regression_response_context(X_ds, y)
+    response_type = getattr(response_context, "target_type", None) if response_context is not None else None
+    if response_type not in {None, "continuous"}:
+        raise ValueError(f"SVR requires continuous targets, got {response_type!r}")
+    target_names = list(response_context.target_names or [])
+    y_value = bind_y(
+        y,
+        X=X_ds,
+        required=True,
+        infer_from_X=True,
+        dataset_as_data=True,
+        missing_message="Train SVR Regression: no target values found",
+    )
+    matrix = to_numpy_2d(X_ds, name="X", dtype=np.float64)
+    raw_target = to_numpy_y(y_value, name="y", expected_samples=matrix.shape[0], dtype=np.float64)
+    raw_matrix = _as_target_matrix(raw_target)
+    response_columns = _response_input_columns(X_ds, y, raw_matrix.shape[1])
+    if target_names and len(target_names) != raw_matrix.shape[1]:
+        raise ValueError("connected response metadata must name every fitted target exactly once")
+    target_index = int(params["target_index"])
+    if target_index > raw_matrix.shape[1]:
+        available = ", ".join(target_names) if target_names else f"{raw_matrix.shape[1]} target(s)"
+        raise ValueError(
+            f"Target Property {target_index} is out of range for this dataset. Available targets: {available}."
+        )
+    selected_index = target_index - 1
+    selected_name = (
+        str(target_names[selected_index]) if selected_index < len(target_names) else f"Target {target_index}"
+    )
+    target = raw_matrix[:, selected_index]
+    target_units = getattr(response_context, "target_units", None) if response_context is not None else None
+    X_ds.target_context = TargetContext(
+        target_type="continuous",
+        target_name=selected_name,
+        target_names=[selected_name],
+        target_units=str(target_units) if target_units else None,
+        selected_target=selected_name,
+    )
+    X_ds, target, population = clean_regression_target_with_population(
+        X_ds,
+        target,
+        model_label="Train SVR Regression",
+        source_scientific_digest=source_digest,
+        response_input_columns=[response_columns[selected_index]],
+        preserve_1d=True,
+    )
+    matrix = to_numpy_2d(X_ds, name="X", dtype=np.float64)
+    if matrix.shape[0] < 2 or matrix.shape[1] < 1 or not np.isfinite(matrix).all():
+        raise ValueError("SVR requires at least two finite samples and one feature")
+    if not np.isfinite(target).all():
+        raise ValueError("SVR requires finite target values")
+
+    estimator = SVR(
+        kernel=str(params["kernel"]),
+        C=float(params["C"]),
+        epsilon=float(params["epsilon"]),
+        gamma=str(params["gamma"]),
+        degree=int(params["degree"]),
+        coef0=float(params["coef0"]),
+    )
+    scale = bool(params["scale"])
+    model = Pipeline(
+        [
+            ("scaler", StandardScaler(with_mean=scale, with_std=scale)),
+            ("estimator", estimator),
+        ]
+    )
+    model.fit(matrix, target)
+    predictions = np.asarray(model.predict(matrix), dtype=np.float64)
+    prediction_matrix = predictions.reshape(-1, 1)
+    residual_matrix = (np.asarray(target) - predictions).reshape(-1, 1)
+    runtime_params = {
+        **params,
+        "_selected_target_index": selected_index,
+        "_selected_target_name": selected_name,
+        "_original_target_names": list(target_names) if target_names else None,
+    }
+    outputs: dict[str, Any] = {
+        "model": model,
+        "y_pred": prediction_matrix.tolist(),
+        "predictions": prediction_matrix.tolist(),
+        "residuals": residual_matrix.tolist(),
+        "r2": _target_metric_lists(target, predictions)[0][0],
+        "rmse": _target_metric_lists(target, predictions)[1][0],
+    }
+    outputs.update(
+        _svr_post_fit(
+            model=model,
+            X_data=matrix,
+            y_array=target,
+            X_ds=X_ds,
+            params=runtime_params,
+            node_id=node_id,
+        )
+    )
+    outputs["population"] = population
+    outputs["_model_artifact"]["metadata"]["population"] = population
+    outputs["fitted_state"] = regression_application.make_application_state(
+        outputs["_model_artifact"],
+        X_ds,
+        y,
+        operation="model.svr",
+        targets=raw_matrix.shape[1] if y is not None else 1,
+        selected_index=selected_index if y is not None else None,
+    )
+    return outputs
 
 
 @register_node
@@ -709,7 +1170,7 @@ class SVRNode(EstimatorSpecNode):
                 category="basic",
             ),
         ],
-        input_types=["NDDataset", "array"],
+        input_types=["SherpaDataset", "array"],
         output_type="dict",
         input_ports=[
             PortMetadata(
@@ -730,8 +1191,15 @@ class SVRNode(EstimatorSpecNode):
         ],
         output_ports=[
             PortMetadata(
+                name="population",
+                type_ref="spectrasherpa://types/RegressionPopulation/1.0",
+                required=True,
+                label="Training population",
+                description="Original row identities, admitted rows and missing-reference exclusions",
+            ),
+            PortMetadata(
                 name="model",
-                type_ref="spectrasherpa://types/FittedModel/1.0",
+                type_ref="spectrasherpa://types/RegressionModel/1.0",
                 required=True,
                 label="Fitted SVR Regression Model",
                 description="Fitted SVR regression model produced by this training node",
@@ -751,6 +1219,8 @@ class SVRNode(EstimatorSpecNode):
                 description="Regression residuals (y_true - y_pred; n_samples × n_targets)",
             ),
         ],
+        policy=NodePolicy(),
+        canonical_parameter_validator=_canonical_svr_parameters,
     )
 
     spec = EstimatorSpec(
@@ -761,6 +1231,145 @@ class SVRNode(EstimatorSpecNode):
         post_fit_fn=_svr_post_fit,
         estimator_import="from sklearn.svm import SVR",
     )
+
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        del use_scp
+        X_expression = inputs.get("X", inputs.get("default", "input_data"))
+        return [
+            f"{indent}# --- Canonical epsilon-Support Vector Regression ({self.node_id}) ---",
+            f"{indent}from spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes import _svr_execute",
+            f"{indent}results[{self.node_id!r}] = _svr_execute(",
+            f"{indent}    {X_expression}, {inputs.get('y', 'None')},",
+            f"{indent}    node_id={self.node_id!r}, parameters={self._resolve_params()!r},",
+            f"{indent})",
+        ]
+
+    async def execute(self, X: Any = None, y: Any = None, **kwargs: Any) -> dict[str, Any]:
+        del kwargs
+        return _svr_execute(X, y, node_id=self.node_id, parameters=self._resolve_params())
+
+    def fit_fitted_state(self, input_data: Any, target: Any) -> dict[str, object]:
+        """Fit and serialize the exact single-response epsilon-SVR state."""
+
+        outputs = _svr_execute(
+            input_data,
+            target,
+            node_id=self.node_id,
+            parameters=self._resolve_params(),
+        )
+        metadata, arrays = SVRExtract.from_sklearn(outputs["model"]).to_artifact()
+        return {
+            "serializer": "spectrasherpa.model-artifact.svr/1",
+            "kernel": metadata["kernel"],
+            "gamma": metadata["gamma"],
+            "degree": metadata["degree"],
+            "coef0": metadata["coef0"],
+            "scale": metadata["scale"],
+            "features": metadata["features"],
+            "support_vectors": arrays["support_vectors"].tolist(),
+            "dual_coef": arrays["dual_coef"].tolist(),
+            "intercept": arrays["intercept"].tolist(),
+            "scaler_mean": None if arrays.get("scaler_mean") is None else arrays["scaler_mean"].tolist(),
+            "scaler_scale": None if arrays.get("scaler_scale") is None else arrays["scaler_scale"].tolist(),
+        }
+
+    def apply_fitted_state(self, input_data: Any, state: Any) -> np.ndarray:
+        """Apply only the closed, dimension-checked epsilon-SVR state."""
+
+        from collections.abc import Mapping
+
+        required = {
+            "serializer",
+            "kernel",
+            "gamma",
+            "degree",
+            "coef0",
+            "scale",
+            "features",
+            "support_vectors",
+            "dual_coef",
+            "intercept",
+            "scaler_mean",
+            "scaler_scale",
+        }
+        if not isinstance(state, Mapping) or set(state) != required:
+            raise ValueError("SVR fitted state does not use the closed serializer schema")
+        if state["serializer"] != "spectrasherpa.model-artifact.svr/1":
+            raise ValueError("SVR fitted state has an unsupported serializer")
+        arrays = {
+            "support_vectors": np.asarray(state["support_vectors"], dtype=np.float64),
+            "dual_coef": np.asarray(state["dual_coef"], dtype=np.float64),
+            "intercept": np.asarray(state["intercept"], dtype=np.float64),
+        }
+        if state["scaler_mean"] is not None:
+            arrays["scaler_mean"] = np.asarray(state["scaler_mean"], dtype=np.float64)
+        if state["scaler_scale"] is not None:
+            arrays["scaler_scale"] = np.asarray(state["scaler_scale"], dtype=np.float64)
+        replay = SVRExtract.from_artifact(
+            {
+                "model_type": "svr",
+                "serializer": state["serializer"],
+                "kernel": state["kernel"],
+                "gamma": state["gamma"],
+                "degree": state["degree"],
+                "coef0": state["coef0"],
+                "scale": state["scale"],
+                "features": state["features"],
+            },
+            arrays,
+        )
+        matrix = to_numpy_2d(bind_X(input_data, allow_array=True), name="input_data", dtype=np.float64)
+        if matrix.shape[1] != state["features"] or not np.isfinite(matrix).all():
+            raise ValueError("SVR apply input does not match the fitted feature contract")
+        return replay.predict(matrix)
+
+
+SVRNode.metadata.output_ports.append(
+    PortMetadata(
+        name="fitted_state",
+        type_ref="spectrasherpa://types/RegressionModel/1.0",
+        label="Fitted State",
+        description="Portable SVR state for Predict Regression.",
+    )
+)
+
+bind_stable_execution_contract(
+    SVRNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.FITTED_MODEL,
+    implementation_id="spectrasherpa.model.svr",
+    implementation_version="1.0.0",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="filters_samples",
+    feature_effect="generates_features",
+    axis_effect="removes_axis",
+    unit_effect="changes_units",
+    resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
+    license_id="BSD-3-Clause",
+    help_reference="docs/nodes/regression.md",
+    implementation_distributions=("numpy", "scipy", "scikit-learn"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("scikit-learn", "1.9.0")),
+    citations=(
+        "Drucker, Burges, Kaufman, Smola & Vapnik, Support Vector Regression Machines, NeurIPS 9 (1997) 155-161",
+        "Lesnoff, Metz & Roger, rchemo::svmr: SVM regression; delegates epsilon-regression to e1071::svm, "
+        "https://search.r-project.org/CRAN/refmans/rchemo/html/svmr.html",
+        "Meyer et al., e1071: Misc Functions of the Department of Statistics, Probability Theory Group, "
+        "TU Wien; svm implements libsvm epsilon-regression, "
+        "https://search.r-project.org/CRAN/refmans/e1071/html/svm.html",
+        "Chang & Lin, LIBSVM: A Library for Support Vector Machines, ACM TIST 2 (2011), DOI 10.1145/1961189.1961199",
+    ),
+    implementation_modules=(fitted_state, _artifact_builder, regression_application),
+    fitted_state_serializer="spectrasherpa.model-artifact.svr/1",
+    deterministic=True,
+    target_access=TargetAccess.FIT_ONLY,
+    group_access="none",
+)
 
 
 def _lr_post_fit(model, X_data, y_array, X_ds, params, node_id):
@@ -774,20 +1383,49 @@ def _lr_post_fit(model, X_data, y_array, X_ds, params, node_id):
     intercept_values = np.asarray(model.intercept_, dtype=np.float64).reshape(-1)
     intercept: float | list[float]
     intercept = float(intercept_values[0]) if intercept_values.size == 1 else intercept_values.tolist()
-    score = float(model.score(X_data, y_array))
-    rmse = float(np.sqrt(np.mean((y_true_2d - y_pred_2d) ** 2)))
+    score = r2_per_target[0] if y_true_2d.shape[1] == 1 else None
+    rmse = rmse_per_target[0] if y_true_2d.shape[1] == 1 else None
     from ._artifact_builder import build_model_artifact
+
+    evidence_scope = "training_fit_only_not_predictive_validation"
+    artifact = build_model_artifact(
+        LinearRegressionExtract.from_sklearn(model),
+        X_ds,
+        node_id=node_id,
+        metrics={
+            "scope": evidence_scope,
+            "r2_cal": score,
+            "rmse_cal": rmse,
+            "per_target": [
+                {
+                    "target_name": name,
+                    "r2_cal": target_r2,
+                    "rmse_cal": target_rmse,
+                }
+                for name, target_r2, target_rmse in zip(
+                    target_names,
+                    r2_per_target,
+                    rmse_per_target,
+                    strict=True,
+                )
+            ],
+        },
+    )
+    artifact["metadata"]["fitted_parameters"] = {"fit_intercept": bool(fit_intercept)}
+    artifact["metadata"]["metrics_scope"] = evidence_scope
+
+    if fit_intercept:
+        reported_intercept: float | list[float] = intercept
+    elif y_true_2d.shape[1] == 1:
+        reported_intercept = 0.0
+    else:
+        reported_intercept = [0.0] * y_true_2d.shape[1]
 
     return {
         "coef": model.coef_.tolist(),
-        "intercept": intercept if fit_intercept else 0.0,
+        "intercept": reported_intercept,
         "score": score,
-        "_model_artifact": build_model_artifact(
-            LinearRegressionExtract.from_sklearn(model),
-            X_ds,
-            node_id=node_id,
-            metrics={"r2": score, "rmse": rmse},
-        ),
+        "_model_artifact": artifact,
         "metadata": {
             "type": "LinearRegression",
             "output_type": "regression",
@@ -813,6 +1451,93 @@ def _lr_post_fit(model, X_data, y_array, X_ds, params, node_id):
             },
         },
     }
+
+
+def _canonical_linear_regression_parameters(parameters: dict[str, object]) -> dict[str, object]:
+    """Return the sole scientist-visible ordinary-least-squares choice."""
+
+    if set(parameters) != {"fit_intercept"} or not isinstance(parameters["fit_intercept"], bool):
+        raise ValueError("linear-regression parameters must contain exactly one boolean fit_intercept")
+    return {"fit_intercept": parameters["fit_intercept"]}
+
+
+def _linear_regression_execute(
+    X: Any,
+    y: Any,
+    *,
+    node_id: str,
+    parameters: dict[str, object],
+) -> dict[str, Any]:
+    """Fit one ordinary least-squares model and return its closed DAG outputs."""
+
+    params = _canonical_linear_regression_parameters(parameters)
+    X_ds = bind_X(X, missing_message="Train Linear Regression: missing required input X", allow_array=True).copy()
+    source_digest = X_ds.scientific_digest
+    y_value = bind_y(
+        y,
+        X=X_ds,
+        required=True,
+        infer_from_X=True,
+        dataset_as_data=True,
+        missing_message="Train Linear Regression: no target values found",
+    )
+    matrix = to_numpy_2d(X_ds, name="X", dtype=np.float64)
+    target = to_numpy_y(y_value, name="y", expected_samples=matrix.shape[0], dtype=np.float64)
+    response_columns = _response_input_columns(X_ds, y, _as_target_matrix(target).shape[1])
+    _bind_continuous_response_context(
+        X_ds,
+        y,
+        n_targets=_as_target_matrix(target).shape[1],
+    )
+    X_ds, target, population = clean_regression_target_with_population(
+        X_ds,
+        target,
+        model_label="Train Linear Regression",
+        source_scientific_digest=source_digest,
+        response_input_columns=response_columns,
+        preserve_1d=True,
+    )
+    matrix = to_numpy_2d(X_ds, name="X", dtype=np.float64)
+    if matrix.shape[0] < 2 or matrix.shape[1] < 1 or not np.isfinite(matrix).all():
+        raise ValueError("linear regression requires at least two finite samples and one feature")
+    if not np.isfinite(target).all():
+        raise ValueError("linear regression requires finite target values")
+
+    model = LinearRegression(fit_intercept=bool(params["fit_intercept"]))
+    model.fit(matrix, target)
+    target_matrix = _as_target_matrix(target)
+    predictions = _as_target_matrix(np.asarray(model.predict(matrix), dtype=np.float64))
+    outputs: dict[str, Any] = {
+        "model": model,
+        "y_pred": predictions.tolist(),
+        "predictions": predictions.tolist(),
+        "residuals": (target_matrix - predictions).tolist(),
+    }
+
+    r2_values, rmse_values = _target_metric_lists(target, predictions)
+    if target_matrix.shape[1] == 1:
+        outputs["r2"], outputs["rmse"] = r2_values[0], rmse_values[0]
+    outputs.update(
+        _lr_post_fit(
+            model=model,
+            X_data=matrix,
+            y_array=target,
+            X_ds=X_ds,
+            params=params,
+            node_id=node_id,
+        )
+    )
+    outputs["metadata"]["evidence_scope"] = "training_fit_only_not_predictive_validation"
+    if target_matrix.shape[1] > 1:
+        _omit_multitarget_summaries(outputs)
+        _omit_multitarget_summaries(outputs["metadata"])
+        _omit_multitarget_summaries(outputs["_model_artifact"]["metadata"])
+    outputs["population"] = population
+    outputs["_model_artifact"]["metadata"]["population"] = population
+    outputs["fitted_state"] = regression_application.make_application_state(
+        outputs["_model_artifact"], X_ds, y, operation="model.linear_regression", targets=target_matrix.shape[1]
+    )
+    return outputs
 
 
 @register_node
@@ -860,6 +1585,13 @@ class LinearRegressionNode(EstimatorSpecNode):
         ],
         output_ports=[
             PortMetadata(
+                name="population",
+                type_ref="spectrasherpa://types/RegressionPopulation/1.0",
+                required=True,
+                label="Training population",
+                description="Original row identities, admitted rows and missing-reference exclusions",
+            ),
+            PortMetadata(
                 name="model",
                 type_ref="spectrasherpa://types/RegressionModel/1.0",
                 required=True,
@@ -868,19 +1600,21 @@ class LinearRegressionNode(EstimatorSpecNode):
             ),
             PortMetadata(
                 name="predictions",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
                 required=True,
                 label="Predictions",
                 description="Predicted values (y_pred)",
             ),
             PortMetadata(
                 name="residuals",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
                 required=True,
                 label="Residuals",
                 description="Regression residuals (y_true - y_pred)",
             ),
         ],
+        policy=NodePolicy(),
+        canonical_parameter_validator=_canonical_linear_regression_parameters,
     )
 
     spec = EstimatorSpec(
@@ -888,3 +1622,114 @@ class LinearRegressionNode(EstimatorSpecNode):
         post_fit_fn=_lr_post_fit,
         estimator_import="from sklearn.linear_model import LinearRegression",
     )
+
+    def generate_python(
+        self,
+        inputs: dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> list[str]:
+        del use_scp
+        X_expression = inputs.get("X", inputs.get("default", "input_data"))
+        return [
+            f"{indent}# --- Canonical ordinary least-squares regression ({self.node_id}) ---",
+            f"{indent}from spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes "
+            "import _linear_regression_execute",
+            f"{indent}results[{self.node_id!r}] = _linear_regression_execute(",
+            f"{indent}    {X_expression}, {inputs.get('y', 'None')},",
+            f"{indent}    node_id={self.node_id!r}, parameters={self._resolve_params()!r},",
+            f"{indent})",
+        ]
+
+    async def execute(self, X: Any = None, y: Any = None, **kwargs: Any) -> dict[str, Any]:
+        del kwargs
+        return _linear_regression_execute(
+            X,
+            y,
+            node_id=self.node_id,
+            parameters=self._resolve_params(),
+        )
+
+    def fit_fitted_state(self, input_data: Any, target: Any) -> dict[str, object]:
+        """Fit the declared ordinary-least-squares state through the live authority."""
+
+        outputs = _linear_regression_execute(
+            input_data,
+            target,
+            node_id=self.node_id,
+            parameters=self._resolve_params(),
+        )
+        extracted = LinearRegressionExtract.from_sklearn(outputs["model"])
+        matrix = to_numpy_2d(bind_X(input_data, allow_array=True), name="input_data", dtype=np.float64)
+        metadata, arrays = extracted.to_artifact()
+        return {
+            "serializer": "spectrasherpa.model-artifact.linear-regression/1",
+            "fit_intercept": metadata["fit_intercept"],
+            "features": int(matrix.shape[1]),
+            "targets": metadata["target_count"],
+            "coef": arrays["coef"].tolist(),
+            "intercept": arrays["intercept"].tolist(),
+        }
+
+    def apply_fitted_state(self, input_data: Any, state: Any) -> np.ndarray:
+        """Apply only the closed, dimension-checked OLS serializer schema."""
+
+        from collections.abc import Mapping
+
+        required = {"serializer", "fit_intercept", "features", "targets", "coef", "intercept"}
+        if not isinstance(state, Mapping) or set(state) != required:
+            raise ValueError("linear-regression fitted state has an invalid closed schema")
+        if state["serializer"] != "spectrasherpa.model-artifact.linear-regression/1":
+            raise ValueError("linear-regression fitted state has an unsupported serializer")
+        features = state["features"]
+        targets = state["targets"]
+        if type(features) is not int or features < 1 or type(targets) is not int or targets < 1:
+            raise ValueError("linear-regression fitted state has invalid dimensions")
+        matrix = to_numpy_2d(bind_X(input_data, allow_array=True), name="input_data", dtype=np.float64)
+        if matrix.shape[1] != features:
+            raise ValueError("linear-regression application feature count does not match fitted state")
+        extracted = LinearRegressionExtract.from_artifact(
+            {"fit_intercept": state["fit_intercept"], "target_count": targets},
+            {
+                "coef": np.asarray(state["coef"], dtype=np.float64),
+                "intercept": np.asarray(state["intercept"], dtype=np.float64),
+            },
+        )
+        return extracted.predict(matrix)
+
+
+LinearRegressionNode.metadata.output_ports.append(
+    PortMetadata(
+        name="fitted_state",
+        type_ref="spectrasherpa://types/RegressionModel/1.0",
+        label="Fitted State",
+        description="Portable linear-regression state for Predict Regression.",
+    )
+)
+
+bind_stable_execution_contract(
+    LinearRegressionNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.FITTED_MODEL,
+    implementation_id="spectrasherpa.model.linear_regression",
+    implementation_version="1.0.0",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="filters_samples",
+    feature_effect="generates_features",
+    axis_effect="removes_axis",
+    unit_effect="changes_units",
+    resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
+    license_id="BSD-3-Clause",
+    help_reference="docs/nodes/regression.md",
+    implementation_distributions=("numpy", "scipy", "scikit-learn"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("scikit-learn", "1.9.0")),
+    citations=(
+        "rchemo::lmr linear-regression reference, https://search.r-project.org/CRAN/refmans/rchemo/html/lmr.html",
+    ),
+    implementation_modules=(fitted_state, _artifact_builder, regression_application),
+    fitted_state_serializer="spectrasherpa.model-artifact.linear-regression/1",
+    deterministic=True,
+    target_access=TargetAccess.FIT_ONLY,
+    group_access="none",
+)

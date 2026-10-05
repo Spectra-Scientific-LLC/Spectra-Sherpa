@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any
 
 import numpy as np
 
 from spectra_sherpa.app.lib.sherpa_dataset import AxisInfo
+from spectra_sherpa.app.services.dag.class_labels import prepare_class_labels as prepare_class_labels
 
 
 def make_labeled_coord(labels: Any, title: str) -> AxisInfo:
@@ -49,112 +49,19 @@ def coerce_numeric_array(values: Any) -> np.ndarray:
     return np.array(flat, dtype=float).reshape(arr.shape)
 
 
-def normalize_class_label_value(value: Any) -> str:
-    """Normalize one raw class label into a stable, human-readable string."""
-    if isinstance(value, np.generic):
-        value = value.item()
-
-    if value is None:
-        return ""
-
-    if isinstance(value, np.ndarray):
-        return normalize_class_label_value(value.tolist())
-
-    if isinstance(value, (list, tuple)):
-        # Common case for SpectroChemPy labels:
-        # [datetime(...), "ClassName"] -> use the readable trailing string.
-        for item in reversed(value):
-            if isinstance(item, str) and item.strip():
-                return item.strip()
-        normalized_parts = [normalize_class_label_value(item) for item in value]
-        normalized_parts = [part for part in normalized_parts if part]
-        if len(normalized_parts) == 1:
-            return normalized_parts[0]
-        if normalized_parts:
-            return " | ".join(normalized_parts)
-        return ""
-
-    if isinstance(value, dict):
-        for key in ("label", "name"):
-            candidate = value.get(key)
-            if isinstance(candidate, str) and candidate.strip():
-                return candidate.strip()
-        return str(value)
-
-    if isinstance(value, str):
-        trimmed = value.strip()
-        if trimmed.startswith("[") or trimmed.startswith("("):
-            quoted = re.findall(r"'([^']+)'|\"([^\"]+)\"", trimmed)
-            if quoted:
-                return str(quoted[-1][0] or quoted[-1][1])
-        return trimmed
-
-    return str(value)
-
-
-def normalize_class_label_vector(raw_labels: Any, n_samples: int) -> np.ndarray:
-    """
-    Normalize class labels while preserving one label per sample.
-
-    This specifically guards against nested label structures like
-    ``[[datetime, "ClassA"], [datetime, "ClassB"], ...]`` where a naive
-    ``flatten()`` would incorrectly produce 2x the sample count.
-    """
-    labels_obj = np.asarray(raw_labels, dtype=object)
-
-    if labels_obj.ndim == 0:
-        labels = [normalize_class_label_value(labels_obj.item())]
-    elif labels_obj.ndim == 1:
-        if n_samples > 0 and labels_obj.size == n_samples:
-            labels = [normalize_class_label_value(item) for item in labels_obj.tolist()]
-        elif n_samples > 0 and labels_obj.size % n_samples == 0:
-            reshaped = labels_obj.reshape(n_samples, -1)
-            labels = [normalize_class_label_value(row.tolist()) for row in reshaped]
-        else:
-            labels = [normalize_class_label_value(item) for item in labels_obj.tolist()]
-    else:
-        if n_samples > 0 and labels_obj.shape[0] == n_samples:
-            labels = [normalize_class_label_value(row.tolist()) for row in labels_obj]
-        elif n_samples > 0 and labels_obj.size == n_samples:
-            labels = [normalize_class_label_value(item) for item in labels_obj.reshape(-1).tolist()]
-        else:
-            labels = [normalize_class_label_value(item) for item in labels_obj.reshape(-1).tolist()]
-
-    return np.asarray(labels, dtype=object)
-
-
-def prepare_class_labels(raw_labels: Any, n_samples: int) -> np.ndarray:
-    """Build validated class-label vector aligned to X sample count."""
-    y_array = normalize_class_label_vector(raw_labels, n_samples)
-
-    if y_array.shape[0] != n_samples:
-        raise ValueError(
-            f"X and y must have the same number of samples (X={n_samples}, y={y_array.shape[0]}). "
-            "If labels came from dataset coordinates, ensure one class label exists per sample."
-        )
-
-    if any(str(label).strip() == "" for label in y_array):
-        raise ValueError("Class labels contain empty values. " "Please provide one non-empty class label per sample.")
-
-    return y_array
-
-
 def macro_specificity_score(y_true: Any, y_pred: Any, classes: Any) -> float:
     """Return one-vs-rest macro specificity for binary or multiclass labels."""
-    from sklearn.metrics import confusion_matrix
-
-    labels = np.asarray(classes)
-    cm = confusion_matrix(y_true, y_pred, labels=labels)
-    total = float(cm.sum())
-    if total <= 0:
+    observed = np.asarray(y_true, dtype=object).reshape(-1)
+    predicted = np.asarray(y_pred, dtype=object).reshape(-1)
+    labels = np.asarray(classes, dtype=object).reshape(-1)
+    if observed.shape != predicted.shape or observed.size == 0:
         return 0.0
 
     values: list[float] = []
-    for idx in range(len(labels)):
-        tp = float(cm[idx, idx])
-        fp = float(cm[:, idx].sum() - tp)
-        fn = float(cm[idx, :].sum() - tp)
-        tn = total - tp - fp - fn
+    for label in labels:
+        negative = observed != label
+        fp = float(np.count_nonzero(negative & (predicted == label)))
+        tn = float(np.count_nonzero(negative & (predicted != label)))
         denom = tn + fp
         values.append(float(tn / denom) if denom > 0 else 0.0)
     return float(np.mean(values)) if values else 0.0

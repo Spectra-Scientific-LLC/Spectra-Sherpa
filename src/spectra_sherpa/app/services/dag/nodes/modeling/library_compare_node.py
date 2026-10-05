@@ -2,15 +2,25 @@
 
 from __future__ import annotations
 
+import math
 import re
 from typing import Any
 
 import numpy as np
 from scipy.interpolate import PchipInterpolator
 
+from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag.io_contracts import bind_X, to_numpy_2d
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.core.axis_semantics import axis_semantics, require_compatible_axis_semantics
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    WorkerCapability,
+)
 
-from ...node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
+from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, NodeResult, PortMetadata, register_node
 
 
 def _axis_values(dataset: Any) -> np.ndarray | None:
@@ -265,6 +275,75 @@ def _split_label_filter(raw: Any) -> set[str]:
     return {part.strip().lower() for part in str(raw).split(",") if part.strip()}
 
 
+def _library_integer(value: object, name: str, *, minimum: int, maximum: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        raise ValueError(f"{name} must be an integer from {minimum} through {maximum}")
+    result = int(value)
+    if float(value) != float(result) or not minimum <= result <= maximum:
+        raise ValueError(f"{name} must be an integer from {minimum} through {maximum}")
+    return result
+
+
+def _library_number(value: object, name: str, *, minimum: float, maximum: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        raise ValueError(f"{name} must be a finite number from {minimum} through {maximum}")
+    result = float(value)
+    if not minimum <= result <= maximum:
+        raise ValueError(f"{name} must be a finite number from {minimum} through {maximum}")
+    return result
+
+
+def canonical_library_comparison_parameters(parameters: dict[str, object]) -> dict[str, object]:
+    """Close scoring, threshold, overlap, and label-filter semantics."""
+
+    expected = {
+        "baseline_gap_threshold",
+        "diagnostic_band_threshold",
+        "hqi_accept_threshold",
+        "hqi_mode",
+        "hqi_reject_threshold",
+        "library_filter",
+        "min_overlap_coverage",
+        "min_overlap_points",
+        "top_n",
+    }
+    if set(parameters) != expected:
+        raise ValueError("library comparison parameters do not match the closed grammar")
+    mode = parameters["hqi_mode"]
+    if mode not in {"whole_spectrum", "band_limited"}:
+        raise ValueError("hqi_mode must be whole_spectrum or band_limited")
+    raw_filter = parameters["library_filter"]
+    if not isinstance(raw_filter, str):
+        raise ValueError("library_filter must be comma-separated text")
+    labels = [part.strip() for part in raw_filter.split(",") if part.strip()]
+    folded = [label.casefold() for label in labels]
+    if len(folded) != len(set(folded)):
+        raise ValueError("library_filter may not repeat labels")
+    accept = _library_number(parameters["hqi_accept_threshold"], "hqi_accept_threshold", minimum=0, maximum=1000)
+    reject = _library_number(parameters["hqi_reject_threshold"], "hqi_reject_threshold", minimum=0, maximum=1000)
+    if reject > accept:
+        raise ValueError("hqi_reject_threshold may not exceed hqi_accept_threshold")
+    return {
+        "baseline_gap_threshold": _library_number(
+            parameters["baseline_gap_threshold"], "baseline_gap_threshold", minimum=0, maximum=2
+        ),
+        "diagnostic_band_threshold": _library_number(
+            parameters["diagnostic_band_threshold"], "diagnostic_band_threshold", minimum=0, maximum=1
+        ),
+        "hqi_accept_threshold": accept,
+        "hqi_mode": str(mode),
+        "hqi_reject_threshold": reject,
+        "library_filter": ",".join(labels),
+        "min_overlap_coverage": _library_number(
+            parameters["min_overlap_coverage"], "min_overlap_coverage", minimum=0, maximum=1
+        ),
+        "min_overlap_points": _library_integer(
+            parameters["min_overlap_points"], "min_overlap_points", minimum=2, maximum=1_000_000
+        ),
+        "top_n": _library_integer(parameters["top_n"], "top_n", minimum=1, maximum=10_000),
+    }
+
+
 def _pchip_to_grid(source_axis: np.ndarray, source_values: np.ndarray, target_axis: np.ndarray) -> np.ndarray:
     if source_axis.size < 2:
         return np.full(target_axis.shape, np.nan, dtype=float)
@@ -409,6 +488,7 @@ class CompareVsLibraryNode(Node):
     """Rank sample spectra against a library My Dataset by spectral similarity."""
 
     metadata = NodeMetadata(
+        policy=NodePolicy(),
         node_type="analysis.compare_library",
         category="exploratory",
         label="Compare vs. Library",
@@ -420,6 +500,8 @@ class CompareVsLibraryNode(Node):
                 param_type="number",
                 default=10,
                 min_value=1,
+                max_value=10000,
+                max_value_reason="Bounds ranking output size and pairwise local-worker cost.",
                 step=1,
                 description="Number of ranked library species to report for each sample spectrum",
                 required=False,
@@ -450,6 +532,8 @@ class CompareVsLibraryNode(Node):
                 param_type="number",
                 default=0.2,
                 min_value=0,
+                max_value=1,
+                max_value_reason="A relative diagnostic-band threshold is a fraction of the library peak.",
                 step=0.01,
                 description="Library relative peak threshold used to define band-limited HQI regions",
                 required=False,
@@ -460,6 +544,8 @@ class CompareVsLibraryNode(Node):
                 param_type="number",
                 default=750,
                 min_value=0,
+                max_value=1000,
+                max_value_reason="The declared HQI scale spans zero through 1000.",
                 step=1,
                 description="Mark candidates at or above this HQI as auto-selected for review",
                 required=False,
@@ -470,6 +556,8 @@ class CompareVsLibraryNode(Node):
                 param_type="number",
                 default=500,
                 min_value=0,
+                max_value=1000,
+                max_value_reason="The declared HQI scale spans zero through 1000.",
                 step=1,
                 description=(
                     "If a sample's best HQI is below this value, mark every candidate for that sample as rejected"
@@ -482,6 +570,8 @@ class CompareVsLibraryNode(Node):
                 param_type="number",
                 default=0.5,
                 min_value=0,
+                max_value=1,
+                max_value_reason="Overlap coverage is a fraction of each spectrum's measured span.",
                 step=0.05,
                 description=(
                     "Minimum fraction of both spectra's x-axis span required before strong or excellent HQI labels "
@@ -495,6 +585,8 @@ class CompareVsLibraryNode(Node):
                 param_type="number",
                 default=20,
                 min_value=2,
+                max_value=1000000,
+                max_value_reason="Bounds resampled vectors and pairwise local-worker memory.",
                 step=1,
                 description="Minimum matched x-axis points required before strong or excellent HQI labels are allowed",
                 required=False,
@@ -505,6 +597,8 @@ class CompareVsLibraryNode(Node):
                 param_type="number",
                 default=0.25,
                 min_value=0,
+                max_value=2,
+                max_value_reason="The maximum gap between two similarities on [-1, 1] is two.",
                 step=0.05,
                 description=(
                     "Flag matches where uncentered cosine exceeds Pearson correlation by this amount, suggesting "
@@ -529,7 +623,59 @@ class CompareVsLibraryNode(Node):
                 accepted_data_roles=["X_spectra"],
             ),
         ],
-        output_type="dict",
+        output_type="Comparison",
+        output_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/Comparison/1.0",
+                required=True,
+                label="Library Ranking",
+                description="Per-sample ranked spectral-library comparison with overlap and confidence caveats",
+            ),
+            PortMetadata(
+                name="data",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Ranked Rows",
+                description="Closed row records for every retained sample-library candidate",
+            ),
+            PortMetadata(
+                name="metadata",
+                type_ref="spectrasherpa://types/Any/1.0",
+                required=True,
+                label="Comparison Evidence",
+                description="Scoring, overlap, alignment, threshold, and known-answer context",
+            ),
+            PortMetadata(
+                name="ranking",
+                type_ref="spectrasherpa://types/Comparison/1.0",
+                required=True,
+                label="Library Ranking",
+                description="Ranked rows paired with their comparison evidence",
+            ),
+            PortMetadata(
+                name="hqi_report",
+                type_ref="spectrasherpa://types/Comparison/1.0",
+                required=True,
+                label="HQI Report",
+                description="Scientist-facing HQI candidate table with overlap and confidence caveats",
+            ),
+            PortMetadata(
+                name="best_matches",
+                type_ref="spectrasherpa://types/Comparison/1.0",
+                required=True,
+                label="Best Matches",
+                description="One highest-ranked library candidate per sample spectrum",
+            ),
+            PortMetadata(
+                name="plots",
+                type_ref="spectrasherpa://types/Visualization/1.0",
+                required=True,
+                label="Comparison Plots",
+                description="Aligned sample and library overlays for visual review",
+            ),
+        ],
+        canonical_parameter_validator=canonical_library_comparison_parameters,
         diagnostics=[
             "top_hqi",
             "best_match",
@@ -549,9 +695,31 @@ class CompareVsLibraryNode(Node):
         ],
     )
 
-    async def execute(self, sample: Any = None, library: Any = None, **_: Any) -> NodeResult:
+    def _execute_sync(  # noqa: C901 - existing closed metric and resampling dispatch
+        self, sample: Any = None, library: Any = None, **_: Any
+    ) -> NodeResult:
+        parameters = self.metadata.canonicalize_parameters(self.parameters)
         sample_ds = bind_X(sample, missing_message="Compare vs. Library requires sample spectra")
         library_ds = bind_X(library, missing_message="Compare vs. Library requires library spectra")
+        sample_feature_axis = sample_ds.feature_axis
+        library_feature_axis = library_ds.feature_axis
+        if sample_feature_axis is None or library_feature_axis is None:
+            raise ValueError("Compare vs. Library requires explicit feature-axis semantics")
+        require_compatible_axis_semantics(
+            axis_semantics(
+                axis_class=type(sample_feature_axis).__name__,
+                title=sample_feature_axis.title,
+                units=sample_feature_axis.units,
+                quantity=sample_feature_axis.quantity,
+            ),
+            axis_semantics(
+                axis_class=type(library_feature_axis).__name__,
+                title=library_feature_axis.title,
+                units=library_feature_axis.units,
+                quantity=library_feature_axis.quantity,
+            ),
+            context="Compare vs. Library",
+        )
         X_sample = to_numpy_2d(sample_ds, name="sample", dtype=np.float64)
         X_library = to_numpy_2d(library_ds, name="library", dtype=np.float64)
         sample_axis = _axis_values(sample_ds)
@@ -564,7 +732,7 @@ class CompareVsLibraryNode(Node):
         sample_labels = _sample_labels(sample_ds, "Sample")
         library_labels = _sample_labels(library_ds, "Library")
         known_components = _known_components_by_sample(sample_ds, X_sample.shape[0])
-        label_filter = _split_label_filter(self.parameters.get("library_filter"))
+        label_filter = _split_label_filter(parameters["library_filter"])
         if label_filter:
             keep = [i for i, label in enumerate(library_labels) if label.lower() in label_filter]
             if not keep:
@@ -576,20 +744,13 @@ class CompareVsLibraryNode(Node):
         library_order = np.argsort(library_axis)
         sample_axis_sorted = sample_axis[sample_order]
         library_axis_sorted = library_axis[library_order]
-        accept_threshold = float(self.parameters.get("hqi_accept_threshold", 750) or 750)
-        reject_threshold = float(self.parameters.get("hqi_reject_threshold", 500) or 500)
-        accept_threshold = min(1000.0, max(0.0, accept_threshold))
-        reject_threshold = min(1000.0, max(0.0, reject_threshold))
-        hqi_mode = str(self.parameters.get("hqi_mode", "whole_spectrum") or "whole_spectrum")
-        if hqi_mode not in {"whole_spectrum", "band_limited"}:
-            hqi_mode = "whole_spectrum"
-        diagnostic_band_threshold = float(self.parameters.get("diagnostic_band_threshold", 0.2) or 0.0)
-        diagnostic_band_threshold = min(1.0, max(0.0, diagnostic_band_threshold))
-        min_overlap_coverage = float(self.parameters.get("min_overlap_coverage", 0.5) or 0.0)
-        min_overlap_coverage = min(1.0, max(0.0, min_overlap_coverage))
-        min_overlap_points = max(2, int(float(self.parameters.get("min_overlap_points", 20) or 20)))
-        baseline_gap_threshold = float(self.parameters.get("baseline_gap_threshold", 0.25) or 0.25)
-        baseline_gap_threshold = max(0.0, baseline_gap_threshold)
+        accept_threshold = float(parameters["hqi_accept_threshold"])
+        reject_threshold = float(parameters["hqi_reject_threshold"])
+        hqi_mode = str(parameters["hqi_mode"])
+        diagnostic_band_threshold = float(parameters["diagnostic_band_threshold"])
+        min_overlap_coverage = float(parameters["min_overlap_coverage"])
+        min_overlap_points = int(parameters["min_overlap_points"])
+        baseline_gap_threshold = float(parameters["baseline_gap_threshold"])
         sample_spacing = _median_spacing(sample_axis_sorted)
         library_spacing = _median_spacing(library_axis_sorted)
         resample_ratio = None
@@ -763,7 +924,7 @@ class CompareVsLibraryNode(Node):
             sample_rows.sort(key=lambda row: (row["hqi"], row["cosine"]), reverse=True)
             for sample_rank, row in enumerate(sample_rows, start=1):
                 row["sample_rank"] = sample_rank
-        top_n = max(1, int(float(self.parameters.get("top_n", 10) or 10)))
+        top_n = int(parameters["top_n"])
         ranked = [row for sample_rows in rows_by_sample.values() for row in sample_rows[:top_n]]
         ranked.sort(key=lambda row: (int(row["sample_index"]), int(row["sample_rank"])))
         global_ranked = rows[:top_n]
@@ -1053,6 +1214,7 @@ class CompareVsLibraryNode(Node):
         }
         return NodeResult(
             outputs={
+                "default": {"data": report_rows, "metadata": metadata},
                 "data": report_rows,
                 "metadata": metadata,
                 "ranking": {"data": report_rows, "metadata": metadata},
@@ -1140,3 +1302,62 @@ class CompareVsLibraryNode(Node):
                 "n_library_spectra": int(X_library.shape[0]),
             },
         )
+
+    async def execute(self, sample: Any = None, library: Any = None, **kwargs: Any) -> NodeResult:
+        return self._execute_sync(sample=sample, library=library, **kwargs)
+
+    def supports_python_export(self) -> bool:
+        return True
+
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        del use_scp
+        parameters = self.metadata.canonicalize_parameters(self.parameters)
+        return [
+            f"{indent}from spectra_sherpa.app.services.dag.nodes.modeling.library_compare_node "
+            "import execute_library_comparison",
+            f"{indent}_comparison_result = execute_library_comparison(",
+            f"{indent}    {inputs.get('sample', 'sample')}, {inputs.get('library', 'library')},",
+            f"{indent}    parameters={parameters!r}, node_id={self.node_id!r},",
+            f"{indent})",
+            f"{indent}results[{self.node_id!r}] = _comparison_result.outputs",
+        ]
+
+
+def execute_library_comparison(
+    sample: Any,
+    library: Any,
+    *,
+    parameters: dict[str, object],
+    node_id: str,
+) -> NodeResult:
+    """Run the exact live library-comparison authority for exported DAGs."""
+
+    return CompareVsLibraryNode(node_id, parameters)._execute_sync(sample=sample, library=library)
+
+
+bind_stable_execution_contract(
+    CompareVsLibraryNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.EVALUATOR,
+    implementation_id="spectrasherpa.analysis.compare_library",
+    implementation_version="1.0.0",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="aggregates_samples",
+    feature_effect="preserves_features",
+    axis_effect="preserves_axis",
+    unit_effect="requires_compatible_units",
+    resource_hints={"timeout_seconds": 60, "cpu_seconds": 60, "memory_bytes": 1_073_741_824},
+    license_id="Apache-2.0",
+    help_reference="docs/nodes/exploratory.md",
+    implementation_modules=(dag_io_contracts,),
+    implementation_distributions=("numpy", "scipy"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1")),
+    citations=(
+        "Stein and Scott, Journal of the American Society for Mass Spectrometry 1994, doi:10.1016/1044-0305(94)87009-8",
+        "Fritsch and Butland, SIAM Journal on Scientific and Statistical Computing 1984, doi:10.1137/0905021",
+    ),
+)
+
+
+__all__ = ["CompareVsLibraryNode", "canonical_library_comparison_parameters", "execute_library_comparison"]

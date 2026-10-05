@@ -12,7 +12,7 @@ exactly what's in a model without loading the arrays.
 
 from __future__ import annotations
 
-import hashlib
+import errno
 import io
 import json
 import logging
@@ -22,20 +22,40 @@ import tempfile
 import time
 import uuid as _uuid
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
+from threading import Lock
 from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib.file_permissions import restrict_file_descriptor
+from spectra_sherpa.core.model_artifact import (
+    CANONICAL_MODEL_ARTIFACT_AUTHORITY,
+    ORDINARY_MODEL_ARTIFACT_AUTHORITY,
+    ModelArtifactIntegrityError,
+    ModelManifestJSONError,
+    assign_model_artifact_authority,
+    experiment_training_dataset_id,
+    parse_model_manifest_json,
+    require_model_artifact_authority,
+)
+from spectra_sherpa.core.model_artifact import (
+    require_artifact_identity as _require_artifact_identity,
+)
+from spectra_sherpa.core.model_artifact import (
+    sha256_file as _sha256_file,
+)
+
 logger = logging.getLogger(__name__)
 
 
-class ModelArtifactIntegrityError(RuntimeError):
-    """Raised when a model artifact's arrays.npz does not match its stored hash.
+class ModelArtifactCollisionError(FileExistsError):
+    """A create-new publication encountered an existing artifact identity."""
 
-    A corrupt/truncated npz must fail loud at load time
-    rather than silently feeding wrong arrays into a prediction.
-    """
+
+_PUBLICATION_THREAD_LOCKS_GUARD = Lock()
+_PUBLICATION_THREAD_LOCKS: dict[str, Lock] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +80,67 @@ def get_model_store() -> ModelStore:
     if _store is None:
         raise RuntimeError("ModelStore not initialized — call init_model_store(base_dir) at startup")
     return _store
+
+
+def verify_model_artifact_storage_record(model: Any) -> None:
+    """Cross-bind one owner-scoped DB row to its verified stored artifact."""
+
+    store = get_model_store()
+    manifest, arrays = store.load(model.artifact_uid, verify=True)
+    if manifest.get("integrity_hash") != model.integrity_hash:
+        raise ModelArtifactIntegrityError("stored model digest contradicts its database record")
+    authority = require_model_artifact_authority(manifest)
+    declared_origin = getattr(model, "artifact_origin", None)
+    if declared_origin is None:
+        if authority != ORDINARY_MODEL_ARTIFACT_AUTHORITY:
+            raise ModelArtifactIntegrityError("ordinary model database record contradicts stored authority")
+        linked_dataset_id = experiment_training_dataset_id(manifest)
+        if linked_dataset_id is not None and linked_dataset_id != getattr(model, "training_dataset_id", None):
+            raise ModelArtifactIntegrityError("ordinary model training source contradicts its database record")
+        if manifest.get("training_scientific_digest") != getattr(model, "training_scientific_digest", None):
+            raise ModelArtifactIntegrityError("ordinary model scientific training identity contradicts its record")
+        return
+
+    from spectra_sherpa.app.services.canonical_model_bridge import (
+        CANONICAL_MODEL_ORIGIN,
+        CanonicalModelBridgeError,
+        validate_canonical_plsda_model_artifact,
+    )
+
+    training_dataset_id = getattr(model, "training_dataset_id", None)
+    if (
+        declared_origin != CANONICAL_MODEL_ORIGIN
+        or authority != CANONICAL_MODEL_ARTIFACT_AUTHORITY
+        or training_dataset_id is None
+    ):
+        raise ModelArtifactIntegrityError("canonical model database record has unsupported authority")
+    try:
+        lineage = validate_canonical_plsda_model_artifact(
+            manifest,
+            arrays,
+            expected_training_dataset_id=training_dataset_id,
+        )
+        classes = json.loads(model.classes_json) if model.classes_json is not None else None
+        feature_axis = json.loads(model.feature_axis_json) if model.feature_axis_json is not None else None
+        preprocessing = json.loads(model.preprocessing_summary) if model.preprocessing_summary is not None else None
+    except (CanonicalModelBridgeError, TypeError, ValueError) as exc:
+        raise ModelArtifactIntegrityError("canonical model scientific lineage is invalid") from exc
+    if (
+        manifest.get("artifact_uid") != model.artifact_uid
+        or manifest.get("integrity_hash") != model.integrity_hash
+        or manifest.get("model_type") != model.model_type
+        or manifest.get("node_id") != model.node_id
+        or manifest.get("n_features") != model.n_features
+        or manifest.get("n_components") != model.n_components
+        or manifest.get("classes") != classes
+        or manifest.get("feature_axis") != feature_axis
+        or manifest.get("preprocessing_chain") != preprocessing
+        or manifest.get("training_data_hash") != model.training_data_hash
+        or manifest.get("training_scientific_digest") != model.training_scientific_digest
+        or lineage.get("lineage_digest") != model.canonical_lineage_digest
+        or lineage.get("validation_execution_digest") != model.validation_evidence_digest
+    ):
+        raise ModelArtifactIntegrityError("stored model artifact contradicts its database record")
 
 
 # ---------------------------------------------------------------------------
@@ -99,6 +180,26 @@ class ModelStore:
         str
             SHA-256 hex digest of the saved arrays.npz file.
         """
+        return self._save(artifact_uid, manifest, arrays, replace_existing=True)
+
+    def save_new(
+        self,
+        artifact_uid: str,
+        manifest: dict[str, Any],
+        arrays: dict[str, np.ndarray],
+    ) -> str:
+        """Atomically create one artifact without replacing an existing UID."""
+
+        return self._save(artifact_uid, manifest, arrays, replace_existing=False)
+
+    def _save(
+        self,
+        artifact_uid: str,
+        manifest: dict[str, Any],
+        arrays: dict[str, np.ndarray],
+        *,
+        replace_existing: bool,
+    ) -> str:
         artifact_dir = self._artifact_dir(artifact_uid)
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
@@ -128,6 +229,7 @@ class ModelStore:
             manifest["arrays"] = array_inventory
             manifest["integrity_hash"] = integrity_hash
             manifest["artifact_uid"] = artifact_uid
+            assign_model_artifact_authority(manifest)
 
             with open(manifest_path, "w") as f:
                 json.dump(manifest, f, indent=2, default=_json_default)
@@ -136,8 +238,28 @@ class ModelStore:
             _fsync_file(npz_path)
             _fsync_dir(staging)
 
-            self._promote(staging, artifact_dir)
-            _fsync_dir(self.models_dir)
+            # Replacement and create-only publication share one per-identity
+            # claim.  In particular, create-only must not observe the brief
+            # absent-target window while replacement has moved the old
+            # generation aside for its crash-recoverable promotion.
+            with self._publication_claim(artifact_uid):
+                try:
+                    if replace_existing:
+                        self._promote(staging, artifact_dir)
+                    else:
+                        self._promote_new(staging, artifact_dir)
+                    _fsync_dir(self.models_dir)
+                except Exception:
+                    # A create-only promotion can fail after the rename (for
+                    # example while fsyncing the parent).  If staging has
+                    # disappeared, this invocation owns the newly promoted
+                    # target; remove it while the same UID claim is held.  A
+                    # collision leaves staging present and must never delete
+                    # the pre-existing winner.
+                    if not replace_existing and not staging.exists() and artifact_dir.exists():
+                        shutil.rmtree(artifact_dir)
+                        _fsync_dir(self.models_dir)
+                    raise
         finally:
             # On the happy path ``staging`` was renamed away and no
             # longer exists; this only fires if promotion failed.
@@ -151,6 +273,80 @@ class ModelStore:
             integrity_hash[:12],
         )
         return integrity_hash
+
+    @staticmethod
+    def _promote_new(staging: Path, target: Path) -> None:
+        """Atomically claim an absent artifact identity without overwrite."""
+
+        try:
+            target.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            raise ModelArtifactCollisionError(f"Model artifact identity already exists: {target.name}")
+        try:
+            os.rename(staging, target)
+        except OSError as exc:
+            if exc.errno in {errno.EEXIST, errno.ENOTEMPTY}:
+                raise ModelArtifactCollisionError(f"Model artifact identity already exists: {target.name}") from exc
+            raise
+
+    @contextmanager
+    def _publication_claim(self, artifact_uid: str):
+        """Hold one process- and host-wide exclusive artifact identity claim.
+
+        The persistent lock file is harmless after a crash: the operating
+        system releases the advisory lock with the file descriptor.  A local
+        thread lock is retained as well because advisory-lock behavior for two
+        descriptors in one process differs across supported platforms.
+        """
+
+        lock_root = self.models_dir.parent / ".model-publication-locks"
+        lock_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        root_stat = lock_root.lstat()
+        if not lock_root.is_dir() or lock_root.is_symlink():
+            raise RuntimeError("Model publication lock root is not a private directory")
+        if root_stat.st_mode & 0o077:
+            os.chmod(lock_root, 0o700)
+        lock_name = _uuid.uuid5(_uuid.NAMESPACE_URL, f"spectrasherpa:model:{artifact_uid}").hex + ".lock"
+        lock_path = lock_root / lock_name
+        lock_key = str(lock_path.resolve())
+        with _PUBLICATION_THREAD_LOCKS_GUARD:
+            thread_lock = _PUBLICATION_THREAD_LOCKS.setdefault(lock_key, Lock())
+        with thread_lock:
+            flags = os.O_RDWR | os.O_CREAT
+            flags |= getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(lock_path, flags, 0o600)
+            unlock = None
+            try:
+                restrict_file_descriptor(fd)
+                try:
+                    import fcntl
+                except ImportError:  # pragma: no cover - Windows only
+                    try:
+                        import msvcrt
+                    except ImportError as exc:  # pragma: no cover - unsupported platform
+                        raise RuntimeError("No safe model publication lock is available") from exc
+                    if os.fstat(fd).st_size == 0:
+                        os.write(fd, b"0")
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+
+                    def unlock() -> None:
+                        msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+
+                else:
+                    fcntl.flock(fd, fcntl.LOCK_EX)
+
+                    def unlock() -> None:
+                        fcntl.flock(fd, fcntl.LOCK_UN)
+
+                yield
+            finally:
+                if unlock is not None:
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    unlock()
+                os.close(fd)
 
     def _promote(self, staging: Path, target: Path) -> None:
         """Atomically move a fully-written staging dir into ``target``.
@@ -189,8 +385,15 @@ class ModelStore:
         manifest_path = self._artifact_dir(artifact_uid) / "manifest.json"
         if not manifest_path.exists():
             raise FileNotFoundError(f"Model artifact not found: {artifact_uid}")
-        with open(manifest_path) as f:
-            return dict(json.load(f))
+        with open(manifest_path, "rb") as f:
+            try:
+                manifest = parse_model_manifest_json(f.read())
+            except ModelManifestJSONError as exc:
+                raise ModelArtifactIntegrityError(
+                    f"Model artifact {artifact_uid}: manifest JSON is ambiguous or malformed"
+                ) from exc
+        require_model_artifact_authority(manifest)
+        return manifest
 
     def load_arrays(self, artifact_uid: str) -> dict[str, np.ndarray]:
         """Load arrays.npz → dict of numpy arrays."""
@@ -220,7 +423,24 @@ class ModelStore:
         manifest = self.load_manifest(artifact_uid)
         if verify:
             self._assert_integrity(artifact_uid, manifest)
+        _require_artifact_identity(manifest, expected_uid=artifact_uid)
         arrays = self.load_arrays(artifact_uid)
+        from spectra_sherpa.app.services.dag.nodes.classification.plsda_state import (
+            canonical_model_validation_required,
+        )
+
+        if canonical_model_validation_required(manifest):
+            from spectra_sherpa.app.services.canonical_model_bridge import (
+                CanonicalModelBridgeError,
+                validate_canonical_plsda_model_artifact,
+            )
+
+            try:
+                validate_canonical_plsda_model_artifact(manifest, arrays)
+            except CanonicalModelBridgeError as exc:
+                raise ModelArtifactIntegrityError(
+                    f"Model artifact {artifact_uid}: canonical scientific lineage is invalid"
+                ) from exc
         return manifest, arrays
 
     def _assert_integrity(self, artifact_uid: str, manifest: dict[str, Any]) -> None:
@@ -274,19 +494,10 @@ class ModelStore:
             raise ValueError(f"Invalid artifact_uid: path traversal detected ({artifact_uid!r})")
         return resolved
 
+    def artifact_directory(self, artifact_uid: str) -> str:
+        """Return the root-confined directory recorded by executor evidence."""
 
-# ---------------------------------------------------------------------------
-# Utilities
-# ---------------------------------------------------------------------------
-
-
-def _sha256_file(path: Path) -> str:
-    """Compute SHA-256 hex digest of a file."""
-    h = hashlib.sha256()
-    with open(path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
+        return str(self._artifact_dir(artifact_uid))
 
 
 def _fsync_file(path: Path) -> None:
@@ -424,6 +635,10 @@ async def persist_model_artifact_records(
             metrics_json=art.get("metrics_json"),
             preprocessing_summary=art.get("preprocessing_summary"),
             training_data_hash=art.get("training_data_hash"),
+            training_scientific_digest=art.get("training_scientific_digest"),
+            artifact_origin=art.get("artifact_origin"),
+            canonical_lineage_digest=art.get("canonical_lineage_digest"),
+            validation_evidence_digest=art.get("validation_evidence_digest"),
             tags=list(art.get("tags") or []),
             is_deploy_ready=bool(art.get("is_deploy_ready", False)),
         )

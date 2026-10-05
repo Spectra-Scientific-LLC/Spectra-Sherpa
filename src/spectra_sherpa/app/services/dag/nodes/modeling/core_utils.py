@@ -116,7 +116,7 @@ def make_safe_coord(values: Any, title: Optional[str] = None) -> Any:
             coord.title = title
         return coord
 
-    # Coord-like object (NDDataset coordinate from SpectroChemPy) — convert to AxisInfo
+    # Coordinate-like object — convert to the canonical AxisInfo projection.
     if hasattr(values, "data") and hasattr(values, "copy"):
         labels = None
         raw_labels = getattr(values, "labels", None)

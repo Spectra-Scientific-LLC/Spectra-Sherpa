@@ -28,7 +28,7 @@ def build_model_artifact(
     Args:
         extract: An Extract dataclass (PLSExtract, PCAExtract, etc.) with
             a ``to_artifact()`` method returning ``(metadata, arrays)``.
-        input_dataset: The training input (SherpaDataset or NDDataset).
+        input_dataset: The canonical SherpaDataset training input.
             Used to extract feature_axis, feature_mask, and preprocessing
             chain for the manifest.
         node_id: Optional node ID for provenance.
@@ -49,6 +49,7 @@ def build_model_artifact(
 
     # --- Training data identity ---
     _enrich_with_training_data_hash(metadata, input_dataset)
+    _enrich_with_training_scientific_identity(metadata, input_dataset)
 
     # --- Target identity ---
     _enrich_with_target_info(metadata, input_dataset)
@@ -76,8 +77,18 @@ def _enrich_with_feature_info(metadata: dict, dataset: Any) -> None:
 
         fa = getattr(dataset, "feature_axis", None)
         if fa is not None:
-            if getattr(fa, "units", None) is not None:
-                metadata["feature_axis_units"] = fa.units
+            from spectra_sherpa.core.axis_semantics import axis_semantics
+
+            semantics = axis_semantics(
+                axis_class=type(fa).__name__,
+                title=getattr(fa, "title", None),
+                units=getattr(fa, "units", None),
+                quantity=getattr(fa, "quantity", None),
+            )
+            if semantics.units is not None:
+                metadata["feature_axis_units"] = semantics.units
+            if semantics.quantity is not None:
+                metadata["feature_axis_quantity"] = semantics.quantity.value
             if getattr(fa, "title", None) is not None:
                 metadata["feature_axis_title"] = fa.title
             metadata["feature_axis_class"] = type(fa).__name__
@@ -201,6 +212,22 @@ def _enrich_with_training_data_hash(metadata: dict, dataset: Any) -> None:
         logger.debug("Could not compute training_data_hash", exc_info=True)
 
 
+def _enrich_with_training_scientific_identity(metadata: dict, dataset: Any) -> None:
+    """Bind the model to the complete admitted training-dataset meaning.
+
+    ``training_data_hash`` deliberately remains the stable matrix-only
+    compatibility field.  It cannot distinguish two DSO datasets whose X
+    values are identical but whose axes, class sets, include state, layout, or
+    source history differ.  The canonical scientific digest closes that gap
+    without introducing another field-by-field model authority.
+    """
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+    if isinstance(dataset, SherpaDataset):
+        metadata["training_scientific_projection_schema"] = dataset.manifest.scientific_projection_schema
+        metadata["training_scientific_digest"] = dataset.scientific_digest
+
+
 def _enrich_with_target_info(metadata: dict, dataset: Any) -> None:
     """Record target interpretation used for supervised artifacts."""
     tc = getattr(dataset, "target_context", None)
@@ -218,7 +245,11 @@ def _enrich_with_target_info(metadata: dict, dataset: Any) -> None:
             metadata["available_target_names"] = normalized_names
     elif normalized_names:
         metadata["target_names"] = normalized_names
-        metadata["target_mode"] = "multi"
+        if len(normalized_names) == 1:
+            metadata["selected_target"] = normalized_names[0]
+            metadata["target_mode"] = "single"
+        else:
+            metadata["target_mode"] = "multi"
     target_type = getattr(tc, "target_type", None)
     if target_type:
         metadata["target_type"] = str(target_type)

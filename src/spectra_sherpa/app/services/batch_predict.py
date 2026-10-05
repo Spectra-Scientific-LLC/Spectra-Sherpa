@@ -7,9 +7,11 @@ and stores per-file results as BatchPrediction rows under a parent ExecutionRun.
 
 from __future__ import annotations
 
+import asyncio
 import fnmatch
 import logging
 import time
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,22 @@ from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.workflow import Workflow
 
 logger = logging.getLogger(__name__)
+
+# Directory discovery is an operational input boundary, not an invitation to
+# materialize an arbitrarily large server directory. These deliberately
+# generous ceilings cover ordinary laboratory drop folders while keeping both
+# enumeration time and the in-memory result list finite.
+MAX_DIRECTORY_ENTRIES = 10_000
+MAX_DISCOVERED_FILES = 1_000
+
+
+@dataclass(frozen=True)
+class WorkflowDatasetExecution:
+    """Completed per-dataset execution projected outside its worker thread."""
+
+    executor: Any
+    results: dict[str, Any]
+    serialized_exit_results: dict[str, Any]
 
 
 def validate_folder_path(folder_path: str) -> Path:
@@ -77,6 +95,8 @@ def discover_files(
     *,
     exclude_names: set[str] | None = None,
     settle_time_seconds: int = 2,
+    max_directory_entries: int = MAX_DIRECTORY_ENTRIES,
+    max_discovered_files: int = MAX_DISCOVERED_FILES,
 ) -> list[Path]:
     """
     Discover spectral files matching a glob pattern in a server folder.
@@ -107,7 +127,14 @@ def discover_files(
     exclude = exclude_names or set()
     matched: list[Path] = []
 
+    entries_seen = 0
     for f in folder.iterdir():
+        entries_seen += 1
+        if entries_seen > max_directory_entries:
+            raise ValueError(
+                f"Folder contains more than {max_directory_entries:,} entries. "
+                "Move the intended spectra into a smaller batch folder."
+            )
         if not f.is_file():
             continue
         # Skip hidden / system files
@@ -133,17 +160,22 @@ def discover_files(
             if not fnmatch.fnmatch(f.name.lower(), file_pattern.lower()):
                 continue
         matched.append(f)
+        if len(matched) > max_discovered_files:
+            raise ValueError(
+                f"Folder contains more than {max_discovered_files:,} matching files. "
+                "Process the spectra in smaller batches."
+            )
 
     matched.sort(key=lambda p: p.name.lower())
     return matched
 
 
-def load_single_file(file_path: Path) -> Any:
+def load_single_file(file_path: Path, *, asset_id: str | None = None) -> Any:
     """
     Load a single spectral file into a SherpaDataset.
 
-    Uses ``get_reader_for_extension()`` to pick the correct SpectroChemPy reader,
-    then ensures the result is 2-D.
+    Uses the frozen structural ingestion registry and requires one explicit
+    asset; multi-asset sources are never flattened for prediction.
 
     Returns:
         SherpaDataset with shape (n_samples, n_features).
@@ -151,24 +183,27 @@ def load_single_file(file_path: Path) -> Any:
     Raises:
         ValueError: If the extension is unsupported or reading fails.
     """
-    from spectra_sherpa.app.core.config import get_reader_for_extension
-    from spectra_sherpa.app.lib.scp_compat import require_scp, scp
+    from spectra_sherpa.app.lib.reference_materialization import materialize_reference_member
+    from spectra_sherpa.app.lib.registered_reference_storage import read_registered_reference_sidecar
+    from spectra_sherpa.io import ingest, select_asset
 
-    require_scp("Batch prediction")
+    registered_reference = read_registered_reference_sidecar(file_path)
+    if registered_reference is not None:
+        projection_id = str(registered_reference["projection_id"])
+        if asset_id is not None and asset_id != projection_id:
+            raise ValueError("requested asset differs from the registered reference projection")
+        materialized = materialize_reference_member(file_path, projection_id)
+        if dict(materialized.portable_reference) != dict(registered_reference):
+            raise ValueError("registered reference identity changed during prediction admission")
+        return materialized.dataset
 
-    ext = file_path.suffix
-    reader_name = get_reader_for_extension(ext)
-    reader_fn = getattr(scp, reader_name)
-    dataset = reader_fn(str(file_path))
-
-    # Ensure 2-D
-    if dataset.ndim == 1:
-        dataset = dataset.reshape(1, -1)
-
-    return dataset
+    result = ingest(file_path)
+    return select_asset(result, asset_id=asset_id).dataset
 
 
-def build_executor_from_workflow(workflow: Workflow) -> Any:
+def build_executor_from_workflow(
+    workflow: Workflow, *, canonical_read_grant: Any = None, uncertainty_provider: Any = None
+) -> Any:
     """
     Build a DAGExecutor from a saved workflow's nodes and edges.
 
@@ -180,8 +215,14 @@ def build_executor_from_workflow(workflow: Workflow) -> Any:
     from spectra_sherpa.app.services.dag import DAGExecutor
     from spectra_sherpa.app.services.dag import WorkflowEdge as DAGEdge
     from spectra_sherpa.app.services.dag import WorkflowNode as DAGNode
+    from spectra_sherpa.app.services.execution_runtime import build_application_execution_runtime
 
-    executor = DAGExecutor()
+    executor = DAGExecutor(
+        runtime=replace(
+            build_application_execution_runtime(canonical_artifact_read_grant=canonical_read_grant),
+            prediction_uncertainty=uncertainty_provider,
+        )
+    )
 
     for node in workflow.nodes:
         dag_node = DAGNode(
@@ -204,12 +245,91 @@ def build_executor_from_workflow(workflow: Workflow) -> Any:
     return executor
 
 
+def _execute_workflow_dataset_blocking(
+    workflow: Workflow,
+    dataset: Any,
+    *,
+    owner_user_id: int,
+    canonical_read_grant: Any = None,
+    uncertainty_provider: Any = None,
+) -> WorkflowDatasetExecution:
+    """Execute and serialize one dataset in a worker thread.
+
+    A DAG may contain a deliberately in-process node. Running its private
+    asyncio loop in this worker keeps CPU-bound or blocking node code from
+    starving the application loop, which owns operational heartbeats and
+    database sessions.
+    """
+    from spectra_sherpa.app.services.serialization import serialize_result
+
+    executor = build_executor_from_workflow(
+        workflow, canonical_read_grant=canonical_read_grant, uncertainty_provider=uncertainty_provider
+    )
+    entry_nodes = executor.find_prediction_entry_nodes()
+    for node_id in entry_nodes:
+        node = executor.nodes[node_id]
+        if node.metadata is not None and node.metadata.node_type == "deploy.input":
+            stream_name = str(node.parameters.get("stream_name", "sample"))
+            executor.inject_deployment_input(node_id, dataset, stream_name=stream_name)
+        else:
+            executor.inject_result(node_id, dataset)
+
+    results = asyncio.run(executor.execute())
+    serialized: dict[str, Any] = {}
+    for node_id in executor.find_exit_nodes():
+        if node_id not in results:
+            continue
+        try:
+            serialized[node_id] = serialize_result(results[node_id], owner_user_id=owner_user_id)
+        except Exception:
+            serialized[node_id] = {"error": "serialization_failed"}
+
+    return WorkflowDatasetExecution(
+        executor=executor,
+        results=results,
+        serialized_exit_results=serialized,
+    )
+
+
+async def execute_workflow_dataset(
+    workflow: Workflow,
+    dataset: Any,
+    *,
+    owner_user_id: int,
+    canonical_read_grant: Any = None,
+    uncertainty_provider: Any = None,
+) -> WorkflowDatasetExecution:
+    """Execute one injected dataset without blocking the service event loop.
+
+    Thread work cannot be force-cancelled safely. If the caller is cancelled,
+    drain the already-accepted execution before propagating cancellation so a
+    folder-watch lease is not released while that execution still has side
+    effects in the background.
+    """
+    worker = asyncio.create_task(
+        asyncio.to_thread(
+            _execute_workflow_dataset_blocking,
+            workflow,
+            dataset,
+            owner_user_id=owner_user_id,
+            canonical_read_grant=canonical_read_grant,
+            uncertainty_provider=uncertainty_provider,
+        )
+    )
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        await asyncio.shield(worker)
+        raise
+
+
 async def run_batch_prediction(
     session: AsyncSession,
     job_id: int,
     run: ExecutionRun,
     workflow: Workflow,
     files: list[Path],
+    asset_id: str | None = None,
 ) -> None:
     """
     Execute a workflow on each file and save per-file BatchPrediction rows.
@@ -223,8 +343,14 @@ async def run_batch_prediction(
         workflow: Workflow with eagerly-loaded nodes + edges.
         files: List of file paths to process.
     """
+    from spectra_sherpa.app.api.deps import check_demo_capability
+    from spectra_sherpa.app.services.deployment_binding import resolve_deployment_binding
+    from spectra_sherpa.app.services.deployment_evidence import (
+        append_deployment_evidence,
+        begin_deployment_evidence,
+        finalize_deployment_evidence,
+    )
     from spectra_sherpa.app.services.job_manager import job_manager
-    from spectra_sherpa.app.services.serialization import serialize_result
     from spectra_sherpa.app.services.workflow_access import validate_workflow_execution_access
 
     total = len(files)
@@ -232,9 +358,33 @@ async def run_batch_prediction(
     error_count = 0
     all_model_ids: set[str] = set()
 
+    # Background invocation is a second admission boundary.  The HTTP route
+    # carries the same guard, but a queued/direct service call must not ingest
+    # arbitrary filesystem data after a deployment changes to the trial tier.
+    private_upload = bool((run.source_metadata or {}).get("private_prediction_input"))
+
     try:
+        if private_upload:
+            from spectra_sherpa.app.contracts.prediction_access import require_private_prediction
+
+            await require_private_prediction(session, run.user_id)
+        else:
+            check_demo_capability("external_prediction_input")
+        if len(run.attempted_artifact_uids or []) != 1 or run.workflow_version_id is None:
+            raise ValueError("Operational batch prediction requires one exact artifact and workflow version")
+        binding = await resolve_deployment_binding(
+            session,
+            user_id=run.user_id,
+            workflow_id=run.workflow_id,
+            artifact_uid=run.attempted_artifact_uids[0],
+            expected_version_id=run.workflow_version_id,
+        )
+        workflow = binding.workflow
         await validate_workflow_execution_access(
-            workflow.nodes,
+            # This graph is constructed by the verified artifact binding, not
+            # supplied by the client. Private input custody replaces trial
+            # dataset admission only for its one injected deployment input.
+            [node for node in workflow.nodes if not (private_upload and node.node_type == "deploy.input")],
             None,
             run.user_id,
             workflow.project_id,
@@ -253,34 +403,34 @@ async def run_batch_prediction(
         await session.commit()
         raise
 
+    await begin_deployment_evidence(run, workflow, files)
+    await session.commit()
     for idx, file_path in enumerate(files):
         start_ms = time.monotonic()
         executor = None
+        dataset = None
 
         try:
-            dataset = load_single_file(file_path)
+            if private_upload:
+                from spectra_sherpa.app.contracts.prediction_access import require_private_prediction
+                from spectra_sherpa.app.services.prediction_upload import verify_prediction_file
 
-            # Fresh executor per file — no cache contamination
-            executor = build_executor_from_workflow(workflow)
-
-            entry_nodes = executor.find_entry_nodes()
-            if not entry_nodes:
-                raise ValueError("Workflow has no entry nodes")
-
-            for node_id in entry_nodes:
-                executor.inject_result(node_id, dataset)
-
-            results = await executor.execute()
-
-            # Collect exit-node results
-            exit_nodes = executor.find_exit_nodes()
-            serialized: dict[str, Any] = {}
-            for node_id in exit_nodes:
-                if node_id in results:
-                    try:
-                        serialized[node_id] = serialize_result(results[node_id], owner_user_id=run.user_id)
-                    except Exception:
-                        serialized[node_id] = {"error": "serialization_failed"}
+                await require_private_prediction(session, run.user_id)
+                await asyncio.to_thread(verify_prediction_file, run.user_id, file_path, run.source_metadata)
+            binding = await resolve_deployment_binding(
+                session,
+                user_id=run.user_id,
+                workflow_id=run.workflow_id,
+                artifact_uid=run.attempted_artifact_uids[0],
+                expected_version_id=run.workflow_version_id,
+            )
+            workflow = binding.workflow
+            dataset = await asyncio.to_thread(load_single_file, file_path, asset_id=asset_id)
+            execution = await execute_workflow_dataset(workflow, dataset, owner_user_id=run.user_id)
+            executor = execution.executor
+            results = execution.results
+            serialized = execution.serialized_exit_results
+            await append_deployment_evidence(run, workflow, idx, execution=execution)
 
             # Extract model_id from executor's saved_artifacts (authoritative source)
             # and also from results dict (for LoadApplyModelNode pass-through)
@@ -325,6 +475,8 @@ async def run_batch_prediction(
         except Exception as exc:
             # Roll back any dirty session state before attempting artifact persist
             await session.rollback()
+            await session.refresh(run)
+            await append_deployment_evidence(run, workflow, idx, error=exc, dataset=dataset)
 
             # Persist any model artifacts saved to disk before the error
             # to avoid orphan files with no DB records.
@@ -386,7 +538,7 @@ async def run_batch_prediction(
         )
 
     # Update parent ExecutionRun with aggregate metrics
-    run.status = "completed" if error_count == 0 else "partial"
+    run.status = "completed" if error_count == 0 else ("partial" if success_count else "error")
     run.results_summary = {
         "__batch__": {
             "total_files": total,
@@ -394,9 +546,9 @@ async def run_batch_prediction(
             "error_count": error_count,
         }
     }
-    if all_model_ids:
-        run.model_ids = sorted(all_model_ids)
-        run.applied_artifact_uids = sorted(all_model_ids)
+    run.succeeded_artifact_uids = sorted(all_model_ids) if success_count else []
+    run.model_ids = list(run.succeeded_artifact_uids)
+    await finalize_deployment_evidence(run)
     await session.commit()
     logger.info(
         "Batch prediction complete: %d/%d succeeded for run %d",

@@ -11,21 +11,23 @@ All node classes have been split into individual files for navigability.
 
 # Import all node modules to trigger @register_node decorators
 from . import (  # noqa: F401
+    application_nodes,
     knn_nodes,
     plsda_nodes,
-    predict_node,
     simca_nodes,
 )
+from .application_nodes import ApplyKNNNode, ApplyPLSDANode, ApplySIMCANode
 from .knn_nodes import KNNNode
 
 # Re-export node classes for backward compatibility
 from .plsda_nodes import PLSDANode
-from .predict_node import ClassifierPredictNode
 from .simca_nodes import SIMCANode
 
 __all__ = [
     "PLSDANode",
     "KNNNode",
     "SIMCANode",
-    "ClassifierPredictNode",
+    "ApplyKNNNode",
+    "ApplyPLSDANode",
+    "ApplySIMCANode",
 ]

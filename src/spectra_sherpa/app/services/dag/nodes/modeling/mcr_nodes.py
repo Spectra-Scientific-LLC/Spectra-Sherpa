@@ -10,12 +10,23 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib import fitted_state
+from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
+from spectra_sherpa.app.services.dag import meta_helpers
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
     inherit_origin_flags,
     inherit_sample_flags,
 )
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    TargetAccess,
+    WorkerCapability,
+)
+from spectra_sherpa.interoperability import spectrochempy_adapter
 
 from ...io_contracts import (
     bind_X,
@@ -25,10 +36,14 @@ from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodePolicy,
     NodeResult,
     PortMetadata,
     register_node,
 )
+from ...stable_execution_contract import bind_stable_execution_contract
+from . import _artifact_builder
+from . import core_utils as modeling_core_utils
 from .core_utils import (
     create_spectral_dataset as _create_spectral_dataset,
 )
@@ -44,8 +59,11 @@ from .core_utils import (
 
 logger = logging.getLogger(__name__)
 
-from spectra_sherpa.app.lib.adapters.scp_extractors import MCRExtract
-from spectra_sherpa.app.lib.scp_compat import scp, to_nddataset
+from spectra_sherpa.app.lib.fitted_state import MCRExtract
+
+MCR_FITTED_STATE_SERIALIZER = MCRExtract.SERIALIZER
+_MCR_MAX_COMPONENTS = 50
+_MCR_MAX_ITERATIONS = 2_000
 
 
 def _safe_correlation(a: np.ndarray, b: np.ndarray) -> float | None:
@@ -499,6 +517,212 @@ def _compare_mcr_spectra_to_truth(
     }
 
 
+def _canonical_mcr_parameters(parameters: dict[str, object]) -> dict[str, object]:
+    """Validate the sole closed MCR-ALS parameter surface."""
+
+    expected = {
+        "n_components",
+        "non_negative_C",
+        "non_negative_St",
+        "max_iter",
+        "tol",
+        "normSpec",
+        "validation_target_index",
+        "validation_component_index",
+    }
+    if set(parameters) != expected:
+        raise ValueError("MCR-ALS parameters do not match the closed canonical schema")
+    n_components = parameters["n_components"]
+    max_iter = parameters["max_iter"]
+    tol = parameters["tol"]
+    target_index = parameters["validation_target_index"]
+    component_index = parameters["validation_component_index"]
+    if type(n_components) is not int or not 2 <= n_components <= _MCR_MAX_COMPONENTS:
+        raise ValueError(f"MCR-ALS n_components must be an integer in [2, {_MCR_MAX_COMPONENTS}]")
+    if type(max_iter) is not int or not 10 <= max_iter <= _MCR_MAX_ITERATIONS:
+        raise ValueError(f"MCR-ALS max_iter must be an integer in [10, {_MCR_MAX_ITERATIONS}]")
+    if (
+        isinstance(tol, bool)
+        or not isinstance(tol, (int, float))
+        or not np.isfinite(tol)
+        or not 1e-8 <= float(tol) <= 0.1
+    ):
+        raise ValueError("MCR-ALS tol must be finite and in [1e-8, 0.1]")
+    if parameters["normSpec"] not in {"euclid", "max", "none"}:
+        raise ValueError("MCR-ALS normSpec must be euclid, max, or none")
+    for name, value in (
+        ("validation_target_index", target_index),
+        ("validation_component_index", component_index),
+    ):
+        if type(value) is not int or value < 1:
+            raise ValueError(f"MCR-ALS {name} must be a positive integer")
+    for name in ("non_negative_C", "non_negative_St"):
+        if type(parameters[name]) is not bool:
+            raise ValueError(f"MCR-ALS {name} must be boolean")
+    return {
+        "n_components": n_components,
+        "non_negative_C": parameters["non_negative_C"],
+        "non_negative_St": parameters["non_negative_St"],
+        "max_iter": max_iter,
+        "tol": float(tol),
+        "normSpec": parameters["normSpec"],
+        "validation_target_index": target_index,
+        "validation_component_index": component_index,
+    }
+
+
+def _mcr_fitted_state_from_extract(extract: MCRExtract) -> dict[str, object]:
+    metadata, arrays = extract.to_artifact()
+    return {
+        "serializer": MCR_FITTED_STATE_SERIALIZER,
+        "metadata": metadata,
+        "arrays": {name: np.asarray(value, dtype=np.float64).tolist() for name, value in arrays.items()},
+    }
+
+
+def _mcr_extract_from_state(state: Any) -> MCRExtract:
+    if not isinstance(state, dict) or set(state) != {"serializer", "metadata", "arrays"}:
+        raise ValueError("MCR-ALS fitted state must contain exact serializer, metadata, and arrays")
+    if state["serializer"] != MCR_FITTED_STATE_SERIALIZER:
+        raise ValueError("MCR-ALS fitted state has an unsupported serializer")
+    metadata = state["metadata"]
+    arrays = state["arrays"]
+    if not isinstance(metadata, dict) or set(metadata) != {
+        "model_type",
+        "n_components",
+        "serializer",
+        "concentration_solver",
+    }:
+        raise ValueError("MCR-ALS fitted-state metadata is not closed")
+    if not isinstance(arrays, dict):
+        raise ValueError("MCR-ALS fitted-state arrays must be a mapping")
+    return MCRExtract.from_artifact(
+        metadata,
+        {name: np.asarray(value, dtype=np.float64) for name, value in arrays.items()},
+    )
+
+
+def apply_mcr_fitted_state(input_data: Any, state: Any) -> np.ndarray:
+    """Resolve concentration profiles using the exact saved solver policy."""
+
+    matrix = to_numpy_2d(input_data, name="input_data", dtype=np.float64)
+    return _mcr_extract_from_state(state).transform(matrix)
+
+
+def _mcr_scientific_core(input_data: Any, *, parameters: dict[str, object]) -> dict[str, Any]:
+    """Fit and extract one authoritative SpectroChemPy MCR-ALS computation."""
+
+    params = _canonical_mcr_parameters(parameters)
+    input_ds = bind_X(
+        input_data,
+        missing_message="Missing required input: input_data (spectral mixtures)",
+        dataset_error_message="input_data must be a dataset object",
+        allow_array=False,
+    )
+    if len(input_ds.shape) != 2:
+        raise ValueError(f"Expected 2D input, got shape {input_ds.shape}")
+    data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
+    if not np.isfinite(data).all():
+        raise ValueError("MCR-ALS input must contain only finite values")
+    n_samples, n_features = data.shape
+    n_components = int(params["n_components"])
+    if n_components > min(n_samples, n_features):
+        raise ValueError(
+            f"n_components ({n_components}) cannot exceed min(n_samples, n_features) = {min(n_samples, n_features)}"
+        )
+    tol = float(params["tol"])
+    if tol > 1e-3:
+        logger.warning(
+            "[MCR-ALS Node] tol=%.4g is loose; chemometric convention is <=1e-3 "
+            "(mdatools 1e-6, pyMCR 1e-5). Results may be under-converged.",
+            tol,
+        )
+
+    U, singular_values, _ = np.linalg.svd(data, full_matrices=False)
+    C0_data = np.abs(U[:, :n_components] * singular_values[:n_components])
+    solver_c = "nnls" if params["non_negative_C"] else "lstsq"
+    solver_s = "nnls" if params["non_negative_St"] else "lstsq"
+    norm_spec = None if params["normSpec"] == "none" else str(params["normSpec"])
+    scp = spectrochempy_adapter.require_spectrochempy("model.mcr_als")
+    mcr = scp.MCRALS(
+        max_iter=int(params["max_iter"]),
+        tol=tol,
+        solverConc=solver_c,
+        solverSpec=solver_s,
+        normSpec=norm_spec,
+    )
+    mcr.fit(
+        spectrochempy_adapter.to_spectrochempy_dataset(
+            input_ds,
+            operation_id="model.mcr_als",
+        ),
+        spectrochempy_adapter.spectrochempy_dataset_from_array(
+            C0_data,
+            operation_id="model.mcr_als",
+        ),
+    )
+    extracted = spectrochempy_adapter.extract_mcr_state(mcr, concentration_solver=solver_c)
+    C_data = _ensure_orientation(
+        extracted.C,
+        expected_rows=n_samples,
+        expected_cols=n_components,
+        name="MCR.C",
+    )
+    St_data = _ensure_orientation(
+        extracted.St,
+        expected_rows=n_components,
+        expected_cols=n_features,
+        name="MCR.St",
+    )
+
+    scale_factors = np.ones(n_components, dtype=np.float64)
+    if params["normSpec"] == "euclid":
+        scale_factors = np.linalg.norm(St_data, axis=1)
+    elif params["normSpec"] == "max":
+        scale_factors = np.max(np.abs(St_data), axis=1)
+    if params["normSpec"] in {"euclid", "max"}:
+        if not np.isfinite(scale_factors).all() or np.any(scale_factors <= 1e-12):
+            raise ValueError("MCR-ALS produced a degenerate pure-spectrum component")
+        C_data = C_data * scale_factors.reshape(1, -1)
+        St_data = St_data / scale_factors.reshape(-1, 1)
+    if not np.isfinite(C_data).all() or not np.isfinite(St_data).all():
+        raise ValueError("MCR-ALS produced non-finite concentration or spectral components")
+    reconstructed = C_data @ St_data
+    residuals = data - reconstructed
+    extract = MCRExtract(
+        C=C_data,
+        St=St_data,
+        n_components=n_components,
+        concentration_solver=solver_c,
+    )
+    return {
+        "dataset": input_ds,
+        "data": data,
+        "model": mcr,
+        "extract": extract,
+        "C": C_data,
+        "St": St_data,
+        "residuals": residuals,
+        "reconstructed": reconstructed,
+        "scale_factors": scale_factors,
+        "fitted_state": _mcr_fitted_state_from_extract(extract),
+        "parameters": params,
+    }
+
+
+def _mcr_export_outputs(input_data: Any, *, parameters: dict[str, object]) -> dict[str, Any]:
+    """Project the shared MCR-ALS computation into editable Python output."""
+
+    core = _mcr_scientific_core(input_data, parameters=parameters)
+    return {
+        "model": core["fitted_state"],
+        "fitted_state": core["fitted_state"],
+        "C": core["C"],
+        "St": core["St"],
+        "residuals": core["residuals"],
+    }
+
+
 @register_node
 class MCRNode(Node):
     """
@@ -511,6 +735,7 @@ class MCRNode(Node):
     """
 
     metadata = NodeMetadata(
+        policy=NodePolicy(),
         node_type="model.mcr_als",
         category="exploratory",
         label="Fit MCR-ALS Decomposition",
@@ -522,6 +747,8 @@ class MCRNode(Node):
                 param_type="number",
                 default=3,
                 min_value=2,
+                max_value=_MCR_MAX_COMPONENTS,
+                max_value_reason="Bounds SVD initialization and alternating least-squares cost.",
                 step=1,
                 description="Number of pure components to resolve",
                 required=True,
@@ -551,6 +778,8 @@ class MCRNode(Node):
                 param_type="number",
                 default=200,
                 min_value=10,
+                max_value=_MCR_MAX_ITERATIONS,
+                max_value_reason="Bounds alternating least-squares work in the interactive runtime.",
                 step=10,
                 description=(
                     "Maximum ALS iterations. Raised from 50 → 200 in v0.4.3 to give the "
@@ -621,7 +850,7 @@ class MCRNode(Node):
                 category="validation",
             ),
         ],
-        input_types=["NDDataset"],
+        input_types=["SherpaDataset"],
         input_ports=[
             PortMetadata(
                 name="default",
@@ -638,7 +867,14 @@ class MCRNode(Node):
                 type_ref="spectrasherpa://types/DecompositionResult/1.0",
                 required=True,
                 label="Fitted MCR-ALS Decomposition",
-                description="Fitted MCR-ALS model object",
+                description="Closed pure-spectrum state and concentration solver used for replay",
+            ),
+            PortMetadata(
+                name="fitted_state",
+                type_ref="spectrasherpa://types/DecompositionResult/1.0",
+                required=True,
+                label="Fitted MCR-ALS State",
+                description="Closed pure-spectrum state and concentration solver used for replay",
             ),
             PortMetadata(
                 name="C",
@@ -669,8 +905,8 @@ class MCRNode(Node):
                 description="Optional recovered-vs-target concentration matching metrics",
             ),
         ],
-        requires_scp=True,
         help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.MCRALS.html",
+        canonical_parameter_validator=_canonical_mcr_parameters,
     )
 
     def generate_python(
@@ -679,57 +915,21 @@ class MCRNode(Node):
         indent: str = "    ",
         use_scp: bool = True,
     ) -> list[str]:
-        """Generate Python export code for MCR-ALS decomposition."""
+        """Generate Python that calls the same scientific operation as the DAG."""
         if not use_scp:
-            return [
-                f"{indent}# --- MCR-ALS ({self.node_id}) ---",
-                f"{indent}# MCR-ALS requires SpectroChemPy (pip install spectra-sherpa[scp])",
-                f"{indent}raise ImportError('MCR-ALS requires spectrochempy')",
-            ]
-
-        params = self._resolve_params()
-        n_components = params.get("n_components", 3)
-        nn_C = "True" if params.get("non_negative_C", True) else "False"
-        nn_St = "True" if params.get("non_negative_St", True) else "False"
-        max_iter = params.get("max_iter", 200)
-        tol = params.get("tol", 1e-5)
-        norm_spec = params.get("normSpec", params.get("norm_spec", "euclid"))
-        norm_spec_expr = "None" if norm_spec in (None, "", "none") else repr(norm_spec)
-
+            return [f"{indent}raise ImportError('MCR-ALS requires spectrochempy')"]
         X_expr = inputs.get("default", inputs.get("X", "input_data"))
+        return [
+            f"{indent}# --- Canonical MCR-ALS ({self.node_id}) ---",
+            f"{indent}from spectra_sherpa.app.services.dag.nodes.modeling.mcr_nodes import _mcr_export_outputs",
+            f"{indent}results[{self.node_id!r}] = _mcr_export_outputs(",
+            f"{indent}    {X_expr}, parameters={self._resolve_params()!r},",
+            f"{indent})",
+        ]
 
-        lines: list[str] = []
-        lines.append(f"{indent}# --- MCR-ALS ({self.node_id}) ---")
-        lines.append(f"{indent}_X_input = {X_expr}")
-        lines.append(f"{indent}_X_data = np.array(")
-        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
-        lines.append(f"{indent}    dtype=np.float64,")
-        lines.append(f"{indent})")
-        lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")
-        lines.append(f"{indent}# Initialize C from SVD")
-        lines.append(f"{indent}_U, _S, _Vt = np.linalg.svd(_X_data, full_matrices=False)")
-        lines.append(f"{indent}_C0 = np.abs(_U[:, :{n_components}] * _S[:{n_components}])")
-        lines.append(f"{indent}_C0_ndd = scp.NDDataset(_C0)")
-        lines.append(f"{indent}_mcr = scp.MCRALS(")
-        lines.append(f"{indent}    _X_ndd, _C0_ndd,")
-        lines.append(f"{indent}    nonnegConc=list(range({n_components})) if {nn_C} else [],")
-        lines.append(f"{indent}    nonnegSpec=list(range({n_components})) if {nn_St} else [],")
-        lines.append(f"{indent}    maxdiv={max_iter}, tol={tol},")
-        lines.append(f"{indent}    normSpec={norm_spec_expr},")
-        lines.append(f"{indent})")
-        lines.append(f"{indent}_C = np.asarray(_mcr.C.data, dtype=np.float64)")
-        lines.append(f"{indent}_St = np.asarray(_mcr.St.data, dtype=np.float64)")
-        lines.append(f'{indent}print(f"  MCR-ALS ({n_components} components): C={{_C.shape}}, St={{_St.shape}}")')
-        lines.append(f"{indent}results['{self.node_id}'] = {{")
-        lines.append(f"{indent}    'model': _mcr,")
-        lines.append(f"{indent}    'C': _C,")
-        lines.append(f"{indent}    'St': _St,")
-        lines.append(f"{indent}    'residuals': _C @ _St - _X_data,")
-        lines.append(f"{indent}}}")
-
-        return lines
-
-    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
+    async def execute(  # noqa: C901 - existing MCR constraint and solver dispatch
+        self, input_data: Any = None, **kwargs: Any
+    ) -> Any:
         """
         Execute MCR-ALS decomposition on input dataset.
 
@@ -744,104 +944,22 @@ class MCRNode(Node):
             - St: Pure spectra (n_components, n_wavenumbers) as SpectralResult
             - n_components: Number of resolved components
         """
-        input_ds = bind_X(
-            input_data,
-            missing_message="Missing required input: input_data (spectral mixtures)",
-            dataset_error_message="input_data must be an dataset object",
-            allow_array=False,
-        )
-        input_ndd = to_nddataset(input_ds)
-
-        # Get parameters
-        n_components = self.parameters.get("n_components", 3)
-        max_iter = self.parameters.get("max_iter", 200)
-        tol = self.parameters.get("tol", 1e-5)
-        non_negative_C = self.parameters.get("non_negative_C", True)
-        non_negative_St = self.parameters.get("non_negative_St", True)
-        norm_spec = self.parameters.get("normSpec", self.parameters.get("norm_spec", "euclid"))
-        if norm_spec in (None, "", "none"):
-            norm_spec = None
-        elif norm_spec not in {"euclid", "max"}:
-            raise ValueError("normSpec must be one of: euclid, max, none")
-        validation_target_index = int(self.parameters.get("validation_target_index", 1)) - 1
-        validation_component_index = int(self.parameters.get("validation_component_index", 1)) - 1
-
-        # Surface loose tolerances: the SCP/legacy default of 0.1 silently
-        # produces under-converged solutions for serious work. mdatools
-        # uses 1e-6 and pyMCR uses 1e-5 — anything looser than 1e-3 is a
-        # numerical-correctness red flag worth flagging to the user.
-        if tol > 1e-3:
-            logger.warning(
-                "[MCR-ALS Node] tol=%.4g is loose; chemometric convention is ≤1e-3 "
-                "(mdatools 1e-6, pyMCR 1e-5). Results may be under-converged.",
-                tol,
-            )
-
-        # Validate input shape
-        if len(input_ds.shape) != 2:
-            raise ValueError(f"Expected 2D input, got shape {input_ds.shape}")
-
-        n_samples, n_features = input_ds.shape
-        if n_components > min(n_samples, n_features):
-            raise ValueError(
-                f"n_components ({n_components}) cannot exceed min(n_samples, n_features) = {min(n_samples, n_features)}"
-            )
-
-        # Create initial guess for C using SVD
-        # This provides a good starting point for ALS
-        from numpy.linalg import svd
-
-        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-        U, S, Vt = svd(data, full_matrices=False)
-
-        # Initial C estimate from first n_components of U*S.
-        # Always take abs() for initialization regardless of the ALS non-negativity
-        # setting: SVD left-singular vectors have arbitrary sign convention and the
-        # leading column is frequently all-negative for non-negative data. SCP's
-        # _guess_profile derives St0 from this C0 using NNLS when solverSpec="nnls"
-        # (the default), and NNLS on an all-negative regressor returns exactly zero,
-        # killing Component 0 before any ALS iteration runs. Applying abs() here is
-        # initialization-only — the ALS solver constraints (solverConc/solverSpec)
-        # govern non-negativity during the actual alternating least-squares loop.
-        C0_data = np.abs(U[:, :n_components] @ np.diag(S[:n_components]))
-        C0 = scp.NDDataset(C0_data)
-
-        # Determine appropriate solvers based on constraints
-        solver_c = "nnls" if non_negative_C else "lstsq"
-        solver_s = "nnls" if non_negative_St else "lstsq"
-
-        # Create and fit MCR-ALS model
-        mcr = scp.MCRALS(max_iter=max_iter, tol=tol, solverConc=solver_c, solverSpec=solver_s, normSpec=norm_spec)
-        mcr.fit(input_ndd, C0)
-
-        # Extract results using typed extractor
-        extracted = MCRExtract.from_scp(mcr)
-        C_data = _ensure_orientation(
-            extracted.C,
-            expected_rows=n_samples,
-            expected_cols=n_components,
-            name="MCR.C",
-        )
-        St_data = _ensure_orientation(
-            extracted.St,
-            expected_rows=n_components,
-            expected_cols=n_features,
-            name="MCR.St",
-        )
-        effective_norm_spec = norm_spec or "none"
-        st_scale_factors = np.ones(n_components, dtype=np.float64)
-        if effective_norm_spec == "euclid":
-            st_scale_factors = np.linalg.norm(St_data, axis=1)
-        elif effective_norm_spec == "max":
-            st_scale_factors = np.nanmax(np.abs(St_data), axis=1)
-        if effective_norm_spec in {"euclid", "max"}:
-            st_scale_factors = np.where(
-                np.isfinite(st_scale_factors) & (st_scale_factors > 1e-12), st_scale_factors, 1.0
-            )
-            # Preserve the reconstruction exactly while fixing the MCR scale
-            # ambiguity: D = C @ St = (C * scale) @ (St / scale).
-            C_data = C_data * st_scale_factors.reshape(1, -1)
-            St_data = St_data / st_scale_factors.reshape(-1, 1)
+        core = _mcr_scientific_core(input_data, parameters=self._resolve_params())
+        input_ds = core["dataset"]
+        data = core["data"]
+        runtime_model = core["model"]
+        extracted = core["extract"]
+        C_data = core["C"]
+        St_data = core["St"]
+        residuals_data = core["residuals"]
+        st_scale_factors = core["scale_factors"]
+        fitted_state = core["fitted_state"]
+        params = core["parameters"]
+        n_components = int(params["n_components"])
+        effective_norm_spec = str(params["normSpec"])
+        norm_spec = None if effective_norm_spec == "none" else effective_norm_spec
+        validation_target_index = int(params["validation_target_index"]) - 1
+        validation_component_index = int(params["validation_component_index"]) - 1
 
         if effective_norm_spec == "euclid":
             st_units = "euclidean-normalized response"
@@ -885,19 +1003,19 @@ class MCRNode(Node):
                         names: list[str] = []
                         for spec in species_list[:n_components]:
                             if isinstance(spec, dict):
-                                names.append(spec.get("name", f"Species {len(names)+1}"))
+                                names.append(spec.get("name", f"Species {len(names) + 1}"))
                             elif hasattr(spec, "name"):
                                 names.append(spec.name)
                             else:
-                                names.append(f"Species {len(names)+1}")
+                                names.append(f"Species {len(names) + 1}")
                         species_names = names
                         logger.debug("[MCR-ALS Node] Extracted species names from input metadata: %s", species_names)
                     except Exception as e:
                         logger.warning("[MCR-ALS Node] Could not extract species names: %s", e, exc_info=True)
 
         # Use species names if available, otherwise use generic labels
-        component_labels = species_names or [f"Component {i+1}" for i in range(n_components)]
-        spectrum_labels = species_names or [f"Pure Spectrum {i+1}" for i in range(n_components)]
+        component_labels = species_names or [f"Component {i + 1}" for i in range(n_components)]
+        spectrum_labels = species_names or [f"Pure Spectrum {i + 1}" for i in range(n_components)]
         ground_truth_comparison = _compare_mcr_to_target(
             C_data,
             input_ds,
@@ -943,9 +1061,7 @@ class MCRNode(Node):
             title="MCR-ALS Concentration Profiles",
         )
 
-        # Compute residuals as SherpaDataset
-        reconstructed = C_data @ St_data
-        residuals_data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64) - reconstructed
+        # The shared core defines residuals as observed minus reconstructed.
         residuals_dataset = _create_spectral_dataset(
             data=residuals_data,
             x_coord=_x_coord,
@@ -1048,10 +1164,7 @@ class MCRNode(Node):
         if ground_truth_comparison is not None:
             C_dataset.meta["ground_truth_comparison"] = ground_truth_comparison
 
-        # Build model artifact for persistence
-        from ._artifact_builder import build_model_artifact
-
-        artifact = build_model_artifact(
+        artifact = _artifact_builder.build_model_artifact(
             extracted,
             input_ds,
             node_id=self.node_id,
@@ -1060,6 +1173,8 @@ class MCRNode(Node):
         # Compute diagnostics scalars for Sherpa advisor
         diagnostics: dict[str, Any] = {"n_components": int(n_components)}
         diagnostics["normSpec"] = norm_spec
+        diagnostics["fitted_state_serializer"] = MCR_FITTED_STATE_SERIALIZER
+        diagnostics["residual_definition"] = "observed_minus_reconstructed"
         try:
             residual_rms = float(np.sqrt(np.mean(residuals_data**2)))
             diagnostics["residual_rms"] = residual_rms
@@ -1071,16 +1186,16 @@ class MCRNode(Node):
         except Exception:
             logger.debug("[MCR-ALS Node] Failed to compute residual diagnostics", exc_info=True)
         for attr, key in (("n_iter", "n_iter"), ("n_iter_", "n_iter")):
-            if hasattr(mcr, attr):
+            if hasattr(runtime_model, attr):
                 try:
-                    diagnostics[key] = int(getattr(mcr, attr))
+                    diagnostics[key] = int(getattr(runtime_model, attr))
                     break
                 except Exception:
                     pass
         for attr in ("converged", "converged_"):
-            if hasattr(mcr, attr):
+            if hasattr(runtime_model, attr):
                 try:
-                    diagnostics["converged"] = bool(getattr(mcr, attr))
+                    diagnostics["converged"] = bool(getattr(runtime_model, attr))
                     break
                 except Exception:
                     pass
@@ -1119,9 +1234,58 @@ class MCRNode(Node):
                 "C": C_dataset,  # Alias for concentrations
                 "St": St_dataset,  # SherpaDataset: pure spectra (n_components, n_features)
                 "residuals": residuals_dataset,  # SherpaDataset: residuals (n_samples, n_features)
-                "model": mcr,  # Model port
+                "model": fitted_state,
+                "fitted_state": fitted_state,
                 "_model_artifact": artifact,
                 "ground_truth_comparison": ground_truth_comparison,
             },
             diagnostics=diagnostics,
         )
+
+    def fit_fitted_state(self, input_data: Any, target: Any = None) -> dict[str, object]:
+        """Fit the same closed state used by live and generated execution."""
+
+        del target
+        return _mcr_scientific_core(input_data, parameters=self._resolve_params())["fitted_state"]
+
+    def apply_fitted_state(self, input_data: Any, state: Any) -> np.ndarray:
+        return apply_mcr_fitted_state(input_data, state)
+
+
+bind_stable_execution_contract(
+    MCRNode,
+    runtime_family=RuntimeFamily.SPECTROCHEMPY,
+    lifecycle_kind=LifecycleKind.FITTED_MODEL,
+    implementation_id="spectrasherpa.model.mcr_als",
+    implementation_version="1.0.0",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="preserves_samples",
+    feature_effect="generates_features",
+    axis_effect="changes_axis",
+    unit_effect="changes_units",
+    resource_hints={"timeout_seconds": 120, "cpu_seconds": 120, "memory_bytes": 1_073_741_824},
+    license_id="BSD-3-Clause",
+    help_reference="docs/nodes/exploratory.md",
+    implementation_distributions=("numpy", "scipy", "spectrochempy"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("spectrochempy", "0.8.1")),
+    citations=(
+        "Tauler, Multivariate curve resolution applied to second order data, Chemometrics and Intelligent "
+        "Laboratory Systems 30 (1995) 133-146",
+        "Jaumot, Gargallo, de Juan & Tauler, A graphical user-friendly interface for MCR-ALS, Chemometrics "
+        "and Intelligent Laboratory Systems 76 (2005) 101-110",
+        "SpectroChemPy MCRALS documentation and constrained alternating least-squares implementation",
+    ),
+    implementation_modules=(
+        fitted_state,
+        spectrochempy_adapter,
+        dag_io_contracts,
+        meta_helpers,
+        modeling_core_utils,
+        _artifact_builder,
+    ),
+    fitted_state_serializer=MCR_FITTED_STATE_SERIALIZER,
+    deterministic=True,
+    target_access=TargetAccess.NONE,
+    group_access="none",
+)

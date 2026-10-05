@@ -9,26 +9,35 @@ from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.lib.adapters.scp_extractors import FastICAExtract, NMFExtract
+from spectra_sherpa.app.lib import nmf_core
+from spectra_sherpa.app.lib.fitted_state import NMFExtract
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
     inherit_origin_flags,
     inherit_sample_flags,
 )
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    TargetAccess,
+    WorkerCapability,
+)
 
 from ...io_contracts import (
     bind_X,
-    to_numpy_2d,
 )
 from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodePolicy,
     NodeResult,
     PortMetadata,
     register_node,
 )
+from ...stable_execution_contract import bind_stable_execution_contract
 from .core_utils import (
     create_spectral_dataset as _create_spectral_dataset,
 )
@@ -51,10 +60,12 @@ class NMFNode(Node):
     the concentration (W) and spectral (H) matrices. Provides physically
     interpretable results for mixture analysis.
 
-    Uses SpectroChemPy's NMF implementation.
+    Uses the one Sherpa-native numerical authority in ``nmf_core`` for live,
+    generated, and fitted-state application paths.
     """
 
     metadata = NodeMetadata(
+        policy=NodePolicy(),
         node_type="model.nmf",
         category="exploratory",
         label="Fit NMF Decomposition",
@@ -74,6 +85,8 @@ class NMFNode(Node):
                 param_type="number",
                 default=3,
                 min_value=2,
+                max_value=500,
+                max_value_reason="Bounds factor-state size and iterative decomposition cost.",
                 step=1,
                 description="Number of components to extract",
                 required=True,
@@ -94,7 +107,9 @@ class NMFNode(Node):
                 label="Maximum Iterations",
                 param_type="number",
                 default=200,
-                min_value=50,
+                min_value=1,
+                max_value=10000,
+                max_value_reason="Bounds the declared convergence budget.",
                 step=50,
                 description="Maximum number of iterations",
                 required=False,
@@ -105,14 +120,29 @@ class NMFNode(Node):
                 label="Convergence Tolerance",
                 param_type="number",
                 default=0.0001,
-                min_value=0.00001,
+                min_value=0.000000000001,
+                max_value=0.1,
+                max_value_reason="Prevents a tolerance so loose that factorization stops without useful refinement.",
                 step=0.0001,
                 description="Convergence tolerance",
                 required=False,
                 category="advanced",
             ),
+            NodeParameter(
+                name="random_state",
+                label="Random Seed",
+                param_type="number",
+                default=42,
+                min_value=0,
+                max_value=4294967295,
+                max_value_reason="Matches the closed unsigned 32-bit seed domain.",
+                step=1,
+                description="Seed for deterministic initialization and fixed-basis application",
+                required=False,
+                category="advanced",
+            ),
         ],
-        input_types=["NDDataset"],
+        input_types=["SherpaDataset"],
         input_ports=[
             PortMetadata(
                 name="default",
@@ -125,30 +155,37 @@ class NMFNode(Node):
         output_type="dict",
         output_ports=[
             PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Concentration Profiles",
+                description="Primary W matrix with observation and canonical-component axes",
+            ),
+            PortMetadata(
                 name="model",
-                type_ref="spectrasherpa://types/DecompositionResult/1.0",
+                type_ref="spectrasherpa://types/FittedModel/1.0",
                 required=True,
                 label="Fitted NMF Decomposition",
-                description="Fitted NMF model object",
+                description="Closed non-negative factor state for deterministic application",
             ),
             PortMetadata(
                 name="concentrations",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Concentrations",
-                description="Concentration profiles (W matrix) as NDDataset with sample/component axes",
+                description="Concentration profiles (W matrix) as SherpaDataset with sample/component axes",
             ),
             PortMetadata(
                 name="spectra",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Pure Spectra",
-                description="Pure component spectra (H matrix) as NDDataset with wavenumber axis",
+                description="Pure component spectra (H matrix) as SherpaDataset with wavenumber axis",
             ),
             PortMetadata(
                 name="reconstruction_error",
-                type_ref="spectrasherpa://types/Array1D/1.0",
-                required=False,
+                type_ref="spectrasherpa://types/Scalar/1.0",
+                required=True,
                 label="Reconstruction Error",
                 description="Final reconstruction error value",
             ),
@@ -161,54 +198,15 @@ class NMFNode(Node):
         indent: str = "    ",
         use_scp: bool = True,
     ) -> list[str]:
-        """Generate Python export code for NMF decomposition."""
-        params = self._resolve_params()
-        n_components = params.get("n_components", 3)
-        solver = params.get("solver", "mu")
-        max_iter = params.get("max_iter", 200)
-        tol = params.get("tol", 0.0001)
-
-        X_expr = inputs.get("default", inputs.get("X", "input_data"))
-
-        lines: list[str] = []
-        lines.append(f"{indent}# --- NMF ({self.node_id}) ---")
-
-        # Extract X
-        lines.append(f"{indent}_X_input = {X_expr}")
-        lines.append(f"{indent}_X_data = np.array(")
-        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
-        lines.append(f"{indent}    dtype=np.float64,")
-        lines.append(f"{indent})")
-        lines.append(f"{indent}if np.any(_X_data < 0):")
-        lines.append(f"{indent}    raise ValueError(")
-        lines.append(f"{indent}        f'NMF requires non-negative input data. Minimum value: {{_X_data.min():.4g}}. '")
-        lines.append(f"{indent}        'Add a Clip Floor (floor=0) or baseline correction step before NMF.'")
-        lines.append(f"{indent}    )")
-
-        # NMF uses sklearn regardless of use_scp
-        lines.append(f"{indent}from sklearn.decomposition import NMF as _NMF")
-        lines.append(
-            f"{indent}_nmf = _NMF(n_components={n_components}, solver='{solver}', max_iter={max_iter}, tol={tol})"
-        )
-        lines.append(f"{indent}_W = _nmf.fit_transform(_X_data)")
-        lines.append(f"{indent}_H = _nmf.components_")
-        lines.append(f"{indent}_err = _nmf.reconstruction_err_ if hasattr(_nmf, 'reconstruction_err_') else None")
-        lines.append(f'{indent}print(f"  NMF ({n_components} components): W={{_W.shape}}, H={{_H.shape}}")')
-        lines.append(f"{indent}if _err is not None:")
-        lines.append(f'{indent}    print(f"    Reconstruction error: {{_err:.6f}}")')
-
-        # Store result
-        lines.append(f"{indent}results['{self.node_id}'] = {{")
-        lines.append(f"{indent}    'default': _W,")
-        lines.append(f"{indent}    'concentrations': _W,")
-        lines.append(f"{indent}    'spectra': _H,")
-        lines.append(f"{indent}    'reconstruction_error': _err,")
-        lines.append(f"{indent}    'W': _W,")
-        lines.append(f"{indent}    'H': _H,")
-        lines.append(f"{indent}    'model': _nmf,")
-        lines.append(f"{indent}}}")
-
-        return lines
+        """Generate Python that calls the same NMF authority as live execution."""
+        del use_scp
+        input_expression = inputs.get("default", inputs.get("X", "input_data"))
+        return [
+            f"{indent}from spectra_sherpa.app.lib.nmf_core import nmf_numeric_outputs",
+            f"{indent}results[{self.node_id!r}] = nmf_numeric_outputs(",
+            f"{indent}    {input_expression}, parameters={self._resolve_params()!r},",
+            f"{indent})",
+        ]
 
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
@@ -220,9 +218,8 @@ class NMFNode(Node):
 
         Returns:
             Dict containing:
-            - W: Basis matrix / concentration profiles (n_samples, n_components) as SpectralResult
-            - H: Coefficient matrix / pure spectra (n_components, n_wavenumbers) as SpectralResult
-            - n_components: Number of components
+            NodeResult with declared concentration, basis-spectrum, fitted-state,
+            reconstruction-error, and model-artifact outputs.
         """
         input_ds = bind_X(
             input_data,
@@ -231,64 +228,24 @@ class NMFNode(Node):
             allow_array=False,
         )
 
-        # Get parameters
-        n_components = self.parameters.get("n_components", 3)
-        solver = self.parameters.get("solver", "mu")
-        max_iter = self.parameters.get("max_iter", 200)
-        tol = self.parameters.get("tol", 0.0001)
+        del kwargs
+        parameters = self._resolve_params()
+        state = nmf_core.fit_nmf(input_ds, parameters=parameters)
+        n_components = int(state["parameters"]["n_components"])
+        W_data = np.asarray(state["concentrations"], dtype=np.float64)
+        H_data = np.asarray(state["components"], dtype=np.float64)
 
-        # Validate input shape
-        if len(input_ds.shape) != 2:
-            raise ValueError(f"Expected 2D input, got shape {input_ds.shape}")
-
-        n_samples, n_features = input_ds.shape
-        if n_components > min(n_samples, n_features):
-            raise ValueError(
-                f"n_components ({n_components}) cannot exceed min(n_samples, n_features) = {min(n_samples, n_features)}"
-            )
-
-        # Check for negative values (NMF requires non-negative data).
-        # Silently shifting data (data - data.min()) can invert spectral meaning
-        # (e.g. absorbance → offset transmission) and must never happen without
-        # explicit user intent.  Raise so the workflow is fixed at the source.
-        data_array = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-        if np.any(data_array < 0):
-            neg_min = float(data_array.min())
-            raise ValueError(
-                f"NMF requires non-negative input data, but found minimum value {neg_min:.4g}. "
-                "Add a 'Clip Floor' node (floor=0) or a baseline correction step before NMF "
-                "to ensure all spectral intensities are ≥ 0."
-            )
-
-        logger.debug("[NMF Node] Executing with:")
-        logger.debug("  - n_components: %s", n_components)
-        logger.debug("  - solver: %s", solver)
-        logger.debug("  - max_iter: %s", max_iter)
-        logger.debug("  - tol: %s", tol)
-        logger.debug("  - Data shape: %s samples x %s features", n_samples, n_features)
-
-        # Perform NMF using sklearn
-        from sklearn.decomposition import NMF
-
-        nmf = NMF(n_components=n_components, solver=solver, max_iter=max_iter, tol=tol)
-        W_data = nmf.fit_transform(data_array)
-        H_data = nmf.components_
-
-        # Get input coordinates for NDDataset creation
+        # Get input coordinates for SherpaDataset creation
         # Use generic accessors to support all axis types (TimeAxis, SampleAxis, etc.)
         _x_coord = input_ds.get_feature_axis()
         _y_coord = input_ds.get_observation_axis()
 
-        # Get reconstruction error if available
-        reconstruction_err = None
-        if hasattr(nmf, "reconstruction_err_"):
-            reconstruction_err = float(nmf.reconstruction_err_)
+        reconstruction_err = float(state["reconstruction_error"])
 
         logger.debug("[NMF Node] Decomposition completed successfully")
         logger.debug("  - W shape: %s", W_data.shape)
         logger.debug("  - H shape: %s", H_data.shape)
-        if reconstruction_err is not None:
-            logger.debug("  - Reconstruction error: %.6f", reconstruction_err)
+        logger.debug("  - Reconstruction error: %.6f", reconstruction_err)
 
         # Extract label_categories for categorical coloring
         label_categories = None
@@ -307,12 +264,12 @@ class NMFNode(Node):
                 label_categories = None
 
         # =====================================================================
-        # Create proper NDDataset objects for W and H with coordinate coupling
+        # Create proper SherpaDataset objects for W and H with coordinate coupling
         # This enables "smart array" behavior - slicing data also slices axes
         # =====================================================================
 
-        component_labels = [f"Component {i+1}" for i in range(n_components)]
-        spectrum_labels = [f"Basis Spectrum {i+1}" for i in range(n_components)]
+        component_labels = [f"Component {i + 1}" for i in range(n_components)]
+        spectrum_labels = [f"Basis Spectrum {i + 1}" for i in range(n_components)]
 
         # H (Pure Spectra): shape (n_components, n_features)
         # X-axis = wavenumbers from input, Y-axis = component labels
@@ -332,9 +289,10 @@ class NMFNode(Node):
             y_coord=_y_coord,  # Preserve sample labels from input
             units="relative concentration",
             title="NMF Concentration Profiles (W)",
+            data_role="X_features",
         )
 
-        # Add processing history to NDDataset outputs
+        # Add processing history to SherpaDataset outputs
         copy_processing_history(input_ds, W_dataset)
         add_processing_step(
             W_dataset,
@@ -359,32 +317,42 @@ class NMFNode(Node):
         inherit_origin_flags(input_ds, H_dataset)
 
         # Store only scientific metadata that coordinates can't carry
-        nmf_quality_summary: dict = {"n_components": int(n_components)}
-        if reconstruction_err is not None:
-            nmf_quality_summary["reconstruction_err"] = float(reconstruction_err)
+        nmf_quality_summary: dict = {
+            "n_components": int(n_components),
+            "reconstruction_err": reconstruction_err,
+        }
         W_dataset.meta.update(
             {
                 "type": "NMF",
+                "scientific_matrix_role": "component_concentrations",
                 "n_components": n_components,
                 "label_categories": label_categories,
                 "reconstruction_error": reconstruction_err,
                 "quality_summary": nmf_quality_summary,
             }
         )
+        H_dataset.meta["scientific_matrix_role"] = "component_spectra"
 
-        nmf_diagnostics: dict[str, Any] = {"n_components": int(n_components)}
-        if reconstruction_err is not None:
-            nmf_diagnostics["reconstruction_error"] = float(reconstruction_err)
-        if hasattr(nmf, "n_iter_"):
-            try:
-                nmf_diagnostics["n_iter"] = int(nmf.n_iter_)
-            except Exception:
-                pass
+        nmf_diagnostics: dict[str, Any] = {
+            "n_components": int(n_components),
+            "reconstruction_error": reconstruction_err,
+            "n_iter": int(state["n_iter"]),
+            "convergence_status": state["convergence_status"],
+            "solver": str(state["parameters"]["solver"]),
+            "application_rule": state["application_rule"],
+        }
 
         from ._artifact_builder import build_model_artifact
 
         artifact = build_model_artifact(
-            NMFExtract(H=H_data.astype(np.float64), n_components=int(n_components)),
+            NMFExtract(
+                H=H_data.astype(np.float64),
+                n_components=int(n_components),
+                solver=str(state["parameters"]["solver"]),
+                max_iter=int(state["parameters"]["max_iter"]),
+                tol=float(state["parameters"]["tol"]),
+                random_state=int(state["parameters"]["random_state"]),
+            ),
             input_ds,
             node_id=self.node_id,
             metrics=nmf_diagnostics,
@@ -392,433 +360,55 @@ class NMFNode(Node):
 
         return NodeResult(
             outputs={
-                "default": W_dataset,  # NDDataset: concentration profiles + sample labels (y) + component coords (x)
-                "concentrations": W_dataset,  # Alias for default
-                "spectra": H_dataset,  # NDDataset: basis spectra + wavenumbers (x) + component coords (y)
-                "W": W_dataset,  # Alias for concentrations
-                "H": H_dataset,  # Alias for spectra
-                "model": nmf,  # Model port
+                "default": W_dataset,
+                "concentrations": W_dataset,
+                "spectra": H_dataset,
+                "model": state,
+                "reconstruction_error": reconstruction_err,
                 "_model_artifact": artifact,
             },
             diagnostics=nmf_diagnostics,
         )
 
+    def fit_fitted_state(self, input_data: Any, target: Any = None) -> dict[str, Any]:
+        """Fit the closed non-negative basis used by graph and artifact application."""
+        del target
+        return nmf_core.fit_nmf(input_data, parameters=self._resolve_params())
 
-@register_node
-class FastICANode(Node):
-    """
-    Fast Independent Component Analysis (FastICA) node.
+    def apply_fitted_state(self, input_data: Any, state: Any) -> np.ndarray:
+        """Estimate concentrations against the frozen non-negative basis."""
+        return nmf_core.apply_nmf(input_data, state)
 
-    Performs ICA to separate multivariate signals into independent
-    non-Gaussian signals. Useful for blind source separation in
-    spectroscopic mixture analysis.
 
-    Uses SpectroChemPy's FastICA implementation.
-    """
-
-    metadata = NodeMetadata(
-        node_type="model.ica",
-        category="exploratory",
-        label="Fit FastICA Decomposition",
-        description="Fit an Independent Component Analysis decomposition for blind source separation",
-        parameters=[
-            NodeParameter(
-                name="n_components",
-                label="Number of Components",
-                param_type="number",
-                default=3,
-                min_value=2,
-                step=1,
-                description="Number of independent components to extract",
-                required=True,
-                category="basic",
-            ),
-            NodeParameter(
-                name="algorithm",
-                label="Algorithm",
-                param_type="select",
-                default="parallel",
-                options=["parallel", "deflation"],
-                description="ICA algorithm: 'parallel' (all components at once) or 'deflation' (one at a time)",
-                required=False,
-                category="advanced",
-            ),
-            NodeParameter(
-                name="fun",
-                label="Contrast Function",
-                param_type="select",
-                default="logcosh",
-                options=["logcosh", "exp", "cube"],
-                description="Contrast function for ICA: 'logcosh', 'exp', or 'cube'",
-                required=False,
-                category="advanced",
-            ),
-            NodeParameter(
-                name="max_iter",
-                label="Maximum Iterations",
-                param_type="number",
-                default=200,
-                min_value=50,
-                step=50,
-                description="Maximum number of iterations",
-                required=False,
-                category="advanced",
-            ),
-            NodeParameter(
-                name="tol",
-                label="Convergence Tolerance",
-                param_type="number",
-                default=0.0001,
-                min_value=0.00001,
-                step=0.0001,
-                description="Convergence tolerance",
-                required=False,
-                category="advanced",
-            ),
-        ],
-        input_types=["NDDataset"],
-        input_ports=[
-            PortMetadata(
-                name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                required=True,
-                label="Input Spectra",
-                description="Spectral data to process",
-            ),
-        ],
-        output_type="dict",
-        output_ports=[
-            PortMetadata(
-                name="model",
-                type_ref="spectrasherpa://types/DecompositionResult/1.0",
-                required=True,
-                label="Fitted FastICA Decomposition",
-                description="Fitted FastICA model object",
-            ),
-            PortMetadata(
-                name="sources",
-                type_ref="spectrasherpa://types/Array2D/1.0",
-                required=True,
-                label="Source Signals",
-                description="Independent source signals (S)",
-            ),
-            PortMetadata(
-                name="mixing_matrix",
-                type_ref="spectrasherpa://types/Array2D/1.0",
-                required=True,
-                label="Mixing Matrix",
-                description="Mixing matrix (A)",
-            ),
-            PortMetadata(
-                name="components",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                required=True,
-                label="Components",
-                description="Independent components (St)",
-            ),
-        ],
-    )
-
-    def generate_python(
-        self,
-        inputs: dict[str, str],
-        indent: str = "    ",
-        use_scp: bool = True,
-    ) -> list[str]:
-        """Generate Python export code for FastICA decomposition."""
-        params = self._resolve_params()
-        n_components = params.get("n_components", 3)
-        algorithm = params.get("algorithm", "parallel")
-        fun = params.get("fun", "logcosh")
-        max_iter = params.get("max_iter", 200)
-        tol = params.get("tol", 0.0001)
-
-        X_expr = inputs.get("default", inputs.get("X", "input_data"))
-
-        lines: list[str] = []
-        lines.append(f"{indent}# --- FastICA ({self.node_id}) ---")
-
-        # Extract X
-        lines.append(f"{indent}_X_input = {X_expr}")
-        lines.append(f"{indent}_X_data = np.array(")
-        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
-        lines.append(f"{indent}    dtype=np.float64,")
-        lines.append(f"{indent})")
-
-        # FastICA uses sklearn regardless of use_scp
-        lines.append(f"{indent}from sklearn.decomposition import FastICA as _FastICA")
-        lines.append(
-            f"{indent}_ica = _FastICA(n_components={n_components},"
-            f" algorithm='{algorithm}', fun='{fun}',"
-            f" max_iter={max_iter}, tol={tol})"
-        )
-        lines.append(f"{indent}_S = _ica.fit_transform(_X_data)")
-        lines.append(f"{indent}_St = _ica.components_ if hasattr(_ica, 'components_') else None")
-        lines.append(f"{indent}_A = _ica.mixing_ if hasattr(_ica, 'mixing_') else None")
-        lines.append(f'{indent}print(f"  FastICA ({n_components} components): sources={{_S.shape}}")')
-        lines.append(f"{indent}if _St is not None:")
-        lines.append(f'{indent}    print(f"    Spectral profiles: {{_St.shape}}")')
-
-        # Store result
-        lines.append(f"{indent}results['{self.node_id}'] = {{")
-        lines.append(f"{indent}    'default': _S,")
-        lines.append(f"{indent}    'sources': _S,")
-        lines.append(f"{indent}    'components': _St,")
-        lines.append(f"{indent}    'mixing_matrix': _A,")
-        lines.append(f"{indent}    'model': _ica,")
-        lines.append(f"{indent}}}")
-
-        return lines
-
-    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
-        """
-        Execute FastICA decomposition on input dataset.
-
-        Args:
-            input_data: Dataset containing spectral mixture data
-                       Shape should be (n_samples, n_wavenumbers)
-
-        Returns:
-            Dict containing:
-            - S: Independent source signals (n_samples, n_components)
-            - A: Mixing matrix (n_components, n_wavenumbers)
-            - n_components: Number of components
-        """
-        input_ds = bind_X(
-            input_data,
-            missing_message="Missing required input: input_data (spectral mixtures)",
-            dataset_error_message="input_data must be an dataset object",
-            allow_array=False,
-        )
-
-        # Get parameters
-        n_components = self.parameters.get("n_components", 3)
-        algorithm = self.parameters.get("algorithm", "parallel")
-        fun = self.parameters.get("fun", "logcosh")
-        max_iter = self.parameters.get("max_iter", 200)
-        tol = self.parameters.get("tol", 0.0001)
-
-        # Validate input shape
-        if len(input_ds.shape) != 2:
-            raise ValueError(f"Expected 2D input, got shape {input_ds.shape}")
-
-        n_samples, n_features = input_ds.shape
-        if n_components > min(n_samples, n_features):
-            raise ValueError(
-                f"n_components ({n_components}) cannot exceed min(n_samples, n_features) = {min(n_samples, n_features)}"
-            )
-
-        logger.debug("[FastICA Node] Executing with:")
-        logger.debug("  - n_components: %s", n_components)
-        logger.debug("  - algorithm: %s", algorithm)
-        logger.debug("  - fun: %s", fun)
-        logger.debug("  - max_iter: %s", max_iter)
-        logger.debug("  - tol: %s", tol)
-        logger.debug("  - Data shape: %s samples x %s features", n_samples, n_features)
-
-        # Perform FastICA using sklearn
-        from sklearn.decomposition import FastICA
-
-        data_array = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-        ica = FastICA(
-            n_components=n_components,
-            algorithm=algorithm,
-            fun=fun,
-            max_iter=max_iter,
-            tol=tol,
-        )
-        S_data = ica.fit_transform(data_array)
-        St_data = ica.components_ if hasattr(ica, "components_") else None
-        A_data = ica.mixing_ if hasattr(ica, "mixing_") else None
-
-        # Get input coordinates for NDDataset creation
-        # Use generic accessors to support all axis types (TimeAxis, SampleAxis, etc.)
-        _x_coord = input_ds.get_feature_axis()
-        _y_coord = input_ds.get_observation_axis()
-
-        logger.debug("[FastICA Node] Decomposition completed successfully")
-        logger.debug("  - S (sources) shape: %s", S_data.shape)
-        if St_data is not None:
-            logger.debug("  - St (spectral profiles) shape: %s", St_data.shape)
-        if A_data is not None:
-            logger.debug("  - A (mixing) shape: %s", A_data.shape)
-
-        # Extract label_categories for categorical coloring
-        label_categories = None
-        if _y_coord is not None:
-            try:
-                if hasattr(_y_coord, "labels") and _y_coord.labels is not None:
-                    raw = _y_coord.labels.tolist() if hasattr(_y_coord.labels, "tolist") else list(_y_coord.labels)
-                    label_categories = sorted(set(str(l) for l in raw))
-                elif hasattr(_y_coord, "data") and _y_coord.data is not None:
-                    raw = _y_coord.data.tolist() if hasattr(_y_coord.data, "tolist") else list(_y_coord.data)
-                    str_labels = [str(l) for l in raw]
-                    unique = sorted(set(str_labels))
-                    if len(unique) < 20 and not _is_sequential_numeric(raw):
-                        label_categories = unique
-            except Exception:
-                label_categories = None
-
-        # Try to extract species names from input metadata (from BlendNode ground truth)
-        species_names = None
-        if hasattr(input_ds, "meta") and input_ds.meta:
-            spectra_meta = input_ds.meta.get("spectra", {})
-            if isinstance(spectra_meta, dict):
-                species_list = spectra_meta.get("species", [])
-                if species_list and len(species_list) >= n_components:
-                    try:
-                        names: list[str] = []
-                        for spec in species_list[:n_components]:
-                            if isinstance(spec, dict):
-                                names.append(spec.get("name", f"IC {len(names)+1}"))
-                            elif hasattr(spec, "name"):
-                                names.append(spec.name)
-                            else:
-                                names.append(f"IC {len(names)+1}")
-                        species_names = names
-                        logger.debug("[FastICA Node] Extracted species names from input metadata: %s", species_names)
-                    except Exception as e:
-                        logger.warning("[FastICA Node] Could not extract species names: %s", e, exc_info=True)
-
-        # Use species names if available, otherwise use generic labels
-        component_labels = species_names or [f"IC {i+1}" for i in range(n_components)]
-        spectrum_labels = species_names or [f"IC Spectrum {i+1}" for i in range(n_components)]
-
-        # =====================================================================
-        # Create proper NDDataset objects with coordinate coupling
-        # This enables "smart array" behavior - slicing data also slices axes
-        # =====================================================================
-
-        # S (Sources): shape (n_samples, n_components)
-        # X-axis = component labels, Y-axis = sample labels/time
-        S_dataset = _create_spectral_dataset(
-            data=S_data,
-            x_coord=_make_safe_coord(component_labels, title="Independent Component"),
-            y_coord=_y_coord,  # Preserve sample labels from input
-            units="source signal",
-            title="FastICA Source Signals",
-        )
-
-        # St (Spectral Profiles): shape (n_components, n_features)
-        # X-axis = wavenumbers from input, Y-axis = component labels
-        St_dataset = None
-        if St_data is not None:
-            St_dataset = _create_spectral_dataset(
-                data=St_data,
-                x_coord=_x_coord,
-                y_coord=_make_safe_coord(spectrum_labels, title="Independent Component"),
-                units=input_ds.units if hasattr(input_ds, "units") else None,
-                title="FastICA Spectral Profiles",
-            )
-
-        # A (Mixing Matrix): shape (n_samples, n_components) or similar
-        A_dataset = None
-        if A_data is not None:
-            A_dataset = _create_spectral_dataset(
-                data=A_data,
-                x_coord=_make_safe_coord(component_labels, title="Independent Component"),
-                y_coord=_y_coord,  # Preserve sample labels from input
-                units="mixing coefficient",
-                title="FastICA Mixing Matrix",
-            )
-
-        # Add processing history to NDDataset outputs
-        copy_processing_history(input_ds, S_dataset)
-        add_processing_step(
-            S_dataset,
-            "model.ica.sources",
-            {"n_components": n_components},
-            node_id=self.node_id,
-        )
-
-        if St_dataset is not None:
-            copy_processing_history(input_ds, St_dataset)
-            add_processing_step(
-                St_dataset,
-                "model.ica.components",
-                {"n_components": n_components},
-                node_id=self.node_id,
-            )
-
-        if A_dataset is not None:
-            copy_processing_history(input_ds, A_dataset)
-            add_processing_step(
-                A_dataset,
-                "model.ica.mixing_matrix",
-                {"n_components": n_components},
-                node_id=self.node_id,
-            )
-
-        # Propagate dataset-level flags. S (sources) and A (mixing matrix) are
-        # sample-axis-preserved; St (spectral profiles) rows are components.
-        # Origin tags survive on every output.
-        if S_dataset is not None:
-            inherit_sample_flags(input_ds, S_dataset)
-            inherit_origin_flags(input_ds, S_dataset)
-        if A_dataset is not None:
-            inherit_sample_flags(input_ds, A_dataset)
-            inherit_origin_flags(input_ds, A_dataset)
-        if St_dataset is not None:
-            inherit_origin_flags(input_ds, St_dataset)
-
-        # Store only scientific metadata that coordinates can't carry
-        S_dataset.meta.update(
-            {
-                "type": "FastICA",
-                "n_components": n_components,
-                "label_categories": label_categories,
-                "species_names": species_names,
-                "quality_summary": {
-                    "n_components": int(n_components),
-                    "algorithm": str(algorithm),
-                    "fun": str(fun),
-                },
-            }
-        )
-
-        ica_diagnostics: dict[str, Any] = {"n_components": int(n_components)}
-        if hasattr(ica, "n_iter_"):
-            try:
-                n_iter_val = ica.n_iter_
-                ica_diagnostics["n_iter"] = int(n_iter_val)
-                # sklearn's FastICA reports convergence via n_iter_ < max_iter
-                ica_diagnostics["converged"] = bool(int(n_iter_val) < int(max_iter))
-            except Exception:
-                pass
-
-        from ._artifact_builder import build_model_artifact
-
-        artifact = build_model_artifact(
-            FastICAExtract(
-                components=np.asarray(ica.components_, dtype=np.float64),
-                mean=(
-                    np.asarray(getattr(ica, "mean_", None), dtype=np.float64)
-                    if getattr(ica, "mean_", None) is not None
-                    else None
-                ),
-                mixing=(
-                    np.asarray(getattr(ica, "mixing_", None), dtype=np.float64)
-                    if getattr(ica, "mixing_", None) is not None
-                    else None
-                ),
-                n_components=int(n_components),
-            ),
-            input_ds,
-            node_id=self.node_id,
-            metrics=ica_diagnostics,
-        )
-
-        return NodeResult(
-            outputs={
-                "default": S_dataset,  # NDDataset: source signals + sample labels (y) + IC coords (x)
-                "sources": S_dataset,  # Alias for default
-                "components": St_dataset,  # NDDataset: spectral profiles + wavenumbers (x) + IC coords (y)
-                "mixing_matrix": A_dataset,  # NDDataset: mixing matrix
-                "model": ica,  # Model port
-                "_model_artifact": artifact,
-            },
-            diagnostics=ica_diagnostics,
-        )
+bind_stable_execution_contract(
+    NMFNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.FITTED_MODEL,
+    implementation_id="spectrasherpa.model.nmf",
+    implementation_version="1.0.0",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="preserves_samples",
+    feature_effect="generates_features",
+    axis_effect="changes_axis",
+    unit_effect="changes_units",
+    resource_hints={"timeout_seconds": 120, "cpu_seconds": 120, "memory_bytes": 1_073_741_824},
+    license_id="BSD-3-Clause",
+    help_reference="docs/nodes/exploratory.md",
+    implementation_modules=(nmf_core,),
+    implementation_distributions=("numpy", "scikit-learn"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scikit-learn", "1.9.0")),
+    citations=(
+        "Lee and Seung, Algorithms for Non-negative Matrix Factorization, Advances in Neural "
+        "Information Processing Systems 13 (2001) 556-562",
+        "Gaujoux and Seoighe, A flexible R package for nonnegative matrix factorization, "
+        "BMC Bioinformatics 11 (2010) 367; R package NMF",
+    ),
+    fitted_state_serializer=nmf_core.NMF_STATE_SERIALIZER,
+    deterministic=True,
+    target_access=TargetAccess.NONE,
+    group_access="none",
+)
 
 
 # =============================================================================

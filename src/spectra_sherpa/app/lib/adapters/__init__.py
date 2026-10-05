@@ -1,8 +1,9 @@
 """
 Edge adapters for SherpaDataset.
 
-All external format conversions (numpy, sklearn, SpectroChemPy)
-live here. The core SherpaDataset module has zero external dependencies.
+Native NumPy and scikit-learn conversions live here. The deliberately narrow
+optional SpectroChemPy boundary lives under ``spectra_sherpa.interoperability``.
+The core SherpaDataset module has zero external dependencies.
 """
 
 from spectra_sherpa.app.lib.adapters.numpy_adapter import from_numpy, to_numpy
@@ -13,9 +14,3 @@ __all__ = [
     "to_numpy",
     "from_sklearn",
 ]
-
-# SCP adapters are imported lazily to avoid hard dependency:
-#   from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset, to_nddataset, scp_roundtrip
-#   from spectra_sherpa.app.lib.adapters.scp_extractors import (
-#       PCAExtract, PLSExtract, MCRExtract, EFAExtract, SIMPLISMAExtract,
-#   )

@@ -90,7 +90,3 @@ def from_sklearn(bunch: Any, name: str = "") -> SherpaDataset:
         extra=extra,
         data_role="X_features",
     )
-
-
-# Alias for backward compat with existing import sites
-from_sklearn_bunch = from_sklearn

@@ -5,14 +5,29 @@ SIMPLISMA self-modeling mixture analysis node.
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from typing import Any
 
+import numpy as np
+
+from spectra_sherpa.app.lib import fitted_state
+from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
+from spectra_sherpa.app.services.dag import meta_helpers
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
     inherit_origin_flags,
     inherit_sample_flags,
 )
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    TargetAccess,
+    WorkerCapability,
+)
+from spectra_sherpa.interoperability import spectrochempy_adapter
 
 from ...io_contracts import (
     bind_X,
@@ -21,6 +36,7 @@ from ...node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodePolicy,
     NodeResult,
     PortMetadata,
     register_node,
@@ -40,8 +56,80 @@ from .core_utils import (
 
 logger = logging.getLogger(__name__)
 
-from spectra_sherpa.app.lib.adapters.scp_extractors import SIMPLISMAExtract
-from spectra_sherpa.app.lib.scp_compat import scp, to_nddataset
+
+def _canonical_simplisma_parameters(parameters: Mapping[str, object]) -> dict[str, object]:
+    """Validate the closed SpectroChemPy SIMPLISMA parameter surface."""
+
+    if set(parameters) != {"n_components", "noise", "tol"}:
+        raise ValueError("SIMPLISMA parameters must use the exact three-field schema")
+    n_components = parameters["n_components"]
+    if isinstance(n_components, bool) or not isinstance(n_components, int) or not 2 <= n_components <= 500:
+        raise ValueError("SIMPLISMA n_components must be an integer between 2 and 500")
+    noise = parameters["noise"]
+    tol = parameters["tol"]
+    if isinstance(noise, bool) or not isinstance(noise, (int, float)) or not np.isfinite(noise):
+        raise ValueError("SIMPLISMA noise must be finite")
+    if not 0.0 <= float(noise) <= 15.0:
+        raise ValueError("SIMPLISMA noise must be between 0 and 15 percent")
+    if isinstance(tol, bool) or not isinstance(tol, (int, float)) or not np.isfinite(tol):
+        raise ValueError("SIMPLISMA tolerance must be finite")
+    if not 0.001 <= float(tol) <= 100.0:
+        raise ValueError("SIMPLISMA tolerance must be between 0.001 and 100 percent")
+    return {"n_components": n_components, "noise": float(noise), "tol": float(tol)}
+
+
+def _simplisma_numeric_outputs(input_data: Any, *, parameters: Mapping[str, object]) -> dict[str, object]:
+    """Run the one SpectroChemPy SIMPLISMA authority and return closed arrays."""
+
+    canonical = _canonical_simplisma_parameters(parameters)
+    input_ds = bind_X(
+        input_data,
+        missing_message="Missing required input: input_data (spectral mixtures)",
+        dataset_error_message="input_data must be a dataset object",
+        allow_array=False,
+    )
+    n_samples, n_features = input_ds.shape
+    n_components = int(canonical["n_components"])
+    if n_components > min(n_samples, n_features):
+        raise ValueError("SIMPLISMA n_components may not exceed the smaller input dimension")
+    scp = spectrochempy_adapter.require_spectrochempy("model.simplisma")
+    model = scp.SIMPLISMA(
+        n_components=n_components,
+        noise=float(canonical["noise"]),
+        tol=float(canonical["tol"]),
+    )
+    model.fit(
+        spectrochempy_adapter.to_spectrochempy_dataset(
+            input_ds,
+            operation_id="model.simplisma",
+        )
+    )
+    extracted = spectrochempy_adapter.extract_simplisma_state(model)
+    concentrations = _ensure_orientation(
+        extracted.C,
+        expected_rows=n_samples,
+        expected_cols=n_components,
+        name="SIMPLISMA.C",
+    )
+    spectra = _ensure_orientation(
+        extracted.St,
+        expected_rows=n_components,
+        expected_cols=n_features,
+        name="SIMPLISMA.St",
+    )
+    purity = (
+        np.asarray(extracted.purities, dtype=np.float64).reshape(-1) if extracted.purities is not None else np.array([])
+    )
+    if purity.shape != (n_components,):
+        raise ValueError("SpectroChemPy SIMPLISMA did not expose one purity value per resolved component")
+    if not np.isfinite(concentrations).all() or not np.isfinite(spectra).all() or not np.isfinite(purity).all():
+        raise ValueError("SpectroChemPy SIMPLISMA returned non-finite results")
+    return {
+        "default": concentrations,
+        "concentrations": concentrations,
+        "spectra": spectra,
+        "purity_values": purity,
+    }
 
 
 @register_node
@@ -56,6 +144,13 @@ class SIMPLISMANode(Node):
     """
 
     metadata = NodeMetadata(
+        policy=NodePolicy(
+            safe_for_auto_apply=True,
+            requires_human_review=False,
+            data_egress_risk="none",
+            offload_to_pool=True,
+            required_worker_capabilities=["read_dataset"],
+        ),
         node_type="model.simplisma",
         category="exploratory",
         label="Fit SIMPLISMA Pure Components",
@@ -67,6 +162,8 @@ class SIMPLISMANode(Node):
                 param_type="number",
                 default=3,
                 min_value=2,
+                max_value=500,
+                max_value_reason="Bound local decomposition rank and memory use",
                 step=1,
                 description="Number of pure components to resolve",
                 required=True,
@@ -78,6 +175,8 @@ class SIMPLISMANode(Node):
                 param_type="number",
                 default=0.1,
                 min_value=0.001,
+                max_value=100.0,
+                max_value_reason="Closed percentage tolerance accepted by SpectroChemPy SIMPLISMA",
                 step=0.01,
                 description="Convergence tolerance",
                 required=False,
@@ -89,13 +188,15 @@ class SIMPLISMANode(Node):
                 param_type="number",
                 default=3.0,
                 min_value=0.0,
+                max_value=15.0,
+                max_value_reason="SpectroChemPy documents the SIMPLISMA noise range as 0-15 percent",
                 step=0.1,
                 description="Noise level for purity calculation",
                 required=False,
                 category="advanced",
             ),
         ],
-        input_types=["NDDataset"],
+        input_types=["SherpaDataset"],
         input_ports=[
             PortMetadata(
                 name="default",
@@ -108,15 +209,15 @@ class SIMPLISMANode(Node):
         output_type="dict",
         output_ports=[
             PortMetadata(
-                name="model",
-                type_ref="spectrasherpa://types/DecompositionResult/1.0",
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
-                label="Fitted SIMPLISMA Pure Components",
-                description="Fitted SIMPLISMA model object",
+                label="Concentration Profiles",
+                description="Primary resolved concentration profiles",
             ),
             PortMetadata(
                 name="concentrations",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Concentrations",
                 description="Resolved concentration profiles (C)",
@@ -136,8 +237,8 @@ class SIMPLISMANode(Node):
                 description="Purity values for resolved components",
             ),
         ],
-        requires_scp=True,
         help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.SIMPLISMA.html",
+        canonical_parameter_validator=_canonical_simplisma_parameters,
     )
 
     def generate_python(
@@ -155,39 +256,15 @@ class SIMPLISMANode(Node):
             ]
 
         params = self._resolve_params()
-        n_components = params.get("n_components", 3)
-        tol = params.get("tol", 0.1)
-        noise = params.get("noise", 3.0)
-
         X_expr = inputs.get("default", inputs.get("X", "input_data"))
-
-        lines: list[str] = []
-        lines.append(f"{indent}# --- SIMPLISMA ({self.node_id}) ---")
-        lines.append(f"{indent}_X_input = {X_expr}")
-        lines.append(f"{indent}_X_data = np.array(")
-        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
-        lines.append(f"{indent}    dtype=np.float64,")
-        lines.append(f"{indent})")
-        lines.append(f"{indent}_X_ndd = scp.NDDataset(_X_data)")
-        lines.append(f"{indent}_simplisma = scp.SIMPLISMA(n_components={n_components}, tol={tol}, noise={noise})")
-        lines.append(f"{indent}_simplisma.fit(_X_ndd)")
-        lines.append(f"{indent}_C = np.asarray(_simplisma.C.data, dtype=np.float64)")
-        lines.append(f"{indent}_St = np.asarray(_simplisma.St.data, dtype=np.float64)")
-        lines.append(
-            f"{indent}_purity = ("
-            f"np.asarray(_simplisma.Pur.data, dtype=np.float64).tolist()"
-            f" if hasattr(_simplisma, 'Pur') and _simplisma.Pur is not None"
-            f" else [])"
-        )
-        lines.append(f'{indent}print(f"  SIMPLISMA ({n_components} components): C={{_C.shape}}, St={{_St.shape}}")')
-        lines.append(f"{indent}results['{self.node_id}'] = {{")
-        lines.append(f"{indent}    'model': _simplisma,")
-        lines.append(f"{indent}    'concentrations': _C,")
-        lines.append(f"{indent}    'spectra': _St,")
-        lines.append(f"{indent}    'purity_values': _purity,")
-        lines.append(f"{indent}}}")
-
-        return lines
+        return [
+            f"{indent}# --- Canonical SIMPLISMA pure-variable estimates ({self.node_id}) ---",
+            f"{indent}from spectra_sherpa.app.services.dag.nodes.modeling.simplisma_nodes "
+            "import _simplisma_numeric_outputs",
+            f"{indent}results[{self.node_id!r}] = _simplisma_numeric_outputs(",
+            f"{indent}    {X_expr}, parameters={params!r},",
+            f"{indent})",
+        ]
 
     async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
         """
@@ -203,54 +280,21 @@ class SIMPLISMANode(Node):
             - St: Pure spectra (n_components, n_wavenumbers)
             - n_components: Number of resolved components
         """
+        del kwargs
         input_ds = bind_X(
             input_data,
             missing_message="Missing required input: input_data (spectral mixtures)",
             dataset_error_message="input_data must be an dataset object",
             allow_array=False,
         )
-        input_ndd = to_nddataset(input_ds)
-
-        # Get parameters
-        n_components = self.parameters.get("n_components", 3)
-        tol = self.parameters.get("tol", 0.1)
-        noise = self.parameters.get("noise", 3.0)
-
-        # Validate input shape
-        if len(input_ds.shape) != 2:
-            raise ValueError(f"Expected 2D input, got shape {input_ds.shape}")
-
+        params = self._resolve_params()
+        n_components = int(params["n_components"])
+        noise = float(params["noise"])
         n_samples, n_features = input_ds.shape
-        if n_components > min(n_samples, n_features):
-            raise ValueError(
-                f"n_components ({n_components}) cannot exceed min(n_samples, n_features) = {min(n_samples, n_features)}"
-            )
-
-        logger.debug("[SIMPLISMA Node] Executing with:")
-        logger.debug("  - n_components: %s", n_components)
-        logger.debug("  - tol: %s", tol)
-        logger.debug("  - noise: %s", noise)
-        logger.debug("  - Data shape: %s samples x %s features", n_samples, n_features)
-
-        # Perform SIMPLISMA using SpectroChemPy
-        simplisma = scp.SIMPLISMA(n_components=n_components, tol=tol, noise=noise)
-        simplisma.fit(input_ndd)
-
-        # Extract results using typed extractor
-        extracted = SIMPLISMAExtract.from_scp(simplisma)
-        C_data = _ensure_orientation(
-            extracted.C,
-            expected_rows=n_samples,
-            expected_cols=n_components,
-            name="SIMPLISMA.C",
-        )
-        St_data = _ensure_orientation(
-            extracted.St,
-            expected_rows=n_components,
-            expected_cols=n_features,
-            name="SIMPLISMA.St",
-        )
-        purities = extracted.purities
+        numeric = _simplisma_numeric_outputs(input_ds, parameters=params)
+        C_data = np.asarray(numeric["concentrations"], dtype=np.float64)
+        St_data = np.asarray(numeric["spectra"], dtype=np.float64)
+        purity_values = np.asarray(numeric["purity_values"], dtype=np.float64)
 
         # Get input coordinates for dataset creation
         _x_coord = input_ds.get_feature_axis()
@@ -287,18 +331,18 @@ class SIMPLISMANode(Node):
                         names: list[str] = []
                         for spec in species_list[:n_components]:
                             if isinstance(spec, dict):
-                                names.append(spec.get("name", f"Species {len(names)+1}"))
+                                names.append(spec.get("name", f"Species {len(names) + 1}"))
                             elif hasattr(spec, "name"):
                                 names.append(spec.name)
                             else:
-                                names.append(f"Species {len(names)+1}")
+                                names.append(f"Species {len(names) + 1}")
                         species_names = names
                     except Exception:
                         pass
 
         # Use species names if available, otherwise use generic labels
-        component_labels = species_names or [f"Component {i+1}" for i in range(n_components)]
-        spectrum_labels = species_names or [f"Pure Spectrum {i+1}" for i in range(n_components)]
+        component_labels = species_names or [f"Component {i + 1}" for i in range(n_components)]
+        spectrum_labels = species_names or [f"Pure Spectrum {i + 1}" for i in range(n_components)]
 
         # =====================================================================
         # Create SherpaDataset objects for St and C with coordinate coupling
@@ -361,16 +405,7 @@ class SIMPLISMANode(Node):
         )
 
         # Purity values extracted by SIMPLISMAExtract
-        purity_list = purities.tolist() if purities is not None else []
-
-        # Build model artifact for persistence
-        from ._artifact_builder import build_model_artifact
-
-        artifact = build_model_artifact(
-            extracted,
-            input_ds,
-            node_id=self.node_id,
-        )
+        purity_list = purity_values.tolist()
 
         diagnostics: dict[str, Any] = {
             "n_components": int(n_components),
@@ -388,9 +423,40 @@ class SIMPLISMANode(Node):
                 "default": C_dataset,  # SherpaDataset: concentrations + sample labels (y) + component coords (x)
                 "concentrations": C_dataset,  # Alias
                 "spectra": St_dataset,  # SherpaDataset: pure spectra + wavenumbers (x) + component coords (y)
-                "model": simplisma,  # Model port
-                "purity_values": purity_list,  # Plain list (1D diagnostic)
-                "_model_artifact": artifact,
+                "purity_values": purity_list,
             },
             diagnostics=diagnostics,
         )
+
+
+bind_stable_execution_contract(
+    SIMPLISMANode,
+    runtime_family=RuntimeFamily.SPECTROCHEMPY,
+    lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
+    implementation_id="spectrasherpa.model.simplisma",
+    implementation_version="1.0.1",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="preserves_samples",
+    feature_effect="generates_features",
+    axis_effect="changes_axis",
+    unit_effect="changes_units",
+    resource_hints={"timeout_seconds": 60, "cpu_seconds": 60, "memory_bytes": 1_073_741_824},
+    license_id="BSD-3-Clause",
+    help_reference="docs/nodes/exploratory.md",
+    implementation_modules=(
+        fitted_state,
+        spectrochempy_adapter,
+        dag_io_contracts,
+        meta_helpers,
+    ),
+    implementation_distributions=("numpy", "scipy", "spectrochempy"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("spectrochempy", "0.8.1")),
+    citations=(
+        "Windig & Guilment, Interactive self-modeling mixture analysis, Analytical Chemistry 63 (1991) 1425-1432",
+        "SpectroChemPy SIMPLISMA documentation and purity-maximization implementation",
+    ),
+    deterministic=True,
+    target_access=TargetAccess.NONE,
+    group_access="none",
+)
