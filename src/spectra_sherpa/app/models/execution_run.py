@@ -11,6 +11,8 @@ from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, Strin
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from spectra_sherpa.app.db.base import Base
+from spectra_sherpa.app.schemas.run_evidence import RunEvidence
+from spectra_sherpa.app.services.run_environment import build_run_environment_snapshot
 
 if TYPE_CHECKING:
     from spectra_sherpa.app.models.batch_prediction import BatchPrediction
@@ -99,11 +101,27 @@ class ExecutionRun(Base):
         String(50), server_default="manual"
     )  # "manual" | "batch" | "folder_watch"
     source_metadata: Mapped[dict | None] = mapped_column(JSON)
-    model_ids: Mapped[list | None] = mapped_column(JSON)  # list of artifact_uid strings used in this run
+    # Resolved versions of the numerical stack that produced this run.
+    # A later comparison can then say *why* results moved, not only that
+    # they did. Historical runs predate the column and stay ``None``;
+    # readers must render that as "not recorded", never as agreement.
+    environment_snapshot: Mapped[dict | None] = mapped_column(JSON, default=build_run_environment_snapshot)
+    # Compatibility storage for databases and clients predating the explicit
+    # lifecycle roles below. Neither field is exposed by the current API.
+    model_ids: Mapped[list | None] = mapped_column(JSON)
     run_kind: Mapped[str] = mapped_column(
-        String(50), default="training", server_default="training", nullable=False
+        String(50), default="other", server_default="other", nullable=False
     )  # "training" | "batch_inference" | "data" | "other"
+    # Deprecated write-through mirror of attempted_artifact_uids. Runtime
+    # writers must assign both through services.run_artifact_roles.
     applied_artifact_uids: Mapped[list | None] = mapped_column(JSON, default=list)
+    produced_artifact_uids: Mapped[list | None] = mapped_column(JSON, default=list)
+    attempted_artifact_uids: Mapped[list | None] = mapped_column(JSON, default=list)
+    succeeded_artifact_uids: Mapped[list | None] = mapped_column(JSON, default=list)
+    # Null historical rows remain unverified; names/statuses imply no completeness.
+    evidence_completeness: Mapped[dict | None] = mapped_column(
+        JSON, nullable=True, default=lambda: RunEvidence().model_dump()
+    )
     # RFC-7240-ish: opaque client-supplied token that lets a retried
     # POST /workflows/{id}/execute replay the original response instead
     # of running the workflow again. Nullable so non-idempotent callers

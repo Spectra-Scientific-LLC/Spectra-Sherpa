@@ -9,11 +9,17 @@ from __future__ import annotations
 
 import inspect
 import logging
+import math
 import threading
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Callable, Dict, List, Mapping, Optional, Type
+
+from spectra_sherpa.core.execution_runtime import ExecutionRuntime
+from spectra_sherpa.core.node_identity import canonical_node_type
+
+from .transport import reject_spectrochempy_transport
 
 logger = logging.getLogger(__name__)
 
@@ -92,15 +98,19 @@ class NodeParameter:
 
     name: str
     label: str
-    param_type: str  # "number", "boolean", "select", "text"
+    param_type: str  # "number", "boolean", "select", "text", "string_list"
     default: Any = None
     min_value: Optional[float] = None
     max_value: Optional[float] = None
+    # A hard maximum changes the admitted scientific/computational domain.
+    # Built-in nodes must publish the reason instead of presenting an
+    # unexplained UI clamp as if it were an algorithmic fact.
+    max_value_reason: Optional[str] = None
     step: Optional[float] = None
     options: Optional[List[str] | List[Dict[str, Any]]] = None
     description: Optional[str] = None
     required: bool = True
-    category: Optional[str] = "basic"  # "basic" or "advanced" - complexity level for UI
+    category: Optional[str] = "basic"  # "basic", "advanced", or "internal" (not scientist-editable)
     # Conditional visibility: {param_name: [allowed_values]}
     # When set, this parameter is only shown when the controlling param has one of the listed values.
     # Example: visible_when={"method": ["whittaker"]} → only show when method is "whittaker"
@@ -147,7 +157,34 @@ class NodePolicy:
     safe_for_auto_apply: bool = False
     requires_human_review: bool = True
     data_egress_risk: str = "none"  # "none", "metadata", "full_data"
-    offload_to_pool: bool = True  # False for dynamically loaded plugin nodes not present in the worker registry.
+    offload_to_pool: bool = True
+    # Closed worker capabilities are checked at the child-process boundary.
+    # They are trusted application configuration, never workflow parameters.
+    required_worker_capabilities: List[str] = field(default_factory=list)
+
+
+def validate_explicit_node_policy(metadata: "NodeMetadata") -> list[str]:
+    """Validate the closed safety policy required on every registered node."""
+
+    policy = metadata.policy
+    if policy is None:
+        return [f"{metadata.node_type} must declare an explicit NodePolicy"]
+
+    errors: list[str] = []
+    for field_name in ("safe_for_auto_apply", "requires_human_review", "offload_to_pool"):
+        if type(getattr(policy, field_name)) is not bool:
+            errors.append(f"{metadata.node_type} policy {field_name} must be boolean")
+    if policy.data_egress_risk not in {"none", "metadata", "full_data"}:
+        errors.append(f"{metadata.node_type} policy uses unknown data_egress_risk {policy.data_egress_risk!r}")
+    capabilities = policy.required_worker_capabilities
+    capabilities_are_closed = isinstance(capabilities, list) and all(
+        isinstance(capability, str) and capability for capability in capabilities
+    )
+    if not capabilities_are_closed:
+        errors.append(f"{metadata.node_type} policy worker capabilities must be non-empty strings")
+    elif len(set(capabilities)) != len(capabilities):
+        errors.append(f"{metadata.node_type} policy worker capabilities may not repeat")
+    return errors
 
 
 @dataclass
@@ -159,8 +196,8 @@ class NodeMetadata:
     label: str
     description: str
     parameters: List[NodeParameter] = field(default_factory=list)
-    input_types: List[str] = field(default_factory=lambda: ["NDDataset"])
-    output_type: str = "NDDataset"
+    input_types: List[str] = field(default_factory=lambda: ["SherpaDataset"])
+    output_type: str = "SherpaDataset"
     # Named input ports. Empty list = source node (no inputs).
     # Executor passes inputs as kwargs: execute(X=data1, y=data2)
     input_ports: List[PortMetadata] = field(default_factory=list)
@@ -169,12 +206,145 @@ class NodeMetadata:
     output_ports: Optional[List[PortMetadata]] = None
     # Diagnostic keys this node emits during execution
     diagnostics: List[str] = field(default_factory=list)
-    # Per-node SCP gate: True = requires SpectroChemPy at runtime
-    requires_scp: bool = False
     # Per-node safety and automation policy
     policy: Optional[NodePolicy] = None
     # Optional URL linking to external documentation (e.g., SpectroChemPy API docs)
     help_url: Optional[str] = None
+    # The sole immutable execution identity. This is deliberately typed as
+    # ``Any`` to avoid a type-level dependency from the base registry. The
+    # leaf execution-contract core validates the object at its consumer.
+    execution_contract: Any = None
+    # Renderer-neutral scientist-facing views over the declared output ports.
+    # Kept separate from execution identity so presentation can be verified
+    # and persisted independently without becoming numerical authority.
+    presentation_contract: Any = None
+    # A node-owned refinement of the generic parameter grammar. The callable
+    # is part of the registered implementation closure, not a second
+    # operation-name dispatch table.
+    canonical_parameter_validator: Optional[Callable[[dict[str, object]], dict[str, object]]] = None
+    # Persistence-only validation for nodes with conditional source requirements.
+    # Execution always uses the canonical validator, never this draft hook.
+    draft_parameter_validator: Optional[Callable[[dict[str, object]], dict[str, object]]] = None
+    # Optional managed-profile refinement owned by the same node module.  The
+    # local canonical grammar may be broader than the bounded settings a
+    # hosted campaign can safely admit.  Keeping this callable beside the
+    # node prevents the managed executor from growing a second operation map.
+    managed_parameter_validator: Optional[Callable[[dict[str, object]], dict[str, object]]] = None
+
+    def resolved_execution_contract(self):
+        """Return the immutable M4 contract, or ``None`` for an uncontracted node.
+
+        C2 removes or contracts every remaining uncontracted built-in. Keeping
+        the lookup here makes the live registry the only node-to-contract
+        authority while that family-by-family conversion is in progress.
+        """
+
+        if self.execution_contract is None:
+            return None
+        # See the field comment above for why this import is intentionally
+        # delayed until a contract consumer asks for it.
+        from spectra_sherpa.execution_contract_vocabulary import NodeExecutionContract
+
+        if not isinstance(self.execution_contract, NodeExecutionContract):
+            raise ValueError("node execution contract must be a NodeExecutionContract")
+        return self.execution_contract
+
+    def resolved_presentation_contract(self):
+        """Return the explicit or registry-derived presentation contract."""
+
+        from spectra_sherpa.app.services.dag.presentation_contract import derive_node_presentation_contract
+
+        return derive_node_presentation_contract(self)
+
+    @property
+    def requires_scp(self) -> bool:
+        """Project SpectroChemPy availability from the immutable contract.
+
+        This compatibility-named value is deliberately not constructor state.
+        Runtime dependency authority belongs only to the execution contract,
+        so catalog projection, generated-code guards, and live execution cannot
+        disagree with the distributions bound into the operation identity.
+        """
+
+        contract = self.resolved_execution_contract()
+        if contract is None:
+            return False
+        return any(
+            requirement["distribution"] == "spectrochempy" for requirement in contract.payload["runtime_requirements"]
+        )
+
+    def resolved_required_worker_capabilities(self) -> tuple[str, ...]:
+        """Return contract authority, or local policy until C2 contracts the node."""
+
+        contract = self.resolved_execution_contract()
+        if contract is not None:
+            return tuple(str(value) for value in contract.payload["required_worker_capabilities"])
+        if self.policy is None:
+            return ()
+        return tuple(str(value) for value in self.policy.required_worker_capabilities)
+
+    def canonicalize_parameters(self, raw: Mapping[str, object]) -> dict[str, object]:
+        """Project parameters through this registered node's closed grammar."""
+
+        expected = {parameter.name for parameter in self.parameters}
+        extra = set(raw) - expected
+        if extra:
+            rendered = ", ".join(sorted(repr(name) for name in extra))
+            raise ValueError(f"parameters contain undeclared fields: {rendered}")
+        projected: dict[str, object] = {}
+        for parameter in self.parameters:
+            value = raw.get(parameter.name, parameter.default)
+            if value is None and not parameter.required:
+                projected[parameter.name] = None
+                continue
+            if parameter.param_type == "number":
+                if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+                    raise ValueError(f"parameter {parameter.name} must be a finite number")
+                if parameter.min_value is not None and value < parameter.min_value:
+                    raise ValueError(f"parameter {parameter.name} is below its admitted minimum")
+                if parameter.max_value is not None and value > parameter.max_value:
+                    raise ValueError(f"parameter {parameter.name} is above its admitted maximum")
+            elif parameter.param_type == "boolean":
+                if not isinstance(value, bool):
+                    raise ValueError(f"parameter {parameter.name} must be boolean")
+            elif parameter.param_type == "select":
+                options = parameter.options or []
+                if (
+                    isinstance(value, bool)
+                    or not isinstance(value, (str, int, float))
+                    or (isinstance(value, float) and not math.isfinite(value))
+                ):
+                    raise ValueError(f"parameter {parameter.name} must be a finite scalar option")
+                admitted = [option.get("value") if isinstance(option, dict) else option for option in options]
+                if not any(value == option for option in admitted):
+                    raise ValueError(f"parameter {parameter.name} is not an admitted option")
+            elif parameter.param_type in {"text", "model_select"}:
+                if not isinstance(value, str):
+                    raise ValueError(f"parameter {parameter.name} must be text")
+            elif parameter.param_type == "string_list":
+                if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+                    raise ValueError(f"parameter {parameter.name} must be a list of strings")
+                if len(set(value)) != len(value):
+                    raise ValueError(f"parameter {parameter.name} may not contain duplicates")
+            elif parameter.param_type == "json" and self.canonical_parameter_validator is not None:
+                # JSON has no useful generic scientific grammar.  A node may
+                # admit it only when a node-specific validator immediately
+                # projects it into a closed canonical value below.
+                pass
+            else:
+                raise ValueError(f"parameter {parameter.name} uses an unsupported canonical parameter type")
+            projected[parameter.name] = value
+        if self.canonical_parameter_validator is not None:
+            projected = self.canonical_parameter_validator(projected)
+        return projected
+
+    def canonicalize_managed_parameters(self, raw: Mapping[str, object]) -> dict[str, object]:
+        """Project one hosted candidate through the node-owned managed envelope."""
+
+        projected = self.canonicalize_parameters(raw)
+        if self.managed_parameter_validator is not None:
+            projected = self.managed_parameter_validator(projected)
+        return projected
 
 
 def validate_execute_port_contract(node_class: Type["Node"]) -> list[str]:
@@ -269,16 +439,7 @@ class Node(ABC):
     metadata: NodeMetadata | None = None
 
     # --- Python export support (override in subclasses) ---
-    # SpectroChemPy method name for simple preprocessing nodes.
-    # When set, the default generate_python() emits: data.{scp_method}(**params)
-    scp_method: Optional[str] = None
-    # Rename node parameters -> SCP keyword arguments
-    # e.g. {"lam": "lamb", "p": "asymmetry"} means node param "lam" becomes scp kwarg "lamb"
-    scp_param_map: Dict[str, str] = {}
-    # Extra hardcoded kwargs always passed to the SCP method
-    # e.g. {"deriv": 1} for first-derivative nodes
-    scp_extra_kwargs: Dict[str, Any] = {}
-    # Additional import lines needed by generated code
+    # Additional import lines needed by generated code.
     python_extra_imports: List[str] = []
 
     def __init__(self, node_id: str, parameters: Optional[Dict[str, Any]] = None):
@@ -290,10 +451,28 @@ class Node(ABC):
             parameters: Dictionary of parameter values
         """
         self.node_id = node_id
-        self.parameters = parameters or {}
+        raw_parameters = dict(parameters or {})
+        if self.metadata is not None and self.metadata.resolved_execution_contract() is not None:
+            raw_parameters = self.metadata.canonicalize_parameters(raw_parameters)
+        self.parameters = raw_parameters
         self.status = NodeStatus.PENDING
         self.error_message: Optional[str] = None
         self.result: Optional[Any] = None
+        self._execution_runtime: ExecutionRuntime | None = None
+
+    def bind_execution_runtime(self, runtime: ExecutionRuntime) -> None:
+        """Bind the immutable authority selected by this node's executor."""
+
+        if not isinstance(runtime, ExecutionRuntime):
+            raise TypeError("node execution runtime must be an ExecutionRuntime")
+        self._execution_runtime = runtime
+
+    def require_execution_runtime(self) -> ExecutionRuntime:
+        """Return explicit runtime authority, never a process-global fallback."""
+
+        if self._execution_runtime is None:
+            raise RuntimeError("node execution runtime is unavailable")
+        return self._execution_runtime
 
     @abstractmethod
     async def execute(self, *inputs: Any, **kwargs: Any) -> Any:
@@ -349,6 +528,17 @@ class Node(ABC):
         """Return True if this node declares explicit named input ports."""
         return bool(self.metadata and self.metadata.input_ports)
 
+    def requires_worker_capability_at_runtime(self, capability: str) -> bool:
+        """Return whether this invocation needs one statically admitted capability.
+
+        Contracts remain the maximum authority. A node may narrow that static
+        declaration for an explicit execution mode, but can never request a
+        capability absent from its immutable contract.
+        """
+
+        admitted = self.metadata.resolved_required_worker_capabilities() if self.metadata else ()
+        return capability in admitted
+
     # ------------------------------------------------------------------
     # Python export / code generation
     # ------------------------------------------------------------------
@@ -369,9 +559,6 @@ class Node(ABC):
 
     def supports_python_export(self) -> bool:
         """Return True if this node can generate Python export code."""
-        if self.scp_method is not None:
-            return True
-        # Check if the subclass overrides generate_python
         return type(self).generate_python is not Node.generate_python
 
     def exported_output_ports(self) -> set[str] | None:
@@ -397,65 +584,26 @@ class Node(ABC):
         """
         Generate Python code lines for this node.
 
-        The default implementation handles the common SCP-method pattern::
-
-            data = {input_expr}.copy()
-            data.{scp_method}(**kwargs)
-            results['{node_id}'] = data
-
-        Nodes that use numpy or have complex logic should override this.
+        Nodes with an admitted export path override this method. The base class
+        fails explicitly so a node cannot acquire an unreviewed scientific
+        implementation through a generic method-name hook.
 
         Args:
             inputs: Mapping of input name -> Python expression
                 (e.g. ``{"input": "results['node_1']"}``)
             indent: Whitespace prefix for each line
-            use_scp: If True, emit SpectroChemPy code; if False, emit
-                numpy/scipy code for standalone scripts.
+            use_scp: Whether optional-runtime export paths are allowed. Only
+                the three contracted optional nodes consume this flag.
 
         Returns:
             List of Python code lines (already indented)
         """
-        if self.scp_method is None:
-            assert self.metadata is not None
-            return [
-                f"{indent}# TODO: {self.metadata.node_type} does not support Python export yet",
-                f"{indent}raise NotImplementedError(" f"'{self.metadata.node_type} export not implemented')",
-            ]
-
-        # SCP-only nodes can't generate no-SCP code
-        if not use_scp and self.metadata and self.metadata.requires_scp:
-            return [
-                f"{indent}# --- {self.metadata.label} ({self.node_id}) ---",
-                f"{indent}# This node requires SpectroChemPy (pip install spectra-sherpa[scp])",
-                f"{indent}raise ImportError(" f"'{self.metadata.label} requires spectrochempy')",
-            ]
-
         assert self.metadata is not None
-        lines: List[str] = []
-        lines.append(f"{indent}# --- {self.metadata.label} ({self.node_id}) ---")
-
-        # Determine input expression
-        input_val = next(iter(inputs.values())) if inputs else "input_data"
-        if isinstance(input_val, list):
-            input_expr = "[" + ", ".join(input_val) + "]"
-        else:
-            input_expr = input_val
-        lines.append(f"{indent}data = {input_expr}.copy()")
-
-        # Build SCP method kwargs
-        params = self._resolve_params()
-        kwargs_parts: List[str] = []
-        for param_name, value in params.items():
-            scp_name = self.scp_param_map.get(param_name, param_name)
-            kwargs_parts.append(f"{scp_name}={_format_value(value)}")
-        for extra_name, extra_val in self.scp_extra_kwargs.items():
-            kwargs_parts.append(f"{extra_name}={_format_value(extra_val)}")
-
-        kwargs_str = ", ".join(kwargs_parts)
-        lines.append(f"{indent}data.{self.scp_method}({kwargs_str})")
-        lines.append(f"{indent}results['{self.node_id}'] = data")
-
-        return lines
+        del inputs, use_scp
+        return [
+            f"{indent}# TODO: {self.metadata.node_type} does not support Python export yet",
+            f"{indent}raise NotImplementedError('{self.metadata.node_type} export not implemented')",
+        ]
 
     async def run(self, *inputs: Any, **kwargs: Any) -> NodeResult:
         """
@@ -473,14 +621,17 @@ class Node(ABC):
         """
         try:
             self.status = NodeStatus.RUNNING
+            reject_spectrochempy_transport(inputs, boundary=f"node {self.node_id!r} input")
+            reject_spectrochempy_transport(kwargs, boundary=f"node {self.node_id!r} input")
+            self._validate_dataset_rank(inputs, kwargs)
+            self._validate_axis_semantics(inputs, kwargs)
             # Per-node SCP gate
             if self.metadata and self.metadata.requires_scp:
-                from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+                from spectra_sherpa.app.services.dag.runtime_dependencies import distribution_is_installed
 
-                if not HAS_SCP:
+                if not distribution_is_installed("spectrochempy"):
                     raise ImportError(
-                        f"{self.metadata.label} requires SpectroChemPy. "
-                        f"Install with: pip install spectra-sherpa[scp]"
+                        f"{self.metadata.label} requires SpectroChemPy. Install with: pip install spectra-sherpa[scp]"
                     )
             self.validate_parameters()
             if kwargs:
@@ -501,12 +652,106 @@ class Node(ABC):
                 # Source nodes (no inputs)
                 raw = await self.execute()
             self.result = NodeResult.wrap(raw)
+            reject_spectrochempy_transport(self.result, boundary=f"node {self.node_id!r} output")
             self.status = NodeStatus.COMPLETED
             return self.result
         except Exception as e:
             self.status = NodeStatus.ERROR
             self.error_message = str(e)
             raise
+
+    def _validate_dataset_rank(self, inputs: Any, kwargs: Any) -> None:
+        """Enforce the immutable rank policy before any scientific kernel runs."""
+
+        if self.metadata is None:
+            return
+        contract = self.metadata.resolved_execution_contract()
+        if contract is None:
+            return
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+        from spectra_sherpa.execution_contract_vocabulary import DatasetRankPolicy
+
+        policy = DatasetRankPolicy(str(contract.payload["input_rank_policy"]))
+        if policy is DatasetRankPolicy.PRESERVES_ND:
+            return
+
+        def datasets(value: Any):
+            if isinstance(value, SherpaDataset):
+                yield value
+            elif isinstance(value, dict):
+                for nested in value.values():
+                    yield from datasets(nested)
+            elif isinstance(value, (list, tuple)):
+                for nested in value:
+                    yield from datasets(nested)
+
+        for dataset in datasets((inputs, kwargs)):
+            if policy is DatasetRankPolicy.REQUIRES_2D and dataset.ndim != 2:
+                raise ValueError(
+                    f"{self.metadata.label} requires a two-dimensional dataset; "
+                    "use Dimension Projection to select or reduce inner dimensions explicitly"
+                )
+            if policy is DatasetRankPolicy.PROJECTS_TO_2D and dataset.ndim < 2:
+                raise ValueError(f"{self.metadata.label} requires a dataset with at least two dimensions")
+
+    def _validate_axis_semantics(self, inputs: Any, kwargs: Any) -> None:
+        """Enforce declared multi-input unit compatibility at the node edge."""
+
+        if self.metadata is None:
+            return
+        contract = self.metadata.resolved_execution_contract()
+        if contract is None or contract.payload.get("unit_effect") != "requires_compatible_units":
+            return
+
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+        from spectra_sherpa.core.axis_semantics import axis_semantics, require_compatible_axis_semantics
+
+        def datasets(value: Any):
+            if isinstance(value, SherpaDataset):
+                yield value
+            elif isinstance(value, dict):
+                for nested in value.values():
+                    yield from datasets(nested)
+            elif isinstance(value, (list, tuple)):
+                for nested in value:
+                    yield from datasets(nested)
+
+        admitted = list(datasets((inputs, kwargs)))
+        if len(admitted) < 2:
+            return
+        reference = admitted[0].feature_axis
+        if reference is None:
+            raise ValueError(f"{self.metadata.label} requires explicit feature-axis semantics")
+        reference_semantics = axis_semantics(
+            axis_class=type(reference).__name__,
+            title=reference.title,
+            units=reference.units,
+            quantity=reference.quantity,
+        )
+        for candidate_dataset in admitted[1:]:
+            candidate = candidate_dataset.feature_axis
+            if candidate is None:
+                raise ValueError(f"{self.metadata.label} requires explicit feature-axis semantics")
+            candidate_semantics = axis_semantics(
+                axis_class=type(candidate).__name__,
+                title=candidate.title,
+                units=candidate.units,
+                quantity=candidate.quantity,
+            )
+            require_compatible_axis_semantics(
+                reference_semantics,
+                candidate_semantics,
+                context=self.metadata.label,
+                require_quantity=any(
+                    value is not None
+                    for value in (
+                        reference_semantics.quantity,
+                        reference_semantics.units,
+                        candidate_semantics.quantity,
+                        candidate_semantics.units,
+                    )
+                ),
+            )
 
     @classmethod
     def get_metadata(cls) -> NodeMetadata:
@@ -526,12 +771,24 @@ class Node(ABC):
         }
 
 
+def resolved_runtime_worker_capabilities(node: Node) -> tuple[str, ...]:
+    """Intersect an invocation's request with its immutable admitted authority.
+
+    The intersection is calculated outside the overrideable node method so a
+    node can narrow its authority but cannot manufacture a capability omitted
+    from its stable execution contract.
+    """
+
+    admitted = node.metadata.resolved_required_worker_capabilities() if node.metadata else ()
+    return tuple(capability for capability in admitted if node.requires_worker_capability_at_runtime(capability))
+
+
 class NodeRegistry:
     """Registry for available node types.
 
-    Thread-safe via ``threading.RLock``.  RLock (not Lock) is used because
-    ``register()`` can be called from within ``reload_plugin_by_path()``
-    which may already hold a loader-level lock on the same thread.
+    Built-in modules populate the registry during deterministic application
+    import. ``freeze_builtins()`` then makes that exact vocabulary immutable
+    for the lifetime of the process.
     """
 
     def __init__(self):
@@ -544,7 +801,7 @@ class NodeRegistry:
         """Mark all currently registered nodes as built-in.
 
         Call this once after all built-in nodes have been imported.
-        After freezing, plugins cannot overwrite built-in node types.
+        After freezing, no code may add, replace, or remove a node type.
         """
         with self._lock:
             self._builtin_types = set(self._nodes.keys())
@@ -555,30 +812,30 @@ class NodeRegistry:
         """
         Register a node type.
 
-        After ``freeze_builtins()`` is called, attempting to overwrite a
-        built-in node type raises ``ValueError``.  Plugin-to-plugin
-        overwrites emit a warning but are allowed.
+        Registration is a startup construction operation. After
+        ``freeze_builtins()`` it fails before inspecting the candidate class,
+        preventing a workflow, plugin, or remote caller from expanding the
+        installed release's canonical operation vocabulary.
 
         Args:
             node_class: Node class to register
 
         Raises:
-            ValueError: If trying to overwrite a built-in node type
+            ValueError: If the registry is frozen or the node contract is invalid
         """
         with self._lock:
+            if self._frozen:
+                raise ValueError("Node registry is frozen; runtime node registration is disabled")
             metadata = node_class.get_metadata()
             node_type = metadata.node_type
+            policy_errors = validate_explicit_node_policy(metadata)
+            if policy_errors:
+                raise ValueError("\n".join(policy_errors))
             contract_errors = validate_execute_port_contract(node_class)
             if contract_errors:
                 raise ValueError("\n".join(contract_errors))
 
             if node_type in self._nodes:
-                if self._frozen and node_type in self._builtin_types:
-                    raise ValueError(
-                        f"Cannot overwrite built-in node type {node_type!r}. "
-                        f"Plugins must use a unique namespaced type "
-                        f"(e.g. 'vendor.my_operation')."
-                    )
                 logger.warning(
                     "Node type %r re-registered (overwriting %s with %s)",
                     node_type,
@@ -591,7 +848,7 @@ class NodeRegistry:
     def __contains__(self, node_type: str) -> bool:
         """Check if a node type is registered."""
         with self._lock:
-            return node_type in self._nodes
+            return canonical_node_type(node_type) in self._nodes
 
     def unregister(self, node_type: str) -> bool:
         """Remove a non-builtin node type from the registry.
@@ -603,6 +860,7 @@ class NodeRegistry:
             ValueError: If attempting to unregister a built-in node type.
         """
         with self._lock:
+            node_type = canonical_node_type(node_type)
             if node_type in self._builtin_types:
                 raise ValueError(f"Cannot unregister built-in node type {node_type!r}")
             return self._nodes.pop(node_type, None) is not None
@@ -623,6 +881,7 @@ class NodeRegistry:
             KeyError: If node type is not registered
         """
         with self._lock:
+            node_type = canonical_node_type(node_type)
             if node_type not in self._nodes:
                 raise KeyError(f"Unknown node type: {node_type}")
 
@@ -633,13 +892,21 @@ class NodeRegistry:
     def get_metadata(self, node_type: str) -> NodeMetadata:
         """Get metadata for a node type."""
         with self._lock:
+            node_type = canonical_node_type(node_type)
             if node_type not in self._nodes:
                 raise KeyError(f"Unknown node type: {node_type}")
             return self._nodes[node_type].get_metadata()
 
+    def get_catalog_metadata(self, node_type: str) -> NodeMetadata:
+        """Get scientist-facing catalog metadata without changing execution metadata."""
+        from .catalog_presentation import project_catalog_metadata
+
+        return project_catalog_metadata(self.get_metadata(node_type))
+
     def get_node_class(self, node_type: str) -> Type[Node]:
         """Get the registered Node class for a node type."""
         with self._lock:
+            node_type = canonical_node_type(node_type)
             if node_type not in self._nodes:
                 raise KeyError(f"Unknown node type: {node_type}")
             return self._nodes[node_type]
@@ -655,6 +922,12 @@ class NodeRegistry:
                     seen.add(cls_id)
                     result.append(cls.get_metadata())
             return result
+
+    def list_catalog_nodes(self) -> List[NodeMetadata]:
+        """List the scientist-facing projection of every registered node."""
+        from .catalog_presentation import project_catalog_metadata
+
+        return [project_catalog_metadata(metadata) for metadata in self.list_nodes()]
 
     def list_by_category(self, category: str) -> List[NodeMetadata]:
         """List nodes in a specific category."""

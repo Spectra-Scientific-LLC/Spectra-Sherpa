@@ -9,22 +9,23 @@ Replaces AnalysisDataset with:
 - Artifact handles for MCP (dataset_id + manifest)
 - Equality modes + fingerprinting for testing
 
-Core module is dependency-neutral: no imports from scp_compat, sklearn,
-or any external spectral library. All conversions live in adapters/.
+Core module is dependency-neutral: no imports from sklearn or any external
+spectral library. Native conversions live in adapters; the optional three-node
+matrix boundary lives in interoperability.
 """
 
 from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import uuid
 from collections.abc import Mapping
 from datetime import datetime, timezone
-from types import MappingProxyType
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic import GetCoreSchemaHandler as _GetCoreSchemaHandler
 from pydantic import GetJsonSchemaHandler as _GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue as _JsonSchemaValue
@@ -41,9 +42,13 @@ from spectra_sherpa.app.lib.axes import (
     SpatialAxis,
     SpectralAxis,
     TimeAxis,
+    revalidated_axis_copy,
 )
 from spectra_sherpa.app.lib.data_roles import DataRole, data_role_to_modality, normalize_data_role
 from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
+from spectra_sherpa.app.lib.scientific_values import lossless_json_scalar, lossless_json_value
+from spectra_sherpa.core.dimension_roles import DimensionRole, canonical_dimension_roles
+from spectra_sherpa.core.target_authority import TargetAuthority
 
 # ---------------------------------------------------------------------------
 # Pydantic-compatible numpy array type for JSON schema generation
@@ -103,6 +108,7 @@ class FrozenDict(dict):
     popitem = _readonly  # type: ignore[assignment]
     setdefault = _readonly  # type: ignore[assignment]
     update = _readonly  # type: ignore[assignment]
+    __ior__ = _readonly  # type: ignore[assignment]
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +183,226 @@ class TargetContext(BaseModel):
     n_classes: int | None = None
     class_names: list[str] | None = None
     selected_target: str | None = None  # explicit Y column selection for multi-target
+    selected_authority: TargetAuthority | None = None
+
+    @model_validator(mode="after")
+    def _selected_authority_is_consistent(self) -> "TargetContext":
+        authority = self.selected_authority
+        if authority is None:
+            return self
+        if self.selected_target != authority.column:
+            raise ValueError("selected target differs from selected_authority.column")
+        if self.target_type != authority.target_type:
+            raise ValueError("target type differs from selected_authority.target_type")
+        if self.target_units != authority.units:
+            raise ValueError("target units differ from selected_authority.units")
+        if self.target_names is not None and authority.column not in self.target_names:
+            raise ValueError("selected target authority is absent from target_names")
+        return self
+
+
+class DatasetDescriptiveContext(BaseModel):
+    """Typed descriptive fields supplied by a source scientific object."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    authors: tuple[str, ...] = ()
+    description: str | None = None
+    created_at: datetime | None = None
+    modified_at: datetime | None = None
+    raw_date_fields: Mapping[str, str] = Field(default_factory=dict)
+
+    @field_validator("authors", mode="before")
+    @classmethod
+    def _validate_authors(cls, value: Any) -> tuple[str, ...]:
+        values = tuple(value or ())
+        for item in values:
+            if not isinstance(item, str) or not item or item != item.strip() or len(item) > 4096:
+                raise ValueError("dataset authors must be bounded, non-empty, whitespace-canonical text")
+        return values
+
+    @field_validator("description")
+    @classmethod
+    def _validate_description(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str) or value != value.strip() or len(value) > 65_536:
+            raise ValueError("dataset description must be bounded, whitespace-canonical text")
+        return value
+
+    @field_validator("raw_date_fields", mode="before")
+    @classmethod
+    def _validate_raw_dates(cls, value: Any) -> Mapping[str, str]:
+        if value is None:
+            return FrozenDict()
+        if not isinstance(value, Mapping) or len(value) > 16:
+            raise ValueError("raw_date_fields must be a bounded mapping")
+        normalized: dict[str, str] = {}
+        for key, item in value.items():
+            if not isinstance(key, str) or not key or key != key.strip() or len(key) > 256:
+                raise ValueError("raw_date_fields contains an invalid key")
+            if not isinstance(item, str) or item != item.strip() or len(item) > 4096:
+                raise ValueError("raw_date_fields contains invalid text")
+            normalized[key] = item
+        return FrozenDict(normalized)
+
+
+class DatasetSourceIdentity(BaseModel):
+    """Portable identity declared by an admitted scientific container."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    source_format: str | None = None
+    storage_version: str | None = None
+    object_name: str | None = None
+    object_unique_id: str | None = None
+    dataset_version: str | None = None
+    source_variable: str | None = None
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _validate_identity_text(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value or value != value.strip() or len(value) > 4096:
+            raise ValueError("dataset source identity must be bounded, non-empty, whitespace-canonical text")
+        return value
+
+
+class DatasetSourceHistory(BaseModel):
+    """Ordered source-native history cells without invented operations."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    entries: tuple[str, ...] = ()
+    source_shape: tuple[int, ...] | None = None
+    storage_order: str = "column-major"
+
+    @field_validator("entries", mode="before")
+    @classmethod
+    def _validate_entries(cls, value: Any) -> tuple[str, ...]:
+        values = tuple(value or ())
+        if len(values) > 65_536:
+            raise ValueError("dataset source history exceeds the entry limit")
+        text_bytes = 0
+        for item in values:
+            if not isinstance(item, str) or item != item.strip() or len(item) > 65_536:
+                raise ValueError("dataset source history entries must be bounded exact text")
+            text_bytes += len(item.encode("utf-8"))
+            if text_bytes > 4 * 1024 * 1024:
+                raise ValueError("dataset source history exceeds the text-byte limit")
+        return values
+
+    @field_validator("source_shape", mode="before")
+    @classmethod
+    def _validate_source_shape(cls, value: Any) -> tuple[int, ...] | None:
+        if value is None:
+            return None
+        if isinstance(value, (str, bytes)):
+            raise ValueError("dataset source history shape is invalid")
+        try:
+            result = tuple(value)
+        except TypeError as exc:
+            raise ValueError("dataset source history shape is invalid") from exc
+        if not result or len(result) > 16 or any(type(item) is not int or item <= 0 for item in result):
+            raise ValueError("dataset source history shape is invalid")
+        return result
+
+    @field_validator("storage_order")
+    @classmethod
+    def _validate_storage_order(cls, value: str) -> str:
+        if value not in {"column-major", "row-major"}:
+            raise ValueError("dataset source history storage order is unsupported")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_shape(self) -> DatasetSourceHistory:
+        if self.source_shape is not None:
+            cells = 1
+            for dimension in self.source_shape:
+                cells *= dimension
+            if cells != len(self.entries):
+                raise ValueError("dataset source history shape does not match its entries")
+        return self
+
+
+class DatasetLayoutContext(BaseModel):
+    """Exact source layout facts needed to interpret n-dimensional data."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    kind: str = "generic"
+    source_type: str | None = None
+    source_dtype: str | None = None
+    source_shape: tuple[int, ...] | None = None
+    mode_roles: tuple[DimensionRole, ...] = ()
+    image_size: tuple[int, ...] | None = None
+    image_mode: int | None = None
+    image_include: tuple[bool, ...] | None = None
+    original_unfolded_shape: tuple[int, ...] | None = None
+
+    @field_validator("kind")
+    @classmethod
+    def _validate_kind(cls, value: str) -> str:
+        if value not in {"generic", "image", "batch", "unknown"}:
+            raise ValueError("dataset layout kind is unsupported")
+        return value
+
+    @field_validator("source_type", "source_dtype")
+    @classmethod
+    def _validate_optional_text(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str) or not value or value != value.strip() or len(value) > 256:
+            raise ValueError("dataset layout text must be bounded and whitespace-canonical")
+        return value
+
+    @field_validator("source_shape", "image_size", "original_unfolded_shape", mode="before")
+    @classmethod
+    def _validate_shape(cls, value: Any) -> tuple[int, ...] | None:
+        if value is None:
+            return None
+        if isinstance(value, (str, bytes)):
+            raise ValueError("dataset layout shape must contain bounded positive integer dimensions")
+        try:
+            result = tuple(value)
+        except TypeError as exc:
+            raise ValueError("dataset layout shape must contain bounded positive integer dimensions") from exc
+        if not result or len(result) > 16 or any(type(item) is not int or item <= 0 for item in result):
+            raise ValueError("dataset layout shape must contain bounded positive integer dimensions")
+        return result
+
+    @field_validator("image_mode", mode="before")
+    @classmethod
+    def _validate_image_mode(cls, value: Any) -> int | None:
+        if value is None:
+            return None
+        if type(value) is not int or value < 0 or value > 2**31 - 1:
+            raise ValueError("dataset image mode must be a bounded exact non-negative integer")
+        return value
+
+    @field_validator("mode_roles", mode="before")
+    @classmethod
+    def _validate_mode_roles(cls, value: Any) -> tuple[DimensionRole, ...]:
+        if isinstance(value, (str, bytes)):
+            raise ValueError("dataset layout dimension roles must be a sequence")
+        return canonical_dimension_roles(value or ())
+
+    @field_validator("image_include", mode="before")
+    @classmethod
+    def _validate_image_include(cls, value: Any) -> tuple[bool, ...] | None:
+        if value is None:
+            return None
+        values = tuple(value)
+        if len(values) > 10_000_000 or any(type(item) is not bool for item in values):
+            raise ValueError("dataset image include state must be bounded exact booleans")
+        return values
+
+    @model_validator(mode="after")
+    def _validate_dimension_roles(self) -> DatasetLayoutContext:
+        if self.source_shape is not None and self.mode_roles and len(self.mode_roles) != len(self.source_shape):
+            raise ValueError("dataset mode_roles length does not match source_shape rank")
+        return self
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -207,21 +433,40 @@ class ProvenanceEntry(BaseModel):
     op_id: str
     op_version: str = "1.0"
     parameters: Mapping[str, Any] = Field(default_factory=dict)
+    impact: Mapping[str, Any] | None = None
     timestamp: str = ""
     node_id: str | None = None
     input_shape: tuple[int, ...] | None = None
     output_shape: tuple[int, ...] | None = None
     state_effects: tuple[str, ...] = ()
 
-    @field_validator("parameters", mode="before")
+    @field_validator("parameters", mode="after")
     @classmethod
     def _freeze_parameters(cls, v: Any) -> Mapping[str, Any]:
         """Deep-freeze parameters so entries are immutable in practice."""
         if v is None:
-            return MappingProxyType({})
+            return FrozenDict()
         if isinstance(v, Mapping):
             return cls._freeze_mapping(v)
         raise ValueError("parameters must be a mapping")
+
+    @field_validator("impact", mode="after")
+    @classmethod
+    def _freeze_impact(cls, v: Any) -> Mapping[str, Any] | None:
+        """Deep-freeze an optional, versioned observed-effect record."""
+        if v is None:
+            return None
+        if isinstance(v, Mapping):
+            schema_version = v.get("schema_version")
+            if (
+                not isinstance(schema_version, str)
+                or schema_version.strip() != schema_version
+                or "/" not in schema_version
+                or not schema_version.rsplit("/", 1)[-1].isdigit()
+            ):
+                raise ValueError("impact.schema_version must end in a numeric contract version")
+            return cls._freeze_mapping(v)
+        raise ValueError("impact must be a mapping")
 
     @field_validator("state_effects", mode="before")
     @classmethod
@@ -236,7 +481,7 @@ class ProvenanceEntry(BaseModel):
         frozen: dict[str, Any] = {}
         for key, value in data.items():
             frozen[str(key)] = cls._freeze_value(value)
-        return MappingProxyType(frozen)
+        return FrozenDict(frozen)
 
     @classmethod
     def _freeze_value(cls, value: Any) -> Any:
@@ -258,12 +503,30 @@ class Provenance:
     def __init__(self, entries: list[ProvenanceEntry] | None = None):
         self._entries: list[ProvenanceEntry] = list(entries) if entries else []
 
+    def __getstate__(self) -> dict[str, Any]:
+        """Serialize through the wire-safe form used by project evidence.
+
+        ``ProvenanceEntry`` deep-freezes nested parameter mappings so callers
+        cannot mutate scientific history. Python's ``mappingproxy`` is not
+        pickleable, however, and datasets are deliberately transferred to
+        spawned DAG workers. The wire form crosses that process boundary;
+        ``__setstate__`` reconstructs the same immutable entries on arrival.
+        """
+
+        return {"entries": self.to_list()}
+
+    def __setstate__(self, state: Mapping[str, Any]) -> None:
+        if not isinstance(state, Mapping) or set(state) != {"entries"} or not isinstance(state["entries"], list):
+            raise ValueError("invalid serialized provenance state")
+        self._entries = Provenance.from_list(state["entries"])._entries
+
     def append(
         self,
         op_id: str,
         parameters: dict[str, Any] | None = None,
         *,
         op_version: str = "1.0",
+        impact: dict[str, Any] | None = None,
         node_id: str | None = None,
         input_shape: tuple[int, ...] | None = None,
         output_shape: tuple[int, ...] | None = None,
@@ -274,6 +537,7 @@ class Provenance:
                 op_id=op_id,
                 op_version=op_version,
                 parameters=parameters or {},
+                impact=impact,
                 timestamp=datetime.now(timezone.utc).isoformat(),
                 node_id=node_id,
                 input_shape=input_shape,
@@ -318,6 +582,8 @@ class Provenance:
         for entry in self._entries:
             dumped = entry.model_dump(exclude_none=True)
             dumped["parameters"] = _json_safe(dict(entry.parameters))
+            if entry.impact is not None:
+                dumped["impact"] = _json_safe(dict(entry.impact))
             dumped["state_effects"] = list(entry.state_effects)
             entries.append(dumped)
         return entries
@@ -508,6 +774,200 @@ class DatasetManifest(BaseModel):
     backend: str = "numpy"
     n_provenance_steps: int = 0
     state_effects: list[str] = Field(default_factory=list)
+    scientific_projection_schema: str = "spectrasherpa-dataset-scientific-projection/1"
+    scientific_digest: str | None = None
+
+
+def _canonical_payload_bytes(value: Any) -> bytes:
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()
+
+
+def _payload_digest(value: Any) -> str:
+    return hashlib.sha256(_canonical_payload_bytes(value)).hexdigest()
+
+
+def _array_scientific_projection(array: np.ndarray) -> dict[str, Any]:
+    values = np.asarray(array)
+    projection: dict[str, Any] = {"dtype": values.dtype.str, "shape": list(values.shape)}
+    if values.dtype.kind in "biufc":
+        contiguous = np.ascontiguousarray(values)
+        projection["sha256"] = hashlib.sha256(memoryview(contiguous).cast("B")).hexdigest()
+        return projection
+    digest = hashlib.sha256()
+    for value in values.reshape(-1):
+        normalized = lossless_json_scalar(value, max_text_chars=4096, field_name="scientific array")
+        encoded = _canonical_payload_bytes(normalized)
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+    projection["sha256"] = digest.hexdigest()
+    return projection
+
+
+def _sequence_scientific_projection(values: Any, *, field_name: str) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    count = 0
+    for value in values:
+        normalized = lossless_json_scalar(value, max_text_chars=4096, field_name=field_name)
+        encoded = _canonical_payload_bytes(normalized)
+        digest.update(len(encoded).to_bytes(8, "big"))
+        digest.update(encoded)
+        count += 1
+    return {"count": count, "sha256": digest.hexdigest()}
+
+
+def structured_scientific_projection(
+    value: Any,
+    *,
+    field_name: str,
+    max_depth: int = 12,
+    max_nodes: int = 1_000_000,
+    max_text_bytes: int = 4 * 1024 * 1024,
+) -> dict[str, Any]:
+    """Digest bounded nested scientific metadata without JSON coercion."""
+
+    budget = {"nodes": 0, "text_bytes": 0}
+
+    def project(item: Any, depth: int) -> Any:
+        if depth > max_depth:
+            raise ValueError(f"{field_name} exceeds the maximum nesting depth")
+        budget["nodes"] += 1
+        if budget["nodes"] > max_nodes:
+            raise ValueError(f"{field_name} exceeds the node limit")
+        if isinstance(item, np.ndarray):
+            return {"kind": "array", "projection": _array_scientific_projection(item)}
+        if isinstance(item, Mapping):
+            if not all(isinstance(key, str) for key in item):
+                raise ValueError(f"{field_name} requires exact string mapping keys")
+            records = []
+            for key in sorted(item):
+                budget["text_bytes"] += len(key.encode("utf-8"))
+                records.append({"key": key, "value": project(item[key], depth + 1)})
+            result: Any = {"kind": "mapping", "records": records}
+        elif isinstance(item, (list, tuple)):
+            result = {"kind": "sequence", "items": [project(nested, depth + 1) for nested in item]}
+        else:
+            scalar = lossless_json_scalar(item, max_text_chars=65_536, field_name=field_name)
+            if isinstance(scalar, str):
+                budget["text_bytes"] += len(scalar.encode("utf-8"))
+            result = {"kind": "scalar", "value": scalar}
+        if budget["text_bytes"] > max_text_bytes:
+            raise ValueError(f"{field_name} exceeds the text-byte limit")
+        return result
+
+    projection = project(value, 0)
+    return {
+        "nodes": budget["nodes"],
+        "text_bytes": budget["text_bytes"],
+        "sha256": _payload_digest(projection),
+    }
+
+
+def _admit_structured_scientific_projection(value: Any, *, field_name: str) -> dict[str, Any]:
+    """Admit a previously issued digest-only structured projection."""
+
+    if not isinstance(value, Mapping) or set(value) != {"nodes", "text_bytes", "sha256"}:
+        raise ValueError(f"{field_name} projection is malformed")
+    nodes = value["nodes"]
+    text_bytes = value["text_bytes"]
+    digest = value["sha256"]
+    if (
+        type(nodes) is not int
+        or nodes < 1
+        or nodes > 1_000_000
+        or type(text_bytes) is not int
+        or text_bytes < 0
+        or text_bytes > 4 * 1024 * 1024
+        or not isinstance(digest, str)
+        or len(digest) != 64
+        or any(char not in "0123456789abcdef" for char in digest)
+    ):
+        raise ValueError(f"{field_name} projection is malformed")
+    return {"nodes": nodes, "text_bytes": text_bytes, "sha256": digest}
+
+
+def _axis_scientific_projection(axis: AxisInfo, *, include_sample_table: bool = True) -> dict[str, Any]:
+    projection: dict[str, Any] = {
+        "axis_class": type(axis).__name__,
+        "values": _array_scientific_projection(axis.values) if axis.values is not None else None,
+        "labels": (
+            _sequence_scientific_projection(axis.labels, field_name="axis labels") if axis.labels is not None else None
+        ),
+        "units": axis.units,
+        "title": axis.title,
+        "include_mask": _array_scientific_projection(axis.include_mask) if axis.include_mask is not None else None,
+        "primary_scale_name": axis.primary_scale_name,
+        "alternate_scales": [
+            {
+                "name": item.name,
+                "values": _array_scientific_projection(item.values),
+                "title": item.title,
+                "units": item.units,
+                "axis_type": item.axis_type,
+                "source_set_index": item.source_set_index,
+            }
+            for item in axis.alternate_scales
+        ],
+        "primary_label_name": axis.primary_label_name,
+        "alternate_label_sets": [
+            {
+                "name": item.name,
+                "values": _sequence_scientific_projection(item.values, field_name="axis label set"),
+                "source_set_index": item.source_set_index,
+            }
+            for item in axis.alternate_label_sets
+        ],
+        "primary_title_name": axis.primary_title_name,
+        "alternate_title_sets": [item.model_dump(mode="json") for item in axis.alternate_title_sets],
+        "primary_class_set_name": axis.primary_class_set_name,
+        "class_sets": [
+            {
+                "name": item.name,
+                "values": _sequence_scientific_projection(item.values, field_name="axis class set"),
+                "levels": [level.model_dump(mode="json") for level in item.levels],
+                "source_set_index": item.source_set_index,
+            }
+            for item in axis.class_sets
+        ],
+    }
+    if isinstance(axis, FeatureAxis):
+        projection.update(
+            {
+                "axis_type": axis.axis_type,
+                "selection_scores": (
+                    _array_scientific_projection(axis.selection_scores) if axis.selection_scores is not None else None
+                ),
+                "selection_method": axis.selection_method,
+            }
+        )
+    if isinstance(axis, SampleAxis):
+        sample_table = None
+        if include_sample_table and axis.sample_table is not None:
+            sample_table = [
+                {
+                    "name": name,
+                    "values": _sequence_scientific_projection(values, field_name=f"sample table {name}"),
+                }
+                for name, values in sorted(axis.sample_table.items())
+            ]
+        projection.update(
+            {
+                # When a named primary class set exists, ``classes`` is its
+                # compatibility projection and not a second scientific
+                # authority with a NumPy-storage dtype of its own.
+                "classes": (
+                    _array_scientific_projection(axis.classes)
+                    if axis.classes is not None and axis.primary_class_set_name is None
+                    else None
+                ),
+                "exclusion_reasons": (
+                    _sequence_scientific_projection(axis.exclusion_reasons, field_name="sample exclusion reasons")
+                    if axis.exclusion_reasons is not None
+                    else None
+                ),
+                "sample_table": sample_table,
+            }
+        )
+    return projection
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -615,6 +1075,10 @@ class SherpaDataset:
         target: np.ndarray | list | None = None,
         target_context: TargetContext | None = None,
         domain: DomainContext | None = None,
+        descriptive: DatasetDescriptiveContext | None = None,
+        source_identity: DatasetSourceIdentity | None = None,
+        source_history: DatasetSourceHistory | None = None,
+        layout: DatasetLayoutContext | None = None,
         provenance: Provenance | None = None,
         quality: QualityMetrics | None = None,
         backend: str = "numpy",
@@ -626,7 +1090,7 @@ class SherpaDataset:
         data_role: DataRole | str | None = None,
     ) -> None:
         # Core data — accept nD arrays (dim 0 = samples, dim -1 = features)
-        arr = np.asarray(X, dtype=np.float64)
+        arr = np.asarray(X, dtype=np.float64, order="C")
         if arr.ndim == 0:
             raise ValueError("X must be at least 1-dimensional, got scalar")
         if arr.ndim == 1:
@@ -647,7 +1111,7 @@ class SherpaDataset:
                     data_shape=tuple(self._X.shape),
                     axis_name="feature_axis",
                 )
-            axis_copy = feature_axis.copy()
+            axis_copy = revalidated_axis_copy(feature_axis)
             axis_copy.bind_expected_length(n_features)
             self._axes[self._SPECTRAL_DIM] = axis_copy
 
@@ -670,7 +1134,7 @@ class SherpaDataset:
                     f"sample_axis.include_mask length ({len(sample_axis.include_mask)}) != n_samples ({n_samples}). "
                     f"include_mask must have one boolean per sample."
                 )
-            sample_copy = sample_axis.copy()
+            sample_copy = revalidated_axis_copy(sample_axis)
             sample_copy.bind_expected_length(n_samples)
             self._axes[self._SAMPLE_DIM] = sample_copy
 
@@ -699,13 +1163,13 @@ class SherpaDataset:
                         data_shape=tuple(self._X.shape),
                         axis_name=f"axes[{dim}]",
                     )
-                ac = axis_info.copy()
+                ac = revalidated_axis_copy(axis_info)
                 ac.bind_expected_length(expected_size)
                 self._axes[normalized] = ac
 
         # Validate target
         if target is not None:
-            t = np.asarray(target)
+            t = np.asarray(target, order="C")
             if t.shape[0] != n_samples:
                 msg_parts = [
                     "❌ Target length mismatch:",
@@ -721,8 +1185,30 @@ class SherpaDataset:
             self._target = None
 
         # Typed fields
-        self._target_context = target_context or TargetContext()
-        self._domain = domain or DomainContext()
+        # Re-admit immutable nested models from their complete Python projection.
+        # Pydantic's ``model_copy(update=...)`` intentionally skips validation;
+        # accepting such an instance directly here would let callers bypass the
+        # scientific bounds enforced by these context models.
+        self._target_context = TargetContext.model_validate(
+            target_context.model_dump(mode="python") if target_context is not None else {}
+        )
+        self._domain = DomainContext.model_validate(domain.model_dump(mode="python") if domain is not None else {})
+        self._descriptive = DatasetDescriptiveContext.model_validate(
+            descriptive.model_dump(mode="python") if descriptive is not None else {}
+        )
+        self._source_identity = DatasetSourceIdentity.model_validate(
+            source_identity.model_dump(mode="python") if source_identity is not None else {}
+        )
+        self._source_history = DatasetSourceHistory.model_validate(
+            source_history.model_dump(mode="python") if source_history is not None else {}
+        )
+        self._layout = DatasetLayoutContext.model_validate(
+            layout.model_dump(mode="python") if layout is not None else {}
+        )
+        if self._layout.source_shape is not None and self._layout.source_shape != tuple(self._X.shape):
+            raise ValueError("dataset layout source_shape does not match admitted data shape")
+        if self._layout.mode_roles and len(self._layout.mode_roles) != self._X.ndim:
+            raise ValueError("dataset layout mode_roles do not match admitted data rank")
         self._provenance = provenance or Provenance()
         self._quality = quality or QualityMetrics()
 
@@ -737,9 +1223,12 @@ class SherpaDataset:
 
         # Extra metadata (namespaced) — deep-copy to isolate from caller
         self._extra: dict[str, Any] = copy.deepcopy(extra) if extra is not None else {}
-        self._data_role: DataRole = normalize_data_role(
-            data_role or self._extra.get("sherpa.data_role") or self._extra.get("scp.sherpa.data_role")
-        )
+        if "dso.userdata" in self._extra:
+            self._extra["dso.userdata"] = lossless_json_value(
+                self._extra["dso.userdata"],
+                field_name="dso.userdata",
+            )
+        self._data_role: DataRole = normalize_data_role(data_role or self._extra.get("sherpa.data_role"))
         self._extra["sherpa.data_role"] = self._data_role
         self._extra["sherpa.data_modality"] = data_role_to_modality(self._data_role)
 
@@ -749,18 +1238,18 @@ class SherpaDataset:
     # ── Pickle support ──────────────────────────────────────────────
 
     @staticmethod
-    def _purge_scp_dicts(obj: Any) -> Any:
-        """Recursively replace SpectroChemPy ReadOnlyDict with plain dict."""
+    def _plain_metadata_containers(obj: Any) -> Any:
+        """Recursively copy mapping/list metadata into built-in containers."""
         if isinstance(obj, dict):
-            return {k: SherpaDataset._purge_scp_dicts(v) for k, v in obj.items()}
+            return {k: SherpaDataset._plain_metadata_containers(v) for k, v in obj.items()}
         if isinstance(obj, (list, tuple)):
-            converted = [SherpaDataset._purge_scp_dicts(v) for v in obj]
+            converted = [SherpaDataset._plain_metadata_containers(v) for v in obj]
             return type(obj)(converted)
         return obj
 
     def __getstate__(self) -> dict[str, Any]:
         state = self.__dict__.copy()
-        state["_extra"] = self._purge_scp_dicts(state.get("_extra", {}))
+        state["_extra"] = self._plain_metadata_containers(state.get("_extra", {}))
         return state
 
     # ── Core Properties ────────────────────────────────────────────
@@ -818,7 +1307,7 @@ class SherpaDataset:
     @target.setter
     def target(self, value: np.ndarray | list | None) -> None:
         if value is not None:
-            t = np.asarray(value)
+            t = np.asarray(value, order="C")
             if t.shape[0] != self._X.shape[0]:
                 msg_parts = [
                     "❌ Target length mismatch:",
@@ -902,7 +1391,7 @@ class SherpaDataset:
                 data_shape=tuple(self._X.shape),
                 axis_name="feature_axis",
             )
-        copied = value.copy()
+        copied = revalidated_axis_copy(value)
         copied.bind_expected_length(self._X.shape[-1])
         self._axes[self._SPECTRAL_DIM] = copied
 
@@ -941,7 +1430,7 @@ class SherpaDataset:
                 f"   Ensure len(include_mask) == n_samples ({self._X.shape[0]})",
             ]
             raise ValueError("\n".join(msg_parts))
-        copied = value.copy()
+        copied = revalidated_axis_copy(value)
         copied.bind_expected_length(self._X.shape[0])
         self._axes[self._SAMPLE_DIM] = copied
 
@@ -1026,6 +1515,22 @@ class SherpaDataset:
         self._target_context = value
 
     @property
+    def descriptive(self) -> DatasetDescriptiveContext:
+        return self._descriptive
+
+    @property
+    def source_identity(self) -> DatasetSourceIdentity:
+        return self._source_identity
+
+    @property
+    def source_history(self) -> DatasetSourceHistory:
+        return self._source_history
+
+    @property
+    def layout(self) -> DatasetLayoutContext:
+        return self._layout
+
+    @property
     def provenance(self) -> Provenance:
         """First-class provenance. No sync — this IS the source of truth."""
         return self._provenance
@@ -1101,6 +1606,7 @@ class SherpaDataset:
             backend=self.backend,
             n_provenance_steps=len(self._provenance),
             state_effects=sorted(self.state.effects),
+            scientific_digest=self.scientific_digest,
         )
 
     # ── Branch Info ────────────────────────────────────────────────
@@ -1121,7 +1627,7 @@ class SherpaDataset:
         """Explicit equality comparison.
 
         mode='data':     compare X array only
-        mode='metadata': compare domain, title, units only
+        mode='metadata': compare the complete canonical scientific metadata
         mode='full':     compare both
         """
         if not isinstance(other, SherpaDataset):
@@ -1132,20 +1638,100 @@ class SherpaDataset:
             if not np.allclose(self._X, other._X, atol=atol, rtol=rtol, equal_nan=True):
                 return False
         if mode in ("metadata", "full"):
-            if self._domain != other._domain:
-                return False
-            if self.title != other.title:
-                return False
-            if self.units != other.units:
-                return False
-            if self.backend != other.backend:
+            if self.scientific_projection(include_data=False) != other.scientific_projection(include_data=False):
                 return False
         return True
 
+    def scientific_projection(
+        self,
+        *,
+        include_data: bool = True,
+        include_provenance: bool = True,
+        include_sample_table: bool = True,
+    ) -> dict[str, Any]:
+        """Return the closed, portable scientific identity projection."""
+
+        axes = [
+            {
+                "dimension": dim if dim >= 0 else self.ndim + dim,
+                "projection": _axis_scientific_projection(
+                    axis,
+                    include_sample_table=include_sample_table,
+                ),
+            }
+            for dim, axis in sorted(
+                self._axes.items(),
+                key=lambda item: item[0] if item[0] >= 0 else self.ndim + item[0],
+            )
+        ]
+        source_identity_projection = self._source_identity.model_dump(mode="json", exclude_none=True)
+        provenance_projection = self._provenance.to_list()
+        if self._source_identity.source_format == "eigenvector-dso":
+            # MAT storage generation and raw container bytes are custody facts,
+            # not DSO science. They remain on the typed dataset/provenance wire,
+            # while v5 and v7.3 encodings of the same object reproduce one
+            # canonical scientific digest.
+            source_identity_projection.pop("storage_version", None)
+            provenance_projection = copy.deepcopy(provenance_projection)
+            for entry in provenance_projection:
+                if entry.get("op_id") != "import.matlab_dso":
+                    continue
+                parameters = entry.get("parameters")
+                if isinstance(parameters, dict):
+                    for storage_field in ("source_sha256", "source_size_bytes", "storage_version"):
+                        parameters.pop(storage_field, None)
+        projection: dict[str, Any] = {
+            "schema_version": "spectrasherpa-dataset-scientific-projection/1",
+            "shape": list(self.shape),
+            "normalized_dtype": self._X.dtype.str,
+            "title": self.title,
+            "units": self.units,
+            "data_role": self._data_role,
+            "domain": self._domain.model_dump(mode="json", exclude_none=True),
+            "target_context": self._target_context.model_dump(mode="json", exclude_none=True),
+            "target": _array_scientific_projection(self._target) if self._target is not None else None,
+            "axes": axes,
+            "descriptive": self._descriptive.model_dump(mode="json", exclude_none=True),
+            "source_identity": source_identity_projection,
+            "source_history": self._source_history.model_dump(mode="json", exclude_none=True),
+            "layout": self._layout.model_dump(mode="json", exclude_none=True),
+            "provenance": (
+                {
+                    "count": len(self._provenance),
+                    "sha256": _payload_digest(provenance_projection),
+                }
+                if include_provenance
+                else None
+            ),
+            "dso_userdata": copy.deepcopy(self._extra.get("dso.userdata")) if "dso.userdata" in self._extra else None,
+            "collection_member_science": (
+                structured_scientific_projection(
+                    self._extra["source_member_metadata"],
+                    field_name="collection member scientific metadata",
+                )
+                if "source_member_metadata" in self._extra
+                else (
+                    _admit_structured_scientific_projection(
+                        self._extra["sherpa.source_member_scientific_projection"],
+                        field_name="collection member scientific metadata",
+                    )
+                    if "sherpa.source_member_scientific_projection" in self._extra
+                    else None
+                )
+            ),
+        }
+        if include_data:
+            projection["X"] = _array_scientific_projection(self._X)
+        return projection
+
+    @property
+    def scientific_digest(self) -> str:
+        return _payload_digest(self.scientific_projection())
+
     @property
     def fingerprint(self) -> str:
-        """Fast content hash for comparison without full array equality."""
-        return hashlib.sha256(self._X.tobytes()).hexdigest()[:16]
+        """Fast data-only hash; use ``scientific_digest`` for scientific identity."""
+        return hashlib.sha256(memoryview(self._X).cast("B")).hexdigest()[:16]
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, SherpaDataset):
@@ -1177,6 +1763,10 @@ class SherpaDataset:
             target=self._target.copy() if self._target is not None else None,
             target_context=self._target_context.model_copy(deep=True),
             domain=self._domain.model_copy(deep=True),
+            descriptive=self._descriptive.model_copy(deep=True),
+            source_identity=self._source_identity.model_copy(deep=True),
+            source_history=self._source_history.model_copy(deep=True),
+            layout=self._layout.model_copy(deep=True),
             provenance=self._provenance.copy(),
             quality=self._quality.model_copy(deep=True),
             backend=self.backend,
@@ -1191,6 +1781,18 @@ class SherpaDataset:
             ds._axes[self._SAMPLE_DIM] = dim0_ax.copy()
 
         return ds
+
+    def snapshot(self) -> SherpaDataset:
+        """Return a defensive deep copy that preserves dataset identity.
+
+        Process-local handle registries use this instead of a JSON round trip.
+        A snapshot must not box scientific arrays into Python lists merely to
+        isolate mutable state. One shared deepcopy memo also preserves aliases
+        between canonical fields and scientific metadata, so a single ndarray
+        authority is not silently duplicated in the retained snapshot.
+        """
+
+        return copy.deepcopy(self)
 
     def with_data(self, new_data: Any) -> SherpaDataset:
         """Create a new SherpaDataset with replaced data, preserving all metadata.
@@ -1224,6 +1826,12 @@ class SherpaDataset:
             if 0 < normalized_dim < arr.ndim and arr.shape[normalized_dim] == self._X.shape[normalized_dim]:
                 axes_copy[dim] = ax.copy()
         inner = axes_copy or None
+        layout_updates: dict[str, Any] = {}
+        if self._layout.source_shape is not None:
+            layout_updates["source_shape"] = tuple(arr.shape)
+        if self._layout.mode_roles and arr.ndim != self.ndim:
+            layout_updates["mode_roles"] = ()
+        layout = self._layout.model_copy(deep=True, update=layout_updates)
 
         ds = SherpaDataset(
             X=arr,
@@ -1233,6 +1841,10 @@ class SherpaDataset:
             target=target,
             target_context=self._target_context.model_copy(deep=True),
             domain=self._domain.model_copy(deep=True),
+            descriptive=self._descriptive.model_copy(deep=True),
+            source_identity=self._source_identity.model_copy(deep=True),
+            source_history=self._source_history.model_copy(deep=True),
+            layout=layout,
             provenance=self._provenance.copy(),
             quality=self._quality.model_copy(deep=True),
             backend=self.backend,
@@ -1264,24 +1876,24 @@ class SherpaDataset:
         ds[s, i1, ..., f]  — full nD indexing (tuple length == ndim)
         """
         feature = self.get_feature_axis()
-        sample = self.sample_axis
+        observation = self.get_observation_axis()
 
         # ── Non-tuple keys: apply to dim 0 (samples) ──
         if isinstance(key, np.ndarray) and key.dtype == bool:
             new_X = self._X[key]
-            new_sample = _slice_sample_axis(sample, key) if sample else None
+            new_sample = _slice_observation_axis(observation, key)
             new_target = self._target[key] if self._target is not None else None
             return self._sliced_copy(new_X, feature_axis=feature, sample_axis=new_sample, target=new_target)
 
         if isinstance(key, (int, np.integer)):
             new_X = self._X[key : key + 1]
-            new_sample = _slice_sample_axis(sample, slice(key, key + 1)) if sample else None
+            new_sample = _slice_observation_axis(observation, slice(key, key + 1))
             new_target = self._target[key : key + 1] if self._target is not None else None
             return self._sliced_copy(new_X, feature_axis=feature, sample_axis=new_sample, target=new_target)
 
         if isinstance(key, slice):
             new_X = self._X[key]
-            new_sample = _slice_sample_axis(sample, key) if sample else None
+            new_sample = _slice_observation_axis(observation, key)
             new_target = self._target[key] if self._target is not None else None
             return self._sliced_copy(new_X, feature_axis=feature, sample_axis=new_sample, target=new_target)
 
@@ -1295,8 +1907,8 @@ class SherpaDataset:
                 x_col = slice(col_key, col_key + 1) if isinstance(col_key, (int, np.integer)) else col_key
                 full_key = tuple([x_row] + [slice(None)] * (self._X.ndim - 2) + [x_col])
                 new_X = self._X[full_key]
-                new_sample = _slice_sample_axis(sample, row_key) if sample else None
-                new_feature = _slice_axis(feature, col_key) if feature else None
+                new_sample = _slice_observation_axis(observation, row_key)
+                new_feature = cast(FeatureAxis | None, _slice_axis(feature, col_key)) if feature else None
                 new_target = None
                 if self._target is not None:
                     try:
@@ -1311,8 +1923,8 @@ class SherpaDataset:
                 x_row = slice(row_key, row_key + 1) if isinstance(row_key, (int, np.integer)) else row_key
                 x_col = slice(col_key, col_key + 1) if isinstance(col_key, (int, np.integer)) else col_key
                 new_X = self._X[x_row, x_col]
-                new_sample = _slice_sample_axis(sample, row_key) if sample else None
-                new_feature = _slice_axis(feature, col_key) if feature else None
+                new_sample = _slice_observation_axis(observation, row_key)
+                new_feature = cast(FeatureAxis | None, _slice_axis(feature, col_key)) if feature else None
                 new_target = None
                 if self._target is not None and not isinstance(row_key, type(None)):
                     try:
@@ -1333,8 +1945,8 @@ class SherpaDataset:
                 new_X = self._X[tuple(full_key_list)]
                 row_key = key[0]
                 col_key = key[-1]
-                new_sample = _slice_sample_axis(sample, row_key) if sample else None
-                new_feature = _slice_axis(feature, col_key) if feature else None
+                new_sample = _slice_observation_axis(observation, row_key)
+                new_feature = cast(FeatureAxis | None, _slice_axis(feature, col_key)) if feature else None
                 # Slice inner axes
                 new_inner = {}
                 for dim, ax in self._axes.items():
@@ -1367,8 +1979,8 @@ class SherpaDataset:
         new_sample = None
         new_target = None
         try:
-            if sample is not None:
-                new_sample = _slice_sample_axis(sample, key)
+            if observation is not None:
+                new_sample = _slice_observation_axis(observation, key)
         except Exception:
             pass
         try:
@@ -1382,7 +1994,7 @@ class SherpaDataset:
         self,
         X: np.ndarray,
         feature_axis: FeatureAxis | None,
-        sample_axis: SampleAxis | None,
+        sample_axis: AxisInfo | None,
         target: np.ndarray | None,
         inner_axes: dict[int, AxisInfo] | None = None,
     ) -> SherpaDataset:
@@ -1390,22 +2002,49 @@ class SherpaDataset:
         # Default: carry forward existing inner axes if not explicitly provided
         if inner_axes is None:
             inner_axes = self.inner_axes or None
-        return SherpaDataset(
+        layout_updates: dict[str, Any] = {}
+        if self._layout.source_shape is not None:
+            layout_updates["source_shape"] = tuple(X.shape)
+        if (
+            self.ndim == 2
+            and self._layout.kind == "image"
+            and self._layout.image_mode == 1
+            and X.shape[0] != self.shape[0]
+        ):
+            layout_updates.update(
+                {
+                    "kind": "generic",
+                    "source_type": "image-row-selection",
+                    "image_size": None,
+                    "image_mode": None,
+                    "image_include": None,
+                }
+            )
+        layout = self._layout.model_copy(deep=True, update=layout_updates)
+        sliced = SherpaDataset(
             X=X,
             feature_axis=feature_axis.copy() if feature_axis else None,
-            sample_axis=sample_axis,  # already sliced/copied
+            sample_axis=sample_axis if isinstance(sample_axis, SampleAxis) else None,
             axes=inner_axes,
             target=target,
             target_context=self._target_context.model_copy(deep=True),
             domain=self._domain.model_copy(deep=True),
+            descriptive=self._descriptive.model_copy(deep=True),
+            source_identity=self._source_identity.model_copy(deep=True),
+            source_history=self._source_history.model_copy(deep=True),
+            layout=layout,
             provenance=self._provenance.copy(),
             quality=self._quality.model_copy(deep=True),
             backend=self.backend,
             title=self.title,
             units=self.units,
             extra=copy.deepcopy(self._extra),
+            is_time_series=self.is_time_series,
             data_role=self._data_role,
         )
+        if sample_axis is not None and not isinstance(sample_axis, SampleAxis):
+            sliced._axes[self._SAMPLE_DIM] = sample_axis.copy()
+        return sliced
 
     # ── Branching ──────────────────────────────────────────────────
 
@@ -1416,7 +2055,7 @@ class SherpaDataset:
             label=label,
             parent_dataset_id=self._dataset_id,
             parent_provenance_index=len(self._provenance),
-            content_hash=hashlib.sha256(self._X.tobytes()).hexdigest(),
+            content_hash=hashlib.sha256(memoryview(self._X).cast("B")).hexdigest(),
         )
         return branched
 
@@ -1442,21 +2081,15 @@ class SherpaDataset:
 
     # ── Serialization ──────────────────────────────────────────────
 
-    def to_dict(self) -> dict[str, Any]:
-        """Serialize to JSON-safe dict.
-
-        Wire format version:
-        - ``"1.0"`` for 2D data with no inner axes (backward compatible)
-        - ``"2.0"`` for nD data or data with inner axes
-        """
+    def to_dict(self, *, include_extra: bool = True) -> dict[str, Any]:
+        """Serialize the complete current JSON-safe SherpaDataset wire."""
         safe_data = np.where(np.isfinite(self._X), self._X, None).tolist()
 
         has_inner = bool(self.inner_axes)
-        version = "2.0" if self._X.ndim > 2 or has_inner else "1.0"
 
         result: dict[str, Any] = {
             "type": "SherpaDataset",
-            "version": version,
+            "version": _SHERPA_DATASET_WIRE_VERSION,
             "dataset_id": self._dataset_id,
             "shape": list(self.shape),
             "ndim": self._X.ndim,
@@ -1476,7 +2109,7 @@ class SherpaDataset:
         if self.sample_axis:
             result["sample_axis"] = _serialize_axis(self.sample_axis)
 
-        # Inner axes (v2 only)
+        # Every declared inner dimension is part of the current n-D wire.
         if has_inner:
             inner_dict: dict[str, Any] = {}
             for dim, ax in self._axes.items():
@@ -1489,11 +2122,15 @@ class SherpaDataset:
 
         result["domain"] = self._domain.model_dump(mode="json", exclude_none=True)
         result["target_context"] = self._target_context.model_dump(mode="json", exclude_none=True)
+        result["descriptive"] = self._descriptive.model_dump(mode="json", exclude_none=True)
+        result["source_identity"] = self._source_identity.model_dump(mode="json", exclude_none=True)
+        result["source_history"] = self._source_history.model_dump(mode="json", exclude_none=True)
+        result["layout"] = self._layout.model_dump(mode="json", exclude_none=True)
         result["provenance"] = self._provenance.to_list()
         result["quality"] = _json_safe(self._quality.model_dump(exclude_none=True))
         result["state"] = self.state.model_dump(mode="json")
 
-        if self._extra:
+        if include_extra and self._extra:
             result["extra"] = _json_safe(self._extra)
 
         if self._branch:
@@ -1524,35 +2161,81 @@ class SherpaDataset:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> SherpaDataset:
-        """Deserialize from SherpaDataset wire format (v1.0 and v2.0)."""
+        """Deserialize the one closed current SherpaDataset wire format."""
+        if not isinstance(d, dict):
+            raise ValueError("SherpaDataset wire payload must be an object")
         dtype = d.get("type")
         if dtype != "SherpaDataset":
             raise ValueError(f"Expected type='SherpaDataset', got '{dtype}'")
 
-        # version = d.get("version", "1.0")
+        unknown = set(d) - _SHERPA_DATASET_WIRE_KEYS
+        if unknown:
+            raise ValueError(f"SherpaDataset wire payload has undeclared field(s): {sorted(unknown)}")
+
+        version = d.get("version")
+        if type(version) is not str or version != _SHERPA_DATASET_WIRE_VERSION:
+            raise ValueError(f"Unsupported SherpaDataset wire version: {version!r}")
+        missing = _SHERPA_DATASET_WIRE_REQUIRED_KEYS - set(d)
+        if missing:
+            raise ValueError(f"SherpaDataset wire payload is missing required field(s): {sorted(missing)}")
+
+        metadata = d.get("metadata")
+        if metadata is not None and not isinstance(metadata, Mapping):
+            raise ValueError("SherpaDataset wire metadata must be an object")
+        metadata = dict(metadata or {})
+        top_role = d.get("data_role")
+        metadata_role = metadata.get("data_role")
+        if top_role is not None and metadata_role is not None:
+            if normalize_data_role(top_role) != normalize_data_role(metadata_role):
+                raise ValueError("SherpaDataset wire data_role receipts contradict each other")
+        if "is_time_series" in d and "is_time_series" in metadata:
+            if type(d["is_time_series"]) is not bool or type(metadata["is_time_series"]) is not bool:
+                raise ValueError("SherpaDataset wire is_time_series receipts must be exact booleans")
+            if d["is_time_series"] is not metadata["is_time_series"]:
+                raise ValueError("SherpaDataset wire is_time_series receipts contradict each other")
+        elif "is_time_series" in d and type(d["is_time_series"]) is not bool:
+            raise ValueError("SherpaDataset wire is_time_series must be an exact boolean")
 
         feature_axis: FeatureAxis | None = None
-        if d.get("feature_axis"):
-            feature_axis = _deserialize_typed_axis(d["feature_axis"])
+        if d.get("feature_axis") is not None:
+            feature_axis = _deserialize_typed_axis(_require_wire_mapping(d["feature_axis"], "feature_axis"))
             if not isinstance(feature_axis, FeatureAxis):
-                feature_axis = None  # safety: must be a FeatureAxis subclass
+                raise ValueError("SherpaDataset feature_axis must declare a FeatureAxis subclass")
 
-        sample_axis = _deserialize_sample_axis(dict(d["sample_axis"])) if d.get("sample_axis") else None
+        sample_axis = (
+            _deserialize_sample_axis(_require_wire_mapping(d["sample_axis"], "sample_axis"))
+            if d.get("sample_axis") is not None
+            else None
+        )
         target = np.asarray(d["target"]) if d.get("target") is not None else None
 
         # Inner axes (v2+)
         inner_axes: dict[int, AxisInfo] | None = None
-        if d.get("inner_axes"):
+        if d.get("inner_axes") is not None:
+            inner_payload = _require_wire_mapping(d["inner_axes"], "inner_axes")
             inner_axes = {}
-            for dim_str, ax_dict in d["inner_axes"].items():
-                inner_axes[int(dim_str)] = _deserialize_typed_axis(ax_dict)
+            for dim_str, ax_dict in inner_payload.items():
+                if not isinstance(dim_str, str) or not dim_str.isascii() or not dim_str.isdecimal():
+                    raise ValueError("SherpaDataset inner_axes keys must be canonical non-negative integers")
+                dim = int(dim_str)
+                if dim_str != str(dim) or dim in inner_axes:
+                    raise ValueError("SherpaDataset inner_axes contains an aliased or duplicate dimension")
+                inner_axes[dim] = _deserialize_typed_axis(_require_wire_mapping(ax_dict, f"inner_axes[{dim_str}]"))
 
         domain = DomainContext.model_validate(d.get("domain", {}))
         target_context = TargetContext.model_validate(d.get("target_context", {}))
+        descriptive = DatasetDescriptiveContext.model_validate(d.get("descriptive", {}))
+        source_identity = DatasetSourceIdentity.model_validate(d.get("source_identity", {}))
+        source_history = DatasetSourceHistory.model_validate(d.get("source_history", {}))
+        layout = DatasetLayoutContext.model_validate(d.get("layout", {}))
         provenance = Provenance.from_list(d.get("provenance", []))
 
         quality_data = d.get("quality", {})
         quality = QualityMetrics.model_validate(quality_data) if quality_data else QualityMetrics()
+
+        wire_time_series = d.get("is_time_series", metadata.get("is_time_series", False))
+        if type(wire_time_series) is not bool:
+            raise ValueError("SherpaDataset wire is_time_series must be an exact boolean")
 
         ds = cls(
             X=np.asarray(d["data"]),
@@ -1562,6 +2245,10 @@ class SherpaDataset:
             target=target,
             target_context=target_context,
             domain=domain,
+            descriptive=descriptive,
+            source_identity=source_identity,
+            source_history=source_history,
+            layout=layout,
             provenance=provenance,
             quality=quality,
             backend=d.get("backend", "numpy"),
@@ -1569,12 +2256,14 @@ class SherpaDataset:
             units=d.get("units"),
             extra=d.get("extra", {}),
             dataset_id=d.get("dataset_id"),
-            is_time_series=bool(d.get("is_time_series", False)),
-            data_role=d.get("data_role") or (d.get("metadata") or {}).get("data_role"),
+            is_time_series=wire_time_series,
+            data_role=top_role or metadata_role,
         )
 
         if d.get("branch"):
             ds._branch = BranchInfo.model_validate(d["branch"])
+
+        _validate_wire_receipts(d, metadata, ds)
 
         return ds
 
@@ -1586,6 +2275,146 @@ class SherpaDataset:
 # ═══════════════════════════════════════════════════════════════════════════
 # Internal Helpers
 # ═══════════════════════════════════════════════════════════════════════════
+
+
+_SHERPA_DATASET_WIRE_VERSION = "3.0"
+_SHERPA_DATASET_WIRE_REQUIRED_KEYS = frozenset(
+    {
+        "type",
+        "version",
+        "dataset_id",
+        "shape",
+        "ndim",
+        "data",
+        "n_samples",
+        "n_features",
+        "title",
+        "units",
+        "backend",
+        "data_role",
+        "data_modality",
+        "domain",
+        "target_context",
+        "descriptive",
+        "source_identity",
+        "source_history",
+        "layout",
+        "provenance",
+        "quality",
+        "state",
+        "is_time_series",
+        "metadata",
+    }
+)
+_SHERPA_DATASET_WIRE_KEYS = frozenset(
+    {
+        "type",
+        "version",
+        "dataset_id",
+        "shape",
+        "ndim",
+        "data",
+        "n_samples",
+        "n_features",
+        "title",
+        "units",
+        "backend",
+        "data_role",
+        "data_modality",
+        "feature_axis",
+        "sample_axis",
+        "inner_axes",
+        "target",
+        "domain",
+        "target_context",
+        "descriptive",
+        "source_identity",
+        "source_history",
+        "layout",
+        "provenance",
+        "quality",
+        "state",
+        "extra",
+        "branch",
+        "is_time_series",
+        "metadata",
+    }
+)
+
+
+def _require_wire_mapping(value: Any, field_name: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise ValueError(f"SherpaDataset wire {field_name} must be an object")
+    if not all(isinstance(key, str) for key in value):
+        raise ValueError(f"SherpaDataset wire {field_name} keys must be strings")
+    return dict(value)
+
+
+def _require_wire_shape(value: Any, field_name: str) -> tuple[int, ...]:
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"SherpaDataset wire {field_name} must be a non-empty dimension list")
+    if any(type(dimension) is not int or dimension < 0 for dimension in value):
+        raise ValueError(f"SherpaDataset wire {field_name} must contain exact non-negative integers")
+    return tuple(value)
+
+
+def _validate_wire_receipts(
+    wire: Mapping[str, Any],
+    metadata: Mapping[str, Any],
+    dataset: SherpaDataset,
+) -> None:
+    """Recompute every compatibility receipt carried by the dataset wire."""
+    if "shape" in wire and _require_wire_shape(wire["shape"], "shape") != tuple(dataset.shape):
+        raise ValueError("SherpaDataset wire shape does not match decoded data")
+    exact_integer_receipts = {
+        "ndim": dataset.ndim,
+        "n_samples": dataset.n_samples,
+        "n_features": dataset.n_features,
+    }
+    for name, expected in exact_integer_receipts.items():
+        if name in wire and (type(wire[name]) is not int or wire[name] != expected):
+            raise ValueError(f"SherpaDataset wire {name} does not match decoded data")
+
+    if "data_modality" in wire:
+        if type(wire["data_modality"]) is not str or wire["data_modality"] != dataset.data_modality:
+            raise ValueError("SherpaDataset wire data_modality does not match decoded data_role")
+    if "state" in wire:
+        try:
+            received_state = DatasetState.model_validate(wire["state"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError("SherpaDataset wire state is malformed") from exc
+        if received_state != dataset.state:
+            raise ValueError("SherpaDataset wire state does not match decoded provenance")
+
+    processing_history = metadata.get("processing_history")
+    if processing_history is not None:
+        # JSON encodes provenance shape tuples as arrays; compare wire forms.
+        if _json_safe(processing_history) != _json_safe(dataset.provenance.to_list()):
+            raise ValueError("SherpaDataset metadata processing_history does not match provenance")
+    if "data_role" in metadata:
+        if normalize_data_role(metadata["data_role"]) != dataset.data_role:
+            raise ValueError("SherpaDataset metadata data_role does not match decoded data_role")
+    if "data_modality" in metadata:
+        if type(metadata["data_modality"]) is not str or metadata["data_modality"] != dataset.data_modality:
+            raise ValueError("SherpaDataset metadata data_modality does not match decoded data_role")
+    if "data_type" in metadata:
+        expected_data_type = dataset.domain.technique or "generic"
+        if type(metadata["data_type"]) is not str or metadata["data_type"] != expected_data_type:
+            raise ValueError("SherpaDataset metadata data_type does not match decoded domain")
+    if "is_time_series" in metadata:
+        if type(metadata["is_time_series"]) is not bool or metadata["is_time_series"] is not dataset.is_time_series:
+            raise ValueError("SherpaDataset metadata is_time_series does not match decoded dataset")
+    if "is_spectra" in metadata:
+        if type(metadata["is_spectra"]) is not bool:
+            raise ValueError("SherpaDataset metadata is_spectra must be an exact boolean")
+        feature_axis = dataset.get_feature_axis()
+        expected_is_spectra = infer_is_spectra(
+            technique=dataset.domain.technique,
+            x_title=feature_axis.title if feature_axis is not None else None,
+            x_units=feature_axis.units if feature_axis is not None else None,
+        )
+        if metadata["is_spectra"] is not expected_is_spectra:
+            raise ValueError("SherpaDataset metadata is_spectra does not match decoded dataset")
 
 
 _AXIS_CLASS_MAP: dict[str, type[AxisInfo]] = {
@@ -1608,94 +2437,79 @@ def _serialize_axis_typed(axis: AxisInfo) -> dict[str, Any]:
     return result
 
 
+def axis_to_wire(axis: AxisInfo, *, include_sample_table: bool = False) -> dict[str, Any]:
+    """Return one complete typed axis wire without unrelated dataset arrays."""
+
+    excluded = set() if include_sample_table else {"sample_table"}
+    result = axis.model_dump(mode="json", exclude=excluded, exclude_none=True)
+    if "values" in result:
+        result["data"] = result.pop("values")
+    result["axis_class"] = type(axis).__name__
+    return _json_safe(result)
+
+
+def axis_from_wire(value: Mapping[str, Any]) -> AxisInfo:
+    """Admit one complete typed axis wire issued by :func:`axis_to_wire`."""
+
+    if not isinstance(value, Mapping):
+        raise ValueError("axis wire must be an object")
+    return _deserialize_typed_axis(dict(value))
+
+
 def _deserialize_typed_axis(d: dict[str, Any]) -> AxisInfo:
     """Deserialize an axis from a dict with an ``axis_class`` type tag."""
     class_name = d.get("axis_class", "AxisInfo")
-    cls = _AXIS_CLASS_MAP.get(class_name, AxisInfo)
-    return cls(
-        values=np.asarray(d["data"]) if d.get("data") is not None else None,
-        labels=d.get("labels"),
-        units=d.get("units"),
-        title=d.get("title"),
-    )
+    if type(class_name) is not str or class_name not in _AXIS_CLASS_MAP:
+        raise ValueError(f"SherpaDataset wire declares unsupported axis class: {class_name!r}")
+    cls = _AXIS_CLASS_MAP[class_name]
+    allowed = set(cls.model_fields) - {"values"}
+    allowed.update({"data", "axis_class"})
+    unknown = set(d) - allowed
+    if unknown:
+        raise ValueError(f"SherpaDataset wire axis has undeclared field(s): {sorted(unknown)}")
+    payload = {key: value for key, value in d.items() if key != "axis_class"}
+    if "data" in payload:
+        payload["values"] = payload.pop("data")
+    return cls.model_validate(payload)
 
 
 def _serialize_axis(axis: AxisInfo) -> dict[str, Any]:
     """Serialize an axis to JSON-safe dict."""
-    result: dict[str, Any] = {}
-    if axis.values is not None:
-        result["data"] = axis.values.tolist()
-    if axis.labels is not None:
-        result["labels"] = _json_safe(axis.labels)
-    if axis.units is not None:
-        result["units"] = axis.units
-    if axis.title is not None:
-        result["title"] = axis.title
-
-    # SampleAxis-specific fields
-    if isinstance(axis, SampleAxis):
-        if axis.classes is not None:
-            result["classes"] = axis.classes.tolist()
-        if axis.include_mask is not None:
-            result["include_mask"] = axis.include_mask.tolist()
-        if axis.sample_table is not None:
-            result["sample_table"] = _json_safe(axis.sample_table)
-
-    return result
+    result = axis.model_dump(mode="json", exclude_none=True)
+    if "values" in result:
+        result["data"] = result.pop("values")
+    return _json_safe(result)
 
 
 def _deserialize_sample_axis(d: dict[str, Any]) -> SampleAxis:
-    return SampleAxis(
-        values=np.asarray(d["data"]) if d.get("data") is not None else None,
-        labels=d.get("labels"),
-        units=d.get("units"),
-        title=d.get("title"),
-        classes=np.asarray(d["classes"], dtype=object) if d.get("classes") is not None else None,
-        include_mask=np.asarray(d["include_mask"], dtype=bool) if d.get("include_mask") is not None else None,
-        sample_table=d.get("sample_table"),
-    )
+    allowed = set(SampleAxis.model_fields) - {"values"}
+    allowed.add("data")
+    unknown = set(d) - allowed
+    if unknown:
+        raise ValueError(f"SherpaDataset wire sample_axis has undeclared field(s): {sorted(unknown)}")
+    payload = dict(d)
+    if "data" in payload:
+        payload["values"] = payload.pop("data")
+    if payload.get("classes") is not None:
+        payload["classes"] = np.asarray(payload["classes"], dtype=object)
+    return SampleAxis.model_validate(payload)
 
 
 def _slice_sample_axis(axis: SampleAxis | None, key: Any) -> SampleAxis | None:
     """Slice a SampleAxis along the sample dimension."""
+    sliced = _slice_axis(axis, key)
+    return cast(SampleAxis | None, sliced)
+
+
+def _slice_observation_axis(axis: AxisInfo | None, key: Any) -> AxisInfo | None:
+    """Slice dim-0 metadata without narrowing it to ``SampleAxis``."""
     if axis is None:
         return None
-
-    new_values = None
-    if axis.values is not None:
-        sliced = axis.values[key]
-        new_values = np.atleast_1d(sliced)
-    new_labels = None
-    if axis.labels is not None:
-        if isinstance(key, np.ndarray) and key.dtype == bool:
-            new_labels = [l for l, m in zip(axis.labels, key) if m]
-        elif isinstance(key, slice):
-            new_labels = axis.labels[key]
-        elif isinstance(key, (int, np.integer)):
-            new_labels = [axis.labels[key]]
-
-    new_classes = np.atleast_1d(axis.classes[key]) if axis.classes is not None else None
-    new_mask = np.atleast_1d(axis.include_mask[key]) if axis.include_mask is not None else None
-
-    new_reasons = None
-    if axis.exclusion_reasons is not None:
-        if isinstance(key, np.ndarray) and key.dtype == bool:
-            new_reasons = [r for r, m in zip(axis.exclusion_reasons, key) if m]
-        elif isinstance(key, slice):
-            new_reasons = axis.exclusion_reasons[key]
-        elif isinstance(key, (int, np.integer)):
-            new_reasons = [axis.exclusion_reasons[key]]
-
-    return SampleAxis(
-        values=new_values,
-        labels=new_labels,
-        units=axis.units,
-        title=axis.title,
-        classes=new_classes,
-        include_mask=new_mask,
-        exclusion_reasons=new_reasons,
-        sample_table=None,  # tabular metadata not sliced automatically
-    )
+    if isinstance(axis, SampleAxis):
+        return _slice_sample_axis(axis, key)
+    if isinstance(key, slice) and key == slice(None):
+        return axis.copy()
+    return _slice_axis(axis, key)
 
 
 def _slice_axis(axis: AxisInfo | None, key: Any) -> AxisInfo | None:
@@ -1703,24 +2517,51 @@ def _slice_axis(axis: AxisInfo | None, key: Any) -> AxisInfo | None:
     if axis is None:
         return None
 
-    new_values = None
-    if axis.values is not None:
-        sliced = axis.values[key]
-        new_values = np.atleast_1d(sliced)
+    def slice_array(values: np.ndarray | None) -> np.ndarray | None:
+        if values is None:
+            return None
+        return np.atleast_1d(values[key]).copy()
 
-    new_labels = None
-    if axis.labels is not None:
-        if isinstance(key, np.ndarray) and key.dtype == bool:
-            new_labels = [l for l, m in zip(axis.labels, key) if m]
-        elif isinstance(key, slice):
-            new_labels = axis.labels[key]
-        elif isinstance(key, (int, np.integer)):
-            new_labels = [axis.labels[key]]
+    def slice_sequence(values: Any) -> list[Any]:
+        return np.atleast_1d(np.asarray(list(values), dtype=object)[key]).tolist()
 
-    # Construct same type as input axis
-    return type(axis)(
-        values=new_values,
-        labels=new_labels,
-        units=axis.units,
-        title=axis.title,
+    payload = axis.model_dump()
+    payload["values"] = slice_array(axis.values)
+    payload["labels"] = slice_sequence(axis.labels) if axis.labels is not None else None
+    payload["include_mask"] = slice_array(axis.include_mask)
+    payload["alternate_scales"] = tuple(
+        item.model_copy(update={"values": slice_array(item.values)}) for item in axis.alternate_scales
     )
+    payload["alternate_label_sets"] = tuple(
+        item.model_copy(update={"values": tuple(slice_sequence(item.values))}) for item in axis.alternate_label_sets
+    )
+    payload["class_sets"] = tuple(
+        item.model_copy(update={"values": tuple(slice_sequence(item.values))}) for item in axis.class_sets
+    )
+    if isinstance(axis, FeatureAxis):
+        payload["selection_scores"] = slice_array(axis.selection_scores)
+    if isinstance(axis, SampleAxis):
+        payload["classes"] = slice_array(axis.classes)
+        payload["exclusion_reasons"] = (
+            slice_sequence(axis.exclusion_reasons) if axis.exclusion_reasons is not None else None
+        )
+        payload["sample_table"] = (
+            {name: slice_sequence(values) for name, values in axis.sample_table.items()}
+            if axis.sample_table is not None
+            else None
+        )
+    sliced_axis = type(axis).model_validate(payload)
+    sliced_length = 0
+    for candidate in (sliced_axis.values, sliced_axis.labels, sliced_axis.include_mask):
+        if candidate is not None:
+            sliced_length = len(candidate)
+            break
+    if sliced_length == 0:
+        aligned = (
+            list(sliced_axis.alternate_scales) + list(sliced_axis.alternate_label_sets) + list(sliced_axis.class_sets)
+        )
+        if aligned:
+            sliced_length = len(aligned[0].values)
+    if sliced_length:
+        sliced_axis.bind_expected_length(sliced_length)
+    return sliced_axis

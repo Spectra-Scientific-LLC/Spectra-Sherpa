@@ -82,3 +82,14 @@ def test_read_csv_delegates_to_existing_loader_with_explicit_target(tmp_path) ->
     np.testing.assert_allclose(ds.target, np.array([0.1, 0.2]))
     assert ds.target_context.target_name == "assay"
     assert ds.target_context.target_type == "continuous"
+
+
+def test_read_dispatches_portable_npz_without_optional_runtime(tmp_path) -> None:
+    path = tmp_path / "portable.npz"
+    expected = np.arange(12, dtype=float).reshape(3, 4)
+    np.savez(path, X=expected, wavenumber=np.array([1000.0, 1100.0, 1200.0, 1300.0]))
+
+    dataset = ss.data.read(path)
+
+    np.testing.assert_array_equal(dataset.X, expected)
+    np.testing.assert_array_equal(dataset.feature_axis.values, [1000.0, 1100.0, 1200.0, 1300.0])

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING, AsyncGenerator
@@ -17,6 +18,45 @@ if TYPE_CHECKING:
     from spectra_sherpa.app.models.user import User
 
 
+_TEST_APP_DATA_ROOT: Path | None = None
+
+
+def _verify_environment_provenance() -> None:
+    """Fail immediately if tests would run against the wrong worktree's source.
+
+    A shared interpreter/environment (e.g. one conda env reused across many
+    git worktrees) can silently resolve ``import spectra_sherpa`` to a
+    DIFFERENT worktree's source than the one pytest was invoked from, if
+    that worktree's editable install happens to win dependency resolution.
+    Every result from a run like that is meaningless: it tested code you
+    were not looking at, and the failure is invisible unless someone checks
+    ``spectra_sherpa.__file__`` by hand. This corrupted a real evidence
+    regeneration run and cost real debugging time before the trap was
+    caught; it should never require a human to notice it again. See
+    manifest.md, "Machine gates enforce what review bandwidth cannot."
+    """
+    worktree_src = (Path(__file__).resolve().parents[1] / "src").resolve()
+    import spectra_sherpa
+
+    imported_path = Path(spectra_sherpa.__file__).resolve()
+    try:
+        imported_path.relative_to(worktree_src)
+    except ValueError:
+        raise RuntimeError(
+            "Environment provenance check failed.\n"
+            f"  This test session's conftest.py lives under: {worktree_src}\n"
+            f"  But `import spectra_sherpa` resolved to:      {imported_path}\n"
+            "  These are different checkouts. Every test result from this run "
+            "would silently test the WRONG code.\n"
+            f"  Fix: run with PYTHONPATH={worktree_src} explicitly, or run "
+            "`poetry install` inside this worktree so its own editable "
+            "install wins, then re-run."
+        ) from None
+
+
+_verify_environment_provenance()
+
+
 def _configure_writable_runtime_dirs() -> None:
     """Force third-party runtime state into writable temp directories.
 
@@ -25,20 +65,45 @@ def _configure_writable_runtime_dirs() -> None:
     user home directories may be read-only and cause unrelated test failures.
     """
 
-    runtime_root = Path(tempfile.mkdtemp(prefix="spectra-sherpa-pytest-"))
+    global _TEST_APP_DATA_ROOT
+
+    runtime_root = Path(tempfile.mkdtemp(prefix="spectra-sherpa-pytest-")).resolve()
     scp_config = runtime_root / "scp-config"
     scp_projects = runtime_root / "scp-projects"
     mpl_config = runtime_root / "mplconfig"
+    app_data = runtime_root / "app-data"
+    _TEST_APP_DATA_ROOT = app_data
 
-    for path in (scp_config, scp_projects, mpl_config):
+    for path in (scp_config, scp_projects, mpl_config, app_data):
         path.mkdir(parents=True, exist_ok=True)
 
+    os.environ["DATA_DIR"] = str(app_data)
+    # Another package may have imported the frozen singleton during collection.
+    # Its storage must follow the same root that the isolation fixture cleans.
+    from spectra_sherpa.app.core.config import settings
+
+    object.__setattr__(settings, "data_dir", app_data)
     os.environ["SCP_CONFIG_HOME"] = str(scp_config)
     os.environ["SCP_PROJECTS_HOME"] = str(scp_projects)
     os.environ["MPLCONFIGDIR"] = str(mpl_config)
 
 
 _configure_writable_runtime_dirs()
+
+
+@pytest.fixture(autouse=True)
+def _isolate_experiment_storage_between_tests():
+    """A fresh in-memory database must never inherit another test's durable files."""
+
+    assert _TEST_APP_DATA_ROOT is not None
+    from spectra_sherpa.app.core.config import settings
+
+    object.__setattr__(settings, "data_dir", _TEST_APP_DATA_ROOT)
+    experiments = _TEST_APP_DATA_ROOT / "experiments"
+    shutil.rmtree(experiments, ignore_errors=True)
+    yield
+    shutil.rmtree(experiments, ignore_errors=True)
+
 
 # SpectroChemPy's logging interferes with pytest's capture mechanism, causing
 # "ValueError: I/O operation on closed file" when printing to stdout/stderr.
@@ -236,3 +301,86 @@ def patch_eigenvector_loader(monkeypatch: pytest.MonkeyPatch):
         generated_eigenvector_result,
     )
     return generated_eigenvector_result
+
+
+@pytest.fixture
+def deployment_artifact_factory(test_session, monkeypatch):
+    """Real owned artifact/version records; storage verification is isolated here."""
+    from uuid import uuid4
+
+    from spectra_sherpa.app.models.model_artifact import ModelArtifact
+    from spectra_sherpa.app.models.workflow_version import WorkflowVersion
+    from spectra_sherpa.app.services import deployment_binding
+
+    monkeypatch.setattr(deployment_binding, "verify_model_artifact_storage_record", lambda artifact: None)
+
+    async def create(workflow):
+        version = WorkflowVersion(
+            workflow_id=workflow.id,
+            version_number=1,
+            created_by=workflow.user_id,
+            snapshot={"nodes": [], "edges": []},
+        )
+        test_session.add(version)
+        await test_session.flush()
+        artifact = ModelArtifact(
+            artifact_uid=str(uuid4()),
+            user_id=workflow.user_id,
+            workflow_id=workflow.id,
+            workflow_version_id=version.id,
+            project_id=workflow.project_id,
+            node_id="model",
+            model_type="pls",
+            name="Reviewed model",
+            artifact_dir="test-artifact",
+            integrity_hash="a" * 64,
+            n_features=2,
+            is_active=True,
+            is_deploy_ready=True,
+        )
+        test_session.add(artifact)
+        await test_session.flush()
+        return artifact
+
+    return create
+
+
+@pytest.fixture
+def deny_inference_network(monkeypatch):
+    """Deny inference connections while allowing the stdlib's Windows socketpair.
+
+    Windows asyncio creates its wake-up socketpair with a temporary loopback
+    listener. Only connections made inside that standard-library constructor
+    may use loopback; application connections (including loopback) still fail.
+    """
+    import contextvars
+    import ipaddress
+    import socket
+
+    constructing_pair = contextvars.ContextVar("constructing_local_socketpair", default=False)
+    real_pair = socket.socketpair
+    real_connect = socket.socket.connect
+    real_connect_ex = socket.socket.connect_ex
+
+    def pair(*args, **kwargs):
+        token = constructing_pair.set(True)
+        try:
+            return real_pair(*args, **kwargs)
+        finally:
+            constructing_pair.reset(token)
+
+    def guard(method):
+        def connect(sock, address):
+            if constructing_pair.get() and isinstance(address, tuple):
+                try:
+                    if ipaddress.ip_address(address[0]).is_loopback:
+                        return method(sock, address)
+                except ValueError:
+                    pass
+            raise AssertionError("Offline inference must not open application network connections")
+
+        return connect
+
+    monkeypatch.setattr(socket, "socketpair", pair)
+    monkeypatch.setattr(socket.socket, "connect", guard(real_connect))
+    monkeypatch.setattr(socket.socket, "connect_ex", guard(real_connect_ex))

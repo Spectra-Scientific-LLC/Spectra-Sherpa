@@ -5,14 +5,18 @@ description: Nested cross-validation for unbiased variable-selection performance
   RMSECV, R², Q², and selection stability across folds.
 category: selection_design
 is_active: true
+status: ready
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Spectral Data
-    parameters:
+    parameters: {}
+    example_binding:
       source: eigenvector
-      eigenvector_dataset: corn_m5
+      dataset_name: corn_m5
+      selected_target: Moisture
+      target_type: continuous
     position_x: 175
     position_y: 50
   - node_id: preprocess_1
@@ -66,6 +70,14 @@ template_data:
   - from_node_id: preprocess_1
     to_node_id: nested_cv_2
     to_input: X
+  - from_node_id: data_1
+    to_node_id: nested_cv_1
+    from_output: target
+    to_input: y
+  - from_node_id: data_1
+    to_node_id: nested_cv_2
+    from_output: target
+    to_input: y
   - from_node_id: nested_cv_1
     to_node_id: viz_1
     from_output: cv_metrics

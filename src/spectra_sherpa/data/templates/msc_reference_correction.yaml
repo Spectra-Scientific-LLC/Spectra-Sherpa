@@ -1,0 +1,60 @@
+schema_version: 1
+name: MSC Reference Correction
+slug: msc_reference_correction
+description: Correct application spectra against one explicit reference cohort through a fitted multiplicative scatter correction.
+category: preprocessing
+is_active: true
+status: ready
+template_data:
+  nodes:
+  - node_id: application_1
+    node_type: data.file_load
+    label: Load Application Spectra
+    parameters: {}
+    example_binding:
+      source: synthetic
+      dataset_name: msc_application_spectra
+    position_x: 80
+    position_y: 100
+  - node_id: reference_1
+    node_type: data.file_load
+    label: Load Reference Cohort
+    parameters: {}
+    example_binding:
+      source: synthetic
+      dataset_name: msc_reference_spectra
+    position_x: 400
+    position_y: 100
+  - node_id: msc_1
+    node_type: preprocess.msc
+    label: Fit and Apply MSC
+    parameters:
+      reference_method: mean
+    position_x: 240
+    position_y: 400
+  edges:
+  - from_node_id: application_1
+    to_node_id: msc_1
+  - from_node_id: reference_1
+    to_node_id: msc_1
+    to_input: reference
+  canvas_state:
+    zoom: 0.9
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: application_1
+      required: true
+      binding_mode: separate_source
+      description: Finite spectra on the exact fitted feature axis
+      accepted_techniques: [FTIR, NIR, Raman]
+    msc_reference:
+      role_type: X_spectra
+      node_binding: reference_1
+      required: true
+      binding_mode: separate_source
+      connects_to_port: reference
+      description: Reference cohort used to fit the frozen MSC spectrum
+      accepted_techniques: [FTIR, NIR, Raman]

@@ -1,0 +1,51 @@
+{
+  "comment": "Top-level profile entries created by Spectra Sherpa. Delete all local data removes only these; anything else in the folder is kept and reported. Kept in step with the backend by tests/test_desktop_profile_layout.py.",
+  "entries": [
+    ".metadata_overrides",
+    ".model-publication-locks",
+    ".profile-upgrades",
+    ".secret_key",
+    ".spectrasherpa-desktop.lock",
+    ".startup.lock",
+    "calibrations",
+    "canonical_fitted_artifacts",
+    "canonical_project_artifacts",
+    "credential-key.protected",
+    "demo",
+    "experiments",
+    "exports",
+    "hybrid-device",
+    "llm_dialogs",
+    "logs",
+    "models",
+    "nist_library",
+    "prediction-inputs-v1",
+    "rate_limits",
+    "reference_cache",
+    "references",
+    "run-outputs-v1",
+    "spectra_platform.db",
+    "staged_uploads",
+    "synthesis_cache",
+    "user"
+  ],
+  "prefixes": [
+    "credential-key.protected.",
+    "spectra_platform.db-"
+  ],
+  "env_keys": [
+    "APP_MODE",
+    "CHAT_ENDPOINT_ALLOW_PRIVATE",
+    "CHAT_ENDPOINT_KEY",
+    "CHAT_ENDPOINT_KEY_ENCRYPTED",
+    "CHAT_ENDPOINT_MODEL",
+    "CHAT_ENDPOINT_PROVIDER",
+    "CHAT_ENDPOINT_URL",
+    "EGRESS_ENABLED",
+    "MASTER_ENCRYPTION_KEY",
+    "SECRET_KEY",
+    "SPECTRASHERPA_API_KEY",
+    "SPECTRASHERPA_API_URL",
+    "SPECTRASHERPA_DEPLOYMENT_ID"
+  ]
+}

@@ -1,5 +1,5 @@
 """
-Mode-matrix regression tests for local / hybrid / enterprise behavior.
+Mode-matrix regression tests for local / extension_test / enterprise behavior.
 
 Tests that mode-dependent behavior matches the documented contracts.
 Each test is parametrized across the three operational modes to ensure
@@ -66,31 +66,31 @@ def _make_config(
 class TestFeatureFlags:
     """Verify feature flags computed by to_client_safe() match per-mode expectations."""
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["local", "extension_test", "enterprise"])
     def test_api_token_settings(self, mode: str):
-        """apiTokenSettings enabled in local/hybrid, disabled in demo."""
+        """apiTokenSettings enabled in local/extension_test, disabled in demo."""
         cfg = _make_config(mode=mode)
         flags = cfg.to_client_safe()["features"]
-        if mode in ("local", "hybrid"):
+        if mode == "local":
             assert flags["apiTokenSettings"] is True
         else:
             assert flags["apiTokenSettings"] is False
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["local", "extension_test", "enterprise"])
     def test_demo_contract_in_client_safe(self, mode: str):
         """demo key is None unless site_profile is 'demo'."""
         cfg = _make_config(mode=mode)
         safe = cfg.to_client_safe()
         assert safe["demo"] is None  # No site_profile set
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
-    def test_plugin_system_always_enabled(self, mode: str):
-        """pluginSystem is always True regardless of mode."""
+    @pytest.mark.parametrize("mode", ["local", "extension_test", "enterprise"])
+    def test_plugin_system_is_disabled(self, mode: str):
+        """The public Workbench never imports arbitrary Python plugins."""
         cfg = _make_config(mode=mode)
         flags = cfg.to_client_safe()["features"]
-        assert flags["pluginSystem"] is True
+        assert "pluginSystem" not in flags
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["local", "extension_test", "enterprise"])
     def test_nist_downloads_follows_egress(self, mode: str):
         """nistDownloads mirrors egress_enabled."""
         for egress in (True, False):
@@ -103,12 +103,12 @@ class TestFeatureFlags:
         The server overlay (subscription entitlements) is what enables it.
         OSS base config never computes sherpaAdvisor=True on its own.
         """
-        for mode in ("local", "hybrid", "enterprise"):
+        for mode in ("local", "extension_test", "enterprise"):
             with patch.dict("os.environ", {"SPECTRASHERPA_API_KEY": "test-key"}):
                 cfg = _make_config(mode=mode)
                 assert cfg.to_client_safe()["features"][SHERPA_ADVISOR] is False
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["local", "extension_test", "enterprise"])
     def test_all_sherpa_capabilities_present_and_false_in_base_config(self, mode: str):
         """Base config must expose the full Sherpa capability surface as False."""
         cfg = _make_config(mode=mode)
@@ -200,9 +200,9 @@ class TestLimits:
         assert limits["maxSherpaRequestsHour"] > 0
         assert limits["adminBypass"] is True
 
-    def test_hybrid_has_no_limits(self):
+    def test_extension_test_has_no_limits(self):
         """Hybrid mode exposes the active Sherpa/LLM quota."""
-        cfg = _make_config(mode="hybrid")
+        cfg = _make_config(mode="extension_test")
         limits = cfg.to_client_safe()["limits"]
         assert limits is not None
         assert limits["maxSherpaRequestsHour"] > 0
@@ -232,9 +232,9 @@ class TestEgressDefaults:
         cfg = _make_config(mode="local")
         assert cfg.egress_enabled is False
 
-    def test_hybrid_egress_enabled_by_default(self):
+    def test_extension_test_egress_enabled_by_default(self):
         """Hybrid mode has egress enabled by default (cloud features)."""
-        cfg = _make_config(mode="hybrid")
+        cfg = _make_config(mode="extension_test")
         assert cfg.egress_enabled is True
 
     def test_enterprise_egress_enabled_by_default(self):
@@ -247,8 +247,8 @@ class TestEgressDefaults:
         cfg_local_on = _make_config(mode="local", egress_enabled=True)
         assert cfg_local_on.egress_enabled is True
 
-        cfg_hybrid_off = _make_config(mode="hybrid", egress_enabled=False)
-        assert cfg_hybrid_off.egress_enabled is False
+        cfg_extension_test_off = _make_config(mode="extension_test", egress_enabled=False)
+        assert cfg_extension_test_off.egress_enabled is False
 
 
 # ===========================================================================
@@ -267,29 +267,35 @@ class TestIsEgressEnabled:
 
             assert is_egress_enabled() is False
 
-    def test_hybrid_egress_enabled_when_healthy(self):
+    def test_extension_test_egress_enabled_when_healthy(self):
         """Hybrid mode: egress enabled when network is healthy."""
-        cfg = _make_config(mode="hybrid", egress_enabled=True)
+        cfg = _make_config(mode="extension_test", egress_enabled=True)
         mock_health = MagicMock()
         mock_health.is_degraded = False
 
         with (
             patch("spectra_sherpa.app.core.security.app_config", cfg),
-            patch("spectra_sherpa.app.services.network_health.get_network_health_service", return_value=mock_health),
+            patch(
+                "spectra_sherpa.app.contracts.runtime_status._provider",
+                lambda: {"is_degraded": mock_health.is_degraded},
+            ),
         ):
             from spectra_sherpa.app.core.security import is_egress_enabled
 
             assert is_egress_enabled() is True
 
-    def test_hybrid_egress_disabled_when_degraded(self):
+    def test_extension_test_egress_disabled_when_degraded(self):
         """Hybrid mode: egress disabled when network is degraded."""
-        cfg = _make_config(mode="hybrid", egress_enabled=True)
+        cfg = _make_config(mode="extension_test", egress_enabled=True)
         mock_health = MagicMock()
         mock_health.is_degraded = True
 
         with (
             patch("spectra_sherpa.app.core.security.app_config", cfg),
-            patch("spectra_sherpa.app.services.network_health.get_network_health_service", return_value=mock_health),
+            patch(
+                "spectra_sherpa.app.contracts.runtime_status._provider",
+                lambda: {"is_degraded": mock_health.is_degraded},
+            ),
         ):
             from spectra_sherpa.app.core.security import is_egress_enabled
 
@@ -341,7 +347,7 @@ class TestExportAllowed:
     @pytest.mark.asyncio
     async def test_no_user_defaults_to_allowed(self):
         """Any mode: null user defaults to export allowed."""
-        for mode in ("local", "hybrid", "enterprise"):
+        for mode in ("local", "extension_test", "enterprise"):
             with patch("spectra_sherpa.app.core.mode_policy.app_config", _make_config(mode=mode)):
                 from spectra_sherpa.app.core.security import check_export_allowed
 
@@ -372,8 +378,8 @@ class TestAuthMiddleware:
             ("local", "127.0.0.1", False),
             ("local", "192.168.1.1", False),
             # Hybrid mode: loopback is exempt, remote requires auth
-            ("hybrid", "127.0.0.1", False),
-            ("hybrid", "192.168.1.1", True),
+            ("extension_test", "127.0.0.1", False),
+            ("extension_test", "192.168.1.1", True),
             # Enterprise mode: always requires auth
             ("enterprise", "127.0.0.1", True),
             ("enterprise", "192.168.1.1", True),
@@ -384,7 +390,7 @@ class TestAuthMiddleware:
         from spectra_sherpa.app.core.mode_policy import is_loopback
 
         # Replicate the logic from main.py
-        requires_ws_auth = mode == "enterprise" or (mode == "hybrid" and not is_loopback(client_host))
+        requires_ws_auth = mode == "enterprise" or (mode == "extension_test" and not is_loopback(client_host))
         assert requires_ws_auth is expected_requires_auth
 
 
@@ -400,7 +406,7 @@ class TestTokenTTL:
     60-minute default removes dead-code complexity.
     """
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["local", "extension_test", "enterprise"])
     def test_token_ttl_is_60_minutes_for_all_modes(self, mode):
         """All modes use the same 60-minute default TTL."""
         with patch.dict("os.environ", {"APP_MODE": mode}, clear=False):
@@ -418,7 +424,7 @@ class TestTokenTTL:
 class TestConfigResponseShape:
     """Verify to_client_safe() response matches documented contract."""
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["local", "extension_test", "enterprise"])
     def test_required_top_level_fields(self, mode: str):
         """Config response always has mode, egressEnabled, features, llms."""
         cfg = _make_config(mode=mode)
@@ -431,7 +437,7 @@ class TestConfigResponseShape:
         assert "llms" in response
         assert "limits" in response  # present, may be None
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["local", "extension_test", "enterprise"])
     def test_required_feature_flags(self, mode: str):
         """All documented feature flags are present."""
         cfg = _make_config(mode=mode)
@@ -439,16 +445,14 @@ class TestConfigResponseShape:
 
         expected_flags = [
             "apiTokenSettings",
-            "cloudOffload",
             CHAT_ASSISTANT,
             "nistDownloads",
-            "pluginSystem",
             *ALL_SHERPA_CAPABILITIES,
         ]
         for flag in expected_flags:
             assert flag in features, f"Missing feature flag: {flag}"
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["local", "extension_test", "enterprise"])
     def test_llm_entry_shape(self, mode: str):
         """Each LLM entry has provider, model, enabled."""
         cfg = _make_config(mode=mode, llm_key="sk-test")
@@ -462,7 +466,7 @@ class TestConfigResponseShape:
 
     def test_mode_field_matches_input(self):
         """Response mode field matches the configured mode."""
-        for mode in ("local", "hybrid", "enterprise"):
+        for mode in ("local", "extension_test", "enterprise"):
             cfg = _make_config(mode=mode)
             assert cfg.to_client_safe()["mode"] == mode
 
@@ -483,7 +487,7 @@ class TestRouteRegistration:
         """
         # We verify the logic pattern, not the live app state
         # (app is already imported at test time with whatever mode was set).
-        for mode in ("hybrid", "enterprise"):
+        for mode in ("extension_test", "enterprise"):
             # In non-local mode, auth/admin routers should be included
             assert mode != "local"  # tautology, documents the gate condition
 
@@ -504,7 +508,7 @@ class TestRouteRegistration:
 class TestMCPToolSystem:
     """Verify MCP tool system behavior across modes."""
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["local", "extension_test", "enterprise"])
     def test_tool_registry_returns_tools_in_all_modes(self, mode: str):
         """tool_registry.list_definitions() is mode-independent — tools are always available."""
         import spectra_sherpa.app.services.tools.builtin  # noqa: F401  — ensure builtins registered
@@ -540,55 +544,65 @@ class TestMCPToolSystem:
             tool_registry.unregister("test_egress_tool")
 
 
+class TestFineGrainedEgressFailurePolicy:
+    """Sensitive data gates must not broaden access when policy reads fail."""
+
+    @pytest.mark.asyncio
+    async def test_strict_fine_grained_lookup_fails_closed(self):
+        from spectra_sherpa.app.core.security import check_egress_permission
+
+        class BrokenPolicySession:
+            async def execute(self, _statement):
+                raise RuntimeError("policy store unavailable")
+
+        user = MagicMock()
+        user.id = 42
+        user.egress_defaults.allow_llm_context = True
+
+        with patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True):
+            allowed = await check_egress_permission(
+                user,
+                "allow_llm_context",
+                data_type="spectra",
+                destination="llm_context",
+                session=BrokenPolicySession(),
+                fail_closed_on_fine_grained_error=True,
+            )
+
+        assert allowed is False
+
+    @pytest.mark.asyncio
+    async def test_strict_fine_grained_lookup_requires_an_explicit_row(self):
+        from spectra_sherpa.app.core.security import check_egress_permission
+
+        class NoPolicyResult:
+            def scalar_one_or_none(self):
+                return None
+
+        class NoPolicySession:
+            async def execute(self, _statement):
+                return NoPolicyResult()
+
+        user = MagicMock()
+        user.id = 42
+        user.egress_defaults.allow_llm_context = True
+
+        with patch("spectra_sherpa.app.core.security.is_egress_enabled", return_value=True):
+            allowed = await check_egress_permission(
+                user,
+                "allow_llm_context",
+                data_type="spectra",
+                destination="llm_context",
+                session=NoPolicySession(),
+                fail_closed_on_fine_grained_error=True,
+            )
+
+        assert allowed is False
+
+
 # ===========================================================================
 # 11. Backward compatibility: mode="demo" → "enterprise"
 # ===========================================================================
-
-
-class TestRegistrationRequiresCode:
-    """registrationRequiresCode surfaces the ``auth_policy`` contract flag.
-
-    The commercial server decides whether an access code is required based
-    on its own configuration (mode + ``ENTERPRISE_PASSWORD``) and registers
-    the result at startup via
-    ``auth_policy.set_registration_requires_code``. OSS only surfaces
-    whatever the server has declared. Server-side tests cover the
-    mode-and-env-var logic itself.
-    """
-
-    def setup_method(self):
-        from spectra_sherpa.app.contracts.auth_policy import _reset_for_tests
-
-        _reset_for_tests()
-
-    def teardown_method(self):
-        from spectra_sherpa.app.contracts.auth_policy import _reset_for_tests
-
-        _reset_for_tests()
-
-    def test_default_is_false_when_no_server_registered(self):
-        """OSS-only installs: the flag is False by default."""
-        for mode in ("local", "hybrid", "enterprise"):
-            cfg = _make_config(mode=mode)
-            assert cfg.to_client_safe()["registrationRequiresCode"] is False
-
-    def test_flag_surfaces_when_server_sets_true(self):
-        """When the server registers True, OSS surfaces True in client config."""
-        from spectra_sherpa.app.contracts.auth_policy import (
-            set_registration_requires_code,
-        )
-
-        set_registration_requires_code(True)
-        for mode in ("local", "hybrid", "enterprise"):
-            cfg = _make_config(mode=mode)
-            assert cfg.to_client_safe()["registrationRequiresCode"] is True
-
-    def test_flag_independent_of_env_var(self):
-        """OSS does NOT read ENTERPRISE_PASSWORD directly; only the contract flag matters."""
-        with patch.dict("os.environ", {"ENTERPRISE_PASSWORD": "secret123"}):
-            cfg = _make_config(mode="enterprise")
-            # No server registered the flag, so the env var should have no effect.
-            assert cfg.to_client_safe()["registrationRequiresCode"] is False
 
 
 # ===========================================================================
@@ -658,7 +672,7 @@ class TestCorsMiddlewareOrdering:
 class TestConfigResponseContract:
     """Verify to_client_safe() meets the documented API contract."""
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["local", "extension_test", "enterprise"])
     def test_to_client_safe_includes_all_expected_keys(self, mode: str):
         """Response includes all required top-level and feature keys."""
         cfg = _make_config(mode=mode)
@@ -674,13 +688,11 @@ class TestConfigResponseContract:
             CHAT_ASSISTANT,
             "nistDownloads",
             "apiTokenSettings",
-            "cloudOffload",
             *ALL_SHERPA_CAPABILITIES,
-            "pluginSystem",
         ):
             assert key in features, f"Missing feature flag: {key}"
 
-    @pytest.mark.parametrize("mode", ["local", "hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["local", "extension_test", "enterprise"])
     def test_to_client_safe_uses_camel_case_keys(self, mode: str):
         """Top-level keys must use camelCase (no underscores)."""
         cfg = _make_config(mode=mode)
@@ -697,7 +709,7 @@ class TestConfigResponseContract:
 
 class TestSubscriptionOverlay:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", ["hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["extension_test", "enterprise"])
     async def test_config_marks_overlay_failure_as_degraded(self, monkeypatch, mode: str):
         from spectra_sherpa.app.api.v1.routes import config as config_routes
         from spectra_sherpa.app.contracts import config_overlay as overlay_mod
@@ -729,7 +741,7 @@ class TestSubscriptionOverlay:
         monkeypatch.setattr(overlay_mod, "_config_overlay_provider", None)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", ["hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["extension_test", "enterprise"])
     async def test_overlay_provider_applies_features(self, monkeypatch, mode: str):
         from spectra_sherpa.app.api.v1.routes import config as config_routes
         from spectra_sherpa.app.contracts import config_overlay as overlay_mod
@@ -741,6 +753,7 @@ class TestSubscriptionOverlay:
             return {
                 "features": {SHERPA_ADVISOR: True, CHAT_ASSISTANT: True},
                 "subscription": {"plan": "pro", "status": "active"},
+                "uiExtensions": [{"id": "mock", "url": "/ui/mock.js", "contractVersion": 1}],
             }
 
         monkeypatch.setattr(overlay_mod, "_config_overlay_provider", _overlay_with_features)
@@ -756,12 +769,13 @@ class TestSubscriptionOverlay:
         assert response["features"][CHAT_ASSISTANT] is True
         assert response["features"][SHERPA_ADVISOR] is True
         assert response["subscription"]["plan"] == "pro"
+        assert response["uiExtensions"] == [{"id": "mock", "url": "/ui/mock.js", "contractVersion": 1}]
 
         # Cleanup
         monkeypatch.setattr(overlay_mod, "_config_overlay_provider", None)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("mode", ["hybrid", "enterprise"])
+    @pytest.mark.parametrize("mode", ["extension_test", "enterprise"])
     async def test_no_overlay_provider_returns_base_config(self, monkeypatch, mode: str):
         """When no overlay provider is installed, non-local modes return base config."""
         from spectra_sherpa.app.api.v1.routes import config as config_routes
@@ -783,3 +797,13 @@ class TestSubscriptionOverlay:
         # No provider → base config, not degraded (just no overlay)
         assert response["configStatus"] == config_routes.CONFIG_STATUS_OK
         assert response["features"][CHAT_ASSISTANT] is False
+
+
+@pytest.fixture(autouse=True)
+def explicit_test_extension(monkeypatch):
+    from spectra_sherpa.app.contracts import runtime_mode
+
+    monkeypatch.setattr(runtime_mode, "_policies", {})
+    runtime_mode.register_runtime_mode(
+        runtime_mode.RuntimeModePolicy(name="extension_test", implicit_loopback_identity=True)
+    )

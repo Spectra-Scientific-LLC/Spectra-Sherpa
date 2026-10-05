@@ -2,7 +2,7 @@
 Configuration endpoint for frontend.
 
 Returns client-safe configuration including:
-- App mode (local, hybrid, enterprise)
+- Core or explicitly registered runtime mode
 - Feature flags
 - LLM provider availability (checks env vars AND database)
 - Rate limits (if enterprise mode)
@@ -13,20 +13,19 @@ import os
 import socket
 from ipaddress import ip_address
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
 
-from spectra_sherpa.app.api.deps import get_current_user, get_session, get_user_from_credentials
+from spectra_sherpa.app.api.deps import api_key_header, get_current_user, get_session, get_user_from_credentials
 from spectra_sherpa.app.contracts.capabilities import CHAT_ASSISTANT
 from spectra_sherpa.app.contracts.llm_catalog import provider_route_catalog_dicts
-from spectra_sherpa.app.core.config import app_config, settings
+from spectra_sherpa.app.core.config import app_config
 from spectra_sherpa.app.core.security import get_bearer_token_optional
 
 
@@ -51,7 +50,6 @@ from spectra_sherpa.app.models.api_key import APIKey
 from spectra_sherpa.app.models.user import User
 
 router = APIRouter(prefix="/config", tags=["config"])
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 CONFIG_STATUS_OK = "ok"
 CONFIG_STATUS_DEGRADED = "degraded"
 CONFIG_ERROR_SUBSCRIPTION_OVERLAY_UNAVAILABLE = "subscription_overlay_unavailable"
@@ -69,10 +67,10 @@ async def get_optional_current_user(
     Returns None for anonymous/public requests so /config remains publicly readable.
 
     Audit Item 4: this public route previously called
-    ``get_user_from_credentials`` without the client host, so the hybrid
+    ``get_user_from_credentials`` without the client host, so the extension
     credential-free fallback (``_resolve_user``) saw ``client_host=None``
     and granted implicit local identity on a *public* endpoint,
-    weakening the hybrid boundary.  Pass the real client host so the
+    weakening the extension boundary.  Pass the real client host so the
     fallback can only fire for an actual loopback caller.
     """
     from spectra_sherpa.app.core.security import get_client_host
@@ -176,85 +174,69 @@ async def get_config(
         config["features"][CHAT_ASSISTANT] = False
         config["subscription"] = None
 
-        # Delegate overlay assembly to the injected provider.
-        from spectra_sherpa.app.contracts.config_overlay import get_config_overlay_provider
+    # Delegate overlay assembly to the injected provider.
+    from spectra_sherpa.app.contracts.config_overlay import get_config_overlay_provider
 
-        overlay_provider = get_config_overlay_provider()
-        if overlay_provider is not None:
-            from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
-
-            overlay = await overlay_provider(spectrasherpa_config.api_key)
-            if overlay:
-                config["features"].update(overlay.get("features", {}))
-                config["subscription"] = overlay.get("subscription")
-                if overlay.get("limits") is not None:
-                    config["limits"] = overlay["limits"]
-                if overlay.get("demo") is not None:
-                    config["demo"] = overlay["demo"]
-                # Phase 4 — server elevates audit pack capabilities
-                # (fullPipeline, reportPack) when the deployment's
-                # plan entitles them. localQuery and exportAudited
-                # remain governed by the OSS deployment flag and are
-                # NOT overridable by the server overlay (per design §3
-                # — audit.basic is a deployment capability, not a plan
-                # entitlement).
-                overlay_audit = overlay.get("audit")
-                if overlay_audit is not None and isinstance(config.get("audit"), dict):
-                    if "fullPipeline" in overlay_audit:
-                        config["audit"]["fullPipeline"] = bool(overlay_audit["fullPipeline"])
-                    if "reportPack" in overlay_audit:
-                        config["audit"]["reportPack"] = bool(overlay_audit["reportPack"])
-                # Explicit merge of server-owned auth-policy flags. The
-                # base shape defaults both to False (see
-                # AppConfig.to_client_safe); the overlay may override
-                # per-request, and the names are listed here so a future
-                # overlay-structure change does not silently drop them.
-                if "registrationEnabled" in overlay:
-                    config["registrationEnabled"] = bool(overlay["registrationEnabled"])
-                if "registrationRequiresCode" in overlay:
-                    config["registrationRequiresCode"] = bool(overlay["registrationRequiresCode"])
-            else:
-                config["configStatus"] = CONFIG_STATUS_DEGRADED
-                config["configError"] = CONFIG_ERROR_SUBSCRIPTION_OVERLAY_UNAVAILABLE
-        # No overlay provider in local-only installs — base config is correct as-is.
+    overlay_provider = get_config_overlay_provider()
+    if overlay_provider is not None:
+        overlay = await overlay_provider(None)
+        if overlay:
+            config["features"].update(overlay.get("features", {}))
+            config["uiExtensions"] = overlay.get("uiExtensions", [])
+            config["implicitIdentity"] = overlay.get("implicitIdentity") is True
+            if overlay.get("advisorContextPolicy") == "receipt":
+                config["advisorContextPolicy"] = "receipt"
+            config["subscription"] = overlay.get("subscription")
+            if overlay.get("limits") is not None:
+                config["limits"] = overlay["limits"]
+            if overlay.get("demo") is not None:
+                config["demo"] = overlay["demo"]
+            # Phase 4 — server elevates audit pack capabilities
+            # (fullPipeline, reportPack) when the deployment's
+            # plan entitles them. localQuery and exportAudited
+            # remain governed by the OSS deployment flag and are
+            # NOT overridable by the server overlay (per design §3
+            # — audit.basic is a deployment capability, not a plan
+            # entitlement).
+            overlay_audit = overlay.get("audit")
+            if overlay_audit is not None and isinstance(config.get("audit"), dict):
+                if "fullPipeline" in overlay_audit:
+                    config["audit"]["fullPipeline"] = bool(overlay_audit["fullPipeline"])
+                if "reportPack" in overlay_audit:
+                    config["audit"]["reportPack"] = bool(overlay_audit["reportPack"])
+            # Explicit merge of server-owned auth-policy flags. The
+            # base shape defaults both to False (see
+            # AppConfig.to_client_safe); the overlay may override
+            # per-request, and the names are listed here so a future
+            # overlay-structure change does not silently drop them.
+            if "registrationEnabled" in overlay:
+                config["registrationEnabled"] = bool(overlay["registrationEnabled"])
+            if isinstance(overlay.get("capabilities"), dict):
+                config["capabilities"] = {
+                    **config.get("capabilities", {}),
+                    **{key: bool(value) for key, value in overlay["capabilities"].items()},
+                }
+        else:
+            config["configStatus"] = CONFIG_STATUS_DEGRADED
+            config["configError"] = CONFIG_ERROR_SUBSCRIPTION_OVERLAY_UNAVAILABLE
+    # No overlay provider in local-only installs — base config is correct as-is.
 
     return config
 
 
 @router.get("/mode")
 async def get_mode():
-    """Get current application mode (considers degradation)"""
-    from spectra_sherpa.app.services.network_health import get_network_health_service
+    from spectra_sherpa.app.contracts.runtime_status import runtime_status
 
-    health_service = get_network_health_service()
-
-    return {
-        "mode": app_config.mode,
-        "effective_mode": health_service.get_effective_mode(),
-        "is_degraded": health_service.is_degraded,
-    }
+    state = runtime_status(app_config.mode)
+    return {key: state[key] for key in ("mode", "effective_mode", "is_degraded")}
 
 
 @router.get("/network-status")
 async def get_network_status():
-    """
-    Get current network connectivity status.
+    from spectra_sherpa.app.contracts.runtime_status import runtime_status
 
-    Returns status of SpectraSherpa connection and degradation state.
-    Useful for showing "Offline Mode" banner in the frontend.
-    """
-    from spectra_sherpa.app.services.network_health import get_network_health_service
-
-    health_service = get_network_health_service()
-    state = health_service.state
-
-    return {
-        "mode": app_config.mode,
-        "effective_mode": health_service.get_effective_mode(),
-        "is_online": health_service.is_online,
-        "is_degraded": health_service.is_degraded,
-        "network_state": state.to_dict(),
-    }
+    return runtime_status(app_config.mode)
 
 
 @router.get("/llms")
@@ -325,11 +307,6 @@ async def get_unit_options():
 # ============================================================================
 
 
-class SpectraSherpaTestRequest(BaseModel):
-    server_url: str
-    api_key: str
-
-
 # SECURITY: SpectraSherpa config is ENV-ONLY to prevent runtime tampering
 # No in-memory storage - configuration must come from environment variables
 
@@ -339,18 +316,11 @@ _extra = [h.strip().lower() for h in os.getenv("SPECTRASHERPA_ALLOWED_HOSTS", ""
 ALLOWED_SPECTRASHERPA_HOSTS = ["localhost", "127.0.0.1", "::1"] + _extra
 
 
-def _mask_api_key(key: str | None) -> str | None:
-    """Mask an API key, showing only first 4 and last 4 characters."""
-    if not key or len(key) < 12:
-        return "****" if key else None
-    return f"{key[:4]}...{key[-4:]}"
-
-
 def _is_allowed_url(url: str) -> bool:
     """Check if a SpectraSherpa URL is safe to contact.
 
     Explicitly configured hosts are always allowed. Otherwise, HTTPS public
-    hostnames are allowed for hybrid cloud onboarding, while direct IPs and
+    hostnames are allowed for user-configured providers, while direct IPs and
     non-HTTPS URLs remain restricted unless allowlisted.
     """
     from urllib.parse import urlparse
@@ -411,162 +381,9 @@ def _can_manage_byo_chat(http_request: Request) -> bool:
     return allow_private in {"1", "true", "yes", "y", "on"} and _is_private_address(host)
 
 
-def _normalize_spectrasherpa_url(url: str) -> str:
-    """
-    Normalize SpectraSherpa URL to ensure /api/v1 path is included.
-
-    Handles:
-    - https://your-server.example.com -> https://your-server.example.com/api/v1
-    - https://your-server.example.com/api/v1 -> https://your-server.example.com/api/v1
-    - https://your-server.example.com/ -> https://your-server.example.com/api/v1
-    """
-    url = url.rstrip("/")
-    if not url.endswith("/api/v1"):
-        url = f"{url}/api/v1"
-    return url
-
-
-@router.get("/spectrasherpa")
-async def get_spectrasherpa_config():
-    """
-    Get current SpectraSherpa configuration.
-    Returns server URL and MASKED API key (never exposes full key).
-
-    Configuration is read-only from environment variables.
-    """
-    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
-
-    if spectrasherpa_config.api_key:
-        return {
-            "serverUrl": spectrasherpa_config.api_base_url,
-            "apiKey": _mask_api_key(spectrasherpa_config.api_key),
-            "configured": True,
-            "source": "environment",
-        }
-
-    return {"serverUrl": None, "apiKey": None, "configured": False, "source": None}
-
-
-@router.post("/spectrasherpa/test")
-async def test_spectrasherpa_connection(request: SpectraSherpaTestRequest, http_request: Request):
-    """
-    Test a SpectraSherpa connection before saving.
-    Returns user info and available managed keys if successful.
-
-    SECURITY:
-    - Only accepts requests from local config clients
-    - Only allows requests to allowlisted/public SpectraSherpa hosts (SSRF protection)
-    """
-    from spectra_sherpa.app.core.mode_policy import is_enterprise, is_loopback
-    from spectra_sherpa.app.core.security import get_client_host
-
-    if is_enterprise():
-        raise HTTPException(status_code=403, detail="Mode switching is disabled in enterprise mode.")
-    if not is_loopback(get_client_host(http_request)):
-        raise HTTPException(status_code=403, detail="Mode switching is only available from localhost.")
-
-    # SSRF Protection: Only allow requests to known SpectraSherpa hosts
-    if not _is_allowed_url(request.server_url):
-        return {
-            "success": False,
-            "error": "Server URL not in allowed hosts. Contact admin to add your SpectraSherpa instance.",
-        }
-
-    try:
-        # Normalize URL to ensure /api/v1 is included
-        base_url = _normalize_spectrasherpa_url(request.server_url)
-
-        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
-            # Validate deployment key
-            response = await client.post(
-                f"{base_url}/keys/deployment/validate", headers={"X-Deployment-Key": request.api_key}
-            )
-
-            if response.status_code == 401:
-                return {"success": False, "error": "Invalid deployment key"}
-            if response.status_code == 403:
-                return {"success": False, "error": "Deployment key has been revoked"}
-            if response.status_code != 200:
-                return {"success": False, "error": f"Server returned {response.status_code}"}
-
-            validation = response.json()
-
-            return {
-                "success": True,
-                "deployment": validation,
-            }
-
-    except httpx.ConnectError:
-        return {"success": False, "error": "Cannot connect to server"}
-    except httpx.TimeoutException:
-        return {"success": False, "error": "Connection timed out"}
-    except Exception as exc:
-        # Log the full exception server-side; return a generic message so
-        # internal details (stack frames, filesystem paths, library versions)
-        # don't flow back to the client.
-        logger.exception("Deployment key validation failed: %s", exc)
-        return {"success": False, "error": "Deployment key validation failed."}
-
-
-@router.get("/spectrasherpa/user")
-async def get_spectrasherpa_user():
-    """
-    Get deployment key info from SpectraSherpa server.
-
-    Returns deployment label, plan, and entitlements rather than user identity
-    (deployment keys don't map to individual server users).
-    """
-    from spectra_sherpa.app.services.spectrasherpa import get_spectrasherpa_service
-
-    service = get_spectrasherpa_service()
-    if not service.is_configured:
-        return {"error": "SpectraSherpa not configured"}
-
-    result = await service.validate_deployment_key()
-    if result.success:
-        return {
-            "label": result.label,
-            "plan": result.plan,
-            "plan_status": result.plan_status,
-            "entitlements": result.entitlements,
-        }
-    else:
-        return {"error": result.error or "Unable to validate deployment key"}
-
-
-@router.get("/spectrasherpa/keys")
-async def get_spectrasherpa_keys():
-    """
-    Get available managed LLM keys from SpectraSherpa.
-    """
-    from spectra_sherpa.app.services.spectrasherpa import get_spectrasherpa_service
-
-    service = get_spectrasherpa_service()
-    if not service.is_configured:
-        return {"keys": [], "error": "SpectraSherpa not configured"}
-
-    keys = await service.get_managed_llm_keys()
-    return {
-        "keys": [
-            {
-                "provider": k.provider,
-                "display_name": k.provider.title(),
-                "model": k.model or "default",
-                "available": k.available,
-            }
-            for k in keys
-        ]
-    }
-
-
 # ============================================================================
-# Hybrid Mode Activation / Deactivation
+# Local configuration persistence
 # ============================================================================
-
-
-class ActivateHybridRequest(BaseModel):
-    server_url: str
-    api_key: str
 
 
 def _find_or_create_env_path() -> str:
@@ -576,9 +393,11 @@ def _find_or_create_env_path() -> str:
         get_local_env_file_search_paths,
         get_project_root,
     )
+    from spectra_sherpa.app.core.desktop_policy import refuse_linked_configuration
 
     for candidate in get_local_env_file_search_paths():
         if candidate.is_file():
+            refuse_linked_configuration(candidate)
             return str(candidate)
 
     # No .env found — create at project root (dev) or data dir (pip)
@@ -593,188 +412,27 @@ def _find_or_create_env_path() -> str:
     return str(env_path)
 
 
-@router.post("/activate-hybrid")
-async def activate_hybrid(request: ActivateHybridRequest, http_request: Request):
-    """
-    Activate hybrid mode by connecting to a SpectraSherpa cloud server.
-
-    Tests the connection, persists config to .env, hot-reloads in-memory
-    singletons, and runs identity linking — all without a restart.
-
-    Security: blocked in enterprise mode; restricted to loopback in local/hybrid.
-    """
-    from spectra_sherpa.app.core.mode_policy import is_enterprise, is_loopback
-    from spectra_sherpa.app.core.security import get_client_host
-
-    if is_enterprise():
-        raise HTTPException(status_code=403, detail="Mode switching is disabled in enterprise mode.")
-    if not is_loopback(get_client_host(http_request)):
-        raise HTTPException(status_code=403, detail="Mode switching is only available from localhost.")
-
-    import secrets
-
-    from dotenv import set_key as dotenv_set_key
-
-    # ── 1. SSRF validation ──
-    if not _is_allowed_url(request.server_url):
-        raise HTTPException(status_code=400, detail="Server URL not in allowed hosts list.")
-
-    base_url = _normalize_spectrasherpa_url(request.server_url)
-
-    # ── 2. Validate deployment key via /keys/deployment/validate ──
-    # The key is a deployment key (not a user API key).  This endpoint
-    # resolves against the DeploymentKey model and returns plan/entitlements.
-    try:
-        async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
-            response = await client.post(
-                f"{base_url}/keys/deployment/validate",
-                headers={"X-Deployment-Key": request.api_key},
-            )
-            if response.status_code == 401:
-                raise HTTPException(status_code=400, detail="Invalid deployment key")
-            if response.status_code == 403:
-                raise HTTPException(status_code=400, detail="Deployment key has been revoked")
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Server validation returned {response.status_code}",
-                )
-    except httpx.ConnectError:
-        raise HTTPException(status_code=400, detail="Cannot connect to server")
-    except httpx.TimeoutException:
-        raise HTTPException(status_code=400, detail="Connection timed out")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    # ── 3. Find or create .env ──
-    env_path = _find_or_create_env_path()
-
-    # ── 4. Generate SECRET_KEY if still default ──
-    from spectra_sherpa.app.core.startup import DEFAULT_SECRET_KEY
-
-    secret_key_generated = False
-    if settings.secret_key == DEFAULT_SECRET_KEY:
-        new_secret = secrets.token_urlsafe(32)
-        dotenv_set_key(env_path, "SECRET_KEY", new_secret)
-        os.environ["SECRET_KEY"] = new_secret
-        secret_key_generated = True
-        logger.info("Generated SECRET_KEY for hybrid mode (persisted to .env)")
-
-    # ── 5. Persist to .env ──
-    dotenv_set_key(env_path, "APP_MODE", "hybrid")
-    dotenv_set_key(env_path, "SPECTRASHERPA_API_URL", base_url)
-    dotenv_set_key(env_path, "SPECTRASHERPA_API_KEY", request.api_key)
-    dotenv_set_key(env_path, "EGRESS_ENABLED", "true")
-
-    # ── 6. Update os.environ ──
-    os.environ["APP_MODE"] = "hybrid"
-    os.environ["SPECTRASHERPA_API_URL"] = base_url
-    os.environ["SPECTRASHERPA_API_KEY"] = request.api_key
-    os.environ["EGRESS_ENABLED"] = "true"
-
-    # ── 7. Mutate in-memory singletons ──
-    app_config.mode = "hybrid"
-    app_config.egress_enabled = True
-
-    from spectra_sherpa.app.services.spectrasherpa import spectrasherpa_config
-
-    spectrasherpa_config.api_base_url = base_url
-    spectrasherpa_config.api_key = request.api_key
-
-    # ── 8. Service lifecycle ──
-    # No singleton reset required; network health and config state are updated below.
-
-    # ── 9. Ensure default user egress settings ──
-    from spectra_sherpa.app.core.startup import ensure_egress_defaults
-
-    await ensure_egress_defaults()
-
-    # ── 10. Start network health monitoring ──
-    from spectra_sherpa.app.services.network_health import start_network_health_service
-
-    await start_network_health_service()
-
-    logger.info("Hybrid mode activated: connected to %s", base_url)
-
-    return {
-        "success": True,
-        "config": app_config.to_client_safe(),
-        "env_path": env_path,
-        "secret_key_generated": secret_key_generated,
-    }
-
-
-@router.post("/deactivate-hybrid")
-async def deactivate_hybrid(http_request: Request):
-    """
-    Revert to local mode by disconnecting from SpectraSherpa cloud.
-
-    Clears credentials from memory and .env, reverts mode to local.
-
-    Security: blocked in enterprise mode; restricted to loopback in local/hybrid.
-    """
-    from spectra_sherpa.app.core.mode_policy import is_enterprise, is_loopback
-    from spectra_sherpa.app.core.security import get_client_host
-
-    if is_enterprise():
-        raise HTTPException(status_code=403, detail="Mode switching is disabled in enterprise mode.")
-    if not is_loopback(get_client_host(http_request)):
-        raise HTTPException(status_code=403, detail="Mode switching is only available from localhost.")
-
-    from dotenv import set_key as dotenv_set_key
-
-    # ── 1. Update .env ──
-    from spectra_sherpa._paths import get_local_env_file_search_paths
-
-    env_path = None
-    for candidate in get_local_env_file_search_paths():
-        if candidate.is_file():
-            env_path = str(candidate)
-            break
-
-    if env_path:
-        dotenv_set_key(env_path, "APP_MODE", "local")
-        dotenv_set_key(env_path, "EGRESS_ENABLED", "false")
-        dotenv_set_key(env_path, "SPECTRASHERPA_API_KEY", "")
-        dotenv_set_key(env_path, "SPECTRASHERPA_API_URL", "")
-
-    # ── 2. Update os.environ ──
-    os.environ["APP_MODE"] = "local"
-    os.environ["EGRESS_ENABLED"] = "false"
-    os.environ.pop("SPECTRASHERPA_API_KEY", None)
-    os.environ.pop("SPECTRASHERPA_API_URL", None)
-
-    # ── 3. Mutate in-memory singletons ──
-    app_config.mode = "local"
-    app_config.egress_enabled = False
-
-    from spectra_sherpa.app.services.spectrasherpa import SPECTRASHERPA_API_BASE, spectrasherpa_config
-
-    spectrasherpa_config.api_key = None
-    spectrasherpa_config.api_base_url = SPECTRASHERPA_API_BASE
-
-    # ── 4. Service lifecycle ──
-    # No singleton reset required; network health and config state are updated below.
-
-    # ── 5. Stop network health monitoring ──
-    from spectra_sherpa.app.services.network_health import stop_network_health_service
-
-    await stop_network_health_service()
-
-    logger.info("Reverted to local mode")
-
-    return {"success": True, "config": app_config.to_client_safe()}
-
-
 # ── BYO Chat Config (local mode) ────────────────────────────────────────────
 
 
 class ByoChatConfigRequest(BaseModel):
     endpoint_url: str
-    endpoint_key: str
+    endpoint_key: str = ""
     model: str = "deepseek-chat"
+    provider: str = "openai_compatible"
+    allow_private_endpoint: bool = False
+
+
+def _normalized_byo_endpoint(url: str) -> str:
+    """Return the stable identity used to decide whether a key may be reused.
+
+    A transport is not a credential boundary: OpenAI-compatible endpoints can
+    belong to entirely different vendors.  Keep host case-insensitive and
+    remove only a syntactic trailing slash, while retaining the path because
+    deployments can isolate credentials below one host.
+    """
+    parsed = urlsplit(url.strip())
+    return urlunsplit((parsed.scheme.lower(), parsed.netloc.lower(), parsed.path.rstrip("/"), parsed.query, ""))
 
 
 @router.get("/byo-chat-config")
@@ -789,10 +447,12 @@ async def get_byo_chat_config(http_request: Request):
 
     config = basic_chat.get_config()
     return {
+        "provider": config.provider,
         "endpoint_url": config.url,
         "model": config.model,
         "has_key": bool(config.key),
-        "configured": bool(config.url and config.key),
+        "allow_private_endpoint": config.allow_private_endpoint,
+        "configured": basic_chat.is_configured(),
     }
 
 
@@ -819,11 +479,20 @@ async def test_byo_chat_config(
         )
 
     configured = basic_chat.get_config()
-    endpoint_key = request.endpoint_key.strip() or configured.key
+    provider = request.provider.strip() or "openai_compatible"
+    # Testing follows the same credential-boundary rule as saving: a blank
+    # field may reuse a saved key only for the same transport *and* endpoint.
+    # A single OpenAI-compatible transport serves multiple vendors.
+    same_endpoint = _normalized_byo_endpoint(configured.url) == _normalized_byo_endpoint(request.endpoint_url)
+    endpoint_key = request.endpoint_key.strip() or (
+        configured.key if configured.provider == provider and same_endpoint else ""
+    )
     success, message = await basic_chat.test_connection(
         request.endpoint_url,
         endpoint_key,
         request.model,
+        provider=provider,
+        allow_private_endpoint=request.allow_private_endpoint,
     )
     return {"success": success, "message": message}
 
@@ -855,25 +524,55 @@ async def save_byo_chat_config(
     url = request.endpoint_url.strip().rstrip("/")
     if not url:
         raise HTTPException(status_code=400, detail="endpoint_url is required.")
-    ok, reason = basic_chat.validate_endpoint_url(url)
+    provider = request.provider.strip() or "openai_compatible"
+    allow_private_endpoint = bool(request.allow_private_endpoint)
+    ok, reason = basic_chat.validate_endpoint_url(
+        url,
+        provider=provider,
+        allow_private_endpoint=allow_private_endpoint,
+    )
     if not ok:
         raise HTTPException(status_code=400, detail=reason)
     endpoint_key = request.endpoint_key.strip()
-    existing_key = os.getenv("CHAT_ENDPOINT_KEY", "")
-    if not endpoint_key and not existing_key:
+    # A blank key may reuse the saved credential only for the same transport
+    # and endpoint. Reusing a DeepSeek key for a newly selected OpenAI or
+    # Anthropic URL, for example, would silently disclose it to the wrong
+    # vendor.
+    current_chat_config = basic_chat.get_config()
+    provider_changed = current_chat_config.provider != provider
+    endpoint_changed = _normalized_byo_endpoint(current_chat_config.url) != _normalized_byo_endpoint(url)
+    existing_key = current_chat_config.key if not provider_changed and not endpoint_changed else ""
+    try:
+        requires_key = basic_chat.get_chat_provider(provider).requires_key
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if requires_key and not endpoint_key and not existing_key:
         raise HTTPException(status_code=400, detail="endpoint_key is required.")
     model = request.model.strip() or "deepseek-chat"
 
     env_path = _find_or_create_env_path()
     dotenv_set_key(env_path, "CHAT_ENDPOINT_URL", url)
+    dotenv_set_key(env_path, "CHAT_ENDPOINT_PROVIDER", provider)
+    dotenv_set_key(env_path, "CHAT_ENDPOINT_ALLOW_PRIVATE", "true" if allow_private_endpoint else "false")
     if endpoint_key:
-        dotenv_set_key(env_path, "CHAT_ENDPOINT_KEY", endpoint_key)
+        basic_chat.persist_endpoint_key(env_path, endpoint_key)
+    elif provider_changed or endpoint_changed:
+        # A key belongs to one configured endpoint. In particular, keyless
+        # providers and a new vendor behind a shared transport must not
+        # inherit an old credential.
+        basic_chat.persist_endpoint_key(env_path, "")
     dotenv_set_key(env_path, "CHAT_ENDPOINT_MODEL", model)
 
     os.environ["CHAT_ENDPOINT_URL"] = url
+    os.environ["CHAT_ENDPOINT_PROVIDER"] = provider
+    os.environ["CHAT_ENDPOINT_ALLOW_PRIVATE"] = "true" if allow_private_endpoint else "false"
     if endpoint_key:
         os.environ["CHAT_ENDPOINT_KEY"] = endpoint_key
+    elif provider_changed or endpoint_changed:
+        # Keep an explicit empty runtime value: get_config intentionally
+        # supports module-level defaults for startup settings.
+        os.environ["CHAT_ENDPOINT_KEY"] = ""
     os.environ["CHAT_ENDPOINT_MODEL"] = model
 
-    logger.info("BYO chat endpoint configured: %s / %s", url, model)
+    logger.info("BYO chat endpoint configured: provider=%s url=%s model=%s", provider, url, model)
     return {"success": True, "configured": True}

@@ -1,13 +1,13 @@
 {
-  "version": "1.0",
-  "description": "Registry of axis types for AI introspection and metadata discovery",
+  "version": "1.1",
+  "description": "Registry of canonical axis quantities and units for scientific admission, introspection, and metadata discovery",
   "axis_types": {
     "AxisInfo": {
       "category": "base",
       "supported_units": [],
       "methods": ["length", "copy", "bind_expected_length"],
       "properties": ["data", "shape"],
-      "description": "Base class for all axes with values, labels, units, and title",
+      "description": "Base class for all axes with values, labels, canonical units, original display units, physical quantity, and title",
       "examples": ["Generic axis without specialized behavior"]
     },
     "FeatureAxis": {
@@ -23,11 +23,11 @@
       "category": "feature",
       "parent": "FeatureAxis",
       "domain": "spectroscopy",
-      "supported_units": ["cm-1", "cm⁻¹", "nm", "µm"],
-      "axis_types": ["wavenumber", "wavelength_nm", "wavelength_um"],
+      "supported_units": ["cm-1", "nm", "µm"],
+      "axis_types": ["wavenumber", "raman_shift", "wavelength_nm", "wavelength_um"],
       "methods": ["axis_type", "range", "select_region", "copy"],
       "properties": ["data", "shape", "range"],
-      "description": "Wavelength/wavenumber axis for spectroscopy (IR, NIR, Raman, UV-Vis)",
+      "description": "Spectral coordinates whose physical quantity distinguishes absolute wavenumber, Raman shift, and wavelength even when units overlap",
       "examples": [
         "IR wavenumbers 400-4000 cm⁻¹",
         "UV-Vis wavelengths 200-800 nm",

@@ -191,78 +191,49 @@ class FixtureSpec:
     builder: Callable[[], Any]
 
 
-def _build_datasource_sklearn_wine() -> Any:
-    """Multi-output data.source result from sklearn wine dataset.
+def _build_canonical_file_load_result() -> Any:
+    """Representative canonical ``data.file_load`` result.
 
-    Canonical shape for ``data.source`` nodes: the outputs dict contains
-    ``{default: SherpaDataset, target: numpy.ndarray}``, so after
-    ``serialize_result`` the payload is ``{default: {...}, target: [...]}``.
-    The dataset identity (title, backend, extra, metadata.feature_names,
-    target_context) lives on ``default``, not at the top level.
-
-    The Sherpa Advisor "dataset identity" feature (wine → Moisture/Oil/
-    etc.) relies on the frontend unwrapping ``default`` correctly before
-    reading these fields.  PR #16 shipped with a version that didn't
-    unwrap and silently showed stale catalog state.  This fixture pins
-    the exact shape so both the backend serializer and the frontend
-    unwrap logic stay in lockstep.
+    The source node itself is deliberately bound to owned database identity,
+    so a serialization-shape test must not bypass that authority with a fake
+    path.  This deterministic result pins the public node boundary shared by
+    the backend serializer and frontend consumers: named ``default`` and
+    ``target`` ports, with the dataset carried under ``default``.
     """
-    from spectra_sherpa.app.services.dag.nodes.data.source import DataSourceNode
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
+    from spectra_sherpa.app.services.dag.node_base import NodeResult
 
-    node = DataSourceNode(
-        node_id="data_1",
-        parameters={"source": "sklearn", "sklearn_dataset": "wine"},
+    data = np.arange(240, dtype=np.float64).reshape(40, 6)
+    target = np.linspace(8.0, 12.0, 40, dtype=np.float64)
+    dataset = SherpaDataset(
+        data,
+        target=target,
+        target_context=TargetContext(
+            target_type="continuous",
+            target_name="Moisture",
+            target_names=["Moisture"],
+            selected_target="Moisture",
+        ),
+        title="canonical-file-load",
+        backend="numpy",
+        extra={
+            "source.experiment_id": 17,
+            "source.file_id": 23,
+        },
     )
-    return asyncio.run(node.run())
+    return NodeResult(outputs={"default": dataset, "target": dataset.target})
 
 
-def _build_datasource_eigenvector_corn() -> Any:
-    """Multi-output data.source result from eigenvector corn_m5.
+def _build_regression_evaluator_single_target() -> Any:
+    """Canonical one-target evaluator metrics and visualization ports."""
+    from spectra_sherpa.app.services.dag.nodes.regression_evaluator_node import RegressionEvaluatorV2Node
 
-    Exercises the other major ``data.source`` path: Eigenvector catalog
-    datasets carry continuous reference properties (Moisture, Oil,
-    Protein, Starch) in ``target_context.target_names`` rather than
-    sklearn's ``class_names``.  PR #13's per-target HoldoutEvaluation
-    relies on these names propagating through.  Skipped gracefully if
-    the eigenvector test data isn't present on this machine.
-    """
-    from spectra_sherpa.app.services.dag.nodes.data.source import DataSourceNode
-
-    node = DataSourceNode(
-        node_id="data_1",
-        parameters={"source": "eigenvector", "eigenvector_dataset": "corn_m5"},
-    )
-    return asyncio.run(node.run())
-
-
-def _build_holdout_regression_multitarget() -> Any:
-    """HoldoutEvaluation on synthetic 4-target regression data.
-
-    Pins the named-port output shape from PR #13:
-    ``{metrics: {data: [row_dict, ...], ...}, visualization: {series:
-    [{name, actual, predicted}, ...]}, predictions: [...], evaluation:
-    {...}}``.  The frontend's ``holdoutVisualization`` computed reads
-    from ``ports.visualization.value``, and PR #13's fix depended on
-    ``metrics`` being the primary port for Quick Plot to work.  Any
-    re-ordering of these ports silently breaks those consumers.
-    """
-    from spectra_sherpa.app.services.dag.nodes.diagnostics import HoldoutEvaluationNode
-
-    # Deterministic seeded inputs — 20 samples × 4 targets, small noise
-    # per target so the metrics differ enough to be useful in assertions.
     rng = np.random.RandomState(0)
-    n, k = 20, 4
-    y_true = rng.normal(size=(n, k)) * np.array([0.5, 0.3, 0.8, 1.0]) + np.array([10.0, 3.0, 8.0, 60.0])
-    y_pred = y_true + rng.normal(scale=0.1, size=(n, k)) * np.array([0.2, 1.5, 0.5, 0.8])
+    y_true = rng.normal(size=20) * 0.5 + 10.0
+    y_pred = y_true + rng.normal(scale=0.02, size=20)
 
-    node = HoldoutEvaluationNode(node_id="eval_1", parameters={"task_type": "regression"})
-    return asyncio.run(
-        node.run(
-            y_true=y_true,
-            y_pred=y_pred,
-            target_names=["Moisture", "Oil", "Protein", "Starch"],
-        )
-    )
+    node = RegressionEvaluatorV2Node(node_id="eval_1", parameters={})
+    return asyncio.run(node.execute(input_data=y_pred, y_true=y_true))
 
 
 def _build_data_table_per_target_metrics() -> Any:
@@ -299,33 +270,21 @@ def _build_data_table_per_target_metrics() -> Any:
 
 FIXTURE_SPECS: tuple[FixtureSpec, ...] = (
     FixtureSpec(
-        name="datasource_sklearn_wine",
+        name="file_load_canonical_result",
         description=(
-            "data.source sklearn wine — pins the multi-output wrapper "
-            "shape {default: SherpaDataset, target: ndarray} and the "
-            "dataset identity fields inside default (extra, metadata, "
-            "target_context) that Sherpa Advisor consumes."
+            "Canonical data.file_load result — pins the named default/target "
+            "wrapper and the SherpaDataset target metadata consumed by the "
+            "frontend without bypassing owned source identity."
         ),
-        builder=_build_datasource_sklearn_wine,
+        builder=_build_canonical_file_load_result,
     ),
     FixtureSpec(
-        name="datasource_eigenvector_corn_m5",
+        name="regression_evaluator_single_target",
         description=(
-            "data.source eigenvector corn_m5 — pins the continuous "
-            "multi-target case with real reference property names "
-            "(Moisture/Oil/Protein/Starch) in target_context."
+            "Canonical one-target regression evaluator — pins the default "
+            "versioned metric record and predicted-versus-actual visualization."
         ),
-        builder=_build_datasource_eigenvector_corn,
-    ),
-    FixtureSpec(
-        name="holdout_regression_multitarget",
-        description=(
-            "HoldoutEvaluation regression on 20x4 targets — pins the "
-            "named-port shape (metrics/visualization/predictions/"
-            "evaluation), the per-target row structure in metrics.data, "
-            "and the multi-target series shape in visualization."
-        ),
-        builder=_build_holdout_regression_multitarget,
+        builder=_build_regression_evaluator_single_target,
     ),
     FixtureSpec(
         name="data_table_per_target_metrics",

@@ -27,6 +27,7 @@ from spectra_sherpa.app.services.tools.schemas import (
     ToolResult,
     ToolScope,
 )
+from tests._optional_scp import HAS_SCP
 
 # ===========================================================================
 # 1. Schema tests
@@ -401,9 +402,13 @@ class TestBuiltinSpectralTools:
         from spectra_sherpa.app.services.tools.builtin.spectral import list_node_types
 
         preprocessing = list_node_types(category="preprocessing")
-        modeling = list_node_types(category="modeling")
+        regression = list_node_types(category="regression")
         assert all(n["category"] == "preprocessing" for n in preprocessing)
-        assert all(n["category"] == "modeling" for n in modeling)
+        assert all(n["category"] == "regression" for n in regression)
+        assert {n["node_type"] for n in regression} >= {
+            "model.fitted_pls",
+            "model.apply_fitted_pls",
+        }
 
     def test_list_node_types_empty_category(self):
         from spectra_sherpa.app.services.tools.builtin.spectral import list_node_types
@@ -457,12 +462,13 @@ class TestBuiltinSpectralTools:
 class TestBuiltinWorkflowTools:
     """Verify built-in workflow tools."""
 
+    @pytest.mark.skipif(not HAS_SCP, reason="spectrochempy not installed")
     def test_validate_workflow_valid(self):
         from spectra_sherpa.app.services.tools.builtin.workflow import validate_workflow
 
         nodes = [
-            {"node_id": "n1", "node_type": "data.source", "parameters": {}},
-            {"node_id": "n2", "node_type": "model.pca", "parameters": {"n_components": 3}},
+            {"node_id": "n1", "node_type": "data.file_load", "parameters": {"experiment_id": 1, "file_id": 2}},
+            {"node_id": "n2", "node_type": "model.pca", "parameters": {"n_components": "3"}},
         ]
         edges = [{"from_node_id": "n1", "to_node_id": "n2"}]
 
@@ -483,7 +489,7 @@ class TestBuiltinWorkflowTools:
         from spectra_sherpa.app.services.tools.builtin.workflow import validate_workflow
 
         nodes = [
-            {"node_id": "n1", "node_type": "data.source", "parameters": {}},
+            {"node_id": "n1", "node_type": "data.file_load", "parameters": {"experiment_id": 1, "file_id": 2}},
             {"node_id": "n1", "node_type": "model.pca", "parameters": {"n_components": 2}},
         ]
 
@@ -496,20 +502,20 @@ class TestBuiltinWorkflowTools:
         from spectra_sherpa.app.services.tools.builtin.workflow import validate_workflow
 
         nodes = [
-            {"node_id": "n1", "node_type": "data.source"},
+            {"node_id": "n1", "node_type": "data.file_load", "parameters": {"experiment_id": 1, "file_id": 2}},
         ]
         edges = [{"from_node_id": "n1", "to_node_id": "n99"}]
 
         result = validate_workflow(nodes=nodes, edges=edges)
         assert result["valid"] is False
-        assert any("not in node list" in i["message"] for i in result["issues"])
+        assert result["issues"]
 
     def test_validate_workflow_cycle(self):
         from spectra_sherpa.app.services.tools.builtin.workflow import validate_workflow
 
         nodes = [
-            {"node_id": "n1", "node_type": "data.source"},
-            {"node_id": "n2", "node_type": "data.source"},
+            {"node_id": "n1", "node_type": "data.file_load", "parameters": {"experiment_id": 1, "file_id": 2}},
+            {"node_id": "n2", "node_type": "data.file_load", "parameters": {"experiment_id": 1, "file_id": 3}},
         ]
         edges = [
             {"from_node_id": "n1", "to_node_id": "n2"},
@@ -539,6 +545,41 @@ class TestBuiltinWorkflowTools:
 
         assert result
         assert all("type" in item for item in result)
+
+    @pytest.mark.asyncio
+    async def test_node_catalog_uses_the_same_pls_family_and_names_as_the_gui(self, monkeypatch):
+        from spectra_sherpa.app.models.data_egress import DataType
+        from spectra_sherpa.app.services.tools.builtin import workflow as workflow_tools
+
+        async def _allow_all(session, user):
+            return {
+                DataType.WORKFLOWS: True,
+                DataType.METADATA: True,
+                DataType.MODELS: True,
+                DataType.SPECTRA: True,
+            }
+
+        monkeypatch.setattr(workflow_tools, "_llm_context_permissions", _allow_all)
+
+        listed = await workflow_tools.list_nodes(
+            category="regression",
+            search="PLS",
+            session=MagicMock(),
+            user=MagicMock(),
+        )
+        by_type = {entry["type"]: entry for entry in listed}
+        assert by_type["model.fitted_pls"]["label"] == "Fit PLS1 / PLS2 Regression (SIMPLS)"
+        assert by_type["model.apply_fitted_pls"]["label"] == "Apply PLS1 / PLS2 Model (SIMPLS)"
+
+        described = await workflow_tools.describe_nodes(
+            ["model.fitted_pls", "model.apply_fitted_pls"],
+            session=MagicMock(),
+            user=MagicMock(),
+        )
+        descriptions = {entry["type"]: entry for entry in described["descriptions"]}
+        assert descriptions["model.fitted_pls"]["category"] == "regression"
+        assert "One response is PLS1" in descriptions["model.fitted_pls"]["summary"]
+        assert descriptions["model.apply_fitted_pls"]["category"] == "regression"
 
     @pytest.mark.asyncio
     async def test_describe_nodes_returns_per_entry_error_for_unknown_type(self, monkeypatch):

@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from spectra_sherpa.app.lib.scp_compat import NDDataset
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -367,7 +367,7 @@ class ChemometricsMeta(BaseModel):
     """
     Complete metadata for a spectral dataset in chemometrics workflows.
 
-    This is the structured replacement for the unstructured NDDataset.meta dict.
+    This is the structured replacement for the unstructured SherpaDataset.meta dict.
     All fields that affect quantitative accuracy are explicitly typed.
     """
 
@@ -441,9 +441,9 @@ class ChemometricsMeta(BaseModel):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def extract_chemometrics_meta(dataset: "NDDataset") -> ChemometricsMeta:
+def extract_chemometrics_meta(dataset: "SherpaDataset") -> ChemometricsMeta:
     """
-    Extract ChemometricsMeta from NDDataset.meta dict.
+    Extract ChemometricsMeta from SherpaDataset.meta dict.
 
     Attempts to parse structured fields from the unstructured meta dict.
     """
@@ -487,9 +487,9 @@ def extract_chemometrics_meta(dataset: "NDDataset") -> ChemometricsMeta:
     return ChemometricsMeta(**kwargs)
 
 
-def apply_chemometrics_meta(dataset: "NDDataset", chem_meta: ChemometricsMeta) -> None:
+def apply_chemometrics_meta(dataset: "SherpaDataset", chem_meta: ChemometricsMeta) -> None:
     """
-    Apply ChemometricsMeta to NDDataset.meta dict.
+    Apply ChemometricsMeta to SherpaDataset.meta dict.
 
     Stores structured data in a way that can be recovered later.
     """

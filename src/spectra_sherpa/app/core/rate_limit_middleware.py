@@ -1,7 +1,7 @@
 """
 Rate Limit Middleware
 
-Enforces conservative auth endpoint throttling for HYBRID and ENTERPRISE mode
+Enforces conservative auth endpoint throttling for registered and ENTERPRISE modes
 deployments.  User-facing paid usage is governed separately by the Sherpa/LLM
 rate limiter.  Demo-profile execution quotas are enforced by the commercial server's
 ``EnterpriseEnforcementMiddleware``.
@@ -9,7 +9,7 @@ rate limiter.  Demo-profile execution quotas are enforced by the commercial serv
 Rate limiting uses the persistent file-backed RateLimiter so state survives
 restarts and is consistent across Gunicorn workers.
 
-Enterprise-specific enforcement (password gating, session expiry, CORS
+Enterprise-specific enforcement (signup activation, session expiry, and CORS
 validation) lives in the commercial server and is injected via create_app() hooks.
 """
 
@@ -28,8 +28,8 @@ from spectra_sherpa.app.services.rate_limiter import RateLimiter
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """
-    Rate limiting for Hybrid and Enterprise modes:
-    1. Auth endpoint rate limiting per IP (login, register)
+    Rate limiting for registered and Enterprise modes:
+    1. Auth endpoint rate limiting per IP (login, registration, verification)
     """
 
     # Paths that bypass rate limiting
@@ -47,6 +47,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     AUTH_RATE_LIMITS = {
         "/api/v1/auth/login": (10, 900),  # 10 attempts per 15 minutes
         "/api/v1/auth/register": (5, 3600),  # 5 registrations per hour
+        "/api/v1/auth/verify-signup-email": (20, 3600),  # DB also limits each code to 5 attempts
+        "/api/v1/auth/resend-signup-code": (5, 3600),  # 5 resend requests per hour
     }
 
     def __init__(self, app):
@@ -63,13 +65,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         }
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # Only active in multi-user modes (Hybrid and Enterprise)
+        # Only active in multi-user modes (registered and Enterprise)
         if not has_rate_limits():
             return await call_next(request)  # type: ignore[no-any-return]
 
         path = request.url.path
 
-        # === AUTH RATE LIMITING (both Hybrid and Enterprise) ===
+        # === AUTH RATE LIMITING (both registered and Enterprise) ===
         # Run before public-path bypass so login/register limits are enforced.
         if request.method == "POST" and path in self._auth_limiters:
             client_ip = get_client_host(request) or "unknown"

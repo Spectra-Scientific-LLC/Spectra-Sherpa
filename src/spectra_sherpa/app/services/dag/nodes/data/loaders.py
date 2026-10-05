@@ -1,49 +1,82 @@
 """Specialized data loader nodes for experiment files and file groups.
 
-Contains:
-- ``FileLoadNode`` (``data.file_load``)
-- ``MyDatasetNode`` (``data.my_dataset``)
-- ``LoadGroupNode`` (``data.load_group``)
+Contains the registered ``data.load_group`` node and the strict experiment
+collection reader shared by Workbench preview and model-application services.
+Project workflows bind the same ordered source manifest through the registered
+node; no second collection assembler is admitted.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Mapping
 
 import numpy as np
-import pandas as pd
 
-from spectra_sherpa.app.lib.sample_labels import clean_sample_labels
-from spectra_sherpa.app.lib.scp_compat import (
-    NDDataset,
-    from_nddataset,
-    get_scp_datadirs,
-    scp,
+from spectra_sherpa.app.lib import collection_assembly as collection_assembly_contract
+from spectra_sherpa.app.lib import collection_definition as collection_definition_contract
+from spectra_sherpa.app.lib import sample_labels as sample_labels_contract
+from spectra_sherpa.app.lib.collection_assembly import (
+    CollectionMember,
+    assemble_collection,
+    dataset_retained_footprint,
+    prepared_data_digest,
+    require_collection_budget,
 )
-from spectra_sherpa.app.lib.sherpa_dataset import FeatureAxis, SampleAxis, SherpaDataset, TargetContext
-from spectra_sherpa.app.models.spectra_meta import (
+from spectra_sherpa.app.lib.collection_definition import (
+    apply_collection_definition,
+    project_collection_definition,
+    scientific_collection_identity,
+    validate_collection_definition,
+)
+from spectra_sherpa.app.lib.registered_reference_collection_identity import (
+    copy_registered_reference_collection_extras,
+    registered_reference_collection_identity,
+)
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
+from spectra_sherpa.app.lib.target_authority import verify_target_authority
+from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.core import spectra_meta as spectra_meta_contract
+from spectra_sherpa.core.execution_runtime import DatasetSourceResolver
+from spectra_sherpa.core.prepared_data import (
+    apply_dataset_prepared_data_overrides,
+    parser_options_for_prepared_data,
+)
+from spectra_sherpa.core.spectra_meta import (
     DataProvenance,
     SourceType,
     SpectraMeta,
     set_spectra_meta,
 )
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step, safe_get_coord
-from spectra_sherpa.app.services.prepared_data import (
-    apply_dataset_prepared_data_overrides,
-    load_prepared_data_overrides,
-    merge_prepared_data_overrides,
+from spectra_sherpa.core.target_authority import admit_target_authority
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    WorkerCapability,
 )
+from spectra_sherpa.io import registry as ingestion_registry_contract
+from spectra_sherpa.io.types import ParserLimits, SourceMember
 
-from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
-from ._utils import extract_dataset_from_result, remove_index_columns
+from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, register_node
+from . import source_contracts
+from .source_contracts import file_manifest
 
 logger = logging.getLogger(__name__)
+
+_LOAD_GROUP_MAX_FILES = 512
+_LOAD_GROUP_MAX_SOURCE_BYTES = 512 * 1024 * 1024
+_LOAD_GROUP_MAX_DECODED_ELEMENTS = 32_000_000
+_LOAD_GROUP_MAX_DECODED_BYTES = 256 * 1024 * 1024
+_LOAD_GROUP_PARSER_LIMITS = ParserLimits()
 
 
 def _optional_text(value: Any) -> str | None:
@@ -51,6 +84,144 @@ def _optional_text(value: Any) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _canonical_load_group_parameters(
+    parameters: dict[str, object], *, allow_incomplete: bool = False
+) -> dict[str, object]:
+    """Validate the closed local-folder or project-collection source grammar."""
+
+    projected = dict(parameters)
+    source_mode = projected.get("source_mode", "local_folder")
+    if source_mode not in {"local_folder", "experiment_collection"}:
+        raise ValueError("source_mode is not admitted")
+    projected["source_mode"] = source_mode
+    for name in (
+        "folder_path",
+        "pattern",
+        "group_title",
+        "asset_id",
+        "source_manifest_sha256",
+        "collection_definition_sha256",
+        "scientific_collection_sha256",
+    ):
+        value = projected.get(name)
+        if not isinstance(value, str):
+            raise ValueError(f"{name} must be text")
+        projected[name] = value.strip()
+    if not isinstance(projected.get("recursive"), bool):
+        raise ValueError("recursive must be boolean")
+    if projected.get("sort_by") not in {"filename", "numeric_suffix"}:
+        raise ValueError("sort_by is not admitted")
+    if source_mode == "local_folder":
+        if not projected["folder_path"] and not allow_incomplete:
+            raise ValueError("folder_path is required for local_folder mode")
+        if not projected["pattern"] and not allow_incomplete:
+            raise ValueError("pattern is required for local_folder mode")
+        projected["experiment_id"] = None
+        projected["stage"] = "raw"
+        projected["source_manifest_sha256"] = ""
+        projected["collection_definition_sha256"] = ""
+        projected["scientific_collection_sha256"] = ""
+        return projected
+
+    if projected["folder_path"]:
+        raise ValueError("folder_path is not admitted for experiment_collection mode")
+    experiment_id = projected.get("experiment_id")
+    if not (allow_incomplete and experiment_id is None) and (
+        not isinstance(experiment_id, int) or isinstance(experiment_id, bool) or experiment_id < 1
+    ):
+        raise ValueError("experiment_id must be a positive integer")
+    if projected.get("stage") not in {"raw", "preprocessed", "synthetic"}:
+        raise ValueError("stage is not admitted")
+    if not projected["asset_id"] and not allow_incomplete:
+        raise ValueError("asset_id is required for experiment_collection mode")
+    digest = str(projected["source_manifest_sha256"])
+    if not (allow_incomplete and not digest) and (
+        len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest)
+    ):
+        raise ValueError("source_manifest_sha256 must be lowercase SHA-256 hex")
+    for name in ("collection_definition_sha256", "scientific_collection_sha256"):
+        digest = str(projected[name])
+        if digest and (len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest)):
+            raise ValueError(f"{name} must be empty or lowercase SHA-256 hex")
+    if (
+        projected["collection_definition_sha256"]
+        and not projected["scientific_collection_sha256"]
+        and not allow_incomplete
+    ):
+        raise ValueError("scientific_collection_sha256 is required when a collection definition is bound")
+    projected["pattern"] = ""
+    projected["recursive"] = False
+    projected["sort_by"] = "filename"
+    return projected
+
+
+def _draft_load_group_parameters(parameters: dict[str, object]) -> dict[str, object]:
+    return _canonical_load_group_parameters(parameters, allow_incomplete=True)
+
+
+def _canonical_collection_load_parameters(parameters: dict[str, object]) -> dict[str, object]:
+    projected = dict(parameters)
+    projected.setdefault("dataset_view_id", None)
+    projected.setdefault("dataset_view_sha256", "")
+    experiment_id = projected.get("experiment_id")
+    if not isinstance(experiment_id, int) or isinstance(experiment_id, bool) or experiment_id < 1:
+        raise ValueError("experiment_id must be a positive integer")
+    if projected.get("stage") not in {"raw", "preprocessed", "synthetic"}:
+        raise ValueError("stage is not admitted")
+    for name in (
+        "group_title",
+        "asset_id",
+        "source_manifest_sha256",
+        "collection_definition_sha256",
+        "scientific_collection_sha256",
+        "group_column",
+        "dataset_view_sha256",
+    ):
+        value = projected.get(name)
+        if not isinstance(value, str):
+            raise ValueError(f"{name} must be text")
+        projected[name] = value.strip()
+    selected_file_ids = projected.get("selected_file_ids", [])
+    if not isinstance(selected_file_ids, list) or not all(isinstance(value, str) for value in selected_file_ids):
+        raise ValueError("selected_file_ids must be a list of positive integer strings")
+    if any(not value.isdigit() or int(value) < 1 for value in selected_file_ids):
+        raise ValueError("selected_file_ids must be a list of positive integer strings")
+    if len(set(selected_file_ids)) != len(selected_file_ids):
+        raise ValueError("selected_file_ids may not contain duplicates")
+    projected["selected_file_ids"] = selected_file_ids
+    source_digest = str(projected["source_manifest_sha256"])
+    if len(source_digest) != 64 or any(ch not in "0123456789abcdef" for ch in source_digest):
+        raise ValueError("source_manifest_sha256 must be lowercase SHA-256 hex")
+    for name in ("collection_definition_sha256", "scientific_collection_sha256"):
+        digest = str(projected[name])
+        if digest and (len(digest) != 64 or any(ch not in "0123456789abcdef" for ch in digest)):
+            raise ValueError(f"{name} must be empty or lowercase SHA-256 hex")
+    if projected["collection_definition_sha256"] and not projected["scientific_collection_sha256"]:
+        raise ValueError("scientific_collection_sha256 is required when a collection definition is bound")
+    authority = admit_target_authority(projected.get("target_authority"))
+    projected["target_authority"] = authority.canonical_dict() if authority is not None else None
+    if projected["group_column"] and authority is None:
+        raise ValueError("group_column requires target_authority")
+    dataset_view_id = projected.get("dataset_view_id")
+    dataset_view_digest = projected["dataset_view_sha256"]
+    if dataset_view_id is not None and (
+        not isinstance(dataset_view_id, int) or isinstance(dataset_view_id, bool) or dataset_view_id < 1
+    ):
+        raise ValueError("dataset_view_id must be a positive integer")
+    if (dataset_view_id is None) != (not dataset_view_digest):
+        raise ValueError("dataset_view_id and dataset_view_sha256 must be paired")
+    if dataset_view_digest and (
+        len(dataset_view_digest) != 64 or any(ch not in "0123456789abcdef" for ch in dataset_view_digest)
+    ):
+        raise ValueError("dataset_view_sha256 must be lowercase SHA-256 hex")
+    return projected
+
+
+def _coordinate_text(coordinate: object, attribute: str) -> str:
+    value = getattr(coordinate, attribute, None)
+    return str(value).strip() if value is not None else ""
 
 
 @dataclass
@@ -67,437 +238,281 @@ class _LoadedDataset:
     ground_truth_spectra_x: np.ndarray | None = None
     ground_truth_spectra_x_title: str | None = None
     ground_truth_spectra_x_units: str | None = None
+    prepared_overrides: Mapping[str, object] | None = None
+    source_members: tuple[SourceMember, ...] = ()
+    selected_asset_id: str = "single-auto"
 
 
-# ============================================================================
-# SPECIALIZED DATA SOURCE NODES
-# These are individual nodes for specific data sources in the unified workflow
-# ============================================================================
+def _retained_numeric_footprint(dataset: SherpaDataset) -> tuple[int, int]:
+    """Delegate retained-state charging to the shared collection authority."""
+
+    return dataset_retained_footprint(dataset)
 
 
-@register_node
-class FileLoadNode(Node):
-    """
-    File Load node for loading spectral data from experiment files.
+class ExperimentDatasetReader:
+    """Strict reader for one exact project-owned experiment collection."""
 
-    This is a specialized node for the unified workflow that loads data
-    from files stored in experiments.
-    """
-
-    metadata = NodeMetadata(
-        node_type="data.file_load",
-        category="data",
-        label="File Load",
-        description="Load spectral data from experiment files",
-        parameters=[
-            NodeParameter(
-                name="experiment_id",
-                label="Experiment ID",
-                param_type="number",
-                default=None,
-                description="Experiment containing the file",
-                required=True,
-            ),
-            NodeParameter(
-                name="file_id",
-                label="File ID",
-                param_type="number",
-                default=None,
-                description="Specific file to load",
-                required=True,
-            ),
-            NodeParameter(
-                name="stage",
-                label="Stage",
-                param_type="select",
-                default="raw",
-                options=["raw", "preprocessed", "synthetic"],
-                description="Data processing stage",
-                required=False,
-            ),
-        ],
-        input_types=[],
-        input_ports=[],
-        output_type="NDDataset",
-    )
+    def __init__(
+        self,
+        node_id: str,
+        parameters: dict[str, Any],
+        *,
+        source_resolver: DatasetSourceResolver | None = None,
+    ) -> None:
+        self.node_id = node_id
+        self.parameters = dict(parameters)
+        self.source_resolver = source_resolver
 
     async def execute(self, *args) -> Any:
-        """Load data from a specific experiment file."""
-        from sqlalchemy import select
-
-        from spectra_sherpa.app.core.config import settings
-        from spectra_sherpa.app.db.session import async_session
-        from spectra_sherpa.app.models.experiment_file import ExperimentFile
-
-        experiment_id = self.parameters.get("experiment_id")
-        file_id = self.parameters.get("file_id")
-        stage = self.parameters.get("stage", "raw")
-
-        if not experiment_id or not file_id:
-            raise ValueError("Both experiment_id and file_id are required")
-
-        try:
-            async with async_session() as session:
-                query = select(ExperimentFile).where(
-                    ExperimentFile.experiment_id == experiment_id,
-                    ExperimentFile.id == file_id,
-                    ExperimentFile.stage == stage,
-                )
-                result = await session.execute(query)
-                file_record = result.scalar_one_or_none()
-
-                if not file_record:
-                    raise ValueError(
-                        f"File {file_id} not found in experiment {experiment_id} for stage '{stage}'. "
-                        f"The file may exist in a different stage (raw/preprocessed/synthetic)."
-                    )
-
-                # Build full file path (file_path already includes stage subdirectory)
-                exp_dir = f"exp_{str(experiment_id).zfill(3)}"
-                full_path = settings.data_dir / "experiments" / exp_dir / file_record.file_path
-
-                dataset = self._load_file(str(full_path))
-
-                # Attach metadata
-                meta = SpectraMeta(
-                    provenance=DataProvenance(
-                        source_type=SourceType.EXPERIMENT,
-                        experiment_id=experiment_id,
-                        file_id=file_id,
-                        original_file_path=str(file_record.file_path),
-                        original_file_format=os.path.splitext(file_record.file_path)[1].lower().lstrip("."),
-                        created_datetime=datetime.utcnow().isoformat(),
-                    ),
-                    processing_steps=["load"] if stage == "raw" else ["load", stage],
-                )
-                set_spectra_meta(dataset, meta)
-
-                # Record provenance in dataset.meta
-                add_processing_step(
-                    dataset,
-                    "data.file_load",
-                    {
-                        "experiment_id": experiment_id,
-                        "file_id": file_id,
-                        "stage": stage,
-                    },
-                    node_id=self.node_id,
-                )
-                # Convert to SherpaDataset for uniform DAG contract
-                return from_nddataset(dataset) if isinstance(dataset, NDDataset) else dataset
-        except Exception as e:
-            raise ValueError(f"Error loading file: {e}")
-
-    def _load_file(self, file_path: str) -> Any:
-        """Load data from a file using SpectroChemPy with index column detection."""
-
-        if not os.path.exists(file_path):
-            raise ValueError(f"File not found: {file_path}")
-
-        ext = os.path.splitext(file_path)[1].lower()
-        if ext == ".csv":
-            from spectra_sherpa.app.lib.io import load_csv_as_sherpa
-
-            return load_csv_as_sherpa(file_path)
-        if ext == ".npz":
-            from spectra_sherpa.app.services.synthesis import is_synthetic_npz
-
-            if is_synthetic_npz(file_path):
-                return _load_synthesis_npz_as_nddataset(file_path)
-        if ext in {".jdx", ".dx", ".npy", ".npz"}:
-            from spectra_sherpa.app.lib.io import load_open_spectral_file_as_sherpa
-
-            open_dataset = load_open_spectral_file_as_sherpa(file_path)
-            if open_dataset is not None:
-                return open_dataset
-
-        try:
-            from spectra_sherpa.app.lib.data_formats import ensure_reader_available
-
-            ensure_reader_available(ext)
-            # Use centralized reader mapping
-            from spectra_sherpa.app.core.config import get_reader_for_extension
-
-            reader_name = get_reader_for_extension(ext)
-            reader_method = getattr(scp, reader_name)
-            dataset = reader_method(file_path)
-
-            # Fail explicitly if reader returns None (no silent fallbacks)
-            if dataset is None:
-                raise ValueError(f"Reader {reader_name} returned None for {file_path}")
-
-            # Post-processing for specific formats
-            if ext.lower() == ".mat":
-                dataset = extract_dataset_from_result(dataset, file_path)
-                dataset = remove_index_columns(dataset)
-            elif ext.lower() == ".csv":
-                dataset = remove_index_columns(dataset)
-
-            return dataset
-
-        except Exception as e:
-            raise ValueError(
-                f"Failed to load file {file_path}: {str(e)}. "
-                f"File format: {ext or 'unknown'}. "
-                f"Please verify the file is valid and readable."
-            ) from e
-
-
-@register_node
-class MyDatasetNode(Node):
-    """
-    My Dataset node -- loads ALL files from a user dataset (experiment) created
-    on the Data tab and concatenates them into a single NDDataset.
-    """
-
-    metadata = NodeMetadata(
-        node_type="data.my_dataset",
-        category="data",
-        label="My Dataset",
-        description="Load all files from your dataset collection",
-        parameters=[
-            NodeParameter(
-                name="dataset_id",
-                label="Dataset",
-                param_type="number",
-                default=None,
-                description="Dataset (experiment) to load",
-                required=True,
-            ),
-            NodeParameter(
-                name="target_mode",
-                label="Target Mode",
-                param_type="select",
-                default="dataset_default",
-                options=[
-                    {"label": "Use My Dataset default", "value": "dataset_default"},
-                    {"label": "Single property", "value": "single"},
-                    {"label": "Multi-target complete-case", "value": "multi"},
-                ],
-                description="How this workflow sheet interprets multi-property reference values.",
-                required=False,
-            ),
-            NodeParameter(
-                name="selected_target",
-                label="Target Property",
-                param_type="text",
-                default=None,
-                description="Property name used when Target Mode is Single property.",
-                required=False,
-            ),
-        ],
-        input_types=[],
-        input_ports=[],
-        output_type="dict",
-        output_ports=[
-            PortMetadata(
-                name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                required=True,
-                label="Dataset",
-                description="Spectral data (all compatible files stacked)",
-            ),
-            PortMetadata(
-                name="target",
-                type_ref="spectrasherpa://types/TargetMatrix/1.0",
-                required=False,
-                label="Properties",
-                description="Property / target data if available (1D or 2D for multi-response)",
-            ),
-        ],
-    )
-
-    async def execute(self, *args) -> Any:
-        """Load all files, group by compatible x-axis, stack each group."""
-        from sqlalchemy import select as sa_select
-
-        from spectra_sherpa.app.core.config import settings
-        from spectra_sherpa.app.db.session import async_session
-        from spectra_sherpa.app.models.experiment import Experiment
-        from spectra_sherpa.app.models.experiment_file import ExperimentFile as EF
-
+        """Admit every member and concatenate only through the shared authority."""
+        del args
         dataset_id = self.parameters.get("dataset_id")
         if not dataset_id:
             raise ValueError("dataset_id is required")
-
-        async with async_session() as session:
-            exp_result = await session.execute(sa_select(Experiment).where(Experiment.id == dataset_id))
-            experiment = exp_result.scalar_one_or_none()
-            if not experiment:
-                raise ValueError(f"Dataset {dataset_id} not found.")
-            exp_name = experiment.name
-
-            query = (
-                sa_select(EF)
-                .where(
-                    EF.experiment_id == dataset_id,
-                    EF.stage == "raw",
-                )
-                .order_by(EF.id)
+        if self.source_resolver is None:
+            raise ValueError("experiment collection resolution capability is unavailable")
+        stage = str(self.parameters.get("stage") or "raw")
+        asset_id = _optional_text(self.parameters.get("asset_id"))
+        collection = await self.source_resolver.resolve_experiment_collection(
+            experiment_id=int(dataset_id),
+            stage=stage,
+        )
+        selected_file_ids = [int(value) for value in self.parameters.get("selected_file_ids", [])]
+        if selected_file_ids:
+            selected = set(selected_file_ids)
+            available = {source.file_id for source in collection.files}
+            if selected.difference(available):
+                raise ValueError("selected experiment file is outside the admitted collection")
+            collection = collection.__class__(
+                experiment_id=collection.experiment_id,
+                experiment_name=collection.experiment_name,
+                files=tuple(source for source in collection.files if source.file_id in selected),
+                collection_definition_bytes=collection.collection_definition_bytes,
+                preloaded_dataset=(collection.preloaded_dataset if selected == available else None),
+                preloaded_asset_id=collection.preloaded_asset_id,
             )
-            result = await session.execute(query)
-            file_records = list(result.scalars().all())
-            if not file_records:
-                synthetic_query = (
-                    sa_select(EF)
-                    .where(
-                        EF.experiment_id == dataset_id,
-                        EF.stage == "synthetic",
-                    )
-                    .order_by(EF.id)
+        exp_name = collection.experiment_name
+        if collection.preloaded_dataset is not None:
+            if (
+                asset_id is not None
+                and collection.preloaded_asset_id is not None
+                and asset_id != collection.preloaded_asset_id
+            ):
+                raise ValueError("preloaded collection asset differs from the admitted trial asset")
+            result = copy.deepcopy(collection.preloaded_dataset)
+            source_collection = result.meta.get("source_collection")
+            if not isinstance(source_collection, dict):
+                raise ValueError("preloaded collection omitted its exact source identity")
+            expected_manifest = _optional_text(self.parameters.get("source_manifest_sha256"))
+            expected_definition = _optional_text(self.parameters.get("collection_definition_sha256"))
+            expected_scientific = _optional_text(self.parameters.get("scientific_collection_sha256"))
+            if expected_manifest is not None and source_collection.get("manifest_digest") != expected_manifest:
+                raise ValueError(
+                    "experiment collection does not match its saved source manifest; "
+                    "source membership changed after binding, so re-import the dataset or rebind the workflow"
                 )
-                result = await session.execute(synthetic_query)
-                file_records = list(result.scalars().all())
-
-        if not file_records:
-            raise ValueError(f"No files found in dataset '{exp_name}'.")
-
-        exp_dir = f"exp_{str(dataset_id).zfill(3)}"
-        base_dir = settings.data_dir / "experiments" / exp_dir
-
-        # Load each file
-        loaded: list[_LoadedDataset] = []
-        for rec in file_records:
-            full_path = base_dir / rec.file_path
-            try:
-                loaded.append(self._load_file(str(full_path), file_name=rec.file_path))
-            except Exception as e:
-                logger.warning(f"[MY_DATASET] Skipping {rec.file_path}: {e}")
-
-        if not loaded:
-            raise ValueError(f"All files in dataset '{exp_name}' failed to load.")
-
-        if all(isinstance(item.dataset, SherpaDataset) and item.dataset.data_role == "X_features" for item in loaded):
-            feature_dataset = self._concatenate_feature_tables(loaded, exp_name)
-            feature_dataset = self._apply_loaded_overrides(feature_dataset, loaded)
-            feature_dataset = self._apply_node_target_selection(feature_dataset)
+            if (
+                expected_definition is not None
+                and source_collection.get("collection_definition_sha256") != expected_definition
+            ):
+                raise ValueError(
+                    "experiment collection does not match its saved collection definition; "
+                    "collection metadata changed after binding, so re-import the dataset or rebind the workflow"
+                )
+            if (
+                expected_scientific is not None
+                and source_collection.get("scientific_collection_sha256") != expected_scientific
+            ):
+                raise ValueError(
+                    "experiment collection does not match its saved scientific identity; "
+                    "parsed data or scientific metadata changed after binding, so re-import the dataset "
+                    "or rebind the workflow"
+                )
+            result = self._apply_node_target_selection(result)
             add_processing_step(
-                feature_dataset,
-                "data.my_dataset",
-                self._processing_parameters(dataset_id=dataset_id, file_count=len(loaded), dataset=feature_dataset),
+                result,
+                "spectrasherpa.experiment_dataset_read/2",
+                {
+                    **self._processing_parameters(
+                        dataset_id=int(dataset_id),
+                        file_count=len(collection.files),
+                        dataset=result,
+                    ),
+                    "stage": stage,
+                    "asset_id": asset_id,
+                    "source_manifest_sha256": str(source_collection.get("manifest_digest") or ""),
+                    "collection_definition_sha256": source_collection.get("collection_definition_sha256"),
+                    "scientific_collection_sha256": source_collection.get("scientific_collection_sha256"),
+                },
                 node_id=self.node_id,
             )
-            return {"default": feature_dataset, "target": feature_dataset.target}
+            return {"default": result, "target": result.target}
+        if not collection.files:
+            raise ValueError(f"No files found in dataset '{exp_name}' for stage {stage!r}.")
+        if len(collection.files) > _LOAD_GROUP_MAX_FILES:
+            raise ValueError(f"experiment collection exceeds the {_LOAD_GROUP_MAX_FILES}-file limit")
+        if any(source.size_bytes is None for source in collection.files):
+            raise ValueError("experiment collection resolver omitted exact source sizes")
+        total_source_bytes = sum(int(source.size_bytes) for source in collection.files if source.size_bytes is not None)
+        if total_source_bytes > _LOAD_GROUP_MAX_SOURCE_BYTES:
+            raise ValueError("experiment collection exceeds the 512 MiB source limit")
 
-        # Group files by compatible x-axis
-        groups = self._group_by_x_axis(loaded)
+        loaded: list[_LoadedDataset] = []
+        members: list[CollectionMember] = []
+        retained_elements = 0
+        retained_bytes = 0
+        for source in collection.files:
+            item = self._load_file(
+                source.path,
+                file_name=source.original_file_path,
+                asset_id=asset_id,
+                prepared_overrides=source.prepared_overrides,
+            )
+            if len(item.source_members) != 1:
+                raise ValueError(
+                    f"Registry result for {source.original_file_path!r} must identify exactly one source member"
+                )
+            observed = item.source_members[0]
+            if source.size_bytes is not None and observed.size_bytes != source.size_bytes:
+                raise ValueError(f"Collection member {source.original_file_path!r} changed during admission")
+            if source.sha256 is not None and observed.sha256 != source.sha256:
+                raise ValueError(f"Collection member {source.original_file_path!r} changed during admission")
+            next_elements, next_bytes = _retained_numeric_footprint(item.dataset)
+            retained_elements += next_elements
+            retained_bytes += next_bytes
+            if retained_elements > _LOAD_GROUP_MAX_DECODED_ELEMENTS:
+                raise ValueError("experiment collection exceeds the decoded-element limit")
+            if retained_bytes > _LOAD_GROUP_MAX_DECODED_BYTES:
+                raise ValueError("experiment collection exceeds the decoded-byte limit")
+            loaded.append(item)
+            members.append(
+                CollectionMember(
+                    dataset=item.dataset,
+                    file_name=source.original_file_path,
+                    size_bytes=observed.size_bytes,
+                    sha256=observed.sha256,
+                    prepared_data_sha256=prepared_data_digest(source.prepared_overrides),
+                    asset_id=item.selected_asset_id,
+                )
+            )
+            require_collection_budget(members)
 
-        # Pick the group with the most x-axis points as "spectra",
-        # remaining groups become "properties" / target
-        groups.sort(key=lambda g: self._x_length(g[0].dataset), reverse=True)
-        spectra_group = groups[0]
-        prop_groups = groups[1:]
-        embedded_target = self._combine_embedded_targets(spectra_group)
-
-        # Stack spectra
-        s_datasets = [item.dataset for item in spectra_group]
-        s_names = [item.file_name for item in spectra_group]
-        s_datasets, s_names = list(s_datasets), list(s_names)
-        spectra = self._concatenate(s_datasets, s_names) if len(s_datasets) > 1 else s_datasets[0]
-        spectra.title = f"{exp_name} ({len(s_datasets)} file{'s' if len(s_datasets) != 1 else ''})"
-
-        meta = SpectraMeta(
-            provenance=DataProvenance(
-                source_type=SourceType.EXPERIMENT,
-                experiment_id=dataset_id,
-                original_file_path=", ".join(s_names),
-                created_datetime=datetime.utcnow().isoformat(),
-            ),
-            processing_steps=["load"],
+        definition = (
+            validate_collection_definition(json.loads(collection.collection_definition_bytes))
+            if collection.collection_definition_bytes is not None
+            else None
         )
-        set_spectra_meta(spectra, meta)
+        if definition is not None and selected_file_ids:
+            definition = project_collection_definition(definition, members)
+        result = (
+            apply_collection_definition(members, definition)
+            if definition is not None
+            else assemble_collection(
+                members,
+                title=exp_name if len(members) == 1 else f"{exp_name} ({len(members)} files)",
+            )
+        )
+        if definition is None and len(loaded) == 1:
+            copy_registered_reference_collection_extras(
+                loaded[0].dataset,
+                result,
+                selected_asset_id=loaded[0].selected_asset_id,
+            )
+        manifest = result.meta["source_collection"]
+        expected_definition = _optional_text(self.parameters.get("collection_definition_sha256"))
+        identity = scientific_collection_identity(manifest, definition, result)
+        if definition is None and expected_definition is not None:
+            registered_identity = registered_reference_collection_identity(
+                manifest,
+                result,
+                members=[(item.dataset, item.selected_asset_id) for item in loaded],
+            )
+            if registered_identity is not None:
+                identity = registered_identity
+        manifest.update(identity)
+        expected_manifest = _optional_text(self.parameters.get("source_manifest_sha256"))
+        if expected_manifest is not None and manifest["manifest_digest"] != expected_manifest:
+            raise ValueError(
+                "experiment collection does not match its saved source manifest; "
+                "source membership changed after binding, so re-import the dataset or rebind the workflow"
+            )
+        expected_scientific = _optional_text(self.parameters.get("scientific_collection_sha256"))
+        if identity["collection_definition_sha256"] != expected_definition:
+            raise ValueError(
+                "experiment collection does not match its saved collection definition; "
+                "collection metadata changed after binding, so re-import the dataset or rebind the workflow"
+            )
+        if definition is not None and expected_scientific is None:
+            raise ValueError(
+                "experiment collection is missing its saved scientific identity; "
+                "re-import the dataset or rebind the workflow"
+            )
+        if expected_scientific is not None and identity["scientific_collection_sha256"] != expected_scientific:
+            raise ValueError(
+                "experiment collection does not match its saved scientific identity; "
+                "parsed data or scientific metadata changed after binding, so re-import the dataset "
+                "or rebind the workflow"
+            )
+        result = self._apply_node_target_selection(result)
+        set_spectra_meta(
+            result,
+            SpectraMeta(
+                provenance=DataProvenance(
+                    source_type=SourceType.EXPERIMENT,
+                    experiment_id=int(dataset_id),
+                    created_datetime=datetime.utcnow().isoformat(),
+                ),
+                processing_steps=["load_group"],
+                custom={
+                    "source_collection": {
+                        "source_mode": "experiment_collection",
+                        "stage": stage,
+                        "asset_id": asset_id,
+                        **manifest,
+                        **identity,
+                    }
+                },
+            ),
+        )
         add_processing_step(
-            spectra,
-            "data.my_dataset",
-            {"dataset_id": dataset_id, "file_count": len(loaded)},
+            result,
+            "spectrasherpa.experiment_dataset_read/2",
+            {
+                **self._processing_parameters(dataset_id=int(dataset_id), file_count=len(loaded), dataset=result),
+                "stage": stage,
+                "asset_id": asset_id,
+                "source_manifest_sha256": manifest["manifest_digest"],
+                "collection_definition_sha256": identity["collection_definition_sha256"],
+                "scientific_collection_sha256": identity["scientific_collection_sha256"],
+            },
             node_id=self.node_id,
         )
-
-        # Stack properties (if any)
-        target: Optional[Any] = None
-        if prop_groups:
-            all_props = []
-            all_pnames = []
-            for grp in prop_groups:
-                for item in grp:
-                    all_props.append(item.dataset)
-                    all_pnames.append(item.file_name)
-            target = self._concatenate(all_props, all_pnames) if len(all_props) > 1 else all_props[0]
-            target.title = f"{exp_name} properties"
-            logger.debug(
-                f"[MY_DATASET] Loaded {len(s_names)} spectral + " f"{len(all_pnames)} property files from '{exp_name}'"
-            )
-
-        # Convert to SherpaDataset for uniform DAG contract
-        spectra_out = from_nddataset(spectra) if isinstance(spectra, NDDataset) else spectra
-        target_out = from_nddataset(target) if isinstance(target, NDDataset) else target
-        spectra_out = self._apply_loaded_overrides(spectra_out, spectra_group)
-        self._attach_ground_truth_spectra(spectra_out, spectra_group)
-
-        # Embed target into default output for single-wire use (parity with DataSourceNode)
-        # Priority 1: CSV property columns embedded alongside the spectra
-        if embedded_target is not None:
-            embedded_target_data, embedded_target_names, embedded_target_units = embedded_target
-            spectra_out.target = embedded_target_data
-            spectra_out.target_context = TargetContext(
-                target_type="continuous",
-                target_name="synthetic concentration" if embedded_target_units == "ppm" else None,
-                target_names=embedded_target_names,
-                target_units=embedded_target_units,
-            )
-            if target_out is None:
-                from spectra_sherpa.app.lib.axes import FeatureAxis
-
-                target_out = SherpaDataset(
-                    X=embedded_target_data,
-                    feature_axis=FeatureAxis(
-                        labels=embedded_target_names,
-                        title="Concentration" if embedded_target_units == "ppm" else "Property",
-                        units=embedded_target_units,
-                    ),
-                    sample_axis=spectra_out.sample_axis,
-                    title=(
-                        f"{exp_name} synthetic concentrations"
-                        if embedded_target_units == "ppm"
-                        else f"{exp_name} properties"
-                    ),
-                )
-        # Priority 2: Multi-file property groups
-        elif target_out is not None:
-            self._validate_target_alignment(spectra_out, target_out, exp_name)
-            target_data = np.asarray(target_out.data, dtype=np.float64)
-            spectra_out.target = target_data
-            t_names = None
-            fa = getattr(target_out, "feature_axis", None)
-            if fa is not None and getattr(fa, "labels", None):
-                t_names = list(fa.labels)
-            spectra_out.target_context = TargetContext(
-                target_type="continuous",
-                target_names=t_names,
-            )
-
-        spectra_out = self._apply_loaded_overrides(spectra_out, spectra_group)
-        spectra_out = self._apply_node_target_selection(spectra_out)
-        processing_history = getattr(spectra_out, "processing_history", None)
-        if processing_history:
-            latest_step = processing_history[-1]
-            if latest_step.operation == "data.my_dataset":
-                latest_step.parameters.update(
-                    self._processing_parameters(dataset_id=dataset_id, file_count=len(loaded), dataset=spectra_out)
-                )
-        return {"default": spectra_out, "target": target_out}
+        return {"default": result, "target": result.target}
 
     def _processing_parameters(self, *, dataset_id: int, file_count: int, dataset: SherpaDataset) -> dict[str, Any]:
         params: dict[str, Any] = {"dataset_id": dataset_id, "file_count": file_count}
         tc = getattr(dataset, "target_context", None)
-        if tc is not None and getattr(tc, "selected_target", None):
+        if tc is not None and getattr(tc, "selected_authority", None) is not None:
             params["target_mode"] = "single"
-            params["selected_target"] = tc.selected_target
+            params["target_authority"] = tc.selected_authority.canonical_dict()
         elif self.parameters.get("target_mode") == "multi":
             params["target_mode"] = "multi"
         return params
 
     def _apply_node_target_selection(self, dataset: SherpaDataset) -> SherpaDataset:
+        authority = admit_target_authority(self.parameters.get("target_authority"))
+        if authority is not None:
+            from spectra_sherpa.app.services.dag.nodes.data.sample_preparation import attach_selected_target_dataset
+
+            verify_target_authority(dataset, authority)
+            return attach_selected_target_dataset(
+                dataset,
+                target_type=authority.target_type,
+                target_column=authority.column,
+                group_column=str(self.parameters.get("group_column") or ""),
+                node_id=self.node_id,
+                target_authority=authority,
+            )
         target_mode = str(self.parameters.get("target_mode") or "dataset_default")
         if target_mode in {"", "dataset_default", "auto"}:
             return dataset
@@ -510,594 +525,183 @@ class MyDatasetNode(Node):
             return dataset
 
         if target_mode != "single":
-            raise ValueError(f"Unsupported target mode for My Dataset: {target_mode}")
+            raise ValueError(f"Unsupported experiment target mode: {target_mode}")
 
         names = [str(name) for name in (tc.target_names or [])]
         selected = str(self.parameters.get("selected_target") or "").strip()
         if not selected and names:
             selected = names[0]
         if not selected:
-            raise ValueError(
-                "This My Dataset node is set to Single property, but the selected dataset has no target names."
-            )
+            raise ValueError("Single-property experiment loading requires a dataset with target names.")
         if names and selected not in names:
             available = ", ".join(names)
             raise ValueError(
-                f"This My Dataset node selects target '{selected}', but the dataset target properties are: {available}."
+                f"The selected target '{selected}' is not present; dataset target properties are: {available}."
             )
         dataset.target_context = tc.model_copy(update={"selected_target": selected})
         dataset.meta["target_mode"] = "single"
         dataset.meta["selected_target"] = selected
         return dataset
 
-    @staticmethod
-    def _sample_labels(dataset: Any) -> list[str] | None:
-        axis = getattr(dataset, "sample_axis", None)
-        if axis is not None and getattr(axis, "labels", None):
-            return [str(item) for item in axis.labels]
-        if not isinstance(dataset, SherpaDataset):
-            coord = safe_get_coord(dataset, "y")
-            labels = getattr(coord, "labels", None) if coord is not None else None
-            if labels:
-                return [str(item) for item in labels]
-        return None
-
-    def _validate_target_alignment(self, spectra: SherpaDataset, target: Any, exp_name: str) -> None:
-        spectra_rows = int(np.asarray(spectra.data).shape[0])
-        target_data = np.asarray(target.data)
-        target_rows = int(target_data.shape[0]) if target_data.ndim > 0 else 1
-        if spectra_rows != target_rows:
-            raise ValueError(
-                f"Cannot attach reference values for '{exp_name}': spectra have {spectra_rows} sample rows "
-                f"but the target/property file has {target_rows} rows."
-            )
-
-        spectra_labels = self._sample_labels(spectra)
-        target_labels = self._sample_labels(target)
-        if spectra_labels and target_labels and spectra_labels != target_labels:
-            mismatch = next(
-                (
-                    i
-                    for i, (spectra_label, target_label) in enumerate(zip(spectra_labels, target_labels))
-                    if spectra_label != target_label
-                ),
-                0,
-            )
-            raise ValueError(
-                f"Cannot attach reference values for '{exp_name}': sample labels differ at row {mismatch + 1} "
-                f"({spectra_labels[mismatch]!r} vs {target_labels[mismatch]!r}). "
-                "Use matching sample IDs or embed the reference values in the spectral file."
-            )
-
-        if spectra_labels and not target_labels:
-            warning = (
-                "Reference values came from a separate property file without sample labels; rows were attached "
-                "by file order. Verify the property file order matches the spectra before trusting calibration metrics."
-            )
-            logger.warning("[MY_DATASET] %s", warning)
-            spectra.meta.setdefault("warnings", []).append(warning)
-
-    @staticmethod
-    def _attach_ground_truth_spectra(dataset: SherpaDataset, loaded: list[_LoadedDataset]) -> None:
-        candidates = [item for item in loaded if item.ground_truth_spectra is not None]
-        if not candidates:
-            return
-        if len(candidates) > 1:
-            logger.debug("Skipping synthetic ground-truth spectra attachment for multi-file stack.")
-            return
-
-        item = candidates[0]
-        spectra = np.asarray(item.ground_truth_spectra, dtype=np.float64)
-        if spectra.ndim != 2 or spectra.size == 0:
-            return
-        if spectra.shape[1] != dataset.n_features:
-            logger.debug(
-                "Skipping synthetic ground-truth spectra attachment: S has %s features but dataset has %s.",
-                spectra.shape[1],
-                dataset.n_features,
-            )
-            return
-
-        dataset.set_extra("ground_truth.spectra", spectra.tolist())
-        dataset.set_extra("ground_truth.spectra_names", item.ground_truth_spectra_names or [])
-        dataset.set_extra("ground_truth.spectra_units", item.ground_truth_spectra_units)
-        if item.ground_truth_spectra_x is not None:
-            dataset.set_extra("ground_truth.spectra_x", np.asarray(item.ground_truth_spectra_x, dtype=float).tolist())
-        if item.ground_truth_spectra_x_title is not None:
-            dataset.set_extra("ground_truth.spectra_x_title", item.ground_truth_spectra_x_title)
-        if item.ground_truth_spectra_x_units is not None:
-            dataset.set_extra("ground_truth.spectra_x_units", item.ground_truth_spectra_x_units)
-
-    @staticmethod
-    def _apply_loaded_overrides(dataset: SherpaDataset, loaded: list[_LoadedDataset]) -> SherpaDataset:
-        overrides = [
-            load_prepared_data_overrides(file_path=str(Path(item.file_path).resolve()))
-            for item in loaded
-            if item.file_path
-        ]
-        if not overrides:
-            return dataset
-        merged = merge_prepared_data_overrides(overrides)
-        if merged.is_empty():
-            return dataset
-        return apply_dataset_prepared_data_overrides(dataset, merged)
-
-    @staticmethod
-    def _x_length(ds: NDDataset) -> int:
-        """Return number of x-axis points (0 if no x-axis).
-
-        Operates on raw NDDataset instances loaded by ``_load_file()``
-        before the SherpaDataset conversion step.
-        """
-        if isinstance(ds, SherpaDataset):
-            axis = ds.feature_axis
-            return int(axis.length) if axis is not None else int(ds.shape[-1])
-        coord = safe_get_coord(ds, "x")
-        return len(np.array(coord.data)) if coord is not None else 0
-
-    def _group_by_x_axis(self, loaded: list[_LoadedDataset]) -> list[list[_LoadedDataset]]:
-        """Group loaded datasets by compatible x-axis.
-
-        Two datasets are compatible if they have the same number of x points
-        and (when both have numeric x) the values match within tolerance.
-        Datasets without an x-axis form their own group.
-        """
-        groups: list[list[_LoadedDataset]] = []
-        group_keys: list[tuple[int, np.ndarray | None]] = []  # (length, x_values)
-
-        for item in loaded:
-            ds = item.dataset
-            if isinstance(ds, SherpaDataset):
-                axis = ds.get_feature_axis()
-                values = getattr(axis, "values", None) if axis is not None else None
-                x = np.asarray(values, dtype=float) if values is not None else None
-                length = int(ds.shape[-1])
-            else:
-                coord = safe_get_coord(ds, "x")
-                if coord is not None:
-                    x = np.array(coord.data)
-                    length = len(x)
-                else:
-                    x = None
-                    length = 0
-
-            matched = False
-            for i, (glen, gx) in enumerate(group_keys):
-                if length != glen:
-                    continue
-                if x is None and gx is None:
-                    groups[i].append(item)
-                    matched = True
-                    break
-                if x is not None and gx is not None and np.allclose(x, gx, rtol=1e-9, atol=1e-12):
-                    groups[i].append(item)
-                    matched = True
-                    break
-
-            if not matched:
-                groups.append([item])
-                group_keys.append((length, x))
-
-        return groups
-
-    def _validate_axes(self, datasets: list[NDDataset], file_names: list[str]) -> None:
-        """Reject datasets whose x-axes differ."""
-        if len(datasets) < 2:
-            return
-        ref = datasets[0]
-        ref_x = self._feature_values(ref)
-        if ref_x is None:
-            return  # no x-axis to compare
-
-        for i, (ds, fname) in enumerate(zip(datasets[1:], file_names[1:]), 2):
-            ds_x = self._feature_values(ds)
-            if ds_x is None:
-                raise ValueError(f"Cannot merge: '{fname}' has no x-axis but " f"'{file_names[0]}' does.")
-            if ds_x.shape != ref_x.shape:
-                raise ValueError(
-                    f"Cannot merge: x-axis length mismatch.\n"
-                    f"  '{file_names[0]}': {len(ref_x)} points\n"
-                    f"  '{fname}': {len(ds_x)} points\n"
-                    f"All files in the dataset must share the same x-axis."
-                )
-            if not np.allclose(ds_x, ref_x, rtol=1e-9, atol=1e-12):
-                idx = int(np.where(~np.isclose(ds_x, ref_x, rtol=1e-9, atol=1e-12))[0][0])
-                raise ValueError(
-                    f"Cannot merge: x-axis values differ at index {idx}.\n"
-                    f"  '{file_names[0]}': {ref_x[idx]:.6f}\n"
-                    f"  '{fname}': {ds_x[idx]:.6f}\n"
-                    f"All files in the dataset must share the same x-axis."
-                )
-
-    @staticmethod
-    def _feature_values(ds: Any) -> np.ndarray | None:
-        if isinstance(ds, SherpaDataset):
-            axis = ds.get_feature_axis()
-            values = getattr(axis, "values", None) if axis is not None else None
-            return np.asarray(values, dtype=float) if values is not None else None
-        coord = safe_get_coord(ds, "x")
-        return np.asarray(coord.data, dtype=float) if coord is not None else None
-
-    def _concatenate(self, datasets: list[NDDataset], file_names: list[str]) -> NDDataset:
-        """Validate x-axes match then concatenate along the sample axis."""
-        self._validate_axes(datasets, file_names)
-        data_arrays = [np.squeeze(np.array(ds.data)) for ds in datasets]
-        data_arrays = [arr if arr.ndim > 0 else np.array([arr]) for arr in data_arrays]
-
-        data_arrays_2d = []
-        for i, arr in enumerate(data_arrays):
-            if arr.ndim == 1:
-                data_arrays_2d.append(arr.reshape(1, -1))
-            elif arr.ndim == 2:
-                data_arrays_2d.append(arr)
-            else:
-                raise ValueError(f"Unexpected dimensionality in file '{file_names[i]}': shape {arr.shape}")
-
-        concatenated_data = np.concatenate(data_arrays_2d, axis=0)
-
-        y_labels = []
-        for ds, arr, fname in zip(datasets, data_arrays_2d, file_names):
-            label = Path(fname).name
-            n = arr.shape[0]
-            source_labels: list[str] = []
-            if isinstance(ds, SherpaDataset) and ds.sample_axis is not None and ds.sample_axis.labels:
-                source_labels = [str(item) for item in ds.sample_axis.labels]
-            if len(source_labels) == n:
-                y_labels.extend(
-                    clean_sample_labels(
-                        source_labels,
-                        n,
-                        fallback_prefix=label if n == 1 else "Sample",
-                        source_name=label,
-                    )
-                )
-            elif n == 1:
-                y_labels.append(label)
-            else:
-                y_labels.extend(clean_sample_labels(None, n, fallback_prefix="Sample"))
-
-        if all(isinstance(ds, SherpaDataset) for ds in datasets):
-            first = datasets[0]
-            assert isinstance(first, SherpaDataset)
-            feature_axis = first.get_feature_axis()
-            sample_axis = SampleAxis(labels=y_labels, title="Sample")
-            target_chunks = [
-                np.asarray(ds.target) for ds in datasets if isinstance(ds, SherpaDataset) and ds.target is not None
-            ]
-            target = None
-            if target_chunks and sum(chunk.shape[0] for chunk in target_chunks) == concatenated_data.shape[0]:
-                target = np.concatenate(target_chunks, axis=0)
-            return SherpaDataset(
-                X=concatenated_data,
-                feature_axis=feature_axis,
-                sample_axis=sample_axis,
-                target=target,
-                target_context=first.target_context.model_copy(deep=True) if target is not None else None,
-                domain=first.domain.model_copy(deep=True),
-                backend=first.backend,
-                title="Stacked Dataset",
-                units=first.units,
-                data_role=first.data_role,
-            )
-
-        merged = scp.NDDataset(concatenated_data)
-
-        ref_x = safe_get_coord(datasets[0], "x")
-        if ref_x is not None:
-            merged.x = ref_x.copy()
-
-        if hasattr(datasets[0], "units") and datasets[0].units is not None:
-            merged.units = datasets[0].units
-
-        cat_y = safe_get_coord(merged, "y")
-        if cat_y is not None:
-            cat_y.title = "Sample"
-            cat_y.labels = y_labels
-        else:
-            cat_x = safe_get_coord(merged, "x")
-            merged.set_coordset(
-                y=scp.Coord(
-                    np.arange(len(y_labels)),
-                    title="Sample",
-                    labels=y_labels,
-                ),
-                x=cat_x,
-            )
-
-        return merged
-
-    @staticmethod
-    def _sample_count(ds: NDDataset) -> int:
-        data = np.asarray(ds.data)
-        if data.ndim == 0:
-            return 1
-        if data.ndim == 1:
-            return 1
-        return int(data.shape[0])
-
-    def _combine_embedded_targets(
-        self, loaded: list[_LoadedDataset]
-    ) -> tuple[np.ndarray, list[str], str | None] | None:
-        """Concatenate embedded property blocks from the spectra group in file order."""
-        target_names: list[str] | None = None
-        target_units: str | None = None
-        target_chunks: list[np.ndarray] = []
-        saw_embedded_target = False
-
-        for item in loaded:
-            target_data = item.embedded_target_data
-            if target_data is None:
-                if saw_embedded_target:
-                    raise ValueError(
-                        f"Embedded property columns are missing for "
-                        f"'{item.file_name}' while other spectral "
-                        f"files have them."
-                    )
-                continue
-
-            saw_embedded_target = True
-            names = item.embedded_target_names or []
-            if target_names is None:
-                target_names = list(names)
-            elif list(names) != target_names:
-                raise ValueError(
-                    f"Embedded property columns in '{item.file_name}' do not match the other spectral files."
-                )
-            if target_units is None:
-                target_units = item.embedded_target_units
-            elif item.embedded_target_units and item.embedded_target_units != target_units:
-                raise ValueError(
-                    f"Embedded property units in '{item.file_name}' do not match the other spectral files."
-                )
-
-            if target_data.shape[0] != self._sample_count(item.dataset):
-                raise ValueError(
-                    f"Embedded property row count mismatch in '{item.file_name}': "
-                    f"{target_data.shape[0]} target rows for {self._sample_count(item.dataset)} spectra."
-                )
-
-            target_chunks.append(target_data)
-
-        if not target_chunks:
-            return None
-
-        return np.concatenate(target_chunks, axis=0), target_names or [], target_units
-
-    def _load_file(self, file_path: str, *, file_name: str | None = None) -> _LoadedDataset:
-        """Load data from a file, with pandas fallback for CSVs that SCP can't read."""
+    def _load_file(
+        self,
+        file_path: str,
+        *,
+        file_name: str | None = None,
+        asset_id: str | None = None,
+        prepared_overrides: Mapping[str, object] | None = None,
+    ) -> _LoadedDataset:
+        """Load one exact file through the sole native ingestion registry."""
         if not os.path.exists(file_path):
             raise ValueError(f"File not found: {file_path}")
+        return _load_registry_asset(
+            file_path,
+            file_name=file_name,
+            asset_id=asset_id,
+            prepared_overrides=prepared_overrides,
+        )
 
-        ext = os.path.splitext(file_path)[1].lower()
-        resolved_file_name = file_name or Path(file_path).name
-        if ext == ".csv":
-            dataset, embedded_target_names, embedded_target_data = self._load_csv_pandas(file_path)
-            return _LoadedDataset(
-                dataset=dataset,
-                file_name=resolved_file_name,
-                file_path=file_path,
-                embedded_target_names=embedded_target_names,
-                embedded_target_data=embedded_target_data,
+
+def _load_registry_asset(
+    file_path: str | Path,
+    *,
+    file_name: str | None = None,
+    asset_id: str | None = None,
+    prepared_overrides: Mapping[str, object] | None = None,
+) -> _LoadedDataset:
+    """Project the one registry result into the experiment-reader record."""
+    from spectra_sherpa.io import ingest, select_asset
+
+    path = Path(file_path)
+    from spectra_sherpa.app.lib.registered_reference_storage import (
+        read_registered_reference_sidecar,
+    )
+
+    registered_reference = read_registered_reference_sidecar(path)
+    if registered_reference is not None:
+        return _load_registered_reference_asset(
+            path,
+            registered_reference=registered_reference,
+            file_name=file_name,
+            asset_id=asset_id,
+            prepared_overrides=prepared_overrides,
+        )
+    result = ingest(path, parser_options=parser_options_for_prepared_data(path.name, prepared_overrides))
+    selected_asset = select_asset(result, asset_id=asset_id)
+    dataset = selected_asset.dataset
+    dataset = apply_dataset_prepared_data_overrides(dataset, prepared_overrides or {})
+    target_names: list[str] | None = None
+    target_units: str | None = None
+    if dataset.target_context is not None:
+        target_names = list(dataset.target_context.target_names or [])
+        if not target_names and dataset.target_context.target_name:
+            target_names = [dataset.target_context.target_name]
+        target_units = dataset.target_context.target_units
+    embedded_target = None if dataset.target is None else np.asarray(dataset.target)
+    if embedded_target is None:
+        properties = dataset.get_extra("properties")
+        declared_names = dataset.get_extra("prop_names")
+        if isinstance(properties, Mapping):
+            ordered_names = (
+                [str(name) for name in declared_names]
+                if isinstance(declared_names, list)
+                else [str(name) for name in properties]
             )
-        if ext == ".npz":
-            from spectra_sherpa.app.services.synthesis import is_synthetic_npz
-
-            if is_synthetic_npz(file_path):
-                return _load_synthesis_npz_as_loaded_dataset(file_path, file_name=resolved_file_name)
-
-        # Try SpectroChemPy first
-        try:
-            from spectra_sherpa.app.core.config import get_reader_for_extension
-
-            reader_name = get_reader_for_extension(ext)
-            reader_method = getattr(scp, reader_name)
-            dataset = reader_method(file_path)
-
-            if dataset is not None:
-                if ext == ".mat":
-                    dataset = extract_dataset_from_result(dataset, file_path)
-                    dataset = remove_index_columns(dataset)
-                return _LoadedDataset(dataset=dataset, file_name=resolved_file_name, file_path=file_path)
-        except Exception:
-            pass  # fall through to pandas fallback
-
-        raise ValueError(f"Failed to load {file_path} (format: {ext or 'unknown'})")
-
-    def _load_csv_pandas(self, file_path: str) -> tuple[Any, list[str] | None, np.ndarray | None]:
-        """Load a CSV via pandas -- handles headers, mixed types, etc.
-
-        Splits columns by whether the *header name* parses as a float:
-        - Float-named columns -> spectral data, header values become x-axis
-        - String-named columns -> label / ID columns (first used as y-labels)
-        """
-        from spectra_sherpa.app.lib.io import load_csv_as_sherpa
-
-        dataset = load_csv_as_sherpa(file_path)
-        if isinstance(dataset, SherpaDataset) and dataset.get_extra("csv.layout") == "axis_column_conditions":
-            return dataset, None, None
-        if isinstance(dataset, SherpaDataset) and dataset.data_role == "X_features":
-            names = None
-            if dataset.target_context is not None:
-                if dataset.target_context.target_names:
-                    names = dataset.target_context.target_names
-                elif dataset.target_context.target_name:
-                    names = [dataset.target_context.target_name]
-            return dataset, names, dataset.target
-
-        df = pd.read_csv(file_path)
-        # Partition columns: float-named headers vs string-named headers
-        spectral_cols: list[str] = []
-        x_vals: list[float] = []
-        label_cols: list[str] = []
-        for col in df.columns:
-            try:
-                x_vals.append(float(col))
-                spectral_cols.append(col)
-            except (ValueError, TypeError):
-                label_cols.append(col)
-
-        if not spectral_cols:
-            # No float-named columns -- fall back to all numeric columns
-            numeric_df = df.select_dtypes(include="number")
-            if numeric_df.empty:
-                raise ValueError(f"No numeric columns in {file_path}")
-            data = numeric_df.values.astype(np.float64)
-            dataset = scp.NDDataset(data)
-            dataset.title = Path(file_path).stem
-            return dataset, None, None
-
-        data = df[spectral_cols].values.astype(np.float64)
-        dataset = scp.NDDataset(data)
-        dataset.title = Path(file_path).stem
-
-        # Set x-axis from column header values and y-axis for samples
-        y_labels = df[label_cols[0]].astype(str).tolist() if label_cols else None
-        dataset.set_coordset(
-            y=scp.Coord(
-                np.arange(data.shape[0]),
-                title="Sample",
-                labels=y_labels,
-            ),
-            x=scp.Coord(
-                np.array(x_vals),
-                title="Feature",
-            ),
+            columns = [np.asarray(properties[name]) for name in ordered_names if name in properties]
+            if columns and all(column.ndim == 1 and column.shape[0] == dataset.n_samples for column in columns):
+                target_names = ordered_names
+                embedded_target = np.column_stack(columns)
+    if dataset.target is None and embedded_target is not None:
+        dataset.target = embedded_target
+        dataset.target_context = TargetContext(
+            target_type="continuous",
+            target_names=target_names or None,
+            target_units=target_units,
         )
-
-        # Detect string-named numeric columns as reference properties
-        # (mirrors io.py load_csv_as_sherpa logic)
-        prop_label_cols = label_cols[1:] if y_labels is not None else label_cols
-        if prop_label_cols:
-            prop_cols = [c for c in prop_label_cols if pd.api.types.is_numeric_dtype(df[c])]
-            if prop_cols:
-                return dataset, prop_cols, df[prop_cols].values.astype(np.float64)
-
-        return dataset, None, None
-
-    def _concatenate_feature_tables(self, loaded: list[_LoadedDataset], exp_name: str) -> SherpaDataset:
-        """Stack compatible X_features tables while preserving embedded targets."""
-        first = loaded[0].dataset
-        assert isinstance(first, SherpaDataset)
-        first_axis = first.feature_axis
-        first_labels = list(first_axis.labels or []) if first_axis is not None else []
-        chunks: list[np.ndarray] = []
-        targets: list[np.ndarray] = []
-        sample_labels: list[str] = []
-
-        for item in loaded:
-            ds = item.dataset
-            if not isinstance(ds, SherpaDataset):
-                raise ValueError(f"Cannot merge feature table with spectral file '{item.file_name}'.")
-            axis = ds.feature_axis
-            labels = list(axis.labels or []) if axis is not None else []
-            if first_labels and labels and labels != first_labels:
-                raise ValueError(f"Feature columns in '{item.file_name}' do not match the first feature-table file.")
-            data = np.asarray(ds.data, dtype=np.float64)
-            chunks.append(data if data.ndim == 2 else data.reshape(1, -1))
-            if ds.target is not None:
-                targets.append(np.asarray(ds.target))
-            n = chunks[-1].shape[0]
-            source_axis = ds.sample_axis
-            source_labels = list(source_axis.labels or []) if source_axis is not None else []
-            sample_labels.extend(
-                clean_sample_labels(
-                    source_labels if len(source_labels) == n else None,
-                    n,
-                    fallback_prefix=item.file_name if n == 1 else "Sample",
-                    source_name=item.file_name,
-                )
-            )
-
-        X = np.vstack(chunks)
-        target = np.concatenate(targets, axis=0) if targets and sum(len(t) for t in targets) == X.shape[0] else None
-        target_context = (
-            first.target_context.model_copy(deep=True) if target is not None and first.target_context else None
-        )
-        return SherpaDataset(
-            X=X,
-            feature_axis=FeatureAxis(
-                values=np.arange(X.shape[1], dtype=float),
-                labels=first_labels or None,
-                title=getattr(first_axis, "title", None) or "Feature",
-            ),
-            sample_axis=SampleAxis(labels=sample_labels, title="Sample"),
-            target=target,
-            target_context=target_context,
-            domain=first.domain.model_copy(deep=True),
-            backend="pandas",
-            title=f"{exp_name} ({len(loaded)} feature file{'s' if len(loaded) != 1 else ''})",
-            data_role="X_features",
-        )
-
-
-def _load_synthesis_npz_as_nddataset(file_path: str) -> NDDataset:
-    from spectra_sherpa.app.services.synthesis import load_synthetic_npz
-
-    payload = load_synthetic_npz(file_path)
-    return _synthesis_npz_payload_to_nddataset(file_path, payload)
-
-
-def _load_synthesis_npz_as_loaded_dataset(file_path: str, *, file_name: str | None = None) -> _LoadedDataset:
-    from spectra_sherpa.app.services.synthesis import load_synthetic_npz
-
-    payload = load_synthetic_npz(file_path)
-    target_names = _synthesis_target_names(payload)
-    ground_truth = _synthesis_ground_truth(payload)
+    ground_truth = _dataset_ground_truth(dataset)
     return _LoadedDataset(
-        dataset=_synthesis_npz_payload_to_nddataset(file_path, payload),
-        file_name=file_name or Path(file_path).name,
-        file_path=file_path,
+        dataset=dataset,
+        file_name=file_name or path.name,
+        file_path=str(path),
         embedded_target_names=target_names,
-        embedded_target_data=np.asarray(payload["C"], dtype=np.float64),
-        embedded_target_units=_optional_text(payload.get("concentration_units")),
-        ground_truth_spectra=np.asarray(payload["S"], dtype=np.float64),
+        embedded_target_data=embedded_target,
+        embedded_target_units=target_units,
+        ground_truth_spectra=ground_truth.get("spectra"),
         ground_truth_spectra_names=target_names,
-        ground_truth_spectra_units=ground_truth.get("S_units"),
-        ground_truth_spectra_x=np.asarray(payload["wavenumber"], dtype=np.float64),
-        ground_truth_spectra_x_title=_optional_text(payload.get("metadata", {}).get("x_title")),
-        ground_truth_spectra_x_units=_optional_text(payload.get("feature_units")),
+        ground_truth_spectra_units=ground_truth.get("units"),
+        ground_truth_spectra_x=ground_truth.get("x"),
+        ground_truth_spectra_x_title=ground_truth.get("x_title"),
+        ground_truth_spectra_x_units=ground_truth.get("x_units"),
+        prepared_overrides=prepared_overrides,
+        source_members=result.source_members,
+        selected_asset_id=selected_asset.asset_id,
     )
 
 
-def _synthesis_npz_payload_to_nddataset(file_path: str, payload: dict[str, Any]) -> NDDataset:
-    data = np.asarray(payload["X"], dtype=np.float64)
-    embedded_meta = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-    dataset = scp.NDDataset(data)
-    dataset.title = str(embedded_meta.get("title") or Path(file_path).stem)
-    value_units = _optional_text(embedded_meta.get("value_units")) or _optional_text(payload.get("units"))
-    if value_units is not None:
-        dataset.units = value_units
-    labels = payload.get("sample_labels") or [f"sample_{i + 1:03d}" for i in range(data.shape[0])]
-    dataset.set_coordset(
-        y=scp.Coord(np.arange(data.shape[0]), title=_optional_text(embedded_meta.get("y_title")), labels=labels),
-        x=scp.Coord(
-            np.asarray(payload["wavenumber"], dtype=np.float64),
-            title=_optional_text(embedded_meta.get("x_title")),
-            units=_optional_text(embedded_meta.get("x_units")) or _optional_text(payload.get("feature_units")),
+def _load_registered_reference_asset(
+    path: Path,
+    *,
+    registered_reference: Mapping[str, Any],
+    file_name: str | None,
+    asset_id: str | None,
+    prepared_overrides: Mapping[str, object] | None,
+) -> _LoadedDataset:
+    """Re-admit a retained exact member without changing generic parser policy."""
+
+    from spectra_sherpa.app.lib.reference_materialization import materialize_reference_member
+
+    projection_id = str(registered_reference["projection_id"])
+    if asset_id is not None and asset_id != projection_id:
+        raise ValueError("requested asset differs from the registered reference projection")
+    materialized = materialize_reference_member(path, projection_id)
+    if dict(materialized.portable_reference) != dict(registered_reference):
+        raise ValueError("registered reference identity changed during workspace admission")
+    dataset = apply_dataset_prepared_data_overrides(materialized.dataset, prepared_overrides or {})
+    target_names = list(dataset.target_context.target_names or []) if dataset.target_context is not None else []
+    if not target_names and dataset.target_context is not None and dataset.target_context.target_name:
+        target_names = [dataset.target_context.target_name]
+    target = None if dataset.target is None else np.asarray(dataset.target)
+    return _LoadedDataset(
+        dataset=dataset,
+        file_name=file_name or path.name,
+        file_path=str(path),
+        embedded_target_names=target_names or None,
+        embedded_target_data=target,
+        embedded_target_units=(dataset.target_context.target_units if dataset.target_context is not None else None),
+        prepared_overrides=prepared_overrides,
+        source_members=(
+            SourceMember(
+                name=path.name,
+                sha256=str(registered_reference["member_sha256"]),
+                size_bytes=int(registered_reference["member_size_bytes"]),
+            ),
         ),
+        selected_asset_id=projection_id,
     )
-    dataset.meta["data_role"] = embedded_meta.get("data_role") or "X_spectra"
-    if embedded_meta.get("data_quantity") is not None:
-        dataset.meta["data_quantity"] = embedded_meta["data_quantity"]
-    if value_units is not None:
-        dataset.meta["value_units"] = value_units
-        dataset.meta["value_units_label"] = value_units
-    dataset.meta["is_time_series"] = bool(embedded_meta.get("is_time_series", False))
-    meta = SpectraMeta(
-        provenance=DataProvenance(
-            source_type=SourceType.SYNTHETIC,
-            original_file_path=str(file_path),
-            original_file_format="npz",
-            created_datetime=datetime.utcnow().isoformat(),
-        ),
-        processing_steps=["load", "synthetic"],
-        custom={
-            "synthesis_recipe": payload.get("recipe_json"),
-            "synthesis_ground_truth": payload.get("ground_truth_json"),
-        },
-    )
-    set_spectra_meta(dataset, meta)
-    return dataset
+
+
+def _dataset_ground_truth(dataset: SherpaDataset) -> dict[str, Any]:
+    """Read optional synthetic ground truth without reparsing source bytes."""
+    spectra = dataset.get_extra("ground_truth.spectra")
+    if spectra is None:
+        return {}
+    parsed = dataset.get_extra("ground_truth")
+    if isinstance(parsed, dict):
+        metadata = parsed
+    else:
+        raw = dataset.get_extra("synthetic.ground_truth_json")
+        try:
+            metadata = json.loads(str(raw or "{}"))
+        except (TypeError, ValueError):
+            metadata = {}
+    feature_axis = dataset.feature_axis
+    return {
+        "spectra": np.asarray(spectra, dtype=np.float64),
+        "units": metadata.get("S_units") if isinstance(metadata, dict) else None,
+        "x": None if feature_axis is None or feature_axis.values is None else np.asarray(feature_axis.values),
+        "x_title": None if feature_axis is None else feature_axis.title,
+        "x_units": None if feature_axis is None else feature_axis.units,
+    }
 
 
 def _synthesis_target_names(payload: dict[str, Any]) -> list[str]:
@@ -1125,43 +729,76 @@ def _synthesis_ground_truth(payload: dict[str, Any]) -> dict[str, Any]:
 @register_node
 class LoadGroupNode(Node):
     """
-    Load Group node for loading multiple spectral files from a folder.
+    Load Group node for one strict local or project-owned spectral collection.
 
     Loads all matching files from a folder and concatenates them along the sample axis,
-    creating a single NDDataset with multiple spectra. Useful for:
+    creating a single SherpaDataset with multiple spectra. Useful for:
     - Time-series measurements (multiple time points)
     - Multi-sample studies (different samples)
     - Batch processing (entire folder of spectra)
     - Comparative studies (control vs treatment groups)
 
     Features:
-    - Mixed format support (uses centralized reader mapping)
+    - Mixed format support through the frozen native ingestion registry
     - Strict x-axis validation (ensures all spectra have identical wavenumbers)
     - Fail-fast error handling (stops on first error, no silent failures)
-    - Multiple sorting options (alphabetical, numeric suffix, modification time)
-    - Rich metadata tracking (source folder, file list, concatenation info)
+    - Deterministic sorting (alphabetical or numeric suffix)
+    - Content-manifest-bound provenance
     """
 
     metadata = NodeMetadata(
+        policy=NodePolicy(
+            safe_for_auto_apply=False,
+            requires_human_review=True,
+            data_egress_risk="none",
+            offload_to_pool=False,
+        ),
         node_type="data.load_group",
         category="data",
         label="Load Group",
-        description="Load multiple spectral files from a folder as a grouped dataset",
+        description="Load one exact compatible collection as a grouped dataset",
         parameters=[
+            NodeParameter(
+                name="source_mode",
+                label="Collection Source",
+                param_type="select",
+                options=["local_folder", "experiment_collection"],
+                default="local_folder",
+                description="Use a local folder or an exact project-owned experiment collection",
+                required=False,
+            ),
+            NodeParameter(
+                name="collection_definition_sha256",
+                label="Collection Definition",
+                param_type="text",
+                default="",
+                description="Exact scientist-definition digest, empty only when no definition is attached",
+                required=False,
+                category="internal",
+            ),
+            NodeParameter(
+                name="scientific_collection_sha256",
+                label="Scientific Collection",
+                param_type="text",
+                default="",
+                description="Combined exact source and scientist-definition identity",
+                required=False,
+                category="internal",
+            ),
             NodeParameter(
                 name="folder_path",
                 label="Folder Path",
                 param_type="text",
                 default="",
-                description="Path to folder containing spectral files (absolute or relative to SpectroChemPy datadir)",
-                required=True,
+                description="Absolute local path; used only in local-folder mode",
+                required=False,
             ),
             NodeParameter(
                 name="pattern",
                 label="File Pattern",
                 param_type="text",
-                default="*.spa",
-                description="Glob pattern to filter files (e.g., '*.spa', '*.csv', '*', 'sample_*.spg')",
+                default="*.csv",
+                description="Glob pattern for native files (e.g., '*.csv', '*.jdx', '*.npz', or '*.mat')",
                 required=False,
             ),
             NodeParameter(
@@ -1176,23 +813,11 @@ class LoadGroupNode(Node):
                 name="sort_by",
                 label="Sort Files By",
                 param_type="select",
-                options=["filename", "numeric_suffix", "modified_time"],
+                options=["filename", "numeric_suffix"],
                 default="filename",
                 description=(
-                    "How to order files before concatenation"
-                    " (filename=alphabetical, numeric_suffix=extract numbers"
-                    " from filename, modified_time=file modification timestamp)"
-                ),
-                required=False,
-            ),
-            NodeParameter(
-                name="validate_axes",
-                label="Validate X-Axes Match",
-                param_type="boolean",
-                default=True,
-                description=(
-                    "Require all files to have identical x-axes (wavenumbers)."
-                    " Recommended: True for strict validation."
+                    "How to order files before concatenation "
+                    "(filename=alphabetical, numeric_suffix=extract numbers from filename)"
                 ),
                 required=False,
             ),
@@ -1204,49 +829,97 @@ class LoadGroupNode(Node):
                 description="Title for the grouped dataset (auto-generated from folder name if empty)",
                 required=False,
             ),
+            NodeParameter(
+                name="asset_id",
+                label="Scientific Asset",
+                param_type="text",
+                default="",
+                description=(
+                    "Exact asset identity to select from every file. Required for multi-asset formats; "
+                    "the same identity is applied to all group members."
+                ),
+                required=False,
+            ),
+            NodeParameter(
+                name="experiment_id",
+                label="Experiment",
+                param_type="number",
+                default=None,
+                description="Project experiment identity; used only in experiment-collection mode",
+                required=False,
+            ),
+            NodeParameter(
+                name="stage",
+                label="Stage",
+                param_type="select",
+                options=["raw", "preprocessed", "synthetic"],
+                default="raw",
+                description="Exact persisted experiment stage",
+                required=False,
+            ),
+            NodeParameter(
+                name="source_manifest_sha256",
+                label="Source Manifest",
+                param_type="text",
+                default="",
+                description="Exact ordered collection digest recorded when the workflow is authored",
+                required=False,
+                category="internal",
+            ),
         ],
         input_types=[],  # No inputs - this is a source node
         input_ports=[],
-        output_type="NDDataset",
-        requires_scp=True,
-        help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.NDDataset.html",
+        output_type="SherpaDataset",
+        output_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Grouped Spectra",
+                description="Strictly compatible spectra bound to a deterministic source manifest",
+            )
+        ],
+        help_url="docs/nodes/data.md#load-group",
+        canonical_parameter_validator=_canonical_load_group_parameters,
+        draft_parameter_validator=_draft_load_group_parameters,
     )
 
-    async def execute(self, *args) -> Any:
+    async def execute(self, *args) -> Any:  # noqa: C901 - existing multi-format loader dispatch
         """
         Execute group loading: load all matching files and concatenate.
 
         Returns:
-            NDDataset containing all spectra concatenated along sample axis (y-axis)
+            SherpaDataset containing all spectra concatenated along the sample axis
         """
         import re
 
-        folder_path = self.parameters.get("folder_path", "")
-        pattern = self.parameters.get("pattern", "*.spa")
-        recursive = self.parameters.get("recursive", False)
-        sort_by = self.parameters.get("sort_by", "filename")
-        validate_axes = self.parameters.get("validate_axes", True)
-        group_title = self.parameters.get("group_title", "")
+        parameters = self.metadata.canonicalize_parameters(self.parameters)
+        source_mode = str(parameters["source_mode"])
+        if source_mode == "experiment_collection":
+            reader = ExperimentDatasetReader(
+                self.node_id,
+                {
+                    "dataset_id": int(parameters["experiment_id"]),
+                    "stage": str(parameters["stage"]),
+                    "asset_id": str(parameters["asset_id"]),
+                    "source_manifest_sha256": str(parameters["source_manifest_sha256"]),
+                    "collection_definition_sha256": str(parameters["collection_definition_sha256"]),
+                    "scientific_collection_sha256": str(parameters["scientific_collection_sha256"]),
+                },
+                source_resolver=self.require_execution_runtime().require_dataset_source_resolver(),
+            )
+            return (await reader.execute())["default"]
 
-        if not folder_path:
-            raise ValueError("folder_path is required. Please specify a folder containing spectral files.")
+        folder_path = str(parameters["folder_path"])
+        pattern = str(parameters["pattern"])
+        recursive = bool(parameters["recursive"])
+        sort_by = str(parameters["sort_by"])
+        group_title = str(parameters["group_title"])
+        asset_id = str(parameters["asset_id"]) or None
 
-        # Resolve folder path (absolute or relative to SpectroChemPy datadir)
         folder = Path(folder_path).expanduser()
-
         if not folder.is_absolute():
-            # Try relative to SpectroChemPy datadir
-            candidate_paths = [datadir / folder_path for datadir in get_scp_datadirs()]
-
-            folder = next((p for p in candidate_paths if p.exists()), None)  # type: ignore[assignment]
-
-            if folder is None:
-                attempted = "\n".join(f"  - {p}" for p in candidate_paths)
-                raise ValueError(
-                    f"Folder not found: {folder_path}\n"
-                    f"Attempted paths:\n{attempted}\n"
-                    f"Please provide an absolute path or a path relative to SpectroChemPy datadir."
-                )
+            raise ValueError("data.load_group requires an absolute folder path")
 
         if not folder.exists():
             raise ValueError(f"Folder does not exist: {folder}")
@@ -1261,13 +934,11 @@ class LoadGroupNode(Node):
         # Get all files (recursively if requested)
         if recursive:
             # Walk directory tree recursively
-            all_files = []
-            for item in folder.rglob("*"):
-                if item.is_file():
-                    all_files.append(item)
+            all_files = [item for item in folder.rglob("*") if item.is_file()]
         else:
             # Only immediate directory
             all_files = [f for f in folder.iterdir() if f.is_file()]
+        all_files.sort(key=lambda path: path.relative_to(folder).as_posix().casefold())
 
         # Filter with case-insensitive matching
         files = []
@@ -1313,40 +984,73 @@ class LoadGroupNode(Node):
         # Sort files according to sort_by parameter
         if sort_by == "numeric_suffix":
             # Extract numeric suffix from filename (e.g., "sample_001.spa" -> 1)
-            def extract_number(file_path: Path) -> int:
+            def extract_number(file_path: Path) -> tuple[int, str, str]:
                 match = re.search(r"(\d+)", file_path.stem)
-                return int(match.group(1)) if match else 0
+                return (
+                    int(match.group(1)) if match else -1,
+                    file_path.name.casefold(),
+                    file_path.relative_to(folder).as_posix().casefold(),
+                )
 
             files.sort(key=extract_number)
             logger.debug("[LOAD_GROUP] Sorted by numeric suffix")
 
-        elif sort_by == "modified_time":
-            # Sort by file modification time (oldest first)
-            files.sort(key=lambda f: f.stat().st_mtime)
-            logger.debug("[LOAD_GROUP] Sorted by modification time")
-
         else:  # sort_by == "filename" (default)
             # Sort alphabetically by filename
-            files.sort(key=lambda f: f.name.lower())
+            files.sort(
+                key=lambda file_path: (
+                    file_path.name.casefold(),
+                    file_path.relative_to(folder).as_posix().casefold(),
+                )
+            )
             logger.debug("[LOAD_GROUP] Sorted alphabetically")
+
+        admitted_manifest = file_manifest(
+            folder,
+            files,
+            max_members=_LOAD_GROUP_MAX_FILES,
+            max_file_bytes=_LOAD_GROUP_PARSER_LIMITS.max_source_bytes,
+            max_total_bytes=_LOAD_GROUP_MAX_SOURCE_BYTES,
+        )
 
         # Load all files (FAIL-FAST: stop on first error)
         datasets = []
         file_names = []
+        parsed_members: list[tuple[Path, SourceMember]] = []
+        retained_elements = 0
+        retained_bytes = 0
 
         for i, file_path in enumerate(files, 1):
             try:
                 logger.debug(f"[LOAD_GROUP] Loading {i}/{len(files)}: {file_path.name}")
 
                 # Load using centralized reader (supports mixed formats)
-                dataset = self._load_single_file(file_path)
+                loaded = self._load_single_file(file_path, asset_id=asset_id)
+                dataset = loaded.dataset
 
                 if dataset is None:
                     # FAIL-FAST: No fallbacks allowed
                     raise ValueError(f"Reader returned None for {file_path.name}")
 
+                if len(loaded.source_members) != 1:
+                    raise ValueError(
+                        f"Registry result for {file_path.name} must identify exactly one consumed source member"
+                    )
+                next_elements, next_bytes = _retained_numeric_footprint(dataset)
+                retained_elements += next_elements
+                retained_bytes += next_bytes
+                if retained_elements > _LOAD_GROUP_MAX_DECODED_ELEMENTS:
+                    raise ValueError(
+                        f"group retains {retained_elements} decoded elements; "
+                        f"limit is {_LOAD_GROUP_MAX_DECODED_ELEMENTS}"
+                    )
+                if retained_bytes > _LOAD_GROUP_MAX_DECODED_BYTES:
+                    raise ValueError(
+                        f"group retains {retained_bytes} decoded bytes; limit is {_LOAD_GROUP_MAX_DECODED_BYTES}"
+                    )
                 datasets.append(dataset)
                 file_names.append(file_path.name)
+                parsed_members.append((file_path, loaded.source_members[0]))
 
             except Exception as e:
                 # FAIL-FAST: Stop immediately on first error
@@ -1362,71 +1066,34 @@ class LoadGroupNode(Node):
 
         logger.debug(f"[LOAD_GROUP] Successfully loaded all {len(datasets)} files")
 
-        # Validate x-axes match (strict validation if enabled)
-        if validate_axes and len(datasets) > 1:
-            self._validate_axes_match(datasets, file_names)
+        source_manifest = source_contracts.file_manifest_from_members(
+            folder,
+            parsed_members,
+            max_members=_LOAD_GROUP_MAX_FILES,
+            max_file_bytes=_LOAD_GROUP_PARSER_LIMITS.max_source_bytes,
+            max_total_bytes=_LOAD_GROUP_MAX_SOURCE_BYTES,
+        )
+        if source_manifest["manifest_digest"] != admitted_manifest["manifest_digest"]:
+            raise ValueError("source files changed before their registry snapshots were admitted")
 
-        # Custom concatenation to avoid SpectroChemPy's unit compatibility issues
-        # Concatenate numpy arrays directly and create new NDDataset
-        try:
-            # Extract data arrays and squeeze out singleton dimensions
-            data_arrays = [np.squeeze(np.array(ds.data)) for ds in datasets]
-
-            # Ensure all arrays are at least 1D (in case of scalar data)
-            data_arrays = [arr if arr.ndim > 0 else np.array([arr]) for arr in data_arrays]
-
-            # Ensure all arrays are 2D (n_spectra, n_wavenumbers)
-            # This handles both single-spectrum files (1D) and multi-spectrum files (2D)
-            data_arrays_2d = []
-            for i, arr in enumerate(data_arrays):
-                if arr.ndim == 1:
-                    # Single spectrum: reshape to (1, n_wavenumbers)
-                    data_arrays_2d.append(arr.reshape(1, -1))
-                elif arr.ndim == 2:
-                    # Multi-spectrum: keep as is (n_spectra, n_wavenumbers)
-                    data_arrays_2d.append(arr)
-                else:
-                    raise ValueError(
-                        f"Unexpected array dimensionality in file {i+1} ({file_names[i]}): shape {arr.shape}. "
-                        f"Expected 1D or 2D array."
-                    )
-
-            # Concatenate along sample axis (axis=0) to get 2D (total_spectra, n_wavenumbers)
-            concatenated_data = np.concatenate(data_arrays_2d, axis=0)
-
-            # Generate y-axis labels accounting for multi-spectrum files
-            y_labels = []
-            for i, (arr, file_name) in enumerate(zip(data_arrays_2d, file_names)):
-                # Use .name instead of .stem to preserve OPUS-style extensions (.0000, .0001, etc.)
-                # For files like "test.0000", Path.stem would give "test" but Path.name gives "test.0000"
-                file_label = Path(file_name).name
-                n_spectra = arr.shape[0]
-                if n_spectra == 1:
-                    # Single spectrum: use file name
-                    y_labels.append(file_label)
-                else:
-                    # Multi-spectrum: add spectrum index
-                    for j in range(n_spectra):
-                        y_labels.append(f"{file_label}_{j+1}")
-
-            total_spectra = concatenated_data.shape[0]
-            logger.debug(
-                f"[LOAD_GROUP] Concatenated {len(datasets)} files "
-                f"({total_spectra} spectra) into shape {concatenated_data.shape}"
+        members = [
+            CollectionMember(
+                dataset=dataset,
+                file_name=source_member.name,
+                size_bytes=source_member.size_bytes,
+                sha256=source_member.sha256,
+                prepared_data_sha256=prepared_data_digest(None),
+                asset_id=loaded.selected_asset_id,
             )
-
-            # Create new NDDataset with stacked data
-            concatenated = scp.NDDataset(concatenated_data)
-
-            # Copy x-axis from reference (all validated to be identical)
-            lgn_ref_x_coord = safe_get_coord(datasets[0], "x")
-            if lgn_ref_x_coord is not None:
-                concatenated.x = lgn_ref_x_coord.copy()
-
-            # Set units from reference if available
-            if hasattr(datasets[0], "units") and datasets[0].units is not None:
-                concatenated.units = datasets[0].units
-
+            for dataset, (_, source_member) in zip(datasets, parsed_members)
+        ]
+        require_collection_budget(members)
+        try:
+            concatenated = assemble_collection(
+                members,
+                title=group_title or f"{folder.name} ({len(datasets)} files)",
+            )
+            total_spectra = int(concatenated.n_samples)
         except Exception as e:
             raise ValueError(
                 f"Failed to concatenate datasets along sample axis.\n"
@@ -1435,24 +1102,8 @@ class LoadGroupNode(Node):
                 f"This may indicate incompatible data shapes or axes."
             ) from e
 
-        # Set meaningful title
-        if group_title:
-            concatenated.title = group_title
-        else:
+        if not group_title:
             concatenated.title = f"{folder.name} ({len(datasets)} files, {total_spectra} spectra)"
-
-        # Update y-axis with file names
-        lgn_cat_y_coord = safe_get_coord(concatenated, "y")
-        if lgn_cat_y_coord is not None:
-            lgn_cat_y_coord.title = "Sample"
-            # Set labels to spectrum names (accounting for multi-spectrum files)
-            lgn_cat_y_coord.labels = y_labels
-        else:
-            # Create y-axis with spectrum names
-            lgn_cat_x_coord = safe_get_coord(concatenated, "x")
-            concatenated.set_coordset(
-                y=scp.Coord(np.arange(len(y_labels)), title="Sample", labels=y_labels), x=lgn_cat_x_coord
-            )
 
         # Attach rich metadata (SECURITY: only folder name, not full path)
         folder_name = folder.name if hasattr(folder, "name") else os.path.basename(str(folder))
@@ -1460,7 +1111,6 @@ class LoadGroupNode(Node):
             provenance=DataProvenance(
                 source_type=SourceType.EXPERIMENT,  # Closest match for file group
                 original_file_path=folder_name,  # Only folder name, sanitized in to_api_json()
-                created_datetime=datetime.utcnow().isoformat(),
             ),
             processing_steps=["load_group"],
             custom={
@@ -1469,79 +1119,67 @@ class LoadGroupNode(Node):
                     "pattern": pattern,
                     "recursive": recursive,
                     "sort_by": sort_by,
-                    "validate_axes": validate_axes,
                     "n_files": len(files),
                     "file_names": file_names,  # File names only, should not contain paths
+                    "source_manifest": source_manifest,
+                    "asset_id": asset_id,
+                    "resource_limits": {
+                        "max_files": _LOAD_GROUP_MAX_FILES,
+                        "max_source_bytes": _LOAD_GROUP_MAX_SOURCE_BYTES,
+                        "max_decoded_elements": _LOAD_GROUP_MAX_DECODED_ELEMENTS,
+                        "max_decoded_bytes": _LOAD_GROUP_MAX_DECODED_BYTES,
+                    },
                 }
             },
         )
-        set_spectra_meta(concatenated, meta)
+        result = concatenated
+        set_spectra_meta(result, meta)
 
         logger.debug(f"[LOAD_GROUP] Group loaded successfully: {concatenated.title}")
 
         # Record provenance in dataset.meta
         add_processing_step(
-            concatenated,
+            result,
             "data.load_group",
             {
                 "folder_path": folder_name,
                 "pattern": pattern,
                 "recursive": recursive,
                 "sort_by": sort_by,
-                "validate_axes": validate_axes,
                 "n_files": len(files),
+                "source_manifest_digest": source_manifest["manifest_digest"],
+                "asset_id": asset_id,
             },
             node_id=self.node_id,
         )
-        # Convert to SherpaDataset for uniform DAG contract
-        return from_nddataset(concatenated)
+        return result
 
-    def _load_single_file(self, file_path: Path) -> NDDataset:
+    def _load_single_file(self, file_path: Path, *, asset_id: str | None = None) -> _LoadedDataset:
         """
-        Load a single spectral file using centralized reader mapping.
+        Load a single spectral file through the frozen ingestion registry.
 
         Args:
             file_path: Path to file
 
         Returns:
-            NDDataset loaded from file
+            Registry projection containing the dataset and exact consumed bytes
 
         Raises:
             ValueError: If file cannot be loaded
         """
-        from spectra_sherpa.app.core.config import get_reader_for_extension
-
-        ext = file_path.suffix
-
         try:
-            # Use centralized reader mapping (supports mixed formats)
-            reader_name = get_reader_for_extension(ext)
-            reader_method = getattr(scp, reader_name)
-
-            dataset = reader_method(str(file_path))
-
-            # FAIL-FAST: No fallbacks allowed
-            if dataset is None:
-                raise ValueError(f"Reader {reader_name} returned None")
-
-            # Post-processing for specific formats
-            if ext.lower() == ".csv":
-                dataset = remove_index_columns(dataset)
-            elif ext.lower() == ".mat":
-                dataset = extract_dataset_from_result(dataset, str(file_path))
-                dataset = remove_index_columns(dataset)
-
-            # Set title to filename for tracking
+            loaded = _load_registry_asset(file_path, asset_id=asset_id)
+            dataset = loaded.dataset
+            if not isinstance(dataset, SherpaDataset):
+                raise TypeError("ingestion registry returned a non-SherpaDataset asset")
             dataset.title = file_path.stem
-
-            return dataset
-
+            return loaded
         except Exception as e:
             raise ValueError(
-                f"Failed to load {file_path.name}: {str(e)}\n" f"File type: {ext}\n" f"Full path: {file_path}"
+                f"Failed to load {file_path.name}: {str(e)}\nFile type: {file_path.suffix}\nFull path: {file_path}"
             ) from e
 
-    def _validate_axes_match(self, datasets: list[NDDataset], file_names: list[str]) -> None:
+    def _validate_axes_match(self, datasets: list[SherpaDataset], file_names: list[str]) -> None:
         """
         Validate that all datasets have identical x-axes (wavenumbers).
 
@@ -1554,37 +1192,71 @@ class LoadGroupNode(Node):
         Raises:
             ValueError: If x-axes don't match across all files
         """
-        if len(datasets) < 2:
-            return  # Nothing to validate
+        if not datasets or len(datasets) != len(file_names):
+            raise ValueError("axis validation requires one file identity per dataset")
 
         reference = datasets[0]
         reference_name = file_names[0]
 
-        # Check if reference has x-axis
-        vam_ref_x_coord = safe_get_coord(reference, "x")
-        if vam_ref_x_coord is None:
+        reference_axis = reference.feature_axis
+        if reference_axis is None or reference_axis.values is None:
             raise ValueError(
                 f"Reference file '{reference_name}' has no x-axis (wavenumbers).\n"
                 f"All files must have x-axis coordinates for validation."
             )
 
-        reference_x = np.array(vam_ref_x_coord.data)
+        reference_x = np.asarray(reference_axis.values, dtype=np.float64).reshape(-1)
+        if reference_x.size < 2 or not np.all(np.isfinite(reference_x)):
+            raise ValueError(f"X-axis validation failed: '{reference_name}' lacks a finite feature axis")
+        reference_differences = np.diff(reference_x)
+        if not (np.all(reference_differences > 0.0) or np.all(reference_differences < 0.0)):
+            raise ValueError(f"X-axis validation failed: '{reference_name}' axis is not strictly monotonic")
         reference_shape = reference_x.shape
 
         # Compare all other datasets to reference
         for i, (dataset, file_name) in enumerate(zip(datasets[1:], file_names[1:]), 2):
-            # Check if dataset has x-axis
-            vam_ds_x_coord = safe_get_coord(dataset, "x")
-            if vam_ds_x_coord is None:
+            axis = dataset.feature_axis
+            if axis is None or axis.values is None:
                 raise ValueError(
                     f"X-axis validation failed:\n"
                     f"File {i}/{len(datasets)}: '{file_name}' has no x-axis.\n"
                     f"Reference: '{reference_name}' has x-axis with {len(reference_x)} points.\n\n"
-                    f"All files must have x-axis coordinates (wavenumbers) for concatenation.\n"
-                    f"Disable 'Validate X-Axes Match' parameter to skip this check (not recommended)."
+                    f"All files must have x-axis coordinates for concatenation."
                 )
 
-            dataset_x = np.array(vam_ds_x_coord.data)
+            dataset_x = np.asarray(axis.values, dtype=np.float64).reshape(-1)
+            if dataset_x.size < 2 or not np.all(np.isfinite(dataset_x)):
+                raise ValueError(f"X-axis validation failed: '{file_name}' lacks a finite feature axis")
+            differences = np.diff(dataset_x)
+            if not (np.all(differences > 0.0) or np.all(differences < 0.0)):
+                raise ValueError(f"X-axis validation failed: '{file_name}' axis is not strictly monotonic")
+
+            reference_axis_units = _coordinate_text(reference_axis, "units")
+            dataset_axis_units = _coordinate_text(axis, "units")
+            if dataset_axis_units != reference_axis_units:
+                raise ValueError(
+                    "X-axis validation failed: "
+                    f"'{file_name}' uses {dataset_axis_units!r}, while "
+                    f"'{reference_name}' uses {reference_axis_units!r}"
+                )
+
+            reference_axis_title = _coordinate_text(reference_axis, "title")
+            dataset_axis_title = _coordinate_text(axis, "title")
+            if dataset_axis_title != reference_axis_title:
+                raise ValueError(
+                    "X-axis validation failed: "
+                    f"'{file_name}' axis title is {dataset_axis_title!r}, while "
+                    f"'{reference_name}' uses {reference_axis_title!r}"
+                )
+
+            reference_units = _coordinate_text(reference, "units")
+            dataset_units = _coordinate_text(dataset, "units")
+            if dataset_units != reference_units:
+                raise ValueError(
+                    "Signal-unit validation failed: "
+                    f"'{file_name}' uses {dataset_units!r}, while "
+                    f"'{reference_name}' uses {reference_units!r}"
+                )
 
             # Check shape match
             if dataset_x.shape != reference_shape:
@@ -1616,3 +1288,155 @@ class LoadGroupNode(Node):
             f"[LOAD_GROUP] X-axis validation passed: All {len(datasets)} spectra "
             f"have identical x-axes ({len(reference_x)} points)"
         )
+
+
+@register_node
+class CollectionLoadNode(Node):
+    """Load one exact server-authorized experiment collection and its target."""
+
+    metadata = NodeMetadata(
+        node_type="data.collection_load",
+        category="data",
+        label="Collection Load",
+        description="Load exact selected members of a project dataset",
+        parameters=[
+            NodeParameter("experiment_id", "Experiment", "number", default=None, min_value=1, category="internal"),
+            NodeParameter(
+                "stage",
+                "Stage",
+                "select",
+                default="raw",
+                options=["raw", "preprocessed", "synthetic"],
+                category="internal",
+            ),
+            NodeParameter("group_title", "Dataset Name", "text", default="", required=False, category="internal"),
+            NodeParameter("asset_id", "Scientific Asset", "text", default="", required=False, category="internal"),
+            NodeParameter("selected_file_ids", "Selected Members", "string_list", default=[], category="internal"),
+            NodeParameter("source_manifest_sha256", "Source Manifest", "text", default="", category="internal"),
+            NodeParameter(
+                "collection_definition_sha256",
+                "Collection Definition",
+                "text",
+                default="",
+                required=False,
+                category="internal",
+            ),
+            NodeParameter(
+                "scientific_collection_sha256",
+                "Scientific Collection",
+                "text",
+                default="",
+                required=False,
+                category="internal",
+            ),
+            NodeParameter(
+                "target_authority", "Target Authority", "json", default=None, required=False, category="internal"
+            ),
+            NodeParameter("group_column", "Validation Group", "text", default="", required=False, category="internal"),
+            NodeParameter(
+                "dataset_view_id",
+                "Saved Dataset Definition",
+                "number",
+                default=None,
+                required=False,
+                category="internal",
+            ),
+            NodeParameter(
+                "dataset_view_sha256",
+                "Saved Definition Digest",
+                "text",
+                default="",
+                required=False,
+                category="internal",
+            ),
+        ],
+        input_types=[],
+        input_ports=[],
+        output_type="dict",
+        output_ports=[
+            PortMetadata("default", "spectrasherpa://types/SpectralDataset/1.0", True, "Selected Dataset"),
+            PortMetadata("target", "spectrasherpa://types/TargetMatrix/1.0", False, "Target Values"),
+        ],
+        canonical_parameter_validator=_canonical_collection_load_parameters,
+        policy=NodePolicy(safe_for_auto_apply=False, requires_human_review=True, data_egress_risk="none"),
+    )
+
+    async def execute(self, *args: Any) -> dict[str, object]:
+        del args
+        parameters = self.metadata.canonicalize_parameters(self.parameters)
+        reader = ExperimentDatasetReader(
+            self.node_id,
+            {"dataset_id": parameters["experiment_id"], **parameters},
+            source_resolver=self.require_execution_runtime().require_dataset_source_resolver(),
+        )
+        return await reader.execute()
+
+
+bind_stable_execution_contract(
+    CollectionLoadNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.DATA_SOURCE,
+    implementation_id="spectrasherpa.data.collection_load",
+    implementation_version="1.0.1",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="generates_samples",
+    feature_effect="generates_features",
+    axis_effect="changes_axis",
+    unit_effect="changes_units",
+    resource_hints={"timeout_seconds": 60, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
+    license_id="CeCILL-B",
+    help_reference="docs/nodes/data.md",
+    implementation_modules=(
+        source_contracts,
+        collection_assembly_contract,
+        collection_definition_contract,
+        spectra_meta_contract,
+        dag_meta_helpers,
+        sample_labels_contract,
+        ingestion_registry_contract,
+        *ingestion_registry_contract.native_implementation_modules(),
+    ),
+    implementation_distributions=("h5py", "numpy", "pandas", "scipy"),
+    runtime_requirements=(
+        ("h5py", "3.16.0"),
+        ("numpy", "1.26.4"),
+        ("pandas", "2.3.3"),
+        ("scipy", "1.17.1"),
+    ),
+)
+
+
+bind_stable_execution_contract(
+    LoadGroupNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.DATA_SOURCE,
+    implementation_id="spectrasherpa.data.load_group",
+    implementation_version="6.0.0",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="generates_samples",
+    feature_effect="generates_features",
+    axis_effect="changes_axis",
+    unit_effect="changes_units",
+    resource_hints={"timeout_seconds": 60, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
+    license_id="CeCILL-B",
+    help_reference="docs/nodes/data.md",
+    implementation_modules=(
+        source_contracts,
+        collection_assembly_contract,
+        collection_definition_contract,
+        spectra_meta_contract,
+        dag_meta_helpers,
+        sample_labels_contract,
+        ingestion_registry_contract,
+        *ingestion_registry_contract.native_implementation_modules(),
+    ),
+    implementation_distributions=("h5py", "numpy", "pandas", "scipy"),
+    runtime_requirements=(
+        ("h5py", "3.16.0"),
+        ("numpy", "1.26.4"),
+        ("pandas", "2.3.3"),
+        ("scipy", "1.17.1"),
+    ),
+)

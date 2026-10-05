@@ -3,172 +3,34 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from dataclasses import dataclass, replace
+import os
+import stat
 from pathlib import Path
 from typing import Any, Mapping
 
-import numpy as np
-
 from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.core.prepared_data import (
+    PreparedDataOverrides as PreparedDataOverrides,
+)
+from spectra_sherpa.core.prepared_data import (
+    apply_dataset_prepared_data_overrides as apply_dataset_prepared_data_overrides,
+)
+from spectra_sherpa.core.prepared_data import (
+    apply_serialized_prepared_data_overrides as apply_serialized_prepared_data_overrides,
+)
+from spectra_sherpa.core.prepared_data import (
+    bind_explicit_target_selection as bind_explicit_target_selection,
+)
+from spectra_sherpa.core.prepared_data import (
+    merge_prepared_data_overrides,
+    parser_options_for_prepared_data,
+)
 
 logger = logging.getLogger(__name__)
-from spectra_sherpa.app.lib.data_roles import normalize_data_role
-from spectra_sherpa.app.lib.sherpa_dataset import FeatureAxis, SherpaDataset, SpectralAxis
-
-
-@dataclass(frozen=True)
-class PreparedDataOverrides:
-    title: str | None = None
-    x_title: str | None = None
-    x_units: str | None = None
-    y_title: str | None = None
-    y_units: str | None = None
-    is_time_series: bool | None = None
-    data_role: str | None = None
-    target_column: str | None = None
-    target_type: str | None = None
-    target_mode: str | None = None
-    selected_target: str | None = None
-
-    @classmethod
-    def from_mapping(cls, overrides: Mapping[str, Any] | None) -> "PreparedDataOverrides":
-        if not overrides:
-            return cls()
-        return cls(
-            title=_normalize_text(overrides.get("title"), allow_empty=True),
-            x_title=_normalize_text(overrides.get("x_title"), allow_empty=True),
-            x_units=_normalize_text(overrides.get("x_units"), allow_empty=True),
-            y_title=_normalize_text(overrides.get("y_title"), allow_empty=True),
-            y_units=_normalize_text(overrides.get("y_units"), allow_empty=True),
-            is_time_series=_normalize_bool(overrides.get("is_time_series")),
-            data_role=_normalize_data_role_value(overrides.get("data_role")),
-            target_column=_normalize_text(overrides.get("target_column")),
-            target_type=_normalize_target_type(overrides.get("target_type")),
-            target_mode=_normalize_target_mode(overrides.get("target_mode")),
-            selected_target=_normalize_text(overrides.get("selected_target")),
-        )
-
-    def to_sidecar_dict(self) -> dict[str, Any]:
-        payload: dict[str, Any] = {}
-        if self.title is not None:
-            payload["title"] = self.title
-        if self.x_title is not None:
-            payload["x_title"] = self.x_title
-        if self.x_units is not None:
-            payload["x_units"] = self.x_units
-        if self.y_title is not None:
-            payload["y_title"] = self.y_title
-        if self.y_units is not None:
-            payload["y_units"] = self.y_units
-        if self.is_time_series is not None:
-            payload["is_time_series"] = self.is_time_series
-        if self.data_role is not None:
-            payload["data_role"] = self.data_role
-        if self.target_column is not None:
-            payload["target_column"] = self.target_column
-        if self.target_type is not None:
-            payload["target_type"] = self.target_type
-        if self.target_mode is not None:
-            payload["target_mode"] = self.target_mode
-        if self.selected_target is not None:
-            payload["selected_target"] = self.selected_target
-        return payload
-
-    def to_prompt_dict(self) -> dict[str, Any]:
-        payload = self.to_sidecar_dict()
-        if "y_title" in payload:
-            payload["data_quantity"] = payload.pop("y_title")
-        return payload
-
-    def is_empty(self) -> bool:
-        return not any(
-            value is not None
-            for value in (
-                self.x_title,
-                self.title,
-                self.x_units,
-                self.y_title,
-                self.y_units,
-                self.is_time_series,
-                self.data_role,
-                self.target_column,
-                self.target_type,
-                self.target_mode,
-                self.selected_target,
-            )
-        )
 
 
 _OVERRIDES_DIR = Path(settings.data_dir) / ".metadata_overrides"
-
-
-def _normalize_text(value: Any, *, allow_empty: bool = False) -> str | None:
-    if value is None:
-        return None
-    text = str(value)
-    if not text and not allow_empty:
-        return None
-    return text
-
-
-def _normalize_bool(value: Any) -> bool | None:
-    if value is None:
-        return None
-    return bool(value)
-
-
-def _normalize_data_role_value(value: Any) -> str | None:
-    if value is None or value == "":
-        return None
-    return normalize_data_role(value)
-
-
-def _normalize_target_type(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip().lower()
-    if not text or text == "auto":
-        return None
-    if text not in {"continuous", "categorical"}:
-        raise ValueError("target_type must be continuous, categorical, or auto")
-    return text
-
-
-def _normalize_target_mode(value: Any) -> str | None:
-    if value is None:
-        return None
-    text = str(value).strip().lower()
-    if not text or text == "auto":
-        return None
-    aliases = {
-        "single-target": "single",
-        "single_property": "single",
-        "single-property": "single",
-        "multi-target": "multi",
-        "multi_property": "multi",
-        "multi-property": "multi",
-    }
-    text = aliases.get(text, text)
-    if text not in {"single", "multi"}:
-        raise ValueError("target_mode must be single, multi, or auto")
-    return text
-
-
-def _selected_target_from_context(dataset: SherpaDataset, selected: str | None) -> str | None:
-    tc = dataset.target_context
-    names = list(tc.target_names or [])
-    if selected and (not names or selected in names):
-        return selected
-    if selected and names and selected not in names:
-        available = ", ".join(str(name) for name in names)
-        raise ValueError(f"Selected target '{selected}' is not available. Available targets: {available}.")
-    if names:
-        return str(names[0])
-    if selected:
-        return selected
-    if tc.target_name:
-        return str(tc.target_name)
-    return None
+PREPARED_DATA_SIDECAR_MAX_BYTES = 64 * 1024
 
 
 def normalize_relative_data_path(file_path: str) -> str:
@@ -246,6 +108,63 @@ def load_prepared_data_overrides(
     return PreparedDataOverrides()
 
 
+def load_prepared_data_overrides_strict(
+    *,
+    file_path: str | None = None,
+    source: str | None = None,
+    name: str | None = None,
+) -> PreparedDataOverrides:
+    """Read one persisted sidecar without links, truncation, or silent defaults.
+
+    Absence has the exact empty-override meaning.  Once a sidecar exists, its
+    bytes are durable scientific state: callers that bind or export a project
+    must refuse rather than reinterpret an unreadable record as empty.
+    """
+
+    target = sidecar_path(file_path=file_path, source=source, name=name)
+    try:
+        observed = target.lstat()
+    except FileNotFoundError:
+        return PreparedDataOverrides()
+    if stat.S_ISLNK(observed.st_mode) or not stat.S_ISREG(observed.st_mode):
+        raise ValueError("prepared-data sidecar is not a regular file")
+    if observed.st_size > PREPARED_DATA_SIDECAR_MAX_BYTES:
+        raise ValueError("prepared-data sidecar exceeds the 64 KiB limit")
+
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_BINARY", 0)
+    try:
+        descriptor = os.open(target, flags)
+    except OSError as exc:
+        raise ValueError("prepared-data sidecar is unavailable") from exc
+    try:
+        admitted = os.fstat(descriptor)
+        if not stat.S_ISREG(admitted.st_mode):
+            raise ValueError("prepared-data sidecar is not a regular file")
+        if admitted.st_size > PREPARED_DATA_SIDECAR_MAX_BYTES:
+            raise ValueError("prepared-data sidecar exceeds the 64 KiB limit")
+        chunks: list[bytes] = []
+        remaining = PREPARED_DATA_SIDECAR_MAX_BYTES + 1
+        while remaining:
+            chunk = os.read(descriptor, min(64 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        payload = b"".join(chunks)
+        if len(payload) > PREPARED_DATA_SIDECAR_MAX_BYTES:
+            raise ValueError("prepared-data sidecar exceeds the 64 KiB limit")
+    finally:
+        os.close(descriptor)
+
+    try:
+        decoded = json.loads(payload.decode("utf-8"))
+        if not isinstance(decoded, Mapping):
+            raise ValueError("prepared-data sidecar must contain an object")
+        return PreparedDataOverrides.from_sidecar_mapping(decoded)
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        raise ValueError("prepared-data sidecar is invalid") from exc
+
+
 def save_prepared_data_overrides(
     overrides: PreparedDataOverrides | Mapping[str, Any],
     *,
@@ -256,176 +175,13 @@ def save_prepared_data_overrides(
     prepared = (
         overrides if isinstance(overrides, PreparedDataOverrides) else PreparedDataOverrides.from_mapping(overrides)
     )
+    if prepared.csv_layout is not None:
+        if file_path is None:
+            raise ValueError("csv_layout requires one exact CSV file source")
+        parser_options_for_prepared_data(Path(file_path).name, prepared)
     target = sidecar_path(file_path=file_path, source=source, name=name)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(prepared.to_sidecar_dict(), indent=2), encoding="utf-8")
-
-
-def apply_serialized_prepared_data_overrides(
-    result: dict[str, Any],
-    overrides: PreparedDataOverrides | Mapping[str, Any],
-) -> dict[str, Any]:
-    prepared = (
-        overrides if isinstance(overrides, PreparedDataOverrides) else PreparedDataOverrides.from_mapping(overrides)
-    )
-    if prepared.is_empty():
-        return result
-
-    if prepared.title is not None:
-        result["title"] = prepared.title
-    meta = result.setdefault("metadata", {})
-    if prepared.x_title is not None:
-        meta["x_title"] = prepared.x_title
-        axis = result.get("x_axis") or result.get("feature_axis")
-        if isinstance(axis, dict):
-            axis["title"] = prepared.x_title
-    if prepared.x_units is not None:
-        meta["x_units"] = prepared.x_units
-        axis = result.get("x_axis") or result.get("feature_axis")
-        if isinstance(axis, dict):
-            axis["units"] = prepared.x_units
-    if prepared.y_title is not None:
-        meta["data_quantity"] = prepared.y_title
-    if prepared.y_units is not None:
-        meta["value_units"] = prepared.y_units
-    if prepared.is_time_series is not None:
-        meta["is_time_series"] = prepared.is_time_series
-        result["is_time_series"] = prepared.is_time_series
-    if prepared.data_role is not None:
-        meta["data_role"] = prepared.data_role
-        result["data_role"] = prepared.data_role
-    if prepared.target_column is not None:
-        meta["target_column"] = prepared.target_column
-    if prepared.target_type is not None:
-        meta["target_type"] = prepared.target_type
-    if prepared.target_mode is not None:
-        meta["target_mode"] = prepared.target_mode
-    if prepared.selected_target is not None:
-        meta["selected_target"] = prepared.selected_target
-
-    if prepared.target_mode is not None or prepared.selected_target is not None:
-        target_context = result.get("target_context")
-        if isinstance(target_context, dict):
-            if prepared.target_mode == "multi":
-                target_context["selected_target"] = None
-            else:
-                names = target_context.get("target_names")
-                selected = prepared.selected_target
-                if selected is None and isinstance(names, list) and names:
-                    selected = str(names[0])
-                if selected is not None:
-                    target_context["selected_target"] = selected
-    return result
-
-
-def apply_dataset_prepared_data_overrides(
-    dataset: SherpaDataset,
-    overrides: PreparedDataOverrides | Mapping[str, Any],
-    *,
-    allow_x_title: bool = True,
-    allow_x_units: bool = True,
-    allow_y_title: bool = True,
-    allow_is_time_series: bool = True,
-) -> SherpaDataset:
-    prepared = (
-        overrides if isinstance(overrides, PreparedDataOverrides) else PreparedDataOverrides.from_mapping(overrides)
-    )
-    if prepared.is_empty():
-        return dataset
-    if dataset.get_extra("csv.layout") == "axis_column_conditions" and prepared.data_role == "X_features":
-        prepared = replace(prepared, data_role=None)
-
-    if prepared.title is not None:
-        dataset.title = prepared.title
-
-    feature_axis = dataset.feature_axis
-    if (
-        feature_axis is None
-        and dataset.data.ndim >= 1
-        and (prepared.x_title is not None or prepared.x_units is not None)
-    ):
-        axis_cls = FeatureAxis if prepared.data_role == "X_features" else SpectralAxis
-        feature_axis = axis_cls(values=np.arange(dataset.data.shape[-1], dtype=float), title="Feature")
-        dataset.feature_axis = feature_axis
-
-    if prepared.data_role is not None:
-        dataset.data_role = prepared.data_role
-
-    if feature_axis is not None and (prepared.x_title is not None or prepared.x_units is not None):
-        updated_axis = feature_axis.copy()
-        if allow_x_title and prepared.x_title is not None:
-            updated_axis.title = prepared.x_title
-        if allow_x_units and prepared.x_units is not None:
-            updated_axis.units = prepared.x_units or None
-        dataset.feature_axis = updated_axis
-
-    domain = dataset.domain.model_copy(deep=True)
-    if allow_x_units and prepared.x_units is not None:
-        domain.expected_units = prepared.x_units or None
-    if allow_y_title and prepared.y_title is not None:
-        domain.data_quantity = prepared.y_title
-    dataset.domain = domain
-    if prepared.y_units is not None:
-        dataset.units = prepared.y_units or None
-
-    if allow_x_title and prepared.x_title is not None:
-        dataset.meta["x_title"] = prepared.x_title
-    if allow_x_units and prepared.x_units is not None:
-        dataset.meta["x_units"] = prepared.x_units
-    if allow_y_title and prepared.y_title is not None:
-        dataset.meta["data_quantity"] = prepared.y_title
-    if prepared.y_units is not None:
-        dataset.meta["value_units"] = prepared.y_units or None
-        dataset.set_extra("scp.value_units_label", prepared.y_units or None)
-    if allow_is_time_series and prepared.is_time_series is not None:
-        dataset.is_time_series = prepared.is_time_series
-        dataset.meta["is_time_series"] = prepared.is_time_series
-    if prepared.target_column is not None:
-        dataset.meta["csv.target_column"] = prepared.target_column
-    if prepared.target_type is not None:
-        dataset.meta["csv.target_type"] = prepared.target_type
-    if prepared.target_mode is not None:
-        dataset.meta["target_mode"] = prepared.target_mode
-    if prepared.selected_target is not None:
-        dataset.meta["selected_target"] = prepared.selected_target
-
-    if prepared.target_mode is not None or prepared.selected_target is not None:
-        if prepared.target_mode == "multi":
-            dataset.target_context = dataset.target_context.model_copy(update={"selected_target": None})
-            dataset.meta.pop("selected_target", None)
-        else:
-            selected = _selected_target_from_context(dataset, prepared.selected_target)
-            if selected is not None:
-                dataset.target_context = dataset.target_context.model_copy(update={"selected_target": selected})
-                dataset.meta["selected_target"] = selected
-
-    return dataset
-
-
-def merge_prepared_data_overrides(overrides: list[PreparedDataOverrides]) -> PreparedDataOverrides:
-    merged = PreparedDataOverrides()
-    for current in overrides:
-        if current.title is not None and merged.title is None:
-            merged = replace(merged, title=current.title)
-        if current.x_title is not None and merged.x_title is None:
-            merged = replace(merged, x_title=current.x_title)
-        if current.x_units is not None and merged.x_units is None:
-            merged = replace(merged, x_units=current.x_units)
-        if current.y_title is not None and merged.y_title is None:
-            merged = replace(merged, y_title=current.y_title)
-        if current.is_time_series is not None and merged.is_time_series is None:
-            merged = replace(merged, is_time_series=current.is_time_series)
-        if current.data_role is not None and merged.data_role is None:
-            merged = replace(merged, data_role=current.data_role)
-        if current.target_column is not None and merged.target_column is None:
-            merged = replace(merged, target_column=current.target_column)
-        if current.target_type is not None and merged.target_type is None:
-            merged = replace(merged, target_type=current.target_type)
-        if current.target_mode is not None and merged.target_mode is None:
-            merged = replace(merged, target_mode=current.target_mode)
-        if current.selected_target is not None and merged.selected_target is None:
-            merged = replace(merged, selected_target=current.selected_target)
-    return merged
 
 
 def load_prepared_data_overrides_for_source(
@@ -458,12 +214,6 @@ def reference_dataset_name(*, source: str, parameters: Mapping[str, Any]) -> str
     if source == "eigenvector":
         value = parameters.get("eigenvector_dataset")
         return str(value) if value else None
-    if source == "spectrochempy":
-        example_dataset = str(parameters.get("example_dataset") or "").strip()
-        example_file = str(parameters.get("example_file") or "").strip()
-        if example_file:
-            return example_file if "/" in example_file else f"{example_dataset}/{example_file}"
-        return example_dataset or None
     if source == "oes":
         value = parameters.get("oes_dataset")
         return str(value) if value else None

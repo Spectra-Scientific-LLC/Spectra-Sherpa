@@ -1,23 +1,13 @@
-"""Calibration Transfer nodes for multi-instrument standardization.
+"""Canonical calibration-transfer nodes.
 
-This package provides:
-- PDS (Piecewise Direct Standardization) — local window regression transfer
-- SBC (Slope/Bias Correction) — global linear spectral correction
-
-These nodes enable spectra measured on a secondary instrument to be
-transformed into the response space of a primary (master) instrument,
-allowing a single calibration model to be applied across instruments.
+Each scientific method owns one explicit fit operation. A shared application
+operation consumes their common closed envelope without refitting.
 """
 
-# Import node modules to trigger @register_node decorators
-from . import (  # noqa: F401
-    pds_node,
-    sbc_node,
-)
+from . import apply_node, ds_node, pds_node, sws_node  # noqa: F401
+from .apply_node import ApplySpectralTransferNode
+from .ds_node import DSNode
 from .pds_node import PDSNode
-from .sbc_node import SBCNode
+from .sws_node import SWSNode
 
-__all__ = [
-    "PDSNode",
-    "SBCNode",
-]
+__all__ = ["ApplySpectralTransferNode", "DSNode", "PDSNode", "SWSNode"]

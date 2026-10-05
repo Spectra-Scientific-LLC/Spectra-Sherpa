@@ -1,0 +1,89 @@
+schema_version: 1
+name: Harmonized Nonnegative Spectra
+slug: harmonized_nonnegative_spectra
+description: Align spectra to an explicit reference grid, retain one declared wavenumber interval, and preserve separate rubberband-baseline and literal nonnegative-floor preparation branches.
+category: preprocessing
+is_active: true
+status: ready
+template_data:
+  nodes:
+  - node_id: source_1
+    node_type: data.file_load
+    label: Load Source Spectra
+    parameters: {}
+    example_binding:
+      source: synthetic
+      dataset_name: instrument_source_spectra
+    position_x: 80
+    position_y: 100
+  - node_id: reference_1
+    node_type: data.file_load
+    label: Load Reference Grid
+    parameters: {}
+    example_binding:
+      source: synthetic
+      dataset_name: reference_instrument_grid
+    position_x: 520
+    position_y: 100
+  - node_id: align_1
+    node_type: preprocess.wavenumber_align
+    label: Align to Reference Grid
+    parameters:
+      method: pchip
+      extrapolation: reject
+    position_x: 300
+    position_y: 350
+  - node_id: range_1
+    node_type: preprocess.clip_range
+    label: Retain Validated Wavenumber Range
+    parameters:
+      minimum: 1000.0
+      maximum: 3200.0
+    position_x: 300
+    position_y: 600
+  - node_id: rubberband_1
+    node_type: baseline.rubberband
+    label: Rubberband Baseline Branch
+    parameters: {}
+    position_x: 100
+    position_y: 850
+  - node_id: floor_1
+    node_type: preprocess.clip_floor
+    label: Literal Nonnegative Floor Branch
+    parameters:
+      floor: 0.0
+    position_x: 500
+    position_y: 850
+  edges:
+  - from_node_id: source_1
+    to_node_id: align_1
+    to_input: spectra
+  - from_node_id: reference_1
+    to_node_id: align_1
+    to_input: reference
+  - from_node_id: align_1
+    to_node_id: range_1
+  - from_node_id: range_1
+    to_node_id: rubberband_1
+  - from_node_id: range_1
+    to_node_id: floor_1
+  canvas_state:
+    zoom: 0.9
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: source_1
+      required: true
+      binding_mode: separate_source
+      description: Finite source-instrument spectra with an explicit cm-1 axis
+      accepted_techniques: [FTIR, NIR, Raman]
+    reference_grid:
+      role_type: wavelength_axis
+      node_binding: reference_1
+      required: true
+      binding_mode: separate_source
+      connects_to_port: reference
+      description: Reference-instrument spectrum whose explicit cm-1 grid defines output coordinates
+      accepted_techniques: [FTIR, NIR, Raman]

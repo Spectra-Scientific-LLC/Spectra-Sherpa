@@ -1,14 +1,9 @@
 from .actor import Actor
 from .api_key import APIKeyCreate, APIKeyInfo
-from .builder import (
-    BlendRequest,
-    BlendResponse,
-    CurveDefaultsResponse,
-    CurvePointsRequest,
-    CurvePointsResponse,
-    PreprocessRequest,
-    PreprocessResponse,
-    SpectrumPayload,
+from .experiment_specimens import (
+    ExperimentSpecimenCreate,
+    ExperimentSpecimenOut,
+    ExperimentSpecimenUpdate,
 )
 from .experiments import (
     ExperimentCreate,
@@ -46,15 +41,13 @@ __all__ = [
     "APIKeyCreate",
     "APIKeyInfo",
     "Actor",
-    "BlendRequest",
-    "BlendResponse",
-    "CurveDefaultsResponse",
-    "CurvePointsRequest",
-    "CurvePointsResponse",
     "ExperimentCreate",
     "ExperimentDetail",
     "ExperimentFileOut",
     "ExperimentSummary",
+    "ExperimentSpecimenCreate",
+    "ExperimentSpecimenOut",
+    "ExperimentSpecimenUpdate",
     "ExperimentUpdate",
     "JobInfo",
     "GenerateScriptRequest",
@@ -71,9 +64,6 @@ __all__ = [
     "ProjectScriptUpdate",
     "SaveProjectRequest",
     "ScriptBrief",
-    "PreprocessRequest",
-    "PreprocessResponse",
-    "SpectrumPayload",
     "VersionCreate",
     "VersionInfo",
     "LogEntry",

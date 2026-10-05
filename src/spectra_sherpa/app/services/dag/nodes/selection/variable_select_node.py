@@ -1,50 +1,347 @@
-"""Variable selection node — chemometric feature selection.
+"""Closed, target-free variable-rule application for canonical DAGs.
 
-Registered as ``selection.variable_select``.
+Registered as ``selection.variable_select``.  This node does not search or
+validate a model.  It applies one declared feature rule to one matrix: an
+explicit interval, a detected-peak window, an exact external mask, or a
+threshold over one of three established PLS importance measures.
 
-Consolidates interval, peak-window, VIP, coefficient-magnitude, and
-selectivity-ratio methods into a single node.  All methods produce a
-boolean feature mask written to ``FeatureAxis.include_mask``.
+PLS importance semantics follow the mdatools variable-selection reference.
+Peak locations use SciPy's documented prominence definition.  Predictive
+validity remains the responsibility of leakage-safe validation downstream.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
 from scipy import signal
 
+from spectra_sherpa.app.lib import fitted_state
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    TargetAccess,
+    WorkerCapability,
+)
 
 from ...io_contracts import bind_X, build_dataset_like, to_numpy_2d
-from ...node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
+from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, NodeResult, PortMetadata, register_node
+from . import _selectivity_ratio
 
 logger = logging.getLogger(__name__)
+
+_METHODS = {"interval", "peak_window", "apply_mask", "vip", "coef_abs", "selectivity_ratio"}
+_REPORT_SCHEMA = "spectrasherpa.selection.variable_select.report/1"
+_SCOPE = "target_free_feature_rule_not_predictive_validation"
+
+
+def _finite_number(value: object, *, name: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value):
+        raise ValueError(f"selection.variable_select {name} must be finite and numeric")
+    return float(value)
+
+
+def _canonical_variable_select_parameters(parameters: Mapping[str, Any]) -> dict[str, object]:
+    """Close parameters around the selected rule; irrelevant fields fail."""
+
+    method = parameters.get("method", "vip")
+    if method not in _METHODS:
+        raise ValueError(f"selection.variable_select method must be one of: {', '.join(sorted(_METHODS))}")
+    allowed_by_method = {
+        "interval": {"method", "region_start", "region_end", "invert"},
+        "peak_window": {"method", "peak_prominence", "peak_half_window", "include_negative_extrema", "invert"},
+        "apply_mask": {"method", "invert"},
+        "vip": {"method", "threshold", "invert"},
+        "coef_abs": {"method", "threshold", "invert"},
+        "selectivity_ratio": {"method", "threshold", "invert"},
+    }
+    allowed = allowed_by_method[str(method)]
+    defaults = {
+        "region_start": None,
+        "region_end": None,
+        "peak_prominence": 0.1,
+        "peak_half_window": 10,
+        "include_negative_extrema": False,
+        "threshold": 1.0,
+    }
+    unknown = sorted(name for name in parameters if name not in allowed and name not in defaults)
+    if unknown:
+        raise ValueError(f"selection.variable_select method {method!r} does not accept: {', '.join(unknown)}")
+    contradictory = sorted(
+        name
+        for name, default in defaults.items()
+        if name not in allowed and name in parameters and parameters[name] != default
+    )
+    if contradictory:
+        raise ValueError(
+            f"selection.variable_select method {method!r} does not accept non-default values for: "
+            f"{', '.join(contradictory)}"
+        )
+    invert = parameters.get("invert", False)
+    if not isinstance(invert, bool):
+        raise ValueError("selection.variable_select invert must be boolean")
+    resolved: dict[str, object] = {"method": method, "invert": invert}
+    if method == "interval":
+        if "region_start" not in parameters or "region_end" not in parameters:
+            raise ValueError("selection.variable_select interval requires region_start and region_end")
+        start = _finite_number(parameters["region_start"], name="region_start")
+        end = _finite_number(parameters["region_end"], name="region_end")
+        if start == end:
+            raise ValueError("selection.variable_select interval endpoints must differ")
+        resolved.update(region_start=start, region_end=end)
+    elif method == "peak_window":
+        prominence = _finite_number(parameters.get("peak_prominence", 0.1), name="peak_prominence")
+        if prominence <= 0.0 or prominence > 1.0:
+            raise ValueError("selection.variable_select peak_prominence must be a relative value in (0, 1]")
+        half_window = parameters.get("peak_half_window", 10)
+        if isinstance(half_window, bool) or not isinstance(half_window, int) or not 1 <= half_window <= 10_000:
+            raise ValueError("selection.variable_select peak_half_window must be an integer in [1, 10000]")
+        include_negative = parameters.get("include_negative_extrema", False)
+        if not isinstance(include_negative, bool):
+            raise ValueError("selection.variable_select include_negative_extrema must be boolean")
+        resolved.update(
+            peak_prominence=prominence,
+            peak_half_window=half_window,
+            include_negative_extrema=include_negative,
+        )
+    elif method in {"vip", "coef_abs", "selectivity_ratio"}:
+        threshold = _finite_number(parameters.get("threshold", 1.0), name="threshold")
+        upper = 1.0 if method == "coef_abs" else 1_000_000.0
+        if threshold <= 0.0 or threshold > upper:
+            raise ValueError(f"selection.variable_select {method} threshold must be in (0, {upper:g}]")
+        resolved["threshold"] = threshold
+    return resolved
+
+
+def _digest_vector(values: np.ndarray, *, dtype: str) -> str:
+    return hashlib.sha256(np.asarray(values, dtype=dtype).tobytes(order="C")).hexdigest()
+
+
+def _extract_pls_model(model_input: Any) -> Any:
+    if isinstance(model_input, Mapping):
+        if "schema_version" in model_input:
+            from ..modeling.fitted_pls_node import verify_fitted_pls_state_envelope
+
+            state = verify_fitted_pls_state_envelope(model_input)
+            # Existing coefficient selection owns the vector/single-target check.
+            from types import SimpleNamespace
+
+            return SimpleNamespace(coef_=np.asarray(state["coefficients"], dtype=float))
+        for key in ("model", "pls_model"):
+            if key in model_input:
+                return model_input[key]
+    return model_input
+
+
+def _model_coefficients(model: Any, *, features: int) -> np.ndarray:
+    if model is None:
+        raise ValueError("The selected PLS importance rule requires a connected fitted PLS model")
+    fitted = _extract_pls_model(model)
+    raw = fitted_state._safe_getattr(fitted, ("coef", "coef_", "coefficients", "_coef"))
+    if raw is None:
+        raise ValueError("Could not extract regression coefficients from the fitted PLS model")
+    raw_value = raw.data if hasattr(raw, "data") else raw
+    coefficients = np.asarray(raw_value, dtype=np.float64).reshape(-1)
+    if coefficients.shape != (features,) or not np.isfinite(coefficients).all():
+        raise ValueError("PLS coefficient vector must be finite and match the feature count exactly")
+    return coefficients
+
+
+def _vip_scores(value: Any, *, features: int) -> np.ndarray:
+    if value is None:
+        raise ValueError("VIP selection requires connected producer-owned importance scores")
+    scores = np.asarray(value, dtype=np.float64)
+    if scores.shape != (features,) or not np.isfinite(scores).all() or np.any(scores < 0.0):
+        raise ValueError("PLS VIP scores must be finite, non-negative, and match the feature count")
+    return scores
+
+
+def _strict_mask(value: Any, *, features: int) -> np.ndarray:
+    raw = value.data if hasattr(value, "data") else value
+    array = np.asarray(raw)
+    if array.ndim != 1 or array.shape != (features,) or array.dtype.kind != "b":
+        raise ValueError("Connected mask must be a one-dimensional boolean vector matching the feature count")
+    return np.array(array, dtype=bool, copy=True)
+
+
+def _rule_mask(
+    matrix: np.ndarray,
+    axis_values: np.ndarray | None,
+    *,
+    model: Any,
+    supplied_mask: Any,
+    importance_scores: Any,
+    parameters: Mapping[str, object],
+) -> tuple[np.ndarray, np.ndarray | None, list[int]]:
+    method = str(parameters["method"])
+    features = matrix.shape[1]
+    scores: np.ndarray | None = None
+    selected_landmarks: list[int] = []
+    if method == "interval":
+        start, end = float(parameters["region_start"]), float(parameters["region_end"])
+        lo, hi = min(start, end), max(start, end)
+        coordinates = axis_values if axis_values is not None else np.arange(features, dtype=np.float64)
+        mask = (coordinates >= lo) & (coordinates <= hi)
+    elif method == "peak_window":
+        centered = np.mean(matrix, axis=0) - float(np.median(np.mean(matrix, axis=0)))
+        magnitude = np.abs(centered)
+        maximum = float(np.max(magnitude))
+        if maximum <= np.finfo(np.float64).eps:
+            raise ValueError("Peak-window selection found no extrema in a constant mean spectrum")
+        normalized = centered / maximum
+        positive, _ = signal.find_peaks(normalized, prominence=float(parameters["peak_prominence"]))
+        peaks = positive
+        if bool(parameters["include_negative_extrema"]):
+            negative, _ = signal.find_peaks(-normalized, prominence=float(parameters["peak_prominence"]))
+            peaks = np.unique(np.concatenate((positive, negative)))
+        if peaks.size == 0:
+            raise ValueError("Peak-window selection found no extrema at the declared prominence")
+        selected_landmarks = np.asarray(peaks, dtype=int).tolist()
+        mask = np.zeros(features, dtype=bool)
+        half_window = int(parameters["peak_half_window"])
+        for peak in peaks:
+            mask[max(0, int(peak) - half_window) : min(features, int(peak) + half_window + 1)] = True
+        scores = magnitude / maximum
+    elif method == "apply_mask":
+        if supplied_mask is None:
+            raise ValueError("apply_mask requires a connected boolean mask")
+        mask = _strict_mask(supplied_mask, features=features)
+        scores = mask.astype(np.float64)
+    elif method == "vip":
+        scores = _vip_scores(importance_scores, features=features)
+        mask = scores >= float(parameters["threshold"])
+    elif method == "coef_abs":
+        scores = np.abs(_model_coefficients(model, features=features))
+        maximum = float(np.max(scores))
+        if maximum <= np.finfo(np.float64).eps:
+            raise ValueError("Coefficient-magnitude selection requires a non-zero coefficient vector")
+        scores = scores / maximum
+        mask = scores >= float(parameters["threshold"])
+    else:
+        coefficients = _model_coefficients(model, features=features)
+        scores = _selectivity_ratio.target_projection_selectivity_ratio(matrix, coefficients)
+        mask = scores >= float(parameters["threshold"])
+    mask = np.asarray(mask, dtype=bool)
+    if bool(parameters["invert"]):
+        mask = ~mask
+    if mask.shape != (features,) or not np.any(mask):
+        raise ValueError(f"Variable-selection rule {method!r} retained no variables")
+    if scores is not None and (scores.shape != (features,) or not np.isfinite(scores).all()):
+        raise ValueError(f"Variable-selection rule {method!r} produced invalid scores")
+    return mask, scores, selected_landmarks
+
+
+def _feature_axis(dataset: Any, *, features: int) -> tuple[Any, np.ndarray | None, str | None]:
+    axis = getattr(dataset, "feature_axis", None)
+    values = None if axis is None else getattr(axis, "values", None)
+    if values is None:
+        return axis, None, None
+    array = np.asarray(values, dtype=np.float64)
+    if array.shape != (features,) or not np.isfinite(array).all():
+        raise ValueError("Feature-axis values must be finite and match the feature count")
+    return axis, array, _digest_vector(array, dtype="<f8")
+
+
+def _variable_select_execute(
+    X: Any,
+    model: Any = None,
+    mask: Any = None,
+    importance_scores: Any = None,
+    *,
+    node_id: str,
+    parameters: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    canonical = _canonical_variable_select_parameters(parameters)
+    dataset = bind_X(X, missing_message="Variable selection requires X", allow_array=True)
+    matrix = to_numpy_2d(dataset, name="X", dtype=np.float64)
+    if isinstance(model, Mapping) and "schema_version" in model:
+        from ...fitted_input_identity import require_fitted_input_identity
+        from ..modeling.fitted_pls_node import verify_fitted_pls_state_envelope
+
+        state = verify_fitted_pls_state_envelope(model)
+        require_fitted_input_identity(dataset, state["input_identity"], features=matrix.shape[1])
+    if matrix.shape[0] < 1 or matrix.shape[1] < 2 or not np.isfinite(matrix).all():
+        raise ValueError("Variable selection requires a finite matrix with at least two features")
+    axis, axis_values, axis_digest = _feature_axis(dataset, features=matrix.shape[1])
+    selected, scores, landmarks = _rule_mask(
+        matrix,
+        axis_values,
+        model=model,
+        supplied_mask=mask,
+        importance_scores=importance_scores,
+        parameters=canonical,
+    )
+    reduced = build_dataset_like(matrix[:, selected], dataset)
+    selected_count = int(selected.sum())
+    if axis is not None and axis_values is not None:
+        from spectra_sherpa.app.lib.sherpa_dataset import FeatureAxis, SpectralAxis
+
+        axis_class = type(axis) if isinstance(axis, FeatureAxis) else SpectralAxis
+        labels = getattr(axis, "labels", None)
+        reduced.feature_axis = axis_class(
+            values=axis_values[selected],
+            labels=list(np.asarray(labels)[selected]) if labels is not None else None,
+            units=getattr(axis, "units", None),
+            title=getattr(axis, "title", None),
+            include_mask=np.ones(selected_count, dtype=bool),
+            selection_method=str(canonical["method"]),
+            selection_scores=scores[selected] if scores is not None else None,
+        )
+    reduced.meta["feature_mask"] = selected.tolist()
+    report = {
+        "schema": _REPORT_SCHEMA,
+        "method": canonical["method"],
+        "parameters": dict(canonical),
+        "selection_scope": _SCOPE,
+        "predictive_performance_claimed": False,
+        "reference_samples": matrix.shape[0],
+        "reference_features": matrix.shape[1],
+        "selected_features": selected_count,
+        "feature_axis_values_sha256": axis_digest,
+        "feature_mask_sha256": _digest_vector(selected, dtype="?"),
+        "score_sha256": None if scores is None else _digest_vector(scores, dtype="<f8"),
+        "detected_extrema_indices": landmarks,
+    }
+    add_processing_step(
+        reduced,
+        "selection.variable_select",
+        {"selection_report": report, "feature_mask": selected.tolist()},
+        node_id,
+    )
+    outputs: dict[str, Any] = {
+        "default": reduced,
+        "X_selected": reduced,
+        "mask": selected,
+        "selection_report": report,
+    }
+    if scores is not None:
+        outputs["scores"] = scores
+    diagnostics = {
+        "method": canonical["method"],
+        "n_selected": selected_count,
+        "n_total": matrix.shape[1],
+        "pct_selected": round(100.0 * selected_count / matrix.shape[1], 1),
+        "selection_scope": _SCOPE,
+    }
+    return outputs, diagnostics
 
 
 @register_node
 class VariableSelectNode(Node):
-    """Select informative spectral variables (wavelengths/features).
-
-    Produces a boolean feature mask and optional importance scores.
-    The mask is written to ``FeatureAxis.include_mask`` on the output
-    dataset, establishing the feature selection contract.
-
-    Methods:
-    - **interval**: Select contiguous wavenumber region(s).
-    - **peak_window**: Detect peaks and select +-window around each.
-    - **apply_mask**: Reuse an externally supplied boolean mask.
-    - **vip**: Variable Importance in Projection from a PLS model.
-    - **coef_abs**: Absolute regression coefficients from a PLS model.
-    - **selectivity_ratio**: Target-projection selectivity ratio from PLS.
-    """
+    """Apply one declared, target-free feature-selection rule."""
 
     metadata = NodeMetadata(
         node_type="selection.variable_select",
         category="selection",
-        label="Variable Selection",
-        description="Select informative wavelengths using chemometric criteria",
+        label="Variable Selection Rule",
+        description="Apply an explicit interval, peak, mask, or fitted-PLS importance rule",
         parameters=[
             NodeParameter(
                 name="method",
@@ -55,33 +352,28 @@ class VariableSelectNode(Node):
                     {"label": "Peak Window", "value": "peak_window"},
                     {"label": "Apply Existing Mask", "value": "apply_mask"},
                     {"label": "VIP (PLS)", "value": "vip"},
-                    {"label": "Coefficient Magnitude", "value": "coef_abs"},
-                    {"label": "Selectivity Ratio", "value": "selectivity_ratio"},
+                    {"label": "Normalized Coefficient Magnitude", "value": "coef_abs"},
+                    {"label": "Target-Projection Selectivity Ratio", "value": "selectivity_ratio"},
                 ],
                 default="vip",
-                description="Variable selection criterion",
                 required=True,
             ),
-            # --- Interval parameters ---
             NodeParameter(
                 name="region_start",
                 label="Region Start",
                 param_type="number",
                 default=None,
-                description="Start of spectral region (in axis units, e.g. cm-1)",
-                required=False,
                 visible_when={"method": ["interval"]},
+                required=False,
             ),
             NodeParameter(
                 name="region_end",
                 label="Region End",
                 param_type="number",
                 default=None,
-                description="End of spectral region (in axis units)",
-                required=False,
                 visible_when={"method": ["interval"]},
+                required=False,
             ),
-            # --- Peak window parameters ---
             NodeParameter(
                 name="peak_prominence",
                 label="Peak Prominence",
@@ -89,8 +381,6 @@ class VariableSelectNode(Node):
                 default=0.1,
                 min_value=0.001,
                 step=0.01,
-                description="Minimum prominence for peak detection",
-                required=False,
                 visible_when={"method": ["peak_window"]},
             ),
             NodeParameter(
@@ -100,8 +390,6 @@ class VariableSelectNode(Node):
                 default=10,
                 min_value=1,
                 step=1,
-                description="Number of points on each side of a detected peak to include",
-                required=False,
                 visible_when={"method": ["peak_window"]},
             ),
             NodeParameter(
@@ -109,32 +397,20 @@ class VariableSelectNode(Node):
                 label="Include Negative Extrema",
                 param_type="boolean",
                 default=False,
-                description="Detect troughs as well as peaks when using peak-window selection",
-                required=False,
                 visible_when={"method": ["peak_window"]},
                 category="advanced",
             ),
-            # --- VIP / coefficient parameters ---
             NodeParameter(
                 name="threshold",
-                label="Threshold",
+                label="Declared Score Threshold",
                 param_type="number",
                 default=1.0,
                 min_value=0.0,
                 step=0.1,
-                description="Selection threshold (VIP > 1.0 convention; coef/SR: top fraction or absolute)",
-                required=False,
                 visible_when={"method": ["vip", "coef_abs", "selectivity_ratio"]},
             ),
-            # --- General ---
             NodeParameter(
-                name="invert",
-                label="Invert Selection",
-                param_type="boolean",
-                default=False,
-                description="If true, exclude selected variables instead of keeping them",
-                required=False,
-                category="advanced",
+                name="invert", label="Invert Selection", param_type="boolean", default=False, category="advanced"
             ),
         ],
         input_ports=[
@@ -143,563 +419,138 @@ class VariableSelectNode(Node):
                 type_ref="spectrasherpa://types/Array2D/1.0",
                 required=True,
                 label="Input Data",
-                description="Spectral dataset or multivariate feature table to select variables from",
                 accepted_data_roles=["X_spectra", "X_features"],
             ),
             PortMetadata(
-                name="model",
-                type_ref="spectrasherpa://types/FittedModel/1.0",
-                required=False,
-                label="PLS Model (optional)",
-                description="Trained PLS/PLS-DA model dict for VIP, coef, or selectivity ratio methods",
+                name="model", type_ref="spectrasherpa://types/FittedModel/1.0", required=False, label="Fitted PLS Model"
             ),
             PortMetadata(
-                name="mask",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                name="mask", type_ref="spectrasherpa://types/Array1D/1.0", required=False, label="Existing Boolean Mask"
+            ),
+            PortMetadata(
+                name="importance_scores",
+                type_ref="spectrasherpa://types/VariableImportance/1.0",
                 required=False,
-                label="Existing Mask",
-                description="Boolean feature mask to reuse when method='apply_mask'",
+                label="Producer-Owned Importance Scores",
+                description="VIP scores emitted by the exact upstream fitted PLS producer.",
             ),
         ],
         output_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Selected Data",
+            ),
             PortMetadata(
                 name="X_selected",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Selected Data",
-                description="Dataset with feature_axis.include_mask applied",
             ),
             PortMetadata(
-                name="mask",
-                type_ref="spectrasherpa://types/Array1D/1.0",
+                name="mask", type_ref="spectrasherpa://types/Array1D/1.0", required=True, label="Feature Mask"
+            ),
+            PortMetadata(
+                name="scores", type_ref="spectrasherpa://types/Array1D/1.0", required=False, label="Rule Scores"
+            ),
+            PortMetadata(
+                name="selection_report",
+                type_ref="spectrasherpa://types/Any/1.0",
                 required=True,
-                label="Feature Mask",
-                description="Boolean mask (True = selected variable)",
-            ),
-            PortMetadata(
-                name="scores",
-                type_ref="spectrasherpa://types/Array1D/1.0",
-                required=False,
-                label="Importance Scores",
-                description="Per-variable importance scores (VIP, coef, SR)",
+                label="Selection Evidence",
             ),
         ],
-        input_types=["NDDataset"],
+        input_types=["SherpaDataset"],
         output_type="dict",
-        diagnostics=["method", "n_selected", "n_total", "pct_selected"],
+        diagnostics=["method", "n_selected", "n_total", "pct_selected", "selection_scope"],
+        policy=NodePolicy(),
+        canonical_parameter_validator=_canonical_variable_select_parameters,
     )
 
-    def generate_python(
-        self,
-        inputs: dict[str, str],
-        indent: str = "    ",
-        use_scp: bool = True,
-    ) -> list[str]:
-        params = self._resolve_params()
-        method = params.get("method", "vip")
-        X_expr = inputs.get("X", inputs.get("default", "input_data"))
-        model_expr = inputs.get("model")
-        mask_expr = inputs.get("mask")
+    def generate_python(self, inputs: Mapping[str, str], indent: str = "    ", use_scp: bool = True) -> list[str]:
+        del use_scp
+        X_expression = inputs.get("X", inputs.get("default", "input_data"))
+        return [
+            f"{indent}# --- Canonical variable-selection rule ({self.node_id}) ---",
+            f"{indent}from spectra_sherpa.app.services.dag.nodes.selection.variable_select_node "
+            "import _variable_select_execute",
+            f"{indent}_vs_outputs, _vs_diagnostics = _variable_select_execute(",
+            f"{indent}    {X_expression}, {inputs.get('model', 'None')}, {inputs.get('mask', 'None')}, "
+            f"{inputs.get('importance_scores', 'None')},",
+            f"{indent}    node_id={self.node_id!r}, parameters={self._resolve_params()!r},",
+            f"{indent})",
+            f"{indent}results[{self.node_id!r}] = _vs_outputs",
+        ]
 
-        lines: list[str] = []
-        lines.append(f"{indent}# --- Variable Selection ({self.node_id}) ---")
-        lines.append(f"{indent}# Method: {method}")
-        lines.append(f"{indent}_X_input = {X_expr}")
-        lines.append(
-            f"{indent}_X_vs = np.asarray("
-            f"_X_input.data if hasattr(_X_input, 'data') else _X_input, dtype=np.float64)"
+    async def execute(
+        self,
+        X: Any = None,
+        model: Any = None,
+        mask: Any = None,
+        importance_scores: Any = None,
+        **kwargs: Any,
+    ) -> NodeResult:
+        # The managed fold lifecycle supplies the canonical chained dataset as
+        # ``input_data``.  The Workbench continues to bind the declared ``X``
+        # port.  Both names enter the same implementation and ambiguous dual
+        # binding is refused instead of choosing an authority by accident.
+        chained = kwargs.pop("input_data", None)
+        managed_chain = X is None and chained is not None
+        if kwargs:
+            raise ValueError("Variable selection received unsupported inputs")
+        if X is not None and chained is not None:
+            raise ValueError("Variable selection received both X and input_data")
+        if X is None:
+            X = chained
+        outputs, diagnostics = _variable_select_execute(
+            X, model, mask, importance_scores, node_id=self.node_id, parameters=self._resolve_params()
         )
-        lines.append(f"{indent}_fa_obj = getattr(_X_input, 'feature_axis', None)")
-        lines.append(f"{indent}if _fa_obj is not None and getattr(_fa_obj, 'values', None) is not None:")
-        lines.append(f"{indent}    _fa_vals = np.asarray(_fa_obj.values, dtype=np.float64)")
-        lines.append(f"{indent}else:")
-        lines.append(f"{indent}    _x_obj = getattr(_X_input, 'x', None)")
-        lines.append(f"{indent}    if hasattr(_x_obj, 'values') and getattr(_x_obj, 'values', None) is not None:")
-        lines.append(f"{indent}        _fa_vals = np.asarray(_x_obj.values, dtype=np.float64)")
-        lines.append(f"{indent}    elif _x_obj is not None:")
-        lines.append(f"{indent}        _fa_vals = np.asarray(_x_obj, dtype=np.float64)")
-        lines.append(f"{indent}    else:")
-        lines.append(f"{indent}        _fa_vals = np.arange(_X_vs.shape[1], dtype=np.float64)")
-        lines.append(f"{indent}_scores = None")
-
-        if method == "interval":
-            rs = params.get("region_start", 0)
-            re_ = params.get("region_end", 0)
-            lines.append(f"{indent}# Interval selection: [{rs}, {re_}]")
-            lines.append(f"{indent}_lo, _hi = min({rs}, {re_}), max({rs}, {re_})")
-            lines.append(f"{indent}_mask = (_fa_vals >= _lo) & (_fa_vals <= _hi)")
-        elif method == "apply_mask":
-            lines.append(f"{indent}if {mask_expr} is None:")
-            lines.append(f"{indent}    raise ValueError('apply_mask requires a connected mask input')")
-            lines.append(
-                f"{indent}_mask = np.asarray("
-                f"{mask_expr}.data if hasattr({mask_expr}, 'data') else {mask_expr}, dtype=bool"
-                f").reshape(-1)"
-            )
-            lines.append(f"{indent}if _mask.size != _X_vs.shape[1]:")
-            lines.append(
-                f"{indent}    raise ValueError("
-                f"'Mask length mismatch: ' + str(_mask.size) + ' != ' + str(_X_vs.shape[1]))"
-            )
-            lines.append(f"{indent}_scores = _mask.astype(np.float64)")
-        elif method == "vip":
-            threshold = params.get("threshold", 1.0)
-            lines.append(f"{indent}# VIP selection: threshold={threshold}")
-            lines.append(f"{indent}if {model_expr} is None:")
-            lines.append(f"{indent}    raise ValueError('VIP selection requires a connected PLS model')")
-            lines.append(
-                f"{indent}from spectra_sherpa.app.services.dag.nodes.selection._vip import extract_vip_from_pls_model"
-            )
-            lines.append(f"{indent}_scores = extract_vip_from_pls_model({model_expr}, _X_vs.shape[1])")
-            lines.append(f"{indent}_mask = _scores >= {threshold}")
-        elif method == "coef_abs":
-            threshold = params.get("threshold", 1.0)
-            lines.append(f"{indent}# Coefficient magnitude selection: threshold={threshold}")
-            lines.append(f"{indent}if {model_expr} is None:")
-            lines.append(f"{indent}    raise ValueError('Coefficient selection requires a connected PLS model')")
-            lines.append(f"{indent}from spectra_sherpa.app.lib.adapters.scp_extractors import _safe_getattr")
-            lines.append(f"{indent}_raw_coef = _safe_getattr({model_expr}, ('coef', 'coef_', 'coefficients', '_coef'))")
-            lines.append(f"{indent}if _raw_coef is None:")
-            lines.append(f"{indent}    raise ValueError('Could not extract coefficients from PLS model')")
-            lines.append(
-                f"{indent}_coef = np.asarray("
-                f"_raw_coef.data if hasattr(_raw_coef, 'data') else _raw_coef, dtype=np.float64).reshape(-1)"
-            )
-            lines.append(f"{indent}if _coef.size != _X_vs.shape[1]:")
-            lines.append(f"{indent}    _coef = _coef[:_X_vs.shape[1]]")
-            lines.append(f"{indent}_scores = np.abs(_coef)")
-            lines.append(f"{indent}_max_score = float(np.max(_scores)) if _scores.size else 0.0")
-            lines.append(f"{indent}if _max_score > 0:")
-            lines.append(f"{indent}    _scores = _scores / _max_score")
-            lines.append(f"{indent}_mask = _scores >= {threshold}")
-        elif method == "peak_window":
-            prominence = params.get("peak_prominence", 0.1)
-            hw = params.get("peak_half_window", 10)
-            include_negative = bool(params.get("include_negative_extrema", False))
-            lines.append(f"{indent}from scipy import signal")
-            lines.append(f"{indent}_mean_spec = np.mean(_X_vs, axis=0)")
-            lines.append(f"{indent}_centered = _mean_spec - float(np.median(_mean_spec))")
-            lines.append(f"{indent}_pos_peaks, _ = signal.find_peaks(_centered, prominence={prominence})")
-            if include_negative:
-                lines.append(f"{indent}_neg_peaks, _ = signal.find_peaks(-_centered, prominence={prominence})")
-                lines.append(f"{indent}_peaks = np.unique(np.concatenate([_pos_peaks, _neg_peaks])).astype(int)")
-            else:
-                lines.append(f"{indent}_peaks = _pos_peaks.astype(int)")
-            lines.append(f"{indent}_mask = np.zeros(_X_vs.shape[1], dtype=bool)")
-            lines.append(f"{indent}for _p in _peaks:")
-            lines.append(f"{indent}    _mask[max(0, _p - {hw}):min(_X_vs.shape[1], _p + {hw} + 1)] = True")
-            lines.append(f"{indent}_magnitude = np.abs(_centered)")
-            lines.append(f"{indent}_max_mag = float(np.max(_magnitude)) if _magnitude.size else 0.0")
-            lines.append(
-                f"{indent}_scores = (_magnitude / _max_mag) if _max_mag > 0"
-                f" else np.zeros(_X_vs.shape[1], dtype=np.float64)"
-            )
-            lines.append(f"{indent}if not np.any(_mask):")
-            lines.append(f"{indent}    _strongest = int(np.argmax(_magnitude)) if _magnitude.size else 0")
-            lines.append(
-                f"{indent}    _mask[max(0, _strongest - {hw}):min(_X_vs.shape[1], _strongest + {hw} + 1)] = True"
-            )
-            lines.append(f"{indent}if len(_peaks) > 0:")
-            lines.append(f"{indent}    _proximity = np.zeros(_X_vs.shape[1], dtype=np.float64)")
-            lines.append(f"{indent}    for _i in range(_X_vs.shape[1]):")
-            lines.append(f"{indent}        _proximity[_i] = float(np.min(np.abs(_peaks - _i)))")
-            lines.append(f"{indent}    _max_dist = float(np.max(_proximity)) if _proximity.size else 0.0")
-            lines.append(f"{indent}    if _max_dist > 0:")
-            lines.append(f"{indent}        _proximity = 1.0 - _proximity / _max_dist")
-            lines.append(f"{indent}    _scores = np.maximum(_scores, _proximity)")
-        elif method == "selectivity_ratio":
-            threshold = params.get("threshold", 1.0)
-            lines.append(f"{indent}if {model_expr} is None:")
-            lines.append(f"{indent}    raise ValueError('Selectivity-ratio selection requires a connected PLS model')")
-            lines.append(f"{indent}from spectra_sherpa.app.lib.adapters.scp_extractors import _safe_getattr")
-            lines.append(f"{indent}_raw_coef = _safe_getattr({model_expr}, ('coef', 'coef_', 'coefficients', '_coef'))")
-            lines.append(f"{indent}if _raw_coef is None:")
-            lines.append(f"{indent}    raise ValueError('Could not extract coefficients from PLS model')")
-            lines.append(
-                f"{indent}_coef = np.asarray("
-                f"_raw_coef.data if hasattr(_raw_coef, 'data') else _raw_coef, dtype=np.float64).reshape(-1)"
-            )
-            lines.append(f"{indent}if _coef.size != _X_vs.shape[1]:")
-            lines.append(f"{indent}    _coef = _coef[:_X_vs.shape[1]]")
-            lines.append(f"{indent}_coef_norm_sq = float(_coef @ _coef)")
-            lines.append(f"{indent}if _coef_norm_sq < 1e-12:")
-            lines.append(f"{indent}    _scores = np.zeros(_X_vs.shape[1], dtype=np.float64)")
-            lines.append(f"{indent}else:")
-            lines.append(f"{indent}    _t_tp = _X_vs @ _coef / _coef_norm_sq")
-            lines.append(f"{indent}    _X_explained = np.outer(_t_tp, _coef)")
-            lines.append(f"{indent}    _X_residual = _X_vs - _X_explained")
-            lines.append(f"{indent}    _var_explained = np.var(_X_explained, axis=0)")
-            lines.append(f"{indent}    _var_residual = np.var(_X_residual, axis=0)")
-            lines.append(f"{indent}    _scores = np.zeros(_X_vs.shape[1], dtype=np.float64)")
-            lines.append(f"{indent}    _nz = _var_residual > 1e-12")
-            lines.append(f"{indent}    _scores[_nz] = _var_explained[_nz] / _var_residual[_nz]")
-            lines.append(f"{indent}_mask = _scores >= {threshold}")
-        else:
-            lines.append(f"{indent}# Method '{method}' — see SpectraSherpa docs")
-            lines.append(f"{indent}_mask = np.ones(_X_vs.shape[1], dtype=bool)")
-
-        invert = params.get("invert", False)
-        if invert:
-            lines.append(f"{indent}_mask = ~_mask")
-
-        lines.append(f"{indent}_X_selected = _X_vs[:, _mask]")
-        lines.append(f"{indent}_selected_target = getattr(_X_input, 'target', None)")
-        lines.append(f"{indent}from spectra_sherpa.app.services.dag.io_contracts import build_dataset_like")
-        lines.append(f"{indent}from spectra_sherpa.app.lib.axes import FeatureAxis, SpectralAxis")
-        lines.append(f"{indent}_X_selected_ds = build_dataset_like(_X_selected, _X_input)")
-        lines.append(f"{indent}if _selected_target is not None:")
-        lines.append(f"{indent}    _X_selected_ds.target = _selected_target")
-        lines.append(f"{indent}_reduced_fa = None")
-        lines.append(
-            f"{indent}if _fa_obj is not None and hasattr(_fa_obj, 'values')"
-            f" and getattr(_fa_obj, 'values', None) is not None:"
+        logger.info(
+            "Variable-selection rule %s retained %s/%s features",
+            diagnostics["method"],
+            diagnostics["n_selected"],
+            diagnostics["n_total"],
         )
-        lines.append(f"{indent}    _fa_cls = type(_fa_obj) if isinstance(_fa_obj, FeatureAxis) else SpectralAxis")
-        lines.append(
-            f"{indent}    _reduced_fa = _fa_cls("
-            f"values=_fa_vals[_mask], units=getattr(_fa_obj, 'units', None), title=getattr(_fa_obj, 'title', None))"
+        return NodeResult(
+            outputs={"default": outputs["default"]} if managed_chain else outputs,
+            diagnostics=diagnostics,
         )
-        lines.append(f"{indent}if _reduced_fa is not None:")
-        lines.append(f"{indent}    _X_selected_ds.feature_axis = _reduced_fa")
-        lines.append(f"{indent}if hasattr(_X_selected_ds, 'meta'):")
-        lines.append(f"{indent}    _X_selected_ds.meta['feature_mask'] = _mask.tolist()")
-        lines.append(f'{indent}print(f"  Selected {{np.sum(_mask)}} / {{len(_mask)}} variables")')
-        lines.append(f"{indent}results['{self.node_id}'] = {{")
-        lines.append(f"{indent}    'X_selected': _X_selected_ds, 'mask': _mask,")
-        lines.append(f"{indent}}}")
-        lines.append(f"{indent}if _scores is not None:")
-        lines.append(f"{indent}    results['{self.node_id}']['scores'] = _scores")
 
-        return lines
 
-    async def execute(self, X: Any = None, model: Any = None, mask: Any = None, **kwargs: Any) -> NodeResult:
-        params = self._resolve_params()
-        method = params.get("method", "vip")
-        invert = bool(params.get("invert", False))
-
-        X_ds = bind_X(
-            X,
-            missing_message="Missing required input: X (dataset)",
-            dataset_error_message="X must be an NDDataset or SherpaDataset",
-            allow_array=True,
-        )
-        X_array = to_numpy_2d(X_ds, name="X", dtype=np.float64)
-        n_features = X_array.shape[1]
-
-        # Get feature axis values if available
-        fa = getattr(X_ds, "feature_axis", None)
-        fa_values = np.asarray(fa.values, dtype=np.float64) if (fa is not None and fa.values is not None) else None
-
-        scores: np.ndarray | None = None
-
-        if method == "interval":
-            mask, scores = self._select_interval(fa_values, n_features, params)
-
-        elif method == "peak_window":
-            mask, scores = self._select_peak_window(X_array, n_features, params)
-
-        elif method == "apply_mask":
-            if mask is None:
-                raise ValueError("apply_mask method requires a connected mask input.")
-            mask = np.asarray(mask, dtype=bool).reshape(-1)
-            if mask.size != n_features:
-                raise ValueError(f"Mask length ({mask.size}) != n_features ({n_features})")
-            scores = mask.astype(np.float64)
-
-        elif method == "vip":
-            mask, scores = self._select_vip(model, n_features, params)
-
-        elif method == "coef_abs":
-            mask, scores = self._select_coef_abs(model, n_features, params)
-
-        elif method == "selectivity_ratio":
-            mask, scores = self._select_selectivity_ratio(model, X_array, n_features, params)
-
-        else:
-            raise ValueError(f"Unknown variable selection method: {method!r}")
-
-        if invert:
-            mask = ~mask
-
-        n_selected = int(np.sum(mask))
-        if n_selected == 0:
-            raise ValueError(
-                f"Variable selection ({method}) produced an empty mask. "
-                "Try adjusting the threshold or region parameters."
-            )
-
-        # --- Build output dataset with mask on feature axis ---
-        X_selected_array = X_array[:, mask]
-        X_selected_ds = build_dataset_like(X_selected_array, X_ds)
-
-        # Set feature axis with selected values + selection provenance on ORIGINAL dataset
-        if fa is not None:
-            fa_copy = fa.copy()
-            fa_copy.apply_mask(mask, method=method, scores=scores)
-            # The output dataset gets the reduced feature axis
-            if fa_values is not None:
-                from spectra_sherpa.app.lib.sherpa_dataset import FeatureAxis, SpectralAxis
-
-                reduced_fa_cls = type(fa) if isinstance(fa, FeatureAxis) else SpectralAxis
-                reduced_fa = reduced_fa_cls(
-                    values=fa_values[mask],
-                    labels=list(np.asarray(fa.labels)[mask]) if fa.labels is not None else None,
-                    units=fa.units,
-                    title=fa.title,
-                    include_mask=np.ones(n_selected, dtype=bool),
-                    selection_method=method,
-                    selection_scores=scores[mask] if scores is not None else None,
-                )
-                X_selected_ds.feature_axis = reduced_fa
-
-        # Store the original feature mask on the output dataset's meta so that
-        # downstream training nodes can include it in their model artifact.
-        # This enables load_apply to auto-slice full-spectrum new data.
-        X_selected_ds.meta["feature_mask"] = mask.tolist()
-
-        # Provenance
-        step_params: dict[str, Any] = {"method": method, "n_selected": n_selected, "n_total": n_features}
-        if method in ("vip", "coef_abs", "selectivity_ratio"):
-            step_params["threshold"] = params.get("threshold", 1.0)
-        add_processing_step(X_selected_ds, "selection.variable_select", step_params, self.node_id)
-
-        outputs: dict[str, Any] = {
-            "default": X_selected_ds,
-            "X_selected": X_selected_ds,
-            "mask": mask,
-        }
-        if scores is not None:
-            outputs["scores"] = scores
-
-        diagnostics = {
-            "method": method,
-            "n_selected": n_selected,
-            "n_total": n_features,
-            "pct_selected": round(100.0 * n_selected / n_features, 1),
-        }
-
-        logger.info(f"Variable selection ({method}): {n_selected}/{n_features} features selected")
-
-        return NodeResult(outputs=outputs, diagnostics=diagnostics)
-
-    # ── Selection methods ──────────────────────────────────────────────
-
-    def _select_interval(
-        self,
-        fa_values: np.ndarray | None,
-        n_features: int,
-        params: dict,
-    ) -> tuple[np.ndarray, np.ndarray | None]:
-        """Select features within a contiguous spectral interval."""
-        region_start = params.get("region_start")
-        region_end = params.get("region_end")
-
-        if region_start is None or region_end is None:
-            raise ValueError("interval method requires region_start and region_end parameters")
-
-        lo, hi = min(float(region_start), float(region_end)), max(float(region_start), float(region_end))
-
-        if fa_values is not None:
-            mask = (fa_values >= lo) & (fa_values <= hi)
-        else:
-            # Treat as index range
-            mask = np.zeros(n_features, dtype=bool)
-            mask[int(lo) : int(hi) + 1] = True
-
-        return mask, None
-
-    def _select_peak_window(
-        self,
-        X_array: np.ndarray,
-        n_features: int,
-        params: dict,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Detect positive and negative peaks, then select +-window around each."""
-        prominence = float(params.get("peak_prominence", 0.1))
-        half_window = int(params.get("peak_half_window", 10))
-        include_negative = bool(params.get("include_negative_extrema", False))
-
-        mean_spectrum = np.mean(X_array, axis=0)
-        centered = mean_spectrum - float(np.median(mean_spectrum))
-        pos_peaks, _ = signal.find_peaks(centered, prominence=prominence)
-        if include_negative:
-            neg_peaks, _ = signal.find_peaks(-centered, prominence=prominence)
-            peaks = np.unique(np.concatenate([pos_peaks, neg_peaks])).astype(int)
-        else:
-            peaks = pos_peaks.astype(int)
-
-        mask = np.zeros(n_features, dtype=bool)
-        for p in peaks:
-            lo = max(0, p - half_window)
-            hi = min(n_features, p + half_window + 1)
-            mask[lo:hi] = True
-
-        magnitude = np.abs(centered)
-        max_mag = float(np.max(magnitude)) if magnitude.size else 0.0
-        scores = (magnitude / max_mag) if max_mag > 0 else np.zeros(n_features, dtype=np.float64)
-
-        # Derivative spectra can have chemically meaningful troughs but no
-        # positive maxima above threshold. Fall back to the strongest absolute
-        # excursion so peak-guided workflows remain usable instead of failing
-        # with an empty mask.
-        if not np.any(mask):
-            strongest = int(np.argmax(magnitude)) if magnitude.size else 0
-            lo = max(0, strongest - half_window)
-            hi = min(n_features, strongest + half_window + 1)
-            mask[lo:hi] = True
-
-        if len(peaks) > 0:
-            proximity = np.zeros(n_features, dtype=np.float64)
-            for i in range(n_features):
-                proximity[i] = float(np.min(np.abs(peaks - i)))
-            max_dist = float(proximity.max())
-            if max_dist > 0:
-                proximity = 1.0 - proximity / max_dist
-            scores = np.maximum(scores, proximity)
-        return mask, scores
-
-    def _select_vip(
-        self,
-        model: Any,
-        n_features: int,
-        params: dict,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Select features using VIP scores from a PLS model."""
-        threshold = float(params.get("threshold", 1.0))
-
-        if model is None:
-            raise ValueError(
-                "VIP method requires a PLS/PLS-DA model. "
-                "Connect the 'model' output port of a PLS node to this node's 'model' input."
-            )
-
-        # Extract PLS model object from the model dict
-        pls_model = self._extract_pls_model(model)
-
-        from ._vip import extract_vip_from_pls_model
-
-        vip_scores = extract_vip_from_pls_model(pls_model, n_features)
-
-        mask = vip_scores >= threshold
-        return mask, vip_scores
-
-    def _select_coef_abs(
-        self,
-        model: Any,
-        n_features: int,
-        params: dict,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Select features by absolute regression coefficient magnitude."""
-        threshold = float(params.get("threshold", 1.0))
-
-        if model is None:
-            raise ValueError("coef_abs method requires a PLS model.")
-
-        pls_model = self._extract_pls_model(model)
-
-        # Extract coefficients
-        from spectra_sherpa.app.lib.adapters.scp_extractors import _safe_getattr
-
-        raw_coef = _safe_getattr(pls_model, ("coef", "coef_", "coefficients", "_coef"))
-        if raw_coef is None:
-            raise ValueError("Could not extract coefficients from PLS model")
-
-        coef = np.asarray(raw_coef, dtype=np.float64).flatten()
-        if len(coef) != n_features:
-            # Some models store transposed
-            if hasattr(raw_coef, "data"):
-                coef = np.asarray(raw_coef.data, dtype=np.float64).flatten()
-            if len(coef) != n_features:
-                raise ValueError(f"Coefficient length ({len(coef)}) != n_features ({n_features})")
-
-        abs_coef = np.abs(coef)
-        # Normalise to max = 1 for interpretable threshold
-        max_coef = abs_coef.max()
-        if max_coef > 0:
-            scores = abs_coef / max_coef
-        else:
-            scores = abs_coef
-
-        mask = scores >= threshold
-        return mask, scores
-
-    def _select_selectivity_ratio(
-        self,
-        model: Any,
-        X_array: np.ndarray,
-        n_features: int,
-        params: dict,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """Select features by target-projection selectivity ratio.
-
-        SR_j = var(t_TP * p_TP_j) / var(x_j - t_TP * p_TP_j)
-
-        where t_TP and p_TP are the target-projected scores and loadings.
-        """
-        threshold = float(params.get("threshold", 1.0))
-
-        if model is None:
-            raise ValueError("selectivity_ratio method requires a PLS model.")
-
-        pls_model = self._extract_pls_model(model)
-
-        from spectra_sherpa.app.lib.adapters.scp_extractors import _safe_getattr
-
-        # Get PLS components
-        raw_w = _safe_getattr(pls_model, ("x_weights", "_x_weights", "x_weights_"))
-        raw_coef = _safe_getattr(pls_model, ("coef", "coef_", "coefficients", "_coef"))
-
-        if raw_w is None or raw_coef is None:
-            raise ValueError("Could not extract weights/coefficients for selectivity ratio")
-
-        W = np.asarray(raw_w, dtype=np.float64)
-        if hasattr(raw_w, "data"):
-            W = np.asarray(raw_w.data, dtype=np.float64)
-        b = np.asarray(raw_coef, dtype=np.float64).flatten()
-        if hasattr(raw_coef, "data"):
-            b = np.asarray(raw_coef.data, dtype=np.float64).flatten()
-
-        # Target projection vector
-        # q = W * b (target projection direction)
-        if W.shape[0] != n_features:
-            W = W.T  # ensure (n_features, n_components)
-        if len(b) != n_features:
-            b = b[:n_features]
-
-        # Target-projected scores: t_TP = X @ b / (b'b)
-        b_norm_sq = b @ b
-        if b_norm_sq < 1e-12:
-            return np.zeros(n_features, dtype=bool), np.zeros(n_features, dtype=np.float64)
-
-        t_tp = X_array @ b / b_norm_sq  # (n_samples,)
-        p_tp = b  # target projection loadings = b (normalised)
-
-        # Explained and residual variance per feature
-        X_explained = np.outer(t_tp, p_tp)  # (n_samples, n_features)
-        X_residual = X_array - X_explained
-
-        var_explained = np.var(X_explained, axis=0)
-        var_residual = np.var(X_residual, axis=0)
-
-        # Selectivity ratio
-        sr = np.zeros(n_features, dtype=np.float64)
-        nonzero = var_residual > 1e-12
-        sr[nonzero] = var_explained[nonzero] / var_residual[nonzero]
-
-        mask = sr >= threshold
-        return mask, sr
-
-    # ── Helpers ─────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _extract_pls_model(model_input: Any) -> Any:
-        """Extract the underlying PLS model object from various input formats."""
-        if isinstance(model_input, dict):
-            # From PLS node output: dict with 'model' key
-            if "model" in model_input:
-                return model_input["model"]
-            # From PLS-DA: may have 'pls_model'
-            if "pls_model" in model_input:
-                return model_input["pls_model"]
-        # Direct model object
-        return model_input
+bind_stable_execution_contract(
+    VariableSelectNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
+    implementation_id="spectrasherpa.selection.variable_select",
+    implementation_version="2.1.0",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(
+        ManagedOptimizationEligibility.LOCAL,
+        ManagedOptimizationEligibility.DEVELOPMENT,
+        ManagedOptimizationEligibility.FULL_REFIT,
+    ),
+    managed_optimization_profiles=("first_party_pls",),
+    sample_effect="preserves_samples",
+    feature_effect="filters_features",
+    axis_effect="changes_axis",
+    unit_effect="preserves_units",
+    resource_hints={"timeout_seconds": 60, "cpu_seconds": 60, "memory_bytes": 1_073_741_824},
+    license_id="Apache-2.0",
+    help_reference="docs/nodes/selection-validation.md",
+    implementation_modules=(_selectivity_ratio, fitted_state),
+    implementation_distributions=("numpy", "scipy"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1")),
+    citations=(
+        "mdatools PLS variable-selection reference, https://mda.tools/docs/pls--variable-selection.html",
+        "Chong and Jun, Chemometrics and Intelligent Laboratory Systems 78 (2005) 103-112",
+        "Kvalheim, Journal of Chemometrics 24 (2010) 496-504, doi:10.1002/cem.1289",
+        "Virtanen et al., Nature Methods 17 (2020) 261-272, doi:10.1038/s41592-019-0686-2",
+    ),
+    deterministic=True,
+    target_access=TargetAccess.NONE,
+    group_access="none",
+)
+
+
+__all__ = ["VariableSelectNode", "_canonical_variable_select_parameters", "_variable_select_execute"]

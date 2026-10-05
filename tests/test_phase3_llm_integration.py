@@ -384,73 +384,6 @@ class TestDatasetTools:
 
 
 # ---------------------------------------------------------------------------
-# Slice 3: WorkflowContextNode domain fields
-# ---------------------------------------------------------------------------
-
-
-class TestWorkflowContextNodeDomain:
-    def test_new_fields_serialize(self):
-        """New domain fields serialize correctly."""
-        from spectra_sherpa.app.schemas.sherpa import WorkflowContextNode
-
-        node = WorkflowContextNode(
-            node_id="n1",
-            node_type="data.eigenvector",
-            domain_technique="IR",
-            domain_data_quantity="Absorbance",
-            processing_stage="preprocessed",
-            processing_effects=["normalized", "baseline_corrected"],
-        )
-        d = node.model_dump()
-        assert d["domain_technique"] == "IR"
-        assert d["domain_data_quantity"] == "Absorbance"
-        assert d["processing_stage"] == "preprocessed"
-        assert d["processing_effects"] == ["normalized", "baseline_corrected"]
-
-    def test_new_fields_default_none(self):
-        """New domain fields default to None."""
-        from spectra_sherpa.app.schemas.sherpa import WorkflowContextNode
-
-        node = WorkflowContextNode(node_id="n1", node_type="model.pca")
-        assert node.domain_technique is None
-        assert node.domain_data_quantity is None
-        assert node.processing_stage is None
-        assert node.processing_effects is None
-
-    def test_roundtrip_json(self):
-        """Domain fields survive JSON round-trip."""
-        from spectra_sherpa.app.schemas.sherpa import WorkflowContextNode
-
-        node = WorkflowContextNode(
-            node_id="n1",
-            node_type="preprocess.normalize",
-            domain_technique="NIR",
-            processing_effects=["normalized"],
-        )
-        json_str = node.model_dump_json()
-        restored = WorkflowContextNode.model_validate_json(json_str)
-        assert restored.domain_technique == "NIR"
-        assert restored.processing_effects == ["normalized"]
-
-    def test_existing_fields_preserved(self):
-        """Existing fields still work alongside new domain fields."""
-        from spectra_sherpa.app.schemas.sherpa import WorkflowContextNode
-
-        node = WorkflowContextNode(
-            node_id="n1",
-            node_type="model.pca",
-            label="PCA",
-            parameters={"n_components": 3},
-            result_shape=[10, 3],
-            domain_technique="IR",
-        )
-        assert node.label == "PCA"
-        assert node.parameters == {"n_components": 3}
-        assert node.result_shape == [10, 3]
-        assert node.domain_technique == "IR"
-
-
-# ---------------------------------------------------------------------------
 # Slice 4: NodePolicy
 # ---------------------------------------------------------------------------
 
@@ -527,10 +460,12 @@ class TestNodePolicy:
         assert meta.policy.requires_human_review is True
         assert meta.policy.data_egress_risk == "none"
 
-    def test_untagged_node_no_policy(self):
-        """Nodes without explicit policy have None."""
+    def test_output_node_has_conservative_explicit_policy(self):
+        """Local presentation is safe to apply and has no data egress."""
         from spectra_sherpa.app.services.dag.node_base import node_registry
 
-        # Plot node should not have a policy
         meta = node_registry.get_metadata("output.plot")
-        assert meta.policy is None
+        assert meta.policy is not None
+        assert meta.policy.safe_for_auto_apply is True
+        assert meta.policy.requires_human_review is False
+        assert meta.policy.data_egress_risk == "none"

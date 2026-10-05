@@ -1,0 +1,61 @@
+opusreader2
+https://github.com/spectral-cockpit/opusreader2
+
+YEAR: 2025
+COPYRIGHT HOLDER: opusreader2 authors
+
+Licensed under the MIT License. The package's DESCRIPTION file declares
+`License: MIT + file LICENSE`, the standard R-package convention (this file
+mirrors the package's own LICENSE stub); the full license grant is the
+standard MIT License text:
+
+  Permission is hereby granted, free of charge, to any person obtaining a
+  copy of this software and associated documentation files (the "Software"),
+  to deal in the Software without restriction, including without limitation
+  the rights to use, copy, modify, merge, publish, distribute, sublicense,
+  and/or sell copies of the Software, and to permit persons to whom the
+  Software is furnished to do so, subject to the following conditions:
+
+  The above copyright notice and this permission notice shall be included in
+  all copies or substantial portions of the Software.
+
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+  DEALINGS IN THE SOFTWARE.
+
+SpectraSherpa redistributes five unmodified real Bruker OPUS instrument files
+from the package's package-authored inst/extdata/test_data directory as
+read-only conformance fixtures, unchanged from their upstream names and pinned
+to upstream commit 96f970beb0ef92ccb3ee62fc3d8b7f27e1587c41:
+
+  inst/extdata/test_data/617262_1TP_C-1_A5.0
+  inst/extdata/test_data/629266_1TP_A-1_C1.0
+  inst/extdata/test_data/BF_lo_01_soil_cal.1
+  inst/extdata/test_data/MMP_2107_Test1.001
+  inst/extdata/test_data/test_spectra.0
+
+  -> packages/spectra-sherpa/tests/fixtures/opus/
+
+Exact SHA-256 digests are recorded per file in
+docs/evidence/native-opus-reader-conformance.json. No opusreader2 source code
+(R or Python) is used or distributed; the parser layout is adapted separately
+from brukeropus (see brukeropus.md).
+
+BF_lo_01_soil_cal.1 is a Bruker ALPHA diffuse-reflectance mid-infrared
+measurement of a soil sample, associated with the dataset in Baumann, P. et
+al. (2021), "Developing the standard for reflectance in the soil visible and
+near-infrared spectroscopy", SOIL 7, 717-731,
+https://doi.org/10.5194/soil-7-717-2021. Philipp Baumann is a copyright
+holder of the opusreader2 package this file is distributed with.
+
+Three additional files in upstream inst/extdata/new_data were supplied by
+third-party GitHub issue reporters. Their issue threads contain no explicit
+redistribution grant from those contributors. SpectraSherpa therefore does
+not redistribute or claim those files under the package MIT licence.
+
+Cite: Baumann, P., Knecht, T., Roudier, P. opusreader2.
+https://spectral-cockpit.github.io/opusreader2/

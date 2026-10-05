@@ -6,16 +6,18 @@ Registered as ``data.synthetic_curve``.
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Any
 
-import numpy as np
-
+from spectra_sherpa.app.lib import sherpa_dataset as sherpa_dataset_contract
 from spectra_sherpa.app.lib.sherpa_dataset import (
     SherpaDataset,
-    SpectralAxis,
+    TimeAxis,
 )
-from spectra_sherpa.app.models.spectra_meta import (
+from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
+from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.core import spectra_meta as spectra_meta_contract
+from spectra_sherpa.core.spectra_meta import (
     ConcentrationProfile,
     ConcentrationUnit,
     DataProvenance,
@@ -23,11 +25,54 @@ from spectra_sherpa.app.models.spectra_meta import (
     SpectraMeta,
     set_spectra_meta,
 )
-from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
+from spectra_sherpa.execution_contract_vocabulary import LifecycleKind, ManagedOptimizationEligibility, RuntimeFamily
 
-from ...node_base import Node, NodeMetadata, NodeParameter, register_node
+from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, register_node
+from . import source_contracts
+from .source_contracts import canonical_synthetic_curve_parameters, generate_synthetic_curve
 
 logger = logging.getLogger(__name__)
+
+
+def build_synthetic_curve_dataset(parameters: dict[str, object], *, node_id: str) -> SherpaDataset:
+    """Build one typed curve result for live and generated DAG execution."""
+
+    parameters = canonical_synthetic_curve_parameters(parameters)
+    curve_type = str(parameters["curve_type"])
+    max_conc = float(parameters["max_concentration"])
+    center = float(parameters["center"])
+    width = float(parameters["width"])
+    time_seconds, curve = generate_synthetic_curve(parameters)
+
+    dataset = SherpaDataset(
+        X=curve.reshape(1, -1),
+        feature_axis=TimeAxis(values=time_seconds, title="Time", units="s"),
+        backend="numpy",
+        title=f"Concentration ({curve_type})",
+        units="mol/L",
+    )
+
+    concentration_profile = ConcentrationProfile(
+        species_index=0,
+        species_name="Synthetic Species",
+        curve_type=curve_type,
+        values=curve.tolist(),
+        max_concentration=max_conc,
+        min_concentration=float(curve.min()),
+        center=center,
+        width=width,
+        unit=ConcentrationUnit.MOL_L,
+    )
+    meta = SpectraMeta(
+        concentrations=[concentration_profile],
+        provenance=DataProvenance(source_type=SourceType.SYNTHETIC),
+        is_ground_truth=True,
+        processing_steps=["synthetic_curve_generation"],
+        custom={"curve_params": dict(parameters)},
+    )
+    set_spectra_meta(dataset, meta)
+    add_processing_step(dataset, "data.synthetic_curve", dict(parameters), node_id=node_id)
+    return dataset
 
 
 @register_node
@@ -39,6 +84,12 @@ class SyntheticCurveNode(Node):
     """
 
     metadata = NodeMetadata(
+        policy=NodePolicy(
+            safe_for_auto_apply=True,
+            requires_human_review=False,
+            data_egress_risk="none",
+            offload_to_pool=False,
+        ),
         node_type="data.synthetic_curve",
         category="synthesis",
         label="Synthetic Curve",
@@ -91,87 +142,65 @@ class SyntheticCurveNode(Node):
                 description="Width of sigmoid/gaussian",
                 required=False,
             ),
+            NodeParameter(
+                name="duration_seconds",
+                label="Duration (seconds)",
+                param_type="number",
+                default=1.0,
+                min_value=1e-12,
+                description="Physical duration represented by the normalized curve domain",
+                required=True,
+            ),
         ],
         input_types=[],
         input_ports=[],
-        output_type="NDDataset",
+        output_type="TimeSeries",
+        output_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/TimeSeries/1.0",
+                required=True,
+                label="Concentration Time Series",
+                description="One deterministic concentration curve on a physical time axis",
+            )
+        ],
+        canonical_parameter_validator=canonical_synthetic_curve_parameters,
     )
 
     async def execute(self, *args) -> Any:
         """Generate synthetic concentration curve."""
-        curve_type = self.parameters.get("curve_type", "sigmoid")
-        n_points = int(self.parameters.get("n_points", 100))
-        max_conc = self.parameters.get("max_concentration", 1.0)
-        center = self.parameters.get("center", 0.5)
-        width = self.parameters.get("width", 0.1)
+        parameters = self.metadata.canonicalize_parameters(self.parameters)
+        return build_synthetic_curve_dataset(parameters, node_id=self.node_id)
 
-        t = np.linspace(0, 1, n_points)
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        """Generate code that invokes the same typed scientific operation."""
 
-        if curve_type == "sigmoid":
-            curve = max_conc / (1 + np.exp(-(t - center) / width))
-        elif curve_type == "gaussian":
-            curve = max_conc * np.exp(-((t - center) ** 2) / (2 * width**2))
-        elif curve_type == "linear":
-            curve = max_conc * t
-        elif curve_type == "exponential":
-            curve = max_conc * (1 - np.exp(-t / width))
-        elif curve_type == "step":
-            curve = np.where(t >= center, max_conc, 0.0)
-        else:
-            curve = np.ones(n_points) * max_conc
+        del inputs, use_scp
+        parameters = self.metadata.canonicalize_parameters(self.parameters)
+        return [
+            f"{indent}from spectra_sherpa.app.services.dag.nodes.data.synthetic import build_synthetic_curve_dataset",
+            f"{indent}results[{self.node_id!r}] = build_synthetic_curve_dataset(",
+            f"{indent}    {parameters!r}, node_id={self.node_id!r}",
+            f"{indent})",
+        ]
 
-        dataset = SherpaDataset(
-            X=curve.reshape(1, -1),
-            feature_axis=SpectralAxis(values=t * n_points, title="Time", units="s"),
-            backend="numpy",
-            title=f"Concentration ({curve_type})",
-            units="mol/L",
-        )
 
-        # Attach metadata with concentration profile
-        concentration_profile = ConcentrationProfile(
-            species_index=0,
-            species_name="Synthetic Species",
-            curve_type=curve_type,
-            values=curve.tolist(),
-            max_concentration=max_conc,
-            min_concentration=float(curve.min()),
-            center=center,
-            width=width,
-            unit=ConcentrationUnit.MOL_L,
-        )
-
-        meta = SpectraMeta(
-            concentrations=[concentration_profile],
-            provenance=DataProvenance(
-                source_type=SourceType.SYNTHETIC,
-                created_datetime=datetime.utcnow().isoformat(),
-            ),
-            is_ground_truth=True,
-            processing_steps=["synthetic_curve_generation"],
-            custom={
-                "curve_params": {
-                    "curve_type": curve_type,
-                    "n_points": n_points,
-                    "max_concentration": max_conc,
-                    "center": center,
-                    "width": width,
-                }
-            },
-        )
-        set_spectra_meta(dataset, meta)
-
-        # Record provenance in dataset.meta
-        add_processing_step(
-            dataset,
-            "data.synthetic_curve",
-            {
-                "curve_type": curve_type,
-                "n_points": n_points,
-                "max_concentration": max_conc,
-                "center": center,
-                "width": width,
-            },
-            node_id=self.node_id,
-        )
-        return dataset
+bind_stable_execution_contract(
+    SyntheticCurveNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.DATA_SOURCE,
+    implementation_id="spectrasherpa.data.synthetic_curve",
+    implementation_version="1.0.0",
+    required_worker_capabilities=(),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="generates_samples",
+    feature_effect="generates_features",
+    axis_effect="changes_axis",
+    unit_effect="changes_units",
+    resource_hints={"timeout_seconds": 5, "cpu_seconds": 5, "memory_bytes": 268_435_456},
+    license_id="Apache-2.0",
+    help_reference="docs/nodes/data.md",
+    implementation_modules=(source_contracts, sherpa_dataset_contract, spectra_meta_contract, dag_meta_helpers),
+    implementation_distributions=("numpy",),
+    runtime_requirements=(("numpy", "1.26.4"),),
+)

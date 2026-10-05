@@ -1,0 +1,56 @@
+schema_version: 1
+name: NMF Mixture Decomposition
+slug: nmf_mixture_decomposition
+description: Fit a deterministic non-negative factor model and inspect concentration profiles and component spectra.
+category: curve_resolution
+is_active: true
+status: ready
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.file_load
+    label: Load Mixture Spectra
+    parameters: {}
+    position_x: 200
+    position_y: 80
+  - node_id: floor_1
+    node_type: preprocess.clip_floor
+    label: Explicit Nonnegative Floor
+    parameters:
+      floor: 0.0
+    position_x: 200
+    position_y: 330
+  - node_id: nmf_1
+    node_type: model.nmf
+    label: Fit NMF Decomposition
+    parameters:
+      n_components: 3
+      solver: cd
+      max_iter: 1000
+      tol: 0.00001
+      random_state: 42
+    position_x: 200
+    position_y: 580
+  edges:
+  - from_node_id: data_1
+    to_node_id: floor_1
+    to_input: default
+  - from_node_id: floor_1
+    to_node_id: nmf_1
+    to_input: default
+  canvas_state:
+    zoom: 1.0
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Mixture spectra whose negative values, if any, are explicitly floored before NMF
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+      - UV-Vis

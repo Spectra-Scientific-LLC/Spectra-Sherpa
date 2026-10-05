@@ -1,34 +1,54 @@
 schema_version: 1
 name: OES Process Monitoring
 slug: oes_process_monitoring
-description: Monitor semiconductor process OES data with SNV normalization and PCA
-  to visualize drift, excursions, and fault separation.
+description: Monitor semiconductor process OES data with batch-local trend removal,
+  moving-window summaries, SNV normalization, and PCA to visualize drift,
+  excursions, and fault separation.
 category: exploratory
 is_active: true
+status: pending_qualification
+status_detail: Representative time-ordered OES process data and complete monitoring execution qualification are pending.
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load OES Data
-    parameters:
+    parameters: {}
+    example_binding:
       source: eigenvector
-      eigenvector_dataset: metal_etch_oes
+      dataset_name: metal_etch_oes
     position_x: 175
     position_y: 50
   - node_id: preprocess_1
+    node_type: time_series.trend_removal
+    label: Remove Linear Batch Trend
+    parameters:
+      method: linear
+    position_x: 425
+    position_y: 175
+  - node_id: window_1
+    node_type: time_series.moving_window
+    label: Summarize Moving Windows
+    parameters:
+      window_size: 10
+      step_size: 5
+      aggregation: mean
+    position_x: 175
+    position_y: 300
+  - node_id: normalize_1
     node_type: preprocess.normalize
     label: SNV Normalize
     parameters:
       method: snv
     position_x: 425
-    position_y: 300
+    position_y: 425
   - node_id: model_1
     node_type: model.pca
     label: Fit PCA Transform
     parameters:
-      n_components: 3
+      n_components: "3"
     position_x: 175
-    position_y: 550
+    position_y: 600
   - node_id: stats_1
     node_type: stats.summary
     label: Monitoring Summary
@@ -46,6 +66,10 @@ template_data:
   - from_node_id: data_1
     to_node_id: preprocess_1
   - from_node_id: preprocess_1
+    to_node_id: window_1
+  - from_node_id: window_1
+    to_node_id: normalize_1
+  - from_node_id: normalize_1
     to_node_id: model_1
   - from_node_id: model_1
     to_node_id: stats_1
@@ -78,7 +102,5 @@ template_data:
     name: corn_mp5
   - source: eigenvector
     name: corn_mp6
-  - source: spectrochempy
-    name: irdata
   - source: oes
     name: uvspectra10

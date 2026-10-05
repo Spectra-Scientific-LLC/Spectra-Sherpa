@@ -27,7 +27,7 @@ async def test_gateway_accepts_user_api_key(
     Ensure the gateway middleware accepts a user API key in non-local mode.
 
     The test client connects via ASGI transport from 127.0.0.1, which is
-    considered loopback and exempt from auth in hybrid mode.  We patch
+    considered loopback and exempt from auth in extension_test mode.  We patch
     ``get_client_host`` to simulate a remote client so the gateway actually
     enforces authentication.
 
@@ -39,7 +39,7 @@ async def test_gateway_accepts_user_api_key(
     import secrets
 
     original_mode = app_config.mode
-    app_config.mode = "hybrid"
+    app_config.mode = "extension_test"
     try:
         # Point gateway DB access to the test engine
         test_sessionmaker = sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
@@ -65,7 +65,7 @@ async def test_gateway_accepts_user_api_key(
 
         set_extra_user_api_key_authenticator(_authenticate_user_api_key)
 
-        # No auth should be blocked in hybrid mode for remote clients
+        # No auth should be blocked in extension_test mode for remote clients
         resp = await client.get("/api/v1/experiments")
         assert resp.status_code == 401
 
@@ -180,3 +180,13 @@ async def test_gateway_allows_deployment_key_on_conversations_route(
         assert resp.json() == [{"id": "c1"}]
     finally:
         app_config.mode = original_mode
+
+
+@pytest.fixture(autouse=True)
+def explicit_test_runtime_policy(monkeypatch):
+    from spectra_sherpa.app.contracts import runtime_mode
+
+    monkeypatch.setattr(runtime_mode, "_policies", {})
+    runtime_mode.register_runtime_mode(
+        runtime_mode.RuntimeModePolicy(name="extension_test", implicit_loopback_identity=True)
+    )

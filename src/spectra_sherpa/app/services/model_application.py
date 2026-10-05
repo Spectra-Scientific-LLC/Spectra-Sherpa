@@ -2,25 +2,68 @@
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import logging
+import time
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal, Sequence
 
 import numpy as np
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
-from spectra_sherpa.app.lib.adapters.scp_extractors import EXTRACT_REGISTRY
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
-from spectra_sherpa.app.models.experiment import Experiment
-from spectra_sherpa.app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.lib.collection_assembly import (
+    MAX_COLLECTION_MEMBERS,
+    MAX_COLLECTION_SOURCE_BYTES,
+    CollectionMember,
+    assemble_collection,
+    lossless_sample_table_scalar,
+    prepared_data_digest,
+    require_collection_budget,
+)
+from spectra_sherpa.app.lib.collection_definition import (
+    ValidatedCollectionDefinition,
+    apply_collection_definition,
+    project_collection_definition,
+    scientific_collection_identity,
+)
+from spectra_sherpa.app.lib.registered_reference_collection_identity import (
+    copy_registered_reference_collection_extras,
+    registered_reference_collection_identity,
+)
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.app.services.artifact_preprocessing_authority import (
+    validate_experiment_source_provenance,
+    validate_variable_selection_provenance,
+)
+from spectra_sherpa.app.services.collection_definitions import read_collection_definition
+from spectra_sherpa.app.services.dag import DAGExecutor, WorkflowEdge, WorkflowNode
 from spectra_sherpa.app.services.dag.io_contracts import extract_target_like
-from spectra_sherpa.app.services.dag.nodes.data.loaders import MyDatasetNode
-from spectra_sherpa.app.services.experiments import experiment_dir
+from spectra_sherpa.app.services.dag.nodes.classification_evaluator_node import evaluate_classification_v2
+from spectra_sherpa.app.services.dag.nodes.data.loaders import ExperimentDatasetReader
+from spectra_sherpa.app.services.dag.nodes.regression_evaluator_node import evaluate_regression_v2
+from spectra_sherpa.app.services.dag.transport import reject_spectrochempy_transport
+from spectra_sherpa.app.services.execution_runtime import build_application_execution_runtime
 from spectra_sherpa.app.services.model_store import ModelArtifactIntegrityError, get_model_store
+from spectra_sherpa.app.services.prepared_data import (
+    PreparedDataOverrides,
+    load_prepared_data_overrides,
+    load_prepared_data_overrides_strict,
+)
+from spectra_sherpa.core.axis_semantics import axis_semantics, canonical_axis_unit
+from spectra_sherpa.sdk.deployment import DEPLOYMENT_INPUT_SCHEMA
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 logger = logging.getLogger(__name__)
+
+
+class _UsePersistedCollectionDefinition:
+    """Sentinel distinguishing a prospective definition from normal loading."""
+
+
+_USE_PERSISTED_COLLECTION_DEFINITION = _UsePersistedCollectionDefinition()
 
 
 @dataclass
@@ -31,37 +74,96 @@ class LoadedProjectDataset:
     project_id: int | None
     file_ids: list[int]
     stage: str
+    asset_id: str | None
+    source_manifest_sha256: str
+    collection_definition_sha256: str | None = None
+    scientific_collection_sha256: str | None = None
+
+
+@dataclass(frozen=True)
+class _PinnedArtifactReader:
+    """Serve one verified snapshot so application metadata and bytes cannot race."""
+
+    artifact_uid: str
+    manifest: dict[str, Any]
+    arrays: dict[str, np.ndarray]
+
+    def load(self, artifact_uid: str, *, verify: bool = True) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
+        del verify  # The snapshot was integrity-verified by ModelStore.load().
+        if artifact_uid != self.artifact_uid:
+            raise FileNotFoundError(f"Model artifact not found: {artifact_uid}")
+        return dict(self.manifest), {name: np.array(values, copy=True) for name, values in self.arrays.items()}
 
 
 async def load_project_dataset(
-    session: AsyncSession,
+    session: "AsyncSession",
     *,
     user_id: int,
     experiment_id: int,
-    stage: str = "raw",
+    stage: Literal["raw", "preprocessed", "synthetic"] = "raw",
     file_id: int | None = None,
+    file_ids: Sequence[int] | None = None,
+    asset_id: str | None = None,
+    definition_override: ValidatedCollectionDefinition | _UsePersistedCollectionDefinition = (
+        _USE_PERSISTED_COLLECTION_DEFINITION
+    ),
+    prepared_overrides_by_file: Mapping[str, PreparedDataOverrides] | None = None,
+    strict_prepared_data: bool = False,
 ) -> LoadedProjectDataset:
-    """Load a user-owned My Dataset experiment as a SherpaDataset."""
+    """Load a user-owned experiment collection as a SherpaDataset."""
+    from sqlalchemy import or_, select
+
+    from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
+    from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
+    from spectra_sherpa.app.models.experiment import Experiment
+    from spectra_sherpa.app.models.experiment_file import ExperimentFile
+    from spectra_sherpa.app.services.experiments import experiment_dir
+
+    started = time.perf_counter()
     exp_result = await session.execute(
-        select(Experiment).where(Experiment.id == experiment_id, Experiment.user_id == user_id)
+        select(Experiment)
+        .where(Experiment.id == experiment_id, or_(Experiment.user_id == user_id, uses_managed_project_access()))
+        .execution_options(populate_existing=True)
     )
     experiment = exp_result.scalar_one_or_none()
     if experiment is None:
         raise ValueError("Dataset not found")
 
-    files_query = select(ExperimentFile).where(ExperimentFile.experiment_id == experiment_id)
+    if uses_managed_project_access():
+        await require_scientific_access(session, user_id, experiment.project_id, "read")
+
+    if stage not in {"raw", "preprocessed", "synthetic"}:
+        raise ValueError("Dataset stage must be raw, preprocessed, or synthetic")
+
+    if file_id is not None and file_ids is not None:
+        raise ValueError("Dataset loading accepts file_id or file_ids, not both")
+    selected_file_ids: tuple[int, ...] | None = None
+    if file_ids is not None:
+        selected_file_ids = tuple(int(value) for value in file_ids)
+        if not selected_file_ids or any(value < 1 for value in selected_file_ids):
+            raise ValueError("Dataset file selection requires positive file identities")
+        if len(set(selected_file_ids)) != len(selected_file_ids):
+            raise ValueError("Dataset file selection contains duplicate identities")
+
+    files_query = select(ExperimentFile).where(
+        ExperimentFile.experiment_id == experiment_id,
+        ExperimentFile.stage == stage,
+    )
     if file_id is not None:
         files_query = files_query.where(ExperimentFile.id == file_id)
-    else:
-        files_query = files_query.where(ExperimentFile.stage == stage)
-    files_query = files_query.order_by(ExperimentFile.id)
+    elif selected_file_ids is not None:
+        files_query = files_query.where(ExperimentFile.id.in_(selected_file_ids))
+    files_query = files_query.order_by(ExperimentFile.id).execution_options(populate_existing=True)
 
     files = list((await session.execute(files_query)).scalars().all())
+    if selected_file_ids is not None and {int(file.id) for file in files} != set(selected_file_ids):
+        raise ValueError("Dataset file selection is outside the owned experiment stage")
     if not files and file_id is None and stage == "raw":
         synthetic_query = (
             select(ExperimentFile)
             .where(ExperimentFile.experiment_id == experiment_id, ExperimentFile.stage == "synthetic")
             .order_by(ExperimentFile.id)
+            .execution_options(populate_existing=True)
         )
         files = list((await session.execute(synthetic_query)).scalars().all())
         if files:
@@ -69,17 +171,70 @@ async def load_project_dataset(
 
     if not files:
         raise ValueError("Dataset has no files for the requested scope")
+    if len(files) > MAX_COLLECTION_MEMBERS:
+        raise ValueError(f"scientific collection exceeds the {MAX_COLLECTION_MEMBERS}-member limit")
+    if sum(int(file.file_size_bytes or 0) for file in files) > MAX_COLLECTION_SOURCE_BYTES:
+        raise ValueError("scientific collection exceeds the 512 MiB source limit")
 
     base_dir = experiment_dir(experiment_id)
-    helper = MyDatasetNode("model_apply_dataset_loader", {"dataset_id": experiment_id})
-    loaded = []
-    for file in files:
-        path = base_dir / file.file_path
-        if not path.exists():
-            raise ValueError(f"Dataset file is missing from storage: {file.file_path}")
-        loaded.append(helper._load_file(str(path), file_name=file.file_path))
+    helper = ExperimentDatasetReader("model_apply_dataset_loader", {"dataset_id": experiment_id})
+    expected_override_keys = {str(file.file_path) for file in files}
+    if prepared_overrides_by_file is not None and set(prepared_overrides_by_file) != expected_override_keys:
+        raise ValueError("Dataset prepared-data snapshot does not match its exact file set")
+    source_paths = [str(file.file_path) for file in files]
 
-    dataset = _loaded_files_to_sherpa(helper, loaded, experiment.name)
+    def load_sources() -> list[Any]:
+        loaded = []
+        for file_path in source_paths:
+            path = base_dir / file_path
+            if not path.exists():
+                raise ValueError(f"Dataset file is missing from storage: {file_path}")
+            if prepared_overrides_by_file is not None:
+                prepared = prepared_overrides_by_file[file_path]
+            elif strict_prepared_data:
+                prepared = load_prepared_data_overrides_strict(file_path=str(path))
+            else:
+                prepared = load_prepared_data_overrides(file_path=str(path))
+            loaded.append(
+                helper._load_file(
+                    str(path),
+                    file_name=file_path,
+                    asset_id=asset_id,
+                    prepared_overrides=prepared.to_sidecar_dict(),
+                )
+            )
+        return loaded
+
+    # Parsing and scientific projection are synchronous; keep them off the API
+    # event loop so selection inspection cannot starve health checks or sockets.
+    queried = time.perf_counter()
+    loaded = await asyncio.to_thread(load_sources)
+    parsed = time.perf_counter()
+
+    definition = (
+        await asyncio.to_thread(read_collection_definition, experiment_id)
+        if definition_override is _USE_PERSISTED_COLLECTION_DEFINITION
+        else definition_override
+    )
+    dataset = await asyncio.to_thread(
+        _loaded_files_to_sherpa,
+        loaded,
+        experiment.name,
+        definition=definition,
+        project_definition=file_id is not None or selected_file_ids is not None,
+    )
+    source_manifest = dataset.meta["source_collection"]
+    finished = time.perf_counter()
+    logger.info(
+        "dataset-load experiment=%s files=%s selected=%s query_ms=%.1f parse_ms=%.1f projection_ms=%.1f total_ms=%.1f",
+        experiment_id,
+        len(files),
+        file_id is not None or selected_file_ids is not None,
+        (queried - started) * 1000,
+        (parsed - queried) * 1000,
+        (finished - parsed) * 1000,
+        (finished - started) * 1000,
+    )
     return LoadedProjectDataset(
         dataset=dataset,
         experiment_id=experiment_id,
@@ -87,62 +242,87 @@ async def load_project_dataset(
         project_id=experiment.project_id,
         file_ids=[int(file.id) for file in files],
         stage=stage,
+        asset_id=asset_id,
+        source_manifest_sha256=str(source_manifest["manifest_digest"]),
+        collection_definition_sha256=source_manifest.get("collection_definition_sha256"),
+        scientific_collection_sha256=source_manifest.get("scientific_collection_sha256"),
     )
 
 
-def _loaded_files_to_sherpa(helper: MyDatasetNode, loaded: list[Any], experiment_name: str) -> SherpaDataset:
-    groups = helper._group_by_x_axis(loaded)
-    groups.sort(key=lambda group: helper._x_length(group[0].dataset), reverse=True)
-    spectra_group = groups[0]
-    prop_groups = groups[1:]
-    embedded_target = helper._combine_embedded_targets(spectra_group)
-
-    spectra_datasets = [item.dataset for item in spectra_group]
-    spectra_names = [item.file_name for item in spectra_group]
-    spectra = helper._concatenate(spectra_datasets, spectra_names) if len(spectra_datasets) > 1 else spectra_datasets[0]
-    spectra.title = f"{experiment_name} ({len(spectra_datasets)} file{'s' if len(spectra_datasets) != 1 else ''})"
-
-    target = None
-    if embedded_target is not None:
-        target_data, target_names, target_units = embedded_target
-        target = (target_data, target_names, target_units)
-    elif prop_groups:
-        all_props: list[Any] = []
-        all_names: list[str] = []
-        for group in prop_groups:
-            for item in group:
-                all_props.append(item.dataset)
-                all_names.append(item.file_name)
-        target_ds = helper._concatenate(all_props, all_names) if len(all_props) > 1 else all_props[0]
-        target_data = np.asarray(target_ds.data, dtype=np.float64)
-        target_names = None
-        if hasattr(target_ds, "x") and getattr(target_ds.x, "labels", None) is not None:
-            target_names = list(target_ds.x.labels)
-        target = (target_data, target_names or [], None)
-
-    spectra_out = spectra if isinstance(spectra, SherpaDataset) else from_nddataset(spectra)
-    if not isinstance(spectra_out, SherpaDataset):
-        raise ValueError("Dataset loader did not return a SherpaDataset")
-
-    if target is not None:
-        target_data, target_names, target_units = target
-        spectra_out.target = target_data
-        is_cat = np.asarray(target_data).dtype.kind in ("U", "S", "O")
-        spectra_out.target_context = TargetContext(
-            target_type="categorical" if is_cat else "continuous",
-            target_names=list(target_names) if target_names else None,
-            target_units=target_units,
+def _loaded_files_to_sherpa(
+    loaded: list[Any],
+    experiment_name: str,
+    *,
+    definition: ValidatedCollectionDefinition | None = None,
+    project_definition: bool = False,
+) -> SherpaDataset:
+    reject_spectrochempy_transport(loaded, boundary="model dataset-loader handoff")
+    members: list[CollectionMember] = []
+    for item in loaded:
+        if len(item.source_members) != 1:
+            raise ValueError(f"Dataset member {item.file_name!r} lacks one exact source identity")
+        source = item.source_members[0]
+        members.append(
+            CollectionMember(
+                dataset=item.dataset,
+                file_name=item.file_name,
+                size_bytes=source.size_bytes,
+                sha256=source.sha256,
+                prepared_data_sha256=prepared_data_digest(item.prepared_overrides),
+                asset_id=item.selected_asset_id,
+            )
         )
-    return spectra_out
+        require_collection_budget(members)
+    effective_definition = (
+        project_collection_definition(definition, members)
+        if definition is not None and project_definition
+        else definition
+    )
+    spectra = (
+        apply_collection_definition(members, effective_definition)
+        if effective_definition is not None
+        else assemble_collection(
+            members,
+            title=experiment_name if len(members) == 1 else f"{experiment_name} ({len(members)} files)",
+        )
+    )
+    # Collection assembly deliberately does not promote arbitrary member
+    # metadata. A retained registered reference is the bounded exception: its
+    # exact sidecar has already been re-admitted and its single projected
+    # member must keep the authority that the server independently verifies
+    # before issuing a trial grant. Ordinary paid-user files never enter this
+    # branch and retain their normal collection behavior.
+    if len(loaded) == 1:
+        source = loaded[0].dataset
+        copy_registered_reference_collection_extras(
+            source,
+            spectra,
+            selected_asset_id=loaded[0].selected_asset_id,
+        )
+    manifest = spectra.meta["source_collection"]
+    identity = scientific_collection_identity(manifest, effective_definition, spectra)
+    if effective_definition is None:
+        registered_identity = registered_reference_collection_identity(
+            manifest,
+            spectra,
+            members=[(item.dataset, item.selected_asset_id) for item in loaded],
+        )
+        if registered_identity is not None:
+            identity = registered_identity
+    spectra.meta["source_collection"].update(identity)
+    reject_spectrochempy_transport(spectra, boundary="model dataset-loader handoff")
+    return spectra
 
 
-def apply_model_to_dataset(
+async def apply_model_to_dataset(
     artifact_uid: str,
     dataset: SherpaDataset,
     *,
     scope: str = "all",
+    execution_evidence: dict[str, Any] | None = None,
+    presentation_multiplier: int = 1,
 ) -> dict[str, Any]:
-    """Apply one model artifact to a SherpaDataset and return comparable output."""
+    """Apply one artifact through the canonical DAG node and evaluator authorities."""
     store = get_model_store()
     try:
         manifest, arrays = store.load(artifact_uid)
@@ -152,69 +332,192 @@ def apply_model_to_dataset(
         raise ValueError(f"Model artifact is corrupt: {exc}") from exc
 
     model_type = str(manifest.get("model_type", ""))
-    extract_cls = EXTRACT_REGISTRY.get(model_type)
-    if extract_cls is None:
-        raise ValueError(f"Unsupported model type: {model_type!r}")
-
-    X = np.asarray(dataset.X, dtype=np.float64)
-    if X.ndim == 1:
-        X = X.reshape(1, -1)
     y, target_warnings, target_metadata = _target_for_artifact(dataset, manifest)
+    if scope != "all":
+        _validate_partition_population(dataset, y, manifest)
+    sample_count = int(np.asarray(dataset.X).shape[0])
+    from spectra_sherpa.app.services.dag.presentation_limits import MAX_PRESENTATION_VALUES
 
-    validate_feature_contract(X, dataset, manifest)
-    X_scoped, y_scoped, sample_indices, warnings = _prepare_X_for_artifact(X, y, manifest, scope=scope)
-    warnings = target_warnings + warnings
-    X_ready, feature_warning = _apply_feature_mask(X_scoped, dataset, manifest)
-    warnings.extend(feature_warning)
-    validate_prepared_feature_contract(X_ready, manifest)
+    output_width = max(
+        dataset.X.shape[1],
+        int(manifest.get("n_components") or 1),
+        len(manifest.get("classes") or []),
+        len(manifest.get("target_names") or []),
+    )
+    if sample_count * output_width * presentation_multiplier > MAX_PRESENTATION_VALUES:
+        raise ValueError("Model application exceeds its display limit (100,000 values); select a smaller cohort")
+    sample_indices = _scope_indices_for_artifact(sample_count, manifest, scope=scope)
+    if dataset.sample_axis is not None and dataset.sample_axis.include_mask is not None:
+        sample_indices = sample_indices[np.asarray(dataset.sample_axis.include_mask, dtype=bool)[sample_indices]]
+    if sample_indices.size == 0:
+        raise ValueError("No included samples remain in the requested model application scope")
+    scoped_dataset = dataset if np.array_equal(sample_indices, np.arange(sample_count)) else dataset[sample_indices, :]
+    feature_indices = np.arange(dataset.X.shape[-1], dtype=np.int64)
+    if dataset.feature_axis is not None and dataset.feature_axis.include_mask is not None:
+        feature_indices = feature_indices[np.asarray(dataset.feature_axis.include_mask, dtype=bool)]
+        if feature_indices.size == 0:
+            raise ValueError("No included features remain in the requested model application selection")
+        if feature_indices.size != dataset.X.shape[-1]:
+            key = (slice(None),) * (dataset.ndim - 1) + (feature_indices,)
+            scoped_dataset = scoped_dataset[key]
+    y_scoped = y[sample_indices] if y is not None else None
 
-    extract = extract_cls.from_artifact(manifest, arrays)  # type: ignore[attr-defined]
+    input_node_id = "application-model-input"
+    model_node_id = "application-model-artifact"
+    input_stream = "application-model-dataset"
+    executor = DAGExecutor(
+        runtime=build_application_execution_runtime(
+            model_artifact_reader=_PinnedArtifactReader(
+                artifact_uid=artifact_uid,
+                manifest=manifest,
+                arrays=arrays,
+            )
+        )
+    )
+    executor.add_node(
+        WorkflowNode(
+            node_id=input_node_id,
+            node_type="deploy.input",
+            parameters={
+                "stream_name": input_stream,
+                "schema_version": DEPLOYMENT_INPUT_SCHEMA,
+            },
+        )
+    )
+    executor.add_node(
+        WorkflowNode(
+            node_id=model_node_id,
+            node_type="model.load_apply",
+            parameters={"model_id": artifact_uid},
+        )
+    )
+    executor.add_edge(
+        WorkflowEdge(
+            from_node=input_node_id,
+            to_node=model_node_id,
+            from_output="default",
+            to_input="X_new",
+        )
+    )
+    executor.inject_deployment_input(input_node_id, scoped_dataset, stream_name=input_stream)
+    try:
+        applied = (await executor.execute())[model_node_id]
+    finally:
+        if execution_evidence is not None:
+            from spectra_sherpa.app.services.dag.presentation_contract import describe_executed_presentations
+            from spectra_sherpa.app.services.dag.scientific_values import describe_node_outputs
+
+            descriptors = {
+                key: describe_node_outputs(executor.nodes[key].metadata, value)
+                for key, value in executor.results.items()
+            }
+            presentations = {
+                key: describe_executed_presentations(executor.nodes[key].metadata, value)
+                for key, value in descriptors.items()
+            }
+            execution_evidence.update(
+                outputs=dict(executor.results),
+                node_statuses={key: node.status.value for key, node in executor.nodes.items()},
+                diagnostics={
+                    **executor.diagnostics,
+                    "_scientific_values": descriptors,
+                    "_scientific_presentations": presentations,
+                },
+                definition={
+                    "schema_version": 1,
+                    "nodes": [
+                        {
+                            "node_id": key,
+                            "node_type": node.metadata.node_type,
+                            "label": node.metadata.label,
+                            "parameters": node._resolve_params(),
+                        }
+                        for key, node in executor.nodes.items()
+                    ],
+                    "edges": [
+                        {
+                            "from_node_id": edge.from_node,
+                            "to_node_id": edge.to_node,
+                            "from_output": edge.from_output,
+                            "to_input": edge.to_input,
+                        }
+                        for edge in executor.edges
+                    ],
+                },
+            )
+    result_matrix = np.asarray(applied["result"])
+    node_metadata = dict(applied.get("metadata") or {})
+    warnings = list(target_warnings)
+    applicability_warning = node_metadata.get("applicability_warning")
+    if isinstance(applicability_warning, str) and applicability_warning:
+        warnings.append(applicability_warning)
+
     response: dict[str, Any] = {
         "artifact_uid": artifact_uid,
         "model_type": model_type,
         "scope": scope,
         "sample_indices": sample_indices.tolist(),
-        "n_samples": int(X_ready.shape[0]),
+        "feature_indices": feature_indices.tolist(),
+        "n_samples": int(result_matrix.shape[0]),
         "warnings": warnings,
         "metadata": {
-            "classes": list(getattr(extract, "classes", manifest.get("classes", [])) or []),
+            "classes": list(node_metadata.get("classes", manifest.get("classes", [])) or []),
             "preprocessing_chain": manifest.get("preprocessing_chain", []),
             "training_data_hash": manifest.get("training_data_hash"),
             **target_metadata,
         },
     }
 
-    if hasattr(extract, "predict") and model_type in {"plsda", "knn", "simca"}:
-        labels, probabilities = extract.predict(X_ready)
-        labels_list = [str(label) for label in list(labels)]
+    if node_metadata.get("output_type") == "clustering":
+        labels = [lossless_sample_table_scalar(label) for label in applied["labels"]]
+        response["predictions"] = labels
+        response["cluster_assignments"] = labels
+        response["output_type"] = "clustering"
+        response["metrics"] = None
+        return response
+
+    if node_metadata.get("output_type") == "classification":
+        labels_list = [lossless_sample_table_scalar(label) for label in list(applied["labels"])]
         response["predictions"] = labels_list
-        response["probabilities"] = np.asarray(probabilities, dtype=np.float64).tolist()
+        output_key = "class_responses" if model_type == "plsda" else "probabilities"
+        response[output_key] = np.asarray(result_matrix, dtype=np.float64).tolist()
+        response["classification_output_semantics"] = (
+            "class_response_scores_not_probabilities" if model_type == "plsda" else "class_probabilities"
+        )
+        if model_type == "plsda":
+            response["decision_margins"] = np.asarray(applied["decision_margins"], dtype=np.float64).tolist()
+            response["classification_application_digest"] = str(applied["classification_application_digest"])
         if y_scoped is not None:
-            y_true = [str(label) for label in y_scoped.tolist()]
+            y_true = [lossless_sample_table_scalar(label) for label in y_scoped.tolist()]
             response["true_labels"] = y_true
-            response["metrics"] = _classification_metrics(y_true, labels_list, response["metadata"]["classes"])
+            response["metrics"] = evaluate_classification_v2(
+                labels_list,
+                y_true,
+                node_id="application-classification-evaluator",
+            ).outputs["default"]
         else:
             response["metrics"] = None
         return response
 
-    if hasattr(extract, "predict"):
-        predicted = extract.predict(X_ready)
-        predicted_arr = np.asarray(predicted, dtype=np.float64)
+    if node_metadata.get("output_type") == "regression":
+        predicted_arr = np.asarray(result_matrix, dtype=np.float64)
         response["predictions"] = predicted_arr.tolist()
-        response["metrics"] = _regression_metrics(y_scoped, predicted_arr) if y_scoped is not None else None
-        applicability = _applicability_diagnostics(extract, X_ready)
+        response["metrics"] = (
+            evaluate_regression_v2(
+                predicted_arr,
+                y_scoped,
+                node_id="application-regression-evaluator",
+            ).outputs["default"]
+            if y_scoped is not None
+            else None
+        )
+        applicability = applied.get("applicability")
         if applicability is not None:
             response["applicability"] = applicability
-            n_out = int(applicability.get("n_out_of_domain", 0) or 0)
-            if n_out:
-                response["warnings"].append(
-                    f"{n_out} sample{'s' if n_out != 1 else ''} outside saved model applicability domain"
-                )
         return response
 
-    if hasattr(extract, "transform"):
-        transformed = extract.transform(X_ready)
-        response["transformed"] = np.asarray(transformed).tolist()
+    if node_metadata.get("output_type") == "decomposition":
+        response["transformed"] = np.asarray(result_matrix).tolist()
         response["metrics"] = None
         return response
 
@@ -265,39 +568,39 @@ def _target_for_artifact(
     if dataset.target is None:
         return None, warnings, metadata
 
+    response_identity = manifest.get("response_identity")
+    if isinstance(response_identity, dict) and not response_identity.get("names"):
+        warnings.append("Evaluation unavailable: the fitted response has no recorded target identity.")
+        return None, warnings, metadata
+
     original_context = dataset.target_context
+    if isinstance(response_identity, dict):
+        recorded_units = response_identity.get("units") or []
+        actual_unit = getattr(original_context, "target_units", None)
+        if actual_unit and any(unit is not None and unit != actual_unit for unit in recorded_units):
+            raise ValueError("Application target units differ from the saved response authority.")
+    context_names = _string_list(getattr(original_context, "target_names", None)) if original_context else []
     if selected:
-        context_names = _string_list(getattr(original_context, "target_names", None)) if original_context else []
-        names = context_names or available_targets
-        if names and selected in names:
-            if original_context is not None:
-                dataset.target_context = original_context.model_copy(
-                    update={"target_names": names, "selected_target": selected}
-                )
-            else:
-                target_units = manifest.get("target_units")
-                dataset.target_context = TargetContext(
-                    target_type=str(manifest.get("target_type") or "continuous"),
-                    target_names=names,
-                    selected_target=selected,
-                    target_units=target_units if isinstance(target_units, str) else None,
-                )
+        names = context_names
+        if names.count(selected) == 1 and original_context is not None:
+            dataset.target_context = original_context.model_copy(
+                update={"target_names": names, "selected_target": selected}
+            )
             try:
                 target = extract_target_like(dataset)
                 return np.asarray(target) if target is not None else None, warnings, metadata
             finally:
                 dataset.target_context = original_context
 
-        target_arr = np.asarray(dataset.target)
-        if target_arr.ndim >= 2 and available_targets and len(available_targets) == target_arr.shape[1]:
-            idx = available_targets.index(selected) if selected in available_targets else -1
-            if idx >= 0:
-                return target_arr[:, idx], warnings, metadata
-
-        warnings.append(
+        raise ValueError(
             f"Saved model was trained for target {selected!r}, but that target could not be matched in the "
-            "labeled dataset"
+            "labeled dataset. Bind the matching target before application."
         )
+
+    if manifest_targets and (
+        context_names != manifest_targets or getattr(original_context, "selected_target", None) is not None
+    ):
+        raise ValueError("Application target names and order must match the saved model's complete target contract.")
 
     target = extract_target_like(dataset)
     return np.asarray(target) if target is not None else None, warnings, metadata
@@ -313,13 +616,19 @@ def _applicability_diagnostics(extract: Any, X_ready: np.ndarray) -> dict[str, A
     return diagnostics
 
 
-def compare_models_on_dataset(
+async def compare_models_on_dataset(
     artifact_uids: list[str],
     dataset: SherpaDataset,
     *,
     scope: str = "all",
 ) -> dict[str, Any]:
-    results = [apply_model_to_dataset(uid, dataset, scope=scope) for uid in artifact_uids]
+    from spectra_sherpa.app.services.dag.presentation_limits import require_bounded_presentation
+
+    require_bounded_presentation(dataset, surface="Model comparison", multiplier=max(1, len(artifact_uids)))
+    results = [
+        await apply_model_to_dataset(uid, dataset, scope=scope, presentation_multiplier=len(artifact_uids))
+        for uid in artifact_uids
+    ]
     comparison: dict[str, Any] = {
         "scope": scope,
         "models": results,
@@ -352,35 +661,66 @@ def _prepare_X_for_artifact(
     manifest: dict[str, Any],
     *,
     scope: str,
+    source_dataset: Any | None = None,
 ) -> tuple[np.ndarray, np.ndarray | None, np.ndarray, list[str]]:
+    matrix, target, indices, warnings, _ = _prepare_artifact_input(
+        X, y, manifest, scope=scope, source_dataset=source_dataset
+    )
+    return matrix, target, indices, warnings
+
+
+def _prepare_artifact_input(
+    X: np.ndarray,
+    y: np.ndarray | None,
+    manifest: dict[str, Any],
+    *,
+    scope: str,
+    source_dataset: Any | None = None,
+) -> tuple[np.ndarray, np.ndarray | None, np.ndarray, list[str], SherpaDataset | None]:
     warnings: list[str] = []
     chain = manifest.get("preprocessing_chain") or []
-    partition = _find_partition_step(chain)
-    indices = np.arange(X.shape[0])
-    if scope in {"train", "test"}:
-        if partition is None:
-            raise ValueError(f"Model artifact does not contain train/test partition provenance for scope={scope!r}")
-        key = "train_indices" if scope == "train" else "test_indices"
-        indices = np.asarray(partition.get(key) or [], dtype=np.int64)
-        if indices.size == 0:
-            raise ValueError(f"Model artifact does not contain {key}")
-        if int(indices.max()) >= X.shape[0] or int(indices.min()) < 0:
-            raise ValueError("Stored partition indices do not match this dataset")
+    indices = _scope_indices_for_artifact(X.shape[0], manifest, scope=scope)
 
     X_work = X[indices]
+    replay_source = copy.copy(source_dataset) if isinstance(source_dataset, SherpaDataset) else None
     y_work = y[indices] if y is not None else None
 
+    non_transforming_provenance = {
+        "data.file_load",
+        "data.attach_target",
+        "data.train_test_split",
+    }
     for step in chain:
+        if not isinstance(step, Mapping) or set(step) != {"op_id", "parameters"}:
+            raise ValueError("model artifact preprocessing provenance is malformed")
         op_id = step.get("op_id")
         params = step.get("parameters", {})
-        if op_id in {"selection.sample_partition"} or str(op_id).startswith("data."):
+        if not isinstance(op_id, str) or not op_id or not isinstance(params, Mapping):
+            raise ValueError("model artifact preprocessing provenance is malformed")
+        params = dict(params)
+        if op_id in non_transforming_provenance:
             continue
-        if str(op_id).startswith("model."):
+        if op_id == "spectrasherpa.experiment_dataset_read/2":
+            validate_experiment_source_provenance(params)
+            continue
+        if op_id == "selection.variable_select":
+            validate_variable_selection_provenance(
+                params,
+                manifest=manifest,
+                source_dataset=source_dataset,
+            )
             continue
         if op_id == "preprocess.scale":
             state = params.get("transform_state")
-            if isinstance(state, dict):
-                X_work = _apply_scale_state(X_work, state)
+            if isinstance(state, Mapping):
+                from spectra_sherpa.app.services.dag.nodes.preprocessing.scale_node import (
+                    _apply_scale_state,
+                    scaled_signal_units,
+                )
+
+                X_work = _apply_scale_state(X_work, state, source_dataset=replay_source)
+                if replay_source is not None:
+                    replay_source.units = scaled_signal_units(replay_source.units, state["method"])
             else:
                 raise ValueError(
                     "preprocess.scale has no replayable transform_state; re-train the model with a current "
@@ -389,15 +729,26 @@ def _prepare_X_for_artifact(
             continue
         if op_id == "preprocess.normalize":
             X_work = _apply_normalize_step(X_work, params)
+            if replay_source is not None:
+                replay_source.units = "dimensionless" if params.get("method") == "snv" else "normalized"
+            continue
+        if op_id == "preprocess.msc":
+            X_work = _apply_msc_step(X_work, params, source_dataset=replay_source)
+            if replay_source is not None:
+                replay_source.units = params["transform_state"]["input_identity"]["signal_units"]
             continue
         if op_id == "preprocess.emsc":
-            X_work = _apply_emsc_step(X_work, params)
+            X_work = _apply_emsc_step(X_work, params, source_dataset=source_dataset)
             continue
         if op_id == "preprocess.smooth":
             X_work = _apply_smooth_step(X_work, params)
             continue
         if op_id == "preprocess.derivative":
             X_work = _apply_derivative_step(X_work, params)
+            if replay_source is not None:
+                from spectra_sherpa.app.services.dag.nodes.preprocessing.derivative_node import _update_derivative_units
+
+                _update_derivative_units(replay_source, replay_source, int(str(params["deriv"])))
             continue
         if op_id == "baseline.penalized_ls":
             X_work = _apply_penalized_baseline_step(X_work, params)
@@ -409,218 +760,282 @@ def _prepare_X_for_artifact(
                 "or re-train with a replayable baseline method."
             )
         if op_id == "preprocess.osc":
-            raise ValueError(
-                "preprocess.osc is recorded in the model preprocessing chain but its fitted OSC projection "
-                "state was not persisted. Re-train without OSC in the deploy path or apply a validated OSC "
-                "transform before Load & Apply."
-            )
-        if str(op_id).startswith(("preprocess.", "baseline.")):
-            raise ValueError(f"Preprocessing step {op_id!r} is recorded but not replayed by model apply")
-        warnings.append(f"Processing step {op_id!r} is recorded but not replayed by model apply")
-
-    return X_work, y_work, indices, warnings
-
-
-def _regression_metrics(y_true: np.ndarray | None, y_pred: np.ndarray) -> dict[str, Any] | None:
-    if y_true is None:
-        return None
-    true = np.asarray(y_true, dtype=np.float64)
-    pred = np.asarray(y_pred, dtype=np.float64)
-    if true.ndim == 1:
-        true = true.reshape(-1, 1)
-    if pred.ndim == 1:
-        pred = pred.reshape(-1, 1)
-    if true.shape != pred.shape or true.size == 0:
-        return None
-
-    finite = np.isfinite(true) & np.isfinite(pred)
-    per_target: list[dict[str, float | None]] = []
-    residuals_all: list[np.ndarray] = []
-    for target_idx in range(true.shape[1]):
-        mask = finite[:, target_idx]
-        if not np.any(mask):
-            per_target.append({"rmsep": None, "r2": None, "bias": None, "sep": None})
+            X_work = _apply_osc_step(X_work, params, source_dataset=source_dataset)
             continue
-        t = true[mask, target_idx]
-        p = pred[mask, target_idx]
-        residual = t - p
-        residuals_all.append(residual)
-        rmsep = float(np.sqrt(np.mean(residual**2)))
-        bias = float(np.mean(residual))
-        sep = float(np.std(residual, ddof=1)) if residual.size > 1 else 0.0
-        ss_tot = float(np.sum((t - np.mean(t)) ** 2))
-        r2 = float(1.0 - np.sum(residual**2) / ss_tot) if ss_tot > 0 else None
-        per_target.append({"rmsep": rmsep, "r2": r2, "bias": bias, "sep": sep})
+        raise ValueError(
+            f"Processing step {op_id!r} is recorded but has no certified artifact-application replay. "
+            "Apply that canonical operation explicitly upstream, or train and export a model whose complete "
+            "scientific path is replayable."
+        )
 
-    if not residuals_all:
-        return None
+    return X_work, y_work, indices, warnings, replay_source
 
-    all_residual = np.concatenate(residuals_all)
-    metrics: dict[str, Any] = {
-        "rmsep": float(np.sqrt(np.mean(all_residual**2))),
-        "bias": float(np.mean(all_residual)),
-        "sep": float(np.std(all_residual, ddof=1)) if all_residual.size > 1 else 0.0,
-        "n_evaluated": int(all_residual.size),
-    }
-    if len(per_target) == 1:
-        metrics["r2"] = per_target[0]["r2"]
-    else:
-        r2_values = [item["r2"] for item in per_target if item["r2"] is not None]
-        metrics["r2"] = float(np.mean(r2_values)) if r2_values else None
-        metrics["per_target"] = per_target
-    return metrics
+
+def _validate_partition_population(dataset: SherpaDataset, y: np.ndarray | None, manifest: Mapping[str, Any]) -> None:
+    """Stored positions are meaningful only against their original bound inputs."""
+    from dataclasses import fields
+
+    from spectra_sherpa.app.services.dag.nodes.data.split_planner import (
+        SplitPlan,
+        _validate_plan_binding,
+        bind_split_groups,
+    )
+
+    partition = _find_partition_step(manifest.get("preprocessing_chain") or [])
+    if partition is None or any(field.name not in partition for field in fields(SplitPlan)):
+        raise ValueError(
+            "Saved train/test scope lacks its complete input-bound split plan. "
+            "Use included samples or select an artifact with exact partition evidence."
+        )
+    values = {field.name: partition[field.name] for field in fields(SplitPlan)}
+    for key in ("train_indices", "test_indices"):
+        values[key] = np.asarray(values[key])
+    if values["held_out_groups"] is not None:
+        values["held_out_groups"] = tuple(values["held_out_groups"])
+    plan = SplitPlan(**values)
+    _validate_plan_binding(np.asarray(dataset.X), y, plan, bind_split_groups(dataset))
+
+
+def _scope_indices_for_artifact(
+    sample_count: int,
+    manifest: Mapping[str, Any],
+    *,
+    scope: str,
+) -> np.ndarray:
+    """Resolve the artifact's declared row scope without performing science."""
+
+    if scope not in {"all", "train", "test"}:
+        raise ValueError("Model application scope must be one of: all, train, test")
+    indices = np.arange(sample_count, dtype=np.int64)
+    if scope == "all":
+        return indices
+    chain = manifest.get("preprocessing_chain") or []
+    partition = _find_partition_step(chain)
+    if partition is None:
+        raise ValueError(f"Model artifact does not contain train/test partition provenance for scope={scope!r}")
+    key = "train_indices" if scope == "train" else "test_indices"
+    raw_indices = np.asarray(partition.get(key) or [])
+    if raw_indices.ndim != 1 or raw_indices.dtype.kind not in {"i", "u"}:
+        raise ValueError("Stored partition indices must be an integer vector")
+    indices = np.asarray(raw_indices, dtype=np.int64)
+    if indices.size == 0:
+        raise ValueError(f"Model artifact does not contain {key}")
+    if int(indices.max()) >= sample_count or int(indices.min()) < 0:
+        raise ValueError("Stored partition indices do not match this dataset")
+    if np.unique(indices).size != indices.size:
+        raise ValueError("Stored partition indices contain duplicate samples")
+    declared_count = partition.get("n_samples")
+    if declared_count is not None and (isinstance(declared_count, bool) or declared_count != sample_count):
+        raise ValueError("Stored partition sample count does not match this dataset")
+    return indices
 
 
 def _find_partition_step(chain: list[dict[str, Any]]) -> dict[str, Any] | None:
     for step in chain:
-        if step.get("op_id") == "selection.sample_partition":
+        if step.get("op_id") == "data.train_test_split":
             params = step.get("parameters")
-            return params if isinstance(params, dict) else None
+            return dict(params) if isinstance(params, Mapping) else None
     return None
 
 
-def _apply_scale_state(X: np.ndarray, state: dict[str, Any]) -> np.ndarray:
-    method = state.get("method")
-    if method == "mean_center":
-        return X - np.asarray(state["mean"], dtype=np.float64)
-    if method in {"autoscale", "pareto"}:
-        out = X
-        mean = state.get("mean")
-        if mean is not None:
-            out = out - np.asarray(mean, dtype=np.float64)
-        return out / np.asarray(state["scale"], dtype=np.float64)
-    if method == "scale_max":
-        target_max = float(state.get("target_max", 1.0))
-        denom = np.max(np.abs(X), axis=1, keepdims=True)
-        denom[(denom == 0) | ~np.isfinite(denom)] = 1.0
-        return X / denom * target_max
-    raise ValueError(f"Unsupported scale transform_state method: {method!r}")
-
-
 def _apply_normalize_step(X: np.ndarray, params: dict[str, Any]) -> np.ndarray:
-    from spectra_sherpa.app.services.dag.nodes.preprocessing.normalize_scale_nodes import _normalize_dispatch
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.normalize_node import (
+        NormalizeNode,
+        _normalize_dispatch,
+    )
 
-    method = params.get("method", "snv")
     state = params.get("transform_state")
-    if isinstance(state, dict):
-        state_method = state.get("method", method)
-        if state_method == "msc":
-            reference = np.asarray(state.get("reference_spectrum"), dtype=np.float64)
-            if reference.ndim != 1 or reference.shape[0] != X.shape[1]:
-                raise ValueError(
-                    "preprocess.normalize(method='msc') transform_state does not match supplied feature count"
-                )
-            return _apply_msc_reference(X, reference)
-        if state_method in {"snv", "scale"}:
-            method = state_method
-            if method == "scale":
-                return _normalize_dispatch(
-                    X,
-                    method="scale",
-                    scale_method=state.get("scale_method", params.get("scale_method", "max")),
-                )
-    if method == "msc":
-        raise ValueError(
-            "preprocess.normalize(method='msc') is recorded but not replayed by model apply "
-            "because the fitted MSC reference spectrum was not persisted"
-        )
-    return _normalize_dispatch(
+    if not isinstance(state, Mapping):
+        raise ValueError("preprocess.normalize requires its complete canonical transform_state")
+    raw = {key: value for key, value in params.items() if key != "transform_state"}
+    expected = {parameter.name for parameter in NormalizeNode.metadata.parameters}
+    if set(raw) != expected:
+        raise ValueError("preprocess.normalize requires its complete canonical parameter record")
+    projected = NormalizeNode.metadata.canonicalize_parameters(raw)
+    method = str(projected["method"])
+    if state.get("method") != method:
+        raise ValueError("preprocess.normalize transform_state method does not match its canonical parameters")
+    if method == "snv":
+        if state.get("replay") != "sample_local" or state.get("std_ddof") != projected["std_ddof"]:
+            raise ValueError("preprocess.normalize SNV transform_state is inconsistent")
+    elif method == "scale":
+        if state.get("replay") != "sample_local" or state.get("scale_method") != projected["scale_method"]:
+            raise ValueError("preprocess.normalize scale transform_state is inconsistent")
+    return _normalize_dispatch(X, **projected)
+
+
+def _apply_msc_step(
+    X: np.ndarray,
+    params: dict[str, Any],
+    *,
+    source_dataset: Any | None,
+) -> np.ndarray:
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.msc_node import (
+        MSCNode,
+        _apply_msc_state,
+        _feature_axis,
+    )
+
+    required = {"reference_method", "state_serializer", "transform_state"}
+    if set(params) != required:
+        raise ValueError("preprocess.msc requires its complete canonical parameter and fitted-state record")
+    state = params.get("transform_state")
+    if not isinstance(state, Mapping):
+        raise ValueError("preprocess.msc requires its complete canonical fitted state")
+    projected = MSCNode.metadata.canonicalize_parameters({"reference_method": params["reference_method"]})
+    contract = MSCNode.metadata.resolved_execution_contract()
+    if contract is None or params["state_serializer"] != contract.payload["fitted_state_serializer"]:
+        raise ValueError("preprocess.msc state serializer is not canonical")
+    if state.get("reference_method") != projected["reference_method"]:
+        raise ValueError("preprocess.msc parameters do not match its fitted state")
+    axis_values: np.ndarray | None = None
+    axis_units: str | None = None
+    if source_dataset is not None:
+        axis_values, axis_units = _feature_axis(source_dataset, features=X.shape[1])
+    return _apply_msc_state(
         X,
-        method=method,
-        reference=params.get("reference", "mean"),
-        scale_method=params.get("scale_method", "max"),
+        state,
+        feature_axis_values=axis_values,
+        feature_axis_units=axis_units,
+        source_dataset=source_dataset,
     )
 
 
-def _apply_msc_reference(X: np.ndarray, reference: np.ndarray) -> np.ndarray:
-    A = np.vstack([reference, np.ones(reference.shape[0], dtype=np.float64)]).T
-    corrected = np.zeros_like(X, dtype=np.float64)
-    for i in range(X.shape[0]):
-        m, c = np.linalg.lstsq(A, X[i], rcond=None)[0]
-        corrected[i] = (X[i] - c) / m if abs(m) > 1e-10 else X[i]
-    return corrected
+def _apply_emsc_step(
+    X: np.ndarray,
+    params: dict[str, Any],
+    *,
+    source_dataset: Any | None,
+) -> np.ndarray:
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.emsc_node import (
+        EMSCNode,
+        _apply_emsc_state,
+        _axis_record,
+    )
 
-
-def _apply_emsc_step(X: np.ndarray, params: dict[str, Any]) -> np.ndarray:
+    required = {"reference_method", "poly_order", "state_serializer", "transform_state"}
+    if set(params) != required:
+        raise ValueError("preprocess.emsc requires its complete canonical parameter and fitted-state record")
     state = params.get("transform_state")
-    if not isinstance(state, dict):
-        raise ValueError(
-            "preprocess.emsc has no replayable transform_state; re-train the model with a current "
-            "SpectraSherpa version or apply EMSC upstream before Load & Apply"
-        )
-    reference = np.asarray(state.get("reference_spectrum"), dtype=np.float64)
-    if reference.ndim != 1 or reference.shape[0] != X.shape[1]:
-        raise ValueError("preprocess.emsc transform_state does not match supplied feature count")
-    poly_order = int(state.get("poly_order", params.get("poly_order", 2)))
-    constituents_raw = state.get("constituents")
-    constituents = None
-    if constituents_raw is not None:
-        constituents = np.asarray(constituents_raw, dtype=np.float64)
-        if constituents.ndim == 1:
-            constituents = constituents.reshape(1, -1)
-        if constituents.ndim != 2 or constituents.shape[1] != X.shape[1]:
-            raise ValueError("preprocess.emsc constituent transform_state does not match supplied feature count")
+    if not isinstance(state, Mapping):
+        raise ValueError("preprocess.emsc requires its complete canonical fitted state")
+    if params["state_serializer"] != "spectra.emsc-reference-json.v1":
+        raise ValueError("preprocess.emsc state serializer is not canonical")
+    projected = EMSCNode.metadata.canonicalize_parameters(
+        {"reference_method": params["reference_method"], "poly_order": params["poly_order"]}
+    )
+    if (
+        state.get("reference_method") != projected["reference_method"]
+        or state.get("poly_order") != projected["poly_order"]
+    ):
+        raise ValueError("preprocess.emsc parameters do not match its fitted state")
+    if source_dataset is None:
+        raise ValueError("preprocess.emsc replay requires the exact source dataset feature axis")
+    axis_values, axis_units = _axis_record(source_dataset, features=X.shape[1])
+    return _apply_emsc_state(
+        X,
+        state,
+        feature_axis_values=axis_values,
+        feature_axis_units=axis_units,
+    )
 
-    n_features = X.shape[1]
-    x_axis = np.arange(n_features, dtype=np.float64)
-    x_norm = (x_axis - x_axis.mean()) / x_axis.std() if n_features > 1 else x_axis
-    design_cols: list[np.ndarray] = [x_norm**deg for deg in range(poly_order + 1)]
-    ref_col_idx = len(design_cols)
-    design_cols.append(reference)
-    if constituents is not None:
-        design_cols.extend(constituents[k] for k in range(constituents.shape[0]))
-    design = np.column_stack(design_cols)
-    baseline_cols = [j for j in range(design.shape[1]) if j != ref_col_idx]
-    corrected = np.zeros_like(X, dtype=np.float64)
-    for i, spectrum in enumerate(X):
-        coef, _, _, _ = np.linalg.lstsq(design, spectrum, rcond=None)
-        if baseline_cols:
-            baseline = design[:, baseline_cols] @ coef[baseline_cols]
-            corrected[i] = (spectrum - baseline) / coef[ref_col_idx] if abs(coef[ref_col_idx]) > 1e-8 else spectrum
-        else:
-            corrected[i] = spectrum / coef[ref_col_idx] if abs(coef[ref_col_idx]) > 1e-8 else spectrum
-    return corrected
+
+def _apply_osc_step(
+    X: np.ndarray,
+    params: dict[str, Any],
+    *,
+    source_dataset: Any | None,
+) -> np.ndarray:
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.osc_node import (
+        OSCNode,
+        _apply_osc_state,
+        _axis_record,
+    )
+
+    required = {
+        "algorithm",
+        "n_components",
+        "state_serializer",
+        "transform_state",
+        "variance_removed_percent",
+    }
+    if set(params) != required:
+        raise ValueError("preprocess.osc requires its complete canonical parameter and fitted-state record")
+    state = params.get("transform_state")
+    if not isinstance(state, Mapping):
+        raise ValueError("preprocess.osc requires its complete canonical fitted state")
+    projected = OSCNode.metadata.canonicalize_parameters({"n_components": params["n_components"]})
+    contract = OSCNode.metadata.resolved_execution_contract()
+    if contract is None or params["state_serializer"] != contract.payload["fitted_state_serializer"]:
+        raise ValueError("preprocess.osc state serializer is not canonical")
+    if params["algorithm"] != state.get("algorithm") or projected["n_components"] != state.get("n_components"):
+        raise ValueError("preprocess.osc parameters do not match its fitted state")
+    variance_removed = params["variance_removed_percent"]
+    if (
+        isinstance(variance_removed, bool)
+        or not isinstance(variance_removed, (int, float))
+        or not np.isfinite(variance_removed)
+        or float(variance_removed) < 0.0
+        or float(variance_removed) > 100.0
+    ):
+        raise ValueError("preprocess.osc variance removed must be between zero and 100")
+    if not np.isclose(
+        float(variance_removed),
+        float(state.get("training_centered_variance_removed_percent", np.nan)),
+        rtol=0.0,
+        atol=0.0,
+    ):
+        raise ValueError("preprocess.osc variance diagnostic does not match its fitted state")
+    if source_dataset is None:
+        raise ValueError("preprocess.osc replay requires the exact source dataset feature axis")
+    axis_values, axis_units = _axis_record(source_dataset, features=X.shape[1])
+    return _apply_osc_state(
+        X,
+        state,
+        feature_axis_values=axis_values,
+        feature_axis_units=axis_units,
+    )
 
 
 def _apply_penalized_baseline_step(X: np.ndarray, params: dict[str, Any]) -> np.ndarray:
-    from spectra_sherpa.app.lib.preprocessing import baseline_penalized_ls
-
-    return baseline_penalized_ls(
-        X,
-        method=params.get("method", "als"),
-        lam=float(params.get("lam", 1e5)),
-        p=float(params.get("p", 0.001)),
-        max_iter=int(params.get("max_iter", 50)),
-        tol=float(params.get("tol", 1e-6)),
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.penalized_baseline_node import (
+        BaselinePenalizedLSNode,
+        _penalized_baseline_dispatch,
     )
+
+    projected = BaselinePenalizedLSNode.metadata.canonicalize_parameters(params)
+    corrected, _diagnostics = _penalized_baseline_dispatch(X, **projected)
+    return corrected
 
 
 def _apply_smooth_step(X: np.ndarray, params: dict[str, Any]) -> np.ndarray:
-    from spectra_sherpa.app.services.dag.nodes.preprocessing.smooth_deriv_nodes import _smooth_dispatch
-
-    return _smooth_dispatch(
-        X,
-        method=params.get("method", "savitzky_golay"),
-        size=int(params.get("size", 11)),
-        order=int(params.get("order", 2)),
-        lam=float(params.get("lam", 1e2)),
-        d=str(params.get("d", "2")),
-        sigma=float(params.get("sigma", 2.0)),
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.smooth_node import (
+        SmoothNode,
+        _smooth_dispatch,
     )
+
+    expected = {parameter.name for parameter in SmoothNode.metadata.parameters}
+    if set(params) != expected:
+        raise ValueError("preprocess.smooth requires its complete canonical parameter record")
+    projected = SmoothNode.metadata.canonicalize_parameters(params)
+    return _smooth_dispatch(X, **projected)
 
 
 def _apply_derivative_step(X: np.ndarray, params: dict[str, Any]) -> np.ndarray:
-    from spectra_sherpa.app.services.dag.nodes.preprocessing.smooth_deriv_nodes import _derivative_dispatch
-
-    return _derivative_dispatch(
-        X,
-        method=params.get("method", "savitzky_golay"),
-        deriv=str(params.get("deriv", "1")),
-        size=int(params.get("size", 11)),
-        order=int(params.get("order", 2)),
-        gap=int(params.get("gap", 5)),
-        segment=int(params.get("segment", 5)),
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.derivative_node import (
+        DerivativeNode,
+        _derivative_dispatch,
     )
+
+    raw = {key: value for key, value in params.items() if key != "delta"}
+    expected = {parameter.name for parameter in DerivativeNode.metadata.parameters}
+    if set(raw) != expected or set(params) != expected | {"delta"}:
+        raise ValueError("preprocess.derivative requires its complete canonical parameter and axis record")
+    projected = DerivativeNode.metadata.canonicalize_parameters(raw)
+    delta = params["delta"]
+    if isinstance(delta, bool) or not isinstance(delta, (int, float)) or not np.isfinite(delta) or delta == 0:
+        raise ValueError("preprocess.derivative axis spacing must be a finite non-zero number")
+    return _derivative_dispatch(X, delta=delta, **projected)
 
 
 def _apply_feature_mask(
@@ -733,38 +1148,24 @@ def validate_feature_contract(
         actual_units = getattr(axis, "units", None)
         if not actual_units:
             raise ValueError("Feature-contract mismatch: dataset feature-axis units are missing")
-        if _normalize_unit(str(actual_units)) != _normalize_unit(str(expected_units)):
+        if canonical_axis_unit(str(actual_units)) != canonical_axis_unit(str(expected_units)):
             raise ValueError(
                 "Feature-contract mismatch: dataset feature-axis units "
                 f"{actual_units!r} differ from artifact units {expected_units!r}"
             )
 
-
-def _normalize_unit(value: str) -> str:
-    return value.strip().lower().replace(" ", "").replace("cm^-1", "cm-1").replace("cm⁻¹", "cm-1")
-
-
-def _classification_metrics(y_true: list[str], y_pred: list[str], classes: list[str]) -> dict[str, Any]:
-    from sklearn.metrics import (
-        accuracy_score,
-        balanced_accuracy_score,
-        classification_report,
-        confusion_matrix,
-        f1_score,
-    )
-
-    labels = [str(cls) for cls in classes] if classes else sorted(set(y_true) | set(y_pred))
-    return {
-        "accuracy": float(accuracy_score(y_true, y_pred)),
-        "balanced_accuracy": float(balanced_accuracy_score(y_true, y_pred)),
-        "f1_macro": float(f1_score(y_true, y_pred, average="macro")),
-        "classes": labels,
-        "confusion_matrix": confusion_matrix(y_true, y_pred, labels=labels).tolist(),
-        "classification_report": classification_report(
-            y_true,
-            y_pred,
-            labels=labels,
-            output_dict=True,
-            zero_division=0,
-        ),
-    }
+    expected_quantity = manifest.get("feature_axis_quantity")
+    if expected_quantity is not None:
+        actual_semantics = axis_semantics(
+            axis_class=type(axis).__name__,
+            title=getattr(axis, "title", None),
+            units=getattr(axis, "units", None),
+            quantity=getattr(axis, "quantity", None),
+        )
+        if actual_semantics.quantity is None:
+            raise ValueError("Feature-contract mismatch: dataset feature-axis quantity is missing")
+        if actual_semantics.quantity.value != expected_quantity:
+            raise ValueError(
+                "Feature-contract mismatch: dataset feature-axis quantity "
+                f"{actual_semantics.quantity.value!r} differs from artifact quantity {expected_quantity!r}"
+            )

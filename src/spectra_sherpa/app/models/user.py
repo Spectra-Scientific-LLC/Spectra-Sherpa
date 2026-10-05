@@ -53,11 +53,16 @@ class User(Base):
     workflows = relationship("Workflow", back_populates="user", cascade="all, delete-orphan")
     background_jobs = relationship("BackgroundJob", back_populates="user", cascade="all, delete-orphan")
     api_keys = relationship("APIKey", back_populates="user", cascade="all, delete-orphan")
-    doe_configs = relationship("DOEConfig", back_populates="user", cascade="all, delete-orphan")
-    # Data egress permissions (HYBRID mode)
+    # Data egress permissions
     egress_permissions = relationship("DataEgressPermission", back_populates="user", cascade="all, delete-orphan")
     egress_defaults = relationship(
         "UserEgressDefaults", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+    acquisition_plan_presets = relationship(
+        "AcquisitionPlanPreset", back_populates="user", cascade="all, delete-orphan"
+    )
+    workbench_preferences = relationship(
+        "UserWorkbenchPreferences", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
 
     @property

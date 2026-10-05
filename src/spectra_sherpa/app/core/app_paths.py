@@ -22,7 +22,6 @@ class AppDataPaths:
     calibrations_dir: Path
     user_dir: Path
     references_dir: Path
-    spectrochempy_reference_pdf: Path
     nist_library_dir: Path
     nist_downloads_dir: Path
     exports_dir: Path
@@ -66,7 +65,6 @@ def get_app_data_paths(root: Path) -> AppDataPaths:
         calibrations_dir=root / "calibrations",
         user_dir=root / "user",
         references_dir=references_dir,
-        spectrochempy_reference_pdf=references_dir / "spectrochempy_testdata_reference.pdf",
         nist_library_dir=nist_library_dir,
         nist_downloads_dir=nist_library_dir / "downloaded",
         exports_dir=exports_dir,

@@ -1,7 +1,7 @@
 """
 Data Egress Permission Model
 
-Tracks user-configurable permissions for data sharing in HYBRID mode.
+Tracks user-configurable permissions for explicit data sharing.
 Each user can control what data types can be sent to which destinations.
 """
 
@@ -43,7 +43,7 @@ class DataType:
 class EgressDestination:
     """Destinations where data can be sent"""
 
-    SPECTRASHERPA = "spectrasherpa"  # SpectraSherpa cloud sync
+    SPECTRASHERPA = "spectrasherpa"  # Legacy storage value retained for database upgrades
     LLM_CONTEXT = "llm_context"  # Send to LLM providers
     EXPORT = "export"  # Export to external files
     NIST = "nist"  # NIST WebBook queries
@@ -98,8 +98,11 @@ class UserEgressDefaults(Base):
 
     # Default policies
     allow_spectrasherpa_sync = Column(Boolean, nullable=False, default=False)
-    allow_llm_chat = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
-    allow_llm_context = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
+    # Column fallback only. Startup writes explicit rows: local and demo users
+    # get LLM chat/context enabled (a request still needs a configured
+    # provider); hosted users start disabled. See app.core.startup.
+    allow_llm_chat = Column(Boolean, nullable=False, default=False)
+    allow_llm_context = Column(Boolean, nullable=False, default=False)
     allow_export = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
     allow_nist_queries = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in
     allow_hitran_queries = Column(Boolean, nullable=False, default=False)  # Default: explicit opt-in

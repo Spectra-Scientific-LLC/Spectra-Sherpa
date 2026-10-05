@@ -21,6 +21,45 @@ class EnvValidationWarning(UserWarning):
     pass
 
 
+# Master-key placeholders that must never be accepted as a real encryption key.
+# MASTER_ENCRYPTION_KEY roots the Fernet derivation that wraps every stored
+# secret (BYOK LLM keys, HITRAN keys, managed system keys, and the per-user
+# artifact data keys behind Pro crypto-custody). The runtime derives the Fernet
+# key from a non-Fernet secret via a single SHA-256; that is cryptographically
+# sound ONLY when the input is high-entropy, so we forbid low-entropy inputs
+# here rather than paying for a slow KDF the strong-input case doesn't need.
+_INSECURE_MASTER_KEY_PLACEHOLDERS = {
+    "changeme",
+    "change-me",
+    "change_me",
+    "default",
+    "secret",
+    "password",
+    "master-key",
+    "master_key",
+    "masterkey",
+    "master-encryption-key",
+    "your-master-key",
+    "your-master-encryption-key",
+}
+_MIN_MASTER_KEY_UNIQUE_CHARS = 8
+
+
+def _looks_like_fernet_key(value: str) -> bool:
+    """True when *value* is a raw 32-byte urlsafe-base64 Fernet key.
+
+    Such keys are high-entropy by construction, so they bypass the
+    placeholder/uniqueness heuristics below.
+    """
+    import base64
+
+    try:
+        decoded = base64.urlsafe_b64decode(value.encode())
+    except Exception:
+        return False
+    return len(decoded) == 32
+
+
 def validate_headless_env() -> List[str]:
     """
     Validate environment for headless mode.
@@ -54,49 +93,31 @@ def validate_encryption_env() -> List[str]:
     master_key = os.getenv("MASTER_ENCRYPTION_KEY")
     if master_key is not None:
         # Accept either a raw Fernet key or a normal high-entropy secret.
-        # The runtime derives a Fernet key from non-Fernet values, so the
-        # main requirement here is sufficient entropy/length.
-        if len(master_key) < 32:
+        # The runtime derives a Fernet key from non-Fernet values via a single
+        # SHA-256, so the security of the whole scheme rests on the INPUT being
+        # high-entropy — enforce that here.
+        value = master_key.strip()
+        if len(value) < 32:
             errors.append("MASTER_ENCRYPTION_KEY must be at least 32 characters for security")
-        elif len(master_key) < 64:
-            warnings_list.append("MASTER_ENCRYPTION_KEY should be at least 64 characters for optimal security")
-
-    for warning_msg in warnings_list:
-        warnings.warn(warning_msg, EnvValidationWarning)
-
-    return errors
-
-
-def validate_scp_env() -> List[str]:
-    """
-    Validate SpectroChemPy environment variables.
-
-    Returns:
-        List of error messages (empty if valid)
-    """
-    errors = []
-    warnings_list = []
-
-    # SCP_DATADIR - optional but if set should be valid path
-    scp_datadir = os.getenv("SCP_DATADIR")
-    if scp_datadir:
-        from pathlib import Path
-
-        path = Path(scp_datadir)
-        if not path.exists():
-            warnings_list.append(f"SCP_DATADIR is set but directory doesn't exist: {scp_datadir}")
-        elif not path.is_dir():
-            errors.append(f"SCP_DATADIR must be a directory, got: {scp_datadir}")
-
-    # SCP_DATA_TIMEOUT - optional but if set should be numeric
-    timeout = os.getenv("SCP_DATA_TIMEOUT")
-    if timeout is not None:
-        try:
-            timeout_val = int(timeout)
-            if timeout_val < 0:
-                errors.append(f"SCP_DATA_TIMEOUT must be non-negative, got: {timeout}")
-        except ValueError:
-            errors.append(f"SCP_DATA_TIMEOUT must be an integer, got: {timeout}")
+        elif _looks_like_fernet_key(value):
+            # A raw Fernet key is 32 random bytes — always strong enough.
+            pass
+        else:
+            normalized = value.lower()
+            if normalized in _INSECURE_MASTER_KEY_PLACEHOLDERS or (
+                normalized.startswith("<") and normalized.endswith(">")
+            ):
+                errors.append(
+                    "MASTER_ENCRYPTION_KEY is a placeholder/default value. Generate a strong "
+                    'random value with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
+                )
+            elif len(set(value)) < _MIN_MASTER_KEY_UNIQUE_CHARS:
+                errors.append(
+                    "MASTER_ENCRYPTION_KEY appears too low-entropy (a long but repetitive value "
+                    "does not count as strong). Generate a fresh random value."
+                )
+            elif len(value) < 64:
+                warnings_list.append("MASTER_ENCRYPTION_KEY should be at least 64 characters for optimal security")
 
     for warning_msg in warnings_list:
         warnings.warn(warning_msg, EnvValidationWarning)
@@ -147,7 +168,6 @@ def validate_all_env() -> Tuple[List[str], List[Tuple[str, str]]]:
     # Critical validations
     all_errors.extend(validate_headless_env())
     all_errors.extend(validate_encryption_env())
-    all_errors.extend(validate_scp_env())
 
     # Informational LLM status
     llm_status = validate_llm_env()

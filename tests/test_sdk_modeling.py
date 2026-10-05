@@ -1,10 +1,8 @@
 from __future__ import annotations
 
 import numpy as np
-import pytest
 
 import spectra_sherpa.sdk as ss
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 
 
 def _calibration_dataset() -> ss.SherpaDataset:
@@ -33,7 +31,6 @@ def _calibration_dataset() -> ss.SherpaDataset:
     )
 
 
-@pytest.mark.skipif(not HAS_SCP, reason="PCA execution requires SpectroChemPy (to_nddataset/SCP runtime)")
 def test_pca_result_exposes_summary_manifest_and_ports() -> None:
     result = ss.explore.pca(_calibration_dataset(), n_components=2)
 
@@ -50,31 +47,43 @@ def test_pca_result_exposes_summary_manifest_and_ports() -> None:
     manifest = result.manifest()
     assert manifest["sdk_function"] == "ss.explore.pca"
     assert manifest["node_type"] == "model.pca"
+    assert len(manifest["workflow_digest"]) == 64
+    assert len(manifest["dataset_content_digests"]) == 1
     assert "scores" in manifest["outputs"]
 
 
-@pytest.mark.skipif(not HAS_SCP, reason="PLS execution requires SpectroChemPy (to_nddataset/SCP runtime)")
 def test_pls_result_resolves_named_target_and_exposes_manifest() -> None:
     result = ss.regression.pls(
         _calibration_dataset(),
         y="assay",
         n_components=2,
-        cv_method="none",
     )
 
-    assert result.X_scores.shape == (6, 2)
-    assert result.X_loadings.shape == (2, 6)
-    assert result.y_pred is not None
-    assert result.y_pred.shape == (6, 1)
-    assert result["X_scores"] is result.X_scores
+    assert result.predictions.shape == (6, 1)
+    assert result.vip_scores.shape == (6,)
+    assert result["default"] is result.outputs["default"]
+    assert result.fitted_state["schema_version"] == "spectrasherpa.fitted-pls-state/9"
 
     summary = result.summary()
     assert summary["model_type"] == "PLS"
     assert summary["n_components"] == 2
     assert summary["n_targets"] == 1
-    assert summary["target_names"] == ["assay"]
+    assert summary["predictions_shape"] == [6, 1]
+    assert summary["vip_scores_shape"] == [6]
 
     manifest = result.manifest()
     assert manifest["sdk_function"] == "ss.regression.pls"
-    assert manifest["node_type"] == "model.pls"
-    assert "X_scores" in manifest["outputs"]
+    assert manifest["node_type"] == "model.fitted_pls"
+    assert len(manifest["workflow_digest"]) == 64
+    assert len(manifest["dataset_content_digests"]) == 1
+    assert set(manifest["outputs"]) == {
+        "default",
+        "fitted_state",
+        "vip_scores",
+        "x_scores",
+        "x_loadings",
+        "explained_variance",
+        "regression_coefficients",
+        "calibration_comparison",
+        "model_id",
+    }

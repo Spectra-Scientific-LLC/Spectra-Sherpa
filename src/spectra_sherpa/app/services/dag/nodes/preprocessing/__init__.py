@@ -5,7 +5,7 @@ These nodes implement various preprocessing techniques like baseline correction,
 smoothing, normalization, and derivatives.
 
 All nodes:
-- Accept SherpaDataset (or legacy NDDataset via coercion) as input
+- Accept the canonical SherpaDataset as input
 - Return SherpaDataset as output
 - Record processing history via provenance
 
@@ -14,33 +14,21 @@ All node classes have been split into individual files for navigability.
 
 # Import all node modules to trigger @register_node decorators
 from . import (  # noqa: F401
+    apply_fitted_preprocessing_nodes,
+    apply_fitted_scale_node,
     baseline_nodes,
-    cleaning_nodes,
-    correction_nodes,
-    normalize_scale_nodes,
+    clip_floor_node,
+    clip_range_node,
+    cosmic_ray_node,
+    derivative_node,
+    emsc_node,
+    msc_node,
+    normalize_node,
     osc_node,
-    smooth_deriv_nodes,
+    penalized_baseline_node,
+    scale_node,
+    smooth_node,
+    wavenumber_align_node,
 )
 
-# Re-export node classes for backward compatibility
-from .baseline_nodes import BaselinePenalizedLSNode, BaselineRubberbandNode
-from .cleaning_nodes import ClipFloorNode, ClipRangeNode, CosmicRayRemovalNode, WavenumberAlignNode
-from .correction_nodes import EMSCNode
-from .normalize_scale_nodes import NormalizeNode, ScaleNode
-from .osc_node import OSCNode
-from .smooth_deriv_nodes import DerivativeNode, SmoothNode
-
-__all__ = [
-    "BaselinePenalizedLSNode",
-    "BaselineRubberbandNode",
-    "ClipFloorNode",
-    "ClipRangeNode",
-    "CosmicRayRemovalNode",
-    "DerivativeNode",
-    "EMSCNode",
-    "NormalizeNode",
-    "OSCNode",
-    "ScaleNode",
-    "SmoothNode",
-    "WavenumberAlignNode",
-]
+__all__: list[str] = []

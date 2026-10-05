@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from spectra_sherpa.app.lib.data_roles import normalize_modalities
 
@@ -34,12 +34,13 @@ DataRoleType = Literal[
 
 BindingMode = Literal[
     "embedded",  # target column(s) in the same file as X
-    "separate_source",  # needs its own data.source node
+    "separate_source",  # needs its own explicit canonical source node
     "port_output",  # wired from an upstream node output
 ]
 
 TargetType = Literal["continuous", "categorical"]
 DataModalityType = Literal["spectra", "features", "hsi"]
+ExampleDatasetSource = Literal["eigenvector", "sklearn", "oes", "synthetic"]
 
 
 # ---------------------------------------------------------------------------
@@ -62,8 +63,23 @@ class TemplateDataRole(BaseModel):
     connects_to_port: str | None = Field(None, description="Specific input port name (e.g. 'y', 'X')")
     description: str = ""
     accepted_techniques: list[str] | None = None
+    technique_match: Literal["advisory", "required"] | None = None
     accepted_data_roles: list[DataRoleType] | None = None
     is_time_series: bool | None = None
+
+
+class TemplateExampleBinding(BaseModel):
+    """Template-only selector for materializing a bundled reference dataset.
+
+    This selector is never persisted as a workflow-node parameter. Template
+    instantiation resolves it to the same exact ``data.file_load`` identity
+    used for scientist-owned files.
+    """
+
+    source: ExampleDatasetSource
+    dataset_name: str = Field(..., min_length=1)
+    selected_target: str | None = Field(None, min_length=1)
+    target_type: TargetType | None = None
 
 
 class TemplateNode(BaseModel):
@@ -73,6 +89,7 @@ class TemplateNode(BaseModel):
     node_type: str
     label: str
     parameters: dict[str, Any] = Field(default_factory=dict)
+    example_binding: TemplateExampleBinding | None = None
     position_x: int | float = 0
     position_y: int | float = 0
 
@@ -89,8 +106,39 @@ class TemplateEdge(BaseModel):
 class CertifiedDataset(BaseModel):
     """A (source, name) pair that has been end-to-end tested for this template."""
 
-    source: str = Field(..., description="Dataset source: synthetic | eigenvector | sklearn | spectrochempy | oes")
+    source: str = Field(..., description="Dataset source: synthetic | eigenvector | sklearn | oes")
     name: str = Field(..., description="Dataset name within that source catalog")
+
+
+class TemplateManagedCandidate(BaseModel):
+    """Explicit persisted DAG used as the managed optimization baseline.
+
+    This is a second visible workflow sheet, not a projection inferred from the
+    scientist-facing workflow.  Keeping the complete node and edge identity in
+    the template makes the saved DAG the authority presented to Harness.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["spectra-managed-candidate-template/1"]
+    name: str = Field(..., min_length=1)
+    description: str = Field(..., min_length=1)
+    scientist_source_node_id: str = Field(..., min_length=1)
+    source_node_id: str = Field(..., min_length=1)
+    nodes: list[TemplateNode] = Field(..., min_length=2)
+    edges: list[TemplateEdge] = Field(..., min_length=1)
+    canvas_state: dict[str, Any] = Field(default_factory=dict)
+
+
+class TemplateCanonicalProject(BaseModel):
+    """Closed project-level contract for a canonical starter project."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["spectra-canonical-starter-project/1"]
+    scientific_objective: Literal["quantitative_regression"]
+    qualification_dataset_ids: list[str] = Field(..., min_length=1)
+    managed_candidate: TemplateManagedCandidate
 
 
 class TemplateData(BaseModel):
@@ -107,6 +155,13 @@ class TemplateData(BaseModel):
             "When non-empty, the wizard dropdown is restricted to these entries."
         ),
     )
+    canonical_project: TemplateCanonicalProject | None = Field(
+        None,
+        description=(
+            "Optional closed project contract that persists a separate, visible managed-candidate "
+            "workflow alongside the scientist-facing workflow."
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -114,7 +169,7 @@ class TemplateData(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-TemplateStatus = Literal["ready", "wip"]
+TemplateStatus = Literal["ready", "pending_data", "pending_qualification", "wip"]
 
 
 class TemplateFile(BaseModel):
@@ -126,9 +181,22 @@ class TemplateFile(BaseModel):
     description: str
     category: str
     is_active: bool = True
-    status: TemplateStatus = "ready"
+    status: TemplateStatus
+    status_detail: str | None = Field(None, min_length=1, max_length=512)
     data_modalities: list[DataModalityType] = Field(default_factory=lambda: ["spectra"])
     template_data: TemplateData
+
+    @model_validator(mode="after")
+    def _require_exact_status_detail(self) -> "TemplateFile":
+        if self.status == "ready" and self.status_detail is not None:
+            raise ValueError("ready templates must not declare status_detail")
+        if self.status != "ready" and (
+            self.status_detail is None
+            or not self.status_detail.strip()
+            or self.status_detail != self.status_detail.strip()
+        ):
+            raise ValueError(f"{self.status} templates must declare status_detail")
+        return self
 
     @field_validator("data_modalities", mode="before")
     @classmethod

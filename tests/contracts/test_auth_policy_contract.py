@@ -31,10 +31,6 @@ class TestDefaults:
         """OSS-only installs must default to registration disabled."""
         assert auth_policy.registration_enabled() is False
 
-    def test_registration_requires_code_defaults_false(self) -> None:
-        """OSS-only installs must default to no access-code gate."""
-        assert auth_policy.registration_requires_code() is False
-
 
 # ── Setter idempotency ────────────────────────────────────────────────
 
@@ -51,12 +47,6 @@ class TestSetterIdempotency:
         auth_policy.set_registration_enabled(False)
         assert auth_policy.registration_enabled() is False
 
-    def test_set_registration_requires_code_idempotent(self) -> None:
-        auth_policy.set_registration_requires_code(True)
-        assert auth_policy.registration_requires_code() is True
-        auth_policy.set_registration_requires_code(True)
-        assert auth_policy.registration_requires_code() is True
-
     def test_setter_coerces_truthy_to_bool(self) -> None:
         """Setters cast truthy/falsy inputs to bool — documented behavior."""
         auth_policy.set_registration_enabled(1)  # type: ignore[arg-type]
@@ -70,9 +60,7 @@ class TestSetterIdempotency:
 
 EXPECTED_FUNCTIONS = {
     "registration_enabled": [],
-    "registration_requires_code": [],
     "set_registration_enabled": ["flag"],
-    "set_registration_requires_code": ["flag"],
 }
 
 
@@ -97,7 +85,7 @@ class TestPublicSurface:
         )
 
     def test_functions_re_exported_from_contracts_package(self) -> None:
-        """The four functions are part of the OSS public contract surface."""
+        """The registration functions are part of the OSS public contract surface."""
         from spectra_sherpa.app import contracts
 
         for name in EXPECTED_FUNCTIONS:

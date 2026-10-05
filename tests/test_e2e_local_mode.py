@@ -24,7 +24,7 @@ from httpx import AsyncClient
 
 import spectra_sherpa.app.api.deps as deps
 from spectra_sherpa.app.core.config import app_config
-from spectra_sherpa.app.services import plugin_loader
+from spectra_sherpa.app.types import ensure_type_registry_loaded
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -34,6 +34,7 @@ from spectra_sherpa.app.services import plugin_loader
 @pytest.fixture(autouse=True)
 def _local_mode():
     """Pin config to local mode and clear the cached local user."""
+    ensure_type_registry_loaded()
     original_mode = app_config.mode
     original_profile = app_config.site_profile
     original_rate = app_config.rate_limit_executions
@@ -49,14 +50,6 @@ def _local_mode():
     app_config.site_profile = original_profile
     app_config.rate_limit_executions = original_rate
     deps._local_user_cache = None
-
-
-@pytest.fixture(autouse=True)
-def _reset_plugin_failures():
-    original_failures = list(plugin_loader.plugin_load_failures)
-    plugin_loader.plugin_load_failures.clear()
-    yield
-    plugin_loader.plugin_load_failures[:] = original_failures
 
 
 # ---------------------------------------------------------------------------
@@ -88,8 +81,36 @@ class TestLocalModeE2E:
         body = resp.json()
         assert body == {"backend_version": expected_version}
 
-    async def test_workflow_create_execute_roundtrip(self, client: AsyncClient):
+    async def test_workflow_create_execute_roundtrip(self, client: AsyncClient, test_session, test_user):
         """Create a workflow via API, read it back, execute it."""
+
+        import numpy as np
+
+        from spectra_sherpa.app.core.config import settings
+        from spectra_sherpa.app.models.experiment import Experiment
+        from spectra_sherpa.app.models.experiment_file import ExperimentFile
+
+        experiment = Experiment(
+            user_id=test_user.id,
+            name="E2E canonical source",
+            description="",
+            metadata_path="",
+        )
+        test_session.add(experiment)
+        await test_session.flush()
+        source_dir = settings.data_dir / "experiments" / f"exp_{experiment.id:03d}" / "raw"
+        source_dir.mkdir(parents=True, exist_ok=True)
+        source_path = source_dir / "e2e.npy"
+        np.save(source_path, np.arange(80, dtype=np.float64).reshape(16, 5))
+        source_file = ExperimentFile(
+            experiment_id=experiment.id,
+            file_path="raw/e2e.npy",
+            file_type="npy",
+            stage="raw",
+            file_size_bytes=source_path.stat().st_size,
+        )
+        test_session.add(source_file)
+        await test_session.commit()
 
         # ── Step 1: Create workflow with nodes + edges ──────────
         create_payload = {
@@ -99,9 +120,13 @@ class TestLocalModeE2E:
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.source",
+                    "node_type": "data.file_load",
                     "label": "DATA",
-                    "parameters": {"source": "experiment"},
+                    "parameters": {
+                        "experiment_id": experiment.id,
+                        "file_id": source_file.id,
+                        "stage": "raw",
+                    },
                 },
                 {
                     "node_id": "snv_1",

@@ -5,8 +5,65 @@ import pytest
 
 from spectra_sherpa.app.lib.axes import FeatureAxis
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.app.services.dag.node_base import SalientFeature, SalientFeatures
 from spectra_sherpa.app.services.dag.nodes.output import ContourPlotNode, DataTableNode, ExportNode, PlotNode
+from spectra_sherpa.app.services.dag.nodes.output.data_table_node import build_data_table_result
 from spectra_sherpa.app.services.dag.nodes.output.stats_summary_node import StatsSummaryNode
+
+
+@pytest.mark.parametrize("serialized", [False, True])
+def test_salient_feature_table_preserves_rows_and_context(serialized) -> None:
+    from dataclasses import asdict
+
+    value = SalientFeatures(
+        method="peak_finding",
+        features=[
+            SalientFeature(position=1206, importance=1, label="consensus peak (155/155 samples)"),
+            SalientFeature(position=1690, importance=6 / 155, label="consensus peak (6/155 samples)"),
+        ],
+        x_units="nm",
+        x_title="Wavelength",
+        n_total_variables=571,
+        selection_context={"n_samples": 155},
+    )
+    table = build_data_table_result(asdict(value) if serialized else value)["visualization"]
+    assert table["data"][1] == {
+        "consensus_group": 2,
+        "position": 1690,
+        "detection_fraction": 6 / 155,
+        "label": "consensus peak (6/155 samples)",
+    }
+    assert table["metadata"]["n_rows"] == 2
+    assert table["metadata"]["column_units"] == {"position": "nm"}
+    assert table["metadata"]["selection_context"] == {"n_samples": 155}
+    assert table["metadata"]["n_total_variables"] == 571
+
+
+def test_table_plot_selects_late_columns_and_keeps_null_row_indices() -> None:
+    from spectra_sherpa.app.services.dag.nodes.output.plot_node import build_plot_result
+
+    names = [f"measurement_{index}" for index in range(44)]
+    rows = [[float(index) for index in range(44)] for _ in range(3)]
+    rows[1][43] = None
+    table = {"data": rows, "metadata": {"column_names": names, "column_units": {names[43]: "nm"}}}
+    plot = build_plot_result(table, parameters={"plot_key": "column:measurement_43"})["visualization"]
+    assert plot["data"][0]["x"] == [1, 2, 3]
+    assert plot["data"][0]["y"] == [43, None, 43]
+    assert plot["layout"]["yaxis"]["title"] == "measurement_43 (nm)"
+    missing = build_plot_result({"data": [{"empty": None}], "metadata": {"column_names": ["empty"]}})["visualization"]
+    assert missing["data"][0]["y"] == [None]
+    assert "all values are missing" in missing["layout"]["annotations"][0]["text"]
+
+
+def test_salient_feature_table_handles_empty_generic_and_truncated_values() -> None:
+    value = SalientFeatures(method="vip", features=[])
+    assert build_data_table_result(value)["visualization"]["data"] == []
+    value.features = [SalientFeature(position=i, importance=2.5) for i in range(12)]
+    table = build_data_table_result(value, parameters={"max_rows": 10})["visualization"]
+    assert len(table["data"]) == 10
+    assert table["data"][9]["importance"] == 2.5
+    assert table["data"][9]["feature_index"] == 10
+    assert table["metadata"]["truncated"] is True
 
 
 @pytest.mark.anyio
@@ -167,11 +224,8 @@ async def test_plot_and_contour_accept_numeric_transform_result_dicts() -> None:
 
 
 @pytest.mark.anyio
-async def test_export_counts_array_like_model_outputs() -> None:
+async def test_export_rejects_untyped_model_output_dictionaries() -> None:
     node = ExportNode(node_id="export_labels", parameters={"filename": "labels.csv", "format": "csv"})
 
-    result = await node.execute({"labels": ["A", "B", "A"]})
-
-    info = result["file_info"]
-    assert info["data_points"] == 3
-    assert "3 data points" in info["message"]
+    with pytest.raises(ValueError, match="canonical dataset"):
+        await node.execute({"labels": ["A", "B", "A"]})

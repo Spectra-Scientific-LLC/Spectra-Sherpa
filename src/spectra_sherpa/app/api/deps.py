@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, AsyncGenerator, Optional, cast
 
+from spectra_sherpa.app.contracts.project_access import ProjectOperation
+
 if TYPE_CHECKING:
     from spectra_sherpa.app.models.experiment import Experiment
     from spectra_sherpa.app.models.project import Project
@@ -14,12 +16,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.core import security
 from spectra_sherpa.app.core.config import app_config, settings
-from spectra_sherpa.app.core.mode_policy import blocks_local_network_client, is_hybrid, is_local, is_loopback
+from spectra_sherpa.app.core.mode_policy import (
+    allows_implicit_loopback_identity,
+    blocks_local_network_client,
+    is_local,
+    is_loopback,
+)
 
 logger = __import__("logging").getLogger(__name__)
 from spectra_sherpa.app.contracts.actors import CurrentActor  # noqa: F401 — re-export for new code
 from spectra_sherpa.app.contracts.auth_resolver import (
     get_extra_bearer_token_resolver,
+    get_extra_bearer_token_validator,
     get_extra_user_api_key_authenticator,
 )
 from spectra_sherpa.app.db.session import async_session
@@ -36,7 +44,11 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+api_key_header = APIKeyHeader(
+    name="X-API-Key",
+    scheme_name="UserAPIKeyHeader",
+    auto_error=False,
+)
 
 
 _local_user_cache: Optional[User] = None
@@ -93,7 +105,7 @@ async def _resolve_user(
         return await _get_or_create_local_user(session)
 
     # If system-key auth is disabled, ignore APP_API_KEY for dependency auth.
-    # This preserves hybrid loopback fallback behavior when stale keys are present
+    # This preserves extension loopback fallback behavior when stale keys are present
     # in local storage, while gateway auth still blocks non-loopback requests.
     if api_key == settings.api_key and not security.is_system_api_key_auth_enabled():
         api_key = None
@@ -141,12 +153,25 @@ async def _resolve_user(
             subject_id = None
 
     # 2b. WebSocket fallback: the request-scope stamp isn't available on
-    # the WS path. If a raw token was presented, delegate decoding to
-    # the server-injected BearerTokenSubjectResolver contract.
+    # the WS path. If a raw token was presented, first run the server-injected
+    # validator (enforces expiry, revocation, active account). Fall back to the
+    # legacy subject resolver only when no validator is injected.
     if subject_id is None and token:
-        bearer_resolver = get_extra_bearer_token_resolver()
-        if bearer_resolver is not None:
-            subject_id = await bearer_resolver(token)
+        validator = get_extra_bearer_token_validator()
+        if validator is not None:
+            validated_payload = await validator(token)
+            if validated_payload is None:
+                return None
+            sub = validated_payload.get("sub")
+            if sub is not None:
+                try:
+                    subject_id = int(sub)
+                except (TypeError, ValueError):
+                    subject_id = None
+        else:
+            bearer_resolver = get_extra_bearer_token_resolver()
+            if bearer_resolver is not None:
+                subject_id = await bearer_resolver(token)
 
     if subject_id is not None:
         result = await session.execute(select(User).where(User.id == subject_id, User.is_active.is_(True)))
@@ -154,25 +179,25 @@ async def _resolve_user(
         if user:
             return user
 
-    # 3. Hybrid fallback: allow implicit local identity only when no
+    # 3. Explicit product fallback: allow implicit local identity only when no
     # credentials were provided AND the client is loopback (defense-in-depth;
     # gateway middleware already enforces this, but we double-check here).
-    if is_hybrid() and not has_credentials:
+    if allows_implicit_loopback_identity() and not has_credentials:
         # Audit Item 4: a missing client host must be treated as
         # NOT-loopback, not as "skip the loopback check".  Previously
         # ``client_host is None`` fell through to the implicit grant, so
         # any caller that resolved the user without threading the host
         # (e.g. the public /config route) silently obtained local
-        # identity in hybrid mode.  Only an affirmatively-loopback host
+        # identity in extension mode.  Only an affirmatively-loopback host
         # may receive the implicit local identity.
         if client_host is None or not is_loopback(client_host):
             logger.warning(
-                "Hybrid mode: rejected credential-free request from non-loopback/unknown host %r",
+                "Product policy: rejected credential-free request from non-loopback/unknown host %r",
                 client_host,
             )
             return None
         logger.debug(
-            "Hybrid mode: granting implicit local identity to loopback client %r",
+            "Product policy: granting implicit local identity to loopback client %r",
             client_host,
         )
         return await _get_or_create_local_user(session)
@@ -344,14 +369,22 @@ async def require_project(
     project_id: int,
     user_id: int,
     session: AsyncSession,
+    *,
+    operation: "ProjectOperation" = "owner",
 ) -> "Project":
     """Load a project owned by *user_id*, or raise 404."""
+    from spectra_sherpa.app.contracts.project_access import require_project_access
     from spectra_sherpa.app.models.project import Project
 
-    result = await session.execute(select(Project).where(Project.id == project_id, Project.user_id == user_id))
+    result = await session.execute(
+        select(Project)
+        .where(Project.id == project_id, Project.deleted_at.is_(None))
+        .execution_options(populate_existing=True)
+    )
     project = cast(Optional[Project], result.scalar_one_or_none())
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
+    await require_project_access(session, user_id, project, operation)
     return project
 
 

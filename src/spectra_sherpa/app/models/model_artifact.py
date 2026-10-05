@@ -50,10 +50,10 @@ class ModelArtifact(Base):
         ForeignKey("workflow.id", ondelete="SET NULL"), nullable=True, index=True
     )
     workflow_version_id: Mapped[int | None] = mapped_column(
-        ForeignKey("workflow_version.id", ondelete="SET NULL"), nullable=True, index=True
+        ForeignKey("workflow_version.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     source_run_id: Mapped[int | None] = mapped_column(
-        ForeignKey("execution_run.id", ondelete="SET NULL"), nullable=True, index=True
+        ForeignKey("execution_run.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     training_dataset_id: Mapped[int | None] = mapped_column(
         ForeignKey("experiment.id", ondelete="SET NULL"), nullable=True, index=True
@@ -79,7 +79,11 @@ class ModelArtifact(Base):
 
     # Provenance
     training_data_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    training_scientific_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
     preprocessing_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    artifact_origin: Mapped[str | None] = mapped_column(String(96), nullable=True, index=True)
+    canonical_lineage_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    validation_evidence_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Lifecycle
     is_active: Mapped[bool] = mapped_column(Boolean, server_default=sa.true(), nullable=False)

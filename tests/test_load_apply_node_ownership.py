@@ -21,6 +21,16 @@ from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.services.workflow_access import require_model_artifact_access
 
 
+@pytest.fixture(autouse=True)
+def _isolate_database_access_checks_from_storage_admission(monkeypatch: pytest.MonkeyPatch) -> None:
+    """This module tests ownership/project scoping; storage admission has its own adversarial suite."""
+
+    monkeypatch.setattr(
+        "spectra_sherpa.app.services.model_store.verify_model_artifact_storage_record",
+        lambda _model: None,
+    )
+
+
 async def _make_project_and_workflow(test_session, user: User, *, name: str):
     from spectra_sherpa.app.models.project import Project
     from spectra_sherpa.app.models.workflow import Workflow

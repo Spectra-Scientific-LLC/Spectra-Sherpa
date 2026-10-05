@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import aclosing
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
@@ -58,7 +59,7 @@ async def chat_stream(
             detail={
                 "code": "capability_unavailable",
                 "capability": CHAT_ASSISTANT,
-                "message": ("BYO chat endpoint not configured. " "Set CHAT_ENDPOINT_URL and CHAT_ENDPOINT_KEY."),
+                "message": "BYO chat endpoint not configured. Check the provider, endpoint URL, and API key.",
             },
         )
     user_key = f"user:{getattr(user, 'id', None) or 'anonymous'}"
@@ -89,21 +90,48 @@ async def chat_stream(
 
     async def _generate():
         try:
-            async for chunk in basic_chat.stream_chat(
-                message, verbose=verbose, max_paragraphs=max_paragraphs, metadata=metadata
-            ):
-                yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
+            async with aclosing(
+                basic_chat.stream_chat(
+                    message, verbose=verbose, max_paragraphs=max_paragraphs, metadata=metadata, exchange_owner=user.id
+                )
+            ) as stream:
+                async for chunk in stream:
+                    yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
         except ValueError as exc:
             # ``ValueError`` from ``basic_chat`` carries operator-facing config
-            # errors.  Log the original message server-side so it stays
-            # debuggable; surface only a fixed, public-safe message so the
-            # exception's stringification can't leak internal context.
-            logger.warning("BYO chat configuration error: %s", exc)
+            # errors. Keep exception content out of both logs and the response:
+            # a provider exception may contain an authenticated URL.
+            logger.warning("BYO chat configuration error (%s)", type(exc).__name__)
             _public_detail = "Chat endpoint is not configured or unreachable."
             yield f"data: {json.dumps({'type': 'error', 'detail': _public_detail})}\n\n"
         except Exception as exc:
-            logger.exception("BYO chat stream failed: %s", exc)
+            logger.warning("BYO chat stream failed (%s)", type(exc).__name__)
             yield f"data: {json.dumps({'type': 'error', 'detail': 'Chat request failed'})}\n\n"
 
     return StreamingResponse(_generate(), media_type="text/event-stream")
+
+
+def _local_history_access(request: Request) -> None:
+    from spectra_sherpa.app.core.mode_policy import is_local, is_loopback
+    from spectra_sherpa.app.core.security import get_client_host
+
+    if not is_local() or not is_loopback(get_client_host(request)):
+        raise HTTPException(status_code=404, detail="Not found.")
+
+
+@router.get("/exchanges")
+async def exchanges(request: Request, user=Depends(get_current_user)):
+    """Return only this local user's bounded, redacted process history."""
+    _local_history_access(request)
+    from spectra_sherpa.app.services.chat_exchange import history
+
+    return {"exchanges": history(user.id), "retention": "Last 20 exchanges; cleared when the backend exits."}
+
+
+@router.delete("/exchanges", status_code=204)
+async def clear_exchanges(request: Request, user=Depends(get_current_user)):
+    _local_history_access(request)
+    from spectra_sherpa.app.services.chat_exchange import clear
+
+    clear(user.id)

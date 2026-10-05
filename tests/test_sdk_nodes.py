@@ -1,21 +1,10 @@
 from __future__ import annotations
 
-import uuid
-
 import numpy as np
 import pytest
 
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services.dag.executor import DAGExecutor, WorkflowEdge, WorkflowNode
 from spectra_sherpa.app.services.dag.meta_helpers import get_processing_history
-from spectra_sherpa.app.services.dag.node_base import (
-    Node,
-    NodeMetadata,
-    NodeResult,
-    PortMetadata,
-    node_registry,
-    register_node,
-)
 from spectra_sherpa.sdk import ChemometricsNode, param_bool, param_number, param_select, param_text
 
 
@@ -152,60 +141,3 @@ def test_numpy_expr_export_support() -> None:
     lines = node.generate_python({"default": "results['src']"})
     joined = "\n".join(lines)
     assert "_result = _data * 4.0" in joined
-
-
-@pytest.mark.asyncio
-async def test_facade_node_executes_in_dag_executor() -> None:
-    source_type = f"test.sdk.source_{uuid.uuid4().hex[:8]}"
-    proc_type = f"test.sdk.proc_{uuid.uuid4().hex[:8]}"
-
-    @register_node
-    class _SourceNode(Node):
-        metadata = NodeMetadata(
-            node_type=source_type,
-            category="data",
-            label="Source",
-            description="source",
-            parameters=[],
-            input_types=[],
-            output_type="NDDataset",
-            output_ports=[
-                PortMetadata(
-                    name="default",
-                    type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                    required=True,
-                    label="Data",
-                )
-            ],
-        )
-
-        async def execute(self):
-            dataset = self.parameters.get("dataset")
-            if dataset is None:
-                raise ValueError("dataset missing")
-            return NodeResult(outputs={"default": dataset})
-
-    @register_node
-    class _ProcNode(ChemometricsNode):
-        node_type = proc_type
-        category = "preprocessing"
-        label = "Proc"
-
-        def process(self, dataset, factor: float = 2.0):
-            return np.asarray(dataset.data, dtype=np.float64) * factor
-
-    try:
-        ds = SherpaDataset(X=np.array([[1.0, 2.0], [3.0, 4.0]]))
-        ex = DAGExecutor(process_pool=None)
-        ex.add_node(WorkflowNode(node_id="src", node_type=source_type, parameters={}))
-        ex.add_node(WorkflowNode(node_id="proc", node_type=proc_type, parameters={"factor": 2.0}))
-        ex.add_edge(WorkflowEdge(from_node="src", to_node="proc"))
-
-        results = await ex.execute(initial_data={"src": {"dataset": ds}})
-        out = results["proc"]["default"]
-
-        assert isinstance(out, SherpaDataset)
-        np.testing.assert_allclose(out.data, ds.data * 2.0)
-    finally:
-        node_registry.unregister(source_type)
-        node_registry.unregister(proc_type)

@@ -132,7 +132,11 @@ async def handle_subscribe(
     if not channel:
         await _safe_ws_send_json(ws, {"type": "error", "detail": "Missing or unauthorized channel"})
         return
-    await ws_manager.subscribe(ws, channel)
+
+    async def still_authorized():
+        return await resolve_channel(channel) == channel
+
+    await ws_manager.subscribe(ws, channel, authorize=still_authorized)
     await _safe_ws_send_json(ws, {"type": "subscribed", "channel": channel})
 
 

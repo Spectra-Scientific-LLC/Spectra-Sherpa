@@ -92,6 +92,27 @@ async def test_compare_vs_library_ranks_best_hqi_match():
 
 
 @pytest.mark.anyio
+async def test_compare_vs_library_refuses_raman_shift_against_absolute_wavenumber():
+    axis = np.array([1000.0, 1001.0, 1002.0, 1003.0])
+    sample = SherpaDataset(
+        X=np.array([[0.0, 1.0, 0.5, 0.0]]),
+        feature_axis=SpectralAxis(values=axis, title="Raman shift", units="cm-1"),
+        sample_axis=SampleAxis(labels=["unknown"]),
+        data_role="X_spectra",
+    )
+    library = SherpaDataset(
+        X=np.array([[0.0, 1.0, 0.5, 0.0]]),
+        feature_axis=SpectralAxis(values=axis, title="Wavenumber", units="cm-1"),
+        sample_axis=SampleAxis(labels=["reference"]),
+        data_role="X_spectra",
+    )
+
+    node = CompareVsLibraryNode("compare_1", {"top_n": 1, "min_overlap_points": 2})
+    with pytest.raises(ValueError, match="raman_shift.*wavenumber"):
+        await node.execute(sample=sample, library=library)
+
+
+@pytest.mark.anyio
 async def test_compare_vs_library_plot_payload_preserves_raw_trace_amplitude():
     axis = np.array([1000.0, 1001.0, 1002.0, 1003.0])
     sample = SherpaDataset(

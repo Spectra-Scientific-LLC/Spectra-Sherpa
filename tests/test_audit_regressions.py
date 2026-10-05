@@ -23,6 +23,7 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
     SherpaDataset,
     SpectralAxis,
 )
+from tests.pca_test_fixtures import closed_pca_diagnostic_state
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Group 1: Mutable defaults on Pydantic models
@@ -152,8 +153,6 @@ class TestDiagnosticsInputMutation:
     @pytest.mark.asyncio
     async def test_outlier_detection_does_not_mutate_input_quality(self):
         """Outlier detection must not modify the source dataset."""
-        from sklearn.decomposition import PCA
-
         from spectra_sherpa.app.services.dag.nodes.diagnostics import (
             OutlierDetectionNode,
         )
@@ -164,22 +163,7 @@ class TestDiagnosticsInputMutation:
 
         assert len(input_ds.quality.evaluations) == 0
 
-        pca = PCA(n_components=3)
-        scores = pca.fit_transform(X)
-
-        pca_model = {
-            "model": pca,
-            "scores": scores,
-            "loadings": pca.components_,
-            "n_components": 3,
-            "n_observations": 20,
-            "explained_variance": pca.explained_variance_,
-            "_internal": {
-                "input_data": X,
-                "input_data_ds": input_ds,
-            },
-            "metadata": {"type": "PCAModel"},
-        }
+        pca_model = closed_pca_diagnostic_state(input_ds, n_components=3)
 
         node = OutlierDetectionNode(node_id="test_outlier")
         node.parameters = {"confidence_level": 0.95}

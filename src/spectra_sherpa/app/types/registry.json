@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "1.1",
   "description": "SpectraSherpa type registry — canonical data types for graph node ports",
   "types": {
     "Scalar": {
@@ -14,6 +14,12 @@
       "parent": null,
       "description": "One-dimensional numeric array"
     },
+    "VariableImportance": {
+      "uri": "spectrasherpa://types/VariableImportance/1.0",
+      "category": "array",
+      "parent": "Array1D",
+      "description": "One producer-owned importance value per input feature"
+    },
     "Array2D": {
       "uri": "spectrasherpa://types/Array2D/1.0",
       "category": "array",
@@ -26,11 +32,47 @@
       "parent": null,
       "description": "Categorical labels (class names, sample IDs)"
     },
+    "RegressionPopulation": {
+      "uri": "spectrasherpa://types/RegressionPopulation/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Original and admitted regression population with ordered exclusion reasons"
+    },
+    "PredictionIntervals": {
+      "uri": "spectrasherpa://types/PredictionIntervals/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Pipeline-bound measured-reference intervals or explicit point-only evidence"
+    },
+    "ApplicabilityScreening": {
+      "uri": "spectrasherpa://types/ApplicabilityScreening/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Row-bound provisional model screening with retained method and unavailable authority"
+    },
+    "PredictionIdentity": {
+      "uri": "spectrasherpa://types/PredictionIdentity/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Ordered response names and units bound to prediction bytes, rows and fitted state"
+    },
     "TargetMatrix": {
       "uri": "spectrasherpa://types/TargetMatrix/1.0",
       "category": "target",
       "parent": null,
       "description": "Target values — 1D vector or 2D matrix for single/multi-response calibration"
+    },
+    "SampleTable": {
+      "uri": "spectrasherpa://types/SampleTable/2.0",
+      "category": "config",
+      "parent": null,
+      "description": "Exact source-row identities, inclusion decisions, target values, and per-sample annotations"
+    },
+    "OutOfFoldEvidence": {
+      "uri": "spectrasherpa://types/OutOfFoldEvidence/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Closed observations, held-out predictions, fold assignments, split plan, and canonical producer identity"
     },
     "Spectrum": {
       "uri": "spectrasherpa://types/Spectrum/1.0",
@@ -42,8 +84,8 @@
       "uri": "spectrasherpa://types/SpectralDataset/1.0",
       "category": "dataset",
       "parent": "Array2D",
-      "description": "Multi-sample spectral matrix (n_samples × n_wavelengths) with coupled coordinates",
-      "expected_axes": ["SampleAxis", "SpectralAxis"]
+      "description": "Sample-first spectral array with one spectral-variable mode and explicit roles for any additional modes",
+      "expected_axes": ["SampleAxis", "InnerAxes", "SpectralAxis"]
     },
     "ScoreMatrix": {
       "uri": "spectrasherpa://types/ScoreMatrix/1.0",
@@ -67,7 +109,8 @@
       "uri": "spectrasherpa://types/TimeSeries/1.0",
       "category": "dataset",
       "parent": "Array2D",
-      "description": "Time-resolved spectral data (n_timepoints × n_features)"
+      "description": "One or more signals sampled along a physical time axis (n_series × n_timepoints)",
+      "expected_axes": ["SampleAxis", "TimeAxis"]
     },
     "Chromatogram": {
       "uri": "spectrasherpa://types/Chromatogram/1.0",
@@ -108,6 +151,12 @@
       "parent": "FittedModel",
       "description": "Fitted regression model (PLS, PCR, SVR, linear)"
     },
+    "SpectralTransferModel": {
+      "uri": "spectrasherpa://types/SpectralTransferModel/1.0",
+      "category": "model",
+      "parent": "FittedModel",
+      "description": "Digest-bound fitted map from a secondary instrument spectral space to a primary instrument spectral space"
+    },
     "ClassificationModel": {
       "uri": "spectrasherpa://types/ClassificationModel/1.0",
       "category": "model",
@@ -119,6 +168,48 @@
       "category": "config",
       "parent": null,
       "description": "Model validation metrics and diagnostics"
+    },
+    "ClassificationComparison": {
+      "uri": "spectrasherpa://types/ClassificationComparison/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Sample-qualified reference class, predicted class, and correctness values for held-out evaluation"
+    },
+    "RegressionComparison": {
+      "uri": "spectrasherpa://types/RegressionComparison/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Sample- and target-qualified reference, prediction, and residual values for calibration or held-out evaluation"
+    },
+    "ExplainedVarianceMatrix": {
+      "uri": "spectrasherpa://types/ExplainedVarianceMatrix/1.0",
+      "category": "array",
+      "parent": "Array2D",
+      "description": "Component-wise explained X and Y variance fractions"
+    },
+    "RegressionCoefficientMatrix": {
+      "uri": "spectrasherpa://types/RegressionCoefficientMatrix/1.0",
+      "category": "array",
+      "parent": "Array2D",
+      "description": "One fitted regression coefficient per input variable and response target"
+    },
+    "StatisticsSummary": {
+      "uri": "spectrasherpa://types/StatisticsSummary/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Deterministic descriptive summary of a canonical dataset or typed scientific result"
+    },
+    "PeakTable": {
+      "uri": "spectrasherpa://types/PeakTable/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Closed consensus peak table with axis positions, constituent source membership, detection counts, half-prominence widths, and absolute window integrals"
+    },
+    "SalientFeatures": {
+      "uri": "spectrasherpa://types/SalientFeatures/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Ranked or detected feature positions and their declared scientific context"
     },
     "ConfusionMatrix": {
       "uri": "spectrasherpa://types/ConfusionMatrix/1.0",
@@ -150,11 +241,361 @@
       "parent": null,
       "description": "Reference (UUID) to a persisted model artifact"
     },
+    "DeploymentResponse": {
+      "uri": "spectrasherpa://types/DeploymentResponse/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Closed deployed-result envelope with format, media type, content, and content digest"
+    },
+    "ExportArtifact": {
+      "uri": "spectrasherpa://types/ExportArtifact/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Closed downloadable content with filename, format, byte length, source binding, and SHA-256 digest"
+    },
     "Any": {
       "uri": "spectrasherpa://types/Any/1.0",
       "category": "any",
       "parent": null,
       "description": "Wildcard type — accepts any data"
+    }
+  },
+  "scientific_semantics": {
+    "Scalar": {
+      "scientific_kind": "scalar",
+      "view_kind": "scalar",
+      "rank": [0],
+      "dimension_roles": [],
+      "view_modes": ["record"],
+      "content_categories": ["unclassified"]
+    },
+    "Array1D": {
+      "scientific_kind": "numeric_vector",
+      "view_kind": "vector",
+      "rank": [1],
+      "dimension_roles": ["entry"],
+      "view_modes": ["table"],
+      "content_categories": ["unclassified"]
+    },
+    "VariableImportance": {
+      "scientific_kind": "variable_importance",
+      "view_kind": "vector",
+      "rank": [1],
+      "dimension_roles": ["feature"],
+      "view_modes": ["table", "variable_profile"],
+      "content_categories": ["variable_diagnostics"]
+    },
+    "Array2D": {
+      "scientific_kind": "numeric_matrix",
+      "view_kind": "matrix",
+      "rank": [2],
+      "dimension_roles": ["row", "column"],
+      "view_modes": ["table"],
+      "content_categories": ["unclassified"]
+    },
+    "Categorical": {
+      "scientific_kind": "categorical_labels",
+      "view_kind": "vector",
+      "rank": [1],
+      "dimension_roles": ["sample"],
+      "view_modes": ["table", "category_counts"],
+      "content_categories": ["unclassified"]
+    },
+    "RegressionPopulation": {
+      "scientific_kind": "structured_record",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record"],
+      "content_categories": ["sample_membership", "provenance_and_evidence"]
+    },
+    "PredictionIntervals": {
+      "scientific_kind": "structured_record",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record"],
+      "content_categories": ["sample_membership", "model_artifacts", "provenance_and_evidence"]
+    },
+    "ApplicabilityScreening": {
+      "scientific_kind": "structured_record",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record"],
+      "content_categories": ["sample_membership", "model_artifacts", "provenance_and_evidence"]
+    },
+    "PredictionIdentity": {
+      "scientific_kind": "structured_record",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record"],
+      "content_categories": ["sample_membership", "model_artifacts", "provenance_and_evidence"]
+    },
+    "TargetMatrix": {
+      "scientific_kind": "target_matrix",
+      "view_kind": "matrix",
+      "rank": [1, 2],
+      "dimension_roles": ["sample", "target"],
+      "view_modes": ["table"],
+      "content_categories": ["reference_targets"]
+    },
+    "SampleTable": {
+      "scientific_kind": "structured_record",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record", "table"],
+      "content_categories": ["reference_targets", "sample_membership", "provenance_and_evidence"]
+    },
+    "OutOfFoldEvidence": {
+      "scientific_kind": "out_of_fold_evidence",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record", "table", "predicted_vs_actual"],
+      "content_categories": ["reference_targets", "sample_membership", "sample_level_results", "provenance_and_evidence"]
+    },
+    "Spectrum": {
+      "scientific_kind": "spectrum",
+      "view_kind": "vector",
+      "rank": [1],
+      "dimension_roles": ["spectral_variable"],
+      "view_modes": ["table", "spectral_plot"],
+      "content_categories": ["sample_measurements"]
+    },
+    "SpectralDataset": {
+      "scientific_kind": "spectral_dataset",
+      "view_kind": "matrix",
+      "rank": [2, 3, 4, 5, 6],
+      "dimension_roles": ["sample", "spectral_variable"],
+      "view_modes": ["table", "spectral_plot"],
+      "content_categories": ["sample_measurements"]
+    },
+    "ScoreMatrix": {
+      "scientific_kind": "score_matrix",
+      "view_kind": "matrix",
+      "rank": [2],
+      "dimension_roles": ["sample", "component"],
+      "view_modes": ["table", "score_plot"],
+      "content_categories": ["sample_level_results"]
+    },
+    "LoadingMatrix": {
+      "scientific_kind": "loading_matrix",
+      "view_kind": "matrix",
+      "rank": [2],
+      "dimension_roles": ["component", "feature"],
+      "view_modes": ["table", "loading_plot"],
+      "content_categories": ["variable_diagnostics"]
+    },
+    "SpectralImage": {
+      "scientific_kind": "spectral_image",
+      "view_kind": "tensor",
+      "rank": [2, 3, 4],
+      "dimension_roles": ["sample", "spatial_coordinate", "spectral_variable"],
+      "view_modes": ["image", "spectral_plot"],
+      "content_categories": ["sample_measurements"]
+    },
+    "TimeSeries": {
+      "scientific_kind": "time_series",
+      "view_kind": "matrix",
+      "rank": [2],
+      "dimension_roles": ["sample", "time_point"],
+      "view_modes": ["table", "time_series_plot"],
+      "content_categories": ["sample_measurements"]
+    },
+    "Chromatogram": {
+      "scientific_kind": "chromatogram",
+      "view_kind": "matrix",
+      "rank": [2],
+      "dimension_roles": ["sample", "time_point"],
+      "view_modes": ["table", "time_series_plot"],
+      "content_categories": ["sample_measurements"]
+    },
+    "MassSpectrum": {
+      "scientific_kind": "mass_spectrum",
+      "view_kind": "matrix",
+      "rank": [2],
+      "dimension_roles": ["sample", "mass_to_charge"],
+      "view_modes": ["table", "spectral_plot"],
+      "content_categories": ["sample_measurements"]
+    },
+    "Voltammogram": {
+      "scientific_kind": "voltammogram",
+      "view_kind": "matrix",
+      "rank": [2],
+      "dimension_roles": ["sample", "potential"],
+      "view_modes": ["table", "spectral_plot"],
+      "content_categories": ["sample_measurements"]
+    },
+    "FittedModel": {
+      "scientific_kind": "fitted_model",
+      "view_kind": "model",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["model_summary"],
+      "content_categories": ["model_artifacts"]
+    },
+    "DecompositionResult": {
+      "scientific_kind": "decomposition_result",
+      "view_kind": "model",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["model_summary"],
+      "content_categories": ["model_artifacts", "variable_diagnostics"]
+    },
+    "RegressionModel": {
+      "scientific_kind": "regression_model",
+      "view_kind": "model",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["model_summary"],
+      "content_categories": ["model_artifacts"]
+    },
+    "SpectralTransferModel": {
+      "scientific_kind": "spectral_transfer_model",
+      "view_kind": "model",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["model_summary"],
+      "content_categories": ["model_artifacts"]
+    },
+    "ClassificationModel": {
+      "scientific_kind": "classification_model",
+      "view_kind": "model",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["model_summary"],
+      "content_categories": ["model_artifacts"]
+    },
+    "ValidationResult": {
+      "scientific_kind": "validation_result",
+      "view_kind": "metric_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record"],
+      "content_categories": ["aggregate_metrics"]
+    },
+    "ClassificationComparison": {
+      "scientific_kind": "classification_comparison",
+      "view_kind": "record_table",
+      "rank": [2],
+      "dimension_roles": ["observation", "comparison_field"],
+      "view_modes": ["table"],
+      "content_categories": ["reference_targets", "sample_level_results"]
+    },
+    "RegressionComparison": {
+      "scientific_kind": "regression_comparison",
+      "view_kind": "record_table",
+      "rank": [2],
+      "dimension_roles": ["observation", "comparison_field"],
+      "view_modes": ["table", "predicted_vs_actual"],
+      "content_categories": ["reference_targets", "sample_level_results"]
+    },
+    "ExplainedVarianceMatrix": {
+      "scientific_kind": "explained_variance",
+      "view_kind": "matrix",
+      "rank": [2],
+      "dimension_roles": ["component", "variance_domain"],
+      "view_modes": ["table", "component_plot"],
+      "content_categories": ["aggregate_model_diagnostics"]
+    },
+    "RegressionCoefficientMatrix": {
+      "scientific_kind": "regression_coefficients",
+      "view_kind": "matrix",
+      "rank": [2],
+      "dimension_roles": ["spectral_variable", "target"],
+      "view_modes": ["table", "variable_profile"],
+      "content_categories": ["variable_diagnostics", "model_artifacts"]
+    },
+    "StatisticsSummary": {
+      "scientific_kind": "statistics_summary",
+      "view_kind": "metric_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record", "table"],
+      "content_categories": ["aggregate_metrics"]
+    },
+    "PeakTable": {
+      "scientific_kind": "peak_table",
+      "view_kind": "record_table",
+      "rank": [1],
+      "dimension_roles": ["detected_peak"],
+      "view_modes": ["table", "peak_plot"],
+      "content_categories": ["variable_diagnostics"]
+    },
+    "SalientFeatures": {
+      "scientific_kind": "salient_features",
+      "view_kind": "record_table",
+      "rank": [1],
+      "dimension_roles": ["selected_variable"],
+      "view_modes": ["table", "variable_profile"],
+      "content_categories": ["variable_diagnostics"]
+    },
+    "ConfusionMatrix": {
+      "scientific_kind": "confusion_matrix",
+      "view_kind": "matrix",
+      "rank": [2],
+      "dimension_roles": ["actual_class", "predicted_class"],
+      "view_modes": ["table", "confusion_matrix"],
+      "content_categories": ["aggregate_metrics"]
+    },
+    "Visualization": {
+      "scientific_kind": "visualization",
+      "view_kind": "visualization",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["plot", "table"],
+      "content_categories": ["visualizations", "unclassified"]
+    },
+    "Comparison": {
+      "scientific_kind": "comparison",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record", "table"],
+      "content_categories": ["unclassified"]
+    },
+    "WorkflowSnapshot": {
+      "scientific_kind": "workflow_snapshot",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record"],
+      "content_categories": ["provenance_and_evidence"]
+    },
+    "ModelReference": {
+      "scientific_kind": "model_reference",
+      "view_kind": "model_reference",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["model_summary"],
+      "content_categories": ["model_artifacts", "provenance_and_evidence"]
+    },
+    "DeploymentResponse": {
+      "scientific_kind": "deployment_response",
+      "view_kind": "structured_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record"],
+      "content_categories": ["unclassified"]
+    },
+    "ExportArtifact": {
+      "scientific_kind": "export_artifact",
+      "view_kind": "artifact",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["artifact_summary", "download"],
+      "content_categories": ["exported_files"]
+    },
+    "Any": {
+      "scientific_kind": "unclassified",
+      "view_kind": "unknown",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": [],
+      "content_categories": ["unclassified"]
     }
   }
 }

@@ -4,16 +4,25 @@ Adaptive Statistics node.
 
 from __future__ import annotations
 
+import hashlib
+import json
+import math
+import re
 from typing import Any, Dict, List, Optional, cast
 
 import numpy as np
 
 from spectra_sherpa.app.lib.data_roles import get_dataset_data_role
-from spectra_sherpa.app.lib.scp_compat import NDDataset
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    WorkerCapability,
+)
 
-from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
+from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, register_node
 
 
 def _is_numeric_array(arr: np.ndarray) -> bool:
@@ -21,9 +30,182 @@ def _is_numeric_array(arr: np.ndarray) -> bool:
     return np.issubdtype(arr.dtype, np.number) or np.issubdtype(arr.dtype, np.bool_)
 
 
+def _is_measured_category(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, (int, float, complex, np.number)):
+        return bool(np.isfinite(value))
+    try:
+        return bool(value == value)
+    except (TypeError, ValueError):
+        return False
+
+
 def _dataset_meta(dataset: Any) -> dict[str, Any]:
     meta = getattr(dataset, "meta", None)
     return meta if isinstance(meta, dict) else {}
+
+
+_REFERENCE_CONTEXT_KEYS = (
+    "reference.artifact_id",
+    "reference.artifact_sha256",
+    "reference.member_sha256",
+    "reference.projection_id",
+    "reference.package_id",
+    "reference.view_id",
+    "reference.instrument_view",
+    "reference.cohort",
+)
+_SAMPLE_ROLE_COLUMNS = ("analysis_role", "source_partition", "cohort", "instrument")
+_REFERENCE_DIGEST_KEYS = frozenset({"reference.artifact_sha256", "reference.member_sha256"})
+_MAX_CONTEXT_TEXT = 256
+_MAX_ROLE_CATEGORIES = 32
+_MAX_ROLE_LABEL = 128
+_MAX_ROLE_LABEL_BYTES = 4096
+
+
+def _sequence_digest(values: list[str]) -> str:
+    payload = json.dumps(values, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _bounded_text(value: Any, *, maximum: int = _MAX_CONTEXT_TEXT) -> str | None:
+    if not isinstance(value, str) or not value or value != value.strip():
+        return None
+    if len(value) > maximum or any(ord(character) < 32 for character in value):
+        return None
+    return value
+
+
+def _reference_context(meta: dict[str, Any]) -> dict[str, str]:
+    reference: dict[str, str] = {}
+    for key in _REFERENCE_CONTEXT_KEYS:
+        value = _bounded_text(meta.get(key))
+        if value is None:
+            continue
+        if key in _REFERENCE_DIGEST_KEYS and re.fullmatch(r"[0-9a-f]{64}", value) is None:
+            continue
+        reference[key] = value
+    return reference
+
+
+def _role_token(value: Any) -> tuple[str, str | None]:
+    if value is None:
+        return "null", "null"
+    if isinstance(value, bool):
+        text = "true" if value else "false"
+        return f"boolean:{text}", f"boolean:{text}"
+    if isinstance(value, (int, np.integer)):
+        text = str(int(value))
+        return f"integer:{text}", f"integer:{text}"
+    if isinstance(value, (float, np.floating)):
+        number = float(value)
+        if not math.isfinite(number):
+            return "number:<nonfinite>", "number:<nonfinite>"
+        text = repr(number)
+        return f"number:{text}", f"number:{text}"
+    text = _bounded_text(value, maximum=_MAX_ROLE_LABEL)
+    if text is not None:
+        return f"text:{text}", f"text:{text}"
+    return f"unsupported:{type(value).__name__}", None
+
+
+def _role_summary(values: list[Any]) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    token_digests: set[str] = set()
+    sequence = hashlib.sha256()
+    invalid_value_count = 0
+    retained_label_bytes = 0
+    overflow = False
+    distinct_count_lower_bound = 0
+    for value in values:
+        token, display = _role_token(value)
+        encoded = token.encode("utf-8")
+        sequence.update(len(encoded).to_bytes(8, "big"))
+        sequence.update(encoded)
+        token_digest = hashlib.sha256(encoded).hexdigest()
+        if display is None:
+            invalid_value_count += 1
+            overflow = True
+            counts.clear()
+        elif not overflow and token_digest in token_digests:
+            counts[display] = counts.get(display, 0) + 1
+        elif not overflow:
+            encoded_label = json.dumps(display, ensure_ascii=False).encode("utf-8")
+            would_exceed = len(token_digests) >= _MAX_ROLE_CATEGORIES or (
+                retained_label_bytes + len(encoded_label) > _MAX_ROLE_LABEL_BYTES
+            )
+            if would_exceed:
+                overflow = True
+                distinct_count_lower_bound = len(token_digests) + 1
+                counts.clear()
+            else:
+                token_digests.add(token_digest)
+                retained_label_bytes += len(encoded_label)
+                counts[display] = 1
+        if overflow and distinct_count_lower_bound == 0:
+            distinct_count_lower_bound = len(token_digests) + 1
+    if not overflow and sum(counts.values()) != len(values):
+        raise RuntimeError("bounded role summary lost sample membership")
+    return {
+        "counts": None if overflow else dict(sorted(counts.items())),
+        "distinct_count": None if overflow else len(token_digests),
+        "distinct_count_lower_bound": distinct_count_lower_bound if overflow else len(token_digests),
+        "invalid_value_count": invalid_value_count,
+        "total_count": len(values),
+        "values_redacted": overflow,
+        "values_sha256": sequence.hexdigest(),
+    }
+
+
+def build_dataset_source_context(dataset: SherpaDataset) -> dict[str, Any]:
+    """Return bounded, auditable source and specimen custody for a result."""
+
+    try:
+        scientific_digest = dataset.scientific_digest
+    except ValueError:
+        # The canonical scientific digest deliberately refuses non-finite
+        # metadata scalars. Missing target cells are valid for descriptive
+        # summaries, so retain the finite X fingerprint and explicit target
+        # missingness instead of making the result node fail.
+        scientific_digest = None
+    meta = _dataset_meta(dataset)
+    reference = _reference_context(meta)
+    source_identity = {
+        key: text
+        for key, value in dataset.source_identity.model_dump(mode="json", exclude_none=True).items()
+        if (text := _bounded_text(value)) is not None
+    }
+    sample_axis = dataset.sample_axis
+    raw_labels = None if sample_axis is None else sample_axis.labels
+    labels = [] if raw_labels is None else [str(value) for value in raw_labels]
+    table = {} if sample_axis is None or sample_axis.sample_table is None else sample_axis.sample_table
+    role_counts = {
+        key: _role_summary(list(table[key]))
+        for key in _SAMPLE_ROLE_COLUMNS
+        if key in table and len(table[key]) == dataset.n_samples
+    }
+    raw_columns = sorted(str(key) for key in table)
+    safe_columns = [name for name in raw_columns if _bounded_text(name, maximum=_MAX_ROLE_LABEL) is not None]
+    displayed_columns = safe_columns[:64]
+    return {
+        "dataset_title": _bounded_text(dataset.title),
+        "scientific_digest": scientific_digest,
+        "data_fingerprint": dataset.fingerprint,
+        "source_identity": source_identity,
+        "reference": reference,
+        "sample_identity": {
+            "count": dataset.n_samples,
+            "labels_present": raw_labels is not None,
+            "labels_unique": len(labels) == len(set(labels)) if labels else None,
+            "labels_sha256": _sequence_digest(labels) if labels else None,
+        },
+        "sample_table_columns": displayed_columns,
+        "sample_table_column_count": len(raw_columns),
+        "sample_table_columns_truncated": len(displayed_columns) != len(raw_columns),
+        "sample_table_columns_sha256": _sequence_digest(raw_columns),
+        "sample_role_counts": role_counts,
+    }
 
 
 def _is_pca_score_dataset(dataset: SherpaDataset) -> bool:
@@ -35,53 +217,60 @@ def _is_pca_score_dataset(dataset: SherpaDataset) -> bool:
     return "score" in title and "principal component" in axis_title
 
 
+def _canonical_summary_parameters(raw: dict[str, object]) -> dict[str, object]:
+    """Close the one scientist-controlled presentation bound."""
+
+    unknown = sorted(set(raw) - {"max_samples"})
+    if unknown:
+        raise ValueError(f"stats.summary received unknown parameters: {', '.join(unknown)}")
+    value = raw.get("max_samples", 100)
+    if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+        raise ValueError("stats.summary max_samples must be an integer")
+    max_samples = int(value)
+    if not 10 <= max_samples <= 10_000:
+        raise ValueError("stats.summary max_samples must be between 10 and 10000")
+    return {"max_samples": max_samples}
+
+
 @register_node
 class StatsSummaryNode(Node):
     """
     Adaptive Statistics node.
 
     Computes contextual statistics based on input type:
-    - NDDataset: spectral statistics, per-sample/feature analysis
+    - SherpaDataset: spectral statistics, per-sample/feature analysis
     - PCA results: scores/loadings stats, outlier detection
     - MCR results: concentration/spectra statistics
     - Generic arrays: basic descriptive statistics
     """
 
     metadata = NodeMetadata(
+        policy=NodePolicy(),
         node_type="stats.summary",
         category="validation",
         label="Statistics",
-        description="Compute adaptive statistics based on input type",
+        description=(
+            "Compute deterministic descriptive summaries for canonical datasets and "
+            "typed scientific result payloads without fitting or inventing missing data"
+        ),
         parameters=[
-            NodeParameter(
-                name="compute_outliers",
-                label="Detect Outliers",
-                param_type="boolean",
-                default=True,
-                description="Compute outlier statistics (for PCA data)",
-                required=False,
-            ),
-            NodeParameter(
-                name="outlier_threshold",
-                label="Outlier Threshold",
-                param_type="number",
-                default=0.95,
-                min_value=0.8,
-                description="Confidence level for outlier detection",
-                required=False,
-            ),
             NodeParameter(
                 name="max_samples",
                 label="Max Sample Rows",
                 param_type="number",
                 default=100,
                 min_value=10,
+                max_value=10000,
+                max_value_reason=(
+                    "Bounds the serialized per-sample table and workbench response size; "
+                    "the result reports explicit truncation."
+                ),
                 description="Maximum rows in per-sample statistics table",
                 required=False,
             ),
         ],
-        input_types=["NDDataset", "dict", "array"],
-        output_type="dict",
+        input_types=["SherpaDataset", "dict", "array"],
+        output_type="StatisticsSummary",
         input_ports=[
             PortMetadata(
                 name="default",
@@ -94,12 +283,13 @@ class StatsSummaryNode(Node):
         output_ports=[
             PortMetadata(
                 name="statistics",
-                type_ref="spectrasherpa://types/ValidationResult/1.0",
+                type_ref="spectrasherpa://types/StatisticsSummary/1.0",
                 required=True,
                 label="Statistics",
                 description="Computed statistics and summary",
             ),
         ],
+        canonical_parameter_validator=_canonical_summary_parameters,
     )
 
     def generate_python(
@@ -108,45 +298,19 @@ class StatsSummaryNode(Node):
         indent: str = "    ",
         use_scp: bool = True,
     ) -> List[str]:
-        """Generate Python code for statistics summary."""
+        """Generate the exact same summary call used by live execution."""
         input_expr = inputs.get("default", next(iter(inputs.values()), "input_data"))
-
-        lines: List[str] = []
-        lines.append(f"{indent}# --- Statistics ({self.node_id}) ---")
-        lines.append(f"{indent}_stats_input = {input_expr}")
-        lines.append(f"{indent}if hasattr(_stats_input, 'data'):")
-        lines.append(f"{indent}    _stats_data = np.atleast_2d(np.asarray(_stats_input.data, dtype=np.float64))")
-        lines.append(f"{indent}elif isinstance(_stats_input, dict):")
-        lines.append(f"{indent}    if 'scores' in _stats_input:")
-        lines.append(f"{indent}        _sc = _stats_input['scores']")
-        lines.append(f"{indent}        _stats_data = np.atleast_2d(")
-        lines.append(f"{indent}            np.asarray(")
-        lines.append(f"{indent}                _sc.data if hasattr(_sc, 'data') else _sc,")
-        lines.append(f"{indent}                dtype=np.float64,")
-        lines.append(f"{indent}            )")
-        lines.append(f"{indent}        )")
-        lines.append(f"{indent}    elif 'data' in _stats_input:")
-        lines.append(f"{indent}        _stats_data = np.atleast_2d(np.asarray(_stats_input['data'], dtype=np.float64))")
-        lines.append(f"{indent}    else:")
-        lines.append(f"{indent}        _stats_data = np.zeros((1, 1))")
-        lines.append(f"{indent}else:")
-        lines.append(f"{indent}    _stats_data = np.atleast_2d(np.asarray(_stats_input, dtype=np.float64))")
-        lines.append(f"{indent}_n_samples, _n_features = _stats_data.shape")
-        lines.append(f"{indent}_summary = {{")
-        lines.append(f"{indent}    'n_samples': _n_samples, 'n_features': _n_features,")
-        lines.append(f"{indent}    'mean': float(np.mean(_stats_data)),")
-        lines.append(f"{indent}    'std': float(np.std(_stats_data)),")
-        lines.append(f"{indent}    'min': float(np.min(_stats_data)),")
-        lines.append(f"{indent}    'max': float(np.max(_stats_data)),")
-        lines.append(f"{indent}    'median': float(np.median(_stats_data)),")
-        lines.append(f"{indent}}}")
-        lines.append(f"{indent}results['{self.node_id}'] = {{'statistics': _summary}}")
-        lines.append(
-            f'{indent}print(f"  Statistics: {{_n_samples}} samples x {{_n_features}} features, '
-            f"mean={{_summary['mean']:.4f}}, std={{_summary['std']:.4f}}\")"
-        )
-
-        return lines
+        parameters = self.metadata.canonicalize_parameters(self._resolve_params())
+        return [
+            f"{indent}# --- Statistics ({self.node_id}) ---",
+            (
+                f"{indent}from spectra_sherpa.app.services.dag.nodes.output.stats_summary_node "
+                "import build_statistics_result"
+            ),
+            f"{indent}results[{self.node_id!r}] = build_statistics_result(",
+            f"{indent}    {input_expr}, max_samples={parameters['max_samples']!r},",
+            f"{indent})",
+        ]
 
     async def execute(self, input_data: Any) -> Dict[str, Any]:
         """
@@ -158,21 +322,26 @@ class StatsSummaryNode(Node):
         Returns:
             Dict with comprehensive statistics and visualization data
         """
-        # Detect input type and route to appropriate handler
+        parameters = self.metadata.canonicalize_parameters(self._resolve_params())
+        return build_statistics_result(input_data, max_samples=int(parameters["max_samples"]))
+
+    def _compute(self, input_data: Any) -> Dict[str, Any]:
+        """Detect one supported input shape and route to its deterministic summary."""
+
         if isinstance(input_data, dict):
             if isinstance(input_data.get("default"), SherpaDataset):
-                return await self._stats_dataset(input_data["default"])
+                return self._stats_dataset(input_data["default"])
             if "accuracy" in input_data or input_data.get("task_type") in ("classification", "regression"):
-                return await self._stats_evaluation(input_data)
+                return self._stats_evaluation(input_data)
             elif "scores" in input_data or "X_scores" in input_data or "isPCA" in input_data.get("metadata", {}):
-                return await self._stats_pca(input_data)
+                return self._stats_pca(input_data)
             elif "C" in input_data or "St" in input_data:
-                return await self._stats_mcr(input_data)
+                return self._stats_mcr(input_data)
             elif "data" in input_data:
                 meta = input_data.get("metadata") or {}
                 if meta.get("type") == "PeakFinding":
-                    return await self._stats_peaks(input_data["data"], meta)
-                return await self._stats_array(input_data["data"], meta)
+                    return self._stats_peaks(input_data["data"], meta)
+                return self._stats_array(input_data["data"], meta)
             for key in (
                 "transformed",
                 "result",
@@ -189,30 +358,29 @@ class StatsSummaryNode(Node):
                 if key in input_data and input_data[key] is not None:
                     meta = dict(input_data.get("metadata") or {})
                     meta.setdefault("source_key", key)
-                    return await self._stats_array(input_data[key], meta)
-            return await self._stats_mapping(input_data)
-
-        # Coerce NDDataset -> SherpaDataset so all dataset paths work
-        if isinstance(input_data, NDDataset):
-            input_data = coerce_to_sherpa(input_data)
+                    return self._stats_array(input_data[key], meta)
+            return self._stats_mapping(input_data)
 
         if isinstance(input_data, SherpaDataset):
             if _is_pca_score_dataset(input_data):
-                return await self._stats_pca({"data": input_data, "metadata": _dataset_meta(input_data)})
-            return await self._stats_dataset(input_data)
+                return self._stats_pca({"data": input_data, "metadata": _dataset_meta(input_data)})
+            return self._stats_dataset(input_data)
 
         # Fallback to array statistics
-        return await self._stats_array(np.array(input_data), None)
+        return self._stats_array(np.array(input_data), None)
 
-    async def _stats_dataset(self, dataset: Any) -> Dict[str, Any]:
+    def _stats_dataset(self, dataset: Any) -> Dict[str, Any]:
         """Compute per-wavelength mean and std for spectral data."""
         data = np.array(dataset.data)
         if data.ndim == 1:
             data = data.reshape(1, -1)
+        if data.ndim != 2 or not _is_numeric_array(data):
+            raise ValueError("stats.summary requires a numeric one- or two-dimensional canonical dataset")
 
         n_samples, n_features = data.shape
         data_role = get_dataset_data_role(dataset)
         is_feature_table = data_role == "X_features"
+        data = data.astype(np.float64, copy=False)
         finite_mask = np.isfinite(data)
         nonfinite_count = int(data.size - np.count_nonzero(finite_mask))
         missing_count = int(np.count_nonzero(np.isnan(data))) if np.issubdtype(data.dtype, np.floating) else 0
@@ -220,8 +388,12 @@ class StatsSummaryNode(Node):
 
         # Per-feature statistics — wavelength/wavenumber when spectral,
         # categorical feature name when the source is X_features.
-        feature_means = np.mean(data, axis=0)
-        feature_stds = np.std(data, axis=0)
+        feature_means: list[float | None] = []
+        feature_stds: list[float | None] = []
+        for feature_index in range(n_features):
+            finite_values = data[finite_mask[:, feature_index], feature_index]
+            feature_means.append(float(np.mean(finite_values)) if finite_values.size else None)
+            feature_stds.append(float(np.std(finite_values)) if finite_values.size else None)
 
         # Get feature axis (wavelength, wavenumber, channel, etc.)
         x_coord = dataset.feature_axis
@@ -248,28 +420,29 @@ class StatsSummaryNode(Node):
             table_rows.append(
                 {
                     feature_key: feature_values[i],
-                    "mean": float(feature_means[i]),
-                    "std": float(feature_stds[i]),
+                    "mean": feature_means[i],
+                    "std": feature_stds[i],
                     "nonfinite": int(feature_values_i.size - np.count_nonzero(feature_finite)),
                 }
             )
 
-        sample_means = np.nanmean(np.where(finite_mask, data, np.nan), axis=1)
-        sample_stds = np.nanstd(np.where(finite_mask, data, np.nan), axis=1)
         sample_nonfinite = data.shape[1] - np.count_nonzero(finite_mask, axis=1)
-        sample_quality = [
-            {
-                "sample": int(i + 1),
-                "mean": float(sample_means[i]) if np.isfinite(sample_means[i]) else None,
-                "std": float(sample_stds[i]) if np.isfinite(sample_stds[i]) else None,
-                "nonfinite": int(sample_nonfinite[i]),
-            }
-            for i in range(min(n_samples, int(self.parameters.get("max_samples", 100))))
-        ]
+        sample_quality = []
+        for sample_index in range(min(n_samples, int(self.parameters.get("max_samples", 100)))):
+            finite_values = data[sample_index, finite_mask[sample_index]]
+            sample_quality.append(
+                {
+                    "sample": int(sample_index + 1),
+                    "mean": float(np.mean(finite_values)) if finite_values.size else None,
+                    "std": float(np.std(finite_values)) if finite_values.size else None,
+                    "nonfinite": int(sample_nonfinite[sample_index]),
+                }
+            )
         target_summary: dict[str, Any] | None = None
         target = getattr(dataset, "target", None)
         if target is not None:
             target_arr = np.asarray(target)
+            target_context = dataset.target_context
             target_summary = {
                 "shape": list(target_arr.shape),
                 "nonfinite": (
@@ -277,9 +450,44 @@ class StatsSummaryNode(Node):
                     if np.issubdtype(target_arr.dtype, np.number)
                     else None
                 ),
+                "target_type": target_context.target_type,
+                "target_units": target_context.target_units,
             }
-            if target_arr.ndim == 1:
-                unique, counts = np.unique(target_arr.astype(str), return_counts=True)
+            if target_context.target_type == "continuous" and target_arr.ndim in {1, 2}:
+                if not np.issubdtype(target_arr.dtype, np.number) or np.issubdtype(
+                    target_arr.dtype, np.complexfloating
+                ):
+                    raise ValueError("continuous target must contain real numeric values")
+                columns = target_arr[:, None] if target_arr.ndim == 1 else target_arr
+                names = target_context.target_names
+                if names is None or len(names) != columns.shape[1]:
+                    names = [target_context.target_name] if columns.shape[1] == 1 else [None] * columns.shape[1]
+                target_summary["columns"] = []
+                for index in range(columns.shape[1]):
+                    values = columns[:, index]
+                    finite = values[np.isfinite(values)].astype(np.float64, copy=False)
+                    target_summary["columns"].append(
+                        {
+                            "name": names[index],
+                            "measured": int(finite.size),
+                            "missing": int(values.size - finite.size),
+                            "min": float(np.min(finite)) if finite.size else None,
+                            "max": float(np.max(finite)) if finite.size else None,
+                            "mean": float(np.mean(finite)) if finite.size else None,
+                        }
+                    )
+            elif target_context.target_type == "categorical" and target_arr.ndim == 1:
+                measured_mask = (
+                    np.isfinite(target_arr)
+                    if np.issubdtype(target_arr.dtype, np.number)
+                    else np.fromiter(
+                        (_is_measured_category(value) for value in target_arr),
+                        dtype=bool,
+                        count=target_arr.size,
+                    )
+                )
+                target_summary["missing"] = int(target_arr.size - np.count_nonzero(measured_mask))
+                unique, counts = np.unique(target_arr[measured_mask].astype(str), return_counts=True)
                 if 1 < len(unique) <= 30:
                     target_summary["class_counts"] = {
                         str(label): int(count) for label, count in zip(unique, counts, strict=True)
@@ -289,15 +497,16 @@ class StatsSummaryNode(Node):
         quality_summary = dataset_meta.get("quality_summary")
         if not isinstance(quality_summary, dict):
             quality_summary = None
+        source_context = build_dataset_source_context(dataset)
 
         mean_plot = {
             "x": feature_values,
-            "y": feature_means.tolist(),
+            "y": feature_means,
             "type": "bar" if is_feature_table else "scatter",
         }
         std_plot = {
             "x": feature_values,
-            "y": feature_stds.tolist(),
+            "y": feature_stds,
             "type": "bar" if is_feature_table else "scatter",
         }
         plots = {
@@ -312,7 +521,7 @@ class StatsSummaryNode(Node):
             plots["std_feature_response"] = std_plot
         return {
             "statistics": {
-                "input_type": "FeatureTable" if is_feature_table else "NDDataset",
+                "input_type": "FeatureTable" if is_feature_table else "SherpaDataset",
                 "summary": {
                     "n_samples": n_samples,
                     "n_features": n_features,
@@ -321,17 +530,21 @@ class StatsSummaryNode(Node):
                     "missing_count": missing_count,
                     "nonfinite_count": nonfinite_count,
                     "finite_fraction": float(np.count_nonzero(finite_mask) / data.size) if data.size else None,
+                    "sample_rows_returned": len(sample_quality),
+                    "sample_rows_truncated": max(0, n_samples - len(sample_quality)),
                     "target": target_summary,
                     "quality": quality_summary,
+                    "source_context": source_context,
                 },
                 "sample_quality": sample_quality,
                 "plots": plots,
                 "data": table_rows,
                 "metadata": {
-                    "type": "FeatureTable" if is_feature_table else "NDDataset",
+                    "type": "FeatureTable" if is_feature_table else "SherpaDataset",
                     "shape": [n_samples, n_features],
                     "has_wavenumbers": x_coord is not None,
                     "data_role": data_role,
+                    "source_context": source_context,
                     "diagnostic_note": (
                         "Feature-table statistics are column-wise variable summaries."
                         if is_feature_table
@@ -341,7 +554,7 @@ class StatsSummaryNode(Node):
             }
         }
 
-    async def _stats_pca(self, pca_data: dict) -> Dict[str, Any]:
+    def _stats_pca(self, pca_data: dict) -> Dict[str, Any]:
         """Compute statistics for PCA results."""
         # Extract PCA components
         metadata = pca_data.get("metadata", {})
@@ -358,57 +571,42 @@ class StatsSummaryNode(Node):
 
         if scores_data.ndim == 1:
             scores_data = scores_data.reshape(-1, 1)
+        if scores_data.ndim != 2 or scores_data.size == 0 or not _is_numeric_array(scores_data):
+            raise ValueError("stats.summary PCA input requires a non-empty numeric score matrix")
+        scores_data = scores_data.astype(np.float64, copy=False)
 
         n_obs, n_comp = scores_data.shape
 
         # Scores statistics per PC
         pc_stats = []
         for i in range(n_comp):
+            finite_values = scores_data[np.isfinite(scores_data[:, i]), i]
             pc_stats.append(
                 {
                     "pc": i + 1,
-                    "mean": float(np.mean(scores_data[:, i])),
-                    "std": float(np.std(scores_data[:, i])),
-                    "min": float(np.min(scores_data[:, i])),
-                    "max": float(np.max(scores_data[:, i])),
-                    "range": float(np.ptp(scores_data[:, i])),
+                    "mean": float(np.mean(finite_values)) if finite_values.size else None,
+                    "std": float(np.std(finite_values)) if finite_values.size else None,
+                    "min": float(np.min(finite_values)) if finite_values.size else None,
+                    "max": float(np.max(finite_values)) if finite_values.size else None,
+                    "range": float(np.ptp(finite_values)) if finite_values.size else None,
+                    "nonfinite": int(n_obs - finite_values.size),
                 }
             )
 
-        # Outlier detection using Hotelling's T-squared (if enabled)
-        outliers = []
-        if self.parameters.get("compute_outliers", True):
-            # Simplified T-squared calculation
-            cov = np.cov(scores_data.T)
-            try:
-                inv_cov = np.linalg.inv(cov)
-                means = np.mean(scores_data, axis=0)
-
-                threshold = self.parameters.get("outlier_threshold", 0.95)
-                from scipy.stats import chi2
-
-                t2_limit = chi2.ppf(threshold, n_comp)
-
-                for i in range(n_obs):
-                    diff = scores_data[i] - means
-                    t2 = diff @ inv_cov @ diff
-                    if t2 > t2_limit:
-                        outliers.append(
-                            {
-                                "sample": i + 1,
-                                "t2_statistic": float(t2),
-                                "threshold": float(t2_limit),
-                            }
-                        )
-            except (np.linalg.LinAlgError, ValueError):
-                # Singular covariance or insufficient data -- skip outlier detection
-                pass
-
-        # Explained variance
-        evr = metadata.get("explained_variance_ratio", [])
-        cumulative_var = np.cumsum(evr).tolist() if evr else []
-        spe = pca_data.get("spe") or metadata.get("spe") or []
-        t2 = pca_data.get("t2") or metadata.get("t2") or []
+        # This presentation node reports diagnostics produced by the PCA
+        # authority; it does not invent a second outlier algorithm. The
+        # dedicated diagnostics.outliers node owns thresholded decisions.
+        evr_array = np.asarray(metadata.get("explained_variance_ratio", []), dtype=np.float64).reshape(-1)
+        if evr_array.size and not np.all(np.isfinite(evr_array)):
+            raise ValueError("stats.summary PCA explained variance must be finite")
+        evr = [float(value) for value in evr_array]
+        cumulative_var = np.cumsum(evr_array).tolist() if evr_array.size else []
+        spe = pca_data.get("spe")
+        if spe is None:
+            spe = metadata.get("spe", [])
+        t2 = pca_data.get("t2")
+        if t2 is None:
+            t2 = metadata.get("t2", [])
         spe_mean = metadata.get("spe_mean")
         spe_p95 = metadata.get("spe_p95")
         t2_mean = metadata.get("t2_mean")
@@ -421,7 +619,7 @@ class StatsSummaryNode(Node):
                     "n_observations": n_obs,
                     "n_components": n_comp,
                     "total_variance_explained": float(sum(evr)) if evr else 0.0,
-                    "n_outliers": len(outliers),
+                    "nonfinite_score_count": int(scores_data.size - np.count_nonzero(np.isfinite(scores_data))),
                     "spe_mean": float(spe_mean) if spe_mean is not None else None,
                     "spe_p95": float(spe_p95) if spe_p95 is not None else None,
                     "t2_mean": float(t2_mean) if t2_mean is not None else None,
@@ -429,7 +627,6 @@ class StatsSummaryNode(Node):
                 },
                 "detailed": {
                     "by_pc": pc_stats,
-                    "outliers": outliers,
                     "variance": {
                         "explained_variance_ratio": evr,
                         "cumulative": cumulative_var,
@@ -455,18 +652,29 @@ class StatsSummaryNode(Node):
                 "metadata": {
                     "type": "PCA",
                     "shape": [n_obs, n_comp],
-                    "has_outliers": len(outliers) > 0,
+                    "diagnostic_decisions_deferred_to": "diagnostics.outliers",
                 },
             }
         }
 
-    async def _stats_mcr(self, mcr_data: dict) -> Dict[str, Any]:
+    def _stats_mcr(self, mcr_data: dict) -> Dict[str, Any]:
         """Compute statistics for MCR-ALS results."""
         # Extract concentration (C) and spectra (St) matrices
         C = np.array(mcr_data.get("C", mcr_data.get("concentrations", {}).get("data", [])))
         St = np.array(mcr_data.get("St", mcr_data.get("spectra", {}).get("data", [])))
 
-        n_obs, n_comp = C.shape if C.size > 0 else (0, 0)
+        if C.ndim != 2 or St.ndim != 2 or C.size == 0 or St.size == 0:
+            raise ValueError("stats.summary MCR input requires non-empty 2D C and St matrices")
+        if not _is_numeric_array(C) or not _is_numeric_array(St):
+            raise ValueError("stats.summary MCR matrices must be numeric")
+        C = C.astype(np.float64, copy=False)
+        St = St.astype(np.float64, copy=False)
+        if C.shape[1] != St.shape[0]:
+            raise ValueError("stats.summary MCR component dimensions do not agree")
+        if not np.all(np.isfinite(C)) or not np.all(np.isfinite(St)):
+            raise ValueError("stats.summary MCR matrices must be finite")
+
+        n_obs, n_comp = C.shape
 
         # Concentration statistics
         conc_stats = []
@@ -487,8 +695,8 @@ class StatsSummaryNode(Node):
             spectra_stats.append(
                 {
                     "component": i + 1,
-                    "max_absorbance": float(np.max(St[i])) if St.size > 0 else 0.0,
-                    "mean_absorbance": float(np.mean(St[i])) if St.size > 0 else 0.0,
+                    "max_response": float(np.max(St[i])),
+                    "mean_response": float(np.mean(St[i])),
                 }
             )
 
@@ -498,7 +706,7 @@ class StatsSummaryNode(Node):
                 "summary": {
                     "n_observations": n_obs,
                     "n_components": n_comp,
-                    "n_wavenumbers": St.shape[1] if St.size > 0 else 0,
+                    "n_features": St.shape[1],
                 },
                 "detailed": {
                     "concentrations": conc_stats,
@@ -506,7 +714,7 @@ class StatsSummaryNode(Node):
                 },
                 "plots": {
                     "concentration_ranges": {
-                        "components": [f"Comp {i+1}" for i in range(n_comp)],
+                        "components": [f"Comp {i + 1}" for i in range(n_comp)],
                         "max_values": [float(np.max(C[:, i])) for i in range(n_comp)],
                         "type": "bar",
                     },
@@ -519,11 +727,13 @@ class StatsSummaryNode(Node):
             }
         }
 
-    async def _stats_peaks(self, rows: list, metadata: dict) -> Dict[str, Any]:
+    def _stats_peaks(self, rows: list, metadata: dict) -> Dict[str, Any]:
         """Compute statistics for peak-finding consensus results.
 
-        Each row is a dict with keys: median_pos, mean_pos, std_pos, min_pos,
-        max_pos, count, detected, median_height, q1_height, q3_height.
+        Each row carries distinct detection and sample counts, positional and
+        height summaries, half-prominence widths, and absolute window
+        integrals. Detection fraction is supplied by the canonical peak node;
+        it is not reconstructed from the potentially larger detection count.
 
         Two axes of variation are reported:
         - **Horizontal (positional)**: within each cluster, how much do
@@ -547,34 +757,42 @@ class StatsSummaryNode(Node):
             std_pos = float(row.get("std_pos", 0))
             min_pos = float(row.get("min_pos", median_pos))
             max_pos = float(row.get("max_pos", median_pos))
-            count = int(row.get("count", 0))
-            fraction = row.get("detected", f"{count}/{n_samples}")
+            detection_count = int(row["detection_count"])
+            sample_count = int(row["sample_count"])
+            detection_fraction = float(row["detection_fraction"])
+            fraction = f"{sample_count}/{n_samples}"
             med_h = float(row.get("median_height", 0))
             q1_h = float(row.get("q1_height", med_h))
             q3_h = float(row.get("q3_height", med_h))
-            med_w = float(row.get("median_fwhm", 0))
-            q1_w = float(row.get("q1_fwhm", med_w))
-            q3_w = float(row.get("q3_fwhm", med_w))
-            med_a = float(row.get("median_area", 0))
-            q1_a = float(row.get("q1_area", med_a))
-            q3_a = float(row.get("q3_area", med_a))
+            med_w = float(row["median_half_prominence_width"])
+            q1_w = float(row["q1_half_prominence_width"])
+            q3_w = float(row["q3_half_prominence_width"])
+            med_a = float(row["median_absolute_window_integral"])
+            q1_a = float(row["q1_absolute_window_integral"])
+            q3_a = float(row["q3_absolute_window_integral"])
 
             label = f"Peak {i + 1}"
 
             table_rows.append(
                 {
                     "peak": i + 1,
+                    "consensus_peak_id": row.get("consensus_peak_id", f"peak-{i + 1:06d}"),
                     "position": median_pos,
                     "pos_std": std_pos,
                     "pos_range": f"{min_pos:.1f}\u2013{max_pos:.1f}",
                     "height": med_h,
                     "height_iqr": f"{q1_h:.4f}\u2013{q3_h:.4f}",
-                    "fwhm": med_w,
-                    "fwhm_iqr": f"{q1_w:.4f}\u2013{q3_w:.4f}",
-                    "area": med_a,
-                    "area_iqr": f"{q1_a:.4g}\u2013{q3_a:.4g}",
+                    "half_prominence_width": med_w,
+                    "half_prominence_width_iqr": f"{q1_w:.4f}\u2013{q3_w:.4f}",
+                    "absolute_window_integral": med_a,
+                    "absolute_window_integral_iqr": f"{q1_a:.4g}\u2013{q3_a:.4g}",
+                    "detection_count": detection_count,
+                    "sample_count": sample_count,
                     "detected": fraction,
-                    "detection_rate": f"{count / n_samples * 100:.0f}%" if n_samples else "\u2013",
+                    "detection_rate": f"{detection_fraction * 100:.0f}%" if n_samples else "\u2013",
+                    "member_sample_indices": list(row.get("member_sample_indices", [])),
+                    "member_sample_labels": list(row.get("member_sample_labels", [])),
+                    "constituent_detections": list(row.get("constituent_detections", [])),
                 }
             )
 
@@ -599,12 +817,12 @@ class StatsSummaryNode(Node):
                     "q1_height": q1_h,
                     "q3_height": q3_h,
                     "iqr": q3_h - q1_h,
-                    "median_fwhm": med_w,
-                    "q1_fwhm": q1_w,
-                    "q3_fwhm": q3_w,
-                    "median_area": med_a,
-                    "q1_area": q1_a,
-                    "q3_area": q3_a,
+                    "median_half_prominence_width": med_w,
+                    "q1_half_prominence_width": q1_w,
+                    "q3_half_prominence_width": q3_w,
+                    "median_absolute_window_integral": med_a,
+                    "q1_absolute_window_integral": q1_a,
+                    "q3_absolute_window_integral": q3_a,
                 }
             )
 
@@ -638,7 +856,7 @@ class StatsSummaryNode(Node):
             }
         }
 
-    async def _stats_evaluation(self, metrics: dict) -> Dict[str, Any]:
+    def _stats_evaluation(self, metrics: dict) -> Dict[str, Any]:
         """Summarize holdout evaluation metrics (classification or regression)."""
         task_type = metrics.get("task_type", "unknown")
 
@@ -698,7 +916,7 @@ class StatsSummaryNode(Node):
                 }
             }
 
-    async def _stats_array(self, data: np.ndarray, metadata: Optional[dict]) -> Dict[str, Any]:
+    def _stats_array(self, data: np.ndarray, metadata: Optional[dict]) -> Dict[str, Any]:
         """Compute basic statistics for generic array data."""
         raw = np.asarray(data)
         if raw.size == 0:
@@ -741,15 +959,23 @@ class StatsSummaryNode(Node):
         data = raw.astype(np.float64, copy=False)
         if data.ndim == 1:
             data = data.reshape(-1, 1)
+        if data.ndim != 2:
+            raise ValueError("stats.summary arrays must be one- or two-dimensional")
+
+        finite = data[np.isfinite(data)]
+        nonfinite_count = int(data.size - finite.size)
 
         summary = {
             "n_samples": data.shape[0],
             "n_features": data.shape[1],
-            "mean": float(np.nanmean(data)),
-            "std": float(np.nanstd(data)),
-            "min": float(np.nanmin(data)),
-            "max": float(np.nanmax(data)),
-            "median": float(np.nanmedian(data)),
+            "n_values": int(data.size),
+            "nonfinite_count": nonfinite_count,
+            "finite_fraction": float(finite.size / data.size) if data.size else None,
+            "mean": float(np.mean(finite)) if finite.size else None,
+            "std": float(np.std(finite)) if finite.size else None,
+            "min": float(np.min(finite)) if finite.size else None,
+            "max": float(np.max(finite)) if finite.size else None,
+            "median": float(np.median(finite)) if finite.size else None,
         }
 
         return {
@@ -761,17 +987,35 @@ class StatsSummaryNode(Node):
             }
         }
 
-    async def _stats_mapping(self, data: dict) -> Dict[str, Any]:
+    def _stats_mapping(self, data: dict) -> Dict[str, Any]:
         """Summarize an otherwise unrecognized dict without numeric coercion."""
-        rows = [{"key": str(k), "value": str(v)} for k, v in data.items()]
+        unsupported = sorted(
+            str(key)
+            for key, value in data.items()
+            if not isinstance(value, (str, int, float, bool, type(None), np.integer, np.floating, np.bool_))
+        )
+        if unsupported:
+            raise ValueError(
+                "stats.summary does not infer semantics for an untyped nested mapping; unsupported keys: "
+                + ", ".join(unsupported)
+            )
+        rows = [{"key": str(k), "value": str(v)} for k, v in sorted(data.items(), key=lambda item: str(item[0]))]
         numeric_values: list[float] = []
         for value in data.values():
             if isinstance(value, (int, float, bool, np.integer, np.floating, np.bool_)):
-                numeric_values.append(float(value))
+                numeric_value = float(value)
+                if np.isfinite(numeric_value):
+                    numeric_values.append(numeric_value)
 
         summary: dict[str, Any] = {
             "n_keys": len(data),
             "n_numeric_values": len(numeric_values),
+            "n_nonfinite_numeric_values": sum(
+                1
+                for value in data.values()
+                if isinstance(value, (int, float, bool, np.integer, np.floating, np.bool_))
+                and not np.isfinite(float(value))
+            ),
         }
         if numeric_values:
             arr = np.asarray(numeric_values, dtype=np.float64)
@@ -792,3 +1036,42 @@ class StatsSummaryNode(Node):
                 "metadata": {"type": "mapping"},
             }
         }
+
+
+def build_statistics_result(input_data: Any, *, max_samples: int = 100) -> dict[str, Any]:
+    """Return the sole live/generated descriptive-summary result.
+
+    Constructing the registered node here deliberately centralizes dispatch,
+    numerical reductions, and result shape. Generated projects call this
+    function directly; live DAG execution delegates to it as well.
+    """
+
+    node = StatsSummaryNode("canonical-statistics-authority", {"max_samples": max_samples})
+    return node._compute(input_data)
+
+
+bind_stable_execution_contract(
+    StatsSummaryNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
+    implementation_id="spectrasherpa.stats.summary",
+    implementation_version="1.1.0",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="aggregates_samples",
+    feature_effect="transforms_features",
+    axis_effect="removes_axis",
+    unit_effect="preserves_units",
+    resource_hints={"timeout_seconds": 10, "cpu_seconds": 5, "memory_bytes": 536_870_912},
+    license_id="Apache-2.0",
+    help_reference="docs/nodes/output.md",
+    implementation_distributions=("numpy",),
+    runtime_requirements=(("numpy", "1.26.4"),),
+    citations=(
+        "NIST/SEMATECH e-Handbook of Statistical Methods, Exploratory Data Analysis, "
+        "https://www.itl.nist.gov/div898/handbook/eda/eda.htm",
+    ),
+)
+
+
+__all__ = ["StatsSummaryNode", "build_statistics_result"]

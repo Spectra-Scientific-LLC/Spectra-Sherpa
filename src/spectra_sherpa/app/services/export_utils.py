@@ -90,6 +90,7 @@ def export_artifacts(results: dict, workflow_name: str = "workflow") -> str:
     """
     import pickle
 
+    from spectra_sherpa.app.lib.export_artifact import materialize_export_artifact, verify_export_artifact
     from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -112,7 +113,24 @@ def export_artifacts(results: dict, workflow_name: str = "workflow") -> str:
             summary: dict[str, Any] = {}
             for sub_key, sub_val in value.items():
                 fname = f"{key}_{sub_key}"
-                if isinstance(sub_val, SherpaDataset):
+                if sub_key == "artifact":
+                    artifact = verify_export_artifact(sub_val)
+                    destination = materialize_export_artifact(artifact, out_dir)
+                    summary[sub_key] = {
+                        field: artifact[field]
+                        for field in (
+                            "schema_version",
+                            "filename",
+                            "format",
+                            "media_type",
+                            "content_sha256",
+                            "byte_length",
+                            "source_digest",
+                            "shape",
+                        )
+                    }
+                    print(f"  Prepared export materialized to {destination}")
+                elif isinstance(sub_val, SherpaDataset):
                     write_array_artifact(os.path.join(out_dir, fname), sub_val.data)
                 elif isinstance(sub_val, np.ndarray):
                     write_array_artifact(os.path.join(out_dir, fname), sub_val)

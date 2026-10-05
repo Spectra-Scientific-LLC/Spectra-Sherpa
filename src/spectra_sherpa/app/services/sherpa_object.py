@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import struct
 import zipfile
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -22,6 +23,8 @@ SUPPORTED_SHERPA_OBJECT_VERSIONS = frozenset({SHERPA_OBJECT_VERSION})
 SHERPA_OBJECT_MANIFEST = "sherpa-object.json"
 PROJECT_PAYLOAD = "project.json"
 DEFAULT_MAX_UNCOMPRESSED_BYTES = 512 * 1024 * 1024
+DEFAULT_MAX_ARCHIVE_MEMBERS = 10_000
+DEFAULT_MAX_CENTRAL_DIRECTORY_BYTES = 16 * 1024 * 1024
 
 
 class SherpaObjectError(ValueError):
@@ -231,6 +234,12 @@ def inspect_archive_bytes(
     """Inspect a portable object or legacy project archive without importing it."""
 
     try:
+        preflight_zip_central_directory(
+            archive_bytes,
+            max_members=DEFAULT_MAX_ARCHIVE_MEMBERS,
+            max_directory_bytes=DEFAULT_MAX_CENTRAL_DIRECTORY_BYTES,
+            max_uncompressed_bytes=max_uncompressed_bytes,
+        )
         with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as zf:
             _validate_zip_members(zf, max_uncompressed_bytes=max_uncompressed_bytes)
             names = sorted(zf.namelist())
@@ -271,6 +280,98 @@ def inspect_archive_bytes(
             has_project=False,
             errors=["Invalid ZIP archive" if isinstance(exc, zipfile.BadZipFile) else _safe_archive_error(exc)],
         )
+
+
+@dataclass(frozen=True)
+class ZipDirectoryPreflight:
+    """Allocation-free census of one standard single-disk ZIP directory."""
+
+    member_count: int
+    directory_size_bytes: int
+    total_uncompressed_bytes: int
+
+
+def preflight_zip_central_directory(
+    archive_bytes: bytes,
+    *,
+    max_members: int,
+    max_directory_bytes: int,
+    max_uncompressed_bytes: int | None,
+) -> ZipDirectoryPreflight:
+    """Bound and independently walk a ZIP directory before ``ZipFile``.
+
+    Current ``.sherpa`` objects are small standard ZIP files.  ZIP64 and
+    multi-disk layouts are unnecessary for their declared ceilings and are
+    refused so an attacker cannot forge a low EOCD count that makes
+    ``ZipFile.infolist()`` allocate an unbounded member inventory.
+    """
+
+    if not isinstance(archive_bytes, bytes) or len(archive_bytes) < 22:
+        raise SherpaObjectError("Archive is truncated")
+    if (
+        isinstance(max_members, bool)
+        or not isinstance(max_members, int)
+        or max_members <= 0
+        or isinstance(max_directory_bytes, bool)
+        or not isinstance(max_directory_bytes, int)
+        or max_directory_bytes <= 0
+    ):
+        raise SherpaObjectError("Archive preflight bounds are invalid")
+    eocd_offset = archive_bytes.rfind(b"PK\x05\x06", max(0, len(archive_bytes) - 65_557))
+    if eocd_offset < 0 or eocd_offset + 22 > len(archive_bytes):
+        raise SherpaObjectError("Archive has no bounded EOCD")
+    (
+        _signature,
+        disk,
+        directory_disk,
+        entries_on_disk,
+        entry_count,
+        directory_size,
+        directory_offset,
+        comment_size,
+    ) = struct.unpack_from("<4s4H2LH", archive_bytes, eocd_offset)
+    if eocd_offset + 22 + comment_size != len(archive_bytes):
+        raise SherpaObjectError("Archive has trailing bytes or an unsupported comment")
+    if disk != 0 or directory_disk != 0 or entries_on_disk != entry_count:
+        raise SherpaObjectError("Archive uses an unsupported multi-disk layout")
+    if entry_count in {0xFFFF} or directory_size == 0xFFFFFFFF or directory_offset == 0xFFFFFFFF:
+        raise SherpaObjectError("Archive uses an unsupported ZIP64 layout")
+    if not 1 <= entry_count <= max_members:
+        raise SherpaObjectError("Archive member count exceeds its bound")
+    if directory_size > max_directory_bytes or directory_offset + directory_size != eocd_offset:
+        raise SherpaObjectError("Archive central directory is outside its bound")
+
+    cursor = directory_offset
+    directory_end = directory_offset + directory_size
+    observed = 0
+    total_uncompressed = 0
+    while cursor < directory_end:
+        if directory_end - cursor < 46:
+            raise SherpaObjectError("Archive central directory is truncated")
+        fields = struct.unpack_from("<4s6H3L5H2L", archive_bytes, cursor)
+        if fields[0] != b"PK\x01\x02":
+            raise SherpaObjectError("Archive central directory is malformed")
+        name_size, extra_size, member_comment_size = fields[10], fields[11], fields[12]
+        if fields[13] != 0:
+            raise SherpaObjectError("Archive member uses an unsupported disk")
+        if fields[8] == 0xFFFFFFFF or fields[9] == 0xFFFFFFFF or fields[16] == 0xFFFFFFFF:
+            raise SherpaObjectError("Archive member uses unsupported ZIP64 sizes")
+        cursor += 46 + name_size + extra_size + member_comment_size
+        observed += 1
+        total_uncompressed += fields[9]
+        if observed > max_members or cursor > directory_end:
+            raise SherpaObjectError("Archive central directory exceeds its bound")
+        if max_uncompressed_bytes is not None and total_uncompressed > max_uncompressed_bytes:
+            raise SherpaObjectError(
+                "Archive uncompressed payload exceeds limit " f"({total_uncompressed} > {max_uncompressed_bytes} bytes)"
+            )
+    if cursor != directory_end or observed != entry_count:
+        raise SherpaObjectError("Archive central-directory census is inconsistent")
+    return ZipDirectoryPreflight(
+        member_count=observed,
+        directory_size_bytes=directory_size,
+        total_uncompressed_bytes=total_uncompressed,
+    )
 
 
 def validate_archive_bytes(

@@ -1,0 +1,24 @@
+Open Specy
+https://github.com/wincowgerDEV/OpenSpecy-package
+
+Copyright (c) Win Cowger and the Open Specy contributors.
+
+Licensed under the Creative Commons Attribution 4.0 International License
+(CC-BY-4.0). Full text: https://creativecommons.org/licenses/by/4.0/legalcode
+
+SpectraSherpa redistributes two unmodified example instrument files from the
+Open Specy package's inst/extdata directory as read-only conformance fixtures:
+
+  inst/extdata/ftir_polyethylene_reflectance_adjustment_not_working.spa
+    -> packages/spectra-sherpa/tests/fixtures/omnic/
+         openspecy-polyethylene-reflectance.spa
+    sha256 042c53feb30cb7328318b8c426203720da455be3f948f41ee5e39119b9d86288
+
+  inst/extdata/ftir_ps.0
+    -> packages/spectra-sherpa/tests/fixtures/opus/openspecy-polystyrene.0
+    sha256 01e6d685c0ab5bdb4967791382bfff3ce3d5584d794596e8440fd51b3ffcdb76
+
+The files are renamed for fixture clarity; their bytes are unchanged, and the
+recorded digests bind that. No Open Specy source code is used or distributed.
+
+Cite: Cowger, W. et al. Open Specy. https://openspecy.org

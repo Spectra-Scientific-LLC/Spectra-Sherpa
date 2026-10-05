@@ -5,8 +5,7 @@ Covers:
   2. PLS regression node now emits per-sample Hotelling T² + Q with
      Pomerantsev (J. Chemom. 2008) DD critical limits
   3. PLS scale default flipped True → False (spectroscopy convention)
-  4. PLS-DA gained a Mahalanobis (mdatools-style) Bayesian rule alongside softmax
-  5. SIMCA defaults to Pomerantsev DD limits, with the classical F/χ² path preserved
+  4. SIMCA defaults to Pomerantsev DD limits, with the classical F/χ² path preserved
 
 The diagnostics helpers ship in
 ``spectra_sherpa/app/services/dag/nodes/_chemometric_diagnostics.py``; the unit
@@ -23,7 +22,6 @@ import numpy as np
 import pytest
 import yaml
 
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.lib.sherpa_dataset import (
     DomainContext,
     SampleAxis,
@@ -37,9 +35,8 @@ from spectra_sherpa.app.services.dag.nodes._chemometric_diagnostics import (
     pomerantsev_dd_limit,
     q_residuals_per_sample,
 )
-from spectra_sherpa.app.services.dag.nodes.classification.plsda_nodes import (
-    _plsda_mahalanobis_probabilities,
-)
+from spectra_sherpa.app.services.dag.nodes.classification.simca_nodes import _simca_export_outputs
+from tests._optional_scp import HAS_SCP
 
 _skip_no_scp = pytest.mark.skipif(not HAS_SCP, reason="spectrochempy not installed")
 
@@ -76,7 +73,7 @@ def _make_spectral_dataset(
     return SherpaDataset(
         X=X,
         feature_axis=SpectralAxis(values=np.linspace(350, 900, n_features), title="Wavelength", units="nm"),
-        sample_axis=SampleAxis(values=np.arange(n_samples), title="Sample", units=""),
+        sample_axis=SampleAxis(values=np.arange(n_samples), title="Sample"),
         domain=DomainContext(technique="UV-Vis", data_quantity="Absorbance", expected_units="nm"),
         target=target,
         target_context=target_context,
@@ -208,7 +205,7 @@ class TestMcrDefaults:
 
 class TestPlsScaleDefault:
     def test_default_scale_is_false(self, make_node):
-        node = make_node("model.pls", {})
+        node = make_node("model.fitted_pls", {})
         params_dict = {p.name: p.default for p in node.metadata.parameters}
         assert params_dict["scale"] is False
 
@@ -217,9 +214,9 @@ class TestPlsScaleDefault:
         params_dict = {p.name: p.default for p in node.metadata.parameters}
         assert params_dict["scale"] is False
 
-    def test_shipped_pls_workflows_pin_scale_false(self):
+    def test_shipped_pls_workflows_pin_explicit_scaling_policy(self):
         templates_dir = Path(__file__).resolve().parents[1] / "src/spectra_sherpa/data/templates"
-        pls_node_types = {"model.pls", "classification.plsda"}
+        pls_node_types = {"model.fitted_pls", "classification.plsda"}
         missing: list[str] = []
 
         for path in templates_dir.glob("*.yaml"):
@@ -228,7 +225,7 @@ class TestPlsScaleDefault:
             for node in nodes:
                 if node.get("node_type") in pls_node_types:
                     params = node.get("parameters") or {}
-                    if params.get("scale") is not False:
+                    if not isinstance(params.get("scale"), bool):
                         missing.append(f"{path.name}:{node.get('node_id')}")
 
         assert missing == []
@@ -248,7 +245,7 @@ class TestChemometricTemplatePresentationWiring:
         doc = self._template(slug)
         return (doc.get("template_data") or {}).get("edges") or []
 
-    def test_simca_templates_surface_acceptance_plot(self):
+    def test_simca_templates_expose_their_intended_scientist_paths(self):
         qc_nodes = self._nodes("simca_qc")
         assert qc_nodes["viz_1"]["parameters"]["plot_key"] == "simca_acceptance"
         assert any(
@@ -259,25 +256,56 @@ class TestChemometricTemplatePresentationWiring:
         )
 
         cls_nodes = self._nodes("simca_classification")
-        assert cls_nodes["viz_2"]["parameters"]["plot_key"] == "simca_acceptance"
-        assert any(
-            edge.get("from_node_id") == "model_1"
-            and edge.get("to_node_id") == "viz_2"
-            and edge.get("from_output") == "plots"
-            for edge in self._edges("simca_classification")
-        )
+        assert {node_id: node["node_type"] for node_id, node in cls_nodes.items()} == {
+            "data_1": "data.file_load",
+            "partition_1": "data.train_test_split",
+            "model_1": "classification.simca",
+            "predict_1": "classification.apply_simca",
+            "eval_1": "diagnostics.classification_evaluator",
+        }
 
-    def test_calibration_transfer_template_is_bound_and_plots_transfer_error(self):
+    def test_calibration_transfer_template_compares_fitted_methods_on_one_paired_split(self):
         nodes = self._nodes("calibration_transfer")
-        assert nodes["primary_1"]["parameters"] == {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}
-        assert nodes["secondary_1"]["parameters"] == {"source": "eigenvector", "eigenvector_dataset": "corn_mp5"}
-        assert nodes["new_data_1"]["parameters"] == {"source": "eigenvector", "eigenvector_dataset": "corn_mp6"}
-        assert any(
-            edge.get("from_node_id") == "transfer_1"
-            and edge.get("to_node_id") == "viz_1"
-            and edge.get("from_output") == "transfer_error"
-            for edge in self._edges("calibration_transfer")
-        )
+        expected = {
+            "primary_1": "corn_m5",
+            "secondary_1": "corn_mp5",
+        }
+        for node_id, dataset_name in expected.items():
+            assert nodes[node_id]["node_type"] == "data.file_load"
+            assert nodes[node_id]["parameters"] == {}
+            assert nodes[node_id]["example_binding"] == {
+                "source": "eigenvector",
+                "dataset_name": dataset_name,
+            }
+        assert {nodes[node_id]["node_type"] for node_id in ("pds_fit_1", "ds_fit_1", "sws_fit_1")} == {
+            "transfer.pds",
+            "transfer.ds",
+            "transfer.sws",
+        }
+        assert {nodes[node_id]["node_type"] for node_id in ("pds_apply_1", "ds_apply_1", "sws_apply_1")} == {
+            "transfer.apply_fitted"
+        }
+        edges = self._edges("calibration_transfer")
+        for prefix in ("pds", "ds", "sws"):
+            assert any(
+                edge.get("from_node_id") == f"{prefix}_fit_1"
+                and edge.get("to_node_id") == f"{prefix}_apply_1"
+                and edge.get("from_output") == "fitted_state"
+                and edge.get("to_input") == "fitted_state"
+                for edge in edges
+            )
+            assert any(
+                edge.get("from_node_id") == "secondary_split_1"
+                and edge.get("to_node_id") == f"{prefix}_apply_1"
+                and edge.get("from_output") == "X_test"
+                for edge in edges
+            )
+            assert any(
+                edge.get("from_node_id") == f"{prefix}_fit_1"
+                and edge.get("to_node_id") == f"{prefix}_table_1"
+                and edge.get("from_output") == "transfer_error"
+                for edge in edges
+            )
 
     def test_oes_stats_are_wired_to_pca_scores(self):
         assert any(
@@ -310,61 +338,35 @@ class TestChemometricTemplatePresentationWiring:
 
 
 # ---------------------------------------------------------------------------
-# Issue 2 — PLS regression emits T² + Q with DD limits
+# Canonical PLS emits reusable fitted state, predictions, and VIP
 # ---------------------------------------------------------------------------
 
 
-class TestPlsT2QEmission:
+class TestCanonicalPlsEmission:
     @_skip_no_scp
     @pytest.mark.asyncio
-    async def test_pls_emits_per_sample_t2_and_q(self, make_node):
+    async def test_pls_emits_predictions_and_closed_fitted_state(self, make_node):
         ds = _make_spectral_dataset(n_samples=30, n_features=50, n_targets=1)
-        node = make_node("model.pls", {"n_components": 3, "cv_method": "none"})
-        result = await node.execute(X=ds)
-        outputs = result.outputs if hasattr(result, "outputs") else result
-        x_scores = outputs["X_scores"]
-        meta = x_scores.meta
+        node = make_node("model.fitted_pls", {"n_components": 3, "scale": False})
+        result = await node.execute(input_data=ds)
 
-        assert "hotelling_t2" in meta, "PLS node must emit per-sample Hotelling T²"
-        assert "q_residuals" in meta, "PLS node must emit per-sample Q-residuals"
-        assert "t2_limit" in meta and "q_limit" in meta
-        assert meta["t2_q_method"] == "pomerantsev_dd_moments"
-        assert meta["t2_q_confidence"] == 0.95
-
-        t2 = np.asarray(meta["hotelling_t2"], dtype=np.float64)
-        q = np.asarray(meta["q_residuals"], dtype=np.float64)
-        assert t2.shape == (ds.X.shape[0],)
-        assert q.shape == (ds.X.shape[0],)
-        assert np.all(t2 >= -1e-9)
-        assert np.all(q >= -1e-9)
-        assert meta["t2_limit"] > 0.0
-        assert meta["q_limit"] > 0.0
-
-        diagnostics = result.diagnostics if hasattr(result, "diagnostics") else {}
-        assert diagnostics.get("t2_limit") is not None
-        assert diagnostics.get("q_limit") is not None
-        assert diagnostics.get("n_t2_outliers") is not None
-        assert diagnostics.get("n_q_outliers") is not None
+        predictions = np.asarray(result.outputs["default"], dtype=np.float64)
+        assert predictions.shape == (ds.X.shape[0], 1)
+        assert result.outputs["fitted_state"]["serializer"] == "spectra.sherpa-simpls-regression-json/6"
+        assert result.diagnostics["fitted_state_serializer"] == "spectra.sherpa-simpls-regression-json/6"
 
     @_skip_no_scp
     @pytest.mark.asyncio
-    async def test_pls_emits_vip_coefficients_and_cv_predictions(self, make_node):
+    async def test_pls_emits_vip_scores_bound_to_the_fitted_state(self, make_node):
         ds = _make_spectral_dataset(n_samples=32, n_features=45, n_targets=1)
-        node = make_node("model.pls", {"n_components": 2, "cv_method": "venetian-blinds", "cv_folds": 4})
-        result = await node.execute(X=ds)
-        outputs = result.outputs if hasattr(result, "outputs") else result
+        node = make_node("model.fitted_pls", {"n_components": 2, "scale": False})
+        result = await node.execute(input_data=ds)
 
-        y_pred_cv = np.asarray(outputs["y_pred_cv"], dtype=np.float64)
-        assert y_pred_cv.shape == (ds.X.shape[0], 1)
-        assert outputs["cv_predictions"]["type"] == "predicted_vs_actual"
-        assert outputs["cv_predictions"]["metadata"]["cv_method"] == "venetian-blinds"
-
-        vip = outputs["vip"]
-        coefs = outputs["coefficients"]
-        assert vip.shape == (1, ds.X.shape[1])
-        assert vip.title == "PLS VIP Scores"
-        assert coefs.shape == (1, ds.X.shape[1])
-        assert coefs.title == "PLS Regression Coefficients"
+        vip = np.asarray(result.outputs["vip_scores"], dtype=np.float64)
+        state_vip = np.asarray(result.outputs["fitted_state"]["state"]["vip_scores"], dtype=np.float64)
+        assert vip.shape == (ds.X.shape[1],)
+        np.testing.assert_allclose(vip, state_vip)
+        assert result.diagnostics["vip_method"] == "mdatools_combined"
 
 
 # ---------------------------------------------------------------------------
@@ -372,84 +374,8 @@ class TestPlsT2QEmission:
 # ---------------------------------------------------------------------------
 
 
-class TestPlsdaMahalanobisRule:
-    def test_mahalanobis_classifies_well_separated_clusters(self):
-        """On two clusters separated by 5σ in score space, the Bayesian rule
-        must assign every test point to its correct class with probability ≈ 1.
-        """
-        rng = np.random.RandomState(7)
-        n_per_class = 50
-        # Class A near (0,0), class B near (5,5)
-        train_a = rng.randn(n_per_class, 2)
-        train_b = rng.randn(n_per_class, 2) + np.array([5.0, 5.0])
-        train_scores = np.vstack([train_a, train_b])
-        train_labels = np.array(["A"] * n_per_class + ["B"] * n_per_class, dtype=object)
-        classes = np.array(["A", "B"], dtype=object)
-
-        # Test points clearly in each cluster
-        test_scores = np.array([[0.1, -0.1], [4.9, 5.1], [-0.5, 0.3], [5.5, 4.8]])
-        probs = _plsda_mahalanobis_probabilities(train_scores, train_labels, test_scores, classes)
-        # Rows sum to 1
-        np.testing.assert_allclose(probs.sum(axis=1), 1.0, rtol=1e-10)
-        # Hard classifications match expected cluster
-        assert classes[np.argmax(probs[0])] == "A"
-        assert classes[np.argmax(probs[1])] == "B"
-        assert classes[np.argmax(probs[2])] == "A"
-        assert classes[np.argmax(probs[3])] == "B"
-        # Confidence should be high (>= 0.99) for well-separated clusters
-        assert probs[0, 0] >= 0.99
-        assert probs[1, 1] >= 0.99
-
-    def test_mahalanobis_handles_balanced_priors(self):
-        """Equal-sized classes → priors are equal, so a sample exactly at the
-        midpoint should yield 50/50 probabilities."""
-        rng = np.random.RandomState(8)
-        train_a = rng.randn(20, 2)
-        train_b = rng.randn(20, 2) + np.array([4.0, 0.0])
-        train_scores = np.vstack([train_a, train_b])
-        train_labels = np.array(["A"] * 20 + ["B"] * 20, dtype=object)
-        # Test sample at exact midpoint between class means, projected to (2, 0)
-        test_scores = np.array([[2.0, 0.0]])
-        probs = _plsda_mahalanobis_probabilities(
-            train_scores, train_labels, test_scores, np.array(["A", "B"], dtype=object)
-        )
-        # Equal priors + equidistant midpoint → roughly 50/50 (allow some
-        # slack because the empirical class means won't be exactly at 0 and 4).
-        assert abs(probs[0, 0] - 0.5) < 0.15
-
-    def test_mahalanobis_param_is_recorded_in_metadata(self, make_node):
-        node = make_node("classification.plsda", {})
-        params_dict = {p.name: p.default for p in node.metadata.parameters}
-        assert "probability_method" in params_dict
-        assert params_dict["probability_method"] == "softmax"  # default preserves BC
-
-    @_skip_no_scp
-    @pytest.mark.asyncio
-    async def test_mahalanobis_state_is_used_by_predict_node(self, make_node):
-        ds = _make_spectral_dataset(n_samples=30, n_features=40, n_targets=1, target_type="categorical")
-        train_node = make_node(
-            "classification.plsda",
-            {"n_components": 2, "cv_folds": 3, "probability_method": "mahalanobis", "scale": False},
-        )
-        train_result = await train_node.execute(X=ds, y=ds.target)
-        model = train_result.outputs["model"]
-
-        assert model["probability_method"] == "mahalanobis"
-        assert "class_score_means" in model
-        assert "score_covariance_inverse" in model
-        assert "class_priors" in model
-
-        predict_node = make_node("classification.predict", {}, node_id="predict")
-        predict_result = await predict_node.execute(X_new=ds, model=model)
-        probs = np.asarray(predict_result.outputs["y_prob"], dtype=np.float64)
-
-        assert predict_result.diagnostics["probability_method"] == "mahalanobis"
-        assert probs.shape == (ds.X.shape[0], len(model["classes"]))
-        np.testing.assert_allclose(probs.sum(axis=1), 1.0, rtol=1e-10)
-
-
 # ---------------------------------------------------------------------------
-# Issue 5 — SIMCA DD limits as default
+# Issue 4 — SIMCA DD limits as default
 # ---------------------------------------------------------------------------
 
 
@@ -458,6 +384,29 @@ class TestSimcaCriticalLimits:
         node = make_node("classification.simca", {})
         params_dict = {p.name: p.default for p in node.metadata.parameters}
         assert params_dict["critical_limits_method"] == "ddmoments"
+
+    @_skip_no_scp
+    @pytest.mark.asyncio
+    async def test_unlabeled_samples_use_identical_row_indices_live_and_exported(self, make_node):
+        ds = _make_spectral_dataset(n_samples=30, n_features=40, n_targets=1, target_type="categorical")
+        assert ds.sample_axis.labels is None
+        parameters = {
+            "n_components": 2,
+            "confidence_level": 0.95,
+            "critical_limits_method": "ddmoments",
+        }
+
+        live_result = await make_node("classification.simca", parameters).execute(X=ds, y=ds.target)
+        exported = _simca_export_outputs(ds, ds.target, parameters=parameters)
+        live_plot = live_result.outputs["plots"]["simca_acceptance"]
+        exported_plot = exported["plots"]["simca_acceptance"]
+
+        live_hover = [text for trace in live_plot["data"] for text in trace.get("text", [])]
+        exported_hover = [text for trace in exported_plot["data"] for text in trace.get("text", [])]
+        assert live_hover == exported_hover
+        assert sorted(text.split("<br>", 1)[0] for text in live_hover) == sorted(
+            str(index) for index in range(ds.X.shape[0])
+        )
 
     @_skip_no_scp
     @pytest.mark.asyncio
@@ -501,15 +450,13 @@ class TestSimcaCriticalLimits:
         ds = _make_spectral_dataset(n_samples=30, n_features=40, n_targets=1, target_type="categorical")
         train_node = make_node("classification.simca", {"n_components": 2})
         train_result = await train_node.execute(X=ds, y=ds.target)
-        model = train_result.outputs["model"]
+        fitted_state = train_result.outputs["fitted_state"]
+        assert fitted_state["serializer"] == "spectrasherpa.model-artifact.simca/1"
+        assert set(fitted_state["metadata"]["T2_limits"]) == set(fitted_state["metadata"]["classes"])
+        assert set(fitted_state["metadata"]["Q_limits"]) == set(fitted_state["metadata"]["classes"])
 
-        for class_model in model["class_models"].values():
-            assert "x_mean" in class_model
-            assert "x_scale" in class_model
-            assert "pca_mean" in class_model
-
-        predict_node = make_node("classification.predict", {}, node_id="predict")
-        predict_result = await predict_node.execute(X_new=ds, model=model)
+        predict_node = make_node("classification.apply_simca", {}, node_id="predict")
+        predict_result = await predict_node.execute(X_new=ds, fitted_state=fitted_state)
 
         assert predict_result.outputs["y_pred"] == [str(label) for label in train_result.outputs["predictions"]]
 

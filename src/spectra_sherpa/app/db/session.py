@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import AsyncGenerator
 
-from sqlalchemy import event
+from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from spectra_sherpa.app.core.config import DATABASE_URL, settings
@@ -50,6 +50,16 @@ if _is_sqlite:
 
 
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def begin_serialized_sqlite_write(session: AsyncSession) -> None:
+    """Acquire SQLite's write lock before a read/compare/write transaction."""
+
+    if session.get_bind().dialect.name != "sqlite":
+        return
+    if session.in_transaction():
+        await session.commit()
+    await session.execute(text("BEGIN IMMEDIATE"))
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:

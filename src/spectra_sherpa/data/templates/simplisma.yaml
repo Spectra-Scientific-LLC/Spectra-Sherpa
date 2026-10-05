@@ -1,49 +1,42 @@
 schema_version: 1
 name: SIMPLISMA Pure Variables
 slug: simplisma
-description: Self-modeling mixture analysis for initial pure component estimates with
-  purity plots.
+description: Self-modeling mixture analysis of the measured mixtures for initial
+  pure-variable estimates, without hidden centering or scaling.
 category: curve_resolution
 is_active: true
+status: ready
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Mixture Data
-    parameters:
-      source: spectrochempy
-      example_dataset: irdata
+    parameters: {}
     position_x: 175
     position_y: 50
-  - node_id: preprocess_1
-    node_type: preprocess.scale
-    label: Mean Center
-    parameters:
-      method: mean_center
-    position_x: 425
-    position_y: 300
   - node_id: model_1
     node_type: model.simplisma
     label: Fit SIMPLISMA Pure Components
     parameters:
       n_components: 3
       noise: 3
+      tol: 0.1
     position_x: 175
-    position_y: 550
+    position_y: 350
   - node_id: viz_1
     node_type: output.plot
     label: Purity Plot
     parameters:
       plot_type: scatter
     position_x: 50
-    position_y: 800
+    position_y: 650
   - node_id: viz_2
     node_type: output.plot
     label: Pure Spectra
     parameters:
       plot_type: spectra
     position_x: 450
-    position_y: 800
+    position_y: 650
   - node_id: export_1
     node_type: output.export
     label: Export Estimates
@@ -51,22 +44,21 @@ template_data:
       filename: initial_estimates.csv
       format: csv
     position_x: 175
-    position_y: 1050
+    position_y: 900
   edges:
   - from_node_id: data_1
-    to_node_id: preprocess_1
-    to_input: default
-  - from_node_id: preprocess_1
     to_node_id: model_1
+    to_input: default
   - from_node_id: model_1
     to_node_id: viz_1
     from_output: purity_values
   - from_node_id: model_1
     to_node_id: viz_2
     from_output: spectra
-  - from_node_id: viz_2
+  - from_node_id: model_1
     to_node_id: export_1
-    from_output: visualization
+    from_output: spectra
+    to_input: default
   canvas_state:
     zoom: 1.0
     pan_x: 0
@@ -78,19 +70,12 @@ template_data:
       required: true
       binding_mode: embedded
       description: Multi-component mixture spectral data
-      is_time_series: true
       accepted_techniques:
       - FTIR
       - NIR
       - Raman
       - UV-Vis
   certified_datasets:
-  - source: spectrochempy
-    name: irdata
-  - source: spectrochempy
-    name: ramandata
-  - source: spectrochempy
-    name: matlabdata/als2004dataset.MAT
   - source: eigenvector
     name: cgl_nir
   - source: eigenvector

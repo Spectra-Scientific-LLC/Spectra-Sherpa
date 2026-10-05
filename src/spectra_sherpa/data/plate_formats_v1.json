@@ -1,0 +1,12 @@
+{
+  "schema_version": "spectrasherpa.plate-formats/1",
+  "default_format_id": "plate-96",
+  "formats": [
+    {
+      "id": "plate-96",
+      "label": "96-well plate",
+      "rows": ["A", "B", "C", "D", "E", "F", "G", "H"],
+      "columns": 12
+    }
+  ]
+}

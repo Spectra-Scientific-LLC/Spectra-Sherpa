@@ -9,37 +9,46 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 pytest.importorskip("spectrochempy")
 import spectrochempy as scp
 
-from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
+
+def _load_scp_reference(path: Path):
+    """Load the temporary scientific parity reference directly."""
+    suffix = path.suffix.lower()
+    if suffix in {".spa", ".spg", ".srs"}:
+        return scp.read_omnic(str(path))
+    if suffix == ".spc":
+        return scp.read_spc(str(path))
+    if suffix == ".csv":
+        return scp.read_csv(str(path))
+    raise AssertionError(f"No test-only SCP parity reader for {suffix}")
+
+
+def _load_public(path: Path, *, parser_options=None):
+    from spectra_sherpa.io import ingest
+
+    result = ingest(path, parser_options=parser_options)
+    assert len(result.assets) == 1
+    return result.assets[0].dataset
+
 
 # Reference file metadata (expected properties)
 # These serve as "golden" references - if these change, investigate why
 GOLDEN_FILES = {
-    "irdata/CO@Mo_Al2O3.SPG": {
-        "format": ".spg",
-        "reader": "read_omnic",
-        "expected_ndim": 2,  # 2D dataset (spectra x wavenumbers)
-        "min_size": 10,  # At least 10 spectra
-        "has_x_axis": True,  # Should have wavenumber axis
-        "x_axis_unit": "cm^-1",  # Wavenumber unit
-    },
     "irdata/IR.CSV": {
         "format": ".csv",
         "reader": "read_csv",
         "expected_ndim": 2,
         "min_size": 1,
         "has_x_axis": True,
-    },
-    "galacticdata/HOLMIUM.SPC": {
-        "format": ".spc",
-        "reader": "read_spc",
-        "expected_ndim": 2,  # Multi-row spectrum
-        "min_size": 100,  # At least 100 data points
-        "has_x_axis": True,
+        "expected_shape": (1, 3736),
+        "expected_axis_prefix": [399.1926, 400.1568, 401.1211, 402.0853, 403.0495],
+        "expected_signal_prefix": [-0.09079, 3.54656, 5.349746, 3.19553, 4.313386],
+        "parser_options": {"csv_layout": "headerless_two_column_spectrum"},
     },
 }
 
@@ -63,29 +72,57 @@ def _resolve_datadir_file(file_path: str) -> Path | None:
     return None
 
 
+@pytest.mark.parametrize(
+    ("fixture_name", "expected_max_abs_difference"),
+    [
+        ("nir.spc", 3.78125),
+        ("m_ordz.spc", 5.724968679249287),
+    ],
+)
+def test_scp_081_is_not_the_multifile_exponent_oracle(
+    fixture_name: str,
+    expected_max_abs_difference: float,
+) -> None:
+    """Freeze the known SCP divergence instead of claiming false parity.
+
+    Galactic UDF 4.50 assigns exact signed exponent authority to each TMULTI
+    subheader.  SpectroChemPy 0.8.1 agrees on row zero of these files, then
+    applies the wrong exponent to later rows.  Native conformance therefore
+    binds the specification plus spc-io/spc-parser, not SCP, for this case.
+    """
+    fixture = Path(__file__).parent / "fixtures" / "spc" / fixture_name
+    native = _load_public(fixture).X
+    scp_values = np.asarray(scp.read_spc(str(fixture)).data, dtype=np.float64)
+
+    np.testing.assert_allclose(native[0], scp_values[0], rtol=0, atol=1e-12)
+    assert float(np.max(np.abs(native - scp_values))) == pytest.approx(expected_max_abs_difference)
+
+
 @pytest.mark.skipif(not _get_scp_datadirs(), reason="SpectroChemPy data directory not found")
 class TestGoldenDataLoading:
     """Golden tests for reference datasets."""
 
     def test_reader_mapping_consistency(self):
-        """Test that reader mapping is consistent across all code paths."""
-        from spectra_sherpa.app.core.config import EXTENSION_READER_MAP, get_reader_for_extension
+        """The frozen registry, not an extension map, owns every reader."""
+        from spectra_sherpa.io import builtin_registry
 
-        # Verify all expected readers are mapped
-        assert ".spa" in EXTENSION_READER_MAP
-        assert ".spg" in EXTENSION_READER_MAP
-        assert ".spc" in EXTENSION_READER_MAP
-        assert ".csv" in EXTENSION_READER_MAP
-
-        # Verify OMNIC files use same reader
-        assert get_reader_for_extension(".spa") == "read_omnic"
-        assert get_reader_for_extension(".spg") == "read_omnic"
-        assert get_reader_for_extension(".SPA") == "read_omnic"  # Case-insensitive
-        assert get_reader_for_extension(".SPG") == "read_omnic"  # Case-insensitive
-
-        # Verify OPUS numeric extensions
-        assert get_reader_for_extension(".0") == "read_opus"
-        assert get_reader_for_extension(".0000") == "read_opus"
+        plugins = {plugin.format_id: plugin for plugin in builtin_registry.plugins}
+        assert set(plugins) == {
+            "csv",
+            "jcamp-dx",
+            "matlab",
+            "numpy",
+            "omnic",
+            "opus",
+            "renishaw-text",
+            "sherpa-json",
+            "spc",
+            "wdf",
+        }
+        assert plugins["csv"].extensions == (".csv", ".tsv", ".txt", ".dat")
+        assert plugins["opus"].filename_patterns == ("numeric-extension",)
+        assert plugins["renishaw-text"].extensions == (".txt",)
+        assert plugins["wdf"].extensions == (".wdf",)
 
     @pytest.mark.parametrize("file_path,metadata", GOLDEN_FILES.items())
     def test_load_reference_file(self, file_path, metadata):
@@ -94,8 +131,7 @@ class TestGoldenDataLoading:
         if full_path is None:
             pytest.skip(f"Reference file not found: {file_path}")
 
-        node = DataSourceNode("test_golden")
-        dataset = node._load_spectrochempy_custom_file(file_path)
+        dataset = _load_public(full_path, parser_options=metadata.get("parser_options"))
 
         # Verify dataset loaded
         assert dataset is not None, f"Failed to load {file_path}"
@@ -107,78 +143,33 @@ class TestGoldenDataLoading:
 
         # Verify minimum size
         assert (
-            dataset.size >= metadata["min_size"]
-        ), f"{file_path}: Expected at least {metadata['min_size']} points, got {dataset.size}"
+            dataset.X.size >= metadata["min_size"]
+        ), f"{file_path}: Expected at least {metadata['min_size']} points, got {dataset.X.size}"
 
         # Verify x-axis if expected
         if metadata.get("has_x_axis"):
-            assert dataset.x is not None, f"{file_path}: Missing x-axis"
+            assert dataset.feature_axis is not None, f"{file_path}: Missing feature axis"
             if metadata.get("x_axis_unit"):
                 # Note: Unit checking is optional as it may vary
                 pass
 
+        assert dataset.shape == metadata["expected_shape"]
+        np.testing.assert_allclose(dataset.feature_axis.values[:5], metadata["expected_axis_prefix"], rtol=0, atol=5e-5)
+        np.testing.assert_allclose(dataset.X[0, :5], metadata["expected_signal_prefix"], rtol=0, atol=5e-6)
+
         # Verify title is set
         assert dataset.title is not None and dataset.title != "", f"{file_path}: Missing or empty title"
 
-    def test_loader_consistency_spa_file(self):
-        """Test that .SPA files load identically via all code paths."""
-        test_file = "irdata/interferogram/spectre.SPA"
-        full_path = _resolve_datadir_file(test_file)
-        if full_path is None:
-            pytest.skip(f"Test file not found: {test_file}")
-
-        node = DataSourceNode("test_golden")
-
-        # Path 1: Custom loader
-        ds1 = node._load_spectrochempy_custom_file(test_file)
-
-        # Path 2: Direct file loader
-        ds2 = node._load_from_file(str(full_path))
-
-        # Both should produce identical results
-        assert ds1.shape == ds2.shape, f"Shape mismatch: custom={ds1.shape}, direct={ds2.shape}"
-
-        # Data should be numerically equivalent (within tolerance for float precision)
-        import numpy as np
-
-        assert np.allclose(ds1.data, ds2.data, rtol=1e-10, atol=1e-12), "Data mismatch between loaders"
-
-    def test_loader_consistency_spg_file(self):
-        """Test that .SPG files load identically via all code paths."""
-        test_file = "irdata/CO@Mo_Al2O3.SPG"
-        full_path = _resolve_datadir_file(test_file)
-        if full_path is None:
-            pytest.skip(f"Test file not found: {test_file}")
-
-        node = DataSourceNode("test_golden")
-
-        # Path 1: Custom loader
-        ds1 = node._load_spectrochempy_custom_file(test_file)
-
-        # Path 2: Direct file loader
-        ds2 = node._load_from_file(str(full_path))
-
-        # Both should produce identical results
-        assert ds1.shape == ds2.shape, f"Shape mismatch: custom={ds1.shape}, direct={ds2.shape}"
-
-        import numpy as np
-
-        assert np.allclose(ds1.data, ds2.data, rtol=1e-10, atol=1e-12), "Data mismatch between loaders"
-
     def test_case_insensitive_loading(self):
-        """Test that files with different capitalizations load correctly."""
-        from spectra_sherpa.app.core.config import get_reader_for_extension
+        """Path extension normalization remains case insensitive."""
+        from spectra_sherpa.io.base import BoundedSource
+        from spectra_sherpa.io.types import ParserLimits
 
-        # Test various capitalizations
-        extensions = [".spa", ".SPA", ".Spa", ".spg", ".SPG", ".Spg", ".csv", ".CSV"]
-
-        for ext in extensions:
-            reader = get_reader_for_extension(ext)
-            assert reader is not None, f"No reader for {ext}"
-
-            # SPA and SPG should use read_omnic regardless of case
-            if ext.lower() in [".spa", ".spg"]:
-                assert reader == "read_omnic", f"{ext} should use read_omnic, got {reader}"
+        test_file = _resolve_datadir_file("irdata/interferogram/spectre.SPA")
+        if test_file is None:
+            pytest.skip("SPA test fixture not found")
+        source = BoundedSource(test_file, limits=ParserLimits())
+        assert source.extension == ".spa"
 
     def test_csv_index_removal(self):
         """Test that CSV index columns are removed consistently."""
@@ -187,8 +178,7 @@ class TestGoldenDataLoading:
         if full_path is None:
             pytest.skip(f"Test file not found: {test_file}")
 
-        node = DataSourceNode("test_golden")
-        dataset = node._load_from_file(str(full_path))
+        dataset = _load_public(full_path, parser_options=GOLDEN_FILES[test_file]["parser_options"])
 
         # Verify dataset loaded
         assert dataset is not None
@@ -197,90 +187,23 @@ class TestGoldenDataLoading:
         # This is a regression test - if this fails, index removal broke
         assert dataset.ndim in [1, 2], "CSV should produce 1D or 2D dataset"
 
-    def test_unsupported_extension_error(self):
+    def test_unsupported_extension_error(self, tmp_path: Path):
         """Test that unsupported extensions raise clear errors."""
-        from spectra_sherpa.app.core.config import get_reader_for_extension
+        from spectra_sherpa.io import UnsupportedFormatError, ingest
 
-        with pytest.raises(ValueError) as exc_info:
-            get_reader_for_extension(".xyz")
+        unknown = tmp_path / "manifest.unknown"
+        unknown.write_bytes(b"unsupported")
+        with pytest.raises(UnsupportedFormatError) as exc_info:
+            ingest(unknown)
 
         error_msg = str(exc_info.value)
-        assert "Unsupported file extension" in error_msg
-        assert "Supported extensions" in error_msg
+        assert "No registered parser structurally recognizes" in error_msg
 
-    def test_backward_compat_dat_warning(self):
-        """Test that .dat files trigger backward compatibility warning."""
-        import warnings
+    def test_generic_text_is_admitted_only_as_a_consistent_table(self):
+        """.txt/.dat reach the delimited-table reader only below exact vendor dialects."""
+        from spectra_sherpa.io import builtin_registry
 
-        from spectra_sherpa.app.core.config import get_reader_for_extension
-
-        # .dat should fall back to generic read with warning
-        with warnings.catch_warnings(record=True) as w:
-            warnings.simplefilter("always")
-            reader = get_reader_for_extension(".dat")
-
-            # Should return generic reader
-            assert reader == "read"
-
-            # Should have issued a warning
-            assert len(w) == 1
-            assert "no explicit reader" in str(w[0].message).lower()
-            assert "falling back" in str(w[0].message).lower()
-
-
-class TestAPIFileDiscovery:
-    """Tests for the API file discovery endpoint."""
-
-    @pytest.mark.asyncio
-    async def test_case_insensitive_discovery(self, client):
-        """Test that API discovers files regardless of extension capitalization."""
-
-        response = await client.get("/api/v1/workflows/spectrochempy-examples")
-        assert response.status_code == 200
-
-        data = response.json()
-        assert isinstance(data, dict)
-
-        # Check that irdata exists and has files
-        if "irdata" in data:
-            irdata_files = data["irdata"]
-            assert isinstance(irdata_files, list)
-
-            # Verify files have required metadata
-            for file_entry in irdata_files:
-                assert "label" in file_entry
-                assert "value" in file_entry
-                assert "path" in file_entry
-                assert "format" in file_entry  # New metadata field
-                assert "source" in file_entry  # New metadata field
-
-    @pytest.mark.asyncio
-    async def test_dual_directory_support(self, client):
-        """Test that API scans both primary and fallback directories."""
-
-        response = await client.get("/api/v1/workflows/spectrochempy-examples")
-        assert response.status_code == 200
-
-        data = response.json()
-
-        # Verify dataset structure
-        for dataset_name, files in data.items():
-            assert isinstance(files, list)
-
-            # Each file should have source metadata
-            for file_entry in files:
-                assert file_entry["source"] in ["primary", "fallback"], f"Invalid source: {file_entry['source']}"
-
-    @pytest.mark.asyncio
-    async def test_galacticdata_in_response(self, client):
-        """Test that galacticdata is now included in API response."""
-
-        response = await client.get("/api/v1/workflows/spectrochempy-examples")
-        assert response.status_code == 200
-
-        data = response.json()
-
-        # galacticdata should be present if the directory exists
-        # (don't fail if directory doesn't exist, just verify structure)
-        if "galacticdata" in data:
-            assert isinstance(data["galacticdata"], list)
+        txt_plugins = [plugin.format_id for plugin in builtin_registry.plugins if ".txt" in plugin.extensions]
+        dat_plugins = [plugin.format_id for plugin in builtin_registry.plugins if ".dat" in plugin.extensions]
+        assert sorted(txt_plugins) == ["csv", "renishaw-text"]
+        assert dat_plugins == ["csv"]

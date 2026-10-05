@@ -285,11 +285,47 @@ def _is_trusted_proxy_peer(host: str | None) -> bool:
     return any(ip in network for network in _TRUSTED_PROXY_CIDRS)
 
 
+def _rightmost_untrusted_forwarded_ip(forwarded: str) -> str | None:
+    """Return the real client IP from an ``X-Forwarded-For`` header value.
+
+    ``X-Forwarded-For`` is appended left-to-right as a request traverses
+    proxies (``client, proxy1, proxy2``), so the entries added by our own
+    infrastructure are on the RIGHT and a remote client can only inject
+    values on the LEFT. We therefore walk from the right and discard every
+    address that falls inside ``TRUSTED_PROXY_CIDRS``; the first address
+    that is NOT a trusted proxy is the real client.
+
+    This is the spoofing-resistant algorithm: because attacker-supplied
+    entries always sit to the left of the trusted-proxy chain, they are
+    never reached. (The previous implementation trusted the LEFT-most —
+    entirely client-controlled — value, which let a remote caller forge
+    ``127.0.0.1`` to bypass loopback-based auth exemptions and evade the
+    per-IP login rate limiter.)
+
+    Returns ``None`` when no untrusted address is found (all hops trusted)
+    or when a hop is unparseable — callers fall back to the direct peer,
+    which is a trusted proxy and never attacker-controlled.
+    """
+    for raw in reversed(forwarded.split(",")):
+        candidate = _normalize_ip(raw.strip())
+        if candidate is None:
+            # A malformed hop breaks the trusted chain — stop here rather
+            # than scanning further left into attacker-controlled entries.
+            return None
+        if _is_trusted_proxy_peer(candidate):
+            continue
+        return candidate
+    return None
+
+
 def get_client_host(request_or_ws) -> str | None:
     """Extract the real client IP, respecting X-Forwarded-For when trusted.
 
     X-Forwarded-For is only honored when TRUST_PROXY is enabled and the
-    immediate peer is inside TRUSTED_PROXY_CIDRS.
+    immediate peer is inside TRUSTED_PROXY_CIDRS. The client IP is taken as
+    the right-most address that is not itself a trusted proxy (see
+    ``_rightmost_untrusted_forwarded_ip``), never the spoofable left-most
+    value.
     """
     client = getattr(request_or_ws, "client", None)
     direct_host = client.host if client else None
@@ -297,8 +333,7 @@ def get_client_host(request_or_ws) -> str | None:
     if _TRUST_PROXY and _is_trusted_proxy_peer(direct_host):
         forwarded = getattr(request_or_ws, "headers", {}).get("x-forwarded-for")
         if forwarded:
-            # X-Forwarded-For: client, proxy1, proxy2 — leftmost is original
-            forwarded_client = _normalize_ip(forwarded.split(",")[0].strip())
+            forwarded_client = _rightmost_untrusted_forwarded_ip(forwarded)
             if forwarded_client:
                 return forwarded_client
     return direct_host
@@ -309,7 +344,7 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     Middleware to validate API keys for all requests.
 
     In Local mode, all requests are allowed (single-user desktop).
-    In Hybrid mode, loopback requests are allowed; non-loopback clients
+    Explicit extension policy can allow loopback requests; non-loopback clients
     must provide valid credentials (JWT or API key).
     In Enterprise mode, all non-public requests must be authenticated.
 
@@ -353,7 +388,7 @@ async def api_key_middleware(request: Request, call_next) -> Response:
     if path in public_paths or is_frontend_path or path.startswith("/docs") or path.startswith("/redoc"):
         return await call_next(request)  # type: ignore[no-any-return]
 
-    # Mode-based auth bypass: local always passes, hybrid loopback passes.
+    # Mode-based auth bypass: local always passes, explicit product policy may exempt loopback.
     if not requires_http_auth(client_host):
         return await call_next(request)  # type: ignore[no-any-return]
 
@@ -397,26 +432,18 @@ def is_egress_enabled() -> bool:
     Check if network egress is globally enabled.
 
     In local mode, egress is disabled by default unless explicitly enabled.
-    In hybrid/enterprise modes, egress is enabled by default.
+    In managed modes, egress is enabled by default.
 
-    IMPORTANT: In hybrid mode, if we're degraded (SpectraSherpa unreachable),
-    egress is disabled to enforce local-only behavior during fallback.
+    Explicit product connectivity policy can further restrict egress.
+    It never bypasses the configured global switch.
 
     Returns:
         True if egress is allowed, False otherwise
     """
-    # Check if we're in degraded mode (hybrid fallback to local)
-    if app_config.mode == "hybrid":
-        try:
-            from spectra_sherpa.app.services.network_health import get_network_health_service
+    from spectra_sherpa.app.contracts.runtime_status import external_services_available
 
-            health_service = get_network_health_service()
-            if health_service.is_degraded:
-                # In degraded mode, disable egress to enforce local-only behavior
-                return False
-        except Exception:
-            # If we can't check health, default to config setting
-            logger.debug("Network health check failed, using config default", exc_info=True)
+    if not external_services_available():
+        return False
 
     return app_config.egress_enabled
 
@@ -429,6 +456,7 @@ async def check_egress_permission(
     session: "AsyncSession | None" = None,
     *,
     skip_global_check: bool = False,
+    fail_closed_on_fine_grained_error: bool = False,
 ) -> bool:
     """
     Check if a user has permission for a specific egress operation.
@@ -448,6 +476,10 @@ async def check_egress_permission(
         skip_global_check: When True, skip the global is_egress_enabled() check.
             Used for user-initiated actions (e.g. BYOK LLM chat) where the user
             explicitly consented by providing their own API key and message.
+        fail_closed_on_fine_grained_error: When True, deny the request if the
+            fine-grained permission tuple cannot be evaluated. Sensitive data
+            paths must use this mode so a policy-store failure cannot fall back
+            to a broader user or deployment default.
 
     Returns:
         True if the permission is granted, False otherwise
@@ -462,17 +494,25 @@ async def check_egress_permission(
     if not skip_global_check and not is_egress_enabled():
         return False
 
-    # If no user context, allow (system operation in hybrid/enterprise mode)
+    fine_grained_requested = data_type is not None and destination is not None
+
+    # A sensitive fine-grained decision is not evaluable without an identified
+    # user and a policy-store session. Ordinary system operations retain the
+    # historical no-user behavior when strict evaluation was not requested.
     if user is None:
+        if fail_closed_on_fine_grained_error and fine_grained_requested:
+            return False
         return True
 
-    # Fine-grained permission check when a specific egress tuple is provided.
     if (
-        data_type is not None
-        and destination is not None
-        and session is not None
-        and getattr(user, "id", None) is not None
+        fail_closed_on_fine_grained_error
+        and fine_grained_requested
+        and (session is None or getattr(user, "id", None) is None)
     ):
+        return False
+
+    # Fine-grained permission check when a specific egress tuple is provided.
+    if fine_grained_requested and session is not None and getattr(user, "id", None) is not None:
         try:
             from sqlalchemy import select
 
@@ -488,9 +528,12 @@ async def check_egress_permission(
             permission_row = result.scalar_one_or_none()
             if permission_row is not None:
                 return bool(permission_row.allowed)
+            if fail_closed_on_fine_grained_error:
+                return False
         except Exception:
-            # Fall back to coarse defaults if fine-grained lookup isn't available.
             logger.debug("Fine-grained egress permission lookup failed", exc_info=True)
+            if fail_closed_on_fine_grained_error:
+                return False
 
     # Check user's egress_defaults relationship for the permission.
     # Wrapped in try/except because the user object may be detached from its
@@ -551,7 +594,7 @@ async def check_export_allowed(
     browser are local operations, not network egress.
 
     In local mode (single user) exports are always allowed.
-    In multi-user modes (hybrid, enterprise), the admin can restrict exports
+    In multi-user modes, the admin can restrict exports
     via the user's ``allow_export`` egress default.
     """
     if export_always_allowed():

@@ -81,7 +81,7 @@ async def test_workflow_run_completed_emits_audit_event(async_session, alice_con
         final_status="completed",
         error_msg=None,
         integrity_hash="abc123",
-        model_ids=["uid-pca-001"],
+        produced_artifact_uids=["uid-pca-001"],
         params_snapshot={"baseline_correction": "snv"},
     )
     assert persisted is not None
@@ -122,7 +122,7 @@ async def test_workflow_run_failed_emits_audit_event(async_session, alice_contex
         final_status="error",
         error_msg="Out of memory",
         integrity_hash=None,
-        model_ids=None,
+        produced_artifact_uids=None,
         params_snapshot=None,
     )
 
@@ -149,7 +149,7 @@ async def test_workflow_run_partial_maps_to_partial_action(async_session, alice_
         final_status="partial",
         error_msg="Node 2 failed",
         integrity_hash=None,
-        model_ids=None,
+        produced_artifact_uids=None,
         params_snapshot=None,
     )
 
@@ -174,7 +174,7 @@ async def test_workflow_run_audit_is_noop_when_disabled(async_session):
         final_status="completed",
         error_msg=None,
         integrity_hash=None,
-        model_ids=None,
+        produced_artifact_uids=None,
         params_snapshot=None,
     )
     rows = (await async_session.execute(select(AuditEvent))).scalars().all()

@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 
 # sklearn adapter now lives in its own module and returns SherpaDataset
-from spectra_sherpa.app.lib.adapters.sklearn_adapter import from_sklearn_bunch
+from spectra_sherpa.app.lib.adapters.sklearn_adapter import from_sklearn
 from spectra_sherpa.app.lib.sherpa_dataset import (
     SampleAxis,
     SherpaDataset,
@@ -29,18 +29,19 @@ from spectra_sherpa.app.services.dag.node_base import NodeResult, node_registry
 
 @pytest.fixture
 def no_scp(monkeypatch):
-    """Simulate SpectroChemPy being absent by patching HAS_SCP to False.
+    """Simulate optional-runtime import failure at the one adapter boundary."""
 
-    Patches HAS_SCP in the canonical module and all modules that import it
-    at module level (Python binds names at import time, so a single patch
-    on the source module does not propagate to already-imported references).
-    """
-    monkeypatch.setattr("spectra_sherpa.app.lib.scp_compat.HAS_SCP", False)
-    monkeypatch.setattr("spectra_sherpa.app.services.dag.nodes.data.HAS_SCP", False)
-    monkeypatch.setattr("spectra_sherpa.app.services.dag.executor.HAS_SCP", False)
-    monkeypatch.setattr("spectra_sherpa.app.services.dag.serialize.HAS_SCP", False)
-    monkeypatch.setattr("spectra_sherpa.app.services.dag.serialize.HAS_NDDATASET", False)
-    monkeypatch.setattr("spectra_sherpa.app.services.dag.executor.HAS_NDDATASET", False)
+    def unavailable(_name: str):
+        raise ImportError("simulated absent optional runtime")
+
+    monkeypatch.setattr(
+        "spectra_sherpa.interoperability.spectrochempy_adapter.import_module",
+        unavailable,
+    )
+    monkeypatch.setattr(
+        "spectra_sherpa.app.services.dag.runtime_dependencies.distribution_is_installed",
+        lambda distribution: distribution != "spectrochempy",
+    )
 
 
 @pytest.fixture
@@ -74,15 +75,64 @@ def iris_dataset():
 
 
 @pytest.mark.asyncio
-async def test_requires_scp_gate_raises_import_error(no_scp):
-    """Nodes with requires_scp=True should raise ImportError when HAS_SCP=False."""
-    node = node_registry.create_node("baseline.rubberband", "test_rb", {})
+@pytest.mark.parametrize(
+    "operation_id",
+    (
+        "model.efa",
+        "model.mcr_als",
+        "model.simplisma",
+    ),
+)
+async def test_scp_contract_operations_fail_before_execution(no_scp, operation_id, monkeypatch):
+    """Every contract-declared SCP operation fails at the shared gate."""
 
-    # Provide a dummy input so we get past parameter validation
+    node = node_registry.create_node(operation_id, f"test-{operation_id}", {})
+
+    async def _must_not_execute(*_args, **_kwargs):
+        raise AssertionError("scientific execution ran before the SCP availability gate")
+
+    monkeypatch.setattr(node, "execute", _must_not_execute)
     dummy = SherpaDataset(X=np.ones((5, 10)))
-
+    kwargs = {} if not node.metadata.input_ports else {"default": dummy}
     with pytest.raises(ImportError, match="requires SpectroChemPy"):
-        await node.run(default=dummy)
+        await node.run(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_native_plsda_fit_and_application_remain_available_without_scp(no_scp, iris_dataset):
+    assert node_registry.get_metadata("classification.plsda").requires_scp is False
+    assert node_registry.get_metadata("classification.apply_plsda").requires_scp is False
+
+    producer = node_registry.create_node(
+        "classification.plsda",
+        "native-plsda",
+        {"n_components": 2, "scale": True},
+    )
+    fitted_state = producer.fit_fitted_state(iris_dataset, iris_dataset.target)
+    direct_scores = producer.apply_fitted_state(iris_dataset, fitted_state)
+
+    application = node_registry.create_node("classification.apply_plsda", "native-apply", {})
+    applied = await application.run(default=iris_dataset, fitted_state=fitted_state)
+    np.testing.assert_allclose(applied.outputs["class_scores"], direct_scores, rtol=0.0, atol=0.0)
+    assert len(applied.outputs["y_pred"]) == iris_dataset.shape[0]
+
+
+@pytest.mark.asyncio
+async def test_native_pca_fit_and_application_remain_available_without_scp(no_scp, iris_dataset):
+    assert node_registry.get_metadata("model.pca").requires_scp is False
+    assert node_registry.get_metadata("model.pca_transform").requires_scp is False
+
+    producer = node_registry.create_node(
+        "model.pca",
+        "native-pca",
+        {"n_components": "2", "standardized": False, "scaled": False},
+    )
+    result = await producer.run(default=iris_dataset)
+    state = result.outputs["fitted_state"]
+
+    application = node_registry.create_node("model.pca_transform", "native-pca-apply", {})
+    applied = await application.run(X_new=iris_dataset, model=state)
+    np.testing.assert_allclose(applied.outputs["scores"].data, result.outputs["scores"].data, rtol=0.0, atol=1e-12)
 
 
 # ---------------------------------------------------------------------------
@@ -307,33 +357,39 @@ async def test_kmeans_node_on_sherpa_dataset(iris_dataset):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_data_source_sklearn_no_scp(no_scp):
-    """DataSource node with source='sklearn' should work without SCP."""
+def test_file_load_categorical_csv_no_scp(no_scp, tmp_path):
+    """The canonical source preserves a categorical target without SCP."""
+    from sklearn.datasets import load_iris
+
+    iris = load_iris()
+    source = tmp_path / "iris.csv"
+    rows = np.column_stack([iris.data, iris.target_names[iris.target]])
+    np.savetxt(source, rows, delimiter=",", header="f1,f2,f3,f4,target", comments="", fmt="%s")
     node = node_registry.create_node(
-        "data.source",
+        "data.file_load",
         "test_source",
         {
-            "source": "sklearn",
-            "sklearn_dataset": "iris",
+            "experiment_id": 1,
+            "file_id": 1,
+            "stage": "raw",
+            "target_authority": {
+                "schema_version": "spectrasherpa-target-authority/1",
+                "column": "target",
+                "target_type": "categorical",
+                "units": None,
+                "source_digest": "0" * 64,
+            },
         },
     )
-    result = await node.run()
-
-    assert isinstance(result, NodeResult)
-    outputs = result.outputs
-    dataset = outputs.get("default")
+    dataset = node._load_file(source, selected_target="target", target_type="categorical")
     assert dataset is not None, "DataSource should produce a 'default' output"
     assert isinstance(dataset, SherpaDataset), f"Expected SherpaDataset, got {type(dataset).__name__}"
     assert dataset.shape == (150, 4), f"Iris shape should be (150, 4), got {dataset.shape}"
-
-    target = outputs.get("target")
-    assert target is not None, "Sklearn source should produce 'target' output"
-    assert len(target) == 150
-    # Target should also be embedded in dataset
     assert dataset.target is not None
     assert len(dataset.target) == 150
     assert dataset.target_context.target_type == "categorical"
+    assert dataset.target_context.selected_target == "target"
+    assert node.exported_output_ports() == {"default", "target", "sample_table"}
 
 
 # ---------------------------------------------------------------------------
@@ -585,16 +641,16 @@ def test_sherpa_dataset_round_trip(iris_dataset):
 
 
 # ---------------------------------------------------------------------------
-# Bonus: from_sklearn_bunch adapter
+# sklearn Bunch adapter
 # ---------------------------------------------------------------------------
 
 
-def test_from_sklearn_bunch():
-    """from_sklearn_bunch should properly convert an sklearn Bunch."""
+def test_from_sklearn():
+    """from_sklearn should properly convert an sklearn Bunch."""
     from sklearn.datasets import load_iris
 
     bunch = load_iris()
-    ds = from_sklearn_bunch(bunch, name="iris")
+    ds = from_sklearn(bunch, name="iris")
 
     assert isinstance(ds, SherpaDataset)
     assert ds.shape == (150, 4)
@@ -742,152 +798,167 @@ class TestGeneratePythonNoScp:
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "with_data(" in code
-        assert "np.array(" in code
+        assert "NormalizeNode" in code
+        assert "transform_dataset(" in code
 
     def test_snv_scp_uses_sherpa_dataset(self):
         node = self._make_node("preprocess.normalize", {"method": "snv"})
         lines = node.generate_python(self._inputs(), use_scp=True)
         code = "\n".join(lines)
-        assert "with_data(" in code
+        assert "transform_dataset(" in code
 
     def test_scale_no_scp_uses_result(self):
         node = self._make_node("preprocess.normalize", {"method": "scale"})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "with_data(" in code
+        assert "transform_dataset(" in code
 
     def test_cosmic_ray_no_scp(self):
         node = self._make_node("preprocess.cosmic_ray", {"window": 7, "zscore": 3.0})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "with_data(" in code
-        assert "median_filter" not in code
-        assert "half_window = window // 2" in code
-        assert "_mad * 1.4826" in code
+        assert "_cosmic_ray_dispatch" in code
+        assert "_build_cosmic_ray_result" in code
+        assert "def _remove_cosmic_rays" not in code
 
     def test_clip_floor_no_scp(self):
         node = self._make_node("preprocess.clip_floor", {"floor": 0.0})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "with_data(" in code
+        assert "_clip_floor_dispatch" in code
+        assert "_build_clip_floor_result" in code
+        assert "np.maximum" not in code
 
-    def test_scale_max_no_scp(self):
-        node = self._make_node("preprocess.scale", {"method": "scale_max", "target_max": 1.0})
+    def test_sample_max_normalization_no_scp(self):
+        node = self._make_node("preprocess.normalize", {"method": "scale", "scale_method": "max"})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "with_data(" in code
+        assert "transform_dataset(" in code
 
     def test_center_mean_no_scp(self):
         node = self._make_node("preprocess.scale", {"method": "mean_center"})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "with_data(" in code
+        assert "apply_fitted_state(" in code
 
     def test_pareto_no_scp(self):
         node = self._make_node("preprocess.scale", {"method": "pareto", "center": True})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "with_data(" in code
+        assert "apply_fitted_state(" in code
 
     def test_autoscaling_no_scp(self):
         node = self._make_node("preprocess.scale", {"method": "autoscale", "center": True})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "with_data(" in code
+        assert "apply_fitted_state(" in code
 
     def test_emsc_no_scp(self):
-        node = self._make_node("preprocess.emsc", {"reference": "mean", "poly_order": 2})
+        node = self._make_node("preprocess.emsc", {"reference_method": "mean", "poly_order": 2})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
         assert "scp.NDDataset" not in code
-        assert "with_data(" in code
+        assert "apply_fitted_state(" in code
+        assert "EMSCNode" in code
+        assert "np.linalg.lstsq" not in code
 
-    def test_savgol_smooth_no_scp_uses_scipy(self):
+    def test_savgol_smooth_no_scp_uses_canonical_dispatcher(self):
         node = self._make_node("preprocess.smooth", {"method": "savitzky_golay", "size": 11, "order": 2})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
-        assert "scp" not in code.lower() or "scp" not in code
-        assert "savgol_filter" in code
-        assert "with_data(" in code
+        assert "SmoothNode" in code
+        assert "savgol_filter" not in code
+        assert ".smooth(" not in code
+        assert "transform_dataset(" in code
 
-    def test_savgol_smooth_scp_uses_method(self):
+    def test_savgol_smooth_scp_uses_same_canonical_dispatcher(self):
         node = self._make_node("preprocess.smooth", {"method": "savitzky_golay", "size": 11, "order": 2})
         lines = node.generate_python(self._inputs(), use_scp=True)
         code = "\n".join(lines)
-        assert "data.smooth(" in code
+        assert "SmoothNode" in code
+        assert "savgol_filter" not in code
+        assert ".smooth(" not in code
+        assert "transform_dataset(" in code
 
-    def test_first_deriv_no_scp_uses_scipy(self):
+    def test_first_deriv_no_scp_uses_complete_canonical_authority(self):
         node = self._make_node(
             "preprocess.derivative", {"method": "savitzky_golay", "deriv": "1", "size": 11, "order": 2}
         )
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
-        assert "savgol_filter" in code
-        assert "deriv=1" in code
-        assert "with_data(" in code
+        assert "_execute_derivative" in code
+        assert "_derivative_dispatch" not in code
+        assert "'deriv': '1'" in code
+        assert "savgol_filter" not in code
+        assert ".savgol(" not in code
+        assert "results['test_preprocess.derivative']" in code
 
-    def test_second_deriv_no_scp_uses_scipy(self):
+    def test_second_deriv_no_scp_uses_complete_canonical_authority(self):
         node = self._make_node(
             "preprocess.derivative", {"method": "savitzky_golay", "deriv": "2", "size": 11, "order": 2}
         )
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
-        assert "savgol_filter" in code
-        assert "deriv=2" in code
-        assert "with_data(" in code
+        assert "_execute_derivative" in code
+        assert "_derivative_dispatch" not in code
+        assert "'deriv': '2'" in code
+        assert "savgol_filter" not in code
+        assert ".savgol(" not in code
+        assert "results['test_preprocess.derivative']" in code
 
-    def test_sg_derivative_no_scp_uses_scipy(self):
+    def test_sg_derivative_no_scp_uses_complete_canonical_authority(self):
         node = self._make_node(
             "preprocess.derivative", {"method": "savitzky_golay", "size": 11, "order": 2, "deriv": "1"}
         )
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
-        assert "savgol_filter" in code
-        assert "with_data(" in code
+        assert "_execute_derivative" in code
+        assert "_derivative_dispatch" not in code
+        assert "savgol_filter" not in code
+        assert ".savgol(" not in code
+        assert "results['test_preprocess.derivative']" in code
 
-    def test_sg_derivative_scp_uses_method(self):
+    def test_sg_derivative_scp_uses_same_complete_canonical_authority(self):
         node = self._make_node(
             "preprocess.derivative", {"method": "savitzky_golay", "size": 11, "order": 2, "deriv": "1"}
         )
         lines = node.generate_python(self._inputs(), use_scp=True)
         code = "\n".join(lines)
-        assert "data.savgol(" in code
+        assert "_execute_derivative" in code
+        assert "_derivative_dispatch" not in code
+        assert "savgol_filter" not in code
+        assert ".savgol(" not in code
+        assert "results['test_preprocess.derivative']" in code
 
-    def test_scp_only_node_emits_import_error(self):
-        """SCP-only nodes should emit ImportError when use_scp=False."""
-        # baseline.rubberband requires SCP (preprocess.normalize is now pure-numpy)
+    def test_native_rubberband_export_uses_the_same_complete_authority(self):
+        """SCP availability cannot select another rubberband implementation."""
         node = self._make_node("baseline.rubberband", {})
-        lines = node.generate_python(self._inputs(), use_scp=False)
-        code = "\n".join(lines)
-        assert "ImportError" in code
-        assert "spectrochempy" in code.lower()
+        without_scp = node.generate_python(self._inputs(), use_scp=False)
+        assert node.generate_python(self._inputs(), use_scp=True) == without_scp
+        code = "\n".join(without_scp)
+        assert "_execute_rubberband" in code
+        assert "spectrochempy" not in code.lower()
 
     def test_clip_range_no_scp_uses_index_lookup(self):
-        """ClipRange no-SCP path should find columns by x-axis values, not SCP slicing."""
-        node = self._make_node("preprocess.clip_range", {"min_wavenumber": 500, "max_wavenumber": 3000})
+        """ClipRange export must delegate rather than restate range math."""
+        node = self._make_node("preprocess.clip_range", {"minimum": 500, "maximum": 3000})
         lines = node.generate_python(self._inputs(), use_scp=False)
         code = "\n".join(lines)
-        assert "_x_vals" in code, "Should use x_vals for index lookup"
-        assert "_mask" in code, "Should build boolean mask"
-        assert "SherpaDataset(" in code, "Should wrap with SherpaDataset"
-        # Primary path must use mask-based selection
-        assert "_x_vals >= 500" in code
-        assert "_x_vals <= 3000" in code
+        assert "_clip_range_dataset_dispatch" in code
+        assert "_build_clip_range_result" in code
+        assert "np.ones" not in code
 
     def test_clip_range_scp_uses_coord_slicing(self):
-        """ClipRange SCP path should use coordinate-aware slicing."""
-        node = self._make_node("preprocess.clip_range", {"min_wavenumber": 500, "max_wavenumber": 3000})
-        lines = node.generate_python(self._inputs(), use_scp=True)
-        code = "\n".join(lines)
-        assert "[:, 500:3000]" in code
+        """SCP availability cannot select another range implementation."""
+        node = self._make_node("preprocess.clip_range", {"minimum": 500, "maximum": 3000})
+        assert node.generate_python(self._inputs(), use_scp=True) == node.generate_python(self._inputs(), use_scp=False)
 
 
 # ---------------------------------------------------------------------------
@@ -909,9 +980,7 @@ class TestClipRangeSherpaDataset:
             feature_axis=SpectralAxis(values=wavenumbers, units="cm-1", title="wavenumber"),
         )
 
-        node = node_registry.create_node(
-            "preprocess.clip_range", "test_clip", {"min_wavenumber": 1000, "max_wavenumber": 2000}
-        )
+        node = node_registry.create_node("preprocess.clip_range", "test_clip", {"minimum": 1000, "maximum": 2000})
         result = await node.run(default=ds)
         output = result.outputs["default"]
 
@@ -926,17 +995,15 @@ class TestClipRangeSherpaDataset:
         np.testing.assert_array_almost_equal(output.X, X[:, expected_mask])
 
     @pytest.mark.asyncio
-    async def test_clip_min_only(self):
-        """ClipRange with only min_wavenumber should keep all columns >= min."""
+    async def test_clip_range_includes_both_requested_boundaries(self):
+        """ClipRange keeps all explicit coordinates inside its closed interval."""
         wavenumbers = np.linspace(400, 4000, 50)
         X = np.ones((3, 50))
         ds = SherpaDataset(
             X=X,
             feature_axis=SpectralAxis(values=wavenumbers, units="cm-1"),
         )
-        node = node_registry.create_node(
-            "preprocess.clip_range", "test_clip_min", {"min_wavenumber": 2000, "max_wavenumber": 4000}
-        )
+        node = node_registry.create_node("preprocess.clip_range", "test_clip_min", {"minimum": 2000, "maximum": 4000})
         result = await node.run(default=ds)
         output = result.outputs["default"]
 
@@ -945,17 +1012,13 @@ class TestClipRangeSherpaDataset:
         assert output.feature_axis.values[0] >= 2000
 
     @pytest.mark.asyncio
-    async def test_clip_no_xaxis_falls_back_to_integer_slicing(self):
-        """Without feature_axis, ClipRange should fall back to integer column slicing."""
+    async def test_clip_rejects_missing_feature_coordinates(self):
+        """Scientific range selection cannot infer coordinates from column positions."""
         X = np.ones((3, 100))
         ds = SherpaDataset(X=X)
-        node = node_registry.create_node(
-            "preprocess.clip_range", "test_clip_nox", {"min_wavenumber": 10, "max_wavenumber": 50}
-        )
-        result = await node.run(default=ds)
-        output = result.outputs["default"]
-        # Integer slicing: columns 10 through 50
-        assert output.shape == (3, 40)
+        node = node_registry.create_node("preprocess.clip_range", "test_clip_nox", {"minimum": 10, "maximum": 50})
+        with pytest.raises(ValueError, match="requires an explicit feature axis"):
+            await node.run(default=ds)
 
     @pytest.mark.asyncio
     async def test_clip_preserves_provenance(self):
@@ -965,33 +1028,23 @@ class TestClipRangeSherpaDataset:
             X=np.ones((3, 100)),
             feature_axis=SpectralAxis(values=wavenumbers),
         )
-        node = node_registry.create_node(
-            "preprocess.clip_range", "test_clip_prov", {"min_wavenumber": 1000, "max_wavenumber": 3000}
-        )
+        node = node_registry.create_node("preprocess.clip_range", "test_clip_prov", {"minimum": 1000, "maximum": 3000})
         result = await node.run(default=ds)
         output = result.outputs["default"]
         history = output.provenance.to_list()
         assert len(history) >= 1
         assert history[-1]["op_id"] == "preprocess.clip_range"
-        assert history[-1]["parameters"]["min_wavenumber"] == 1000
-        assert history[-1]["parameters"]["max_wavenumber"] == 3000
+        assert history[-1]["parameters"]["minimum"] == 1000
+        assert history[-1]["parameters"]["maximum"] == 3000
 
-    @pytest.mark.asyncio
-    async def test_clip_swaps_reversed_bounds(self):
-        """ClipRange should swap min/max if min > max."""
-        wavenumbers = np.linspace(400, 4000, 100)
-        ds = SherpaDataset(
-            X=np.ones((3, 100)),
-            feature_axis=SpectralAxis(values=wavenumbers),
-        )
-        node = node_registry.create_node(
-            "preprocess.clip_range", "test_clip_swap", {"min_wavenumber": 3000, "max_wavenumber": 1000}
-        )
-        result = await node.run(default=ds)
-        output = result.outputs["default"]
-        # Should have swapped and clipped to [1000, 3000]
-        expected_mask = (wavenumbers >= 1000) & (wavenumbers <= 3000)
-        assert output.shape[1] == expected_mask.sum()
+    def test_clip_rejects_reversed_bounds(self):
+        """Reversed bounds are invalid rather than silently reinterpreted."""
+        with pytest.raises(ValueError, match="strictly less"):
+            node_registry.create_node(
+                "preprocess.clip_range",
+                "test_clip_reversed",
+                {"minimum": 3000, "maximum": 1000},
+            )
 
 
 # ---------------------------------------------------------------------------

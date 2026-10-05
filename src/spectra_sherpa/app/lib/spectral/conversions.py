@@ -20,7 +20,7 @@ import numpy as np
 from .dataset import SpectralUnit, add_provenance, parse_spectral_unit
 
 if TYPE_CHECKING:
-    from spectra_sherpa.app.lib.scp_compat import NDDataset
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +31,7 @@ class ReferenceNotAppliedWarning(UserWarning):
     pass
 
 
-def check_reference_applied(dataset: "NDDataset", operation: str) -> bool:
+def check_reference_applied(dataset: "SherpaDataset", operation: str) -> bool:
     """
     Check if reference spectrum has been applied to dataset.
 
@@ -40,7 +40,7 @@ def check_reference_applied(dataset: "NDDataset", operation: str) -> bool:
 
     Parameters
     ----------
-    dataset : NDDataset
+    dataset : SherpaDataset
         Dataset to check
     operation : str
         Name of the operation (for warning messages)
@@ -75,10 +75,10 @@ def check_reference_applied(dataset: "NDDataset", operation: str) -> bool:
 
 
 def ensure_absorbance(
-    dataset: "NDDataset",
+    dataset: "SherpaDataset",
     validate_reference: bool = True,
     allow_unknown_absorbance_like: bool = False,
-) -> "NDDataset":
+) -> "SherpaDataset":
     """
     Convert dataset to absorbance if needed, with warning.
 
@@ -87,7 +87,7 @@ def ensure_absorbance(
 
     Parameters
     ----------
-    dataset : NDDataset
+    dataset : SherpaDataset
         Input dataset in any spectral unit
     validate_reference : bool
         If True, warn when reference spectrum status is unknown
@@ -98,7 +98,7 @@ def ensure_absorbance(
 
     Returns
     -------
-    NDDataset
+    SherpaDataset
         Dataset converted to absorbance units
     """
     unit = parse_spectral_unit(dataset.units)
@@ -142,7 +142,18 @@ def _declares_percent_units(units: object) -> bool:
     return "%" in unit_text or "percent" in unit_text
 
 
+def _declares_fractional_ratio_units(units: object) -> bool:
+    unit_text = str(units or "").strip().lower()
+    return unit_text in {"transmittance", "reflectance", "fraction", "ratio", "dimensionless", "1"}
+
+
 def _validate_ratio_domain(data: np.ndarray, *, quantity: str, units: object) -> np.ndarray:
+    if not _declares_percent_units(units) and not _declares_fractional_ratio_units(units):
+        raise ValueError(
+            f"{quantity} conversion requires explicit percent or fractional ratio units; "
+            f"observed units were {units!r}. A displayed quantity without ratio units is not enough "
+            "to establish I/I0."
+        )
     finite = data[np.isfinite(data)]
     if finite.size == 0:
         return data
@@ -159,9 +170,9 @@ def _validate_ratio_domain(data: np.ndarray, *, quantity: str, units: object) ->
 
 
 def transmittance_to_absorbance(
-    dataset: "NDDataset",
+    dataset: "SherpaDataset",
     validate_reference: bool = True,
-) -> "NDDataset":
+) -> "SherpaDataset":
     """
     Convert Transmittance to Absorbance.
 
@@ -172,14 +183,14 @@ def transmittance_to_absorbance(
 
     Parameters
     ----------
-    dataset : NDDataset
+    dataset : SherpaDataset
         Dataset in transmittance units (0-1 scale or 0-100%)
     validate_reference : bool
         If True, warn when reference spectrum status is unknown
 
     Returns
     -------
-    NDDataset
+    SherpaDataset
         Dataset in absorbance units
     """
     # Check reference status
@@ -191,14 +202,12 @@ def transmittance_to_absorbance(
             ReferenceNotAppliedWarning,
         )
 
-    result = dataset.copy()
-
-    data = dataset.data.copy()
+    data = dataset.X.copy()
     if _declares_percent_units(dataset.units):
         data = data / 100.0
+    result = dataset.with_data(-np.log10(_validate_ratio_domain(data, quantity="Transmittance", units=dataset.units)))
+    if _declares_percent_units(dataset.units):
         add_provenance(result, "scale_correction", {"from": "percent", "to": "fraction"})
-    data = _validate_ratio_domain(data, quantity="Transmittance", units=dataset.units)
-    result.data = -np.log10(data)
     result.units = SpectralUnit.ABSORBANCE.value
 
     # Mark reference as applied in output (since we did the conversion)
@@ -209,7 +218,7 @@ def transmittance_to_absorbance(
     return result
 
 
-def absorbance_to_transmittance(dataset: "NDDataset") -> "NDDataset":
+def absorbance_to_transmittance(dataset: "SherpaDataset") -> "SherpaDataset":
     """
     Convert Absorbance to Transmittance.
 
@@ -217,23 +226,22 @@ def absorbance_to_transmittance(dataset: "NDDataset") -> "NDDataset":
 
     Parameters
     ----------
-    dataset : NDDataset
+    dataset : SherpaDataset
         Dataset in absorbance units
 
     Returns
     -------
-    NDDataset
+    SherpaDataset
         Dataset in transmittance units (0-1 scale)
     """
-    result = dataset.copy()
-    result.data = np.power(10.0, -dataset.data)
+    result = dataset.with_data(np.power(10.0, -dataset.X))
     result.units = SpectralUnit.TRANSMITTANCE.value
 
     add_provenance(result, "absorbance_to_transmittance", {"source_units": "absorbance"})
     return result
 
 
-def reflectance_to_kubelka_munk(dataset: "NDDataset") -> "NDDataset":
+def reflectance_to_kubelka_munk(dataset: "SherpaDataset") -> "SherpaDataset":
     """
     Convert Reflectance to Kubelka-Munk.
 
@@ -244,30 +252,28 @@ def reflectance_to_kubelka_munk(dataset: "NDDataset") -> "NDDataset":
 
     Parameters
     ----------
-    dataset : NDDataset
+    dataset : SherpaDataset
         Dataset in reflectance units (0-1 scale or 0-100%)
 
     Returns
     -------
-    NDDataset
+    SherpaDataset
         Dataset in Kubelka-Munk units
     """
-    result = dataset.copy()
-
-    R = dataset.data.copy()
+    R = dataset.X.copy()
     if _declares_percent_units(dataset.units):
         R = R / 100.0
-        add_provenance(result, "scale_correction", {"from": "percent", "to": "fraction"})
-
     R = _validate_ratio_domain(R, quantity="Reflectance", units=dataset.units)
-    result.data = ((1 - R) ** 2) / (2 * R)
+    result = dataset.with_data(((1 - R) ** 2) / (2 * R))
+    if _declares_percent_units(dataset.units):
+        add_provenance(result, "scale_correction", {"from": "percent", "to": "fraction"})
     result.units = SpectralUnit.KUBELKA_MUNK.value
 
     add_provenance(result, "reflectance_to_kubelka_munk", {"source_units": "reflectance"})
     return result
 
 
-def kubelka_munk_to_reflectance(dataset: "NDDataset") -> "NDDataset":
+def kubelka_munk_to_reflectance(dataset: "SherpaDataset") -> "SherpaDataset":
     """
     Convert Kubelka-Munk to Reflectance.
 
@@ -275,28 +281,26 @@ def kubelka_munk_to_reflectance(dataset: "NDDataset") -> "NDDataset":
 
     Parameters
     ----------
-    dataset : NDDataset
+    dataset : SherpaDataset
         Dataset in Kubelka-Munk units
 
     Returns
     -------
-    NDDataset
+    SherpaDataset
         Dataset in reflectance units (0-1 scale)
     """
-    result = dataset.copy()
-
     # K = (1-R)^2 / (2R)
     # 2KR = (1-R)^2
     # 2KR = 1 - 2R + R^2
     # R^2 - 2R(1+K) + 1 = 0
     # R = (1+K) - sqrt((1+K)^2 - 1)
-    K = np.maximum(dataset.data, 0.0)
+    K = np.maximum(dataset.X, 0.0)
     discriminant = (1 + K) ** 2 - 1
     discriminant = np.maximum(discriminant, 0.0)  # Numerical safety
     R = (1 + K) - np.sqrt(discriminant)
     R = np.clip(R, 0.0, 1.0)
 
-    result.data = R
+    result = dataset.with_data(R)
     result.units = SpectralUnit.REFLECTANCE.value
 
     add_provenance(result, "kubelka_munk_to_reflectance", {"source_units": "kubelka_munk"})

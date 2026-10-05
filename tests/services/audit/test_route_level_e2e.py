@@ -18,6 +18,8 @@ field set.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from sqlalchemy import select
 
@@ -31,6 +33,15 @@ from spectra_sherpa.app.services.audit.boot import _reset_process_boot_id_for_te
 from spectra_sherpa.app.services.audit.reproducibility import (
     _reset_environment_snapshot_for_tests,
 )
+from spectra_sherpa.app.types import type_registry
+
+# The real app loads this via the FastAPI lifespan handler, which the
+# in-process ASGI test client does not run. Without it, the shared workflow
+# preflight fails closed with "type_registry_unavailable" on every real
+# /execute route call this suite makes, regardless of the workflow's own
+# validity.
+if not type_registry.is_loaded:
+    type_registry.load(Path(__file__).resolve().parents[3] / "src" / "spectra_sherpa" / "app" / "types")
 
 
 @pytest.fixture(autouse=True)
@@ -109,7 +120,7 @@ async def test_workflow_update_emits_before_after_state(auth_client, test_sessio
                     "node_id": "n1",
                     "node_type": "synthesis.species",
                     "label": "Synth",
-                    "parameters": {"n_samples": 50},
+                    "parameters": {"species_name": "Species A"},
                     "position_x": 0,
                     "position_y": 0,
                 }
@@ -131,7 +142,7 @@ async def test_workflow_update_emits_before_after_state(auth_client, test_sessio
                     "node_id": "n1",
                     "node_type": "synthesis.species",
                     "label": "Synth",
-                    "parameters": {"n_samples": 200},  # changed value
+                    "parameters": {"species_name": "Species B"},  # changed value
                     "position_x": 0,
                     "position_y": 0,
                 }
@@ -146,8 +157,8 @@ async def test_workflow_update_emits_before_after_state(auth_client, test_sessio
     assert len(updated) == 1
     event = updated[0]
     # Before should have the original parameter; after should have the new one
-    assert event.before_state["parameter_set"]["n1"]["n_samples"] == 50
-    assert event.after_state["parameter_set"]["n1"]["n_samples"] == 200
+    assert event.before_state["parameter_set"]["n1"]["species_name"] == "Species A"
+    assert event.after_state["parameter_set"]["n1"]["species_name"] == "Species B"
 
 
 async def test_route_level_reproducibility_record_carries_required_fields(auth_client, test_session):

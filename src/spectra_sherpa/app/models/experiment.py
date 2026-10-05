@@ -28,9 +28,7 @@ class Experiment(Base):
     project = relationship("Project", back_populates="experiments")
     files = relationship("ExperimentFile", back_populates="experiment", cascade="all, delete-orphan")
     versions = relationship("ExpVersion", back_populates="experiment", cascade="all, delete-orphan")
-    samples = relationship("Sample", back_populates="experiment", cascade="all, delete-orphan")
-    mixtures = relationship("Mixture", back_populates="experiment", cascade="all, delete-orphan")
-    factor_definitions = relationship("FactorDefinition", back_populates="experiment", cascade="all, delete-orphan")
-    plate_wells = relationship("PlateWell", back_populates="experiment", cascade="all, delete-orphan")
-    run_levels = relationship("RunLevel", back_populates="experiment", cascade="all, delete-orphan")
-    matched_acquisitions = relationship("MatchedAcquisition", back_populates="experiment", cascade="all, delete-orphan")
+    specimens = relationship("ExperimentSpecimen", back_populates="experiment", cascade="all, delete-orphan")
+    acquisition_plan = relationship(
+        "AcquisitionPlan", back_populates="experiment", uselist=False, cascade="all, delete-orphan"
+    )

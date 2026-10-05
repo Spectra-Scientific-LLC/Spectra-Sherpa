@@ -1,11 +1,27 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from spectra_sherpa.app.lib.axes import FeatureAxis
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag.nodes.output import PlotNode
+
+
+def test_frontend_validation_ledger_fixture_matches_canonical_producer():
+    from spectra_sherpa.app.services.dag.regression_comparison import build_regression_comparison
+
+    comparison = build_regression_comparison(
+        [1, 2], [1.1, 1.8], role="held_out_test", sample_labels=["A", "B"], target_names=["density"]
+    )
+    actual = PlotNode("plot", {})._plot_regression_comparison(comparison)["visualization"]
+    fixture = Path(__file__).resolve().parents[1] / "frontend/src/test/fixtures/regression-comparison-plot.json"
+    assert actual == json.loads(fixture.read_text())
+    assert actual["metadata"]["n_rows"] == 2
+    assert actual["data"][-1]["mode"] == "lines"
 
 
 @pytest.mark.anyio
@@ -79,6 +95,69 @@ async def test_plot_node_renders_predicted_vs_actual_payload() -> None:
     assert vis["data"][1]["name"] == "Ideal"
     assert vis["layout"]["xaxis"]["title"] == "Actual"
     assert vis["layout"]["yaxis"]["title"] == "Predicted"
+
+
+@pytest.mark.anyio
+async def test_plot_node_renders_canonical_regression_comparison_as_scatter() -> None:
+    """Row records must never fall through to the categorical-count plot."""
+
+    node = PlotNode(node_id="plot_canonical_comparison", parameters={})
+    rows = [
+        {
+            "sample": "Corn 1",
+            "target": "Moisture",
+            "reference": 10.0,
+            "predicted": 9.8,
+            "residual": 0.2,
+            "role": "held_out_test",
+        },
+        {
+            "sample": "Corn 2",
+            "target": "Moisture",
+            "reference": 11.0,
+            "predicted": 11.1,
+            "residual": -0.1,
+            "role": "held_out_test",
+        },
+    ]
+
+    result = await node.execute(
+        {
+            "schema_version": "spectrasherpa-regression-comparison/1",
+            "shape": [2, 6],
+            "data": rows,
+            "metadata": {
+                "column_names": ["sample", "target", "reference", "predicted", "residual", "role"],
+                "n_samples": 2,
+                "n_targets": 1,
+                "target_names": ["Moisture"],
+                "role": "held_out_test",
+                "residual_definition": "reference_minus_predicted",
+            },
+        }
+    )
+    vis = result["visualization"]
+
+    assert vis["plot_type"] == "scatter"
+    assert vis["metadata"]["source_schema"] == "spectrasherpa-regression-comparison/1"
+    assert [trace["name"] for trace in vis["data"]] == ["Moisture", "1:1 Line"]
+    assert vis["data"][0]["type"] == "scatter"
+    assert vis["data"][0]["x"] == [10.0, 11.0]
+    assert vis["data"][0]["y"] == [9.8, 11.1]
+    assert vis["metadata"]["n_rows"] == 2
+    assert vis["layout"]["title"] == "Predicted vs Reference — Moisture · held out test"
+    assert vis["layout"]["xaxis"] == {
+        "title": "Reference — Moisture",
+        "range": pytest.approx([9.735, 11.165]),
+        "constrain": "domain",
+    }
+    assert vis["layout"]["yaxis"] == {
+        "title": "Predicted — Moisture",
+        "range": pytest.approx([9.735, 11.165]),
+        "scaleanchor": "x",
+        "scaleratio": 1,
+        "constrain": "domain",
+    }
 
 
 @pytest.mark.anyio
@@ -277,6 +356,10 @@ async def test_plot_node_renders_regression_cv_metric_dict() -> None:
         "r2_cv": 0.91,
         "q2": 0.9,
         "bias": -0.01,
+        "sep": 0.11,
+        "slope": 0.98,
+        "intercept": 0.02,
+        "rer": 19.4,
         "per_fold_n_selected": [12, 10, 11],
         "per_fold_mse": [0.01, 0.02, 0.015],
         "selection_method": "vip",
@@ -286,6 +369,13 @@ async def test_plot_node_renders_regression_cv_metric_dict() -> None:
     vis = result["visualization"]
 
     assert vis["plot_type"] == "metrics"
-    assert vis["data"][0]["type"] == "bar"
-    assert "RMSECV" in vis["data"][0]["x"]
-    assert {trace["name"] for trace in vis["data"]} == {"Summary", "Fold MSE", "Variables Selected"}
+    assert {trace["name"] for trace in vis["data"]} == {"Outer-fold RMSE", "Variables Selected"}
+    assert vis["data"][0]["y"] == pytest.approx([0.1, np.sqrt(0.02), np.sqrt(0.015)])
+    assert vis["layout"]["xaxis"]["title"] == "Outer Fold"
+    assert vis["layout"]["yaxis"]["title"] == "Outer-fold RMSE"
+    assert vis["layout"]["yaxis2"]["title"] == "Variables Selected"
+    summary = vis["layout"]["annotations"][0]["text"]
+    assert "RMSECV 0.12" in summary
+    assert "R² CV 0.91" in summary
+    assert "Q² 0.9" in summary
+    assert "RER 19.4" in summary

@@ -299,6 +299,7 @@ class TestGenerateScript:
         sample_workflow: Workflow,
     ):
         proj_id = sample_project["id"]
+        await auth_client.post(f"/api/v1/projects/{proj_id}/workflows/{sample_workflow.id}")
 
         with patch(
             "spectra_sherpa.app.api.v1.routes.project_scripts.generate_python_code",
@@ -326,6 +327,24 @@ class TestGenerateScript:
         assert resp.status_code == 404
 
     @pytest.mark.anyio
+    async def test_generate_script_rejects_workflow_from_another_project(
+        self,
+        auth_client: AsyncClient,
+        sample_project: dict,
+        sample_workflow: Workflow,
+    ):
+        other = await auth_client.post("/api/v1/projects", json={"name": "Other project"})
+        assert other.status_code == 201
+        await auth_client.post(f"/api/v1/projects/{other.json()['id']}/workflows/{sample_workflow.id}")
+
+        response = await auth_client.post(
+            f"/api/v1/projects/{sample_project['id']}/scripts/generate",
+            json={"workflow_id": sample_workflow.id, "name": "cross-project.py"},
+        )
+
+        assert response.status_code == 404
+
+    @pytest.mark.anyio
     async def test_generate_script_export_fails(
         self,
         auth_client: AsyncClient,
@@ -333,6 +352,7 @@ class TestGenerateScript:
         sample_workflow: Workflow,
     ):
         proj_id = sample_project["id"]
+        await auth_client.post(f"/api/v1/projects/{proj_id}/workflows/{sample_workflow.id}")
 
         with patch(
             "spectra_sherpa.app.api.v1.routes.project_scripts.generate_python_code",
@@ -531,7 +551,8 @@ class TestScriptCascade:
         )
 
         # Delete project
-        resp = await auth_client.delete(f"/api/v1/projects/{proj_id}")
+        await auth_client.post(f"/api/v1/projects/{proj_id}/archive")
+        resp = await auth_client.delete(f"/api/v1/projects/{proj_id}?confirm_name=Script%20Test%20Project")
         assert resp.status_code == 204
 
         # Scripts should be gone

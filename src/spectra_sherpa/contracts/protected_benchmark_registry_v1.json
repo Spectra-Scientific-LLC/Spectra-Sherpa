@@ -1,0 +1,301 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://spectrascientific.ai/schemas/protected_benchmark_registry_v1.json",
+  "title": "SpectraSherpa Protected Benchmark Registry v1",
+  "description": "Public, non-disclosing governance metadata for protected benchmark sets. Raw spectra, labels, sample metadata, storage locations, credentials, and access URLs are prohibited.",
+  "type": "object",
+  "required": ["schema_version", "registry_id", "entries"],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "registry_id": {
+      "const": "spectra-protected-benchmarks-v1"
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/protected_entry"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "opaque_ref": {
+      "type": "string",
+      "pattern": "^urn:spectra:[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"
+    },
+    "benchmark_id": {
+      "type": "string",
+      "pattern": "^pbm-[a-z0-9][a-z0-9-]{7,59}$"
+    },
+    "benchmark_status": {
+      "type": "string",
+      "enum": [
+        "public_reproducibility_only",
+        "provisional_internal",
+        "claim_eligible",
+        "retired"
+      ]
+    },
+    "protected_status": {
+      "type": "string",
+      "enum": ["provisional_internal", "claim_eligible", "retired"]
+    },
+    "status_transition": {
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "actor_ref",
+        "decision_digest",
+        "effective_at"
+      ],
+      "properties": {
+        "from": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/protected_status"
+            }
+          ]
+        },
+        "to": {
+          "$ref": "#/definitions/protected_status"
+        },
+        "actor_ref": {
+          "$ref": "#/definitions/opaque_ref"
+        },
+        "decision_digest": {
+          "$ref": "#/definitions/sha256"
+        },
+        "effective_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false
+    },
+    "claim_review": {
+      "type": "object",
+      "required": [
+        "reviewer_ref",
+        "study_operator_ref",
+        "review_digest",
+        "reviewed_at",
+        "independent_of_study_operator"
+      ],
+      "properties": {
+        "reviewer_ref": {
+          "$ref": "#/definitions/opaque_ref"
+        },
+        "study_operator_ref": {
+          "$ref": "#/definitions/opaque_ref"
+        },
+        "review_digest": {
+          "$ref": "#/definitions/sha256"
+        },
+        "reviewed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "independent_of_study_operator": {
+          "const": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "protected_entry": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "benchmark_id",
+        "status",
+        "artifact_attestations",
+        "provenance",
+        "governance",
+        "protocol",
+        "allowed_uses",
+        "prohibited_uses",
+        "status_history"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": "1"
+        },
+        "benchmark_id": {
+          "$ref": "#/definitions/benchmark_id"
+        },
+        "status": {
+          "$ref": "#/definitions/protected_status"
+        },
+        "artifact_attestations": {
+          "type": "object",
+          "required": [
+            "canonicalization",
+            "dataset_digest",
+            "labels_digest",
+            "development_split_digest",
+            "confirmation_split_digest"
+          ],
+          "properties": {
+            "canonicalization": {
+              "const": "sealed-artifact-bytes-v1"
+            },
+            "dataset_digest": {
+              "$ref": "#/definitions/sha256"
+            },
+            "labels_digest": {
+              "$ref": "#/definitions/sha256"
+            },
+            "development_split_digest": {
+              "$ref": "#/definitions/sha256"
+            },
+            "confirmation_split_digest": {
+              "$ref": "#/definitions/sha256"
+            }
+          },
+          "additionalProperties": false
+        },
+        "provenance": {
+          "type": "object",
+          "required": ["source_class", "provenance_ref", "acquired_at"],
+          "properties": {
+            "source_class": {
+              "type": "string",
+              "enum": [
+                "lab_owned",
+                "partner_contributed",
+                "licensed_third_party"
+              ]
+            },
+            "provenance_ref": {
+              "$ref": "#/definitions/opaque_ref"
+            },
+            "acquired_at": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          "additionalProperties": false
+        },
+        "governance": {
+          "type": "object",
+          "required": [
+            "steward_ref",
+            "custodian_ref",
+            "custody_policy_ref",
+            "access_policy_ref",
+            "access_log_ref",
+            "confirmation_nonuse_attestation_digest"
+          ],
+          "properties": {
+            "steward_ref": {
+              "$ref": "#/definitions/opaque_ref"
+            },
+            "custodian_ref": {
+              "$ref": "#/definitions/opaque_ref"
+            },
+            "custody_policy_ref": {
+              "$ref": "#/definitions/opaque_ref"
+            },
+            "access_policy_ref": {
+              "$ref": "#/definitions/opaque_ref"
+            },
+            "access_log_ref": {
+              "$ref": "#/definitions/opaque_ref"
+            },
+            "confirmation_nonuse_attestation_digest": {
+              "$ref": "#/definitions/sha256"
+            }
+          },
+          "additionalProperties": false
+        },
+        "protocol": {
+          "type": "object",
+          "required": ["protocol_ref", "protocol_digest"],
+          "properties": {
+            "protocol_ref": {
+              "$ref": "#/definitions/opaque_ref"
+            },
+            "protocol_digest": {
+              "$ref": "#/definitions/sha256"
+            }
+          },
+          "additionalProperties": false
+        },
+        "allowed_uses": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "blind_confirmation_evaluation",
+              "internal_architectural_evaluation",
+              "claim_eligible_performance_evaluation",
+              "reproducibility_audit"
+            ]
+          }
+        },
+        "prohibited_uses": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": [
+              "workflow_development",
+              "model_selection_tuning",
+              "raw_data_repository_distribution",
+              "public_performance_claims"
+            ]
+          }
+        },
+        "status_history": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/definitions/status_transition"
+          }
+        },
+        "claim_review": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/claim_review"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "claim_eligible"
+              }
+            },
+            "required": ["status"]
+          },
+          "then": {
+            "required": ["claim_review"],
+            "properties": {
+              "claim_review": {
+                "$ref": "#/definitions/claim_review"
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

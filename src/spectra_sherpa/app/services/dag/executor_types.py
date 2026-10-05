@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from spectra_sherpa.core.node_identity import canonical_node_type
+
 
 class WorkflowStatus(str, Enum):
     """Workflow execution status."""
@@ -41,6 +43,9 @@ class WorkflowNode:
     parameters: Dict[str, Any]
     position: Optional[Dict[str, float]] = None  # x, y coordinates for UI
 
+    def __post_init__(self) -> None:
+        self.node_type = canonical_node_type(self.node_type)
+
 
 @dataclass
 class ValidationIssue:
@@ -50,6 +55,7 @@ class ValidationIssue:
     node_id: Optional[str]  # None for graph-level issues
     port: Optional[str]  # Port name if applicable
     message: str
+    code: str = "structural_validation"
 
 
 @dataclass

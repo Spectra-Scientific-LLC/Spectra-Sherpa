@@ -1,7 +1,7 @@
 """Unit coverage for the PR-C run-hygiene changes.
 
 - ``ExecutionRun.status`` CHECK constraint
-- ``_auto_persist_run`` dedups model_ids
+- ``_auto_persist_run`` dedups produced artifact UIDs
 - ``_auto_persist_run`` persists ``source_metadata`` from the route
 - The error-path ``diagnostics["_run_summary"]`` carries serialization-vs-execution
   triage info (asserted via direct call to the route helper).
@@ -21,10 +21,18 @@ from spectra_sherpa.app.api.v1.routes.workflows._helpers import (
 )
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.services.run_artifact_roles import attempted_artifact_fields
 
 # ---------------------------------------------------------------------------
 # M8 — status CHECK constraint
 # ---------------------------------------------------------------------------
+
+
+def test_attempted_artifact_compatibility_mirror_cannot_drift_at_assignment() -> None:
+    values = attempted_artifact_fields(["artifact-a", "artifact-b"])
+
+    assert values["attempted_artifact_uids"] == values["applied_artifact_uids"]
+    assert values["attempted_artifact_uids"] is not values["applied_artifact_uids"]
 
 
 @pytest.mark.asyncio
@@ -67,12 +75,12 @@ async def test_execution_run_status_check_accepts_every_allowlisted_value(test_s
 
 
 # ---------------------------------------------------------------------------
-# L1 — _auto_persist_run dedups model_ids
+# L1 — _auto_persist_run dedups produced artifact UIDs
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_auto_persist_run_dedups_model_ids(test_session, test_user: User):
+async def test_auto_persist_run_dedups_produced_artifact_uids(test_session, test_user: User):
     from spectra_sherpa.app.models.project import Project
     from spectra_sherpa.app.models.workflow import Workflow
 
@@ -96,12 +104,15 @@ async def test_auto_persist_run_dedups_model_ids(test_session, test_user: User):
         final_status="completed",
         error_msg=None,
         integrity_hash=None,
-        model_ids=duplicates,
+        produced_artifact_uids=duplicates,
         params_snapshot={},
     )
     assert run_id is not None
     persisted = (await test_session.execute(select(ExecutionRun).where(ExecutionRun.id == run_id))).scalar_one()
-    assert persisted.model_ids == ["artifact-a", "artifact-b"]
+    assert persisted.produced_artifact_uids == ["artifact-a", "artifact-b"]
+    assert persisted.run_kind == "training"
+    assert not persisted.attempted_artifact_uids
+    assert persisted.applied_artifact_uids == persisted.attempted_artifact_uids
 
 
 # ---------------------------------------------------------------------------
@@ -137,7 +148,7 @@ async def test_auto_persist_run_persists_source_metadata(test_session, test_user
         final_status="completed",
         error_msg=None,
         integrity_hash=None,
-        model_ids=[],
+        produced_artifact_uids=[],
         params_snapshot={},
         source_metadata=meta,
     )

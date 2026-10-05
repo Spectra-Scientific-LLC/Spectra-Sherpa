@@ -5,32 +5,37 @@ description: Peak detection identifies informative spectral regions, then a PLS 
   is built on those regions only.
 category: selection_design
 is_active: true
+status: ready
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Spectral Data
-    parameters:
+    parameters: {}
+    example_binding:
       source: eigenvector
-      eigenvector_dataset: corn_m5
+      dataset_name: corn_m5
+      selected_target: Moisture
+      target_type: continuous
     position_x: 175
     position_y: 50
   - node_id: preprocess_1
     node_type: preprocess.derivative
     label: 2nd Derivative
     parameters:
+      method: savitzky_golay
+      deriv: '2'
+      size: 15
       order: 2
-      window_length: 15
-      polyorder: 2
     position_x: 175
     position_y: 250
   - node_id: partition_1
-    node_type: selection.sample_partition
+    node_type: data.train_test_split
     label: Train/Test Split
     parameters:
-      method: kennard_stone
+      split_method: kennard_stone
       test_size: 0.25
-      n_pcs: 5
+      n_components: 5
     position_x: 175
     position_y: 450
   - node_id: peak_select_train
@@ -51,7 +56,7 @@ template_data:
     position_x: 500
     position_y: 650
   - node_id: model_1
-    node_type: model.pls
+    node_type: model.fitted_pls
     label: PLS on Peak Regions
     parameters:
       n_components: 3
@@ -59,16 +64,15 @@ template_data:
     position_x: 175
     position_y: 850
   - node_id: predict_1
-    node_type: model.pls_predict
+    node_type: model.predict_regression
     label: Predict Test Set
     parameters: {}
     position_x: 500
     position_y: 850
   - node_id: eval_1
-    node_type: diagnostics.holdout_evaluation
+    node_type: diagnostics.regression_evaluator
     label: Test Evaluation
-    parameters:
-      task_type: regression
+    parameters: {}
     position_x: 500
     position_y: 1050
   - node_id: table_1
@@ -90,6 +94,10 @@ template_data:
   - from_node_id: preprocess_1
     to_node_id: partition_1
     to_input: X
+  - from_node_id: data_1
+    to_node_id: partition_1
+    from_output: target
+    to_input: y
   - from_node_id: partition_1
     from_output: X_train
     to_node_id: peak_select_train
@@ -105,37 +113,35 @@ template_data:
   - from_node_id: peak_select_train
     to_node_id: model_1
     from_output: X_selected
-    to_input: X
+    to_input: default
+  - from_node_id: partition_1
+    to_node_id: model_1
+    from_output: y_train
+    to_input: y
   - from_node_id: peak_select_test
     to_node_id: predict_1
     from_output: X_selected
-    to_input: X_new
+    to_input: default
   - from_node_id: model_1
     to_node_id: predict_1
-    from_output: model
-    to_input: model
+    from_output: fitted_state
+    to_input: fitted_state
   - from_node_id: predict_1
     to_node_id: eval_1
-    from_output: y_pred
-    to_input: y_pred
+    from_output: default
+    to_input: default
   - from_node_id: partition_1
     to_node_id: eval_1
     from_output: y_test
     to_input: y_true
-  - from_node_id: model_1
-    to_node_id: eval_1
-    from_output: y_pred
-    to_input: y_train_pred
-  - from_node_id: model_1
-    to_node_id: eval_1
-    from_output: y_true
-    to_input: y_train_true
   - from_node_id: eval_1
     to_node_id: table_1
-    from_output: metrics
+    from_output: default
+    to_input: default
   - from_node_id: eval_1
     to_node_id: viz_1
-    from_output: visualization
+    from_output: comparison
+    to_input: default
   canvas_state:
     zoom: 0.85
     pan_x: 0

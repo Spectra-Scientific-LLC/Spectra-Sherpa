@@ -13,15 +13,18 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import pytest
 
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.lib.sherpa_dataset import (
     SherpaDataset,
     SpectralAxis,
     TargetContext,
 )
+from spectra_sherpa.app.lib.target_authority import issue_target_authority
 from spectra_sherpa.app.services.dag.node_base import node_registry
+from spectra_sherpa.app.services.dag.nodes.data.sample_preparation import attach_selected_target_dataset
+from tests._optional_scp import HAS_SCP
 
 _skip_no_scp = pytest.mark.skipif(not HAS_SCP, reason="spectrochempy not installed")
 
@@ -72,6 +75,36 @@ def _make_dataset_with_target(
     return ds
 
 
+def _load_materialized_reference(
+    tmp_path: Path,
+    reference: dict[str, object],
+    *,
+    selected_target: str,
+    target_type: str,
+) -> SherpaDataset:
+    """Exercise the same reference-to-portable-file boundary used by imports."""
+    from spectra_sherpa.app.services.dag.nodes.data.file_load_node import FileLoadNode
+
+    spectra = np.asarray(reference["spectra"], dtype=np.float64)
+    wavelengths = reference.get("wavelengths")
+    columns = (
+        [str(value) for value in np.asarray(wavelengths).reshape(-1)]
+        if wavelengths is not None
+        else [str(index) for index in range(spectra.shape[1])]
+    )
+    frame = pd.DataFrame(spectra, columns=columns)
+    properties = np.asarray(reference["properties"])
+    for index, property_name in enumerate(reference.get("prop_names") or []):
+        frame[str(property_name)] = properties[:, index]
+    path = tmp_path / "managed-reference.csv"
+    frame.to_csv(path, index_label="sample_id")
+    return FileLoadNode("source", {"experiment_id": 1, "file_id": 1})._load_file(
+        path,
+        selected_target=selected_target,
+        target_type=target_type,
+    )
+
+
 # ---------------------------------------------------------------------------
 # 1. TargetContext.target_names
 # ---------------------------------------------------------------------------
@@ -112,40 +145,99 @@ class TestTargetContext:
 
 
 class TestDataSourceEmbeddedTarget:
-    @pytest.mark.asyncio
-    async def test_eigenvector_corn_m5_embedded(self, make_node, patch_eigenvector_loader):
-        """Corn M5: dataset.target should be (80, 4) with target_names."""
-        node = make_node("data.source", {"source": "eigenvector", "eigenvector_dataset": "corn_m5"})
-        result = await node.execute()
-        dataset = result["default"]
+    @pytest.mark.parametrize(
+        ("target_name", "target_index"),
+        [("Moisture", 0), ("Oil", 1), ("Protein", 2), ("Starch", 3)],
+    )
+    def test_eigenvector_corn_m5_embedded(
+        self,
+        tmp_path: Path,
+        patch_eigenvector_loader,
+        target_name: str,
+        target_index: int,
+    ):
+        """Every Corn response remains available through explicit selection."""
+        reference = patch_eigenvector_loader("corn_m5")
+        dataset = _load_materialized_reference(
+            tmp_path,
+            reference,
+            selected_target=target_name,
+            target_type="continuous",
+        )
 
         assert dataset.target is not None
-        assert dataset.target.shape == (80, 4)
+        assert dataset.target.shape == (80,)
+        np.testing.assert_allclose(dataset.target, np.asarray(reference["properties"])[:, target_index])
         assert dataset.target_context.target_type == "continuous"
-        assert dataset.target_context.target_names == ["Moisture", "Oil", "Protein", "Starch"]
-        # Target output port should be derived from embedded
-        np.testing.assert_array_equal(result["target"], dataset.target)
+        assert dataset.target_context.selected_target == target_name
 
-    @pytest.mark.asyncio
-    async def test_sklearn_iris_embedded(self, make_node):
-        """sklearn iris: dataset.target should be embedded with categorical context."""
-        node = make_node("data.source", {"source": "sklearn", "sklearn_dataset": "iris"})
-        result = await node.execute()
-        dataset = result["default"]
+    def test_sklearn_iris_embedded(self, tmp_path: Path):
+        """A materialized categorical reference preserves all Iris classes."""
+        from sklearn.datasets import load_iris
+
+        iris = load_iris()
+        reference = {
+            "spectra": iris.data,
+            "wavelengths": None,
+            "properties": np.asarray(iris.target).reshape(-1, 1),
+            "prop_names": ["species"],
+        }
+        dataset = _load_materialized_reference(
+            tmp_path,
+            reference,
+            selected_target="species",
+            target_type="categorical",
+        )
 
         assert dataset.target is not None
         assert len(dataset.target) == 150
         assert dataset.target_context.target_type == "categorical"
 
-    @pytest.mark.asyncio
-    async def test_target_port_matches_embedded(self, make_node, patch_eigenvector_loader):
-        """Target output port should be exactly dataset.target."""
-        node = make_node("data.source", {"source": "eigenvector", "eigenvector_dataset": "diesel_nir"})
-        result = await node.execute()
-        dataset = result["default"]
-        target_port = result["target"]
+    def test_target_port_matches_embedded(self, tmp_path: Path, patch_eigenvector_loader):
+        """The canonical target port is the embedded response object."""
+        from spectra_sherpa.app.services.dag.io_contracts import extract_target_like
+
+        dataset = _load_materialized_reference(
+            tmp_path,
+            patch_eigenvector_loader("diesel_nir"),
+            selected_target="CN",
+            target_type="continuous",
+        )
+        target_port = extract_target_like(dataset)
 
         assert target_port is dataset.target
+
+    def test_exact_native_response_selection_does_not_require_a_sample_table(self):
+        dataset = _make_dataset_with_target(
+            n_samples=12,
+            n_features=8,
+            n_targets=2,
+            target_names=["Carbon dioxide", "Water"],
+        )
+        dataset.target_context.target_units = "ppm"
+        dataset.meta["source_collection"] = {
+            "scientific_collection_sha256": "a" * 64,
+            "manifest_digest": "b" * 64,
+        }
+        authority = issue_target_authority(
+            dataset,
+            column="Carbon dioxide",
+            target_type="continuous",
+        )
+
+        selected = attach_selected_target_dataset(
+            dataset,
+            target_type="continuous",
+            target_column="Carbon dioxide",
+            node_id="data_1",
+            target_authority=authority,
+        )
+
+        np.testing.assert_array_equal(selected.target, np.asarray(dataset.target)[:, 0])
+        assert selected.target_context.selected_target == "Carbon dioxide"
+        assert selected.target_context.target_names == ["Carbon dioxide"]
+        assert selected.target_context.selected_authority == authority
+        assert selected.meta.get("supervision_binding") is None
 
 
 # ---------------------------------------------------------------------------
@@ -159,11 +251,11 @@ class TestSingleWirePLS:
     async def test_pls_infers_target_from_dataset(self, make_node):
         """PLS should extract y from dataset.target when y not wired."""
         ds = _make_dataset_with_target(n_samples=50, n_features=100, n_targets=1)
-        node = make_node("model.pls", {"n_components": 2, "scale": True})
-        result = await node.execute(X=ds)
+        node = make_node("model.fitted_pls", {"n_components": 2, "scale": True})
+        result = await node.execute(input_data=ds)
 
-        assert "default" in result.outputs  # X_scores
-        assert "model" in result.outputs
+        assert "default" in result.outputs
+        assert "fitted_state" in result.outputs
 
     @_skip_no_scp
     @pytest.mark.asyncio
@@ -175,11 +267,11 @@ class TestSingleWirePLS:
             n_targets=4,
             target_names=["Moisture", "Oil", "Protein", "Starch"],
         )
-        node = make_node("model.pls", {"n_components": 3, "scale": True})
-        result = await node.execute(X=ds)
+        node = make_node("model.fitted_pls", {"n_components": 3, "scale": True})
+        result = await node.execute(input_data=ds)
 
-        assert "model" in result.outputs
-        assert "default" in result.outputs  # X_scores
+        assert "fitted_state" in result.outputs
+        assert result.outputs["default"].shape == (50, 4)
 
     @_skip_no_scp
     @pytest.mark.asyncio
@@ -188,10 +280,10 @@ class TestSingleWirePLS:
         ds = _make_dataset_with_target(n_samples=50, n_features=100, n_targets=1)
         # Provide explicit y that differs from embedded
         explicit_y = np.random.randn(50)
-        node = make_node("model.pls", {"n_components": 2, "scale": True})
-        result = await node.execute(X=ds, y=explicit_y)
+        node = make_node("model.fitted_pls", {"n_components": 2, "scale": True})
+        result = await node.execute(input_data=ds, y=explicit_y)
 
-        assert "model" in result.outputs
+        assert "fitted_state" in result.outputs
 
     @_skip_no_scp
     @pytest.mark.asyncio
@@ -208,11 +300,10 @@ class TestSingleWirePLS:
             target_context=TargetContext(target_type="continuous", target_names=["Moisture", "Oil"]),
             backend="numpy",
         )
-        node = make_node("model.pls", {"n_components": 2, "scale": True})
-        result = await node.execute(X=ds, y=explicit_y)
+        node = make_node("model.fitted_pls", {"n_components": 2, "scale": True})
+        result = await node.execute(input_data=ds, y=explicit_y)
 
-        assert result.outputs["default"].meta.get("target_names") == ["Moisture", "Oil"]
-        assert list(result.outputs["Y_loadings"].sample_axis.labels) == ["Moisture", "Oil"]
+        assert result.outputs["default"].shape == (50, 2)
 
     @pytest.mark.asyncio
     async def test_pls_no_target_gives_helpful_error(self, make_node):
@@ -221,9 +312,9 @@ class TestSingleWirePLS:
             X=np.random.randn(50, 100),
             backend="numpy",
         )
-        node = make_node("model.pls", {"n_components": 2})
-        with pytest.raises(ValueError, match="No target values found"):
-            await node.execute(X=ds)
+        node = make_node("model.fitted_pls", {"n_components": 2})
+        with pytest.raises(ValueError, match="requires training targets"):
+            await node.execute(input_data=ds)
 
 
 # ---------------------------------------------------------------------------
@@ -280,8 +371,8 @@ class TestAttachTarget:
 class TestMyDatasetEmbeddedCsvTargets:
     @_skip_no_scp
     def test_axis_column_csv_loads_shared_x_axis_as_two_spectra(self, make_node, tmp_path: Path):
-        """MyDataset must not treat a shared wavenumber column as an intensity column."""
-        node = make_node("data.my_dataset", {"dataset_id": 1})
+        """Canonical file loading recognizes a shared wavenumber column."""
+        node = make_node("data.file_load", {"experiment_id": 1, "file_id": 1})
 
         csv_path = tmp_path / "axis_column.csv"
         csv_path.write_text(
@@ -289,15 +380,13 @@ class TestMyDatasetEmbeddedCsvTargets:
             encoding="ascii",
         )
 
-        loaded = node._load_file(str(csv_path), file_name="axis_column.csv")
-        dataset = loaded.dataset
+        dataset = node._load_file(str(csv_path))
 
         assert isinstance(dataset, SherpaDataset)
         assert dataset.shape == (2, 3)
         assert dataset.data_role == "X_spectra"
         assert dataset.get_extra("csv.layout") == "axis_column_conditions"
-        assert loaded.embedded_target_names is None
-        assert loaded.embedded_target_data is None
+        assert dataset.target is None
         assert dataset.feature_axis.title == "Wavenumber"
         assert dataset.feature_axis.units == "cm-1"
         assert dataset.sample_axis.labels == ["Condition A", "Condition B"]
@@ -305,9 +394,9 @@ class TestMyDatasetEmbeddedCsvTargets:
         np.testing.assert_allclose(dataset.X, np.array([[1.0, 2.0, 3.0], [10.0, 20.0, 30.0]]))
 
     @_skip_no_scp
-    def test_embedded_csv_targets_concatenate_in_file_order(self, make_node, tmp_path: Path):
-        """MyDataset should concatenate embedded CSV property blocks across spectral files."""
-        node = make_node("data.my_dataset", {"dataset_id": 1})
+    def test_each_exact_csv_file_exposes_its_selected_target(self, make_node, tmp_path: Path):
+        """Canonical loading keeps each file visible and binds one response."""
+        node = make_node("data.file_load", {"experiment_id": 1, "file_id": 1})
 
         csv_a = tmp_path / "part_a.csv"
         csv_b = tmp_path / "part_b.csv"
@@ -321,26 +410,13 @@ class TestMyDatasetEmbeddedCsvTargets:
         )
 
         loaded = [
-            node._load_file(str(csv_a), file_name="part_a.csv"),
-            node._load_file(str(csv_b), file_name="part_b.csv"),
+            node._load_file(str(csv_a), selected_target="Moisture", target_type="continuous"),
+            node._load_file(str(csv_b), selected_target="Moisture", target_type="continuous"),
         ]
 
-        embedded = node._combine_embedded_targets(loaded)
-        assert embedded is not None
-        target_data, target_names, target_units = embedded
-        assert target_names == ["Moisture", "Oil"]
-        assert target_units is None
-        np.testing.assert_allclose(
-            target_data,
-            np.array(
-                [
-                    [10.0, 4.0],
-                    [11.0, 5.0],
-                    [12.0, 6.0],
-                    [13.0, 7.0],
-                ]
-            ),
-        )
+        np.testing.assert_allclose(loaded[0].target, [10.0, 11.0])
+        np.testing.assert_allclose(loaded[1].target, [12.0, 13.0])
+        assert all(dataset.target_context.selected_target == "Moisture" for dataset in loaded)
 
     @pytest.mark.asyncio
     async def test_attach_categorical_target(self, make_node):
@@ -374,7 +450,7 @@ class TestMyDatasetEmbeddedCsvTargets:
         attach_result = await attach_node.execute(X=ds, y=y)
         ds_with_target = attach_result["default"]
 
-        pls_node = make_node("model.pls", {"n_components": 2, "scale": True}, node_id="pls")
-        pls_result = await pls_node.execute(X=ds_with_target)  # No y — inferred from embedded
+        pls_node = make_node("model.fitted_pls", {"n_components": 2, "scale": True}, node_id="pls")
+        pls_result = await pls_node.execute(input_data=ds_with_target)  # No y — inferred from embedded
 
-        assert "model" in pls_result.outputs
+        assert "fitted_state" in pls_result.outputs

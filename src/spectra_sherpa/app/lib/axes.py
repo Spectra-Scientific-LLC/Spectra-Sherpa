@@ -16,14 +16,32 @@ This module provides a hierarchy of axis types:
 from __future__ import annotations
 
 import copy
-from typing import Annotated, Any
+from collections.abc import Iterator
+from typing import Annotated, Any, TypeVar, cast
 
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, field_validator, model_validator
 from pydantic import GetCoreSchemaHandler as _GetCoreSchemaHandler
 from pydantic import GetJsonSchemaHandler as _GetJsonSchemaHandler
 from pydantic.json_schema import JsonSchemaValue as _JsonSchemaValue
 from pydantic_core import core_schema as _cs
+
+from spectra_sherpa.app.lib.scientific_values import (
+    LosslessScalar,
+    lossless_json_scalar,
+    lossless_scalar_identity,
+)
+from spectra_sherpa.core.axis_semantics import (
+    AxisQuantity,
+    axis_semantics,
+)
+
+MAX_AXIS_SETS_PER_KIND = 64
+MAX_AXIS_SET_NAME_CHARS = 256
+MAX_AXIS_TEXT_CHARS = 4096
+MAX_AXIS_SET_LENGTH = 10_000_000
+MAX_AXIS_TOTAL_ALIGNED_VALUES = 10_000_000
+MAX_AXIS_TOTAL_TEXT_BYTES = 16 * 1024 * 1024
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Pydantic-compatible numpy array type
@@ -70,6 +88,168 @@ NpArray = Annotated[np.ndarray, _NpArrayPydanticAnnotation]
 """Numpy array type that is JSON-schema compatible for Pydantic models."""
 
 
+def _closed_text(value: object, *, field_name: str, max_chars: int = MAX_AXIS_TEXT_CHARS) -> str:
+    if not isinstance(value, str) or not value or value != value.strip() or len(value) > max_chars:
+        raise ValueError(f"{field_name} must be bounded, non-empty, and whitespace-canonical")
+    return value
+
+
+def _aligned_numeric_values(value: object, *, field_name: str) -> np.ndarray:
+    if isinstance(value, (str, bytes)):
+        raise ValueError(f"{field_name} must be a one-dimensional numeric array")
+    array = np.asarray(value)
+    if array.ndim != 1 or array.size > MAX_AXIS_SET_LENGTH:
+        raise ValueError(f"{field_name} must be a bounded one-dimensional numeric array")
+    if array.dtype.kind not in "iuf":
+        raise ValueError(f"{field_name} must contain real numeric values")
+    normalized = np.asarray(array, dtype=np.float64).copy()
+    if not np.all(np.isfinite(normalized)):
+        raise ValueError(f"{field_name} contains non-finite values")
+    normalized.setflags(write=False)
+    return normalized
+
+
+class AxisScaleSet(BaseModel):
+    """One named alternate numeric coordinate scale aligned to an axis."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True, extra="forbid")
+
+    name: str
+    values: NpArray
+    title: str | None = None
+    units: str | None = None
+    axis_type: str | None = None
+    source_set_index: int = Field(ge=0, strict=True)
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: object) -> str:
+        return _closed_text(value, field_name="axis scale-set name", max_chars=MAX_AXIS_SET_NAME_CHARS)
+
+    @field_validator("title", "units", "axis_type")
+    @classmethod
+    def _validate_optional_text(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return _closed_text(value, field_name="axis scale-set text")
+
+    @field_validator("values", mode="before")
+    @classmethod
+    def _validate_values(cls, value: object) -> np.ndarray:
+        return _aligned_numeric_values(value, field_name="axis scale set")
+
+
+class AxisLabelSet(BaseModel):
+    """One named alternate text-label set aligned to an axis."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str
+    values: tuple[str, ...]
+    source_set_index: int = Field(ge=0, strict=True)
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: object) -> str:
+        return _closed_text(value, field_name="axis label-set name", max_chars=MAX_AXIS_SET_NAME_CHARS)
+
+    @field_validator("values", mode="before")
+    @classmethod
+    def _validate_values(cls, value: object) -> tuple[str, ...]:
+        if isinstance(value, (str, bytes)):
+            raise ValueError("axis label set must be an aligned sequence")
+        try:
+            values: tuple[Any, ...] = tuple(value)  # type: ignore[arg-type]
+        except TypeError as exc:
+            raise ValueError("axis label set must be an aligned sequence") from exc
+        if len(values) > MAX_AXIS_SET_LENGTH:
+            raise ValueError("axis label set exceeds the aligned-value limit")
+        return tuple(_closed_text(item, field_name="axis label") for item in values)
+
+
+class AxisTitleSet(BaseModel):
+    """One named alternate mode title."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str
+    title: str
+    source_set_index: int = Field(ge=0, strict=True)
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: object) -> str:
+        return _closed_text(value, field_name="axis title-set name", max_chars=MAX_AXIS_SET_NAME_CHARS)
+
+    @field_validator("title")
+    @classmethod
+    def _validate_title(cls, value: object) -> str:
+        return _closed_text(value, field_name="axis title")
+
+
+class AxisClassLevel(BaseModel):
+    """One type-preserving class code and its display label."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    code: LosslessScalar
+    label: str
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def _validate_code(cls, value: object) -> LosslessScalar:
+        return lossless_json_scalar(value, max_text_chars=MAX_AXIS_TEXT_CHARS, field_name="axis class level")
+
+    @field_validator("label")
+    @classmethod
+    def _validate_label(cls, value: object) -> str:
+        return _closed_text(value, field_name="axis class display label")
+
+
+class AxisClassSet(BaseModel):
+    """One named, aligned classification scheme for an axis."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    name: str
+    values: tuple[LosslessScalar, ...]
+    levels: tuple[AxisClassLevel, ...] = ()
+    source_set_index: int = Field(ge=0, strict=True)
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: object) -> str:
+        return _closed_text(value, field_name="axis class-set name", max_chars=MAX_AXIS_SET_NAME_CHARS)
+
+    @field_validator("values", mode="before")
+    @classmethod
+    def _validate_values(cls, value: object) -> tuple[LosslessScalar, ...]:
+        if isinstance(value, (str, bytes)):
+            raise ValueError("axis class set must be an aligned sequence")
+        try:
+            values: tuple[Any, ...] = tuple(value)  # type: ignore[arg-type]
+        except TypeError as exc:
+            raise ValueError("axis class set must be an aligned sequence") from exc
+        if len(values) > MAX_AXIS_SET_LENGTH:
+            raise ValueError("axis class set exceeds the aligned-value limit")
+        return tuple(
+            lossless_json_scalar(item, max_text_chars=MAX_AXIS_TEXT_CHARS, field_name="axis class set")
+            for item in values
+        )
+
+    @model_validator(mode="after")
+    def _validate_levels(self) -> AxisClassSet:
+        level_identities = [lossless_scalar_identity(level.code) for level in self.levels]
+        if len(level_identities) != len(set(level_identities)):
+            raise ValueError("axis class set contains duplicate typed class levels")
+        if self.levels:
+            admitted = set(level_identities)
+            missing = {lossless_scalar_identity(value) for value in self.values if value is not None} - admitted
+            if missing:
+                raise ValueError("axis class set values are absent from its class-level lookup")
+        return self
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Base Axis Class
 # ═══════════════════════════════════════════════════════════════════════════
@@ -85,8 +265,56 @@ class AxisInfo(BaseModel):
     )
     labels: list[str] | None = Field(None, description="Optional text labels for axis points")
     units: str | None = Field(None, description="Physical units (e.g., 'cm-1', 'nm', 'min', 'm/z', 'V')")
+    display_units: str | None = Field(
+        None,
+        description="Original source spelling retained for display when units were canonicalized",
+    )
+    quantity: AxisQuantity | None = Field(
+        None,
+        description="Canonical physical meaning of the coordinate axis; distinct from its units",
+    )
     title: str | None = Field(None, description="Human-readable axis title")
+    include_mask: NpArray | None = Field(
+        None, description="Boolean mask indicating which positions on this dimension are included"
+    )
+    primary_scale_name: str | None = Field(None, description="Name of the primary values/units coordinate scale")
+    alternate_scales: tuple[AxisScaleSet, ...] = Field(default_factory=tuple)
+    primary_label_name: str | None = Field(None, description="Name of the primary labels projection")
+    alternate_label_sets: tuple[AxisLabelSet, ...] = Field(default_factory=tuple)
+    primary_title_name: str | None = Field(None, description="Name of the primary mode-title projection")
+    alternate_title_sets: tuple[AxisTitleSet, ...] = Field(default_factory=tuple)
+    class_sets: tuple[AxisClassSet, ...] = Field(default_factory=tuple)
+    primary_class_set_name: str | None = Field(None, description="Selected compatibility class-set name")
     _expected_length: int | None = PrivateAttr(default=None)
+
+    @field_validator(
+        "primary_scale_name",
+        "primary_label_name",
+        "primary_title_name",
+        "primary_class_set_name",
+    )
+    @classmethod
+    def _validate_primary_name(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return _closed_text(value, field_name="primary axis-set name", max_chars=MAX_AXIS_SET_NAME_CHARS)
+
+    @field_validator("units", "display_units", "title")
+    @classmethod
+    def _validate_axis_text(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        return _closed_text(value, field_name="axis text")
+
+    @field_validator("include_mask", mode="before")
+    @classmethod
+    def _validate_include_mask_type(cls, value: object) -> np.ndarray | None:
+        if value is None:
+            return None
+        array = np.asarray(value)
+        if array.ndim != 1 or array.size > MAX_AXIS_SET_LENGTH or array.dtype.kind != "b":
+            raise ValueError("axis include_mask must be a bounded one-dimensional boolean array")
+        return array.astype(bool, copy=True)
 
     @property
     def data(self) -> np.ndarray | None:
@@ -95,10 +323,20 @@ class AxisInfo(BaseModel):
 
     @property
     def length(self) -> int:
+        if self._expected_length is not None:
+            return self._expected_length
         if self.values is not None:
             return len(self.values)
         if self.labels is not None:
             return len(self.labels)
+        if self.include_mask is not None:
+            return len(self.include_mask)
+        if self.alternate_scales:
+            return len(self.alternate_scales[0].values)
+        if self.alternate_label_sets:
+            return len(self.alternate_label_sets[0].values)
+        if self.class_sets:
+            return len(self.class_sets[0].values)
         return 0
 
     @property
@@ -109,15 +347,7 @@ class AxisInfo(BaseModel):
         return self.length
 
     def copy(self) -> AxisInfo:
-        cp = AxisInfo(
-            values=self.values.copy() if self.values is not None else None,
-            labels=list(self.labels) if self.labels is not None else None,
-            units=self.units,
-            title=self.title,
-        )
-        if self._expected_length is not None:
-            cp.bind_expected_length(self._expected_length)
-        return cp
+        return copy.deepcopy(self)
 
     def bind_expected_length(self, expected: int) -> None:
         """Attach axis length constraint used for runtime assignment checks."""
@@ -136,6 +366,84 @@ class AxisInfo(BaseModel):
                 raise ValueError(f"Axis values length ({value_len}) != expected length ({self._expected_length})")
             if label_len is not None and label_len != self._expected_length:
                 raise ValueError(f"Axis labels length ({label_len}) != expected length ({self._expected_length})")
+        expected = self._expected_length
+        if expected is None:
+            expected = value_len if value_len is not None else label_len
+        aligned_lengths: list[tuple[str, int]] = []
+        if self.include_mask is not None:
+            aligned_lengths.append(("include_mask", len(self.include_mask)))
+        aligned_lengths.extend((f"alternate_scales[{item.name}]", len(item.values)) for item in self.alternate_scales)
+        aligned_lengths.extend(
+            (f"alternate_label_sets[{item.name}]", len(item.values)) for item in self.alternate_label_sets
+        )
+        aligned_lengths.extend((f"class_sets[{item.name}]", len(item.values)) for item in self.class_sets)
+        if expected is None and aligned_lengths:
+            expected = aligned_lengths[0][1]
+        if expected is not None:
+            for field_name, actual in aligned_lengths:
+                if actual != expected:
+                    raise ValueError(f"{field_name} length ({actual}) != expected length ({expected})")
+
+        collections: tuple[tuple[str, tuple[Any, ...], str | None], ...] = (
+            ("alternate scale", self.alternate_scales, self.primary_scale_name),
+            ("alternate label", self.alternate_label_sets, self.primary_label_name),
+            ("alternate title", self.alternate_title_sets, self.primary_title_name),
+            ("class", self.class_sets, None),
+        )
+        for kind, items, primary_name in collections:
+            if len(items) > MAX_AXIS_SETS_PER_KIND:
+                raise ValueError(f"axis exceeds the {MAX_AXIS_SETS_PER_KIND} {kind}-set limit")
+            names = [item.name for item in items]
+            indices = [item.source_set_index for item in items]
+            if len(names) != len(set(names)) or len(indices) != len(set(indices)):
+                raise ValueError(f"axis contains duplicate {kind}-set identities")
+            if primary_name is not None and primary_name in names:
+                raise ValueError(f"axis {kind} sets duplicate the primary projection")
+        if self.primary_class_set_name is not None and self.primary_class_set_name not in {
+            item.name for item in self.class_sets
+        }:
+            raise ValueError("primary_class_set_name does not identify an admitted class set")
+        aligned_values = sum(
+            len(values)
+            for values in (
+                self.values if self.values is not None else (),
+                self.labels or (),
+                self.include_mask if self.include_mask is not None else (),
+                *(item.values for item in self.alternate_scales),
+                *(item.values for item in self.alternate_label_sets),
+                *(item.values for item in self.class_sets),
+            )
+        )
+        if aligned_values > MAX_AXIS_TOTAL_ALIGNED_VALUES:
+            raise ValueError("axis aligned metadata exceeds the aggregate value limit")
+
+        def text_values() -> Iterator[str | None]:
+            yield self.units
+            yield self.display_units
+            yield self.title
+            yield self.primary_scale_name
+            yield self.primary_label_name
+            yield self.primary_title_name
+            yield self.primary_class_set_name
+            for scale in self.alternate_scales:
+                yield scale.name
+                yield scale.title
+                yield scale.units
+                yield scale.axis_type
+            for label_set in self.alternate_label_sets:
+                yield label_set.name
+                yield from label_set.values
+            for title_set in self.alternate_title_sets:
+                yield title_set.name
+                yield title_set.title
+            for class_set in self.class_sets:
+                yield class_set.name
+                yield from (level.label for level in class_set.levels)
+                yield from (value for value in class_set.values if isinstance(value, str))
+
+        text_bytes = sum(len(value.encode("utf-8")) for value in text_values() if isinstance(value, str))
+        if text_bytes > MAX_AXIS_TOTAL_TEXT_BYTES:
+            raise ValueError("axis aligned metadata exceeds the aggregate text limit")
         return self
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -196,9 +504,6 @@ class FeatureAxis(AxisInfo):
 
     # --- Feature selection contract ---
     # Mirrors SampleAxis.include_mask for the feature dimension.
-    include_mask: NpArray | None = Field(
-        None, description="Boolean mask indicating which features are selected (True = included)"
-    )
     selection_scores: NpArray | None = Field(
         None, description="Importance scores from variable selection (e.g. VIP, selectivity ratio)"
     )
@@ -262,18 +567,7 @@ class FeatureAxis(AxisInfo):
         return (float(np.min(self.values)), float(np.max(self.values)))
 
     def copy(self) -> FeatureAxis:
-        cp = FeatureAxis(
-            values=self.values.copy() if self.values is not None else None,
-            labels=list(self.labels) if self.labels is not None else None,
-            units=self.units,
-            title=self.title,
-            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
-            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
-            selection_method=self.selection_method,
-        )
-        if self._expected_length is not None:
-            cp.bind_expected_length(self._expected_length)
-        return cp
+        return copy.deepcopy(self)
 
     def select_region(self, start: float, end: float) -> np.ndarray:
         """Boolean mask for values within [start, end] (inclusive, order-independent)."""
@@ -343,12 +637,6 @@ class FeatureAxis(AxisInfo):
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-# Spectroscopy unit sets for axis_type detection
-_WAVENUMBER_UNITS = frozenset({"cm-1", "cm⁻¹", "1/cm", "cm^-1"})
-_WAVELENGTH_NM_UNITS = frozenset({"nm", "nanometer", "nanometers"})
-_WAVELENGTH_UM_UNITS = frozenset({"um", "µm", "\u03bcm", "micron", "microns", "micrometer", "micrometers"})
-
-
 class SpectralAxis(FeatureAxis):
     """Spectral axis for spectroscopy (wavelength/wavenumber).
 
@@ -360,31 +648,53 @@ class SpectralAxis(FeatureAxis):
 
     @property
     def axis_type(self) -> str | None:
-        """Detect: 'wavenumber', 'wavelength_nm', 'wavelength_um', or None."""
-        if self.units is None:
-            return None
-        u = self.units.lower().strip()
-        if u in _WAVENUMBER_UNITS:
+        """Return quantity-aware spectral type; Raman shift is not wavenumber."""
+        semantics = axis_semantics(
+            axis_class=type(self).__name__,
+            title=self.title,
+            units=self.units,
+            quantity=self.quantity,
+        )
+        if semantics.quantity is AxisQuantity.RAMAN_SHIFT:
+            return "raman_shift"
+        if semantics.quantity is AxisQuantity.WAVENUMBER:
             return "wavenumber"
-        if u in _WAVELENGTH_NM_UNITS:
+        if semantics.quantity is AxisQuantity.WAVELENGTH and semantics.units == "nm":
             return "wavelength_nm"
-        if u in _WAVELENGTH_UM_UNITS:
+        if semantics.quantity is AxisQuantity.WAVELENGTH and semantics.units == "µm":
             return "wavelength_um"
         return None
 
     def copy(self) -> SpectralAxis:
-        cp = SpectralAxis(
-            values=self.values.copy() if self.values is not None else None,
-            labels=list(self.labels) if self.labels is not None else None,
-            units=self.units,
-            title=self.title,
-            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
-            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
-            selection_method=self.selection_method,
-        )
-        if self._expected_length is not None:
-            cp.bind_expected_length(self._expected_length)
-        return cp
+        return copy.deepcopy(self)
+
+
+def canonicalize_feature_axis(axis: FeatureAxis) -> FeatureAxis:
+    """Return a reader-boundary axis with canonical units and quantity.
+
+    The source spelling remains in ``display_units`` whenever normalization
+    changes it.  This makes scientific comparisons use one vocabulary without
+    erasing what the instrument or interchange file actually said.
+    """
+
+    semantics = axis_semantics(
+        axis_class=type(axis).__name__,
+        title=axis.title,
+        units=axis.units,
+        quantity=axis.quantity,
+    )
+    display_units = axis.display_units
+    if display_units is None and axis.units is not None and axis.units != semantics.units:
+        display_units = axis.units
+    payload = axis.model_dump(mode="python")
+    payload.update(
+        {
+            "units": semantics.units,
+            "display_units": display_units,
+            "quantity": semantics.quantity,
+        }
+    )
+    return type(axis).model_validate(payload)
 
 
 # Chromatography unit sets
@@ -422,18 +732,7 @@ class TimeAxis(FeatureAxis):
         return None
 
     def copy(self) -> TimeAxis:
-        cp = TimeAxis(
-            values=self.values.copy() if self.values is not None else None,
-            labels=list(self.labels) if self.labels is not None else None,
-            units=self.units,
-            title=self.title,
-            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
-            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
-            selection_method=self.selection_method,
-        )
-        if self._expected_length is not None:
-            cp.bind_expected_length(self._expected_length)
-        return cp
+        return copy.deepcopy(self)
 
 
 # Mass spectrometry unit sets
@@ -461,18 +760,7 @@ class MZAxis(FeatureAxis):
         return None
 
     def copy(self) -> MZAxis:
-        cp = MZAxis(
-            values=self.values.copy() if self.values is not None else None,
-            labels=list(self.labels) if self.labels is not None else None,
-            units=self.units,
-            title=self.title,
-            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
-            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
-            selection_method=self.selection_method,
-        )
-        if self._expected_length is not None:
-            cp.bind_expected_length(self._expected_length)
-        return cp
+        return copy.deepcopy(self)
 
 
 # Electrochemistry unit sets
@@ -504,18 +792,7 @@ class PotentialAxis(FeatureAxis):
         return None
 
     def copy(self) -> PotentialAxis:
-        cp = PotentialAxis(
-            values=self.values.copy() if self.values is not None else None,
-            labels=list(self.labels) if self.labels is not None else None,
-            units=self.units,
-            title=self.title,
-            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
-            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
-            selection_method=self.selection_method,
-        )
-        if self._expected_length is not None:
-            cp.bind_expected_length(self._expected_length)
-        return cp
+        return copy.deepcopy(self)
 
 
 # NMR / dielectric spectroscopy unit sets
@@ -548,18 +825,7 @@ class FrequencyAxis(FeatureAxis):
         return None
 
     def copy(self) -> FrequencyAxis:
-        cp = FrequencyAxis(
-            values=self.values.copy() if self.values is not None else None,
-            labels=list(self.labels) if self.labels is not None else None,
-            units=self.units,
-            title=self.title,
-            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
-            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
-            selection_method=self.selection_method,
-        )
-        if self._expected_length is not None:
-            cp.bind_expected_length(self._expected_length)
-        return cp
+        return copy.deepcopy(self)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -607,18 +873,7 @@ class SpatialAxis(FeatureAxis):
         return None
 
     def copy(self) -> SpatialAxis:
-        cp = SpatialAxis(
-            values=self.values.copy() if self.values is not None else None,
-            labels=list(self.labels) if self.labels is not None else None,
-            units=self.units,
-            title=self.title,
-            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
-            selection_scores=self.selection_scores.copy() if self.selection_scores is not None else None,
-            selection_method=self.selection_method,
-        )
-        if self._expected_length is not None:
-            cp.bind_expected_length(self._expected_length)
-        return cp
+        return copy.deepcopy(self)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -630,15 +885,37 @@ class SampleAxis(AxisInfo):
     """Sample axis with per-sample metadata."""
 
     classes: NpArray | None = Field(None, description="Class assignments for each sample (classification tasks)")
-    include_mask: NpArray | None = Field(
-        None, description="Boolean mask indicating which samples are included (soft delete)"
-    )
     exclusion_reasons: list[str | None] | None = Field(
         None, description="Reason for exclusion for each excluded sample"
     )
     sample_table: dict[str, list[Any]] | None = Field(
         None, description="Tabular metadata (arbitrary columns) for samples"
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _project_primary_class_set(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or value.get("classes") is not None:
+            return value
+        primary_name = value.get("primary_class_set_name")
+        if primary_name is None:
+            return value
+        for item in value.get("class_sets") or ():
+            if isinstance(item, AxisClassSet):
+                name = item.name
+                values = item.values
+            elif isinstance(item, dict):
+                name = item.get("name")
+                values = item.get("values")
+            else:
+                continue
+            if name == primary_name:
+                if isinstance(values, (str, bytes)) or values is None:
+                    return value
+                projected = dict(value)
+                projected["classes"] = np.asarray(tuple(values), dtype=object)
+                return projected
+        return value
 
     @model_validator(mode="after")
     def _validate_sample_fields(self) -> SampleAxis:
@@ -654,6 +931,16 @@ class SampleAxis(AxisInfo):
             for key, values in self.sample_table.items():
                 if len(values) != n:
                     raise ValueError(f"sample_table[{key!r}] length ({len(values)}) != expected length ({n})")
+        if self.classes is not None and self.primary_class_set_name is not None:
+            primary = next(item for item in self.class_sets if item.name == self.primary_class_set_name)
+            compatibility = tuple(
+                lossless_json_scalar(item, max_text_chars=MAX_AXIS_TEXT_CHARS, field_name="sample classes")
+                for item in self.classes.tolist()
+            )
+            if tuple(map(lossless_scalar_identity, compatibility)) != tuple(
+                map(lossless_scalar_identity, primary.values)
+            ):
+                raise ValueError("SampleAxis.classes contradicts the selected primary class set")
         return self
 
     @property
@@ -702,16 +989,15 @@ class SampleAxis(AxisInfo):
         self.sample_table[name] = values
 
     def copy(self) -> SampleAxis:
-        cp = SampleAxis(
-            values=self.values.copy() if self.values is not None else None,
-            labels=list(self.labels) if self.labels is not None else None,
-            units=self.units,
-            title=self.title,
-            classes=self.classes.copy() if self.classes is not None else None,
-            include_mask=self.include_mask.copy() if self.include_mask is not None else None,
-            exclusion_reasons=list(self.exclusion_reasons) if self.exclusion_reasons else None,
-            sample_table=copy.deepcopy(self.sample_table) if self.sample_table else None,
-        )
-        if self._expected_length is not None:
-            cp.bind_expected_length(self._expected_length)
-        return cp
+        return copy.deepcopy(self)
+
+
+AxisT = TypeVar("AxisT", bound=AxisInfo)
+
+
+def revalidated_axis_copy(axis: AxisT) -> AxisT:
+    """Re-admit an axis and every nested set before crossing a data boundary."""
+
+    if not isinstance(axis, AxisInfo):
+        raise TypeError("axis must be an AxisInfo instance")
+    return cast(AxisT, type(axis).model_validate(axis.model_dump(mode="python")))

@@ -19,7 +19,9 @@ import yaml  # type: ignore[import-untyped]
 
 from spectra_sherpa.app.schemas.template_schema import (
     TemplateCategoryFile,
+    TemplateEdge,
     TemplateFile,
+    TemplateNode,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,7 +84,7 @@ class TemplateLoader:
             # Schema version gate
             sv = raw.get("schema_version")
             if sv not in SUPPORTED_SCHEMA_VERSIONS:
-                errors.append(f"{name}: unsupported schema_version {sv!r} " f"(supported: {SUPPORTED_SCHEMA_VERSIONS})")
+                errors.append(f"{name}: unsupported schema_version {sv!r} (supported: {SUPPORTED_SCHEMA_VERSIONS})")
                 continue
 
             # Validate against Pydantic model
@@ -148,9 +150,7 @@ class TemplateLoader:
 
             sv = raw.get("schema_version")
             if sv not in SUPPORTED_SCHEMA_VERSIONS:
-                all_errors.append(
-                    f"{name}: unsupported schema_version {sv!r} " f"(supported: {SUPPORTED_SCHEMA_VERSIONS})"
-                )
+                all_errors.append(f"{name}: unsupported schema_version {sv!r} (supported: {SUPPORTED_SCHEMA_VERSIONS})")
                 continue
 
             file_errors = self._validate_one(raw, filename=name)
@@ -188,29 +188,46 @@ class TemplateLoader:
             return errors
 
         td = parsed.template_data
-        node_ids = {n.node_id for n in td.nodes}
-
-        # Check for duplicate node_ids
-        seen_ids: set[str] = set()
-        for n in td.nodes:
-            if n.node_id in seen_ids:
-                errors.append(f"{filename}: duplicate node_id '{n.node_id}'")
-            seen_ids.add(n.node_id)
-
-        # Check edges reference valid nodes
-        for edge in td.edges:
-            if edge.from_node_id not in node_ids:
-                errors.append(f"{filename}: edge references unknown node_id " f"'{edge.from_node_id}'")
-            if edge.to_node_id not in node_ids:
-                errors.append(f"{filename}: edge references unknown node_id " f"'{edge.to_node_id}'")
+        node_ids = self._validate_graph(
+            td.nodes,
+            td.edges,
+            filename=filename,
+            graph_name="scientist workflow",
+            errors=errors,
+        )
 
         # Check data_roles node_bindings reference valid node_ids
         for role_name, role in td.data_roles.items():
             if role.node_binding not in node_ids:
                 errors.append(
-                    f"{filename}: data_roles.{role_name}.node_binding "
-                    f"'{role.node_binding}' references unknown node_id"
+                    f"{filename}: data_roles.{role_name}.node_binding '{role.node_binding}' references unknown node_id"
                 )
+
+        canonical_project = td.canonical_project
+        if canonical_project is not None:
+            candidate = canonical_project.managed_candidate
+            candidate_ids = self._validate_graph(
+                candidate.nodes,
+                candidate.edges,
+                filename=filename,
+                graph_name="managed candidate",
+                errors=errors,
+            )
+            source_nodes = [node for node in candidate.nodes if node.node_id == candidate.source_node_id]
+            if len(source_nodes) != 1 or source_nodes[0].node_type != "data.file_load":
+                errors.append(
+                    f"{filename}: managed candidate source_node_id '{candidate.source_node_id}' "
+                    "must name exactly one data.file_load node"
+                )
+            scientist_sources = [node for node in td.nodes if node.node_id == candidate.scientist_source_node_id]
+            if len(scientist_sources) != 1 or scientist_sources[0].node_type != "data.file_load":
+                errors.append(
+                    f"{filename}: managed candidate scientist_source_node_id "
+                    f"'{candidate.scientist_source_node_id}' must name exactly one scientist-facing "
+                    "data.file_load node"
+                )
+            if candidate.source_node_id not in candidate_ids:
+                errors.append(f"{filename}: managed candidate source_node_id is not present in its DAG")
 
         # Check node types exist in registry (deferred — only when registry
         # is available, not at import time)
@@ -219,11 +236,59 @@ class TemplateLoader:
 
             for n in td.nodes:
                 if n.node_type not in node_registry:
-                    errors.append(f"{filename}: node '{n.node_id}' has unknown " f"node_type '{n.node_type}'")
+                    errors.append(f"{filename}: node '{n.node_id}' has unknown node_type '{n.node_type}'")
+            if canonical_project is not None:
+                candidate = canonical_project.managed_candidate
+                for node in candidate.nodes:
+                    if node.node_type not in node_registry:
+                        errors.append(
+                            f"{filename}: managed candidate node '{node.node_id}' has unknown "
+                            f"node_type '{node.node_type}'"
+                        )
         except ImportError:
             pass  # Registry not available (e.g. in lightweight test context)
 
+        if canonical_project is not None:
+            try:
+                from spectra_sherpa.app.lib.reference_datasets import load_reference_dataset_registry
+
+                governed_ids = {entry.dataset_id for entry in load_reference_dataset_registry()}
+                declared_ids = canonical_project.qualification_dataset_ids
+                if len(declared_ids) != len(set(declared_ids)):
+                    errors.append(f"{filename}: canonical project qualification dataset identities must be unique")
+                unknown_ids = sorted(set(declared_ids).difference(governed_ids))
+                if unknown_ids:
+                    errors.append(
+                        f"{filename}: canonical project names unknown governed dataset(s): {', '.join(unknown_ids)}"
+                    )
+            except ImportError:
+                pass
+
         return errors
+
+    @staticmethod
+    def _validate_graph(
+        nodes: list[TemplateNode],
+        edges: list[TemplateEdge],
+        *,
+        filename: str,
+        graph_name: str,
+        errors: list[str],
+    ) -> set[str]:
+        """Apply the same structural rules to every explicitly stored DAG."""
+
+        node_ids = {node.node_id for node in nodes}
+        seen_ids: set[str] = set()
+        for node in nodes:
+            if node.node_id in seen_ids:
+                errors.append(f"{filename}: {graph_name} has duplicate node_id '{node.node_id}'")
+            seen_ids.add(node.node_id)
+        for edge in edges:
+            if edge.from_node_id not in node_ids:
+                errors.append(f"{filename}: {graph_name} edge references unknown node_id '{edge.from_node_id}'")
+            if edge.to_node_id not in node_ids:
+                errors.append(f"{filename}: {graph_name} edge references unknown node_id '{edge.to_node_id}'")
+        return node_ids
 
     @staticmethod
     def _to_legacy_dict(template: TemplateFile) -> dict[str, Any]:
@@ -235,7 +300,10 @@ class TemplateLoader:
         flat dict with ``name``, ``slug``, ``category``, ``template_data``, etc.
         """
         td = template.template_data.model_dump(exclude_none=True)
+        td["schema_version"] = template.schema_version
         td["status"] = template.status
+        if template.status_detail is not None:
+            td["status_detail"] = template.status_detail
         td["data_modalities"] = list(template.data_modalities)
         return {
             "name": template.name,
@@ -255,12 +323,6 @@ class TemplateLoader:
 def _cli_validate() -> None:
     """CLI entry point: ``spectra-sherpa validate-templates``."""
     import sys
-
-    # Match application startup behavior so plugin-backed templates validate
-    # against the same node registry contents users get at runtime.
-    from spectra_sherpa.app.services.plugin_loader import discover_plugins
-
-    discover_plugins()
 
     loader = TemplateLoader()
     errors = loader.validate_all()

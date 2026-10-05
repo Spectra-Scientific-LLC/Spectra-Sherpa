@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from urllib.parse import quote
 
 
@@ -30,3 +31,15 @@ def attachment_headers(filename: str, *, fallback: str = "download", lowercase: 
     return {
         "Content-Disposition": (f"attachment; filename=\"{safe_filename}\"; filename*=UTF-8''{quote(safe_filename)}")
     }
+
+
+def scientific_asset_warnings(*warning_groups: Iterable[str]) -> list[str]:
+    """Project file- and asset-level ingestion warnings without duplicates.
+
+    Parsers may refuse an unqualified sibling block while retaining qualified
+    assets from the same physical file.  Inventory responses must therefore
+    carry both scopes; otherwise the Workbench presents a scientifically
+    incomplete source without telling the scientist what was omitted.
+    """
+
+    return list(dict.fromkeys(warning for group in warning_groups for warning in group))

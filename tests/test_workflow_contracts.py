@@ -16,20 +16,27 @@ Run with:
 from __future__ import annotations
 
 import copy
+import hashlib
+from datetime import UTC, datetime
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
 import pytest
 
+from spectra_sherpa.app.lib.pca import PCAExtract
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis
 from spectra_sherpa.app.services.dag.node_base import (
     Node,
     NodeMetadata,
     NodeParameter,
+    NodePolicy,
     node_registry,
-    register_node,
 )
+from spectra_sherpa.app.services.dataset_source_resolver import ApplicationDatasetSourceResolver
+from spectra_sherpa.app.services.execution_runtime import ApplicationModelArtifactReplay
 from spectra_sherpa.app.services.model_store import ModelStore
+from spectra_sherpa.core.execution_runtime import ExecutionRuntime
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -64,7 +71,73 @@ def executor(model_store):
     """DAGExecutor wired with model_store, no process pool."""
     from spectra_sherpa.app.services.dag.executor import DAGExecutor
 
-    return DAGExecutor(process_pool=None, model_store=model_store)
+    return DAGExecutor(
+        process_pool=None,
+        runtime=ExecutionRuntime(
+            model_artifact_reader=model_store,
+            model_artifact_writer=model_store,
+            model_artifact_replay=ApplicationModelArtifactReplay(),
+        ),
+    )
+
+
+@pytest.fixture
+def canonical_file_source(tmp_path, monkeypatch):
+    """Bind data.file_load to one real portable file and an exact fake DB row."""
+
+    data_root = tmp_path / "data"
+    relative_path = "raw/contract-spectra.csv"
+    source_path = data_root / "experiments" / "exp_001" / relative_path
+    source_path.parent.mkdir(parents=True)
+    rows = ["sample,1000,1100,1200,target"]
+    for index in range(30):
+        rows.append(f"sample-{index + 1},{index + 1},{index + 2},{index + 3},{0.5 * index + 1}")
+    source_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+
+    file_record = SimpleNamespace(
+        id=2,
+        experiment_id=1,
+        stage="raw",
+        file_path=relative_path,
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+    )
+
+    class _Result:
+        def scalar_one_or_none(self):
+            return file_record
+
+    class _Session:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+        async def execute(self, query):
+            del query
+            return _Result()
+
+    monkeypatch.setattr(
+        "spectra_sherpa.app.services.dataset_source_resolver.settings",
+        SimpleNamespace(data_dir=data_root),
+    )
+    monkeypatch.setattr("spectra_sherpa.app.services.dataset_source_resolver.async_session", lambda: _Session())
+    return (
+        {
+            "experiment_id": 1,
+            "file_id": 2,
+            "stage": "raw",
+            "target_authority": {
+                "schema_version": "spectrasherpa-target-authority/1",
+                "column": "target",
+                "target_type": "continuous",
+                "units": None,
+                "source_digest": source_sha256,
+            },
+        },
+        ExecutionRuntime(dataset_source_resolver=ApplicationDatasetSourceResolver()),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -103,37 +176,31 @@ class TestPreflightContracts:
         )
         from spectra_sherpa.app.services.dag.executor_validation import (
             _validate_port_type,
-            _validate_spectral_units,
         )
 
         assert callable(_validate_port_type)
-        assert callable(_validate_spectral_units)
         assert callable(set_default_pool)
         assert callable(get_default_pool)
 
     def test_data_package_imports(self):
-        """DataSourceNode and HAS_SCP importable from nodes.data."""
-        from spectra_sherpa.app.services.dag.nodes.data import (
-            HAS_SCP,
-            DataSourceNode,
-        )
+        """Canonical FileLoadNode is importable without an SCP capability alias."""
+        from spectra_sherpa.app.services.dag.nodes.data import FileLoadNode
 
-        assert DataSourceNode is not None
-        assert isinstance(HAS_SCP, bool)
+        assert FileLoadNode is not None
 
     def test_data_submodule_imports(self):
         """Sub-modules importable directly."""
-        from spectra_sherpa.app.services.dag.nodes.data.source import DataSourceNode
+        from spectra_sherpa.app.services.dag.nodes.data.file_load_node import FileLoadNode
         from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
 
-        assert DataSourceNode is not None
+        assert FileLoadNode is not None
         assert TrainTestSplitNode is not None
 
     def test_node_registry_has_core_types(self):
         """Key node types present in the global registry."""
         all_types = {m.node_type for m in node_registry.list_nodes()}
         expected = {
-            "data.source",
+            "data.file_load",
             "data.train_test_split",
             "preprocess.normalize",
             "model.load_apply",
@@ -143,19 +210,18 @@ class TestPreflightContracts:
         missing = expected - all_types
         assert not missing, f"Missing node types: {missing}"
 
-    def test_monkeypatch_targets_resolve(self):
-        """Attributes used by monkeypatch in existing tests are valid getattr targets."""
+    def test_optional_capability_surfaces_are_exact(self):
+        """Native data and executor surfaces expose no SCP capability aliases."""
         import spectra_sherpa.app.services.dag.executor as executor_mod
         import spectra_sherpa.app.services.dag.nodes.data as data_mod
 
-        # These must exist as module-level attributes (tests monkeypatch them)
-        assert hasattr(executor_mod, "HAS_SCP")
-        assert hasattr(executor_mod, "HAS_NDDATASET")
-        assert hasattr(data_mod, "HAS_SCP")
+        assert not hasattr(executor_mod, "HAS_SCP")
+        assert not hasattr(executor_mod, "HAS_NDDATASET")
+        assert not hasattr(data_mod, "HAS_SCP")
 
 
 # ---------------------------------------------------------------------------
-# Class 2: TestLoadPathContract — data.source → preprocessing → model
+# Class 2: TestLoadPathContract — data.file_load → preprocessing → model
 # ---------------------------------------------------------------------------
 
 
@@ -163,9 +229,11 @@ class TestLoadPathContract:
     """Verify the data loading and preprocessing pipeline."""
 
     @pytest.mark.asyncio
-    async def test_sklearn_source_to_snv(self):
-        """data.source(sklearn) → snv → result is SherpaDataset, shape preserved."""
-        source = node_registry.create_node("data.source", "src", {"source": "sklearn", "sklearn_dataset": "iris"})
+    async def test_file_source_to_snv(self, canonical_file_source):
+        """data.file_load → SNV preserves the loaded canonical dataset shape."""
+        source_parameters, runtime = canonical_file_source
+        source = node_registry.create_node("data.file_load", "src", source_parameters)
+        source.bind_execution_runtime(runtime)
         result = await source.run()
         ds = result.outputs["default"]
         assert isinstance(ds, SherpaDataset)
@@ -178,8 +246,8 @@ class TestLoadPathContract:
         assert out.shape == (n_samples, n_features)
 
     @pytest.mark.asyncio
-    async def test_train_test_split_output_ports(self):
-        """data.source → train_test_split → output ports, shapes sum to input.
+    async def test_train_test_split_output_ports(self, canonical_file_source):
+        """data.file_load → train_test_split exposes aligned named outputs.
 
         Uses the DAGExecutor to run the full pipeline with X and y wired,
         exercising the sample_axis slicing path in slice_axis_for_indices.
@@ -190,12 +258,13 @@ class TestLoadPathContract:
             WorkflowNode,
         )
 
-        executor = DAGExecutor(process_pool=None)
+        source_parameters, runtime = canonical_file_source
+        executor = DAGExecutor(process_pool=None, runtime=runtime)
         executor.add_node(
             WorkflowNode(
                 node_id="src",
-                node_type="data.source",
-                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
+                node_type="data.file_load",
+                parameters=source_parameters,
             )
         )
         executor.add_node(
@@ -218,8 +287,10 @@ class TestLoadPathContract:
         X_test = outputs["X_test"]
         assert isinstance(X_train, SherpaDataset)
         assert isinstance(X_test, SherpaDataset)
-        assert X_train.shape[0] + X_test.shape[0] == 150  # iris has 150 samples
-        assert X_train.shape[1] == 4  # iris has 4 features
+        assert X_train.shape[0] + X_test.shape[0] == 30
+        assert X_train.shape[1] == 3
+        assert outputs["y_train"].shape[0] == X_train.shape[0]
+        assert outputs["y_test"].shape[0] == X_test.shape[0]
 
     @pytest.mark.asyncio
     async def test_multi_step_preprocessing_chain(self, spectral_dataset):
@@ -274,10 +345,9 @@ class TestLoadPathContract:
 class TestApplyPathContract:
     """Verify the model artifact save → load_apply roundtrip.
 
-    Training nodes (PCA etc.) require SpectroChemPy, so we create a
-    PCA-shaped artifact manually via ModelStore and test load_apply
-    against it.  This isolates the contract between ModelStore and
-    LoadApplyModelNode.
+    We create a PCA-shaped artifact manually via ModelStore and test
+    ``load_apply`` against it. This isolates the contract between ModelStore
+    and LoadApplyModelNode from the separate native producer proof.
     """
 
     @pytest.fixture
@@ -287,9 +357,13 @@ class TestApplyPathContract:
         uid = "contract-test-pca-001"
         manifest = {
             "model_type": "pca",
+            "serializer": PCAExtract.SERIALIZER,
             "format_version": "1.0",
             "n_features": 50,
             "n_components": 3,
+            "standardized": False,
+            "scaled": False,
+            "scale_mode": None,
         }
         arrays = {
             "loadings": rng.standard_normal((3, 50)).astype(np.float64),
@@ -301,17 +375,17 @@ class TestApplyPathContract:
         return model_store, uid, arrays
 
     @pytest.mark.asyncio
-    async def test_pca_save_then_load_apply(self, pca_artifact, spectral_dataset, monkeypatch):
+    async def test_pca_save_then_load_apply(self, pca_artifact, spectral_dataset):
         """Saved PCA artifact → load_apply → produces scores with correct shape."""
         store, uid, arrays = pca_artifact
 
-        # Patch global model store so LoadApplyModelNode can find it
-        monkeypatch.setattr(
-            "spectra_sherpa.app.services.dag.nodes.modeling.load_apply_node.get_model_store",
-            lambda: store,
-        )
-
         node = node_registry.create_node("model.load_apply", "apply", {"model_id": uid})
+        node.bind_execution_runtime(
+            ExecutionRuntime(
+                model_artifact_reader=store,
+                model_artifact_replay=ApplicationModelArtifactReplay(),
+            )
+        )
         result = await node.run(X_new=spectral_dataset)
         outputs = result.outputs
 
@@ -325,13 +399,15 @@ class TestApplyPathContract:
         assert scores.shape == (10, 3)
 
     @pytest.mark.asyncio
-    async def test_load_apply_rejects_missing_model(self, model_store, monkeypatch):
+    async def test_load_apply_rejects_missing_model(self, model_store):
         """model.load_apply with bogus model_id → clear ValueError."""
-        monkeypatch.setattr(
-            "spectra_sherpa.app.services.dag.nodes.modeling.load_apply_node.get_model_store",
-            lambda: model_store,
-        )
         node = node_registry.create_node("model.load_apply", "apply", {"model_id": "nonexistent-uid"})
+        node.bind_execution_runtime(
+            ExecutionRuntime(
+                model_artifact_reader=model_store,
+                model_artifact_replay=ApplicationModelArtifactReplay(),
+            )
+        )
         dummy = SherpaDataset(X=np.ones((2, 10)))
 
         with pytest.raises(ValueError, match="not found"):
@@ -360,7 +436,7 @@ class TestDeployPathContract:
         executor.add_edge(WorkflowEdge(from_node="snv", to_node="d_out"))
 
         # Inject real data into the deploy.input node
-        executor.inject_result("d_in", {"default": spectral_dataset})
+        executor.inject_deployment_input("d_in", spectral_dataset, stream_name="sample")
 
         results = await executor.execute()
         outputs = results["d_out"]
@@ -368,7 +444,8 @@ class TestDeployPathContract:
         assert "format" in outputs
         assert outputs["format"] == "json"
         assert "content" in outputs
-        assert "raw_payload" in outputs
+        assert outputs["schema_version"] == "spectrasherpa.deploy-response/1"
+        assert len(outputs["content_sha256"]) == 64
 
     def test_executor_deepcopy_preserves_graph(self, executor):
         """deepcopy(executor) → clone has same nodes/edges, independent execution."""
@@ -376,7 +453,9 @@ class TestDeployPathContract:
 
         executor.add_node(
             WorkflowNode(
-                node_id="src", node_type="data.source", parameters={"source": "sklearn", "sklearn_dataset": "iris"}
+                node_id="src",
+                node_type="data.file_load",
+                parameters={"experiment_id": 1, "file_id": 2, "stage": "raw"},
             )
         )
         executor.add_node(WorkflowNode(node_id="snv", node_type="preprocess.normalize", parameters={"method": "snv"}))
@@ -399,14 +478,14 @@ class TestDeployPathContract:
         executor.add_edge(WorkflowEdge(from_node="src", to_node="snv"))
 
         # Inject a pre-computed result for the source
-        executor.inject_result("src", {"default": spectral_dataset})
+        executor.inject_deployment_input("src", spectral_dataset, stream_name="sample")
 
         results = await executor.execute()
 
         # Source result is our injected data
         assert "src" in results
-        src_default = results["src"]["default"]
-        assert src_default is spectral_dataset
+        assert results["src"]["default"] is spectral_dataset
+        assert "target" not in results["src"]
 
         # SNV ran on the injected data
         assert "snv" in results
@@ -431,24 +510,15 @@ class TestDeployPathContract:
 
 
 class TestCustomAlgoContract:
-    """Verify dynamic node registration and custom offload policies."""
-
-    @pytest.fixture(autouse=True)
-    def _cleanup_custom_node(self):
-        """Ensure the test node type is removed after the test."""
-        yield
-        try:
-            node_registry.unregister("_test.contract_custom")
-        except (ValueError, KeyError):
-            pass
+    """Verify a locally constructed node and its offload policy."""
 
     @pytest.mark.asyncio
     async def test_custom_node_registers_and_executes(self, spectral_dataset):
         """Dynamically register a node class → build workflow → execute → produces output."""
 
-        @register_node
         class _ContractCustomNode(Node):
             metadata = NodeMetadata(
+                policy=NodePolicy(),
                 node_type="_test.contract_custom",
                 category="custom",
                 label="Contract Test Custom",
@@ -479,11 +549,7 @@ class TestCustomAlgoContract:
                     )
                 return input_data
 
-        # Verify registered
-        assert node_registry.get_node_class("_test.contract_custom") is _ContractCustomNode
-
-        # Create and execute
-        node = node_registry.create_node("_test.contract_custom", "custom1", {"scale_factor": 3.0})
+        node = _ContractCustomNode("custom1", {"scale_factor": 3.0})
         result = await node.run(default=spectral_dataset)
         out = result.outputs["default"]
 
@@ -495,7 +561,6 @@ class TestCustomAlgoContract:
         from spectra_sherpa.app.services.dag.executor import DAGExecutor
         from spectra_sherpa.app.services.dag.node_base import NodePolicy
 
-        @register_node
         class _ContractCustomNode(Node):
             metadata = NodeMetadata(
                 node_type="_test.contract_custom",

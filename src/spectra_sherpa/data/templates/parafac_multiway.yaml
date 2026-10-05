@@ -1,0 +1,74 @@
+schema_version: 1
+name: PARAFAC Multiway Decomposition
+slug: parafac_multiway
+description: Deterministic CP-ALS decomposition for hyperspectral cubes that preserves spatial and spectral modes.
+category: exploratory
+is_active: true
+status: ready
+data_modalities:
+- hsi
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.file_load
+    label: Load Hyperspectral Cube
+    parameters: {}
+    position_x: 175
+    position_y: 50
+  - node_id: model_1
+    node_type: model.parafac
+    label: Fit PARAFAC Decomposition
+    parameters:
+      n_components: 3
+      max_iter: 200
+      tol: 0.000001
+      ridge: 0.000000000001
+    position_x: 175
+    position_y: 300
+  - node_id: scores_plot
+    node_type: output.plot
+    label: Mode-1 Component Scores
+    parameters:
+      plot_type: scores
+    position_x: 50
+    position_y: 550
+  - node_id: weights_plot
+    node_type: output.plot
+    label: Component Weights
+    parameters:
+      plot_type: spectra
+    position_x: 450
+    position_y: 550
+  - node_id: scores_summary
+    node_type: stats.summary
+    label: Mode-1 Score Summary
+    parameters: {}
+    position_x: 250
+    position_y: 800
+  edges:
+  - from_node_id: data_1
+    to_node_id: model_1
+  - from_node_id: model_1
+    to_node_id: scores_plot
+    from_output: sample_scores
+  - from_node_id: model_1
+    to_node_id: weights_plot
+    from_output: component_weights
+  - from_node_id: model_1
+    to_node_id: scores_summary
+    from_output: sample_scores
+  canvas_state:
+    zoom: 1.0
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_hsi:
+      role_type: X_hsi
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Hyperspectral cube with explicit spatial and spectral dimension roles
+      accepted_data_roles:
+      - X_hsi
+      accepted_techniques:
+      - Hyperspectral image

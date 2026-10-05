@@ -12,16 +12,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import errno
 import getpass
 import os
-import shutil
-import signal
-import subprocess
+import socket
 import threading
 import time
 import webbrowser
+from collections.abc import Callable
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import quote, urlsplit, urlunsplit
 from urllib.request import Request, urlopen
 
 DEFAULT_BIND_HOST = ".".join(("0", "0", "0", "0"))
@@ -60,16 +60,6 @@ def _env_bool(name: str, default: bool = False) -> bool:
     if value is None or value.strip() == "":
         return default
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
-
-
-def _env_float(name: str, default: float) -> float:
-    value = os.getenv(name)
-    if value is None or value.strip() == "":
-        return default
-    try:
-        return float(value)
-    except ValueError:
-        return default
 
 
 def _normalize_api_base(url: str) -> str:
@@ -168,111 +158,228 @@ def _object_import(path: str, api_url: str, token: str | None) -> None:
     print(json.dumps({"id": result.get("id"), "name": result.get("name")}, indent=2))
 
 
-def _find_listening_pids(port: int) -> list[int]:
-    """Return process IDs listening on *port* (POSIX via ``lsof``).
+def _campaign_review_download(campaign_id: str, output: str, api_url: str, token_env: str) -> None:
+    """Download one publisher-authenticated Campaign Review Package."""
 
-    Returns an empty list when no process is listening or when ``lsof``
-    is unavailable.
-    """
+    import hashlib
+
+    from spectra_sherpa.sdk.project import MAX_PROJECT_FILE_BYTES
+
+    output_path = _resolve_path(output)
+    if output_path.exists():
+        raise SystemExit(f"Campaign Review Package output already exists: {output_path}")
+    token = os.getenv(token_env)
+    if not token:
+        raise SystemExit(f"Campaign Review Package download requires a bearer token in {token_env}")
+    encoded_campaign_id = quote(campaign_id, safe="")
+    url = f"{_normalize_api_base(api_url)}/harness/canonical-campaigns/{encoded_campaign_id}/campaign-review"
+    request = Request(url, headers=_auth_headers(token), method="GET")
     try:
-        result = subprocess.run(
-            ["lsof", "-ti", f"tcp:{port}", "-sTCP:LISTEN"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-    except FileNotFoundError:
-        return []
-
-    # lsof returns 1 when no matches were found.
-    if result.returncode not in {0, 1}:
-        return []
-
-    self_pid = os.getpid()
-    pids: set[int] = set()
-    for raw in result.stdout.splitlines():
-        value = raw.strip()
-        if not value.isdigit():
-            continue
-        pid = int(value)
-        if pid != self_pid:
-            pids.add(pid)
-    return sorted(pids)
+        # Explicit user-provided API endpoint.
+        with urlopen(request) as response:  # nosec B310
+            declared_length = response.headers.get("Content-Length")
+            if declared_length is not None and (
+                not declared_length.isdigit() or int(declared_length) > MAX_PROJECT_FILE_BYTES
+            ):
+                raise SystemExit("Campaign Review Package download exceeds the supported size")
+            payload = response.read(MAX_PROJECT_FILE_BYTES + 1)
+            expected_digest = response.headers.get("X-Spectra-Campaign-Review-SHA256")
+    except (HTTPError, URLError) as exc:
+        _raise_api_error("Campaign Review Package download", exc)
+    if len(payload) > MAX_PROJECT_FILE_BYTES:
+        raise SystemExit("Campaign Review Package download exceeds the supported size")
+    actual_digest = hashlib.sha256(payload).hexdigest()
+    if expected_digest != actual_digest:
+        raise SystemExit("Campaign Review Package download digest is missing or invalid")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("xb") as stream:
+        stream.write(payload)
+    print(f"Wrote signed Campaign Review Package: {output_path} (sha256={actual_digest})")
 
 
-def _safe_kill(pid: int, sig: int) -> bool:
-    """Attempt to signal *pid*. Returns False on permission errors."""
-    try:
-        os.kill(pid, sig)
-        return True
-    except ProcessLookupError:
-        return True
-    except PermissionError:
-        return False
+def _ensure_campaign_review_runtime() -> None:
+    """Load the exact local registry needed to re-admit a saved application."""
+
+    import spectra_sherpa.app.services.dag.nodes  # noqa: F401
+    from spectra_sherpa.app.types import ensure_type_registry_loaded
+
+    ensure_type_registry_loaded()
 
 
-def _clear_port(
-    port: int,
-    *,
-    grace_seconds: float,
-    force_kill: bool,
-) -> bool:
-    """Try to free a TCP port by terminating listeners.
+def _campaign_review_inspect(
+    project: str,
+    publisher_trust_anchors: str | None,
+    report: str | None,
+) -> None:
+    """Render the complete package decision chain with no account or network."""
 
-    Returns True when no blocking listener remains.
-    """
-    if shutil.which("lsof") is None:
-        print(
-            "Warning: KILL_PORT_ON_START is enabled but `lsof` is not available; " "skipping automatic port cleanup.",
-        )
-        return False
+    import json
+    from pathlib import Path
 
-    initial = _find_listening_pids(port)
-    if not initial:
-        return True
+    from spectra_sherpa.sdk.campaign_review import inspect_campaign_review_package
+    from spectra_sherpa.sdk.project import ProjectIOError, load_bounded_json_object
 
-    print(
-        f"Port {port} is already in use by PID(s): " + ", ".join(str(pid) for pid in initial),
+    _ensure_campaign_review_runtime()
+
+    def load_json(path: str | None) -> dict | None:
+        if path is None:
+            return None
+        try:
+            value = load_bounded_json_object(path)
+        except ProjectIOError as exc:
+            raise SystemExit(f"Campaign Review verification document is invalid: {path}") from exc
+        return value
+
+    inspection = inspect_campaign_review_package(
+        str(Path(project).expanduser()),
+        publisher_trust_anchors=load_json(publisher_trust_anchors),
     )
-    print("Attempting to free the port before startup...")
+    rendered = json.dumps(inspection.as_dict(), indent=2, sort_keys=True) + "\n"
+    if report is None:
+        print(rendered, end="")
+        return
+    report_path = _resolve_path(report)
+    if report_path.exists():
+        raise SystemExit(f"Campaign Review inspection report already exists: {report_path}")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    with report_path.open("x", encoding="utf-8") as stream:
+        stream.write(rendered)
+    print(f"Wrote Campaign Review inspection report: {report_path}")
 
-    for pid in initial:
-        if not _safe_kill(pid, signal.SIGTERM):
-            print(f"  Warning: no permission to terminate PID {pid}.")
 
-    deadline = time.time() + max(0.0, grace_seconds)
-    while time.time() < deadline:
-        remaining = [pid for pid in _find_listening_pids(port) if pid in initial]
-        if not remaining:
-            return True
-        time.sleep(0.1)
+def _canonical_project_reproduce(
+    project: str,
+    fixture: str,
+    custody_id: str | None,
+    spectral_axis_title: str | None,
+    spectral_axis_units: str | None,
+    publisher_trust_anchors: str | None,
+    report: str | None,
+    registered_reference_projection: str | None = None,
+) -> None:
+    import json
 
-    remaining = [pid for pid in _find_listening_pids(port) if pid in initial]
-    if remaining and force_kill:
-        # ``SIGKILL`` is POSIX-only; fall back to ``SIGTERM`` on Windows so
-        # the function degrades cleanly instead of raising ``AttributeError``.
-        # In real Windows deployments the ``lsof`` guard above short-circuits
-        # this branch entirely; the fallback only matters when callers stub
-        # out ``lsof`` (e.g. from tests).
-        force_signal = getattr(signal, "SIGKILL", signal.SIGTERM)
-        signal_label = "SIGKILL" if force_signal is getattr(signal, "SIGKILL", None) else "SIGTERM"
-        print(
-            f"Port still busy after grace period. Sending {signal_label} to PID(s): "
-            + ", ".join(str(pid) for pid in remaining),
-        )
-        for pid in remaining:
-            if not _safe_kill(pid, force_signal):
-                print(f"  Warning: no permission to force-kill PID {pid}.")
-        time.sleep(0.1)
-        remaining = [pid for pid in _find_listening_pids(port) if pid in initial]
+    from spectra_sherpa.sdk.campaign_review import CampaignReviewPackage, load_review_package_bytes
+    from spectra_sherpa.sdk.canonical_public_fixture import (
+        CanonicalPublicFixtureError,
+        load_canonical_public_fixture,
+        load_registered_reference_fixture,
+    )
+    from spectra_sherpa.sdk.canonical_reproduction import reproduce_canonical_project
+    from spectra_sherpa.sdk.project import (
+        ProjectIOError,
+        load_bounded_json_object,
+    )
 
-    if remaining:
-        print(
-            "Warning: port remains occupied by PID(s): " + ", ".join(str(pid) for pid in remaining),
-        )
-        return False
+    _ensure_campaign_review_runtime()
 
-    return True
+    review_package = CampaignReviewPackage.from_archive(load_review_package_bytes(project))
+    package = review_package.application
+    try:
+        if registered_reference_projection is not None:
+            if custody_id is not None or spectral_axis_title is not None or spectral_axis_units is not None:
+                raise SystemExit(
+                    "Registered-reference reproduction derives custody and spectral-axis authority from "
+                    "the signed package and qualified projection; do not pass --custody-id or spectral-axis flags"
+                )
+            public_fixture = load_registered_reference_fixture(
+                _resolve_path(fixture),
+                package,
+                projection_id=registered_reference_projection,
+            )
+        else:
+            if custody_id is None:
+                raise SystemExit("Canonical NPZ reproduction requires --custody-id")
+            public_fixture = load_canonical_public_fixture(
+                _resolve_path(fixture),
+                package,
+                custody_id=custody_id,
+                spectral_axis_title=spectral_axis_title,
+                spectral_axis_units="cm-1" if spectral_axis_units is None else spectral_axis_units,
+            )
+    except CanonicalPublicFixtureError as exc:
+        raise SystemExit(f"Campaign Review reproduction source was refused: {exc}") from exc
+
+    def load_json(path: str | None) -> dict | None:
+        if path is None:
+            return None
+        try:
+            return load_bounded_json_object(path)
+        except ProjectIOError as exc:
+            raise SystemExit(f"Campaign Review verification document is invalid: {path}") from exc
+
+    result = reproduce_canonical_project(
+        package,
+        fixture=public_fixture.capability,
+        split_plan=public_fixture.split_plan,
+        publisher_attestation=review_package.publisher_attestation.as_dict(),
+        publisher_trust_anchors=load_json(publisher_trust_anchors),
+    )
+    result_payload = result.as_dict()
+    rendered = json.dumps(result_payload, indent=2, sort_keys=True) + "\n"
+    required_outcomes = (
+        "integrity_verified",
+        "publisher_authenticated",
+        "validation_reproduced",
+        "application_reproduced",
+    )
+    failed_outcomes = [
+        name
+        for name in required_outcomes
+        if not isinstance(result_payload.get(name), dict) or result_payload[name].get("status") != "passed"
+    ]
+    if report is None:
+        print(rendered, end="")
+    else:
+        report_path = _resolve_path(report)
+        if report_path.exists():
+            raise SystemExit(f"Canonical reproduction report already exists: {report_path}")
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        with report_path.open("x", encoding="utf-8") as stream:
+            stream.write(rendered)
+        print(f"Wrote canonical reproduction report: {report_path}")
+    if failed_outcomes:
+        raise SystemExit("Campaign Review reproduction did not pass: " + ", ".join(failed_outcomes))
+
+
+def _assert_port_available(host: str, port: int) -> None:
+    """Probe the requested bind without inspecting or signaling any process.
+
+    The socket is closed before uvicorn starts. A later bind race is handled by
+    uvicorn's normal refusal; it never authorizes terminating the new listener.
+    """
+    try:
+        addresses = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM, flags=socket.AI_PASSIVE)
+    except OSError as exc:
+        print(f"Warning: Cannot resolve {host}:{port} for preflight: {exc}. Uvicorn will attempt startup.")
+        return
+    supported = False
+    for family, socktype, protocol, _, address in addresses:
+        try:
+            with socket.socket(family, socktype, protocol) as probe:
+                if os.name == "nt":
+                    probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+                else:
+                    probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                probe.bind(address)
+            supported = True
+        except OSError as exc:
+            if exc.errno in {errno.EAFNOSUPPORT, errno.EPROTONOSUPPORT}:
+                continue
+            if exc.errno in {errno.EADDRINUSE, errno.EACCES}:
+                print(f"Error: Cannot bind {host}:{port}: {exc}")
+                print("Existing processes are left untouched. Stop the service you own manually,")
+                print("check bind permissions, or choose a different port: spectra-sherpa --port <PORT>")
+                raise SystemExit(1) from None
+            # A preflight cannot diagnose every platform's bind behavior. Let
+            # the actual server report non-conflict failures without claiming
+            # that an unrelated service occupies the requested port.
+            print(f"Warning: Cannot probe {address}: {exc}. Uvicorn will attempt startup.")
+            supported = True
+    if not supported:
+        print(f"Error: No supported address family found for {host}:{port}.")
+        print("Choose a host address supported by this system, or enable the required address family.")
+        raise SystemExit(1)
 
 
 async def _prewarm_hitran_synthesis_library(args: argparse.Namespace) -> None:
@@ -331,7 +438,7 @@ async def _prewarm_hitran_synthesis_library(args: argparse.Namespace) -> None:
         raise SystemExit(2)
 
 
-def main(argv: list[str] | None = None) -> None:
+def main(argv: list[str] | None = None, *, _server_runner: Callable[..., None] | None = None) -> None:
     from spectra_sherpa import __version__
 
     parser = argparse.ArgumentParser(
@@ -394,12 +501,57 @@ def main(argv: list[str] | None = None) -> None:
     export_parser.add_argument("project_id", type=int, help="Project ID to export")
     export_parser.add_argument("output", help="Output .sherpa path")
     export_parser.add_argument("--api-url", default="http://127.0.0.1:8000", help="SpectraSherpa server URL")
-    export_parser.add_argument("--token", default=None, help="Bearer token for hosted/hybrid APIs")
+    export_parser.add_argument("--token", default=None, help="Bearer token for authenticated APIs")
 
     import_parser = object_subparsers.add_parser("import", help="Import a .sherpa object into a running API")
     import_parser.add_argument("path", help="Path to .sherpa object")
     import_parser.add_argument("--api-url", default="http://127.0.0.1:8000", help="SpectraSherpa server URL")
-    import_parser.add_argument("--token", default=None, help="Bearer token for hosted/hybrid APIs")
+    import_parser.add_argument("--token", default=None, help="Bearer token for authenticated APIs")
+
+    canonical_parser = subparsers.add_parser(
+        "campaign-review",
+        help="Download, inspect, or independently reproduce a Campaign Review Package",
+    )
+    canonical_subparsers = canonical_parser.add_subparsers(dest="canonical_project_command", required=True)
+    canonical_export = canonical_subparsers.add_parser(
+        "download",
+        help="Download the signed, data-free Campaign Review Package",
+    )
+    canonical_export.add_argument("campaign_id", help="Frozen canonical campaign identifier")
+    canonical_export.add_argument("output", help="New .sherpa output path")
+    canonical_export.add_argument("--api-url", required=True, help="Hosted SpectraSherpa server URL")
+    canonical_export.add_argument(
+        "--token-env",
+        default="SPECTRA_SHERPA_TOKEN",
+        help="Environment variable containing the bearer token (default: SPECTRA_SHERPA_TOKEN)",
+    )
+
+    canonical_inspect = canonical_subparsers.add_parser(
+        "inspect",
+        help="Verify and render the complete data-free decision chain with no account",
+    )
+    canonical_inspect.add_argument("project", help="Campaign Review Package (.sherpa)")
+    canonical_inspect.add_argument("--publisher-trust-anchors")
+    canonical_inspect.add_argument("--report", help="New path for the machine-readable inspection report")
+
+    canonical_reproduce = canonical_subparsers.add_parser(
+        "reproduce",
+        help="Recompute validation and application with an independently supplied public fixture",
+    )
+    canonical_reproduce.add_argument("project", help="Campaign Review Package (.sherpa)")
+    canonical_reproduce.add_argument(
+        "fixture",
+        help="Independent public NPZ fixture or exact provider-acquired registered-reference artifact",
+    )
+    canonical_reproduce.add_argument("--custody-id", help="Published opaque fixture custody ID (NPZ only)")
+    canonical_reproduce.add_argument(
+        "--registered-reference-projection",
+        help="Qualified projection ID when fixture is an exact provider-acquired registered-reference artifact",
+    )
+    canonical_reproduce.add_argument("--spectral-axis-title")
+    canonical_reproduce.add_argument("--spectral-axis-units")
+    canonical_reproduce.add_argument("--publisher-trust-anchors")
+    canonical_reproduce.add_argument("--report", help="New path for the machine-readable reproduction report")
 
     prewarm_parser = subparsers.add_parser(
         "prewarm-hitran-synthesis",
@@ -471,38 +623,37 @@ def main(argv: list[str] | None = None) -> None:
             _object_import(args.path, args.api_url, args.token)
         return
 
+    if getattr(args, "command", None) == "campaign-review":
+        if args.canonical_project_command == "download":
+            _campaign_review_download(args.campaign_id, args.output, args.api_url, args.token_env)
+        elif args.canonical_project_command == "inspect":
+            _campaign_review_inspect(
+                args.project,
+                args.publisher_trust_anchors,
+                args.report,
+            )
+        elif args.canonical_project_command == "reproduce":
+            _canonical_project_reproduce(
+                args.project,
+                args.fixture,
+                args.custody_id,
+                args.spectral_axis_title,
+                args.spectral_axis_units,
+                args.publisher_trust_anchors,
+                args.report,
+                args.registered_reference_projection,
+            )
+        return
+
     # Check for headless mode BEFORE browser launch to avoid unnecessary GUI on servers
     is_headless = getattr(args, "command", None) == "serve-model"
 
-    # Early port availability check — detect conflicts BEFORE the app
-    # lifespan runs its multi-phase initialisation (DB, plugins, worker
-    # pool, etc.).  Failing fast here saves the user from a confusing
-    # "address already in use" traceback after a long startup delay.
+    # Refuse before browser launch or app/database initialization. A listening
+    # PID or matching command name is not evidence that we own that process.
     mode = os.environ.get("APP_MODE", "local")
-    auto_clear = mode == "local" or _env_bool("KILL_PORT_ON_START", False)
-    pids_on_port = _find_listening_pids(args.port)
-    if pids_on_port:
-        if auto_clear:
-            # Local mode (single-user desktop): auto-clear stale processes.
-            # Also honours KILL_PORT_ON_START for hybrid/enterprise.
-            grace = _env_float("KILL_PORT_GRACE_SECONDS", 2.0)
-            force = _env_bool("KILL_PORT_FORCE", True)
-            cleared = _clear_port(args.port, grace_seconds=grace, force_kill=force)
-            if not cleared:
-                print(
-                    f"Error: Could not free port {args.port}. "
-                    "Stop the existing process manually or use --port to pick another.",
-                )
-                raise SystemExit(1)
-        else:
-            # Non-local mode without KILL_PORT_ON_START: fail fast.
-            pid_list = ", ".join(str(pid) for pid in pids_on_port)
-            print(f"Error: Port {args.port} is already in use by PID(s): {pid_list}")
-            print("  Options:")
-            print(f"    - Stop the existing process(es): kill {pid_list}")
-            print("    - Use a different port: spectra-sherpa --port <PORT>")
-            print("    - Set KILL_PORT_ON_START=true in .env to auto-clear")
-            raise SystemExit(1)
+    if _env_bool("KILL_PORT_ON_START", False):
+        print("Warning: KILL_PORT_ON_START is no longer supported; existing processes will not be terminated.")
+    _assert_port_available(args.host, args.port)
 
     # Auto-open browser only for normal mode (not headless)
     if not is_headless:
@@ -535,7 +686,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         return
 
-    uvicorn.run(
+    (_server_runner or uvicorn.run)(
         "spectra_sherpa.app.main:app",
         host=args.host,
         port=args.port,

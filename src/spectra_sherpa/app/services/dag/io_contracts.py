@@ -1,7 +1,7 @@
 """Shared IO contract helpers for DAG nodes.
 
 Phase 1 objective:
-- Standardize X/y input binding and legacy port fallback.
+- Standardize X/y input binding through the canonical dataset.
 - Standardize conversion to SherpaDataset / numpy arrays.
 - Standardize output dataset wrapping with metadata preservation.
 
@@ -12,23 +12,20 @@ incrementally without changing business logic.
 from __future__ import annotations
 
 import copy
+import hashlib
 from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
 from spectra_sherpa.app.lib.sherpa_dataset import EvaluationResult, Provenance, SherpaDataset
 
-from .meta_helpers import safe_get_coord
+from .transport import reject_spectrochempy_transport, require_raw_matrix_container
 
 
 def _is_dataset_like(value: Any) -> bool:
-    """Return True for dataset containers (SherpaDataset or NDDataset)."""
-    if isinstance(value, SherpaDataset):
-        return True
-    if HAS_SCP and isinstance(value, NDDataset):
-        return True
-    return False
+    """Return whether *value* is the canonical scientific dataset."""
+
+    return isinstance(value, SherpaDataset)
 
 
 def coerce_to_sherpa(
@@ -47,15 +44,12 @@ def coerce_to_sherpa(
         allow_array: If True, wraps array-like input into SherpaDataset.
         dataset_error_message: Optional custom error message.
     """
+    reject_spectrochempy_transport(value, boundary=f"{input_name} canonical dataset admission")
     if isinstance(value, SherpaDataset):
         return value
 
-    if HAS_SCP and isinstance(value, NDDataset):
-        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
-
-        return from_nddataset(value)
-
     if allow_array:
+        require_raw_matrix_container(value, input_name=input_name)
         arr = np.asarray(value, dtype=np.float64)
         if arr.ndim == 0:
             err = dataset_error_message or (
@@ -66,7 +60,7 @@ def coerce_to_sherpa(
             arr = arr.reshape(-1, 1)
         return SherpaDataset(X=arr, backend="numpy")
 
-    err = dataset_error_message or (f"{input_name} must be an NDDataset or SherpaDataset object")
+    err = dataset_error_message or (f"{input_name} must be a SherpaDataset object")
     raise ValueError(err)
 
 
@@ -74,7 +68,7 @@ def bind_X(
     X: Any,
     *,
     missing_message: str = "Missing required input: X",
-    dataset_error_message: str = "X must be an NDDataset or SherpaDataset object",
+    dataset_error_message: str = "X must be a SherpaDataset object",
     allow_array: bool = False,
 ) -> SherpaDataset:
     """Bind and normalize the X input."""
@@ -112,17 +106,50 @@ def _apply_selected_target(dataset: Any, target: Any) -> Any:
     if not selected:
         return target
 
-    target_arr = np.asarray(target)
-    if target_arr.ndim < 2:
-        return target  # 1D — nothing to slice
+    return select_exact_target(dataset, str(selected))
 
-    # Match by name from target_names
-    names = getattr(tc, "target_names", None)
-    if names and selected in names:
-        idx = list(names).index(selected)
-        return target_arr[:, idx]
 
-    return target  # name not found — return all columns
+def select_exact_target(dataset: Any, selected_target: str) -> np.ndarray:
+    """Return one explicitly named supervised response or fail closed.
+
+    Managed optimization must never infer which column of a multi-response
+    reference table the scientist intended to optimize.  This helper is the
+    strict counterpart to the local convenience projection above: it requires
+    target metadata, checks the declared name against the physical target
+    shape, and returns exactly one sample-aligned vector.
+    """
+
+    if not isinstance(selected_target, str) or not selected_target.strip():
+        raise ValueError("selected target must be one exact non-empty name")
+    target = getattr(dataset, "target", None)
+    if not _has_values(target):
+        raise ValueError("dataset has no supervised response values")
+    target_array = np.asarray(target)
+    context = getattr(dataset, "target_context", None)
+    names = [str(name) for name in (getattr(context, "target_names", None) or [])]
+    single_name = getattr(context, "target_name", None)
+    context_selected = getattr(context, "selected_target", None)
+
+    if target_array.ndim == 1:
+        if context_selected is not None:
+            declared = str(context_selected)
+        elif len(names) == 1:
+            declared = names[0]
+        elif single_name is not None:
+            declared = str(single_name)
+        else:
+            raise ValueError("one-dimensional dataset response has no exact target identity")
+        if declared != selected_target:
+            raise ValueError(f"selected target {selected_target!r} is not the dataset response {str(declared)!r}")
+        return np.asarray(target_array)
+
+    if target_array.ndim != 2 or target_array.shape[1] < 1:
+        raise ValueError("dataset response must be one- or two-dimensional")
+    if len(names) != target_array.shape[1]:
+        raise ValueError("dataset response names do not match its target columns")
+    if selected_target not in names:
+        raise ValueError(f"selected target {selected_target!r} is not present in the dataset response columns")
+    return np.asarray(target_array[:, names.index(selected_target)])
 
 
 def extract_target_like(dataset: Any) -> Any | None:
@@ -132,38 +159,17 @@ def extract_target_like(dataset: Any) -> Any | None:
     If ``target_context.selected_target`` is set, extract only that
     column from a multi-target array instead of returning all columns.
 
-    Priority:
-    1. dataset.target (optionally sliced by selected_target)
-    2. dataset.y.labels
-    3. dataset.y.data
+    Authority: ``SherpaDataset.target``, optionally sliced by the exact
+    ``selected_target`` identity.
+
+    A SherpaDataset sample axis is identity/ordering metadata, never an
+    implicit supervised target.
     """
     target = getattr(dataset, "target", None)
     if _has_values(target):
         # Honor explicit Y column selection for multi-target datasets
         target = _apply_selected_target(dataset, target)
         return target
-
-    if isinstance(dataset, SherpaDataset):
-        sample_axis = dataset.sample_axis
-        if sample_axis is None:
-            return None
-        if _has_values(sample_axis.labels):
-            return sample_axis.labels
-        if _has_values(sample_axis.values):
-            return sample_axis.values
-        return None
-
-    y_coord = safe_get_coord(dataset, "y")
-    if y_coord is None:
-        return None
-
-    labels = getattr(y_coord, "labels", None)
-    if _has_values(labels):
-        return labels
-
-    y_data = getattr(y_coord, "data", None)
-    if _has_values(y_data):
-        return y_data
 
     return None
 
@@ -203,6 +209,48 @@ def resolve_target_names(
     return None
 
 
+def require_aligned_response_samples(X: SherpaDataset, y: SherpaDataset) -> None:
+    """Validate explicit dataset row identities before unwrapping responses.
+
+    Two anonymous datasets retain the positional API. A supplied identity must
+    never be discarded to pair rows against an anonymous or contradictory one.
+    Raw arrays remain the caller's explicit positional interface.
+    """
+    if X.n_samples != y.n_samples:
+        raise ValueError("X and response datasets have different sample counts")
+
+    def identity(dataset: SherpaDataset) -> list[str | float] | None:
+        axis = dataset.sample_axis
+        if axis is None:
+            return None
+        labels = axis.labels
+        if labels is not None:
+            if any(not isinstance(label, str) or not label.strip() for label in labels):
+                raise ValueError("dataset has invalid sample identities")
+            table_ids = (axis.sample_table or {}).get("sample_id")
+            if table_ids is not None and list(table_ids) != list(labels):
+                raise ValueError("sample table identities contradict sample-axis labels")
+            return list(labels)
+        if (axis.sample_table or {}).get("sample_id") is not None:
+            raise ValueError("sample table identities require aligned sample-axis labels")
+        if axis.values is not None:
+            if not np.isfinite(axis.values).all():
+                raise ValueError("dataset has non-finite sample identities")
+            return axis.values.tolist()
+        return None
+
+    left, right = identity(X), identity(y)
+    if left is None and right is None:
+        return
+    for name, labels in (("X", left), ("response", right)):
+        if labels is None or len(labels) != X.n_samples:
+            raise ValueError(f"{name} dataset is missing complete sample identities; use an explicit sample join")
+        if len(set(labels)) != len(labels):
+            raise ValueError(f"{name} dataset has duplicate sample identities")
+    if left != right:
+        raise ValueError("X and response sample identities/order differ; use an explicit sample join")
+
+
 def bind_y(
     y: Any,
     *,
@@ -213,7 +261,7 @@ def bind_y(
     target_type: str | None = None,
     missing_message: str = "Missing required input: y",
     dataset_missing_message: str = (
-        "Dataset passed to y port has no embedded labels. " "Use target or y-axis labels/data."
+        "Dataset passed to y port has no embedded labels. Use target or y-axis labels/data."
     ),
 ) -> Any:
     """
@@ -247,7 +295,7 @@ def bind_y(
                 )
             else:
                 raise ValueError(
-                    f"Dataset has {actual_type} targets [{names_str}] — " f"this node requires {target_type} targets."
+                    f"Dataset has {actual_type} targets [{names_str}] — this node requires {target_type} targets."
                 )
 
     if y is None and infer_from_X and X is not None:
@@ -262,6 +310,15 @@ def bind_y(
 
     if _is_dataset_like(y):
         y_dataset = coerce_to_sherpa(y, input_name="y", allow_array=False)
+        if target_type is not None:
+            y_context = getattr(y_dataset, "target_context", None)
+            y_target_type = getattr(y_context, "target_type", None) if y_context is not None else None
+            if y_target_type is not None and y_target_type != target_type:
+                raise ValueError(
+                    f"Dataset connected to y has {y_target_type} targets; this node requires {target_type} targets."
+                )
+        if X is not None:
+            require_aligned_response_samples(X, y_dataset)
         if dataset_as_data:
             return y_dataset.data
         inferred = extract_target_like(y_dataset)
@@ -356,7 +413,23 @@ def clean_regression_target(
     model_label: str,
     preserve_1d: bool = True,
 ) -> tuple[SherpaDataset, np.ndarray]:
-    """Validate/drop non-finite regression targets while keeping X aligned.
+    """Compatibility wrapper; producers must retain the population receipt."""
+    dataset, target, _ = clean_regression_target_with_population(
+        X_ds, y_array, model_label=model_label, preserve_1d=preserve_1d
+    )
+    return dataset, target
+
+
+def clean_regression_target_with_population(
+    X_ds: SherpaDataset,
+    y_array: np.ndarray,
+    *,
+    model_label: str,
+    preserve_1d: bool = True,
+    source_scientific_digest: str | None = None,
+    response_input_columns: list[int] | None = None,
+) -> tuple[SherpaDataset, np.ndarray, dict[str, Any]]:
+    """Admit measured regression targets and return an ordered population receipt.
 
     Partial reference tables are common in spectroscopy benchmark datasets:
     different properties may be measured for different samples. A multi-target
@@ -373,8 +446,45 @@ def clean_regression_target(
     target_context = getattr(X_ds, "target_context", None)
     selected_target = getattr(target_context, "selected_target", None) if target_context is not None else None
 
-    nonfinite_mask = ~np.isfinite(y_2d)
+    if y_2d.shape[0] != X_ds.n_samples or y_2d.shape[1] == 0:
+        raise ValueError(f"{model_label} target dimensions do not match the input population")
+    if np.isinf(y_2d).any():
+        raise ValueError(f"{model_label} target contains infinity; invalid references cannot be treated as missing")
+    if not np.isfinite(X_ds.X).all():
+        raise ValueError(f"{model_label} predictors contain non-finite values; repair predictors explicitly")
+    axis = X_ds.sample_axis
+    if axis is not None and axis.include_mask is not None and not np.all(axis.include_mask):
+        raise ValueError(f"{model_label} input has excluded samples; materialize the active cohort before fitting")
+    source_digest = source_scientific_digest or X_ds.scientific_digest
+    nonfinite_mask = np.isnan(y_2d)
     row_mask = nonfinite_mask.any(axis=1)
+    labels = list(axis.labels) if axis is not None and axis.labels is not None else None
+    values = axis.values.tolist() if axis is not None and axis.values is not None else None
+    response_bytes = np.array(y_2d, dtype="<f8", order="C", copy=True)
+    response_bytes[np.isnan(response_bytes)] = np.nan  # canonical missing-value representation
+    population = {
+        "schema": "spectrasherpa.regression-population/1",
+        "source_scientific_digest": source_digest,
+        "scope": "training_fit_only_not_predictive_validation",
+        "model": model_label,
+        "input_count": int(y_2d.shape[0]),
+        "admitted_count": int((~row_mask).sum()),
+        "excluded_count": int(row_mask.sum()),
+        "selected_target": str(selected_target) if selected_target else None,
+        "response_names": list(target_context.target_names or []) if target_context is not None else [],
+        "response_units": getattr(target_context, "target_units", None),
+        "response_input_columns": response_input_columns or list(range(y_2d.shape[1])),
+        "response_shape": list(y_2d.shape),
+        "response_sha256": hashlib.sha256(response_bytes.tobytes(order="C")).hexdigest(),
+        "identity_basis": "source_digest_and_zero_based_row",
+        "sample_labels": labels,
+        "sample_values": values,
+        "admitted_rows": np.flatnonzero(~row_mask).tolist(),
+        "excluded_rows": [
+            {"row": int(i), "reason": "missing_reference", "target_columns": np.flatnonzero(nonfinite_mask[i]).tolist()}
+            for i in np.flatnonzero(row_mask)
+        ],
+    }
     if row_mask.any():
         n_targets = int(y_2d.shape[1])
         if n_targets > 1 and not selected_target:
@@ -413,8 +523,8 @@ def clean_regression_target(
         X_ds.meta["target_names"] = [selected]
 
     if preserve_1d and (original_was_1d or y_2d.shape[1] == 1):
-        return X_ds, y_2d.reshape(-1)
-    return X_ds, y_2d
+        return X_ds, y_2d.reshape(-1), population
+    return X_ds, y_2d, population
 
 
 class FlattenedView:
@@ -523,6 +633,7 @@ def build_dataset_like(
         units=src.units if units is None else units,
         extra=copy.deepcopy(src.meta),
         is_time_series=bool(src.is_time_series),
+        data_role=src.data_role,
     )
 
     # If observation axis is NOT a SampleAxis (e.g., TimeAxis for time-resolved data),

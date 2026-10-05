@@ -1,4 +1,4 @@
-"""OSS-compatible actor routes for local/hybrid modes.
+"""OSS-compatible actor routes for local/extension modes.
 
 When a server extension is installed its full auth module takes priority.
 This module intentionally exposes only the narrow actor endpoint needed by
@@ -20,5 +20,5 @@ router = APIRouter()
 async def read_current_user(
     current_user: CurrentActor = Depends(get_current_actor),
 ) -> CurrentActor:
-    """Return the current actor for OSS local/hybrid bootstrap."""
+    """Return the current actor for OSS local/extension bootstrap."""
     return current_user

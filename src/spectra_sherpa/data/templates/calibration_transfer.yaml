@@ -1,66 +1,211 @@
 schema_version: 1
-name: Calibration Transfer (PDS)
+name: Calibration Transfer Method Comparison
 slug: calibration_transfer
-description: Piecewise Direct Standardization (PDS) to transfer a calibration between
-  instruments, with per-feature RMSE diagnostics.
+description: Fit PDS, DS, and single-wavelength standardization on the same paired
+  instrument standards, then apply each frozen relation to held-out secondary spectra.
 category: preprocessing
 is_active: true
+status: ready
 template_data:
   nodes:
   - node_id: primary_1
-    node_type: data.source
-    label: Primary Transfer Samples
-    parameters:
+    node_type: data.file_load
+    label: Primary-Instrument Standards
+    parameters: {}
+    example_binding:
       source: eigenvector
-      eigenvector_dataset: corn_m5
-    position_x: 100
+      dataset_name: corn_m5
+    position_x: 50
     position_y: 50
   - node_id: secondary_1
-    node_type: data.source
-    label: Secondary Transfer Samples
-    parameters:
+    node_type: data.file_load
+    label: Secondary-Instrument Standards
+    parameters: {}
+    example_binding:
       source: eigenvector
-      eigenvector_dataset: corn_mp5
-    position_x: 400
+      dataset_name: corn_mp5
+    position_x: 350
     position_y: 50
-  - node_id: new_data_1
-    node_type: data.source
-    label: New Secondary Spectra
+  - node_id: primary_split_1
+    node_type: data.train_test_split
+    label: Primary Paired Split
     parameters:
-      source: eigenvector
-      eigenvector_dataset: corn_mp6
-    position_x: 700
-    position_y: 50
-  - node_id: transfer_1
+      split_method: sequential
+      test_size: 0.25
+      random_seed: 42
+      distance_metric: euclidean
+      n_components: 0
+    position_x: 50
+    position_y: 250
+  - node_id: secondary_split_1
+    node_type: data.train_test_split
+    label: Secondary Paired Split
+    parameters:
+      split_method: sequential
+      test_size: 0.25
+      random_seed: 42
+      distance_metric: euclidean
+      n_components: 0
+    position_x: 350
+    position_y: 250
+  - node_id: pds_fit_1
     node_type: transfer.pds
-    label: PDS Transfer
+    label: Fit PDS
     parameters:
       half_window: 3
       n_components: 2
-    position_x: 400
-    position_y: 350
-  - node_id: viz_1
+    position_x: 50
+    position_y: 500
+  - node_id: ds_fit_1
+    node_type: transfer.ds
+    label: Fit Direct Standardization
+    parameters: {}
+    position_x: 350
+    position_y: 500
+  - node_id: sws_fit_1
+    node_type: transfer.sws
+    label: Fit Single-Wavelength Standardization
+    parameters: {}
+    position_x: 650
+    position_y: 500
+  - node_id: pds_apply_1
+    node_type: transfer.apply_fitted
+    label: Apply PDS to Held-Out Spectra
+    parameters: {}
+    position_x: 50
+    position_y: 750
+  - node_id: ds_apply_1
+    node_type: transfer.apply_fitted
+    label: Apply DS to Held-Out Spectra
+    parameters: {}
+    position_x: 350
+    position_y: 750
+  - node_id: sws_apply_1
+    node_type: transfer.apply_fitted
+    label: Apply SWS to Held-Out Spectra
+    parameters: {}
+    position_x: 650
+    position_y: 750
+  - node_id: pds_plot_1
     node_type: output.plot
-    label: Transfer Diagnostics
+    label: PDS Standardized Spectra
     parameters:
-      plot_type: scatter
-    position_x: 700
-    position_y: 350
+      plot_type: spectra
+    position_x: 50
+    position_y: 1000
+  - node_id: ds_plot_1
+    node_type: output.plot
+    label: DS Standardized Spectra
+    parameters:
+      plot_type: spectra
+    position_x: 350
+    position_y: 1000
+  - node_id: sws_plot_1
+    node_type: output.plot
+    label: SWS Standardized Spectra
+    parameters:
+      plot_type: spectra
+    position_x: 650
+    position_y: 1000
+  - node_id: pds_table_1
+    node_type: output.data_table
+    label: PDS Training Diagnostics
+    parameters: {}
+    position_x: 50
+    position_y: 1250
+  - node_id: ds_table_1
+    node_type: output.data_table
+    label: DS Training Diagnostics
+    parameters: {}
+    position_x: 350
+    position_y: 1250
+  - node_id: sws_table_1
+    node_type: output.data_table
+    label: SWS Training Diagnostics
+    parameters: {}
+    position_x: 650
+    position_y: 1250
   edges:
   - from_node_id: primary_1
-    to_node_id: transfer_1
-    to_input: X_primary
+    to_node_id: primary_split_1
+    to_input: X
   - from_node_id: secondary_1
-    to_node_id: transfer_1
+    to_node_id: secondary_split_1
+    to_input: X
+  - from_node_id: primary_split_1
+    to_node_id: pds_fit_1
+    from_output: X_train
+    to_input: X_primary
+  - from_node_id: secondary_split_1
+    to_node_id: pds_fit_1
+    from_output: X_train
     to_input: X_secondary
-  - from_node_id: new_data_1
-    to_node_id: transfer_1
-    to_input: X_new
-  - from_node_id: transfer_1
-    to_node_id: viz_1
+  - from_node_id: primary_split_1
+    to_node_id: ds_fit_1
+    from_output: X_train
+    to_input: X_primary
+  - from_node_id: secondary_split_1
+    to_node_id: ds_fit_1
+    from_output: X_train
+    to_input: X_secondary
+  - from_node_id: primary_split_1
+    to_node_id: sws_fit_1
+    from_output: X_train
+    to_input: X_primary
+  - from_node_id: secondary_split_1
+    to_node_id: sws_fit_1
+    from_output: X_train
+    to_input: X_secondary
+  - from_node_id: secondary_split_1
+    to_node_id: pds_apply_1
+    from_output: X_test
+    to_input: default
+  - from_node_id: pds_fit_1
+    to_node_id: pds_apply_1
+    from_output: fitted_state
+    to_input: fitted_state
+  - from_node_id: secondary_split_1
+    to_node_id: ds_apply_1
+    from_output: X_test
+    to_input: default
+  - from_node_id: ds_fit_1
+    to_node_id: ds_apply_1
+    from_output: fitted_state
+    to_input: fitted_state
+  - from_node_id: secondary_split_1
+    to_node_id: sws_apply_1
+    from_output: X_test
+    to_input: default
+  - from_node_id: sws_fit_1
+    to_node_id: sws_apply_1
+    from_output: fitted_state
+    to_input: fitted_state
+  - from_node_id: pds_apply_1
+    to_node_id: pds_plot_1
+    from_output: default
+    to_input: default
+  - from_node_id: ds_apply_1
+    to_node_id: ds_plot_1
+    from_output: default
+    to_input: default
+  - from_node_id: sws_apply_1
+    to_node_id: sws_plot_1
+    from_output: default
+    to_input: default
+  - from_node_id: pds_fit_1
+    to_node_id: pds_table_1
     from_output: transfer_error
+    to_input: default
+  - from_node_id: ds_fit_1
+    to_node_id: ds_table_1
+    from_output: transfer_error
+    to_input: default
+  - from_node_id: sws_fit_1
+    to_node_id: sws_table_1
+    from_output: transfer_error
+    to_input: default
   canvas_state:
-    zoom: 0.85
+    zoom: 0.75
     pan_x: 0
     pan_y: 0
   data_roles:
@@ -69,7 +214,7 @@ template_data:
       node_binding: primary_1
       required: true
       binding_mode: embedded
-      description: Transfer samples on the primary (master) instrument
+      description: Paired transfer samples measured on the primary instrument
       accepted_techniques:
       - FTIR
       - NIR
@@ -79,17 +224,7 @@ template_data:
       node_binding: secondary_1
       required: true
       binding_mode: embedded
-      description: Same transfer samples on the secondary instrument
-      accepted_techniques:
-      - FTIR
-      - NIR
-      - Raman
-    X_new:
-      role_type: X_spectra
-      node_binding: new_data_1
-      required: true
-      binding_mode: embedded
-      description: New spectra from secondary instrument to standardize
+      description: The same ordered transfer samples measured on the secondary instrument
       accepted_techniques:
       - FTIR
       - NIR
@@ -99,5 +234,3 @@ template_data:
     name: corn_m5
   - source: eigenvector
     name: corn_mp5
-  - source: eigenvector
-    name: corn_mp6

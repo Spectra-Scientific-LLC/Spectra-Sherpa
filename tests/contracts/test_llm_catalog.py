@@ -156,9 +156,9 @@ def test_get_returns_fresh_copy_not_shared_state():
 
 def test_appmode_is_str_compatible_and_canonical():
     assert AppMode.LOCAL == "local"
-    assert AppMode.values() == ("local", "hybrid", "enterprise")
+    assert AppMode.values() == ("local", "enterprise")
     # str-based enum keeps existing `app_config.mode == "local"` working.
-    assert AppMode.HYBRID.value in AppMode.values()
+    assert "hybrid" not in AppMode.values()
 
 
 def test_appconfig_accepts_injected_provider_from_env(monkeypatch):

@@ -6,6 +6,7 @@ Tests Issue #3: Circular imports must not prevent library usage.
 from __future__ import annotations
 
 import importlib
+import subprocess
 import sys
 from importlib.util import find_spec
 
@@ -108,8 +109,8 @@ def test_library_usage_example():
         executor.add_node(
             WorkflowNode(
                 node_id="src",
-                node_type="data.source",
-                parameters={"source": "sklearn", "dataset_name": "iris"},
+                node_type="data.file_load",
+                parameters={"experiment_id": 1, "file_id": 1, "stage": "raw"},
             )
         )
         assert True
@@ -196,7 +197,7 @@ def test_cli_importable():
         "spectra_sherpa.app.services.dag.node_base",
         "spectra_sherpa.app.services.dag.graph_utils",
         "spectra_sherpa.app.lib.sherpa_dataset",
-        "spectra_sherpa.app.lib.adapters.scp_adapter",
+        "spectra_sherpa.interoperability.spectrochempy_adapter",
     ],
 )
 def test_critical_modules_importable(module_path):
@@ -276,24 +277,56 @@ def test_top_level_front_door_exports():
 
 
 def test_top_level_lazy_submodules():
-    """`io` and `preprocessing` should load lazily via package __getattr__."""
-    saved = {k: v for k, v in sys.modules.items() if k.startswith("spectra_sherpa")}
+    """Only the supported top-level ``io`` module loads lazily."""
+    saved = {k: v for k, v in sys.modules.items() if k.startswith("spectra_sherpa") or k.startswith("spectrochempy")}
     for key in list(saved):
         del sys.modules[key]
 
     try:
         import spectra_sherpa as ss
 
-        assert "spectra_sherpa.app.lib.io" not in sys.modules
-        assert "spectra_sherpa.app.lib.preprocessing" not in sys.modules
-        assert "spectra_sherpa.app.lib.scp_compat" not in sys.modules
+        assert "spectra_sherpa.io" not in sys.modules
+        assert "spectrochempy" not in sys.modules
 
         _ = ss.io
-        assert "spectra_sherpa.app.lib.io" in sys.modules
+        assert "spectra_sherpa.io" in sys.modules
+        assert "spectra_sherpa.app.lib.io" not in sys.modules
 
-        _ = ss.preprocessing
-        assert "spectra_sherpa.app.lib.preprocessing" in sys.modules
+        assert "preprocessing" not in ss.__all__
+        with pytest.raises(AttributeError):
+            _ = ss.preprocessing
     finally:
-        for k in [k for k in sys.modules if k.startswith("spectra_sherpa")]:
+        for k in [k for k in sys.modules if k.startswith("spectra_sherpa") or k.startswith("spectrochempy")]:
             del sys.modules[k]
         sys.modules.update(saved)
+
+
+def test_base_application_and_registry_import_do_not_load_optional_runtime() -> None:
+    """Installed SCP must stay unloaded across every base-profile import root."""
+
+    code = """
+import sys
+import spectra_sherpa
+import spectra_sherpa.sdk
+import spectra_sherpa.app.services.dag.nodes
+from spectra_sherpa.app.main import app
+from spectra_sherpa.app.services.dag.node_base import node_registry
+
+assert app is not None
+assert len(node_registry.list_nodes()) == 101
+assert not any(name == 'spectrochempy' or name.startswith('spectrochempy.') for name in sys.modules)
+"""
+    completed = subprocess.run(
+        [sys.executable, "-c", code],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_retired_preprocessing_engine_modules_are_absent() -> None:
+    """The canonical DAG may not regain a parallel Builder/cache engine."""
+
+    assert find_spec("spectra_sherpa.app.lib.preprocessing") is None
+    assert find_spec("spectra_sherpa.app.services.cache") is None

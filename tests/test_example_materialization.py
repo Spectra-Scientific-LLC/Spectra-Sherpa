@@ -10,69 +10,15 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.core import config as config_mod
-from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.user import User
-from spectra_sherpa.app.services.dag.nodes.data.source import DataSourceNode
-from spectra_sherpa.app.services.experiments import import_reference_dataset
+from spectra_sherpa.app.services.dag.nodes.data.loaders import ExperimentDatasetReader
+from spectra_sherpa.app.services.dataset_source_resolver import ApplicationDatasetSourceResolver
 
 
 @pytest.mark.asyncio
-async def test_import_reference_dataset_materializes_scp_bundle_as_one_csv(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    test_session: AsyncSession,
-    test_user: User,
-) -> None:
-    data_dir = tmp_path / "app-data"
-    monkeypatch.setattr(
-        "spectra_sherpa.app.services.experiments.settings",
-        SimpleNamespace(data_dir=data_dir),
-    )
-
-    dataset = SherpaDataset(
-        np.array([[1.0, 1.1, 1.2], [2.0, 2.1, 2.2]]),
-        feature_axis=SpectralAxis(values=np.array([1000.0, 1001.0, 1002.0]), title="Wavenumber", units="cm-1"),
-        sample_axis=SampleAxis(labels=["sample_a", "sample_b"]),
-        data_role="X_spectra",
-    )
-    monkeypatch.setattr(
-        "spectra_sherpa.app.lib.scp_catalog.get_scp_catalog_entry",
-        lambda name: {"name": name, "label": "Mock SCP Bundle", "x_title": "Wavenumber", "x_units": "cm-1"},
-    )
-    monkeypatch.setattr(
-        "spectra_sherpa.app.lib.scp_catalog.load_scp_reference_as_sherpa",
-        lambda name: dataset,
-    )
-
-    experiment = Experiment(
-        user_id=test_user.id,
-        name="SCP Bundle Import",
-        description="",
-        metadata_path="{}",
-    )
-    test_session.add(experiment)
-    await test_session.flush()
-
-    files = await import_reference_dataset(test_session, experiment.id, "spectrochempy", "ramandata")
-
-    assert [file.file_path for file in files] == ["raw/scp_ramandata.csv"]
-    csv_path = data_dir / "experiments" / f"exp_{experiment.id:03d}" / "raw" / "scp_ramandata.csv"
-    assert csv_path.exists()
-    assert csv_path.read_text(encoding="utf-8").splitlines() == [
-        "Wavenumber (cm-1),sample_a,sample_b",
-        "1000.0,1.0,2.0",
-        "1001.0,1.1,2.1",
-        "1002.0,1.2,2.2",
-    ]
-
-
-@pytest.mark.skipif(not HAS_SCP, reason="SpectroChemPy is required for experiment-backed multi-file loading")
-@pytest.mark.asyncio
-async def test_data_source_experiment_loads_all_materialized_files(
+async def test_experiment_dataset_reader_loads_all_materialized_files(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     test_session: AsyncSession,
@@ -80,13 +26,21 @@ async def test_data_source_experiment_loads_all_materialized_files(
 ) -> None:
     data_dir = tmp_path / "app-data"
     monkeypatch.setattr(config_mod, "settings", SimpleNamespace(data_dir=data_dir))
+    monkeypatch.setattr(
+        "spectra_sherpa.app.services.dataset_source_resolver.settings",
+        SimpleNamespace(data_dir=data_dir),
+    )
+    monkeypatch.setattr(
+        "spectra_sherpa.app.services.experiments.settings",
+        SimpleNamespace(data_dir=data_dir),
+    )
 
     @asynccontextmanager
     async def override_async_session():
         yield test_session
 
     monkeypatch.setattr(
-        "spectra_sherpa.app.db.session.async_session",
+        "spectra_sherpa.app.services.dataset_source_resolver.async_session",
         override_async_session,
     )
 
@@ -136,13 +90,12 @@ async def test_data_source_experiment_loads_all_materialized_files(
     )
     await test_session.commit()
 
-    node = DataSourceNode(
+    node = ExperimentDatasetReader(
         "src_1",
         {
-            "source": "experiment",
-            "experiment_id": experiment.id,
-            "stage": "raw",
+            "dataset_id": experiment.id,
         },
+        source_resolver=ApplicationDatasetSourceResolver(),
     )
 
     result = await node.execute()

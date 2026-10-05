@@ -20,6 +20,7 @@ Markers:
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -38,8 +39,15 @@ from spectra_sherpa.app.main import app
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_node import WorkflowNode
-from spectra_sherpa.app.services import plugin_loader
 from spectra_sherpa.app.services.websocket_manager import ws_manager
+from spectra_sherpa.app.types import type_registry
+
+# The real app loads this via the FastAPI lifespan handler (app.main), which
+# ASGITransport does not run for these in-process smoke tests. Without it,
+# the shared workflow preflight fails closed with "type_registry_unavailable"
+# on every /execute call, regardless of the workflow's own validity.
+if not type_registry.is_loaded:
+    type_registry.load(Path(__file__).resolve().parents[1] / "src" / "spectra_sherpa" / "app" / "types")
 
 # ---------------------------------------------------------------------------
 # Detect if full auth routes exist (server distribution)
@@ -134,14 +142,6 @@ def _reset_ws_state():
     ws_manager._channels.clear()
     yield
     ws_manager._channels.clear()
-
-
-@pytest.fixture(autouse=True)
-def _reset_plugin_failures():
-    original_failures = list(plugin_loader.plugin_load_failures)
-    plugin_loader.plugin_load_failures.clear()
-    yield
-    plugin_loader.plugin_load_failures[:] = original_failures
 
 
 # ---------------------------------------------------------------------------
@@ -266,11 +266,13 @@ class TestWorkflowExecute:
             f"/api/v1/workflows/{wf.id}/execute",
             json={"node_id": "snv_1"},
         )
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["workflow_id"] == wf.id
-        # Node without input data will error, but the endpoint should not 500
-        assert data["status"] in ("success", "completed", "error", "partial")
+        # The shared workflow preflight now runs before execution and fails
+        # closed on a structurally invalid graph (this node has no input
+        # connection) -- a 422 here, not a 500 or a per-node "error" status,
+        # is the endpoint doing its job.
+        assert resp.status_code == 422, resp.text
+        detail = resp.json()["detail"]
+        assert detail["code"] == "workflow_preflight_failed"
 
     async def test_execute_nonexistent_workflow(self, auth_client: AsyncClient):
         resp = await auth_client.post(
@@ -283,9 +285,7 @@ class TestWorkflowExecute:
         resp = await auth_client.get("/api/v1/health")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["status"] in ("ok", "degraded")
-        if data["status"] == "degraded":
-            assert data["plugin_failure_count"] >= 1
+        assert data["status"] == "ok"
 
 
 # ---------------------------------------------------------------------------

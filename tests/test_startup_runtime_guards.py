@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from concurrent.futures import TimeoutError as FutureTimeout
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +9,10 @@ import spectra_sherpa.app.core.startup as startup
 from spectra_sherpa.app.services.encryption import get_master_key
 
 _STRONG_SECRET = "-".join(("secure", "test", "runtime", "entropy", "123456"))
+# A real Fernet key — high-entropy by construction, so it passes the
+# MASTER_ENCRYPTION_KEY entropy guard. Used wherever a test needs a *valid*
+# master key that is not itself the subject under test.
+_STRONG_MASTER_KEY = Fernet.generate_key().decode()
 
 
 def _patch_runtime(
@@ -42,8 +44,8 @@ def test_oss_local_allows_multi_worker_concurrency(monkeypatch: pytest.MonkeyPat
     startup.validate_concurrency_settings()
 
 
-def test_hybrid_fails_fast_on_multi_worker_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_runtime(monkeypatch, mode="hybrid")
+def test_extension_test_fails_fast_on_multi_worker_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_runtime(monkeypatch, mode="extension_test")
     monkeypatch.setenv("WEB_CONCURRENCY", "2")
 
     with pytest.raises(SystemExit) as exc_info:
@@ -52,15 +54,15 @@ def test_hybrid_fails_fast_on_multi_worker_concurrency(monkeypatch: pytest.Monke
     assert exc_info.value.code == 1
 
 
-def test_hybrid_accepts_single_worker_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_runtime(monkeypatch, mode="hybrid")
+def test_extension_test_accepts_single_worker_concurrency(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_runtime(monkeypatch, mode="extension_test")
     monkeypatch.setenv("WEB_CONCURRENCY", "1")
 
     startup.validate_concurrency_settings()
 
 
-def test_hybrid_invalid_worker_value_defaults_to_safe_single_worker(monkeypatch: pytest.MonkeyPatch) -> None:
-    _patch_runtime(monkeypatch, mode="hybrid")
+def test_extension_test_invalid_worker_value_defaults_to_safe_single_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_runtime(monkeypatch, mode="extension_test")
     monkeypatch.setenv("WEB_CONCURRENCY", "not-an-int")
 
     startup.validate_concurrency_settings()
@@ -79,10 +81,10 @@ def test_oss_local_security_allows_default_secret(monkeypatch: pytest.MonkeyPatc
     startup.validate_security_settings()
 
 
-def test_hybrid_security_rejects_default_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_extension_test_security_rejects_default_secret(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_runtime(
         monkeypatch,
-        mode="hybrid",
+        mode="extension_test",
         secret_key=startup.DEFAULT_SECRET_KEY,
         api_key="safe-api-key",
     )
@@ -93,7 +95,7 @@ def test_hybrid_security_rejects_default_secret(monkeypatch: pytest.MonkeyPatch)
     assert exc_info.value.code == 1
 
 
-def test_hybrid_security_rejects_default_api_key_when_system_auth_enabled(
+def test_extension_test_security_rejects_default_api_key_when_system_auth_enabled(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -103,25 +105,139 @@ def test_hybrid_security_rejects_default_api_key_when_system_auth_enabled(
     """
     _patch_runtime(
         monkeypatch,
-        mode="hybrid",
+        mode="extension_test",
         secret_key=_STRONG_SECRET,
         api_key=startup.DEFAULT_API_KEY,
     )
     monkeypatch.setenv("ALLOW_SYSTEM_API_KEY_AUTH", "true")
-    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", "a" * 32)
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", _STRONG_MASTER_KEY)
 
     with pytest.raises(SystemExit) as exc_info:
         with caplog.at_level("CRITICAL"):
             startup.validate_security_settings()
 
     assert exc_info.value.code == 1
-    assert "APP_API_KEY is set to the default value" in caplog.text
+    assert "APP_API_KEY is a published default/placeholder" in caplog.text
 
 
-def test_hybrid_security_rejects_short_master_encryption_key(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_extension_test_security_rejects_env_example_api_key_when_system_auth_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Regression: the value shipped in .env.example ("default-local-key")
+    is a distinct string from the runtime default ("local-key"). The prior
+    exact-match guard only caught the latter, so an operator who copied
+    .env.example and enabled system-key auth slipped through. Both must fail.
+    """
     _patch_runtime(
         monkeypatch,
-        mode="hybrid",
+        mode="extension_test",
+        secret_key=_STRONG_SECRET,
+        api_key="default-local-key",
+    )
+    monkeypatch.setenv("ALLOW_SYSTEM_API_KEY_AUTH", "true")
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", _STRONG_MASTER_KEY)
+
+    with pytest.raises(SystemExit) as exc_info:
+        with caplog.at_level("CRITICAL"):
+            startup.validate_security_settings()
+
+    assert exc_info.value.code == 1
+    assert "APP_API_KEY is a published default/placeholder" in caplog.text
+
+
+def test_extension_test_security_rejects_short_system_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A short (brute-forceable) APP_API_KEY is rejected when it is accepted
+    as a credential, even though it is not a known placeholder string.
+    """
+    _patch_runtime(
+        monkeypatch,
+        mode="extension_test",
+        secret_key=_STRONG_SECRET,
+        api_key="short-key",
+    )
+    monkeypatch.setenv("ALLOW_SYSTEM_API_KEY_AUTH", "true")
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", _STRONG_MASTER_KEY)
+
+    with pytest.raises(SystemExit) as exc_info:
+        with caplog.at_level("CRITICAL"):
+            startup.validate_security_settings()
+
+    assert exc_info.value.code == 1
+    assert "APP_API_KEY must be at least" in caplog.text
+
+
+def test_extension_test_security_rejects_low_diversity_system_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A long but repetitive APP_API_KEY (e.g. "0"*40) clears the length floor
+    yet carries almost no entropy — it must still be rejected as a credential.
+    """
+    _patch_runtime(
+        monkeypatch,
+        mode="extension_test",
+        secret_key=_STRONG_SECRET,
+        api_key="0" * 40,
+    )
+    monkeypatch.setenv("ALLOW_SYSTEM_API_KEY_AUTH", "true")
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", _STRONG_MASTER_KEY)
+
+    with pytest.raises(SystemExit) as exc_info:
+        with caplog.at_level("CRITICAL"):
+            startup.validate_security_settings()
+
+    assert exc_info.value.code == 1
+    assert "too low-entropy" in caplog.text
+
+
+def test_extension_test_security_accepts_strong_system_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A strong random APP_API_KEY is accepted with system-key auth enabled."""
+    _patch_runtime(
+        monkeypatch,
+        mode="extension_test",
+        secret_key=_STRONG_SECRET,
+        api_key="k" + "AbC9dEf2" * 5,  # 41 chars, mixed
+    )
+    monkeypatch.setenv("ALLOW_SYSTEM_API_KEY_AUTH", "true")
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", _STRONG_MASTER_KEY)
+
+    startup.validate_security_settings()
+
+
+def test_extension_test_security_allows_blank_api_key_when_system_auth_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_runtime(monkeypatch, mode="extension_test", secret_key=_STRONG_SECRET, api_key="")
+    monkeypatch.setenv("ALLOW_SYSTEM_API_KEY_AUTH", "false")
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", _STRONG_MASTER_KEY)
+
+    startup.validate_security_settings()
+
+
+def test_local_security_ignores_system_api_key_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Local mode bypasses auth, so even an explicitly enabled placeholder
+    APP_API_KEY does not participate in request authentication or block startup.
+    """
+    _patch_runtime(
+        monkeypatch,
+        mode="local",
+        secret_key=startup.DEFAULT_SECRET_KEY,
+        api_key="default-local-key",
+    )
+    monkeypatch.setenv("ALLOW_SYSTEM_API_KEY_AUTH", "true")
+    monkeypatch.delenv("MASTER_ENCRYPTION_KEY", raising=False)
+
+    startup.validate_security_settings()
+
+
+def test_extension_test_security_rejects_short_master_encryption_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_runtime(
+        monkeypatch,
+        mode="extension_test",
         secret_key=_STRONG_SECRET,
         api_key="safe-api-key",
     )
@@ -139,6 +255,57 @@ def test_master_encryption_secret_is_normalized_to_valid_fernet_key(monkeypatch:
     key = get_master_key()
 
     Fernet(key)
+
+
+def test_extension_test_security_rejects_low_entropy_master_key(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A long-but-repetitive MASTER_ENCRYPTION_KEY clears the 32-char floor but
+    is trivially brute-forceable — the single-SHA-256 derivation is only sound
+    on a high-entropy input, so a low-entropy one must fail closed.
+    """
+    _patch_runtime(monkeypatch, mode="extension_test", secret_key=_STRONG_SECRET, api_key="safe-api-key")
+    monkeypatch.delenv("ALLOW_SYSTEM_API_KEY_AUTH", raising=False)
+    monkeypatch.delenv("TRUST_PROXY", raising=False)
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", "a" * 40)
+
+    with pytest.raises(SystemExit) as exc_info:
+        with caplog.at_level("CRITICAL"):
+            startup.validate_security_settings()
+
+    assert exc_info.value.code == 1
+    assert "MASTER_ENCRYPTION_KEY appears too low-entropy" in caplog.text
+
+
+def test_extension_test_security_rejects_template_marker_master_key(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An un-substituted ``<...>`` template marker (>=32 chars) must be rejected
+    as a placeholder rather than accepted as a real key.
+    """
+    _patch_runtime(monkeypatch, mode="extension_test", secret_key=_STRONG_SECRET, api_key="safe-api-key")
+    monkeypatch.delenv("ALLOW_SYSTEM_API_KEY_AUTH", raising=False)
+    monkeypatch.delenv("TRUST_PROXY", raising=False)
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", "<your-master-encryption-key-goes-here>")
+
+    with pytest.raises(SystemExit) as exc_info:
+        with caplog.at_level("CRITICAL"):
+            startup.validate_security_settings()
+
+    assert exc_info.value.code == 1
+    assert "MASTER_ENCRYPTION_KEY is a placeholder/default" in caplog.text
+
+
+def test_extension_test_security_accepts_fernet_master_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A genuine Fernet key (32 random bytes) is accepted without entropy fuss."""
+    _patch_runtime(monkeypatch, mode="extension_test", secret_key=_STRONG_SECRET, api_key="safe-api-key")
+    monkeypatch.delenv("ALLOW_SYSTEM_API_KEY_AUTH", raising=False)
+    monkeypatch.delenv("TRUST_PROXY", raising=False)
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", _STRONG_MASTER_KEY)
+
+    startup.validate_security_settings()
 
 
 # ===========================================================================
@@ -199,7 +366,7 @@ def test_enterprise_security_rejects_trust_proxy_without_trusted_cidrs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _patch_runtime(monkeypatch, mode="enterprise", secret_key=_STRONG_SECRET, api_key="safe-api-key")
-    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", "x" * 32)
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", _STRONG_MASTER_KEY)
     monkeypatch.setenv("TRUST_PROXY", "true")
     monkeypatch.delenv("TRUSTED_PROXY_CIDRS", raising=False)
 
@@ -209,12 +376,12 @@ def test_enterprise_security_rejects_trust_proxy_without_trusted_cidrs(
     assert exc_info.value.code == 1
 
 
-def test_hybrid_security_warns_trust_proxy_without_trusted_cidrs(
+def test_extension_test_security_warns_trust_proxy_without_trusted_cidrs(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    _patch_runtime(monkeypatch, mode="hybrid", secret_key=_STRONG_SECRET, api_key="safe-api-key")
-    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", "x" * 32)
+    _patch_runtime(monkeypatch, mode="extension_test", secret_key=_STRONG_SECRET, api_key="safe-api-key")
+    monkeypatch.setenv("MASTER_ENCRYPTION_KEY", _STRONG_MASTER_KEY)
     monkeypatch.setenv("TRUST_PROXY", "true")
     monkeypatch.delenv("TRUSTED_PROXY_CIDRS", raising=False)
 
@@ -269,189 +436,11 @@ def test_dag_pool_creation_gracefully_handles_permission_error(
     assert _dag_pool is None
 
 
-# ===========================================================================
-# SpectroChemPy bootstrap timeout behavior
-# ===========================================================================
+@pytest.fixture(autouse=True)
+def explicit_test_runtime_policy(monkeypatch):
+    from spectra_sherpa.app.contracts import runtime_mode
 
-
-def test_scp_bootstrap_timeout_auto_is_non_blocking(
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-    tmp_path,
-) -> None:
-    class _TimedOutFuture:
-        def __init__(self) -> None:
-            self.cancel_called = False
-
-        def result(self, timeout=None):  # noqa: ANN001
-            raise FutureTimeout()
-
-        def cancel(self) -> None:
-            self.cancel_called = True
-
-    class _FakeExecutor:
-        def __init__(self, max_workers=1):  # noqa: ANN001
-            self.shutdown_calls: list[tuple[bool, bool]] = []
-            self.future = _TimedOutFuture()
-
-        def submit(self, fn, *args, **kwargs):  # noqa: ANN001
-            return self.future
-
-        def shutdown(self, wait=True, cancel_futures=False):  # noqa: ANN001
-            self.shutdown_calls.append((wait, cancel_futures))
-
-    fake_executor = _FakeExecutor()
-
-    monkeypatch.setenv("SCP_DATA_BOOTSTRAP", "auto")
-    monkeypatch.setenv("SCP_DATA_TIMEOUT", "1")
-    monkeypatch.setattr(
-        "spectra_sherpa.app.lib.scp_compat.HAS_SCP",
-        True,
+    monkeypatch.setattr(runtime_mode, "_policies", {})
+    runtime_mode.register_runtime_mode(
+        runtime_mode.RuntimeModePolicy(name="extension_test", implicit_loopback_identity=True)
     )
-    monkeypatch.setattr(
-        "spectra_sherpa.app.lib.scp_compat.get_scp_datadirs",
-        lambda: [tmp_path / "missing"],
-    )
-    monkeypatch.setattr(
-        "spectra_sherpa.app.lib.scp_compat.download_testdata",
-        lambda: None,
-    )
-    monkeypatch.setattr(
-        "concurrent.futures.ThreadPoolExecutor",
-        lambda max_workers=1: fake_executor,
-    )
-
-    with caplog.at_level("WARNING"):
-        startup.ensure_spectrochempy_data()
-
-    assert "timed out after 1s" in caplog.text
-    assert fake_executor.future.cancel_called is True
-    assert fake_executor.shutdown_calls == [(False, True)]
-
-
-def test_scp_bootstrap_timeout_required_raises_runtime_error(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
-) -> None:
-    class _TimedOutFuture:
-        def __init__(self) -> None:
-            self.cancel_called = False
-
-        def result(self, timeout=None):  # noqa: ANN001
-            raise FutureTimeout()
-
-        def cancel(self) -> None:
-            self.cancel_called = True
-
-    class _FakeExecutor:
-        def __init__(self, max_workers=1):  # noqa: ANN001
-            self.shutdown_calls: list[tuple[bool, bool]] = []
-            self.future = _TimedOutFuture()
-
-        def submit(self, fn, *args, **kwargs):  # noqa: ANN001
-            return self.future
-
-        def shutdown(self, wait=True, cancel_futures=False):  # noqa: ANN001
-            self.shutdown_calls.append((wait, cancel_futures))
-
-    fake_executor = _FakeExecutor()
-
-    monkeypatch.setenv("SCP_DATA_BOOTSTRAP", "required")
-    monkeypatch.setenv("SCP_DATA_TIMEOUT", "1")
-    monkeypatch.setattr(
-        "spectra_sherpa.app.lib.scp_compat.HAS_SCP",
-        True,
-    )
-    monkeypatch.setattr(
-        "spectra_sherpa.app.lib.scp_compat.get_scp_datadirs",
-        lambda: [tmp_path / "missing"],
-    )
-    monkeypatch.setattr(
-        "spectra_sherpa.app.lib.scp_compat.download_testdata",
-        lambda: None,
-    )
-    monkeypatch.setattr(
-        "concurrent.futures.ThreadPoolExecutor",
-        lambda max_workers=1: fake_executor,
-    )
-
-    with pytest.raises(RuntimeError, match="timed out after 1s"):
-        startup.ensure_spectrochempy_data()
-
-    assert fake_executor.future.cancel_called is True
-    assert fake_executor.shutdown_calls == [(False, True)]
-
-
-def test_scp_completeness_check_requires_nested_anchor_paths(tmp_path) -> None:
-    datadir = tmp_path / "testdata"
-    (datadir / "irdata").mkdir(parents=True)
-    (datadir / "ramandata").mkdir(parents=True)
-    (datadir / "nmrdata").mkdir(parents=True)
-    (datadir / "galacticdata").mkdir(parents=True)
-    (datadir / "agirdata").mkdir(parents=True)
-
-    (datadir / "irdata" / "nh4y-activation.spg").write_text("x")
-    (datadir / "ramandata" / "wire").mkdir(parents=True)
-
-    for idx in range(30):
-        (datadir / "irdata" / f"sample_{idx}.spa").write_text("x")
-
-    assert startup._scp_testdata_looks_complete(datadir) is False
-
-    nested_nmr = datadir / "nmrdata" / "bruker" / "tests" / "nmr" / "topspin_1d" / "1"
-    nested_nmr.mkdir(parents=True)
-    (nested_nmr / "fid").write_text("x")
-
-    assert startup._scp_testdata_looks_complete(datadir) is True
-
-
-def test_scp_bootstrap_redownloads_when_partial_tree_exists(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    datadir = tmp_path / "testdata"
-    (datadir / "irdata").mkdir(parents=True)
-    (datadir / "ramandata").mkdir(parents=True)
-    (datadir / "irdata" / "nh4y-activation.spg").write_text("x")
-
-    download_calls: list[str] = []
-
-    monkeypatch.setenv("SCP_DATA_BOOTSTRAP", "auto")
-    monkeypatch.setattr("spectra_sherpa.app.lib.scp_compat.HAS_SCP", True)
-    monkeypatch.setattr("spectra_sherpa.app.lib.scp_compat.get_scp_datadirs", lambda: [datadir])
-    monkeypatch.setattr(
-        "spectra_sherpa.app.lib.scp_compat.download_testdata",
-        lambda: download_calls.append("downloaded"),
-    )
-
-    startup.ensure_spectrochempy_data()
-
-    assert download_calls == ["downloaded"]
-
-
-def test_scp_reference_file_detection_matches_real_world_tree() -> None:
-    assert startup._is_scp_testdata_file(Path("sample.SPA")) is True
-    assert startup._is_scp_testdata_file(Path("sample.SPC")) is True
-    assert startup._is_scp_testdata_file(Path("sample.CSV")) is True
-    assert startup._is_scp_testdata_file(Path("mapping.wdf")) is True
-    assert startup._is_scp_testdata_file(Path("GC_Demo.srs")) is True
-    assert startup._is_scp_testdata_file(Path("als2004dataset.MAT")) is True
-    assert startup._is_scp_testdata_file(Path("background.0")) is True
-    assert startup._is_scp_testdata_file(Path("1")) is True
-    assert startup._is_scp_testdata_file(Path("README.md")) is False
-
-
-def test_scp_reference_pdf_is_migrated_to_app_data_dir(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
-) -> None:
-    app_data_dir = tmp_path / "app-data"
-    scp_dir = tmp_path / "scp-home" / "testdata"
-    scp_dir.mkdir(parents=True)
-    legacy_pdf = scp_dir.parent / "spectrochempy_testdata_reference.pdf"
-    legacy_pdf.write_text("legacy pdf", encoding="utf-8")
-
-    monkeypatch.setattr(startup, "settings", SimpleNamespace(data_dir=app_data_dir))
-
-    resolved = startup._resolve_scp_reference_pdf_path(scp_dir)
-
-    expected = app_data_dir / "references" / "spectrochempy_testdata_reference.pdf"
-    assert resolved == expected
-    assert expected.read_text(encoding="utf-8") == "legacy pdf"

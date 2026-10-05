@@ -7,7 +7,7 @@ schema and structural invariants.  These tests ensure that:
 1. Every YAML file parses and validates against ``TemplateFile``.
 2. Every node_type in every template exists in the NodeRegistry.
 3. Every edge references valid node_ids.
-4. Every ``data_roles`` node_binding references a ``data.source`` node.
+4. Every ``data_roles`` node_binding references a canonical ``data.file_load`` node.
 5. No duplicate slugs across the template set.
 6. Every template category exists in ``_categories.yaml``.
 7. ``data_roles`` node_bindings are valid and role_types are from the enum.
@@ -140,19 +140,19 @@ class TestEdgeReferences:
 
 
 class TestDataRolesNodeBindings:
-    """data_roles node_binding values must reference data.source nodes."""
+    """data_roles node_binding values must reference exact file-load nodes."""
 
     def test_data_role_bindings_are_source_nodes(self, all_templates: list[dict]) -> None:
         errors = []
         for t in all_templates:
             slug = t["slug"]
-            source_ids = {n["node_id"] for n in t["template_data"]["nodes"] if n["node_type"] == "data.source"}
+            source_ids = {n["node_id"] for n in t["template_data"]["nodes"] if n["node_type"] == "data.file_load"}
             for role_name, role in t["template_data"].get("data_roles", {}).items():
                 if role.get("role_type") in ("X_spectra", "Y_reference", "class_labels"):
                     if role["node_binding"] not in source_ids:
                         errors.append(
                             f"{slug}: data_roles.{role_name}.node_binding "
-                            f"'{role['node_binding']}' is not a data.source node"
+                            f"'{role['node_binding']}' is not a data.file_load node"
                         )
         assert not errors, "Invalid data_roles bindings:\n" + "\n".join(errors)
 
@@ -201,6 +201,8 @@ class TestCategoryExistence:
 
 VALID_ROLE_TYPES = {
     "X_spectra",
+    "X_features",
+    "X_hsi",
     "Y_reference",
     "class_labels",
     "wavelength_axis",
@@ -222,8 +224,7 @@ class TestDataRoles:
             for role_name, role in t["template_data"].get("data_roles", {}).items():
                 if role["node_binding"] not in node_ids:
                     errors.append(
-                        f"{slug}: data_roles.{role_name}.node_binding "
-                        f"'{role['node_binding']}' references unknown node"
+                        f"{slug}: data_roles.{role_name}.node_binding '{role['node_binding']}' references unknown node"
                     )
         assert not errors, "Invalid data_roles bindings:\n" + "\n".join(errors)
 
@@ -233,7 +234,7 @@ class TestDataRoles:
             slug = t["slug"]
             for role_name, role in t["template_data"].get("data_roles", {}).items():
                 if role["role_type"] not in VALID_ROLE_TYPES:
-                    errors.append(f"{slug}: data_roles.{role_name}.role_type " f"'{role['role_type']}' is not valid")
+                    errors.append(f"{slug}: data_roles.{role_name}.role_type '{role['role_type']}' is not valid")
         assert not errors, "Invalid role_types:\n" + "\n".join(errors)
 
     def test_data_roles_binding_modes_valid(self, all_templates: list[dict]) -> None:
@@ -242,9 +243,7 @@ class TestDataRoles:
             slug = t["slug"]
             for role_name, role in t["template_data"].get("data_roles", {}).items():
                 if role["binding_mode"] not in VALID_BINDING_MODES:
-                    errors.append(
-                        f"{slug}: data_roles.{role_name}.binding_mode " f"'{role['binding_mode']}' is not valid"
-                    )
+                    errors.append(f"{slug}: data_roles.{role_name}.binding_mode '{role['binding_mode']}' is not valid")
         assert not errors, "Invalid binding_modes:\n" + "\n".join(errors)
 
     def test_supervised_templates_have_target_role(self, all_templates: list[dict]) -> None:
@@ -279,20 +278,13 @@ class TestCertifiedDatasets:
     def _default_example_refs(template_data: dict) -> list[tuple[str, str]]:
         refs: list[tuple[str, str]] = []
         for node in template_data.get("nodes", []):
-            if node.get("node_type") != "data.source":
+            if node.get("node_type") != "data.file_load":
                 continue
-            params = node.get("parameters", {}) or {}
-            source = params.get("source")
-            if source == "eigenvector" and params.get("eigenvector_dataset"):
-                refs.append(("eigenvector", params["eigenvector_dataset"]))
-            elif source == "sklearn" and params.get("sklearn_dataset"):
-                refs.append(("sklearn", params["sklearn_dataset"]))
-            elif source == "spectrochempy":
-                dataset_name = params.get("example_dataset") or params.get("example_file")
-                if dataset_name:
-                    refs.append(("spectrochempy", dataset_name))
-            elif source == "oes" and params.get("oes_dataset"):
-                refs.append(("oes", params["oes_dataset"]))
+            binding = node.get("example_binding") or {}
+            source = binding.get("source")
+            dataset_name = binding.get("dataset_name")
+            if source and dataset_name:
+                refs.append((source, dataset_name))
         return refs
 
     def test_default_example_bindings_are_certified(self, all_templates: list[dict]) -> None:
@@ -357,7 +349,7 @@ class TestDAGStructure:
     def test_all_non_source_nodes_have_incoming_edge(self, all_templates: list[dict]) -> None:
         """Every non-source, non-deploy-input node should have at least one incoming edge."""
         errors = []
-        exempt_types = {"data.source", "deploy.input"}
+        exempt_types = {"data.file_load", "deploy.input"}
         for t in all_templates:
             slug = t["slug"]
             nodes = t["template_data"]["nodes"]

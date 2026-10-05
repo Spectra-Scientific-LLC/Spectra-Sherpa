@@ -5,9 +5,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-pytest.importorskip("spectrochempy")
-
-from spectra_sherpa.app.lib.scp_compat import NDDataset, scp
 from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset, SpectralAxis, TargetContext
 from spectra_sherpa.app.services.dag import node_registry
 
@@ -17,12 +14,12 @@ def _make_regression_dataset(
     n_features: int = 8,
     noise: float = 0.02,
     seed: int = 42,
-) -> tuple[NDDataset, np.ndarray]:
+) -> tuple[SherpaDataset, np.ndarray]:
     rng = np.random.default_rng(seed)
     X = rng.normal(size=(n_samples, n_features))
     coefficients = np.linspace(1.2, 0.3, n_features)
     y = X @ coefficients + noise * rng.normal(size=n_samples)
-    return scp.NDDataset(X), y
+    return SherpaDataset(X=X, data_role="X_features"), y
 
 
 def _make_multitarget_regression_dataset(
@@ -59,12 +56,12 @@ def _make_incomplete_multitarget_dataset() -> tuple[SherpaDataset, np.ndarray, l
     return dataset, incomplete, target_names
 
 
-def _make_cluster_dataset(seed: int = 7) -> NDDataset:
+def _make_cluster_dataset(seed: int = 7) -> SherpaDataset:
     rng = np.random.default_rng(seed)
     cluster_a = rng.normal(loc=-2.0, scale=0.12, size=(12, 2))
     cluster_b = rng.normal(loc=2.0, scale=0.12, size=(12, 2))
     data = np.vstack([cluster_a, cluster_b])
-    return scp.NDDataset(data)
+    return SherpaDataset(X=data, data_role="X_features")
 
 
 @pytest.mark.asyncio
@@ -94,7 +91,7 @@ async def test_pcr_node_regression_fit():
 
 @pytest.mark.asyncio
 async def test_pcr_node_multitarget_preserves_target_dimensions():
-    X_dataset, y, target_names = _make_multitarget_regression_dataset()
+    X_dataset, y, _target_names = _make_multitarget_regression_dataset()
     node = node_registry.create_node(
         node_type="model.pcr",
         node_id="pcr_multitarget_test",
@@ -108,7 +105,10 @@ async def test_pcr_node_multitarget_preserves_target_dimensions():
     assert scores_ds.meta["training_X_shape"] == [X_dataset.shape[0], X_dataset.shape[1]]
     assert scores_ds.meta["training_y_shape"] == [X_dataset.shape[0], y.shape[1]]
     assert scores_ds.meta["output_dimensions"]["y_pred"] == [X_dataset.shape[0], y.shape[1]]
-    assert scores_ds.meta["target_names"] == target_names
+    # The explicit raw NumPy response is the sole response-identity authority.
+    # It carries no labels, so PCR must not inherit potentially stale property
+    # names from X merely because the arrays happen to have the same width.
+    assert scores_ds.meta["target_names"] == ["Target 1", "Target 2", "Target 3"]
     assert len(scores_ds.meta["r2_per_target"]) == y.shape[1]
     assert len(scores_ds.meta["rmse_per_target"]) == y.shape[1]
 
@@ -151,93 +151,118 @@ async def test_pcr_node_selected_target_drops_incomplete_rows():
 async def test_pls_node_attaches_quality_evaluation():
     X_dataset, y = _make_regression_dataset(n_samples=36, n_features=6, seed=24)
     node = node_registry.create_node(
-        node_type="model.pls",
+        node_type="model.fitted_pls",
         node_id="pls_test",
         parameters={"n_components": 3, "scale": True},
     )
 
-    result = await node.run(X=X_dataset, y=y)
-    outputs = result.outputs
+    result = await node.run(input_data=X_dataset, y=y)
+    predictions = result.outputs["default"]
+    evaluator = node_registry.create_node("diagnostics.regression_evaluator", "pls_quality", {})
+    quality = await evaluator.execute(input_data=predictions, y_true=y)
 
-    scores_ds = outputs["default"]
-    assert isinstance(scores_ds, SherpaDataset)
-    assert scores_ds.quality.latest is not None
-    assert scores_ds.quality.latest.model_type == "PLS"
-    assert scores_ds.quality.latest.n_components == 3
-    assert scores_ds.quality.latest.r2 is None or isinstance(scores_ds.quality.latest.r2, float)
-    assert scores_ds.quality.latest.rmse is None or isinstance(scores_ds.quality.latest.rmse, float)
+    assert predictions.shape == (36, 1)
+    assert result.outputs["fitted_state"]["state"]["n_components"] == 3
+    assert result.outputs["vip_scores"].shape == (6,)
+    assert quality.outputs["default"]["r2"] > 0.9
+    assert quality.outputs["default"]["rmse"] >= 0.0
 
 
 @pytest.mark.asyncio
 async def test_pls_node_rejects_incomplete_multitarget_without_selection():
     X_dataset, _y, _target_names = _make_incomplete_multitarget_dataset()
     node = node_registry.create_node(
-        node_type="model.pls",
+        node_type="model.fitted_pls",
         node_id="pls_incomplete_target_test",
         parameters={"n_components": 2, "scale": True},
     )
 
-    with pytest.raises(ValueError, match="incomplete multi-target reference values"):
-        await node.run(X=X_dataset)
+    with pytest.raises(ValueError, match="finite"):
+        await node.run(input_data=X_dataset, y=X_dataset.target)
 
 
 @pytest.mark.asyncio
 async def test_pls_node_selected_target_uses_single_incomplete_property():
     X_dataset, y, target_names = _make_incomplete_multitarget_dataset()
-    selected = target_names[1]
-    X_dataset.target_context = X_dataset.target_context.model_copy(update={"selected_target": selected})
-    valid_rows = int(np.isfinite(y[:, 1]).sum())
+    valid = np.isfinite(y[:, 1])
+    valid_rows = int(valid.sum())
+    selected_dataset = SherpaDataset(X=np.asarray(X_dataset.data)[valid], data_role="X_features")
     node = node_registry.create_node(
-        node_type="model.pls",
+        node_type="model.fitted_pls",
         node_id="pls_selected_target_test",
         parameters={"n_components": 2, "scale": True},
     )
 
-    result = await node.run(X=X_dataset)
-    scores_ds = result.outputs["default"]
+    result = await node.run(input_data=selected_dataset, y=y[valid, 1])
+    state = result.outputs["fitted_state"]["state"]
 
-    assert scores_ds.shape == (valid_rows, 2)
-    assert scores_ds.meta["training_X_shape"] == [valid_rows, X_dataset.shape[1]]
-    assert scores_ds.meta["training_y_shape"] == [valid_rows, 1]
-    assert scores_ds.meta["target_names"] == [selected]
-    assert scores_ds.meta["target_mode"] == "single"
-    assert scores_ds.meta["selected_target"] == selected
-    assert scores_ds.meta["quality_summary"]["target_names"] == [selected]
-    assert scores_ds.meta["quality_summary"]["selected_target"] == selected
-    assert result.diagnostics["target_names"] == [selected]
-    assert result.diagnostics["selected_target"] == selected
-    assert result.outputs["_model_artifact"]["metadata"]["target_names"] == [selected]
-    assert result.outputs["_model_artifact"]["metadata"]["selected_target"] == selected
-    assert result.outputs["cv_predictions"]["metadata"]["selected_target"] == selected
-    assert result.outputs["Y_loadings"].shape == (1, 2)
+    assert result.outputs["default"].shape == (valid_rows, 1)
+    assert state["reference_samples"] == valid_rows
+    assert state["features"] == X_dataset.shape[1]
+    assert state["targets"] == 1
+    assert result.outputs["vip_scores"].shape == (X_dataset.shape[1],)
 
 
-def test_my_dataset_node_freezes_selected_target_per_sheet():
+def test_file_load_node_freezes_selected_target_per_sheet(tmp_path):
     X_dataset, _y, target_names = _make_incomplete_multitarget_dataset()
     selected = target_names[2]
+    source = tmp_path / "targets.csv"
+    rows = np.column_stack(
+        [
+            [f"sample-{index}" for index in range(X_dataset.shape[0])],
+            np.asarray(X_dataset.data),
+            np.asarray(X_dataset.target),
+        ]
+    )
+    headers = ["sample_id", *[str(value) for value in range(X_dataset.shape[1])], *target_names]
+    np.savetxt(source, rows, delimiter=",", header=",".join(headers), comments="", fmt="%s")
     node = node_registry.create_node(
-        node_type="data.my_dataset",
+        node_type="data.file_load",
         node_id="my_dataset_selected_target_test",
-        parameters={"target_mode": "single", "selected_target": selected},
+        parameters={
+            "experiment_id": 1,
+            "file_id": 1,
+            "stage": "raw",
+            "target_authority": {
+                "schema_version": "spectrasherpa-target-authority/1",
+                "column": selected,
+                "target_type": "continuous",
+                "units": None,
+                "source_digest": "0" * 64,
+            },
+        },
     )
 
-    output = node._apply_node_target_selection(X_dataset)
+    output = node._load_file(source, selected_target=selected, target_type="continuous")
 
     assert output.target_context.selected_target == selected
-    assert output.meta["target_mode"] == "single"
-    assert output.meta["selected_target"] == selected
+    assert output.target_context.target_names == [selected]
+    assert output.target.shape == (X_dataset.shape[0],)
 
 
-def test_my_dataset_node_rejects_stale_selected_target():
+def test_file_load_node_rejects_stale_selected_target(tmp_path):
     X_dataset, _y, _target_names = _make_incomplete_multitarget_dataset()
+    source = tmp_path / "features.csv"
+    np.savetxt(source, np.asarray(X_dataset.data), delimiter=",", header="a,b,c,d,e,f,g", comments="")
     node = node_registry.create_node(
-        node_type="data.my_dataset",
+        node_type="data.file_load",
         node_id="my_dataset_bad_target_test",
-        parameters={"target_mode": "single", "selected_target": "NoSuchProperty"},
+        parameters={
+            "experiment_id": 1,
+            "file_id": 1,
+            "stage": "raw",
+            "target_authority": {
+                "schema_version": "spectrasherpa-target-authority/1",
+                "column": "NoSuchProperty",
+                "target_type": "continuous",
+                "units": None,
+                "source_digest": "0" * 64,
+            },
+        },
     )
 
     with pytest.raises(ValueError, match="NoSuchProperty"):
-        node._apply_node_target_selection(X_dataset)
+        node._load_file(source, selected_target="NoSuchProperty", target_type="continuous")
 
 
 @pytest.mark.asyncio

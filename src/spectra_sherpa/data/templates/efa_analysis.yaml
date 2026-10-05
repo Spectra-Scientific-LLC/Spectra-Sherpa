@@ -1,55 +1,44 @@
 schema_version: 1
 name: Evolving Factor Analysis
 slug: efa_analysis
-description: Determine the number of components in evolving mixtures with forward/backward
-  EFA and eigenvalue plots.
+description: Determine evolving-system rank from the measured mixture sequence with
+  forward/backward EFA diagnostics and no implicit preprocessing.
 category: curve_resolution
 is_active: true
 status: ready
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Data
-    parameters:
-      source: spectrochempy
-      example_dataset: irdata
+    parameters: {}
     position_x: 175
     position_y: 50
-  - node_id: preprocess_1
-    node_type: preprocess.scale
-    label: Mean Center
-    parameters:
-      method: mean_center
-    position_x: 425
-    position_y: 300
   - node_id: model_1
     node_type: model.efa
     label: Fit EFA Decomposition
     parameters:
       n_components: 10
     position_x: 175
-    position_y: 550
+    position_y: 350
   - node_id: viz_1
     node_type: output.plot
     label: Forward EFA
     parameters:
       plot_type: spectra
     position_x: 50
-    position_y: 800
+    position_y: 650
   - node_id: viz_2
     node_type: output.plot
     label: Backward EFA
     parameters:
       plot_type: spectra
     position_x: 450
-    position_y: 800
+    position_y: 650
   edges:
   - from_node_id: data_1
-    to_node_id: preprocess_1
-    to_input: default
-  - from_node_id: preprocess_1
     to_node_id: model_1
+    to_input: default
   - from_node_id: model_1
     to_node_id: viz_1
     from_output: forward_eigenvalues
@@ -74,12 +63,6 @@ template_data:
       - Raman
       - UV-Vis
   certified_datasets:
-  - source: spectrochempy
-    name: irdata
-  - source: spectrochempy
-    name: ramandata
-  - source: spectrochempy
-    name: matlabdata/als2004dataset.MAT
   - source: eigenvector
     name: corn_m5
   - source: eigenvector

@@ -11,7 +11,7 @@ empty defaults that impose no restrictions.
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Any, Awaitable, Callable
 
 
 class DemoPolicy:
@@ -56,6 +56,105 @@ def set_demo_policy_provider(provider: DemoPolicyProvider) -> None:
     """Install a demo policy provider (called by a server extension at startup)."""
     global _demo_policy_provider
     _demo_policy_provider = provider
+
+
+# Server-issued trial dataset grants are checked at every execution edge.
+# The OSS package owns only this narrow injection contract; local OSS has no
+# provider and therefore retains unrestricted scientist-owned data access.
+TrialDatasetAccessProvider = Callable[..., Awaitable[Any]]
+TrialStarterExperimentDeletionProvider = Callable[..., Awaitable[None]]
+TrialReferenceGrantProvider = Callable[..., Awaitable[Any]]
+
+_trial_dataset_access_provider: TrialDatasetAccessProvider | None = None
+_trial_starter_experiment_deletion_provider: TrialStarterExperimentDeletionProvider | None = None
+_trial_reference_grant_provider: TrialReferenceGrantProvider | None = None
+
+
+async def require_trial_dataset_access(
+    *,
+    session: Any,
+    user_id: int,
+    workflow_project_id: int | None,
+    experiment_id: int | None,
+    stage: str | None,
+    file_id: int | None,
+    asset_id: str | None,
+    loaded_dataset: Any | None = None,
+    file_ids: list[int] | None = None,
+) -> Any | None:
+    """Re-admit a server-issued starter dataset, or no-op outside trial."""
+
+    if _trial_dataset_access_provider is not None:
+        return await _trial_dataset_access_provider(
+            session=session,
+            user_id=user_id,
+            workflow_project_id=workflow_project_id,
+            experiment_id=experiment_id,
+            stage=stage,
+            file_id=file_id,
+            asset_id=asset_id,
+            loaded_dataset=loaded_dataset,
+            **({"file_ids": file_ids} if file_ids is not None else {}),
+        )
+    return None
+
+
+def set_trial_dataset_access_provider(provider: TrialDatasetAccessProvider | None) -> None:
+    """Install or clear the server-owned free-trial dataset authority."""
+
+    global _trial_dataset_access_provider
+    _trial_dataset_access_provider = provider
+
+
+async def require_trial_starter_experiment_deletion(
+    *,
+    session: Any,
+    user_id: int,
+    experiment_id: int,
+) -> None:
+    """Refuse deletion when the server owns active starter custody.
+
+    Local/OSS deployments install no provider and retain their ordinary
+    Experiment lifecycle.  The managed demo injects the durable receipt
+    authority without making the OSS package import server-only models.
+    """
+
+    if _trial_starter_experiment_deletion_provider is not None:
+        await _trial_starter_experiment_deletion_provider(
+            session=session,
+            user_id=user_id,
+            experiment_id=experiment_id,
+        )
+
+
+def set_trial_starter_experiment_deletion_provider(
+    provider: TrialStarterExperimentDeletionProvider | None,
+) -> None:
+    """Install or clear the server-owned starter deletion authority."""
+
+    global _trial_starter_experiment_deletion_provider
+    _trial_starter_experiment_deletion_provider = provider
+
+
+async def issue_trial_reference_grant(**kwargs: Any) -> Any | None:
+    """Issue managed-demo execution custody after exact reference import.
+
+    Local OSS and non-demo deployments install no provider; their ordinary
+    persistence and execution authority remains local to the scientist.
+    """
+
+    if _trial_reference_grant_provider is not None:
+        return await _trial_reference_grant_provider(**kwargs)
+    if "data_upload" in get_demo_policy().disabled_capabilities:
+        raise RuntimeError("managed trial reference-grant authority is unavailable")
+    return None
+
+
+def set_trial_reference_grant_provider(provider: TrialReferenceGrantProvider | None) -> None:
+    """Install or clear the server-owned registered-reference grant issuer."""
+
+    global _trial_reference_grant_provider
+    _trial_reference_grant_provider = provider
 
 
 # ---------------------------------------------------------------------------
@@ -170,3 +269,20 @@ def set_demo_limit_detail_provider(provider: DemoLimitDetailProvider) -> None:
     """Install the demo rate-limit detail provider (server extension, startup)."""
     global _demo_limit_detail_provider
     _demo_limit_detail_provider = provider
+
+
+# Managed synthesis must attest provider spectra and grant saved execution
+# custody. Keeping the implementation server-owned preserves the OSS boundary.
+ManagedSynthesisProvider = Callable[..., Awaitable[Any]]
+_managed_synthesis_provider: ManagedSynthesisProvider | None = None
+
+
+def set_managed_synthesis_provider(provider: ManagedSynthesisProvider | None) -> None:
+    global _managed_synthesis_provider
+    _managed_synthesis_provider = provider
+
+
+async def run_managed_synthesis(**kwargs: Any) -> Any:
+    if _managed_synthesis_provider is None:
+        raise RuntimeError("Managed HITRAN synthesis authority is unavailable")
+    return await _managed_synthesis_provider(**kwargs)

@@ -81,6 +81,71 @@ def test_jcamp_xydata_uses_line_checkpoints_when_header_grid_drifts():
     np.testing.assert_allclose(parsed.y, np.array([1, 2, 3, 4], dtype=np.float64))
 
 
+def test_jcamp_complete_fixed_grid_uses_endpoints_instead_of_accumulating_checkpoint_rounding():
+    from spectra_sherpa.app.lib.jcamp_reader import parse_jcamp
+
+    text = "\n".join(
+        [
+            "##TITLE=Nicolet-style rounded checkpoints",
+            "##FIRSTX=399.212341",
+            "##LASTX=406.926590",
+            "##DELTAX=1.928562",
+            "##NPOINTS=5",
+            "##XYDATA=(X++(Y..Y))",
+            "399.212 1 2",
+            "403.069 3 4",
+            "406.851 5",
+            "##END=",
+        ]
+    )
+
+    parsed = parse_jcamp(text)
+
+    np.testing.assert_allclose(parsed.x, np.linspace(399.212341, 406.926590, 5), rtol=0.0, atol=0.0)
+    np.testing.assert_allclose(parsed.y, np.array([1, 2, 3, 4, 5], dtype=np.float64))
+
+
+def test_jcamp_complete_fixed_grid_rejects_declared_delta_contradiction():
+    from spectra_sherpa.app.lib.jcamp_reader import parse_jcamp
+
+    text = "\n".join(
+        [
+            "##TITLE=Contradictory delta",
+            "##FIRSTX=100",
+            "##LASTX=103",
+            "##DELTAX=2",
+            "##NPOINTS=4",
+            "##XYDATA=(X++(Y..Y))",
+            "100 1 2 3 4",
+            "##END=",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="DELTAX contradicts"):
+        parse_jcamp(text)
+
+
+def test_jcamp_complete_fixed_grid_rejects_materially_shifted_checkpoint():
+    from spectra_sherpa.app.lib.jcamp_reader import parse_jcamp
+
+    text = "\n".join(
+        [
+            "##TITLE=Contradictory checkpoint",
+            "##FIRSTX=100",
+            "##LASTX=103",
+            "##DELTAX=1",
+            "##NPOINTS=4",
+            "##XYDATA=(X++(Y..Y))",
+            "100 1 2",
+            "102.6 3 4",
+            "##END=",
+        ]
+    )
+
+    with pytest.raises(ValueError, match="checkpoint contradicts"):
+        parse_jcamp(text)
+
+
 def test_jcamp_xydata_splits_adjacent_signed_numeric_runs():
     from spectra_sherpa.app.lib.jcamp_reader import parse_jcamp
 

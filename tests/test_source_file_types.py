@@ -1,54 +1,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 
-from spectra_sherpa.app.lib.scp_compat import is_scp_testdata_file
 from spectra_sherpa.app.lib.sherpa_dataset import FeatureAxis, SherpaDataset
-
-
-@pytest.mark.parametrize(
-    "filename",
-    [
-        "spectrum.csv",
-        "spectrum.jdx",
-        "spectrum.dx",
-        "spectrum.spc",
-        "spectrum.spa",
-        "series.spg",
-        "time_series.srs",
-        "renishaw.wdf",
-        "table.txt",
-        "dataset.mat",
-        "ion_currents.asc",
-        "sample.dat",
-        "sample.opus",
-        "sample.0",
-        "sample.0000",
-        "0",
-    ],
-)
-def test_scp_testdata_file_type_detection_covers_importable_formats(filename: str) -> None:
-    assert is_scp_testdata_file(Path(filename))
-
-
-@pytest.mark.parametrize(
-    "filename",
-    [
-        "README.md",
-        "report.pdf",
-        "sample.xlsx",
-        "not_a_numeric_opus_name",
-        "paradigm_time_series.srsx",
-        "microscopy.session",
-        "raman.map",
-        "raman.mapx",
-    ],
-)
-def test_scp_testdata_file_type_detection_rejects_non_data_files(filename: str) -> None:
-    assert not is_scp_testdata_file(Path(filename))
 
 
 def test_source_preview_file_loader_handles_scientist_axis_column_csv(tmp_path: Path) -> None:
@@ -73,13 +31,13 @@ def test_source_preview_file_loader_handles_scientist_axis_column_csv(tmp_path: 
 
 
 @pytest.mark.parametrize("suffix", [".spa", ".spg", ".srs", ".wdf", ".0"])
-def test_source_preview_file_loader_delegates_instrument_formats_to_scp_reader(
+def test_source_preview_file_loader_delegates_instrument_formats_to_native_registry(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     suffix: str,
 ) -> None:
+    import spectra_sherpa.io as native_io
     from spectra_sherpa.app.api.v1.routes import builder
-    from spectra_sherpa.app.lib.adapters import scp_adapter
 
     path = tmp_path / f"instrument{suffix}"
     path.write_bytes(b"not parsed by this unit test")
@@ -90,17 +48,62 @@ def test_source_preview_file_loader_delegates_instrument_formats_to_scp_reader(
     )
     calls: list[str] = []
 
-    class FakeService:
-        @staticmethod
-        def _load_datasets_from_file(payload: dict[str, str]) -> list[object]:
-            calls.append(payload["file_path"])
-            return [object()]
+    def fake_ingest(source_path: Path, *, parser_options: object | None = None):
+        calls.append(str(source_path))
+        assert parser_options is None
+        return SimpleNamespace(assets=(SimpleNamespace(dataset=expected),))
 
     monkeypatch.setattr(builder, "ensure_reader_available", lambda _path: None)
-    monkeypatch.setattr(builder, "service", FakeService())
-    monkeypatch.setattr(scp_adapter, "from_nddataset", lambda _dataset: expected)
+    monkeypatch.setattr(native_io, "ingest", fake_ingest)
 
     dataset = builder._file_as_sherpa(path)
 
     assert dataset is expected
     assert calls == [str(path)]
+
+
+def test_registered_multiasset_reference_previews_its_verified_projection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import spectra_sherpa.io as native_io
+    from spectra_sherpa.app.api.v1.routes import builder
+    from spectra_sherpa.app.lib import reference_materialization, registered_reference_storage
+
+    path = tmp_path / "corn.mat"
+    path.write_bytes(b"registered multi-asset source")
+    expected = SherpaDataset(
+        np.array([[1.0, 2.0, 3.0]]),
+        feature_axis=FeatureAxis(labels=["a", "b", "c"]),
+        data_role="X_features",
+    )
+    reference = {
+        "projection_id": "public-corn-m5-moisture-v1",
+        "member_size_bytes": path.stat().st_size,
+        "member_sha256": "a" * 64,
+    }
+    calls: list[str] = []
+
+    def materialize(_path: Path, projection_id: str) -> SimpleNamespace:
+        calls.append(projection_id)
+        return SimpleNamespace(dataset=expected, portable_reference=reference)
+
+    monkeypatch.setattr(registered_reference_storage, "read_registered_reference_sidecar", lambda _path: reference)
+    monkeypatch.setattr(reference_materialization, "materialize_reference_member", materialize)
+    monkeypatch.setattr(native_io, "ingest", lambda _path: pytest.fail("must not select an arbitrary MAT asset"))
+
+    inspected = builder._file_as_sherpa(path)
+    member = builder._file_as_collection_member(
+        path,
+        file_name="raw/corn.mat",
+        asset_id=None,
+        prepared_overrides=None,
+    )
+
+    np.testing.assert_array_equal(inspected.X, expected.X)
+    np.testing.assert_array_equal(member.dataset.X, expected.X)
+    assert member.asset_id == reference["projection_id"]
+    assert member.sha256 == reference["member_sha256"]
+    assert calls == [reference["projection_id"], reference["projection_id"]]
+    with pytest.raises(ValueError, match="requested asset differs"):
+        builder._file_as_sherpa(path, asset_id="m5spec")

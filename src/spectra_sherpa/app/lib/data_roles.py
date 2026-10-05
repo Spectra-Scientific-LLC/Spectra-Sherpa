@@ -42,8 +42,10 @@ SPECTRUM_ONLY_NODE_TYPES: frozenset[str] = frozenset(
         "model.efa",
         "model.mcr_als",
         "model.simplisma",
+        "transfer.apply_fitted",
+        "transfer.ds",
         "transfer.pds",
-        "transfer.sbc",
+        "transfer.sws",
     }
 )
 
@@ -85,14 +87,14 @@ def data_role_to_modality(role: Any) -> DataModality:
 
 
 def get_dataset_data_role(dataset: Any) -> DataRole | None:
-    """Best-effort extraction of a dataset role from Sherpa/SCP-like objects."""
+    """Best-effort extraction of a role from a canonical or array-like dataset."""
     role = getattr(dataset, "data_role", None)
     if role:
         return normalize_data_role(role)
 
     extra = getattr(dataset, "extra", None) or getattr(dataset, "meta", None)
     if isinstance(extra, dict):
-        for key in ("sherpa.data_role", "scp.sherpa.data_role", "data_role", "data_modality"):
+        for key in ("sherpa.data_role", "data_role", "data_modality"):
             if extra.get(key):
                 return normalize_data_role(extra[key])
 
@@ -110,7 +112,9 @@ def is_spectrum_only_node(node_type: str, parameters: dict[str, Any] | None = No
         return True
     if node_type == "preprocess.normalize":
         method = str((parameters or {}).get("method") or "").lower()
-        return method in {"snv", "msc"}
+        return method == "snv"
+    if node_type == "preprocess.msc":
+        return True
     if node_type == "preprocess.clip_range":
         return True
     return False

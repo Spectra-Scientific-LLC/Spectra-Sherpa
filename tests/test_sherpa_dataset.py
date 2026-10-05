@@ -4,6 +4,8 @@ Run with:
     cd spectra-sherpa && python -m pytest tests/test_sherpa_dataset.py -v --no-cov
 """
 
+import json
+import pickle
 from types import SimpleNamespace
 
 import numpy as np
@@ -35,6 +37,19 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
 # ═══════════════════════════════════════════════════════════════════════════
 # AxisInfo (base)
 # ═══════════════════════════════════════════════════════════════════════════
+
+
+def test_processing_history_receipt_survives_json_shape_roundtrip():
+    dataset = SherpaDataset(np.ones((3, 4)))
+    dataset.provenance.append("data.load", input_shape=(3, 4), output_shape=(3, 4))
+    wire = json.loads(json.dumps(dataset.to_dict()))
+    restored = SherpaDataset.from_dict(wire)
+    assert restored.scientific_digest == dataset.scientific_digest
+    assert restored.provenance.to_list() == dataset.provenance.to_list()
+
+    wire["metadata"]["processing_history"][0]["output_shape"] = [3, 5]
+    with pytest.raises(ValueError, match="processing_history does not match provenance"):
+        SherpaDataset.from_dict(wire)
 
 
 class TestAxisInfo:
@@ -88,8 +103,12 @@ class TestAxisInfo:
 
 class TestSpectralAxis:
     def test_axis_type_wavenumber(self):
-        sa = SpectralAxis(values=np.arange(100), units="cm-1")
+        sa = SpectralAxis(values=np.arange(100), units="cm-1", quantity="wavenumber")
         assert sa.axis_type == "wavenumber"
+
+    def test_inverse_centimetre_unit_alone_does_not_guess_quantity(self):
+        sa = SpectralAxis(values=np.arange(100), units="cm-1")
+        assert sa.axis_type is None
 
     def test_axis_type_wavelength_nm(self):
         sa = SpectralAxis(values=np.arange(100), units="nm")
@@ -314,6 +333,42 @@ class TestProvenanceEntry:
         assert pe.parameters["a"] == 1
         assert pe.parameters["nested"]["b"] == 2
 
+    def test_versioned_impact_is_optional_immutable_and_wire_safe(self):
+        impact = {
+            "schema_version": "spectrasherpa-operation-impact/1",
+            "changed_values": 3,
+            "summary": {"maximum_adjustment": 2.25},
+        }
+        pe = ProvenanceEntry(op_id="test", impact=impact)
+        impact["changed_values"] = 99
+        impact["summary"]["maximum_adjustment"] = 99.0
+
+        assert pe.impact is not None
+        assert pe.impact["changed_values"] == 3
+        assert pe.impact["summary"]["maximum_adjustment"] == 2.25
+        with pytest.raises(TypeError):
+            pe.impact["changed_values"] = 4  # type: ignore[index]
+        with pytest.raises(TypeError):
+            pe.impact.__ior__({"changed_values": 4})  # type: ignore[union-attr]
+
+        provenance = Provenance([pe])
+        restored = Provenance.from_list(provenance.to_list())
+        assert restored.to_list() == provenance.to_list()
+        assert ProvenanceEntry(op_id="without-impact").model_dump(exclude_none=True).get("impact") is None
+
+    @pytest.mark.parametrize(
+        "impact",
+        [
+            {},
+            {"schema_version": ""},
+            {"schema_version": "unversioned"},
+            {"schema_version": "spectrasherpa-operation-impact/latest"},
+        ],
+    )
+    def test_impact_requires_numeric_contract_version(self, impact):
+        with pytest.raises(ValueError, match="numeric contract version"):
+            ProvenanceEntry(op_id="test", impact=impact)
+
     def test_provenance_copy_isolation(self):
         """Mutating a copied provenance does not affect the original."""
         prov = Provenance()
@@ -327,6 +382,21 @@ class TestProvenanceEntry:
 
 
 class TestProvenance:
+    def test_nested_parameters_round_trip_across_spawn_serialization(self):
+        provenance = Provenance()
+        provenance.append(
+            "preprocess.scale",
+            {"method": "autoscale", "transform_state": {"mean": [1.0, 2.0], "scale": [0.5, 0.25]}},
+        )
+
+        restored = pickle.loads(pickle.dumps(provenance))
+
+        assert restored.to_list() == provenance.to_list()
+        with pytest.raises(TypeError):
+            restored[0].parameters["transform_state"]["mean"] = (9.0,)  # type: ignore[index]
+        with pytest.raises(TypeError):
+            restored[0].parameters["transform_state"]["mean"] = (0.0, 0.0)  # type: ignore[index]
+
     def test_empty(self):
         prov = Provenance()
         assert len(prov) == 0
@@ -1102,7 +1172,7 @@ class TestSherpaDatasetSerialization:
     def test_type_field(self):
         d = self._make_ds().to_dict()
         assert d["type"] == "SherpaDataset"
-        assert d["version"] == "1.0"
+        assert d["version"] == "3.0"
 
     def test_shape_and_data(self):
         d = self._make_ds().to_dict()
@@ -1428,91 +1498,6 @@ class TestSklearnAdapter:
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# Adapters — scp (mocked)
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestSCPAdapter:
-    def _make_mock_nddataset(self):
-        """Create a mock NDDataset with the expected interface."""
-        x_coord = SimpleNamespace(
-            data=np.linspace(400, 4000, 50),
-            units="cm^-1",
-            title="wavenumber",
-            labels=None,
-        )
-        y_coord = SimpleNamespace(
-            data=np.arange(3, dtype=float),
-            units=None,
-            title="samples",
-            labels=np.array(["s1", "s2", "s3"]),
-        )
-        return SimpleNamespace(
-            data=np.random.rand(3, 50),
-            ndim=2,
-            dims=None,
-            x=x_coord,
-            y=y_coord,
-            title="Mock IR Data",
-            units="absorbance",
-            meta={"custom": "value", "processing_history": [{"op_id": "load"}]},
-        )
-
-    def test_from_nddataset(self):
-        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
-
-        mock = self._make_mock_nddataset()
-        ds = from_nddataset(mock)
-        assert isinstance(ds, SherpaDataset)
-        assert ds.shape == (3, 50)
-        assert ds.backend == "scp"
-        assert ds.title == "Mock IR Data"
-
-    def test_from_nddataset_sample_axis(self):
-        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
-
-        mock = self._make_mock_nddataset()
-        ds = from_nddataset(mock)
-        assert ds.sample_axis is not None
-        assert ds.sample_axis.labels == ["s1", "s2", "s3"]
-
-    def test_from_nddataset_provenance(self):
-        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
-
-        mock = self._make_mock_nddataset()
-        ds = from_nddataset(mock)
-        assert len(ds.provenance) == 1
-        assert ds.provenance[0].op_id == "load"
-
-    def test_from_nddataset_extra(self):
-        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
-
-        mock = self._make_mock_nddataset()
-        ds = from_nddataset(mock)
-        assert ds.get_extra("scp.custom") == "value"
-
-    def test_from_nddataset_preserves_name_as_title(self):
-        """When NDDataset.title is '<untitled>', fall back to .name."""
-        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
-
-        mock = self._make_mock_nddataset()
-        mock.title = "<untitled>"
-        mock.name = "Corn MP5 NIR"
-        ds = from_nddataset(mock)
-        assert ds.title == "Corn MP5 NIR"
-
-    def test_from_nddataset_domain_inference(self):
-        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
-
-        mock = self._make_mock_nddataset()
-        ds = from_nddataset(mock)
-        # Should infer IR from wavenumber range
-        assert ds.domain.inferred is not None
-        assert ds.domain.inferred.technique == "IR"
-        assert ds.domain.inferred.confidence > 0
-
-
-# ═══════════════════════════════════════════════════════════════════════════
 # Pydantic schema generation
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1565,196 +1550,3 @@ class TestPydanticSchemas:
         assert "values" in schema["properties"]
         assert "classes" in schema["properties"]
         assert "include_mask" in schema["properties"]
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# scp_roundtrip() — envelope pattern tests
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestSCPRoundtrip:
-    """Test the scp_roundtrip() envelope function.
-
-    Uses mock NDDataset (SimpleNamespace) so tests work without SCP installed.
-    The mock simulates the to_nddataset → fn → from_nddataset cycle by
-    patching the adapter functions.
-    """
-
-    def _make_rich_dataset(self) -> SherpaDataset:
-        """Create a SherpaDataset with all metadata fields populated."""
-        feature_ax = SpectralAxis(
-            values=np.linspace(400, 4000, 50),
-            units="cm^-1",
-            title="wavenumber",
-        )
-        sample = SampleAxis(
-            values=np.arange(3, dtype=float),
-            labels=["s1", "s2", "s3"],
-            title="samples",
-            classes=np.array(["A", "B", "A"], dtype=object),
-            include_mask=np.array([True, True, False]),
-            exclusion_reasons=[None, None, "outlier"],
-            sample_table={"concentration": [1.0, 2.0, 3.0]},
-        )
-        prov = Provenance()
-        prov.append("data.source", {"file": "test.csv"})
-        quality = QualityMetrics(snr=42.0)
-        quality.add_evaluation(EvaluationResult(evaluation_id="eval-1", model_type="PCA", n_components=3))
-        domain = DomainContext(technique="IR", sample_type="liquid")
-        target_ctx = TargetContext(target_type="continuous", target_name="moisture")
-
-        return SherpaDataset(
-            X=np.random.default_rng(42).standard_normal((3, 50)),
-            feature_axis=feature_ax,
-            sample_axis=sample,
-            target=np.array([1.0, 2.0, 3.0]),
-            target_context=target_ctx,
-            domain=domain,
-            provenance=prov,
-            quality=quality,
-            backend="numpy",
-            title="Test IR Spectra",
-            units="absorbance",
-            extra={"user.note": "important", "scp.custom": "value"},
-        )
-
-    def _roundtrip_with_mock(self, ds, fn_effect=None, **kwargs):
-        """Run scp_roundtrip with patched adapter functions.
-
-        Simulates the to_nddataset → fn → from_nddataset cycle using
-        a mock NDDataset. Optionally applies fn_effect to the data.
-        """
-        from unittest.mock import patch
-
-        from spectra_sherpa.app.lib.adapters import scp_adapter
-
-        def mock_to_nddataset(sherpa_ds):
-            """Simulate to_nddataset: produce a mock NDDataset."""
-            feature_ax = sherpa_ds.feature_axis
-            x_coord = SimpleNamespace(
-                data=feature_ax.values.copy() if feature_ax else None,
-                units=feature_ax.units if feature_ax else None,
-                title=feature_ax.title if feature_ax else None,
-                labels=None,
-            )
-            y_coord = SimpleNamespace(
-                data=sherpa_ds.sample_axis.values.copy() if sherpa_ds.sample_axis else None,
-                units=sherpa_ds.sample_axis.units if sherpa_ds.sample_axis else None,
-                title=sherpa_ds.sample_axis.title if sherpa_ds.sample_axis else None,
-                labels=(
-                    np.array(sherpa_ds.sample_axis.labels)
-                    if sherpa_ds.sample_axis and sherpa_ds.sample_axis.labels
-                    else None
-                ),
-            )
-            # Simulate what fn_effect does to the data
-            data = sherpa_ds.X.copy()
-            if fn_effect is not None:
-                data = fn_effect(data)
-            return SimpleNamespace(
-                data=data,
-                x=x_coord,
-                y=y_coord,
-                title=sherpa_ds.title or "",
-                units=sherpa_ds.units or "",
-                meta={"processing_history": sherpa_ds.provenance.to_list()},
-            )
-
-        with (
-            patch.object(scp_adapter, "to_nddataset", side_effect=mock_to_nddataset),
-            patch.object(scp_adapter, "require_scp"),
-        ):
-            return scp_adapter.scp_roundtrip(ds, lambda ndd: None, **kwargs)
-
-    def test_roundtrip_preserves_provenance(self):
-        ds = self._make_rich_dataset()
-        original_len = len(ds.provenance)
-
-        result = self._roundtrip_with_mock(ds, op_id="test.op", parameters={"key": "val"})
-
-        # Original provenance carried forward + 1 new step
-        assert len(result.provenance) == original_len + 1
-        assert result.provenance[0].op_id == "data.source"
-        assert result.provenance[-1].op_id == "test.op"
-
-    def test_roundtrip_preserves_target(self):
-        ds = self._make_rich_dataset()
-        result = self._roundtrip_with_mock(ds, op_id="test.op")
-
-        np.testing.assert_array_equal(result.target, ds.target)
-
-    def test_roundtrip_preserves_target_context(self):
-        ds = self._make_rich_dataset()
-        result = self._roundtrip_with_mock(ds, op_id="test.op")
-
-        assert result.target_context.target_type == "continuous"
-        assert result.target_context.target_name == "moisture"
-
-    def test_roundtrip_preserves_quality(self):
-        ds = self._make_rich_dataset()
-        result = self._roundtrip_with_mock(ds, op_id="test.op")
-
-        assert result.quality.snr == 42.0
-        assert len(result.quality.evaluations) == 1
-        assert result.quality.evaluations[0].model_type == "PCA"
-
-    def test_roundtrip_preserves_domain(self):
-        ds = self._make_rich_dataset()
-        result = self._roundtrip_with_mock(ds, op_id="test.op")
-
-        assert result.domain.technique == "IR"
-        assert result.domain.sample_type == "liquid"
-
-    def test_roundtrip_preserves_extra(self):
-        ds = self._make_rich_dataset()
-        result = self._roundtrip_with_mock(ds, op_id="test.op")
-
-        assert result.get_extra("user.note") == "important"
-        # scp.custom also survives (may come from both snapshot and from_nddataset)
-        assert result.get_extra("scp.custom") == "value"
-
-    def test_roundtrip_preserves_sample_axis_extras(self):
-        ds = self._make_rich_dataset()
-        result = self._roundtrip_with_mock(ds, op_id="test.op")
-
-        sa = result.sample_axis
-        assert sa is not None
-        np.testing.assert_array_equal(sa.classes, np.array(["A", "B", "A"], dtype=object))
-        np.testing.assert_array_equal(sa.include_mask, np.array([True, True, False]))
-        assert sa.exclusion_reasons == [None, None, "outlier"]
-        assert sa.sample_table == {"concentration": [1.0, 2.0, 3.0]}
-
-    def test_roundtrip_adds_provenance_step(self):
-        ds = self._make_rich_dataset()
-        result = self._roundtrip_with_mock(
-            ds,
-            op_id="baseline.rubberband",
-            parameters={"method": "rubberband"},
-            state_effects=["baseline_corrected"],
-            node_id="node-123",
-        )
-
-        last = result.provenance[-1]
-        assert last.op_id == "baseline.rubberband"
-        assert dict(last.parameters) == {"method": "rubberband"}
-        assert "baseline_corrected" in last.state_effects
-        assert last.node_id == "node-123"
-
-    def test_roundtrip_preserves_title_and_units(self):
-        ds = self._make_rich_dataset()
-        result = self._roundtrip_with_mock(ds, op_id="test.op")
-
-        assert result.title == "Test IR Spectra"
-        assert result.units == "absorbance"
-
-    def test_roundtrip_inplace_op(self):
-        """fn returning None (in-place SCP methods) must work."""
-        ds = self._make_rich_dataset()
-        # fn_effect simulates an in-place mutation (e.g. baseline shift)
-        result = self._roundtrip_with_mock(
-            ds,
-            fn_effect=lambda data: data - np.mean(data, axis=1, keepdims=True),
-            op_id="test.inplace",
-        )
-        assert result.shape == ds.shape
-        assert len(result.provenance) == len(ds.provenance) + 1

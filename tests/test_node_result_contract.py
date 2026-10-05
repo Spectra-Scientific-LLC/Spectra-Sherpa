@@ -19,15 +19,36 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+from spectra_sherpa.app.services.dag import out_of_fold_evidence
 from spectra_sherpa.app.services.dag.node_base import NodeResult, node_registry
+from spectra_sherpa.sdk.validate import make_split_plan
+from tests._optional_scp import HAS_SCP
 
 # Many nodes wrap their inputs in spectrochempy.NDDataset internally and
-# cannot execute without it (PLSDA, PLS, PCR, MCR, SIMPLISMA, EFA,
-# ClassifierPredict, PLSPredict). Skip the corresponding contract tests
+# cannot execute without it (PCR, MCR, SIMPLISMA, EFA, and their
+# application nodes). Skip the corresponding contract tests
 # in environments without SCP installed — the SCP Compat CI job re-runs
 # them with the full extras.
 _requires_scp = pytest.mark.skipif(not HAS_SCP, reason="spectrochempy not installed")
+
+
+def _bound_regression_evidence(observed: np.ndarray, predicted: np.ndarray, *, n_splits: int) -> dict[str, object]:
+    plan = make_split_plan(observed.size, n_splits=n_splits)
+    split_plan = {
+        "schema_version": "spectra-split-plan/1",
+        "method": plan.method,
+        "n_samples": plan.n_samples,
+        "grouped": plan.grouped,
+        "folds": [{"train": fold.train.tolist(), "test": fold.test.tolist()} for fold in plan.folds],
+    }
+    return out_of_fold_evidence.build_out_of_fold_evidence(
+        producer_node_id="nested",
+        task_type="regression",
+        observations=observed,
+        predictions=predicted,
+        split_plan=split_plan,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Nodes that MUST return NodeResult with non-empty diagnostics today.
@@ -102,10 +123,10 @@ def _assert_classification_metrics_contract(result: NodeResult, *, method: str) 
     assert isinstance(metrics, dict)
     assert metrics["task_type"] == "classification"
     assert metrics["method"] == method
-    assert metrics["primary_split"] == "cv"
+    assert metrics["primary_split"] == "train"
     assert metrics["primary_metric"] == "balanced_accuracy"
-    assert set(metrics["splits"]) >= {"train", "cv"}
-    for split in ("train", "cv"):
+    assert set(metrics["splits"]) == {"train"}
+    for split in ("train",):
         split_metrics = metrics["splits"][split]
         assert set(split_metrics) >= {
             "accuracy",
@@ -116,8 +137,7 @@ def _assert_classification_metrics_contract(result: NodeResult, *, method: str) 
             "sensitivity_macro",
             "specificity_macro",
         }
-    assert "train" in metrics["confusion_matrices"]
-    assert "cv" in metrics["confusion_matrices"]
+    assert set(metrics["confusion_matrices"]) == {"train"}
     assert result.diagnostics["metrics"] == metrics
 
 
@@ -127,7 +147,6 @@ def _assert_classification_metrics_contract(result: NodeResult, *, method: str) 
 
 
 class TestClassificationNodesEmitDiagnostics:
-    @_requires_scp
     @pytest.mark.asyncio
     async def test_plsda_emits_diagnostics(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
@@ -135,18 +154,23 @@ class TestClassificationNodesEmitDiagnostics:
         X, y = _make_classification_data()
         result = await _assert_node_result(
             node_type="classification.plsda",
-            parameters={"n_components": 2, "cv_folds": 3},
+            parameters={"n_components": 2, "scale": False},
             kwargs={"X": SherpaDataset(X=X), "y": y},
             required_diagnostic_keys={
-                "cv_accuracy",
-                "cv_f1_macro",
-                "n_components",
+                "train_accuracy",
+                "train_f1_macro",
+                "requested_n_components",
+                "effective_n_components",
                 "n_classes",
             },
         )
-        _assert_classification_metrics_contract(result, method="plsda")
+        metrics = result.outputs["metrics"]
+        assert metrics["method"] == "plsda"
+        assert metrics["primary_split"] == "train"
+        assert set(metrics["splits"]) == {"train"}
+        assert set(metrics["confusion_matrices"]) == {"train"}
+        assert result.diagnostics["evidence_scope"] == "calibration_fit_diagnostics_not_validation_evidence"
 
-    @_requires_scp
     @pytest.mark.asyncio
     async def test_plsda_components_are_not_capped_by_class_count(self):
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
@@ -159,15 +183,17 @@ class TestClassificationNodesEmitDiagnostics:
         node = node_registry.create_node(
             node_type="classification.plsda",
             node_id="test_plsda_component_count",
-            parameters={"n_components": 5, "cv_folds": 3},
+            parameters={"n_components": 5, "scale": False},
         )
         result = await node.execute(X=SherpaDataset(X=X), y=y)
 
         assert result.diagnostics["n_classes"] == 2
-        assert result.diagnostics["n_components"] == 5
+        assert result.diagnostics["requested_n_components"] == 5
         assert result.diagnostics["effective_n_components"] == 5
         assert result.outputs["default"].shape == (60, 5)
         assert result.outputs["loadings"].shape == (5, 12)
+        assert result.outputs["explained_variance"].shape == (5, 2)
+        assert result.outputs["class_coefficients"].shape == (12, 2)
         assert [trace["name"] for trace in result.outputs["plots"]["loadings_lines"]["data"]] == [
             "LV1",
             "LV2",
@@ -184,9 +210,9 @@ class TestClassificationNodesEmitDiagnostics:
         X, y = _make_classification_data()
         result = await _assert_node_result(
             node_type="classification.knn",
-            parameters={"n_neighbors": 3, "cv_folds": 3},
+            parameters={"n_neighbors": 3},
             kwargs={"X": SherpaDataset(X=X), "y": y},
-            required_diagnostic_keys={"cv_accuracy", "n_classes"},
+            required_diagnostic_keys={"train_accuracy", "n_classes"},
         )
         _assert_classification_metrics_contract(result, method="knn")
 
@@ -198,9 +224,9 @@ class TestClassificationNodesEmitDiagnostics:
         X, y = _make_classification_data()
         result = await _assert_node_result(
             node_type="classification.simca",
-            parameters={"n_components": 2, "cv_folds": 3},
+            parameters={"n_components": 2},
             kwargs={"X": SherpaDataset(X=X), "y": y},
-            required_diagnostic_keys={"cv_accuracy", "n_classes"},
+            required_diagnostic_keys={"train_accuracy", "n_classes"},
         )
         _assert_classification_metrics_contract(result, method="simca")
 
@@ -212,12 +238,15 @@ class TestRegressionNodesEmitDiagnostics:
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
         X, y = _make_regression_data()
-        await _assert_node_result(
-            node_type="model.pls",
+        result = await _assert_node_result(
+            node_type="model.fitted_pls",
             parameters={"n_components": 3},
-            kwargs={"X": SherpaDataset(X=X), "y": y},
-            required_diagnostic_keys={"r2", "rmse", "n_components"},
+            kwargs={"input_data": SherpaDataset(X=X), "y": y},
+            required_diagnostic_keys={"fitted_state_serializer", "vip_method"},
         )
+        assert result.outputs["default"].shape == (len(y), 1)
+        assert result.outputs["fitted_state"]["state"]["n_components"] == 3
+        assert result.outputs["vip_scores"].shape == (X.shape[1],)
 
     @_requires_scp
     @pytest.mark.asyncio
@@ -239,11 +268,11 @@ class TestDiagnosticsNodesEmitDiagnostics:
         node = node_registry.create_node(
             node_type="diagnostics.cross_validation",
             node_id="cv_regression",
-            parameters={"cv_folds": 5, "cv_method": "k_fold", "task_type": "regression"},
+            parameters={},
         )
         y_true = np.linspace(0, 10, 30)
         y_pred = y_true + np.random.default_rng(0).normal(0, 0.3, 30)
-        result = await node.execute(y_true=y_true, y_pred=y_pred)
+        result = await node.execute(evidence=_bound_regression_evidence(y_true, y_pred, n_splits=5))
 
         assert isinstance(result, NodeResult)
         assert result.diagnostics
@@ -257,49 +286,44 @@ class TestDiagnosticsNodesEmitDiagnostics:
     @pytest.mark.asyncio
     async def test_holdout_evaluation_classification_emits_diagnostics(self):
         node = node_registry.create_node(
-            node_type="diagnostics.holdout_evaluation",
+            node_type="diagnostics.classification_evaluator",
             node_id="holdout_cls",
-            parameters={"task_type": "classification"},
+            parameters={},
         )
         y_true = np.array(["a", "a", "b", "b", "c", "c"])
         y_pred = np.array(["a", "b", "b", "b", "c", "c"])
-        result = await node.execute(y_true=y_true, y_pred=y_pred)
+        result = await node.execute(input_data=y_pred, y_true=y_true)
 
         assert isinstance(result, NodeResult)
         assert result.diagnostics
-        assert "test_accuracy" in result.diagnostics
-        assert "confusion_matrix" in result.diagnostics
-        assert "per_class" in result.diagnostics
+        assert result.outputs["default"]["accuracy"] == pytest.approx(5 / 6)
+        assert result.outputs["default"]["n_samples"] == 6
+        assert result.diagnostics["accounted_samples"] == 6
+        assert result.outputs["visualization"]["metadata"]["type"] == "ClassificationTest"
 
     @pytest.mark.asyncio
     async def test_holdout_evaluation_regression_emits_diagnostics(self):
         node = node_registry.create_node(
-            node_type="diagnostics.holdout_evaluation",
+            node_type="diagnostics.regression_evaluator",
             node_id="holdout_reg",
-            parameters={"task_type": "regression"},
+            parameters={},
         )
         y_true = np.array([1.0, 2.0, 3.0, 4.0, 5.0])
         y_pred = np.array([1.1, 1.9, 3.2, 3.8, 5.1])
-        y_train_true = np.array([1.0, 2.0, 3.0, 4.0])
-        y_train_pred = np.array([1.0, 2.1, 2.9, 4.0])
-        result = await node.execute(
-            y_true=y_true,
-            y_pred=y_pred,
-            y_train_true=y_train_true,
-            y_train_pred=y_train_pred,
-        )
+        result = await node.execute(input_data=y_pred, y_true=y_true)
 
         assert isinstance(result, NodeResult)
         assert result.diagnostics
-        for key in ("rmse_test", "r2_test"):
-            assert key in result.diagnostics
-        metrics = result.outputs["metrics"]
-        assert "rmse_train" in metrics
-        assert "r2_train" in metrics
-        assert metrics["data"][0]["RMSE_train"] == metrics["rmse_train"]
-        viz = result.outputs["visualization"]
-        assert viz["metadata"]["splits"] == ["train", "test"]
-        assert len(viz["metadata"]["train"]["data"]) == 4
+        assert result.diagnostics["metric_registry"] == "2"
+        metrics = result.outputs["default"]
+        assert metrics["rmse"] > 0.0
+        assert metrics["r2"] > 0.9
+        comparison = result.outputs["comparison"]
+        assert comparison["schema_version"] == "spectrasherpa-regression-comparison/1"
+        # Direct arrays carry no saved population/model lineage.
+        assert comparison["metadata"]["role"] == "unqualified_evaluation"
+        assert comparison["metadata"]["n_samples"] == 5
+        assert len(comparison["data"]) == 5
 
 
 class TestClusteringNodesEmitDiagnostics:
@@ -417,24 +441,28 @@ class TestDecompositionNodesEmitDiagnostics:
 
 
 class TestPredictionNodesEmitDiagnostics:
-    @_requires_scp
     @pytest.mark.asyncio
     async def test_classifier_predict_plsda_emits_diagnostics(self):
-        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+        from spectra_sherpa.app.lib.sherpa_dataset import FeatureAxis, SherpaDataset
 
         X, y = _make_classification_data()
+        feature_axis = FeatureAxis(
+            values=np.arange(X.shape[1]),
+            labels=[f"feature-{index}" for index in range(X.shape[1])],
+        )
+        dataset = SherpaDataset(X=X, feature_axis=feature_axis)
         train_node = node_registry.create_node(
             node_type="classification.plsda",
             node_id="plsda_train",
-            parameters={"n_components": 2, "cv_folds": 3},
+            parameters={"n_components": 2, "scale": False},
         )
-        train_result = await train_node.execute(X=SherpaDataset(X=X), y=y)
-        model = train_result.outputs["model"]
+        train_result = await train_node.execute(X=dataset, y=y)
+        fitted_state = train_result.outputs["fitted_state"]
 
         await _assert_node_result(
-            node_type="classification.predict",
+            node_type="classification.apply_plsda",
             parameters={},
-            kwargs={"X_new": SherpaDataset(X=X), "model": model},
+            kwargs={"default": dataset, "fitted_state": fitted_state},
             required_diagnostic_keys={"method", "n_predicted", "n_classes"},
         )
 
@@ -446,16 +474,16 @@ class TestPredictionNodesEmitDiagnostics:
         train_node = node_registry.create_node(
             node_type="classification.knn",
             node_id="knn_train",
-            parameters={"n_neighbors": 3, "cv_folds": 3},
+            parameters={"n_neighbors": 3},
         )
         train_result = await train_node.execute(X=SherpaDataset(X=X), y=y)
-        model = train_result.outputs["model"]
+        fitted_state = train_result.outputs["fitted_state"]
 
         await _assert_node_result(
-            node_type="classification.predict",
+            node_type="classification.apply_knn",
             parameters={},
-            kwargs={"X_new": SherpaDataset(X=X), "model": model},
-            required_diagnostic_keys={"method", "n_predicted", "n_classes", "mean_max_prob"},
+            kwargs={"X_new": SherpaDataset(X=X), "fitted_state": fitted_state},
+            required_diagnostic_keys={"method", "n_predicted", "n_classes", "serializer"},
         )
 
     @pytest.mark.asyncio
@@ -469,13 +497,13 @@ class TestPredictionNodesEmitDiagnostics:
             parameters={"n_components": 2},
         )
         train_result = await train_node.execute(X=SherpaDataset(X=X), y=y)
-        model = train_result.outputs["model"]
+        fitted_state = train_result.outputs["fitted_state"]
 
         await _assert_node_result(
-            node_type="classification.predict",
+            node_type="classification.apply_simca",
             parameters={},
-            kwargs={"X_new": SherpaDataset(X=X), "model": model},
-            required_diagnostic_keys={"method", "n_predicted", "n_classes", "mean_min_distance"},
+            kwargs={"X_new": SherpaDataset(X=X), "fitted_state": fitted_state},
+            required_diagnostic_keys={"method", "n_predicted", "n_classes", "n_rejected"},
         )
 
     @pytest.mark.asyncio
@@ -491,19 +519,25 @@ class TestPredictionNodesEmitDiagnostics:
             for center in (25.0, 55.0, 80.0):
                 spectra[i] += np.exp(-((x - center) ** 2) / 10.0)
             spectra[i] += rng.normal(0, 0.01, len(x))
-        await _assert_node_result(
+        result = await _assert_node_result(
             node_type="analysis.peak_finding",
             parameters={"distance": 5},
             kwargs={"input_data": SherpaDataset(X=spectra)},
             required_diagnostic_keys={
                 "n_consensus_peaks",
                 "n_peaks",
+                "n_samples",
                 "method",
                 "n_features",
                 "detection_rate_min",
                 "detection_rate_max",
             },
         )
+        assert result.outputs["plots"]["metadata"] == {
+            "n_samples": n_samples,
+            "n_peaks": result.diagnostics["n_peaks"],
+            "n_consensus_peaks": result.diagnostics["n_consensus_peaks"],
+        }
 
     @pytest.mark.asyncio
     async def test_peak_finding_peak_table_includes_fwhm_and_area(self):
@@ -532,14 +566,25 @@ class TestPredictionNodesEmitDiagnostics:
 
         rows = result.outputs["peaks"]["data"]
         assert rows
-        assert rows[0]["median_fwhm"] > 0
-        assert rows[0]["median_area"] > 0
+        assert rows[0]["median_half_prominence_width"] > 0
+        assert rows[0]["median_absolute_window_integral"] > 0
+        assert rows[0]["consensus_peak_id"].startswith("peak-")
+        assert len(rows[0]["constituent_detections"]) == rows[0]["detection_count"]
+        assert len(rows[0]["member_sample_labels"]) == rows[0]["sample_count"]
+        assert result.outputs["peaks"]["metadata"]["membership_complete"] is True
 
     def test_peak_finding_numeric_parameters_are_not_artificially_capped(self):
         metadata = node_registry.get_metadata("analysis.peak_finding")
         by_name = {param.name: param for param in metadata.parameters}
 
-        for name in ("height", "threshold", "distance", "prominence", "width"):
+        for name in (
+            "height",
+            "threshold",
+            "distance",
+            "prominence",
+            "width",
+            "consensus_tolerance",
+        ):
             assert by_name[name].max_value is None
 
         assert by_name["height"].min_value == 0.0
@@ -547,6 +592,7 @@ class TestPredictionNodesEmitDiagnostics:
         assert by_name["prominence"].min_value == 0.0
         assert by_name["distance"].min_value == 0
         assert by_name["width"].min_value == 0
+        assert by_name["consensus_tolerance"].min_value == 0.0
 
     @pytest.mark.asyncio
     async def test_peak_finding_treats_zero_distance_and_width_as_disabled(self):
@@ -578,19 +624,24 @@ class TestPredictionNodesEmitDiagnostics:
 
         X, y = _make_regression_data()
         train_node = node_registry.create_node(
-            node_type="model.pls",
+            node_type="model.fitted_pls",
             node_id="pls_train",
             parameters={"n_components": 3},
         )
-        train_result = await train_node.execute(X=SherpaDataset(X=X), y=y)
-        model = train_result.outputs["model"]
+        dataset = SherpaDataset(X=X)
+        train_result = await train_node.execute(input_data=dataset, y=y)
+        state = train_result.outputs["fitted_state"]
 
-        await _assert_node_result(
-            node_type="model.pls_predict",
+        applied = await _assert_node_result(
+            node_type="model.apply_fitted_pls",
             parameters={},
-            kwargs={"X_new": SherpaDataset(X=X), "model": model, "y_true": y},
-            required_diagnostic_keys={"n_predicted", "rmsep", "r2"},
+            kwargs={"input_data": dataset, "fitted_state": state},
+            required_diagnostic_keys={"fitted_state_custody"},
         )
+        np.testing.assert_allclose(applied.outputs["default"], train_result.outputs["default"])
+        evaluator = node_registry.create_node("diagnostics.regression_evaluator", "pls_eval", {})
+        evidence = await evaluator.execute(input_data=applied.outputs["default"], y_true=y)
+        assert evidence.outputs["default"]["rmse"] >= 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -617,11 +668,16 @@ class TestPreprocessingNodesEmitDiagnostics:
             parameters={"method": "als", "lam": 1e5},
             kwargs={"input_data": SherpaDataset(X=spectra)},
             required_diagnostic_keys={
+                "algorithm",
                 "baseline_mean",
-                "baseline_std",
-                "baseline_max",
-                "residual_rms",
-                "correction_magnitude_pct",
+                "baseline_standard_deviation",
+                "maximum_absolute_correction",
+                "corrected_root_mean_square",
+                "correction_magnitude_percent",
+                "converged_spectra",
+                "nonconverged_spectra",
+                "maximum_iterations_used",
+                "input_feature_count",
             },
         )
 
@@ -659,7 +715,7 @@ class TestPreprocessingNodesEmitDiagnostics:
         X = np.abs(rng.normal(0, 1, (5, 100))) + 0.1
         await _assert_node_result(
             node_type="preprocess.normalize",
-            parameters={"method": "max"},
+            parameters={"method": "scale", "scale_method": "max"},
             kwargs={"input_data": SherpaDataset(X=X)},
             required_diagnostic_keys={"method"},
         )

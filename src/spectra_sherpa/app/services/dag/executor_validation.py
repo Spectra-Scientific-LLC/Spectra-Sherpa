@@ -3,36 +3,15 @@
 from __future__ import annotations
 
 import warnings
-from typing import Any, Callable, List, Optional
+from typing import Any
 
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-
-from .meta_helpers import safe_get_coord
-
-HAS_NDDATASET = HAS_SCP
-
-# SpectralResult removed - using NDDataset-only
-HAS_SPECTRAL_RESULT = False
-SpectralResult = None
-
-# Import unit validation from app/lib
-try:
-    from spectra_sherpa.app.lib.spectral.validators import validate_and_normalize_units
-
-    HAS_UNIT_VALIDATION = True
-except ImportError:
-    validate_and_normalize_units: Optional[Callable[[list[Any], str], list[Any]]] = None  # type: ignore[no-redef]
-    HAS_UNIT_VALIDATION = False
 
 
 def _is_dataset(obj: Any) -> bool:
-    """Check if obj is a dataset (SherpaDataset primary; also catches legacy types)."""
-    if isinstance(obj, SherpaDataset):
-        return True
-    if HAS_SCP and isinstance(obj, NDDataset):
-        return True
-    return False
+    """Return whether *obj* is the canonical dataset transport."""
+
+    return isinstance(obj, SherpaDataset)
 
 
 def _is_estimator_like(obj: Any) -> bool:
@@ -56,6 +35,10 @@ def _is_model_payload(obj: Any) -> bool:
     nested_model = obj.get("model")
     if nested_model is not None and _is_estimator_like(nested_model):
         return True
+    if isinstance(nested_model, dict):
+        nested_serializer = nested_model.get("serializer")
+        if isinstance(nested_serializer, str) and nested_serializer.startswith("spectrasherpa.model-artifact."):
+            return True
 
     class_models = obj.get("class_models")
     if isinstance(class_models, dict) and class_models:
@@ -63,6 +46,79 @@ def _is_model_payload(obj: Any) -> bool:
 
     model_id = obj.get("model_id")
     if isinstance(model_id, str) and model_id.strip():
+        return True
+
+    # Canonical fitted states are deliberately data-only mappings rather than
+    # live estimator objects.  The receiving application node performs the
+    # serializer-specific closed-schema validation; this runtime category
+    # check only needs to distinguish an artifact state from an arbitrary
+    # configuration mapping.
+    serializer = obj.get("serializer")
+    if isinstance(serializer, str) and serializer.startswith("spectrasherpa.model-artifact."):
+        return True
+
+    # Native fitted-model families may use a closed serializer-owned state
+    # before the durable model-artifact envelope is built. The consumer owns
+    # full schema validation; this check only recognizes the narrow transport.
+    if (
+        set(obj) == {"serializer", "metadata", "arrays"}
+        and isinstance(serializer, str)
+        and serializer.startswith("spectrasherpa.")
+        and "-state/" in serializer
+        and isinstance(obj.get("metadata"), dict)
+        and isinstance(obj.get("arrays"), dict)
+    ):
+        return True
+
+    # Some fitted families use a closed outer envelope so the producer
+    # contract identity and the inner state serializer are both bound.  The
+    # receiving node still performs full closed-schema and digest validation;
+    # this category check merely recognizes that envelope as model data.
+    schema_version = obj.get("schema_version")
+    if (
+        schema_version == "spectrasherpa.local-regression-application/1"
+        and set(obj)
+        == {
+            "schema_version",
+            "operation_id",
+            "source_contract_digest",
+            "input_identity",
+            "response_identity",
+            "metadata",
+            "arrays",
+            "state_content_digest",
+        }
+        and isinstance(obj.get("metadata"), dict)
+        and isinstance(obj.get("arrays"), dict)
+    ):
+        return True  # Predictor still verifies the schema, digest, axes and producer.
+    if (
+        set(obj) == {"serializer", "operation_id", "input_identity", "state"}
+        and obj.get("operation_id") in {"model.fitted_pcr", "model.fitted_svr", "model.fitted_linear_regression"}
+        and serializer == f"spectrasherpa.{obj['operation_id']}/1"
+        and isinstance(obj.get("state"), dict)
+    ):
+        return True
+    if isinstance(schema_version, str) and schema_version.startswith("spectrasherpa.model-artifact."):
+        return True
+
+    # Local fit/apply nodes exchange one closed, data-only fitted-state
+    # envelope.  Recognize that exact transport as model data so the runtime
+    # category check agrees with the producer and consumer port contracts;
+    # serializer-specific semantic validation remains the consumer's job.
+    if (
+        set(obj) == {"schema_version", "serializer", "source_contract_digest", "state_content_digest", "state"}
+        and isinstance(schema_version, str)
+        and schema_version.startswith("spectrasherpa.fitted-")
+        and isinstance(obj.get("serializer"), str)
+        and isinstance(obj.get("state"), dict)
+        and all(
+            isinstance(obj.get(field), str)
+            and len(obj[field]) == 64
+            and all(character in "0123456789abcdef" for character in obj[field])
+            for field in ("source_contract_digest", "state_content_digest")
+        )
+    ):
         return True
 
     return False
@@ -102,7 +158,13 @@ def _category_from_type_ref(type_ref: str) -> str:
         "ModelReference",
     } or type_name.endswith("Model"):
         return "model"
-    if type_name in {"ValidationResult", "Visualization", "Comparison", "WorkflowSnapshot"}:
+    if type_name in {
+        "ValidationResult",
+        "StatisticsSummary",
+        "Visualization",
+        "Comparison",
+        "WorkflowSnapshot",
+    }:
         return "config"
     if (
         "Dataset" in type_name
@@ -111,48 +173,6 @@ def _category_from_type_ref(type_ref: str) -> str:
     ):
         return "dataset"
     return "any"
-
-
-def _validate_spectral_units(
-    datasets: List[Any],
-    operation: str,
-) -> List[Any]:
-    """
-    Validate and normalize spectral units across multiple datasets.
-
-    Uses the "warning + auto-convert" policy: if incompatible units are
-    detected (e.g., mixing Absorbance and Transmittance), logs a warning
-    and auto-converts all datasets to Absorbance.
-
-    Args:
-        datasets: List of NDDataset objects to validate
-        operation: Name of the operation (for warning messages)
-
-    Returns:
-        List of datasets with compatible units (possibly auto-converted)
-    """
-    if not HAS_UNIT_VALIDATION or not HAS_NDDATASET:
-        return datasets
-
-    # Filter to only NDDataset objects (unit validation is SCP-specific)
-    nddatasets = [d for d in datasets if HAS_NDDATASET and isinstance(d, NDDataset)]
-    if len(nddatasets) < 2:
-        return datasets
-
-    # Validate and normalize units
-    normalized = validate_and_normalize_units(nddatasets, operation)
-
-    # Replace in original list
-    result = []
-    norm_idx = 0
-    for d in datasets:
-        if HAS_NDDATASET and isinstance(d, NDDataset):
-            result.append(normalized[norm_idx])
-            norm_idx += 1
-        else:
-            result.append(d)
-
-    return result
 
 
 def _validate_port_type(
@@ -167,7 +187,7 @@ def _validate_port_type(
     Validate that data matches the expected port type.
 
     Port types:
-    - "dataset": Expects NDDataset (SpectroChemPy smart array)
+    - "dataset": Expects the canonical SherpaDataset
     - "array": Expects list, tuple, or numpy array
     - "model": Expects fitted model object
     - "target": Expects array-like (concentrations, labels)
@@ -228,14 +248,14 @@ def _validate_port_type(
             # Check X-axis (spectral dimension) exists and matches data shape.
             # Coordinate internals can occasionally be malformed (e.g., coord.data is None),
             # so this validation must never raise and block execution.
-            x_coord = safe_get_coord(data, "x")
+            x_coord = data.feature_axis
             data_shape = tuple(data.shape) if hasattr(data, "shape") else ()
             data_spectral_dim = data_shape[-1] if len(data_shape) > 0 else 0
 
             if x_coord is not None:
                 x_len = None
                 try:
-                    x_data = getattr(x_coord, "data")
+                    x_data = getattr(x_coord, "values")
                 except Exception:
                     x_data = None
 

@@ -15,13 +15,13 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import PlainTextResponse, Response
+from fastapi.responses import Response
 
 from spectra_sherpa.app.core.mode_policy import is_loopback
 from spectra_sherpa.app.core.security import get_client_host
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.services.batch_predict import build_executor_from_workflow
-from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
+from spectra_sherpa.sdk.deployment import validate_deployment_input_set
 
 logger = logging.getLogger(__name__)
 
@@ -88,9 +88,11 @@ async def lifespan(app: FastAPI):
 
     # Initialize ModelStore so LoadApplyModelNode can load saved artifacts
     from spectra_sherpa.app.core.config import settings
+    from spectra_sherpa.app.services.canonical_artifact_store import init_canonical_artifact_store
     from spectra_sherpa.app.services.model_store import init_model_store
 
     init_model_store(settings.data_dir)
+    init_canonical_artifact_store(settings.data_dir)
 
     workflow_id_str = os.getenv("HEADLESS_WORKFLOW_ID")
     if not workflow_id_str:
@@ -178,7 +180,6 @@ async def predict(request: Request) -> Response:
         payload = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
-
     # Clone the executor so concurrent requests don't mix state if we enable multithreading later
     import copy
 
@@ -191,17 +192,18 @@ async def predict(request: Request) -> Response:
     if not deploy_input_nodes:
         raise HTTPException(status_code=500, detail="Workflow does not contain any deploy.input nodes")
 
+    declared_streams = [str(node.parameters.get("stream_name", "sample")) for node in deploy_input_nodes]
+    try:
+        payload = validate_deployment_input_set(payload, expected_streams=tuple(declared_streams))
+    except ValueError as exc:
+        status_code = 500 if "workflow" in str(exc) and "duplicate" in str(exc) else 400
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+
     # Inject data into the correct nodes based on stream_name
     for node in deploy_input_nodes:
         stream_name = node.parameters.get("stream_name", "sample")
-        if stream_name not in payload:
-            raise HTTPException(status_code=400, detail=f"Missing required stream: {stream_name}")
-
-        # Convert raw JSON to SherpaDataset (allow arrays for headless predictions)
-        data = payload[stream_name]
         try:
-            dataset = coerce_to_sherpa(data, allow_array=True)
-            executor.inject_result(node.node_id, dataset)
+            executor.inject_deployment_input(node.node_id, payload[stream_name], stream_name=stream_name)
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Error parsing data for stream '{stream_name}': {e}")
 
@@ -249,10 +251,7 @@ async def predict(request: Request) -> Response:
     # Extract results from deploy.output node(s)
     deploy_output_nodes = [n for n in executor.nodes.values() if n.metadata.node_type == "deploy.output"]
     if not deploy_output_nodes:
-        # Fallback to returning all exit node results if no specific deploy.output exists
-        exit_nodes = executor.find_exit_nodes()
-        out = {k: str(results[k]) for k in exit_nodes if k in results}
-        return Response(content=json.dumps(out), media_type="application/json", headers=provenance_headers)
+        raise HTTPException(status_code=500, detail="Workflow does not contain a deploy.output node")
 
     # Aggregate ALL deploy.output nodes (multiple outputs for advanced workflows)
     if len(deploy_output_nodes) == 1:
@@ -262,19 +261,16 @@ async def predict(request: Request) -> Response:
             raise HTTPException(status_code=500, detail="Deploy output node did not produce a result")
 
         fmt_result = results[out_node_id]  # Expected to be a dict from DeployOutputNode.execute()
-        fmt_type = fmt_result.get("format", "json")
-        content = fmt_result.get("content", "")
-
-        if fmt_type == "json":
-            return Response(
-                content=json.dumps(content),
-                media_type="application/json",
-                headers=provenance_headers,
-            )
-        elif fmt_type == "csv":
-            return PlainTextResponse(content=content, media_type="text/csv", headers=provenance_headers)
-        else:
-            return PlainTextResponse(content=content, media_type="text/plain", headers=provenance_headers)
+        response_headers = {
+            **provenance_headers,
+            "X-Content-SHA256": fmt_result["content_sha256"],
+            "X-Deployment-Response-Schema": fmt_result["schema_version"],
+        }
+        return Response(
+            content=fmt_result["body"],
+            media_type=fmt_result["media_type"],
+            headers=response_headers,
+        )
     else:
         # Multiple outputs: return dict keyed by node ID
         outputs = {}
@@ -282,8 +278,6 @@ async def predict(request: Request) -> Response:
             out_node_id = node.node_id
             if out_node_id in results:
                 fmt_result = results[out_node_id]
-                outputs[out_node_id] = {
-                    "format": fmt_result.get("format", "json"),
-                    "content": fmt_result.get("content", ""),
-                }
-        return Response(content=json.dumps(outputs), media_type="application/json", headers=provenance_headers)
+                outputs[out_node_id] = fmt_result
+        body = json.dumps(outputs, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
+        return Response(content=body, media_type="application/json", headers=provenance_headers)

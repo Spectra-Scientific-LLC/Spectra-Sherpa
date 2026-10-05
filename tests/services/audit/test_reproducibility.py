@@ -131,7 +131,7 @@ async def test_workflow_run_completed_event_carries_full_reproducibility_record(
         final_status="completed",
         error_msg=None,
         integrity_hash="abc123",
-        model_ids=["uid-pca-001"],
+        produced_artifact_uids=["uid-pca-001"],
         params_snapshot={"baseline_correction": "snv"},
     )
 

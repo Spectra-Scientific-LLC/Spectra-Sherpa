@@ -1,0 +1,229 @@
+{
+  "_description": "Canonical one-target regression evaluator \u2014 pins the default versioned metric record and predicted-versus-actual visualization.",
+  "_spec": "regression_evaluator_single_target",
+  "serialized": {
+    "default": {
+      "task_type": "regression",
+      "registry_version": "2",
+      "n_samples": 20,
+      "rmse": 0.02378256536398701,
+      "mae": 0.018800663657791625,
+      "bias": 0.001115007069734286,
+      "r2": 0.996869939298566,
+      "sep": 0.024373565804538443,
+      "slope": 1.004883645635982,
+      "intercept": -0.04911166349021234,
+      "rer": 66.01765012320509
+    },
+    "comparison": {
+      "schema_version": "spectrasherpa-regression-comparison/1",
+      "statistics": {
+        "schema_version": "spectrasherpa-regression-statistics/1",
+        "targets": [
+          {
+            "target": "Target 1",
+            "reference_min": 9.511361060061795,
+            "reference_max": 11.12044659960073,
+            "reference_sd": 0.43613457426249264,
+            "metrics": {
+              "registry_version": "2",
+              "n_samples": 20,
+              "rmse": 0.02378256536398701,
+              "mae": 0.018800663657791625,
+              "bias": 0.001115007069734286,
+              "r2": 0.996869939298566,
+              "sep": 0.024373565804538443,
+              "slope": 1.004883645635982,
+              "intercept": -0.04911166349021234,
+              "rer": 66.01765012320509
+            },
+            "bias_definition": "predicted_minus_reference"
+          }
+        ]
+      },
+      "shape": [
+        20,
+        6
+      ],
+      "data": [
+        {
+          "sample": "1",
+          "target": "Target 1",
+          "reference": 10.882026172983831,
+          "predicted": 10.83096637666715,
+          "residual": 0.05105979631668234,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "2",
+          "target": "Target 1",
+          "reference": 10.200078604183611,
+          "predicted": 10.213150976092418,
+          "residual": -0.013072371908807057,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "3",
+          "target": "Target 1",
+          "reference": 10.489368992052869,
+          "predicted": 10.506657716030059,
+          "residual": -0.017288723977189946,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "4",
+          "target": "Target 1",
+          "reference": 11.12044659960073,
+          "predicted": 11.1056032991926,
+          "residual": 0.014843300408129423,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "5",
+          "target": "Target 1",
+          "reference": 10.933778995074984,
+          "predicted": 10.979174087554737,
+          "residual": -0.04539509247975282,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "6",
+          "target": "Target 1",
+          "reference": 9.511361060061795,
+          "predicted": 9.482273746569819,
+          "residual": 0.02908731349197602,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "7",
+          "target": "Target 1",
+          "reference": 10.475044208762794,
+          "predicted": 10.475959379108824,
+          "residual": -0.0009151703460297256,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "8",
+          "target": "Target 1",
+          "reference": 9.924321395851152,
+          "predicted": 9.920577718850636,
+          "residual": 0.0037436770005161435,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "9",
+          "target": "Target 1",
+          "reference": 9.948390574103222,
+          "predicted": 9.97904615839039,
+          "residual": -0.03065558428716919,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "10",
+          "target": "Target 1",
+          "reference": 10.205299250969187,
+          "predicted": 10.234686426367192,
+          "residual": -0.029387175398005283,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "11",
+          "target": "Target 1",
+          "reference": 10.07202178558044,
+          "predicted": 10.075120734094378,
+          "residual": -0.0030989485139389927,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "12",
+          "target": "Target 1",
+          "reference": 10.727136753481487,
+          "predicted": 10.734700003873531,
+          "residual": -0.007563250392044196,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "13",
+          "target": "Target 1",
+          "reference": 10.380518862573497,
+          "predicted": 10.362763147620894,
+          "residual": 0.017755714952603086,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "14",
+          "target": "Target 1",
+          "reference": 10.060837508246415,
+          "predicted": 10.021221578881937,
+          "residual": 0.03961592936447822,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "15",
+          "target": "Target 1",
+          "reference": 10.221931616372713,
+          "predicted": 10.21497337338619,
+          "residual": 0.006958242986522478,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "16",
+          "target": "Target 1",
+          "reference": 10.166837163687134,
+          "predicted": 10.169964143069214,
+          "residual": -0.003126979382079398,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "17",
+          "target": "Target 1",
+          "reference": 10.747039536578804,
+          "predicted": 10.771645350193358,
+          "residual": -0.024605813614554606,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "18",
+          "target": "Target 1",
+          "reference": 9.8974208681171,
+          "predicted": 9.921468465092788,
+          "residual": -0.024047596975687924,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "19",
+          "target": "Target 1",
+          "reference": 10.15653385082545,
+          "predicted": 10.14878731447729,
+          "residual": 0.007746536348159694,
+          "role": "unqualified_evaluation"
+        },
+        {
+          "sample": "20",
+          "target": "Target 1",
+          "reference": 9.572952130349137,
+          "predicted": 9.56690607533763,
+          "residual": 0.006046055011506013,
+          "role": "unqualified_evaluation"
+        }
+      ],
+      "metadata": {
+        "column_names": [
+          "sample",
+          "target",
+          "reference",
+          "predicted",
+          "residual",
+          "role"
+        ],
+        "n_samples": 20,
+        "n_targets": 1,
+        "target_names": [
+          "Target 1"
+        ],
+        "role": "unqualified_evaluation",
+        "residual_definition": "reference_minus_predicted"
+      }
+    }
+  }
+}

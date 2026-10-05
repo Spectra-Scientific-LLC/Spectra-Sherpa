@@ -1,0 +1,49 @@
+schema_version: 1
+name: Target-Orthogonal Signal Correction
+slug: osc_target_orthogonal_correction
+description: Fit Fearn's direct OSC projection from quantitative reference values and remove dominant spectral variation orthogonal to those targets.
+category: preprocessing
+is_active: true
+status: ready
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.file_load
+    label: Load Spectra and Reference Values
+    parameters: {}
+    example_binding:
+      source: synthetic
+      dataset_name: quantitative_spectra
+      selected_target: response
+      target_type: continuous
+    position_x: 180
+    position_y: 100
+  - node_id: osc_1
+    node_type: preprocess.osc
+    label: Fit and Apply Direct OSC
+    parameters:
+      n_components: 1
+    position_x: 180
+    position_y: 400
+  edges:
+  - from_node_id: data_1
+    to_node_id: osc_1
+  canvas_state:
+    zoom: 0.9
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Finite spectra on one explicit numeric feature axis
+      accepted_techniques: [FTIR, NIR, Raman]
+    Y_reference:
+      role_type: Y_reference
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      target_type: continuous
+      description: Quantitative reference values used only while fitting the OSC projection

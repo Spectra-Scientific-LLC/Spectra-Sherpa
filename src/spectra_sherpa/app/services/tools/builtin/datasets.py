@@ -456,7 +456,7 @@ def compute_dataset_statistics(
     feature_axis = ds.get_feature_axis()
     sample_axis = ds.sample_axis
     value_units = ds.units if ds.units and str(ds.units) != "dimensionless" else None
-    value_units = value_units or ds.get_extra("scp.value_units_label") or ds.domain.expected_units
+    value_units = value_units or ds.get_extra("spectrasherpa.value_units_label") or ds.domain.expected_units
     base: dict[str, Any] = {
         "dataset_id": ds.dataset_id,
         "axis": axis,

@@ -15,6 +15,7 @@ def test_headless_mode_no_browser_launch():
     with (
         patch("uvicorn.run") as mock_uvicorn,
         patch("spectra_sherpa.cli.threading.Thread") as mock_thread,
+        patch("spectra_sherpa.cli._assert_port_available"),
         patch("spectra_sherpa.cli.os.environ", {}) as mock_env,
     ):
         main(["serve-model", "123", "--port", "8001"])
@@ -28,7 +29,7 @@ def test_normal_mode_launches_browser():
     with (
         patch("uvicorn.run") as mock_uvicorn,
         patch("spectra_sherpa.cli.threading.Thread") as mock_thread,
-        patch("spectra_sherpa.cli._find_listening_pids", return_value=[]),
+        patch("spectra_sherpa.cli._assert_port_available"),
         patch("spectra_sherpa.cli.os.environ", {}),
     ):
         main(["--port", "8000"])

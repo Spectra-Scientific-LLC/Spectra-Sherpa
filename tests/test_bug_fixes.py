@@ -17,16 +17,16 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
-class TestSamplePartitionTargetPreservation:
-    """sample_partition must reattach y to X_cal_ds and X_test_ds."""
+class TestTrainTestSplitTargetPreservation:
+    """The canonical partition must reattach y to both split datasets."""
 
     @pytest.fixture
     def partition_node(self):
-        from spectra_sherpa.app.services.dag.nodes.selection.sample_partition_node import SamplePartitionNode
+        from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
 
-        return SamplePartitionNode(
+        return TrainTestSplitNode(
             node_id="test_sp",
-            parameters={"method": "random", "test_size": 0.3, "random_seed": 42},
+            parameters={"split_method": "random", "test_size": 0.3, "random_seed": 42},
         )
 
     @pytest.fixture
@@ -38,25 +38,25 @@ class TestSamplePartitionTargetPreservation:
 
     def test_xcal_has_target(self, partition_node, dataset_with_target):
         result = asyncio.run(partition_node.execute(X=dataset_with_target, y=dataset_with_target.target))
-        X_cal = result.outputs["X_cal"]
-        assert X_cal.target is not None, "X_cal must have target reattached"
-        assert len(X_cal.target) == X_cal.data.shape[0]
+        X_train = result["X_train"]
+        assert X_train.target is not None, "X_train must have target reattached"
+        assert len(X_train.target) == X_train.data.shape[0]
 
     def test_xtest_has_target(self, partition_node, dataset_with_target):
         result = asyncio.run(partition_node.execute(X=dataset_with_target, y=dataset_with_target.target))
-        X_test = result.outputs["X_test"]
+        X_test = result["X_test"]
         assert X_test.target is not None, "X_test must have target reattached"
         assert len(X_test.target) == X_test.data.shape[0]
 
     def test_target_values_match_indices(self, partition_node, dataset_with_target):
         """Targets on X_cal/X_test must be the correct slices, not shuffled."""
         result = asyncio.run(partition_node.execute(X=dataset_with_target, y=dataset_with_target.target))
-        cal_idx = result.outputs["cal_indices"]
-        test_idx = result.outputs["test_indices"]
+        cal_idx = result["train_indices"]
+        test_idx = result["test_indices"]
         y_full = dataset_with_target.target
 
-        np.testing.assert_array_equal(result.outputs["X_cal"].target, y_full[cal_idx])
-        np.testing.assert_array_equal(result.outputs["X_test"].target, y_full[test_idx])
+        np.testing.assert_array_equal(result["X_train"].target, y_full[cal_idx])
+        np.testing.assert_array_equal(result["X_test"].target, y_full[test_idx])
 
     def test_no_target_when_y_is_none(self, partition_node):
         """When no y is provided, X_cal/X_test should not have spurious targets."""
@@ -64,9 +64,10 @@ class TestSamplePartitionTargetPreservation:
 
         ds = SherpaDataset(X=np.random.randn(20, 50))
         result = asyncio.run(partition_node.execute(X=ds))
-        # Target may or may not be None depending on source, but y_cal/y_test should not be in outputs
-        assert "y_cal" not in result.outputs
-        assert "y_test" not in result.outputs
+        # Target may or may not be None depending on source, but no target
+        # outputs may be fabricated when the canonical input has none.
+        assert "y_train" not in result
+        assert "y_test" not in result
 
 
 # ---------------------------------------------------------------------------
@@ -78,13 +79,13 @@ class TestGeneratePythonCompleteness:
     """generate_python() must assign results dict and not reference undefined vars."""
 
     def test_sample_partition_has_results_dict(self):
-        from spectra_sherpa.app.services.dag.nodes.selection.sample_partition_node import SamplePartitionNode
+        from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
 
-        node = SamplePartitionNode(
+        node = TrainTestSplitNode(
             node_id="sp1",
-            parameters={"method": "kennard_stone", "test_size": 0.2},
+            parameters={"split_method": "kennard_stone", "test_size": 0.2},
         )
-        lines = node.generate_python({"X": "data"})
+        lines = node.generate_python({"X": "data", "y": "target"})
         code = "\n".join(lines)
         assert "results['sp1']" in code, "generate_python must assign results dict"
 
@@ -94,9 +95,9 @@ class TestGeneratePythonCompleteness:
         from spectra_sherpa.app.services.dag.nodes.classification.simca_nodes import SIMCANode
 
         nodes = [
-            KNNNode(node_id="knn_export", parameters={"n_neighbors": 3, "cv_folds": 3}),
-            PLSDANode(node_id="plsda_export", parameters={"n_components": 2, "cv_folds": 3}),
-            SIMCANode(node_id="simca_export", parameters={"n_components": 2, "cv_folds": 3}),
+            KNNNode(node_id="knn_export", parameters={"n_neighbors": 3}),
+            PLSDANode(node_id="plsda_export", parameters={"n_components": 2, "scale": False}),
+            SIMCANode(node_id="simca_export", parameters={"n_components": 2}),
         ]
         rng = np.random.default_rng(42)
         data = np.vstack(
@@ -119,11 +120,23 @@ class TestGeneratePythonCompleteness:
         for node in nodes:
             code = "\n".join(node.generate_python({"X": "data", "y": "target"}, indent=""))
             compile(code, f"<{node.node_id}_export>", "exec")
-            assert "classification_metrics_contract" in code
-            assert "'classification_metrics': _classification_metrics" in code
-            assert "'confusion_matrix_train': _cm_train" in code
-            assert "'confusion_matrix_cv': _cm_cv" in code
-            assert "'y_pred_cv'" in code
+            if isinstance(node, (KNNNode, PLSDANode, SIMCANode)):
+                # Canonical repaired classifiers delegate generated execution to
+                # the same source-closed operation as live execution. Validate
+                # returned contracts below instead of requiring duplicated
+                # implementation details in generated source text.
+                helper = {
+                    KNNNode: "_knn_export_outputs",
+                    PLSDANode: "_plsda_export_outputs",
+                    SIMCANode: "_simca_export_outputs",
+                }[type(node)]
+                assert helper in code
+            else:
+                assert "classification_metrics_contract" in code
+                assert "'classification_metrics': _classification_metrics" in code
+                assert "'confusion_matrix_train': _cm_train" in code
+                assert "'confusion_matrix_cv': _cm_cv" in code
+                assert "'y_pred_cv'" in code
             if isinstance(node, PLSDANode) and scp is None:
                 pytest.skip(f"SpectroChemPy unavailable for generated PLS-DA export execution: {scp_import_error}")
 
@@ -132,63 +145,61 @@ class TestGeneratePythonCompleteness:
                 namespace["scp"] = scp
             exec(compile(code, f"<{node.node_id}_export>", "exec"), namespace)
             output = namespace["results"][node.node_id]
-            canonical = output["metrics"]["classification_metrics"]
+            canonical = (
+                output["metrics"]
+                if isinstance(node, (KNNNode, PLSDANode, SIMCANode))
+                else output["metrics"]["classification_metrics"]
+            )
             assert canonical["task_type"] == "classification"
-            assert canonical["primary_split"] == "cv"
-            assert "train" in canonical["splits"]
-            assert "cv" in canonical["splits"]
+            assert canonical["primary_split"] == "train"
+            assert set(canonical["splits"]) == {"train"}
             assert canonical["confusion_matrices"]["train"]
-            assert canonical["confusion_matrices"]["cv"]
+            assert set(canonical["confusion_matrices"]) == {"train"}
             assert output["confusion_matrix_train"].shape == (3, 3)
-            assert output["confusion_matrix_cv"].shape == (3, 3)
-            assert len(output["metadata"]["y_pred_cv"]) == len(target)
+            assert "confusion_matrix_cv" not in output
+            assert "y_pred_cv" not in output["metadata"]
 
-    def test_static_validation_rejects_feature_tables_for_spectrum_only_nodes(self):
+    def test_static_validation_accepts_canonical_spectral_file_for_spectrum_nodes(self):
         from spectra_sherpa.app.services.dag.executor import DAGExecutor, WorkflowEdge, WorkflowNode
 
         executor = DAGExecutor()
         executor.add_node(
             WorkflowNode(
                 node_id="src",
-                node_type="data.source",
-                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
+                node_type="data.file_load",
+                parameters={"experiment_id": 1, "file_id": 1, "stage": "raw"},
             )
         )
         executor.add_node(
             WorkflowNode(
                 node_id="smooth",
                 node_type="preprocess.smooth",
-                parameters={"method": "savgol", "window_size": 5, "poly_order": 2},
+                parameters={"method": "savitzky_golay", "size": 5, "order": 2},
             )
         )
         executor.add_edge(WorkflowEdge(from_node="src", to_node="smooth"))
 
         result = executor.validate_full()
-        messages = "\n".join(issue.message for issue in result.errors).lower()
-        assert "requires x_spectra" in messages
-        assert "received x_features" in messages
+        assert result.is_valid
 
-    def test_sample_partition_export_preserves_targets(self):
-        from spectra_sherpa.app.services.dag.nodes.selection.sample_partition_node import SamplePartitionNode
+    def test_train_test_split_export_preserves_targets(self):
+        from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
 
-        node = SamplePartitionNode(
+        node = TrainTestSplitNode(
             node_id="sp_target",
-            parameters={"method": "random", "test_size": 0.2},
+            parameters={"split_method": "random", "test_size": 0.2},
         )
-        code = "\n".join(node.generate_python({"X": "data"}))
-        assert "_y_train" in code
-        assert "'y_train'" in code
-        assert "target=_y_train" in code
-        # Backward-compatible aliases also emitted
-        assert "'y_cal'" in code
-        assert "'X_cal'" in code
+        code = "\n".join(node.generate_python({"X": "data", "y": "target"}))
+        assert "bind_split_target" in code
+        assert "materialize_split_outputs" in code
+        assert "_y_input = target" in code
 
     def test_sample_partition_spxy_export(self):
-        from spectra_sherpa.app.services.dag.nodes.selection.sample_partition_node import SamplePartitionNode
+        from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
 
-        node = SamplePartitionNode(
+        node = TrainTestSplitNode(
             node_id="sp2",
-            parameters={"method": "spxy", "test_size": 0.2},
+            parameters={"split_method": "spxy", "test_size": 0.2},
         )
         lines = node.generate_python({"X": "data", "y": "target"})
         code = "\n".join(lines)
@@ -196,11 +207,11 @@ class TestGeneratePythonCompleteness:
         assert "results['sp2']" in code
 
     def test_sample_partition_stratified_export(self):
-        from spectra_sherpa.app.services.dag.nodes.selection.sample_partition_node import SamplePartitionNode
+        from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
 
-        node = SamplePartitionNode(
+        node = TrainTestSplitNode(
             node_id="sp3",
-            parameters={"method": "stratified", "test_size": 0.3, "random_seed": 0},
+            parameters={"split_method": "stratified", "test_size": 0.3, "random_seed": 0},
         )
         lines = node.generate_python({"X": "data", "y": "target"})
         code = "\n".join(lines)
@@ -216,10 +227,10 @@ class TestGeneratePythonCompleteness:
         )
         lines = node.generate_python({"X": "data"})
         code = "\n".join(lines)
-        # _mask must be defined before use
-        assert "_mask = " in code, "VIP branch must define _mask"
+        # Generated execution delegates to the same canonical implementation
+        # as live DAG execution; it may not carry a second VIP implementation.
+        assert "_variable_select_execute" in code
         assert "results['vs1']" in code
-        assert "extract_vip_from_pls_model" in code
         assert "TODO" not in code
 
     def test_variable_select_interval_has_results(self):
@@ -242,8 +253,7 @@ class TestGeneratePythonCompleteness:
         )
         lines = node.generate_python({"X": "data"})
         code = "\n".join(lines)
-        assert "_mask" in code
-        assert "signal.find_peaks" in code
+        assert "_variable_select_execute" in code
         assert "results['vs3']" in code
 
     def test_variable_select_peak_window_negative_extrema_is_opt_in(self):
@@ -254,7 +264,7 @@ class TestGeneratePythonCompleteness:
             parameters={"method": "peak_window", "peak_prominence": 0.1, "peak_half_window": 5},
         )
         default_code = "\n".join(default_node.generate_python({"X": "data"}))
-        assert "_neg_peaks" not in default_code
+        assert "'include_negative_extrema': False" in default_code
 
         opt_in_node = VariableSelectNode(
             node_id="vs_peak_neg",
@@ -266,7 +276,7 @@ class TestGeneratePythonCompleteness:
             },
         )
         opt_in_code = "\n".join(opt_in_node.generate_python({"X": "data"}))
-        assert "_neg_peaks" in opt_in_code
+        assert "'include_negative_extrema': True" in opt_in_code
 
     def test_variable_select_export_preserves_targets(self):
         from spectra_sherpa.app.services.dag.nodes.selection.variable_select_node import VariableSelectNode
@@ -276,8 +286,8 @@ class TestGeneratePythonCompleteness:
             parameters={"method": "interval", "region_start": 1000, "region_end": 2000},
         )
         code = "\n".join(node.generate_python({"X": "data"}))
-        assert "_selected_target = getattr(_X_input, 'target', None)" in code
-        assert "'X_selected': _X_selected_ds" in code
+        assert "_variable_select_execute" in code
+        assert "results['vs_target'] = _vs_outputs" in code
 
     def test_variable_select_unknown_method_defines_mask(self):
         """Even for unknown/selectivity_ratio methods, _mask must be defined."""
@@ -289,7 +299,7 @@ class TestGeneratePythonCompleteness:
         )
         lines = node.generate_python({"X": "data"})
         code = "\n".join(lines)
-        assert "_mask = " in code or "_mask =" in code
+        assert "_variable_select_execute" in code
 
 
 # ---------------------------------------------------------------------------
@@ -480,42 +490,54 @@ def test_classifier_training_nodes_emit_split_qualified_metrics_only():
             assert alias not in source, f"{node_cls.__name__}.execute emits ambiguous {alias}"
 
 
-def test_holdout_classification_export_uses_test_accuracy():
+def test_classification_evaluator_export_uses_the_canonical_authority():
     import inspect
 
-    from spectra_sherpa.app.services.dag.nodes.diagnostics import CrossValidationNode, HoldoutEvaluationNode
+    from spectra_sherpa.app.services.dag.nodes.classification_evaluator_node import ClassificationEvaluatorV2Node
+    from spectra_sherpa.app.services.dag.nodes.diagnostics import CrossValidationNode
 
     cv_source = inspect.getsource(CrossValidationNode.execute)
     assert '"accuracy":' not in cv_source
     assert '"f1_score":' not in cv_source
 
-    node = HoldoutEvaluationNode(node_id="holdout_1", parameters={"task_type": "classification"})
-    code = "\n".join(node.generate_python({"y_true": "y_true", "y_pred": "y_pred"}, indent=""))
+    node = ClassificationEvaluatorV2Node(node_id="score", parameters={})
+    code = "\n".join(node.generate_python({"y_true": "y_true", "default": "y_pred"}, indent=""))
 
-    assert "'test_accuracy': _acc" in code
-    assert "'accuracy': _acc" not in code
+    assert "evaluate_classification_v2" in code
+    assert "y_pred, y_true" in code
+    assert "results['score']" in code
 
 
-def test_regression_diagnostic_exports_use_split_qualified_metrics():
-    from spectra_sherpa.app.services.dag.nodes.diagnostics import CrossValidationNode, HoldoutEvaluationNode
+def test_regression_diagnostic_exports_use_canonical_metric_authorities():
+    from spectra_sherpa.app.services.dag.nodes.diagnostics import CrossValidationNode
+    from spectra_sherpa.app.services.dag.nodes.regression_evaluator_node import RegressionEvaluatorV2Node
 
-    cv_node = CrossValidationNode(node_id="cv_1", parameters={"task_type": "regression"})
-    cv_code = "\n".join(cv_node.generate_python({"y_true": "y_true", "y_pred": "y_pred"}, indent=""))
+    cv_node = CrossValidationNode(node_id="cv_1", parameters={})
+    cv_code = "\n".join(
+        cv_node.generate_python(
+            {"evidence": "oof_evidence"},
+            indent="",
+        )
+    )
 
-    assert "'r2_cv': _r2" in cv_code
-    assert "'rmsecv': _rmse" in cv_code
-    assert "'q2': _r2" in cv_code
+    # The canonical exporter delegates to the same closed evaluator as live
+    # execution.  Split-qualified metric names are proved from that evaluator's
+    # output in test_c2_cross_validation_contract.py; this regression test must
+    # not freeze the deleted hand-written export implementation.
+    assert "_cross_validation_execute" in cv_code
+    assert "oof_evidence" in cv_code
+    assert "results['cv_1'] = _cv_outputs" in cv_code
     assert "'r2': _r2" not in cv_code
     assert "'rmse': _rmse" not in cv_code
 
-    holdout_node = HoldoutEvaluationNode(node_id="holdout_1", parameters={"task_type": "regression"})
-    holdout_code = "\n".join(holdout_node.generate_python({"y_true": "y_true", "y_pred": "y_pred"}, indent=""))
+    evaluator = RegressionEvaluatorV2Node(node_id="score", parameters={})
+    evaluator_code = "\n".join(evaluator.generate_python({"y_true": "y_true", "default": "y_pred"}, indent=""))
 
-    assert "'r2_test': _r2" in holdout_code
-    assert "'rmse_test': _rmsep" in holdout_code
-    assert "'mae': _mae" in holdout_code
-    assert "'R2': _r2" not in holdout_code
-    assert "'RMSEP': _rmsep" not in holdout_code
+    assert "evaluate_regression_v2" in evaluator_code
+    assert "y_pred, y_true" in evaluator_code
+    assert "results['score']" in evaluator_code
+    assert "'R2'" not in evaluator_code
+    assert "'RMSEP'" not in evaluator_code
 
 
 # ---------------------------------------------------------------------------
@@ -528,17 +550,23 @@ class TestLoadApplyFeatureMask:
     and wavelength comparison must use masked values."""
 
     def test_feature_mask_applied_before_nfeatures_check(self):
-        """Reading the source to verify structural fix."""
-        import inspect
+        """The shared authority accepts raw width, masks it, then validates prepared width."""
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+        from spectra_sherpa.app.services import model_application
 
-        from spectra_sherpa.app.services.dag.nodes.modeling.load_apply_node import LoadApplyModelNode
+        dataset = SherpaDataset(X=np.arange(8, dtype=np.float64).reshape(2, 4))
+        manifest = {
+            "n_features": 2,
+            "feature_mask": [False, True, False, True],
+        }
 
-        source = inspect.getsource(LoadApplyModelNode.execute)
+        matrix = np.asarray(dataset.X)
+        model_application.validate_feature_contract(matrix, dataset, manifest)
+        prepared, warnings = model_application._apply_feature_mask(matrix, dataset, manifest)
+        model_application.validate_prepared_feature_contract(prepared, manifest)
 
-        # feature_mask application should appear before n_features validation
-        mask_pos = source.find("Applied saved feature mask")
-        nfeat_pos = source.find("Feature count mismatch")
-        assert mask_pos < nfeat_pos, "Feature mask application must come before n_features validation"
+        np.testing.assert_array_equal(prepared, matrix[:, [1, 3]])
+        assert warnings == ["Applied saved feature mask (4 -> 2 features)"]
 
     def test_variable_select_stores_feature_mask_in_meta(self):
         """variable_select must store the boolean mask in output dataset meta
@@ -565,14 +593,30 @@ class TestLoadApplyFeatureMask:
         assert np.sum(mask) == X_selected.data.shape[1]
 
     def test_wavelength_comparison_uses_masked_values(self):
-        """The axis comparison must use actual_wn[mask], not actual_wn[:len]."""
-        import inspect
+        """A non-contiguous mask compares selected coordinates, never an axis prefix."""
+        from spectra_sherpa.app.lib.axes import FeatureAxis
+        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+        from spectra_sherpa.app.services.model_application import validate_feature_contract
 
-        from spectra_sherpa.app.services.dag.nodes.modeling.load_apply_node import LoadApplyModelNode
+        dataset = SherpaDataset(
+            X=np.ones((2, 4), dtype=np.float64),
+            feature_axis=FeatureAxis(
+                values=np.array([100.0, 200.0, 300.0, 400.0]),
+                units="cm-1",
+            ),
+        )
+        manifest = {
+            "n_features": 2,
+            "feature_mask": [False, True, False, True],
+            "feature_axis": [200.0, 400.0],
+            "feature_axis_units": "cm^-1",
+        }
 
-        source = inspect.getsource(LoadApplyModelNode.execute)
+        validate_feature_contract(np.asarray(dataset.X), dataset, manifest)
 
-        # Should compare masked axis values
-        assert (
-            "actual_wn[mask]" in source
-        ), "Wavelength comparison must use actual_wn[mask] for non-contiguous selections"
+        with pytest.raises(ValueError, match="feature-axis values differ"):
+            validate_feature_contract(
+                np.asarray(dataset.X),
+                dataset,
+                {**manifest, "feature_axis": [100.0, 200.0]},
+            )

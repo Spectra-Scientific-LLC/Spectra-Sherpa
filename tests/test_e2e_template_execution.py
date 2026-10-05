@@ -5,12 +5,11 @@ Verifies that the recently-audited nodes execute correctly with the
 ``diesel_nir``-shaped generated data (NIR, 784 samples, 401 channels).
 
 Covered fixes (from the chemometrician audit):
-  #1  PLS-DA calibrated probability flag in metadata
-  #2  Outlier Detection requires eigenvalues (no score-variance fallback)
-  #3  NMF rejects negative data with an actionable error
-  #4  Baseline lambda auto-selects from technique tag (NIR → 1×10⁶)
-  #5  CrossValidation reports SEP, RER, bias
-  #6  CrossValidation applies LOOCV automatically when n ≤ 50
+  #1  Outlier Detection requires eigenvalues (no score-variance fallback)
+  #2  NMF rejects negative data with an actionable error
+  #3  Baseline lambda auto-selects from technique tag (NIR → 1×10⁶)
+  #4  CrossValidation reports SEP, RER, bias
+  #5  CrossValidation records an explicitly supplied LOOCV split plan
 
 The ``diesel_nir`` catalog entry is also confirmed to be first in DATASET_CATALOG
 (so it appears at the top of the Inspector dropdown without any frontend change).
@@ -28,8 +27,36 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
     SherpaDataset,
     SpectralAxis,
 )
+from spectra_sherpa.app.services.dag import out_of_fold_evidence
 from spectra_sherpa.app.services.dag.node_base import node_registry
+from spectra_sherpa.sdk.validate import make_split_plan
 from tests.eigenvector_test_fixtures import generated_eigenvector_result
+from tests.pca_test_fixtures import closed_pca_diagnostic_state
+
+
+def _bound_evidence(
+    observed: np.ndarray,
+    predicted: np.ndarray,
+    *,
+    n_splits: int,
+    task_type: str = "regression",
+) -> dict[str, object]:
+    plan = make_split_plan(observed.size, n_splits=n_splits)
+    split_plan = {
+        "schema_version": "spectra-split-plan/1",
+        "method": plan.method,
+        "n_samples": plan.n_samples,
+        "grouped": plan.grouped,
+        "folds": [{"train": fold.train.tolist(), "test": fold.test.tolist()} for fold in plan.folds],
+    }
+    return out_of_fold_evidence.build_out_of_fold_evidence(
+        producer_node_id="nested",
+        task_type=task_type,
+        observations=observed,
+        predictions=predicted,
+        split_plan=split_plan,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -59,22 +86,8 @@ def diesel_nir_dataset() -> SherpaDataset:
 
 @pytest.fixture(scope="module")
 def diesel_pca_model(diesel_nir_dataset: SherpaDataset) -> dict:
-    """Run sklearn PCA on diesel_nir and return a PCA model dict compatible with the node."""
-    X = diesel_nir_dataset.data
-    # Mean-center before PCA (standard preprocessing)
-    X_c = X - X.mean(axis=0)
-    pca = PCA(n_components=5)
-    scores = pca.fit_transform(X_c)
-    return {
-        "model": pca,
-        "scores": scores,
-        "loadings": pca.components_,
-        "n_components": 5,
-        "n_observations": X.shape[0],
-        "explained_variance": pca.explained_variance_,
-        "_internal": {"input_data": X, "input_data_ds": diesel_nir_dataset},
-        "metadata": {"type": "PCAModel"},
-    }
+    """Build the typed PCA diagnostic envelope without requiring the fit extra."""
+    return closed_pca_diagnostic_state(diesel_nir_dataset, n_components=5)
 
 
 # ---------------------------------------------------------------------------
@@ -92,53 +105,53 @@ def test_diesel_nir_is_first_in_dataset_catalog():
 
 
 def test_diesel_nir_has_nir_technique_tag():
-    """diesel_nir must carry a NIR technique tag for lambda auto-selection to work."""
+    """diesel_nir must carry the NIR domain tag used by scientist-facing context."""
     catalog_entry = DATASET_CATALOG["diesel_nir"]
     assert catalog_entry.get("technique", "").upper() == "NIR"
 
 
 # ---------------------------------------------------------------------------
-# 2. Fix #4 — Baseline lambda auto-selects to 1×10⁶ for NIR
+# 2. Canonical baseline executes the exact displayed lambda
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_baseline_penalized_ls_uses_nir_lambda(diesel_nir_dataset: SherpaDataset):
-    """BaselinePenalizedLSNode must auto-select λ=1e6 for a NIR-tagged dataset."""
+async def test_baseline_penalized_ls_uses_exact_canvas_lambda(diesel_nir_dataset: SherpaDataset):
+    """NIR metadata must not silently replace the lambda shown on the canvas."""
     node = node_registry.create_node(
         node_type="baseline.penalized_ls",
         node_id="baseline_test",
-        parameters={"method": "als", "lam": 1e5},  # default — should be overridden for NIR
+        parameters={"method": "als", "lam": 1e5},
     )
 
-    # Capture the effective lambda by patching baseline_penalized_ls
-    import spectra_sherpa.app.services.dag.nodes.preprocessing.baseline_nodes as prep_mod
+    # Capture the exact implementation argument without substituting by technique.
+    import spectra_sherpa.app.services.dag.nodes.preprocessing.penalized_baseline_node as prep_mod
 
     captured_lam: list[float] = []
-    original_fn = prep_mod.baseline_penalized_ls
+    original_fn = prep_mod._penalized_baseline_dispatch
 
     def _spy_baseline(data, method, lam, **kw):
         captured_lam.append(float(lam))
-        return original_fn(data, method, lam, **kw)
+        return original_fn(data, method=method, lam=lam, **kw)
 
-    prep_mod.baseline_penalized_ls = _spy_baseline
+    prep_mod._penalized_baseline_dispatch = _spy_baseline
     try:
         result = await node.execute(input_data=diesel_nir_dataset)
     finally:
-        prep_mod.baseline_penalized_ls = original_fn
+        prep_mod._penalized_baseline_dispatch = original_fn
 
-    assert captured_lam, "baseline_penalized_ls was never called"
+    assert captured_lam, "canonical baseline implementation was never called"
     effective_lam = captured_lam[0]
-    assert effective_lam == pytest.approx(1e6), (
-        f"Expected NIR auto-lambda=1×10⁶, got {effective_lam:.2g}. "
-        "Fix #4: technique-aware lambda selection may be broken."
-    )
+    assert effective_lam == pytest.approx(1e5)
 
     # Result should be a valid SherpaDataset with same shape
     from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset as SD
     from spectra_sherpa.app.services.dag.node_base import NodeResult
 
     if isinstance(result, NodeResult):
+        provenance = result.outputs["default"].provenance.to_list()[-1]
+        assert provenance["parameters"]["lam"] == pytest.approx(1e5)
+        assert "_lam_auto_technique" not in provenance["parameters"]
         result = result.outputs.get("default", result.outputs)
     assert isinstance(result, SD) or isinstance(result, dict)
 
@@ -163,7 +176,7 @@ async def test_outlier_detection_raises_without_eigenvalues(diesel_nir_dataset: 
         "loadings": pca.components_,
         "n_components": 3,
         "n_observations": X.shape[0],
-        # 'explained_variance' intentionally omitted
+        # 'eigenvalues' intentionally omitted
         "_internal": {"input_data": X},
         "metadata": {"type": "PCAModel"},
     }
@@ -217,27 +230,28 @@ async def test_cross_validation_reports_sep_rer_bias():
     node = node_registry.create_node(
         node_type="diagnostics.cross_validation",
         node_id="cv_test",
-        parameters={"cv_folds": 5, "cv_method": "k_fold"},
+        parameters={},
     )
 
-    result = await node.execute(y_true=y_true, y_pred=y_pred)
+    result = await node.execute(evidence=_bound_evidence(y_true, y_pred, n_splits=5))
 
     metrics = result.outputs.get("cv_metrics", {})
-    assert "sep" in metrics, f"SEP missing from CV metrics (fix #5). Keys: {list(metrics)}"
-    assert "rer" in metrics, f"RER missing from CV metrics (fix #5). Keys: {list(metrics)}"
-    assert "bias" in metrics, f"bias missing from CV metrics (fix #5). Keys: {list(metrics)}"
+    overall = metrics["overall_metrics"]
+    assert "sep" in overall, f"SEP missing from CV metrics (fix #5). Keys: {list(overall)}"
+    assert "rer" in overall, f"RER missing from CV metrics (fix #5). Keys: {list(overall)}"
+    assert "bias" in overall, f"bias missing from CV metrics (fix #5). Keys: {list(overall)}"
 
     # Sanity-check numeric reasonableness
-    assert metrics["sep"] >= 0
-    assert metrics["rer"] > 0
-    assert isinstance(metrics["bias"], float)
+    assert overall["sep"] >= 0
+    assert overall["rer"] > 0
+    assert isinstance(overall["bias"], float)
     # RER ≥ 10 is the ASTM E1655 minimum for a useful calibration
-    assert metrics["rer"] >= 5, f"RER={metrics['rer']:.1f} seems very low — is the formula correct?"
+    assert overall["rer"] >= 5, f"RER={overall['rer']:.1f} seems very low — is the formula correct?"
 
 
 @pytest.mark.asyncio
-async def test_cross_validation_loocv_applied_for_small_n():
-    """CrossValidation 'auto' must apply LOOCV when n ≤ 50 (fix #6)."""
+async def test_cross_validation_records_supplied_loocv_assignments():
+    """One unique fold per sample is accepted only when it is supplied explicitly."""
     rng = np.random.default_rng(99)
     n = 30  # small dataset → LOOCV expected
     y_true = rng.uniform(0, 1, n)
@@ -246,86 +260,59 @@ async def test_cross_validation_loocv_applied_for_small_n():
     node = node_registry.create_node(
         node_type="diagnostics.cross_validation",
         node_id="cv_loocv_test",
-        parameters={"cv_folds": 5, "cv_method": "auto"},  # auto should → LOOCV
+        parameters={},
     )
 
-    result = await node.execute(y_true=y_true, y_pred=y_pred)
+    result = await node.execute(evidence=_bound_evidence(y_true, y_pred, n_splits=n))
 
     metrics = result.outputs.get("cv_metrics", {})
-    # With LOOCV on 30 samples, effective_folds == n_samples (cv_folds_used == 30)
-    assert (
-        metrics.get("cv_method") == "loocv"
-    ), f"Expected 'loocv' for n={n} ≤ 50, got '{metrics.get('cv_method')}'. Fix #6 may be broken."
-    assert metrics.get("cv_folds_used") == n
-    assert "rmsecv" in metrics
-    assert "r2_cv" in metrics
+    assert metrics["n_folds"] == n
+    assert result.outputs["fold_assignments"] == list(range(n))
+    assert "rmsecv" in metrics["overall_metrics"]
+    assert "r2_cv" in metrics["overall_metrics"]
 
 
 @pytest.mark.asyncio
-async def test_cross_validation_honors_explicit_classification_task_type():
-    """CrossValidation must use explicit classification scoring instead of label-cardinality heuristics."""
-    node = node_registry.create_node(
-        node_type="diagnostics.cross_validation",
-        node_id="cv_classification_test",
-        parameters={"cv_folds": 5, "cv_method": "k_fold", "task_type": "classification"},
-    )
-
-    result = await node.execute(
-        y_true=np.array(["low", "low", "high", "high"]),
-        y_pred=np.array(["low", "high", "high", "high"]),
-    )
-
-    metrics = result.outputs.get("cv_metrics", {})
-    assert metrics.get("task_type") == "classification"
-    assert metrics.get("cv_accuracy") == pytest.approx(0.75)
-    assert metrics.get("n_classes") == 2
+async def test_cross_validation_rejects_classification_without_an_authorized_producer():
+    """The UI must not imply classification CV before an authoritative producer exists."""
+    observed = np.array(["low", "low", "high", "high"])
+    predicted = np.array(["low", "high", "high", "high"])
+    with pytest.raises(ValueError, match="supports regression only"):
+        _bound_evidence(observed, predicted, n_splits=2, task_type="classification")
 
 
 # ---------------------------------------------------------------------------
-# 5. Holdout evaluation integration regressions
+# 5. Canonical held-out regression evaluation regressions
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_holdout_evaluation_tolerates_non_finite_regression_predictions():
+async def test_canonical_evaluator_rejects_non_finite_regression_predictions():
     node = node_registry.create_node(
-        node_type="diagnostics.holdout_evaluation",
+        node_type="diagnostics.regression_evaluator",
         node_id="holdout_nan_test",
-        parameters={"task_type": "regression"},
+        parameters={},
     )
 
-    result = await node.execute(
-        y_true=np.array([1.0, 2.0, 3.0, 4.0]),
-        y_pred=np.array([1.1, np.nan, 2.9, np.inf]),
-    )
-
-    # NodeResult: outputs carry the port data, diagnostics carry scalar metrics
-    outputs = result.outputs
-    metrics = outputs["metrics"]
-    assert metrics["n_samples"] == 4
-    assert metrics["n_valid_samples"] == 2
-    assert metrics["n_invalid_predictions"] == 2
-    assert metrics["status"] == "contains_non_finite_predictions"
-    assert np.isfinite(metrics["rmse_test"])
-    assert len(outputs["visualization"]["data"]) == 2
-
-    # Diagnostics should mirror the key metrics
-    assert result.diagnostics["rmse_test"] == metrics["rmse_test"]
+    with pytest.raises(ValueError, match="finite prediction or target matrix"):
+        node.score_held_out_predictions(
+            np.array([1.1, np.nan, 2.9, np.inf]),
+            np.array([1.0, 2.0, 3.0, 4.0]),
+        )
 
 
-def test_holdout_evaluation_generate_python_matches_runtime_payload_shape():
+def test_canonical_evaluator_generate_python_uses_the_regression_authority():
     node = node_registry.create_node(
-        node_type="diagnostics.holdout_evaluation",
+        node_type="diagnostics.regression_evaluator",
         node_id="holdout_export_test",
-        parameters={"task_type": "classification"},
+        parameters={},
     )
 
-    code = "\n".join(node.generate_python({"y_true": "y_true", "y_pred": "y_pred"}))
+    code = "\n".join(node.generate_python({"default": "y_pred", "y_true": "y_true"}))
 
-    assert "classification_report" in code
-    assert "'classes': _classes.tolist()" in code
-    assert "'type': 'confusion_matrix'" in code
-    assert "'ClassificationTest'" in code
+    assert "evaluate_regression_v2" in code
+    assert "y_pred, y_true" in code
+    assert "classification_report" not in code
 
 
 # ---------------------------------------------------------------------------

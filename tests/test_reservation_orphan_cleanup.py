@@ -61,6 +61,7 @@ async def test_finalize_running_reservation_marks_it_error(test_session, test_us
     did_finalize = await finalize_orphan_reservation_if_running(
         test_session,
         reservation_id=reservation.id,
+        user_id=test_user.id,
         error_msg="validation rejected the request",
         exception_class="HTTPException",
     )
@@ -99,6 +100,7 @@ async def test_finalize_is_noop_when_row_already_terminal(test_session, test_use
     did_finalize = await finalize_orphan_reservation_if_running(
         test_session,
         reservation_id=row.id,
+        user_id=test_user.id,
         error_msg="should not overwrite",
         exception_class="ValueError",
     )
@@ -115,9 +117,42 @@ async def test_finalize_handles_missing_reservation_row(test_session, test_user:
     did_finalize = await finalize_orphan_reservation_if_running(
         test_session,
         reservation_id=9_999_999,
+        user_id=test_user.id,
         error_msg="row gone",
     )
     assert did_finalize is False
+
+
+@pytest.mark.asyncio
+async def test_finalize_cannot_mutate_another_users_reservation(test_session, test_user: User):
+    """A guessed reservation id must not turn another user's run into error."""
+    other_user = User(username="orphan-reservation-other-user")
+    test_session.add(other_user)
+    await test_session.flush()
+    other_project, other_workflow = await _make_workflow(test_session, other_user, name="other-reservation")
+    reservation = await _reserve_run(
+        test_session,
+        workflow_id=other_workflow.id,
+        user_id=other_user.id,
+        project_id=other_project.id,
+        wf_version_id=None,
+        integrity_hash="h",
+        idempotency_key="otherKEY1",
+        params_snapshot={},
+    )
+    assert reservation is not None
+
+    did_finalize = await finalize_orphan_reservation_if_running(
+        test_session,
+        reservation_id=reservation.id,
+        user_id=test_user.id,
+        error_msg="must not be written",
+    )
+    assert did_finalize is False
+
+    await test_session.refresh(reservation)
+    assert reservation.status == "running"
+    assert reservation.error is None
 
 
 # ---------------------------------------------------------------------------

@@ -1,659 +1,630 @@
-"""Tests for DataSourceNode.generate_python() — Python export of standard data loaders.
-
-Covers:
-- sklearn datasets: iris, wine, breast_cancer
-- Eigenvector datasets: corn_m5, diesel_nir (with/without properties)
-- SpectroChemPy example datasets: irdata (SCP mode), numpy mode fallback
-- Multi-port output (default + target)
-- supports_python_export() conditional on source type
-- Orchestrator integration (exportable source nodes skip placeholder)
-"""
+"""Canonical source acquisition and executable-export tests."""
 
 from __future__ import annotations
 
-import pytest
-
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP
-from spectra_sherpa.app.services.dag.node_base import node_registry
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Helpers
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-def _create_source(source: str, **extra) -> object:
-    """Create a DataSourceNode with the given source type and extra params."""
-    params = {"source": source, **extra}
-    return node_registry.create_node("data.source", "src_1", params)
-
-
-def _gen(node, *, multi_port: bool = False, use_scp: bool = True) -> str:
-    """Run generate_python and return joined code."""
-    inputs = {"_multi_port": str(multi_port)} if multi_port else {}
-    lines = node.generate_python(inputs, indent="    ", use_scp=use_scp)
-    return "\n".join(lines)
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# supports_python_export
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestSupportsExport:
-    """DataSourceNode.supports_python_export() returns True for bundled/reference sources."""
-
-    @pytest.mark.parametrize("source", ["sklearn", "eigenvector", "spectrochempy", "synthetic"])
-    def test_supported_sources(self, source):
-        node = _create_source(source)
-        assert node.supports_python_export() is True
-
-    @pytest.mark.parametrize("source", ["file", "experiment", "library", ""])
-    def test_unsupported_sources(self, source):
-        node = _create_source(source)
-        assert node.supports_python_export() is False
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# sklearn
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestSklearnExport:
-    """Sklearn source emits SherpaDataset construction with proper imports."""
-
-    @pytest.mark.parametrize(
-        "dataset,loader",
-        [
-            ("iris", "load_iris"),
-            ("wine", "load_wine"),
-            ("breast_cancer", "load_breast_cancer"),
-        ],
-    )
-    def test_sklearn_loader_import(self, dataset, loader):
-        node = _create_source("sklearn", sklearn_dataset=dataset)
-        code = _gen(node)
-        assert f"from sklearn.datasets import {loader}" in code
-
-    def test_sherpa_dataset_import(self):
-        code = _gen(_create_source("sklearn", sklearn_dataset="iris"))
-        assert "from spectra_sherpa.app.lib.sherpa_dataset import" in code
-        assert "SherpaDataset" in code
-        assert "FeatureAxis" in code
-        assert "SampleAxis" in code
-        assert "TargetContext" in code
-
-    def test_sherpa_dataset_construction(self):
-        code = _gen(_create_source("sklearn", sklearn_dataset="iris"))
-        assert "_ds = SherpaDataset(" in code
-        assert "_bunch.data," in code
-        assert "feature_axis=FeatureAxis(" in code
-        assert "sample_axis=SampleAxis(" in code
-        assert "target=_bunch.target," in code
-        assert "data_role='X_features'" in code
-
-    def test_target_context_categorical(self):
-        code = _gen(_create_source("sklearn", sklearn_dataset="iris"))
-        assert "target_type='categorical'" in code
-        assert "target_names=list(_bunch.target_names)" in code
-
-    def test_title_matches_dataset_name(self):
-        code = _gen(_create_source("sklearn", sklearn_dataset="wine"))
-        assert "title='wine'" in code
-
-    def test_single_port_output(self):
-        code = _gen(_create_source("sklearn"), multi_port=False)
-        assert "results['src_1'] = _ds" in code
-        assert "'default'" not in code
-
-    def test_multi_port_output(self):
-        code = _gen(_create_source("sklearn"), multi_port=True)
-        assert "results['src_1'] = {'default': _ds, 'target': _ds.target}" in code
-
-    def test_print_statement(self):
-        code = _gen(_create_source("sklearn", sklearn_dataset="iris"))
-        assert "Data Source (sklearn.iris)" in code
-
-    def test_no_scp_dependency(self):
-        """sklearn export should not reference scp (works in both modes)."""
-        code = _gen(_create_source("sklearn"), use_scp=False)
-        assert "scp." not in code
-        assert "SherpaDataset" in code
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Synthetic references
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestSyntheticReferenceExport:
-    """Synthetic first-party references emit the packaged benchmark loader."""
-
-    def test_synthetic_reference_import(self):
-        code = _gen(_create_source("synthetic", synthetic_dataset="Synthetic_atmospheric-6"))
-        assert "from spectra_sherpa.app.lib.synthetic_references import load_synthetic_reference_as_sherpa" in code
-
-    def test_synthetic_reference_loader_uses_selected_dataset(self):
-        code = _gen(_create_source("synthetic", synthetic_dataset="Library_atmospheric-9"))
-        assert "_ds = load_synthetic_reference_as_sherpa('Library_atmospheric-9')" in code
-        assert "Data Source (synthetic.Library_atmospheric-9)" in code
-
-    def test_synthetic_reference_multi_port_output(self):
-        code = _gen(_create_source("synthetic", synthetic_dataset="Synthetic_atmospheric-6"), multi_port=True)
-        assert "results['src_1'] = {'default': _ds, 'target': _ds.target}" in code
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Eigenvector
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestEigenvectorExport:
-    """Eigenvector source emits SherpaDataset with catalog metadata."""
-
-    def test_eigenvector_import(self):
-        code = _gen(_create_source("eigenvector", eigenvector_dataset="corn_m5"))
-        assert "from spectra_sherpa.app.lib.eigenvector import load_eigenvector_dataset" in code
-
-    def test_sherpa_dataset_construction(self):
-        code = _gen(_create_source("eigenvector", eigenvector_dataset="corn_m5"))
-        assert "_ev = load_eigenvector_dataset('corn_m5')" in code
-        assert "_ds = SherpaDataset(" in code
-        assert "_ev['spectra']," in code
-
-    def test_feature_axis_with_wavelengths(self):
-        code = _gen(_create_source("eigenvector", eigenvector_dataset="corn_m5"))
-        assert "feature_axis=SpectralAxis(" in code
-        assert "_wavelengths" in code
-
-    def test_catalog_x_title(self):
-        """corn_m5 has x_title='Channel'."""
-        code = _gen(_create_source("eigenvector", eigenvector_dataset="corn_m5"))
-        assert "title='Channel'" in code
-
-    def test_catalog_x_units_present(self):
-        """diesel_nir has x_units='nm'."""
-        code = _gen(_create_source("eigenvector", eigenvector_dataset="diesel_nir"))
-        assert "units='nm'" in code
-
-    def test_catalog_x_units_absent(self):
-        """corn_m5 has x_units=None — no units= line emitted."""
-        code = _gen(_create_source("eigenvector", eigenvector_dataset="corn_m5"))
-        # Should not contain units= inside SpectralAxis for corn_m5
-        lines = code.split("\n")
-        spectral_block = []
-        in_spectral = False
-        for line in lines:
-            if "feature_axis=SpectralAxis(" in line:
-                in_spectral = True
-            if in_spectral:
-                spectral_block.append(line)
-                if line.strip().startswith("),"):
-                    break
-        spectral_code = "\n".join(spectral_block)
-        assert "units=" not in spectral_code
-
-    def test_target_with_prop_names(self):
-        """corn_m5 has prop_names=['Moisture', 'Oil', 'Protein', 'Starch']."""
-        code = _gen(_create_source("eigenvector", eigenvector_dataset="corn_m5"))
-        assert "target=_ev.get('properties')" in code
-        assert "target_type='continuous'" in code
-        assert "'Moisture'" in code
-        assert "'Protein'" in code
-
-    def test_label_from_catalog(self):
-        code = _gen(_create_source("eigenvector", eigenvector_dataset="corn_m5"))
-        assert "Corn M5 NIR" in code
-
-    def test_single_port_output(self):
-        code = _gen(_create_source("eigenvector", eigenvector_dataset="corn_m5"), multi_port=False)
-        assert "results['src_1'] = _ds" in code
-
-    def test_multi_port_output(self):
-        code = _gen(_create_source("eigenvector", eigenvector_dataset="corn_m5"), multi_port=True)
-        assert "'default': _ds" in code
-        assert "'target': _ds.target" in code
-
-    def test_no_scp_dependency(self):
-        code = _gen(_create_source("eigenvector"), use_scp=False)
-        assert "scp." not in code
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# SpectroChemPy
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestSpectrochempyExport:
-    """SpectroChemPy source emits scp.read() → from_nddataset() conversion."""
-
-    def test_scp_mode_reads_file(self):
-        code = _gen(_create_source("spectrochempy", example_dataset="irdata"), use_scp=True)
-        assert "scp.read(" in code
-
-    def test_scp_known_default_path(self):
-        """irdata has a known default path."""
-        code = _gen(_create_source("spectrochempy", example_dataset="irdata"), use_scp=True)
-        assert "irdata/nh4y-activation.spg" in code
-
-    def test_from_nddataset_conversion(self):
-        code = _gen(_create_source("spectrochempy", example_dataset="irdata"), use_scp=True)
-        assert "from spectra_sherpa.app.lib.scp_compat import from_nddataset" in code
-        assert "_ds = from_nddataset(_ndd)" in code
-
-    def test_unknown_dataset_placeholder(self):
-        """Datasets without known defaults get EDIT comment."""
-        code = _gen(_create_source("spectrochempy", example_dataset="ramandata"), use_scp=True)
-        assert "YOUR_FILE_HERE" in code
-        assert "EDIT" in code
-
-    def test_custom_example_file(self):
-        """Specific example_file overrides the default path."""
-        node = _create_source("spectrochempy", example_dataset="irdata", example_file="CO@Mo_Al2O3.SPG")
-        code = _gen(node, use_scp=True)
-        assert "irdata/CO@Mo_Al2O3.SPG" in code
-
-    def test_numpy_mode_raises_import_error(self):
-        code = _gen(_create_source("spectrochempy"), use_scp=False)
-        assert "raise ImportError" in code
-        assert "spectrochempy" in code
-
-    def test_single_port_output(self):
-        code = _gen(_create_source("spectrochempy", example_dataset="irdata"), use_scp=True, multi_port=False)
-        assert "results['src_1'] = _ds" in code
-
-    def test_multi_port_output(self):
-        code = _gen(_create_source("spectrochempy", example_dataset="irdata"), use_scp=True, multi_port=True)
-        assert "'default': _ds" in code
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Orchestrator integration
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestOrchestratorIntegration:
-    """The python_export orchestrator delegates to generate_python for
-    exportable source nodes instead of emitting generic placeholders."""
-
-    def test_sklearn_source_no_placeholder(self):
-        """Exported code for sklearn source should not contain '>>> EDIT' placeholder."""
-        from spectra_sherpa.app.services.python_export import generate_python_code
-
-        wf = _make_workflow(
-            "test sklearn export",
-            nodes=[
-                _wf_node("src", "data.source", {"source": "sklearn", "sklearn_dataset": "iris"}),
-                _wf_node("pca", "model.pca", {"n_components": 3}),
-            ],
-            edges=[_wf_edge("src", "pca")],
-        )
-
-        code = generate_python_code(wf)
-        assert "SherpaDataset(" in code
-        assert "load_iris" in code
-        # Should NOT contain the generic placeholder
-        assert ">>> EDIT: provide your data below <<<" not in code
-
-    def test_file_source_still_placeholder(self):
-        """File source (non-exportable) should still get the generic placeholder."""
-        from spectra_sherpa.app.services.python_export import generate_python_code
-
-        wf = _make_workflow(
-            "test file export",
-            nodes=[
-                _wf_node("src", "data.source", {"source": "file", "file_path": "/tmp/data.csv"}),
-                _wf_node("pca", "model.pca", {"n_components": 3}),
-            ],
-            edges=[_wf_edge("src", "pca")],
-        )
-
-        code = generate_python_code(wf)
-        # Placeholder now uses a DATA LOADING banner instead of ">>> EDIT"
-        assert "DATA LOADING" in code
-        assert "SherpaDataset.from_nddataset" not in code
-        assert "from spectra_sherpa.app.lib.scp_compat import from_nddataset" in code
-
-    def test_eigenvector_multi_port_export(self):
-        """Eigenvector source with both default and target ports connected."""
-        from spectra_sherpa.app.services.python_export import generate_python_code
-
-        wf = _make_workflow(
-            "test eigenvector multi-port",
-            nodes=[
-                _wf_node("src", "data.source", {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}),
-                _wf_node("pls", "model.pls", {"n_components": 3}),
-            ],
-            edges=[
-                _wf_edge("src", "pls", from_output="default", to_input="default"),
-                _wf_edge("src", "pls", from_output="target", to_input="y"),
-            ],
-        )
-
-        code = generate_python_code(wf)
-        assert "SherpaDataset(" in code
-        assert "load_eigenvector_dataset('corn_m5')" in code
-        assert "'default': _ds" in code
-        assert "'target': _ds.target" in code
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Code executability
-# ═══════════════════════════════════════════════════════════════════════════
-
-
-class TestCodeExecutability:
-    """Generated code should be syntactically valid Python."""
-
-    @pytest.mark.parametrize(
-        "source,extra",
-        [
-            ("sklearn", {"sklearn_dataset": "iris"}),
-            ("eigenvector", {"eigenvector_dataset": "corn_m5"}),
-            ("spectrochempy", {"example_dataset": "irdata"}),
-        ],
-    )
-    def test_syntax_valid(self, source, extra):
-        """Generated code compiles without SyntaxError."""
-        node = _create_source(source, **extra)
-        code = _gen(node, use_scp=True)
-        # Wrap in a function so indentation is valid
-        wrapped = f"def _test():\n{code}"
-        compile(wrapped, "<test>", "exec")
-
-    def test_sklearn_executes(self):
-        """sklearn export actually runs and produces a SherpaDataset."""
-        node = _create_source("sklearn", sklearn_dataset="iris")
-        code = _gen(node, use_scp=False)
-
-        ns = {"np": __import__("numpy"), "results": {}}
-        wrapped = f"def _run():\n{code}\n    return results"
-        exec(compile(wrapped, "<test>", "exec"), ns)
-        result = ns["_run"]()
-        ds = result["src_1"]
-
-        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-
-        assert isinstance(ds, SherpaDataset)
-        assert ds.shape == (150, 4)
-        assert ds.target is not None
-        assert len(ds.target) == 150
-
-    def test_eigenvector_executes(self, patch_eigenvector_loader):
-        """Eigenvector export actually runs and produces a SherpaDataset."""
-        node = _create_source("eigenvector", eigenvector_dataset="corn_m5")
-        code = _gen(node, use_scp=False)
-
-        ns = {"np": __import__("numpy"), "results": {}}
-        wrapped = f"def _run():\n{code}\n    return results"
-        exec(compile(wrapped, "<test>", "exec"), ns)
-        result = ns["_run"]()
-        ds = result["src_1"]
-
-        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-
-        assert isinstance(ds, SherpaDataset)
-        assert ds.shape == (80, 700)
-        assert ds.target is not None
-        assert ds.target.shape[0] == 80
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Workflow model helpers (lightweight mocks for orchestrator tests)
-# ═══════════════════════════════════════════════════════════════════════════
-
+import ast
+import hashlib
+from pathlib import Path
 from types import SimpleNamespace
 
+import numpy as np
+import pytest
 
-def _wf_node(node_id: str, node_type: str, parameters: dict) -> SimpleNamespace:
-    """Create a lightweight workflow node duck-type."""
-    return SimpleNamespace(node_id=node_id, node_type=node_type, parameters=parameters)
+from spectra_sherpa.app.api.v1.routes.workflows.export import _workflow_data_readme
+from spectra_sherpa.app.lib.collection_definition import COLLECTION_DEFINITION_SCHEMA
+from spectra_sherpa.app.lib.sherpa_dataset import DomainContext, SherpaDataset
+from spectra_sherpa.app.services import workflow_export_context as export_context_service
+from spectra_sherpa.app.services.dag.node_base import node_registry
+from spectra_sherpa.app.services.dag.supervision_binding import admit_attached_sample_table_supervision
+from spectra_sherpa.app.services.prepared_data import PreparedDataOverrides
+from spectra_sherpa.app.services.python_export import build_canonical_executable_export, generate_python_code
+from spectra_sherpa.app.services.workflow_export_context import (
+    BundledSourceFile,
+    SourceExportSpec,
+    WorkflowExportContext,
+)
+from spectra_sherpa.io.authority import project_portable_ingestion_authority
+
+_SOURCE_BYTES = b"target,1000,1001\n1,2,3\n2,4,6\n"
+_SOURCE_SHA256 = hashlib.sha256(_SOURCE_BYTES).hexdigest()
 
 
-def _wf_edge(
-    from_id: str,
-    to_id: str,
-    from_output: str = "default",
-    to_input: str = "default",
-) -> SimpleNamespace:
-    """Create a lightweight workflow edge duck-type."""
+def _workflow(*, selected_target: str = "target") -> SimpleNamespace:
     return SimpleNamespace(
-        from_node_id=from_id,
-        to_node_id=to_id,
-        from_output=from_output,
-        to_input=to_input,
-    )
-
-
-def _make_workflow(name: str, nodes: list, edges: list) -> SimpleNamespace:
-    """Create a lightweight workflow duck-type."""
-    return SimpleNamespace(
-        name=name,
+        name="Materialized reference",
         description="",
-        nodes=nodes,
-        edges=edges,
-    )
-
-
-@pytest.mark.skipif(not HAS_SCP, reason="SCP required for export execution")
-def test_preprocess_normalize_then_pls_export_preserves_embedded_targets(patch_eigenvector_loader):
-    """Preprocessing export should preserve embedded targets for downstream PLS."""
-    import spectra_sherpa.app.services.dag.nodes.data.source  # noqa: F401
-    import spectra_sherpa.app.services.dag.nodes.modeling.pls_nodes  # noqa: F401
-    import spectra_sherpa.app.services.dag.nodes.preprocessing  # noqa: F401
-    from spectra_sherpa.app.services.python_export import generate_python_code, validate_export
-
-    wf = _make_workflow(
-        "normalize to pls",
+        integrity_hash="source-export",
         nodes=[
-            _wf_node("src", "data.source", {"source": "eigenvector", "eigenvector_dataset": "corn_m5"}),
-            _wf_node("norm", "preprocess.normalize", {"method": "snv"}),
-            _wf_node("pls", "model.pls", {"n_components": 3, "scale": True}),
+            SimpleNamespace(
+                node_id="source",
+                node_type="data.file_load",
+                parameters={
+                    "experiment_id": 1,
+                    "file_id": 2,
+                    "stage": "raw",
+                    "target_authority": _target_authority(selected_target, "continuous", _SOURCE_SHA256),
+                },
+            )
         ],
-        edges=[
-            _wf_edge("src", "norm", from_output="default", to_input="default"),
-            _wf_edge("norm", "pls", from_output="default", to_input="X"),
-        ],
+        edges=[],
     )
 
-    assert validate_export(wf) == []
 
-    ns = {"__name__": "__main__"}
-    exec(generate_python_code(wf), ns)
-    results = ns["run_workflow"]()
-
-    assert results["pls"]["y_true"].shape == (80, 4)
-    assert results["pls"]["r2"].shape == (4,)
-
-
-@pytest.mark.skipif(not HAS_SCP, reason="SIMCA export requires spectrochempy")
-def test_simca_to_classifier_predict_export_uses_model_port():
-    """SIMCA export should validate when wired through the wrapped model port."""
-    import spectra_sherpa.app.services.dag.nodes.classification.predict_node  # noqa: F401
-    import spectra_sherpa.app.services.dag.nodes.classification.simca_nodes  # noqa: F401
-    import spectra_sherpa.app.services.dag.nodes.data.source  # noqa: F401
-    from spectra_sherpa.app.services.python_export import generate_python_code, validate_export
-
-    wf = _make_workflow(
-        "simca predict",
-        nodes=[
-            _wf_node("src", "data.source", {"source": "sklearn", "sklearn_dataset": "iris"}),
-            _wf_node("train", "classification.simca", {"n_components": 2}),
-            _wf_node("pred", "classification.predict", {}),
-        ],
-        edges=[
-            _wf_edge("src", "train", from_output="default", to_input="X"),
-            _wf_edge("src", "train", from_output="target", to_input="y"),
-            _wf_edge("src", "pred", from_output="default", to_input="X_new"),
-            _wf_edge("train", "pred", from_output="model", to_input="model"),
-        ],
-    )
-
-    assert validate_export(wf) == []
-
-    code = generate_python_code(wf)
-    assert "results['train']['model']" in code
-    assert "'model': {" in code
+def _target_authority(column: str, target_type: str, source_digest: str) -> dict[str, object]:
+    return {
+        "schema_version": "spectrasherpa-target-authority/1",
+        "column": column,
+        "target_type": target_type,
+        "units": None,
+        "source_digest": source_digest,
+    }
 
 
-def test_knn_export_emits_plots_port():
-    """KNN export should emit declared plot outputs, not a placeholder."""
-    import spectra_sherpa.app.services.dag.nodes.classification.knn_nodes  # noqa: F401
-
-    node = node_registry.create_node("classification.knn", "knn_1", {})
-    code = "\n".join(node.generate_python({}, indent="    ", use_scp=True))
-
-    assert "_cm_train_plot" in code
-    assert "_cm_cv_plot" in code
-    assert "'confusion_matrix_train': _cm_train" in code
-    assert "'confusion_matrix_cv': _cm_cv" in code
-    assert "'plots': {'confusion_matrix_train': _cm_train_plot, 'confusion_matrix_cv': _cm_cv_plot}" in code
+def _write_source(path: Path) -> bytes:
+    content = _SOURCE_BYTES
+    path.write_bytes(content)
+    return content
 
 
-@pytest.mark.asyncio
-async def test_source_execute_replays_prepared_data_overrides():
-    import spectra_sherpa.app.services.dag.nodes.data.source  # noqa: F401
-    from spectra_sherpa.app.services.prepared_data import load_prepared_data_overrides, save_prepared_data_overrides
+def _external_reference(content: bytes) -> dict[str, object]:
+    digest = hashlib.sha256(content).hexdigest()
+    return {
+        "schema_version": "spectrasherpa-portable-reference/1",
+        "projection_id": "eigenvector.corn_m5",
+        "artifact_id": "eigenvector.corn",
+        "artifact_size_bytes": 123456,
+        "artifact_sha256": "a" * 64,
+        "member_path": "corn.mat",
+        "member_size_bytes": len(content),
+        "member_sha256": digest,
+        "native_reader_contract": "spectrasherpa.matlab/1",
+        "scientific_sha256": "b" * 64,
+        "provider": "Eigenvector Research",
+        "provider_page": "https://eigenvector.com/data_sets",
+        "download_url": "https://eigenvector.com/data/Corn.zip",
+        "redistribution": "user_acquired_no_redistribution",
+    }
 
-    save_prepared_data_overrides(
-        {
-            "x_title": "Time",
-            "x_units": "s",
-            "y_title": "Response",
-            "is_time_series": True,
+
+def _write_spectrum(path: Path, values: tuple[float, float, float]) -> bytes:
+    content = (f"4000.0,{values[0]}\n" f"3999.0,{values[1]}\n" f"3998.0,{values[2]}\n").encode("utf-8")
+    path.write_bytes(content)
+    return content
+
+
+def _collection_definition(first: bytes, second: bytes) -> dict[str, object]:
+    domain = DomainContext(
+        technique="IR",
+        measurement_mode="absorbance",
+        expected_units="cm-1",
+        data_quantity="absorbance",
+    ).model_dump(mode="json", exclude_none=False)
+    rows = []
+    for index, (name, content, label) in enumerate(
+        (("first.csv", first, "class-a"), ("second.csv", second, "class-b")),
+        start=1,
+    ):
+        sample_id = f"sample-{index}"
+        rows.append(
+            {
+                "file_name": name,
+                "sha256": hashlib.sha256(content).hexdigest(),
+                "asset_id": "single-auto",
+                "source_row_index": 0,
+                "sample_id": sample_id,
+                "annotations": {
+                    "sample_id": sample_id,
+                    "specimen_id": label,
+                    "class": label,
+                    "block": index,
+                },
+            }
+        )
+    return {
+        "schema_version": COLLECTION_DEFINITION_SCHEMA,
+        "columns": ["sample_id", "specimen_id", "class", "block"],
+        "collection": {
+            "dataset_id": "portable-collection-test/1",
+            "title": "Portable selected collection",
+            "units": "absorbance",
+            "data_role": "X_spectra",
+            "domain": domain,
+            "sample_axis": {"title": "Samples", "units": None, "values_policy": "omit"},
         },
-        source="sklearn",
-        name="iris",
+        "rows": rows,
+    }
+
+
+def _context(
+    path: Path,
+    *,
+    bundle_relative_path: str = "source/reference.csv",
+    external_reference: dict[str, object] | None = None,
+) -> WorkflowExportContext:
+    from spectra_sherpa.app.lib.io import load_canonical_file_as_sherpa
+
+    ingestion_authority = (
+        project_portable_ingestion_authority(load_canonical_file_as_sherpa(path)).canonical_dict()
+        if path.is_file()
+        else None
     )
-    try:
-        node = _create_source("sklearn", sklearn_dataset="iris")
-        result = await node.execute()
-        dataset = result["default"]
-
-        assert load_prepared_data_overrides(source="sklearn", name="iris").x_title == "Time"
-        assert dataset.feature_axis is not None
-        assert dataset.feature_axis.title == "Time"
-        assert dataset.feature_axis.units == "s"
-        assert dataset.domain.data_quantity == "Response"
-        assert dataset.is_time_series is True
-    finally:
-        from spectra_sherpa.app.services.prepared_data import sidecar_path
-
-        sidecar = sidecar_path(file_path=None, source="sklearn", name="iris")
-        sidecar.unlink(missing_ok=True)
-
-
-def test_generate_python_code_uses_bundled_files_and_explicit_overrides():
-    from pathlib import Path
-
-    from spectra_sherpa.app.services.prepared_data import PreparedDataOverrides
-    from spectra_sherpa.app.services.python_export import generate_python_code
-    from spectra_sherpa.app.services.workflow_export_context import (
-        BundledSourceFile,
-        SourceExportSpec,
-        WorkflowExportContext,
-    )
-
-    wf = _make_workflow(
-        "Bundled Export",
-        nodes=[
-            _wf_node(
-                "src",
-                "data.source",
-                {"source": "experiment", "experiment_id": 12, "file_id": 34, "stage": "raw"},
-            ),
-            _wf_node("pca", "model.pca", {"n_components": 2}),
-        ],
-        edges=[_wf_edge("src", "pca", from_output="default", to_input="default")],
-    )
-
-    context = WorkflowExportContext(
+    return WorkflowExportContext(
         source_specs={
-            "src": SourceExportSpec(
-                node_id="src",
+            "source": SourceExportSpec(
+                node_id="source",
                 source="experiment",
                 loader_mode="single_file",
                 overrides=PreparedDataOverrides(
-                    x_title="Time",
-                    x_units="s",
-                    y_title="Response",
-                    is_time_series=True,
+                    x_title="Wavenumber",
+                    x_units="cm-1",
+                    y_title="Target",
+                    target_column="target",
+                    selected_target="target",
+                    target_type="continuous",
+                    target_mode="single",
                 ),
                 bundle_files=(
                     BundledSourceFile(
-                        absolute_path=Path("/tmp/example.csv"),
-                        source_relative_path="experiments/exp_012/raw/example.csv",
-                        bundle_relative_path="src/example.csv",
+                        absolute_path=path,
+                        source_relative_path=path.name,
+                        bundle_relative_path=bundle_relative_path,
+                        external_reference=external_reference,
+                        ingestion_authority=ingestion_authority,
                     ),
                 ),
             )
         }
     )
 
-    code = generate_python_code(wf, export_context=context)
 
-    assert "os.path.join(DATA_DIR, 'src/example.csv')" in code
-    assert "_feature_axis_src.title = 'Time'" in code
-    assert "_feature_axis_src.units = 's'" in code
-    assert "_domain_src.data_quantity = 'Response'" in code
-    assert "_ds.is_time_series = True" in code
-
-
-@pytest.mark.skipif(not HAS_SCP, reason="SCP testdata required to resolve bundle files")
-def test_resolve_scp_bundle_files_known_default():
-    """SCP example datasets with known defaults produce a BundledSourceFile."""
-    from spectra_sherpa.app.services.workflow_export_context import _resolve_scp_bundle_files
-
-    files = _resolve_scp_bundle_files("data_1", {"example_dataset": "irdata"})
-    assert len(files) == 1
-    assert files[0].absolute_path.exists()
-    assert files[0].bundle_relative_path == "data_1/nh4y-activation.spg"
-    assert "irdata" in files[0].source_relative_path
+def test_file_load_is_the_canonical_materialized_reference_source() -> None:
+    metadata = node_registry.get_metadata("data.file_load")
+    assert {port.name for port in metadata.output_ports} >= {"default", "target"}
+    assert metadata.policy is not None
+    assert metadata.policy.data_egress_risk == "none"
 
 
-def test_resolve_scp_bundle_files_unknown_dataset():
-    """SCP datasets not in _SCP_KNOWN_DEFAULTS and no example_file return empty."""
-    from spectra_sherpa.app.services.workflow_export_context import _resolve_scp_bundle_files
-
-    files = _resolve_scp_bundle_files("data_1", {"example_dataset": "ramandata"})
-    assert files == []
-
-
-@pytest.mark.skipif(not HAS_SCP, reason="SCP testdata required to resolve bundle files")
-def test_scp_source_bundled_export_uses_bundle_path():
-    """When SCP data is resolvable, the generated code references the bundled file
-    via _bundle_path instead of calling scp.read() with an SCP-relative path."""
-    from spectra_sherpa.app.services.python_export import generate_python_code
-    from spectra_sherpa.app.services.workflow_export_context import (
-        SourceExportSpec,
-        WorkflowExportContext,
-        _resolve_scp_bundle_files,
-    )
-
-    bundle_files = _resolve_scp_bundle_files("data_1", {"example_dataset": "irdata"})
-    assert bundle_files, "Expected SCP bundle files to be resolved"
-
-    wf = _make_workflow(
-        "SCP Bundled",
+def test_legacy_project_collection_requires_resave_through_canonical_source() -> None:
+    workflow = SimpleNamespace(
+        name="Project collection",
+        description="",
+        integrity_hash="project-collection",
         nodes=[
-            _wf_node("data_1", "data.source", {"source": "spectrochempy", "example_dataset": "irdata"}),
-            _wf_node("pca", "model.pca", {"n_components": 3}),
+            SimpleNamespace(
+                node_id="source",
+                node_type="data.load_group",
+                parameters={
+                    "source_mode": "experiment_collection",
+                    "experiment_id": 7,
+                    "stage": "raw",
+                    "asset_id": "spectrum",
+                    "source_manifest_sha256": "a" * 64,
+                },
+            )
         ],
-        edges=[_wf_edge("data_1", "pca", from_output="default", to_input="default")],
+        edges=[],
     )
 
+    with pytest.raises(ValueError, match="reopened and saved through data.collection_load"):
+        build_canonical_executable_export(workflow, export_context=WorkflowExportContext())
+
+
+def test_eigenvector_catalog_preserves_scientific_identity() -> None:
+    from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
+
+    corn = DATASET_CATALOG["corn_m5"]
+    diesel = DATASET_CATALOG["diesel_nir"]
+    assert corn["prop_names"] == ["Moisture", "Oil", "Protein", "Starch"]
+    assert corn["x_title"] == "Wavelength"
+    assert corn["x_units"] == "nm"
+    assert corn["artifact_projection_id"] == "public-corn-m5-moisture-v1"
+    assert diesel["x_units"] == "nm"
+
+
+def test_synthetic_reference_loader_returns_canonical_dataset() -> None:
+    from spectra_sherpa.app.lib.synthetic_references import load_synthetic_reference_as_sherpa
+
+    dataset = load_synthetic_reference_as_sherpa("Library_atmospheric-9")
+    assert isinstance(dataset, SherpaDataset)
+    assert dataset.shape[0] == 9
+    assert "Component Library" in dataset.title
+
+
+def test_export_binds_exact_file_digest_target_and_prepared_metadata(tmp_path: Path) -> None:
+    source = tmp_path / "reference.csv"
+    content = _write_source(source)
+    projected = build_canonical_executable_export(_workflow(), export_context=_context(source))
+
+    binding = projected.bundled_sources[0]
+    assert binding.bundle_relative_path == "source/reference.csv"
+    assert binding.byte_length == len(content)
+    assert binding.sha256 == hashlib.sha256(content).hexdigest()
+    assert binding.selected_target == "target"
+    assert binding.target_type == "continuous"
+    assert binding.prepared_overrides["x_title"] == "Wavenumber"
+    assert binding.ingestion_authority["schema_version"] == "spectrasherpa.portable-ingestion-authority/1"
+    assert binding.ingestion_authority["format_id"] == "csv"
+    assert binding.ingestion_authority["source_members"] == [
+        {"size_bytes": len(content), "sha256": hashlib.sha256(content).hexdigest()}
+    ]
+    assert "name" not in binding.ingestion_authority["source_members"][0]
+    assert projected.workflow.payload["nodes"] == [
+        {
+            "node_id": "source",
+            "node_type": "deploy.input",
+            "parameters": {
+                "stream_name": "export.source.source",
+                "schema_version": "spectrasherpa.deploy-input/1",
+            },
+        }
+    ]
+
+
+def test_registered_reference_export_binds_portable_identity_without_reclassifying_ordinary_source(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "server-projection.csv"
+    content = _write_source(source)
+    reference = _external_reference(content)
+    registered = _context(
+        source,
+        bundle_relative_path="source/corn.mat",
+        external_reference=reference,
+    )
+    ordinary = _context(source)
+
+    projected = build_canonical_executable_export(_workflow(), export_context=registered)
+    assert projected.bundled_sources[0].external_reference == reference
+    assert registered.iter_embedded_bundle_files() == []
+    assert registered.iter_external_reference_files() == registered.iter_bundle_files()
+    assert ordinary.iter_embedded_bundle_files() == ordinary.iter_bundle_files()
+    assert ordinary.iter_external_reference_files() == []
+
+    readme = _workflow_data_readme(
+        registered,
+        [
+            {"name": "MATLAB", "extensions": [".mat"], "available": True},
+            {"name": "Pending", "unsupportedReason": "not qualified", "available": False},
+        ],
+    )
+    assert "not included in this export" in readme
+    assert "SPECTRA_REFERENCE_DIR" in readme
+    assert "eigenvector.corn_m5" in readme
+    assert "https://eigenvector.com/data/Corn.zip" in readme
+    assert reference["member_sha256"] in readme
+    assert "does not retrieve, proxy, cache, mirror, or redistribute" in readme
+
+
+def test_export_context_uses_sidecar_as_the_only_reference_classifier(tmp_path: Path, monkeypatch) -> None:
+    source = tmp_path / "customer-renamed.mat"
+    content = _write_source(source)
+    reference = _external_reference(content)
+
+    monkeypatch.setattr(export_context_service, "read_registered_reference_sidecar", lambda _path: None)
+    ordinary = export_context_service._bundle_specs_for_files("source", [str(source)])
+    assert ordinary[0].external_reference is None
+    assert ordinary[0].bundle_relative_path == "source/customer-renamed.mat"
+
+    monkeypatch.setattr(
+        export_context_service,
+        "read_registered_reference_sidecar",
+        lambda _path: reference,
+    )
+    registered = export_context_service._bundle_specs_for_files("source", [str(source)])
+    assert registered[0].external_reference == reference
+    assert registered[0].bundle_relative_path == "source/corn.mat"
+
+
+def test_registered_reference_export_refuses_member_drift(tmp_path: Path) -> None:
+    source = tmp_path / "server-projection.csv"
+    content = _write_source(source)
+    reference = _external_reference(content)
+    source.write_bytes(content + b"drift")
+
+    with pytest.raises(ValueError, match="registered reference member is not exact"):
+        build_canonical_executable_export(
+            _workflow(),
+            export_context=_context(source, external_reference=reference),
+        )
+
+
+def test_generated_source_export_uses_only_sdk_reader_and_runtime(tmp_path: Path) -> None:
+    source = tmp_path / "reference.csv"
+    _write_source(source)
+    code = generate_python_code(_workflow(), export_context=_context(source))
+
+    ast.parse(code)
+    assert "ss.data.read(" in code
+    assert "prepared_overrides=binding['prepared_overrides']" in code
+    assert "expected_ingestion_authority=binding['ingestion_authority']" in code
+    assert "ss.runtime.execute_workflow(" in code
+    assert "load_canonical_file_as_sherpa" not in code
+    assert "ExperimentDatasetReader" not in code
+    assert "spectrochempy" not in code
+
+
+def test_generated_source_export_executes_and_preserves_target_axis_and_units(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "reference.csv"
+    _write_source(source)
+    code = generate_python_code(_workflow(), export_context=_context(source))
+    bundle = tmp_path / "source" / "reference.csv"
+    bundle.parent.mkdir()
+    bundle.write_bytes(source.read_bytes())
+    monkeypatch.setenv("SHERPA_DATA_DIR", str(tmp_path))
+    namespace = {"__file__": str(tmp_path / "workflow.py"), "__name__": "source_test"}
+    exec(compile(code, "<source-export>", "exec"), namespace)
+
+    result = namespace["run_workflow"]()["source"]
+    dataset = result["default"]
+    np.testing.assert_array_equal(result["target"], np.array([1, 2]))
+    assert dataset.feature_axis.title == "Wavenumber"
+    assert dataset.feature_axis.units == "cm-1"
+    assert dataset.target_context.selected_target == "target"
+
+
+def test_registered_reference_export_rebinds_renamed_exact_member_from_bounded_directory(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "server-projection.csv"
+    content = _write_source(source)
+    reference = _external_reference(content)
+    code = generate_python_code(
+        _workflow(),
+        export_context=_context(
+            source,
+            bundle_relative_path="source/corn.mat",
+            external_reference=reference,
+        ),
+    )
+    reference_dir = tmp_path / "scientist-files"
+    reference_dir.mkdir()
+    (reference_dir / "renamed-by-scientist.csv").write_bytes(content)
+    monkeypatch.setenv("SPECTRA_REFERENCE_DIR", str(reference_dir))
+    from spectra_sherpa.sdk import data as sdk_data
+
+    monkeypatch.setattr(
+        sdk_data,
+        "read_registered_reference",
+        lambda path, **_kwargs: sdk_data.read(path, y="target"),
+    )
+    namespace = {"__file__": str(tmp_path / "workflow.py"), "__name__": "source_test"}
+    exec(compile(code, "<reference-export>", "exec"), namespace)
+
+    result = namespace["run_workflow"]()["source"]
+    np.testing.assert_array_equal(result["target"], np.array([1, 2]))
+    assert namespace["BUNDLED_SOURCE_BINDINGS"][0]["external_reference"]["projection_id"] == ("eigenvector.corn_m5")
+
+    exact_file = reference_dir / "renamed-by-scientist.csv"
+    monkeypatch.setenv("SPECTRA_REFERENCE_DIR", str(exact_file))
+    exact_namespace = {"__file__": str(tmp_path / "workflow.py"), "__name__": "source_test"}
+    exec(compile(code, "<reference-export>", "exec"), exact_namespace)
+    np.testing.assert_array_equal(exact_namespace["run_workflow"]()["source"]["target"], np.array([1, 2]))
+
+
+def test_collection_export_rebuilds_selected_members_target_and_groups_from_relocated_files(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    first = tmp_path / "first.csv"
+    second = tmp_path / "second.csv"
+    first_bytes = _write_spectrum(first, (0.1, 0.2, 0.3))
+    second_bytes = _write_spectrum(second, (0.4, 0.5, 0.6))
+    definition = _collection_definition(first_bytes, second_bytes)
+    overrides = PreparedDataOverrides(
+        csv_layout="headerless_two_column_spectrum",
+        x_title="Wavenumber",
+        x_units="cm-1",
+    )
+    workflow = SimpleNamespace(
+        name="Portable collection",
+        description="",
+        integrity_hash="portable-collection",
+        nodes=[
+            SimpleNamespace(
+                node_id="source",
+                node_type="data.collection_load",
+                parameters={
+                    "experiment_id": 7,
+                    "stage": "raw",
+                    "selected_file_ids": [10, 11],
+                    "asset_id": "single-auto",
+                    "target_authority": _target_authority("class", "categorical", "c" * 64),
+                    "group_column": "block",
+                    "source_manifest_sha256": "",
+                    "collection_definition_sha256": "",
+                    "scientific_collection_sha256": "",
+                },
+            )
+        ],
+        edges=[],
+    )
     context = WorkflowExportContext(
         source_specs={
-            "data_1": SourceExportSpec(
-                node_id="data_1",
-                source="spectrochempy",
-                loader_mode="single_file",
-                bundle_files=tuple(bundle_files),
+            "source": SourceExportSpec(
+                node_id="source",
+                source="experiment_collection",
+                loader_mode="collection",
+                bundle_files=(
+                    BundledSourceFile(
+                        absolute_path=first,
+                        source_relative_path="first.csv",
+                        bundle_relative_path="source/first.csv",
+                        prepared_overrides=overrides,
+                        member_file_name="first.csv",
+                    ),
+                    BundledSourceFile(
+                        absolute_path=second,
+                        source_relative_path="second.csv",
+                        bundle_relative_path="source/second.csv",
+                        prepared_overrides=overrides,
+                        member_file_name="second.csv",
+                    ),
+                ),
+                collection_title="Portable selected collection",
+                collection_definition=definition,
             )
         }
     )
 
-    code = generate_python_code(wf, export_context=context)
+    code = generate_python_code(workflow, export_context=context)
+    for path in (first, second):
+        bundled = tmp_path / "relocated" / "source" / path.name
+        bundled.parent.mkdir(parents=True, exist_ok=True)
+        bundled.write_bytes(path.read_bytes())
+    monkeypatch.setenv("SHERPA_DATA_DIR", str(tmp_path / "relocated"))
+    namespace = {"__file__": str(tmp_path / "workflow.py"), "__name__": "source_test"}
+    exec(compile(code, "<collection-export>", "exec"), namespace)
 
-    # Should use the bundled file path, not scp.read() with a bare SCP-relative path
-    assert "os.path.join(DATA_DIR," in code
-    assert "_bundle_path_data_1" in code
+    result = namespace["run_workflow"]()["source"]
+    dataset = result["default"]
+    np.testing.assert_allclose(dataset.X, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+    np.testing.assert_array_equal(result["target"], np.asarray(["class-a", "class-b"]))
+    supervision = admit_attached_sample_table_supervision(dataset)
+    assert supervision is not None
+    np.testing.assert_array_equal(supervision.groups, np.asarray([1, 2]))
+    assert dataset.sample_axis.labels == ["sample-1", "sample-2"]
+    assert dataset.target_context.selected_target == "class"
+
+
+def test_registered_reference_export_refuses_missing_and_ambiguous_rebinding(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    source = tmp_path / "server-projection.csv"
+    content = _write_source(source)
+    code = generate_python_code(
+        _workflow(),
+        export_context=_context(source, external_reference=_external_reference(content)),
+    )
+    monkeypatch.delenv("SPECTRA_REFERENCE_DIR", raising=False)
+    missing_namespace = {"__file__": str(tmp_path / "workflow.py"), "__name__": "source_test"}
+    exec(compile(code, "<reference-export>", "exec"), missing_namespace)
+    with pytest.raises(FileNotFoundError, match="Set SPECTRA_REFERENCE_DIR"):
+        missing_namespace["run_workflow"]()
+
+    reference_dir = tmp_path / "duplicates"
+    reference_dir.mkdir()
+    (reference_dir / "one.csv").write_bytes(content)
+    (reference_dir / "two.csv").write_bytes(content)
+    monkeypatch.setenv("SPECTRA_REFERENCE_DIR", str(reference_dir))
+    duplicate_namespace = {"__file__": str(tmp_path / "workflow.py"), "__name__": "source_test"}
+    exec(compile(code, "<reference-export>", "exec"), duplicate_namespace)
+    with pytest.raises(ValueError, match="more than one exact registered-reference match"):
+        duplicate_namespace["run_workflow"]()
+
+    bounded_dir = tmp_path / "too-many-entries"
+    bounded_dir.mkdir()
+    for index in range(1001):
+        (bounded_dir / f"unrelated-{index:04d}.txt").write_text("x", encoding="utf-8")
+    monkeypatch.setenv("SPECTRA_REFERENCE_DIR", str(bounded_dir))
+    bounded_namespace = {"__file__": str(tmp_path / "workflow.py"), "__name__": "source_test"}
+    exec(compile(code, "<reference-export>", "exec"), bounded_namespace)
+    with pytest.raises(ValueError, match="1000-entry search limit"):
+        bounded_namespace["run_workflow"]()
+
+
+def test_export_rejects_missing_unowned_or_multi_file_source(tmp_path: Path) -> None:
+    workflow = _workflow()
+    with pytest.raises(ValueError, match="complete actor-authorized source set"):
+        generate_python_code(workflow)
+
+    source = tmp_path / "missing.csv"
+    with pytest.raises(ValueError, match="bundled file is unavailable"):
+        generate_python_code(workflow, export_context=_context(source))
+
+    source.write_text("x\n1\n", encoding="utf-8")
+    spec = _context(source).source_specs["source"]
+    multi = WorkflowExportContext(
+        source_specs={
+            "source": SourceExportSpec(
+                node_id="source",
+                source="experiment",
+                loader_mode="multi_file",
+                overrides=spec.overrides,
+                bundle_files=spec.bundle_files,
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="complete actor-authorized source set"):
+        generate_python_code(workflow, export_context=multi)
+
+
+def test_sdk_reader_applies_the_shared_prepared_data_authority(tmp_path: Path) -> None:
+    import spectra_sherpa.sdk as ss
+
+    source = tmp_path / "reference.csv"
+    _write_source(source)
+    dataset = ss.data.read(
+        source,
+        y="target",
+        target_type="continuous",
+        prepared_overrides={
+            "x_title": "Raman shift",
+            "x_units": "cm-1",
+            "selected_target": "target",
+            "target_type": "continuous",
+            "target_mode": "single",
+        },
+    )
+
+    assert dataset.feature_axis.title == "Raman shift"
+    assert dataset.feature_axis.units == "cm-1"
+    np.testing.assert_array_equal(dataset.target, np.array([1, 2]))
+
+
+def test_sdk_reader_refuses_native_parser_authority_drift(tmp_path: Path) -> None:
+    import spectra_sherpa.sdk as ss
+
+    source = tmp_path / "reference.csv"
+    _write_source(source)
+    observed = ss.data.read(source)
+    expected = project_portable_ingestion_authority(observed).canonical_dict()
+    renamed = tmp_path / "scientist-renamed.csv"
+    renamed.write_bytes(source.read_bytes())
+    rebound = ss.data.read(renamed, expected_ingestion_authority=expected)
+    np.testing.assert_array_equal(rebound.X, observed.X)
+
+    expected["parser_version"] = "future-parser"
+
+    with pytest.raises(ValueError, match="native ingestion authority changed"):
+        ss.data.read(source, expected_ingestion_authority=expected)
+
+
+def test_portable_ingestion_authority_refuses_malformed_source_members(tmp_path: Path) -> None:
+    import spectra_sherpa.sdk as ss
+
+    source = tmp_path / "reference.csv"
+    _write_source(source)
+    observed = ss.data.read(source)
+    full_authority = observed.get_extra("ingestion.authority")
+    assert isinstance(full_authority, dict)
+    full_authority["source_members"] = [None]
+    observed.set_extra("ingestion.authority", full_authority)
+
+    with pytest.raises(ValueError, match="has no source members"):
+        project_portable_ingestion_authority(observed)
+
+
+def test_exported_sdk_reader_replays_the_exact_csv_profile(tmp_path: Path) -> None:
+    import spectra_sherpa.sdk as ss
+
+    source = tmp_path / "supplier-export.csv"
+    source.write_text("4000.0,0.10\n3999.0,0.20\n3998.0,0.30\n", encoding="utf-8")
+    dataset = ss.data.read(
+        source,
+        prepared_overrides={
+            "csv_layout": "headerless_two_column_spectrum",
+            "x_title": "Wavenumber",
+            "x_units": "cm-1",
+        },
+    )
+
+    np.testing.assert_allclose(dataset.X, [[0.10, 0.20, 0.30]])
+    np.testing.assert_allclose(dataset.feature_axis.values, [4000.0, 3999.0, 3998.0])
+    assert dataset.feature_axis.title == "Wavenumber"
+    assert dataset.feature_axis.units == "cm-1"
+    assert dataset.meta["csv.profile"] == "headerless_two_column_spectrum"

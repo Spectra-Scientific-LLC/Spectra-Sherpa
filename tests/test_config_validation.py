@@ -101,8 +101,8 @@ class TestDatabaseMode:
             issues = _validate_database_mode()
         assert len(issues) == 0
 
-    def test_hybrid_sqlite_ok(self):
-        cfg = _FakeAppConfig(mode="hybrid")
+    def test_extension_test_sqlite_ok(self):
+        cfg = _FakeAppConfig(mode="extension_test")
         stg = _FakeSettings(database_url="sqlite+aiosqlite:///data/test.db")
         with (
             patch("spectra_sherpa.app.core.startup.app_config", cfg),
@@ -127,26 +127,20 @@ class TestSiteProfile:
 
     def test_demo_enterprise_ok(self):
         cfg = _FakeAppConfig(mode="enterprise", site_profile="demo")
-        with (
-            patch("spectra_sherpa.app.core.startup.app_config", cfg),
-            patch.dict("os.environ", {"ENTERPRISE_PASSWORD": "welcome_to_spectra_sherpa"}),
-        ):
+        with patch("spectra_sherpa.app.core.startup.app_config", cfg):
             issues = _validate_site_profile()
         assert len(issues) == 0
 
-    def test_demo_enterprise_requires_access_code(self):
+    def test_demo_enterprise_refuses_retired_access_code(self):
         cfg = _FakeAppConfig(mode="enterprise", site_profile="demo")
         with (
             patch("spectra_sherpa.app.core.startup.app_config", cfg),
-            patch.dict("os.environ", {}, clear=False),
+            patch.dict("os.environ", {"ENTERPRISE_PASSWORD": "retired"}),
         ):
-            import os
-
-            os.environ.pop("ENTERPRISE_PASSWORD", None)
             issues = _validate_site_profile()
         assert len(issues) == 1
         assert issues[0].level == "error"
-        assert "ENTERPRISE_PASSWORD" in issues[0].message
+        assert "retired" in issues[0].message
 
     def test_no_profile_ok(self):
         cfg = _FakeAppConfig(mode="local", site_profile=None)
@@ -175,7 +169,7 @@ class TestLLMConfig:
 
     def test_llm_egress_enabled_ok(self):
         cfg = _FakeAppConfig(
-            mode="hybrid",
+            mode="extension_test",
             egress_enabled=True,
             llms={"openai": _FakeLLM(is_configured=True)},
         )
@@ -197,7 +191,7 @@ class TestLLMConfig:
 
 class TestCORS:
     def test_cors_warning_nonlocal(self):
-        cfg = _FakeAppConfig(mode="hybrid")
+        cfg = _FakeAppConfig(mode="extension_test")
         with patch("spectra_sherpa.app.core.startup.app_config", cfg), patch.dict("os.environ", {}, clear=False):
             # Ensure CORS_ORIGINS is NOT set
             import os

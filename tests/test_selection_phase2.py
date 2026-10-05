@@ -4,7 +4,7 @@ Covers:
 - iPLS (interval PLS) variable selection
 - CARS (Competitive Adaptive Reweighted Sampling)
 - SPA (Successive Projections Algorithm)
-- UVE (MC Uninformative Variable Elimination)
+- MC-UVE (Monte Carlo Uninformative Variable Elimination)
 - Stability Selection meta-node
 - SPXY sample partitioning
 """
@@ -51,9 +51,8 @@ class TestIPLSNode:
             "test_ipls",
             {
                 "n_intervals": 10,
-                "n_components": 3,
+                "max_components": 3,
                 "cv_folds": 3,
-                "n_best": 1,
             },
         )
         result = await node.execute(X=ds, y=y)
@@ -67,7 +66,7 @@ class TestIPLSNode:
         assert result.diagnostics["best_rmsecv"] < np.inf
 
     @pytest.mark.asyncio
-    async def test_ipls_multi_interval(self, spectral_dataset):
+    async def test_ipls_selects_one_contiguous_interval(self, spectral_dataset):
         from spectra_sherpa.app.services.dag.nodes.selection.ipls_node import IPLSNode
 
         ds, y = spectral_dataset
@@ -75,15 +74,18 @@ class TestIPLSNode:
             "test_ipls2",
             {
                 "n_intervals": 10,
-                "n_components": 3,
+                "max_components": 3,
                 "cv_folds": 3,
-                "n_best": 3,
             },
         )
         result = await node.execute(X=ds, y=y)
 
-        # Combining 3 intervals should select more variables than 1
-        assert result.diagnostics["n_selected"] > 0
+        # Standard iPLS retains exactly one contiguous interval, not a
+        # combination of the best-scoring intervals.
+        mask = result.outputs["mask"]
+        selected_indices = np.flatnonzero(mask)
+        assert selected_indices.size > 0
+        assert np.array_equal(selected_indices, np.arange(selected_indices[0], selected_indices[-1] + 1))
 
     @pytest.mark.asyncio
     async def test_ipls_global_vs_local(self, spectral_dataset):
@@ -94,7 +96,7 @@ class TestIPLSNode:
             "test_ipls3",
             {
                 "n_intervals": 5,
-                "n_components": 2,
+                "max_components": 2,
                 "cv_folds": 3,
             },
         )
@@ -120,7 +122,7 @@ class TestCARSNode:
             "test_cars",
             {
                 "n_iterations": 20,
-                "n_components": 3,
+                "max_components": 3,
                 "cv_folds": 3,
             },
         )
@@ -139,7 +141,7 @@ class TestCARSNode:
             "test_cars2",
             {
                 "n_iterations": 15,
-                "n_components": 2,
+                "max_components": 2,
                 "cv_folds": 3,
             },
         )
@@ -163,78 +165,76 @@ class TestSPANode:
     async def test_basic_spa(self, spectral_dataset):
         from spectra_sherpa.app.services.dag.nodes.selection.spa_node import SPANode
 
-        ds, _ = spectral_dataset
-        node = SPANode("test_spa", {"n_select": 10})
-        result = await node.execute(X=ds)
+        ds, y = spectral_dataset
+        node = SPANode("test_spa", {"max_variables": 10, "cv_folds": 3})
+        result = await node.execute(X=ds, y=y)
 
-        assert result.diagnostics["n_selected"] == 10
-        assert "condition_number" in result.diagnostics
-        assert result.diagnostics["condition_number"] > 0
+        assert 1 <= result.diagnostics["n_selected"] <= 10
+        assert result.diagnostics["best_rmsecv"] >= 0
 
     @pytest.mark.asyncio
     async def test_spa_selects_independent_vars(self, spectral_dataset):
         """SPA should yield a well-conditioned subset."""
         from spectra_sherpa.app.services.dag.nodes.selection.spa_node import SPANode
 
-        ds, _ = spectral_dataset
-        node = SPANode("test_spa2", {"n_select": 8})
-        result = await node.execute(X=ds)
+        ds, y = spectral_dataset
+        node = SPANode("test_spa2", {"max_variables": 8, "cv_folds": 3})
+        result = await node.execute(X=ds, y=y)
 
-        # Condition number should be finite and not astronomical
-        cond = result.diagnostics["condition_number"]
-        assert np.isfinite(cond)
+        assert np.isfinite(result.diagnostics["best_rmsecv"])
+        assert result.diagnostics["candidate_chain_count"] > 1
 
     @pytest.mark.asyncio
     async def test_spa_mask_and_scores(self, spectral_dataset):
         from spectra_sherpa.app.services.dag.nodes.selection.spa_node import SPANode
 
-        ds, _ = spectral_dataset
-        node = SPANode("test_spa3", {"n_select": 5})
-        result = await node.execute(X=ds)
+        ds, y = spectral_dataset
+        node = SPANode("test_spa3", {"max_variables": 5, "cv_folds": 3})
+        result = await node.execute(X=ds, y=y)
 
         mask = result.outputs["mask"]
         scores = result.outputs["scores"]
         assert mask.shape == (50,)
-        assert np.sum(mask) == 5
+        assert 1 <= np.sum(mask) <= 5
         # First-selected variable should have highest score
         assert scores[mask].max() == 1.0
 
 
-# ── UVE Tests ─────────────────────────────────────────────────────────
+# ── MC-UVE Tests ──────────────────────────────────────────────────────
 
 
-class TestUVENode:
+class TestMCUVENode:
     """Monte Carlo Uninformative Variable Elimination."""
 
     @pytest.mark.asyncio
     async def test_basic_uve(self, spectral_dataset):
-        from spectra_sherpa.app.services.dag.nodes.selection.uve_node import UVENode
+        from spectra_sherpa.app.services.dag.nodes.selection.mcuve_node import MCUVENode
 
         ds, y = spectral_dataset
-        node = UVENode(
+        node = MCUVENode(
             "test_uve",
             {
                 "n_components": 3,
                 "n_resamples": 30,
-                "cutoff_percentile": 90.0,
+                "n_variables": 10,
             },
         )
         result = await node.execute(X=ds, y=y)
 
         assert result.diagnostics["n_selected"] > 0
-        assert "noise_threshold" in result.diagnostics
+        assert result.diagnostics["n_selected"] == 10
 
     @pytest.mark.asyncio
     async def test_uve_outputs(self, spectral_dataset):
-        from spectra_sherpa.app.services.dag.nodes.selection.uve_node import UVENode
+        from spectra_sherpa.app.services.dag.nodes.selection.mcuve_node import MCUVENode
 
         ds, y = spectral_dataset
-        node = UVENode(
+        node = MCUVENode(
             "test_uve2",
             {
                 "n_components": 2,
                 "n_resamples": 25,
-                "cutoff_percentile": 85.0,
+                "n_variables": 10,
             },
         )
         result = await node.execute(X=ds, y=y)
@@ -262,8 +262,8 @@ class TestStabilitySelectionNode:
             {
                 "base_method": "coef_abs",
                 "base_threshold": 0.01,
-                "stability_threshold": 0.3,
-                "n_bootstrap": 30,
+                "selection_probability_threshold": 0.6,
+                "n_resamples": 30,
                 "n_components": 3,
             },
         )
@@ -282,8 +282,8 @@ class TestStabilitySelectionNode:
             {
                 "base_method": "coef_abs",
                 "base_threshold": 0.01,
-                "stability_threshold": 0.2,
-                "n_bootstrap": 25,
+                "selection_probability_threshold": 0.6,
+                "n_resamples": 25,
                 "n_components": 2,
             },
         )
@@ -303,8 +303,8 @@ class TestStabilitySelectionNode:
             {
                 "base_method": "coef_abs",
                 "base_threshold": 0.005,
-                "stability_threshold": 0.2,
-                "n_bootstrap": 20,
+                "selection_probability_threshold": 0.6,
+                "n_resamples": 20,
                 "n_components": 2,
             },
         )
@@ -320,18 +320,18 @@ class TestStabilitySelectionNode:
 @pytest.mark.parametrize(
     ("node_module", "node_name", "params", "needs_y"),
     [
-        ("ipls_node", "IPLSNode", {"n_intervals": 10, "n_components": 3, "cv_folds": 3, "n_best": 1}, True),
-        ("cars_node", "CARSNode", {"n_iterations": 15, "n_components": 2, "cv_folds": 3}, True),
-        ("spa_node", "SPANode", {"n_select": 5}, False),
-        ("uve_node", "UVENode", {"n_components": 2, "n_resamples": 20, "cutoff_percentile": 85.0}, True),
+        ("ipls_node", "IPLSNode", {"n_intervals": 10, "max_components": 3, "cv_folds": 3}, True),
+        ("cars_node", "CARSNode", {"n_iterations": 15, "max_components": 2, "cv_folds": 3}, True),
+        ("spa_node", "SPANode", {"max_variables": 5, "cv_folds": 3}, True),
+        ("mcuve_node", "MCUVENode", {"n_components": 2, "n_resamples": 20, "n_variables": 10}, True),
         (
             "stability_node",
             "StabilitySelectionNode",
             {
                 "base_method": "coef_abs",
                 "base_threshold": 0.01,
-                "stability_threshold": 0.2,
-                "n_bootstrap": 20,
+                "selection_probability_threshold": 0.6,
+                "n_resamples": 20,
                 "n_components": 2,
             },
             True,
@@ -366,64 +366,72 @@ class TestSPXYPartition:
 
     @pytest.mark.asyncio
     async def test_spxy_partition(self, spectral_dataset):
-        from spectra_sherpa.app.services.dag.nodes.selection.sample_partition_node import SamplePartitionNode
+        from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
 
         ds, y = spectral_dataset
-        node = SamplePartitionNode(
+        node = TrainTestSplitNode(
             "test_spxy",
             {
-                "method": "spxy",
+                "split_method": "spxy",
                 "test_size": 0.2,
             },
         )
         result = await node.execute(X=ds, y=y)
 
-        assert result.diagnostics["method"] == "spxy"
-        assert result.diagnostics["n_cal"] + result.diagnostics["n_test"] == 60
-        assert "y_cal" in result.outputs
-        assert "y_test" in result.outputs
+        assert result["X_train"].shape[0] + result["X_test"].shape[0] == 60
+        assert "y_train" in result
+        assert "y_test" in result
 
 
 # ── SPA Core Algorithm Tests ─────────────────────────────────────────
 
 
-class TestSPAProjections:
-    """Low-level SPA projection algorithm."""
+class TestSPAProjectionChains:
+    """Low-level SPA projection-chain algorithm."""
 
     def test_projections_select_correct_count(self):
-        from spectra_sherpa.app.services.dag.nodes.selection.spa_node import _spa_projections
+        from spectra_sherpa.app.services.dag.nodes.selection.spa_node import _spa_projection_chains
 
-        rng = np.random.RandomState(42)
-        X = rng.randn(30, 20) - rng.randn(30, 20).mean(axis=0)
-        selected = _spa_projections(X, n_select=8)
-        assert len(selected) == 8
-        assert len(np.unique(selected)) == 8
+        rng = np.random.default_rng(42)
+        X = rng.normal(size=(30, 20))
+        chains = _spa_projection_chains(X, max_variables=8)
+        assert len(chains) == 20
+        assert all(len(chain) == 8 for chain in chains)
+        assert all(len(set(chain)) == len(chain) for chain in chains)
 
     def test_projections_with_start_var(self):
-        from spectra_sherpa.app.services.dag.nodes.selection.spa_node import _spa_projections
+        from spectra_sherpa.app.services.dag.nodes.selection.spa_node import _spa_projection_chains
 
-        rng = np.random.RandomState(42)
-        X = rng.randn(30, 20) - rng.randn(30, 20).mean(axis=0)
-        selected = _spa_projections(X, n_select=5, start_var=3)
-        assert selected[0] == 3
-        assert len(selected) == 5
-
-
-# ── UVE Core Algorithm Tests ─────────────────────────────────────────
+        rng = np.random.default_rng(42)
+        X = rng.normal(size=(30, 20))
+        chains = _spa_projection_chains(X, max_variables=5)
+        assert [chain[0] for chain in chains] == list(range(20))
+        assert len(chains[3]) == 5
 
 
-class TestUVEMC:
+# ── MC-UVE Core Algorithm Tests ──────────────────────────────────────
+
+
+class TestMCUVE:
     """Low-level MC-UVE algorithm."""
 
     def test_reliability_shape(self):
-        from spectra_sherpa.app.services.dag.nodes.selection.uve_node import _uve_mc
+        from spectra_sherpa.app.services.dag.nodes.selection.mcuve_node import _mcuve_dispatch
 
         rng = np.random.RandomState(42)
         X = rng.randn(40, 20)
         y = X[:, 5] + rng.randn(40) * 0.1
 
-        real_rel, noise_rel = _uve_mc(X, y, n_components=3, n_resamples=15, test_fraction=0.2)
-        assert real_rel.shape == (20,)
-        assert noise_rel.shape == (20,)
-        assert np.all(real_rel >= 0)
-        assert np.all(noise_rel >= 0)
+        result = _mcuve_dispatch(
+            X,
+            y,
+            n_components=3,
+            n_resamples=20,
+            calibration_fraction=0.8,
+            n_variables=5,
+            random_seed=42,
+        )
+        stability = np.asarray(result["stability_scores"])
+        assert stability.shape == (20,)
+        assert np.all(stability >= 0)
+        assert np.sum(result["feature_mask"]) == 5

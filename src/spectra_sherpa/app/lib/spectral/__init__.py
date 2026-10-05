@@ -1,5 +1,5 @@
 """
-Spectral data utilities with SpectroChemPy integration.
+Native spectral data utilities.
 
 Provides:
 - SpectralUnit enum for type-safe unit handling

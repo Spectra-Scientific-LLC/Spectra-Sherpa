@@ -100,8 +100,63 @@ def test_compact_results_for_run_history_trims_large_sherpa_dataset():
     assert len(dataset["data"][0]) == 128
     assert len(dataset["x_axis"]["data"]) == 128
     assert dataset["x_axis"]["data_original_length"] == 300
+    assert dataset["y_axis"]["labels"] == [f"sample_{row:03d}" for row in range(40)]
+    assert dataset["y_axis"].get("labels_truncated") is None
     assert dataset["metadata"]["wavenumbers"]["_truncated_sequence"] is True
     assert len(json.dumps(compacted)) < len(json.dumps(result)) / 4
+
+
+def test_compact_results_for_run_history_preserves_narrow_score_matrices_and_annotations():
+    sample_count = 113
+    classes = ["setosa", "versicolor", "virginica"]
+    result = {
+        "model_1": {
+            "X_scores": {
+                "type": "SherpaDataset",
+                "shape": [sample_count, 2],
+                "data": [[float(row), float(-row)] for row in range(sample_count)],
+                "metadata": {
+                    "sample_labels": [f"sample-{row + 1}" for row in range(sample_count)],
+                    "labels": [f"sample-{row + 1}" for row in range(sample_count)],
+                    "sample_classes": [classes[row % len(classes)] for row in range(sample_count)],
+                    "label_categories": classes,
+                },
+            }
+        }
+    }
+
+    compacted = _compact_results_for_run_history(result)["model_1"]["X_scores"]
+
+    assert len(compacted["data"]) == sample_count
+    assert compacted.get("persisted_preview") is None
+    assert compacted["metadata"]["label_categories"] == classes
+    for key in ("sample_labels", "labels", "sample_classes"):
+        assert compacted["metadata"][key] == result["model_1"]["X_scores"]["metadata"][key]
+
+
+def test_compact_results_for_run_history_bounds_unusually_large_sample_annotations():
+    sample_count = 2_001
+    labels = [f"sample-{row + 1}" for row in range(sample_count)]
+    result = {
+        "model_1": {
+            "X_scores": {
+                "type": "SherpaDataset",
+                "shape": [sample_count, 1],
+                "data": [[float(row)] for row in range(sample_count)],
+                "y_axis": {"labels": labels},
+                "metadata": {"sample_labels": labels},
+            }
+        }
+    }
+
+    compacted = _compact_results_for_run_history(result)["model_1"]["X_scores"]
+
+    assert compacted["y_axis"]["labels"] == labels[:2_000]
+    assert compacted["y_axis"]["labels_truncated"] is True
+    assert compacted["y_axis"]["labels_original_length"] == sample_count
+    assert compacted["metadata"]["sample_labels"]["_truncated_sequence"] is True
+    assert compacted["metadata"]["sample_labels"]["length"] == sample_count
+    assert len(compacted["metadata"]["sample_labels"]["preview"]) == 24
 
 
 def test_compact_results_for_run_history_preserves_visualization_payloads():
@@ -118,6 +173,95 @@ def test_compact_results_for_run_history_preserves_visualization_payloads():
 
     assert compacted["viz_1"]["visualization"]["data"][0]["x"] == list(range(300))
     assert compacted["viz_1"]["visualization"]["data"][0]["y"][-1] == 299.0
+
+
+def test_compact_results_for_run_history_preserves_modest_scientific_matrices():
+    """Corn-sized PLS presentations must remain exact and renderable after reload."""
+
+    result = {
+        "model_1": {
+            "x_scores": [[float(row + component) for component in range(3)] for row in range(60)],
+            "x_loadings": [[float(component + feature) for feature in range(700)] for component in range(3)],
+            "vip_scores": [float(feature) / 700.0 for feature in range(700)],
+            "regression_coefficients": [[float(feature) / 1000.0] for feature in range(700)],
+        }
+    }
+
+    compacted = _compact_results_for_run_history(result)
+
+    assert compacted == result
+
+
+def test_compact_results_for_run_history_preserves_diagnostic_sample_identity():
+    labels = [f"sample-{row + 1}" for row in range(569)]
+    result = {
+        "outliers_1": {
+            "T2": [float(row) for row in range(569)],
+            "Q": [float(row) / 10.0 for row in range(569)],
+            "flags": [row % 11 == 0 for row in range(569)],
+            "sample_labels": labels,
+        }
+    }
+
+    compacted = _compact_results_for_run_history(result)
+
+    assert compacted["outliers_1"]["sample_labels"] == labels
+
+
+def test_compact_results_for_run_history_preserves_plsda_sized_coefficients_and_loading_axes():
+    coefficients = [[float(feature + target) for target in range(3)] for feature in range(1_868)]
+    loading_data = [[float(feature + component) for feature in range(1_868)] for component in range(2)]
+    wavenumbers = [4_000.0 - feature for feature in range(1_868)]
+    result = {
+        "model_1": {
+            "class_coefficients": coefficients,
+            "loadings": {
+                "type": "SherpaDataset",
+                "data": loading_data,
+                "x_axis": {"data": wavenumbers, "title": "Wavenumber", "units": "cm-1"},
+                "y_axis": {"labels": ["LV1", "LV2"], "title": "Latent Variable"},
+                "metadata": {},
+            },
+        }
+    }
+
+    compacted = _compact_results_for_run_history(result)
+
+    assert compacted["model_1"]["class_coefficients"] == coefficients
+    assert compacted["model_1"]["loadings"]["data"] == loading_data
+    assert compacted["model_1"]["loadings"]["x_axis"]["data"] == wavenumbers
+    assert compacted["model_1"]["loadings"].get("persisted_preview") is None
+
+
+def test_compact_results_for_run_history_preserves_narrow_component_matrices():
+    concentrations = [[float(row), 0.25, 0.75] for row in range(50)]
+    result = {
+        "model_1": {
+            "concentrations": {
+                "type": "SherpaDataset",
+                "shape": [50, 3],
+                "data": concentrations,
+                "x_axis": {"labels": ["Component 1", "Component 2", "Component 3"]},
+                "y_axis": {"labels": [f"mixture-{row + 1}" for row in range(50)]},
+                "metadata": {"scientific_matrix_role": "component_concentrations"},
+            }
+        }
+    }
+
+    compacted = _compact_results_for_run_history(result)["model_1"]["concentrations"]
+
+    assert compacted["data"] == concentrations
+    assert compacted["y_axis"]["labels"][-1] == "mixture-50"
+    assert compacted.get("persisted_preview") is None
+
+
+def test_compact_results_for_run_history_still_bounds_large_standalone_matrices():
+    result = {"model_1": {"large_result": [[float(column) for column in range(200)] for _ in range(200)]}}
+
+    compacted = _compact_results_for_run_history(result)
+
+    assert compacted["model_1"]["large_result"]["_truncated_matrix"] is True
+    assert compacted["model_1"]["large_result"]["rows"] == 200
 
 
 def test_compact_diagnostics_for_run_history_summarizes_large_arrays():
@@ -170,7 +314,7 @@ async def test_auto_persist_run_stores_idempotency_key(test_session, test_user: 
         final_status="completed",
         error_msg=None,
         integrity_hash="abc",
-        model_ids=[],
+        produced_artifact_uids=[],
         params_snapshot={},
         idempotency_key="key-with-token-42",
     )
@@ -333,6 +477,11 @@ async def test_execute_replays_response_on_duplicate_idempotency_key(auth_client
     creating a second run row."""
     from spectra_sherpa.app.models.project import Project
     from spectra_sherpa.app.models.workflow import Workflow
+    from spectra_sherpa.app.types import ensure_type_registry_loaded
+
+    # The focused test client does not run the ASGI lifespan that normally
+    # establishes this fail-closed execution authority.
+    ensure_type_registry_loaded()
 
     project = Project(user_id=test_user.id, name="replay p")
     test_session.add(project)
@@ -407,6 +556,81 @@ async def test_execute_replay_marks_compacted_run_history_payload(auth_client, t
     body = response.json()
     assert body["results_truncated"] is True
     assert body["diagnostics_truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_execute_replay_restores_persisted_scientific_value_descriptors(
+    auth_client,
+    test_session,
+    test_user: User,
+):
+    """A page reload sees the same port meaning as the original execution."""
+
+    from spectra_sherpa.app.models.project import Project
+    from spectra_sherpa.app.models.workflow import Workflow
+
+    project = Project(user_id=test_user.id, name="descriptor replay p")
+    test_session.add(project)
+    await test_session.flush()
+    workflow = Workflow(user_id=test_user.id, project_id=project.id, name="descriptor replay wf")
+    test_session.add(workflow)
+    await test_session.commit()
+
+    descriptors = {
+        "partition_1": {
+            "X_train": {
+                "schema_version": "spectrasherpa-scientific-value/1",
+                "port_name": "X_train",
+                "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+                "label": "Training X",
+                "scientific_kind": "spectral_dataset",
+                "view_kind": "matrix",
+                "shape": [60, 700],
+                "dimensions": [
+                    {"role": "sample", "size": 60},
+                    {"role": "spectral_variable", "size": 700},
+                ],
+                "view_modes": ["table", "spectral_plot"],
+                "content_categories": ["sample_measurements"],
+                "shape_valid": True,
+                "shape_issue": None,
+            }
+        }
+    }
+    presentations = {
+        "partition_1": {
+            "schema_version": "spectrasherpa-executed-presentation/1",
+            "contract_digest": "a" * 64,
+            "contract": {
+                "schema_version": "spectrasherpa-node-presentation/1",
+                "default_presentation": "X_train",
+                "presentations": [],
+            },
+            "presentations": [],
+        }
+    }
+    await _make_run(
+        test_session,
+        user_id=test_user.id,
+        workflow_id=workflow.id,
+        project_id=project.id,
+        key="descriptor-replay-1",
+        executed_at=datetime.utcnow(),
+        diagnostics={
+            "_scientific_values": descriptors,
+            "_scientific_presentations": presentations,
+        },
+    )
+
+    response = await auth_client.post(
+        f"/api/v1/workflows/{workflow.id}/execute",
+        json={},
+        headers={"Idempotency-Key": "descriptor-replay-1"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["result_descriptors"] == descriptors
+    assert response.json()["result_presentations"] == presentations
 
 
 @pytest.mark.asyncio

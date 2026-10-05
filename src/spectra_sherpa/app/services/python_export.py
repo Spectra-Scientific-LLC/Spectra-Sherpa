@@ -1,977 +1,590 @@
-"""
-Python code generator for workflows.
+"""Render a saved Workbench DAG as one canonical executable Python program.
 
-Exports workflows as standalone executable Python scripts by delegating
-code generation to each node's ``generate_python()`` method.  The exporter
-handles only orchestration: topological sort, import collection, and
-stitching the final script.
-
-The generated code is styled for readability:
-- Each workflow step is a named top-level function
-- ``run_workflow()`` reads as a linear recipe
-- Utility code lives in ``export_utils`` (not inlined)
-- ``SherpaDataset`` is the visible first-class data object
+The exporter is deliberately not a scientific code generator. It projects
+application-owned ``data.file_load`` sources to explicit ``deploy.input``
+bindings, embeds the resulting current workflow manifest, and invokes the
+public SDK's canonical executor. Node formulas, estimators, preprocessing,
+metrics, and artifact lifecycle behavior therefore remain owned by the live
+registry operation that the Workbench itself executes.
 """
 
 from __future__ import annotations
 
-import logging
+import hashlib
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Literal
+from pprint import pformat
+from typing import TYPE_CHECKING, Any, Mapping
 
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP
-from spectra_sherpa.app.services.dag.graph_utils import Edge, build_input_map, topological_sort
-from spectra_sherpa.app.services.dag.node_base import node_registry
+from spectra_sherpa.core.target_authority import admit_target_authority
+from spectra_sherpa.io.authority import (
+    admit_portable_ingestion_authority,
+    project_portable_ingestion_authority,
+)
+from spectra_sherpa.sdk.deployment import DEPLOYMENT_INPUT_SCHEMA
+from spectra_sherpa.sdk.workflow import WorkflowSpec, workflow_spec
 
 if TYPE_CHECKING:
     from spectra_sherpa.app.models.workflow import Workflow
-    from spectra_sherpa.app.services.workflow_export_context import SourceExportSpec, WorkflowExportContext
-
-logger = logging.getLogger(__name__)
-
-ExportMode = Literal["sdk", "standalone"]
-_EXPORT_MODES: frozenset[str] = frozenset({"sdk", "standalone"})
+    from spectra_sherpa.app.services.workflow_export_context import BundledSourceFile, WorkflowExportContext
 
 
-def _safe_identifier(node_id: str) -> str:
-    """Convert *node_id* to a valid Python identifier suffix."""
-    return re.sub(r"[^a-zA-Z0-9_]", "_", node_id)
-
-
-def _validate_export_mode(mode: str) -> ExportMode:
-    normalized = mode.lower().strip()
-    if normalized not in _EXPORT_MODES:
-        raise ValueError(f"Unsupported Python export mode: {mode!r}. Expected 'sdk' or 'standalone'.")
-    return normalized  # type: ignore[return-value]
-
-
-# ── Variable naming ──────────────────────────────────────────────
-
-_TYPE_TO_VARNAME: dict[str, str] = {
-    "data.source": "data",
-    "data.my_dataset": "data",
-    "data.transform": "transformed",
-    "preprocess.normalize": "normalized",
-    "preprocess.smooth": "smoothed",
-    "preprocess.scale": "scaled",
-    "preprocess.derivative": "derivative",
-    "preprocess.clip_range": "clipped",
-    "baseline.penalized_ls": "baseline_corrected",
-    "baseline.rubberband": "baseline_corrected",
-    "model.pca": "pca_result",
-    "model.pls": "pls_result",
-    "model.mcr_als": "mcr_result",
-    "model.simplisma": "simplisma_result",
-    "model.efa": "efa_result",
-    "model.hca": "hca_result",
-    "model.pls_predict": "pls_prediction",
-    "classification.plsda": "plsda_result",
-    "classification.knn": "knn_result",
-    "classification.simca": "simca_result",
-    "classification.predict": "prediction",
-    "selection.sample_partition": "partition",
-    "selection.variable_select": "selected_vars",
-    "selection.nested_cv": "nested_cv_result",
-    "transfer.pds": "pds_result",
-    "transfer.sbc": "sbc_result",
-    "output.plot": "figure",
-    "output.export": "exported",
-    "stats.summary": "statistics",
-    "diagnostics.outliers": "outliers",
-    "diagnostics.cross_validation": "cv_result",
-    "analysis.peak_finding": "peaks",
-    "deploy.input": "deploy_input",
-    "deploy.output": "deploy_output",
-}
-
-
-def _derive_function_name(node_id: str, node_type: str, label: str) -> str:
-    """Derive a clean function name from node metadata.
-
-    Uses the node label (user-provided) when available, falling back
-    to the node type.  Deduplication is handled by the caller.
-    """
-    # Use label if meaningful, otherwise fall back to type
-    raw = label or node_type.replace(".", "_")
-    # Convert to snake_case
-    name = re.sub(r"[^a-zA-Z0-9]+", "_", raw).strip("_").lower()
-    # Collapse repeated underscores
-    name = re.sub(r"_+", "_", name)
-    # Ensure it doesn't start with a digit
-    if name and name[0].isdigit():
-        name = f"step_{name}"
-    return name or f"step_{_safe_identifier(node_id)}"
-
-
-def _derive_variable_name(node_id: str, node_type: str) -> str:
-    """Derive a readable variable name for a node's output."""
-    return _TYPE_TO_VARNAME.get(node_type, _safe_identifier(node_id))
-
-
-def _deduplicate_names(names: list[tuple[str, str]]) -> dict[str, str]:
-    """Given (node_id, desired_name) pairs, return {node_id: unique_name}.
-
-    Appends _2, _3, etc. for collisions.
-    """
-    counts: dict[str, int] = {}
-    result: dict[str, str] = {}
-    for node_id, name in names:
-        counts[name] = counts.get(name, 0) + 1
-    # Second pass: assign with suffix if needed
-    used: dict[str, int] = {}
-    for node_id, name in names:
-        if counts[name] > 1:
-            used[name] = used.get(name, 0) + 1
-            result[node_id] = f"{name}_{used[name]}"
-        else:
-            result[node_id] = name
-    return result
-
-
-@dataclass
+@dataclass(frozen=True)
 class ExportValidationError:
-    """Describes a node that cannot be exported."""
+    """Describe why a workflow cannot become a self-contained executable."""
 
     node_id: str
     node_type: str
     reason: str
 
 
-# ── Source node code generation ───────────────────────────────────
+@dataclass(frozen=True)
+class BundledSourceBinding:
+    """One actor-authorized file projected to a canonical deployment input."""
+
+    node_id: str
+    stream_name: str
+    bundle_relative_path: str
+    byte_length: int
+    sha256: str
+    target_authority: Mapping[str, object] | None
+    prepared_overrides: Mapping[str, object]
+    ingestion_authority: Mapping[str, object]
+    external_reference: Mapping[str, object] | None = None
+    source_kind: str = "file"
+    asset_id: str | None = None
+    member_file_name: str | None = None
+    collection_title: str | None = None
+    collection_definition: Mapping[str, object] | None = None
+    group_column: str | None = None
+    source_manifest_sha256: str | None = None
+    collection_definition_sha256: str | None = None
+    scientific_collection_sha256: str | None = None
+
+    @property
+    def selected_target(self) -> str | None:
+        value = self.target_authority.get("column") if self.target_authority is not None else None
+        return str(value) if value else None
+
+    @property
+    def target_type(self) -> str | None:
+        value = self.target_authority.get("target_type") if self.target_authority is not None else None
+        return str(value) if value else None
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "node_id": self.node_id,
+            "stream_name": self.stream_name,
+            "bundle_relative_path": self.bundle_relative_path,
+            "byte_length": self.byte_length,
+            "sha256": self.sha256,
+            "target_authority": dict(self.target_authority) if self.target_authority is not None else None,
+            "prepared_overrides": dict(self.prepared_overrides),
+            "ingestion_authority": dict(self.ingestion_authority),
+            "external_reference": dict(self.external_reference) if self.external_reference is not None else None,
+            "source_kind": self.source_kind,
+            "asset_id": self.asset_id,
+            "member_file_name": self.member_file_name,
+            "collection_title": self.collection_title,
+            "collection_definition": (
+                dict(self.collection_definition) if self.collection_definition is not None else None
+            ),
+            "group_column": self.group_column,
+            "source_manifest_sha256": self.source_manifest_sha256,
+            "collection_definition_sha256": self.collection_definition_sha256,
+            "scientific_collection_sha256": self.scientific_collection_sha256,
+        }
 
 
-def _generate_source_placeholder_lines(node_id: str, node, edges: list[Edge], indent: str) -> list[str]:
-    """Build placeholder code for non-exportable source nodes."""
-    used_ports = {e.from_output or "default" for e in edges if e.from_node == node_id}
-    is_multi_port = len(used_ports) > 1
+@dataclass(frozen=True)
+class CanonicalExecutableExport:
+    """Closed projection shared by Python and notebook renderers."""
 
-    lines: list[str] = []
-    lines.append(f"{indent}# --- Source: {node_id} ({node.metadata.node_type}) ---")
-    lines.append(f"{indent}# ╔══════════════════════════════════════════════════════════╗")
-    lines.append(f"{indent}# ║  DATA LOADING — Edit below to load your data            ║")
-    lines.append(f"{indent}# ║                                                          ║")
-    lines.append(f"{indent}# ║  Place your spectral data files in the DATA_DIR folder.  ║")
-    lines.append(f"{indent}# ║  Supported formats: .csv, .spc, .dx, .jdx, .mat, .scp   ║")
-    lines.append(f"{indent}# ╚══════════════════════════════════════════════════════════╝")
+    workflow: WorkflowSpec
+    bundled_sources: tuple[BundledSourceBinding, ...]
+    external_streams: tuple[str, ...]
+    execution_order: tuple[str, ...]
+    node_types: Mapping[str, str]
+    node_labels: Mapping[str, str]
 
-    if is_multi_port:
-        lines.append(f"{indent}results['{node_id}'] = {{}}")
-        lines.append(f"{indent}# Example: Load spectra from CSV (rows=samples, cols=wavelengths)")
-        lines.append(f"{indent}# _raw = np.loadtxt(os.path.join(DATA_DIR, 'spectra.csv'), delimiter=',')")
-        lines.append(f"{indent}# results['{node_id}']['default'] = SherpaDataset(_raw)")
-        for port in sorted(used_ports - {"default"}):
-            if port == "target":
-                lines.append(f"{indent}# _target = np.loadtxt(os.path.join(DATA_DIR, 'targets.csv'), delimiter=',')")
-                lines.append(f"{indent}# results['{node_id}']['target'] = _target")
-            else:
-                lines.append(f"{indent}# results['{node_id}']['{port}'] = ...  # provide {port} data")
+
+def _safe_identifier(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_.-]", "_", value) or "source"
+
+
+def _portable_ingestion_authority(
+    bundle: BundledSourceFile,
+    *,
+    asset_id: str | None,
+    prepared_overrides: Mapping[str, object],
+) -> Mapping[str, object]:
+    """Resolve one export source through its actual native scientific path."""
+
+    if bundle.ingestion_authority is not None:
+        return admit_portable_ingestion_authority(bundle.ingestion_authority).canonical_dict()
+    if bundle.external_reference is not None:
+        from spectra_sherpa.app.lib.reference_materialization import materialize_reference_member
+
+        projection_id = str(bundle.external_reference.get("projection_id") or "")
+        if not projection_id:
+            raise ValueError("registered export source is missing its projection identity")
+        dataset = materialize_reference_member(bundle.absolute_path, projection_id).dataset
     else:
-        lines.append(f"{indent}# Example: Load spectra from CSV (rows=samples, cols=wavelengths)")
-        lines.append(f"{indent}# _raw = np.loadtxt(os.path.join(DATA_DIR, 'spectra.csv'), delimiter=',')")
-        lines.append(f"{indent}# results['{node_id}'] = SherpaDataset(_raw)")
-        lines.append(f"{indent}#")
-        lines.append(f"{indent}# Or load a SpectroChemPy dataset:")
-        lines.append(f"{indent}# from spectra_sherpa.app.lib.scp_compat import from_nddataset")
-        lines.append(f"{indent}# _ndd = scp.read(os.path.join(DATA_DIR, 'data.scp'))")
-        lines.append(f"{indent}# results['{node_id}'] = from_nddataset(_ndd)")
-    return lines
+        from spectra_sherpa.app.lib.io import load_canonical_file_as_sherpa
 
-
-def _inject_prepared_override_lines(
-    lines: list[str],
-    node_id: str,
-    spec: "SourceExportSpec | None",
-    indent: str,
-) -> list[str]:
-    if spec is None or spec.overrides.is_empty():
-        return lines
-
-    insert_at = next((idx for idx, line in enumerate(lines) if f"results['{node_id}']" in line), len(lines))
-    return lines[:insert_at] + _generate_prepared_override_lines("_ds", spec, indent) + lines[insert_at:]
-
-
-def _generate_prepared_override_lines(dataset_expr: str, spec: "SourceExportSpec", indent: str) -> list[str]:
-    safe_id = _safe_identifier(spec.node_id)
-    lines: list[str] = []
-    lines.append(f"{indent}# Replay Data/Explore overrides for {spec.node_id}")
-
-    if spec.overrides.x_title is not None or spec.overrides.x_units is not None:
-        lines.append(f"{indent}if getattr({dataset_expr}, 'feature_axis', None) is not None:")
-        lines.append(f"{indent}    _feature_axis_{safe_id} = {dataset_expr}.feature_axis.copy()")
-        if spec.overrides.x_title is not None:
-            lines.append(f"{indent}    _feature_axis_{safe_id}.title = {spec.overrides.x_title!r}")
-            lines.append(f"{indent}    {dataset_expr}.meta['x_title'] = {spec.overrides.x_title!r}")
-        if spec.overrides.x_units is not None:
-            lines.append(
-                f"{indent}    _feature_axis_{safe_id}.units = "
-                f"{repr(spec.overrides.x_units) if spec.overrides.x_units else 'None'}"
-            )
-            lines.append(f"{indent}    {dataset_expr}.meta['x_units'] = {spec.overrides.x_units!r}")
-        lines.append(f"{indent}    {dataset_expr}.feature_axis = _feature_axis_{safe_id}")
-
-    if spec.overrides.y_title is not None or spec.overrides.x_units is not None:
-        lines.append(f"{indent}_domain_{safe_id} = {dataset_expr}.domain.model_copy(deep=True)")
-        if spec.overrides.x_units is not None:
-            lines.append(
-                f"{indent}_domain_{safe_id}.expected_units = "
-                f"{repr(spec.overrides.x_units) if spec.overrides.x_units else 'None'}"
-            )
-        if spec.overrides.y_title is not None:
-            lines.append(f"{indent}_domain_{safe_id}.data_quantity = {spec.overrides.y_title!r}")
-            lines.append(f"{indent}{dataset_expr}.meta['data_quantity'] = {spec.overrides.y_title!r}")
-        lines.append(f"{indent}{dataset_expr}.domain = _domain_{safe_id}")
-
-    if spec.overrides.is_time_series is not None:
-        lines.append(f"{indent}{dataset_expr}.is_time_series = {spec.overrides.is_time_series!r}")
-        lines.append(f"{indent}{dataset_expr}.meta['is_time_series'] = {spec.overrides.is_time_series!r}")
-
-    if spec.overrides.target_mode is not None or spec.overrides.selected_target is not None:
-        if spec.overrides.target_mode == "multi":
-            lines.append(
-                f"{indent}{dataset_expr}.target_context = "
-                f"{dataset_expr}.target_context.model_copy(update={{'selected_target': None}})"
-            )
-            lines.append(f"{indent}{dataset_expr}.meta['target_mode'] = 'multi'")
-            lines.append(f"{indent}{dataset_expr}.meta.pop('selected_target', None)")
-        else:
-            selected_target = spec.overrides.selected_target
-            if selected_target is not None:
-                lines.append(
-                    f"{indent}{dataset_expr}.target_context = "
-                    f"{dataset_expr}.target_context.model_copy(update={{'selected_target': {selected_target!r}}})"
-                )
-                lines.append(f"{indent}{dataset_expr}.meta['target_mode'] = 'single'")
-                lines.append(f"{indent}{dataset_expr}.meta['selected_target'] = {selected_target!r}")
-
-    return lines
-
-
-def _generate_bundled_source_lines(
-    node_id: str,
-    node,
-    spec: "SourceExportSpec",
-    indent: str,
-    is_multi_port: bool,
-    use_scp: bool,
-) -> list[str]:
-    safe_id = _safe_identifier(node_id)
-    lines: list[str] = []
-    lines.append(f"{indent}# --- Data Source ({node_id}) — bundled files ---")
-
-    if spec.loader_mode == "single_file":
-        bundle_file = spec.bundle_files[0]
-        lines.append(f"{indent}_bundle_path_{safe_id} = os.path.join(DATA_DIR, {bundle_file.bundle_relative_path!r})")
-        lines.append(f"{indent}if _bundle_path_{safe_id}.lower().endswith('.csv'):")
-        lines.append(f"{indent}    from spectra_sherpa.app.lib.io import load_csv_as_sherpa")
-        lines.append(f"{indent}    _ds = load_csv_as_sherpa(_bundle_path_{safe_id})")
-        lines.append(f"{indent}else:")
-        lines.append(f"{indent}    if not {use_scp!r}:")
-        lines.append(f"{indent}        raise ImportError('SpectroChemPy is required for non-CSV bundled data export')")
-        lines.append(f"{indent}    from spectra_sherpa.app.lib.scp_compat import from_nddataset")
-        lines.append(f"{indent}    _ndd = scp.read(_bundle_path_{safe_id})")
-        lines.append(f"{indent}    _ds = from_nddataset(_ndd)")
-        lines.extend(_generate_prepared_override_lines("_ds", spec, indent))
-        lines.append(f'{indent}print(f"  Data Source ({node_id}): {{_ds.shape}} from bundled file")')
-        if is_multi_port:
-            lines.append(f"{indent}results['{node_id}'] = {{'default': _ds, 'target': _ds.target}}")
-        else:
-            lines.append(f"{indent}results['{node_id}'] = _ds")
-        return lines
-
-    lines.append(f"{indent}from spectra_sherpa.app.lib.scp_compat import from_nddataset")
-    lines.append(f"{indent}from spectra_sherpa.app.services.dag.nodes.data.loaders import MyDatasetNode")
-    lines.append(f"{indent}_loader_{safe_id} = MyDatasetNode({node_id!r}, {{'dataset_id': 0}})")
-    lines.append(f"{indent}_loaded_{safe_id} = []")
-    for bundle_file in spec.bundle_files:
-        lines.append(
-            f"{indent}_loaded_{safe_id}.append("
-            f"_loader_{safe_id}._load_file("
-            f"os.path.join(DATA_DIR, {bundle_file.bundle_relative_path!r}), "
-            f"file_name={bundle_file.bundle_relative_path!r}"
-            f"))"
+        dataset = load_canonical_file_as_sherpa(
+            bundle.absolute_path,
+            asset_id=asset_id,
+            prepared_overrides=prepared_overrides,
         )
-    lines.append(f"{indent}_groups_{safe_id} = _loader_{safe_id}._group_by_x_axis(_loaded_{safe_id})")
-    lines.append(
-        f"{indent}_groups_{safe_id}.sort("
-        f"key=lambda _group: _loader_{safe_id}._x_length(_group[0].dataset), reverse=True"
-        f")"
-    )
-    lines.append(f"{indent}_spectra_group_{safe_id} = _groups_{safe_id}[0]")
-    lines.append(
-        f"{indent}_embedded_target_{safe_id} = "
-        f"_loader_{safe_id}._combine_embedded_targets(_spectra_group_{safe_id})"
-    )
-    lines.append(f"{indent}_spectra_items_{safe_id} = [item.dataset for item in _spectra_group_{safe_id}]")
-    lines.append(f"{indent}_spectra_names_{safe_id} = [item.file_name for item in _spectra_group_{safe_id}]")
-    lines.append(f"{indent}_spectra_{safe_id} = (")
-    lines.append(
-        f"{indent}    _loader_{safe_id}._concatenate(_spectra_items_{safe_id}, _spectra_names_{safe_id}) "
-        f"if len(_spectra_items_{safe_id}) > 1 else _spectra_items_{safe_id}[0]"
-    )
-    lines.append(f"{indent})")
-    lines.append(f"{indent}_ds = from_nddataset(_spectra_{safe_id})")
-    lines.append(f"{indent}if _embedded_target_{safe_id} is not None:")
-    lines.append(
-        f"{indent}    _embedded_target_data_{safe_id}, "
-        f"_embedded_target_names_{safe_id} = _embedded_target_{safe_id}"
-    )
-    lines.append(f"{indent}    _ds.target = _embedded_target_data_{safe_id}")
-    lines.append(f"{indent}    _ds.target_context = TargetContext(")
-    lines.append(f"{indent}        target_type='continuous',")
-    lines.append(f"{indent}        target_names=_embedded_target_names_{safe_id},")
-    lines.append(f"{indent}    )")
-    lines.extend(_generate_prepared_override_lines("_ds", spec, indent))
-    lines.append(f'{indent}print(f"  Data Source ({node_id}): {{_ds.shape}} from bundled folder")')
-    if is_multi_port:
-        lines.append(f"{indent}results['{node_id}'] = {{'default': _ds, 'target': _ds.target}}")
-    else:
-        lines.append(f"{indent}results['{node_id}'] = _ds")
-    return lines
+    return project_portable_ingestion_authority(dataset).canonical_dict()
 
 
-# ── Per-node code generation ─────────────────────────────────────
+def _topological_order(nodes: list[dict[str, Any]], edges: list[dict[str, str]]) -> tuple[str, ...]:
+    indegree = {str(node["node_id"]): 0 for node in nodes}
+    successors: dict[str, list[str]] = {node_id: [] for node_id in indegree}
+    for edge in edges:
+        source = edge["from_node_id"]
+        target = edge["to_node_id"]
+        indegree[target] += 1
+        successors[source].append(target)
+    ready = sorted(node_id for node_id, degree in indegree.items() if degree == 0)
+    ordered: list[str] = []
+    while ready:
+        node_id = ready.pop(0)
+        ordered.append(node_id)
+        for target in sorted(successors[node_id]):
+            indegree[target] -= 1
+            if indegree[target] == 0:
+                ready.append(target)
+                ready.sort()
+    if len(ordered) != len(nodes):
+        raise ValueError("Workflow graph must be acyclic")
+    return tuple(ordered)
 
 
-def _generate_node_python_lines(
-    node_id: str,
-    node,
-    edges: list[Edge],
-    dict_output_nodes: frozenset[str],
-    indent: str,
-    use_scp: bool,
-    export_context: "WorkflowExportContext | None" = None,
-) -> list[str]:
-    """Generate the code block for a single workflow node."""
-    input_map = build_input_map(node_id, edges, dict_output_nodes=dict_output_nodes)
-    if not input_map:
-        used_ports = {e.from_output or "default" for e in edges if e.from_node == node_id}
-        is_multi_port = len(used_ports) > 1
-        spec = export_context.source_spec_for(node_id) if export_context is not None else None
-        if spec is not None and spec.loader_mode != "builtin":
-            return _generate_bundled_source_lines(node_id, node, spec, indent, is_multi_port, use_scp)
-        if node.supports_python_export():
-            export_inputs = {"_multi_port": str(is_multi_port)}
-            return _inject_prepared_override_lines(
-                node.generate_python(export_inputs, indent=indent, use_scp=use_scp),
-                node_id,
-                spec,
-                indent,
-            )
-        return _generate_source_placeholder_lines(node_id, node, edges, indent)
-    return node.generate_python(input_map, indent=indent, use_scp=use_scp)
+def build_canonical_executable_export(
+    workflow: Workflow,
+    *,
+    export_context: WorkflowExportContext | None,
+) -> CanonicalExecutableExport:
+    """Build the only executable export projection for a saved workflow.
 
-
-# ── Export validation ─────────────────────────────────────────────
-
-
-def validate_export(workflow: Workflow) -> list[ExportValidationError]:
+    A Workbench file source carries database identities that are meaningful
+    only inside the originating application. Export replaces that source
+    node—not any scientific child—with ``deploy.input`` and binds its exact
+    actor-authorized bytes separately. All remaining node identities,
+    parameters, typed ports, and edges are preserved and re-admitted by the
+    current registry through :func:`workflow_spec`.
     """
-    Pre-check whether every non-source node in the workflow supports Python export.
 
-    Source nodes (those with no incoming edges) are always rendered as
-    placeholder comments, so they do not need a ``generate_python()``
-    implementation to pass validation.
+    if getattr(workflow, "fold_validation_plan", None) is not None:
+        raise ValueError(
+            "Executable code export cannot preserve the sheet validation plan; export its .sherpa project instead."
+        )
 
-    Returns:
-        List of validation errors (empty means all nodes are exportable).
-    """
-    # Identify source nodes (no incoming edges)
-    nodes_with_incoming = {e.to_node_id for e in workflow.edges}
+    nodes: list[dict[str, Any]] = []
+    bundled_sources: list[BundledSourceBinding] = []
+    external_streams: list[str] = []
+    seen_streams: set[str] = set()
 
-    errors: list[ExportValidationError] = []
+    from spectra_sherpa.app.services.dag.node_base import node_registry
+
     for wf_node in workflow.nodes:
-        # Source nodes get placeholder comments — skip validation
-        if wf_node.node_id not in nodes_with_incoming:
-            continue
-
-        try:
-            node = node_registry.create_node(wf_node.node_type, wf_node.node_id, wf_node.parameters)
-        except KeyError:
-            errors.append(
-                ExportValidationError(
-                    node_id=wf_node.node_id,
-                    node_type=wf_node.node_type,
-                    reason=f"Unknown node type: {wf_node.node_type}",
-                )
+        node_id = str(wf_node.node_id)
+        node_type = str(wf_node.node_type)
+        parameters = dict(wf_node.parameters or {})
+        if node_type == "data.load_group" and parameters.get("source_mode") == "experiment_collection":
+            raise ValueError(
+                "Legacy project collection sources must be reopened and saved through "
+                "data.collection_load before export"
             )
-            continue
-
-        if not node.supports_python_export():
-            errors.append(
-                ExportValidationError(
-                    node_id=wf_node.node_id,
-                    node_type=wf_node.node_type,
-                    reason="Node does not support Python export yet",
-                )
+        if node_type in {"data.file_load", "data.collection_load"}:
+            spec = export_context.source_spec_for(node_id) if export_context is not None else None
+            expected_mode = "single_file" if node_type == "data.file_load" else "collection"
+            if spec is None or spec.loader_mode != expected_mode or not spec.bundle_files:
+                raise ValueError(f"Node {node_id} ({node_type}) has no complete actor-authorized source set")
+            if node_type == "data.file_load" and len(spec.bundle_files) != 1:
+                raise ValueError(f"Node {node_id} ({node_type}) requires exactly one actor-authorized file")
+            stream_name = f"export.source.{_safe_identifier(node_id)}"
+            if stream_name in seen_streams:
+                raise ValueError(f"Export repeats deployment stream {stream_name!r}")
+            seen_streams.add(stream_name)
+            admitted_target_authority = admit_target_authority(parameters.get("target_authority"))
+            target_authority = (
+                admitted_target_authority.canonical_dict() if admitted_target_authority is not None else None
             )
-            continue
-
-        # Check that wired output ports exist in the node's exported output
-        exported_ports = node.exported_output_ports()
-        if exported_ports is not None:
-            wired_ports = {e.from_output or "default" for e in workflow.edges if e.from_node_id == wf_node.node_id}
-            missing = wired_ports - exported_ports - {"default"}
-            if missing:
-                errors.append(
-                    ExportValidationError(
-                        node_id=wf_node.node_id,
-                        node_type=wf_node.node_type,
-                        reason=(
-                            f"Downstream edges reference output port(s) "
-                            f"{sorted(missing)} but export only provides "
-                            f"{sorted(exported_ports)}"
+            if admitted_target_authority is not None and node_type == "data.collection_load":
+                collection_digest = parameters.get("scientific_collection_sha256")
+                if collection_digest and admitted_target_authority.source_digest != collection_digest:
+                    raise ValueError(f"Node {node_id} ({node_type}) target authority differs from its collection")
+            asset_id = str(parameters.get("asset_id") or "") or None
+            for bundle in spec.bundle_files:
+                try:
+                    source_bytes = bundle.absolute_path.read_bytes()
+                except OSError as exc:
+                    raise ValueError(f"Node {node_id} ({node_type}) bundled file is unavailable") from exc
+                source_sha256 = hashlib.sha256(source_bytes).hexdigest()
+                if bundle.external_reference is not None:
+                    expected_size = bundle.external_reference.get("member_size_bytes")
+                    expected_sha256 = bundle.external_reference.get("member_sha256")
+                    if len(source_bytes) != expected_size or source_sha256 != expected_sha256:
+                        raise ValueError(f"Node {node_id} ({node_type}) registered reference member is not exact")
+                if (
+                    admitted_target_authority is not None
+                    and node_type == "data.file_load"
+                    and admitted_target_authority.source_digest != source_sha256
+                ):
+                    raise ValueError(f"Node {node_id} ({node_type}) target authority differs from its source")
+                bundled_sources.append(
+                    BundledSourceBinding(
+                        node_id=node_id,
+                        stream_name=stream_name,
+                        bundle_relative_path=str(bundle.bundle_relative_path),
+                        byte_length=len(source_bytes),
+                        sha256=source_sha256,
+                        target_authority=target_authority,
+                        prepared_overrides=(
+                            bundle.prepared_overrides.to_sidecar_dict()
+                            if node_type == "data.collection_load"
+                            else spec.overrides.to_sidecar_dict()
+                        ),
+                        ingestion_authority=_portable_ingestion_authority(
+                            bundle,
+                            asset_id=None if asset_id == "single-auto" else asset_id,
+                            prepared_overrides=(
+                                bundle.prepared_overrides.to_sidecar_dict()
+                                if node_type == "data.collection_load"
+                                else spec.overrides.to_sidecar_dict()
+                            ),
+                        ),
+                        external_reference=bundle.external_reference,
+                        source_kind="collection" if node_type == "data.collection_load" else "file",
+                        asset_id=(
+                            str(bundle.external_reference["projection_id"])
+                            if bundle.external_reference is not None
+                            else asset_id
+                        ),
+                        member_file_name=bundle.member_file_name or bundle.absolute_path.name,
+                        collection_title=spec.collection_title,
+                        collection_definition=spec.collection_definition,
+                        group_column=str(parameters.get("group_column") or "") or None,
+                        source_manifest_sha256=str(parameters.get("source_manifest_sha256") or "") or None,
+                        collection_definition_sha256=(
+                            str(parameters.get("collection_definition_sha256") or "") or None
+                        ),
+                        scientific_collection_sha256=(
+                            str(parameters.get("scientific_collection_sha256") or "") or None
                         ),
                     )
                 )
-    return errors
-
-
-def _first_input_expr(inputs: dict[str, str | list[str]]) -> str | None:
-    for value in inputs.values():
-        if isinstance(value, list):
-            # Multi-input fan-in has no single SDK wrapper shape yet; fall back to standalone node export.
-            return None
-        return value
-    return None
-
-
-def _append_kw(parts: list[str], name: str, value, default) -> None:
-    if value != default:
-        parts.append(f"{name}={value!r}")
-
-
-def _sdk_preprocess_call(node, inputs: dict[str, str | list[str]]) -> str | None:
-    inp = _first_input_expr(inputs)
-    if inp is None:
-        return None
-
-    params = dict(getattr(node, "parameters", {}) or {})
-    node_type = node.metadata.node_type
-
-    if node_type == "preprocess.normalize":
-        method = params.get("method", "snv")
-        if method == "snv":
-            return f"ss.preprocess.snv({inp})"
-        if method == "msc":
-            parts = [inp]
-            _append_kw(parts, "reference", params.get("reference", "mean"), "mean")
-            return f"ss.preprocess.msc({', '.join(parts)})"
-        return None
-
-    if node_type == "preprocess.smooth":
-        if params.get("method", "savitzky_golay") != "savitzky_golay":
-            return None
-        parts = [inp]
-        _append_kw(parts, "window", int(params.get("size", 11)), 15)
-        _append_kw(parts, "polyorder", int(params.get("order", 2)), 2)
-        return f"ss.preprocess.savgol({', '.join(parts)})"
-
-    if node_type == "preprocess.derivative":
-        if params.get("method", "savitzky_golay") != "savitzky_golay":
-            return None
-        parts = [inp]
-        _append_kw(parts, "window", int(params.get("size", 11)), 15)
-        _append_kw(parts, "polyorder", int(params.get("order", 2)), 2)
-        _append_kw(parts, "deriv", int(params.get("deriv", 1)), 0)
-        return f"ss.preprocess.savgol({', '.join(parts)})"
-
-    if node_type == "baseline.penalized_ls":
-        if params.get("method", "als") != "als":
-            return None
-        parts = [inp]
-        _append_kw(parts, "lam", float(params.get("lam", 1e5)), 1e5)
-        _append_kw(parts, "p", float(params.get("p", 0.01)), 0.01)
-        _append_kw(parts, "max_iter", int(params.get("max_iter", 50)), 50)
-        _append_kw(parts, "tol", float(params.get("tol", 1e-6)), 1e-6)
-        return f"ss.preprocess.baseline_als({', '.join(parts)})"
-
-    if node_type == "preprocess.scale":
-        method = params.get("method", "mean_center")
-        if method == "mean_center":
-            return f"ss.preprocess.mean_center({inp})"
-        if method == "autoscale":
-            parts = [inp]
-            _append_kw(parts, "center", bool(params.get("center", True)), True)
-            return f"ss.preprocess.autoscale({', '.join(parts)})"
-        return None
-
-    return None
-
-
-def _sdk_model_call(node, inputs: dict[str, str | list[str]]) -> str | None:
-    params = dict(getattr(node, "parameters", {}) or {})
-    node_type = node.metadata.node_type
-
-    if node_type == "model.pca":
-        inp = inputs.get("default", inputs.get("X"))
-        if not isinstance(inp, str):
-            return None
-        parts = [inp]
-        _append_kw(parts, "n_components", params.get("n_components", 2), 2)
-        _append_kw(parts, "standardized", bool(params.get("standardized", False)), False)
-        _append_kw(parts, "scaled", bool(params.get("scaled", False)), False)
-        return f"ss.explore.pca({', '.join(parts)})"
-
-    if node_type == "model.pls":
-        X_expr = inputs.get("X", inputs.get("default"))
-        y_expr = inputs.get("y")
-        if not isinstance(X_expr, str):
-            return None
-        parts = [X_expr]
-        if isinstance(y_expr, str):
-            parts.append(f"y={y_expr}")
-        _append_kw(parts, "n_components", int(params.get("n_components", 3)), 3)
-        _append_kw(parts, "scale", bool(params.get("scale", False)), False)
-        _append_kw(parts, "cv_method", params.get("cv_method", "k-fold"), "k-fold")
-        _append_kw(parts, "cv_folds", int(params.get("cv_folds", 5)), 5)
-        return f"ss.regression.pls({', '.join(parts)})"
-
-    return None
-
-
-def _generate_sdk_source_lines(
-    node_id: str,
-    node,
-    spec: "WorkflowExportContext | None",
-    indent: str,
-) -> list[str] | None:
-    source_spec = spec.source_spec_for(node_id) if spec is not None else None
-    if source_spec is not None and source_spec.loader_mode == "single_file" and source_spec.bundle_files:
-        bundle_file = source_spec.bundle_files[0]
-        safe_id = _safe_identifier(node_id)
-        lines = [
-            f"{indent}# --- Data Source ({node_id}) via SpectraSherpa SDK ---",
-            f"{indent}_bundle_path_{safe_id} = os.path.join(DATA_DIR, {bundle_file.bundle_relative_path!r})",
-            f"{indent}_ds = ss.data.read_csv(_bundle_path_{safe_id})",
-            f"{indent}results['{node_id}'] = _ds",
-        ]
-        return _inject_prepared_override_lines(lines, node_id, source_spec, indent)
-
-    return None
-
-
-def _generate_sdk_node_python_lines(
-    node_id: str,
-    node,
-    edges: list[Edge],
-    dict_output_nodes: frozenset[str],
-    indent: str,
-    use_scp: bool,
-    export_context: "WorkflowExportContext | None" = None,
-    strict: bool = False,
-) -> list[str]:
-    input_map = build_input_map(node_id, edges, dict_output_nodes=dict_output_nodes)
-    if not input_map:
-        source_lines = _generate_sdk_source_lines(node_id, node, export_context, indent)
-        if source_lines is not None:
-            return source_lines
-
-    sdk_call = _sdk_preprocess_call(node, input_map)
-    if sdk_call is None:
-        sdk_call = _sdk_model_call(node, input_map)
-    if sdk_call is not None:
-        return [
-            f"{indent}# SDK wrapper: {node.metadata.node_type}",
-            f"{indent}results['{node_id}'] = {sdk_call}",
-        ]
-
-    if strict:
-        raise ValueError(f"Node {node_id} ({node.metadata.node_type}) has no SDK export wrapper")
-
-    fallback = _generate_node_python_lines(
-        node_id,
-        node,
-        edges,
-        dict_output_nodes,
-        indent,
-        use_scp,
-        export_context,
-    )
-    return [
-        f"{indent}# No SDK wrapper is registered for {node.metadata.node_type}; using standalone export.",
-        *fallback,
-    ]
-
-
-def _generate_sdk_python_code(
-    workflow: Workflow,
-    export_context: "WorkflowExportContext | None" = None,
-    *,
-    strict_sdk: bool = False,
-) -> str:
-    edges = [
-        Edge(
-            from_node=e.from_node_id,
-            to_node=e.to_node_id,
-            from_output=e.from_output or "default",
-            to_input=e.to_input or "default",
-        )
-        for e in workflow.edges
-    ]
-    node_ids = [n.node_id for n in workflow.nodes]
-    execution_order = topological_sort(node_ids, edges)
-
-    node_map = {}
-    node_type_map = {}
-    node_label_map = {}
-    for wf_node in workflow.nodes:
-        node_map[wf_node.node_id] = node_registry.create_node(wf_node.node_type, wf_node.node_id, wf_node.parameters)
-        node_type_map[wf_node.node_id] = wf_node.node_type
-        try:
-            meta = node_registry.get_metadata(wf_node.node_type)
-            node_label_map[wf_node.node_id] = meta.label
-        except (KeyError, AttributeError):
-            node_label_map[wf_node.node_id] = wf_node.node_type
-
-    use_scp = HAS_SCP
-    extra_imports: set[str] = set()
-    for node in node_map.values():
-        for imp in node.python_extra_imports:
-            extra_imports.add(imp)
-
-    nodes_with_incoming = {e.to_node for e in edges}
-    dict_output_nodes = frozenset(
-        nid for nid, node in node_map.items() if nid in nodes_with_incoming and node.exported_output_ports() is not None
-    )
-
-    raw_func_names = [
-        (nid, _derive_function_name(nid, node_type_map[nid], node_label_map.get(nid, ""))) for nid in execution_order
-    ]
-    func_names = _deduplicate_names(raw_func_names)
-
-    indent = "    "
-    lines: list[str] = []
-
-    lines.append('"""')
-    lines.append(f"Generated workflow: {workflow.name}")
-    lines.append("")
-    lines.append("Export mode: sdk")
-    if workflow.description:
-        lines.append("")
-        lines.append(workflow.description)
-    if hasattr(workflow, "integrity_hash") and workflow.integrity_hash:
-        lines.append("")
-        lines.append(f"Integrity Hash: {workflow.integrity_hash}")
-    lines.append('"""')
-    lines.append("")
-    lines.append("import os")
-    lines.append("")
-    lines.append("import numpy as np")
-    if use_scp:
-        lines.append("import spectrochempy as scp")
-        lines.append("from spectrochempy import NDDataset")
-    lines.append("import spectra_sherpa.sdk as ss")
-    lines.append("from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext")
-    lines.append("from spectra_sherpa.app.services.export_utils import export_artifacts")
-    lines.append("")
-
-    base_imports = {
-        "import numpy as np",
-        "import os",
-        "import spectra_sherpa.sdk as ss",
-        "from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext",
-        "from spectra_sherpa.app.services.export_utils import export_artifacts",
-    }
-    if use_scp:
-        base_imports |= {"import spectrochempy as scp", "from spectrochempy import NDDataset"}
-    for imp in sorted(extra_imports - base_imports):
-        if not use_scp and "spectrochempy" in imp:
+            nodes.append(
+                {
+                    "node_id": node_id,
+                    "node_type": "deploy.input",
+                    "parameters": {
+                        "stream_name": stream_name,
+                        "schema_version": DEPLOYMENT_INPUT_SCHEMA,
+                    },
+                }
+            )
             continue
-        lines.append(imp)
-    if extra_imports - base_imports:
-        lines.append("")
 
-    data_env_var = export_context.data_env_var if export_context is not None else "SHERPA_DATA_DIR"
-    lines.append("# Data directory - defaults to ./data, override with SHERPA_DATA_DIR")
-    lines.append("DATA_DIR = os.environ.get(")
-    lines.append(f"    {data_env_var!r},")
-    lines.append('    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")')
-    lines.append('    if "__file__" in dir() else os.path.join(os.getcwd(), "data"),')
-    lines.append(")")
-    lines.append("")
-    lines.append("")
+        if node_type == "deploy.input":
+            stream_name = str(parameters.get("stream_name", ""))
+            if not stream_name or stream_name in seen_streams:
+                raise ValueError(f"Node {node_id} ({node_type}) has an invalid or repeated stream name")
+            seen_streams.add(stream_name)
+            external_streams.append(stream_name)
 
-    for step_idx, node_id in enumerate(execution_order):
-        node = node_map[node_id]
-        fn_name = func_names[node_id]
-        label = node_label_map.get(node_id, node_type_map[node_id])
-        lines.append(f"def {fn_name}(results):")
-        lines.append(f'{indent}"""Step {step_idx + 1}: {label}."""')
+        nodes.append({"node_id": node_id, "node_type": node_type, "parameters": parameters})
+
+    edges = [
+        {
+            "from_node_id": str(edge.from_node_id),
+            "to_node_id": str(edge.to_node_id),
+            "from_output": str(edge.from_output or "default"),
+            "to_input": str(edge.to_input or "default"),
+        }
+        for edge in workflow.edges
+    ]
+    admitted = workflow_spec(nodes=nodes, edges=edges)
+    node_types = {str(node["node_id"]): str(node["node_type"]) for node in admitted.payload["nodes"]}
+    node_labels: dict[str, str] = {}
+    for node_id, node_type in node_types.items():
+        try:
+            node_labels[node_id] = node_registry.get_metadata(node_type).label
+        except (AttributeError, KeyError):
+            node_labels[node_id] = node_type
+    order = _topological_order(admitted.payload["nodes"], admitted.payload["edges"])
+    return CanonicalExecutableExport(
+        workflow=admitted,
+        bundled_sources=tuple(sorted(bundled_sources, key=lambda item: item.node_id)),
+        external_streams=tuple(sorted(external_streams)),
+        execution_order=order,
+        node_types=node_types,
+        node_labels=node_labels,
+    )
+
+
+def validate_export(
+    workflow: Workflow, export_context: WorkflowExportContext | None = None
+) -> list[ExportValidationError]:
+    """Return an empty list only when the canonical export projection admits."""
+
+    try:
+        build_canonical_executable_export(workflow, export_context=export_context)
+    except (KeyError, TypeError, ValueError) as exc:
+        return [ExportValidationError(node_id="__workflow__", node_type="canonical_dag", reason=str(exc))]
+    return []
+
+
+def _render_module(export: CanonicalExecutableExport, workflow: Workflow, *, include_main: bool) -> str:
+    workflow_manifest = pformat(export.workflow.as_dict(), width=100, sort_dicts=True)
+    source_bindings = pformat([binding.as_dict() for binding in export.bundled_sources], width=100, sort_dicts=True)
+    external_streams = repr(export.external_streams)
+
+    documentation = [
+        f"Generated canonical workflow: {workflow.name}",
+        "",
+        "This file contains declarative DAG and source-binding records only.",
+        "Every scientific operation executes through spectra_sherpa.sdk.runtime.",
+        f"Workflow digest: {export.workflow.workflow_digest}",
+    ]
+    description = str(getattr(workflow, "description", "") or "").strip()
+    if description:
+        documentation.extend(["", description])
+    integrity_hash = getattr(workflow, "integrity_hash", None)
+    if integrity_hash:
+        documentation.extend(["", f"Saved Workbench integrity hash: {integrity_hash}"])
+    if any(binding.external_reference is not None for binding in export.bundled_sources):
+        documentation.extend(
+            [
+                "",
+                "Registered reference bytes are not included. Set SPECTRA_REFERENCE_DIR to the exact",
+                "required extracted member or to a bounded directory containing exactly one matching file.",
+            ]
+        )
+    lines = [repr("\n".join(documentation)), ""]
+    lines.extend(
+        [
+            "import hashlib",
+            "import os",
+            "",
+            "import spectra_sherpa.sdk as ss",
+            "from spectra_sherpa.app.services.export_utils import export_artifacts",
+            "",
+            f"WORKFLOW_MANIFEST = {workflow_manifest}",
+            f"BUNDLED_SOURCE_BINDINGS = {source_bindings}",
+            f"EXTERNAL_STREAMS = {external_streams}",
+            "",
+            "DATA_DIR = os.environ.get(",
+            "    'SHERPA_DATA_DIR',",
+            '    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")',
+            '    if "__file__" in dir() else os.path.join(os.getcwd(), "data"),',
+            ")",
+            "REFERENCE_PATH = os.environ.get('SPECTRA_REFERENCE_DIR')",
+            "REFERENCE_SEARCH_LIMIT = 1000",
+            "",
+            "",
+            "def _file_sha256(path):",
+            "    digest = hashlib.sha256()",
+            "    with open(path, 'rb') as source_file:",
+            "        for chunk in iter(lambda: source_file.read(1024 * 1024), b''):",
+            "            digest.update(chunk)",
+            "    return digest.hexdigest()",
+            "",
+            "",
+            "def _registered_reference_path(binding):",
+            "    if not REFERENCE_PATH:",
+            "        raise FileNotFoundError(",
+            "            'This workflow uses a registered reference file. Set SPECTRA_REFERENCE_DIR '",
+            "            'to the exact extracted member or a directory containing it.'",
+            "        )",
+            "    root = os.path.abspath(os.path.expanduser(REFERENCE_PATH))",
+            "    candidates = []",
+            "    if os.path.isfile(root) and not os.path.islink(root):",
+            "        candidates = [root]",
+            "    elif os.path.isdir(root) and not os.path.islink(root):",
+            "        visited = 0",
+            "        pending = [root]",
+            "        while pending:",
+            "            current = pending.pop()",
+            "            with os.scandir(current) as entries:",
+            "                for entry in entries:",
+            "                    visited += 1",
+            "                    if visited > REFERENCE_SEARCH_LIMIT:",
+            "                        raise ValueError('SPECTRA_REFERENCE_DIR exceeds the 1000-entry search limit')",
+            "                    if entry.is_symlink():",
+            "                        continue",
+            "                    if entry.is_dir(follow_symlinks=False):",
+            "                        pending.append(entry.path)",
+            "                        continue",
+            "                    if not entry.is_file(follow_symlinks=False):",
+            "                        continue",
+            "                    path = entry.path",
+            "                    if os.path.getsize(path) != binding['byte_length']:",
+            "                        continue",
+            "                    if _file_sha256(path) == binding['sha256']:",
+            "                        candidates.append(path)",
+            "    else:",
+            "        raise FileNotFoundError(f'SPECTRA_REFERENCE_DIR is unavailable: {root}')",
+            "    if not candidates:",
+            "        raise FileNotFoundError(",
+            "            'No file under SPECTRA_REFERENCE_DIR matches the required registered '",
+            "            'reference size and SHA-256'",
+            "        )",
+            "    if len(candidates) != 1:",
+            "        raise ValueError('SPECTRA_REFERENCE_DIR contains more than one exact registered-reference match')",
+            "    return candidates[0]",
+            "",
+            "",
+            "def _binding_path(binding):",
+            "    if binding.get('external_reference') is not None:",
+            "        return _registered_reference_path(binding)",
+            "    return os.path.join(DATA_DIR, binding['bundle_relative_path'])",
+            "",
+            "",
+            "def _load_bundled_inputs():",
+            '    """Load exact embedded files or explicitly rebound registered references."""',
+            "    inputs = {}",
+            "    streams = {}",
+            "    for binding in BUNDLED_SOURCE_BINDINGS:",
+            "        streams.setdefault(binding['stream_name'], []).append(binding)",
+            "    for stream_name, bindings in streams.items():",
+            "        resolved = []",
+            "        for binding in bindings:",
+            "            path = _binding_path(binding)",
+            "            if not os.path.isfile(path):",
+            '                raise FileNotFoundError(f"Workflow source is unavailable: {path}")',
+            "            with open(path, 'rb') as source_file:",
+            "                source_bytes = source_file.read()",
+            "            if len(source_bytes) != binding['byte_length']:",
+            '                raise ValueError(f"Workflow source size mismatch: {path}")',
+            "            if hashlib.sha256(source_bytes).hexdigest() != binding['sha256']:",
+            '                raise ValueError(f"Workflow source digest mismatch: {path}")',
+            "            resolved.append((binding, path))",
+            "        first = bindings[0]",
+            "        if first['source_kind'] == 'collection':",
+            "            inputs[stream_name] = ss.data.read_collection(",
+            "                [",
+            "                    {",
+            "                        'path': path,",
+            "                        'file_name': binding['member_file_name'],",
+            "                        'byte_length': binding['byte_length'],",
+            "                        'sha256': binding['sha256'],",
+            "                        'asset_id': binding['asset_id'],",
+            "                        'prepared_overrides': binding['prepared_overrides'],",
+            "                        'expected_ingestion_authority': binding['ingestion_authority'],",
+            "                        'external_reference': binding['external_reference'],",
+            "                    }",
+            "                    for binding, path in resolved",
+            "                ],",
+            "                title=first['collection_title'],",
+            "                collection_definition=first['collection_definition'],",
+            "                selected_target=(first['target_authority'] or {}).get('column'),",
+            "                target_type=(first['target_authority'] or {}).get('target_type'),",
+            "                group_column=first['group_column'],",
+            "                expected_source_manifest_sha256=first['source_manifest_sha256'],",
+            "                expected_collection_definition_sha256=first['collection_definition_sha256'],",
+            "                expected_scientific_collection_sha256=first['scientific_collection_sha256'],",
+            "            )",
+            "        else:",
+            "            if len(resolved) != 1:",
+            "                raise ValueError('Single-file source resolved to multiple bindings')",
+            "            binding, path = resolved[0]",
+            "            if binding.get('external_reference') is not None:",
+            "                inputs[stream_name] = ss.data.read_registered_reference(",
+            "                    path,",
+            "                    projection_id=binding['external_reference']['projection_id'],",
+            "                    prepared_overrides=binding['prepared_overrides'],",
+            "                    expected_ingestion_authority=binding['ingestion_authority'],",
+            "                )",
+            "            else:",
+            "                inputs[stream_name] = ss.data.read(",
+            "                    path,",
+            "                    asset_id=binding['asset_id'],",
+            "                    y=(binding['target_authority'] or {}).get('column'),",
+            "                    target_type=(binding['target_authority'] or {}).get('target_type'),",
+            "                    prepared_overrides=binding['prepared_overrides'],",
+            "                    expected_ingestion_authority=binding['ingestion_authority'],",
+            "                )",
+            "    return inputs",
+            "",
+            "",
+            "def execute_workflow(deployment_inputs=None):",
+            '    """Execute the digest-bound DAG through the canonical SDK runtime."""',
+            "    inputs = _load_bundled_inputs()",
+            "    supplied = dict(deployment_inputs or {})",
+            "    overlap = sorted(set(inputs) & set(supplied))",
+            "    if overlap:",
+            '        raise ValueError(f"Caller cannot replace bundled source streams: {overlap}")',
+            "    inputs.update(supplied)",
+            "    workflow = ss.workflow.WorkflowSpec.from_dict(WORKFLOW_MANIFEST)",
+            "    return ss.runtime.execute_workflow(workflow, deployment_inputs=inputs)",
+            "",
+            "",
+            "def run_workflow(deployment_inputs=None):",
+            '    """Execute the workflow and return every canonical node result."""',
+            "    return dict(execute_workflow(deployment_inputs).results)",
+            "",
+        ]
+    )
+
+    if include_main:
+        safe_name = _safe_identifier(str(workflow.name).replace(" ", "_"))
         lines.extend(
-            _generate_sdk_node_python_lines(
-                node_id,
-                node,
-                edges,
-                dict_output_nodes,
-                indent,
-                use_scp,
-                export_context,
-                strict=strict_sdk,
-            )
+            [
+                "",
+                'if __name__ == "__main__":',
+                "    if EXTERNAL_STREAMS:",
+                "        raise SystemExit(",
+                '            "This workflow requires run_workflow(deployment_inputs={...}) for streams "',
+                "            + repr(EXTERNAL_STREAMS)",
+                "        )",
+                "    results = run_workflow()",
+                f"    print({('Workflow: ' + str(workflow.name))!r})",
+                '    print("=" * 60)',
+                "    for key, value in results.items():",
+                "        if isinstance(value, dict):",
+                '            print(f"  {key}: {list(value.keys())}")',
+                "        elif hasattr(value, 'shape'):",
+                '            print(f"  {key}: {value.shape}")',
+                "        else:",
+                '            print(f"  {key}: {type(value).__name__}")',
+                f"    export_artifacts(results, {safe_name!r})",
+                "",
+            ]
         )
-        lines.append("")
-        lines.append("")
-
-    lines.append("def run_workflow():")
-    lines.append(f'{indent}"""Execute the workflow and return all intermediate results."""')
-    lines.append(f"{indent}results = {{}}")
-    lines.append("")
-    for step_idx, node_id in enumerate(execution_order):
-        fn_name = func_names[node_id]
-        label = node_label_map.get(node_id, node_type_map[node_id])
-        lines.append(f"{indent}# Step {step_idx + 1}: {label}")
-        lines.append(f"{indent}{fn_name}(results)")
-        lines.append("")
-    lines.append(f"{indent}return results")
-    lines.append("")
-    lines.append("")
-
-    wf_name_safe = workflow.name.replace(" ", "_").replace("/", "_")
-    lines.append('if __name__ == "__main__":')
-    lines.append(f"{indent}results = run_workflow()")
-    lines.append("")
-    lines.append(f'{indent}print("\\nWorkflow: {workflow.name}")')
-    lines.append(f'{indent}print("=" * 60)')
-    lines.append(f"{indent}for key, value in results.items():")
-    lines.append(f"{indent}    if isinstance(value, SherpaDataset):")
-    lines.append(f'{indent}        print(f"  {{key}}: SherpaDataset {{value.shape}}")')
-    lines.append(f"{indent}    elif isinstance(value, dict):")
-    lines.append(f'{indent}        print(f"  {{key}}: {{list(value.keys())}}")')
-    lines.append(f"{indent}    else:")
-    lines.append(f'{indent}        print(f"  {{key}}: {{type(value).__name__}}")')
-    lines.append("")
-    lines.append(f"{indent}export_artifacts(results, {wf_name_safe!r})")
-    lines.append("")
-
-    return "\n".join(lines)
-
-
-# ── Main code generator ──────────────────────────────────────────
-
-
-def _generate_standalone_python_code(
-    workflow: Workflow,
-    export_context: "WorkflowExportContext | None" = None,
-) -> str:
-    """
-    Generate executable Python code from a workflow.
-
-    Produces clean, sklearn-styled code with:
-    - Named top-level functions for each workflow step
-    - A linear ``run_workflow()`` that reads like a recipe
-    - ``SherpaDataset`` as the visible first-class data object
-    - Utilities imported from ``export_utils`` (not inlined)
-
-    Args:
-        workflow: Workflow model with nodes and edges
-
-    Returns:
-        Python code as a string
-
-    Raises:
-        ValueError: If any node does not support Python export.
-    """
-    # --- validate --------------------------------------------------------
-    errors = validate_export(workflow)
-    if errors:
-        details = "; ".join(f"{e.node_id} ({e.node_type}): {e.reason}" for e in errors)
-        raise ValueError(f"Workflow contains nodes that cannot be exported: {details}")
-
-    # --- normalise edges -------------------------------------------------
-    edges = [
-        Edge(
-            from_node=e.from_node_id,
-            to_node=e.to_node_id,
-            from_output=e.from_output or "default",
-            to_input=e.to_input or "default",
-        )
-        for e in workflow.edges
-    ]
-    node_ids = [n.node_id for n in workflow.nodes]
-
-    # --- topological sort ------------------------------------------------
-    execution_order = topological_sort(node_ids, edges)
-
-    # --- instantiate nodes via registry ----------------------------------
-    node_map = {}
-    node_type_map = {}
-    node_label_map = {}
-    for wf_node in workflow.nodes:
-        node_map[wf_node.node_id] = node_registry.create_node(wf_node.node_type, wf_node.node_id, wf_node.parameters)
-        node_type_map[wf_node.node_id] = wf_node.node_type
-        try:
-            meta = node_registry.get_metadata(wf_node.node_type)
-            node_label_map[wf_node.node_id] = meta.label
-        except (KeyError, AttributeError):
-            node_label_map[wf_node.node_id] = wf_node.node_type
-
-    # --- backend mode (SCP vs numpy) --------------------------------------
-    use_scp = HAS_SCP
-
-    # --- collect extra imports -------------------------------------------
-    extra_imports: set[str] = set()
-    for node in node_map.values():
-        for imp in node.python_extra_imports:
-            extra_imports.add(imp)
-
-    # --- identify dict-emitting nodes ------------------------------------
-    nodes_with_incoming = {e.to_node for e in edges}
-    dict_output_nodes = frozenset(
-        nid for nid, node in node_map.items() if nid in nodes_with_incoming and node.exported_output_ports() is not None
-    )
-
-    # --- derive clean function names -------------------------------------
-    raw_func_names = [
-        (nid, _derive_function_name(nid, node_type_map[nid], node_label_map.get(nid, ""))) for nid in execution_order
-    ]
-    func_names = _deduplicate_names(raw_func_names)
-
-    # --- build code lines ------------------------------------------------
-    indent = "    "
-    lines: list[str] = []
-
-    # ── Header ──
-    lines.append('"""')
-    lines.append(f"Generated workflow: {workflow.name}")
-    if workflow.description:
-        lines.append("")
-        lines.append(workflow.description)
-    if hasattr(workflow, "integrity_hash") and workflow.integrity_hash:
-        lines.append("")
-        lines.append(f"Integrity Hash: {workflow.integrity_hash}")
-    lines.append('"""')
-    lines.append("")
-
-    # ── Imports ──
-    lines.append("import os")
-    lines.append("")
-    lines.append("import numpy as np")
-    if use_scp:
-        lines.append("import spectrochempy as scp")
-        lines.append("from spectrochempy import NDDataset")
-    lines.append("from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext")
-    lines.append("from spectra_sherpa.app.services.export_utils import export_artifacts")
-    lines.append("")
-
-    # Extra imports from nodes (deduplicated, skip already-present)
-    base_imports = {
-        "import numpy as np",
-        "import os",
-        "from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext",
-        "from spectra_sherpa.app.services.export_utils import export_artifacts",
-    }
-    if use_scp:
-        base_imports |= {"import spectrochempy as scp", "from spectrochempy import NDDataset"}
-    for imp in sorted(extra_imports - base_imports):
-        if not use_scp and "spectrochempy" in imp:
-            continue
-        lines.append(imp)
-    if extra_imports - base_imports:
-        lines.append("")
-
-    # ── Data directory ──
-    data_env_var = export_context.data_env_var if export_context is not None else "SHERPA_DATA_DIR"
-    lines.append("# Data directory — defaults to ./data, override with SHERPA_DATA_DIR")
-    lines.append("DATA_DIR = os.environ.get(")
-    lines.append(f"    {data_env_var!r},")
-    lines.append('    os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")')
-    lines.append('    if "__file__" in dir() else os.path.join(os.getcwd(), "data"),')
-    lines.append(")")
-    lines.append("")
-    lines.append("")
-
-    # ── Step functions (one per node) ──
-    # Each node's code is wrapped in a named function. The function
-    # takes no arguments (reads from `results` by closure) but has a
-    # clear name and docstring describing what it does.
-    for step_idx, node_id in enumerate(execution_order):
-        node = node_map[node_id]
-        fn_name = func_names[node_id]
-        label = node_label_map.get(node_id, node_type_map[node_id])
-        step_indent = indent
-
-        lines.append(f"def {fn_name}(results):")
-        lines.append(f'{step_indent}"""Step {step_idx + 1}: {label}."""')
-
-        node_lines = _generate_node_python_lines(
-            node_id,
-            node,
-            edges,
-            dict_output_nodes,
-            step_indent,
-            use_scp,
-            export_context,
-        )
-        lines.extend(node_lines)
-
-        # Validate: every node must store its result in results[node_id]
-        node_code = "\n".join(node_lines)
-        if f"results['{node_id}']" not in node_code:
-            logger.warning(
-                "Node %s (%s) generate_python() does not set results['%s']",
-                node_id,
-                node.metadata.node_type,
-                node_id,
-            )
-
-        lines.append("")
-        lines.append("")
-
-    # ── run_workflow() — the linear recipe ──
-    lines.append("def run_workflow():")
-    lines.append(f'{indent}"""Execute the workflow and return all intermediate results."""')
-    lines.append(f"{indent}results = {{}}")
-    lines.append("")
-
-    for step_idx, node_id in enumerate(execution_order):
-        fn_name = func_names[node_id]
-        label = node_label_map.get(node_id, node_type_map[node_id])
-        lines.append(f"{indent}# Step {step_idx + 1}: {label}")
-        lines.append(f"{indent}{fn_name}(results)")
-        lines.append("")
-
-    lines.append(f"{indent}return results")
-    lines.append("")
-    lines.append("")
-
-    # ── Main block ──
-    wf_name_safe = workflow.name.replace(" ", "_").replace("/", "_")
-    lines.append('if __name__ == "__main__":')
-    lines.append(f"{indent}results = run_workflow()")
-    lines.append("")
-    lines.append(f'{indent}print("\\nWorkflow: {workflow.name}")')
-    lines.append(f'{indent}print("=" * 60)')
-    lines.append(f"{indent}for key, value in results.items():")
-    lines.append(f"{indent}    if isinstance(value, SherpaDataset):")
-    lines.append(f'{indent}        print(f"  {{key}}: SherpaDataset {{value.shape}}")')
-    lines.append(f"{indent}    elif isinstance(value, dict):")
-    lines.append(f'{indent}        print(f"  {{key}}: {{list(value.keys())}}")')
-    lines.append(f"{indent}    else:")
-    lines.append(f'{indent}        print(f"  {{key}}: {{type(value).__name__}}")')
-    lines.append("")
-    lines.append(f"{indent}export_artifacts(results, {wf_name_safe!r})")
-    lines.append("")
-
     return "\n".join(lines)
 
 
 def generate_python_code(
     workflow: Workflow,
-    export_context: "WorkflowExportContext | None" = None,
-    *,
-    mode: str = "sdk",
-    strict_sdk: bool = False,
+    export_context: WorkflowExportContext | None = None,
 ) -> str:
-    """
-    Generate executable Python code from a workflow.
+    """Generate the one current executable Python representation."""
 
-    ``mode="sdk"`` is the default and emits public ``spectra_sherpa.sdk`` calls
-    for nodes covered by the SDK wrapper contract, falling back to standalone
-    node export with an explicit comment when a wrapper does not exist.
-    ``mode="standalone"`` preserves the older SDK-independent export path.
-    """
-    export_mode = _validate_export_mode(mode)
-    if export_mode == "standalone":
-        return _generate_standalone_python_code(workflow, export_context=export_context)
-    return _generate_sdk_python_code(workflow, export_context=export_context, strict_sdk=strict_sdk)
+    export = build_canonical_executable_export(workflow, export_context=export_context)
+    return _render_module(export, workflow, include_main=True)
+
+
+def generate_notebook_module_code(
+    workflow: Workflow,
+    export_context: WorkflowExportContext | None = None,
+) -> tuple[CanonicalExecutableExport, str]:
+    """Return the shared projection and definition-only code for notebooks."""
+
+    export = build_canonical_executable_export(workflow, export_context=export_context)
+    return export, _render_module(export, workflow, include_main=False)
+
+
+__all__ = [
+    "BundledSourceBinding",
+    "CanonicalExecutableExport",
+    "ExportValidationError",
+    "build_canonical_executable_export",
+    "generate_notebook_module_code",
+    "generate_python_code",
+    "validate_export",
+]

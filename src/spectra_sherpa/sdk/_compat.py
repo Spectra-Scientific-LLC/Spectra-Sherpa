@@ -37,7 +37,6 @@ from spectra_sherpa.app.services.dag.meta_helpers import (
     get_sample_labels,
     get_spectral_info,
     include_samples,
-    safe_get_coord,
     set_class,
     set_sample_labels,
 )
@@ -94,7 +93,6 @@ __all__ = [
     "copy_processing_history",
     "get_processing_history",
     "clear_processing_history",
-    "safe_get_coord",
     # Sample management
     "exclude_samples",
     "include_samples",

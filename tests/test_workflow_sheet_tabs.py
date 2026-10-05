@@ -6,7 +6,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
+from spectra_sherpa.app.models.workflow_node import WorkflowNode
 from spectra_sherpa.app.models.workflow_version import WorkflowVersion
+from spectra_sherpa.app.services.dag.saved_graph_admission import CURRENT_CLASSIFIER_VALIDATION_SEMANTICS
 
 
 async def _create_project(auth_client: AsyncClient) -> int:
@@ -30,9 +33,9 @@ async def _create_workflow(auth_client: AsyncClient, project_id: int, name: str)
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.source",
+                    "node_type": "data.file_load",
                     "label": "Data",
-                    "parameters": {},
+                    "parameters": {"experiment_id": 1, "file_id": 1, "stage": "raw"},
                     "position_x": 10,
                     "position_y": 20,
                 }
@@ -55,9 +58,9 @@ async def _create_data_workflow(auth_client: AsyncClient, project_id: int, name:
             "nodes": [
                 {
                     "node_id": "data_1",
-                    "node_type": "data.source",
-                    "label": "Wine Data",
-                    "parameters": {"source": "sklearn", "sklearn_dataset": "wine"},
+                    "node_type": "data.file_load",
+                    "label": "Experiment File",
+                    "parameters": {"experiment_id": 7, "file_id": 11, "stage": "raw"},
                     "position_x": 10,
                     "position_y": 20,
                 }
@@ -67,6 +70,43 @@ async def _create_data_workflow(auth_client: AsyncClient, project_id: int, name:
     )
     assert response.status_code == 201
     return response.json()
+
+
+async def test_candidate_authority_is_retained_but_not_an_interactive_sheet(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+) -> None:
+    project_id = await _create_project(auth_client)
+    first = await _create_workflow(auth_client, project_id, "Scientific PLS")
+    second = await _create_workflow(auth_client, project_id, "Scientific PCA")
+    analysis = await test_session.get(Workflow, first["id"])
+    candidate = Workflow(
+        user_id=analysis.user_id,
+        project_id=project_id,
+        name="Internal candidate",
+        purpose="managed_candidate_authority",
+        sheet_order=9,
+        status="draft",
+    )
+    test_session.add(candidate)
+    await test_session.commit()
+
+    tabs = await auth_client.get("/api/v1/workflows", params={"project_id": project_id, "in_workbook": True})
+    assert tabs.status_code == 200
+    assert [row["id"] for row in tabs.json()] == [first["id"], second["id"]]
+    reordered = await auth_client.put(
+        f"/api/v1/workflows/reorder-sheets?project_id={project_id}",
+        json={"ordered_ids": [second["id"], candidate.id, first["id"]]},
+    )
+    assert reordered.status_code == 200
+    assert [row["id"] for row in reordered.json()] == [second["id"], first["id"]]
+    await test_session.refresh(candidate)
+    assert candidate.sheet_order == 9
+    records = await auth_client.get("/api/v1/workflows", params={"project_id": project_id})
+    assert candidate.id in {row["id"] for row in records.json()}
+    detail = await auth_client.get(f"/api/v1/workflows/{candidate.id}")
+    assert detail.status_code == 200
+    assert detail.json()["purpose"] == "managed_candidate_authority"
 
 
 async def test_save_without_version_suppresses_workflow_version(
@@ -88,6 +128,156 @@ async def test_save_without_version_suppresses_workflow_version(
     assert version_count == 0
 
 
+async def test_create_refuses_retired_classifier_parameter_before_database_mutation(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+) -> None:
+    project_id = await _create_project(auth_client)
+    before = await test_session.scalar(select(func.count(Workflow.id)))
+
+    response = await auth_client.post(
+        "/api/v1/workflows",
+        json={
+            "name": "Retired local CV",
+            "project_id": project_id,
+            "nodes": [
+                {
+                    "node_id": "model",
+                    "node_type": "classification.plsda",
+                    "parameters": {"n_components": 2, "scale": True, "cv_folds": 5},
+                }
+            ],
+            "edges": [],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "cannot be auto-migrated" in response.json()["detail"]
+    assert await test_session.scalar(select(func.count(Workflow.id))) == before
+
+
+async def test_create_refuses_malformed_port_before_database_mutation(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+) -> None:
+    project_id = await _create_project(auth_client)
+    before = await test_session.scalar(select(func.count(Workflow.id)))
+
+    response = await auth_client.post(
+        "/api/v1/workflows",
+        json={
+            "name": "Malformed port",
+            "project_id": project_id,
+            "nodes": [
+                {"node_id": "source_a", "node_type": "data.file_load", "parameters": {}},
+                {"node_id": "source_b", "node_type": "data.file_load", "parameters": {}},
+            ],
+            "edges": [
+                {
+                    "from_node_id": "source_a",
+                    "to_node_id": "source_b",
+                    "from_output": "retired_cv_output",
+                    "to_input": "default",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    assert "does not name ports" in response.json()["detail"]
+    assert await test_session.scalar(select(func.count(Workflow.id))) == before
+
+
+async def test_update_refuses_retired_classifier_parameter_before_any_mutation(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+) -> None:
+    project_id = await _create_project(auth_client)
+    workflow = await _create_workflow(auth_client, project_id, "Current graph")
+    before = (await test_session.execute(select(Workflow).where(Workflow.id == workflow["id"]))).scalar_one()
+    before_name = before.name
+    before_integrity = before.integrity_hash
+
+    response = await auth_client.put(
+        f"/api/v1/workflows/{workflow['id']}",
+        json={
+            "name": "Must not persist",
+            "create_version": False,
+            "nodes": [
+                {
+                    "node_id": "model",
+                    "node_type": "classification.knn",
+                    "parameters": {"n_neighbors": 3, "cv_folds": 5},
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    await test_session.refresh(before)
+    assert before.name == before_name
+    assert before.integrity_hash == before_integrity
+    observed_nodes = (
+        (await test_session.execute(select(WorkflowNode).where(WorkflowNode.workflow_id == workflow["id"])))
+        .scalars()
+        .all()
+    )
+    assert [(node.node_id, node.node_type) for node in observed_nodes] == [("data_1", "data.file_load")]
+
+
+async def test_update_edges_only_refuses_malformed_port_before_any_mutation(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+) -> None:
+    project_id = await _create_project(auth_client)
+    create = await auth_client.post(
+        "/api/v1/workflows",
+        json={
+            "name": "Two sources",
+            "project_id": project_id,
+            "nodes": [
+                {"node_id": "source_a", "node_type": "data.file_load", "parameters": {}},
+                {"node_id": "source_b", "node_type": "data.file_load", "parameters": {}},
+            ],
+            "edges": [],
+        },
+    )
+    assert create.status_code == 201
+    workflow = create.json()
+
+    response = await auth_client.put(
+        f"/api/v1/workflows/{workflow['id']}",
+        json={
+            "name": "Must not persist",
+            "create_version": False,
+            "edges": [
+                {
+                    "from_node_id": "source_a",
+                    "to_node_id": "source_b",
+                    "from_output": "retired_cv_output",
+                    "to_input": "default",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 400
+    observed = (await test_session.execute(select(Workflow).where(Workflow.id == workflow["id"]))).scalar_one()
+    assert observed.name == "Two sources"
+    assert (
+        await test_session.scalar(
+            select(func.count()).select_from(WorkflowNode).where(WorkflowNode.workflow_id == workflow["id"])
+        )
+        == 2
+    )
+    assert (
+        await test_session.scalar(
+            select(func.count()).select_from(WorkflowEdge).where(WorkflowEdge.workflow_id == workflow["id"])
+        )
+        == 0
+    )
+
+
 async def test_duplicate_workflow_creates_sheet_copy_without_runs_or_versions(
     auth_client: AsyncClient,
     test_session: AsyncSession,
@@ -102,6 +292,7 @@ async def test_duplicate_workflow_creates_sheet_copy_without_runs_or_versions(
     assert duplicate["id"] != workflow["id"]
     assert duplicate["name"] == "PCA (copy)"
     assert duplicate["project_id"] == project_id
+    assert duplicate["purpose"] == "analysis"
     assert duplicate["sheet_order"] == 1
     assert duplicate["tab_color"] == "#3b82f6"
     assert len(duplicate["nodes"]) == 1
@@ -116,6 +307,53 @@ async def test_duplicate_workflow_creates_sheet_copy_without_runs_or_versions(
     )
     assert run_count == 0
     assert version_count == 0
+
+
+async def test_duplicate_rejects_retired_graph_without_creating_a_sheet(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+) -> None:
+    project_id = await _create_project(auth_client)
+    workflow = await _create_workflow(auth_client, project_id, "Retired duplicate")
+    node = (
+        await test_session.execute(select(WorkflowNode).where(WorkflowNode.workflow_id == workflow["id"]))
+    ).scalar_one()
+    node.node_type = "data.source"
+    await test_session.commit()
+    before = await test_session.scalar(select(func.count(Workflow.id)))
+
+    response = await auth_client.post(f"/api/v1/workflows/{workflow['id']}/duplicate")
+
+    assert response.status_code == 409
+    assert "not current" in response.json()["detail"]
+    assert await test_session.scalar(select(func.count(Workflow.id))) == before
+
+
+async def test_duplicate_preserves_current_parameter_incomplete_draft(
+    auth_client: AsyncClient,
+) -> None:
+    project_id = await _create_project(auth_client)
+    create_response = await auth_client.post(
+        "/api/v1/workflows",
+        json={
+            "name": "Unbound draft",
+            "project_id": project_id,
+            "nodes": [
+                {
+                    "node_id": "source",
+                    "node_type": "data.file_load",
+                    "parameters": {},
+                }
+            ],
+            "edges": [],
+        },
+    )
+    assert create_response.status_code == 201
+
+    duplicate_response = await auth_client.post(f"/api/v1/workflows/{create_response.json()['id']}/duplicate")
+
+    assert duplicate_response.status_code == 201
+    assert duplicate_response.json()["nodes"][0]["parameters"] == {}
 
 
 async def test_reorder_sheets_persists_dense_order_and_tolerates_stale_payloads(
@@ -189,8 +427,8 @@ async def test_workflow_data_source_is_inferred_and_listed_in_project_details(
     project_response = await auth_client.get(f"/api/v1/projects/{project_id}")
     assert project_response.status_code == 200
     project = project_response.json()
-    assert project["data_sources"][0]["display_name"] == "Sklearn: Wine"
-    assert project["data_sources"][0]["source_type"] == "example"
+    assert project["data_sources"][0]["display_name"] == "Experiment 7 / File 11"
+    assert project["data_sources"][0]["source_type"] == "upload"
     assert project["workflows"][0]["primary_data_source_id"] == workflow["primary_data_source_id"]
     assert project["workflows"][0]["data_source_ids"] == workflow["data_source_ids"]
     assert {channel["channel_type"] for channel in project["advisor_channels"]} == {"project", "sheet"}
@@ -336,6 +574,9 @@ async def test_open_version_as_new_sheet_clones_without_touching_original(
     assert len(versions) >= 1
     version_id = versions[0]["id"]
     version_number = versions[0]["version_number"]
+    version = await test_session.get(WorkflowVersion, version_id)
+    assert version is not None
+    assert version.snapshot["classifier_validation_semantics"] == CURRENT_CLASSIFIER_VALIDATION_SEMANTICS
 
     open_resp = await auth_client.post(
         f"/api/v1/workflows/{workflow['id']}/versions/{version_id}/open-as-new-sheet",
@@ -346,6 +587,7 @@ async def test_open_version_as_new_sheet_clones_without_touching_original(
     # New sheet is a distinct workflow in the same project.
     assert new_sheet["id"] != workflow["id"]
     assert new_sheet["project_id"] == project_id
+    assert new_sheet["purpose"] == "analysis"
     assert new_sheet["created_from_workflow_id"] == workflow["id"]
     assert new_sheet["name"] == f"PLS (from v{version_number})"
     assert new_sheet["sheet_order"] == 1
@@ -394,3 +636,79 @@ async def test_open_version_as_new_sheet_rejects_wrong_workflow_version_id(
         f"/api/v1/workflows/{workflow_b['id']}/versions/{a_version_id}/open-as-new-sheet",
     )
     assert resp.status_code == 404
+
+
+async def test_version_restore_and_open_reject_retired_snapshot_before_mutation(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+) -> None:
+    project_id = await _create_project(auth_client)
+    workflow = await _create_workflow(auth_client, project_id, "Current workflow")
+    save_response = await auth_client.put(
+        f"/api/v1/workflows/{workflow['id']}",
+        json={"name": "Current workflow", "create_version": True},
+    )
+    assert save_response.status_code == 200
+
+    version = (
+        await test_session.execute(select(WorkflowVersion).where(WorkflowVersion.workflow_id == workflow["id"]))
+    ).scalar_one()
+    snapshot = dict(version.snapshot)
+    snapshot["name"] = "Retired snapshot name"
+    snapshot["nodes"] = [dict(node) for node in snapshot["nodes"]]
+    snapshot["nodes"][0]["node_type"] = "model.pls"
+    version.snapshot = snapshot
+    await test_session.commit()
+
+    workflow_count = await test_session.scalar(select(func.count(Workflow.id)))
+    version_count = await test_session.scalar(
+        select(func.count(WorkflowVersion.id)).where(WorkflowVersion.workflow_id == workflow["id"])
+    )
+
+    restore_response = await auth_client.post(f"/api/v1/workflows/{workflow['id']}/versions/{version.id}/restore")
+    assert restore_response.status_code == 409
+    restored = await auth_client.get(f"/api/v1/workflows/{workflow['id']}")
+    assert restored.status_code == 200
+    assert restored.json()["name"] == "Current workflow"
+    assert restored.json()["nodes"][0]["node_type"] == "data.file_load"
+    assert (
+        await test_session.scalar(
+            select(func.count(WorkflowVersion.id)).where(WorkflowVersion.workflow_id == workflow["id"])
+        )
+        == version_count
+    )
+
+    open_response = await auth_client.post(
+        f"/api/v1/workflows/{workflow['id']}/versions/{version.id}/open-as-new-sheet"
+    )
+    assert open_response.status_code == 409
+    assert await test_session.scalar(select(func.count(Workflow.id))) == workflow_count
+
+
+async def test_version_restore_refuses_default_omitted_legacy_classifier(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+) -> None:
+    project_id = await _create_project(auth_client)
+    workflow = await _create_workflow(auth_client, project_id, "Legacy classifier")
+    assert (
+        await auth_client.put(
+            f"/api/v1/workflows/{workflow['id']}",
+            json={"name": "Legacy classifier", "create_version": True},
+        )
+    ).status_code == 200
+
+    version = (
+        await test_session.execute(select(WorkflowVersion).where(WorkflowVersion.workflow_id == workflow["id"]))
+    ).scalar_one()
+    snapshot = dict(version.snapshot)
+    snapshot.pop("classifier_validation_semantics")
+    snapshot["nodes"] = [dict(node) for node in snapshot["nodes"]]
+    snapshot["nodes"][0]["node_type"] = "classification.knn"
+    snapshot["nodes"][0]["parameters"] = {"n_neighbors": 3}
+    version.snapshot = snapshot
+    await test_session.commit()
+
+    response = await auth_client.post(f"/api/v1/workflows/{workflow['id']}/versions/{version.id}/restore")
+    assert response.status_code == 409
+    assert "no current classifier-validation authority" in response.json()["detail"]

@@ -12,14 +12,20 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
 import uuid
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.lib.data_roles import is_spectrum_only_node, require_data_role
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP, NDDataset
+from spectra_sherpa.core.execution_runtime import ExecutionRuntime
 
-from .executor_pool import _run_node_in_worker, get_default_pool, set_default_pool  # noqa: F401
+from .executor_pool import (
+    IsolatedWorkerPool,
+    WorkerExecutionContext,
+    _run_node_in_worker,
+    get_default_pool,
+)  # noqa: F401
+from .executor_pool import set_default_pool as set_default_pool
 from .executor_types import (  # noqa: F401 — re-exported for backward compat
     ValidationIssue,
     ValidationResult,
@@ -28,15 +34,14 @@ from .executor_types import (  # noqa: F401 — re-exported for backward compat
     WorkflowStatus,
 )
 from .executor_validation import (  # noqa: F401 — tests import/monkeypatch these
-    HAS_NDDATASET,
     _category_from_type_ref,
     _is_dataset,
     _validate_port_type,
-    _validate_spectral_units,
 )
 from .graph_utils import Edge as _Edge
 from .graph_utils import build_dependency_map, topological_sort
-from .node_base import Node, NodeResult, NodeStatus, node_registry
+from .node_base import Node, NodeResult, NodeStatus, node_registry, resolved_runtime_worker_capabilities
+from .transport import reject_spectrochempy_transport
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +54,16 @@ class DAGExecutor:
     Supports caching to avoid re-executing unchanged nodes.
     """
 
-    def __init__(self, process_pool=None, model_store: Any = None):
+    def __init__(self, process_pool=None, runtime: ExecutionRuntime | None = None):
         """Initialize executor.
 
         Args:
             process_pool: Optional ProcessPoolExecutor for offloading CPU-bound
                 nodes. When provided, nodes (except data-source nodes) run in
                 worker processes, keeping the event loop responsive.
-            model_store: Optional ModelStore for persisting model artifacts.
-                When provided, nodes that emit ``_model_artifact`` in their
-                result dict will have arrays saved to disk automatically.
-                Falls back to the global ``get_model_store()`` singleton if
-                not provided.
+            runtime: Immutable timeout and artifact capabilities constructed
+                by the SDK, workbench, or managed caller. An omitted runtime
+                has no storage authority and uses the public local timeout.
         """
         self.nodes: Dict[str, Node] = {}
         self.edges: List[WorkflowEdge] = []
@@ -68,13 +71,16 @@ class DAGExecutor:
         self.diagnostics: Dict[str, Dict[str, Any]] = {}
         self.status: WorkflowStatus = WorkflowStatus.IDLE
         self._process_pool = process_pool if process_pool is not None else get_default_pool()
-        self.model_store = model_store
+        self.runtime = runtime if runtime is not None else ExecutionRuntime()
         # Artifacts saved during this execution (for DB record creation by callers)
         self.saved_artifacts: List[Dict[str, Any]] = []
         # Caching: store hash of params when node was last executed
         self._param_hashes: Dict[str, str] = {}
         # Track which nodes are "dirty" (need re-execution)
         self._dirty_nodes: Set[str] = set()
+        # A sheet opened from a campaign candidate keeps the campaign's folds:
+        # its terminal evaluator is scored out of fold, never on fitted rows.
+        self.fold_validation_plan: Any = None
 
     def __getstate__(self) -> Dict[str, Any]:
         """Exclude unpicklable ProcessPoolExecutor from serialization.
@@ -97,23 +103,12 @@ class DAGExecutor:
         # Restore reference to global process pool
         self._process_pool = get_default_pool()
 
-    def _resolve_model_store(self) -> Any:
-        """Return the active ModelStore: explicit > global singleton > None."""
-        if self.model_store is not None:
-            return self.model_store
-        try:
-            from spectra_sherpa.app.services.model_store import get_model_store
-
-            return get_model_store()
-        except RuntimeError:
-            return None
-
     def _process_model_artifact(self, node_id: str) -> None:
         """Save model artifact to disk if the node produced one.
 
         Training nodes include ``_model_artifact`` in their result dict.
-        This method generates a UUID, persists the artifact to disk via
-        the ModelStore (explicit or global singleton), replaces the payload
+        This method generates a UUID, persists the artifact through the
+        explicitly supplied write capability, replaces the payload
         with a ``model_id`` reference, and records the artifact metadata
         in ``self.saved_artifacts`` for DB row creation by the caller.
         """
@@ -122,57 +117,55 @@ class DAGExecutor:
             return
 
         artifact_uid = str(uuid.uuid4())
-        store = self._resolve_model_store()
-        if store is not None:
-            try:
-                artifact = result["_model_artifact"]
-                metadata = artifact.get("metadata", {})
-                arrays = artifact.get("arrays", {})
-                metadata.setdefault("node_id", artifact.get("node_id", node_id))
-                integrity_hash = store.save(artifact_uid, metadata, arrays)
+        store = self.runtime.require_model_artifact_writer()
+        try:
+            artifact = result["_model_artifact"]
+            metadata = artifact.get("metadata", {})
+            arrays = artifact.get("arrays", {})
+            metadata.setdefault("node_id", artifact.get("node_id", node_id))
+            integrity_hash = store.save(artifact_uid, metadata, arrays)
 
-                # Only pop after successful save — avoid losing data on failure
-                result.pop("_model_artifact")
-                result["model_id"] = artifact_uid
+            # Only pop after successful save — avoid losing data on failure
+            result.pop("_model_artifact")
+            result["model_id"] = artifact_uid
 
-                # Record for DB creation by the caller
-                self.saved_artifacts.append(
-                    {
-                        "artifact_uid": artifact_uid,
-                        "node_id": metadata.get("node_id", node_id),
-                        "model_type": metadata.get("model_type", "unknown"),
-                        "n_features": metadata.get("n_features", 0),
-                        "n_components": metadata.get("n_components"),
-                        "classes_json": json.dumps(metadata["classes"]) if "classes" in metadata else None,
-                        "feature_axis_json": (
-                            json.dumps(metadata["feature_axis"]) if "feature_axis" in metadata else None
-                        ),
-                        "metrics_json": json.dumps(metadata["metrics"]) if "metrics" in metadata else None,
-                        "preprocessing_summary": (
-                            json.dumps(metadata["preprocessing_chain"]) if "preprocessing_chain" in metadata else None
-                        ),  # noqa: E501
-                        "training_data_hash": metadata.get("training_data_hash"),
-                        "integrity_hash": integrity_hash,
-                        "artifact_dir": str(store._artifact_dir(artifact_uid)),
-                    }
-                )
-
-                logger.info(
-                    "Saved model artifact %s (type=%s) from node %s",
-                    artifact_uid,
-                    metadata.get("model_type", "unknown"),
-                    node_id,
-                )
-            except Exception:
-                logger.exception("Failed to save model artifact for node %s", node_id)
-                raise  # Fail-fast: don't let a run appear successful while artifact is lost
-        else:
-            # Fail closed: a training run that emits an artifact must not
-            # appear successful if persistence is unavailable.
-            raise RuntimeError(
-                f"ModelStore not initialized — cannot persist artifact from node {node_id}. "
-                "Ensure init_model_store() is called at startup."
+            # Record for DB creation by the caller
+            self.saved_artifacts.append(
+                {
+                    "artifact_uid": artifact_uid,
+                    "node_id": metadata.get("node_id", node_id),
+                    "model_type": metadata.get("model_type", "unknown"),
+                    "n_features": metadata.get("n_features", 0),
+                    "n_components": metadata.get("n_components"),
+                    "classes_json": json.dumps(metadata["classes"]) if "classes" in metadata else None,
+                    "feature_axis_json": (json.dumps(metadata["feature_axis"]) if "feature_axis" in metadata else None),
+                    "metrics_json": json.dumps(metadata["metrics"]) if "metrics" in metadata else None,
+                    "preprocessing_summary": (
+                        json.dumps(metadata["preprocessing_chain"]) if "preprocessing_chain" in metadata else None
+                    ),  # noqa: E501
+                    "training_data_hash": metadata.get("training_data_hash"),
+                    "training_scientific_digest": metadata.get("training_scientific_digest"),
+                    "artifact_origin": metadata.get("artifact_origin"),
+                    "canonical_lineage_digest": (metadata.get("canonical_training_lineage") or {}).get(
+                        "lineage_digest"
+                    ),
+                    "validation_evidence_digest": (metadata.get("canonical_training_lineage") or {}).get(
+                        "validation_execution_digest"
+                    ),
+                    "integrity_hash": integrity_hash,
+                    "artifact_dir": store.artifact_directory(artifact_uid),
+                }
             )
+
+            logger.info(
+                "Saved model artifact %s (type=%s) from node %s",
+                artifact_uid,
+                metadata.get("model_type", "unknown"),
+                node_id,
+            )
+        except Exception:
+            logger.exception("Failed to save model artifact for node %s", node_id)
+            raise  # Fail-fast: don't let a run appear successful while artifact is lost
 
     def _compute_param_hash(self, node_id: str) -> str:
         """
@@ -189,7 +182,13 @@ class DAGExecutor:
             return ""
         try:
             # Sort keys for deterministic output
-            param_str = json.dumps(node.parameters, sort_keys=True, default=str)
+            definition = {
+                "parameters": node.parameters,
+                "inputs": sorted(
+                    (edge.from_node, edge.from_output, edge.to_input) for edge in self.edges if edge.to_node == node_id
+                ),
+            }
+            param_str = json.dumps(definition, sort_keys=True, default=str)
             return hashlib.md5(param_str.encode(), usedforsecurity=False).hexdigest()
         except Exception:
             # If params can't be serialized, always consider dirty
@@ -292,28 +291,80 @@ class DAGExecutor:
 
         Args:
             node_id: Node ID to inject result for
-            result: Pre-computed result (typically an NDDataset)
+            result: Pre-computed canonical result
         """
+        node = self.nodes.get(node_id)
+        if node is None:
+            raise KeyError(f"Cannot inject a result for unknown node {node_id!r}")
+        if node.metadata is not None and node.metadata.node_type == "deploy.input":
+            raise ValueError(
+                "deploy.input payloads must use inject_deployment_input() so the named external dataset is admitted"
+            )
+        reject_spectrochempy_transport(result, boundary=f"executor injection for node {node_id!r}")
         self.results[node_id] = result
+        self._param_hashes[node_id] = "__injected__"
+
+    def inject_deployment_input(self, node_id: str, payload: Any, *, stream_name: str) -> None:
+        """Admit and inject one named external dataset into ``deploy.input``.
+
+        HTTP authentication belongs to the caller-facing route. This method is
+        the scientific data boundary: it binds the requested stream to the
+        node's declared stream and applies the same matrix contract used by
+        exported Python.
+        """
+
+        node = self.nodes.get(node_id)
+        if node is None:
+            raise KeyError(f"Unknown deployment input node {node_id!r}")
+        if node.metadata is None or node.metadata.node_type != "deploy.input":
+            raise ValueError(f"Node {node_id!r} is not a deploy.input node")
+        declared_stream = node.parameters.get("stream_name", "sample")
+        if stream_name != declared_stream:
+            raise ValueError(f"Deployment input {node_id!r} declares stream {declared_stream!r}, not {stream_name!r}")
+
+        from spectra_sherpa.sdk.deployment import (
+            DEPLOYMENT_INPUT_SCHEMA,
+            admit_deployment_input,
+            deployment_target_output,
+        )
+
+        dataset = admit_deployment_input(
+            payload,
+            stream_name=stream_name,
+            schema_version=node.parameters.get("schema_version", DEPLOYMENT_INPUT_SCHEMA),
+        )
+        admitted: dict[str, Any] = {"default": dataset}
+        target_required = any(edge.from_node == node_id and edge.from_output == "target" for edge in self.edges)
+        target = deployment_target_output(dataset, required=target_required)
+        if target is not None:
+            admitted["target"] = target
+        self.results[node_id] = admitted
+        # Reuse the executor's sole precomputed-result cache marker. The
+        # deployment-specific admission has already happened above; cache
+        # identity only needs to prevent ordinary source execution.
         self._param_hashes[node_id] = "__injected__"
 
     def find_entry_nodes(self) -> List[str]:
         """
-        Find entry nodes (no incoming edges or data.* type).
+        Find graph roots, never downstream data-processing nodes.
 
         Returns:
             List of node IDs that are entry points
         """
         incoming = {e.to_node for e in self.edges}
-        return [
-            nid
-            for nid in self.nodes
-            if nid not in incoming
-            or (
-                self.nodes[nid].metadata is not None
-                and self.nodes[nid].metadata.node_type.startswith("data.")  # type: ignore[union-attr]
-            )
+        return [nid for nid in self.nodes if nid not in incoming]
+
+    def find_prediction_entry_nodes(self) -> List[str]:
+        """Resolve the single dataset boundary without replacing reference branches."""
+        roots = self.find_entry_nodes()
+        types = {nid: node.metadata.node_type for nid in roots if (node := self.nodes[nid]).metadata is not None}
+        explicit = [nid for nid, node_type in types.items() if node_type == "deploy.input"]
+        candidates = explicit or [
+            nid for nid, node_type in types.items() if node_type in {"data.file_load", "data.collection_load"}
         ]
+        if len(candidates) != 1:
+            raise ValueError("Prediction requires exactly one input; add a single deploy.input node")
+        return candidates
 
     def find_exit_nodes(self) -> List[str]:
         """
@@ -334,7 +385,7 @@ class DAGExecutor:
         """
         return self.validate_full().to_error_strings()
 
-    def validate_full(self) -> ValidationResult:
+    def validate_full(self, *, include_port_type_validation: bool = True) -> ValidationResult:
         """
         Full workflow validation with structured results.
 
@@ -361,13 +412,102 @@ class DAGExecutor:
         # 4. Required parameters and value constraints
         issues.extend(self._validate_parameters())
 
-        # 5. Port type compatibility between connected nodes
-        issues.extend(self._validate_port_types())
+        # 5. Port type compatibility between connected nodes.  API/workbench
+        # admission uses workflow_preflight as its one semantic authority and
+        # opts out here; direct SDK use retains the historical check until the
+        # canonical runtime path is fully adopted.
+        if include_port_type_validation:
+            issues.extend(self._validate_port_types())
 
         # 6. Static data-role compatibility where a source role can be inferred
         issues.extend(self._validate_static_data_roles())
 
+        # 7. The ordinary canvas executes every ancestor once on the complete
+        # matrix. A holdout split or nested-CV node may consume only raw sources and
+        # operations whose canonical contracts prove they are stateless
+        # transforms.  The rule is deliberately based on lifecycle contracts
+        # rather than catalog categories: fitted variable selectors leak just
+        # as surely as fitted preprocessing.  Target access alone is not a
+        # proxy for fitting—a stateless target-attachment operation is safe.
+        issues.extend(self._validate_nested_cv_ancestor_fold_safety())
+        from .population_authority import analyze_populations
+
+        population_issues, _ = analyze_populations(self.nodes, self.edges)
+        issues.extend(population_issues)
+
         return ValidationResult(issues)
+
+    def _validate_nested_cv_ancestor_fold_safety(self) -> List[ValidationIssue]:
+        """Reject full-matrix fitting before holdout or nested-CV boundaries."""
+
+        issues: List[ValidationIssue] = []
+        incoming: dict[str, list[str]] = {node_id: [] for node_id in self.nodes}
+        for edge in self.edges:
+            incoming.setdefault(edge.to_node, []).append(edge.from_node)
+
+        for nested_id, nested_node in self.nodes.items():
+            if nested_node.metadata is None or nested_node.metadata.node_type not in {
+                "selection.nested_cv",
+                "data.train_test_split",
+            }:
+                continue
+            is_holdout = nested_node.metadata.node_type == "data.train_test_split"
+            boundary = "Train/test split" if is_holdout else "Nested CV"
+            evaluation = "the holdout split" if is_holdout else "cross-validation"
+            remedy = (
+                "Split raw data first, fit on the training branch, and apply that frozen state to the test branch."
+                if is_holdout
+                else "Run fitted operations through the canonical fold lifecycle."
+            )
+            ancestors: set[str] = set()
+            stack = list(incoming.get(nested_id, ()))
+            while stack:
+                ancestor_id = stack.pop()
+                if ancestor_id in ancestors:
+                    continue
+                ancestors.add(ancestor_id)
+                stack.extend(incoming.get(ancestor_id, ()))
+
+            for ancestor_id in sorted(ancestors):
+                ancestor = self.nodes[ancestor_id]
+                metadata = ancestor.metadata
+                if metadata is None:
+                    issues.append(
+                        ValidationIssue(
+                            "error",
+                            nested_id,
+                            "X",
+                            f"{boundary} cannot consume upstream operation '{ancestor_id}' because its "
+                            "metadata is unavailable. The canvas would execute that operation on all "
+                            f"rows before {evaluation}.",
+                        )
+                    )
+                    continue
+                contract = metadata.resolved_execution_contract()
+
+                if contract is None:
+                    reason = "has no canonical execution contract"
+                else:
+                    payload = contract.payload
+                    lifecycle = payload.get("lifecycle_kind")
+                    unsafe: list[str] = []
+                    if lifecycle not in {"data_source", "stateless_transform"}:
+                        unsafe.append(f"lifecycle_kind={lifecycle}")
+                    if not unsafe:
+                        continue
+                    reason = "declares " + ", ".join(unsafe)
+                issues.append(
+                    ValidationIssue(
+                        "error",
+                        nested_id,
+                        "X",
+                        f"{boundary} cannot consume upstream operation '{ancestor_id}' "
+                        f"({metadata.label}) because it {reason}. The canvas would execute that "
+                        f"operation on all rows before {evaluation}. Use only a raw data source "
+                        f"or a contract-declared stateless transform here. {remedy}",
+                    )
+                )
+        return issues
 
     def _validate_port_connections(self) -> List[ValidationIssue]:
         """Check that multi-input nodes have all required inputs connected."""
@@ -376,10 +516,11 @@ class DAGExecutor:
             if node.uses_named_ports() and node.metadata is not None and node.metadata.input_ports:
                 incoming_edges = [e for e in self.edges if e.to_node == node_id]
                 connected_ports: Set[str] = set()
+                declared_ports = {port.name for port in node.metadata.input_ports}
 
                 for edge in incoming_edges:
                     port_name = edge.to_input
-                    if port_name == "default":
+                    if port_name == "default" and "default" not in declared_ports:
                         port_idx = len(connected_ports)
                         if port_idx < len(node.metadata.input_ports):
                             port_name = node.metadata.input_ports[port_idx].name
@@ -459,8 +600,7 @@ class DAGExecutor:
                             "error",
                             node_id,
                             None,
-                            f"Node '{node_id}' ({node.metadata.label}): "
-                            f"Missing required parameter '{param_def.label}'",
+                            f"Node '{node_id}' ({node.metadata.label}): Missing required parameter '{param_def.label}'",
                         )
                     )
                     continue
@@ -549,6 +689,15 @@ class DAGExecutor:
             # Both ports have type_refs: check compatibility
             if source_type_ref and target_type_ref:
                 is_ok, reason = type_registry.is_compatible(source_type_ref, target_type_ref)
+                if is_ok:
+                    from .model_edge_contracts import model_edge_error
+
+                    reason = model_edge_error(
+                        source_node.metadata, edge.from_output, target_node.metadata, edge.to_input
+                    )
+                    if reason is not None:
+                        issues.append(ValidationIssue("error", edge.to_node, edge.to_input, reason))
+                        continue
                 if not is_ok:
                     src_label = source_node.metadata.label if source_node.metadata else edge.from_node
                     tgt_label = target_node.metadata.label if target_node.metadata else edge.to_node
@@ -635,14 +784,9 @@ class DAGExecutor:
             return explicit_role
 
         node_type = node.metadata.node_type if node.metadata is not None else ""
-        if node_type == "data.source":
-            source = node.parameters.get("source")
-            if source == "sklearn":
-                return "X_features"
-            if source in {"spectrochempy", "eigenvector", "library", "nist", "hitran"}:
-                return "X_spectra"
-
-        if node_type in {"data.synthetic_curve", "data.nist_library"}:
+        if node_type == "data.filter_samples" and node.parameters.get("field") == "source_inclusion":
+            return "X_spectra"
+        if node_type == "data.nist_library":
             return "X_spectra"
 
         return None
@@ -716,19 +860,64 @@ class DAGExecutor:
             return False
         return True
 
+    def _worker_context(self, node: Node) -> WorkerExecutionContext:
+        """Create trusted worker authority; never derive it from workflow data."""
+        capabilities = resolved_runtime_worker_capabilities(node)
+        return WorkerExecutionContext(
+            execution_id=str(uuid.uuid4()),
+            runtime=self.runtime.for_worker(capabilities),
+            capabilities=capabilities,
+            origin_pid=os.getpid(),
+        )
+
     @staticmethod
     def _sanitize_for_pool(value: Any) -> Any:
-        """Guard: reject any stray NDDataset at the pool boundary.
+        """Reject any optional-runtime object recursively at the pool boundary."""
 
-        All nodes must emit SherpaDataset.  Use ``scp_roundtrip()`` or
-        ``from_nddataset()`` inside the node's ``execute()`` method.
-        """
-        if HAS_SCP and isinstance(value, NDDataset):
-            raise TypeError(
-                "NDDataset reached pool boundary — node must emit SherpaDataset. "
-                "Use scp_roundtrip() or from_nddataset() in the node's execute() method."
-            )
+        reject_spectrochempy_transport(value, boundary="process-pool submission")
         return value
+
+    async def _run_fold_validated_evaluator(self, node: Node, timeout: float) -> NodeResult | None:
+        """Score a sheet's terminal evaluator with its recorded campaign folds.
+
+        Returns ``None`` when the node is not a fold-validated evaluator (for
+        example, the scientist wired explicit reference values).
+        """
+        from .sheet_fold_validation import (
+            fold_validation_chain,
+            prepare_sheet_fold_validation,
+            run_sheet_fold_validation,
+            run_sheet_fold_validation_async,
+            sheet_fold_validation_result,
+        )
+
+        node_types = {nid: item.metadata.node_type for nid, item in self.nodes.items() if item.metadata}
+        chain = fold_validation_chain(node_types, self.edges, node.node_id, holdout=self.fold_validation_plan.holdout)
+        if chain is None:
+            return None
+        boundary_id, chain_ids = chain
+        boundary = self.results.get(boundary_id)
+        boundary_port = "X_train" if node_types[boundary_id] == "data.train_test_split" else "default"
+        dataset = boundary.get(boundary_port) if isinstance(boundary, dict) else boundary
+        members = set(chain_ids)
+        chain_nodes = [WorkflowNode(nid, node_types[nid], dict(self.nodes[nid].parameters)) for nid in chain_ids]
+        chain_edges = [edge for edge in self.edges if edge.from_node in members and edge.to_node in members]
+        plan = self.fold_validation_plan
+        graph_wire, capability_wire, split = prepare_sheet_fold_validation(plan, chain_nodes, chain_edges, dataset)
+        if isinstance(self._process_pool, IsolatedWorkerPool):
+            execution = await self._process_pool.run(
+                run_sheet_fold_validation, graph_wire, capability_wire, split, timeout=timeout
+            )
+        elif self._process_pool is not None:
+            future = asyncio.get_running_loop().run_in_executor(
+                self._process_pool, run_sheet_fold_validation, graph_wire, capability_wire, split
+            )
+            execution = await asyncio.wait_for(future, timeout=timeout)
+        else:
+            execution = await asyncio.wait_for(
+                run_sheet_fold_validation_async(graph_wire, capability_wire, split), timeout=timeout
+            )
+        return sheet_fold_validation_result(plan, execution, split=split)
 
     async def _run_one_node(
         self,
@@ -737,66 +926,79 @@ class DAGExecutor:
         named_inputs: Dict[str, Any],
         timeout: float,
     ) -> NodeResult:
-        """Execute a single node, offloading to the process pool when possible.
+        """Execute a node; worker failures never retry in the API process."""
+        from .execution_scope import upstream_node_ids
+        from .population_authority import analyze_populations, qualify_evaluation_result
 
-        Falls back to in-process execution if the pool submission fails
-        (e.g. unpicklable input or broken worker).
-        """
+        selected = upstream_node_ids(self.nodes, self.edges, node.node_id)
+        population_issues, receipts = analyze_populations(
+            {key: value for key, value in self.nodes.items() if key in selected},
+            [edge for edge in self.edges if edge.to_node in selected],
+        )
+        if population_issues:
+            raise ValueError("\n".join(issue.message for issue in population_issues))
+        receipt = receipts.get(node.node_id)
+        if self.fold_validation_plan is not None:
+            holdout = self.fold_validation_plan.holdout
+            if holdout is not None and node.node_id == holdout["split_node_id"]:
+                from .retained_holdout import materialize_retained_holdout
+
+                if node.metadata.node_type != "data.train_test_split":
+                    raise ValueError("Retained holdout is bound to a train/test split node")
+                source = named_inputs.get("X") if named_inputs else positional_inputs[0]
+                retained_source = self.results.get(holdout["source_node_id"])
+                if isinstance(retained_source, dict):
+                    retained_source = retained_source.get("default")
+                outputs = materialize_retained_holdout(
+                    source, holdout, parameters=node.parameters, raw_source=retained_source
+                )
+                return NodeResult(
+                    outputs=outputs,
+                    diagnostics={
+                        "membership": "retained_from_source_run",
+                        "source_run_id": holdout["source_run_id"],
+                        "training_rows": len(holdout["train_indices"]),
+                        "held_out_rows": len(holdout["test_indices"]),
+                    },
+                )
+            fold_result = await self._run_fold_validated_evaluator(node, timeout)
+            if fold_result is not None:
+                return fold_result
+        capabilities = frozenset(resolved_runtime_worker_capabilities(node))
+        if "read_model_artifact" in capabilities:
+            self.runtime.require_model_artifact_reader()
+            self.runtime.require_model_artifact_replay()
+        if "read_canonical_fitted_artifact" in capabilities:
+            self.runtime.require_canonical_artifact_reader()
         if self._should_offload(node):
-            loop = asyncio.get_running_loop()
-            try:
-                # Sanitise inputs: convert NDDataset → SherpaDataset so
-                # only numpy arrays cross the process boundary.
-                safe_pos = tuple(self._sanitize_for_pool(v) for v in positional_inputs) if not named_inputs else ()
-                safe_named = {k: self._sanitize_for_pool(v) for k, v in named_inputs.items()} if named_inputs else {}
+            safe_pos = tuple(self._sanitize_for_pool(v) for v in positional_inputs) if not named_inputs else ()
+            safe_named = {k: self._sanitize_for_pool(v) for k, v in named_inputs.items()} if named_inputs else {}
+            assert node.metadata is not None
+            args = (
+                node.metadata.node_type,
+                node.node_id,
+                dict(node.parameters),
+                safe_pos,
+                safe_named,
+                self._worker_context(node),
+            )
+            if isinstance(self._process_pool, IsolatedWorkerPool):
+                result = await self._process_pool.run(_run_node_in_worker, *args, timeout=timeout)
+            else:
+                # Compatibility for SDK callers supplying their own executor.
+                # They own its cancellation policy; never retry locally.
+                future = asyncio.get_running_loop().run_in_executor(self._process_pool, _run_node_in_worker, *args)
+                result = await asyncio.wait_for(future, timeout=timeout)
+            return qualify_evaluation_result(result, receipt)
 
-                assert node.metadata is not None
-                future = loop.run_in_executor(
-                    self._process_pool,
-                    _run_node_in_worker,
-                    node.metadata.node_type,
-                    node.node_id,
-                    dict(node.parameters),
-                    safe_pos,
-                    safe_named,
-                )
-                return await asyncio.wait_for(future, timeout=timeout)
-            except Exception as exc:
-                # If the failure looks like a pickle/serialization issue,
-                # a broken worker, or a shut-down pool, fall back to
-                # in-process execution.
-                from concurrent.futures.process import BrokenProcessPool
-
-                exc_str = str(exc)
-                is_pool_error = isinstance(exc, BrokenProcessPool) or any(
-                    kw in exc_str
-                    for kw in (
-                        "pickle",
-                        "Pickling",
-                        "serialize",
-                        "can't pickle",
-                        "after shutdown",
-                    )
-                )
-                if is_pool_error:
-                    logger.warning(
-                        "Pool offload failed for %s (%s), running in-process: %s",
-                        node.node_id,
-                        node.metadata.label if node.metadata else "?",
-                        exc_str,
-                    )
-                else:
-                    raise
-
-        # In-process path (data nodes, pool unavailable, or fallback).
-        # NOTE: We do NOT sanitize (NDDataset→SherpaDataset) here because
-        # some nodes pass inputs directly to SpectroChemPy functions that
-        # require NDDataset.  JSON-safety is ensured at the API boundary
-        # by serialize_result() and _json_safe() in to_dict().
+        # In-process nodes use the same Node.run transport guard as workers.
+        node.bind_execution_runtime(self.runtime)
         if named_inputs:
-            return await asyncio.wait_for(node.run(**named_inputs), timeout=timeout)
+            return qualify_evaluation_result(await asyncio.wait_for(node.run(**named_inputs), timeout=timeout), receipt)
         else:
-            return await asyncio.wait_for(node.run(*positional_inputs), timeout=timeout)
+            return qualify_evaluation_result(
+                await asyncio.wait_for(node.run(*positional_inputs), timeout=timeout), receipt
+            )
 
     def _validate_runtime_data_roles(
         self,
@@ -949,30 +1151,14 @@ class DAGExecutor:
                 _edge_counts[_pn] = _edge_counts.get(_pn, 0) + 1
             for _pn, _count in _edge_counts.items():
                 if _count > 1 and _pn not in variadic_ports:
-                    raise ValueError(
-                        f"Port '{_pn}' on node '{node_id}' received " f"{_count} edges but is not variadic"
-                    )
-
-            # Validate and normalize spectral units only for true spectral dataset ports.
-            # Do NOT include target/config/model ports even if they are NDDataset objects
-            # (e.g., class-label dataset on y port), or numeric conversion may fail.
-            if validate_types and len(named_inputs) > 1:
-                spectral_keys = [key for key in named_inputs.keys() if port_types.get(key) == "dataset"]
-                if len(spectral_keys) > 1:
-                    spectral_values = [named_inputs[key] for key in spectral_keys]
-                    normalized = _validate_spectral_units(
-                        spectral_values,
-                        node.metadata.label if node.metadata else node_id,
-                    )
-                    for i, key in enumerate(spectral_keys):
-                        named_inputs[key] = normalized[i]
+                    raise ValueError(f"Port '{_pn}' on node '{node_id}' received {_count} edges but is not variadic")
 
             return [], named_inputs
         else:
             # Legacy: return positional inputs sorted by port name
             incoming_edges.sort(key=lambda e: e.to_input)
             positional_inputs = []
-            for idx, edge in enumerate(incoming_edges):
+            for edge in incoming_edges:
                 if edge.from_node not in self.results:
                     raise ValueError(f"Node {edge.from_node} has not been executed yet (required by {node_id})")
 
@@ -998,42 +1184,7 @@ class DAGExecutor:
                     # Single-output node
                     data = result
 
-                # Validate port type for legacy single-input nodes (assume first input_type)
-                if validate_types and node.metadata and node.metadata.input_types:
-                    if idx < len(node.metadata.input_types):
-                        expected = node.metadata.input_types[idx]
-                        if expected == "NDDataset":
-                            _validate_port_type(
-                                data=data,
-                                expected_type="dataset",
-                                port_name=f"input_{idx}",
-                                source_node_id=edge.from_node,
-                                target_node_id=node_id,
-                                strict=False,
-                            )
-
                 positional_inputs.append(data)
-
-            # Validate and normalize spectral units only when we have 2+ spectral inputs.
-            # Legacy nodes use input_types ordering; restrict to NDDataset-typed inputs.
-            if validate_types and len(positional_inputs) > 1:
-                spectral_indices: List[int] = []
-                if node.metadata and node.metadata.input_types:
-                    for i, expected in enumerate(node.metadata.input_types):
-                        if i >= len(positional_inputs):
-                            break
-                        if expected == "NDDataset":
-                            spectral_indices.append(i)
-                else:
-                    spectral_indices = list(range(len(positional_inputs)))
-
-                if len(spectral_indices) > 1:
-                    spectral_values = [positional_inputs[i] for i in spectral_indices]
-                    normalized = _validate_spectral_units(
-                        spectral_values, node.metadata.label if node.metadata else node_id
-                    )
-                    for idx, i in enumerate(spectral_indices):
-                        positional_inputs[i] = normalized[idx]
 
             return positional_inputs, {}
 
@@ -1110,7 +1261,7 @@ class DAGExecutor:
                 self._validate_runtime_data_roles(node, positional_inputs, named_inputs)
 
                 # Execute node (offloaded to process pool when available)
-                node_timeout = settings.max_job_duration_sec
+                node_timeout = self.runtime.node_timeout_seconds
                 label = node.metadata.label if node.metadata else node_id
                 logger.debug("Executing node: %s (%s)", node_id, label)
                 node.status = NodeStatus.RUNNING
@@ -1119,8 +1270,7 @@ class DAGExecutor:
                     result = await self._run_one_node(node, positional_inputs, named_inputs, node_timeout)
                 except asyncio.TimeoutError:
                     err_msg = (
-                        f"Node '{label}' exceeded {node_timeout}s timeout. "
-                        f"Reduce dataset size or simplify parameters."
+                        f"Node '{label}' exceeded {node_timeout}s timeout. Reduce dataset size or simplify parameters."
                     )
                     node.status = NodeStatus.ERROR
                     node.error_message = err_msg
@@ -1166,12 +1316,6 @@ class DAGExecutor:
             raise ValueError(str(e)) from e
         except Exception as e:
             self.status = WorkflowStatus.ERROR
-            if not HAS_SCP and "NoneType" in str(e):
-                raise ValueError(
-                    f"Workflow execution failed: {e}. "
-                    f"SpectroChemPy is not installed — install with: "
-                    f"pip install spectra-sherpa[scp]"
-                ) from e
             raise ValueError(f"Workflow execution failed: {str(e)}") from e
 
     async def execute_node(
@@ -1213,6 +1357,17 @@ class DAGExecutor:
             except Exception:
                 pass  # never let broadcast failure affect execution
 
+        from .execution_scope import upstream_node_ids
+        from .population_authority import analyze_populations
+
+        selected = upstream_node_ids(self.nodes, self.edges, node_id)
+        population_issues, _ = analyze_populations(
+            {key: node for key, node in self.nodes.items() if key in selected},
+            [edge for edge in self.edges if edge.to_node in selected],
+        )
+        if population_issues:
+            raise ValueError("\n".join(issue.message for issue in population_issues))
+
         # Inject initial_data as parameters into DATA nodes
         if initial_data:
             for data_node_id, config in initial_data.items():
@@ -1247,7 +1402,7 @@ class DAGExecutor:
 
             # Execute the node (offloaded to process pool when available)
             positional_inputs, named_inputs = self._get_node_inputs(dep_node_id)
-            node_timeout = settings.max_job_duration_sec
+            node_timeout = self.runtime.node_timeout_seconds
             logger.debug("Executing node: %s (%s)", dep_node_id, node.metadata.label if node.metadata else dep_node_id)
             node.status = NodeStatus.RUNNING
             await _emit(dep_node_id, "running")
@@ -1256,7 +1411,7 @@ class DAGExecutor:
             except asyncio.TimeoutError:
                 label = node.metadata.label if node.metadata else dep_node_id
                 err_msg = (
-                    f"Node '{label}' exceeded {node_timeout}s timeout. " f"Reduce dataset size or simplify parameters."
+                    f"Node '{label}' exceeded {node_timeout}s timeout. Reduce dataset size or simplify parameters."
                 )
                 node.status = NodeStatus.ERROR
                 node.error_message = err_msg

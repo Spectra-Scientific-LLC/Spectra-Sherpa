@@ -5,7 +5,8 @@ import warnings
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import event, pool
+from alembic.script import ScriptDirectory
+from sqlalchemy import event, inspect, pool
 from sqlalchemy.exc import SAWarning
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
@@ -13,6 +14,7 @@ import spectra_sherpa.app.models  # noqa: F401
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.db.base import Base
 from spectra_sherpa.app.db.session import apply_sqlite_pragmas
+from spectra_sherpa.app.db.sqlite_migration import migration_transaction
 
 config = context.config
 
@@ -44,10 +46,30 @@ def run_migrations_offline() -> None:
 
 
 def do_run_migrations(connection) -> None:
-    context.configure(connection=connection, target_metadata=target_metadata)
+    from spectra_sherpa.app.db.profile_upgrade import ProfileUpgradeError, prepare_profile_upgrade
 
-    with context.begin_transaction():
-        context.run_migrations()
+    snapshot = None
+    try:
+        with migration_transaction(connection):
+            if connection.dialect.name == "sqlite":
+                if config.attributes.get("local_profile_recovery"):
+                    snapshot = prepare_profile_upgrade(connection, ScriptDirectory.from_config(config))
+                if (
+                    config.attributes.get("bootstrap_schema")
+                    and "alembic_version" not in inspect(connection).get_table_names()
+                ):
+                    Base.metadata.create_all(connection)
+            context.configure(connection=connection, target_metadata=target_metadata)
+            with context.begin_transaction():
+                context.run_migrations()
+    except Exception as exc:
+        if snapshot is not None:
+            raise ProfileUpgradeError(
+                "migration_failed",
+                f"Upgrade rolled back. Verified recovery snapshot: {snapshot}. "
+                "Keep this profile and snapshot; retry with the corrected app or restore to a separate copy.",
+            ) from exc
+        raise
 
 
 async def run_migrations_online() -> None:

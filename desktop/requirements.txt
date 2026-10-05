@@ -1,0 +1,5 @@
+# Build on the target OS. HAPI clients are runtime payload; PyInstaller is build-only.
+pyinstaller>=6.10,<7
+# Keep these pins aligned with desktop/hitran_bundle.py and poetry.lock.
+hitran-api==1.3.0.0
+hitran-api2==0.2.2

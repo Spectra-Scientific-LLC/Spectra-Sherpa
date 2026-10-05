@@ -5,14 +5,18 @@ description: PLS calibration with Kennard-Stone partitioning for representative 
   coverage. Reports RMSEP and R² on a held-out test set.
 category: selection_design
 is_active: true
+status: ready
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Spectral Data
-    parameters:
+    parameters: {}
+    example_binding:
       source: eigenvector
-      eigenvector_dataset: corn_m5
+      dataset_name: corn_m5
+      selected_target: Moisture
+      target_type: continuous
     position_x: 175
     position_y: 50
   - node_id: preprocess_1
@@ -25,17 +29,17 @@ template_data:
     position_x: 175
     position_y: 250
   - node_id: partition_1
-    node_type: selection.sample_partition
+    node_type: data.train_test_split
     label: Train/Test Split
     parameters:
-      method: kennard_stone
+      split_method: kennard_stone
       test_size: 0.25
-      metric: euclidean
-      n_pcs: 5
+      distance_metric: euclidean
+      n_components: 5
     position_x: 175
     position_y: 450
   - node_id: model_1
-    node_type: model.pls
+    node_type: model.fitted_pls
     label: Train PLS Regression
     parameters:
       n_components: 4
@@ -43,16 +47,15 @@ template_data:
     position_x: 175
     position_y: 700
   - node_id: predict_1
-    node_type: model.pls_predict
+    node_type: model.predict_regression
     label: Predict Test Set
     parameters: {}
     position_x: 500
     position_y: 700
   - node_id: eval_1
-    node_type: diagnostics.holdout_evaluation
+    node_type: diagnostics.regression_evaluator
     label: Test Evaluation
-    parameters:
-      task_type: regression
+    parameters: {}
     position_x: 500
     position_y: 900
   - node_id: table_1
@@ -74,44 +77,107 @@ template_data:
   - from_node_id: preprocess_1
     to_node_id: partition_1
     to_input: X
+  - from_node_id: data_1
+    to_node_id: partition_1
+    from_output: target
+    to_input: y
   - from_node_id: partition_1
     to_node_id: model_1
     from_output: X_train
-    to_input: X
+    to_input: default
+  - from_node_id: partition_1
+    to_node_id: model_1
+    from_output: y_train
+    to_input: y
   - from_node_id: partition_1
     to_node_id: predict_1
     from_output: X_test
-    to_input: X_new
+    to_input: default
   - from_node_id: model_1
     to_node_id: predict_1
-    from_output: model
-    to_input: model
+    from_output: fitted_state
+    to_input: fitted_state
   - from_node_id: predict_1
     to_node_id: eval_1
-    from_output: y_pred
-    to_input: y_pred
+    from_output: default
+    to_input: default
   - from_node_id: partition_1
     to_node_id: eval_1
     from_output: y_test
     to_input: y_true
-  - from_node_id: model_1
-    to_node_id: eval_1
-    from_output: y_pred
-    to_input: y_train_pred
-  - from_node_id: model_1
-    to_node_id: eval_1
-    from_output: y_true
-    to_input: y_train_true
   - from_node_id: eval_1
     to_node_id: table_1
-    from_output: metrics
+    from_output: default
+    to_input: default
   - from_node_id: eval_1
     to_node_id: viz_1
-    from_output: visualization
+    from_output: comparison
+    to_input: default
   canvas_state:
     zoom: 0.85
     pan_x: 0
     pan_y: 0
+  canonical_project:
+    schema_version: spectra-canonical-starter-project/1
+    scientific_objective: quantitative_regression
+    qualification_dataset_ids:
+    - public-corn-m5-moisture-v1
+    managed_candidate:
+      schema_version: spectra-managed-candidate-template/1
+      name: Harness-only Smoothed PLS Candidate Authority
+      description: >-
+        Exact smoothed PLS starting point for fold-local managed validation.
+        Harness supplies training and held-out targets through the governed
+        validation lifecycle; this sheet is the persisted candidate authority,
+        not a second scientific implementation and not a locally runnable
+        train/test sheet. The scientist sheet's Kennard-Stone partition is a
+        local validation design and is deliberately absent here, because the
+        managed lifecycle owns the split plan for every candidate. Only the
+        smoothing and PLS modelling steps carry over, so the managed campaign
+        varies the same pipeline the scientist authored.
+      scientist_source_node_id: data_1
+      source_node_id: candidate_data
+      nodes:
+      - node_id: candidate_data
+        node_type: data.file_load
+        label: Managed Dataset Binding
+        parameters: {}
+        position_x: 175
+        position_y: 225
+      - node_id: candidate_smooth
+        node_type: preprocess.smooth
+        label: Savitzky-Golay Smoothing
+        parameters:
+          method: savitzky_golay
+          size: 15
+          order: 2
+        position_x: 425
+        position_y: 225
+      - node_id: candidate_model
+        node_type: model.fitted_pls
+        label: Ordinary PLS Starting Point
+        parameters:
+          n_components: 4
+          scale: false
+        position_x: 675
+        position_y: 225
+      - node_id: candidate_evaluator
+        node_type: diagnostics.regression_evaluator
+        label: Governed Fold Evaluation
+        parameters: {}
+        position_x: 925
+        position_y: 225
+      edges:
+      - from_node_id: candidate_data
+        to_node_id: candidate_smooth
+      - from_node_id: candidate_smooth
+        to_node_id: candidate_model
+      - from_node_id: candidate_model
+        to_node_id: candidate_evaluator
+      canvas_state:
+        zoom: 1.0
+        pan_x: 0
+        pan_y: 0
   data_roles:
     X_spectra:
       role_type: X_spectra

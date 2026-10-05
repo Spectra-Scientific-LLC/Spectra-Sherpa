@@ -6,6 +6,8 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib.sherpa_dataset import FeatureAxis, SampleAxis, SherpaDataset, TargetContext
+
 # NOTE: sklearn datasets are NOT spectroscopic data.  They are tabular
 # morphological / clinical measurements and lack physical axis scales (no
 # wavenumber, wavelength, or m/z axis).  Spectral preprocessing nodes
@@ -45,6 +47,40 @@ _LOADERS = {
     "wine": "load_wine",
     "breast_cancer": "load_breast_cancer",
 }
+
+
+def load_sklearn_reference_as_sherpa(name: str) -> SherpaDataset:
+    """Load one catalog table with its canonical feature and target semantics."""
+
+    if name not in SKLEARN_CATALOG:
+        raise ValueError(f"Unknown sklearn dataset: {name!r}. " f"Available: {', '.join(SKLEARN_CATALOG)}")
+
+    from sklearn import datasets
+
+    bunch = getattr(datasets, _LOADERS[name])()
+    target_names = [str(value) for value in getattr(bunch, "target_names", [])]
+    return SherpaDataset(
+        X=np.asarray(bunch.data, dtype=np.float64),
+        feature_axis=FeatureAxis(
+            labels=[str(value) for value in getattr(bunch, "feature_names", [])],
+            title="Feature",
+        ),
+        sample_axis=SampleAxis(
+            labels=[f"Sample {index + 1}" for index in range(int(bunch.data.shape[0]))],
+            title="Sample",
+        ),
+        target=np.asarray(bunch.target),
+        target_context=TargetContext(
+            target_type="categorical",
+            target_name="target",
+            target_names=["target"],
+            selected_target="target",
+            n_classes=len(target_names) if target_names else int(len(np.unique(bunch.target))),
+            class_names=target_names or None,
+        ),
+        title=str(SKLEARN_CATALOG[name]["label"]),
+        data_role="X_features",
+    )
 
 
 def get_sklearn_dataset_info(name: str) -> dict[str, Any]:

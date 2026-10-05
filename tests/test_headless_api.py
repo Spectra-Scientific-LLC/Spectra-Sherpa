@@ -6,6 +6,7 @@ Tests Issue #1: Headless API must support executor deepcopy for concurrent reque
 from __future__ import annotations
 
 import copy
+import hashlib
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from unittest.mock import MagicMock, patch
@@ -36,12 +37,12 @@ def _create_process_pool(max_workers: int = 2) -> ProcessPoolExecutor:
 
 
 def _make_simple_workflow(executor: DAGExecutor) -> None:
-    """Create a minimal workflow: DataSource -> SNV"""
+    """Create a minimal canonical workflow: exact file source -> SNV."""
     executor.add_node(
         WorkflowNode(
             node_id="src",
-            node_type="data.source",
-            parameters={"source": "sklearn", "dataset_name": "iris"},
+            node_type="data.file_load",
+            parameters={"experiment_id": 1, "file_id": 1, "stage": "raw"},
         )
     )
     executor.add_node(
@@ -275,6 +276,56 @@ def test_predict_with_array_payload(test_client):
         # Verify JSON response contains the array data via the mock executor pass-through
         data = response.json()
         assert data == payload["sample"]
+        assert response.content == b"[[1.0,2.0,3.0],[4.0,5.0,6.0]]"
+        assert response.headers["X-Content-SHA256"] == hashlib.sha256(response.content).hexdigest()
+        assert response.headers["X-Deployment-Response-Schema"] == "spectrasherpa.deploy-response/1"
+
+
+def test_predict_rejects_inexact_or_malformed_stream_payload(test_client):
+    import spectra_sherpa.app.api.headless_app as headless_app
+
+    executor = DAGExecutor(process_pool=None)
+    executor.add_node(WorkflowNode(node_id="deploy_in", node_type="deploy.input", parameters={"stream_name": "sample"}))
+    executor.add_node(
+        WorkflowNode(node_id="deploy_out", node_type="deploy.output", parameters={"output_format": "json"})
+    )
+    executor.add_edge(WorkflowEdge(from_node="deploy_in", to_node="deploy_out"))
+
+    with patch.object(headless_app, "_executor", executor):
+        unexpected = test_client.post("/predict", json={"sample": [[1.0]], "undeclared": [[2.0]]})
+        one_dimensional = test_client.post("/predict", json={"sample": [1.0, 2.0]})
+
+    assert unexpected.status_code == 400
+    assert "unexpected: undeclared" in unexpected.text
+    assert one_dimensional.status_code == 400
+    assert "two-dimensional matrix" in one_dimensional.text
+
+
+def test_predict_rejects_duplicate_stream_contract_before_execution(test_client):
+    import spectra_sherpa.app.api.headless_app as headless_app
+
+    executor = DAGExecutor(process_pool=None)
+    executor.add_node(WorkflowNode(node_id="first", node_type="deploy.input", parameters={"stream_name": "sample"}))
+    executor.add_node(WorkflowNode(node_id="second", node_type="deploy.input", parameters={"stream_name": "sample"}))
+
+    with patch.object(headless_app, "_executor", executor):
+        response = test_client.post("/predict", json={"sample": [[1.0]]})
+
+    assert response.status_code == 500
+    assert "duplicate input stream names" in response.text
+
+
+def test_predict_requires_explicit_deploy_output(test_client):
+    import spectra_sherpa.app.api.headless_app as headless_app
+
+    executor = DAGExecutor(process_pool=None)
+    executor.add_node(WorkflowNode(node_id="deploy_in", node_type="deploy.input", parameters={"stream_name": "sample"}))
+
+    with patch.object(headless_app, "_executor", executor):
+        response = test_client.post("/predict", json={"sample": [[1.0]]})
+
+    assert response.status_code == 500
+    assert "does not contain a deploy.output node" in response.text
 
 
 @pytest.mark.asyncio

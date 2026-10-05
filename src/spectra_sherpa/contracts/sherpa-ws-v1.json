@@ -65,6 +65,18 @@
         "event_count": { "type": "integer" },
         "tool_rounds": { "type": "integer" },
         "first_activity_ms": { "type": ["integer", "null"] },
+        "execution_result": {
+          "description": "Explicit server-authorized execution outcome; null when this request did not execute a workflow.",
+          "type": ["object", "null"],
+          "required": ["workflow_id", "status"],
+          "properties": {
+            "workflow_id": { "type": "integer" },
+            "run_id": { "type": ["integer", "null"] },
+            "status": { "type": "string", "minLength": 1 },
+            "error": { "type": ["string", "object", "array", "null"] }
+          },
+          "additionalProperties": false
+        },
         "timing": { "$ref": "#/definitions/timing" }
       },
       "additionalProperties": false
@@ -281,6 +293,18 @@
         "timing": { "$ref": "#/definitions/timing" }
       },
       "additionalProperties": true
+    },
+    "sherpa_workflow_proposal_preview": {
+      "type": "object",
+      "required": ["type", "conversation_id", "proposal"],
+      "properties": {
+        "type": { "const": "sherpa_workflow_proposal_preview" },
+        "request_id": { "type": "string" },
+        "conversation_id": { "type": "string" },
+        "proposal": { "type": "object" },
+        "timing": { "$ref": "#/definitions/timing" }
+      },
+      "additionalProperties": false
     }
   },
   "oneOf": [
@@ -304,6 +328,7 @@
     { "$ref": "#/definitions/sherpa_data_story_chunk" },
     { "$ref": "#/definitions/sherpa_data_story_result" },
     { "$ref": "#/definitions/sherpa_data_story_error" },
-    { "$ref": "#/definitions/sherpa_workflow_proposed" }
+    { "$ref": "#/definitions/sherpa_workflow_proposed" },
+    { "$ref": "#/definitions/sherpa_workflow_proposal_preview" }
   ]
 }

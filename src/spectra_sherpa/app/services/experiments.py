@@ -1,19 +1,30 @@
 from __future__ import annotations
 
+import hashlib
 import json
-from pathlib import Path
+import os
+import zipfile
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.models.exp_version import ExpVersion
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.models.project import live_project_filter
 
 ALLOWED_STAGES = {"raw", "preprocessed", "synthetic"}
+_BUILTIN_LAVENDER_NAME = "lavender-essential-oil-v1"
+_BUILTIN_LAVENDER_ARCHIVE_ENV = "TRIAL_AVATAR_ARCHIVE_PATH"
+_BUILTIN_LAVENDER_ARCHIVE_DEFAULT = "/run/spectra-trial/lavender-essential-oil-v1.zip"
+_BUILTIN_LAVENDER_PACKAGE_ROOT = "lavender-essential-oil-v1"
+_BUILTIN_LAVENDER_MANIFEST_SCHEMA = "spectrasherpa-avatar-essential-oils-distribution/2"
+_BUILTIN_LAVENDER_DATASET_ID = "avatar-essential-oils/1"
+_BUILTIN_LAVENDER_SOURCE_FILE_BYTES_MAX = 64 * 1024 * 1024
+_BUILTIN_LAVENDER_SOURCE_AGGREGATE_BYTES_MAX = 64 * 1024 * 1024
 
 
 def experiment_dir(experiment_id: int) -> Path:
@@ -47,6 +58,185 @@ def relative_to_data_dir(path: Path) -> str:
 
 def resolve_data_path(relative_path: str) -> Path:
     return (settings.data_dir / relative_path).resolve()
+
+
+def _sha256(content: bytes) -> str:
+    return hashlib.sha256(content).hexdigest()
+
+
+def _builtin_lavender_archive_path() -> Path:
+    return Path(os.getenv(_BUILTIN_LAVENDER_ARCHIVE_ENV) or _BUILTIN_LAVENDER_ARCHIVE_DEFAULT)
+
+
+def _normalized_lavender_member(info: zipfile.ZipInfo) -> str:
+    name = info.filename
+    path = PurePosixPath(name)
+    if path.is_absolute() or ".." in path.parts or len(path.parts) < 2:
+        raise ValueError("Lavender reference archive contains an unsafe member path")
+    if path.parts[0] != _BUILTIN_LAVENDER_PACKAGE_ROOT:
+        raise ValueError("Lavender reference archive has the wrong package root")
+    if info.is_dir():
+        raise ValueError("Lavender reference archive contains a directory entry")
+    return path.relative_to(_BUILTIN_LAVENDER_PACKAGE_ROOT).as_posix()
+
+
+def _read_lavender_json(archive: zipfile.ZipFile, member_name: str) -> dict[str, Any]:
+    try:
+        content = archive.read(f"{_BUILTIN_LAVENDER_PACKAGE_ROOT}/{member_name}")
+    except KeyError as exc:
+        raise FileNotFoundError(f"Lavender reference archive is missing {member_name}") from exc
+    try:
+        payload = json.loads(content.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Lavender reference archive {member_name} is not valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"Lavender reference archive {member_name} must be a JSON object")
+    return payload
+
+
+def builtin_lavender_source_files() -> list[str]:
+    """Return the mounted corpus inventory without exposing host paths."""
+
+    archive_path = _builtin_lavender_archive_path()
+    if not archive_path.exists():
+        return []
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            member_list = [_normalized_lavender_member(info) for info in archive.infolist()]
+            if len(member_list) != len(set(member_list)):
+                return []
+            members = set(member_list)
+            manifest = _read_lavender_json(archive, "manifest.json")
+            if (
+                manifest.get("schema_version") != _BUILTIN_LAVENDER_MANIFEST_SCHEMA
+                or manifest.get("dataset_id") != _BUILTIN_LAVENDER_DATASET_ID
+            ):
+                return []
+            file_rows = manifest.get("files")
+            if not isinstance(file_rows, list) or len(file_rows) != 33:
+                return []
+            result: list[str] = []
+            for row in file_rows:
+                if not isinstance(row, dict):
+                    return []
+                relative_path = row.get("path")
+                if not isinstance(relative_path, str):
+                    return []
+                path = PurePosixPath(relative_path)
+                if path.is_absolute() or ".." in path.parts or len(path.parts) != 2 or path.parts[0] != "data":
+                    return []
+                if relative_path not in members:
+                    return []
+                result.append(relative_path)
+            if len(result) != len(set(result)):
+                return []
+            return result
+    except (OSError, ValueError, zipfile.BadZipFile):
+        return []
+
+
+async def _import_builtin_lavender_reference(
+    session: AsyncSession,
+    experiment_id: int,
+    raw_dir: Path,
+    written_files: list[Path],
+) -> list[ExperimentFile]:
+    from spectra_sherpa.app.services.collection_definitions import write_collection_definition
+
+    archive_path = _builtin_lavender_archive_path()
+    if not archive_path.exists():
+        raise FileNotFoundError(
+            "Lavender Essential Oil FTIR Corpus v1 is not mounted on this server. "
+            f"Set {_BUILTIN_LAVENDER_ARCHIVE_ENV} to the operator-installed archive."
+        )
+
+    created: list[ExperimentFile] = []
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            members = [_normalized_lavender_member(info) for info in archive.infolist()]
+            if len(members) != len(set(members)):
+                raise ValueError("Lavender reference archive contains duplicate members")
+
+            manifest = _read_lavender_json(archive, "manifest.json")
+            if manifest.get("schema_version") != _BUILTIN_LAVENDER_MANIFEST_SCHEMA:
+                raise ValueError("Lavender reference archive manifest has an unsupported schema")
+            if manifest.get("dataset_id") != _BUILTIN_LAVENDER_DATASET_ID:
+                raise ValueError("Lavender reference archive has the wrong dataset identity")
+            counts = manifest.get("counts")
+            if not isinstance(counts, dict) or counts.get("files") != 33:
+                raise ValueError("Lavender reference archive does not contain the qualified 33-file corpus")
+
+            file_rows = manifest.get("files")
+            if not isinstance(file_rows, list) or len(file_rows) != 33:
+                raise ValueError("Lavender reference archive manifest file census is invalid")
+
+            definition_payload = _read_lavender_json(archive, "collection-definition.json")
+            definition_file_names = {
+                str(row.get("file_name")) for row in definition_payload.get("rows", []) if isinstance(row, dict)
+            }
+            total_size = 0
+            seen_targets: set[str] = set()
+            for row in file_rows:
+                if not isinstance(row, dict):
+                    raise ValueError("Lavender reference archive manifest file row is invalid")
+                relative_path = row.get("path")
+                expected_size = row.get("size_bytes")
+                expected_sha256 = row.get("sha256")
+                if not isinstance(relative_path, str) or not relative_path.startswith("data/"):
+                    raise ValueError("Lavender reference archive manifest has an invalid source path")
+                if not isinstance(expected_size, int) or expected_size < 0:
+                    raise ValueError("Lavender reference archive manifest has an invalid source size")
+                if not isinstance(expected_sha256, str) or len(expected_sha256) != 64:
+                    raise ValueError("Lavender reference archive manifest has an invalid source digest")
+
+                source_path = PurePosixPath(relative_path)
+                if source_path.is_absolute() or ".." in source_path.parts or len(source_path.parts) != 2:
+                    raise ValueError("Lavender reference archive manifest source path is unsafe")
+                source_name = source_path.name
+                if source_name in seen_targets:
+                    raise ValueError("Lavender reference archive contains duplicate source file names")
+                seen_targets.add(source_name)
+                target_rel = f"raw/{source_name}"
+                if target_rel not in definition_file_names:
+                    raise ValueError("Lavender reference archive definition is not bound to its source files")
+
+                try:
+                    source_info = archive.getinfo(f"{_BUILTIN_LAVENDER_PACKAGE_ROOT}/{relative_path}")
+                except KeyError as exc:
+                    raise ValueError("Lavender reference archive manifest names a missing source file") from exc
+                if source_info.file_size != expected_size:
+                    raise ValueError("Lavender reference archive source size does not match its manifest")
+                if source_info.file_size > _BUILTIN_LAVENDER_SOURCE_FILE_BYTES_MAX:
+                    raise ValueError("Lavender reference archive source file exceeds its byte ceiling")
+                total_size += source_info.file_size
+                if total_size > _BUILTIN_LAVENDER_SOURCE_AGGREGATE_BYTES_MAX:
+                    raise ValueError("Lavender reference archive exceeds its aggregate byte ceiling")
+
+                content = archive.read(source_info)
+                if len(content) != expected_size or _sha256(content) != expected_sha256:
+                    raise ValueError("Lavender reference archive source bytes do not match their manifest")
+
+                target_path = raw_dir / source_name
+                if target_path.exists():
+                    raise ValueError(f"File already exists: {source_name}")
+                target_path.write_bytes(content)
+                written_files.append(target_path)
+                created.append(
+                    await add_experiment_file(
+                        session,
+                        experiment_id,
+                        "raw",
+                        target_rel,
+                        target_path.stat().st_size,
+                        target_path.suffix.lstrip(".").lower() or None,
+                        flush_only=True,
+                    )
+                )
+            write_collection_definition(experiment_id, definition_payload)
+    except zipfile.BadZipFile as exc:
+        raise ValueError("Lavender reference archive is not a valid ZIP file") from exc
+
+    return created
 
 
 async def create_experiment(
@@ -93,15 +283,7 @@ async def create_experiment(
 
 
 async def get_experiment(session: AsyncSession, experiment_id: int) -> Experiment | None:
-    result = await session.execute(
-        select(Experiment)
-        .where(Experiment.id == experiment_id)
-        .options(
-            selectinload(Experiment.mixtures),
-            selectinload(Experiment.factor_definitions),
-            selectinload(Experiment.samples),
-        )
-    )
+    result = await session.execute(select(Experiment).where(Experiment.id == experiment_id))
     return result.scalar_one_or_none()  # type: ignore[no-any-return]
 
 
@@ -117,6 +299,7 @@ async def list_experiments(
         query = query.where(Experiment.user_id == user_id)
     if project_id is not None:
         query = query.where(Experiment.project_id == project_id)
+    query = query.where(live_project_filter(Experiment.project_id))
     query = query.limit(limit).offset(offset)
     result = await session.execute(query)
     return list(result.scalars())
@@ -295,21 +478,6 @@ async def add_experiment_file(
     return experiment_file
 
 
-def _resolve_scp_path(name: str) -> Path:
-    """Resolve a SCP dataset name to its filesystem path, with boundary checks."""
-    from spectra_sherpa.app.lib.scp_compat import resolve_scp_path
-
-    # Reject obvious traversal attempts
-    if ".." in name or name.startswith("/"):
-        raise ValueError(f"Invalid SCP dataset name: {name}")
-
-    resolved = resolve_scp_path(name.rstrip("/"))
-    if resolved is not None:
-        return resolved.resolve()
-
-    raise FileNotFoundError(f"SCP dataset not found: {name}")
-
-
 async def import_reference_dataset(
     session: AsyncSession,
     experiment_id: int,
@@ -318,11 +486,10 @@ async def import_reference_dataset(
 ) -> list[ExperimentFile]:
     """Import a reference dataset into an experiment as raw files.
 
-    For synthetic: copies SpectraSherpa synthetic NPZ artifacts into the synthetic stage.
+    For synthetic: copies catalogued SpectraSherpa artifacts into the synthetic stage.
+    For builtin Lavender: materializes the operator-mounted distribution archive.
     For eigenvector: exports spectra (+ properties) as CSV.
     For sklearn: exports as CSV.
-    For spectrochempy: copies the actual file(s) from testdata.
-
     All DB writes use flush_only=True so the caller can commit the full
     batch atomically.  On error, written files are cleaned up.
     """
@@ -373,13 +540,24 @@ async def import_reference_dataset(
                     "synthetic",
                     rel,
                     target_path.stat().st_size,
-                    "npz",
+                    source_path.suffix.lstrip("."),
                     flush_only=True,
                 )
             )
 
+        elif source == "builtin" and name == _BUILTIN_LAVENDER_NAME:
+            created.extend(
+                await _import_builtin_lavender_reference(
+                    session,
+                    experiment_id,
+                    raw_dir,
+                    written_files,
+                )
+            )
+
         elif source == "eigenvector":
-            from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG, load_eigenvector_dataset
+            from spectra_sherpa.app.lib.eigenvector import DATASET_CATALOG
+            from spectra_sherpa.app.services.eigenvector_datasets import load_eigenvector_dataset
 
             if name not in DATASET_CATALOG:
                 raise ValueError(f"Unknown eigenvector dataset: {name}")
@@ -399,14 +577,20 @@ async def import_reference_dataset(
                     df[pname] = result["properties"][:, i]
 
             if result.get("sample_ids"):
-                df.index = result["sample_ids"]
-                df.index.name = "sample_id"
+                sample_ids = [str(value) for value in result["sample_ids"]]
+            else:
+                # Reference matrices without upstream row labels still need a
+                # durable row identity once materialized as a project source.
+                # These identifiers are deliberately positional and carry no
+                # specimen, class, batch, or acquisition meaning.
+                sample_ids = [f"{name}_row_{index + 1:04d}" for index in range(spectra.shape[0])]
+            df.insert(0, "sample_id", sample_ids)
 
             csv_name = f"{name}.csv"
             csv_path = raw_dir / csv_name
             if csv_path.exists():
                 raise ValueError(f"File already exists: {csv_name}")
-            df.to_csv(csv_path)
+            df.to_csv(csv_path, index=False)
             written_files.append(csv_path)
             rel = csv_path.relative_to(exp_dir).as_posix()
             created.append(
@@ -448,55 +632,6 @@ async def import_reference_dataset(
                 )
             )
 
-        elif source == "spectrochempy":
-            from spectra_sherpa.app.lib.scp_catalog import get_scp_catalog_entry, load_scp_reference_as_sherpa
-
-            entry = get_scp_catalog_entry(name)
-            dataset = load_scp_reference_as_sherpa(name)
-            X = dataset.X.reshape(dataset.n_samples, dataset.n_features)
-            feature_axis = dataset.get_feature_axis()
-            axis_values = getattr(feature_axis, "values", None) if feature_axis is not None else None
-            axis_labels = getattr(feature_axis, "labels", None) if feature_axis is not None else None
-            if axis_values is not None:
-                axis = [str(value) for value in axis_values]
-            elif axis_labels is not None:
-                axis = [str(value) for value in axis_labels]
-            else:
-                axis = [str(idx) for idx in range(dataset.n_features)]
-
-            sample_axis = dataset.sample_axis
-            sample_labels = list(sample_axis.labels) if sample_axis is not None and sample_axis.labels else []
-            if len(sample_labels) != dataset.n_samples:
-                sample_labels = [f"sample_{idx + 1}" for idx in range(dataset.n_samples)]
-
-            x_title = getattr(feature_axis, "title", None) if feature_axis is not None else None
-            x_units = getattr(feature_axis, "units", None) if feature_axis is not None else None
-            axis_header = str(entry.get("x_title") or x_title or "Feature")
-            if entry.get("x_units") or x_units:
-                axis_header = f"{axis_header} ({entry.get('x_units') or x_units})"
-
-            df = pd.DataFrame({axis_header: axis})
-            for row, label in zip(X, sample_labels, strict=True):
-                df[str(label)] = row
-
-            csv_name = f"scp_{name.replace('/', '_')}.csv"
-            csv_path = raw_dir / csv_name
-            if csv_path.exists():
-                raise ValueError(f"File already exists: {csv_name}")
-            df.to_csv(csv_path, index=False)
-            written_files.append(csv_path)
-            rel = csv_path.relative_to(exp_dir).as_posix()
-            created.append(
-                await add_experiment_file(
-                    session,
-                    experiment_id,
-                    "raw",
-                    rel,
-                    csv_path.stat().st_size,
-                    "csv",
-                    flush_only=True,
-                )
-            )
         elif source == "oes":
             from spectra_sherpa.app.lib.oes_datasets import OES_CATALOG, load_oes_dataset
 
@@ -550,6 +685,16 @@ async def list_experiment_files(
         query = query.where(ExperimentFile.stage == stage)
     result = await session.execute(query)
     return list(result.scalars())
+
+
+async def preferred_experiment_stage(session: AsyncSession, experiment_id: int) -> str | None:
+    """Return the default scientific stage from the experiment's actual inventory."""
+
+    result = await session.execute(
+        select(ExperimentFile.stage).where(ExperimentFile.experiment_id == experiment_id).distinct()
+    )
+    stages = {str(value) for value in result.scalars()}
+    return next((stage for stage in ("raw", "synthetic", "preprocessed") if stage in stages), None)
 
 
 async def get_experiment_file(session: AsyncSession, experiment_id: int, file_id: int) -> ExperimentFile | None:

@@ -1,0 +1,360 @@
+{
+  "schema_version": "spectra-sherpa-reference-dataset-packages/1",
+  "packages": [
+    {
+      "package_id": "eigenvector-art-image-demo-v1",
+      "title": "Eigenvector Art Image Data A",
+      "description": "A hyperspectral paint image for image chemometrics and multivariate exploration.",
+      "provider": "Eigenvector Research",
+      "assembly_mode": "single_view",
+      "artifact_ids": ["eigenvector-art-image-demo-archive-v1"],
+      "initial_view_ids": ["paint-demo"],
+      "annotation_tables": [],
+      "views": [
+        {
+          "view_id": "paint-demo",
+          "projection_id": "public-art-image-paint-demo-v1",
+          "label": "Paint hyperspectral image",
+          "instrument": "Art Image Data A source",
+          "cohort": "paint-demo",
+          "annotation_table_id": null
+        }
+      ],
+      "relations": []
+    },
+    {
+      "package_id": "eigenvector-cgl-nir-v1",
+      "title": "Eigenvector CGL NIR",
+      "description": "A 231-sample near-infrared mixture dataset with Casein, Glucose, Lactate, and Moisture measurements and a verified provider calibration/test row assignment.",
+      "provider": "Eigenvector Research",
+      "assembly_mode": "homogeneous_collection",
+      "artifact_ids": ["eigenvector-cgl-nir-archive-v1"],
+      "initial_view_ids": ["cgl-spectra"],
+      "annotation_tables": [
+        {
+          "annotation_table_id": "cgl-properties",
+          "object_name": "PropVals",
+          "n_rows": 231,
+          "fields": [
+            {"index": 0, "name": "Casein (wt %)", "target_type": "continuous", "units": "wt %"},
+            {"index": 1, "name": "Glucose (wt %)", "target_type": "continuous", "units": "wt %"},
+            {"index": 2, "name": "Lactate (wt %)", "target_type": "continuous", "units": "wt %"},
+            {"index": 3, "name": "Moisture (wt %)", "target_type": "continuous", "units": "wt %"}
+          ],
+          "values_sha256": "0113db6920d87e4527cc5f4f10a911a3975e53300535062293c9cd42e0591996"
+        }
+      ],
+      "views": [
+        {
+          "view_id": "cgl-spectra",
+          "projection_id": "public-cgl-nir-lactate-v1",
+          "label": "Complete spectra",
+          "instrument": "CGL NIR source",
+          "cohort": "cgl-231",
+          "annotation_table_id": "cgl-properties"
+        }
+      ],
+      "relations": []
+    },
+    {
+      "package_id": "eigenvector-corn-v1",
+      "title": "Eigenvector Corn",
+      "description": "The same 80 corn specimens measured on three near-infrared instruments, with one shared four-property annotation table.",
+      "provider": "Eigenvector Research",
+      "assembly_mode": "homogeneous_collection",
+      "artifact_ids": ["eigenvector-corn-archive-v1"],
+      "initial_view_ids": ["corn-m5"],
+      "annotation_tables": [
+        {
+          "annotation_table_id": "corn-properties",
+          "object_name": "propvals",
+          "n_rows": 80,
+          "fields": [
+            {"index": 0, "name": "Moisture", "target_type": "continuous", "units": null},
+            {"index": 1, "name": "Oil", "target_type": "continuous", "units": null},
+            {"index": 2, "name": "Protein", "target_type": "continuous", "units": null},
+            {"index": 3, "name": "Starch", "target_type": "continuous", "units": null}
+          ],
+          "values_sha256": "86c8c4889eefdc398ac31124d72d4169b182f53596f273cf802645a0cd4ad7e6"
+        }
+      ],
+      "views": [
+        {
+          "view_id": "corn-m5",
+          "projection_id": "public-corn-m5-moisture-v1",
+          "label": "M5",
+          "instrument": "M5",
+          "cohort": "corn-80",
+          "annotation_table_id": "corn-properties"
+        },
+        {
+          "view_id": "corn-mp5",
+          "projection_id": "public-corn-mp5-moisture-v1",
+          "label": "MP5",
+          "instrument": "MP5",
+          "cohort": "corn-80",
+          "annotation_table_id": "corn-properties"
+        },
+        {
+          "view_id": "corn-mp6",
+          "projection_id": "public-corn-mp6-moisture-v1",
+          "label": "MP6",
+          "instrument": "MP6",
+          "cohort": "corn-80",
+          "annotation_table_id": "corn-properties"
+        }
+      ],
+      "relations": [
+        {
+          "relation_id": "corn-instrument-views",
+          "relation_type": "same_specimens_aligned",
+          "view_ids": ["corn-m5", "corn-mp5", "corn-mp6"],
+          "row_identity": "source_row_index"
+        }
+      ]
+    },
+    {
+      "package_id": "eigenvector-diesel-d4052-v1",
+      "title": "Eigenvector Diesel D4052",
+      "description": "Diesel near-infrared measurements supplied as two low-level sets and one high-level set, each paired with an ASTM D4052 density result.",
+      "provider": "Eigenvector Research",
+      "assembly_mode": "homogeneous_collection",
+      "artifact_ids": ["eigenvector-diesel-d4052-archive-v1"],
+      "initial_view_ids": ["diesel-low-level-a"],
+      "annotation_tables": [
+        {
+          "annotation_table_id": "diesel-density-high-level",
+          "object_name": "d_y_hl",
+          "n_rows": 20,
+          "fields": [
+            {"index": 0, "name": "D4052 density", "target_type": "continuous", "units": null}
+          ],
+          "values_sha256": "c37d1e41009255c3df4066706fc64ee4acbeb4978f1821104a2ce89d232ae22f"
+        },
+        {
+          "annotation_table_id": "diesel-density-low-level-a",
+          "object_name": "d_y_ll_a",
+          "n_rows": 122,
+          "fields": [
+            {"index": 0, "name": "D4052 density", "target_type": "continuous", "units": null}
+          ],
+          "values_sha256": "9a75e2eb099bc9a7e4208bb786647333081d581daa604cbc19a1cb1a44e831c5"
+        },
+        {
+          "annotation_table_id": "diesel-density-low-level-b",
+          "object_name": "d_y_ll_b",
+          "n_rows": 121,
+          "fields": [
+            {"index": 0, "name": "D4052 density", "target_type": "continuous", "units": null}
+          ],
+          "values_sha256": "6104539b4e8e4d1c59953cda0bcf0523a52ef4e5caf679783fbda5b8df477703"
+        }
+      ],
+      "views": [
+        {
+          "view_id": "diesel-high-level",
+          "projection_id": "public-diesel-high-level-d4052-v1",
+          "label": "High-level set",
+          "instrument": "Provider high-level set",
+          "cohort": "diesel-high-level-20",
+          "annotation_table_id": "diesel-density-high-level"
+        },
+        {
+          "view_id": "diesel-low-level-a",
+          "projection_id": "public-diesel-d4052-v1",
+          "label": "Low-level set A",
+          "instrument": "Provider low-level set A",
+          "cohort": "diesel-low-level-a-122",
+          "annotation_table_id": "diesel-density-low-level-a"
+        },
+        {
+          "view_id": "diesel-low-level-b",
+          "projection_id": "public-diesel-low-level-b-d4052-v1",
+          "label": "Low-level set B",
+          "instrument": "Provider low-level set B",
+          "cohort": "diesel-low-level-b-121",
+          "annotation_table_id": "diesel-density-low-level-b"
+        }
+      ],
+      "relations": [
+        {
+          "relation_id": "diesel-provider-sets",
+          "relation_type": "alignment_unverified",
+          "view_ids": ["diesel-high-level", "diesel-low-level-a", "diesel-low-level-b"],
+          "row_identity": "provider row order within each set; cross-set specimen alignment is not asserted"
+        }
+      ]
+    },
+    {
+      "package_id": "eigenvector-iasim16-test1-v1",
+      "title": "Eigenvector IASIM16 Challenge Test 1",
+      "description": "A hyperspectral challenge image for multivariate image analysis.",
+      "provider": "Eigenvector Research",
+      "assembly_mode": "single_view",
+      "artifact_ids": ["eigenvector-iasim16-test1-archive-v1"],
+      "initial_view_ids": ["iasim16-test-1"],
+      "annotation_tables": [],
+      "views": [
+        {
+          "view_id": "iasim16-test-1",
+          "projection_id": "public-iasim16-test1-v1",
+          "label": "IASIM16 Test 1 hyperspectral image",
+          "instrument": "IASIM16 challenge source",
+          "cohort": "iasim16-test-1",
+          "annotation_table_id": null
+        }
+      ],
+      "relations": []
+    },
+    {
+      "package_id": "eigenvector-metal-etch-v1",
+      "title": "Eigenvector Metal Etch",
+      "description": "Three complementary LAM 9600 process views: machine sensors, optical emission spectra, and RF-monitor variables.",
+      "provider": "Eigenvector Research",
+      "assembly_mode": "heterogeneous_views",
+      "artifact_ids": [
+        "eigenvector-metal-etch-machine-archive-v1",
+        "eigenvector-metal-etch-oes-archive-v1",
+        "eigenvector-metal-etch-rfm-archive-v1"
+      ],
+      "initial_view_ids": ["metal-etch-oes"],
+      "annotation_tables": [],
+      "views": [
+        {
+          "view_id": "metal-etch-machine",
+          "projection_id": "public-metal-etch-machine-v1",
+          "label": "Machine sensors",
+          "instrument": "LAM 9600 machine sensors",
+          "cohort": "metal-etch-machine",
+          "annotation_table_id": null
+        },
+        {
+          "view_id": "metal-etch-oes",
+          "projection_id": "public-metal-etch-oes-v1",
+          "label": "Optical emission spectra",
+          "instrument": "LAM 9600 optical emission spectroscopy",
+          "cohort": "metal-etch-oes",
+          "annotation_table_id": null
+        },
+        {
+          "view_id": "metal-etch-rfm",
+          "projection_id": "public-metal-etch-rfm-v1",
+          "label": "RF-monitor variables",
+          "instrument": "LAM 9600 RF monitor",
+          "cohort": "metal-etch-rfm",
+          "annotation_table_id": null
+        }
+      ],
+      "relations": [
+        {
+          "relation_id": "metal-etch-complementary-views",
+          "relation_type": "alignment_unverified",
+          "view_ids": ["metal-etch-machine", "metal-etch-oes", "metal-etch-rfm"],
+          "row_identity": "provider row order; cross-view specimen alignment is not asserted"
+        }
+      ]
+    },
+    {
+      "package_id": "eigenvector-nir-shootout-v1",
+      "title": "Eigenvector NIR Shootout 2002",
+      "description": "Pharmaceutical tablets measured on two near-infrared instruments across calibration, test, and validation cohorts, with shared Weight, Hardness, and Assay annotations.",
+      "provider": "Eigenvector Research",
+      "assembly_mode": "homogeneous_collection",
+      "artifact_ids": ["eigenvector-nir-shootout-archive-v1"],
+      "initial_view_ids": ["nir-calibration-1"],
+      "annotation_tables": [
+        {
+          "annotation_table_id": "shootout-calibration-properties",
+          "object_name": "calibrate_Y",
+          "n_rows": 155,
+          "fields": [
+            {"index": 0, "name": "Weight", "target_type": "continuous", "units": null},
+            {"index": 1, "name": "Hardness", "target_type": "continuous", "units": null},
+            {"index": 2, "name": "Assay", "target_type": "continuous", "units": null}
+          ],
+          "values_sha256": "40a1f310fb8938ce38c743858695256a0ba5ba5cbd43566ee9a0ce3f18e79cb5"
+        },
+        {
+          "annotation_table_id": "shootout-test-properties",
+          "object_name": "test_Y",
+          "n_rows": 460,
+          "fields": [
+            {"index": 0, "name": "Weight", "target_type": "continuous", "units": null},
+            {"index": 1, "name": "Hardness", "target_type": "continuous", "units": null},
+            {"index": 2, "name": "Assay", "target_type": "continuous", "units": null}
+          ],
+          "values_sha256": "acb0fbc8fc1d3457b91d400b714874c85d892d3918d02edb32e08da38a4e59ac"
+        },
+        {
+          "annotation_table_id": "shootout-validation-properties",
+          "object_name": "validate_Y",
+          "n_rows": 40,
+          "fields": [
+            {"index": 0, "name": "Weight", "target_type": "continuous", "units": null},
+            {"index": 1, "name": "Hardness", "target_type": "continuous", "units": null},
+            {"index": 2, "name": "Assay", "target_type": "continuous", "units": null}
+          ],
+          "values_sha256": "157dca47517e41d24f9b87523c15470e243b72b27b6187943bce90e17ff822d4"
+        }
+      ],
+      "views": [
+        {
+          "view_id": "nir-calibration-1",
+          "projection_id": "public-nir-shootout-cal1-assay-v1",
+          "label": "Calibration — instrument 1",
+          "instrument": "NIR instrument 1",
+          "cohort": "shootout-calibration-155",
+          "annotation_table_id": "shootout-calibration-properties"
+        },
+        {
+          "view_id": "nir-calibration-2",
+          "projection_id": "public-nir-shootout-cal2-assay-v1",
+          "label": "Calibration — instrument 2",
+          "instrument": "NIR instrument 2",
+          "cohort": "shootout-calibration-155",
+          "annotation_table_id": "shootout-calibration-properties"
+        },
+        {
+          "view_id": "nir-test-1",
+          "projection_id": "public-nir-shootout-test1-assay-v1",
+          "label": "Test — instrument 1",
+          "instrument": "NIR instrument 1",
+          "cohort": "shootout-test-460",
+          "annotation_table_id": "shootout-test-properties"
+        },
+        {
+          "view_id": "nir-test-2",
+          "projection_id": "public-nir-shootout-test2-assay-v1",
+          "label": "Test — instrument 2",
+          "instrument": "NIR instrument 2",
+          "cohort": "shootout-test-460",
+          "annotation_table_id": "shootout-test-properties"
+        },
+        {
+          "view_id": "nir-validation-1",
+          "projection_id": "public-nir-shootout-validation1-assay-v1",
+          "label": "Validation — instrument 1",
+          "instrument": "NIR instrument 1",
+          "cohort": "shootout-validation-40",
+          "annotation_table_id": "shootout-validation-properties"
+        },
+        {
+          "view_id": "nir-validation-2",
+          "projection_id": "public-nir-shootout-validation2-assay-v1",
+          "label": "Validation — instrument 2",
+          "instrument": "NIR instrument 2",
+          "cohort": "shootout-validation-40",
+          "annotation_table_id": "shootout-validation-properties"
+        }
+      ],
+      "relations": [
+        {
+          "relation_id": "shootout-calibration-application-cohorts",
+          "relation_type": "calibration_application_cohorts",
+          "view_ids": ["nir-calibration-1", "nir-calibration-2", "nir-test-1", "nir-test-2", "nir-validation-1", "nir-validation-2"],
+          "row_identity": "cohort_source_row_index"
+        }
+      ]
+    }
+  ]
+}

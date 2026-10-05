@@ -4,6 +4,7 @@ Verifies:
 1. No SCP node returns NDDataset in any output port
 2. Shape conventions are correct for modeling node outputs
 3. SherpaDataset outputs carry correct axis metadata
+4. Matrix-only SCP projection reattaches exact native scientific identity
 
 Run with:
     cd spectra-sherpa && .venv/bin/pytest tests/test_scp_node_contracts.py -v
@@ -14,7 +15,6 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.lib.sherpa_dataset import (
     DomainContext,
     SampleAxis,
@@ -30,12 +30,13 @@ from spectra_sherpa.app.services.dag.meta_helpers import (
 from spectra_sherpa.app.services.dag.node_base import node_registry
 from spectra_sherpa.app.services.serialization import serialize_result
 
-_skip_no_scp = pytest.mark.skipif(not HAS_SCP, reason="spectrochempy not installed")
+try:
+    import spectrochempy as _scp
+except ImportError:
+    _scp = None
 
-if HAS_SCP:
-    from spectra_sherpa.app.lib.scp_compat import NDDataset as _NDDataset
-else:
-    _NDDataset = None
+_skip_no_scp = pytest.mark.skipif(_scp is None, reason="spectrochempy not installed")
+_NDDataset = _scp.NDDataset if _scp is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -133,6 +134,55 @@ def _make_spectral_dataset(
     return ds
 
 
+def _make_adapter_mapping_dataset() -> SherpaDataset:
+    """Build a mixture whose native identity cannot survive accidental defaults."""
+    n_samples = 30
+    n_features = 40
+    sample_positions = np.cumsum(np.linspace(0.35, 2.25, n_samples))
+    sample_labels = [f"Lab vial {index + 1:02d}" for index in range(n_samples)]
+    descending_axis = 1900.0 - np.cumsum(np.linspace(10.0, 30.0, n_features))
+    profiles = np.vstack(
+        (
+            np.exp(-0.5 * ((descending_axis - 1750.0) / 45.0) ** 2),
+            np.exp(-0.5 * ((descending_axis - 1480.0) / 65.0) ** 2),
+            np.exp(-0.5 * ((descending_axis - 1210.0) / 50.0) ** 2),
+        )
+    )
+    progress = np.linspace(0.0, 1.0, n_samples)
+    concentrations = np.column_stack(
+        (
+            np.clip(1.0 - 1.4 * progress, 0.0, None),
+            np.sin(np.pi * progress) ** 2,
+            np.clip(1.4 * progress - 0.4, 0.0, None),
+        )
+    )
+    concentrations += 0.015
+    return SherpaDataset(
+        X=concentrations @ profiles + 0.001,
+        feature_axis=SpectralAxis(
+            values=descending_axis,
+            title="Non-uniform descending Raman shift",
+            units="cm-1",
+        ),
+        sample_axis=SampleAxis(
+            values=sample_positions,
+            labels=sample_labels,
+            title="Named laboratory samples",
+            units="min",
+        ),
+        units="a.u.",
+        domain=DomainContext(technique="Raman", data_quantity="Intensity", expected_units="cm-1"),
+        backend="numpy",
+    )
+
+
+def _assert_axis_exact(actual, expected) -> None:
+    np.testing.assert_array_equal(actual.values, expected.values)
+    assert actual.labels == expected.labels
+    assert actual.title == expected.title
+    assert actual.units == expected.units
+
+
 # ---------------------------------------------------------------------------
 # 1. No-NDDataset contract (all SCP modeling nodes)
 # ---------------------------------------------------------------------------
@@ -141,7 +191,6 @@ def _make_spectral_dataset(
 class TestNoNDDatasetContract:
     """Every SCP modeling node must return SherpaDataset, never NDDataset."""
 
-    @_skip_no_scp
     @pytest.mark.asyncio
     async def test_pca_no_nddataset(self, make_node):
         ds = _make_spectral_dataset(n_samples=20, n_features=50)
@@ -149,12 +198,11 @@ class TestNoNDDatasetContract:
         result = _unwrap_result(await node.execute(input_data=ds))
         _check_no_nddataset(result, "pca")
 
-    @_skip_no_scp
     @pytest.mark.asyncio
     async def test_pls_no_nddataset(self, make_node):
         ds = _make_spectral_dataset(n_samples=30, n_features=50, n_targets=2, target_names=["A", "B"])
-        node = make_node("model.pls", {"n_components": 2})
-        result = await node.execute(X=ds)
+        node = make_node("model.fitted_pls", {"n_components": 2})
+        result = _unwrap_result(await node.execute(input_data=ds, y=ds.target))
         _check_no_nddataset(result, "pls")
 
     @_skip_no_scp
@@ -170,6 +218,7 @@ class TestNoNDDatasetContract:
     async def test_efa_no_nddataset(self, make_node):
         # EFA returns (n_samples, n_components) eigenvalues; use matching n_components
         ds = _make_spectral_dataset(n_samples=20, n_features=50)
+        ds.is_time_series = True
         node = make_node("model.efa", {"n_components": 20})
         result = _unwrap_result(await node.execute(input_data=ds))
         _check_no_nddataset(result, "efa")
@@ -191,11 +240,11 @@ class TestNoNDDatasetContract:
 class TestShapeConventions:
     """Verify canonical shapes for modeling node outputs."""
 
-    @_skip_no_scp
     @pytest.mark.asyncio
     async def test_pca_shapes(self, make_node):
         n_samples, n_features, n_components = 20, 50, 3
         ds = _make_spectral_dataset(n_samples=n_samples, n_features=n_features)
+        ds.is_time_series = True
         node = make_node("model.pca", {"n_components": str(n_components)})
         result = _unwrap_result(await node.execute(input_data=ds))
 
@@ -206,7 +255,6 @@ class TestShapeConventions:
         assert scores.shape == (n_samples, n_components)
         assert loadings.shape == (n_components, n_features)
 
-    @_skip_no_scp
     @pytest.mark.asyncio
     async def test_pls_shapes(self, make_node):
         n_samples, n_features, n_components, n_targets = 30, 50, 3, 2
@@ -216,23 +264,20 @@ class TestShapeConventions:
             n_targets=n_targets,
             target_names=["Target_A", "Target_B"],
         )
-        node = make_node("model.pls", {"n_components": n_components})
-        result = _unwrap_result(await node.execute(X=ds))
+        node = make_node("model.fitted_pls", {"n_components": n_components})
+        result = _unwrap_result(await node.execute(input_data=ds, y=ds.target))
 
-        # X scores: (n_samples, n_components)
-        assert result["default"].shape == (n_samples, n_components)
-        # X loadings: (n_components, n_features)
-        assert result["X_loadings"].shape == (n_components, n_features)
-        # Y scores: (n_samples, n_components)
-        assert result["Y_scores"].shape == (n_samples, n_components)
-        # Y loadings: (n_targets, n_components)
-        assert result["Y_loadings"].shape == (n_targets, n_components)
-        # Coefficients: (n_features, n_targets) — plain ndarray
-        assert result["coef"].shape == (n_features, n_targets)
+        assert result["default"].shape == (n_samples, n_targets)
+        assert result["vip_scores"].shape == (n_features,)
+        envelope = result["fitted_state"]
+        state = envelope["state"]
+        assert envelope["schema_version"] == "spectrasherpa.fitted-pls-state/9"
+        assert np.asarray(state["coefficients"]).shape == (n_features, n_targets)
+        assert np.asarray(state["feature_offset"]).shape == (1, n_features)
+        assert np.asarray(state["prediction_offset"]).shape == (1, n_targets)
 
-    @_skip_no_scp
     @pytest.mark.asyncio
-    async def test_pls_provenance_preserves_training_shape_for_score_outputs(self, make_node):
+    async def test_pls_state_preserves_training_shape_and_applies_through_one_authority(self, make_node):
         n_samples, n_features, n_components, n_targets = 5, 401, 3, 7
         ds = _make_spectral_dataset(
             n_samples=n_samples,
@@ -240,58 +285,31 @@ class TestShapeConventions:
             n_targets=n_targets,
             target_names=[f"Property {i + 1}" for i in range(n_targets)],
         )
-        node = make_node("model.pls", {"n_components": n_components, "cv_method": "none"})
-        result = await node.execute(X=ds)
-        outputs = result.outputs
+        fit = make_node("model.fitted_pls", {"n_components": n_components})
+        fitted = await fit.execute(input_data=ds, y=ds.target)
+        state = fitted.outputs["fitted_state"]["state"]
+        assert state["reference_samples"] == n_samples
+        assert state["features"] == n_features
+        assert state["targets"] == n_targets
+        assert state["n_components"] == n_components
 
-        x_scores = outputs["default"]
-        y_scores = outputs["Y_scores"]
-        vip = outputs["vip"]
-        coefficients = outputs["coefficients"]
+        apply = make_node("model.apply_fitted_pls")
+        applied = await apply.execute(input_data=ds, fitted_state=fitted.outputs["fitted_state"])
+        np.testing.assert_allclose(applied.outputs["default"], fitted.outputs["default"])
 
-        assert x_scores.shape == (n_samples, n_components)
-        assert y_scores.shape == (n_samples, n_components)
-        assert vip.shape == (1, n_features)
-        assert coefficients.shape == (n_targets, n_features)
-
-        x_scores_history = x_scores.provenance.to_list()[-1]
-        y_scores_history = y_scores.provenance.to_list()[-1]
-        vip_history = vip.provenance.to_list()[-1]
-        coefficients_history = coefficients.provenance.to_list()[-1]
-
-        assert x_scores_history["input_shape"] == (n_samples, n_features)
-        assert x_scores_history["output_shape"] == (n_samples, n_components)
-        assert y_scores_history["input_shape"] == (n_samples, n_targets)
-        assert y_scores_history["output_shape"] == (n_samples, n_components)
-        assert vip_history["input_shape"] == (n_samples, n_features)
-        assert vip_history["output_shape"] == (1, n_features)
-        assert coefficients_history["input_shape"] == (n_samples, n_features)
-        assert coefficients_history["output_shape"] == (n_targets, n_features)
-
-        assert x_scores.meta["training_X_shape"] == [n_samples, n_features]
-        assert x_scores.meta["training_y_shape"] == [n_samples, n_targets]
-        assert x_scores.meta["output_dimensions"]["training_X"] == [n_samples, n_features]
-        assert x_scores.meta["output_dimensions"]["X_scores"] == [n_samples, n_components]
-        assert result.diagnostics["output_dimensions"]["training_X"] == [n_samples, n_features]
-        assert result.diagnostics["output_dimensions"]["coefficients"] == [n_targets, n_features]
-
-    @_skip_no_scp
     @pytest.mark.asyncio
-    async def test_pls_y_loadings_target_labels(self, make_node):
-        """Y_loadings should carry target names on sample axis."""
+    async def test_pls_state_records_exact_multi_target_width(self, make_node):
         ds = _make_spectral_dataset(
             n_samples=30,
             n_features=50,
             n_targets=2,
             target_names=["Moisture", "Oil"],
         )
-        node = make_node("model.pls", {"n_components": 2})
-        result = _unwrap_result(await node.execute(X=ds))
+        node = make_node("model.fitted_pls", {"n_components": 2})
+        result = _unwrap_result(await node.execute(input_data=ds, y=ds.target))
 
-        yl = result["Y_loadings"]
-        assert isinstance(yl, SherpaDataset)
-        assert yl.sample_axis is not None
-        assert yl.sample_axis.labels == ["Moisture", "Oil"]
+        assert result["fitted_state"]["state"]["targets"] == 2
+        assert result["default"].shape == (30, 2)
 
     @_skip_no_scp
     @pytest.mark.asyncio
@@ -338,74 +356,91 @@ class TestShapeConventions:
         assert fwd.shape[1] == n_components
 
 
-# ---------------------------------------------------------------------------
-# 3. Corn MP5 integration test
-# ---------------------------------------------------------------------------
-
-
-class TestCornMP5Integration:
-    """End-to-end: DataSource(corn_mp5) -> PLS(3 comps), all outputs valid."""
+class TestOptionalAdapterScientificMapping:
+    """The matrix-only SCP adapter must not erase native result identity."""
 
     @_skip_no_scp
     @pytest.mark.asyncio
-    async def test_corn_mp5_through_pls(self, make_node):
-        # Load corn_mp5 dataset
-        src = make_node(
-            "data.source",
-            {"source": "eigenvector", "eigenvector_dataset": "corn_mp5"},
+    async def test_all_optional_nodes_reattach_exact_axes_and_sample_identity(self, make_node):
+        source = _make_adapter_mapping_dataset()
+
+        simplisma = _unwrap_result(await make_node("model.simplisma", {"n_components": 3}).execute(input_data=source))
+        _assert_axis_exact(simplisma["spectra"].feature_axis, source.feature_axis)
+        assert simplisma["spectra"].sample_axis.labels == [
+            "Pure Spectrum 1",
+            "Pure Spectrum 2",
+            "Pure Spectrum 3",
+        ]
+        np.testing.assert_array_equal(simplisma["spectra"].sample_axis.values, np.arange(3, dtype=float))
+        assert simplisma["concentrations"].feature_axis.labels == [
+            "Component 1",
+            "Component 2",
+            "Component 3",
+        ]
+        np.testing.assert_array_equal(simplisma["concentrations"].feature_axis.values, np.arange(3, dtype=float))
+        _assert_axis_exact(simplisma["concentrations"].sample_axis, source.sample_axis)
+
+        mcr = _unwrap_result(
+            await make_node(
+                "model.mcr_als",
+                {"n_components": 3, "max_iter": 200, "tol": 1e-5},
+            ).execute(input_data=source)
         )
-        src_result = await src.execute()
-        dataset = src_result["default"]
+        _assert_axis_exact(mcr["St"].feature_axis, source.feature_axis)
+        assert mcr["St"].sample_axis.labels == [
+            "Pure Spectrum 1",
+            "Pure Spectrum 2",
+            "Pure Spectrum 3",
+        ]
+        np.testing.assert_array_equal(mcr["St"].sample_axis.values, np.arange(3, dtype=float))
+        assert mcr["C"].feature_axis.labels == ["Component 1", "Component 2", "Component 3"]
+        np.testing.assert_array_equal(mcr["C"].feature_axis.values, np.arange(3, dtype=float))
+        _assert_axis_exact(mcr["C"].sample_axis, source.sample_axis)
+        _assert_axis_exact(mcr["residuals"].feature_axis, source.feature_axis)
+        _assert_axis_exact(mcr["residuals"].sample_axis, source.sample_axis)
 
-        # Title should survive NDDataset->SherpaDataset conversion
-        assert dataset.title is not None and dataset.title != "<untitled>"
+        source.is_time_series = True
+        efa = _unwrap_result(await make_node("model.efa", {"n_components": 3}).execute(input_data=source))
+        for output_name in ("forward_eigenvalues", "backward_eigenvalues"):
+            output = efa[output_name]
+            assert output.feature_axis.labels == ["EV1", "EV2", "EV3"]
+            np.testing.assert_array_equal(output.feature_axis.values, np.arange(3, dtype=float))
+            _assert_axis_exact(output.sample_axis, source.sample_axis)
 
-        # Run PLS with 3 components
-        pls = make_node("model.pls", {"n_components": 3})
-        result = _unwrap_result(await pls.execute(X=dataset))
-
-        # All output ports should be non-None
-        for key in ("default", "X_loadings", "Y_scores", "Y_loadings", "coef"):
-            assert result[key] is not None, f"output port '{key}' is None"
-
-        # Canonical shapes
-        assert result["default"].shape == (80, 3)  # X scores
-        assert result["X_loadings"].shape == (3, 700)  # X loadings
-        assert result["Y_scores"].shape == (80, 3)  # Y scores
-        assert result["Y_loadings"].shape == (4, 3)  # Y loadings
-        assert result["coef"].shape == (700, 4)  # coefficients
-
-        # Y_loadings should carry target names
-        yl = result["Y_loadings"]
-        assert yl.sample_axis is not None
-        assert list(yl.sample_axis.labels) == ["Moisture", "Oil", "Protein", "Starch"]
-
-        # No NDDataset anywhere in results
-        _check_no_nddataset(result, "corn_mp5_pls")
+        _check_no_nddataset({"simplisma": simplisma, "mcr": mcr, "efa": efa}, "adapter_mapping")
 
 
 # ---------------------------------------------------------------------------
-# 4. Explicit algorithm identity on primary outputs
+# 3. Explicit algorithm identity on primary outputs
 # ---------------------------------------------------------------------------
 
 
 class TestExplicitOutputTypes:
     """Primary serialized outputs should retain explicit algorithm identity."""
 
-    @_skip_no_scp
     @pytest.mark.asyncio
-    async def test_pls_default_output_has_explicit_type(self, make_node):
+    async def test_pls_outputs_have_explicit_canonical_port_types(self, make_node):
         ds = _make_spectral_dataset(
             n_samples=30,
             n_features=50,
             n_targets=2,
             target_names=["Moisture", "Oil"],
         )
-        node = make_node("model.pls", {"n_components": 2})
-        result = _unwrap_result(await node.execute(X=ds))
+        node = make_node("model.fitted_pls", {"n_components": 2})
+        result = _unwrap_result(await node.execute(input_data=ds, y=ds.target))
+        metadata = node.metadata
 
-        payload = serialize_result(result["default"])
-        assert payload["metadata"]["type"] == "PLS"
+        assert [port.type_ref for port in metadata.output_ports] == [
+            "spectrasherpa://types/TargetMatrix/1.0",
+            "spectrasherpa://types/RegressionModel/1.0",
+            "spectrasherpa://types/VariableImportance/1.0",
+            "spectrasherpa://types/RegressionComparison/1.0",
+            "spectrasherpa://types/ScoreMatrix/1.0",
+            "spectrasherpa://types/LoadingMatrix/1.0",
+            "spectrasherpa://types/ExplainedVarianceMatrix/1.0",
+            "spectrasherpa://types/RegressionCoefficientMatrix/1.0",
+        ]
+        assert result["fitted_state"]["schema_version"] == "spectrasherpa.fitted-pls-state/9"
 
     @_skip_no_scp
     @pytest.mark.asyncio
@@ -427,7 +462,6 @@ class TestExplicitOutputTypes:
         payload = serialize_result(result["default"])
         assert payload["metadata"]["type"] == "SIMPLISMA"
 
-    @_skip_no_scp
     @pytest.mark.asyncio
     async def test_plsda_default_output_has_explicit_type(self, make_node):
         ds = _make_spectral_dataset(
@@ -436,7 +470,7 @@ class TestExplicitOutputTypes:
             n_targets=1,
             target_type="categorical",
         )
-        node = make_node("classification.plsda", {"n_components": 2, "cv_folds": 3})
+        node = make_node("classification.plsda", {"n_components": 2, "scale": False})
         result = _unwrap_result(await node.execute(X=ds))
 
         payload = serialize_result(result["default"])
@@ -446,9 +480,8 @@ class TestExplicitOutputTypes:
 class TestOriginContextPropagation:
     """Transformed outputs should keep serialized Explore-tab context."""
 
-    @_skip_no_scp
     @pytest.mark.asyncio
-    async def test_pca_serialized_outputs_preserve_origin_context(self, make_node):
+    async def test_pca_serialized_outputs_preserve_technique_but_own_result_semantics(self, make_node):
         ds = _make_spectral_dataset(n_samples=24, n_features=60)
         node = make_node("model.pca", {"n_components": "3"})
         result = _unwrap_result(await node.execute(input_data=ds))
@@ -458,10 +491,13 @@ class TestOriginContextPropagation:
 
         assert scores_payload["metadata"]["is_time_series"] is True
         assert scores_payload["metadata"]["spectral_technique"] == "UV-Vis"
-        assert scores_payload["metadata"]["data_quantity"] == "Absorbance"
+        assert scores_payload["metadata"]["data_quantity"] == "PCA score"
+        assert scores_payload["metadata"]["value_units"] == "dimensionless"
+        assert scores_payload["metadata"]["x_title"] == "Principal Component"
 
         assert loadings_payload["metadata"]["spectral_technique"] == "UV-Vis"
-        assert loadings_payload["metadata"]["data_quantity"] == "Absorbance"
+        assert loadings_payload["metadata"]["data_quantity"] == "PCA loading"
+        assert loadings_payload["metadata"]["value_units"] == "dimensionless"
         assert loadings_payload["metadata"]["x_title"] == "Wavelength"
         assert loadings_payload["metadata"]["x_units"] == "nm"
 
@@ -536,24 +572,29 @@ class TestOriginContextHelpers:
 
     @_skip_no_scp
     @pytest.mark.asyncio
-    async def test_pls_serialized_outputs_preserve_origin_context(self, make_node):
+    async def test_pls_state_binds_feature_axis_identity(self, make_node):
         ds = _make_spectral_dataset(
             n_samples=30,
             n_features=50,
             n_targets=2,
             target_names=["Moisture", "Oil"],
         )
-        node = make_node("model.pls", {"n_components": 2})
-        result = _unwrap_result(await node.execute(X=ds))
+        fit = make_node("model.fitted_pls", {"n_components": 2})
+        result = _unwrap_result(await fit.execute(input_data=ds, y=ds.target))
+        state = result["fitted_state"]["state"]
 
-        scores_payload = serialize_result(result["X_scores"])
-        loadings_payload = serialize_result(result["X_loadings"])
+        assert state["feature_axis_values_sha256"] is not None
+        assert state["feature_axis_units"] == "nm"
 
-        assert scores_payload["metadata"]["is_time_series"] is True
-        assert scores_payload["metadata"]["spectral_technique"] == "UV-Vis"
-        assert scores_payload["metadata"]["data_quantity"] == "Absorbance"
-
-        assert loadings_payload["metadata"]["spectral_technique"] == "UV-Vis"
-        assert loadings_payload["metadata"]["data_quantity"] == "Absorbance"
-        assert loadings_payload["metadata"]["x_title"] == "Wavelength"
-        assert loadings_payload["metadata"]["x_units"] == "nm"
+        changed = SherpaDataset(
+            X=np.asarray(ds.X)[:, ::-1],
+            feature_axis=SpectralAxis(
+                values=np.asarray(ds.feature_axis.values)[::-1],
+                title=ds.feature_axis.title,
+                units=ds.feature_axis.units,
+            ),
+            backend="numpy",
+        )
+        apply = make_node("model.apply_fitted_pls")
+        with pytest.raises(ValueError, match="fitted feature axis"):
+            await apply.execute(input_data=changed, fitted_state=result["fitted_state"])

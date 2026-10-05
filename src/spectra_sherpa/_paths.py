@@ -70,7 +70,7 @@ def get_default_data_dir() -> Path:
 
 
 def get_static_dir() -> Path:
-    """Return the directory containing the pre-built frontend distribution."""
+    """Return the directory containing the release-generated frontend distribution."""
     return _PACKAGE_DIR / "static"
 
 
@@ -82,6 +82,12 @@ def get_env_file_search_paths() -> list[Path]:
     directory is undeterminable (e.g. some CI runners) the user-level entry is
     silently skipped rather than raising.
     """
+    from spectra_sherpa.app.core.desktop_policy import is_desktop
+
+    if is_desktop():
+        # The desktop app owns exactly one profile. It never reads or writes a
+        # user-level, working-directory or project .env belonging to other work.
+        return [(get_default_data_dir() / ".env").expanduser().resolve()]
     paths: list[Path] = []
     home = _safe_home()
     if home is not None:
@@ -130,4 +136,9 @@ def load_layered_env_files(*, preserve_existing: bool = True) -> list[Path]:
                 continue
             os.environ[key] = value
 
+    # A profile .env written by an earlier Hybrid activation must not turn the
+    # desktop application into a connected client.
+    from spectra_sherpa.app.core.desktop_policy import scrub_hosted_service_environment
+
+    scrub_hosted_service_environment()
     return loaded_paths

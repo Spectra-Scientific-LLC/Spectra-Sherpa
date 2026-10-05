@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -176,38 +175,6 @@ def test_enforce_helper_noop_when_allowed(reset_quota_provider):
     enforce_demo_execution_quota(7)  # unlimited path, must not raise
 
 
-async def test_doe_upload_quota_reservation_released_on_cancellation(monkeypatch, reset_demo_policy_providers):
-    """CancelledError is a BaseException; upload routes must still release reservations."""
-    from spectra_sherpa.app.api.v1.routes import doe
-
-    calls: list[tuple[str, int | None]] = []
-    dp = reset_demo_policy_providers
-    dp.set_demo_upload_quota_providers(
-        reserve=lambda uid: (calls.append(("reserve", uid)) or (True, 0)),
-        consume_reserved=lambda uid: calls.append(("consume", uid)) or 0,
-        release=lambda uid: calls.append(("release", uid)),
-    )
-
-    async def _verify(*_args, **_kwargs):
-        return None
-
-    async def _cancel(*_args, **_kwargs):
-        raise asyncio.CancelledError()
-
-    monkeypatch.setattr(doe, "_verify", _verify)
-    monkeypatch.setattr(doe.doe_service, "import_samples", _cancel)
-
-    with pytest.raises(asyncio.CancelledError):
-        await doe.import_samples(
-            11,
-            SimpleNamespace(csv_data="sample_id,label\ns1,A\n"),
-            session=SimpleNamespace(),
-            current_user=SimpleNamespace(id=7),
-        )
-
-    assert calls == [("reserve", 7), ("release", 7)]
-
-
 async def test_trial_execute_rejects_demo_hidden_node_before_dag(monkeypatch, reset_demo_policy_providers):
     import spectra_sherpa.app.api.v1.routes.workflows.execute as execute_mod
     import spectra_sherpa.app.core.config as cfg
@@ -294,7 +261,7 @@ def hybrid_mode(monkeypatch):
     import spectra_sherpa.app.api.deps as deps
 
     monkeypatch.setattr(deps, "is_local", lambda: False)
-    monkeypatch.setattr(deps, "is_hybrid", lambda: True)
+    monkeypatch.setattr(deps, "allows_implicit_loopback_identity", lambda: True)
     monkeypatch.setattr(deps, "is_loopback", lambda h: h in ("127.0.0.1", "::1", "localhost"))
     return deps
 
@@ -331,10 +298,12 @@ def batch_predict_env(monkeypatch, reset_quota_provider):
     calls: list = []
     reset_quota_provider.set_demo_execution_quota_provider(lambda uid: (calls.append(uid) or (True, 3)))
 
-    async def _load_wf(_s, _wid, _uid):
-        return SimpleNamespace(nodes=[], versions=[], project_id=1)
+    async def _load_wf(*_args, **_kwargs):
+        return SimpleNamespace(workflow=SimpleNamespace(nodes=[], project_id=1))
 
-    monkeypatch.setattr(bp, "load_workflow_with_graph", _load_wf)
+    from spectra_sherpa.app.api.v1.routes import runs
+
+    monkeypatch.setattr(runs, "_resolve_owned_deployment_binding", _load_wf)
 
     async def _validate_folder(_session, folder_path, _user_id):
         return Path(folder_path)
@@ -352,13 +321,12 @@ async def test_batch_predict_no_files_does_not_consume_quota(batch_predict_env, 
     bp, calls = batch_predict_env
     monkeypatch.setattr(bp, "discover_files", lambda *_a, **_k: [])  # bad folder / no matches
 
-    from spectra_sherpa.app.api.v1.routes import deploy
+    from spectra_sherpa.app.api.v1.routes import runs
     from spectra_sherpa.app.schemas.deploy import BatchPredictRequest
 
     with pytest.raises(HTTPException) as ei:
-        await deploy.batch_predict(
-            workflow_id=1,
-            payload=BatchPredictRequest(folder_path="/nope", file_pattern="*.json"),
+        await runs.batch_run_folder(
+            payload=BatchPredictRequest(folder_path="/nope", file_pattern="*.json", artifact_uid="reviewed"),
             session=object(),
             current_user=SimpleNamespace(id=7),
         )
@@ -374,13 +342,12 @@ async def test_batch_predict_enforces_quota_after_discovery(batch_predict_env, m
     monkeypatch.setattr(bp, "discover_files", lambda *_a, **_k: ["file-a.json"])  # real work present
     dp.set_demo_execution_quota_provider(lambda _uid: (False, 0))  # exhausted
 
-    from spectra_sherpa.app.api.v1.routes import deploy
+    from spectra_sherpa.app.api.v1.routes import runs
     from spectra_sherpa.app.schemas.deploy import BatchPredictRequest
 
     with pytest.raises(HTTPException) as ei:
-        await deploy.batch_predict(
-            workflow_id=1,
-            payload=BatchPredictRequest(folder_path="/data", file_pattern="*.json"),
+        await runs.batch_run_folder(
+            payload=BatchPredictRequest(folder_path="/data", file_pattern="*.json", artifact_uid="reviewed"),
             session=object(),
             current_user=SimpleNamespace(id=7),
         )

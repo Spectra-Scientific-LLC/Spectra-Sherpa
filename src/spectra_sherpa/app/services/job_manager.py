@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.models.background_job import BackgroundJob
+from spectra_sherpa.app.services.run_reconciliation import reconcile_job_runs
 from spectra_sherpa.app.services.websocket_manager import ws_manager
 
 
@@ -97,6 +98,7 @@ class JobManager:
                         completed_at=datetime.now(timezone.utc),
                     )
                 )
+                await reconcile_job_runs(session, job_id=job_id)
                 await session.commit()
                 if (block_result.rowcount or 0) > 0:
                     await self._broadcast_job(
@@ -122,6 +124,7 @@ class JobManager:
                             completed_at=datetime.now(timezone.utc),
                         )
                     )
+                    await reconcile_job_runs(session, job_id=job_id)
                     await session.commit()
                     if (block_result.rowcount or 0) > 0:
                         await self._broadcast_job(
@@ -160,30 +163,36 @@ class JobManager:
         try:
             await work()
             async with async_session() as done_session:
-                await done_session.execute(
+                done_result = await done_session.execute(
                     update(BackgroundJob)
                     .where(BackgroundJob.id == job_id)
+                    .where(BackgroundJob.status == "running")
                     .values(
                         status="completed",
                         progress=100,
                         completed_at=datetime.now(timezone.utc),
                     )
                 )
+                await reconcile_job_runs(done_session, job_id=job_id)
                 await done_session.commit()
-            await self._broadcast_job(job_id, status="completed", progress=100)
+            if (done_result.rowcount or 0) > 0:
+                await self._broadcast_job(job_id, status="completed", progress=100)
         except Exception as exc:
             async with async_session() as err_session:
-                await err_session.execute(
+                error_result = await err_session.execute(
                     update(BackgroundJob)
                     .where(BackgroundJob.id == job_id)
+                    .where(BackgroundJob.status == "running")
                     .values(
                         status="failed",
                         error_message=str(exc),
                         completed_at=datetime.now(timezone.utc),
                     )
                 )
+                await reconcile_job_runs(err_session, job_id=job_id)
                 await err_session.commit()
-            await self._broadcast_job(job_id, status="failed", message=str(exc))
+            if (error_result.rowcount or 0) > 0:
+                await self._broadcast_job(job_id, status="failed", message=str(exc))
         finally:
             self._local_jobs.discard(job_id)
             self._job_owners.pop(job_id, None)
@@ -213,19 +222,37 @@ class JobManager:
         await session.commit()
         await self._broadcast_job(job_id, progress=progress, message=message, session=session)
 
-    async def cancel_job(self, session: AsyncSession, job_id: int) -> None:
-        await session.execute(
+    async def cancel_job(self, session: AsyncSession, job_id: int, *, user_id: int) -> bool:
+        """Cancel a job only when it belongs to the acting user.
+
+        This service is called by an HTTP route today, but it is also a
+        service-layer authorization boundary: callers must supply the actor
+        rather than relying on a prior, separate ownership lookup.
+        """
+        result = await session.execute(
             update(BackgroundJob)
-            .where(BackgroundJob.id == job_id)
+            .where(
+                BackgroundJob.id == job_id,
+                BackgroundJob.user_id == user_id,
+                BackgroundJob.status.in_(("pending", "running")),
+            )
             .values(
                 status="cancelled",
                 error_message="Cancelled by user",
                 completed_at=datetime.now(timezone.utc),
             )
         )
+        if (result.rowcount or 0) == 0:
+            # This service owns the transaction on both outcomes: callers may
+            # continue using a supplied session after an authorization or
+            # terminal-state miss without inheriting an open transaction.
+            await session.rollback()
+            return False
+        await reconcile_job_runs(session, job_id=job_id)
         await session.commit()
         await self._broadcast_job(job_id, status="cancelled", message="Cancelled by user", session=session)
         self._job_owners.pop(job_id, None)
+        return True
 
     async def shutdown(self) -> None:
         """Cancel all locally-tracked jobs on shutdown."""
@@ -236,12 +263,15 @@ class JobManager:
             await session.execute(
                 update(BackgroundJob)
                 .where(BackgroundJob.id.in_(job_ids))
+                .where(BackgroundJob.status.in_(("pending", "running")))
                 .values(
                     status="cancelled",
                     error_message="Server shutting down",
                     completed_at=datetime.now(timezone.utc),
                 )
             )
+            for job_id in job_ids:
+                await reconcile_job_runs(session, job_id=job_id)
             await session.commit()
         for job_id in job_ids:
             heartbeat_task = self._heartbeat_tasks.pop(job_id, None)

@@ -8,12 +8,43 @@ from typing import Any, Dict, List
 
 import numpy as np
 
-from spectra_sherpa.app.lib.scp_compat import NDDataset
+import spectra_sherpa.sdk.plot_spec as plot_spec_contract
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    WorkerCapability,
+)
+from spectra_sherpa.sdk.plot_spec import canonical_plot_spec_from_projection
 
-from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
+from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, register_node
 from ._helpers import get_axis_display_info
+
+
+def _canonical_contour_parameters(raw: dict[str, object]) -> dict[str, object]:
+    """Close the contour-presentation settings."""
+
+    unknown = sorted(set(raw) - {"colorscale", "plot_type", "reverse_x", "transpose"})
+    if unknown:
+        raise ValueError(f"output.contour received unknown parameters: {', '.join(unknown)}")
+    colorscale = raw.get("colorscale", "Viridis")
+    if colorscale not in {"Viridis", "Hot", "RdBu", "Blues", "Greys", "Jet", "Spectral"}:
+        raise ValueError("output.contour colorscale is not supported")
+    plot_type = raw.get("plot_type", "heatmap")
+    if plot_type not in {"heatmap", "contour", "surface"}:
+        raise ValueError("output.contour plot_type is not supported")
+    reverse_x = raw.get("reverse_x", False)
+    transpose = raw.get("transpose", False)
+    if not isinstance(reverse_x, bool) or not isinstance(transpose, bool):
+        raise ValueError("output.contour reverse_x and transpose must be boolean")
+    return {
+        "colorscale": colorscale,
+        "plot_type": plot_type,
+        "reverse_x": reverse_x,
+        "transpose": transpose,
+    }
 
 
 @register_node
@@ -32,6 +63,12 @@ class ContourPlotNode(Node):
     """
 
     metadata = NodeMetadata(
+        policy=NodePolicy(
+            safe_for_auto_apply=True,
+            requires_human_review=False,
+            data_egress_risk="none",
+            offload_to_pool=False,
+        ),
         node_type="output.contour",
         category="output",
         label="Contour Plot",
@@ -72,7 +109,7 @@ class ContourPlotNode(Node):
                 required=False,
             ),
         ],
-        input_types=["NDDataset"],
+        input_types=["SherpaDataset"],
         output_type="dict",
         input_ports=[
             PortMetadata(
@@ -92,7 +129,28 @@ class ContourPlotNode(Node):
                 description="Contour/Heatmap configuration",
             ),
         ],
+        canonical_parameter_validator=_canonical_contour_parameters,
     )
+
+    def generate_python(
+        self,
+        inputs: Dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> List[str]:
+        """Generate a call to the same contour authority used live."""
+        input_expr = inputs.get("default", next(iter(inputs.values()), "input_data"))
+        parameters = self.metadata.canonicalize_parameters(self._resolve_params())
+        return [
+            f"{indent}# --- Contour ({self.node_id}) ---",
+            (
+                f"{indent}from spectra_sherpa.app.services.dag.nodes.output.contour_plot_node "
+                "import build_contour_result"
+            ),
+            f"{indent}results[{self.node_id!r}] = build_contour_result(",
+            f"{indent}    {input_expr}, parameters={parameters!r},",
+            f"{indent})",
+        ]
 
     async def execute(self, input_data: Any) -> Dict[str, Any]:
         """
@@ -104,22 +162,23 @@ class ContourPlotNode(Node):
         Returns:
             Dict with Plotly-compatible contour/heatmap configuration
         """
+        parameters = self.metadata.canonicalize_parameters(self._resolve_params())
+        return build_contour_result(input_data, parameters=parameters)
+
+    def _build(self, input_data: Any) -> Dict[str, Any]:
+        """Project a supported numeric matrix into one contour payload."""
         colorscale = self.parameters.get("colorscale", "Viridis")
         plot_type = self.parameters.get("plot_type", "heatmap")
-        reverse_x = self.parameters.get("reverse_x", True)
+        reverse_x = self.parameters.get("reverse_x", False)
         transpose = self.parameters.get("transpose", False)
 
-        # Coerce NDDataset -> SherpaDataset so all dataset paths work
-        if isinstance(input_data, NDDataset):
-            input_data = coerce_to_sherpa(input_data)
-
-        # Handle NDDataset / SherpaDataset input
+        # Handle the canonical scientific dataset directly.
         if isinstance(input_data, SherpaDataset):
             return self._create_contour(input_data, colorscale, plot_type, reverse_x, transpose)
 
         # Handle dict with data field
         if isinstance(input_data, dict) and "data" in input_data:
-            data = np.array(input_data["data"])
+            data = self._numeric_matrix(input_data["data"])
             x_data = input_data.get("x", list(range(data.shape[1])))
             y_data = input_data.get("y", list(range(data.shape[0])))
             plot_data = self._create_contour_from_arrays(
@@ -140,14 +199,18 @@ class ContourPlotNode(Node):
         if isinstance(input_data, (list, tuple, np.ndarray)):
             return self._create_from_array_like(input_data, colorscale, plot_type, reverse_x, transpose)
 
-        # Fallback
-        # Fallback
-        result = {
-            "plot_type": "contour",
-            "data": [],
-            "layout": {"title": "No 2D data to plot"},
-        }
-        return {"visualization": result}
+        raise ValueError("output.contour requires a supported canonical dataset or numeric array")
+
+    @staticmethod
+    def _numeric_matrix(input_data: Any) -> np.ndarray:
+        data = np.asarray(input_data, dtype=np.float64)
+        if data.ndim == 1:
+            data = data.reshape(-1, 1)
+        if data.ndim != 2 or data.size == 0:
+            raise ValueError("output.contour requires a non-empty one- or two-dimensional numeric array")
+        if not np.isfinite(data).all():
+            raise ValueError("output.contour requires finite numeric values")
+        return data
 
     def _create_from_array_like(
         self,
@@ -159,13 +222,7 @@ class ContourPlotNode(Node):
         title: str = "Array Output",
     ) -> Dict[str, Any]:
         """Create a contour/heatmap from numeric array-like model outputs."""
-        data = np.asarray(input_data, dtype=np.float64)
-        if data.ndim == 0:
-            data = data.reshape(1, 1)
-        elif data.ndim == 1:
-            data = data.reshape(-1, 1)
-        else:
-            data = np.atleast_2d(data)
+        data = self._numeric_matrix(input_data)
         plot_data = self._create_contour_from_arrays(
             data,
             list(range(data.shape[1])),
@@ -186,9 +243,7 @@ class ContourPlotNode(Node):
         """Generate contour/heatmap plot from SherpaDataset."""
 
         # Get spectral data as 2D array
-        data = np.array(dataset.data)
-        if data.ndim == 1:
-            data = data.reshape(1, -1)
+        data = self._numeric_matrix(dataset.data)
 
         # Get axes - preserve titles from source data (use generic accessors)
         x_coord = dataset.feature_axis
@@ -267,6 +322,12 @@ class ContourPlotNode(Node):
     ) -> Dict[str, Any]:
         """Create contour plot data from arrays."""
 
+        data = self._numeric_matrix(data)
+        x_data = list(x_data)
+        y_data = list(y_data)
+        if len(x_data) != data.shape[1] or len(y_data) != data.shape[0]:
+            raise ValueError("output.contour axis lengths must match the numeric matrix")
+
         # Create the trace based on plot type
         if plot_type == "contour":
             trace = {
@@ -329,3 +390,43 @@ class ContourPlotNode(Node):
             "data": [trace],
             "layout": layout,
         }
+
+
+def build_contour_result(
+    input_data: Any,
+    *,
+    parameters: dict[str, object] | None = None,
+) -> dict[str, Any]:
+    """Return the sole live/generated contour-presentation payload."""
+
+    canonical = ContourPlotNode.metadata.canonicalize_parameters(parameters or {})
+    node = ContourPlotNode("canonical-contour-authority", canonical)
+    projection = node._build(input_data)
+    visualization = projection.get("visualization")
+    if not isinstance(visualization, dict):
+        raise ValueError("output.contour did not produce a visualization projection")
+    return {"visualization": canonical_plot_spec_from_projection(visualization).as_dict()}
+
+
+bind_stable_execution_contract(
+    ContourPlotNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
+    implementation_id="spectrasherpa.output.contour",
+    implementation_version="2.0.0",
+    implementation_modules=(plot_spec_contract,),
+    implementation_distributions=("numpy",),
+    runtime_requirements=(("numpy", "1.26.4"),),
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="preserves_samples",
+    feature_effect="preserves_features",
+    axis_effect="preserves_axis",
+    unit_effect="preserves_units",
+    resource_hints={"timeout_seconds": 10, "cpu_seconds": 5, "memory_bytes": 536_870_912},
+    license_id="Apache-2.0",
+    help_reference="docs/nodes/output.md",
+)
+
+
+__all__ = ["ContourPlotNode", "build_contour_result"]

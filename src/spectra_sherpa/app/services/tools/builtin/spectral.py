@@ -20,7 +20,7 @@ from spectra_sherpa.app.services.tools.schemas import ToolCategory
 
 @register_tool(
     "list_node_types",
-    "List available DAG node types, optionally filtered by category. " "Returns node type IDs, labels, and categories.",
+    "List available DAG node types, optionally filtered by category. Returns node type IDs, labels, and categories.",
     category=ToolCategory.spectral,
     parameters={
         "type": "object",
@@ -29,8 +29,8 @@ from spectra_sherpa.app.services.tools.schemas import ToolCategory
                 "type": "string",
                 "description": (
                     "Filter by node category. Common values: "
-                    "preprocessing, modeling, classification, data, "
-                    "output, diagnostics, custom, time_series"
+                    "data, synthesis, preprocessing, transfer, time_series, selection, exploratory, "
+                    "regression, classification, clustering, validation, output, deploy"
                 ),
             },
         },
@@ -42,8 +42,7 @@ def list_node_types(category: Optional[str] = None) -> list[dict[str, str]]:
     from spectra_sherpa.app.services.dag.node_base import node_registry
 
     results = []
-    for node_type, node_cls in sorted(node_registry._nodes.items()):
-        meta = node_cls.metadata
+    for meta in sorted(node_registry.list_catalog_nodes(), key=lambda item: item.node_type):
         if category and meta.category != category:
             continue
         results.append(
@@ -72,9 +71,7 @@ def list_node_types(category: Optional[str] = None) -> list[dict[str, str]]:
         "properties": {
             "node_type": {
                 "type": "string",
-                "description": (
-                    "Node type identifier (e.g. 'model.pca', " "'preprocess.scale', 'baseline.penalized_ls')"
-                ),
+                "description": ("Node type identifier (e.g. 'model.pca', 'preprocess.scale', 'baseline.penalized_ls')"),
             },
         },
         "required": ["node_type"],
@@ -84,12 +81,11 @@ def describe_node(node_type: str) -> dict[str, Any]:
     """Return the full metadata for a single node type."""
     from spectra_sherpa.app.services.dag.node_base import node_registry
 
-    node_cls = node_registry._nodes.get(node_type)
-    if node_cls is None:
-        available = sorted(node_registry._nodes.keys())
+    try:
+        meta = node_registry.get_catalog_metadata(node_type)
+    except KeyError:
+        available = sorted(metadata.node_type for metadata in node_registry.list_catalog_nodes())
         return {"error": f"Unknown node type: {node_type!r}", "available": available}
-
-    meta = node_cls.metadata
     params = []
     for p in meta.parameters:
         entry: dict[str, Any] = {
@@ -195,7 +191,7 @@ _DEFAULT_RECOMMENDATIONS = [
             },
             "goal": {
                 "type": "string",
-                "description": ("Analysis goal: 'classification', 'regression', " "'clustering', 'exploration'"),
+                "description": ("Analysis goal: 'classification', 'regression', 'clustering', 'exploration'"),
                 "enum": ["classification", "regression", "clustering", "exploration"],
             },
         },

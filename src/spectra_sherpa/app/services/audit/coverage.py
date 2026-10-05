@@ -70,6 +70,12 @@ AUDITED_MODELS: tuple[AuditedModel, ...] = (
                 "project_linked",
                 "project_unlinked",
                 "workflow.run.started",
+                "workflow.data_selection.applied",
+                # canonical_source_bound fires when a workflow's canonical
+                # application graph is bound to a local data source
+                # (canonical_project_binding.py) — a distinct state change
+                # from the generic "updated" verb.
+                "workflow.canonical_source_bound",
             }
         ),
     ),
@@ -89,9 +95,11 @@ AUDITED_MODELS: tuple[AuditedModel, ...] = (
                 "workflow.run.completed",
                 "workflow.run.partial",
                 "workflow.run.failed",
-                # batch_failed records a 207 batch-apply where no artifact
-                # produced a successful run — no ExecutionRun row is
-                # persisted, so target_id is the literal "unpersisted".
+                "workflow.run.named",
+                # Every batch attempt has a persisted ExecutionRun, including
+                # partial and all-failed applications.
+                "workflow.run.batch_completed",
+                "workflow.run.batch_partial",
                 "workflow.run.batch_failed",
             }
         ),
@@ -101,12 +109,36 @@ AUDITED_MODELS: tuple[AuditedModel, ...] = (
         target_type="ModelArtifact",
         # project_linked / project_unlinked cover the project-membership
         # mutation paths POST/DELETE /projects/{pid}/models/{uid}.
-        actions=frozenset({"created", "updated", "deleted", "project_linked", "project_unlinked"}),
+        actions=frozenset(
+            {
+                "created",
+                "updated",
+                "deleted",
+                "project_linked",
+                "project_unlinked",
+                # Issued when a verified canonical full-refit state is
+                # converted into normal ModelStore custody without fitting.
+                "model_artifact.canonical_full_refit_imported",
+            }
+        ),
     ),
     AuditedModel(
         model_dotted_path="spectra_sherpa.app.models.project.Project",
         target_type="Project",
-        actions=frozenset({"created", "updated", "deleted"}),
+        actions=frozenset(
+            {
+                "created",
+                "updated",
+                "deleted",
+                "archived",
+                "restored",
+                # canonical_imported fires when a sealed canonical project
+                # package is admitted under durable custody
+                # (canonical_project_import.py) — a distinct provenance
+                # event from the generic "updated" verb.
+                "project.canonical_imported",
+            }
+        ),
     ),
     AuditedModel(
         model_dotted_path="spectra_sherpa.app.models.experiment.Experiment",
@@ -118,7 +150,16 @@ AUDITED_MODELS: tuple[AuditedModel, ...] = (
     AuditedModel(
         model_dotted_path="spectra_sherpa.app.models.experiment_file.ExperimentFile",
         target_type="ExperimentFile",
-        actions=frozenset({"created", "deleted"}),
+        actions=frozenset(
+            {
+                "created",
+                "deleted",
+                # Exact registered-reference admission creates an ordinary
+                # ExperimentFile, but records the stronger registry-bound
+                # custody event separately from a generic upload.
+                "registered_reference.imported",
+            }
+        ),
     ),
     AuditedModel(
         model_dotted_path="spectra_sherpa.app.models.project_data_source.ProjectDataSource",

@@ -3,18 +3,25 @@ from __future__ import annotations
 import numpy as np
 
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.app.services.dag.nodes.data.file_load_node import FileLoadNode
+
+
+def _file_load_node() -> FileLoadNode:
+    return FileLoadNode("csv_test", {"experiment_id": 1, "file_id": 1, "stage": "raw"})
 
 
 def test_load_csv_pandas_named_feature_columns_returns_sherpa_dataset(tmp_path):
     csv_path = tmp_path / "sklearn_wine.csv"
     csv_path.write_text(
-        "alcohol,malic_acid,ash,target\n" "14.23,1.71,2.43,class_0\n" "13.20,1.78,2.14,class_1\n",
+        "alcohol,malic_acid,ash,target\n14.23,1.71,2.43,class_0\n13.20,1.78,2.14,class_1\n",
         encoding="ascii",
     )
 
-    node = DataSourceNode("csv_test")
-    dataset = node._load_csv_pandas(str(csv_path))
+    dataset = _file_load_node()._load_file(
+        csv_path,
+        selected_target="target",
+        target_type="categorical",
+    )
 
     assert isinstance(dataset, SherpaDataset)
     assert dataset.X.shape == (2, 3)
@@ -29,15 +36,11 @@ def test_load_csv_pandas_named_feature_columns_returns_sherpa_dataset(tmp_path):
 def test_load_csv_pandas_axis_column_conditions_returns_spectral_sherpa_dataset(tmp_path):
     csv_path = tmp_path / "raman_conditions.csv"
     csv_path.write_text(
-        "Wavenumber (cm-1),Aqueous PP,15:85 AuNPs:PP AuNPs with KCl\n"
-        "200,2139,9549\n"
-        "201,2159,9538\n"
-        "202,2178,9537\n",
+        "Wavenumber (cm-1),Aqueous PP,15:85 AuNPs:PP AuNPs with KCl\n200,2139,9549\n201,2159,9538\n202,2178,9537\n",
         encoding="ascii",
     )
 
-    node = DataSourceNode("csv_test")
-    dataset = node._load_csv_pandas(str(csv_path))
+    dataset = _file_load_node()._load_file(csv_path)
 
     assert isinstance(dataset, SherpaDataset)
     assert dataset.data_role == "X_spectra"

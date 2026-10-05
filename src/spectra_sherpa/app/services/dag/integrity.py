@@ -18,12 +18,14 @@ import hashlib
 import json
 from typing import Any
 
+from spectra_sherpa.core.node_identity import canonical_node_type
+
 
 def _canonical_node(node: dict[str, Any]) -> dict[str, Any]:
     """Extract semantically meaningful fields from a node dict."""
     return {
         "node_id": node["node_id"],
-        "node_type": node["node_type"],
+        "node_type": canonical_node_type(node["node_type"]),
         "parameters": node.get("parameters", {}),
     }
 
@@ -75,3 +77,26 @@ def compute_workflow_hash(
     }
     payload = json.dumps(canonical, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def workflow_definitions_match(expected: dict[str, Any], saved: dict[str, Any]) -> bool:
+    """Compare a browser round-trip without changing persisted integrity hashes.
+
+    JSON.stringify emits integral numbers such as 1.0 as 1. Normalize that
+    representation only; booleans, strings, keys, ports and changed numeric
+    values still have distinct canonical JSON. Historical hashes retain their
+    existing byte representation.
+    """
+
+    def normalize(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: normalize(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [normalize(item) for item in value]
+        if type(value) is float and value.is_integer():
+            return int(value)
+        return value
+
+    return compute_workflow_hash(normalize(expected["nodes"]), normalize(expected["edges"])) == compute_workflow_hash(
+        normalize(saved["nodes"]), normalize(saved["edges"])
+    )

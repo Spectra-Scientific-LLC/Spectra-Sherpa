@@ -63,7 +63,8 @@ async def test_project_delete_emits_audit_event(auth_client, test_session):
     await test_session.execute(AuditEvent.__table__.delete())
     await test_session.commit()
 
-    resp = await auth_client.delete(f"/api/v1/projects/{proj_id}")
+    await auth_client.post(f"/api/v1/projects/{proj_id}/archive")
+    resp = await auth_client.delete(f"/api/v1/projects/{proj_id}?confirm_name=to-delete")
     assert resp.status_code == 204
 
     rows = (await test_session.execute(select(AuditEvent))).scalars().all()

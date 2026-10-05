@@ -33,7 +33,7 @@ def get_config_overlay_provider() -> ConfigOverlayProvider | None:
     return _config_overlay_provider
 
 
-def set_config_overlay_provider(provider: ConfigOverlayProvider) -> None:
+def set_config_overlay_provider(provider: ConfigOverlayProvider | None) -> None:
     """Inject a server-provided config overlay provider.
 
     Called by a server extension during startup to add subscription

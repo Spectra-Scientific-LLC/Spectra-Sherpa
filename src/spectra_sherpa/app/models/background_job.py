@@ -14,6 +14,9 @@ class BackgroundJob(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
     job_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    execution_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("execution_run.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     status: Mapped[str] = mapped_column(String(50), server_default="pending", nullable=False, index=True)
     progress: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
     progress_message: Mapped[str | None] = mapped_column(Text)

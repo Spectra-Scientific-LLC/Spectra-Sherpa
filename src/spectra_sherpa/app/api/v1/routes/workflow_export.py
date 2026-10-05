@@ -4,6 +4,7 @@ API endpoints for workflow export and documentation.
 
 from __future__ import annotations
 
+from asyncio import to_thread
 from datetime import datetime
 from typing import Any
 
@@ -18,6 +19,8 @@ from spectra_sherpa.app.core.security import check_export_allowed
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
+from spectra_sherpa.app.schemas.run_evidence import EvidenceGap, RunEvidence
+from spectra_sherpa.core.node_identity import canonicalize_serialized_workflow
 
 router = APIRouter(prefix="/workflows")
 
@@ -165,6 +168,9 @@ async def export_workflow_to_markdown(
 async def get_report_data(
     workflow_id: int,
     run_ids: str | None = Query(None, description="Comma-separated run IDs"),
+    include_row_level_plots: bool = Query(
+        False, description="Opt in to exporting reference, prediction and residual values"
+    ),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> dict:
@@ -185,6 +191,8 @@ async def get_report_data(
             parsed_run_ids = [int(x.strip()) for x in run_ids.split(",") if x.strip()]
         except ValueError:
             raise HTTPException(status_code=422, detail="run_ids must be comma-separated integers")
+        if not parsed_run_ids or len(parsed_run_ids) > 10 or any(value < 1 for value in parsed_run_ids):
+            raise HTTPException(status_code=422, detail="Select between 1 and 10 positive run IDs")
 
     user_id = current_user.id
 
@@ -195,6 +203,7 @@ async def get_report_data(
         .options(
             selectinload(Workflow.nodes),
             selectinload(Workflow.edges),
+            selectinload(Workflow.primary_data_source),
         )
     )
     result = await session.execute(query)
@@ -244,6 +253,7 @@ async def get_report_data(
         "workflow_id": workflow.id,
         "name": workflow.name,
         "description": workflow.description,
+        "purpose": workflow.purpose,
         "technique": getattr(workflow, "technique", None),
         "sample_type": getattr(workflow, "sample_type", None),
         "integrity_hash": workflow.integrity_hash,
@@ -259,6 +269,7 @@ async def get_report_data(
             }
             for e in workflow.edges
         ],
+        "workflow_identity": _workflow_identity(workflow),
     }
 
     # Optionally include execution run data
@@ -267,12 +278,42 @@ async def get_report_data(
             select(ExecutionRun)
             .where(
                 ExecutionRun.workflow_id == workflow_id,
+                ExecutionRun.user_id == user_id,
                 ExecutionRun.id.in_(parsed_run_ids),
             )
             .order_by(ExecutionRun.id)
         )
         run_result = await session.execute(run_query)
         runs = list(run_result.scalars().all())
+        if len(runs) != len(set(parsed_run_ids)):
+            raise HTTPException(status_code=404, detail="One or more selected runs are unavailable in this workflow")
+
+        saved_definitions = await to_thread(lambda: [_saved_report_definition(run) for run in runs])
+        from spectra_sherpa.app.services.run_validation_summary import validation_summary
+
+        validation_summaries = await to_thread(
+            lambda: [
+                validation_summary(run, definition, include_row_level_plots=include_row_level_plots is True)
+                for run, definition in zip(runs, saved_definitions)
+            ]
+        )
+        # Never attach the current edited canvas to historical measurements.
+        common_definition = saved_definitions[0] if saved_definitions else None
+        if common_definition is None or any(value != common_definition for value in saved_definitions):
+            common_definition = None
+        response.update(
+            name=common_definition.get("name", runs[0].name) if common_definition else "Selected saved runs",
+            description=None,
+            purpose=None,
+            technique=None,
+            sample_type=None,
+            created_at=None,
+            updated_at=None,
+            integrity_hash=runs[0].integrity_hash if common_definition else None,
+            nodes=common_definition.get("nodes", []) if common_definition else [],
+            edges=common_definition.get("edges", []) if common_definition else [],
+            workflow_identity=_workflow_identity(workflow, definition=common_definition),
+        )
 
         response["runs"] = [
             {
@@ -286,37 +327,116 @@ async def get_report_data(
                 "node_statuses": r.node_statuses,
                 "integrity_hash": r.integrity_hash,
                 "labels": r.labels,
+                "selection_provenance": {
+                    "schema_version": 1,
+                    "state": ("exact" if (r.source_metadata or {}).get("data_selection_revisions") else "unavailable"),
+                    "reason": (
+                        None
+                        if (r.source_metadata or {}).get("data_selection_revisions")
+                        else "This run predates sheet-specific data-selection revisions."
+                    ),
+                    "revisions": (r.source_metadata or {}).get("data_selection_revisions", []),
+                    "scientific_receipts": (r.source_metadata or {}).get("dataset_scientific_receipts", []),
+                    "executor_user_id": r.user_id,
+                    "workflow_version_id": r.workflow_version_id,
+                },
+                "saved_definition": definition,
+                "validation_summary": summary,
+                "workflow_identity": _workflow_identity(workflow, definition=definition),
+                "evidence_gaps": [item.model_dump() for item in _run_evidence_gaps(r)],
+                "evidence_notice": (
+                    (
+                        "Saved run has incomplete durable evidence. Review the named node outputs and recovery actions."
+                        if _run_evidence_gaps(r)
+                        else (
+                            "Saved summary, not the complete live session. "
+                            "No retained output gaps are declared for this run."
+                        )
+                    )
+                    if definition is not None
+                    else (
+                        "Saved workflow evidence is unavailable or unverified. "
+                        "Current workflow details were not substituted."
+                    )
+                ),
             }
-            for r in runs
+            for r, definition, summary in zip(runs, saved_definitions, validation_summaries)
         ]
 
         # Compute comparison diff when 2+ runs
         if len(runs) >= 2:
-            response["comparison"] = _build_comparison(runs)
+            response["comparison"] = await to_thread(_build_comparison, runs)
         else:
             response["comparison"] = None
 
     return response
 
 
+def _workflow_identity(workflow: Workflow, *, definition: dict | None = None) -> dict[str, Any]:
+    """Return the stable sheet and source identity shown in reports and exports."""
+
+    source_name = workflow.primary_data_source.display_name if workflow.primary_data_source is not None else None
+    source_origin = workflow.data_origin
+    source_node_id = None
+    if definition is not None:
+        context = definition.get("data_context") if isinstance(definition.get("data_context"), dict) else {}
+        source_name = context.get("source_name") or source_name
+        source_origin = context.get("source_origin") if context.get("source_origin") is not None else source_origin
+        for node in definition.get("nodes", []):
+            if node.get("node_type") not in {"data.file_load", "data.collection_load"}:
+                continue
+            source_node_id = node.get("node_id")
+            break
+    return {
+        "schema_version": 1,
+        "project_id": workflow.project_id,
+        "workflow_id": workflow.id,
+        "workflow_name": definition.get("name", workflow.name) if definition is not None else workflow.name,
+        "template_name": workflow.created_from_template_name,
+        "template_version": workflow.created_from_template_version,
+        "source_name": source_name,
+        "source_origin": source_origin if source_origin in {"current", "example"} else None,
+        "source_node_id": source_node_id,
+    }
+
+
 def _build_comparison(runs: list[ExecutionRun]) -> dict[str, Any]:
-    """Build metric comparison across runs (same logic as compare_runs)."""
-    metric_keys: set[str] = set()
-    for run in runs:
-        for node_id, metrics in (run.results_summary or {}).items():
-            if isinstance(metrics, dict):
-                for key in metrics:
-                    metric_keys.add(f"{node_id}.{key}")
+    from spectra_sherpa.app.services.run_metrics import comparison_response
 
-    sorted_keys = sorted(metric_keys)
+    return comparison_response(runs).model_dump()
 
-    diff: dict[str, dict[str, object]] = {}
-    for key in sorted_keys:
-        node_id, metric_name = key.split(".", 1)
-        diff[key] = {}
-        for run in runs:
-            node_metrics = (run.results_summary or {}).get(node_id, {})
-            if isinstance(node_metrics, dict) and metric_name in node_metrics:
-                diff[key][str(run.id)] = node_metrics[metric_name]
 
-    return {"metric_keys": sorted_keys, "diff": diff}
+def _run_evidence_gaps(run: ExecutionRun) -> list[EvidenceGap]:
+    """Project supported retained evidence without trusting legacy JSON."""
+
+    try:
+        return RunEvidence.model_validate(run.evidence_completeness or {}).gaps()
+    except (ValueError, TypeError):
+        return [
+            EvidenceGap(
+                node_id="__workflow__",
+                output="retention",
+                state="unverified",
+                category="unverified",
+                reason="Historical evidence completeness is unavailable or unsupported.",
+                recovery="Rerun this workflow to create a qualified durable record.",
+            )
+        ]
+
+
+def _saved_report_definition(run: ExecutionRun) -> dict | None:
+    from spectra_sherpa.app.services.run_output_retention import read_output
+
+    try:
+        evidence = RunEvidence.model_validate(run.evidence_completeness)
+        item = evidence.outputs.get("__workflow__", {}).get("definition")
+        if evidence.qualification != "qualified" or item is None or item.state != "exact":
+            return None
+        if item.byte_count is None or item.byte_count > 2 * 1024 * 1024:
+            return None
+        definition = read_output(run.user_id, item)
+        if not isinstance(definition, dict) or definition.get("schema_version") != 1:
+            return None
+        return canonicalize_serialized_workflow(definition)
+    except (ValueError, OSError, TypeError):
+        return None

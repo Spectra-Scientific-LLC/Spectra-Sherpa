@@ -4,15 +4,22 @@ Data Table visualization node.
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from dataclasses import asdict
+from typing import Any, Dict, List
 
 import numpy as np
 
-from spectra_sherpa.app.lib.scp_compat import NDDataset
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
+from spectra_sherpa.app.services.dag import presentation_limits
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    WorkerCapability,
+)
 
-from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
+from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, SalientFeatures, register_node
 
 
 def _is_numeric_array(arr: np.ndarray) -> bool:
@@ -32,9 +39,32 @@ def _copy_scientific_metadata(meta: Dict[str, Any], source: Dict[str, Any]) -> N
         "quality_summary",
         "target_context",
         "selection_provenance",
+        "source_context",
+        "peak_groups",
+        "column_units",
+        "measurement_policy",
     ):
         if key in source:
             meta[key] = source[key]
+
+
+def _canonical_table_parameters(raw: dict[str, object]) -> dict[str, object]:
+    """Close the bounded table-preview settings."""
+
+    unknown = sorted(set(raw) - {"max_rows", "transpose", "show_index"})
+    if unknown:
+        raise ValueError(f"output.data_table received unknown parameters: {', '.join(unknown)}")
+    max_rows = raw.get("max_rows", 100_000)
+    if isinstance(max_rows, bool) or not isinstance(max_rows, (int, np.integer)):
+        raise ValueError("output.data_table max_rows must be an integer")
+    max_rows = int(max_rows)
+    if not 10 <= max_rows <= 100_000:
+        raise ValueError("output.data_table max_rows must be between 10 and 100000")
+    transpose = raw.get("transpose", False)
+    show_index = raw.get("show_index", True)
+    if not isinstance(transpose, bool) or not isinstance(show_index, bool):
+        raise ValueError("output.data_table transpose and show_index must be boolean")
+    return {"max_rows": max_rows, "transpose": transpose, "show_index": show_index}
 
 
 @register_node
@@ -48,6 +78,12 @@ class DataTableNode(Node):
     """
 
     metadata = NodeMetadata(
+        policy=NodePolicy(
+            safe_for_auto_apply=True,
+            requires_human_review=False,
+            data_egress_risk="none",
+            offload_to_pool=False,
+        ),
         node_type="output.data_table",
         category="output",
         label="Data Table",
@@ -59,6 +95,8 @@ class DataTableNode(Node):
                 param_type="number",
                 default=100000,
                 min_value=10,
+                max_value=100000,
+                max_value_reason="Bounds browser memory and serialized preview size.",
                 step=10,
                 description="Maximum number of rows to display before truncating the table preview",
                 required=False,
@@ -80,7 +118,7 @@ class DataTableNode(Node):
                 required=False,
             ),
         ],
-        input_types=["NDDataset", "dict", "array"],
+        input_types=["SherpaDataset", "dict", "array"],
         output_type="dict",
         input_ports=[
             PortMetadata(
@@ -100,7 +138,28 @@ class DataTableNode(Node):
                 description="Table configuration and data",
             ),
         ],
+        canonical_parameter_validator=_canonical_table_parameters,
     )
+
+    def generate_python(
+        self,
+        inputs: Dict[str, str],
+        indent: str = "    ",
+        use_scp: bool = True,
+    ) -> List[str]:
+        """Generate a call to the same table authority used live."""
+        input_expr = inputs.get("default", next(iter(inputs.values()), "input_data"))
+        parameters = self.metadata.canonicalize_parameters(self._resolve_params())
+        return [
+            f"{indent}# --- Data table ({self.node_id}) ---",
+            (
+                f"{indent}from spectra_sherpa.app.services.dag.nodes.output.data_table_node "
+                "import build_data_table_result"
+            ),
+            f"{indent}results[{self.node_id!r}] = build_data_table_result(",
+            f"{indent}    {input_expr}, parameters={parameters!r},",
+            f"{indent})",
+        ]
 
     async def execute(self, input_data: Any) -> Dict[str, Any]:
         """
@@ -121,13 +180,19 @@ class DataTableNode(Node):
         which was why the Metrics Table panel looked empty even when the
         backend produced valid metrics.
         """
+        parameters = self.metadata.canonicalize_parameters(self._resolve_params())
+        return build_data_table_result(input_data, parameters=parameters)
+
+    def _build(self, input_data: Any) -> Dict[str, Any]:
+        """Project one supported canonical value into a bounded table payload."""
+        from spectra_sherpa.app.services.dag.presentation_limits import require_bounded_presentation
+
+        if isinstance(input_data, SalientFeatures):
+            input_data = asdict(input_data)
+        require_bounded_presentation(input_data, surface="Data table", max_values=500_000)
         max_rows = self.parameters.get("max_rows", 100000)
         transpose = self.parameters.get("transpose", False)
         show_index = self.parameters.get("show_index", True)
-
-        # Coerce NDDataset -> SherpaDataset so all dataset paths work
-        if isinstance(input_data, NDDataset):
-            input_data = coerce_to_sherpa(input_data)
 
         # Convert input to table format
         if isinstance(input_data, SherpaDataset):
@@ -157,10 +222,7 @@ class DataTableNode(Node):
         elif isinstance(input_data, (list, np.ndarray)):
             table_data = self._table_from_array(input_data, max_rows, transpose, show_index)
         else:
-            table_data = {
-                "data": [],
-                "metadata": {"type": "empty", "message": "No data to display"},
-            }
+            raise ValueError("output.data_table requires a supported canonical dataset, mapping, or array")
 
         return {"visualization": table_data}
 
@@ -178,6 +240,8 @@ class DataTableNode(Node):
         # Handle 1D data
         if data.ndim == 1:
             data = data.reshape(-1, 1)
+        if data.ndim != 2 or data.size == 0:
+            raise ValueError("output.data_table requires a non-empty one- or two-dimensional canonical dataset")
 
         n_rows, n_cols = data.shape
 
@@ -204,40 +268,33 @@ class DataTableNode(Node):
         if x_coord is not None and not transpose:
             raw_labels = getattr(x_coord, "labels", None)
             if raw_labels is not None:
-                try:
-                    labels_list = list(raw_labels)
-                    if len(labels_list) >= n_cols:
-                        columns = [str(v) for v in labels_list[:n_cols]]
-                except Exception:
-                    columns = []
+                labels_list = list(raw_labels)
+                if len(labels_list) >= n_cols:
+                    columns = [str(v) for v in labels_list[:n_cols]]
             if not columns:
-                try:
-                    x_vals = np.asarray(x_coord.data)
-                    if x_vals.size == n_cols and np.issubdtype(x_vals.dtype, np.number):
-                        columns = [f"{float(x):.2f}" for x in x_vals[:n_cols]]
-                except Exception:
-                    columns = []
+                x_vals = np.asarray(x_coord.data)
+                if x_vals.size == n_cols and np.issubdtype(x_vals.dtype, np.number):
+                    columns = [f"{float(x):.2f}" for x in x_vals[:n_cols]]
         if not columns:
-            columns = [f"Col_{i+1}" for i in range(n_cols)]
+            columns = [f"Col_{i + 1}" for i in range(n_cols)]
 
         # Forward sample labels to the frontend if present
         sample_labels: list[str] | None = None
-        try:
-            sample_axis = getattr(dataset, "sample_axis", None)
-            if sample_axis is not None:
-                raw_labels = getattr(sample_axis, "labels", None)
-                if raw_labels is not None:
-                    sample_labels = [str(x) for x in list(raw_labels)[:n_rows]]
-        except Exception:
-            sample_labels = None
+        sample_axis = getattr(dataset, "sample_axis", None)
+        if sample_axis is not None:
+            raw_labels = getattr(sample_axis, "labels", None)
+            if raw_labels is not None:
+                sample_labels = [str(x) for x in list(raw_labels)[:n_rows]]
 
         # Emit rows as flat numeric lists — outputPreview on the frontend
         # auto-generates col_0, col_1, ... fields and overrides them with
         # ``metadata.column_names`` when present.
-        rows = [list(map(float, data[i].tolist())) for i in range(n_rows)]
+        # Table payloads are plain JSON, unlike typed datasets. Preserve missing
+        # measurements as null rather than leaking non-JSON NaN/Infinity.
+        rows = [[float(value) if np.isfinite(value) else None for value in data[i]] for i in range(n_rows)]
 
         meta: Dict[str, Any] = {
-            "type": "NDDataset",
+            "type": "SherpaDataset",
             "shape": list(dataset.shape),
             "n_rows": n_rows,
             "n_cols": n_cols,
@@ -272,6 +329,48 @@ class DataTableNode(Node):
         Anything else falls back to a key/value table (for flat scalar
         dicts like model diagnostics).
         """
+        if {"method", "features", "x_units", "x_title", "n_total_variables", "selection_context"} <= data.keys():
+            features = data["features"]
+            if not isinstance(features, list) or any(
+                not isinstance(feature, dict) or not {"position", "importance", "label"} <= feature.keys()
+                for feature in features
+            ):
+                raise ValueError("SalientFeatures requires a list of position, importance and label records")
+            is_peaks = data["method"] == "peak_finding"
+            index_column = "consensus_group" if is_peaks else "feature_index"
+            score_column = "detection_fraction" if is_peaks else "importance"
+            columns = [index_column, "position", score_column, "label"]
+            return {
+                "data": [
+                    {
+                        index_column: index + 1,
+                        "position": feature["position"],
+                        score_column: feature["importance"],
+                        "label": feature["label"],
+                    }
+                    for index, feature in enumerate(features[:max_rows])
+                ],
+                "metadata": {
+                    "type": "salient_features",
+                    "n_rows": min(len(features), max_rows),
+                    "n_cols": len(columns),
+                    "truncated": len(features) > max_rows,
+                    "show_index": show_index,
+                    "column_names": columns,
+                    "column_units": {"position": data["x_units"]},
+                    "method": data["method"],
+                    "x_title": data["x_title"],
+                    "x_units": data["x_units"],
+                    "n_total_variables": data["n_total_variables"],
+                    "selection_context": data["selection_context"],
+                    "score_meaning": (
+                        "Fraction of input spectra with at least one detected peak in this consensus group (0–1)."
+                        if is_peaks
+                        else "Producer-supplied importance; interpretation depends on the selection method."
+                    ),
+                },
+            }
+
         # Metrics payloads: list of row dicts from HoldoutEvaluation /
         # classification reports.  Forward straight through so the frontend
         # preview machinery can use the dict keys as column headers.
@@ -299,8 +398,9 @@ class DataTableNode(Node):
                 "show_index": show_index,
                 "column_names": columns,
             }
-            if source_metadata is not None:
+            if isinstance(source_metadata, dict):
                 meta["source_metadata"] = source_metadata
+                _copy_scientific_metadata(meta, source_metadata)
             return {"data": rows_in, "metadata": meta}
 
         # Numeric payloads from PCA/MCR: forward the array to the numeric path.
@@ -321,7 +421,7 @@ class DataTableNode(Node):
                 scores = scores.reshape(-1, 1)
             n_rows = min(scores.shape[0], max_rows)
             n_cols = scores.shape[1] if scores.ndim > 1 else 1
-            columns = list(data.get("pc_labels", [f"PC{i+1}" for i in range(n_cols)]))[:n_cols]
+            columns = list(data.get("pc_labels", [f"PC{i + 1}" for i in range(n_cols)]))[:n_cols]
             numeric_rows: list[list[float]] = [list(map(float, scores[i].tolist())) for i in range(n_rows)]
             return {
                 "data": numeric_rows,
@@ -408,6 +508,8 @@ class DataTableNode(Node):
 
         if arr.ndim == 1:
             arr = arr.reshape(-1, 1)
+        if arr.ndim != 2 or arr.size == 0:
+            raise ValueError("output.data_table requires a non-empty one- or two-dimensional array")
 
         n_rows, n_cols = arr.shape
 
@@ -425,7 +527,7 @@ class DataTableNode(Node):
         if n_cols == 1:
             columns = ["Value"]
         else:
-            columns = [f"Col_{i+1}" for i in range(n_cols)]
+            columns = [f"Col_{i + 1}" for i in range(n_cols)]
 
         if _is_numeric_array(arr):
             rows: list[list[Any]] = [list(map(float, arr[i].tolist())) for i in range(n_rows)]
@@ -447,3 +549,39 @@ class DataTableNode(Node):
                 "column_names": columns,
             },
         }
+
+
+def build_data_table_result(
+    input_data: Any,
+    *,
+    parameters: dict[str, object] | None = None,
+) -> dict[str, Any]:
+    """Return the sole live/generated table-presentation payload."""
+
+    canonical = DataTableNode.metadata.canonicalize_parameters(parameters or {})
+    node = DataTableNode("canonical-data-table-authority", canonical)
+    return node._build(input_data)
+
+
+bind_stable_execution_contract(
+    DataTableNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
+    implementation_id="spectrasherpa.output.data-table",
+    implementation_version="1.0.2",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="filters_samples",
+    feature_effect="preserves_features",
+    axis_effect="preserves_axis",
+    unit_effect="preserves_units",
+    resource_hints={"timeout_seconds": 10, "cpu_seconds": 5, "memory_bytes": 536_870_912},
+    license_id="Apache-2.0",
+    help_reference="docs/nodes/output.md",
+    implementation_modules=(presentation_limits,),
+    implementation_distributions=("numpy",),
+    runtime_requirements=(("numpy", "1.26.4"),),
+)
+
+
+__all__ = ["DataTableNode", "build_data_table_result"]

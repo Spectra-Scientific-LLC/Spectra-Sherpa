@@ -3,15 +3,15 @@ WebSocket authentication helpers.
 
 WebSocket auth is intentionally narrower than HTTP auth:
 
-- Local/hybrid loopback connections resolve an implicit local user
-- Remote hybrid/enterprise connections must authenticate in the first
+- Local or explicitly exempted loopback connections resolve an implicit local user
+- Managed connections must authenticate in the first
   WebSocket message via ``{"type": "authenticate", ...}``
 
 Connection-time credentials in WS headers or query params are no longer
 accepted. This keeps the runtime model simple and avoids token leakage via
 URLs, server logs, and proxy metadata.
 
-**Why this file exists in the OSS repo:**  The hybrid and enterprise auth
+**Why this file exists in the OSS repo:**  The runtime authentication
 paths are exercised only when a commercial server extension is installed. In a pure OSS
 local deployment, ``requires_auth`` is always False and the implicit user
 is resolved immediately — the ``authenticate`` message path is never
@@ -24,9 +24,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import WebSocket
+from fastapi import WebSocket, status
 
-from spectra_sherpa.app.api.deps import get_user_from_credentials
+from spectra_sherpa.app.api.deps import get_user_from_credentials, invalidate_api_key_cache
+from spectra_sherpa.app.contracts.auth_resolver import get_extra_bearer_token_validator
 from spectra_sherpa.app.db.session import async_session
 
 logger = logging.getLogger(__name__)
@@ -42,13 +43,84 @@ async def resolve_initial_ws_user(
 
     Connection-time credential transport has been removed. The only initial
     identity that may exist before the message loop is the implicit local user
-    for local mode or loopback hybrid connections.
+    for local mode or explicitly exempted loopback connections.
     """
     if requires_auth:
         return None
 
     async with async_session() as session:
         return await get_user_from_credentials(session, client_host=client_host)
+
+
+async def validate_ws_token(token: str) -> dict | None:
+    """Validate a raw bearer token using the server-injected validator.
+
+    Returns the decoded payload if the token passes enterprise session policy
+    (expiry, revocation, active account), or ``None`` if it does not. In pure
+    OSS local mode no validator is injected and this returns ``None``.
+    """
+    validator = get_extra_bearer_token_validator()
+    if validator is None:
+        return None
+    return await validator(token)
+
+
+async def revalidate_ws_token(token: str | None, *, user_id: int | None = None) -> bool:
+    """Revalidate a stored bearer token before an action or protected delivery.
+
+    Returns ``True`` if the token is still valid or if no managed validator
+    is injected (pure OSS local mode has no session-revocation policy). A
+    token that fails an injected validator is treated as invalid, which lets
+    an already-open WebSocket connection be promptly closed after password
+    rotation, revocation, or account deactivation.
+    """
+    if token is None:
+        return True
+    validator = get_extra_bearer_token_validator()
+    if validator is None:
+        return True
+    try:
+        payload = await validator(token)
+        return payload is not None and (user_id is None or str(payload.get("sub")) == str(user_id))
+    except Exception:
+        # An unavailable session authority must not leave retained subscriptions
+        # authorized. Never include the credential in the diagnostic.
+        logger.warning("WebSocket session authority failed")
+        return False
+
+
+async def _revalidate_ws_credentials(websocket: WebSocket) -> bool:
+    user_id = getattr(websocket.state, "ws_auth_user_id", None)
+    api_key = getattr(websocket.state, "ws_auth_api_key", None)
+    if api_key is None:
+        return await revalidate_ws_token(getattr(websocket.state, "ws_auth_token", None), user_id=user_id)
+    try:
+        # Do not let a cached key-to-user mapping outlive key revocation.
+        invalidate_api_key_cache(api_key)
+        async with async_session() as session:
+            user = await get_user_from_credentials(session, api_key=api_key, client_host="remote")
+        return user is not None and user.is_active and user.id == user_id
+    except Exception:
+        logger.warning("WebSocket API key authority failed")
+        return False
+
+
+async def require_live_ws_session(websocket: WebSocket) -> bool:
+    """Retire an invalid managed session before an action or event delivery."""
+    from spectra_sherpa.app.services.websocket_manager import ws_manager
+
+    if getattr(websocket.state, "ws_session_invalidated", False):
+        return False
+    if await _revalidate_ws_credentials(websocket):
+        return True
+    websocket.state.ws_session_invalidated = True
+    # Remove every subscription before closing, including those on other channels.
+    await ws_manager.disconnect(websocket)
+    try:
+        await websocket.send_json({"type": "error", "detail": "Session invalidated"})
+    finally:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+    return False
 
 
 async def authenticate_ws_message(
@@ -59,25 +131,17 @@ async def authenticate_ws_message(
 ) -> Any:
     """Resolve a user from a first-message ``authenticate`` action.
 
-    Returns the resolved user, or *current_user* unchanged if the message
-    credentials don't resolve to anyone better.
+    Reject mixed or invalid credentials. A retained identity must never rescue
+    failed authentication or be paired with a different credential's authority.
     """
     auth_token = payload.get("token")
     auth_api_key = payload.get("api_key")
-    ws_user = current_user
-
-    if auth_token or auth_api_key:
-        async with async_session() as session:
-            if auth_token:
-                token_user = await get_user_from_credentials(session, token=auth_token, client_host=client_host)
-                if token_user is not None:
-                    ws_user = token_user
-            if auth_api_key:
-                api_key_user = await get_user_from_credentials(session, api_key=auth_api_key, client_host=client_host)
-                if api_key_user is not None:
-                    ws_user = api_key_user
-
-    return ws_user
+    if auth_token and auth_api_key:
+        return None
+    async with async_session() as session:
+        # A credential-free frame may resolve implicit local identity anew, but
+        # must never turn a retained remote identity into an unvalidated session.
+        return await get_user_from_credentials(session, token=auth_token, api_key=auth_api_key, client_host=client_host)
 
 
 def require_authenticated_action(

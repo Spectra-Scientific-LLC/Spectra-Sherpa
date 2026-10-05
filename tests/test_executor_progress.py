@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
+import numpy as np
 import pytest
 
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag.executor import (
     DAGExecutor,
     WorkflowEdge,
@@ -39,12 +41,21 @@ def callback():
     return AsyncMock()
 
 
-def _spectral_source_node() -> WorkflowNode:
-    return WorkflowNode(
-        node_id="src1",
-        node_type="data.source",
-        parameters={"source": "eigenvector", "eigenvector_dataset": "diesel_nir"},
+def _add_exact_file_source(executor: DAGExecutor, *, error: Exception | None = None) -> None:
+    """Add canonical source identity while isolating this unit test from I/O."""
+    executor.add_node(
+        WorkflowNode(
+            node_id="src1",
+            node_type="data.file_load",
+            parameters={"experiment_id": 1, "file_id": 1},
+        )
     )
+    if error is None:
+        executor.nodes["src1"].run = AsyncMock(
+            return_value={"default": SherpaDataset(X=np.arange(20, dtype=float).reshape(4, 5))}
+        )
+    else:
+        executor.nodes["src1"].run = AsyncMock(side_effect=error)
 
 
 # ---------------------------------------------------------------------------
@@ -55,9 +66,9 @@ def _spectral_source_node() -> WorkflowNode:
 class TestStatusCallback:
     @pytest.mark.asyncio
     async def test_callback_receives_queued_running_completed(self, callback, patch_eigenvector_loader):
-        """Basic pipeline: data.source → snv. Callback gets full lifecycle."""
+        """Basic canonical source → SNV pipeline gets the full lifecycle."""
         executor = DAGExecutor(process_pool=None)
-        executor.add_node(_spectral_source_node())
+        _add_exact_file_source(executor)
         executor.add_node(WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}))
         executor.add_edge(WorkflowEdge(from_node="src1", to_node="snv1"))
 
@@ -82,14 +93,7 @@ class TestStatusCallback:
     async def test_callback_receives_error_on_failure(self, callback):
         """When a node fails, callback receives error status."""
         executor = DAGExecutor(process_pool=None)
-        executor.add_node(
-            WorkflowNode(
-                node_id="src1",
-                node_type="data.source",
-                # Missing required source_type → will fail at execution
-                parameters={"source": "sklearn", "sklearn_dataset": "nonexistent_dataset"},
-            )
-        )
+        _add_exact_file_source(executor, error=ValueError("source failed"))
 
         # The workflow may raise, but callback should still be called with error
         try:
@@ -106,13 +110,7 @@ class TestStatusCallback:
     async def test_no_callback_still_works(self):
         """Verify execution works without a callback (backward compat)."""
         executor = DAGExecutor(process_pool=None)
-        executor.add_node(
-            WorkflowNode(
-                node_id="src1",
-                node_type="data.source",
-                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
-            )
-        )
+        _add_exact_file_source(executor)
 
         results = await executor.execute()  # No callback
         assert "src1" in results
@@ -123,13 +121,7 @@ class TestStatusCallback:
         failing_callback = AsyncMock(side_effect=RuntimeError("broadcast failed"))
 
         executor = DAGExecutor(process_pool=None)
-        executor.add_node(
-            WorkflowNode(
-                node_id="src1",
-                node_type="data.source",
-                parameters={"source": "sklearn", "sklearn_dataset": "iris"},
-            )
-        )
+        _add_exact_file_source(executor)
 
         # Should not raise despite callback failures
         results = await executor.execute(status_callback=failing_callback)
@@ -139,7 +131,7 @@ class TestStatusCallback:
     async def test_callback_order_queued_before_running(self, callback, patch_eigenvector_loader):
         """All queued events should come before any running events."""
         executor = DAGExecutor(process_pool=None)
-        executor.add_node(_spectral_source_node())
+        _add_exact_file_source(executor)
         executor.add_node(WorkflowNode(node_id="snv1", node_type="preprocess.normalize", parameters={"method": "snv"}))
         executor.add_edge(WorkflowEdge(from_node="src1", to_node="snv1"))
 

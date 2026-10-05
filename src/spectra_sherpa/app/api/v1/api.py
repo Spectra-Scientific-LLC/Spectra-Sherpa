@@ -7,24 +7,25 @@ from typing import Any, TypeAlias
 from fastapi import APIRouter
 
 from spectra_sherpa.app.api.v1.routes import (
+    acquisition_preferences,
     api_keys,
     audit_events,
     builder,
     chat,
-    compute,
     config,
+    dataset_views,
     datasets,
     deploy,
-    doe,
-    doe_config,
     egress,
     execution_runs,
+    experiment_specimens,
     experiments,
     health,
     jobs,
     logs,
     models,
-    predict,
+    project_choices,
+    project_provenance,
     project_scripts,
     projects,
     runs,
@@ -76,26 +77,30 @@ def build_api_router(
 
     # --- Always registered (functional routes) ---
     router.include_router(health.router, tags=["health"])
+    router.include_router(acquisition_preferences.router, tags=["acquisition-preferences"])
     router.include_router(config.router, tags=["config"])
     router.include_router(logs.router, tags=["logs"])
     router.include_router(experiments.router, tags=["experiments"])
-    router.include_router(doe.router, tags=["doe"])
-    router.include_router(doe_config.router, prefix="/doe-configs", tags=["doe-configs"])
+    router.include_router(dataset_views.router, tags=["dataset-views"])
+    router.include_router(experiment_specimens.router, tags=["experiment-specimens"])
+    # Register static organization paths before workflows' generic
+    # ``/{workflow_id}`` routes so /workflows/tags and /workflows/folders
+    # remain reachable.
+    router.include_router(workflow_organization.router, prefix="/workflows", tags=["workflow-organization"])
     router.include_router(workflows.router, tags=["workflows"])
     router.include_router(execution_runs.router, tags=["execution-runs"])
     router.include_router(runs.router, tags=["runs"])
-    router.include_router(workflow_organization.router, prefix="/workflows", tags=["workflow-organization"])
     router.include_router(workflow_templates.router, tags=["workflow-templates"])
     router.include_router(workflow_export.router, tags=["workflow-export"])
-    router.include_router(predict.router, tags=["predict"])
     router.include_router(builder.router, tags=["builder"])
-    router.include_router(compute.router, prefix="/compute", tags=["compute"])
     router.include_router(datasets.router, tags=["datasets"])
     router.include_router(synthesis.router, tags=["synthesis"])
     router.include_router(jobs.router, tags=["jobs"])
     router.include_router(egress.router, tags=["egress"])
     router.include_router(deploy.router, tags=["deploy"])
     router.include_router(projects.router, tags=["projects"])
+    router.include_router(project_choices.router, tags=["project-choices"])
+    router.include_router(project_provenance.router, tags=["project-provenance"])
     router.include_router(project_scripts.router, tags=["project-scripts"])
     router.include_router(models.router, tags=["models"])
     # Phase 4 C2 — audit query API (gated on app_config.audit_enabled).
@@ -109,7 +114,7 @@ def build_api_router(
 
     if include_actor_compat_route:
         # Actor compatibility route: available in OSS distributions so /auth/me
-        # resolves for local and hybrid bootstrap without implying managed auth.
+        # resolves for local and extension bootstrap without implying managed auth.
         from spectra_sherpa.app.api.v1.routes import auth_compat
 
         router.include_router(auth_compat.router, prefix="/auth", tags=["auth"])

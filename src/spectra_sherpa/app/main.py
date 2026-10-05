@@ -4,14 +4,12 @@ import asyncio
 import logging
 import os
 from collections.abc import Awaitable, Callable, Mapping
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass
 from typing import Any, TypeAlias
 from urllib.parse import urlparse
 
-# Force non-interactive matplotlib backend before SpectroChemPy imports it.
-# The macOS backend requires the main thread, but FastAPI runs handlers
-# in worker threads — 'agg' works everywhere without a display.
-# matplotlib is a transitive dep of spectrochempy (optional); guard the import.
+# Force a non-interactive matplotlib backend for server-side rendering.
 try:
     import matplotlib
 
@@ -27,6 +25,7 @@ from sqlalchemy import text
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from spectra_sherpa.app.api.v1.api import build_api_router
+from spectra_sherpa.app.contracts.application_lifecycle import ApplicationLifespan, compose_lifespan
 from spectra_sherpa.app.core.app_paths import get_app_data_paths
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.logging import configure_logging
@@ -40,8 +39,6 @@ from spectra_sherpa.app.core.startup import (
     ensure_database_ready,
     ensure_default_user,
     ensure_egress_defaults,
-    ensure_spectrochempy_data,
-    ensure_spectrochempy_testdata,
     ensure_workflow_templates,
     reconcile_orphan_model_artifacts,
     reconcile_stale_jobs,
@@ -56,6 +53,16 @@ logger = logging.getLogger(__name__)
 
 RouterMount: TypeAlias = tuple[APIRouter, str | Mapping[str, Any]]
 WebSocketRegistryHook: TypeAlias = Callable[[FastAPI], None]
+WebSocketAdmissionProvider: TypeAlias = Callable[[str, str | None, int | None], Awaitable["WebSocketAdmissionDecision"]]
+
+
+@dataclass(frozen=True)
+class WebSocketAdmissionDecision:
+    """Import-light result returned by an optional hosted transport authority."""
+
+    allowed: bool
+    reason: str | None = None
+    retry_after_seconds: int = 0
 
 
 def get_cors_origins() -> list[str]:
@@ -66,7 +73,7 @@ def get_cors_origins() -> list[str]:
     1. CORS_ORIGINS env var (comma-separated list)
     2. Mode-based defaults: localhost origins for all modes
 
-    NOTE: For hybrid/enterprise production deployments, CORS_ORIGINS must be set
+    NOTE: For managed production deployments, CORS_ORIGINS must be set
     to your frontend domain(s). The localhost defaults are only for development.
     """
     # Check for explicit CORS configuration
@@ -280,6 +287,12 @@ def _make_lifespan(
 
             init_model_store(settings.data_dir)
 
+            # Canonical fitted-state artifacts are distinct from legacy model
+            # artifacts and have their own private, content-addressed reader.
+            from spectra_sherpa.app.services.canonical_artifact_store import init_canonical_artifact_store
+
+            init_canonical_artifact_store(settings.data_dir)
+
             # Audit subsystem (ISO 17025 readiness — phase 1):
             #   * Mint process_boot_id once per app boot; pairs with
             #     app_monotonic_ns on each event for strict within-process
@@ -316,10 +329,6 @@ def _make_lifespan(
                 await reconcile_stale_jobs()
                 logger.info("  → reconcile_orphan_model_artifacts")
                 await reconcile_orphan_model_artifacts()
-                logger.info("  → ensure_spectrochempy_data")
-                ensure_spectrochempy_data()
-                logger.info("  → ensure_spectrochempy_testdata")
-                await ensure_spectrochempy_testdata()
                 logger.info("  → ensure_workflow_templates")
                 await ensure_workflow_templates()
                 logger.info("Phase 2 complete")
@@ -330,22 +339,12 @@ def _make_lifespan(
                 logger.info("Follower: DB ready")
 
             # Phase 3: per-worker setup that depends on DB being ready
-            logger.info("Phase 3: tools + plugins ...")
+            logger.info("Phase 3: built-in tools ...")
             # Register built-in MCP tools (import triggers @register_tool decorators)
             import spectra_sherpa.app.services.tools.builtin  # noqa: F401
             from spectra_sherpa.app.services.tools import tool_registry as _tool_reg
 
             logger.info("Registered %d built-in tool(s)", len(_tool_reg))
-
-            # Discover and load third-party plugins (may register additional tools)
-            from spectra_sherpa.app.services.plugin_loader import discover_plugins
-
-            discover_plugins()
-
-            # Start network health monitoring (HYBRID mode only)
-            from spectra_sherpa.app.services.network_health import start_network_health_service
-
-            await start_network_health_service()
 
             # Start folder watch polling service
             from spectra_sherpa.app.services.folder_watch_service import start_folder_watch_service
@@ -368,26 +367,13 @@ def _make_lifespan(
             for hook in extra_startup or []:
                 await hook()
 
-            # Phase 5: DAG worker pool for CPU-bound node execution
-            import multiprocessing
-            from concurrent.futures import ProcessPoolExecutor
-
-            from spectra_sherpa.app.services.dag.executor import set_default_pool
+            # Phase 5: bounded, individually cancellable scientific workers.
+            from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool, set_default_pool
 
             pool_size = settings.dag_worker_pool_size
-            try:
-                _dag_pool = ProcessPoolExecutor(
-                    max_workers=pool_size,
-                    mp_context=multiprocessing.get_context("spawn"),
-                )
-                set_default_pool(_dag_pool)
-                logger.info("DAG worker pool: %d processes (spawn)", pool_size)
-            except (PermissionError, OSError) as exc:
-                logger.warning(
-                    "Could not create DAG worker pool (%s). " "CPU-bound nodes will run in-process.",
-                    exc,
-                )
-                _dag_pool = None
+            _dag_pool = IsolatedWorkerPool(max_workers=pool_size)
+            set_default_pool(_dag_pool)
+            logger.info("DAG worker capacity: %d isolated spawned processes", pool_size)
 
             logger.info("Application startup complete")
         except Exception:
@@ -397,33 +383,22 @@ def _make_lifespan(
             )
             raise
 
-        yield
+        try:
+            yield
+        finally:
+            # Register independent cleanup operations in reverse order. A failing
+            # extension shutdown must not strand core workers or services.
+            from spectra_sherpa.app.services.dag.executor import set_default_pool as _clear_pool
+            from spectra_sherpa.app.services.folder_watch_service import stop_folder_watch_service
 
-        # === SHUTDOWN ===
-        # Extension shutdown hooks run first so server add-ons can still
-        # access core services before they are torn down.
-        for hook in extra_shutdown or []:
-            await hook()
-
-        # Shut down DAG worker pool
-        from spectra_sherpa.app.services.dag.executor import set_default_pool as _clear_pool
-
-        _clear_pool(None)
-        if _dag_pool is not None:
-            _dag_pool.shutdown(wait=True, cancel_futures=True)
-            logger.info("DAG worker pool shut down")
-
-        await job_manager.shutdown()
-
-        # Stop folder watch polling
-        from spectra_sherpa.app.services.folder_watch_service import stop_folder_watch_service
-
-        await stop_folder_watch_service()
-
-        # Stop network health monitoring
-        from spectra_sherpa.app.services.network_health import stop_network_health_service
-
-        await stop_network_health_service()
+            async with AsyncExitStack() as cleanup:
+                cleanup.push_async_callback(stop_folder_watch_service)
+                cleanup.push_async_callback(job_manager.shutdown)
+                if _dag_pool is not None:
+                    cleanup.callback(_dag_pool.shutdown, wait=True, cancel_futures=True)
+                cleanup.callback(_clear_pool, None)
+                for hook in reversed(extra_shutdown or []):
+                    cleanup.push_async_callback(hook)
 
     return lifespan
 
@@ -434,11 +409,11 @@ def _make_lifespan(
 
 
 def _mount_frontend(app: FastAPI) -> None:
-    """Mount the pre-built frontend if static/ exists.
+    """Mount the release-generated frontend if static/ exists.
 
     In local/pip-installed mode the bundled SPA is served directly by
-    FastAPI (no nginx needed). In Docker/cloud mode static/ won't exist
-    inside the backend container, so this is a no-op.
+    FastAPI (no nginx needed). A source-only developer checkout before a
+    frontend build has no static directory, so this is a no-op.
     """
     from spectra_sherpa._paths import get_static_dir
 
@@ -451,6 +426,12 @@ def _mount_frontend(app: FastAPI) -> None:
     assets_dir = static_dir / "assets"
     if assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="frontend-assets")
+
+    @app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"])
+    async def _missing_api(path: str):
+        # Unknown API endpoints must never become SPA HTML or a misleading
+        # 405 from the GET-only page fallback in a bundled installation.
+        return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
     @app.get("/{path:path}")
     async def _spa_catchall(request: Request, path: str):
@@ -488,6 +469,18 @@ async def _authorize_workflow_channel(requested: str, ws_user: Any) -> str | Non
     from spectra_sherpa.app.models.workflow import Workflow
 
     async with async_session() as session:
+        from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
+        from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
+
+        if uses_managed_project_access():
+            workflow = await session.get(Workflow, wf_id, populate_existing=True)
+            if workflow is None:
+                return None
+            try:
+                await require_scientific_access(session, ws_user.id, workflow.project_id, "read")
+            except Exception:
+                return None
+            return requested
         owner_id = (await session.execute(select(Workflow.user_id).where(Workflow.id == wf_id))).scalar_one_or_none()
     if owner_id is None:
         return None
@@ -499,6 +492,52 @@ async def _authorize_workflow_channel(requested: str, ws_user: Any) -> str | Non
 # ---------------------------------------------------------------------------
 # WebSocket endpoint (standalone — registered on app inside create_app)
 # ---------------------------------------------------------------------------
+
+
+async def _admit_websocket_transport_event(
+    websocket: WebSocket,
+    *,
+    event: str,
+    client_host: str | None,
+    user: Any,
+) -> bool:
+    provider: WebSocketAdmissionProvider | None = getattr(
+        websocket.app.state,
+        "websocket_admission_provider",
+        None,
+    )
+    if provider is None:
+        return True
+    try:
+        decision = await provider(
+            event,
+            client_host,
+            int(user.id) if user is not None and user.id is not None else None,
+        )
+    except Exception:
+        logger.exception("WebSocket transport admission failed closed")
+        decision = WebSocketAdmissionDecision(
+            allowed=False,
+            reason="transport_authority_unavailable",
+            retry_after_seconds=1,
+        )
+    if decision.allowed:
+        return True
+    await websocket.send_json(
+        {
+            "type": "error",
+            "detail": "Managed trial transport admission refused",
+            "reason": decision.reason,
+            "retry_after_seconds": max(1, int(decision.retry_after_seconds)),
+        }
+    )
+    await websocket.close(code=status.WS_1013_TRY_AGAIN_LATER)
+    return False
+
+
+async def _cancel_ws_requests(registry, websocket):
+    if registry is not None:
+        await registry.requests.close(websocket)
 
 
 async def websocket_endpoint(websocket: WebSocket) -> None:
@@ -513,6 +552,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     )
 
     # Determine if auth is required for this connection (mode-dependent).
+    from spectra_sherpa.app.contracts.auth_resolver import user_allows_compute
     from spectra_sherpa.app.core.mode_policy import (
         blocks_local_network_client,
     )
@@ -523,6 +563,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     from spectra_sherpa.app.services.ws_auth import (
         authenticate_ws_message,
         require_authenticated_action,
+        require_live_ws_session,
         resolve_initial_ws_user,
         stamp_last_active,
     )
@@ -557,7 +598,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     ws_registry = getattr(websocket.app.state, "ws_action_registry", None)
 
     async def _resolve_channel(requested: str | None) -> str | None:
-        if not requested:
+        # handle_subscribe retains this resolver as the per-delivery authorizer.
+        if not requested or not await require_live_ws_session(websocket):
             return None
         if requested == "jobs":
             return job_channel
@@ -578,7 +620,13 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         # ownership-gated (see _authorize_workflow_channel).
         if requested.startswith("workflow:"):
             return await _authorize_workflow_channel(requested, ws_user)
-        return requested
+        # The core only produces events for job and workflow channels. Do not
+        # treat an arbitrary client-supplied name as a future extension point:
+        # once a producer broadcasts on such a channel, every prior subscriber
+        # would receive its payload without an ownership decision. A new
+        # channel family requires a core change here with explicit actor-aware
+        # authorization; the action registry does not authorize channels.
+        return None
 
     # ---- Action dispatcher ----
     # Send a server-side ping when the connection is idle for this many seconds.
@@ -588,10 +636,19 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
     await ws_manager.connect(websocket)
     try:
+        if not await _admit_websocket_transport_event(
+            websocket,
+            event="connect",
+            client_host=ws_client_host,
+            user=ws_user,
+        ):
+            return
         while True:
             try:
                 payload = await asyncio.wait_for(websocket.receive_json(), timeout=_WS_IDLE_TIMEOUT)
             except asyncio.TimeoutError:
+                if not await require_live_ws_session(websocket):
+                    break
                 # Connection has been idle — probe it before assuming it is alive.
                 try:
                     await websocket.send_json({"type": "ping"})
@@ -608,6 +665,17 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 action = payload.get("action") or payload.get("type")
                 logger.info("WS action received: %s", action)
 
+                if not await _admit_websocket_transport_event(
+                    websocket,
+                    event=str(action or "unknown"),
+                    client_host=ws_client_host,
+                    user=ws_user,
+                ):
+                    return
+
+                if not await require_live_ws_session(websocket):
+                    break
+
                 if action == "ping":
                     await websocket.send_json({"type": "pong"})
                     continue
@@ -619,6 +687,9 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 # of via URL query params.  Preferred because it keeps tokens
                 # out of server logs and browser history.
                 if action == "authenticate":
+                    await _cancel_ws_requests(ws_registry, websocket)
+                    # Reauthentication cannot carry the previous actor's channels.
+                    await ws_manager.disconnect(websocket)
                     ws_user = await authenticate_ws_message(
                         payload,
                         client_host=ws_client_host,
@@ -627,14 +698,28 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     if ws_user and ws_user.id is not None:
                         job_channel = f"jobs:{ws_user.id}"
                         await stamp_last_active(ws_user)
-                    if require_authenticated_action(requires_auth=requires_ws_auth, ws_user=ws_user):
+                    if ws_user is None:
                         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                         break
+                    if not await user_allows_compute(ws_user):
+                        await websocket.send_json({"type": "error", "detail": "Managed trial access is not active"})
+                        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                        break
+                    # Remember the bearer token supplied during authentication so
+                    # subsequent protected actions can revalidate it against the
+                    # current session authority (expiry, revocation, active account).
+                    websocket.state.ws_auth_token = payload.get("token")
+                    websocket.state.ws_auth_api_key = payload.get("api_key")
+                    websocket.state.ws_auth_user_id = ws_user.id if ws_user else None
                     await websocket.send_json({"type": "authenticated", "user_id": ws_user.id if ws_user else None})
                     continue
 
                 # Guard: reject any action before auth on enterprise connections
                 if require_authenticated_action(requires_auth=requires_ws_auth, ws_user=ws_user):
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                    break
+                if not await user_allows_compute(ws_user):
+                    await websocket.send_json({"type": "error", "detail": "Managed trial access is not active"})
                     await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
                     break
 
@@ -652,11 +737,15 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                     payload,
                     ws_user,
                     _llm_rate_limiter,
+                    background=True,
                 ):
                     continue
                 else:
                     await websocket.send_json({"type": "error", "detail": "Unknown action"})
     except WebSocketDisconnect:
+        pass
+    finally:
+        await _cancel_ws_requests(ws_registry, websocket)
         await ws_manager.disconnect(websocket)
 
 
@@ -667,13 +756,18 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
 def create_app(
     *,
+    api_router: APIRouter | None = None,
     extra_routers: list[RouterMount] | None = None,
     extra_startup: list[Callable[[], Awaitable[None]]] | None = None,
     extra_shutdown: list[Callable[[], Awaitable[None]]] | None = None,
+    extra_lifespans: list[ApplicationLifespan] | None = None,
     extra_middleware: list[Callable[[FastAPI], None]] | None = None,
     extra_ws_action_registrars: list[WebSocketRegistryHook] | None = None,
+    websocket_admission_provider: WebSocketAdmissionProvider | None = None,
     include_server_routers: bool = True,
     include_actor_compat_route: bool = True,
+    include_websocket: bool = True,
+    include_frontend: bool = True,
 ) -> FastAPI:
     """Build and return the FastAPI application.
 
@@ -682,6 +776,8 @@ def create_app(
 
     Repo 2 (server) calls this with extra hooks to inject cloud-only
     routers, startup tasks, and middleware without forking this module.
+    Product factories may supply app-scoped ``extra_lifespans`` to own paired
+    startup/cleanup after core startup. No implementation is auto-discovered.
     """
     origins = get_cors_origins()
     _allow_all = origins == ["*"]
@@ -693,11 +789,29 @@ def create_app(
         openapi_url="/api/openapi.json",
         docs_url="/api/docs",
         redoc_url="/api/redoc",
-        lifespan=_make_lifespan(extra_startup, extra_shutdown),
+        lifespan=compose_lifespan(_make_lifespan(extra_startup, extra_shutdown), extra_lifespans or ()),
     )
     from spectra_sherpa.app.services.ws_action_registry import build_default_ws_action_registry
 
     _app.state.ws_action_registry = build_default_ws_action_registry()
+
+    from fastapi.responses import JSONResponse
+
+    from spectra_sherpa.app.services.encryption import CredentialStorageUnavailable
+
+    async def _credential_storage_unavailable(_request, exc: CredentialStorageUnavailable):
+        # Persistent credential operations are refused; analysis stays available.
+        return JSONResponse(status_code=409, content={"detail": str(exc), "code": "credential_storage_unavailable"})
+
+    _app.add_exception_handler(CredentialStorageUnavailable, _credential_storage_unavailable)
+
+    from spectra_sherpa.app.core.desktop_policy import LinkedConfigurationRefused
+
+    async def _linked_configuration(_request, exc: LinkedConfigurationRefused):
+        return JSONResponse(status_code=409, content={"detail": str(exc), "code": "linked_configuration_refused"})
+
+    _app.add_exception_handler(LinkedConfigurationRefused, _linked_configuration)
+    _app.state.websocket_admission_provider = websocket_admission_provider
     for registrar in extra_ws_action_registrars or []:
         registrar(_app)
 
@@ -761,9 +875,13 @@ def create_app(
 
     # --- Routers ---
     _app.include_router(
-        build_api_router(
-            include_server_routers=include_server_routers,
-            include_actor_compat_route=include_actor_compat_route,
+        (
+            api_router
+            if api_router is not None
+            else build_api_router(
+                include_server_routers=include_server_routers,
+                include_actor_compat_route=include_actor_compat_route,
+            )
         ),
         prefix="/api/v1",
     )
@@ -777,8 +895,6 @@ def create_app(
 
     @_app.get("/api/ready")
     async def ready() -> JSONResponse:
-        from spectra_sherpa.app.services.plugin_loader import plugin_load_failures
-
         try:
             async with async_session() as session:
                 await session.execute(text("SELECT 1"))
@@ -796,17 +912,15 @@ def create_app(
             "status": "ok",
             "database": "ok",
         }
-        if plugin_load_failures:
-            content["status"] = "degraded"
-            content["plugin_failure_count"] = len(plugin_load_failures)
-
         return JSONResponse(status_code=status.HTTP_200_OK, content=content)
 
     # --- WebSocket ---
-    _app.add_api_websocket_route("/ws", websocket_endpoint)
+    if include_websocket:
+        _app.add_api_websocket_route("/ws", websocket_endpoint)
 
     # --- Frontend SPA ---
-    _mount_frontend(_app)
+    if include_frontend:
+        _mount_frontend(_app)
 
     return _app
 

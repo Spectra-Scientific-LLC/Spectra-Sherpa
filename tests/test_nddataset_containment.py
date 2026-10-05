@@ -1,144 +1,165 @@
-"""CI enforcement: NDDataset imports must be confined to approved modules.
-
-This test scans all Python files in the spectra_sherpa package and asserts
-that NDDataset is only referenced in files that are approved to use it.
-
-As the SherpaDataset migration progresses, the approved set shrinks.
-
-Run with:
-    cd spectra-sherpa && .venv/bin/pytest tests/test_nddataset_containment.py -v
-"""
+"""Fail-closed containment for the optional SpectroChemPy runtime."""
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
-# Modules approved to reference NDDataset.
-# This list should shrink over time as compatibility shims are removed.
-# When migrating a module away from NDDataset, remove it from this list.
-APPROVED_NDDATASET_MODULES = {
-    # Adapter layer (core SCP interop)
-    "app/lib/scp_compat.py",
-    "app/lib/adapters/scp_adapter.py",
-    "app/lib/adapters/scp_extractors.py",
-    # SCP-backed modeling/classification nodes
-    "nodes/modeling/pca_nodes.py",
-    "nodes/modeling/pls_nodes.py",
-    "nodes/modeling/mcr_nodes.py",
-    "nodes/modeling/efa_nodes.py",
-    "nodes/modeling/simplisma_nodes.py",
-    "nodes/modeling/decomposition_nodes.py",
-    "nodes/modeling/peak_finding_nodes.py",
-    "nodes/modeling/regression_nodes.py",
-    "nodes/modeling/load_apply_node.py",
-    "nodes/modeling/clustering_nodes.py",
-    "nodes/modeling/core_utils.py",
-    "nodes/classification/plsda_nodes.py",
-    "nodes/classification/simca_nodes.py",
-    "nodes/classification/knn_nodes.py",
-    "nodes/classification/predict_node.py",
-    # Data source / preprocessing / utility nodes
-    "nodes/data/loaders.py",
-    "nodes/data/source.py",
-    "nodes/data/_utils.py",
-    "nodes/data/synthetic.py",
-    "nodes/data/transforms.py",
-    "nodes/preprocessing/__init__.py",
-    "nodes/preprocessing/_shared.py",
-    "nodes/preprocessing/baseline_nodes.py",
-    "nodes/preprocessing/cleaning_nodes.py",
-    "nodes/preprocessing/correction_nodes.py",
-    "nodes/preprocessing/normalize_scale_nodes.py",
-    "nodes/preprocessing/osc_node.py",
-    "nodes/preprocessing/smooth_deriv_nodes.py",
-    "nodes/blend.py",
-    "nodes/custom.py",
-    "nodes/deploy_nodes.py",
-    "nodes/selection/sample_partition_node.py",
-    "nodes/selection/variable_select_node.py",
-    "nodes/selection/ipls_node.py",
-    "nodes/selection/cars_node.py",
-    "nodes/selection/spa_node.py",
-    "nodes/selection/uve_node.py",
-    "nodes/selection/stability_node.py",
-    "nodes/selection/nested_cv_node.py",
-    "nodes/selection/selection_audit_node.py",
-    "nodes/selection/compare_selections_node.py",
-    "nodes/transfer/pds_node.py",
-    "nodes/transfer/sbc_node.py",
-    "nodes/modeling/_artifact_builder.py",
-    "nodes/diagnostics.py",
-    "nodes/output/plot_node.py",
-    "nodes/output/export_node.py",
-    "nodes/output/stats_summary_node.py",
-    "nodes/output/contour_plot_node.py",
-    "nodes/output/data_table_node.py",
-    "nodes/time_series.py",
-    # DAG infrastructure
-    "services/dag/io_contracts.py",
-    "services/dag/executor.py",
-    "services/dag/executor_validation.py",
-    "services/dag/serialize.py",
-    "services/dag/export_helpers.py",
-    "services/dag/meta_helpers.py",
-    "services/dag/node_base.py",
-    # Services
-    "services/serialization.py",
-    "services/python_export.py",
-    "services/builder.py",
-    "services/cache.py",
-    "services/metadata/__init__.py",
-    "services/metadata/extractor_base.py",
-    # API layer
-    "api/v1/routes/predict.py",
-    "api/v1/routes/builder.py",
-    "api/v1/routes/compute.py",
-    # Library modules (legacy SCP interop)
-    "app/lib/__init__.py",
-    "app/lib/io.py",
-    "app/lib/preprocessing.py",
-    "app/lib/blending/__init__.py",
-    "app/lib/blending/blend.py",
-    "app/lib/spectral/conversions.py",
-    "app/lib/spectral/dataset.py",
-    "app/lib/spectral/metadata.py",
-    "app/lib/spectral/validators.py",
-    # Models
-    "app/models/spectra_meta.py",
-    # SDK
-    "sdk_nodes.py",
-}
+_NDDATASET_MODULES = frozenset({"interoperability/spectrochempy_adapter.py"})
 
 
-def _find_src_root() -> Path:
-    """Locate the spectra_sherpa source root."""
-    candidate = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa"
-    if candidate.exists():
-        return candidate
-    raise FileNotFoundError(f"Cannot find spectra_sherpa source at {candidate}")
+def _source_root() -> Path:
+    root = Path(__file__).resolve().parent.parent / "src" / "spectra_sherpa"
+    if not root.is_dir():
+        raise FileNotFoundError(f"Cannot find spectra_sherpa source at {root}")
+    return root
 
 
-def test_nddataset_import_containment():
-    """NDDataset references must be confined to approved modules."""
-    src_root = _find_src_root()
-    violations = []
+def test_nddataset_references_are_confined_to_the_closed_temporary_set() -> None:
+    root = _source_root()
+    observed = {
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*.py")
+        if "NDDataset" in path.read_text(encoding="utf-8")
+    }
 
-    for py_file in sorted(src_root.rglob("*.py")):
-        # Normalize to forward slashes so the approved-module list (which
-        # uses ``/`` separators) matches identically on Windows runners.
-        relative = py_file.relative_to(src_root).as_posix()
-
-        # Skip if it's an approved module
-        if any(relative.endswith(approved) for approved in APPROVED_NDDATASET_MODULES):
-            continue
-
-        content = py_file.read_text(errors="replace")
-        if "NDDataset" in content:
-            violations.append(relative)
-
-    assert not violations, (
-        "NDDataset referenced in unapproved modules:\n"
-        + "\n".join(f"  - {v}" for v in violations)
-        + "\n\nEither add these to APPROVED_NDDATASET_MODULES or "
-        "remove the NDDataset reference."
+    assert observed == _NDDATASET_MODULES, (
+        "Only the minimal optional adapter may construct the external dataset type.\n"
+        f"unexpected={sorted(observed - _NDDATASET_MODULES)}\n"
+        f"missing={sorted(_NDDATASET_MODULES - observed)}"
     )
+
+
+def test_retired_scp_extractor_module_does_not_exist() -> None:
+    root = _source_root()
+    assert not (root / "app" / "lib" / "adapters" / "scp_extractors.py").exists()
+    assert (root / "app" / "lib" / "fitted_state.py").is_file()
+
+
+def test_dag_node_vocabulary_is_canonical_sherpa_dataset() -> None:
+    root = _source_root()
+    nodes_root = root / "app" / "services" / "dag" / "nodes"
+    occurrences: list[tuple[str, str]] = []
+    for path in nodes_root.rglob("*.py"):
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if "NDDataset" in line:
+                occurrences.append((path.relative_to(root).as_posix(), line.strip()))
+
+    assert occurrences == []
+
+
+def test_node_metadata_defaults_name_the_canonical_dataset() -> None:
+    source = (_source_root() / "app" / "services" / "dag" / "node_base.py").read_text(encoding="utf-8")
+    assert 'default_factory=lambda: ["SherpaDataset"]' in source
+    assert 'output_type: str = "SherpaDataset"' in source
+    assert '"NDDataset"' not in source
+
+
+def test_frontend_production_source_has_no_retired_dataset_vocabulary() -> None:
+    frontend = Path(__file__).resolve().parent.parent / "frontend" / "src"
+    occurrences = []
+    for path in frontend.rglob("*"):
+        if not path.is_file() or "test" in path.parts:
+            continue
+        if path.suffix not in {".ts", ".vue"}:
+            continue
+        if "NDDataset" in path.read_text(encoding="utf-8"):
+            occurrences.append(path.relative_to(frontend).as_posix())
+    assert occurrences == []
+
+
+def test_only_the_adapter_can_import_the_optional_runtime() -> None:
+    root = _source_root()
+    observed: set[str] = set()
+    for path in root.rglob("*.py"):
+        relative = path.relative_to(root).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import) and any(alias.name == "spectrochempy" for alias in node.names):
+                observed.add(relative)
+            elif isinstance(node, ast.ImportFrom) and node.module == "spectrochempy":
+                observed.add(relative)
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id in {"import_module", "__import__"}
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and node.args[0].value == "spectrochempy"
+            ):
+                observed.add(relative)
+    assert observed == {"interoperability/spectrochempy_adapter.py"}
+
+
+def test_only_three_optional_nodes_import_the_adapter() -> None:
+    root = _source_root()
+    observed: set[str] = set()
+    for path in root.rglob("*.py"):
+        relative = path.relative_to(root).as_posix()
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module == "spectra_sherpa.interoperability":
+                if any(alias.name == "spectrochempy_adapter" for alias in node.names):
+                    observed.add(relative)
+    assert observed == {
+        "app/services/dag/nodes/modeling/efa_nodes.py",
+        "app/services/dag/nodes/modeling/mcr_nodes.py",
+        "app/services/dag/nodes/modeling/simplisma_nodes.py",
+    }
+
+
+def test_retired_compatibility_and_product_authorities_do_not_exist() -> None:
+    root = _source_root()
+    for relative in (
+        "app/lib/scp_compat.py",
+        "app/lib/scp_catalog.py",
+        "app/lib/adapters/scp_adapter.py",
+    ):
+        assert not (root / relative).exists()
+
+    retired = {
+        "HAS_NDDATASET",
+        "HAS_SCP",
+        "SCP_DATADIR",
+        "SCP_DATA_BOOTSTRAP",
+        "spectrochempy-examples",
+        "scp_roundtrip",
+        "from_nddataset",
+        "to_nddataset",
+    }
+    occurrences: list[tuple[str, str]] = []
+    for path in root.rglob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for symbol in retired:
+            if symbol in text:
+                occurrences.append((path.relative_to(root).as_posix(), symbol))
+    assert occurrences == []
+
+
+def test_retired_product_authorities_are_absent_from_delivery_sources() -> None:
+    package_root = Path(__file__).resolve().parent.parent
+    repository_root = package_root.parents[1]
+    roots = (
+        package_root / ".env.example",
+        repository_root / "packages" / "spectra-ops" / "docker" / "Dockerfile.backend",
+    )
+    product_files = [*roots]
+    product_files.extend(
+        path
+        for path in (package_root / "frontend" / "src").rglob("*")
+        if path.is_file() and path.suffix in {".ts", ".vue"} and "test" not in path.parts
+    )
+    retired = (
+        "SCP_DATA_BOOTSTRAP",
+        "SCP_DATADIR",
+        "spectrochempy-examples",
+        "SCP dataset not found",
+        "_resolve_scp_path",
+    )
+    occurrences = [
+        (path.relative_to(repository_root).as_posix(), symbol)
+        for path in product_files
+        for symbol in retired
+        if symbol in path.read_text(encoding="utf-8")
+    ]
+    assert occurrences == []

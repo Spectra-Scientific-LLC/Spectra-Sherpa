@@ -1,0 +1,129 @@
+schema_version: 1
+name: Bilinear Mixture Synthesis
+slug: bilinear_mixture_synthesis
+description: Label two measured pure-component responses, form one compatible
+  pure-response matrix, and combine it with an explicit non-negative coefficient
+  design through the standard bilinear equation D = C @ S.
+category: curve_resolution
+is_active: true
+status: ready
+template_data:
+  nodes:
+  - node_id: pure_a
+    node_type: data.file_load
+    label: Pure Response A
+    parameters: {}
+    example_binding:
+      source: synthetic
+      dataset_name: pure_response_a
+    position_x: 50
+    position_y: 50
+  - node_id: species_a
+    node_type: synthesis.species
+    label: Identify Species A
+    parameters:
+      species_name: Species A
+      molar_absorptivity: null
+    position_x: 50
+    position_y: 250
+  - node_id: pure_b
+    node_type: data.file_load
+    label: Pure Response B
+    parameters: {}
+    example_binding:
+      source: synthetic
+      dataset_name: pure_response_b
+    position_x: 350
+    position_y: 50
+  - node_id: species_b
+    node_type: synthesis.species
+    label: Identify Species B
+    parameters:
+      species_name: Species B
+      molar_absorptivity: null
+    position_x: 350
+    position_y: 250
+  - node_id: merge_pure
+    node_type: synthesis.merge
+    label: Form Pure-response Matrix (S)
+    parameters: {}
+    position_x: 200
+    position_y: 450
+  - node_id: coefficient_design
+    node_type: data.file_load
+    label: Mixture Coefficient Design (C)
+    parameters: {}
+    example_binding:
+      source: synthetic
+      dataset_name: mixture_coefficient_design
+      selected_target: coefficient_matrix
+      target_type: continuous
+    position_x: 600
+    position_y: 250
+  - node_id: blend
+    node_type: synthesis.blend
+    label: Evaluate D = C @ S
+    parameters: {}
+    position_x: 400
+    position_y: 650
+  - node_id: mixture_plot
+    node_type: output.plot
+    label: Synthetic Mixture Spectra
+    parameters:
+      plot_type: spectra
+    position_x: 400
+    position_y: 850
+  edges:
+  - from_node_id: pure_a
+    to_node_id: species_a
+    to_input: default
+  - from_node_id: pure_b
+    to_node_id: species_b
+    to_input: default
+  - from_node_id: species_a
+    to_node_id: merge_pure
+    to_input: default
+  - from_node_id: species_b
+    to_node_id: merge_pure
+    to_input: default
+  - from_node_id: merge_pure
+    to_node_id: blend
+    to_input: pure_spectra
+  - from_node_id: coefficient_design
+    from_output: target
+    to_node_id: blend
+    to_input: concentrations
+  - from_node_id: blend
+    to_node_id: mixture_plot
+    to_input: default
+  canvas_state:
+    zoom: 0.85
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    Pure_Response_A:
+      role_type: X_spectra
+      node_binding: pure_a
+      required: true
+      binding_mode: embedded
+      description: Exactly one finite pure-component response on the shared spectral axis
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+    Pure_Response_B:
+      role_type: X_spectra
+      node_binding: pure_b
+      required: true
+      binding_mode: embedded
+      description: A second pure-component response on the exact same axis and units
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+    Coefficient_Design:
+      role_type: Y_reference
+      node_binding: coefficient_design
+      required: true
+      binding_mode: embedded
+      description: One non-negative dimensionless coefficient column per species

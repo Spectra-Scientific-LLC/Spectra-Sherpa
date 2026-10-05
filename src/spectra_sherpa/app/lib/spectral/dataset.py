@@ -1,9 +1,4 @@
-"""
-Unified spectral dataset with SpectroChemPy integration.
-
-This module provides the core data types and factory functions for
-creating properly configured NDDataset objects with spectral metadata.
-"""
+"""Native spectral dataset construction and unit helpers."""
 
 from __future__ import annotations
 
@@ -12,7 +7,8 @@ from typing import List, Optional
 
 import numpy as np
 
-from spectra_sherpa.app.lib.scp_compat import Coord, NDDataset, require_scp, scp
+from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
 
 class SpectralUnit(Enum):
@@ -53,7 +49,7 @@ def parse_spectral_unit(unit_str: Optional[str]) -> SpectralUnit:
     Parameters
     ----------
     unit_str : str or None
-        Unit string from NDDataset.units
+        Unit string from SherpaDataset.units
 
     Returns
     -------
@@ -123,9 +119,9 @@ def create_spectral_dataset(
     x_units: SpectralAxisUnit = SpectralAxisUnit.WAVENUMBER,
     title: str = "Spectral Data",
     meta: Optional[dict] = None,
-) -> "NDDataset":
+) -> SherpaDataset:
     """
-    Factory function to create a properly configured NDDataset.
+    Create a native dataset with explicit spectral and sample axes.
 
     Parameters
     ----------
@@ -147,45 +143,40 @@ def create_spectral_dataset(
 
     Returns
     -------
-    NDDataset
-        Fully configured dataset with coordinates and units
+    SherpaDataset
+        Fully configured native dataset.
     """
-    require_scp("Spectral dataset creation")
-
-    # Ensure 2D
-    if data.ndim == 1:
-        data = data.reshape(1, -1)
-
-    dataset = scp.NDDataset(data, title=title)
-
-    # Set spectral axis (x)
-    dataset.x = Coord(wavenumbers, title="Wavenumber", units=x_units.value)
-
-    # SpectroChemPy Coord expects numeric coordinate data. For categorical
-    # sample names, store numeric row indices in .data and attach the human
-    # labels separately so multi-spectrum files can still carry names safely.
-    if sample_labels is not None:
-        dataset.y = Coord(
-            np.arange(data.shape[0]),
-            title="Samples",
-            labels=[str(label) for label in sample_labels],
-        )
-    elif data.shape[0] > 1:
-        # Auto-generate sample indices
-        dataset.y = Coord(np.arange(data.shape[0]), title="Sample Index")
-
-    # Set intensity units
-    dataset.units = units.value
-
-    # Add metadata
+    matrix = np.asarray(data, dtype=np.float64)
+    if matrix.ndim == 1:
+        matrix = matrix.reshape(1, -1)
+    if matrix.ndim != 2:
+        raise ValueError(f"Spectral data must be 1-D or 2-D, got shape {matrix.shape}")
+    axis = np.asarray(wavenumbers, dtype=np.float64).reshape(-1)
+    if axis.size != matrix.shape[1]:
+        raise ValueError(f"Spectral axis length ({axis.size}) != feature count ({matrix.shape[1]})")
+    labels = [str(label) for label in sample_labels] if sample_labels is not None else None
+    if labels is not None and len(labels) != matrix.shape[0]:
+        raise ValueError(f"Sample label count ({len(labels)}) != sample count ({matrix.shape[0]})")
+    sample_axis = SampleAxis(
+        values=np.arange(matrix.shape[0], dtype=np.float64),
+        labels=labels,
+        title="Samples",
+    )
+    dataset = SherpaDataset(
+        X=matrix,
+        feature_axis=SpectralAxis(values=axis, title="Wavenumber", units=x_units.value),
+        sample_axis=sample_axis,
+        title=title,
+        units=units.value,
+        data_role="X_spectra",
+    )
     if meta:
         dataset.meta.update(meta)
-
     return dataset
 
 
 def add_provenance(
-    dataset: "NDDataset",
+    dataset: SherpaDataset,
     operation: str,
     parameters: dict,
 ) -> None:
@@ -194,7 +185,7 @@ def add_provenance(
 
     Parameters
     ----------
-    dataset : NDDataset
+    dataset : SherpaDataset
         Dataset to modify in-place
     operation : str
         Name of the operation performed

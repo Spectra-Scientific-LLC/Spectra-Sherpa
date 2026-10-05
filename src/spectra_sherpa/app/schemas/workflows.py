@@ -3,9 +3,12 @@ Pydantic schemas for workflow API requests/responses.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+
+from spectra_sherpa.app.lib.workflow_purpose import ANALYSIS_WORKFLOW, WorkflowPurpose
+from spectra_sherpa.core.node_identity import canonical_node_type, canonicalize_serialized_workflow
 
 
 # Node schemas
@@ -19,6 +22,11 @@ class WorkflowNodeBase(BaseModel):
     annotation: str | None = Field(None, description="Markdown annotation/comment for node")
     position_x: float | None = Field(None, description="Canvas X coordinate")
     position_y: float | None = Field(None, description="Canvas Y coordinate")
+
+    @field_validator("node_type", mode="before")
+    @classmethod
+    def resolve_serialized_node_type(cls, value: object) -> object:
+        return canonical_node_type(value) if isinstance(value, str) else value
 
 
 class WorkflowNodeCreate(WorkflowNodeBase):
@@ -136,6 +144,10 @@ class WorkflowBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: str | None = Field(None)
     status: str = Field(default="draft", description="draft, active, or archived")
+    purpose: WorkflowPurpose = Field(
+        default=ANALYSIS_WORKFLOW,
+        description="Closed execution purpose: analysis or managed_candidate_authority",
+    )
     canvas_state: dict[str, Any] | None = Field(None, description="UI state (zoom, pan, etc.)")
     notes: str | None = Field(None, description="Markdown notes/documentation for workflow")
     technique: str | None = Field(
@@ -213,11 +225,18 @@ class WorkflowSummary(WorkflowBase):
     tab_color_override: str | None = Field(None, description="Manual sheet tab color override")
     color_source: str = Field("blank", description="Sheet color rule: blank, ai, data, or manual")
     primary_data_source_id: int | None = Field(None, description="Primary project data source")
+    primary_data_source_name: str | None = Field(None, description="Human-readable primary data identity")
+    data_origin: Literal["current", "example"] | None = Field(
+        None, description="Whether this sheet uses current project data or a bundled example"
+    )
     data_source_ids: list[int] = Field(default_factory=list, description="All data sources used by this workflow")
     advisor_channel_id: int | None = Field(None, description="Sheet-scoped Sherpa Advisor channel")
     created_from_template_name: str | None = Field(None, description="Template provenance display name")
     created_from_template_version: str | None = Field(None, description="Template provenance version")
     created_from_workflow_id: int | None = Field(None, description="ID of the workflow this was generated from")
+    fold_validation_plan: dict | None = Field(
+        None, description="Campaign cross-validation scope this sheet's evaluator is scored with, if any"
+    )
     sheet_order: int = Field(0, description="Position in workbook tab order")
     created_at: datetime
     updated_at: datetime
@@ -232,6 +251,17 @@ class WorkflowSummary(WorkflowBase):
 class WorkflowDetail(WorkflowSummary):
     """Schema for detailed workflow response."""
 
+    proposal_receipt: dict[str, Any] | None = None
+
+    @computed_field
+    @property
+    def warnings(self) -> list[str]:
+        """Expose retained upgrade notices through the canvas warning surface."""
+        marker = "[Classifier validation migration l1m3n5o7p159]"
+        if self.notes and marker in self.notes:
+            return [self.notes.split(marker, 1)[1].strip()]
+        return []
+
     nodes: list[WorkflowNodeOut] = Field(default_factory=list)
     edges: list[WorkflowEdgeOut] = Field(default_factory=list)
 
@@ -240,27 +270,73 @@ class WorkflowDetail(WorkflowSummary):
 class WorkflowValidationIssue(BaseModel):
     """A single validation issue."""
 
-    level: str = Field(..., description="'error' or 'warning'")
+    level: Literal["error", "warning"] = Field(..., description="'error' or 'warning'")
+    code: str | None = Field(None, description="Stable machine-readable validation code when available")
     node_id: str | None = Field(None, description="Node ID (null for graph-level)")
     port: str | None = Field(None, description="Port name if applicable")
     message: str = Field(..., description="Human-readable description")
 
 
+class WorkflowPreflightEdge(BaseModel):
+    """Authoritative semantic compatibility result for one graph edge."""
+
+    from_node_id: str
+    from_output: str
+    to_node_id: str
+    to_input: str
+    status: Literal["typed_valid", "invalid"] = Field(
+        ...,
+        description="One of typed_valid or invalid",
+    )
+    reason: str | None = None
+
+
 class WorkflowValidationResponse(BaseModel):
     """Response from workflow validation endpoint."""
 
+    workflow_id: int = Field(..., description="Persisted workflow evaluated by this report")
     is_valid: bool = Field(..., description="True if no errors (warnings OK)")
     issues: list[WorkflowValidationIssue] = Field(default_factory=list, description="Validation issues")
+    semantic_edges: list[WorkflowPreflightEdge] = Field(
+        default_factory=list,
+        description="Backend-authoritative semantic compatibility for every saved edge",
+    )
     error_count: int = Field(0, description="Number of errors")
     warning_count: int = Field(0, description="Number of warnings")
 
 
 # Execution schemas
+class ExpectedWorkflowDefinition(BaseModel):
+    """Request-bound saved graph, excluding cosmetic state from its comparison."""
+
+    nodes: list[WorkflowNodeCreate]
+    edges: list[WorkflowEdgeCreate]
+
+
 class WorkflowExecuteRequest(BaseModel):
     """Schema for workflow execution request."""
 
+    expected_definition: ExpectedWorkflowDefinition | None = Field(
+        None, description="Refuse execution if the persisted graph differs from this caller snapshot."
+    )
     initial_data: dict[str, Any] | None = Field(None, description="Initial data for source nodes (node_id -> data)")
     node_id: str | None = Field(None, description="Execute specific node only")
+
+
+class CanonicalProjectSourceBindingRequest(BaseModel):
+    """The one local data binding for an imported canonical application path."""
+
+    experiment_id: int = Field(..., ge=1, description="Owned experiment in the imported project")
+    file_id: int = Field(..., ge=1, description="Owned file from that experiment")
+    stage: Literal["raw", "preprocessed", "synthetic"] = Field(
+        "raw", description="Persisted experiment-file stage to apply"
+    )
+    asset_id: str | None = Field(
+        None,
+        min_length=1,
+        max_length=255,
+        description="Exact scientific asset identity for a multi-asset source",
+    )
 
 
 class WorkflowExecuteResponse(BaseModel):
@@ -268,8 +344,19 @@ class WorkflowExecuteResponse(BaseModel):
 
     workflow_id: int
     run_id: int | None = Field(None, description="Auto-persisted execution run id, when persistence succeeded")
+    params_snapshot: dict[str, dict[str, Any]] = Field(
+        default_factory=dict, description="Recorded effective execution parameters"
+    )
     status: str = Field(..., description="Execution status")
     results: dict[str, Any] = Field(default_factory=dict, description="Node results (node_id -> result)")
+    result_descriptors: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Canonical scientific value descriptions (node_id -> output port -> descriptor)",
+    )
+    result_presentations: dict[str, dict[str, Any]] = Field(
+        default_factory=dict,
+        description="Execution-bound scientific presentation records (node_id -> presentation authority)",
+    )
     diagnostics: dict[str, dict[str, Any]] = Field(
         default_factory=dict, description="Per-node diagnostic measurements (node_id -> metrics)"
     )
@@ -295,7 +382,7 @@ class WorkflowPythonExportResponse(BaseModel):
     python_code: str
     filename: str
     saved_path: str
-    export_mode: str = "sdk"
+    export_mode: Literal["canonical_dag"] = "canonical_dag"
 
 
 # Node library schemas
@@ -308,11 +395,12 @@ class NodeParameterInfo(BaseModel):
     default: Any | None
     min_value: float | None = None
     max_value: float | None = None
+    max_value_reason: str | None = None
     step: float | None = None
     options: list[str] | list[dict[str, Any]] | None = None  # Supports both string lists and {label, value} dicts
     description: str | None = None
     required: bool = False
-    category: str | None = "basic"  # "basic" or "advanced" - controls Inspector display
+    category: str | None = "basic"  # "basic", "advanced", or "internal" - controls Inspector display
     visible_when: dict[str, list[str]] | None = None  # Conditional visibility rules
 
 
@@ -329,6 +417,49 @@ class NodePortInfo(BaseModel):
         None,
         description="Accepted dataset roles for this port, e.g. X_spectra or X_features",
     )
+
+
+class NodeExecutionContractInfo(BaseModel):
+    """The exact immutable contract registered for a node."""
+
+    digest: str
+    payload: dict[str, Any]
+
+
+class NodePresentationContractInfo(BaseModel):
+    """Renderer-neutral presentation identity supplied by the node registry."""
+
+    digest: str
+    payload: dict[str, Any]
+
+
+class NodeDependencyReadinessInfo(BaseModel):
+    """Safe dependency state and exact remediation displayed before Run."""
+
+    ready: bool
+    blockers: list[str] = Field(default_factory=list)
+    remediation: list[str] = Field(default_factory=list)
+
+
+class NodeCatalogClassificationInfo(BaseModel):
+    """Registry-derived scientist-facing catalog classification."""
+
+    contract_status: str
+    runtime_family: str
+    lifecycle_kind: str
+    typed_port_status: str
+    managed_optimization_eligible: bool
+    reason: str
+
+
+class NodeManagedOptimizationProfileInfo(BaseModel):
+    """Exact relationship between one node and the managed profile."""
+
+    profile_id: str
+    profile_version: str
+    profile_digest: str
+    eligible: bool
+    reason: str
 
 
 class NodeMetadataInfo(BaseModel):
@@ -348,6 +479,15 @@ class NodeMetadataInfo(BaseModel):
         description="Diagnostic metric keys emitted by this node at execution time",
     )
     help_url: str | None = Field(None, description="Link to external documentation")
+    execution_contract: NodeExecutionContractInfo | None = None
+    presentation_contract: NodePresentationContractInfo | None = None
+    dependency_readiness: NodeDependencyReadinessInfo
+    requires_scp: bool = Field(
+        ...,
+        description="Derived from the canonical execution contract; never independent mutable metadata",
+    )
+    catalog_classification: NodeCatalogClassificationInfo
+    managed_optimization_profile: NodeManagedOptimizationProfileInfo
 
 
 class NodeLibraryResponse(BaseModel):
@@ -356,6 +496,9 @@ class NodeLibraryResponse(BaseModel):
     nodes: list[NodeMetadataInfo] = Field(..., description="Available node types")
     total: int = Field(..., description="Total number of nodes")
     version: str = Field(default="1.0.0", description="Backend API version for cache invalidation")
+    contract_schema_version: str = Field(..., description="Node-library contract wire version")
+    registry_digest: str = Field(..., description="Canonical digest of the live node contract census")
+    cache_identity: str = Field(..., description="Contract-sensitive frontend cache identity")
 
 
 # Trial execution schemas (for DetailView independent execution)
@@ -365,6 +508,11 @@ class TrialNodeDefinition(BaseModel):
     node_id: str = Field(..., description="Unique node ID")
     node_type: str = Field(..., description="Node type (e.g., 'model.pca')")
     parameters: dict[str, Any] = Field(default_factory=dict, description="Node parameters")
+
+    @field_validator("node_type", mode="before")
+    @classmethod
+    def resolve_serialized_node_type(cls, value: object) -> object:
+        return canonical_node_type(value) if isinstance(value, str) else value
 
 
 class TrialEdgeDefinition(BaseModel):
@@ -398,6 +546,15 @@ class TrialExecuteResponse(BaseModel):
     target_node_id: str
     status: str = Field(..., description="Execution status: completed or error")
     result: dict[str, Any] | None = Field(None, description="Execution result for target node")
+    result_descriptor: dict[str, Any] | None = Field(
+        None,
+        description="Canonical scientific value descriptions for the target node's output ports",
+    )
+    result_presentation: dict[str, Any] | None = Field(
+        None,
+        description="Execution-bound presentation authority for the target node",
+    )
+    diagnostics: dict[str, Any] = Field(default_factory=dict, description="Execution diagnostics of the target node")
     error: str | None = Field(None, description="Error message if execution failed")
 
 
@@ -427,6 +584,11 @@ class WorkflowVersionDetail(WorkflowVersionSummary):
 
     snapshot: dict[str, Any] = Field(..., description="Complete workflow state snapshot")
 
+    @field_validator("snapshot", mode="before")
+    @classmethod
+    def resolve_snapshot_node_types(cls, value: object) -> object:
+        return canonicalize_serialized_workflow(value)
+
 
 class WorkflowVersionListResponse(BaseModel):
     """Schema for list of workflow versions."""
@@ -447,6 +609,11 @@ class WorkflowDagSpecNode(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
     position: Position | None = None
 
+    @field_validator("type", mode="before")
+    @classmethod
+    def resolve_serialized_node_type(cls, value: object) -> object:
+        return canonical_node_type(value) if isinstance(value, str) else value
+
 
 class WorkflowDagSpecEdge(BaseModel):
     source: str  # node id
@@ -461,6 +628,8 @@ class WorkflowDagSpec(BaseModel):
 
 
 class AIForkRequest(BaseModel):
+    expected_source_bindings: dict[str, str] | None = None
+    expected_parent_definition_hash: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")
     dag_spec: WorkflowDagSpec
     new_conversation_id: str
     suggested_name: str | None = None

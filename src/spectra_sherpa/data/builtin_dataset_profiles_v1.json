@@ -1,0 +1,32 @@
+{
+  "schema_version": "spectra-sherpa-builtin-dataset-profiles/1",
+  "datasets": [
+    {
+      "dataset_id": "builtin:lavender-essential-oil-v1",
+      "name": "lavender-essential-oil-v1",
+      "source": "builtin",
+      "label": "Lavender Essential Oil FTIR Corpus v1",
+      "description": "Thirty-three FTIR spectra in three acquisition blocks with parallel specimen, botanical-group, and reported-authenticity labels.",
+      "availability": "distributed_reference",
+      "analysis_profile": {
+        "primary_role": "X_spectra",
+        "modality": "spectra",
+        "technique": "FTIR",
+        "target_type": "categorical",
+        "target_fields": [
+          "specimen_id",
+          "claimed_botanical_group",
+          "author_reported_authenticity_status"
+        ],
+        "identity_fields": [
+          "sample_id",
+          "specimen_id"
+        ],
+        "group_fields": [
+          "block"
+        ],
+        "ordered_samples": false
+      }
+    }
+  ]
+}

@@ -7,10 +7,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from spectra_sherpa.app.db.base import Base
+from spectra_sherpa.app.lib.workflow_purpose import ANALYSIS_WORKFLOW
 
 if TYPE_CHECKING:
     from spectra_sherpa.app.models.advisor_channel import AdvisorChannel
@@ -25,6 +26,16 @@ class Workflow(Base):
     """
 
     __tablename__ = "workflow"
+    __table_args__ = (
+        CheckConstraint(
+            "purpose IN ('analysis', 'managed_candidate_authority')",
+            name="ck_workflow_purpose",
+        ),
+        CheckConstraint(
+            "data_origin IS NULL OR data_origin IN ('current', 'example')",
+            name="ck_workflow_data_origin",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("user.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -34,6 +45,10 @@ class Workflow(Base):
     status: Mapped[str] = mapped_column(
         String(50), nullable=False, default="draft", index=True
     )  # draft, active, archived
+    # The Python default keeps isolated ORM fixtures conservative.  Every
+    # production constructor is separately guarded to pass purpose explicitly;
+    # the database remains closed and non-null.
+    purpose: Mapped[str] = mapped_column(String(50), nullable=False, index=True, default=ANALYSIS_WORKFLOW)
     canvas_state: Mapped[dict | None] = mapped_column(JSON)  # UI state (zoom, pan, etc.)
     notes: Mapped[str | None] = mapped_column(Text)  # Markdown notes/documentation for workflow
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
@@ -42,6 +57,10 @@ class Workflow(Base):
     )
     last_executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     integrity_hash: Mapped[str | None] = mapped_column(String(64), index=True)
+    proposal_receipt: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Campaign cross-validation scope retained by a sheet opened from a
+    # candidate; its evaluator is then scored with those exact folds.
+    fold_validation_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Spectral context (Sherpa hook — provides technique/sample context for AI guidance)
     technique: Mapped[str | None] = mapped_column(String(50))  # e.g. "FTIR", "Raman", "NMR", "UV-Vis", "NIR"
@@ -60,6 +79,9 @@ class Workflow(Base):
     created_from_template_id: Mapped[int | None] = mapped_column(nullable=True)
     created_from_template_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_from_template_version: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # How this sheet acquired its bound source. Nullable historical rows stay
+    # explicitly unverified instead of being relabelled as current project data.
+    data_origin: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_from_workflow_id: Mapped[int | None] = mapped_column(
         ForeignKey("workflow.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -97,6 +119,12 @@ class Workflow(Base):
         "ExecutionRun",
         back_populates="workflow",
         order_by="ExecutionRun.created_at.desc()",
+    )
+    data_selection_revisions = relationship(
+        "WorkflowDataSelectionRevision",
+        back_populates="workflow",
+        cascade="all, delete-orphan",
+        order_by="WorkflowDataSelectionRevision.revision_number.desc()",
     )
     tags = relationship(
         "WorkflowTag",

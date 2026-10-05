@@ -17,10 +17,10 @@ from spectra_sherpa.app.services.dag.meta_helpers import get_processing_history
 from spectra_sherpa.app.services.dag.node_base import (
     NodeMetadata,
     NodeParameter,
+    NodePolicy,
+    NodeRegistry,
     NodeResult,
     PortMetadata,
-    node_registry,
-    register_node,
 )
 from spectra_sherpa.app.services.dag.spec_nodes import (
     EstimatorSpec,
@@ -595,11 +595,11 @@ class TestEstimatorSpecNode:
 # ═══════════════════════════════════════════════════════════════════════════
 
 
-@register_node
 class _RegisteredDoubleNode(TransformSpecNode):
-    """Test node that auto-registers via decorator."""
+    """Test node admitted only to an isolated pre-freeze registry."""
 
     metadata = NodeMetadata(
+        policy=NodePolicy(),
         node_type="test._registered_double",
         category="test",
         label="Registered Double",
@@ -609,6 +609,15 @@ class _RegisteredDoubleNode(TransformSpecNode):
         output_type="NDDataset",
     )
     spec = TransformSpec(transform_fn=_double)
+
+
+@pytest.fixture
+def local_registry() -> NodeRegistry:
+    """Construct an isolated mutable registry before its startup freeze."""
+
+    registry = NodeRegistry()
+    registry.register(_RegisteredDoubleNode)
+    return registry
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1011,15 +1020,15 @@ class TestEstimatorAutoExport:
 
 
 class TestRegistryIntegration:
-    """Verify spec nodes work with the node registry."""
+    """Verify spec nodes work during deterministic registry construction."""
 
-    def test_registered_in_registry(self):
-        meta = node_registry.get_metadata("test._registered_double")
+    def test_registered_in_registry(self, local_registry: NodeRegistry):
+        meta = local_registry.get_metadata("test._registered_double")
         assert meta.label == "Registered Double"
 
     @pytest.mark.asyncio
-    async def test_create_and_execute_via_registry(self):
-        node = node_registry.create_node("test._registered_double", "reg_1")
+    async def test_create_and_execute_via_registry(self, local_registry: NodeRegistry):
+        node = local_registry.create_node("test._registered_double", "reg_1")
         ds = SherpaDataset(X=np.array([[1.0, 2.0]]))
         result = await node.execute(ds)
 

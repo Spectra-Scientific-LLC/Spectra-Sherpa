@@ -1,0 +1,214 @@
+{
+  "schema_version": "spectra-sherpa-reference-artifact-registry/2",
+  "artifacts": [
+    {
+      "artifact_id": "eigenvector-art-image-demo-archive-v1",
+      "title": "Eigenvector Art Image Data A archive",
+      "description": "Hyperspectral paint-image data for image chemometrics and multivariate exploration.",
+      "provider": "Eigenvector Research",
+      "provider_page": "https://eigenvector.com/resources/data-sets/",
+      "download_url": "https://eigenvector.com/wp-content/uploads/2023/11/ArtImageDataA.zip",
+      "expected_size_bytes": 72187425,
+      "sha256": "fa2b80082130e5c9cb4f2548c7d38857775a45379e2177c2b0820f3f7f1ac561",
+      "media_type": "application/zip",
+      "redistribution": "upstream_only_not_redistributed",
+      "attribution": "Art Image Data A provided by Eigenvector Research and its named scientific contributors.",
+      "no_endorsement": "Eigenvector Research and the original contributors are not affiliated with, sponsoring, or endorsing Spectra Scientific or Spectra Sherpa.",
+      "qualification_status": "qualified",
+      "reviewed_at": "2026-08-31",
+      "members": [{"path": "ArtImageDataA/PaintDemo.mat", "expected_size_bytes": 6847944, "sha256": "94edd353043f60c2fb63c4eda670cdac6e5030f2aab1ec086459331e28f6f3e3"}]
+    },
+    {
+      "artifact_id": "eigenvector-cgl-nir-archive-v1",
+      "title": "Eigenvector CGL NIR archive",
+      "description": "NIR mixture-design spectra with four aligned reference properties.",
+      "provider": "Eigenvector Research",
+      "provider_page": "https://eigenvector.com/resources/data-sets/",
+      "download_url": "https://eigenvector.com/wp-content/uploads/2021/04/CGL_nir.mat_.zip",
+      "expected_size_bytes": 224320,
+      "sha256": "d5306358cd8584f4d12bd48715ffe5bc2709a87cf1b1e7f4d0563a2729d8adc4",
+      "media_type": "application/zip",
+      "redistribution": "upstream_only_not_redistributed",
+      "attribution": "CGL NIR dataset provided by Eigenvector Research; data attributed by the provider to Tormod Naes and Tomas Isaksson.",
+      "no_endorsement": "Eigenvector Research and the original contributors are not affiliated with, sponsoring, or endorsing Spectra Scientific or Spectra Sherpa.",
+      "qualification_status": "qualified",
+      "reviewed_at": "2026-08-31",
+      "members": [{"path": "CGL_nir.mat", "expected_size_bytes": 224188, "sha256": "49b0de6188544f3e67ab7103608dc9d9e2e574d4d8e2d6b5989712f86befc9b8"}]
+    },
+    {
+      "artifact_id": "eigenvector-corn-archive-v1",
+      "title": "Eigenvector Corn instrument-standardization archive",
+      "description": "Corn samples measured on three near-infrared instruments for calibration-transfer and regression work.",
+      "provider": "Eigenvector Research",
+      "provider_page": "https://eigenvector.com/resources/data-sets/",
+      "download_url": "https://eigenvector.com/wp-content/uploads/2019/06/corn.mat_.zip",
+      "expected_size_bytes": 1094488,
+      "sha256": "8a2d1a03648b6ad334caaafa5d8377bf945ba1477a5082c4963d705d07cca795",
+      "media_type": "application/zip",
+      "redistribution": "upstream_only_not_redistributed",
+      "attribution": "Eigenvector Research Corn instrument-standardization dataset; original samples from Cargill.",
+      "no_endorsement": "Eigenvector Research and the original contributors are not affiliated with, sponsoring, or endorsing Spectra Scientific or Spectra Sherpa.",
+      "qualification_status": "qualified",
+      "reviewed_at": "2026-08-30",
+      "members": [{"path": "corn.mat", "expected_size_bytes": 1445616, "sha256": "e28fd4be274a54ca57b1f2c67ef5a8bf4981f8314bcc73e4c64836fe658c46b5"}]
+    },
+    {
+      "artifact_id": "eigenvector-diesel-d4052-archive-v1",
+      "title": "Eigenvector Diesel D4052 archive",
+      "description": "Diesel NIR calibration and test matrices for the ASTM D4052 density property.",
+      "provider": "Eigenvector Research",
+      "provider_page": "https://eigenvector.com/resources/data-sets/",
+      "download_url": "https://eigenvector.com/wp-content/uploads/2019/06/d4052gatest.zip",
+      "expected_size_bytes": 789022,
+      "sha256": "020fb224743ae33302c348b0fd6ea7afd49ea7997c0d2978e46a5f5230538226",
+      "media_type": "application/zip",
+      "redistribution": "upstream_only_not_redistributed",
+      "attribution": "SWRI Diesel NIR dataset provided by Eigenvector Research; provider attribution identifies Southwest Research Institute and U.S. Army sponsorship.",
+      "no_endorsement": "Eigenvector Research and the original contributors are not affiliated with, sponsoring, or endorsing Spectra Scientific or Spectra Sherpa.",
+      "qualification_status": "qualified",
+      "reviewed_at": "2026-08-31",
+      "members": [{"path": "D4052GATEST.mat", "expected_size_bytes": 846336, "sha256": "620591362fa5291ac8c6ac90e1918194dae684bec0cc92b07c1b25d4e43be9ab"}]
+    },
+    {
+      "artifact_id": "eigenvector-iasim16-test1-archive-v1",
+      "title": "Eigenvector IASIM16 Challenge archive",
+      "description": "Hyperspectral IASIM 2016 challenge images for multivariate image analysis.",
+      "provider": "Eigenvector Research",
+      "provider_page": "https://eigenvector.com/resources/data-sets/",
+      "download_url": "https://eigenvector.com/wp-content/uploads/2021/03/IASIM16ChallengeProblem.zip",
+      "expected_size_bytes": 448641963,
+      "sha256": "c92960efc1919fa0c97b6fe71e87ff122b7788dd1c6e5074a91f8c8a60a071ae",
+      "media_type": "application/zip",
+      "redistribution": "upstream_only_not_redistributed",
+      "attribution": "IASIM16 Challenge Problem provided by Eigenvector Research and its named challenge contributors.",
+      "no_endorsement": "Eigenvector Research and the original contributors are not affiliated with, sponsoring, or endorsing Spectra Scientific or Spectra Sherpa.",
+      "qualification_status": "qualified",
+      "reviewed_at": "2026-08-31",
+      "members": [{"path": "Test_1.mat", "expected_size_bytes": 77236300, "sha256": "6ae86a094ebf721f4632eaf37b85383872e5566c0eec8dda5ecb55f474539cec"}]
+    },
+    {
+      "artifact_id": "eigenvector-metal-etch-machine-archive-v1",
+      "title": "Eigenvector Metal Etch machine-sensor archive",
+      "description": "Engineering sensor data from a LAM 9600 metal etcher, including normal and induced-fault wafers.",
+      "provider": "Eigenvector Research",
+      "provider_page": "https://eigenvector.com/resources/data-sets/",
+      "download_url": "https://eigenvector.com/wp-content/uploads/2019/06/MACHINE_Data.mat_.zip",
+      "expected_size_bytes": 438002,
+      "sha256": "18398bc5a0595b666352e656ac5ae561d2accd19a6d9380253aa775cfe6011f2",
+      "media_type": "application/zip",
+      "redistribution": "upstream_only_not_redistributed",
+      "attribution": "Metal Etch machine-sensor dataset provided by Eigenvector Research; provider attribution identifies Texas Instruments and the SEMATECH J-88 project.",
+      "no_endorsement": "Eigenvector Research and the original contributors are not affiliated with, sponsoring, or endorsing Spectra Scientific or Spectra Sherpa.",
+      "qualification_status": "qualified",
+      "reviewed_at": "2026-08-31",
+      "members": [{"path": "MACHINE_Data.mat", "expected_size_bytes": 2170264, "sha256": "8d4e40f2c692c0a80a3e307665d31207037f52ed4bba89ecad60d8de86aa24c7"}]
+    },
+    {
+      "artifact_id": "eigenvector-metal-etch-oes-archive-v1",
+      "title": "Eigenvector Metal Etch OES archive",
+      "description": "Optical-emission process data from a LAM 9600 metal etcher, including normal and induced-fault wafers.",
+      "provider": "Eigenvector Research",
+      "provider_page": "https://eigenvector.com/resources/data-sets/",
+      "download_url": "https://eigenvector.com/wp-content/uploads/2019/06/OES_DATA.mat_.zip",
+      "expected_size_bytes": 1821555,
+      "sha256": "dc8b3dc025ea49c4bcc70b20701e2db8312fccbefd2a0ca9ed9db6bef2a6c74c",
+      "media_type": "application/zip",
+      "redistribution": "upstream_only_not_redistributed",
+      "attribution": "Metal Etch OES dataset provided by Eigenvector Research; provider attribution identifies Texas Instruments and the SEMATECH J-88 project.",
+      "no_endorsement": "Eigenvector Research and the original contributors are not affiliated with, sponsoring, or endorsing Spectra Scientific or Spectra Sherpa.",
+      "qualification_status": "qualified",
+      "reviewed_at": "2026-08-31",
+      "members": [{"path": "OES_DATA.mat", "expected_size_bytes": 4955232, "sha256": "785eb082efe0110f5e88cc7bc3f98fe95652e7b82ecdd34b78599c949dbce3d3"}]
+    },
+    {
+      "artifact_id": "eigenvector-metal-etch-rfm-archive-v1",
+      "title": "Eigenvector Metal Etch RF-monitor archive",
+      "description": "RF-monitor process data from a LAM 9600 metal etcher, including normal and induced-fault wafers.",
+      "provider": "Eigenvector Research",
+      "provider_page": "https://eigenvector.com/resources/data-sets/",
+      "download_url": "https://eigenvector.com/wp-content/uploads/2019/06/RFM_DATA.mat_.zip",
+      "expected_size_bytes": 794537,
+      "sha256": "444604f3a8f79dd11bfc9e8b834c5fe74464fe594bb95e20cc2c8022e98094a9",
+      "media_type": "application/zip",
+      "redistribution": "upstream_only_not_redistributed",
+      "attribution": "Metal Etch RF-monitor dataset provided by Eigenvector Research; provider attribution identifies Texas Instruments and the SEMATECH J-88 project.",
+      "no_endorsement": "Eigenvector Research and the original contributors are not affiliated with, sponsoring, or endorsing Spectra Scientific or Spectra Sherpa.",
+      "qualification_status": "qualified",
+      "reviewed_at": "2026-08-31",
+      "members": [{"path": "RFM_DATA.mat", "expected_size_bytes": 2015208, "sha256": "19f8b58a467bdfd09cc51b9bffad7f4058d216e572cf2d869672e2a2b24ed4e1"}]
+    },
+    {
+      "artifact_id": "eigenvector-nir-shootout-archive-v1",
+      "title": "Eigenvector NIR Shootout 2002 archive",
+      "description": "Pharmaceutical-tablet NIR calibration and test spectra from two instruments with aligned assay properties.",
+      "provider": "Eigenvector Research",
+      "provider_page": "https://eigenvector.com/resources/data-sets/",
+      "download_url": "https://eigenvector.com/wp-content/uploads/2019/06/nir_shootout_2002.mat_.zip",
+      "expected_size_bytes": 5414232,
+      "sha256": "04c03a4314ab8e8f63e0ecc788b657b5d1b5450791ce465ad41ad90cb5d52125",
+      "media_type": "application/zip",
+      "redistribution": "upstream_only_not_redistributed",
+      "attribution": "NIR Shootout 2002 dataset provided by Eigenvector Research and the named IDRC challenge contributors.",
+      "no_endorsement": "Eigenvector Research and the original contributors are not affiliated with, sponsoring, or endorsing Spectra Scientific or Spectra Sherpa.",
+      "qualification_status": "qualified",
+      "reviewed_at": "2026-08-31",
+      "members": [{"path": "nir_shootout_2002.mat", "expected_size_bytes": 6868936, "sha256": "129a32ec9e194e568cbd96a200c88aabeb347156081b5dfbb0120372fdd6c22a"}]
+    }
+  ],
+  "projections": [
+    {
+      "projection_id": "public-art-image-paint-demo-v1", "artifact_id": "eigenvector-art-image-demo-archive-v1", "title": "Art Image Data A — Paint Demo", "member_path": "ArtImageDataA/PaintDemo.mat", "native_reader_contract": "spectrasherpa.matlab-source/1", "object_name": "PaintCubeA_ed", "target_object_name": null, "target_index": null, "target_name": null, "target_units": null, "n_samples": 19200, "n_features": 207, "feature_axis_title": "Spectral coordinate", "feature_axis_units": null, "feature_axis_sha256": "802ba4b4224ca59496e0d1525d96a7eb359149278e5747cfcfd2fa3bf7929837", "scientific_sha256": "14f878ca4abca3ae1b50fb88bc33bc3bf699e3f2b117aeccd56156d9e439504b", "qualification_status": "qualified", "analysis": {"primary_role": "X_hsi", "modality": "hsi", "technique": "Hyperspectral image", "target_type": null, "target_fields": [], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-cgl-nir-lactate-v1", "artifact_id": "eigenvector-cgl-nir-archive-v1", "title": "CGL NIR", "member_path": "CGL_nir.mat", "native_reader_contract": "spectrasherpa.matlab-dso/1", "object_name": "Spectra", "target_object_name": "PropVals", "target_index": 2, "target_name": "Lactate (wt %)", "target_units": "wt %", "n_samples": 231, "n_features": 117, "feature_axis_title": "Wavelength", "feature_axis_units": "nm", "feature_axis_sha256": "8616f66e7f43b4be9bb5e2386058c199aa9df4f57ff29db4d7394abc71946d52", "scientific_sha256": "4d6feaa0d4b5bab4979a2264fb0f79a222085bfb19440e31afa5ee54dac38654", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["Lactate (wt %)"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-corn-m5-moisture-v1", "artifact_id": "eigenvector-corn-archive-v1", "title": "Eigenvector Corn M5", "member_path": "corn.mat", "native_reader_contract": "spectrasherpa.matlab-dso/1", "object_name": "m5spec", "target_object_name": "propvals", "target_index": 0, "target_name": "Moisture", "target_units": null, "n_samples": 80, "n_features": 700, "feature_axis_title": "Wavelength", "feature_axis_units": "nm", "feature_axis_sha256": "511c76b03f30cd33e3b3190df26cf0578840edaad63644ebe4f6cfc95d36f96e", "scientific_sha256": "27007609c7a8f53d144e235eaeb61829b4f306e33a129980a08f882a800f040e", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["Moisture"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-corn-mp5-moisture-v1", "artifact_id": "eigenvector-corn-archive-v1", "title": "Eigenvector Corn MP5", "member_path": "corn.mat", "native_reader_contract": "spectrasherpa.matlab-dso/1", "object_name": "mp5spec", "target_object_name": "propvals", "target_index": 0, "target_name": "Moisture", "target_units": null, "n_samples": 80, "n_features": 700, "feature_axis_title": "Wavelength", "feature_axis_units": "nm", "feature_axis_sha256": "511c76b03f30cd33e3b3190df26cf0578840edaad63644ebe4f6cfc95d36f96e", "scientific_sha256": "e3169da12c3933d4d02e7ce64e16b0caf6854fb0d883365de39fbe4e50182c28", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["Moisture"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-corn-mp6-moisture-v1", "artifact_id": "eigenvector-corn-archive-v1", "title": "Eigenvector Corn MP6", "member_path": "corn.mat", "native_reader_contract": "spectrasherpa.matlab-dso/1", "object_name": "mp6spec", "target_object_name": "propvals", "target_index": 0, "target_name": "Moisture", "target_units": null, "n_samples": 80, "n_features": 700, "feature_axis_title": "Wavelength", "feature_axis_units": "nm", "feature_axis_sha256": "511c76b03f30cd33e3b3190df26cf0578840edaad63644ebe4f6cfc95d36f96e", "scientific_sha256": "f50613ba0767e77371a8b00cd4a1c36934bca0c6b2078113cbd78aa9a5c8514d", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["Moisture"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-diesel-d4052-v1", "artifact_id": "eigenvector-diesel-d4052-archive-v1", "title": "Diesel NIR — D4052", "member_path": "D4052GATEST.mat", "native_reader_contract": "spectrasherpa.matlab-array-pair/1", "object_name": "d_sd_ll_a", "target_object_name": "d_y_ll_a", "target_index": 0, "target_name": "D4052 density", "target_units": null, "n_samples": 122, "n_features": 401, "feature_axis_title": "Channel", "feature_axis_units": null, "feature_axis_sha256": "358350098173667478f9c5664d6568c0051b2e2c5bda905004e40c3519dc5ca5", "scientific_sha256": "b58a741d0df3e57a4ea367a9013b38f38dd8e631c0f6d587c9667f1d9a18f129", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["D4052 density"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-diesel-high-level-d4052-v1", "artifact_id": "eigenvector-diesel-d4052-archive-v1", "title": "Diesel NIR — High-level set", "member_path": "D4052GATEST.mat", "native_reader_contract": "spectrasherpa.matlab-array-pair/1", "object_name": "d_sd_hl", "target_object_name": "d_y_hl", "target_index": 0, "target_name": "D4052 density", "target_units": null, "n_samples": 20, "n_features": 401, "feature_axis_title": "Channel", "feature_axis_units": null, "feature_axis_sha256": "358350098173667478f9c5664d6568c0051b2e2c5bda905004e40c3519dc5ca5", "scientific_sha256": "34a126735645ed792947789616157b955d9322a8d97a75b9256dbcfda35b0cc4", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["D4052 density"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-diesel-low-level-b-d4052-v1", "artifact_id": "eigenvector-diesel-d4052-archive-v1", "title": "Diesel NIR — Low-level set B", "member_path": "D4052GATEST.mat", "native_reader_contract": "spectrasherpa.matlab-array-pair/1", "object_name": "d_sd_ll_b", "target_object_name": "d_y_ll_b", "target_index": 0, "target_name": "D4052 density", "target_units": null, "n_samples": 121, "n_features": 401, "feature_axis_title": "Channel", "feature_axis_units": null, "feature_axis_sha256": "358350098173667478f9c5664d6568c0051b2e2c5bda905004e40c3519dc5ca5", "scientific_sha256": "053653d969ada148cb2eba436d38ce9b77534e36704b6bd463fa0f9c0f4ac4ac", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["D4052 density"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-iasim16-test1-v1", "artifact_id": "eigenvector-iasim16-test1-archive-v1", "title": "IASIM16 Challenge — Test 1", "member_path": "Test_1.mat", "native_reader_contract": "spectrasherpa.matlab-source/1", "object_name": "z", "target_object_name": null, "target_index": null, "target_name": null, "target_units": null, "n_samples": 59292, "n_features": 229, "feature_axis_title": "Spectral coordinate", "feature_axis_units": null, "feature_axis_sha256": "9a1c92321471447889b22933e0aaffc1fd2c92d7299937bbc8eccacc44d67352", "scientific_sha256": "b4541b10b22ec26583b037f1cdd73b56ffb9ad04425bedde45584e89021ab43f", "qualification_status": "qualified", "analysis": {"primary_role": "X_hsi", "modality": "hsi", "technique": "Hyperspectral image", "target_type": null, "target_fields": [], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-metal-etch-machine-v1", "artifact_id": "eigenvector-metal-etch-machine-archive-v1", "title": "Metal Etch — Machine sensors", "member_path": "MACHINE_Data.mat", "native_reader_contract": "spectrasherpa.matlab-process-log/1", "object_name": "LAMDATA", "target_object_name": null, "target_index": null, "target_name": null, "target_units": null, "n_samples": 129, "n_features": 21, "feature_axis_title": "Variable", "feature_axis_units": null, "feature_axis_sha256": "576b531337d3197c5410a9d1bf8e7354eebd2c0a382544d1d61427b26c2fc685", "scientific_sha256": "51fcb3636aa1cd43f55af3d89f30f0a6f3d758226dedbd1c0683d1ecbfce7df0", "qualification_status": "qualified", "analysis": {"primary_role": "X_features", "modality": "features", "technique": "Process sensors", "target_type": null, "target_fields": [], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-metal-etch-oes-v1", "artifact_id": "eigenvector-metal-etch-oes-archive-v1", "title": "Metal Etch — OES", "member_path": "OES_DATA.mat", "native_reader_contract": "spectrasherpa.matlab-process-log/1", "object_name": "OESDATA", "target_object_name": null, "target_index": null, "target_name": null, "target_units": null, "n_samples": 126, "n_features": 129, "feature_axis_title": "Wavelength", "feature_axis_units": "nm", "feature_axis_sha256": "ce13a8bb235f93a36d2122d6f29e648633cfe7b175b370bec54e6a7f417dc0b3", "scientific_sha256": "87f1986e5359dc7b531c4f12c01abc7aa7400886c54f49ed1cbc47ebb1e8f67d", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "OES", "target_type": null, "target_fields": [], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-metal-etch-rfm-v1", "artifact_id": "eigenvector-metal-etch-rfm-archive-v1", "title": "Metal Etch — RF monitor", "member_path": "RFM_DATA.mat", "native_reader_contract": "spectrasherpa.matlab-process-log/1", "object_name": "RFMDATA", "target_object_name": null, "target_index": null, "target_name": null, "target_units": null, "n_samples": 126, "n_features": 71, "feature_axis_title": "Variable", "feature_axis_units": null, "feature_axis_sha256": "80a6f1ee29255d4d72b3862d1405344f85838fea2fda2cc774a4629106cbda45", "scientific_sha256": "35b05898575e49634e8b35afbc6d639c4adce021f526d3c2d26ce0edd1e7301c", "qualification_status": "qualified", "analysis": {"primary_role": "X_features", "modality": "features", "technique": "RF monitor", "target_type": null, "target_fields": [], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-nir-shootout-cal1-assay-v1", "artifact_id": "eigenvector-nir-shootout-archive-v1", "title": "NIR Shootout 2002 — Calibration instrument 1 assay", "member_path": "nir_shootout_2002.mat", "native_reader_contract": "spectrasherpa.matlab-dso/1", "object_name": "calibrate_1", "target_object_name": "calibrate_Y", "target_index": 2, "target_name": "Assay", "target_units": null, "n_samples": 155, "n_features": 650, "feature_axis_title": "Wavelength", "feature_axis_units": "nm", "feature_axis_sha256": "ef62e2f1342de3e45112a87810af1b1c23cd33257395750878ea9d4104d8a75f", "scientific_sha256": "b03037130e5a68b303c06f5543d09851a0ad8f6ad14b930efdf2cb8c5c6e0f83", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["Assay"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-nir-shootout-cal2-assay-v1", "artifact_id": "eigenvector-nir-shootout-archive-v1", "title": "NIR Shootout 2002 — Calibration instrument 2 assay", "member_path": "nir_shootout_2002.mat", "native_reader_contract": "spectrasherpa.matlab-dso/1", "object_name": "calibrate_2", "target_object_name": "calibrate_Y", "target_index": 2, "target_name": "Assay", "target_units": null, "n_samples": 155, "n_features": 650, "feature_axis_title": "Wavelength", "feature_axis_units": "nm", "feature_axis_sha256": "ef62e2f1342de3e45112a87810af1b1c23cd33257395750878ea9d4104d8a75f", "scientific_sha256": "63c19480804fd0348d3f556694f7f1a48fd3c21f5be5da87ea68f2e5c7231979", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["Assay"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-nir-shootout-test1-assay-v1", "artifact_id": "eigenvector-nir-shootout-archive-v1", "title": "NIR Shootout 2002 — Test instrument 1 assay", "member_path": "nir_shootout_2002.mat", "native_reader_contract": "spectrasherpa.matlab-dso/1", "object_name": "test_1", "target_object_name": "test_Y", "target_index": 2, "target_name": "Assay", "target_units": null, "n_samples": 460, "n_features": 650, "feature_axis_title": "Wavelength", "feature_axis_units": "nm", "feature_axis_sha256": "ef62e2f1342de3e45112a87810af1b1c23cd33257395750878ea9d4104d8a75f", "scientific_sha256": "561a3751cf9a691eb18a3e5593efd2db463aa3f6b855b7bd4cc965d50e122491", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["Assay"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-nir-shootout-test2-assay-v1", "artifact_id": "eigenvector-nir-shootout-archive-v1", "title": "NIR Shootout 2002 — Test instrument 2 assay", "member_path": "nir_shootout_2002.mat", "native_reader_contract": "spectrasherpa.matlab-dso/1", "object_name": "test_2", "target_object_name": "test_Y", "target_index": 2, "target_name": "Assay", "target_units": null, "n_samples": 460, "n_features": 650, "feature_axis_title": "Wavelength", "feature_axis_units": "nm", "feature_axis_sha256": "ef62e2f1342de3e45112a87810af1b1c23cd33257395750878ea9d4104d8a75f", "scientific_sha256": "5d184cb5abd545f64b40cf210a4334eb3fa366e42c17e30a7196b04d2664538e", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["Assay"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-nir-shootout-validation1-assay-v1", "artifact_id": "eigenvector-nir-shootout-archive-v1", "title": "NIR Shootout 2002 — Validation instrument 1 assay", "member_path": "nir_shootout_2002.mat", "native_reader_contract": "spectrasherpa.matlab-dso/1", "object_name": "validate_1", "target_object_name": "validate_Y", "target_index": 2, "target_name": "Assay", "target_units": null, "n_samples": 40, "n_features": 650, "feature_axis_title": "Wavelength", "feature_axis_units": "nm", "feature_axis_sha256": "ef62e2f1342de3e45112a87810af1b1c23cd33257395750878ea9d4104d8a75f", "scientific_sha256": "6011f11aac7d1ce0620fb248eb6151528945872140209c796c3b1b09b9f04175", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["Assay"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    },
+    {
+      "projection_id": "public-nir-shootout-validation2-assay-v1", "artifact_id": "eigenvector-nir-shootout-archive-v1", "title": "NIR Shootout 2002 — Validation instrument 2 assay", "member_path": "nir_shootout_2002.mat", "native_reader_contract": "spectrasherpa.matlab-dso/1", "object_name": "validate_2", "target_object_name": "validate_Y", "target_index": 2, "target_name": "Assay", "target_units": null, "n_samples": 40, "n_features": 650, "feature_axis_title": "Wavelength", "feature_axis_units": "nm", "feature_axis_sha256": "ef62e2f1342de3e45112a87810af1b1c23cd33257395750878ea9d4104d8a75f", "scientific_sha256": "068bba7e4e7fb54b526710786c9322a85636a9a0019ea6cdf8c14402abc6d819", "qualification_status": "qualified", "analysis": {"primary_role": "X_spectra", "modality": "spectra", "technique": "NIR", "target_type": "continuous", "target_fields": ["Assay"], "identity_fields": [], "group_fields": [], "ordered_samples": false}
+    }
+  ]
+}

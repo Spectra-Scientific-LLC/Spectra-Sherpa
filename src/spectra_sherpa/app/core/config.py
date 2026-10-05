@@ -7,7 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from spectra_sherpa._paths import (
     get_default_data_dir,
@@ -35,6 +35,13 @@ def _get_bool(name: str, default: bool) -> bool:
     if value is None or value == "":
         return default
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _get_retention_limit(name: str, maximum: int) -> int:
+    value = _get_int(name, maximum)
+    if not 0 < value <= maximum:
+        raise ValueError(f"{name} must be between 1 and the qualified maximum {maximum}")
+    return value
 
 
 PROJECT_ROOT = get_project_root() or get_package_root().parent.parent
@@ -68,7 +75,7 @@ class Settings:
     secret_key: str = os.getenv("SECRET_KEY", "local-dev-key")
     algorithm: str = "HS256"
     # Token lifetime: 60 min default for all modes.  Local mode bypasses JWT
-    # entirely (implicit user identity), so this only matters for hybrid/enterprise.
+    # entirely (implicit user identity), so this only matters for managed.
     # Override with ACCESS_TOKEN_EXPIRE_MINUTES env var.
     access_token_expire_minutes: int = _get_int("ACCESS_TOKEN_EXPIRE_MINUTES", 60)
 
@@ -86,115 +93,25 @@ class Settings:
     dag_worker_pool_size: int = _get_int("DAG_WORKER_POOL_SIZE", min(4, os.cpu_count() or 2))
     parallel_threshold: int = _get_int("PARALLEL_THRESHOLD", 100)  # min spectra to enable multi-core preprocessing
     max_export_size_mb: int = _get_int("MAX_EXPORT_SIZE_MB", 1024)
+    run_output_retention_enabled: bool = _get_bool("RUN_OUTPUT_RETENTION_ENABLED", True)
+    run_output_max_bytes: int = _get_retention_limit("RUN_OUTPUT_MAX_BYTES", 8 * 1024 * 1024)
+    run_output_run_max_bytes: int = _get_retention_limit("RUN_OUTPUT_RUN_MAX_BYTES", 64 * 1024 * 1024)
+    run_output_user_max_bytes: int = _get_retention_limit("RUN_OUTPUT_USER_MAX_BYTES", 512 * 1024 * 1024)
+    folder_watch_files_per_poll: int = _get_retention_limit("FOLDER_WATCH_FILES_PER_POLL", 16)
+    prediction_upload_max_files: int = _get_retention_limit("PREDICTION_UPLOAD_MAX_FILES", 16)
+    prediction_upload_max_request_bytes: int = _get_retention_limit(
+        "PREDICTION_UPLOAD_MAX_REQUEST_BYTES", 32 * 1024 * 1024
+    )
+    prediction_upload_max_user_bytes: int = _get_retention_limit("PREDICTION_UPLOAD_MAX_USER_BYTES", 512 * 1024 * 1024)
+    prediction_upload_timeout_seconds: int = _get_retention_limit("PREDICTION_UPLOAD_TIMEOUT_SECONDS", 60)
     log_buffer_size: int = _get_int("LOG_BUFFER_SIZE", 1000)
     log_file_path: Optional[str] = os.getenv("LOG_FILE_PATH")  # e.g., "logs/audit.log"
     log_file_max_bytes: int = _get_int("LOG_FILE_MAX_BYTES", 10 * 1024 * 1024)  # 10 MB default
     log_file_backup_count: int = _get_int("LOG_FILE_BACKUP_COUNT", 5)
     sanitize_paths: bool = _get_bool("SANITIZE_PATHS", False)
-    allowed_extensions: tuple[str, ...] = (
-        ".csv",
-        ".jdx",
-        ".dx",
-        ".json",  # Kept for backward compatibility (will warn if no explicit reader)
-        ".spc",
-        ".spa",
-        ".spg",
-        ".srs",
-        ".txt",
-        ".wdf",  # Renishaw WiRE Data Format (Raman)
-        ".dat",  # Kept for backward compatibility (will warn if no explicit reader)
-        ".opus",
-        ".mat",
-        ".npy",
-        ".npz",
+    campaign_review_publisher_trust_anchors_path: Optional[str] = os.getenv(
+        "CAMPAIGN_REVIEW_PUBLISHER_TRUST_ANCHORS_PATH"
     )
-
-
-# Extension to SpectroChemPy reader method mapping
-# Single source of truth for all file loading operations
-EXTENSION_READER_MAP = {
-    # Structured formats
-    ".csv": "read_csv",
-    ".mat": "read_matlab",
-    # JCAMP-DX formats (common in IR spectroscopy)
-    ".jdx": "read_jcamp",
-    ".dx": "read_jcamp",
-    # Galactic SPC format
-    ".spc": "read_spc",
-    # OMNIC formats (both use read_omnic, NOT read_spa/read_spg)
-    ".spa": "read_omnic",  # OMNIC single file
-    ".spg": "read_omnic",  # OMNIC series file
-    ".srs": "read_omnic",  # OMNIC time series file
-    # Text-based and proprietary formats (use generic reader)
-    ".txt": "read",
-    ".wdf": "read",  # Renishaw WiRE Data Format
-    # Note: .dat and .json are in allowed_extensions for backward compatibility
-    # but have no explicit reader - will fall back to generic read with warning
-}
-
-
-def get_reader_for_extension(ext: str) -> str:
-    """
-    Get the appropriate SpectroChemPy reader method for a file extension.
-
-    Args:
-        ext: File extension (with or without leading dot)
-
-    Returns:
-        Name of SpectroChemPy reader method (e.g., 'read_omnic')
-
-    Raises:
-        ValueError: If extension is not supported
-    """
-    import warnings
-
-    ext_lower = ext.lower()
-    if not ext_lower.startswith("."):
-        ext_lower = f".{ext_lower}"
-
-    # Special case: OPUS files use numeric extensions (.0, .1, .0000, etc.)
-    if ext_lower.lstrip(".").isdigit():
-        return "read_opus"
-
-    if ext_lower not in EXTENSION_READER_MAP:
-        # Check against the allowed_extensions tuple directly (defined above in Settings class)
-        # This is safe because Settings is not instantiated until after this function is defined
-        allowed_extensions_tuple = (
-            ".csv",
-            ".jdx",
-            ".dx",
-            ".json",
-            ".spc",
-            ".spa",
-            ".spg",
-            ".srs",
-            ".txt",
-            ".wdf",
-            ".dat",
-            ".opus",
-            ".mat",
-            ".npy",
-            ".npz",
-        )
-
-        if ext_lower in allowed_extensions_tuple:
-            # Fall back to generic reader with a warning
-            warnings.warn(
-                f"Extension {ext_lower} has no explicit reader. "
-                f"Falling back to generic scp.read(). "
-                f"This may fail or produce unexpected results.",
-                UserWarning,
-            )
-            return "read"
-
-        # Truly unsupported extension
-        supported = ", ".join(sorted(EXTENSION_READER_MAP.keys()))
-        raise ValueError(
-            f"Unsupported file extension: {ext}\n"
-            f"Supported extensions: {supported}, or numeric extensions for OPUS files"
-        )
-
-    return EXTENSION_READER_MAP[ext_lower]
 
 
 def _refresh_settings_singleton() -> Settings:
@@ -208,7 +125,7 @@ def _refresh_settings_singleton() -> Settings:
 
 
 # ============================================================================
-# Multi-Mode Configuration (Local, Hybrid, Enterprise)
+# Multi-Mode Configuration (Local, Enterprise and explicit extensions)
 # ============================================================================
 
 
@@ -227,21 +144,9 @@ class LLMConfig(BaseModel):
 
 
 class AppMode(str, Enum):
-    """Canonical deployment-mode identifiers.
-
-    Single source of truth for the three deployment modes. ``str``-based
-    so existing ``app_config.mode == "local"`` comparisons and JSON
-    serialization keep working unchanged; new callers and tests should
-    import this instead of hard-coding the literals.
-
-    Migrating the remaining ~37 string-comparison sites to ``AppMode``
-    is a separate, non-urgent follow-up: mode strings are stable and are
-    not an OSS/proprietary churn source, so a big-bang change to the
-    security-critical auth/mode path is not worth the risk here.
-    """
+    """Built-in runtime identifiers; private products register their own policy."""
 
     LOCAL = "local"
-    HYBRID = "hybrid"
     ENTERPRISE = "enterprise"
 
     @classmethod
@@ -253,17 +158,21 @@ class AppMode(str, Enum):
 class ExecutionConfig(BaseModel):
     """Execution and compute settings"""
 
-    mode: Literal["local", "hybrid"] = "local"
-    gradient_api_key: Optional[str] = None
-    auto_offload_threshold: int = 10000  # Dataset size threshold for GPU offload
+    mode: Literal["local", "remote"] = "local"
 
 
 class AppConfig(BaseModel):
-    """Main application configuration for local, hybrid, and enterprise modes."""
+    """Main application configuration for core and explicitly composed product runtimes."""
 
-    mode: Literal["local", "hybrid", "enterprise"] = Field(
-        default="local", description="Application mode: local, hybrid, or enterprise"
-    )
+    mode: str = Field(default="local", description="Core or explicitly registered product runtime mode")
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, value: str) -> str:
+        from spectra_sherpa.app.contracts.runtime_mode import validate_runtime_mode
+
+        return validate_runtime_mode(value)
+
     egress_enabled: bool = Field(
         default=False, description="Enable network egress (external API calls). Defaults to False in local mode."
     )
@@ -278,21 +187,18 @@ class AppConfig(BaseModel):
     )
     api_base_url: str = Field(default="http://localhost:8000", description="Backend API base URL")
 
-    # Integration fields for commercial server extensions (enterprise/hybrid/demo).
+    # Integration fields for commercial server extensions (managed).
     # These are None in OSS mode but can be injected by an extension package.
     site_profile: Optional[str] = Field(
         default=None,
-        description="Product profile (demo, pro, hybrid_server, org) used by server extensions",
+        description="Product profile (demo, pro, org, or extension-defined) used by server extensions",
     )
     rate_limit_executions: Optional[int] = Field(
         default=None,
-        description="Max executions per hour per user (enterprise/hybrid mode) - used by server extensions",
+        description="Max executions per hour per user (managed mode) - used by server extensions",
     )
     session_expiry_hours: Optional[int] = Field(
-        default=None, description="Session expiry in hours (enterprise/hybrid mode) - used by server extensions"
-    )
-    spectrasherpa_log_url: Optional[str] = Field(
-        default=None, description="Remote audit log URL for hybrid/enterprise mode - used by server extensions"
+        default=None, description="Session expiry in hours (managed mode) - used by server extensions"
     )
 
     # LLM configurations
@@ -305,15 +211,19 @@ class AppConfig(BaseModel):
     def from_env(cls) -> "AppConfig":
         """Load configuration from environment variables using registry defaults.
 
-        Reads APP_MODE to determine operational mode (local, hybrid, enterprise).
+        Reads APP_MODE to determine operational mode (local or enterprise, or an explicitly installed product mode).
         """
         # Determine app mode from environment
         raw_mode = os.getenv("APP_MODE", "local").strip().lower()
-        if raw_mode not in AppMode.values():
-            allowed = ", ".join(AppMode.values())
-            raise ValueError(f"Unsupported APP_MODE={raw_mode!r}. Expected one of: {allowed}.")
+        from spectra_sherpa.app.contracts.runtime_mode import validate_runtime_mode
 
         mode = raw_mode
+        from spectra_sherpa.app.core.desktop_policy import is_desktop
+
+        if is_desktop():
+            # The signed desktop product is always the local workbench.
+            mode = "local"
+        validate_runtime_mode(mode)
 
         # Provider metadata comes from the injectable LLM provider
         # catalog contract (spectra_sherpa.app.contracts.llm_catalog).
@@ -334,15 +244,15 @@ class AppConfig(BaseModel):
                 base_url=provider_meta.get("base_url"),
             )
 
-        # Egress: disabled by default in local (privacy-first), enabled in hybrid/enterprise
+        # Egress: disabled by default in local (privacy-first), enabled in managed
         egress_enabled = _get_bool("EGRESS_ENABLED", mode != "local")
 
         # Audit subsystem: off by default everywhere. Operators opt in via
-        # SHERPA_AUDIT_ENABLED. Cloud/Hybrid Team-tier deployments turn this on;
+        # SHERPA_AUDIT_ENABLED. Managed Team-tier deployments turn this on;
         # the commercial server's entitlement check then gates the full pipeline.
         audit_enabled = _get_bool("SHERPA_AUDIT_ENABLED", False)
 
-        # Enterprise/hybrid integration fields
+        # Managed extension integration fields
         site_profile = os.getenv("SITE_PROFILE", "").strip() or None
         rate_limit_raw = _get_int("RATE_LIMIT_EXECUTIONS", 0) if mode != "local" else 0
         rate_limit_executions = rate_limit_raw if rate_limit_raw else None
@@ -359,9 +269,7 @@ class AppConfig(BaseModel):
             session_expiry_hours=session_expiry_hours,
             llms=llm_configs,
             execution=ExecutionConfig(
-                mode="hybrid" if mode != "local" else "local",
-                gradient_api_key=os.getenv("GRADIENT_API_KEY"),
-                auto_offload_threshold=int(os.getenv("AUTO_OFFLOAD_THRESHOLD", "10000")),
+                mode="remote" if mode != "local" else "local",
             ),
         )
 
@@ -404,8 +312,7 @@ class AppConfig(BaseModel):
     def to_client_safe(self) -> dict:
         """Return client-safe configuration (no secrets).
 
-        ``registrationEnabled`` and ``registrationRequiresCode`` are
-        server-owned flags. The commercial server declares their values
+        ``registrationEnabled`` is a server-owned flag. The commercial server declares its value
         at startup via ``spectra_sherpa.app.contracts.auth_policy``; OSS
         reads them here. In OSS-only installs both default to ``False``
         — the base shape carries those defaults, which is the correct
@@ -416,19 +323,16 @@ class AppConfig(BaseModel):
         live_llms = self._live_llm_configs()
         has_llm = any(llm.is_configured for llm in live_llms.values())
 
-        from spectra_sherpa.app.contracts.auth_policy import (
-            registration_requires_code as _registration_requires_code_flag,
-        )
+        from spectra_sherpa.app.core.desktop_policy import is_desktop
         from spectra_sherpa.app.core.mode_policy import allows_registration
         from spectra_sherpa.app.lib.data_formats import client_data_formats
+        from spectra_sherpa.app.services.encryption import (
+            credential_storage_available as _credential_storage_available,
+        )
 
         # ``allows_registration()`` layers the multi-user mode check on
         # top of the server-registered flag.
         registration_enabled = allows_registration()
-        # ``registration_requires_code`` is independent of mode: the
-        # server declares whether an access code is required; OSS
-        # simply surfaces it.
-        registration_requires_code = _registration_requires_code_flag()
 
         # User-facing quota model: one Sherpa/LLM hourly limit plus optional
         # session expiry metadata. Execution throttling is no longer exposed.
@@ -480,16 +384,24 @@ class AppConfig(BaseModel):
             "audit": audit_block,
             "apiBaseUrl": self.api_base_url,
             "registrationEnabled": registration_enabled,
-            "registrationRequiresCode": registration_requires_code,
             "siteProfile": self.site_profile,
+            # Desktop builds have no Hybrid enrollment or hosted connection.
+            "desktop": is_desktop(),
+            "capabilities": {
+                "llmByok": self.mode == "local",
+                "managedLlm": False,
+                "governedTools": False,
+                "hostedFolderWatch": False,
+                "workbenchDeploy": False,
+            },
             "features": {
-                "apiTokenSettings": self.mode in ("local", "hybrid"),
-                "cloudOffload": self.execution.gradient_api_key is not None,
+                "apiTokenSettings": self.mode == "local",
+                # False only in the desktop app without OS credential protection.
+                "credentialStorage": _credential_storage_available(),
                 CHAT_ASSISTANT: has_llm,
                 "nistDownloads": self.egress_enabled,
                 # Sherpa capabilities default to False; server overlay enables them.
                 **{cap: False for cap in ALL_SHERPA_CAPABILITIES},
-                "pluginSystem": True,
             },
             "llms": {
                 name: {"provider": llm.provider, "model": llm.model, "enabled": llm.is_configured}

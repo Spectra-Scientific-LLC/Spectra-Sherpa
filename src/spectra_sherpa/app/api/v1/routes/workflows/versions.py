@@ -7,11 +7,19 @@ from __future__ import annotations
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session, require_project
+from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
+from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
+from spectra_sherpa.app.lib.workflow_purpose import (
+    MANAGED_CANDIDATE_AUTHORITY,
+    WorkflowPurpose,
+    WorkflowPurposeError,
+    require_workflow_purpose,
+)
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
@@ -24,14 +32,62 @@ from spectra_sherpa.app.schemas.workflows import (
     WorkflowVersionSummary,
 )
 from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
+from spectra_sherpa.app.services.dag.saved_graph_admission import (
+    CURRENT_CLASSIFIER_VALIDATION_SEMANTICS,
+    SavedGraphAdmissionError,
+    admit_saved_workflow_graph,
+)
 from spectra_sherpa.app.services.project_data_sources import (
     ensure_sheet_advisor_channel,
     sync_workflow_data_sources,
 )
+from spectra_sherpa.app.services.run_params import build_workflow_version_snapshot
+from spectra_sherpa.app.services.workflow_data_selections import record_restored_selection_revisions
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workflows")
+
+
+def _admit_snapshot_graph(snapshot: dict) -> None:
+    """Reject stale durable graph identities before any workflow mutation."""
+
+    if snapshot.get("replay_authority") == "external_evidence_only":
+        raise HTTPException(
+            status_code=409,
+            detail="Imported model source version is evidence only; source data identities are not local. "
+            "Apply the saved model for inference instead.",
+        )
+    if snapshot.get("fold_validation_plan") is not None:
+        from spectra_sherpa.app.services.dag.sheet_fold_validation import SheetFoldValidationPlan
+
+        try:
+            snapshot["fold_validation_plan"] = SheetFoldValidationPlan.from_dict(
+                snapshot["fold_validation_plan"]
+            ).as_dict()
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    try:
+        admission = admit_saved_workflow_graph(
+            snapshot.get("nodes") or [],
+            snapshot.get("edges") or [],
+            classifier_validation_semantics=snapshot.get("classifier_validation_semantics"),
+        )
+    except SavedGraphAdmissionError as exc:
+        raise HTTPException(status_code=409, detail=f"Saved workflow graph is not current: {exc}") from exc
+    snapshot["nodes"] = list(admission.nodes)
+    snapshot["edges"] = list(admission.edges)
+    snapshot["classifier_validation_semantics"] = CURRENT_CLASSIFIER_VALIDATION_SEMANTICS
+
+
+def _snapshot_purpose(snapshot: dict) -> WorkflowPurpose:
+    try:
+        return require_workflow_purpose(snapshot.get("purpose"))
+    except WorkflowPurposeError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Saved workflow purpose is not current: {exc}",
+        ) from exc
 
 
 @router.get("/{workflow_id}/versions", response_model=WorkflowVersionListResponse)
@@ -46,12 +102,18 @@ async def list_workflow_versions(
     user_id = current_user.id
 
     # Verify workflow exists and user owns it
-    workflow_query = select(Workflow).where(Workflow.id == workflow_id).where(Workflow.user_id == user_id)
+    workflow_query = (
+        select(Workflow)
+        .where(Workflow.id == workflow_id)
+        .where(or_(Workflow.user_id == user_id, uses_managed_project_access()))
+    )
     workflow_result = await session.execute(workflow_query)
     workflow = workflow_result.scalar_one_or_none()
 
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+
+    await require_scientific_access(session, user_id, workflow.project_id, "read", resource_owner_id=workflow.user_id)
 
     # Get total count
     count_query = select(func.count(WorkflowVersion.id)).where(WorkflowVersion.workflow_id == workflow_id)
@@ -86,12 +148,18 @@ async def get_workflow_version(
     user_id = current_user.id
 
     # Verify workflow exists and user owns it
-    workflow_query = select(Workflow).where(Workflow.id == workflow_id).where(Workflow.user_id == user_id)
+    workflow_query = (
+        select(Workflow)
+        .where(Workflow.id == workflow_id)
+        .where(or_(Workflow.user_id == user_id, uses_managed_project_access()))
+    )
     workflow_result = await session.execute(workflow_query)
     workflow = workflow_result.scalar_one_or_none()
 
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+
+    await require_scientific_access(session, user_id, workflow.project_id, "read", resource_owner_id=workflow.user_id)
 
     # Get version
     query = (
@@ -122,14 +190,18 @@ async def restore_workflow_version(
     workflow_query = (
         select(Workflow)
         .where(Workflow.id == workflow_id)
-        .where(Workflow.user_id == user_id)
-        .options(selectinload(Workflow.nodes), selectinload(Workflow.edges))
+        .where(or_(Workflow.user_id == user_id, uses_managed_project_access()))
+        .options(selectinload(Workflow.nodes), selectinload(Workflow.edges), selectinload(Workflow.data_source_links))
+        .with_for_update()
     )
     workflow_result = await session.execute(workflow_query)
     workflow = workflow_result.scalar_one_or_none()
 
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    await require_scientific_access(session, user_id, workflow.project_id, "write", resource_owner_id=workflow.user_id)
+    if workflow.purpose == MANAGED_CANDIDATE_AUTHORITY:
+        raise HTTPException(status_code=409, detail="Managed candidate authority cannot be restored from a version")
 
     # Get version to restore
     version_query = (
@@ -144,7 +216,16 @@ async def restore_workflow_version(
         raise HTTPException(status_code=404, detail="Version not found")
 
     # Restore workflow from snapshot
-    snapshot = version.snapshot
+    snapshot = version.snapshot or {}
+    _admit_snapshot_graph(snapshot)
+    snapshot_purpose = _snapshot_purpose(snapshot)
+    if snapshot_purpose != workflow.purpose:
+        raise HTTPException(
+            status_code=409,
+            detail="A workflow version cannot change the workflow's execution purpose",
+        )
+
+    workflow.fold_validation_plan = snapshot.get("fold_validation_plan")
 
     # Update workflow fields
     if "name" in snapshot:
@@ -192,6 +273,12 @@ async def restore_workflow_version(
             )
             workflow.edges.append(edge)
 
+    await record_restored_selection_revisions(session, workflow=workflow, user_id=user_id, version_id=version.id)
+
+    await sync_workflow_data_sources(workflow, session, workflow.nodes)
+    await session.flush()
+    await session.refresh(workflow, attribute_names=["data_source_links"])
+
     # Create a new version record for the restore action
     latest_version_query = select(func.max(WorkflowVersion.version_number)).where(
         WorkflowVersion.workflow_id == workflow_id
@@ -205,7 +292,7 @@ async def restore_workflow_version(
         version_number=new_version_number,
         created_by=user_id,
         change_description=f"Restored from version {version.version_number}",
-        snapshot=snapshot,
+        snapshot=build_workflow_version_snapshot(workflow),
     )
     session.add(restore_version)
 
@@ -220,6 +307,8 @@ async def restore_workflow_version(
             selectinload(Workflow.edges),
             selectinload(Workflow.tags),
             selectinload(Workflow.folder),
+            selectinload(Workflow.advisor_channels),
+            selectinload(Workflow.data_source_links),
         )
     )
     reload_result = await session.execute(reload_query)
@@ -244,7 +333,7 @@ async def _unique_version_open_name(
     base_name = f"{source_name} (from v{version_number})"
     existing_result = await session.execute(
         select(Workflow.name).where(
-            Workflow.user_id == user_id,
+            or_(Workflow.user_id == user_id, uses_managed_project_access()),
             Workflow.project_id == project_id,
         )
     )
@@ -281,13 +370,19 @@ async def open_version_as_new_sheet(
     # Source workflow + ownership.
     source_query = (
         select(Workflow)
-        .where(Workflow.id == workflow_id, Workflow.user_id == user_id)
+        .where(Workflow.id == workflow_id, or_(Workflow.user_id == user_id, uses_managed_project_access()))
         .options(selectinload(Workflow.nodes), selectinload(Workflow.edges))
     )
     source_result = await session.execute(source_query)
     source = source_result.scalar_one_or_none()
     if source is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    await require_scientific_access(session, user_id, source.project_id, "write", resource_owner_id=source.user_id)
+    if source.purpose == MANAGED_CANDIDATE_AUTHORITY:
+        raise HTTPException(
+            status_code=409,
+            detail="Managed candidate authority cannot be opened as another workflow",
+        )
     if source.project_id is None:
         raise HTTPException(
             status_code=400,
@@ -305,15 +400,17 @@ async def open_version_as_new_sheet(
     if version is None:
         raise HTTPException(status_code=404, detail="Version not found")
 
-    await require_project(source.project_id, user_id, session)
+    await require_project(source.project_id, user_id, session, operation="write")
 
     snapshot = version.snapshot or {}
+    _admit_snapshot_graph(snapshot)
+    snapshot_purpose = _snapshot_purpose(snapshot)
 
     # Place the new sheet at the end of the workbook.
     max_order = await session.scalar(
         select(func.max(Workflow.sheet_order)).where(
             Workflow.project_id == source.project_id,
-            Workflow.user_id == user_id,
+            or_(Workflow.user_id == user_id, uses_managed_project_access()),
         )
     )
 
@@ -331,6 +428,8 @@ async def open_version_as_new_sheet(
         name=new_name,
         description=snapshot.get("description") or source.description,
         status=snapshot.get("status") or source.status,
+        purpose=snapshot_purpose,
+        fold_validation_plan=snapshot.get("fold_validation_plan"),
         canvas_state=snapshot.get("canvas_state") or source.canvas_state,
         notes=snapshot.get("notes"),
         technique=snapshot.get("technique") or source.technique,
@@ -341,6 +440,7 @@ async def open_version_as_new_sheet(
         created_from_template_id=source.created_from_template_id,
         created_from_template_name=source.created_from_template_name,
         created_from_template_version=source.created_from_template_version,
+        data_origin=snapshot.get("data_origin", source.data_origin),
         created_from_workflow_id=source.id,
         sheet_order=(max_order if max_order is not None else -1) + 1,
     )
@@ -397,6 +497,10 @@ async def open_version_as_new_sheet(
     nodes_query = select(WorkflowNode).where(WorkflowNode.workflow_id == new_workflow.id)
     nodes_result = await session.execute(nodes_query)
     persisted_nodes = nodes_result.scalars().all()
+    await session.refresh(new_workflow, attribute_names=["nodes", "edges"])
+    await record_restored_selection_revisions(
+        session, workflow=new_workflow, user_id=user_id, version_id=version.id, record_initial=True
+    )
     await sync_workflow_data_sources(new_workflow, session, persisted_nodes)
     await ensure_sheet_advisor_channel(new_workflow, session, new_workflow.tab_color)
 

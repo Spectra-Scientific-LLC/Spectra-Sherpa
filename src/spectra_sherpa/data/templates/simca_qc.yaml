@@ -5,17 +5,22 @@ description: Build a SIMCA model for quality control and outlier detection based
   reference class.
 category: quality_control
 is_active: true
+status: pending_qualification
+status_detail: The training-only graph lacks an explicit application and held-out QC decision contract; the separate SIMCA Classification starter remains the qualified path.
 data_modalities:
 - spectra
 - features
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Reference Data
-    parameters:
+    parameters: {}
+    example_binding:
       source: sklearn
-      sklearn_dataset: wine
+      dataset_name: wine
+      selected_target: target
+      target_type: categorical
     position_x: 175
     position_y: 50
   - node_id: preprocess_1

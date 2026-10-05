@@ -10,19 +10,21 @@ status: ready
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Synthetic_atmospheric-6
-    parameters:
+    parameters: {}
+    example_binding:
       source: synthetic
-      synthetic_dataset: Synthetic_atmospheric-6
+      dataset_name: Synthetic_atmospheric-6
     position_x: 175
     position_y: 50
   - node_id: data_2
-    node_type: data.source
+    node_type: data.file_load
     label: Library_atmospheric-9
-    parameters:
+    parameters: {}
+    example_binding:
       source: synthetic
-      synthetic_dataset: Library_atmospheric-9
+      dataset_name: Library_atmospheric-9
     position_x: 575
     position_y: 50
   - node_id: model_1
@@ -73,6 +75,16 @@ template_data:
       max_rows: 100000
     position_x: 900
     position_y: 550
+  - node_id: contour_1
+    node_type: output.contour
+    label: Mixture Response Map
+    parameters:
+      plot_type: heatmap
+      colorscale: Viridis
+      reverse_x: false
+      transpose: false
+    position_x: 50
+    position_y: 300
   edges:
   - from_node_id: data_1
     to_node_id: model_1
@@ -92,6 +104,9 @@ template_data:
   - from_node_id: compare_1
     to_node_id: table_1
     from_output: hqi_report
+  - from_node_id: data_1
+    to_node_id: contour_1
+    to_input: default
   canvas_state:
     zoom: 0.9
     pan_x: 0

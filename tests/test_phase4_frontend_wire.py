@@ -14,6 +14,7 @@ from spectra_sherpa.app.lib.sherpa_dataset import (
     SampleAxis,
     SherpaDataset,
     SpectralAxis,
+    TargetContext,
 )
 from spectra_sherpa.app.services.dag.serialize import serialize_for_api
 
@@ -109,6 +110,33 @@ class TestMetadataEnrichment:
         metadata = result["metadata"]
         assert "sample_labels" in metadata
         assert metadata["sample_labels"] == ["A", "B", "C"]
+
+    def test_sample_classes_in_metadata(self):
+        ds = SherpaDataset(
+            X=np.zeros((3, 10)),
+            sample_axis=SampleAxis(
+                labels=["S1", "S2", "S3"],
+                classes=np.asarray(["control", "treated", "control"], dtype=object),
+            ),
+        )
+
+        metadata = serialize_for_api(ds)["metadata"]
+
+        assert metadata["sample_classes"] == ["control", "treated", "control"]
+        assert metadata["label_categories"] == ["control", "treated"]
+
+    def test_categorical_target_classes_in_metadata(self):
+        ds = SherpaDataset(
+            X=np.zeros((3, 10)),
+            sample_axis=SampleAxis(labels=["S1", "S2", "S3"]),
+            target=np.asarray(["control", "treated", "control"], dtype=object),
+            target_context=TargetContext(target_type="categorical", target_names=["class"]),
+        )
+
+        metadata = serialize_for_api(ds)["metadata"]
+
+        assert metadata["sample_classes"] == ["control", "treated", "control"]
+        assert metadata["label_categories"] == ["control", "treated"]
 
 
 # ---------------------------------------------------------------------------

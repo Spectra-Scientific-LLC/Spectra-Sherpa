@@ -29,6 +29,19 @@ async def test_folder_watch_settle_time(tmp_path):
     assert len(found_files_short) == 1, "File should be found after it ages past settle_time"
 
 
+def test_file_discovery_rejects_unbounded_directory_enumeration(tmp_path):
+    folder = tmp_path / "large_drop_folder"
+    folder.mkdir()
+    for idx in range(4):
+        (folder / f"sample-{idx}.csv").touch()
+
+    with pytest.raises(ValueError, match="more than 3 entries"):
+        discover_files(str(folder), settle_time_seconds=0, max_directory_entries=3)
+
+    with pytest.raises(ValueError, match="more than 2 matching files"):
+        discover_files(str(folder), settle_time_seconds=0, max_discovered_files=2)
+
+
 @pytest.mark.asyncio
 async def test_headless_api_predict_missing_executor():
     """Test that headless API returns 500 when _executor is missing."""

@@ -6,40 +6,37 @@ visit, exercising the full vertical slice from auth through DAG execution
 and LLM chat. It uses the standard test fixtures (in-memory SQLite, auth
 bypass) and monkeypatches only the LLM provider.
 
-The workflow uses an Eigenvector catalog source and patches the loader to a
-generated Eigenvector-shaped fixture so the user journey does not depend on
-redistributed upstream raw data.
+The workflow uses the same exact-file source contract as a real workbench
+project, backed by a generated local fixture.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 import pytest
 from httpx import AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
 
 
-def _make_preprocessing_template() -> dict[str, Any]:
-    """Minimal preprocessing template using an Eigenvector catalog source.
-
-    The test patches eigenvector corn_m5 to generated fixture data; production
-    loads this source from a user-local cache or runtime download.
-    """
+def _make_preprocessing_template(*, experiment_id: int, file_id: int) -> dict[str, Any]:
+    """Minimal preprocessing template using the canonical exact-file source."""
     return {
         "status": "ready",
         "nodes": [
             {
                 "node_id": "data_1",
-                "node_type": "data.source",
+                "node_type": "data.file_load",
                 "label": "Load Data",
                 "parameters": {
-                    "source": "eigenvector",
-                    "eigenvector_dataset": "corn_m5",
+                    "experiment_id": experiment_id,
+                    "file_id": file_id,
+                    "stage": "raw",
                 },
                 "position_x": 0,
                 "position_y": 0,
@@ -68,11 +65,48 @@ def _make_preprocessing_template() -> dict[str, Any]:
 async def test_first_time_user_journey(
     auth_client: AsyncClient,
     test_session: AsyncSession,
+    test_engine,
     test_user: User,
-    patch_eigenvector_loader,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """Simulate: new user → list templates → create workflow from template
     → execute workflow → ask Sherpa a question → get a reply."""
+
+    import spectra_sherpa.app.db.session as db_session
+    from spectra_sherpa.app.core.config import settings
+    from spectra_sherpa.app.models.experiment import Experiment
+    from spectra_sherpa.app.models.experiment_file import ExperimentFile
+    from spectra_sherpa.app.types import ensure_type_registry_loaded
+
+    ensure_type_registry_loaded()
+    monkeypatch.setattr(
+        db_session,
+        "async_session",
+        async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False),
+    )
+
+    experiment = Experiment(user_id=test_user.id, name="First journey data", description="", metadata_path="")
+    test_session.add(experiment)
+    await test_session.flush()
+    source_dir = settings.data_dir / "experiments" / f"exp_{experiment.id:03d}" / "raw"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    source_path = source_dir / "first-journey.csv"
+    np.savetxt(
+        source_path,
+        np.arange(80, dtype=np.float64).reshape(16, 5),
+        delimiter=",",
+        header="4000,3999,3998,3997,3996",
+        comments="",
+    )
+    source_file = ExperimentFile(
+        experiment_id=experiment.id,
+        file_path="raw/first-journey.csv",
+        file_type="csv",
+        stage="raw",
+        file_size_bytes=source_path.stat().st_size,
+    )
+    test_session.add(source_file)
+    await test_session.commit()
 
     # ── Step 1: Seed a template ───────────────────────────────────────
     template = WorkflowTemplate(
@@ -80,7 +114,7 @@ async def test_first_time_user_journey(
         name="Basic Preprocessing",
         description="SNV normalize spectral data",
         category="preprocessing",
-        template_data=_make_preprocessing_template(),
+        template_data=_make_preprocessing_template(experiment_id=experiment.id, file_id=source_file.id),
         is_active=True,
     )
     test_session.add(template)
@@ -95,9 +129,7 @@ async def test_first_time_user_journey(
 
     # ── Step 3: Create a workflow directly from the template data ─────
     # In the real UI, instantiation goes through the template endpoint.
-    # Here we create the workflow directly so the eigenvector source
-    # parameters are preserved (no experiment file indirection).
-    td = _make_preprocessing_template()
+    td = _make_preprocessing_template(experiment_id=experiment.id, file_id=source_file.id)
     workflow = Workflow(
         user_id=test_user.id,
         name="My First Workflow",

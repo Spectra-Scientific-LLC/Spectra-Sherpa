@@ -1,243 +1,100 @@
-"""
-Baseline correction nodes: BaselinePenalizedLSNode, BaselineRubberbandNode.
-"""
+"""Canonical Sherpa-native rubberband baseline correction."""
 
 from __future__ import annotations
 
-import logging
-from typing import Any, Dict
+from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib import rubberband as rubberband_authority
+from spectra_sherpa.app.lib import sherpa_dataset as sherpa_dataset_contract
+from spectra_sherpa.app.lib.axes import SpectralAxis
+from spectra_sherpa.app.lib.rubberband import RubberbandResult, rubberband_correct
+from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
+from spectra_sherpa.app.services.dag import supervision_binding
+from spectra_sherpa.app.services.dag.node_base import NodePolicy
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    WorkerCapability,
+)
+
+from . import _shared
 from ._shared import (
-    _BASELINE_LAMBDA_DEFAULT,
-    _LAMBDA_BY_TECHNIQUE,
     EFFECT_BASELINE_CORRECTED,
     Node,
     NodeMetadata,
-    NodeParameter,
     NodeResult,
     PortMetadata,
     SherpaDataset,
-    TransformSpec,
-    TransformSpecNode,
     add_processing_step,
-    baseline_penalized_ls,
     build_dataset_like,
     coerce_to_sherpa,
     register_node,
-    scp_roundtrip,
     to_numpy_2d,
 )
-from ._transforms import _baseline_pls_export
-
-logger = logging.getLogger(__name__)
 
 
-@register_node
-class BaselinePenalizedLSNode(TransformSpecNode):
-    """
-    Penalized Least Squares baseline correction node.
-
-    Supports three algorithms via method selector:
-    - ALS:    Asymmetric Least Squares (Eilers 2005)
-    - ArPLS:  Asymmetrically Reweighted PLS (Baek et al. 2015)
-    - AirPLS: Adaptive Iteratively Reweighted PLS (Zhang et al. 2010)
-    """
-
-    metadata = NodeMetadata(
-        node_type="baseline.penalized_ls",
-        category="preprocessing",
-        label="Baseline (Penalized LS)",
-        description=(
-            "Estimates and subtracts a smooth baseline using Asymmetric Least Squares (ALS), "
-            "Asymmetrically Reweighted PLS (ArPLS), or Adaptive Iteratively Reweighted PLS (AirPLS). "
-            "Lambda is auto-selected by spectroscopic technique when left at default: "
-            "NIR \u2192 1\u00d710\u2076, FTIR/IR \u2192 1\u00d710\u2077,"
-            "Raman \u2192 1\u00d710\u2075, OES \u2192 1\u00d710\u2074. "
-            "ArPLS and AirPLS are more robust than ALS for spectra with many or broad peaks."
-        ),
-        parameters=[
-            NodeParameter(
-                name="method",
-                label="Algorithm",
-                param_type="select",
-                default="als",
-                options=["als", "arpls", "airpls"],
-                description="ALS: classic asymmetric; ArPLS: adaptive reweighted; AirPLS: iterative reweighted",
-                required=True,
-                category="basic",
-            ),
-            NodeParameter(
-                name="lam",
-                label="Lambda (Smoothness)",
-                param_type="number",
-                default=1e5,
-                min_value=1e2,
-                description=(
-                    "Smoothness penalty \u2014 larger values produce a smoother (flatter) baseline. "
-                    "When left at the default (1\u00d710\u2075), the value is auto-selected by technique "
-                    "(NIR: 1\u00d710\u2076, FTIR/IR: 1\u00d710\u2077, Raman: 1\u00d710\u2075, OES: 1\u00d710\u2074). "
-                    "Set explicitly to override the auto-selected value."
-                ),
-                required=False,
-                category="basic",
-                hint=(
-                    "If the corrected baseline still curves under peaks, increase \u03bb. "
-                    "If signal peaks are suppressed or flattened, decrease \u03bb. "
-                    "A factor of 10\u00d7 change is a good starting step."
-                ),
-            ),
-            NodeParameter(
-                name="p",
-                label="Asymmetry (p)",
-                param_type="number",
-                default=0.001,
-                min_value=0.0001,
-                step=0.0001,
-                description="Asymmetry parameter (smaller = more asymmetric)",
-                required=False,
-                category="basic",
-                visible_when={"method": ["als"]},
-            ),
-            NodeParameter(
-                name="max_iter",
-                label="Max Iterations",
-                param_type="number",
-                default=50,
-                min_value=5,
-                step=5,
-                description="Maximum number of iterations",
-                required=False,
-                category="advanced",
-            ),
-            NodeParameter(
-                name="tol",
-                label="Convergence Tolerance",
-                param_type="number",
-                default=1e-6,
-                min_value=1e-10,
-                description="Convergence tolerance on weight change",
-                required=False,
-                category="advanced",
-            ),
-        ],
-        input_types=["NDDataset"],
-        input_ports=[
-            PortMetadata(
-                name="default",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                required=True,
-                label="Input Spectra",
-                description="Spectral data to process",
-            ),
-        ],
-        output_type="NDDataset",
-    )
-
-    spec = TransformSpec(
-        transform_fn=baseline_penalized_ls,
-        export_lines_fn=_baseline_pls_export,
-        extra_imports=["import numpy as np", "from scipy import sparse"],
+def _build_rubberband_result(
+    source: SherpaDataset,
+    numerical: RubberbandResult,
+    *,
+    node_id: str,
+) -> SherpaDataset:
+    result = build_dataset_like(numerical.corrected, source)
+    add_processing_step(
+        result,
+        "baseline.rubberband",
+        {"method": "lower_convex_envelope"},
+        node_id=node_id,
         state_effects=[EFFECT_BASELINE_CORRECTED],
     )
+    supervision_binding.rebind_sample_preserving_supervision(source, result)
+    return result
 
-    async def execute(self, input_data: Any = None, **kwargs: Any) -> Any:
-        """Override TransformSpecNode to apply technology-aware lambda defaults.
 
-        When the user has not explicitly overridden the lambda parameter (i.e.
-        it still equals the node's built-in default of 1e5), we substitute a
-        technique-specific starting value read from ``_LAMBDA_BY_TECHNIQUE``.
-        An explicit user value \u2014 even if it happens to equal a table entry \u2014
-        always takes precedence over the auto-selected value.
-        """
-        input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        data = to_numpy_2d(input_ds, name="input_data", dtype=np.float64)
-
-        params = self._resolve_params()
-        user_lam = params.get("lam", _BASELINE_LAMBDA_DEFAULT)
-
-        # Auto-select lambda when the user hasn't changed it from the node default
-        effective_lam = user_lam
-        technique_used: str | None = None
-        if user_lam == _BASELINE_LAMBDA_DEFAULT:
-            technique = None
-            if isinstance(input_ds, SherpaDataset) and input_ds.domain is not None:
-                technique = input_ds.domain.technique
-            if technique:
-                lookup = _LAMBDA_BY_TECHNIQUE.get(technique.upper().replace(" ", "_"))
-                if lookup is not None:
-                    effective_lam = lookup
-                    technique_used = technique
-                    logger.info(
-                        "[Baseline] Auto-selected \u03bb=%g for technique '%s'. "
-                        "Set the Lambda parameter explicitly to override.",
-                        effective_lam,
-                        technique,
-                    )
-
-        result_data = baseline_penalized_ls(
-            data,
-            method=params.get("method", "als"),
-            lam=effective_lam,
-            p=params.get("p", 0.001),
-            max_iter=params.get("max_iter", 50),
-            tol=params.get("tol", 1e-6),
+def _execute_rubberband(source: SherpaDataset, *, node_id: str) -> tuple[SherpaDataset, dict[str, Any]]:
+    feature_axis = source.feature_axis
+    if not isinstance(feature_axis, SpectralAxis):
+        raise ValueError(
+            "baseline.rubberband requires a SpectralAxis; load spectral data "
+            "with ordered feature coordinates "
+            "before applying a rubberband baseline."
         )
-
-        # Compute baseline as the difference between original and corrected
-        baseline = data - result_data
-        baseline_diagnostics = {
-            "baseline_mean": float(np.mean(baseline)),
-            "baseline_std": float(np.std(baseline)),
-            "baseline_max": float(np.max(np.abs(baseline))),
-            "residual_rms": float(np.sqrt(np.mean(result_data**2))),
-            "correction_magnitude_pct": float(100 * np.mean(np.abs(baseline)) / (np.mean(np.abs(data)) + 1e-12)),
-        }
-
-        result = build_dataset_like(result_data, input_ds, units=None)
-        recorded_params = dict(params)
-        recorded_params["lam"] = effective_lam
-        if technique_used:
-            recorded_params["_lam_auto_technique"] = technique_used
-        add_processing_step(
-            result,
-            self.metadata.node_type,
-            recorded_params,
-            node_id=self.node_id,
-            state_effects=[EFFECT_BASELINE_CORRECTED],
+    matrix = to_numpy_2d(source, name="input_data", dtype=np.float64)
+    if not np.isfinite(matrix).all():
+        raise ValueError(
+            "baseline.rubberband requires finite input values; remove an explicitly blanked region "
+            "with preprocess.clip_range before baseline correction"
         )
-        result.meta["baseline_diagnostics"] = baseline_diagnostics
-        return NodeResult(outputs={"default": result}, diagnostics=baseline_diagnostics)
+    numerical = rubberband_correct(matrix, feature_axis.values)
+    anchor_counts = [len(indices) for indices in numerical.anchor_indices]
+    diagnostics: dict[str, Any] = {
+        "method": "lower_convex_envelope",
+        "anchor_count_min": min(anchor_counts),
+        "anchor_count_max": max(anchor_counts),
+        "max_baseline_magnitude": float(abs(numerical.baseline).max()),
+        "max_absolute_correction": float(abs(numerical.corrected).max()),
+    }
+    return _build_rubberband_result(source, numerical, node_id=node_id), diagnostics
 
 
 @register_node
 class BaselineRubberbandNode(Node):
-    """
-    Rubberband baseline correction node.
-
-    Removes baseline by fitting a convex hull baseline.
-    """
-
-    scp_method = "basc"
-    scp_extra_kwargs = {"method": "rubberband"}
+    """Subtract each spectrum's lower convex-envelope baseline."""
 
     metadata = NodeMetadata(
         node_type="baseline.rubberband",
         category="preprocessing",
         label="Baseline (Rubberband)",
-        description="Rubberband (convex hull) baseline correction",
-        parameters=[
-            NodeParameter(
-                name="ranges",
-                label="Spectral Ranges",
-                param_type="text",
-                default="",
-                description="Optional: spectral ranges for baseline points (e.g., '4000:3800, 1800:1700')",
-                required=False,
-            ),
-        ],
-        input_types=["NDDataset"],
+        description=(
+            "Subtract the piecewise-linear lower convex envelope of every spectrum. "
+            "Select a fitting interval explicitly with Clip Range upstream."
+        ),
+        parameters=[],
+        input_types=["SpectralDataset"],
         input_ports=[
             PortMetadata(
                 name="default",
@@ -247,32 +104,72 @@ class BaselineRubberbandNode(Node):
                 description="Spectral data to process",
             ),
         ],
-        output_type="NDDataset",
-        requires_scp=True,
-        help_url="https://www.spectrochempy.fr/reference/generated/spectrochempy.basc.html",
+        output_ports=[
+            PortMetadata(
+                name="default",
+                type_ref="spectrasherpa://types/SpectralDataset/1.0",
+                required=True,
+                label="Baseline-corrected Spectra",
+                description="Spectra after subtraction of the lower convex-envelope baseline",
+            ),
+        ],
+        output_type="SpectralDataset",
+        policy=NodePolicy(),
+        help_url="docs/nodes/preprocessing.md#rubberband-baseline",
     )
 
-    async def execute(self, input_data) -> SherpaDataset:
-        """Execute rubberband baseline correction."""
+    async def execute(self, input_data: Any = None, **kwargs: Any) -> NodeResult:
+        del kwargs
         input_ds = coerce_to_sherpa(input_data, input_name="input_data")
-        ranges_str = self.parameters.get("ranges", "").strip()
+        result, diagnostics = _execute_rubberband(input_ds, node_id=self.node_id)
+        return NodeResult(outputs={"default": result}, diagnostics=diagnostics)
 
-        basc_kwargs: Dict[str, Any] = {"method": "rubberband"}
-        if ranges_str:
-            parsed = []
-            for part in ranges_str.split(","):
-                part = part.strip()
-                if ":" in part:
-                    lo, hi = part.split(":", 1)
-                    parsed.append((float(lo.strip()), float(hi.strip())))
-            if parsed:
-                basc_kwargs["ranges"] = parsed
+    def supports_python_export(self) -> bool:
+        return True
 
-        return scp_roundtrip(
-            input_ds,
-            lambda ndd: ndd.basc(**basc_kwargs),
-            op_id="baseline.rubberband",
-            parameters={"method": "rubberband", "ranges": ranges_str or None},
-            state_effects=[EFFECT_BASELINE_CORRECTED],
-            node_id=self.node_id,
-        )
+    def generate_python(self, inputs, indent="    ", use_scp=True):
+        del use_scp
+        source = next(iter(inputs.values())) if inputs else "input_data"
+        return [
+            f"{indent}# --- Canonical Rubberband Baseline ({self.node_id}) ---",
+            f"{indent}from spectra_sherpa.app.services.dag.nodes.preprocessing.baseline_nodes "
+            "import _execute_rubberband",
+            f"{indent}results[{self.node_id!r}], _rubberband_diagnostics = "
+            f"_execute_rubberband({source}, node_id={self.node_id!r})",
+        ]
+
+
+bind_stable_execution_contract(
+    BaselineRubberbandNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
+    implementation_id="spectrasherpa.baseline.rubberband",
+    implementation_version="2.0.1",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="preserves_samples",
+    feature_effect="preserves_features",
+    axis_effect="preserves_axis",
+    unit_effect="preserves_units",
+    resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
+    license_id="Apache-2.0",
+    help_reference="docs/nodes/preprocessing.md",
+    implementation_modules=(
+        supervision_binding,
+        _shared,
+        rubberband_authority,
+        dag_meta_helpers,
+        sherpa_dataset_contract,
+    ),
+    implementation_distributions=("numpy",),
+    runtime_requirements=(("numpy", "1.26.4"),),
+    citations=(
+        "Butler et al., Using Raman spectroscopy to characterize biological materials, "
+        "Analyst 143 (2018), DOI 10.1039/C8AN01384E",
+        "Andrew, Another efficient algorithm for convex hulls in two dimensions, "
+        "Information Processing Letters 9 (1979) 216-219, DOI 10.1016/0020-0190(79)90072-3",
+    ),
+)
+
+
+__all__ = ["BaselineRubberbandNode"]

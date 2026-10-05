@@ -1,34 +1,10 @@
-"""
-Shared mode policy for local / hybrid / enterprise runtime behavior.
-
-This module captures cross-cutting, request-time policy decisions used in
-multiple places (HTTP auth, WebSocket auth, client config gating). One-shot
-startup validation can still read ``app_config`` directly.
-
-Mode summary for developers:
-
-- **local** — Single user on localhost. No auth. BYOK LLM only. No Sherpa
-  advisor (``DisabledAIProvider``). Egress gates never reached because the
-  advisor stub returns before any network call.
-
-- **hybrid** — Local user + optional cloud features. The local spectra-sherpa
-  instance calls the cloud server via ``DeploymentAIProvider``
-  (HTTP with ``X-Deployment-Key``). Loopback browser connections need no auth;
-  non-loopback connections (defense-in-depth if bound to 0.0.0.0) require
-  first-message WebSocket auth. Egress permission
-  ``allow_spectrasherpa_sync`` gates whether workflow data is sent to the
-  cloud — must be True in the user's ``UserEgressDefaults`` row.
-
-- **enterprise** — Cloud-hosted multi-user deployment. All connections require
-  first-message WebSocket auth with a valid JWT. Sherpa advisor runs
-  in-process via ``ServerAIProvider`` (injected by a server extension).
-  Subscriptions gate individual features via entitlements.
-"""
+"""Shared core policy with explicitly installed product runtime overrides."""
 
 from __future__ import annotations
 
 import os
 
+from spectra_sherpa.app.contracts.runtime_mode import runtime_mode_policy
 from spectra_sherpa.app.core.config import app_config
 
 
@@ -77,9 +53,10 @@ def is_local() -> bool:
     return app_config.mode == "local"
 
 
-def is_hybrid() -> bool:
-    """True when running in hybrid (local + optional cloud) mode."""
-    return app_config.mode == "hybrid"
+def allows_implicit_loopback_identity() -> bool:
+    """An installed product may request local identity for loopback only."""
+    policy = runtime_mode_policy(app_config.mode)
+    return policy is not None and policy.implicit_loopback_identity
 
 
 def is_enterprise() -> bool:
@@ -88,7 +65,7 @@ def is_enterprise() -> bool:
 
 
 def is_multi_user() -> bool:
-    """True when the mode requires user management (hybrid or enterprise)."""
+    """True when the mode requires user management (managed)."""
     return app_config.mode != "local"
 
 
@@ -108,12 +85,12 @@ def requires_http_auth(client_host: str | None) -> bool:
     """Whether an HTTP request from *client_host* must carry credentials.
 
     - Local mode: never requires auth.
-    - Hybrid mode: loopback clients are exempt; remote clients need auth.
+    - Installed product policy: may exempt positively identified loopback clients.
     - Enterprise mode: all clients need auth.
     """
     if app_config.mode == "local":
         return False
-    if app_config.mode == "hybrid":
+    if allows_implicit_loopback_identity():
         return not is_loopback(client_host)
     # enterprise (and any future mode): always require auth
     return True
@@ -138,7 +115,7 @@ def allows_registration() -> bool:
     actively mounted), so it has been removed.
 
     Returns ``True`` only when:
-    - the runtime mode is multi-user (hybrid/enterprise), AND
+    - the runtime mode is multi-user (managed), AND
     - the server has called ``auth_policy.set_registration_enabled(True)``
       at startup.
 
@@ -190,4 +167,5 @@ def cors_allow_all() -> bool:
 
 def has_rate_limits() -> bool:
     """True when rate limiting / session expiry enforcement is active."""
-    return app_config.mode in ("hybrid", "enterprise")
+    policy = runtime_mode_policy(app_config.mode)
+    return policy.rate_limits if policy is not None else app_config.mode == "enterprise"

@@ -10,7 +10,7 @@ from spectra_sherpa.app.db.base import Base
 
 class APIKey(Base):
     """
-    Stores encrypted BYOK API keys for LLM providers.
+    Stores encrypted personal API keys for HITRAN and LLM providers.
 
     OSS owns only user-scoped keys. Older deployments may still contain
     legacy system rows with ``user_id=None``; the OSS runtime ignores them.

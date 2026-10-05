@@ -12,7 +12,7 @@ import asyncio
 import numpy as np
 import pytest
 
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+from tests._optional_scp import HAS_SCP
 
 pytestmark = pytest.mark.skipif(not HAS_SCP, reason="requires SpectroChemPy")
 
@@ -44,7 +44,7 @@ def sherpa_dataset():
 
 class TestArtifactBuilder:
     def test_build_includes_metadata_and_arrays(self, sherpa_dataset):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
         extract = PCAExtract(
             scores=np.random.randn(30, 3),
@@ -69,7 +69,7 @@ class TestArtifactBuilder:
         assert "loadings" in artifact["arrays"]
 
     def test_build_includes_metrics(self, sherpa_dataset):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
         extract = PCAExtract(
             scores=np.random.randn(30, 2),
@@ -93,7 +93,7 @@ class TestArtifactBuilder:
         add_processing_step(sherpa_dataset, "preprocess.snv", {"method": "snv"}, "pp_1")
         add_processing_step(sherpa_dataset, "preprocess.savgol", {"window": 11}, "pp_2")
 
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
         extract = PCAExtract(
             scores=np.random.randn(30, 2),
@@ -114,8 +114,8 @@ class TestArtifactBuilder:
     def test_build_picks_up_feature_mask_from_meta(self):
         """When a dataset has feature_mask in meta (from variable_select),
         the artifact builder must include it in the manifest."""
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
         from spectra_sherpa.app.lib.axes import FeatureAxis
+        from spectra_sherpa.app.lib.pca import PCAExtract
         from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
         from spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder import build_model_artifact
 
@@ -147,7 +147,7 @@ class TestArtifactBuilder:
 
     def test_build_with_numpy_array_input(self):
         """Should handle plain numpy arrays without crashing."""
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
         extract = PCAExtract(
             scores=np.random.randn(10, 2),
@@ -169,38 +169,34 @@ class TestArtifactBuilder:
 # ---------------------------------------------------------------------------
 
 
-class TestPLSArtifactEmission:
-    def test_pls_emits_artifact(self, sherpa_dataset):
-        from spectra_sherpa.app.services.dag.nodes.modeling.pls_nodes import PLSNode
+class TestCanonicalPLSStateEmission:
+    def test_pls_emits_closed_fitted_state(self, sherpa_dataset):
+        from spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node import FittedPLSV2Node
 
-        node = PLSNode(node_id="pls_1", parameters={"n_components": 3, "scale": True})
-        result = _run(node.execute(X=sherpa_dataset, y=sherpa_dataset.target))
-        assert "_model_artifact" in result.outputs
-        meta = result.outputs["_model_artifact"]["metadata"]
-        assert meta["model_type"] == "pls"
-        assert meta["n_features"] == 50
-        assert "coef" in result.outputs["_model_artifact"]["arrays"]
+        node = FittedPLSV2Node(node_id="pls_1", parameters={"n_components": 3, "scale": True})
+        result = _run(node.execute(input_data=sherpa_dataset, y=sherpa_dataset.target))
+        envelope = result.outputs["fitted_state"]
+        assert envelope["schema_version"] == "spectrasherpa.fitted-pls-state/6"
+        assert envelope["state"]["features"] == 50
+        assert len(envelope["state"]["coefficients"]) == 50
 
-    def test_pls_artifact_has_feature_axis(self, sherpa_dataset):
-        from spectra_sherpa.app.services.dag.nodes.modeling.pls_nodes import PLSNode
+    def test_pls_state_binds_feature_axis(self, sherpa_dataset):
+        from spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node import FittedPLSV2Node
 
-        node = PLSNode(node_id="pls_2", parameters={"n_components": 2})
-        result = _run(node.execute(X=sherpa_dataset, y=sherpa_dataset.target))
-        meta = result.outputs["_model_artifact"]["metadata"]
-        assert "feature_axis" in meta
-        assert len(meta["feature_axis"]) == 50
-        # Check wavenumber values are plausible
-        assert meta["feature_axis"][0] == pytest.approx(4000.0, abs=1)
+        node = FittedPLSV2Node(node_id="pls_2", parameters={"n_components": 2})
+        result = _run(node.execute(input_data=sherpa_dataset, y=sherpa_dataset.target))
+        state = result.outputs["fitted_state"]["state"]
+        assert len(state["feature_axis_values_sha256"]) == 64
+        assert state["feature_axis_units"] == "cm-1"
 
-    def test_pls_artifact_has_metrics(self, sherpa_dataset):
-        from spectra_sherpa.app.services.dag.nodes.modeling.pls_nodes import PLSNode
+    def test_pls_state_has_content_and_contract_digests(self, sherpa_dataset):
+        from spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node import FittedPLSV2Node
 
-        node = PLSNode(node_id="pls_3", parameters={"n_components": 3})
-        result = _run(node.execute(X=sherpa_dataset, y=sherpa_dataset.target))
-        metrics = result.outputs["_model_artifact"]["metadata"].get("metrics")
-        # Random data may or may not give good metrics, but they should exist
-        if metrics:
-            assert "r2" in metrics or "rmse" in metrics
+        node = FittedPLSV2Node(node_id="pls_3", parameters={"n_components": 3})
+        result = _run(node.execute(input_data=sherpa_dataset, y=sherpa_dataset.target))
+        envelope = result.outputs["fitted_state"]
+        assert len(envelope["state_content_digest"]) == 64
+        assert len(envelope["source_contract_digest"]) == 64
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +266,7 @@ class TestClassificationArtifactEmission:
     def test_plsda_emits_artifact(self, classification_dataset):
         from spectra_sherpa.app.services.dag.nodes.classification.plsda_nodes import PLSDANode
 
-        node = PLSDANode(node_id="plsda_1", parameters={"n_components": 2, "cv_folds": 3})
+        node = PLSDANode(node_id="plsda_1", parameters={"n_components": 2, "scale": False})
         result = _run(node.execute(X=classification_dataset, y=classification_dataset.target))
         assert "_model_artifact" in result.outputs
         artifact = result.outputs["_model_artifact"]
@@ -279,12 +275,20 @@ class TestClassificationArtifactEmission:
         assert meta["classes"] == ["A", "B", "C"]
         assert meta["n_features"] == 20
         assert "training_data_hash" in meta
-        assert {"coef", "x_mean", "y_mean"}.issubset(artifact["arrays"])
+        assert {
+            "coefficients",
+            "x_offset",
+            "y_offset",
+            "x_loadings",
+            "y_loadings",
+            "x_explained_variance",
+            "y_explained_variance",
+        } == set(artifact["arrays"])
 
     def test_knn_emits_artifact(self, classification_dataset):
         from spectra_sherpa.app.services.dag.nodes.classification.knn_nodes import KNNNode
 
-        node = KNNNode(node_id="knn_1", parameters={"n_neighbors": 3, "cv_folds": 3})
+        node = KNNNode(node_id="knn_1", parameters={"n_neighbors": 3})
         result = _run(node.execute(X=classification_dataset, y=classification_dataset.target))
         assert "_model_artifact" in result.outputs
         artifact = result.outputs["_model_artifact"]
@@ -358,9 +362,12 @@ class TestDecompositionArtifactEmission:
         assert "H" in artifact["arrays"]
 
     def test_fastica_emits_artifact(self, sherpa_dataset):
-        from spectra_sherpa.app.services.dag.nodes.modeling.decomposition_nodes import FastICANode
+        from spectra_sherpa.app.services.dag.nodes.modeling.ica_node import FastICANode
 
-        node = FastICANode(node_id="ica_1", parameters={"n_components": 3, "max_iter": 100})
+        node = FastICANode(
+            node_id="ica_1",
+            parameters={"n_components": 3, "max_iter": 200, "tol": 0.01},
+        )
         result = _run(node.execute(input_data=sherpa_dataset))
         artifact = result.outputs["_model_artifact"]
         assert artifact["metadata"]["model_type"] == "fastica"
@@ -376,18 +383,10 @@ class TestDecompositionArtifactEmission:
 class TestExecutorGracefulArtifact:
     def test_executor_fails_without_model_store(self, sherpa_dataset):
         """Executor must fail closed when artifact persistence is unavailable."""
-        from unittest.mock import patch
-
         from spectra_sherpa.app.services.dag.executor import DAGExecutor
+        from spectra_sherpa.core.execution_runtime import ExecutionCapabilityError
 
-        nodes = {
-            "pca_1": {
-                "type": "model.pca",
-                "parameters": {"n_components": "2"},
-            },
-        }
-        edges = []
-        executor = DAGExecutor(nodes, edges)
+        executor = DAGExecutor()
 
         # Simulate: node produced _model_artifact but no store
         executor.results["pca_1"] = {
@@ -397,10 +396,8 @@ class TestExecutorGracefulArtifact:
             }
         }
 
-        # Force _resolve_model_store to return None
-        with patch.object(executor, "_resolve_model_store", return_value=None):
-            with pytest.raises(RuntimeError, match="ModelStore not initialized"):
-                executor._process_model_artifact("pca_1")
+        with pytest.raises(ExecutionCapabilityError, match="write capability is unavailable"):
+            executor._process_model_artifact("pca_1")
 
 
 # ---------------------------------------------------------------------------

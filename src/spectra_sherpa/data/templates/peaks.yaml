@@ -1,19 +1,17 @@
 schema_version: 1
-name: Peak Detection & Fitting
+name: Peak Detection
 slug: peaks
-description: Automated peak detection with prominence, FWHM-like width, and area
-  estimates.
+description: Automated peak detection with prominence, half-prominence width,
+  and descriptive window-integral summaries.
 category: spectroscopy
 is_active: true
 status: ready
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Spectra
-    parameters:
-      source: spectrochempy
-      example_dataset: irdata
+    parameters: {}
     position_x: 175
     position_y: 50
   - node_id: preprocess_1
@@ -37,7 +35,10 @@ template_data:
   - node_id: analysis_1
     node_type: analysis.peak_finding
     label: Peak Detection
-    parameters: {}
+    parameters:
+      distance: 10
+      prominence: 0.1
+      consensus_tolerance: 6.0
     position_x: 50
     position_y: 800
   - node_id: stats_1
@@ -82,12 +83,6 @@ template_data:
       - Raman
       - UV-Vis
   certified_datasets:
-  - source: spectrochempy
-    name: irdata
-  - source: spectrochempy
-    name: ramandata
-  - source: spectrochempy
-    name: matlabdata/als2004dataset.MAT
   - source: eigenvector
     name: diesel_nir
   - source: eigenvector

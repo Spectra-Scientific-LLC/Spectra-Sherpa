@@ -5,8 +5,10 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset, SpectralAxis
+from spectra_sherpa.app.lib.sherpa_dataset import FeatureAxis, SampleAxis, SherpaDataset, SpectralAxis, TargetContext
 from spectra_sherpa.app.services.dag.nodes.output import ContourPlotNode, PlotNode
+from spectra_sherpa.app.services.dag.nodes.output._helpers import get_axis_display_info
+from spectra_sherpa.core.axis_semantics import AxisQuantity
 
 
 def _make_dataset(n_samples: int, n_features: int = 10, labels: list[str] | None = None) -> SherpaDataset:
@@ -114,3 +116,87 @@ async def test_plot_spectra_keeps_all_traces_when_under_cap() -> None:
 
     assert len(traces) == 10
     assert "warning" not in vis["metadata"]
+
+
+def test_spectral_axis_direction_uses_quantity_not_shared_inverse_centimetre_units() -> None:
+    wavenumber = SpectralAxis(
+        values=np.asarray([400.0, 4000.0]),
+        title="Wavenumber",
+        units="cm-1",
+        quantity=AxisQuantity.WAVENUMBER,
+    )
+    raman_shift = SpectralAxis(
+        values=np.asarray([100.0, 3200.0]),
+        title="Raman Shift",
+        units="cm-1",
+        quantity=AxisQuantity.RAMAN_SHIFT,
+    )
+
+    assert get_axis_display_info(wavenumber)["should_reverse"] is True
+    assert get_axis_display_info(raman_shift)["should_reverse"] is False
+
+
+@pytest.mark.anyio
+async def test_explained_variance_plot_is_a_labeled_scree_projection() -> None:
+    node = PlotNode(node_id="scree", parameters={"plot_type": "explained_variance"})
+
+    result = await node.execute(np.asarray([0.62, 0.23, 0.09]))
+    visualization = result["visualization"]
+
+    assert visualization["plot_type"] == "explained_variance"
+    assert visualization["data"][0]["x"] == ["PC1", "PC2", "PC3"]
+    assert visualization["data"][0]["y"] == pytest.approx([62.0, 23.0, 9.0])
+    assert visualization["data"][1]["y"] == pytest.approx([62.0, 85.0, 94.0])
+    assert visualization["layout"]["yaxis"]["title"] == "Explained Variance (%)"
+
+
+@pytest.mark.anyio
+async def test_pca_scores_split_categorical_targets_into_named_populations() -> None:
+    scores = SherpaDataset(
+        X=np.asarray([[-2.1, 0.2], [-1.7, -0.1], [1.8, 0.3], [2.2, -0.2]]),
+        feature_axis=FeatureAxis(labels=["PC1 (74.0%)", "PC2 (18.0%)"], title="Principal Component"),
+        sample_axis=SampleAxis(labels=["A-1", "A-2", "B-1", "B-2"], title="Sample"),
+        target=np.asarray([0, 0, 1, 1]),
+        target_context=TargetContext(
+            target_type="categorical",
+            target_name="Cultivar",
+            target_names=["Cultivar"],
+            class_names=["Alpha", "Beta"],
+        ),
+        data_role="X_features",
+        title="PCA Scores",
+    )
+
+    result = await PlotNode(node_id="scores", parameters={"plot_type": "scores"}).execute(scores)
+    visualization = result["visualization"]
+
+    assert [trace["name"] for trace in visualization["data"]] == ["Alpha", "Beta"]
+    assert visualization["data"][0]["text"] == ["A-1", "A-2"]
+    assert visualization["data"][1]["text"] == ["B-1", "B-2"]
+    assert visualization["layout"]["xaxis"]["title"] == "PC1 (74.0%)"
+    assert visualization["layout"]["yaxis"]["title"] == "PC2 (18.0%)"
+    assert visualization["layout"]["showlegend"] is True
+
+
+@pytest.mark.anyio
+async def test_pca_loadings_keep_spectral_lines_and_wavenumber_direction() -> None:
+    loadings = SherpaDataset(
+        X=np.asarray([[0.1, -0.2, 0.3], [-0.3, 0.2, 0.1]]),
+        feature_axis=SpectralAxis(
+            values=np.asarray([500.0, 2000.0, 4000.0]),
+            title="Wavenumber",
+            units="cm-1",
+            quantity=AxisQuantity.WAVENUMBER,
+        ),
+        sample_axis=SampleAxis(labels=["PC1", "PC2"], title="Principal Component"),
+        data_role="X_features",
+        title="PCA Loadings",
+    )
+
+    result = await PlotNode(node_id="loadings", parameters={"plot_type": "spectra"}).execute(loadings)
+    visualization = result["visualization"]
+
+    assert [trace["type"] for trace in visualization["data"]] == ["scatter", "scatter"]
+    assert [trace["mode"] for trace in visualization["data"]] == ["lines", "lines"]
+    assert [trace["name"] for trace in visualization["data"]] == ["PC1", "PC2"]
+    assert visualization["layout"]["xaxis"]["autorange"] == "reversed"

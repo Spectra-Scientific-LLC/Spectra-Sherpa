@@ -14,7 +14,14 @@ from pathlib import Path
 
 import pytest
 
-from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, PortMetadata, node_registry, register_node
+from spectra_sherpa.app.services.dag.node_base import (
+    Node,
+    NodeMetadata,
+    NodePolicy,
+    NodeRegistry,
+    PortMetadata,
+    node_registry,
+)
 from spectra_sherpa.app.services.dag.node_meta_validator import (
     validate_all_registered_node_meta,
     validate_node_meta,
@@ -93,7 +100,7 @@ class TestAllNodeTypeRefs:
                     td = type_registry.resolve(port.type_ref)
                     if td.category not in valid_categories:
                         errors.append(
-                            f"{meta.node_type} port '{port.name}': " f"category '{td.category}' not in known categories"
+                            f"{meta.node_type} port '{port.name}': category '{td.category}' not in known categories"
                         )
                 except (KeyError, ValueError) as e:
                     errors.append(f"{meta.node_type} port '{port.name}': {e}")
@@ -146,8 +153,11 @@ class TestAllNodeTypeRefs:
 
 class TestExecutePortContracts:
     def test_multi_port_default_contract_registers_when_signature_is_compatible(self):
+        registry = NodeRegistry()
+
         class _ValidDefaultPortNode(Node):
             metadata = NodeMetadata(
+                policy=NodePolicy(),
                 node_type="_test.valid_default_port_contract",
                 category="test",
                 label="Valid Default Contract",
@@ -171,15 +181,15 @@ class TestExecutePortContracts:
             async def execute(self, input_data=None, reference=None, **kwargs):
                 return input_data
 
-        register_node(_ValidDefaultPortNode)
-        try:
-            assert "_test.valid_default_port_contract" in node_registry
-        finally:
-            node_registry.unregister("_test.valid_default_port_contract")
+        registry.register(_ValidDefaultPortNode)
+        assert "_test.valid_default_port_contract" in registry
 
     def test_multi_port_default_contract_fails_fast_on_registration(self):
+        registry = NodeRegistry()
+
         class _InvalidDefaultPortNode(Node):
             metadata = NodeMetadata(
+                policy=NodePolicy(),
                 node_type="_test.invalid_default_port_contract",
                 category="test",
                 label="Invalid Default Contract",
@@ -208,4 +218,65 @@ class TestExecutePortContracts:
         assert any("default' input port" in err for err in errors)
 
         with pytest.raises(ValueError, match="default"):
-            register_node(_InvalidDefaultPortNode)
+            registry.register(_InvalidDefaultPortNode)
+
+    def test_registration_rejects_missing_explicit_policy(self):
+        registry = NodeRegistry()
+
+        class _MissingPolicyNode(Node):
+            metadata = NodeMetadata(
+                node_type="_test.missing_explicit_policy",
+                category="test",
+                label="Missing Policy",
+                description="Registration must reject implicit safety authority",
+            )
+
+            async def execute(self):
+                return None
+
+        with pytest.raises(ValueError, match="must declare an explicit NodePolicy"):
+            registry.register(_MissingPolicyNode)
+
+    def test_registration_rejects_unknown_egress_risk(self):
+        registry = NodeRegistry()
+
+        class _InvalidPolicyNode(Node):
+            metadata = NodeMetadata(
+                policy=NodePolicy(data_egress_risk="unknown"),
+                node_type="_test.invalid_policy",
+                category="test",
+                label="Invalid Policy",
+                description="Registration must reject an open policy vocabulary",
+            )
+
+            async def execute(self):
+                return None
+
+        with pytest.raises(ValueError, match="unknown data_egress_risk"):
+            registry.register(_InvalidPolicyNode)
+
+    @pytest.mark.parametrize(
+        ("policy", "message"),
+        [
+            (NodePolicy(safe_for_auto_apply=1), "safe_for_auto_apply must be boolean"),
+            (NodePolicy(required_worker_capabilities=("read",)), "capabilities must be non-empty strings"),
+            (NodePolicy(required_worker_capabilities=["read", "read"]), "capabilities may not repeat"),
+        ],
+    )
+    def test_registration_rejects_malformed_closed_policy(self, policy, message):
+        registry = NodeRegistry()
+
+        class _MalformedPolicyNode(Node):
+            metadata = NodeMetadata(
+                policy=policy,
+                node_type="_test.malformed_policy",
+                category="test",
+                label="Malformed Policy",
+                description="Registration must validate every closed policy field",
+            )
+
+            async def execute(self):
+                return None
+
+        with pytest.raises(ValueError, match=message):
+            registry.register(_MalformedPolicyNode)

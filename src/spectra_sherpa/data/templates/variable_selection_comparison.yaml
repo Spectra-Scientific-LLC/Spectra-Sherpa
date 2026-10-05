@@ -1,0 +1,195 @@
+schema_version: 1
+name: Variable Selection Comparison
+slug: variable_selection_comparison
+description: Compare training-owned VIP, CARS, MC-UVE, and SPA feature selections, and inspect stability selection, on one exact calibration partition without claiming predictive superiority.
+category: selection_design
+is_active: true
+status: ready
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.file_load
+    label: Load Spectral Data
+    parameters: {}
+    example_binding:
+      source: synthetic
+      dataset_name: quantitative_spectra
+      selected_target: response
+      target_type: continuous
+    position_x: 100
+    position_y: 50
+  - node_id: partition_1
+    node_type: data.train_test_split
+    label: Calibration/Test Partition
+    parameters:
+      split_method: kennard_stone
+      test_size: 0.25
+      distance_metric: euclidean
+      n_components: 0
+    position_x: 100
+    position_y: 250
+  - node_id: pls_1
+    node_type: model.fitted_pls
+    label: Fit Calibration PLS for VIP
+    parameters:
+      n_components: 4
+      scale: true
+    position_x: 100
+    position_y: 500
+  - node_id: vip_1
+    node_type: selection.variable_select
+    label: VIP Selection
+    parameters:
+      method: vip
+      threshold: 1.0
+    position_x: 100
+    position_y: 750
+  - node_id: cars_1
+    node_type: selection.cars
+    label: CARS Selection
+    parameters:
+      n_iterations: 20
+      max_components: 4
+      cv_folds: 5
+      calibration_fraction: 0.8
+      random_seed: 42
+      component_selection: one_standard_deviation
+      cv_order: sorted_target
+    position_x: 500
+    position_y: 500
+  - node_id: mcuve_1
+    node_type: selection.mcuve
+    label: MC-UVE Selection
+    parameters:
+      n_components: 3
+      n_resamples: 20
+      calibration_fraction: 0.75
+      n_variables: 8
+      random_seed: 42
+    position_x: 500
+    position_y: 750
+  - node_id: spa_1
+    node_type: selection.spa
+    label: SPA-MLR Selection
+    parameters:
+      min_variables: 1
+      max_variables: 5
+      cv_folds: 3
+      cv_order: sorted_target
+      random_seed: 42
+    position_x: 900
+    position_y: 500
+  - node_id: stability_1
+    node_type: selection.stability
+    label: Stability Selection
+    parameters:
+      base_method: coef_abs
+      base_threshold: 0.01
+      selection_probability_threshold: 0.6
+      n_resamples: 20
+      n_components: 3
+      random_seed: 42
+    position_x: 900
+    position_y: 750
+  - node_id: compare_1
+    node_type: selection.compare
+    label: Selection Agreement
+    parameters:
+      consensus_threshold: 0.5
+    position_x: 300
+    position_y: 1000
+  edges:
+  - from_node_id: data_1
+    to_node_id: partition_1
+    to_input: X
+  - from_node_id: data_1
+    from_output: target
+    to_node_id: partition_1
+    to_input: y
+  - from_node_id: partition_1
+    from_output: X_train
+    to_node_id: pls_1
+    to_input: default
+  - from_node_id: partition_1
+    from_output: y_train
+    to_node_id: pls_1
+    to_input: y
+  - from_node_id: partition_1
+    from_output: X_train
+    to_node_id: vip_1
+    to_input: X
+  - from_node_id: pls_1
+    from_output: vip_scores
+    to_node_id: vip_1
+    to_input: importance_scores
+  - from_node_id: partition_1
+    from_output: X_train
+    to_node_id: cars_1
+    to_input: X
+  - from_node_id: partition_1
+    from_output: y_train
+    to_node_id: cars_1
+    to_input: y
+  - from_node_id: partition_1
+    from_output: X_train
+    to_node_id: compare_1
+    to_input: X
+  - from_node_id: partition_1
+    from_output: X_train
+    to_node_id: mcuve_1
+    to_input: X
+  - from_node_id: partition_1
+    from_output: y_train
+    to_node_id: mcuve_1
+    to_input: y
+  - from_node_id: partition_1
+    from_output: X_train
+    to_node_id: spa_1
+    to_input: X
+  - from_node_id: partition_1
+    from_output: y_train
+    to_node_id: spa_1
+    to_input: y
+  - from_node_id: partition_1
+    from_output: X_train
+    to_node_id: stability_1
+    to_input: X
+  - from_node_id: partition_1
+    from_output: y_train
+    to_node_id: stability_1
+    to_input: y
+  - from_node_id: vip_1
+    from_output: mask
+    to_node_id: compare_1
+    to_input: mask_1
+  - from_node_id: cars_1
+    from_output: mask
+    to_node_id: compare_1
+    to_input: mask_2
+  - from_node_id: mcuve_1
+    from_output: mask
+    to_node_id: compare_1
+    to_input: mask_3
+  - from_node_id: spa_1
+    from_output: mask
+    to_node_id: compare_1
+    to_input: mask_4
+  canvas_state:
+    zoom: 0.8
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Finite spectral matrix with a stable feature axis
+      accepted_techniques: [FTIR, NIR, Raman, UV-Vis]
+    Y_reference:
+      role_type: Y_reference
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      target_type: continuous
+      description: One explicitly selected quantitative reference response

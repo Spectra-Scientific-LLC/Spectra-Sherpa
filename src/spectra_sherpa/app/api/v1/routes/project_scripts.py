@@ -8,11 +8,12 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session, require_project
+from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
 from spectra_sherpa.app.models.project_script import ProjectScript
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
@@ -80,10 +81,15 @@ async def list_scripts(
     current_user: User = Depends(get_current_user),
 ) -> list[ProjectScriptSummary]:
     """List scripts for a project (summaries, no code body)."""
-    await _get_project_for_user(project_id, current_user.id, session)
+    await _get_project_for_user(project_id, current_user.id, session, operation="read")
 
     result = await session.execute(
-        select(ProjectScript).where(ProjectScript.project_id == project_id).order_by(ProjectScript.priority)
+        select(ProjectScript)
+        .where(
+            ProjectScript.project_id == project_id,
+            or_(ProjectScript.user_id == current_user.id, uses_managed_project_access()),
+        )
+        .order_by(ProjectScript.priority)
     )
     return [_script_to_summary(s) for s in result.scalars().all()]
 
@@ -96,7 +102,18 @@ async def create_script(
     current_user: User = Depends(get_current_user),
 ) -> ProjectScriptDetail:
     """Create a script manually."""
-    await _get_project_for_user(project_id, current_user.id, session)
+    await _get_project_for_user(project_id, current_user.id, session, operation="write")
+
+    if payload.source_workflow_id is not None:
+        workflow = await session.scalar(
+            select(Workflow).where(
+                Workflow.id == payload.source_workflow_id,
+                Workflow.project_id == project_id,
+                Workflow.user_id == current_user.id,
+            )
+        )
+        if workflow is None:
+            raise HTTPException(status_code=404, detail="Workflow not found")
 
     script = ProjectScript(
         project_id=project_id,
@@ -123,12 +140,16 @@ async def generate_script(
     current_user: User = Depends(get_current_user),
 ) -> ProjectScriptDetail:
     """Generate a script from a workflow's Python export."""
-    await _get_project_for_user(project_id, current_user.id, session)
+    await _get_project_for_user(project_id, current_user.id, session, operation="write")
 
     # Load workflow with nodes and edges
     result = await session.execute(
         select(Workflow)
-        .where(Workflow.id == payload.workflow_id, Workflow.user_id == current_user.id)
+        .where(
+            Workflow.id == payload.workflow_id,
+            Workflow.user_id == current_user.id,
+            Workflow.project_id == project_id,
+        )
         .options(selectinload(Workflow.nodes), selectinload(Workflow.edges))
     )
     workflow = result.scalar_one_or_none()
@@ -137,13 +158,17 @@ async def generate_script(
 
     # Generate Python code
     try:
-        export_context = await build_workflow_export_context(workflow, session)
+        export_context = await build_workflow_export_context(
+            workflow,
+            session,
+            actor_user_id=current_user.id,
+        )
         code = generate_python_code(workflow, export_context=export_context)
-    except Exception as exc:
+    except Exception:
         raise HTTPException(
             status_code=422,
-            detail=f"Cannot export workflow: {exc}",
-        )
+            detail="Cannot export workflow.",
+        ) from None
 
     script = ProjectScript(
         project_id=project_id,
@@ -176,10 +201,14 @@ async def get_script(
     current_user: User = Depends(get_current_user),
 ) -> ProjectScriptDetail:
     """Get a script with full code."""
-    await _get_project_for_user(project_id, current_user.id, session)
+    await _get_project_for_user(project_id, current_user.id, session, operation="read")
 
     result = await session.execute(
-        select(ProjectScript).where(ProjectScript.id == script_id, ProjectScript.project_id == project_id)
+        select(ProjectScript).where(
+            ProjectScript.id == script_id,
+            ProjectScript.project_id == project_id,
+            or_(ProjectScript.user_id == current_user.id, uses_managed_project_access()),
+        )
     )
     script = result.scalar_one_or_none()
     if script is None:
@@ -196,10 +225,14 @@ async def update_script(
     current_user: User = Depends(get_current_user),
 ) -> ProjectScriptDetail:
     """Update a script."""
-    await _get_project_for_user(project_id, current_user.id, session)
+    await _get_project_for_user(project_id, current_user.id, session, operation="write")
 
     result = await session.execute(
-        select(ProjectScript).where(ProjectScript.id == script_id, ProjectScript.project_id == project_id)
+        select(ProjectScript).where(
+            ProjectScript.id == script_id,
+            ProjectScript.project_id == project_id,
+            or_(ProjectScript.user_id == current_user.id, uses_managed_project_access()),
+        )
     )
     script = result.scalar_one_or_none()
     if script is None:
@@ -222,10 +255,14 @@ async def delete_script(
     current_user: User = Depends(get_current_user),
 ) -> Response:
     """Delete a script."""
-    await _get_project_for_user(project_id, current_user.id, session)
+    await _get_project_for_user(project_id, current_user.id, session, operation="write")
 
     result = await session.execute(
-        select(ProjectScript).where(ProjectScript.id == script_id, ProjectScript.project_id == project_id)
+        select(ProjectScript).where(
+            ProjectScript.id == script_id,
+            ProjectScript.project_id == project_id,
+            or_(ProjectScript.user_id == current_user.id, uses_managed_project_access()),
+        )
     )
     script = result.scalar_one_or_none()
     if script is None:

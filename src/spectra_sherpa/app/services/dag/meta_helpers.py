@@ -19,35 +19,22 @@ Usage in nodes:
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Dict, List, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP
 from spectra_sherpa.app.lib.sherpa_dataset import Provenance, SherpaDataset
 
-HAS_NDDATASET = HAS_SCP
+from .transport import reject_spectrochempy_transport
 
 
-# =============================================================================
-# Safe Coordinate Access
-# =============================================================================
+def _require_dataset(dataset: Any, *, name: str = "dataset") -> SherpaDataset:
+    """Require the one canonical scientific dataset at SDK/helper boundaries."""
 
-
-def safe_get_coord(dataset, coord_name: str):
-    """Safely get a coordinate from NDDataset.
-
-    SpectroChemPy's NDDataset.__getattr__ raises KeyError (not AttributeError)
-    when a coordinate name like 'x' or 'y' is not in the coordset.  Python's
-    built-in hasattr() only catches AttributeError, so
-    ``hasattr(dataset, 'x')`` propagates the KeyError.  Use this helper
-    instead of hasattr for coordinate access.
-    """
-    try:
-        return getattr(dataset, coord_name)
-    except (KeyError, AttributeError):
-        return None
+    reject_spectrochempy_transport(dataset, boundary=f"{name} metadata helper admission")
+    if not isinstance(dataset, SherpaDataset):
+        raise TypeError(f"{name} must be a SherpaDataset; received {type(dataset).__name__}")
+    return dataset
 
 
 # =============================================================================
@@ -62,6 +49,7 @@ def add_processing_step(
     node_id: Optional[str] = None,
     input_shape: Optional[tuple] = None,
     state_effects: Optional[List[str]] = None,
+    impact: Optional[Dict[str, Any]] = None,
 ) -> None:
     """
     Record a processing step in dataset provenance / meta["processing_history"].
@@ -69,57 +57,30 @@ def add_processing_step(
     Mutates the dataset in place.
 
     Args:
-        dataset: SherpaDataset, NDDataset, or compatible dataset to add history to
+        dataset: Canonical SherpaDataset to which history is added
         operation: Name of the operation (e.g., "baseline.als", "smooth.savgol")
         parameters: Dict of parameters used
         node_id: Optional DAG node ID
         input_shape: Shape before processing (defaults to current shape)
         state_effects: List of effect tags (e.g., ["baseline_corrected", "normalized"])
+        impact: Optional versioned record of observed effects, kept separate
+            from the operation's canonical input parameters.
 
     Example:
         >>> add_processing_step(dataset, "baseline.als", {"lam": 1e5, "p": 0.001},
         ...                     state_effects=["baseline_corrected"])
     """
-    if isinstance(dataset, SherpaDataset):
-        in_shape = tuple(input_shape) if input_shape else tuple(dataset.shape)
-        dataset.provenance.append(
-            op_id=operation,
-            parameters=parameters,
-            node_id=node_id,
-            input_shape=in_shape,
-            output_shape=tuple(dataset.shape),
-            state_effects=state_effects or [],
-        )
-        return
-
-    if not hasattr(dataset, "meta") or dataset.meta is None:
-        dataset.meta = {}
-
-    if "processing_history" not in dataset.meta:
-        dataset.meta["processing_history"] = []
-
-    step = {
-        "op_id": operation,
-        "parameters": parameters,
-        "timestamp": datetime.utcnow().isoformat(),
-        "node_id": node_id,
-        "input_shape": list(input_shape) if input_shape else list(dataset.shape),
-        "output_shape": list(dataset.shape),
-    }
-
-    dataset.meta["processing_history"].append(step)
-
-    # Sync to provenance list if legacy dataset
-    # NOTE: Cannot use hasattr() here — NDDataset.__getattr__ raises KeyError
-    # (not AttributeError) for unknown attributes, which hasattr doesn't catch.
-    # Guard: skip if provenance IS the same list object (legacy datasets may link
-    # them in __init__ via setdefault) to avoid double-appending.
-    try:
-        prov = dataset.provenance
-        if isinstance(prov, list) and prov is not dataset.meta.get("processing_history"):
-            prov.append(step)
-    except (KeyError, AttributeError):
-        pass
+    dataset = _require_dataset(dataset)
+    in_shape = tuple(input_shape) if input_shape else tuple(dataset.shape)
+    dataset.provenance.append(
+        op_id=operation,
+        parameters=parameters,
+        impact=impact,
+        node_id=node_id,
+        input_shape=in_shape,
+        output_shape=tuple(dataset.shape),
+        state_effects=state_effects or [],
+    )
 
 
 def get_processing_history(dataset: Any) -> List[Dict[str, Any]]:
@@ -129,12 +90,7 @@ def get_processing_history(dataset: Any) -> List[Dict[str, Any]]:
     Returns:
         List of processing step dicts, or empty list if none
     """
-    if isinstance(dataset, SherpaDataset):
-        return dataset.provenance.to_list()
-
-    if not hasattr(dataset, "meta") or not dataset.meta:
-        return []
-    return cast(List[Dict[str, Any]], dataset.meta.get("processing_history", []))
+    return _require_dataset(dataset).provenance.to_list()
 
 
 def inherit_sample_flags(source: Any, target: Any) -> None:
@@ -142,16 +98,14 @@ def inherit_sample_flags(source: Any, target: Any) -> None:
     sample-preserved target.
 
     Copies:
-    - ``target.is_time_series`` (top-level boolean — SCP NDDataset has no
-      native concept of this, so it must be explicitly carried back across
-      every to_nddataset → SCP op → from_nddataset round-trip)
+    - ``target.is_time_series`` (top-level boolean)
     - ``target.sample_axis`` (full axis with labels/title) when row counts
       match — covers cases where SCP's transform() drops sample labels
 
-    Safe to call with non-SherpaDataset arguments or 1D shapes (no-op).
+    One-dimensional datasets are a no-op.
     """
-    if not isinstance(source, SherpaDataset) or not isinstance(target, SherpaDataset):
-        return
+    source = _require_dataset(source, name="source")
+    target = _require_dataset(target, name="target")
 
     if len(source.shape) < 2 or len(target.shape) < 2:
         return
@@ -178,10 +132,10 @@ def inherit_origin_context(source: Any, target: Any, *, preserve_feature_axis: b
     a value the node has already explicitly set (e.g. PCA scores keep
     x_title="Principal Component" because they set it before this runs).
 
-    Safe to call with non-SherpaDataset arguments (no-op).
+    Both arguments must be canonical datasets.
     """
-    if not isinstance(source, SherpaDataset) or not isinstance(target, SherpaDataset):
-        return
+    source = _require_dataset(source, name="source")
+    target = _require_dataset(target, name="target")
 
     if preserve_feature_axis and source.feature_axis is not None and source.shape[-1] == target.shape[-1]:
         target.feature_axis = source.feature_axis
@@ -226,57 +180,24 @@ def copy_processing_history(source: Any, target: Any) -> None:
     """
     Copy processing history from source to target dataset.
 
-    For legacy datasets, also syncs the .provenance attribute so that
-    meta["processing_history"] and provenance stay in lockstep.
-
     Args:
         source: Dataset to copy history from
         target: Dataset to copy history to
     """
-    if isinstance(source, SherpaDataset) and isinstance(target, SherpaDataset):
-        inherit_sample_flags(source, target)
-        inherit_origin_context(source, target, preserve_feature_axis=source.shape[-1] == target.shape[-1])
+    source = _require_dataset(source, name="source")
+    target = _require_dataset(target, name="target")
+    inherit_sample_flags(source, target)
+    inherit_origin_context(source, target, preserve_feature_axis=source.shape[-1] == target.shape[-1])
 
     history = get_processing_history(source)
     copied = [step.copy() if isinstance(step, dict) else dict(step) for step in history]
 
-    if isinstance(target, SherpaDataset):
-        target.provenance = Provenance.from_list(copied)
-        return
-
-    if not hasattr(target, "meta") or target.meta is None:
-        target.meta = {}
-
-    target.meta["processing_history"] = copied
-
-    # Keep legacy dataset .provenance in sync (it may be a separate list
-    # after meta["processing_history"] was replaced above).
-    try:
-        prov = target.provenance
-        if isinstance(prov, list) and prov is not copied:
-            prov.clear()
-            prov.extend(copied)
-            # Re-link so they're the same object going forward
-            target.meta["processing_history"] = prov
-    except (KeyError, AttributeError):
-        pass
+    target.provenance = Provenance.from_list(copied)
 
 
 def clear_processing_history(dataset: Any) -> None:
     """Clear processing history (useful for creating derived datasets)."""
-    if isinstance(dataset, SherpaDataset):
-        dataset.provenance = Provenance()
-        return
-
-    if hasattr(dataset, "meta") and dataset.meta:
-        dataset.meta["processing_history"] = []
-    # Sync legacy dataset .provenance
-    try:
-        prov = dataset.provenance
-        if isinstance(prov, list):
-            prov.clear()
-    except (KeyError, AttributeError):
-        pass
+    _require_dataset(dataset).provenance = Provenance()
 
 
 # =============================================================================
@@ -294,15 +215,14 @@ def ensure_samples_meta(dataset: Any) -> Dict[str, Any]:
             classes: np.ndarray[str|int]    # Class labels per sample
             labels: List[str]               # Sample names/identifiers
     """
-    if not hasattr(dataset, "meta") or dataset.meta is None:
-        dataset.meta = {}
+    dataset = _require_dataset(dataset)
 
     if "samples" not in dataset.meta:
         n_samples = dataset.shape[0]
         dataset.meta["samples"] = {
             "include_mask": np.ones(n_samples, dtype=bool),
             "classes": np.array([""] * n_samples, dtype=object),
-            "labels": [f"Sample_{i+1}" for i in range(n_samples)],
+            "labels": [f"Sample_{i + 1}" for i in range(n_samples)],
         }
 
     return dict(dataset.meta["samples"])  # type: ignore[return-value]
@@ -472,11 +392,6 @@ def get_sample_labels(dataset: Any) -> List[str]:
 # Spectral Type Detection
 # =============================================================================
 
-# Patterns for detection
-_WAVENUMBER_UNITS = frozenset({"cm-1", "cm^-1", "cm⁻¹", "1/cm", "kayser"})
-_WAVELENGTH_NM_UNITS = frozenset({"nm", "nanometer", "nanometers"})
-_WAVELENGTH_UM_UNITS = frozenset({"um", "μm", "micron", "microns", "micrometer", "micrometers"})
-
 _ABSORBANCE_PATTERNS = {"absorbance", "abs", "a", "optical density", "od"}
 _TRANSMITTANCE_PATTERNS = {"transmittance", "trans", "t", "%t", "% transmittance"}
 _REFLECTANCE_PATTERNS = {"reflectance", "refl", "r", "%r", "% reflectance"}
@@ -489,32 +404,11 @@ def detect_x_axis_type(dataset: Any) -> Optional[str]:
     Returns:
         "wavenumber", "wavelength_nm", "wavelength_um", or None
     """
-    # SherpaDataset: use feature_axis directly
-    if isinstance(dataset, SherpaDataset):
-        sa = dataset.feature_axis
-        if sa is None:
-            return None
-        return sa.axis_type
-
-    # NDDataset: SpectroChemPy's __getattr__ raises KeyError (not AttributeError)
-    # when a coordinate name like 'x' is not found.
-    try:
-        x_coord = dataset.x
-    except (KeyError, AttributeError):
+    dataset = _require_dataset(dataset)
+    sa = dataset.feature_axis
+    if sa is None:
         return None
-    if x_coord is None:
-        return None
-
-    units = str(x_coord.units).lower().strip() if hasattr(x_coord, "units") else ""
-
-    if units in _WAVENUMBER_UNITS or ("cm" in units and "-1" in units):
-        return "wavenumber"
-    if units in _WAVELENGTH_NM_UNITS:
-        return "wavelength_nm"
-    if units in _WAVELENGTH_UM_UNITS:
-        return "wavelength_um"
-
-    return None
+    return sa.axis_type
 
 
 def detect_spectral_technique(dataset: Any) -> Optional[str]:
@@ -524,41 +418,19 @@ def detect_spectral_technique(dataset: Any) -> Optional[str]:
     Returns:
         "IR", "NIR", "Raman", "UV-Vis", or None
     """
-    # SherpaDataset: check authoritative domain first, then infer from spectral axis
-    if isinstance(dataset, SherpaDataset):
-        if dataset.domain.technique is not None:
-            return dataset.domain.technique
-        sa = dataset.feature_axis
-        if sa is None:
-            return None
-        if dataset.title and "raman" in dataset.title.lower():
-            return "Raman"
-        axis_type = sa.axis_type
-        if axis_type is None or sa.range is None:
-            return None
-        x_min, x_max = sa.range
-        return _technique_from_range(axis_type, x_min, x_max, (dataset.units or "").lower())
-
-    # NDDataset path
-    try:
-        x_coord = dataset.x
-    except (KeyError, AttributeError):
+    dataset = _require_dataset(dataset)
+    if dataset.domain.technique is not None:
+        return dataset.domain.technique
+    sa = dataset.feature_axis
+    if sa is None:
         return None
-    if x_coord is None:
-        return None
-
-    # Check title for Raman indicator
-    if hasattr(dataset, "title") and dataset.title and "raman" in str(dataset.title).lower():
+    if dataset.title and "raman" in dataset.title.lower():
         return "Raman"
-
-    axis_type = detect_x_axis_type(dataset)
-    if axis_type is None:
+    axis_type = sa.axis_type
+    if axis_type is None or sa.range is None:
         return None
-
-    x_data = np.array(x_coord.data)
-    x_min, x_max = float(np.min(x_data)), float(np.max(x_data))
-    units_str = str(dataset.units).lower() if hasattr(dataset, "units") else ""
-    return _technique_from_range(axis_type, x_min, x_max, units_str)
+    x_min, x_max = sa.range
+    return _technique_from_range(axis_type, x_min, x_max, (dataset.units or "").lower())
 
 
 def _technique_from_range(axis_type: str, x_min: float, x_max: float, units_str: str) -> Optional[str]:
@@ -585,8 +457,8 @@ def detect_data_quantity(dataset: Any) -> Optional[str]:
     Returns:
         "Absorbance", "Transmittance", "Reflectance", "Intensity", or None
     """
-    # SherpaDataset: check authoritative domain first
-    if isinstance(dataset, SherpaDataset) and dataset.domain.data_quantity is not None:
+    dataset = _require_dataset(dataset)
+    if dataset.domain.data_quantity is not None:
         return dataset.domain.data_quantity
 
     if not hasattr(dataset, "units") or not dataset.units:
@@ -613,6 +485,7 @@ def get_spectral_info(dataset: Any) -> Dict[str, Any]:
     Returns:
         Dict with technique, data_quantity, x_axis_type, ranges, etc.
     """
+    dataset = _require_dataset(dataset)
     info = {
         "technique": detect_spectral_technique(dataset),
         "data_quantity": detect_data_quantity(dataset),
@@ -622,27 +495,10 @@ def get_spectral_info(dataset: Any) -> Dict[str, Any]:
         "n_features": dataset.shape[-1],
     }
 
-    # SherpaDataset: use feature_axis directly
-    if isinstance(dataset, SherpaDataset):
-        sa = dataset.feature_axis
-        if sa is not None and sa.range is not None:
-            info["x_range"] = sa.range
-            info["x_units"] = sa.units
-        if dataset.units:
-            info["data_units"] = str(dataset.units)
-        return info
-
-    # NDDataset path
-    try:
-        x_coord = dataset.x
-    except (KeyError, AttributeError):
-        x_coord = None
-    if x_coord is not None:
-        x_data = np.array(x_coord.data)
-        info["x_range"] = (float(np.min(x_data)), float(np.max(x_data)))
-        info["x_units"] = str(x_coord.units) if hasattr(x_coord, "units") else None
-
-    if hasattr(dataset, "units"):
+    sa = dataset.feature_axis
+    if sa is not None and sa.range is not None:
+        info["x_range"] = sa.range
+        info["x_units"] = sa.units
+    if dataset.units:
         info["data_units"] = str(dataset.units)
-
     return info

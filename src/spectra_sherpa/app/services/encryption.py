@@ -45,7 +45,74 @@ def _normalize_master_key(value: str) -> bytes:
     return base64.urlsafe_b64encode(hashlib.sha256(value.encode()).digest())
 
 
+class CredentialStorageUnavailable(RuntimeError):
+    """Saved credentials are refused because OS credential protection is unavailable."""
+
+    MESSAGE = (
+        "Saved API keys are unavailable because this computer's credential protection "
+        "could not be used. Analysis still works; AI and HITRAN features that need a "
+        "saved key are disabled until protection is available."
+    )
+
+    def __init__(self) -> None:
+        super().__init__(self.MESSAGE)
+
+
+def credential_storage_available() -> bool:
+    """False only in the desktop app when the OS-protected key is missing."""
+    from spectra_sherpa.app.core.desktop_policy import is_desktop
+
+    return _process_master_key is not None or not is_desktop()
+
+
+# Set by the desktop launcher from the OS-protected key the native shell sends
+# over its private launch pipe. When present it is the only key source, and no
+# plaintext key is ever written to the profile.
+_process_master_key: Optional[bytes] = None
+
+
+def set_process_master_key(value: str) -> None:
+    global _process_master_key
+    _process_master_key = _normalize_master_key(value)
+
+
+def has_process_master_key() -> bool:
+    return _process_master_key is not None
+
+
+def retire_plaintext_master_key(env_path: Path) -> bool:
+    """Remove a legacy plaintext key from the profile ``.env`` once it is protected.
+
+    Only a line whose value matches the OS-protected process key is removed, so
+    a different project's key or an unrelated secret is never touched.
+    """
+    if _process_master_key is None or not env_path.is_file():
+        return False
+    from spectra_sherpa.app.core.desktop_policy import refuse_linked_configuration
+
+    refuse_linked_configuration(env_path)
+    lines = env_path.read_text().splitlines(keepends=True)
+    kept = [
+        line
+        for line in lines
+        if not (
+            line.startswith("MASTER_ENCRYPTION_KEY=")
+            and line.split("=", 1)[1].strip()
+            and _normalize_master_key(line.split("=", 1)[1].strip()) == _process_master_key
+        )
+    ]
+    if len(kept) == len(lines):
+        return False
+    env_path.write_text("".join(kept))
+    return True
+
+
 def get_master_key() -> bytes:
+    if _process_master_key is not None:
+        return _process_master_key
+    if not credential_storage_available():
+        # Never fall back to a plaintext key file in the desktop app.
+        raise CredentialStorageUnavailable()
     key = os.getenv("MASTER_ENCRYPTION_KEY")
     if key:
         return _normalize_master_key(key)

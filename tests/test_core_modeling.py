@@ -2,42 +2,31 @@ import numpy as np
 import pytest
 
 pytest.importorskip("spectrochempy")
-import spectrochempy as scp
 
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
-from spectra_sherpa.app.services.dag.nodes.modeling import MCRNode, PCRNode, PLSNode
+from spectra_sherpa.app.services.dag.nodes.modeling import MCRNode, PCRNode
 from spectra_sherpa.app.services.dag.nodes.modeling.mcr_nodes import _compare_mcr_to_target
-
-
-@pytest.mark.asyncio
-async def test_pls_node_accepts_array():
-    # Bug 11: PLSNode should accept arrays matching metadata signature
-    node = PLSNode("pls_test")
-    X_array = np.random.rand(10, 50)
-    y_array = np.random.rand(10)
-
-    # This should not raise ValueError from bind_X(allow_array=False)
-    result = await node.execute(X=X_array, y=y_array)
-    assert "model" in result.outputs
 
 
 @pytest.mark.asyncio
 async def test_mcr_node_constraints():
     # Bug 10: MCRNode should apply constraints
     node = MCRNode(
-        "mcr_test", parameters={"n_components": 2, "max_iter": 5, "non_negative_C": True, "non_negative_St": True}
+        "mcr_test", parameters={"n_components": 2, "max_iter": 10, "non_negative_C": True, "non_negative_St": True}
     )
 
     # Create simple dataset
     X_array = np.abs(np.random.rand(10, 50))
-    ds = scp.NDDataset(X_array)
+    ds = SherpaDataset(X_array)
 
     result = await node.execute(input_data=ds)
-    mcr_model = result.outputs["model"]
+    fitted_state = result.outputs["model"]
 
-    # Internal SCP instances should reflect the solver selection
-    assert mcr_model.solverConc == "nnls"
-    assert mcr_model.solverSpec == "nnls"
+    # The typed model port exposes the closed replay state, not a runtime-only
+    # SpectroChemPy object. Both fitted constraints remain explicit.
+    assert fitted_state == result.outputs["fitted_state"]
+    assert fitted_state["metadata"]["concentration_solver"] == "nnls"
+    assert np.min(np.asarray(fitted_state["arrays"]["St"])) >= 0.0
 
 
 def test_mcr_ground_truth_comparison_matches_permuted_scaled_components():
@@ -147,7 +136,7 @@ async def test_pcr_node_scaling(monkeypatch):
 
     X_array = np.random.rand(10, 50)
     y_array = np.random.rand(10)
-    ds = scp.NDDataset(X_array)
+    ds = SherpaDataset(X_array)
 
     await node.execute(X=ds, y=y_array)
 

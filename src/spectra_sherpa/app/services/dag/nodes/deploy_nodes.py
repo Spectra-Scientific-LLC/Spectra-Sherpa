@@ -1,54 +1,74 @@
-"""
-Deploy nodes for headless prediction server pipelines.
-
-These nodes act as entry and exit points when a workflow is run
-via the headless API or batch runner, allowing external data to be injected
-and structured results to be returned.
-"""
+"""Canonical entry and exit nodes for deployed DAGs."""
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
-import numpy as np
+from spectra_sherpa.app.services.dag import supervision_binding as supervision_contract
+from spectra_sherpa.app.services.dag.node_base import (
+    Node,
+    NodeMetadata,
+    NodeParameter,
+    NodePolicy,
+    PortMetadata,
+    register_node,
+)
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.execution_contract_vocabulary import (
+    DatasetRankPolicy,
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    WorkerCapability,
+)
+from spectra_sherpa.sdk import deployment as deployment_contract
 
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
-from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
-
-logger = logging.getLogger(__name__)
+_DEPLOYMENT_IMPORT = (
+    "from spectra_sherpa.sdk.deployment import "
+    "admit_deployment_input, deployment_target_output, format_deployment_output, validate_deployment_input_set"
+)
+_SUPERVISION_IMPORT = (
+    "from spectra_sherpa.app.services.dag.supervision_binding import " "admit_attached_sample_table_supervision"
+)
 
 
 @register_node
 class DeployInputNode(Node):
-    """
-    Entry point for prediction pipelines.
+    """Admit one explicitly supplied external scientific dataset.
 
-    During 'Bench' interactive mode, this node acts as a dummy pass-through or returns
-    an empty dataset to allow pipeline validation.
-
-    During 'Deploy' (Headless) mode, the execution engine intercepts this node
-    and injects the payload data matching the stream_name.
+    The execution engine must inject the payload matching ``stream_name``.
+    Ordinary execution fails closed; a workflow can never appear successful
+    by running against fabricated spectral data.
     """
 
     metadata = NodeMetadata(
+        policy=NodePolicy(offload_to_pool=False),
         node_type="deploy.input",
         category="deploy",
         label="Deploy Input",
-        description="Injects external data streams into headless prediction pipelines",
+        description="Admits a named external scientific dataset into a deployed DAG",
         parameters=[
             NodeParameter(
                 name="stream_name",
                 label="Stream Name",
                 param_type="text",
                 default="sample",
-                description="Unique identifier for the incoming data stream (e.g. 'sample', 'reference')",
+                description="Unique portable identifier for this external data stream",
                 required=True,
                 category="basic",
             ),
+            NodeParameter(
+                name="schema_version",
+                label="Input Schema",
+                param_type="select",
+                default=deployment_contract.DEPLOYMENT_INPUT_SCHEMA,
+                options=[deployment_contract.DEPLOYMENT_INPUT_SCHEMA],
+                description="Closed external scientific-dataset request schema",
+                required=True,
+                category="advanced",
+            ),
         ],
-        input_types=[],  # Source node
+        input_types=[],
         input_ports=[],
         output_type="spectrasherpa://types/SpectralDataset/1.0",
         output_ports=[
@@ -57,59 +77,55 @@ class DeployInputNode(Node):
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Dataset",
-                description="Injected dataset",
+                description="Exact admitted external dataset",
+            ),
+            PortMetadata(
+                name="target",
+                type_ref="spectrasherpa://types/TargetMatrix/1.0",
+                required=False,
+                label="Target Values",
+                description="Reference values, or canonical text class labels for a declared categorical target",
             ),
         ],
     )
+    python_extra_imports = [_DEPLOYMENT_IMPORT, _SUPERVISION_IMPORT]
 
-    async def execute(self, *args) -> Any:
-        # In actual deployment, the runner (headless API or batch_predict.py)
-        # intercepts execution and injects data before this is called.
-        # If this execute() is called, we are likely running interactively in the Bench.
-        logger.warning(
-            f"DeployInputNode ({self.node_id}) executed normally. This usually indicates "
-            "it's running in interactive/bench mode without injected payload data. Returning empty dataset."
+    async def execute(self, *args: Any) -> Any:
+        raise RuntimeError(
+            f"deploy.input {self.node_id!r} requires an explicitly admitted external payload; "
+            "ordinary DAG execution cannot fabricate deployment data"
         )
-        empty_data = np.zeros((1, 1))
-        dataset = coerce_to_sherpa(empty_data)
-        dataset.title = f"Dummy Data for Stream: {self.parameters.get('stream_name')}"
-        return dataset
 
     def supports_python_export(self) -> bool:
         return True
 
     def generate_python(self, input_map: dict[str, str], indent: str = "    ", use_scp: bool = False) -> list[str]:
         stream_name = self.parameters.get("stream_name", "sample")
-        lines = [
+        schema_version = self.parameters.get("schema_version", deployment_contract.DEPLOYMENT_INPUT_SCHEMA)
+        return [
             f"{indent}# --- {self.node_id} (Deploy Input) ---",
-            f"{indent}# The prediction server injects the '{stream_name}' payload here.",
-            f"{indent}# For local testing, supply dummy data:",
+            f"{indent}# Admit the caller-supplied {stream_name!r} scientific dataset.",
+            f"{indent}results[{self.node_id!r}] = {{'default': admit_deployment_input(",
+            f"{indent}    deployment_inputs[{stream_name!r}],",
+            f"{indent}    stream_name={stream_name!r},",
+            f"{indent}    schema_version={schema_version!r},",
+            f"{indent})}}",
+            f"{indent}target = deployment_target_output(results[{self.node_id!r}]['default'], required=False)",
+            f"{indent}if target is not None:",
+            f"{indent}    results[{self.node_id!r}]['target'] = target",
         ]
-        if use_scp:
-            lines.append(
-                f"{indent}results['{self.node_id}'] = scp.NDDataset(np.zeros((1, 1)))  # Replace with actual data"
-            )
-        else:
-            lines.append(
-                f"{indent}results['{self.node_id}'] = SherpaDataset(np.zeros((1, 1)))  # Replace with actual data"
-            )
-        return lines
 
 
 @register_node
 class DeployOutputNode(Node):
-    """
-    Exit point for prediction pipelines.
-
-    Collects final pipeline outputs and formats them. The headless API
-    will read the result of this node to return the HTTP response.
-    """
+    """Serialize a DAG result into one deterministic response envelope."""
 
     metadata = NodeMetadata(
+        policy=NodePolicy(data_egress_risk="full_data", offload_to_pool=False),
         node_type="deploy.output",
         category="deploy",
         label="Deploy Output",
-        description="Formats results for the headless prediction server API",
+        description="Formats one deployed DAG result through the canonical response contract",
         parameters=[
             NodeParameter(
                 name="output_format",
@@ -117,26 +133,28 @@ class DeployOutputNode(Node):
                 param_type="select",
                 default="json",
                 options=["json", "csv", "plain_text"],
-                description="Format for the HTTP response or file output",
+                description="Exact response representation",
                 required=True,
                 category="basic",
             ),
             NodeParameter(
                 name="key_value_separator",
                 label="Key-Value Separator",
-                param_type="text",
+                param_type="select",
                 default="=",
-                description="Separator for plain_text mode (e.g. '=')",
-                required=False,
+                options=["=", ":", "\t"],
+                description="Closed separator for plain-text mappings",
+                required=True,
                 category="advanced",
             ),
             NodeParameter(
                 name="end_of_message_tag",
                 label="End of Message Tag",
-                param_type="text",
+                param_type="select",
                 default="\\n",
-                description="Termination string for plain_text mode (e.g. '\\n')",
-                required=False,
+                options=["", "\\n", "\\r\\n"],
+                description="Closed line ending for plain-text responses",
+                required=True,
                 category="advanced",
             ),
         ],
@@ -147,75 +165,87 @@ class DeployOutputNode(Node):
                 type_ref="spectrasherpa://types/Any/1.0",
                 required=True,
                 label="Payload",
-                description="Pipeline output to format and return",
+                description="Pipeline result to return",
             ),
         ],
-        output_type="dict",
+        output_type="spectrasherpa://types/DeploymentResponse/1.0",
         output_ports=[
             PortMetadata(
                 name="default",
-                type_ref="spectrasherpa://types/Scalar/1.0",
+                type_ref="spectrasherpa://types/DeploymentResponse/1.0",
                 required=True,
-                label="Formatted Result",
-                description="The formatted response data",
+                label="Response",
+                description="Formatted response with exact byte digest",
             ),
         ],
     )
+    python_extra_imports = [_DEPLOYMENT_IMPORT]
 
-    async def execute(self, payload: Any) -> dict:
-        """
-        Takes the upstream payload and formats it according to settings.
-        Returns a dict containing the formatted raw response and metadata.
-        """
-        fmt = self.parameters.get("output_format", "json")
-        separator = self.parameters.get("key_value_separator", "=")
-        eom = self.parameters.get("end_of_message_tag", "\\n").encode().decode("unicode_escape")
-
-        # If the payload is a dataset, try to extract its .data array
-        raw_data = payload
-        if isinstance(payload, SherpaDataset):
-            raw_data = payload.data.tolist() if isinstance(payload.data, np.ndarray) else payload.data
-        elif hasattr(payload, "data") and isinstance(payload.data, np.ndarray):
-            raw_data = payload.data.tolist()
-        elif isinstance(payload, np.ndarray):
-            raw_data = payload.tolist()
-
-        formatted_result = None
-
-        if fmt == "json":
-            # Just pass the raw serializable structure, FastAPI will jsonify it
-            formatted_result = raw_data
-        elif fmt == "csv":
-            import csv
-            import io
-
-            output = io.StringIO()
-            writer = csv.writer(output)
-            if isinstance(raw_data, list) and len(raw_data) > 0:
-                if isinstance(raw_data[0], list):
-                    writer.writerows(raw_data)
-                else:
-                    writer.writerow(raw_data)
-            else:
-                writer.writerow([str(raw_data)])
-            formatted_result = output.getvalue()
-        elif fmt == "plain_text":
-            if isinstance(raw_data, dict):
-                lines = [f"{k}{separator}{v}" for k, v in raw_data.items()]
-                formatted_result = "; ".join(lines) + eom
-            else:
-                formatted_result = f"Result{separator}{str(raw_data)}{eom}"
-
-        return {"format": fmt, "content": formatted_result, "raw_payload": raw_data}
+    async def execute(self, payload: Any) -> dict[str, Any]:
+        return deployment_contract.format_deployment_output(
+            payload,
+            output_format=self.parameters.get("output_format", "json"),
+            key_value_separator=self.parameters.get("key_value_separator", "="),
+            end_of_message_tag=self.parameters.get("end_of_message_tag", "\\n"),
+        )
 
     def supports_python_export(self) -> bool:
         return True
 
     def generate_python(self, input_map: dict[str, str], indent: str = "    ", use_scp: bool = False) -> list[str]:
         in_var = input_map.get("default", "None")
-        lines = [
+        output_format = self.parameters.get("output_format", "json")
+        separator = self.parameters.get("key_value_separator", "=")
+        ending = self.parameters.get("end_of_message_tag", "\\n")
+        return [
             f"{indent}# --- {self.node_id} (Deploy Output) ---",
-            f"{indent}# Pass through the result for export",
-            f"{indent}results['{self.node_id}'] = {in_var}",
+            f"{indent}results['{self.node_id}'] = format_deployment_output(",
+            f"{indent}    {in_var},",
+            f"{indent}    output_format={output_format!r},",
+            f"{indent}    key_value_separator={separator!r},",
+            f"{indent}    end_of_message_tag={ending!r},",
+            f"{indent})",
         ]
-        return lines
+
+
+bind_stable_execution_contract(
+    DeployInputNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.DATA_SOURCE,
+    implementation_id="spectrasherpa.deploy.input",
+    implementation_version="3.1.0",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="generates_samples",
+    feature_effect="generates_features",
+    axis_effect="changes_axis",
+    unit_effect="changes_units",
+    target_access="optional",
+    input_rank_policy=DatasetRankPolicy.PRESERVES_ND,
+    resource_hints={"timeout_seconds": 10, "cpu_seconds": 5, "memory_bytes": 536_870_912},
+    license_id="Apache-2.0",
+    help_reference="docs/nodes/data.md",
+    implementation_modules=(deployment_contract, supervision_contract),
+    implementation_distributions=("numpy",),
+    runtime_requirements=(("numpy", "1.26.4"),),
+)
+
+bind_stable_execution_contract(
+    DeployOutputNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
+    implementation_id="spectrasherpa.deploy.output",
+    implementation_version="1.0.0",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="preserves_samples",
+    feature_effect="preserves_features",
+    axis_effect="preserves_axis",
+    unit_effect="preserves_units",
+    resource_hints={"timeout_seconds": 10, "cpu_seconds": 5, "memory_bytes": 536_870_912},
+    license_id="Apache-2.0",
+    help_reference="docs/nodes/data.md",
+    implementation_modules=(deployment_contract,),
+    implementation_distributions=("numpy",),
+    runtime_requirements=(("numpy", "1.26.4"),),
+)

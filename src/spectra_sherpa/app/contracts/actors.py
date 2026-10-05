@@ -19,7 +19,7 @@ class CurrentActor(Protocol):
     """Minimal identity contract consumed by OSS platform code.
 
     Local mode: a lightweight workspace owner created at first startup.
-    Hybrid/Enterprise mode: the full ``User`` ORM satisfies this protocol.
+    Managed mode: the full ``User`` ORM satisfies this protocol.
 
     Enterprise-only attributes (``is_superuser``, ``password_hash``,
     ``login_count``, etc.) are intentionally excluded.  OSS code that

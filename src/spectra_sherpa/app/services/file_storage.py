@@ -4,11 +4,10 @@ import os
 import re
 import unicodedata
 from pathlib import Path
-from typing import Iterable
 
 from fastapi import UploadFile
 
-from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.io.registry import builtin_registry
 
 
 def _secure_filename(filename: str) -> str:
@@ -47,10 +46,10 @@ def sanitize_filename(filename: str) -> str:
     return sanitized
 
 
-def validate_extension(filename: str, allowed_extensions: Iterable[str] | None = None) -> str:
+def validate_ingestion_filename(filename: str) -> str:
+    """Admit exactly filenames supported by the installed ingestion registry."""
     extension = Path(filename).suffix.lower()
-    allowed = {ext.lower() for ext in (allowed_extensions or settings.allowed_extensions)}
-    if extension not in allowed:
+    if not builtin_registry.accepts_filename(filename):
         raise FileValidationError("Unsupported file type")
     return extension
 
@@ -73,10 +72,9 @@ async def save_upload_file(
     upload: UploadFile,
     destination_dir: Path,
     max_file_size_mb: int,
-    allowed_extensions: Iterable[str] | None = None,
 ) -> Path:
     filename = sanitize_filename(upload.filename or "")
-    validate_extension(filename, allowed_extensions)
+    validate_ingestion_filename(filename)
 
     destination_dir.mkdir(parents=True, exist_ok=True)
     target_path = resolve_target_path(destination_dir, filename)

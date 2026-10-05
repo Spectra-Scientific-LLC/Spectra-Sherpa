@@ -4,12 +4,10 @@ import asyncio
 import logging
 import os
 import secrets
-import shutil
 import sys
 import warnings
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from typing import cast
 
 from sqlalchemy import func, select, update
@@ -26,14 +24,8 @@ from spectra_sherpa.app.db.seeder import seed_data
 from spectra_sherpa.app.db.session import async_session
 from spectra_sherpa.app.models.background_job import BackgroundJob
 from spectra_sherpa.app.models.data_egress import UserEgressDefaults
-from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.user import PRINCIPAL_KIND_HUMAN, User
 from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
-from spectra_sherpa.app.services.experiments import (
-    create_experiment,
-    metadata_path_for,
-    write_metadata,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +34,14 @@ DEFAULT_SECRET_KEY = "local-dev-key"
 DEFAULT_API_KEY = "local-key"
 MIN_SECRET_KEY_LENGTH = 32
 MIN_SECRET_KEY_UNIQUE_CHARS = 8
+# Minimum length for an APP_API_KEY that is actually accepted as a credential
+# (ALLOW_SYSTEM_API_KEY_AUTH). Short keys are brute-forceable; the issued form
+# is ``secrets.token_urlsafe(32)`` (~43 chars), so 32 is a comfortable floor.
+MIN_SYSTEM_API_KEY_LENGTH = 32
+# Minimum distinct characters, mirroring MIN_SECRET_KEY_UNIQUE_CHARS. Catches
+# length-padding mistakes ("0"*32, "password"*4) that clear the length floor
+# but carry almost no entropy. A real token_urlsafe(32) has far more.
+MIN_SYSTEM_API_KEY_UNIQUE_CHARS = 8
 INSECURE_SECRET_KEY_PLACEHOLDERS = {
     "",
     DEFAULT_SECRET_KEY,
@@ -54,6 +54,55 @@ INSECURE_SECRET_KEY_PLACEHOLDERS = {
     "<generate-new-key>",
     "<paste your generated secret key>",
 }
+# Well-known / shipped placeholder APP_API_KEY values. ``DEFAULT_API_KEY`` is the
+# runtime default when the env var is unset; ``default-local-key`` is the value
+# the packaged ``.env.example`` ships. Both are published and therefore unsafe
+# to accept as a real credential. Kept separate from the SECRET_KEY set because
+# the two have different provenance and may diverge.
+INSECURE_API_KEY_PLACEHOLDERS = {
+    "",
+    DEFAULT_API_KEY,
+    "default-local-key",
+    "your-api-key",
+    "your-app-api-key",
+    "change-me",
+    "changeme",
+    "secret",
+    "password",
+    "default",
+    "<generate-new-key>",
+    "<paste your generated api key>",
+}
+
+
+def system_api_key_security_issue(api_key: str | None) -> str | None:
+    """Return a startup-blocking issue for a weak APP_API_KEY that is being
+    accepted as a request credential (ALLOW_SYSTEM_API_KEY_AUTH enabled).
+
+    Returns ``None`` when the key is acceptable. Non-local startup validation
+    treats any returned issue as fatal. Local mode bypasses request
+    authentication and returns before this system-key check.
+    """
+    value = (api_key or "").strip()
+    normalized = value.lower()
+    if normalized in INSECURE_API_KEY_PLACEHOLDERS or (normalized.startswith("<") and normalized.endswith(">")):
+        return (
+            "APP_API_KEY is a published default/placeholder while "
+            "ALLOW_SYSTEM_API_KEY_AUTH is enabled. Set a strong random value with: "
+            'python -c "import secrets; print(secrets.token_urlsafe(32))"'
+        )
+    if len(value) < MIN_SYSTEM_API_KEY_LENGTH:
+        return (
+            f"APP_API_KEY must be at least {MIN_SYSTEM_API_KEY_LENGTH} characters when "
+            "ALLOW_SYSTEM_API_KEY_AUTH is enabled. Generate a fresh random value."
+        )
+    if len(set(value)) < MIN_SYSTEM_API_KEY_UNIQUE_CHARS:
+        return (
+            "APP_API_KEY appears too low-entropy (a long but repetitive value does not "
+            "count as strong). Generate a fresh random value."
+        )
+    return None
+
 
 # Filename where the auto-generated local secret key is persisted
 _LOCAL_KEY_FILENAME = ".secret_key"
@@ -159,8 +208,7 @@ def _validate_security() -> list[ConfigIssue]:
                 ConfigIssue(
                     "warning",
                     "security",
-                    "Using default SECRET_KEY in local mode. "
-                    "This is acceptable for development but not recommended.",
+                    "Using default SECRET_KEY in local mode. This is acceptable for development but not recommended.",
                 )
             )
         from spectra_sherpa.app.core.mode_policy import is_loopback, local_network_access_allowed
@@ -204,21 +252,23 @@ def _validate_security() -> list[ConfigIssue]:
         "true",
         "yes",
     }
-    if settings.api_key == DEFAULT_API_KEY and system_key_auth_enabled:
-        # In enterprise/hybrid mode this is a hard failure — leaving the
-        # default key while accepting it for authentication exposes every
-        # endpoint to anyone who knows the published default. Local mode
-        # already bypasses auth, so the default is harmless there.
-        level = "error" if app_config.mode in ("enterprise", "hybrid") else "warning"
-        issues.append(
-            ConfigIssue(
-                level,
-                "security",
-                f"APP_API_KEY is set to the default value while ALLOW_SYSTEM_API_KEY_AUTH "
-                f"is enabled in {app_config.mode} mode. Set a strong random APP_API_KEY "
-                f"before starting.",
+    if system_key_auth_enabled:
+        # When APP_API_KEY is accepted as a request credential, a published
+        # default/placeholder (or a short, brute-forceable value) exposes
+        # every endpoint to anyone who knows it. This is a hard failure in
+        # managed modes. Local mode bypasses auth and returns before this
+        # check. Covers the runtime default ("local-key") AND the value formerly
+        # shipped in .env.example ("default-local-key"), which the previous
+        # exact-match check silently let through.
+        api_key_issue = system_api_key_security_issue(settings.api_key)
+        if api_key_issue:
+            issues.append(
+                ConfigIssue(
+                    "error",
+                    "security",
+                    f"{api_key_issue} (mode: {app_config.mode})",
+                )
             )
-        )
 
     if os.getenv("TRUST_PROXY", "").strip().lower() in {"1", "true", "yes"}:
         trusted_proxy_cidrs = os.getenv("TRUSTED_PROXY_CIDRS", "").strip()
@@ -255,19 +305,6 @@ def _validate_security() -> list[ConfigIssue]:
         for warning_item in caught:
             issues.append(ConfigIssue("warning", "security", str(warning_item.message)))
 
-    if app_config.mode == "hybrid":
-        bind_host = os.getenv("HOST", "127.0.0.1")
-        loopback = {"127.0.0.1", "::1", "localhost"}
-        if bind_host not in loopback:
-            issues.append(
-                ConfigIssue(
-                    "warning",
-                    "security",
-                    f"Hybrid mode is bound to '{bind_host}'. Non-loopback clients "
-                    "must authenticate with a valid JWT or API key.",
-                )
-            )
-
     return issues
 
 
@@ -275,7 +312,7 @@ def _validate_concurrency() -> list[ConfigIssue]:
     """Check concurrency-related settings (refactored from validate_concurrency_settings)."""
     issues: list[ConfigIssue] = []
 
-    if app_config.mode in ("hybrid", "enterprise"):
+    if app_config.mode != "local":
         web_concurrency = os.getenv("WEB_CONCURRENCY", "").strip()
         if web_concurrency:
             try:
@@ -315,15 +352,15 @@ def _validate_site_profile() -> list[ConfigIssue]:
                 ConfigIssue(
                     "error",
                     "mode",
-                    f"site_profile=demo requires APP_MODE=enterprise, " f"but current mode is '{app_config.mode}'.",
+                    f"site_profile=demo requires APP_MODE=enterprise, but current mode is '{app_config.mode}'.",
                 )
             )
-        if not os.getenv("ENTERPRISE_PASSWORD", "").strip():
+        if os.getenv("ENTERPRISE_PASSWORD", "").strip():
             issues.append(
                 ConfigIssue(
                     "error",
                     "mode",
-                    "site_profile=demo requires ENTERPRISE_PASSWORD so public signup remains access-code gated.",
+                    "ENTERPRISE_PASSWORD is retired for site_profile=demo; use six-digit email verification.",
                 )
             )
 
@@ -399,7 +436,7 @@ def validate_concurrency_settings() -> None:
             logger.warning(issue.message)
 
     # Additional logging not covered by structured validation
-    if app_config.mode in ("hybrid", "enterprise"):
+    if app_config.mode != "local":
         try:
             import fcntl  # noqa: F401
 
@@ -580,6 +617,7 @@ async def reconcile_stale_jobs() -> None:
             await session.execute(
                 update(BackgroundJob)
                 .where(BackgroundJob.status == "pending")
+                .where(BackgroundJob.created_at < stale_cutoff)
                 .values(
                     status="failed",
                     error_message="Server restarted before job execution",
@@ -600,12 +638,17 @@ async def reconcile_stale_jobs() -> None:
             await session.execute(
                 update(BackgroundJob)
                 .where(BackgroundJob.status == "running")
+                .where(BackgroundJob.last_heartbeat.is_(None))
+                .where(BackgroundJob.created_at < stale_cutoff)
                 .values(
                     status="failed",
                     error_message="Server restarted (job did not complete)",
                     completed_at=now,
                 )
             )
+            from spectra_sherpa.app.services.run_reconciliation import reconcile_job_runs
+
+            await reconcile_job_runs(session)
             await session.commit()
     except OperationalError:
         logger.warning("Skipping job reconciliation; database not initialized.")
@@ -633,190 +676,6 @@ async def reconcile_orphan_model_artifacts() -> None:
         logger.warning("Skipping orphan-artifact reconciliation; database not initialized.")
     except Exception as exc:  # pragma: no cover - best-effort janitor
         logger.warning("Orphan-artifact reconciliation failed: %s", exc)
-
-
-def ensure_spectrochempy_data() -> None:
-    """Ensure SpectroChemPy test data is available before DB-dependent setup.
-
-    Controlled by ``SCP_DATA_BOOTSTRAP``:
-    - ``auto`` (default): download if missing, warn on failure.
-    - ``required``: download if missing, fail startup on failure.
-    - ``skip``: never download (use pre-baked images).
-    """
-    import os
-    from concurrent.futures import ThreadPoolExecutor
-    from concurrent.futures import TimeoutError as FutureTimeout
-
-    policy = os.getenv("SCP_DATA_BOOTSTRAP", "auto").strip().lower()
-    if policy not in {"auto", "required", "skip"}:
-        logger.warning("Invalid SCP_DATA_BOOTSTRAP=%r, defaulting to 'auto'", policy)
-        policy = "auto"
-
-    if policy == "skip":
-        logger.info("SCP data bootstrap skipped (SCP_DATA_BOOTSTRAP=skip)")
-        return
-
-    from spectra_sherpa.app.lib.scp_compat import HAS_SCP, download_testdata, get_scp_datadirs
-
-    if not HAS_SCP:
-        return
-
-    for datadir in get_scp_datadirs():
-        try:
-            if _scp_testdata_looks_complete(datadir):
-                logger.info("SCP test data present at %s", datadir)
-                return
-        except OSError:
-            continue
-
-    timeout_sec = int(os.getenv("SCP_DATA_TIMEOUT", "300"))
-    logger.info("Downloading SCP test data (timeout=%ss)...", timeout_sec)
-
-    executor: ThreadPoolExecutor | None = None
-    future = None
-    try:
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(download_testdata)
-        future.result(timeout=timeout_sec)
-        logger.info("SCP test data download complete")
-    except FutureTimeout:
-        if future is not None:
-            future.cancel()
-        if executor is not None:
-            executor.shutdown(wait=False, cancel_futures=True)
-            executor = None
-        msg = f"SCP data download timed out after {timeout_sec}s"
-        if policy == "required":
-            raise RuntimeError(msg)
-        logger.warning(msg)
-    except Exception as exc:
-        msg = f"Failed to download SCP test data: {exc}"
-        if policy == "required":
-            raise RuntimeError(msg) from exc
-        logger.warning(msg)
-    finally:
-        if executor is not None:
-            executor.shutdown(wait=True, cancel_futures=False)
-
-
-def _scp_testdata_looks_complete(datadir: Path) -> bool:
-    """Compatibility wrapper around the shared SCP completeness check."""
-    from spectra_sherpa.app.lib.scp_compat import scp_testdata_looks_complete
-
-    return scp_testdata_looks_complete(datadir)
-
-
-def _is_scp_testdata_file(path: Path) -> bool:
-    """Compatibility wrapper around the shared SCP file classifier."""
-    from spectra_sherpa.app.lib.scp_compat import is_scp_testdata_file
-
-    return is_scp_testdata_file(path)
-
-
-def _get_scp_reference_root() -> Path | None:
-    """Return the most useful SCP data root for metadata/reference scanning."""
-    from spectra_sherpa.app.lib.scp_compat import get_preferred_scp_datadir
-
-    return get_preferred_scp_datadir()
-
-
-def _resolve_scp_reference_pdf_path(spectrochempy_dir: Path) -> Path | None:
-    """Return the app-owned SCP reference PDF path, migrating legacy storage."""
-    app_pdf = get_app_data_paths(settings.data_dir).spectrochempy_reference_pdf
-    if app_pdf.exists():
-        return app_pdf
-
-    legacy_pdf = spectrochempy_dir.parent / app_pdf.name
-    if not legacy_pdf.exists():
-        return None
-
-    try:
-        app_pdf.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(legacy_pdf, app_pdf)
-        logger.info("Copied legacy SpectroChemPy reference PDF to %s", app_pdf)
-        return app_pdf
-    except OSError as exc:
-        logger.warning("Could not copy legacy SpectroChemPy reference PDF into app data dir: %s", exc)
-        return legacy_pdf
-
-
-async def ensure_spectrochempy_testdata() -> None:
-    """
-    Ensure SpectrochemPy test data directory is accessible for LLM.
-    Scans the resolved SpectroChemPy testdata root and creates a reference
-    experiment with directory info.
-    """
-    try:
-        spectrochempy_dir = _get_scp_reference_root()
-        if spectrochempy_dir is None:
-            logger.info(
-                "SpectroChemPy not detected — native .scp/.spg/.omnic file support "
-                "and the bundled testdata catalog are disabled. To enable, install "
-                "the optional extra: pip install 'spectra-sherpa[scp]'"
-            )
-            return
-
-        async with async_session() as session:
-            # Get default user
-            result = await session.execute(select(User).limit(1))
-            user = result.scalar_one_or_none()
-            if not user:
-                logger.warning("No default user found, cannot create spectrochempy reference")
-                return
-
-            # Check if reference experiment already exists
-            result = await session.execute(select(Experiment).where(Experiment.name == "SpectrochemPy Test Data"))
-            experiment = result.scalar_one_or_none()
-
-            # Count available test files and subdirectories from the actual
-            # testdata root. Use case-insensitive extension handling so SCP's
-            # uppercase demo files (e.g. .SPA, .SPC, .CSV) are not dropped.
-            subdirs = [d for d in spectrochempy_dir.iterdir() if d.is_dir() and not d.name.startswith(".")]
-            test_files = [f for f in spectrochempy_dir.rglob("*") if f.is_file() and _is_scp_testdata_file(f)]
-
-            # Keep reference assets under the app data root, not inside the
-            # SpectroChemPy home directory. Migrate legacy placement if needed.
-            pdf_ref = _resolve_scp_reference_pdf_path(spectrochempy_dir)
-            has_pdf = pdf_ref is not None and pdf_ref.exists()
-
-            metadata = {
-                "source": "spectrochempy",
-                "auto_loaded": True,
-                "base_path": str(spectrochempy_dir),
-                "subdirectories": [d.name for d in subdirs],
-                "file_count": len(test_files),
-                "reference_pdf": str(pdf_ref) if pdf_ref is not None else None,
-                "instructions": f"Files are accessible from {spectrochempy_dir}. Do not load all files into database.",
-            }
-
-            # Create or update experiment
-            if not experiment:
-                logger.info("Creating SpectrochemPy Test Data reference")
-                experiment = await create_experiment(  # type: ignore[assignment]
-                    session=session,
-                    user_id=user.id,
-                    name="SpectrochemPy Test Data",
-                    description=(
-                        f"Reference to test datasets in {spectrochempy_dir} "
-                        f"({len(test_files)} files in {len(subdirs)} subdirectories)"
-                    ),
-                    metadata=metadata,
-                )
-                logger.info(
-                    f"SpectrochemPy reference created: {len(test_files)} files, {len(subdirs)} subdirs, PDF: {has_pdf}"
-                )
-            else:
-                # Update metadata with current file counts
-                metadata_file = metadata_path_for(experiment.id)
-                write_metadata(metadata_file, metadata)
-                logger.info(
-                    f"SpectrochemPy reference updated: {len(test_files)} files, {len(subdirs)} subdirs, PDF: {has_pdf}"
-                )
-
-    except OperationalError:
-        logger.warning("Skipping SpectrochemPy test data setup; database not initialized.")
-    except Exception as e:
-        logger.error(f"Error setting up SpectrochemPy test data: {e}", exc_info=True)
 
 
 async def ensure_workflow_templates() -> None:

@@ -165,7 +165,9 @@ async def test_byo_chat_stream_sse_events_are_well_formed():
         verbose: bool = True,
         max_paragraphs: int = 2,
         metadata: dict | None = None,
+        exchange_owner: int | None = None,
     ) -> AsyncIterator[str]:
+        assert exchange_owner == 1
         yield "chunk one"
         yield " chunk two"
 
@@ -195,3 +197,32 @@ async def test_byo_chat_stream_sse_events_are_well_formed():
     assert isinstance(frames[0]["text"], str)
     assert frames[1]["type"] == "chunk"
     assert frames[2]["type"] == "done"
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        None,
+        {"workflow_id": 10, "run_id": 20, "status": "completed", "error": None},
+        {"workflow_id": 10, "status": "refused", "error": {"code": "access_denied"}},
+        {"workflow_id": 10, "status": "failed", "error": "Draft retained"},
+    ],
+)
+def test_chat_done_retains_explicit_execution_outcome(result):
+    validate_ws_event({"type": "sherpa_chat_done", "request_id": "run-1", "execution_result": result})
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        {"status": "completed"},
+        {"workflow_id": 10},
+        {"workflow_id": 10, "status": "completed", "run_id": "latest"},
+        {"workflow_id": 10, "status": "completed", "extra": True},
+    ],
+)
+def test_chat_done_rejects_untyped_execution_outcome(result):
+    from jsonschema.exceptions import ValidationError
+
+    with pytest.raises(ValidationError):
+        validate_ws_event({"type": "sherpa_chat_done", "execution_result": result})

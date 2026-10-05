@@ -221,25 +221,23 @@ class TestVIPUtility:
         # Mean VIP should be approximately 1.0 by construction
         assert 0.5 < np.mean(vip) < 2.0
 
-    def test_vip_zeros_on_empty_input(self):
+    def test_vip_fails_closed_without_explained_response_variance(self):
         from spectra_sherpa.app.services.dag.nodes.selection._vip import calculate_vip
 
-        # Malformed inputs should return zeros, not crash
-        vip = calculate_vip(
-            np.zeros((10, 3)),
-            np.zeros((3, 20)),
-            np.zeros((1, 3)),
-            20,
-        )
-        assert vip.shape == (20,)
-        assert np.all(vip == 0.0)
+        with pytest.raises(ValueError, match="explained response variance"):
+            calculate_vip(
+                np.zeros((10, 3)),
+                np.zeros((3, 20)),
+                np.zeros((1, 3)),
+                20,
+            )
 
 
 # ── Sample Partition Node Tests ────────────────────────────────────────
 
 
-class TestSamplePartitionNode:
-    """Integration tests for selection.sample_partition."""
+class TestCanonicalTrainTestSplitNode:
+    """Integration tests for the sole canonical partition node."""
 
     @pytest.fixture
     def make_dataset(self):
@@ -261,42 +259,45 @@ class TestSamplePartitionNode:
 
     @pytest.mark.asyncio
     async def test_kennard_stone_partition(self, make_dataset):
-        from spectra_sherpa.app.services.dag.nodes.selection.sample_partition_node import SamplePartitionNode
+        from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
 
         ds = make_dataset(50, 100)
-        node = SamplePartitionNode("test_ks", {"method": "kennard_stone", "test_size": 0.2})
+        node = TrainTestSplitNode("test_ks", {"split_method": "kennard_stone", "test_size": 0.2})
         result = await node.execute(X=ds)
 
-        assert "X_cal" in result.outputs
-        assert "X_test" in result.outputs
-        assert "cal_indices" in result.outputs
-        assert result.diagnostics["method"] == "kennard_stone"
-        assert result.diagnostics["n_cal"] == 40
-        assert result.diagnostics["n_test"] == 10
+        assert result["X_train"].shape[0] == 40
+        assert result["X_test"].shape[0] == 10
+        assert len(result["train_indices"]) == 40
+        assert len(result["test_indices"]) == 10
 
     @pytest.mark.asyncio
     async def test_duplex_partition(self, make_dataset):
-        from spectra_sherpa.app.services.dag.nodes.selection.sample_partition_node import SamplePartitionNode
+        from spectra_sherpa.app.services.dag.nodes.data.split_planner import (
+            plan_train_test_split,
+            space_filling_coverage,
+        )
+        from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
 
         ds = make_dataset(50, 100)
-        node = SamplePartitionNode("test_dup", {"method": "duplex", "test_size": 0.2})
+        node = TrainTestSplitNode("test_dup", {"split_method": "duplex", "test_size": 0.2})
         result = await node.execute(X=ds)
 
-        n_cal = result.diagnostics["n_cal"]
-        n_test = result.diagnostics["n_test"]
-        assert n_cal + n_test == 50
-        assert "coverage" in result.diagnostics
+        assert result["X_train"].shape[0] + result["X_test"].shape[0] == 50
+        assert np.intersect1d(result["train_indices"], result["test_indices"]).size == 0
+        plan = plan_train_test_split(ds.X, ds.target, method="duplex", test_size=0.2)
+        coverage = space_filling_coverage(ds.X, plan, ds.target)
+        assert set(coverage) == {"mean_nn_distance", "max_nn_distance", "min_nn_distance"}
 
     @pytest.mark.asyncio
     async def test_random_partition(self, make_dataset):
-        from spectra_sherpa.app.services.dag.nodes.selection.sample_partition_node import SamplePartitionNode
+        from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
 
         ds = make_dataset(50, 100)
-        node = SamplePartitionNode("test_rand", {"method": "random", "test_size": 0.3, "random_seed": 42})
+        node = TrainTestSplitNode("test_rand", {"split_method": "random", "test_size": 0.3, "random_seed": 42})
         result = await node.execute(X=ds)
 
-        assert result.diagnostics["n_test"] == 15
-        assert result.diagnostics["n_cal"] == 35
+        assert result["X_test"].shape[0] == 15
+        assert result["X_train"].shape[0] == 35
 
 
 # ── Variable Selection Node Tests ──────────────────────────────────────
@@ -374,28 +375,25 @@ class TestVariableSelectNode:
         ds = make_dataset(n_features=12)
         node = VariableSelectNode("test_apply_mask_bad", {"method": "apply_mask"})
 
-        with pytest.raises(ValueError, match="Mask length"):
+        with pytest.raises(ValueError, match="boolean vector"):
             await node.execute(X=ds, mask=np.array([True, False, True]))
 
     @pytest.mark.asyncio
-    async def test_vip_requires_model(self, make_dataset):
+    async def test_vip_requires_producer_owned_scores(self, make_dataset):
         from spectra_sherpa.app.services.dag.nodes.selection.variable_select_node import VariableSelectNode
 
         ds = make_dataset()
         node = VariableSelectNode("test_vip", {"method": "vip", "threshold": 1.0})
 
-        with pytest.raises(ValueError, match="requires a PLS"):
-            await node.execute(X=ds)  # no model provided
+        with pytest.raises(ValueError, match="connected producer-owned importance scores"):
+            await node.execute(X=ds)
 
     @pytest.mark.asyncio
     async def test_interval_requires_region(self, make_dataset):
         from spectra_sherpa.app.services.dag.nodes.selection.variable_select_node import VariableSelectNode
 
-        ds = make_dataset()
-        node = VariableSelectNode("test_int2", {"method": "interval"})
-
         with pytest.raises(ValueError, match="region_start"):
-            await node.execute(X=ds)
+            VariableSelectNode("test_int2", {"method": "interval"})
 
     @pytest.mark.asyncio
     async def test_invert_selection(self, make_dataset):
@@ -419,17 +417,38 @@ class TestVariableSelectNode:
         assert n_normal + n_invert == 200
 
 
-def test_sample_partition_generate_python_preserves_export_contract():
-    from spectra_sherpa.app.services.dag.nodes.selection.sample_partition_node import SamplePartitionNode
+def test_train_test_split_generate_python_preserves_export_contract():
+    from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
 
-    node = SamplePartitionNode(
+    node = TrainTestSplitNode(
         "partition_export",
-        {"method": "kennard_stone", "test_size": 0.25, "metric": "euclidean", "n_pcs": 5},
+        {
+            "split_method": "kennard_stone",
+            "test_size": 0.25,
+            "distance_metric": "euclidean",
+            "n_components": 5,
+        },
     )
 
     code = "\n".join(node.generate_python({"X": "input_data"}))
 
-    assert "n_pcs=5" in code
-    assert "build_dataset_like" in code
-    assert "slice_axis_for_indices" in code
-    assert "np.asarray(_raw_y)" in code
+    assert "n_components=5" in code
+    assert "plan_train_test_split" in code
+    assert "materialize_split_outputs" in code
+    assert "_y_input = None" in code
+    assert "bind_split_target(_X_input, _y_input)" in code
+
+
+def test_train_test_split_generate_python_binds_the_named_group_holdout():
+    from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
+
+    node = TrainTestSplitNode(
+        "partition_export",
+        {"split_method": "group_holdout", "held_out_groups": ["MP5"]},
+    )
+
+    code = "\n".join(node.generate_python({"X": "input_data"}))
+
+    assert "method='group_holdout'" in code
+    assert "held_out_groups=['MP5']" in code
+    assert "groups=_split_groups" in code

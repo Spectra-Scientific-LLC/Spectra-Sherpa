@@ -6,20 +6,8 @@ import pytest
 from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset, SpectralAxis
 
 
-class _MiniDataset:
-    def __init__(self, data, units: str | None):
-        self.data = np.asarray(data, dtype=float)
-        self.units = units
-        self.meta = {}
-
-    def copy(self):
-        copied = _MiniDataset(self.data.copy(), self.units)
-        copied.meta = dict(self.meta)
-        return copied
-
-
 def test_simca_extract_rejects_samples_outside_all_class_limits():
-    from spectra_sherpa.app.lib.adapters.scp_extractors import SIMCAExtract
+    from spectra_sherpa.app.lib.fitted_state import SIMCAExtract
 
     extract = SIMCAExtract(
         class_loadings={
@@ -55,10 +43,11 @@ def test_simca_extract_rejects_samples_outside_all_class_limits():
 
 @pytest.mark.asyncio
 async def test_knn_default_model_scales_features_before_distance_calculation():
-    from sklearn.pipeline import Pipeline
-
-    from spectra_sherpa.app.lib.adapters.scp_extractors import KNNExtract
-    from spectra_sherpa.app.services.dag.nodes.classification.knn_nodes import KNNNode
+    from spectra_sherpa.app.lib.fitted_state import KNNExtract
+    from spectra_sherpa.app.services.dag.nodes.classification.knn_nodes import (
+        KNNNode,
+        apply_knn_fitted_state,
+    )
 
     X = SherpaDataset(
         X=np.array(
@@ -72,11 +61,14 @@ async def test_knn_default_model_scales_features_before_distance_calculation():
         sample_axis=SampleAxis(labels=["a0", "a1", "b0", "b1"]),
         target=np.array(["A", "A", "B", "B"], dtype=object),
     )
-    node = KNNNode(node_id="knn_scale", parameters={"n_neighbors": 1, "cv_folds": 2})
+    node = KNNNode(node_id="knn_scale", parameters={"n_neighbors": 1})
 
     result = await node.execute(X=X)
 
-    assert isinstance(result.outputs["model"]["model"], Pipeline)
+    fitted_state = result.outputs["fitted_state"]
+    assert fitted_state["serializer"] == "spectrasherpa.model-artifact.knn/1"
+    assert fitted_state["scale"] is True
+    assert not np.array_equal(np.asarray(fitted_state["x_mean"]), np.zeros(X.X.shape[1]))
     artifact = result.outputs["_model_artifact"]
     assert artifact["metadata"]["model_type"] == "knn"
     assert "x_mean" in artifact["arrays"]
@@ -93,11 +85,12 @@ async def test_knn_default_model_scales_features_before_distance_calculation():
 
     assert raw_extract.predict(query)[0].tolist() == ["B"]
     assert scaled_extract.predict(query)[0].tolist() == ["A"]
+    assert apply_knn_fitted_state(query, fitted_state)[0].tolist() == ["A"]
 
 
 @pytest.mark.asyncio
 async def test_savgol_derivative_uses_physical_axis_spacing():
-    from spectra_sherpa.app.services.dag.nodes.preprocessing.smooth_deriv_nodes import DerivativeNode
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.derivative_node import DerivativeNode
 
     x = np.arange(0.0, 14.0, 2.0)
     ds = SherpaDataset(
@@ -111,14 +104,15 @@ async def test_savgol_derivative_uses_physical_axis_spacing():
         parameters={"method": "savitzky_golay", "deriv": "1", "size": 5, "order": 2},
     )
 
-    result = await node.execute(input_data=ds)
+    execution = await node.execute(input_data=ds)
+    result = execution.outputs["default"]
 
     np.testing.assert_allclose(result.X[0, 2:-2], 2.0 * x[2:-2], atol=1e-10)
 
 
 @pytest.mark.asyncio
 async def test_derivative_rejects_nonuniform_axis_for_physical_units():
-    from spectra_sherpa.app.services.dag.nodes.preprocessing.smooth_deriv_nodes import DerivativeNode
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.derivative_node import DerivativeNode
 
     x = np.array([0.0, 1.0, 3.0, 6.0, 10.0, 15.0])
     ds = SherpaDataset(X=x.reshape(1, -1), feature_axis=SpectralAxis(values=x, units="cm-1"))
@@ -146,29 +140,40 @@ async def test_hca_accepts_ui_metric_aliases():
 def test_percent_transmittance_conversion_uses_declared_units_not_magnitude():
     from spectra_sherpa.app.lib.spectral.conversions import transmittance_to_absorbance
 
-    ds = _MiniDataset([[0.8, 80.0]], "%T")
+    ds = SherpaDataset(X=np.array([[0.8, 80.0]]), units="%T")
     ds.meta["reference_applied"] = True
 
     result = transmittance_to_absorbance(ds)
 
-    np.testing.assert_allclose(result.data, -np.log10(np.array([[0.008, 0.8]])))
+    np.testing.assert_allclose(result.X, -np.log10(np.array([[0.008, 0.8]])))
     assert result.units == "absorbance"
 
 
 def test_fractional_transmittance_rejects_percent_scaled_values_without_declared_percent_units():
     from spectra_sherpa.app.lib.spectral.conversions import transmittance_to_absorbance
 
-    ds = _MiniDataset([[80.0]], "transmittance")
+    ds = SherpaDataset(X=np.array([[80.0]]), units="transmittance")
     ds.meta["reference_applied"] = True
 
     with pytest.raises(ValueError, match="fractional values"):
         transmittance_to_absorbance(ds)
 
 
+def test_transmittance_conversion_refuses_display_label_without_ratio_units():
+    from spectra_sherpa.app.lib.spectral.conversions import transmittance_to_absorbance
+
+    ds = SherpaDataset(X=np.array([[0.8]]), units=None)
+    ds.domain.data_quantity = "Transmittance"
+    ds.meta["reference_applied"] = True
+
+    with pytest.raises(ValueError, match="requires explicit percent or fractional ratio units"):
+        transmittance_to_absorbance(ds)
+
+
 def test_unknown_units_are_not_relabelled_as_absorbance():
     from spectra_sherpa.app.lib.spectral.conversions import ensure_absorbance
 
-    ds = _MiniDataset([[10.0, 12.0]], "counts")
+    ds = SherpaDataset(X=np.array([[10.0, 12.0]]), units="counts")
 
     with pytest.raises(ValueError, match="Cannot auto-convert"):
         ensure_absorbance(ds)
@@ -196,21 +201,3 @@ def test_matrix_csv_does_not_infer_axis_from_filename(tmp_path):
 
     assert ds.feature_axis.title is None
     assert ds.feature_axis.units is None
-
-
-def test_interpolation_rejects_out_of_range_target_grid():
-    from spectra_sherpa.app.lib.scp_compat import HAS_SCP
-
-    if not HAS_SCP:
-        pytest.skip("spectrochempy not installed")
-
-    from spectra_sherpa.app.lib.preprocessing import interpolate_to_grid
-    from spectra_sherpa.app.lib.spectral.dataset import create_spectral_dataset
-
-    ds = create_spectral_dataset(
-        data=np.array([[1.0, 2.0, 3.0]]),
-        wavenumbers=np.array([1000.0, 1001.0, 1002.0]),
-    )
-
-    with pytest.raises(ValueError, match="outside the source spectral coverage"):
-        interpolate_to_grid(ds, np.array([999.0, 1000.0, 1001.0]), method="linear")

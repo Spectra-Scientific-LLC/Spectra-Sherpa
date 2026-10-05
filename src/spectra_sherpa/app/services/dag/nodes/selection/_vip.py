@@ -1,8 +1,4 @@
-"""Shared VIP (Variable Importance in Projection) calculation.
-
-Extracted from PLS-DA so it can be used by both classification nodes
-and the standalone variable selection node.
-"""
+"""Sole Chong-Jun/mdatools VIP (Variable Importance in Projection) authority."""
 
 from __future__ import annotations
 
@@ -15,7 +11,7 @@ def calculate_vip(
     y_loadings: np.ndarray,
     n_features: int,
 ) -> np.ndarray:
-    """Calculate VIP scores from PLS model components.
+    """Calculate combined-response VIP scores from PLS model components.
 
     VIP_i = sqrt(n_features * sum(s_h * w_{i,h}^2) / sum(s_h))
 
@@ -24,8 +20,8 @@ def calculate_vip(
 
     Args:
         x_scores: T matrix, shape (n_samples, n_components).
-        x_weights: W matrix, shape (n_components, n_features) — will be
-            transposed internally to (n_features, n_components).
+        x_weights: W matrix in either common orientation,
+            (n_features, n_components) or (n_components, n_features).
         y_loadings: Q matrix, shape (n_targets, n_components) or
             (n_components,).
         n_features: Number of spectral variables.
@@ -34,13 +30,21 @@ def calculate_vip(
         1-D float64 array of length *n_features*.  Values > 1.0 indicate
         important variables by the standard convention.
     """
+    if isinstance(n_features, bool) or not isinstance(n_features, int) or n_features < 1:
+        raise ValueError("VIP requires a positive feature count")
     t = np.asarray(x_scores, dtype=np.float64)
     w_raw = np.asarray(x_weights, dtype=np.float64)
     q_raw = np.asarray(y_loadings, dtype=np.float64)
 
-    # Ensure 2-D
-    if t.ndim != 2 or w_raw.ndim != 2 or q_raw.ndim < 1:
-        return np.zeros(n_features, dtype=np.float64)
+    if (
+        t.ndim != 2
+        or w_raw.ndim != 2
+        or q_raw.ndim not in {1, 2}
+        or not np.isfinite(t).all()
+        or not np.isfinite(w_raw).all()
+        or not np.isfinite(q_raw).all()
+    ):
+        raise ValueError("VIP requires finite score, weight, and loading matrices")
 
     n_components = t.shape[1]
 
@@ -50,7 +54,7 @@ def calculate_vip(
     elif w_raw.shape == (n_features, n_components):
         w = w_raw
     else:
-        return np.zeros(n_features, dtype=np.float64)
+        raise ValueError("VIP weight dimensions do not match scores and features")
 
     # Normalise loading orientation to (n_components, n_targets).
     q = q_raw.reshape(-1, 1) if q_raw.ndim == 1 else q_raw
@@ -59,62 +63,29 @@ def calculate_vip(
     elif q.shape[1] == n_components:
         q = q.T
     else:
-        return np.zeros(n_features, dtype=np.float64)
+        raise ValueError("VIP loading dimensions do not match score components")
 
-    # Explained Y-variance contribution per latent variable:
-    # diag(T'T QQ') for q shaped (n_components, n_targets).
-    s = np.diag(t.T @ t @ q @ q.T).reshape(n_components, -1)
-    s = np.nan_to_num(s, nan=0.0, posinf=0.0, neginf=0.0)
-    total_s = float(np.sum(s))
-    if total_s <= 1e-12:
-        return np.zeros(n_features, dtype=np.float64)
-
-    # VIP per feature
-    vip = np.zeros(n_features, dtype=np.float64)
-    for i in range(n_features):
-        weights = np.empty(n_components, dtype=np.float64)
-        for j in range(n_components):
-            norm = float(np.linalg.norm(np.nan_to_num(w[:, j], nan=0.0)))
-            if norm <= 1e-12:
-                weights[j] = 0.0
-            else:
-                weights[j] = (w[i, j] / norm) ** 2
-        vip[i] = np.sqrt(n_features * np.sum(s.flatten() * weights) / total_s)
-
-    return np.nan_to_num(vip, nan=0.0, posinf=0.0, neginf=0.0)
-
-
-def extract_vip_from_pls_model(pls_model: object, n_features: int) -> np.ndarray:
-    """Extract VIP scores from a SpectroChemPy PLS or PLS-DA model.
-
-    Tries multiple attribute name conventions for version resilience.
-
-    Args:
-        pls_model: Trained SpectroChemPy PLSRegression instance.
-        n_features: Number of spectral variables in the training data.
-
-    Returns:
-        VIP scores array of length *n_features*, or zeros on failure.
-    """
-    from spectra_sherpa.app.lib.adapters.scp_extractors import _safe_getattr
-
-    def _coerce(raw: object) -> np.ndarray | None:
-        if raw is None:
-            return None
-        arr = np.asarray(raw)
-        if hasattr(raw, "data"):
-            arr = np.asarray(raw.data)
-        return arr.astype(np.float64)
-
-    raw_t = _safe_getattr(pls_model, ("x_scores", "_x_scores", "x_scores_"))
-    raw_w = _safe_getattr(pls_model, ("x_weights", "_x_weights", "x_weights_"))
-    raw_q = _safe_getattr(pls_model, ("y_loadings", "_y_loadings", "y_loadings_"))
-
-    t = _coerce(raw_t)
-    w = _coerce(raw_w)
-    q = _coerce(raw_q)
-
-    if t is None or w is None or q is None:
-        return np.zeros(n_features, dtype=np.float64)
-
-    return calculate_vip(t, w, q, n_features)
+    # Each component contribution is ||t_h||² ||q_h||². A relative activity
+    # floor makes the unitless VIP invariant to changing response units while
+    # excluding a trailing component retained after the response residual is
+    # constant.
+    explained_y = np.sum(t * t, axis=0) * np.sum(q * q, axis=1)
+    if not np.isfinite(explained_y).all() or np.any(explained_y < 0.0):
+        raise ValueError("VIP response contributions are invalid")
+    maximum_contribution = float(np.max(explained_y, initial=0.0))
+    if maximum_contribution <= 0.0:
+        raise ValueError("VIP requires explained response variance")
+    active = explained_y > np.finfo(np.float64).eps * maximum_contribution
+    if not np.any(active):
+        raise ValueError("VIP requires an active response component")
+    active_weights = w[:, active]
+    weight_norms = np.linalg.norm(active_weights, axis=0)
+    if np.any(weight_norms <= 0.0):
+        raise ValueError("VIP has a degenerate weight vector with response contribution")
+    normalized_weights = active_weights / weight_norms
+    active_contributions = explained_y[active]
+    total_contribution = float(np.sum(active_contributions))
+    vip = np.sqrt(n_features * ((normalized_weights * normalized_weights) @ active_contributions) / total_contribution)
+    if vip.shape != (n_features,) or not np.isfinite(vip).all() or np.any(vip < 0.0):
+        raise ValueError("VIP calculation produced invalid scores")
+    return np.asarray(vip, dtype=np.float64)

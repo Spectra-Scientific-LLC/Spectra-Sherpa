@@ -1,0 +1,54 @@
+schema_version: 1
+name: Prepare Supervised Dataset
+slug: supervised_data_preparation
+description: >-
+  Bind measured data to a portable sample table, explicitly apply its sample
+  inclusion decisions, and prepare one downloadable CSV for subsequent local
+  analysis or managed optimization.
+category: preprocessing
+is_active: true
+status: ready
+data_modalities:
+- spectra
+- features
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.file_load
+    label: Load Measured Data
+    parameters: {}
+    position_x: 175
+    position_y: 100
+  - node_id: export_1
+    node_type: output.export
+    label: Download Prepared Dataset
+    parameters:
+      filename: prepared-supervised-data.csv
+      format: csv
+    position_x: 175
+    position_y: 700
+  edges:
+  - from_node_id: data_1
+    to_node_id: export_1
+    from_output: default
+    to_input: default
+  canvas_state:
+    zoom: 0.9
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Exact measured spectra or feature matrix to prepare
+      accepted_data_roles:
+      - X_spectra
+      - X_features
+    Y_reference:
+      role_type: Y_reference
+      node_binding: data_1
+      required: true
+      binding_mode: separate_source
+      description: Portable sample table containing the named target and sample decisions

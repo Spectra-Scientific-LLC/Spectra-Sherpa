@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
+from spectra_sherpa.core.dimension_roles import DimensionRole, canonical_dimension_roles
+
 logger = logging.getLogger(__name__)
 
 # ── URI helpers ──────────────────────────────────────────────────────────
@@ -51,6 +53,12 @@ class TypeDef:
     parent: Optional[str]  # Parent type *name* (e.g. "Array2D"), or None
     parent_uri: Optional[str] = None
     description: str = ""
+    scientific_kind: str = "unclassified"
+    view_kind: str = "unknown"
+    ranks: tuple[int, ...] = ()
+    dimension_roles: tuple[DimensionRole, ...] = ()
+    view_modes: tuple[str, ...] = ()
+    content_categories: tuple[str, ...] = ("unclassified",)
 
 
 # ── Registry ─────────────────────────────────────────────────────────────
@@ -74,7 +82,7 @@ class TypeRegistry:
         if not registry_path.exists():
             raise FileNotFoundError(f"Type registry not found: {registry_path}")
 
-        with open(registry_path) as f:
+        with open(registry_path, encoding="utf-8") as f:
             manifest = json.load(f)
 
         self.version = manifest.get("version", "1.0")
@@ -82,10 +90,20 @@ class TypeRegistry:
         self._by_name.clear()
         self._children.clear()
 
-        for name, entry in manifest.get("types", {}).items():
+        type_entries = manifest.get("types", {})
+        semantics_entries = manifest.get("scientific_semantics", {})
+        if set(type_entries) != set(semantics_entries):
+            missing = sorted(set(type_entries) - set(semantics_entries))
+            extra = sorted(set(semantics_entries) - set(type_entries))
+            raise ValueError(
+                "type registry scientific semantics must cover every type exactly; " f"missing={missing}, extra={extra}"
+            )
+
+        for name, entry in type_entries.items():
             uri = entry["uri"]
             _, major, minor = parse_type_ref(uri)
             parent_name = entry.get("parent")
+            semantics = semantics_entries[name]
 
             td = TypeDef(
                 uri=uri,
@@ -96,6 +114,12 @@ class TypeRegistry:
                 category=entry.get("category", "dataset"),
                 parent=parent_name,
                 description=entry.get("description", ""),
+                scientific_kind=str(semantics["scientific_kind"]),
+                view_kind=str(semantics["view_kind"]),
+                ranks=tuple(int(rank) for rank in semantics["rank"]),
+                dimension_roles=canonical_dimension_roles(semantics["dimension_roles"]),
+                view_modes=tuple(str(mode) for mode in semantics["view_modes"]),
+                content_categories=tuple(str(category) for category in semantics["content_categories"]),
             )
             self._types[uri] = td
             self._by_name[name] = td
@@ -229,6 +253,12 @@ class TypeRegistry:
                 "parent_uri": td.parent_uri,
                 "category": td.category,
                 "description": td.description,
+                "scientific_kind": td.scientific_kind,
+                "view_kind": td.view_kind,
+                "rank": list(td.ranks),
+                "dimension_roles": list(td.dimension_roles),
+                "view_modes": list(td.view_modes),
+                "content_categories": list(td.content_categories),
             }
 
         subtypes: dict[str, list[str]] = {}

@@ -17,6 +17,7 @@ Reference:
 
 from __future__ import annotations
 
+import io
 import logging
 import re
 from pathlib import Path
@@ -25,10 +26,23 @@ from typing import Any
 import numpy as np
 
 from spectra_sherpa.app.core.path_security import resolve_existing_file_path
+from spectra_sherpa.ingestion_errors import ParserLimitError
 
 _JCAMP_EXTENSIONS = {".jdx", ".dx", ".jcamp"}
+_MAX_JCAMP_DATA_LINE_CHARACTERS = 64 * 1024
 
 logger = logging.getLogger(__name__)
+
+
+def _bounded_jcamp_lines(text: str):
+    """Iterate text while rejecting pathological packed lines before token expansion."""
+    for raw_line in io.StringIO(text):
+        if len(raw_line) > _MAX_JCAMP_DATA_LINE_CHARACTERS:
+            raise ParserLimitError(
+                f"JCAMP data line has {len(raw_line)} characters; limit is {_MAX_JCAMP_DATA_LINE_CHARACTERS}"
+            )
+        yield raw_line
+
 
 # Label regex: ##KEY= value (case-insensitive keys)
 _LDR_RE = re.compile(r"^##([^=]+)=\s*(.*)")
@@ -183,6 +197,51 @@ class JCAMPData:
         self.data_type = data_type
 
 
+def count_declared_jcamp_points(text: str) -> int:
+    """Count the exact decoded point cardinality without allocating numeric arrays."""
+    headers: dict[str, str] = {}
+    data_format: str | None = None
+    in_data_block = False
+    count = 0
+    found_data = False
+    for raw_line in _bounded_jcamp_lines(text):
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = _LDR_RE.match(line)
+        if match:
+            key = match.group(1).strip().upper()
+            value = match.group(2).strip()
+            if key in ("XYDATA", "XYPOINTS", "PEAK TABLE"):
+                data_format = key
+                in_data_block = True
+                continue
+            if key == "END":
+                in_data_block = False
+                continue
+            if in_data_block:
+                in_data_block = False
+            headers[key] = value
+            continue
+        if in_data_block:
+            found_data = True
+            if data_format == "XYDATA":
+                parts = _expand_packed_parts(line.replace(",", " ").split())
+                for token in parts[1:]:
+                    kind, value = _decode_packed_token(token)
+                    count += int(value) if kind == "dup" else 1
+            else:
+                count += len(_tokenize_data_line(line)) // 2
+    if data_format is None or not found_data:
+        raise ValueError("No JCAMP data block is available to count")
+    if data_format == "XYDATA":
+        npoints = _safe_int(headers.get("NPOINTS"), None)
+        if npoints is not None and count != npoints:
+            raise ValueError(f"JCAMP point-count mismatch: header NPOINTS={npoints}, encoded {count}")
+        return count
+    return count
+
+
 def read_jcamp(filepath: str | Path) -> JCAMPData:
     """
     Read a JCAMP-DX file and return parsed spectral data.
@@ -231,7 +290,7 @@ def parse_jcamp(text: str) -> JCAMPData:
     data_format: str | None = None
     in_data_block = False
 
-    for raw_line in text.splitlines():
+    for raw_line in _bounded_jcamp_lines(text):
         line = raw_line.strip()
         if not line:
             continue
@@ -320,6 +379,7 @@ def _parse_xydata(
     previous_y: float | None = None
     last_diff: float | None = None
     checkpoint_mismatch_count = 0
+    checkpoints: list[tuple[int, float]] = []
 
     for line in lines:
         parts = _expand_packed_parts(line.replace(",", " ").split())
@@ -328,6 +388,7 @@ def _parse_xydata(
         kind, line_x = _decode_packed_token(parts[0])
         if kind != "absolute":
             raise ValueError(f"JCAMP XYDATA line checkpoint must be absolute, got {parts[0]!r}")
+        checkpoints.append((len(all_y), line_x))
         expected_x = firstx + len(all_y) * deltax if firstx is not None and deltax is not None else None
         if expected_x is not None and not np.isclose(line_x, expected_x, rtol=1e-5, atol=1e-8):
             checkpoint_mismatch_count += 1
@@ -381,8 +442,39 @@ def _parse_xydata(
     if n == 0:
         raise ValueError("No data points parsed from XYDATA block")
 
-    # Build X axis
-    if len(all_x) == n:
+    # A complete fixed-grid declaration is the strongest axis authority for
+    # X++(Y..Y): it carries both endpoints and exact cardinality. Supplier
+    # writers commonly round DELTAX and line checkpoints independently, so
+    # repeatedly expanding those rounded values can create avoidable drift.
+    # Accept the global grid only when DELTAX and every checkpoint remain
+    # consistent with it; materially contradictory files refuse.
+    complete_grid = firstx is not None and lastx is not None and npoints is not None
+    if complete_grid and npoints != n:
+        raise ValueError("JCAMP fixed-grid cardinality does not match decoded XYDATA")
+    if complete_grid and n > 1:
+        assert firstx is not None and lastx is not None
+        global_step = (lastx - firstx) / (n - 1)
+        if not np.isfinite(global_step) or global_step == 0:
+            raise ValueError("JCAMP fixed-grid endpoints do not define a finite monotonic axis")
+        if deltax is not None:
+            declared_tolerance = max(
+                _numeric_text_resolution(headers.get("DELTAX")),
+                abs(global_step) * 1e-12,
+            )
+            if abs(deltax - global_step) > declared_tolerance:
+                raise ValueError("JCAMP DELTAX contradicts FIRSTX/LASTX/NPOINTS fixed grid")
+        checkpoint_tolerance = abs(global_step) * 0.05
+        for point_index, checkpoint in checkpoints:
+            expected = firstx + point_index * global_step
+            if not np.isfinite(checkpoint) or abs(checkpoint - expected) > checkpoint_tolerance:
+                raise ValueError("JCAMP XYDATA line checkpoint contradicts the declared fixed grid")
+        x = np.linspace(firstx * xfactor, lastx * xfactor, n, dtype=np.float64)
+    elif complete_grid and n == 1:
+        assert firstx is not None and lastx is not None
+        if not np.isclose(firstx, lastx, rtol=0.0, atol=_numeric_text_resolution(headers.get("LASTX"))):
+            raise ValueError("JCAMP one-point fixed grid has contradictory endpoints")
+        x = np.asarray([firstx * xfactor], dtype=np.float64)
+    elif len(all_x) == n:
         x = np.array(all_x, dtype=np.float64)
     elif firstx is not None and deltax is not None:
         x = np.array([firstx * xfactor + i * deltax * xfactor for i in range(n)])
@@ -393,6 +485,18 @@ def _parse_xydata(
 
     y = np.array(all_y, dtype=np.float64)
     return x, y
+
+
+def _numeric_text_resolution(value: object) -> float:
+    """Return half one declared least-significant decimal unit."""
+
+    token = str(value or "").strip().split()[0] if str(value or "").strip() else ""
+    match = re.fullmatch(r"[+-]?(?:\d+(?:\.(\d*))?|\.([0-9]+))(?:[Ee]([+-]?\d+))?", token)
+    if match is None:
+        return 0.0
+    decimals = len(match.group(1) if match.group(1) is not None else (match.group(2) or ""))
+    exponent = int(match.group(3) or 0)
+    return 0.5 * (10.0 ** (exponent - decimals))
 
 
 def _parse_xypoints(

@@ -37,14 +37,9 @@ from spectra_sherpa.app.services.dag.node_base import node_registry
 
 
 def _is_ready(template: dict[str, Any]) -> bool:
-    """Return True for templates exposed to users by default.
-
-    Mirrors ``_template_status`` in ``routes/workflow_templates.py``:
-    untagged templates default to "ready"; only explicit ``status: wip``
-    is filtered out by the listing endpoint.
-    """
+    """Return True only for templates explicitly exposed to scientists."""
     template_data = template.get("template_data") or {}
-    return template_data.get("status") != "wip"
+    return template_data.get("status") == "ready"
 
 
 def _load_ready_templates() -> list[dict[str, Any]]:

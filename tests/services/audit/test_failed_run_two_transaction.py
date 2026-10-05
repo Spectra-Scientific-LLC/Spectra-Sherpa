@@ -113,7 +113,7 @@ async def test_failed_run_event_survives_workflow_rollback(async_session, alice_
         final_status="error",
         error_msg="execution exploded mid-run",
         integrity_hash=None,
-        model_ids=None,
+        produced_artifact_uids=None,
         params_snapshot=None,
     )
     assert persisted is not None
@@ -165,7 +165,7 @@ async def test_failed_run_record_uses_fresh_transaction_isolation(async_session,
         final_status="error",
         error_msg="phase B should also fail",
         integrity_hash=None,
-        model_ids=None,
+        produced_artifact_uids=None,
         params_snapshot=None,
     )
     # Whether persisted comes back True or False depends on the model

@@ -17,6 +17,9 @@ class PCAResult:
     loadings: Any
     explained_variance: np.ndarray
     diagnostics: dict[str, Any]
+    workflow_digest: str
+    dataset_content_digests: dict[str, str]
+    artifacts: tuple[dict[str, Any], ...]
     outputs: dict[str, Any]
 
     def __getitem__(self, key: str) -> Any:
@@ -37,6 +40,8 @@ class PCAResult:
         return {
             "sdk_function": "ss.explore.pca",
             "node_type": "model.pca",
+            "workflow_digest": self.workflow_digest,
+            "dataset_content_digests": dict(self.dataset_content_digests),
             "summary": self.summary(),
             "diagnostics": self.diagnostics,
             "outputs": sorted(k for k in self.outputs if not k.startswith("_")),
@@ -51,46 +56,31 @@ def pca(
     scaled: bool = False,
 ) -> PCAResult:
     """Fit PCA using the same runtime path as the GUI ``model.pca`` node."""
-    from spectra_sherpa.app.services.dag.nodes.modeling.pca_nodes import PCANode
+    from .runtime import execute_operation
 
-    node = PCANode(
-        node_id="sdk.model.pca",
+    execution = execute_operation(
+        "model.pca",
         parameters={
             # PCANode stores this GUI parameter as text; preserve that node contract.
             "n_components": str(n_components),
             "standardized": bool(standardized),
             "scaled": bool(scaled),
         },
+        inputs={"default": ds},
     )
-    try:
-        result = _run_node_execute(node.execute(input_data=ds))
-    except ImportError as exc:
-        raise ImportError(
-            "ss.explore.pca requires spectra-sherpa[scp]; install with: pip install 'spectra-sherpa[scp]'"
-        ) from exc
-    outputs = dict(result.outputs)
+    outputs = dict(execution.results["sdk.operation"])
     explained = np.asarray(outputs.get("explained_variance", []), dtype=np.float64)
     return PCAResult(
         model=outputs.get("model"),
         scores=outputs.get("scores", outputs.get("default")),
         loadings=outputs.get("loadings"),
         explained_variance=explained,
-        diagnostics=dict(result.diagnostics or {}),
+        diagnostics=dict(execution.diagnostics.get("sdk.operation", {})),
+        workflow_digest=execution.workflow.workflow_digest,
+        dataset_content_digests=dict(execution.dataset_content_digests),
+        artifacts=tuple(dict(artifact) for artifact in execution.artifacts),
         outputs=outputs,
     )
-
-
-def _run_node_execute(coro):
-    import asyncio
-    import concurrent.futures
-
-    try:
-        asyncio.get_running_loop()
-    except RuntimeError:
-        return asyncio.run(coro)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-        return executor.submit(asyncio.run, coro).result()
 
 
 def _shape_of(value: Any) -> list[int]:

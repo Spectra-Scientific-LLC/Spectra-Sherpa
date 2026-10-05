@@ -1,0 +1,3 @@
+# Preserve scientific fixture, source and evidence bytes in the standalone OSS repo.
+* -text
+/poetry.lock text eol=lf

@@ -1,0 +1,22 @@
+{
+  "name": "spectra-sherpa-desktop",
+  "version": "0.6.0",
+  "private": true,
+  "description": "Public native shell for the Spectra Sherpa OSS workbench",
+  "author": "Spectra Scientific LLC <info@spectrascientific.ai>",
+  "license": "AGPL-3.0-only",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.cjs",
+    "package": "node package.cjs",
+    "smoke": "node smoke.cjs",
+    "smoke:lifecycle": "node lifecycle-smoke.cjs"
+  },
+  "devDependencies": {
+    "@electron/fuses": "2.1.3",
+    "@electron/packager": "20.3.0",
+    "electron": "44.4.5",
+    "playwright": "1.61.0"
+  }
+}

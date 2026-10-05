@@ -22,7 +22,14 @@ from spectra_sherpa.app.services.dag.export_helpers import (
 )
 from spectra_sherpa.app.services.dag.io_contracts import build_dataset_like, coerce_to_sherpa
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
-from spectra_sherpa.app.services.dag.node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata
+from spectra_sherpa.app.services.dag.node_base import (
+    Node,
+    NodeMetadata,
+    NodeParameter,
+    NodePolicy,
+    NodeResult,
+    PortMetadata,
+)
 
 ChemometricsParam = NodeParameter
 
@@ -134,6 +141,8 @@ def param_number(
     description: str | None = None,
     required: bool | None = None,
 ) -> ChemometricsParam:
+    """Declare one bounded numeric parameter for a custom SDK node."""
+
     return ChemometricsParam(
         name=name,
         label=label or _labelize(name),
@@ -155,6 +164,8 @@ def param_bool(
     description: str | None = None,
     required: bool = False,
 ) -> ChemometricsParam:
+    """Declare one Boolean parameter for a custom SDK node."""
+
     return ChemometricsParam(
         name=name,
         label=label or _labelize(name),
@@ -173,6 +184,8 @@ def param_text(
     description: str | None = None,
     required: bool | None = None,
 ) -> ChemometricsParam:
+    """Declare one text parameter for a custom SDK node."""
+
     return ChemometricsParam(
         name=name,
         label=label or _labelize(name),
@@ -192,6 +205,8 @@ def param_select(
     description: str | None = None,
     required: bool = True,
 ) -> ChemometricsParam:
+    """Declare one closed-choice parameter for a custom SDK node."""
+
     normalized_options: list[dict[str, Any]] = []
     for option in options:
         if isinstance(option, dict):
@@ -269,8 +284,8 @@ class ChemometricsNode(Node):
             label=cls.label or "",
             description=(cls.description or cls.label or ""),
             parameters=cls._parameter_defs(),
-            input_types=["NDDataset"],
-            output_type="NDDataset",
+            input_types=["SherpaDataset"],
+            output_type="SherpaDataset",
             input_ports=[
                 PortMetadata(
                     name="default",
@@ -288,6 +303,7 @@ class ChemometricsNode(Node):
                 )
             ],
             diagnostics=list(_DIAGNOSTIC_KEYS),
+            policy=NodePolicy(),
         )
         return cls.metadata
 

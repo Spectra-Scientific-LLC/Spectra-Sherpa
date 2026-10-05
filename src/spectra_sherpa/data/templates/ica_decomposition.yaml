@@ -1,0 +1,83 @@
+schema_version: 1
+name: FastICA Blind Source Separation
+slug: ica_decomposition
+description: Seeded independent-component decomposition with inspectable source scores,
+  mixing spectral profiles, reconstruction residuals, and a replayable fitted state.
+category: exploratory
+is_active: true
+data_modalities:
+- spectra
+- features
+status: ready
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.file_load
+    label: Load Mixture Data
+    parameters: {}
+    position_x: 250
+    position_y: 50
+  - node_id: model_1
+    node_type: model.ica
+    label: Fit FastICA Decomposition
+    parameters:
+      n_components: 3
+      algorithm: parallel
+      fun: logcosh
+      whiten: unit-variance
+      max_iter: 400
+      tol: 0.0001
+      random_seed: 42
+    position_x: 250
+    position_y: 300
+  - node_id: sources_plot
+    node_type: output.plot
+    label: Independent Source Scores
+    parameters:
+      plot_type: scores
+    position_x: 50
+    position_y: 550
+  - node_id: profiles_plot
+    node_type: output.plot
+    label: Mixing Spectral Profiles
+    parameters:
+      plot_type: spectra
+    position_x: 450
+    position_y: 550
+  - node_id: residual_summary
+    node_type: stats.summary
+    label: Reconstruction Residual Summary
+    parameters: {}
+    position_x: 250
+    position_y: 800
+  edges:
+  - from_node_id: data_1
+    to_node_id: model_1
+  - from_node_id: model_1
+    to_node_id: sources_plot
+    from_output: sources
+  - from_node_id: model_1
+    to_node_id: profiles_plot
+    from_output: components
+  - from_node_id: model_1
+    to_node_id: residual_summary
+    from_output: residuals
+  canvas_state:
+    zoom: 1.0
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Repeated mixture observations for blind source separation
+      accepted_data_roles:
+      - X_spectra
+      - X_features
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+      - UV-Vis

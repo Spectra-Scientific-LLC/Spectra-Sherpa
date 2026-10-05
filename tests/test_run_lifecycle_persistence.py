@@ -133,7 +133,7 @@ async def test_auto_persist_run_writes_cancelled_status(test_session, test_user:
         final_status="cancelled",
         error_msg="Workflow execution timed out after 30s",
         integrity_hash=None,
-        model_ids=[],
+        produced_artifact_uids=[],
         params_snapshot={},
         source_metadata=_build_source_metadata(
             executor_status="cancelled",

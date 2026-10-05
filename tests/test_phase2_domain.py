@@ -18,7 +18,7 @@ from spectra_sherpa.app.services.dag.meta_helpers import (
     detect_x_axis_type,
     get_spectral_info,
 )
-from spectra_sherpa.app.services.dag.nodes.data import DataSourceNode
+from spectra_sherpa.core.axis_semantics import AxisQuantity
 
 # ---------------------------------------------------------------------------
 # Slice 1: Detection functions with SherpaDataset
@@ -29,7 +29,11 @@ class TestDetectXAxisType:
     def test_wavenumber(self):
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
+            feature_axis=SpectralAxis(
+                values=np.linspace(400, 4000, 100),
+                units="cm-1",
+                quantity=AxisQuantity.WAVENUMBER,
+            ),
         )
         assert detect_x_axis_type(ds) == "wavenumber"
 
@@ -63,14 +67,22 @@ class TestDetectSpectralTechnique:
     def test_ir_from_wavenumber_range(self):
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 100), units="cm-1"),
+            feature_axis=SpectralAxis(
+                values=np.linspace(400, 4000, 100),
+                units="cm-1",
+                quantity=AxisQuantity.WAVENUMBER,
+            ),
         )
         assert detect_spectral_technique(ds) == "IR"
 
     def test_nir_from_wavenumber_range(self):
         ds = SherpaDataset(
             X=np.zeros((3, 100)),
-            feature_axis=SpectralAxis(values=np.linspace(4000, 10000, 100), units="cm-1"),
+            feature_axis=SpectralAxis(
+                values=np.linspace(4000, 10000, 100),
+                units="cm-1",
+                quantity=AxisQuantity.WAVENUMBER,
+            ),
         )
         assert detect_spectral_technique(ds) == "NIR"
 
@@ -150,7 +162,11 @@ class TestGetSpectralInfo:
     def test_full_info(self):
         ds = SherpaDataset(
             X=np.zeros((5, 200)),
-            feature_axis=SpectralAxis(values=np.linspace(400, 4000, 200), units="cm-1"),
+            feature_axis=SpectralAxis(
+                values=np.linspace(400, 4000, 200),
+                units="cm-1",
+                quantity=AxisQuantity.WAVENUMBER,
+            ),
             units="absorbance",
         )
         info = get_spectral_info(ds)
@@ -203,29 +219,6 @@ class TestDomainPopulation:
         assert ds.domain.technique == "IR"
         assert ds.domain.inferred is not None
         assert ds.domain.inferred.confidence == 0.8
-
-    def test_data_source_promotes_instrument_and_measurement_mode(self):
-        node = DataSourceNode(node_id="phase2-domain-node", parameters={})
-        ds = SherpaDataset(
-            X=np.zeros((4, 6)),
-            extra={
-                "scp.instrument_metadata": {
-                    "manufacturer": "Bruker",
-                    "model": "ALPHA",
-                },
-                "scp.sample_info": {
-                    "sampling_technique": "atr",
-                },
-            },
-        )
-        enriched = node._apply_domain_context_hints(
-            ds,
-            source="file",
-            sklearn_dataset="iris",
-            eigenvector_dataset=None,
-        )
-        assert enriched.domain.instrument == "Bruker ALPHA"
-        assert enriched.domain.measurement_mode == "ATR"
 
 
 # ---------------------------------------------------------------------------

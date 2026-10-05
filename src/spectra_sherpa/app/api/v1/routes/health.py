@@ -18,37 +18,73 @@ router = APIRouter()
 
 
 class HealthResponse(BaseModel):
-    status: Literal["ok", "degraded"]
-    plugin_failure_count: int | None = None
+    status: Literal["ok"]
 
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check() -> dict:
-    from spectra_sherpa.app.services.plugin_loader import plugin_load_failures
-
-    result: dict = {"status": "ok"}
-    if plugin_load_failures:
-        result["status"] = "degraded"
-        result["plugin_failure_count"] = len(plugin_load_failures)
-    return result
+    return {"status": "ok"}
 
 
 class VersionResponse(BaseModel):
     backend_version: str
+    python_version: str | None = None
+    build_commit: str | None = None
+    signing_identity: str | None = None
+    package_hashes: dict[str, str] | None = None
 
 
-@router.get("/version", response_model=VersionResponse)
+# exclude_none keeps the public contract intact. Provenance comes from a
+# packaged desktop bundle or a deployment's installed revision artifact.
+# A plain pip install/dev checkout has neither; emitting nulls changes the shape
+# every consumer sees. Two places lock that shape deliberately:
+# tests/test_e2e_local_mode.py::test_version and the wheel qualification smoke
+# in scripts/qualify_release_artifacts.py.
+@router.get("/version", response_model=VersionResponse, response_model_exclude_none=True)
 async def app_version() -> dict:
-    """Return the running backend's package version.
+    """Return the running backend's package version and provenance.
 
     Public (no auth) so the frontend can read it before any user is
     signed in.  Pairs with the build-time-injected
     ``__SHERPA_FRONTEND_VERSION__`` on the frontend so users can spot
     bundle/server drift after upgrades.
     """
+    import json
+    import sys
+    from pathlib import Path
+
     from spectra_sherpa import __version__
 
-    return {"backend_version": __version__}
+    response: dict = {"backend_version": __version__}
+
+    # Docker embeds the admitted source revision in a read-only build artifact.
+    # Do not infer deployment identity from the working checkout or package tag.
+    try:
+        import re
+
+        revision = Path("/usr/local/share/spectra/source-revision").read_text(encoding="utf-8").strip()
+        if re.fullmatch(r"[0-9a-f]{40}", revision) and revision != "0" * 40:
+            response["build_commit"] = revision
+    except (OSError, UnicodeError):
+        pass
+
+    if hasattr(sys, "_MEIPASS"):
+        provenance_path = Path(sys._MEIPASS) / "provenance.json"
+        if provenance_path.exists():
+            try:
+                provenance_data = json.loads(provenance_path.read_text(encoding="utf-8"))
+                response.update(
+                    {
+                        "python_version": provenance_data.get("python_version"),
+                        "build_commit": provenance_data.get("build_commit"),
+                        "signing_identity": provenance_data.get("signing_identity"),
+                        "package_hashes": provenance_data.get("package_hashes"),
+                    }
+                )
+            except Exception:
+                pass
+
+    return response
 
 
 @router.get("/onboarding")

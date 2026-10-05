@@ -5,14 +5,14 @@ description: Multivariate Curve Resolution with kinetic constraints for time-res
   spectroscopy and reaction mechanism analysis.
 category: curve_resolution
 is_active: true
+status: pending_qualification
+status_detail: Representative time-ordered kinetic data and complete optional-runtime execution qualification are pending.
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Time-Series Spectra
-    parameters:
-      source: spectrochempy
-      example_dataset: irdata
+    parameters: {}
     position_x: 175
     position_y: 50
   - node_id: preprocess_1
@@ -110,12 +110,6 @@ template_data:
       - Raman
       - UV-Vis
   certified_datasets:
-  - source: spectrochempy
-    name: irdata
-  - source: spectrochempy
-    name: ramandata
-  - source: spectrochempy
-    name: matlabdata/als2004dataset.MAT
   - source: eigenvector
     name: diesel_nir
   - source: eigenvector

@@ -4,12 +4,13 @@ Registered as ``selection.nested_cv``.
 
 Performs variable selection *inside* each CV fold to prevent information
 leakage.  For each outer fold:
-  1. Select variables on the training set only
-  2. Tune the PLS latent-variable count by inner CV on selected training variables
-  3. Fit PLS on the selected training variables
+  1. Tune selection and PLS together inside inner-training folds
+  2. Refit selection on the complete outer-training fold
+  3. Fit PLS on the selected outer-training variables
   4. Predict the held-out set using only selected variables
 
-Reports honest (unbiased) RMSECV, R², Q² and per-fold selection stability.
+Reports outer-fold RMSECV, R², Q² and selection stability.
+Generalization claims depend on the declared sampling design.
 
 This is the correct way to evaluate variable selection in chemometrics —
 selecting on full data then cross-validating is optimistically biased.
@@ -19,17 +20,123 @@ Reference: Filzmoser et al., J. Chemometrics 23 (2009) 160-171.
 
 from __future__ import annotations
 
+import hashlib
 import logging
-from typing import Any
+from typing import Any, Mapping
 
 import numpy as np
-from sklearn.cross_decomposition import PLSRegression
 from sklearn.model_selection import KFold
 
+import spectra_sherpa.app.services.dag.regression_comparison as regression_comparison
+import spectra_sherpa.sdk.validate as sdk_validate
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    WorkerCapability,
+)
+
+from ... import out_of_fold_evidence
 from ...io_contracts import bind_X, bind_y, to_numpy_2d, to_numpy_y
-from ...node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
+from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, NodeResult, PortMetadata, register_node
+from ...presentation_contract import NodePresentationContract, ScientificPresentation
+from ..modeling import pls_core
+from . import _vip, cars_node, mcuve_node, spa_node
 
 logger = logging.getLogger(__name__)
+
+_SELECTION_METHODS = frozenset({"vip", "coef_abs", "cars", "mcuve", "spa", "none"})
+_SELECTOR_PROFILE_VERSION = "spectra-nested-selector-profile/1"
+_CARS_ITERATIONS = 30
+_CARS_CV_FOLDS_MAX = 3
+_MCUVE_RESAMPLES = 30
+_MCUVE_CALIBRATION_FRACTION = 0.8
+_MCUVE_MAX_VARIABLES = 20
+_SPA_MAX_VARIABLES = 20
+_SPA_CV_FOLDS_MAX = 3
+
+
+def _canonical_nested_cv_parameters(parameters: dict[str, object]) -> dict[str, object]:
+    """Return the exact, bounded local nested-CV parameter representation."""
+
+    group_source = parameters.get("group_source", "explicit_or_rows")
+    if group_source not in {"explicit_or_rows", "attached"}:
+        raise ValueError("nested CV group_source must be explicit_or_rows or attached")
+    max_selector_fits = parameters.get("max_selector_fits", 500)
+    if isinstance(max_selector_fits, bool) or not isinstance(max_selector_fits, int) or max_selector_fits < 1:
+        raise ValueError("max_selector_fits must be a positive integer")
+    n_repeats = parameters.get("n_repeats", 1)
+    if isinstance(n_repeats, bool) or not isinstance(n_repeats, int) or not 1 <= n_repeats <= 20:
+        raise ValueError("nested CV n_repeats must be an integer between 1 and 20")
+    method = parameters["selection_method"]
+    n_components = parameters["n_components"]
+    cv_folds = parameters["cv_folds"]
+    vip_threshold = parameters["vip_threshold"]
+    coef_threshold = parameters["coef_threshold"]
+    random_seed = parameters["random_seed"]
+    if not isinstance(method, str) or method not in _SELECTION_METHODS:
+        raise ValueError("nested CV selection method is not admitted")
+    for name, value in (
+        ("n_components", n_components),
+        ("cv_folds", cv_folds),
+        ("random_seed", random_seed),
+    ):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"nested CV {name} must be an integer")
+    for name, value in (("vip_threshold", vip_threshold), ("coef_threshold", coef_threshold)):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"nested CV {name} must be a finite number")
+        if not np.isfinite(value):
+            raise ValueError(f"nested CV {name} must be a finite number")
+    if not 1 <= n_components <= 50:
+        raise ValueError("nested CV n_components must be between 1 and 50")
+    if not 2 <= cv_folds <= 20:
+        raise ValueError("nested CV cv_folds must be between 2 and 20")
+    if not 0 <= random_seed <= 4_294_967_295:
+        raise ValueError("nested CV random_seed must be an unsigned 32-bit integer")
+    if float(vip_threshold) < 0.1:
+        raise ValueError("nested CV vip_threshold must be at least 0.1")
+    if float(coef_threshold) < 0.0:
+        raise ValueError("nested CV coef_threshold must be non-negative")
+    return {
+        "selection_method": method,
+        "n_repeats": n_repeats,
+        "group_source": group_source,
+        "max_selector_fits": max_selector_fits,
+        "n_components": n_components,
+        "cv_folds": cv_folds,
+        "vip_threshold": float(vip_threshold),
+        "coef_threshold": float(coef_threshold),
+        "random_seed": random_seed,
+    }
+
+
+def _derive_seed(root_seed: int, *, purpose: str, fold_index: int) -> int:
+    """Derive one deterministic uint32 seed without overflow arithmetic."""
+
+    encoded = f"spectra-nested-cv-seed/1:{root_seed}:{purpose}:{fold_index}".encode("ascii")
+    return int.from_bytes(hashlib.sha256(encoded).digest()[:4], "big", signed=False)
+
+
+def _selector_profile(method: str) -> dict[str, object]:
+    if method == "cars":
+        fixed: dict[str, object] = {"n_iterations": _CARS_ITERATIONS, "cv_folds_max": _CARS_CV_FOLDS_MAX}
+    elif method == "mcuve":
+        fixed = {
+            "n_resamples": _MCUVE_RESAMPLES,
+            "calibration_fraction": _MCUVE_CALIBRATION_FRACTION,
+            "max_selected_variables": _MCUVE_MAX_VARIABLES,
+        }
+    elif method == "spa":
+        fixed = {
+            "max_selected_variables": _SPA_MAX_VARIABLES,
+            "cv_folds_max": _SPA_CV_FOLDS_MAX,
+            "cv_order": "seeded_random",
+        }
+    else:
+        fixed = {}
+    return {"schema_version": _SELECTOR_PROFILE_VERSION, "method": method, "fixed_settings": fixed}
 
 
 def _select_variables_inner(
@@ -37,90 +144,82 @@ def _select_variables_inner(
     y_train: np.ndarray,
     method: str,
     n_components: int,
-    **method_kwargs: Any,
+    vip_threshold: float,
+    coef_threshold: float,
+    random_seed: int,
 ) -> np.ndarray:
     """Run variable selection on training fold only. Returns boolean mask."""
     n_features = X_train.shape[1]
 
     if method == "vip":
-        threshold = method_kwargs.get("vip_threshold", 1.0)
-        pls = PLSRegression(n_components=min(n_components, X_train.shape[0] - 1, n_features - 1), scale=False)
-        pls.fit(X_train, y_train)
-        from ._vip import calculate_vip
-
-        # sklearn: x_weights_ (n_features, n_comp) -> need (n_comp, n_features)
-        # sklearn: y_loadings_ (n_targets, n_comp) -> pass as-is
-        vip = calculate_vip(
-            pls.x_scores_,
-            pls.x_weights_.T,
-            pls.y_loadings_,
+        pls = pls_core.fit_simpls_exact(
+            X_train,
+            y_train,
+            n_components=min(n_components, X_train.shape[0] - 1, n_features - 1),
+            scale=False,
+        )
+        vip = _vip.calculate_vip(
+            pls.x_scores,
+            pls.x_weights.T,
+            pls.y_loadings.T,
             n_features,
         )
-        mask = vip >= threshold
-        if np.sum(mask) == 0:
-            # Fallback: keep top 10% by VIP
-            n_keep = max(1, n_features // 10)
-            top_idx = np.argsort(vip)[-n_keep:]
-            mask = np.zeros(n_features, dtype=bool)
-            mask[top_idx] = True
-        return mask
+        return vip >= vip_threshold
 
     elif method == "cars":
-        from .cars_node import _cars_run
-
-        mask, _, _ = _cars_run(
+        mask, _, _ = cars_node._cars_run(
             X_train,
             y_train,
             n_components,
-            cv_folds=min(3, X_train.shape[0]),
-            n_iterations=method_kwargs.get("cars_iterations", 30),
+            cv_folds=min(_CARS_CV_FOLDS_MAX, X_train.shape[0]),
+            n_iterations=_CARS_ITERATIONS,
+            seed=random_seed,
+            fail_on_fit_error=True,
         )
-        if np.sum(mask) == 0:
-            return np.ones(n_features, dtype=bool)
         return mask
 
-    elif method == "uve":
-        from .uve_node import _uve_mc
-
-        real_rel, noise_rel = _uve_mc(
+    elif method == "mcuve":
+        result = mcuve_node._mcuve_dispatch(
             X_train,
             y_train,
-            n_components,
-            n_resamples=method_kwargs.get("uve_resamples", 30),
-            test_fraction=0.2,
+            n_components=n_components,
+            n_resamples=_MCUVE_RESAMPLES,
+            calibration_fraction=_MCUVE_CALIBRATION_FRACTION,
+            n_variables=min(_MCUVE_MAX_VARIABLES, n_features),
+            random_seed=random_seed,
         )
-        cutoff = np.percentile(noise_rel, method_kwargs.get("uve_cutoff", 90.0))
-        mask = real_rel > cutoff
-        if np.sum(mask) == 0:
-            return np.ones(n_features, dtype=bool)
-        return mask
+        return np.asarray(result["feature_mask"], dtype=bool)
 
     elif method == "spa":
-        from .spa_node import _spa_projections
-
-        n_select = method_kwargs.get("spa_n_select", min(20, n_features))
-        X_mc = X_train - X_train.mean(axis=0)
-        selected_idx = _spa_projections(X_mc, n_select)
-        mask = np.zeros(n_features, dtype=bool)
-        mask[selected_idx] = True
-        return mask
+        cv_folds = min(_SPA_CV_FOLDS_MAX, X_train.shape[0])
+        smallest_training_fold = min(
+            X_train.shape[0] - int(np.sum(np.arange(X_train.shape[0]) % cv_folds == fold)) for fold in range(cv_folds)
+        )
+        max_variables = min(_SPA_MAX_VARIABLES, n_features, smallest_training_fold - 1)
+        result = spa_node._spa_dispatch(
+            X_train,
+            y_train,
+            min_variables=1,
+            max_variables=max_variables,
+            cv_folds=cv_folds,
+            cv_order="seeded_random",
+            random_seed=random_seed,
+        )
+        return np.asarray(result["feature_mask"], dtype=bool)
 
     elif method == "coef_abs":
-        threshold = method_kwargs.get("coef_threshold", 0.01)
-        pls = PLSRegression(n_components=min(n_components, X_train.shape[0] - 1, n_features - 1), scale=False)
-        pls.fit(X_train, y_train)
-        coef = np.abs(pls.coef_.flatten()[:n_features])
-        mask = coef >= threshold
-        if np.sum(mask) == 0:
-            n_keep = max(1, n_features // 10)
-            top_idx = np.argsort(coef)[-n_keep:]
-            mask = np.zeros(n_features, dtype=bool)
-            mask[top_idx] = True
-        return mask
+        pls = pls_core.fit_simpls_exact(
+            X_train,
+            y_train,
+            n_components=min(n_components, X_train.shape[0] - 1, n_features - 1),
+            scale=False,
+        )
+        coef = np.abs(pls.coefficients.reshape(-1)[:n_features])
+        return coef >= coef_threshold
 
-    else:
-        # No selection — use all variables
+    if method == "none":
         return np.ones(n_features, dtype=bool)
+    raise ValueError(f"unsupported nested CV selection method: {method}")
 
 
 def _choose_pls_components_inner_cv(
@@ -128,7 +227,12 @@ def _choose_pls_components_inner_cv(
     y_train: np.ndarray,
     *,
     max_components: int,
+    random_seed: int,
     inner_folds: int = 3,
+    groups: np.ndarray | None = None,
+    selection_method: str = "none",
+    vip_threshold: float = 1.0,
+    coef_threshold: float = 0.0,
 ) -> int:
     """Choose PLS latent variables by inner CV inside one outer training fold."""
     n_samples, n_features = X_train.shape
@@ -140,28 +244,434 @@ def _choose_pls_components_inner_cv(
     if n_splits < 2:
         return 1
 
-    kf = KFold(n_splits=n_splits, shuffle=True, random_state=17)
-    best_components = 1
+    if groups is None:
+        kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_seed)
+        inner_partitions = list(kf.split(X_train))
+    else:
+        n_splits = min(n_splits, len(np.unique(groups)))
+        if n_splits < 2:
+            raise ValueError("nested group CV requires at least two training groups in every outer fold")
+        inner_plan = sdk_validate.make_split_plan(n_samples, n_splits=n_splits, groups=groups)
+        inner_partitions = [(fold.train, fold.test) for fold in inner_plan.folds]
+    max_consistent = min(
+        max_valid,
+        min(len(inner_train_idx) - 1 for inner_train_idx, _ in inner_partitions),
+    )
+    if max_consistent < 1:
+        return 1
+    best_components: int | None = None
     best_mse = float("inf")
 
-    for n_comp in range(1, max_valid + 1):
-        fold_errors: list[float] = []
-        for inner_train_idx, inner_val_idx in kf.split(X_train):
-            n_comp_fit = min(n_comp, len(inner_train_idx) - 1, X_train.shape[1])
-            if n_comp_fit < 1:
-                continue
-            pls = PLSRegression(n_components=n_comp_fit, scale=False)
-            pls.fit(X_train[inner_train_idx], y_train[inner_train_idx])
-            y_hat = pls.predict(X_train[inner_val_idx]).reshape(-1)
-            fold_errors.append(float(np.mean((y_train[inner_val_idx] - y_hat) ** 2)))
-        if not fold_errors:
+    for n_comp in range(1, max_consistent + 1):
+        squared_error = 0.0
+        count = 0
+        for inner_index, (inner_train_idx, inner_val_idx) in enumerate(inner_partitions):
+            # Neither selection nor model fitting may see inner-validation targets.
+            mask = _select_variables_inner(
+                X_train[inner_train_idx],
+                y_train[inner_train_idx],
+                selection_method,
+                n_comp,
+                vip_threshold,
+                coef_threshold,
+                _derive_seed(random_seed, purpose="inner_selector", fold_index=inner_index),
+            )
+            if mask.shape != (n_features,) or mask.dtype != np.bool_:
+                raise ValueError("inner CV selector produced an invalid selection mask")
+            if int(mask.sum()) < n_comp:
+                # A candidate must be evaluable in every fold; do not score a
+                # favourable subset or silently change its component count.
+                count = 0
+                break
+            pls = pls_core.fit_simpls_exact(
+                X_train[inner_train_idx][:, mask],
+                y_train[inner_train_idx],
+                n_components=n_comp,
+                scale=False,
+            )
+            y_hat = pls.predict(X_train[inner_val_idx][:, mask]).reshape(-1)
+            squared_error += float(np.sum((y_train[inner_val_idx] - y_hat) ** 2))
+            count += len(inner_val_idx)
+        if count != n_samples:
             continue
-        mse = float(np.mean(fold_errors))
+        mse = squared_error / count
         if mse < best_mse:
             best_mse = mse
             best_components = n_comp
+    if best_components is None:
+        raise ValueError("no component candidate has sufficient selected features in every inner fold")
+    return best_components
 
-    return int(best_components)
+
+def _nested_cv_inputs(X: object, y: object) -> tuple[np.ndarray, np.ndarray]:
+    """Bind one finite matrix and one finite quantitative target without guessing."""
+
+    X_ds = bind_X(X, missing_message="Nested CV requires X", allow_array=True)
+    y_val = bind_y(y, X=X_ds, required=True, infer_from_X=True, dataset_as_data=False)
+    X_array = to_numpy_2d(X_ds, name="X", dtype=np.float64)
+    y_array = to_numpy_y(y_val, name="y", expected_samples=X_array.shape[0])
+    if y_array.ndim == 2:
+        if y_array.shape[1] != 1:
+            raise ValueError("nested CV supports exactly one quantitative target")
+        y_array = y_array[:, 0]
+    if y_array.ndim != 1 or not np.isfinite(y_array).all():
+        raise ValueError("nested CV requires one finite quantitative target")
+    if X_array.shape[0] < 3 or X_array.shape[1] < 2 or not np.isfinite(X_array).all():
+        raise ValueError("nested CV requires at least three finite samples and two finite features")
+    return np.array(X_array, copy=True), np.array(y_array, copy=True)
+
+
+def _regression_cv_metrics(target: np.ndarray, predictions: np.ndarray) -> dict[str, Any]:
+    """Compute the one-target registry metrics plus bias-corrected SEP/RER."""
+
+    registry = sdk_validate.metrics(target, predictions)
+    if registry.r2 is None or target.size < 2:
+        raise ValueError("nested CV cannot score a constant or single-sample target")
+    residual = predictions - target
+    sep = float(np.sqrt(np.sum((residual - registry.bias) ** 2) / (target.size - 1)))
+    if sep == 0.0:
+        rer: float | None = None
+        rer_status = "undefined_zero_sep"
+    else:
+        rer = float((np.max(target) - np.min(target)) / sep)
+        rer_status = "defined"
+    return {
+        "statistics": regression_comparison.build_regression_statistics(
+            target, predictions, metric_records=[registry.as_dict()]
+        ),
+        "rmsecv": registry.rmse,
+        "r2": registry.r2,
+        "bias": registry.bias,
+        "sep": sep,
+        "rer": rer,
+        "rer_status": rer_status,
+        "metric_registry_version": registry.registry_version,
+    }
+
+
+def _nested_groups(groups: object, n_samples: int) -> np.ndarray | None:
+    if groups is None:
+        return None
+    values = np.asarray(groups)
+    if values.ndim != 1 or len(values) != n_samples:
+        raise ValueError("nested CV groups require one identity per row")
+    normalized = [
+        sdk_validate._normalize_group_identity(v.item() if isinstance(v, np.generic) else v, name="nested CV group")
+        for v in values
+    ]
+    if len({type(value) for value in normalized}) != 1:
+        raise ValueError("nested CV group identities must have a consistent scalar type")
+    return np.asarray(normalized)
+
+
+def _bind_nested_groups(X: object, groups: object = None, group_source: str = "explicit_or_rows") -> object:
+    from ..data.split_planner import bind_split_groups
+
+    if group_source == "explicit_or_rows":
+        return groups
+    attached = bind_split_groups(X)
+    if attached is None:
+        raise ValueError("Attached grouping was selected but no authoritative group binding is present")
+    if groups is not None and attached is not None and not np.array_equal(np.asarray(groups), attached):
+        raise ValueError("explicit groups contradict the attached specimen group authority")
+    return groups if groups is not None else attached
+
+
+def _nested_cv_dispatch(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    producer_node_id: str,
+    selection_method: str,
+    n_components: int,
+    cv_folds: int,
+    vip_threshold: float,
+    coef_threshold: float,
+    random_seed: int,
+    groups: object = None,
+    n_repeats: int = 1,
+    group_source: str = "explicit_or_rows",
+    max_selector_fits: int = 500,
+    _group_repeat_seed: int | None = None,
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Run the sole local nested-CV implementation and return outputs plus diagnostics."""
+
+    parameters = _canonical_nested_cv_parameters(
+        {
+            "selection_method": selection_method,
+            "n_repeats": n_repeats,
+            "group_source": group_source,
+            "max_selector_fits": max_selector_fits,
+            "n_components": n_components,
+            "cv_folds": cv_folds,
+            "vip_threshold": vip_threshold,
+            "coef_threshold": coef_threshold,
+            "random_seed": random_seed,
+        }
+    )
+    selector_fit_bound = n_repeats * cv_folds * (3 * n_components + 1)
+    if selector_fit_bound > max_selector_fits:
+        raise ValueError(
+            f"Requested nested validation has a conservative bound of {selector_fit_bound} selector calls, "
+            f"above the declared max_selector_fits={max_selector_fits}. Reduce folds, components or repeats, "
+            "or explicitly raise Selector Fit Budget. The existing node time limit still applies."
+        )
+    if n_repeats > 1:
+        return _repeated_nested_cv(X, y, groups=groups, producer_node_id=producer_node_id, parameters=parameters)
+    matrix = np.asarray(X, dtype=np.float64)
+    target = np.asarray(y, dtype=np.float64)
+    if matrix.ndim != 2 or target.ndim != 1 or matrix.shape[0] != target.shape[0]:
+        raise ValueError("nested CV requires a two-dimensional X and matching one-dimensional y")
+    if matrix.shape[0] < 3 or matrix.shape[1] < 2 or not np.isfinite(matrix).all() or not np.isfinite(target).all():
+        raise ValueError("nested CV requires at least three finite samples and two finite features")
+    folds_requested = int(parameters["cv_folds"])
+    if folds_requested > matrix.shape[0]:
+        raise ValueError("nested CV fold count cannot exceed the number of samples")
+
+    group_values = _nested_groups(groups, matrix.shape[0])
+    random_seed_value = int(parameters["random_seed"])
+    split_plan = sdk_validate.make_split_plan(
+        matrix.shape[0],
+        n_splits=folds_requested,
+        groups=group_values,
+        shuffle=group_values is None,
+        random_state=random_seed_value if group_values is None else None,
+    )
+    if group_values is not None and _group_repeat_seed is not None:
+        # Randomize independent units, never their constituent observations.
+        identities = np.unique(group_values)
+        np.random.default_rng(_group_repeat_seed).shuffle(identities)
+        chunks = np.array_split(identities, folds_requested)
+        split_plan = sdk_validate.SplitPlan(
+            method="group_kfold",
+            n_samples=len(target),
+            grouped=True,
+            folds=tuple(
+                sdk_validate.Fold(
+                    np.flatnonzero(~np.isin(group_values, held)), np.flatnonzero(np.isin(group_values, held))
+                )
+                for held in chunks
+            ),
+        )
+        split_plan.validate(group_values)
+    if any(fold.train.size < 2 for fold in split_plan.folds):
+        raise ValueError("nested CV requires at least two training samples in every outer fold")
+    folds = [(np.array(fold.train, copy=True), np.array(fold.test, copy=True)) for fold in split_plan.folds]
+    split_digest = split_plan.digest
+    predictions = np.full(matrix.shape[0], np.nan, dtype=np.float64)
+    fold_assignments = np.full(matrix.shape[0], -1, dtype=np.int64)
+    fold_masks: list[np.ndarray] = []
+    fold_n_selected: list[int] = []
+    fold_n_components: list[int] = []
+    fold_requested_components: list[int] = []
+    fold_mse: list[float] = []
+    fold_sizes: list[int] = []
+
+    for fold_index, (train_index, test_index) in enumerate(folds):
+        X_train, X_test = matrix[train_index], matrix[test_index]
+        y_train, y_test = target[train_index], target[test_index]
+        component_count = _choose_pls_components_inner_cv(
+            X_train,
+            y_train,
+            max_components=min(int(parameters["n_components"]), len(train_index) - 1),
+            random_seed=_derive_seed(random_seed_value, purpose="component_tuning", fold_index=fold_index),
+            inner_folds=min(3, len(train_index)),
+            groups=None if group_values is None else group_values[train_index],
+            selection_method=str(parameters["selection_method"]),
+            vip_threshold=float(parameters["vip_threshold"]),
+            coef_threshold=float(parameters["coef_threshold"]),
+        )
+        mask = _select_variables_inner(
+            X_train,
+            y_train,
+            str(parameters["selection_method"]),
+            component_count,
+            vip_threshold=float(parameters["vip_threshold"]),
+            coef_threshold=float(parameters["coef_threshold"]),
+            random_seed=_derive_seed(random_seed_value, purpose="selector", fold_index=fold_index),
+        )
+        if mask.shape != (matrix.shape[1],) or mask.dtype != np.bool_:
+            raise ValueError(f"nested CV fold {fold_index} produced an invalid selection mask")
+        selected_count = int(np.sum(mask))
+        if selected_count == 0:
+            raise ValueError(
+                f"nested CV fold {fold_index} selected no variables; " "adjust the declared selection threshold"
+            )
+        fold_requested_components.append(component_count)
+        # Adapt only using outer-training information; expose the actual refit.
+        component_count = min(component_count, selected_count)
+        fold_masks.append(np.array(mask, copy=True))
+        fold_n_selected.append(selected_count)
+        X_train_selected = X_train[:, mask]
+        fold_n_components.append(component_count)
+        model = pls_core.fit_simpls_exact(
+            X_train_selected,
+            y_train,
+            n_components=component_count,
+            scale=False,
+        )
+        fold_prediction = np.asarray(model.predict(X_test[:, mask]), dtype=np.float64).reshape(-1)
+        if fold_prediction.shape != (len(test_index),) or not np.isfinite(fold_prediction).all():
+            raise ValueError(f"nested CV fold {fold_index} produced invalid predictions")
+        predictions[test_index] = fold_prediction
+        fold_assignments[test_index] = fold_index
+        fold_mse.append(float(np.mean((y_test - fold_prediction) ** 2)))
+        fold_sizes.append(int(len(test_index)))
+
+    if not np.isfinite(predictions).all():
+        raise ValueError("nested CV did not produce exactly one finite prediction per sample")
+    if np.any(fold_assignments < 0):
+        raise ValueError("nested CV did not assign every prediction to exactly one validation fold")
+    ss_tot = float(np.sum((target - np.mean(target)) ** 2))
+    if ss_tot <= 0.0:
+        raise ValueError("nested CV cannot score a constant target")
+    scored = _regression_cv_metrics(target, predictions)
+    rmsecv = float(scored["rmsecv"])
+    r2 = float(scored["r2"])
+    bias = float(scored["bias"])
+    sep = float(scored["sep"])
+    rer = scored["rer"]
+
+    jaccards: list[float] = []
+    for left in range(len(fold_masks)):
+        for right in range(left + 1, len(fold_masks)):
+            intersection = int(np.sum(fold_masks[left] & fold_masks[right]))
+            union = int(np.sum(fold_masks[left] | fold_masks[right]))
+            jaccards.append(float(intersection / union) if union else 0.0)
+    mean_jaccard = float(np.mean(jaccards)) if jaccards else 1.0
+    frequency = np.mean(np.stack(fold_masks, axis=0).astype(np.float64), axis=0)
+
+    split_plan_payload = {
+        "schema_version": "spectra-split-plan/1",
+        "method": split_plan.method,
+        "grouped": split_plan.grouped,
+        "n_samples": split_plan.n_samples,
+        "folds": [{"train": train.astype(int).tolist(), "test": test.astype(int).tolist()} for train, test in folds],
+    }
+    if group_values is not None:
+        split_plan_payload["schema_version"] = "spectra-grouped-split-plan/1"
+        split_plan_payload["groups"] = group_values.tolist()
+    metrics: dict[str, object] = {
+        "statistics": scored["statistics"],
+        "metadata": {"type": "RegressionCV"},
+        "rmsecv": rmsecv,
+        "r2_cv": r2,
+        "r2": r2,
+        "q2": r2,
+        "bias": bias,
+        "metric_registry_version": scored["metric_registry_version"],
+        "sep": sep,
+        "rer": rer,
+        "rer_status": scored["rer_status"],
+        "n_folds": folds_requested,
+        "n_rows": len(target),
+        "n_groups": None if group_values is None else len(np.unique(group_values)),
+        "population_scope": "row_wise" if group_values is None else "whole_group",
+        "selection_method": parameters["selection_method"],
+        "selector_profile": _selector_profile(str(parameters["selection_method"])),
+        "component_selection": "inner_cv",
+        "inner_selection_scope": "inner_training_fold",
+        "random_seed": random_seed_value,
+        "split_plan_digest": split_digest,
+        "split_plan": {
+            **split_plan_payload,
+            "n_folds": len(split_plan.folds),
+            "digest": split_digest,
+            "root_seed": random_seed_value,
+            "seed_derivation": "spectra-nested-cv-seed/1",
+        },
+        "per_fold_n_samples": fold_sizes,
+        "per_fold_n_selected": fold_n_selected,
+        "per_fold_n_components": fold_n_components,
+        "per_fold_inner_chosen_components": fold_requested_components,
+        "outer_refit_component_policy": "min(inner_choice, outer_training_selected_features)",
+        "selector_call_upper_bound": selector_fit_bound,
+        "selector_fit_budget": max_selector_fits,
+        "per_fold_mse": fold_mse,
+        "per_fold_rmse": [float(np.sqrt(value)) for value in fold_mse],
+    }
+    stability: dict[str, object] = {
+        "mean_jaccard": mean_jaccard,
+        "per_variable_frequency": frequency.tolist(),
+        "mean_n_selected": float(np.mean(fold_n_selected)),
+        "std_n_selected": float(np.std(fold_n_selected)),
+    }
+    diagnostics: dict[str, object] = {
+        "metadata": {"type": "RegressionCV"},
+        "rmsecv": rmsecv,
+        "r2_cv": r2,
+        "r2": r2,
+        "q2": r2,
+        "sep": sep,
+        "rer": rer,
+        "rer_status": scored["rer_status"],
+        "bias": bias,
+        "mean_n_selected": stability["mean_n_selected"],
+        "selection_stability": mean_jaccard,
+        "selection_method": parameters["selection_method"],
+        "mean_n_components": float(np.mean(fold_n_components)),
+        "component_selection": "inner_cv",
+        "inner_selection_scope": "inner_training_fold",
+        "random_seed": random_seed_value,
+        "split_plan_digest": split_digest,
+        "group_boundary": (
+            "whole_groups_outer_and_inner" if group_values is not None else "row_wise_no_group_protection"
+        ),
+    }
+    out_of_fold_record = out_of_fold_evidence.build_out_of_fold_evidence(
+        producer_node_id=producer_node_id,
+        task_type="regression",
+        observations=target,
+        predictions=predictions,
+        split_plan=split_plan_payload,
+    )
+    return {
+        "cv_metrics": metrics,
+        "oof_evidence": out_of_fold_record,
+        "stability": stability,
+    }, diagnostics
+
+
+def _repeated_nested_cv(X, y, *, groups, producer_node_id, parameters):
+    """Keep repeats separate: these are partition sensitivity, not new specimens."""
+    repeats = []
+    for index in range(parameters["n_repeats"]):
+        seed = _derive_seed(parameters["random_seed"], purpose="repeat", fold_index=index)
+        outputs, _ = _nested_cv_dispatch(
+            X,
+            y,
+            groups=groups,
+            producer_node_id=producer_node_id,
+            **{**parameters, "n_repeats": 1, "random_seed": seed},
+            _group_repeat_seed=seed,
+        )
+        repeats.append({"repeat_id": index + 1, "seed": seed, "outputs": outputs})
+    distributions = {}
+    for name in ("rmsecv", "r2_cv", "bias", "sep"):
+        values = np.asarray([item["outputs"]["cv_metrics"][name] for item in repeats], dtype=float)
+        distributions[name] = {
+            "per_repeat": values.tolist(),
+            "mean": float(values.mean()),
+            "std_across_repeats": float(values.std(ddof=1)),
+            "minimum": float(values.min()),
+            "maximum": float(values.max()),
+        }
+    record = {
+        "schema_version": "spectrasherpa.repeated-nested-validation/1",
+        "n_repeats": len(repeats),
+        "n_rows": len(y),
+        "n_groups": repeats[0]["outputs"]["cv_metrics"]["n_groups"],
+        "root_seed": parameters["random_seed"],
+        "seed_derivation": "spectra-nested-cv-seed/1",
+        "parameters": parameters,
+        "scope": "sensitivity_to_partitions_of_this_dataset",
+        "interpretation": "Repeat spread is not a confidence interval or external validation. "
+        "Repeated predictions are not independent observations.",
+        "distributions": distributions,
+        "selection_stability_per_repeat": [item["outputs"]["stability"] for item in repeats],
+    }
+    record["metadata"] = {"repeated_validation": dict(record)}
+    return {"cv_metrics": record, "repeated_evidence": {**record, "repeats": repeats}}, record
 
 
 @register_node
@@ -169,21 +679,64 @@ class NestedCVNode(Node):
     """Leakage-safe Nested CV — variable selection inside each fold.
 
     For each outer CV fold:
-    1. Select variables on training data only (VIP, CARS, UVE, SPA, or |coef|)
+    1. Select variables on training data only (VIP, CARS, MC-UVE, SPA, or |coef|)
     2. Tune the latent-variable count by inner CV
     3. Fit PLS on selected training variables
     4. Predict held-out samples with selected variables only
 
-    Reports honest RMSECV, R², Q² that are unbiased by selection or LV tuning.
-    Also reports per-fold selection stability (Jaccard between folds).
+    Reports leakage-safe random-fold RMSECV, R², Q² and per-fold selection
+    stability. It does not claim to protect grouped, temporal, or batch
+    dependence; those designs require a separate split contract.
     """
 
     metadata = NodeMetadata(
         node_type="selection.nested_cv",
         category="selection",
         label="Evaluate Nested CV Selection",
-        description="Variable selection inside CV folds — honest, unbiased performance estimates",
+        description=(
+            "Fits variable selection and latent-variable choice inside each shuffled outer fold. "
+            "Recorded or explicit specimen groups are kept separate in outer and inner folds. "
+            "Without groups this is row-wise validation, not a grouped or temporal design."
+        ),
         parameters=[
+            NodeParameter(
+                name="group_source",
+                label="Grouping Choice",
+                param_type="select",
+                default="explicit_or_rows",
+                options=[
+                    {"label": "Row-wise unless Groups input is connected", "value": "explicit_or_rows"},
+                    {"label": "Use attached specimen groups", "value": "attached"},
+                ],
+                description=(
+                    "Existing workflows remain row-wise. Attached groups require explicit selection; "
+                    "insufficient groups never silently fall back."
+                ),
+            ),
+            NodeParameter(
+                name="max_selector_fits",
+                label="Selector Fit Budget",
+                param_type="number",
+                default=500,
+                min_value=1,
+                step=1,
+                description=(
+                    "Conservative bound: repeats × outer folds × (3 × maximum components + 1). "
+                    "Each CARS/MCUVE call fits many models. Raising this budget does not raise "
+                    "the 120-second node limit."
+                ),
+            ),
+            NodeParameter(
+                name="n_repeats",
+                label="Validation Repeats",
+                param_type="number",
+                default=1,
+                min_value=1,
+                max_value=20,
+                step=1,
+                max_value_reason="Repeated nested fitting multiplies selector and model work.",
+                description="Separate seeded repeats; spread measures partition sensitivity, not new specimens.",
+            ),
             NodeParameter(
                 name="selection_method",
                 label="Selection Method",
@@ -192,7 +745,7 @@ class NestedCVNode(Node):
                     {"label": "VIP", "value": "vip"},
                     {"label": "|Coefficient|", "value": "coef_abs"},
                     {"label": "CARS", "value": "cars"},
-                    {"label": "UVE (MC)", "value": "uve"},
+                    {"label": "MC-UVE", "value": "mcuve"},
                     {"label": "SPA", "value": "spa"},
                     {"label": "None (full spectrum)", "value": "none"},
                 ],
@@ -205,6 +758,8 @@ class NestedCVNode(Node):
                 param_type="number",
                 default=5,
                 min_value=1,
+                max_value=50,
+                max_value_reason="Bounds the inner PLS search inside the declared local resource envelope.",
                 step=1,
                 description="Maximum latent variables considered by the inner CV loop",
             ),
@@ -214,6 +769,8 @@ class NestedCVNode(Node):
                 param_type="number",
                 default=5,
                 min_value=2,
+                max_value=20,
+                max_value_reason="Bounds repeated outer and inner fitting inside the declared local resource envelope.",
                 step=1,
                 description="Number of outer cross-validation folds",
             ),
@@ -239,8 +796,30 @@ class NestedCVNode(Node):
                 category="advanced",
                 visible_when={"selection_method": ["coef_abs"]},
             ),
+            NodeParameter(
+                name="random_seed",
+                label="Random Seed",
+                param_type="number",
+                default=42,
+                min_value=0,
+                max_value=4_294_967_295,
+                max_value_reason="Exact unsigned 32-bit root seed; per-fold seeds use overflow-safe hash derivation.",
+                step=1,
+                description="Exact seed for outer folds, inner folds, and stochastic selectors.",
+                category="advanced",
+            ),
         ],
         input_ports=[
+            PortMetadata(
+                name="groups",
+                type_ref="spectrasherpa://types/Array1D/1.0",
+                required=False,
+                label="Independent Specimen Groups",
+                description=(
+                    "One specimen or batch ID per row; used explicitly when connected; "
+                    "attached binding requires Grouping Choice."
+                ),
+            ),
             PortMetadata(
                 name="X",
                 type_ref="spectrasherpa://types/Array2D/1.0",
@@ -252,340 +831,153 @@ class NestedCVNode(Node):
             PortMetadata(
                 name="y",
                 type_ref="spectrasherpa://types/TargetMatrix/1.0",
-                required=False,
+                required=True,
                 label="Target Values",
+                description="Exactly one finite quantitative target; may be supplied by the dataset target binding.",
             ),
         ],
         output_ports=[
             PortMetadata(
+                name="repeated_evidence",
+                type_ref="spectrasherpa://types/ValidationResult/1.0",
+                required=False,
+                label="Repeated Validation Evidence",
+                description="Separate repeat identities, fold evidence and partition-sensitivity distributions.",
+            ),
+            PortMetadata(
                 name="cv_metrics",
-                type_ref="spectrasherpa://types/Any/1.0",
+                type_ref="spectrasherpa://types/ValidationResult/1.0",
                 required=True,
                 label="CV Metrics",
             ),
             PortMetadata(
-                name="y_pred",
-                type_ref="spectrasherpa://types/Array1D/1.0",
-                required=True,
-                label="CV Predictions",
+                name="oof_evidence",
+                type_ref=out_of_fold_evidence.OUT_OF_FOLD_EVIDENCE_TYPE,
+                required=False,
+                label="Out-of-Fold Evidence",
+                description=(
+                    "Observations, predictions, fold assignments, exact split plan, and canonical producer "
+                    "identity bound into one closed record"
+                ),
             ),
             PortMetadata(
                 name="stability",
-                type_ref="spectrasherpa://types/Any/1.0",
+                type_ref="spectrasherpa://types/ValidationResult/1.0",
                 required=False,
                 label="Selection Stability",
             ),
         ],
-        input_types=["NDDataset"],
+        input_types=["Array2D", "TargetMatrix"],
         output_type="dict",
         diagnostics=["rmsecv", "r2_cv", "q2", "mean_n_selected", "selection_stability"],
+        policy=NodePolicy(),
+        canonical_parameter_validator=_canonical_nested_cv_parameters,
+        presentation_contract=NodePresentationContract(
+            default_presentation="metrics",
+            presentations=(
+                ScientificPresentation("metrics", "Validation Metrics", "metric_record", ("cv_metrics",), ("record",)),
+                ScientificPresentation(
+                    "oof",
+                    "Single-repeat Predictions",
+                    "out_of_fold_evidence",
+                    ("oof_evidence",),
+                    ("plot", "table", "record"),
+                ),
+                ScientificPresentation(
+                    "repeats", "Separate Repeat Evidence", "metric_record", ("repeated_evidence",), ("record",)
+                ),
+                ScientificPresentation(
+                    "stability", "Selection Stability", "metric_record", ("stability",), ("record",)
+                ),
+            ),
+        ),
     )
 
     def generate_python(
         self,
-        inputs: dict[str, str],
+        inputs: Mapping[str, str],
         indent: str = "    ",
         use_scp: bool = True,
     ) -> list[str]:
-        """Generate Python code for leakage-safe nested cross-validation."""
-        X_expr = inputs.get("X", inputs.get("default", "input_data"))
-        y_expr = inputs.get("y", "None")
+        """Export the same registered implementation used by the live DAG."""
 
-        params = self._resolve_params()
-        selection_method = params.get("selection_method", "vip")
-        n_components = int(params.get("n_components", 5))
-        cv_folds = int(params.get("cv_folds", 5))
-        vip_threshold = float(params.get("vip_threshold", 1.0))
-        coef_threshold = float(params.get("coef_threshold", 0.01))
+        del use_scp
+        X_expression = inputs.get("X", inputs.get("default", "input_data"))
+        y_expression = inputs.get("y", "None")
+        groups_expression = inputs.get("groups", "None")
+        parameters = self._resolve_params()
+        return [
+            f"{indent}# --- Canonical nested CV selection ({self.node_id}) ---",
+            (
+                f"{indent}from spectra_sherpa.app.services.dag.nodes.selection.nested_cv_node "
+                "import _nested_cv_dispatch, _nested_cv_inputs, _bind_nested_groups"
+            ),
+            f"{indent}_nested_X, _nested_y = _nested_cv_inputs({X_expression}, {y_expression})",
+            f"{indent}_nested_outputs, _nested_diagnostics = _nested_cv_dispatch(",
+            f"{indent}    _nested_X, _nested_y, producer_node_id={self.node_id!r}, "
+            f"groups=_bind_nested_groups({X_expression}, {groups_expression}, {parameters['group_source']!r}), "
+            f"**{parameters!r}",
+            f"{indent})",
+            f"{indent}results[{self.node_id!r}] = _nested_outputs",
+        ]
 
-        lines: list[str] = []
-        lines.append(f"{indent}# --- Nested CV / Leakage-safe ({self.node_id}) ---")
-        lines.append(f"{indent}from sklearn.cross_decomposition import PLSRegression as _PLSRegression")
-        lines.append(f"{indent}from sklearn.model_selection import KFold as _KFold")
-        lines.append(f"{indent}_X_input = {X_expr}")
-        lines.append(
-            f"{indent}_X_ncv = np.asarray(_X_input.data if hasattr(_X_input, 'data') else _X_input, dtype=np.float64)"
+    async def execute(self, X: Any = None, y: Any = None, groups: Any = None, **kwargs: Any) -> NodeResult:
+        del kwargs
+        matrix, target = _nested_cv_inputs(X, y)
+        outputs, diagnostics = _nested_cv_dispatch(
+            matrix,
+            target,
+            producer_node_id=self.node_id,
+            groups=_bind_nested_groups(X, groups, self._resolve_params()["group_source"]),
+            **self._resolve_params(),
         )
-        lines.append(f"{indent}_X_ncv = np.atleast_2d(_X_ncv)")
+        logger.info("Nested CV completed for %s", self.node_id)
+        return NodeResult(outputs=outputs, diagnostics=diagnostics)
 
-        # Target extraction
-        lines.append(f"{indent}_y_raw = {y_expr}")
-        lines.append(f"{indent}if _y_raw is None and hasattr(_X_input, 'target') and _X_input.target is not None:")
-        lines.append(f"{indent}    _y_raw = _X_input.target")
-        lines.append(f"{indent}_y_ncv = np.asarray(_y_raw, dtype=np.float64).ravel()")
 
-        lines.append(f"{indent}_n_samples, _n_features = _X_ncv.shape")
-        lines.append(f"{indent}_cv_folds = min({cv_folds}, _n_samples)")
-        lines.append(f"{indent}_kf = _KFold(n_splits=_cv_folds, shuffle=True, random_state=42)")
-        lines.append(f"{indent}_y_pred_all = np.full(_n_samples, np.nan)")
-        lines.append(f"{indent}_fold_masks = []")
-        lines.append(f"{indent}_fold_n_selected = []")
-        lines.append(f"{indent}_fold_n_components = []")
-        lines.append("")
-        lines.append(f"{indent}for _fold_i, (_train_idx, _test_idx) in enumerate(_kf.split(_X_ncv)):")
-        lines.append(f"{indent}    _X_train, _X_test = _X_ncv[_train_idx], _X_ncv[_test_idx]")
-        lines.append(f"{indent}    _y_train, _y_test = _y_ncv[_train_idx], _y_ncv[_test_idx]")
+bind_stable_execution_contract(
+    NestedCVNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.EVALUATOR,
+    implementation_id="spectrasherpa.selection.nested_cv",
+    implementation_version="2.5.0",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="preserves_samples",
+    # This evaluator reports fold-local selection stability and predictions;
+    # it does not emit a filtered feature matrix or a replacement axis.
+    feature_effect="preserves_features",
+    axis_effect="preserves_axis",
+    unit_effect="preserves_units",
+    resource_hints={"timeout_seconds": 120, "cpu_seconds": 120, "memory_bytes": 1_073_741_824},
+    license_id="Apache-2.0",
+    help_reference="docs/nodes/selection-validation.md",
+    implementation_modules=(
+        out_of_fold_evidence,
+        _vip,
+        cars_node,
+        mcuve_node,
+        pls_core,
+        sdk_validate,
+        spa_node,
+        regression_comparison,
+    ),
+    implementation_distributions=("numpy", "scikit-learn"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scikit-learn", "1.9.0")),
+    citations=(
+        "Filzmoser et al., Journal of Chemometrics 23 (2009) 160-171",
+        pls_core.CITATION,
+    ),
+    deterministic=False,
+    seed_parameter="random_seed",
+    target_access="required",
+    group_access="optional",
+)
 
-        # Variable selection inside fold
-        if selection_method == "vip":
-            lines.append(f"{indent}    # VIP-based variable selection on training data only")
-            lines.append(f"{indent}    _nc = min({n_components}, _X_train.shape[0] - 1, _n_features - 1)")
-            lines.append(f"{indent}    _pls_sel = _PLSRegression(n_components=max(_nc, 1), scale=False)")
-            lines.append(f"{indent}    _pls_sel.fit(_X_train, _y_train)")
-            lines.append(f"{indent}    _W = _pls_sel.x_weights_")
-            lines.append(f"{indent}    _T = _pls_sel.x_scores_")
-            lines.append(f"{indent}    _Q = _pls_sel.y_loadings_")
-            lines.append(f"{indent}    _p = _W.shape[0]")
-            lines.append(f"{indent}    _ss = np.sum(_T ** 2, axis=0) * np.sum(_Q ** 2, axis=0)")
-            lines.append(
-                f"{indent}    _vip = np.sqrt(_p * np.sum("
-                f"_ss * (_W / np.linalg.norm(_W, axis=0)) ** 2, axis=1) / np.sum(_ss))"
-            )
-            lines.append(f"{indent}    _mask = _vip >= {vip_threshold}")
-            lines.append(f"{indent}    if np.sum(_mask) == 0:")
-            lines.append(f"{indent}        _top_n = max(int(0.1 * _p), 1)")
-            lines.append(f"{indent}        _mask = np.zeros(_p, dtype=bool)")
-            lines.append(f"{indent}        _mask[np.argsort(_vip)[-_top_n:]] = True")
-        elif selection_method == "coef_abs":
-            lines.append(f"{indent}    # |Coefficient|-based variable selection on training data only")
-            lines.append(f"{indent}    _nc = min({n_components}, _X_train.shape[0] - 1, _n_features - 1)")
-            lines.append(f"{indent}    _pls_sel = _PLSRegression(n_components=max(_nc, 1), scale=False)")
-            lines.append(f"{indent}    _pls_sel.fit(_X_train, _y_train)")
-            lines.append(f"{indent}    _coefs = np.abs(_pls_sel.coef_.ravel())")
-            lines.append(f"{indent}    _thresh = {coef_threshold}")
-            lines.append(f"{indent}    _mask = _coefs >= _thresh")
-            lines.append(f"{indent}    if np.sum(_mask) == 0:")
-            lines.append(f"{indent}        _top_n = max(int(0.1 * _n_features), 1)")
-            lines.append(f"{indent}        _mask = np.zeros(_n_features, dtype=bool)")
-            lines.append(f"{indent}        _mask[np.argsort(_coefs)[-_top_n:]] = True")
-        else:
-            # "none" or other — use all variables
-            lines.append(f"{indent}    # No variable selection — use all variables")
-            lines.append(f"{indent}    _mask = np.ones(_n_features, dtype=bool)")
 
-        lines.append(f"{indent}    _fold_masks.append(_mask)")
-        lines.append(f"{indent}    _n_sel = int(np.sum(_mask))")
-        lines.append(f"{indent}    _fold_n_selected.append(_n_sel)")
-        lines.append(f"{indent}    if _n_sel == 0:")
-        lines.append(f"{indent}        _mask = np.ones(_n_features, dtype=bool)")
-        lines.append(f"{indent}        _n_sel = _n_features")
-        lines.append(f"{indent}    _X_train_sel = _X_train[:, _mask]")
-        lines.append(f"{indent}    _max_comp = max(1, min({n_components}, _n_sel, len(_train_idx) - 1))")
-        lines.append(f"{indent}    _best_comp, _best_mse = 1, float('inf')")
-        lines.append(f"{indent}    if len(_train_idx) >= 4 and _max_comp > 1:")
-        lines.append(
-            f"{indent}        _inner = _KFold(" f"n_splits=min(3, len(_train_idx)), shuffle=True, random_state=17)"
-        )
-        lines.append(f"{indent}        for _nc_try in range(1, _max_comp + 1):")
-        lines.append(f"{indent}            _errs = []")
-        lines.append(f"{indent}            for _itr, _ival in _inner.split(_X_train_sel):")
-        lines.append(f"{indent}                _nc_inner = min(_nc_try, len(_itr) - 1, _X_train_sel.shape[1])")
-        lines.append(f"{indent}                if _nc_inner < 1:")
-        lines.append(f"{indent}                    continue")
-        lines.append(f"{indent}                _pls_inner = _PLSRegression(n_components=_nc_inner, scale=False)")
-        lines.append(f"{indent}                _pls_inner.fit(_X_train_sel[_itr], _y_train[_itr])")
-        lines.append(f"{indent}                _pred_inner = _pls_inner.predict(_X_train_sel[_ival]).ravel()")
-        lines.append(f"{indent}                _errs.append(float(np.mean((_y_train[_ival] - _pred_inner) ** 2)))")
-        lines.append(f"{indent}            if _errs and float(np.mean(_errs)) < _best_mse:")
-        lines.append(f"{indent}                _best_mse = float(np.mean(_errs))")
-        lines.append(f"{indent}                _best_comp = _nc_try")
-        lines.append(f"{indent}    _nc_fit = _best_comp")
-        lines.append(f"{indent}    _fold_n_components.append(_nc_fit)")
-        lines.append(f"{indent}    _pls_fold = _PLSRegression(n_components=_nc_fit, scale=False)")
-        lines.append(f"{indent}    _pls_fold.fit(_X_train_sel, _y_train)")
-        lines.append(f"{indent}    _y_pred_all[_test_idx] = _pls_fold.predict(_X_test[:, _mask]).flatten()")
-        lines.append("")
-
-        # Compute metrics
-        lines.append(f"{indent}_valid = ~np.isnan(_y_pred_all)")
-        lines.append(f"{indent}_yt = _y_ncv[_valid]")
-        lines.append(f"{indent}_yp = _y_pred_all[_valid]")
-        lines.append(f"{indent}_ss_res = float(np.sum((_yt - _yp) ** 2))")
-        lines.append(f"{indent}_ss_tot = float(np.sum((_yt - np.mean(_yt)) ** 2))")
-        lines.append(f"{indent}_rmsecv = float(np.sqrt(np.mean((_yt - _yp) ** 2)))")
-        lines.append(f"{indent}_r2 = 1.0 - _ss_res / max(_ss_tot, 1e-12)")
-        lines.append(f"{indent}_q2 = _r2  # Q² = 1 - PRESS/TSS for CV")
-        lines.append(f"{indent}_bias = float(np.mean(_yp - _yt))")
-
-        # Stability
-        lines.append(f"{indent}_jaccards = []")
-        lines.append(f"{indent}for _i in range(len(_fold_masks)):")
-        lines.append(f"{indent}    for _j in range(_i + 1, len(_fold_masks)):")
-        lines.append(f"{indent}        _inter = np.sum(_fold_masks[_i] & _fold_masks[_j])")
-        lines.append(f"{indent}        _union = np.sum(_fold_masks[_i] | _fold_masks[_j])")
-        lines.append(f"{indent}        _jaccards.append(float(_inter / max(_union, 1)))")
-        lines.append(f"{indent}_mean_jaccard = float(np.mean(_jaccards)) if _jaccards else 1.0")
-
-        lines.append(f"{indent}results['{self.node_id}'] = {{")
-        lines.append(f"{indent}    'cv_metrics': {{'rmsecv': _rmsecv, 'r2': _r2, 'q2': _q2, 'bias': _bias,")
-        lines.append(
-            f"{indent}        'selection_method': {selection_method!r}, 'n_folds': _cv_folds,"
-            f" 'component_selection': 'inner_cv', 'per_fold_n_components': _fold_n_components}},"
-        )
-        lines.append(f"{indent}    'y_pred': _y_pred_all,")
-        lines.append(
-            f"{indent}    'stability': {{'mean_jaccard': _mean_jaccard,"
-            f" 'mean_n_selected': float(np.mean(_fold_n_selected))}},"
-        )
-        lines.append(f"{indent}}}")
-        lines.append(
-            f'{indent}print(f"  Nested CV: RMSECV={{_rmsecv:.4f}}, R²={{_r2:.4f}},'
-            f' Q²={{_q2:.4f}}, stability={{_mean_jaccard:.3f}}")'
-        )
-
-        return lines
-
-    async def execute(self, X: Any = None, y: Any = None, **kwargs: Any) -> NodeResult:
-        params = self._resolve_params()
-        selection_method = params.get("selection_method", "vip")
-        n_components = int(params.get("n_components", 5))
-        cv_folds = int(params.get("cv_folds", 5))
-        vip_threshold = float(params.get("vip_threshold", 1.0))
-
-        X_ds = bind_X(X, missing_message="Nested CV requires X", allow_array=True)
-        y_val = bind_y(y, X=X_ds, required=True, infer_from_X=True, dataset_as_data=False)
-        X_array = to_numpy_2d(X_ds, name="X", dtype=np.float64)
-        y_array = to_numpy_y(y_val, name="y", expected_samples=X_array.shape[0])
-        if y_array.ndim > 1:
-            y_array = y_array[:, 0]
-
-        n_samples, n_features = X_array.shape
-        cv_folds = min(cv_folds, n_samples)
-
-        kf = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
-        y_pred_all = np.full(n_samples, np.nan)
-
-        fold_masks: list[np.ndarray] = []
-        fold_n_selected: list[int] = []
-        fold_n_components: list[int] = []
-        fold_errors: list[float] = []
-
-        method_kwargs = {
-            "vip_threshold": vip_threshold,
-        }
-
-        for fold_i, (train_idx, test_idx) in enumerate(kf.split(X_array)):
-            X_train, X_test = X_array[train_idx], X_array[test_idx]
-            y_train, y_test = y_array[train_idx], y_array[test_idx]
-
-            # Step 1: Variable selection on training data ONLY
-            mask = _select_variables_inner(X_train, y_train, selection_method, n_components, **method_kwargs)
-            fold_masks.append(mask)
-            n_sel = int(np.sum(mask))
-            fold_n_selected.append(n_sel)
-
-            if n_sel == 0:
-                logger.warning(f"Fold {fold_i}: selection eliminated all variables, using full spectrum")
-                mask = np.ones(n_features, dtype=bool)
-                n_sel = n_features
-
-            # Step 2: Tune PLS latent-variable count by inner CV.
-            X_train_sel = X_train[:, mask]
-            n_comp = _choose_pls_components_inner_cv(
-                X_train_sel,
-                y_train,
-                max_components=min(n_components, n_sel, len(train_idx) - 1),
-                inner_folds=min(3, len(train_idx)),
-            )
-            if n_comp < 1:
-                n_comp = 1
-            fold_n_components.append(n_comp)
-
-            try:
-                pls = PLSRegression(n_components=n_comp, scale=False)
-                pls.fit(X_train_sel, y_train)
-
-                # Step 3: Predict held-out set with SAME selected variables
-                y_hat = pls.predict(X_test[:, mask]).flatten()
-                y_pred_all[test_idx] = y_hat
-                fold_errors.append(float(np.mean((y_test - y_hat) ** 2)))
-            except Exception as e:
-                logger.warning(f"Fold {fold_i} failed: {e}")
-                y_pred_all[test_idx] = np.mean(y_train)
-                fold_errors.append(float(np.mean((y_test - np.mean(y_train)) ** 2)))
-
-        # Compute metrics
-        valid = ~np.isnan(y_pred_all)
-        y_t = y_array[valid]
-        y_p = y_pred_all[valid]
-
-        ss_res = float(np.sum((y_t - y_p) ** 2))
-        ss_tot = float(np.sum((y_t - np.mean(y_t)) ** 2))
-        rmsecv = float(np.sqrt(np.mean((y_t - y_p) ** 2)))
-        r2 = 1.0 - ss_res / max(ss_tot, 1e-12)
-        q2 = 1.0 - ss_res / max(ss_tot, 1e-12)  # Q² = 1 - PRESS/TSS
-        bias = float(np.mean(y_p - y_t))
-        sep = float(np.sqrt(np.mean((y_t - y_p - bias) ** 2)))
-        y_range = float(np.max(y_t) - np.min(y_t))
-        rer = y_range / max(sep, 1e-12)
-
-        # Selection stability: pairwise Jaccard between fold masks
-        if len(fold_masks) >= 2:
-            jaccards = []
-            for i in range(len(fold_masks)):
-                for j in range(i + 1, len(fold_masks)):
-                    inter = np.sum(fold_masks[i] & fold_masks[j])
-                    union = np.sum(fold_masks[i] | fold_masks[j])
-                    jaccards.append(float(inter / max(union, 1)) if union > 0 else 0.0)
-            mean_jaccard = float(np.mean(jaccards))
-        else:
-            mean_jaccard = 1.0
-
-        # Per-variable selection frequency across folds
-        if fold_masks:
-            freq = np.mean(np.stack(fold_masks, axis=0).astype(float), axis=0)
-        else:
-            freq = np.ones(n_features)
-
-        cv_metrics = {
-            "metadata": {"type": "RegressionCV"},
-            "rmsecv": rmsecv,
-            "r2_cv": r2,
-            "r2": r2,
-            "q2": q2,
-            "bias": bias,
-            "sep": sep,
-            "rer": rer,
-            "n_folds": cv_folds,
-            "selection_method": selection_method,
-            "component_selection": "inner_cv",
-            "per_fold_n_selected": fold_n_selected,
-            "per_fold_n_components": fold_n_components,
-            "per_fold_mse": fold_errors,
-        }
-
-        stability_report = {
-            "mean_jaccard": mean_jaccard,
-            "per_variable_frequency": freq.tolist(),
-            "mean_n_selected": float(np.mean(fold_n_selected)),
-            "std_n_selected": float(np.std(fold_n_selected)),
-        }
-
-        logger.info(
-            f"Nested CV ({selection_method}): RMSECV={rmsecv:.4f}, R²={r2:.4f}, "
-            f"Q²={q2:.4f}, stability={mean_jaccard:.3f}, "
-            f"mean {np.mean(fold_n_selected):.0f}/{n_features} selected"
-        )
-
-        return NodeResult(
-            outputs={
-                "cv_metrics": cv_metrics,
-                "y_pred": y_pred_all,
-                "stability": stability_report,
-            },
-            diagnostics={
-                "metadata": {"type": "RegressionCV"},
-                "rmsecv": rmsecv,
-                "r2_cv": r2,
-                "r2": r2,
-                "q2": q2,
-                "sep": sep,
-                "rer": rer,
-                "bias": bias,
-                "mean_n_selected": float(np.mean(fold_n_selected)),
-                "selection_stability": mean_jaccard,
-                "selection_method": selection_method,
-                "mean_n_components": float(np.mean(fold_n_components)) if fold_n_components else None,
-                "component_selection": "inner_cv",
-            },
-        )
+__all__ = [
+    "NestedCVNode",
+    "_canonical_nested_cv_parameters",
+    "_nested_cv_dispatch",
+    "_nested_cv_inputs",
+]

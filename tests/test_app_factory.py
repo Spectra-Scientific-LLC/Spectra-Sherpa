@@ -27,6 +27,25 @@ def _paths(routes, prefix: str = "") -> set[str]:
     return paths
 
 
+def test_bundled_frontend_keeps_missing_api_routes_json_404(tmp_path, monkeypatch):
+    (tmp_path / "index.html").write_text("<html>Workbench</html>", encoding="utf-8")
+    monkeypatch.setattr("spectra_sherpa._paths.get_static_dir", lambda: tmp_path)
+    app = FastAPI()
+
+    @app.get("/api/existing")
+    def existing():
+        return {"ok": True}
+
+    app_main._mount_frontend(app)
+    with TestClient(app) as client:
+        assert client.get("/api/existing").json() == {"ok": True}
+        for method in ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"):
+            response = client.request(method, "/api/v1/missing")
+            assert response.status_code == 404
+            assert response.json() == {"detail": "Not Found"}
+        assert "Workbench" in client.get("/workflow").text
+
+
 def _sync_event(events: list[str], name: str) -> Callable[..., None]:
     def _fn(*args: Any, **kwargs: Any) -> None:
         events.append(name)
@@ -166,11 +185,6 @@ def test_ready_endpoint_is_public_when_http_auth_required(monkeypatch: pytest.Mo
 
     monkeypatch.setattr("spectra_sherpa.app.core.security.requires_http_auth", lambda _host: True)
     monkeypatch.setattr(app_main, "async_session", lambda: _FakeSessionManager())
-    monkeypatch.setattr(
-        "spectra_sherpa.app.services.plugin_loader.plugin_load_failures",
-        [],
-    )
-
     app = app_main.create_app(include_server_routers=False)
     client = TestClient(app)
 
@@ -263,7 +277,11 @@ def test_create_app_rejects_invalid_extra_router_config():
 
 
 @pytest.mark.asyncio
-async def test_lifespan_runs_extra_shutdown_before_core_teardown(monkeypatch: pytest.MonkeyPatch):
+@pytest.mark.parametrize("extension_fails", [False, True])
+@pytest.mark.parametrize("shutdown_fails", [False, True])
+async def test_lifespan_runs_extra_shutdown_before_core_teardown(
+    monkeypatch: pytest.MonkeyPatch, extension_fails, shutdown_fails
+):
     events: list[str] = []
 
     # Startup sync phase
@@ -283,39 +301,39 @@ async def test_lifespan_runs_extra_shutdown_before_core_teardown(monkeypatch: py
     monkeypatch.setattr(app_main, "ensure_default_user", _async_event(events, "ensure_default_user"))
     monkeypatch.setattr(app_main, "ensure_egress_defaults", _async_event(events, "ensure_egress_defaults"))
     monkeypatch.setattr(app_main, "reconcile_stale_jobs", _async_event(events, "reconcile_stale_jobs"))
-    monkeypatch.setattr(app_main, "ensure_spectrochempy_data", _sync_event(events, "ensure_spectrochempy_data"))
-    monkeypatch.setattr(
-        app_main, "ensure_spectrochempy_testdata", _async_event(events, "ensure_spectrochempy_testdata")
-    )
     monkeypatch.setattr(app_main, "ensure_workflow_templates", _async_event(events, "ensure_workflow_templates"))
-    monkeypatch.setattr(
-        "spectra_sherpa.app.services.plugin_loader.discover_plugins", _sync_event(events, "discover_plugins")
-    )
-    monkeypatch.setattr(
-        "spectra_sherpa.app.services.network_health.start_network_health_service",
-        _async_event(events, "start_network_health_service"),
-    )
 
     # Shutdown async phase
     monkeypatch.setattr(app_main.job_manager, "shutdown", _async_event(events, "job_manager_shutdown"))
-    monkeypatch.setattr(
-        "spectra_sherpa.app.services.network_health.stop_network_health_service",
-        _async_event(events, "stop_network_health_service"),
-    )
 
     async def extra_startup() -> None:
         events.append("extra_startup")
 
     async def extra_shutdown() -> None:
         events.append("extra_shutdown")
+        if shutdown_fails:
+            raise ExtensionShutdownError("extension cleanup failed")
 
     lifespan = app_main._make_lifespan(
         extra_startup=[extra_startup],
         extra_shutdown=[extra_shutdown],
     )
 
-    async with lifespan(FastAPI()):
-        events.append("inside")
+    class ExtensionStartupError(RuntimeError):
+        pass
+
+    class ExtensionShutdownError(RuntimeError):
+        pass
+
+    try:
+        async with lifespan(FastAPI()):
+            events.append("inside")
+            if extension_fails:
+                raise ExtensionStartupError("extension failed after core started")
+    except ExtensionStartupError:
+        assert extension_fails
+    except ExtensionShutdownError:
+        assert shutdown_fails
 
     assert "extra_startup" in events
     assert "extra_shutdown" in events

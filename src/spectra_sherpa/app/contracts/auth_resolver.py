@@ -82,6 +82,41 @@ def clear_extra_bearer_token_resolver() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Bearer-token validator (server-owned session policy enforcement for WS)
+# ---------------------------------------------------------------------------
+#
+# HTTP requests pass through the server's EnterpriseEnforcementMiddleware,
+# which stamps request.state only after enforcing session expiry, revocation
+# and active-account policy. WebSocket connections do not traverse that
+# middleware, so OSS exposes this validator: the server decodes a raw JWT
+# and returns the payload only if it passes the same policy checks. The
+# WebSocket loop stores the payload and revalidates it before each protected
+# action. OSS default: no validator (WS JWT auth returns None).
+
+BearerTokenValidator = Callable[[str], Awaitable[dict | None]]
+
+_extra_bearer_token_validator: BearerTokenValidator | None = None
+
+
+def get_extra_bearer_token_validator() -> BearerTokenValidator | None:
+    """Return the injected JWT validator, if configured."""
+    return _extra_bearer_token_validator
+
+
+def set_extra_bearer_token_validator(validator: BearerTokenValidator) -> None:
+    """Inject a server-provided validator that returns a decoded payload or None."""
+    global _extra_bearer_token_validator
+    _extra_bearer_token_validator = validator
+    logger.info("ExtraBearerTokenValidator: custom implementation injected")
+
+
+def clear_extra_bearer_token_validator() -> None:
+    """Reset the injected JWT validator."""
+    global _extra_bearer_token_validator
+    _extra_bearer_token_validator = None
+
+
+# ---------------------------------------------------------------------------
 # Admin-capability resolver (server-owned superuser lookup)
 # ---------------------------------------------------------------------------
 #
@@ -137,5 +172,46 @@ async def is_admin_user(user: Any) -> bool:
         return False
     resolver = get_extra_admin_resolver()
     if resolver is None:
+        return False
+    return bool(await resolver(int(user_id)))
+
+
+# ---------------------------------------------------------------------------
+# Managed-compute access resolver (server-owned trial/subscription lifecycle)
+# ---------------------------------------------------------------------------
+
+UserComputeAccessResolver = Callable[[int], Awaitable[bool]]
+
+_user_compute_access_resolver: UserComputeAccessResolver | None = None
+
+
+def set_user_compute_access_resolver(resolver: UserComputeAccessResolver) -> None:
+    """Inject the managed server's per-user compute lifecycle decision."""
+
+    global _user_compute_access_resolver
+    _user_compute_access_resolver = resolver
+    logger.info("UserComputeAccessResolver: custom implementation injected")
+
+
+def clear_user_compute_access_resolver() -> None:
+    """Restore the OSS/local default, which has no managed lifecycle."""
+
+    global _user_compute_access_resolver
+    _user_compute_access_resolver = None
+
+
+async def user_allows_compute(user: Any) -> bool:
+    """Return whether an authenticated user may invoke managed compute.
+
+    With no proprietary resolver installed, OSS/local execution remains
+    available. Once a server installs the resolver, missing user identity and
+    provider errors fail closed at the caller.
+    """
+
+    resolver = _user_compute_access_resolver
+    if resolver is None:
+        return True
+    user_id = getattr(user, "id", None)
+    if user_id is None:
         return False
     return bool(await resolver(int(user_id)))

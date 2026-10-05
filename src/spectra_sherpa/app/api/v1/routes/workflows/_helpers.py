@@ -8,7 +8,8 @@ import json
 import logging
 import math
 import re
-from datetime import datetime, timedelta
+from asyncio import to_thread
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -19,6 +20,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from spectra_sherpa.app.core.request_id import get_request_id
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.services.audit import audit_emitter, build_reproducibility_record
+from spectra_sherpa.app.services.run_artifact_roles import attempted_artifact_fields
+from spectra_sherpa.app.services.run_environment import build_run_environment_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +41,26 @@ TERMINAL_RUN_STATUSES: frozenset[str] = frozenset({"completed", "partial", "erro
 
 _PERSISTED_DATASET_PREVIEW_ROWS = 20
 _PERSISTED_DATASET_PREVIEW_COLS = 128
+# Sample labels are scientific row identity, not a numerical data preview.
+# Keep a practical exact axis for persisted plots and target tables while
+# continuing to bound unusually large acquisitions.
+_PERSISTED_SAMPLE_AXIS_LABELS = 2_000
 _PERSISTED_METADATA_SEQUENCE_PREVIEW = 24
 _PERSISTED_DIAGNOSTIC_SEQUENCE_PREVIEW = 32
+# Keep modest numerical results intact.  The previous outer-length-only rule
+# summarized a 60 x 3 score matrix and a 700-value VIP vector even though both
+# are small, scientist-facing results.  Besides losing useful evidence, that
+# changed their JSON shape from an array into a summary record and made the
+# Workbench's declared plot/table presentations empty after a page reload.
+#
+# Raw spectral matrices still take the dedicated SherpaDataset preview path
+# above.  This budget is for standalone numerical node outputs such as scores,
+# loadings, coefficients, and importance profiles.
+_PERSISTED_RESULT_SCALAR_BUDGET = 20_000
 _SHERPA_DATASET_TYPE = "SherpaDataset"
 _LEGACY_DATASET_TYPE = "ND" + "Dataset"
 _COMPACTED_DATASET_TYPES = frozenset({_SHERPA_DATASET_TYPE, _LEGACY_DATASET_TYPE})
+_SAMPLE_ROW_ANNOTATION_KEYS = frozenset({"labels", "sample_classes", "sample_ids", "sample_labels"})
 
 
 def _run_action_from_status(status: str) -> str:
@@ -60,6 +78,8 @@ def _build_source_metadata(
     executor_status: str,
     had_serialization_errors: bool,
     exception_class: str | None = None,
+    dataset_scientific_receipts: list[dict[str, Any]] | None = None,
+    data_selection_revisions: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Compose the ``source_metadata`` blob persisted on an auto-saved run.
 
@@ -77,12 +97,46 @@ def _build_source_metadata(
         payload["request_id"] = request_id
     if exception_class:
         payload["exception_class"] = exception_class
+    if dataset_scientific_receipts:
+        payload["dataset_scientific_receipts"] = dataset_scientific_receipts
+    if data_selection_revisions:
+        payload["data_selection_revisions"] = data_selection_revisions
     return payload
+
+
+def _retention_warning(evidence: dict[str, Any]) -> str | None:
+    """Summarize retained-output omissions that change run completeness.
+
+    Private runtime ports are intentionally excluded and do not make a
+    successful scientific run partial. Storage, size, and materialization
+    failures do: a completed run must not claim that every result is
+    available when its durable evidence is missing.
+    """
+
+    outputs = evidence.get("outputs") if isinstance(evidence, dict) else None
+    if not isinstance(outputs, dict):
+        return None
+    omissions: list[str] = []
+    for node_id, ports in outputs.items():
+        if not isinstance(ports, dict):
+            continue
+        for port, item in ports.items():
+            if not isinstance(item, dict) or item.get("state") != "missing":
+                continue
+            reason = str(item.get("reason") or "Output was not retained.")
+            if reason == "Not retained: private runtime output excluded by policy.":
+                continue
+            omissions.append(f"{node_id}/{port}: {reason}")
+    if not omissions:
+        return None
+    return "Retained output incomplete; the execution succeeded but some results are unavailable: " + "; ".join(
+        omissions[:8]
+    )
 
 
 def _build_run_reproducibility_record(
     run_data: dict[str, Any],
-    model_ids: list[str] | None,
+    produced_artifact_uids: list[str] | None,
     *,
     input_ports: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
@@ -107,7 +161,7 @@ def _build_run_reproducibility_record(
         workflow_version_id=run_data.get("workflow_version_id"),
         workflow_integrity_hash=run_data.get("integrity_hash"),
         parameter_set=run_data.get("params_snapshot"),
-        model_artifact_uids=list(model_ids or []),
+        model_artifact_uids=list(produced_artifact_uids or []),
         input_ports=input_ports or [],
     )
 
@@ -125,6 +179,19 @@ def _sanitize_json(obj: Any) -> Any:
 
 def _is_scalar_sequence(value: Any) -> bool:
     return isinstance(value, list) and all(v is None or isinstance(v, (str, int, float, bool)) for v in value)
+
+
+def _rectangular_scalar_cell_count(value: Any) -> int | None:
+    """Return the cell count for a flat vector or rectangular scalar matrix."""
+
+    if _is_scalar_sequence(value):
+        return len(value)
+    if not isinstance(value, list) or not value or not all(_is_scalar_sequence(row) for row in value):
+        return None
+    widths = {len(row) for row in value}
+    if len(widths) != 1:
+        return None
+    return len(value) * next(iter(widths))
 
 
 def _summarize_long_sequence(value: list[Any], *, preview: int) -> dict[str, Any]:
@@ -157,20 +224,49 @@ def _compact_metadata_for_run_history(value: Any) -> Any:
     return value
 
 
+def _compact_dataset_metadata_value_for_run_history(
+    key: str,
+    value: Any,
+    *,
+    stored_rows: int | None,
+    original_rows: int | None,
+) -> Any:
+    """Retain bounded sample annotations needed to interpret persisted results."""
+    is_aligned_sample_annotation = (
+        key in _SAMPLE_ROW_ANNOTATION_KEYS
+        and isinstance(original_rows, int)
+        and _is_scalar_sequence(value)
+        and len(value) == original_rows
+    )
+    if not is_aligned_sample_annotation:
+        return _compact_metadata_for_run_history(value)
+    if len(value) <= _PERSISTED_SAMPLE_AXIS_LABELS:
+        return value
+    preview = (
+        stored_rows
+        if isinstance(stored_rows, int) and stored_rows < original_rows
+        else _PERSISTED_METADATA_SEQUENCE_PREVIEW
+    )
+    return _summarize_long_sequence(value, preview=preview)
+
+
 def _compact_axis_for_run_history(axis: Any, *, limit: int) -> Any:
     if not isinstance(axis, dict):
         return _compact_metadata_for_run_history(axis)
     compacted: dict[str, Any] = {}
     for key, value in axis.items():
-        if key in {"data", "labels"} and isinstance(value, list) and len(value) > limit:
-            compacted[key] = value[:limit]
-            compacted[f"{key}_truncated"] = True
-            compacted[f"{key}_original_length"] = len(value)
-            if key == "data" and value:
-                compacted["data_min"] = value[0]
-                compacted["data_max"] = value[-1]
-        else:
-            compacted[key] = _compact_metadata_for_run_history(value)
+        if key in {"data", "labels"} and isinstance(value, list):
+            if len(value) > limit:
+                compacted[key] = value[:limit]
+                compacted[f"{key}_truncated"] = True
+                compacted[f"{key}_original_length"] = len(value)
+                if key == "data" and value:
+                    compacted["data_min"] = value[0]
+                    compacted["data_max"] = value[-1]
+            else:
+                compacted[key] = value
+            continue
+        compacted[key] = _compact_metadata_for_run_history(value)
     return compacted
 
 
@@ -195,16 +291,32 @@ def _compact_sherpa_dataset_for_run_history(dataset: dict[str, Any]) -> dict[str
     run persistence fragile and duplicate data already stored elsewhere.
     """
     compacted: dict[str, Any] = {}
-    data_truncated = False
+    data = dataset.get("data")
+    scalar_cells = _rectangular_scalar_cell_count(data)
+    matrix_columns = len(data[0]) if data and isinstance(data[0], list) else None
+    preserve_complete_matrix = (
+        isinstance(data, list)
+        and scalar_cells is not None
+        and scalar_cells <= _PERSISTED_RESULT_SCALAR_BUDGET
+        and (
+            len(data) <= _PERSISTED_DATASET_PREVIEW_ROWS
+            or (matrix_columns is not None and matrix_columns <= _PERSISTED_DATASET_PREVIEW_COLS)
+        )
+    )
+    compacted_data, data_truncated, original_rows, original_cols = (
+        (data, False, len(data), len(data[0]) if data and isinstance(data[0], list) else None)
+        if preserve_complete_matrix
+        else _compact_matrix_preview(data)
+    )
+    stored_rows = len(compacted_data) if isinstance(compacted_data, list) else None
 
     for key, value in dataset.items():
         if key == "data":
-            compacted_data, data_truncated, original_rows, original_cols = _compact_matrix_preview(value)
             compacted[key] = compacted_data
             if data_truncated:
                 compacted["persisted_preview"] = True
                 compacted["data_truncated"] = True
-                compacted["stored_rows"] = len(compacted_data) if isinstance(compacted_data, list) else None
+                compacted["stored_rows"] = stored_rows
                 compacted["stored_cols"] = (
                     max((len(row) for row in compacted_data if isinstance(row, list)), default=None)
                     if isinstance(compacted_data, list)
@@ -214,10 +326,24 @@ def _compact_sherpa_dataset_for_run_history(dataset: dict[str, Any]) -> dict[str
                 compacted["original_cols"] = original_cols
             continue
         if key == "x_axis":
-            compacted[key] = _compact_axis_for_run_history(value, limit=_PERSISTED_DATASET_PREVIEW_COLS)
+            compacted[key] = _compact_axis_for_run_history(
+                value,
+                limit=(
+                    original_cols
+                    if preserve_complete_matrix and isinstance(original_cols, int)
+                    else _PERSISTED_DATASET_PREVIEW_COLS
+                ),
+            )
             continue
         if key == "y_axis":
-            compacted[key] = _compact_axis_for_run_history(value, limit=_PERSISTED_DATASET_PREVIEW_ROWS)
+            compacted[key] = _compact_axis_for_run_history(
+                value,
+                limit=(
+                    min(original_rows, _PERSISTED_SAMPLE_AXIS_LABELS)
+                    if isinstance(original_rows, int)
+                    else _PERSISTED_DATASET_PREVIEW_ROWS
+                ),
+            )
             continue
         if key == "target":
             compacted_target, target_truncated, original_rows, original_cols = _compact_matrix_preview(value)
@@ -228,7 +354,18 @@ def _compact_sherpa_dataset_for_run_history(dataset: dict[str, Any]) -> dict[str
                 compacted["target_original_cols"] = original_cols
             continue
         if key in {"metadata", "extra"}:
-            compacted[key] = _compact_metadata_for_run_history(value)
+            if isinstance(value, dict):
+                compacted[key] = {
+                    metadata_key: _compact_dataset_metadata_value_for_run_history(
+                        metadata_key,
+                        metadata_value,
+                        stored_rows=stored_rows,
+                        original_rows=original_rows,
+                    )
+                    for metadata_key, metadata_value in value.items()
+                }
+            else:
+                compacted[key] = _compact_metadata_for_run_history(value)
             continue
         compacted[key] = _compact_results_for_run_history(value, _path=(key,))
 
@@ -254,6 +391,13 @@ def _compact_results_for_run_history(value: Any, *, _path: tuple[str, ...] = ())
             return _compact_sherpa_dataset_for_run_history(value)
         return {k: _compact_results_for_run_history(v, _path=(*_path, k)) for k, v in value.items()}
     if isinstance(value, list):
+        scalar_cells = _rectangular_scalar_cell_count(value)
+        if scalar_cells is not None and scalar_cells <= _PERSISTED_RESULT_SCALAR_BUDGET:
+            # Scalars are already JSON-safe at this boundary.  Retain the
+            # exact rectangular value so persisted plot/table presentations
+            # remain scientifically usable rather than becoming type-changing
+            # summary dictionaries.
+            return value
         if not _preserve_large_result_lists(_path):
             if len(value) > _PERSISTED_METADATA_SEQUENCE_PREVIEW and _is_scalar_sequence(value):
                 return _summarize_long_sequence(value, preview=_PERSISTED_METADATA_SEQUENCE_PREVIEW)
@@ -382,17 +526,17 @@ def _derive_run_display_name(
 ) -> str:
     """Derive a human-readable default name for an auto-persisted run.
 
-    Mirrors ``persist_model_artifact_records``'s artifact-naming pattern
-    so a training run's name matches the artifact it produced (e.g. both
-    show ``"SIMCA — 4a4b4c4d"`` in the GUI). Non-training runs fall back
-    to ``"<workflow> — <hash[:8]>"`` so the Run History column is always
-    readable even when no artifact is emitted.
+    Record the sheet name at execution. Navigation may separately display its
+    current name after a rename; the stored name and scientific identity remain
+    historical. Artifact-based names are only a fallback for unnamed workflows.
 
     Note: the runtime sentinel for "this is an auto-saved run that the
     user has not explicitly named" is ``source_type == 'auto'``, not the
     legacy ``name == '__latest__'`` placeholder; callers that flip the
     run to ``'named'`` continue to overwrite this default.
     """
+    if workflow_name:
+        return workflow_name
     if saved_artifacts:
         first = saved_artifacts[0]
         artifact_uid = first.get("artifact_uid") or ""
@@ -450,7 +594,11 @@ async def _reserve_run(
         status="running",
         params_snapshot=params_snapshot or {},
         results_summary={},
-        executed_at=datetime.utcnow(),
+        # Captured at reservation so every run carries it, including runs that
+        # fail: a failure whose cause is a dependency change is exactly the
+        # case that needs the versions recorded.
+        environment_snapshot=build_run_environment_snapshot(),
+        executed_at=datetime.now(timezone.utc),
         source_type="auto",
         integrity_hash=integrity_hash,
         idempotency_key=idempotency_key,
@@ -473,6 +621,7 @@ async def finalize_orphan_reservation_if_running(
     session: AsyncSession,
     *,
     reservation_id: int,
+    user_id: int,
     error_msg: str,
     exception_class: str | None = None,
 ) -> bool:
@@ -497,7 +646,12 @@ async def finalize_orphan_reservation_if_running(
     """
     try:
         row = (
-            await session.execute(select(ExecutionRun).where(ExecutionRun.id == reservation_id))
+            await session.execute(
+                select(ExecutionRun).where(
+                    ExecutionRun.id == reservation_id,
+                    ExecutionRun.user_id == user_id,
+                )
+            )
         ).scalar_one_or_none()
         if row is None or row.status != "running":
             return False
@@ -505,7 +659,7 @@ async def finalize_orphan_reservation_if_running(
         for k, v in {
             "status": "error",
             "error": error_msg,
-            "executed_at": datetime.utcnow(),
+            "executed_at": datetime.now(timezone.utc),
             "source_metadata": _build_source_metadata(
                 executor_status="error",
                 had_serialization_errors=False,
@@ -542,15 +696,19 @@ async def _auto_persist_run(
     final_status: str,
     error_msg: str | None,
     integrity_hash: str | None,
-    model_ids: list[str] | None,
+    produced_artifact_uids: list[str] | None,
     saved_artifacts: list[dict[str, Any]] | None = None,
     params_snapshot: dict[str, Any] | None = None,
     input_ports: list[dict[str, Any]] | None = None,
     run_kind: str | None = None,
-    applied_artifact_uids: list[str] | None = None,
+    attempted_artifact_uids: list[str] | None = None,
     source_metadata: dict[str, Any] | None = None,
+    retention_feedback: dict[str, Any] | None = None,
     idempotency_key: str | None = None,
     reservation_id: int | None = None,
+    raw_outputs_for_retention: dict[str, Any] | None = None,
+    diagnostics_for_retention: dict[str, Any] | None = None,
+    definition_for_retention: dict[str, Any] | None = None,
 ) -> int | None:
     """Persist an auto-saved ``ExecutionRun`` so results survive page refresh.
 
@@ -568,11 +726,12 @@ async def _auto_persist_run(
     Either mode emits the same audit event and returns the row id.
     """
     try:
-        # Dedup model_ids while preserving order — a single workflow run may
+        # Dedup produced artifacts while preserving order — a single workflow run may
         # save the same artifact_uid twice (e.g. the same model registered
         # from two ports) which would otherwise inflate audit counts and
         # source_run_id rebinding work below.
-        deduped_model_ids = list(dict.fromkeys(model_ids or []))
+        produced_uids = list(dict.fromkeys(produced_artifact_uids or []))
+        attempted_uids = list(dict.fromkeys(attempted_artifact_uids or []))
         derived_name = _derive_run_display_name(workflow_name, integrity_hash, saved_artifacts)
         # Defensive normalization: the DAG executor's ``status.value`` can be
         # ``"idle"`` when a workflow has nodes that weren't reachable from
@@ -584,6 +743,7 @@ async def _auto_persist_run(
         # ``"partial"`` so the row persists and the user sees what ran.
         if final_status not in ExecutionRun.VALID_STATUSES:
             final_status = "partial"
+        artifact_attempts = attempted_artifact_fields(attempted_uids)
         run_data = dict(
             project_id=project_id,
             workflow_id=workflow_id,
@@ -597,14 +757,46 @@ async def _auto_persist_run(
             node_statuses=node_statuses,
             error=error_msg,
             integrity_hash=integrity_hash,
-            executed_at=datetime.utcnow(),
+            executed_at=datetime.now(timezone.utc),
             source_type="auto",
             source_metadata=source_metadata or None,
-            model_ids=deduped_model_ids,
-            run_kind=run_kind or ("training" if deduped_model_ids else "data"),
-            applied_artifact_uids=applied_artifact_uids or [],
+            produced_artifact_uids=produced_uids,
+            attempted_artifact_uids=artifact_attempts["attempted_artifact_uids"],
+            succeeded_artifact_uids=[],
+            model_ids=produced_uids,
+            run_kind=run_kind or ("training" if produced_uids else "data"),
+            applied_artifact_uids=artifact_attempts["applied_artifact_uids"],
             idempotency_key=idempotency_key,
         )
+        if raw_outputs_for_retention is not None:
+            from spectra_sherpa.app.services.canonical_metric_retention import project_canonical_metric_evidence
+            from spectra_sherpa.app.services.run_output_retention import retain_run_outputs
+
+            retained_outputs = await to_thread(
+                project_canonical_metric_evidence,
+                raw_outputs_for_retention,
+                definition_for_retention,
+            )
+            if definition_for_retention is not None:
+                retained_outputs["__workflow__"] = {"definition": definition_for_retention}
+            evidence = await to_thread(retain_run_outputs, user_id, retained_outputs, diagnostics_for_retention or {})
+            run_data["evidence_completeness"] = evidence
+            retention_warning = _retention_warning(evidence)
+            if retention_warning:
+                # Retention is part of the run contract. Preserve the
+                # computational result, but persist/report a partial run so
+                # clients cannot mistake a missing durable output for success.
+                run_data["status"] = "partial" if run_data["status"] == "completed" else run_data["status"]
+                run_data["error"] = run_data.get("error") or retention_warning
+                metadata = dict(run_data.get("source_metadata") or {})
+                metadata["retention_warning"] = retention_warning
+                run_data["source_metadata"] = metadata
+                summary = diagnostics_serialized.get("_run_summary")
+                if isinstance(summary, dict):
+                    summary["retention_warning"] = retention_warning
+                run_data["diagnostics"] = _sanitize_json(diagnostics_serialized)
+                if retention_feedback is not None:
+                    retention_feedback["warning"] = retention_warning
         if final_status in {"completed", "partial"}:
             durable_uid = f"run_{reservation_id}" if reservation_id is not None else f"run_{uuid4().hex}"
             await _persist_run_output_durably_if_configured(
@@ -622,7 +814,12 @@ async def _auto_persist_run(
             # mutable fields with the terminal values. Keep id/created_at;
             # everything else comes from run_data.
             run_row = (
-                await session.execute(select(ExecutionRun).where(ExecutionRun.id == reservation_id))
+                await session.execute(
+                    select(ExecutionRun).where(
+                        ExecutionRun.id == reservation_id,
+                        ExecutionRun.user_id == user_id,
+                    )
+                )
             ).scalar_one_or_none()
             if run_row is None:
                 # The reservation row vanished — fall back to an insert so
@@ -639,12 +836,12 @@ async def _auto_persist_run(
 
         await session.flush()
 
-        if deduped_model_ids:
+        if produced_uids:
             from spectra_sherpa.app.models.model_artifact import ModelArtifact
 
             artifact_query = select(ModelArtifact).where(
                 ModelArtifact.user_id == user_id,
-                ModelArtifact.artifact_uid.in_(deduped_model_ids),
+                ModelArtifact.artifact_uid.in_(produced_uids),
             )
             if project_id is not None:
                 artifact_query = artifact_query.where(ModelArtifact.project_id == project_id)
@@ -668,21 +865,21 @@ async def _auto_persist_run(
         if _app_config.audit_enabled:
             audit_emitter.emit(
                 session=session,
-                action=_run_action_from_status(final_status),
+                action=_run_action_from_status(str(run_data["status"])),
                 target_type="ExecutionRun",
                 target_id=run_row.id,
                 after={
-                    "status": final_status,
+                    "status": run_data["status"],
                     "workflow_id": workflow_id,
                     "project_id": project_id,
                     "workflow_version_id": wf_version_id,
                     "error": error_msg,
-                    "model_artifact_count": len(deduped_model_ids),
+                    "model_artifact_count": len(produced_uids),
                 },
                 context={
                     "reproducibility_record": _build_run_reproducibility_record(
                         run_data,
-                        deduped_model_ids,
+                        produced_uids,
                         input_ports=input_ports,
                     )
                 },
@@ -828,7 +1025,7 @@ def _raise_execution_persistence_error() -> None:
     logger.error("Workflow execution completed but results could not be persisted")
     raise HTTPException(
         status_code=500,
-        detail=("Workflow execution completed but results could not be saved. " f"Reference request ID: {short_id}"),
+        detail=(f"Workflow execution completed but results could not be saved. Reference request ID: {short_id}"),
     )
 
 

@@ -36,7 +36,7 @@ async def init_db() -> None:
 
     has_alembic = "alembic_version" in table_names
 
-    if not has_alembic:
+    if not has_alembic and engine.url.get_backend_name() != "sqlite":
         # Fresh or legacy database — bootstrap tables first.
         # create_all() is idempotent for existing tables so it safely
         # creates any new tables without touching existing ones.
@@ -52,12 +52,16 @@ async def init_db() -> None:
         await _run_alembic("upgrade", "head")
         logger.info("Alembic migrations applied successfully")
     except Exception as exc:
+        from spectra_sherpa.app.db.profile_upgrade import ProfileUpgradeError
+
+        if isinstance(exc, ProfileUpgradeError):
+            raise
         logger.error(
             "Alembic migration failed: %s",
             exc,
             exc_info=True,
         )
-        raise RuntimeError("Database migration failed; startup aborted.") from exc
+        raise RuntimeError(f"Database migration failed; startup aborted. {exc}") from exc
 
 
 async def _ensure_postgres_database_exists() -> None:
@@ -129,7 +133,13 @@ async def _run_alembic(cmd: str, revision: str) -> None:
 
     cfg = Config(str(alembic_ini))
     cfg.set_main_option("script_location", str(alembic_dir))
-    cfg.set_main_option("sqlalchemy.url", str(engine.url))
+    # Alembic uses ConfigParser interpolation; preserve URL escapes literally.
+    cfg.set_main_option("sqlalchemy.url", engine.url.render_as_string(hide_password=False).replace("%", "%%"))
     # Prevent Alembic env.py from reconfiguring logging (root→WARN)
     cfg.set_main_option("_skip_logging_config", "true")
+    # SQLite bootstrap and recovery share Alembic's atomic migration transaction.
+    cfg.attributes["bootstrap_schema"] = engine.url.get_backend_name() == "sqlite"
+    from spectra_sherpa.app.core.config import app_config
+
+    cfg.attributes["local_profile_recovery"] = app_config.mode == "local"
     await asyncio.to_thread(getattr(command, cmd), cfg, revision)

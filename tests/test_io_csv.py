@@ -3,16 +3,45 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from spectra_sherpa.app.lib.io import inspect_csv_import_plan, load_csv_as_sherpa, stack_datasets
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.app.lib.collection_assembly import CollectionMember, assemble_collection
+from spectra_sherpa.app.lib.io import inspect_csv_import_plan, load_csv_as_sherpa
+from spectra_sherpa.app.lib.sherpa_dataset import DatasetLayoutContext, SampleAxis, SherpaDataset
+from spectra_sherpa.app.services import prepared_data as prepared_data_service
 from spectra_sherpa.app.services.dag.nodes.data.transforms import FilterSamplesNode
 from spectra_sherpa.app.services.prepared_data import apply_dataset_prepared_data_overrides
+from spectra_sherpa.core.prepared_data import PreparedDataOverrides, parser_options_for_prepared_data
 
-try:
-    from spectra_sherpa.app.lib.spectral.dataset import SpectralUnit, create_spectral_dataset
-except ImportError:
-    create_spectral_dataset = None
+
+def test_csv_layout_sidecar_is_closed_and_source_typed() -> None:
+    with pytest.raises(ValueError, match="csv_layout must be one of"):
+        PreparedDataOverrides.from_sidecar_mapping({"csv_layout": "supplier_magic"})
+
+    with pytest.raises(ValueError, match="only to a CSV source"):
+        parser_options_for_prepared_data(
+            "spectrum.spa",
+            {"csv_layout": "headerless_two_column_spectrum"},
+        )
+
+    assert parser_options_for_prepared_data(
+        "spectrum.CSV",
+        {"csv_layout": "headered_decimal_comma"},
+    ) == {"csv_layout": "headered_decimal_comma"}
+
+
+def test_csv_layout_cannot_be_persisted_for_a_non_csv_or_reference_source(
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(prepared_data_service, "_OVERRIDES_DIR", tmp_path / "sidecars")
+    override = PreparedDataOverrides(csv_layout="headerless_two_column_spectrum")
+
+    with pytest.raises(ValueError, match="only to a CSV source"):
+        prepared_data_service.save_prepared_data_overrides(override, file_path="source.spa")
+    with pytest.raises(ValueError, match="requires one exact CSV file"):
+        prepared_data_service.save_prepared_data_overrides(override, source="catalog", name="entry")
+
+    prepared_data_service.save_prepared_data_overrides(override, file_path="source.csv")
+    assert prepared_data_service.load_prepared_data_overrides(file_path="source.csv") == override
 
 
 def test_load_csv_as_sherpa_named_feature_columns_preserves_target(tmp_path):
@@ -35,6 +64,9 @@ def test_load_csv_as_sherpa_named_feature_columns_preserves_target(tmp_path):
     assert dataset.target_context is not None
     assert dataset.target_context.target_type == "categorical"
     assert dataset.target_context.target_name == "target"
+    assert dataset.target_context.target_names == ["target"]
+    assert dataset.target_context.selected_target == "target"
+    assert dataset.target_context.class_names == ["class_0", "class_1"]
 
 
 def test_load_csv_as_sherpa_respects_explicit_feature_role_with_numeric_headers(tmp_path):
@@ -47,6 +79,59 @@ def test_load_csv_as_sherpa_respects_explicit_feature_role_with_numeric_headers(
     assert dataset.feature_axis is not None
     assert dataset.feature_axis.labels == ["1000", "1001"]
     np.testing.assert_array_equal(dataset.target, np.array(["A", "B"]))
+
+
+def test_header_only_spectral_csv_preserves_a_typed_positional_sample_axis(tmp_path):
+    csv_path = tmp_path / "UVSpectra10.csv"
+    csv_path.write_text("190.5,191.0,191.5\n0.1,0.2,0.3\n0.4,0.5,0.6\n", encoding="ascii")
+
+    dataset = load_csv_as_sherpa(csv_path)
+
+    assert dataset.data_role == "X_spectra"
+    assert dataset.feature_axis is not None
+    assert dataset.feature_axis.title == "Wavelength"
+    assert dataset.feature_axis.units == "nm"
+    assert dataset.sample_axis is not None
+    assert dataset.sample_axis.title == "Sample"
+    assert dataset.sample_axis.labels is None
+    np.testing.assert_array_equal(dataset.sample_axis.values, np.array([0.0, 1.0]))
+
+    admitted = assemble_collection(
+        [
+            CollectionMember(
+                dataset=dataset,
+                file_name=csv_path.name,
+                size_bytes=csv_path.stat().st_size,
+                sha256="a" * 64,
+            )
+        ],
+        title="UV/OES upload",
+    )
+    assert admitted.X.shape == (2, 3)
+
+
+def test_csv_inspector_reports_the_final_spectral_property_and_metadata_mapping(tmp_path):
+    csv_path = tmp_path / "portable-spectra.csv"
+    csv_path.write_text(
+        "sample,400,401,reference_a,reference_b,sample_meta.fault_name\n"
+        "s1,0.1,0.2,1,0,normal\n"
+        "s2,0.3,0.4,0,1,fault\n",
+        encoding="ascii",
+    )
+
+    plan = inspect_csv_import_plan(csv_path)
+
+    assert plan["layout"] == "sample_rows_spectral_matrix"
+    assert plan["shape"] == {"rows": 2, "columns": 6, "samples": 2, "features": 2}
+    assert plan["target"] == {"column": None, "type": None, "candidates": []}
+    assert {column["name"]: column["role"] for column in plan["columns"]} == {
+        "sample": "I",
+        "400": "F",
+        "401": "F",
+        "reference_a": "P",
+        "reference_b": "P",
+        "sample_meta.fault_name": "M",
+    }
 
 
 def test_load_csv_as_sherpa_axis_column_conditions_as_shared_x_spectra(tmp_path):
@@ -101,6 +186,86 @@ def test_inspect_csv_import_plan_axis_column_roles(tmp_path):
     assert plan["shape"]["samples"] == 2
     assert plan["shape"]["features"] == 2
     assert plan["axis"] == {"column": "cm-1", "title": "Wavenumber", "units": "cm-1"}
+    assert plan["recommended_layout"] == "headered"
+    assert {option["value"] for option in plan["layout_options"]} == {
+        "headered",
+        "headerless_two_column_spectrum",
+        "headerless_axis_column_spectra",
+        "headered_decimal_comma",
+        "headerless_two_column_spectrum_decimal_comma",
+        "headerless_axis_column_spectra_decimal_comma",
+    }
+
+
+def test_inspect_csv_import_plan_recommends_unheaded_xy_without_silently_losing_choice(tmp_path):
+    csv_path = tmp_path / "supplier-export.csv"
+    csv_path.write_text("400.0,0.10\n401.0,0.20\n402.0,0.30\n", encoding="ascii")
+
+    plan = inspect_csv_import_plan(csv_path)
+
+    assert plan["layout"] == "headerless_two_column_spectrum"
+    assert plan["recommended_layout"] == "headerless_two_column_spectrum"
+    assert plan["requires_confirmation"] is True
+    assert plan["delimiter"] == "comma"
+    assert plan["decimal"] == "point"
+    assert plan["shape"] == {"rows": 3, "columns": 2, "samples": 1, "features": 3}
+
+
+def test_unheaded_axis_column_matrix_preserves_uv_orientation_and_axis(tmp_path):
+    csv_path = tmp_path / "UVSpectra10.csv"
+    rows = [f"{190.529 + index:.3f},{index + 0.1},{index + 0.2},{index + 0.3}" for index in range(8)]
+    csv_path.write_text("\n".join(rows) + "\n", encoding="ascii")
+
+    plan = inspect_csv_import_plan(csv_path)
+    dataset = load_csv_as_sherpa(csv_path, csv_layout="headerless_axis_column_spectra")
+
+    assert plan["recommended_layout"] == "headerless_axis_column_spectra"
+    assert plan["shape"] == {"rows": 8, "columns": 4, "samples": 3, "features": 8}
+    assert plan["axis"] == {"column": "column 1", "title": "Wavelength", "units": "nm"}
+    assert dataset.shape == (3, 8)
+    assert dataset.feature_axis.title == "Wavelength"
+    assert dataset.feature_axis.units == "nm"
+    np.testing.assert_allclose(dataset.feature_axis.values, [190.529 + index for index in range(8)])
+    np.testing.assert_allclose(dataset.X[0], [index + 0.1 for index in range(8)])
+
+
+def test_decimal_comma_supplier_profiles_cover_headered_and_unheaded_spectra(tmp_path):
+    headered = tmp_path / "supplier-headered.csv"
+    headered.write_text("Wavenumber (cm-1);A;B\n400,0;0,10;0,20\n401,0;0,30;0,40\n", encoding="ascii")
+    unheaded = tmp_path / "supplier-unheaded.csv"
+    unheaded.write_text("400,0;0,10\n401,0;0,30\n402,0;0,50\n", encoding="ascii")
+
+    headered_plan = inspect_csv_import_plan(headered)
+    unheaded_plan = inspect_csv_import_plan(unheaded)
+    headered_dataset = load_csv_as_sherpa(headered, csv_layout="headered_decimal_comma")
+    unheaded_dataset = load_csv_as_sherpa(
+        unheaded,
+        csv_layout="headerless_two_column_spectrum_decimal_comma",
+    )
+
+    assert headered_plan["recommended_layout"] == "headered_decimal_comma"
+    assert unheaded_plan["recommended_layout"] == "headerless_two_column_spectrum_decimal_comma"
+    np.testing.assert_allclose(headered_dataset.feature_axis.values, [400.0, 401.0])
+    np.testing.assert_allclose(headered_dataset.X, [[0.1, 0.3], [0.2, 0.4]])
+    np.testing.assert_allclose(unheaded_dataset.feature_axis.values, [400.0, 401.0, 402.0])
+    np.testing.assert_allclose(unheaded_dataset.X, [[0.1, 0.3, 0.5]])
+
+
+def test_headerless_supplier_csv_preserves_explicit_missing_values_and_rejects_infinity(tmp_path):
+    missing = tmp_path / "supplier-missing.csv"
+    missing.write_text("400.0,#NaN\n401.0,0.20\n402.0,0.30\n", encoding="ascii")
+
+    plan = inspect_csv_import_plan(missing)
+    dataset = load_csv_as_sherpa(missing, csv_layout="headerless_two_column_spectrum")
+
+    assert plan["recommended_layout"] == "headerless_two_column_spectrum"
+    assert np.isnan(dataset.X[0, 0])
+    np.testing.assert_array_equal(dataset.X[0, 1:], [0.2, 0.3])
+
+    infinite = tmp_path / "supplier-infinite.csv"
+    infinite.write_text("400.0,inf\n401.0,0.20\n402.0,0.30\n", encoding="ascii")
+    with pytest.raises(ValueError, match="explicit headerless two-column"):
+        load_csv_as_sherpa(infinite, csv_layout="headerless_two_column_spectrum")
 
 
 def test_inspect_csv_import_plan_axis_column_reports_full_feature_count(tmp_path):
@@ -172,6 +337,54 @@ def test_axis_column_csv_cannot_be_downgraded_by_prepared_feature_override(tmp_p
 
     assert dataset.data_role == "X_spectra"
     assert dataset.X.shape == (2, 2)
+
+
+def test_prepared_target_column_binds_registry_preserved_csv_property(tmp_path):
+    csv_path = tmp_path / "feature_table.csv"
+    csv_path.write_text(
+        "length,width,target\n5.1,3.5,setosa\n7.0,3.2,versicolor\n",
+        encoding="ascii",
+    )
+
+    from spectra_sherpa.app.services.dag.nodes.data.loaders import _load_registry_asset
+
+    loaded = _load_registry_asset(
+        csv_path,
+        prepared_overrides={
+            "data_role": "X_features",
+            "target_column": "target",
+            "target_type": "categorical",
+        },
+    )
+
+    assert loaded.dataset.data_role == "X_features"
+    assert loaded.dataset.feature_axis.labels == ["length", "width"]
+    assert loaded.dataset.target.tolist() == ["setosa", "versicolor"]
+    assert loaded.dataset.target_context.target_type == "categorical"
+    assert loaded.dataset.target_context.target_names == ["target"]
+    assert loaded.dataset.target_context.selected_target == "target"
+    assert loaded.dataset.target_context.class_names == ["setosa", "versicolor"]
+
+
+def test_prepared_target_column_replaces_an_inferred_target(tmp_path):
+    csv_path = tmp_path / "feature_table.csv"
+    csv_path.write_text(
+        "length,width,inferred_target,chosen_target\n" "5.1,3.5,old-a,selected-b\n" "7.0,3.2,old-b,selected-a\n",
+        encoding="ascii",
+    )
+
+    dataset = load_csv_as_sherpa(csv_path, data_role="X_features", target_column="inferred_target")
+    dataset = apply_dataset_prepared_data_overrides(
+        dataset,
+        {
+            "target_column": "chosen_target",
+            "target_type": "categorical",
+        },
+    )
+
+    assert dataset.target.tolist() == ["selected-b", "selected-a"]
+    assert dataset.target_context.target_name == "chosen_target"
+    assert dataset.target_context.class_names == ["selected-a", "selected-b"]
 
 
 @pytest.mark.asyncio
@@ -354,32 +567,44 @@ async def test_filter_samples_node_selects_shared_axis_csv_condition_by_intensit
     assert output.sample_axis.labels == ["15:85 AuNPs:PP AuNPs with KCl"]
 
 
+@pytest.mark.asyncio
+async def test_filter_samples_node_honors_unfolded_image_source_inclusions():
+    dataset = SherpaDataset(
+        X=np.arange(24.0).reshape(6, 4),
+        sample_axis=SampleAxis(labels=[f"pixel-{index}" for index in range(1, 7)]),
+        layout=DatasetLayoutContext(
+            kind="image",
+            source_type="image",
+            source_dtype="float64",
+            source_shape=(6, 4),
+            mode_roles=("sample", "feature"),
+            image_size=(2, 3),
+            image_mode=1,
+            image_include=(True, True, False, False, True, True),
+            original_unfolded_shape=(6, 4),
+        ),
+        data_role="X_hsi",
+    )
+    node = FilterSamplesNode("filter_source_inclusions", parameters={"field": "source_inclusion"})
+
+    output = (await node.execute(X=dataset))["default"]
+
+    np.testing.assert_array_equal(output.X, dataset.X[[0, 1, 4, 5]])
+    assert output.sample_axis is not None
+    assert output.sample_axis.labels == ["pixel-1", "pixel-2", "pixel-5", "pixel-6"]
+    assert output.data_role == "X_spectra"
+    assert output.layout.kind == "generic"
+    assert output.layout.source_type == "image-row-selection"
+    assert output.layout.image_size is None
+    assert output.layout.image_include is None
+    assert output.layout.original_unfolded_shape == (6, 4)
+    assert output.provenance[-1].parameters["selected_indices"] == (0, 1, 4, 5)
+
+
 def test_filter_samples_node_is_available_in_data_sources_category():
     assert FilterSamplesNode.metadata.category == "data"
     assert FilterSamplesNode.metadata.node_type == "data.filter_samples"
     assert FilterSamplesNode.metadata.label == "Filter Samples"
     field_param = next(param for param in FilterSamplesNode.metadata.parameters if param.name == "field")
     assert {"label": "Intensity", "value": "intensity"} in field_param.options
-
-
-@pytest.mark.skipif(not HAS_SCP, reason="SpectroChemPy not installed")
-def test_stack_datasets_preserves_string_sample_labels_for_multispectrum_files():
-    wavenumbers = np.array([1000.0, 1001.0, 1002.0])
-    ds1 = create_spectral_dataset(
-        data=np.array([1.0, 2.0, 3.0]),
-        wavenumbers=wavenumbers,
-        units=SpectralUnit.ABSORBANCE,
-        title="scan_001",
-    )
-    ds2 = create_spectral_dataset(
-        data=np.array([4.0, 5.0, 6.0]),
-        wavenumbers=wavenumbers,
-        units=SpectralUnit.ABSORBANCE,
-        title="scan_002",
-    )
-
-    stacked = stack_datasets([ds1, ds2])
-
-    assert stacked.shape == (2, 3)
-    np.testing.assert_array_equal(stacked.y.data, np.array([0, 1]))
-    assert list(stacked.y.labels) == ["scan_001", "scan_002"]
+    assert {"label": "Source Inclusion", "value": "source_inclusion"} in field_param.options

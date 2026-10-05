@@ -1,171 +1,129 @@
-"""PDS — Piecewise Direct Standardization.
-
-Registered as ``transfer.pds``.
-
-Transfers spectra from a secondary instrument to the response space of
-a primary (master) instrument using local multivariate regression in
-sliding wavelength windows.
-
-For each wavelength j on the primary instrument, PDS fits a regression
-model using a window of neighbouring wavelengths on the secondary:
-    x_primary[j] = F_j @ x_secondary[j-w : j+w+1]
-
-The fitted transformation matrices are then applied to new secondary
-spectra to produce standardized spectra compatible with the primary
-calibration model.
-
-References:
-    Wang et al., Analytical Chemistry 63 (1991) 2750-2756.
-    Bouveresse & Massart, Vibrational Spectroscopy 11 (1996) 3-8.
-"""
+"""Canonical Piecewise Direct Standardization (PDS)."""
 
 from __future__ import annotations
 
-import logging
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
 
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
+from spectra_sherpa.app.services.dag.node_base import (
+    Node,
+    NodeMetadata,
+    NodeParameter,
+    NodePolicy,
+    NodeResult,
+    PortMetadata,
+    register_node,
+)
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    WorkerCapability,
+)
 
-from ...io_contracts import bind_X, build_dataset_like, to_numpy_2d
-from ...node_base import Node, NodeMetadata, NodeParameter, NodeResult, PortMetadata, register_node
+from ..modeling import pls_core
+from . import _core, _fitted_state
 
-logger = logging.getLogger(__name__)
+PDS_STATE_SERIALIZER = "spectrasherpa.transfer.pds-state/2"
+_STATE_FIELDS = {
+    "serializer",
+    "method",
+    "reference_samples",
+    "primary_features",
+    "secondary_features",
+    "paired_sample_identity_sha256",
+    "primary_axis",
+    "secondary_axis",
+    "primary_signal_units",
+    "secondary_signal_units",
+    "half_window",
+    "n_components",
+    "windows",
+}
 
 
-def _pds_fit(
-    X_primary: np.ndarray,
-    X_secondary: np.ndarray,
-    half_window: int,
+def _whole_number(value: object, *, name: str, minimum: int) -> int:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not np.isfinite(value)
+        or int(value) != value
+        or int(value) < minimum
+    ):
+        raise ValueError(f"{name} must be a whole number >= {minimum}")
+    return int(value)
+
+
+def _canonical_parameters(parameters: dict[str, object]) -> dict[str, object]:
+    return {
+        "half_window": _whole_number(parameters["half_window"], name="half_window", minimum=0),
+        "n_components": _whole_number(parameters["n_components"], name="n_components", minimum=1),
+    }
+
+
+def _window_bounds(index: int, features: int, half_window: int) -> tuple[int, int]:
+    return max(0, index - half_window), min(features, index + half_window + 1)
+
+
+def _fit_local_pls(
+    X_window: np.ndarray,
+    y_primary: np.ndarray,
+    *,
     n_components: int,
-) -> list[np.ndarray]:
-    """Fit PDS transformation matrices.
+) -> tuple[np.ndarray, float]:
+    """Return one public-predict affine map for the published local PLS step."""
 
-    Args:
-        X_primary: Transfer samples on primary instrument (n_transfer, n_features).
-        X_secondary: Same samples on secondary instrument (n_transfer, n_features).
-        half_window: Half-width of the local window (full width = 2*half_window + 1).
-        n_components: Max PLS/PCA components for local regression (0 = OLS).
-
-    Returns:
-        List of n_features transformation vectors/matrices, one per wavelength.
-    """
-    n_transfer, n_features = X_primary.shape
-    transforms: list[np.ndarray] = []
-
-    for j in range(n_features):
-        # Window indices on secondary
-        lo = max(0, j - half_window)
-        hi = min(n_features, j + half_window + 1)
-        X_win = X_secondary[:, lo:hi]  # (n_transfer, window_size)
-
-        y_j = X_primary[:, j]  # (n_transfer,)
-
-        window_size = hi - lo
-
-        if n_components > 0 and window_size > 1:
-            # PCA-based local regression (regularised)
-            n_comp = min(n_components, window_size, n_transfer - 1)
-            # Center
-            X_mean = X_win.mean(axis=0)
-            y_mean = y_j.mean()
-            Xc = X_win - X_mean
-            yc = y_j - y_mean
-
-            # SVD for pseudo-inverse with truncation
-            try:
-                U, s, Vt = np.linalg.svd(Xc, full_matrices=False)
-                s_inv = np.zeros_like(s)
-                s_inv[:n_comp] = 1.0 / np.maximum(s[:n_comp], 1e-12)
-                beta = Vt.T @ np.diag(s_inv) @ U.T @ yc
-                intercept = y_mean - X_mean @ beta
-            except np.linalg.LinAlgError:
-                # Fallback: ridge regression
-                lam = 1e-6 * np.trace(Xc.T @ Xc) / max(window_size, 1)
-                beta = np.linalg.solve(Xc.T @ Xc + lam * np.eye(window_size), Xc.T @ yc)
-                intercept = y_mean - X_mean @ beta
-        else:
-            # OLS with ridge regularization
-            X_mean = X_win.mean(axis=0)
-            y_mean = y_j.mean()
-            Xc = X_win - X_mean
-            yc = y_j - y_mean
-            lam = 1e-6 * max(np.trace(Xc.T @ Xc) / max(window_size, 1), 1e-12)
-            beta = np.linalg.solve(Xc.T @ Xc + lam * np.eye(window_size), Xc.T @ yc)
-            intercept = y_mean - X_mean @ beta
-
-        transforms.append(
-            {
-                "beta": beta,
-                "intercept": intercept,
-                "lo": lo,
-                "hi": hi,
-            }
-        )
-
-    return transforms
-
-
-def _pds_transform(
-    X_secondary: np.ndarray,
-    transforms: list[dict],
-) -> np.ndarray:
-    """Apply PDS transformation to secondary spectra.
-
-    Args:
-        X_secondary: New spectra from secondary instrument (n_samples, n_features).
-        transforms: Fitted transformation parameters from _pds_fit.
-
-    Returns:
-        Standardized spectra (n_samples, n_features).
-    """
-    n_samples, n_features = X_secondary.shape
-    X_std = np.zeros_like(X_secondary)
-
-    for j, t in enumerate(transforms):
-        X_win = X_secondary[:, t["lo"] : t["hi"]]
-        X_std[:, j] = X_win @ t["beta"] + t["intercept"]
-
-    return X_std
+    model = pls_core.fit_simpls_exact(
+        X_window,
+        y_primary,
+        n_components=n_components,
+        scale=False,
+    )
+    coefficients = np.asarray(model.coefficients, dtype=np.float64).reshape(-1)
+    intercept = float(model.prediction_offset[0] - model.x_offset @ coefficients)
+    if not np.isfinite(coefficients).all() or not np.isfinite(intercept):
+        raise ValueError("PDS local PLS produced non-finite coefficients")
+    return coefficients, intercept
 
 
 @register_node
-class PDSNode(Node):
-    """Piecewise Direct Standardization (PDS).
+class PDSNode(_fitted_state.TransferFittedStateEnvelopeAuthority, Node):
+    """Fit local PLS maps on paired standards and emit a reusable state."""
 
-    Transfers spectra from a secondary instrument to match the primary
-    instrument's response using local window regression on paired
-    transfer samples.
-
-    Connect paired transfer samples (same physical samples measured on
-    both instruments) to fit the transfer function, then apply it to
-    new secondary spectra.
-    """
+    fitted_state_serializer = PDS_STATE_SERIALIZER
 
     metadata = NodeMetadata(
         node_type="transfer.pds",
         category="preprocessing",
-        label="PDS Transfer",
-        description="Piecewise Direct Standardization — multi-instrument calibration transfer",
+        label="Piecewise Direct Standardization",
+        description=(
+            "Fit one local PLS relation per primary wavelength from explicitly paired primary/secondary "
+            "transfer standards. The fitted state can be applied to new spectra by transfer.apply_fitted."
+        ),
         parameters=[
             NodeParameter(
                 name="half_window",
                 label="Half Window",
                 param_type="number",
                 default=3,
-                min_value=1,
+                min_value=0,
                 step=1,
-                description="Half-width of the local regression window (full = 2*w+1 channels)",
+                required=True,
+                description="Secondary channels on either side of each primary wavelength.",
             ),
             NodeParameter(
                 name="n_components",
-                label="Local Components",
+                label="Local PLS Components",
                 param_type="number",
                 default=2,
-                min_value=0,
+                min_value=1,
                 step=1,
-                description="PCA components for local regression (0 = OLS, >0 = PCA-regularised)",
+                required=True,
+                description="Exact local PLS rank; unsupported ranks are rejected rather than truncated.",
             ),
         ],
         input_ports=[
@@ -173,22 +131,15 @@ class PDSNode(Node):
                 name="X_primary",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
-                label="Primary Transfer Spectra",
-                description="Transfer samples measured on the primary (master) instrument",
+                label="Primary Transfer Standards",
+                accepted_data_roles=["X_spectra"],
             ),
             PortMetadata(
                 name="X_secondary",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
-                label="Secondary Transfer Spectra",
-                description="Same transfer samples measured on the secondary instrument",
-            ),
-            PortMetadata(
-                name="X_new",
-                type_ref="spectrasherpa://types/SpectralDataset/1.0",
-                required=True,
-                label="New Secondary Spectra",
-                description="New spectra from secondary instrument to standardize",
+                label="Secondary Transfer Standards",
+                accepted_data_roles=["X_spectra"],
             ),
         ],
         output_ports=[
@@ -196,215 +147,218 @@ class PDSNode(Node):
                 name="X_standardized",
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
-                label="Standardized Spectra",
-                description="Secondary spectra transformed to primary instrument space",
+                label="Primary-Space Spectra",
+                accepted_data_roles=["X_spectra"],
+            ),
+            PortMetadata(
+                name="fitted_state",
+                type_ref="spectrasherpa://types/SpectralTransferModel/1.0",
+                required=True,
+                label="Fitted PDS State",
             ),
             PortMetadata(
                 name="transfer_error",
-                type_ref="spectrasherpa://types/Any/1.0",
-                required=False,
-                label="Transfer Diagnostics",
-                description="Transfer quality metrics on the paired samples",
+                type_ref="spectrasherpa://types/ValidationResult/1.0",
+                required=True,
+                label="Paired-Standard Diagnostics",
             ),
         ],
-        input_types=["NDDataset"],
+        input_types=["SherpaDataset"],
         output_type="dict",
-        diagnostics=["rmse_transfer", "max_error", "half_window", "n_features"],
+        diagnostics=["rmse_transfer", "max_error", "half_window", "n_components"],
+        policy=NodePolicy(
+            safe_for_auto_apply=False,
+            requires_human_review=True,
+            data_egress_risk="none",
+            offload_to_pool=True,
+            required_worker_capabilities=[],
+        ),
+        canonical_parameter_validator=_canonical_parameters,
     )
 
-    def generate_python(
-        self,
-        inputs: dict[str, str],
-        indent: str = "    ",
-        use_scp: bool = True,
-    ) -> list[str]:
-        """Generate Python code for PDS calibration transfer."""
-        X_pri_expr = inputs.get("X_primary", "X_primary")
-        X_sec_expr = inputs.get("X_secondary", "X_secondary")
-        X_new_expr = inputs.get("X_new", "X_new")
-
+    def fit_fitted_state(self, X_primary: Any, X_secondary: Any) -> dict[str, object]:
+        _, _, primary, secondary, binding = _core.admit_paired_spectra(
+            X_primary,
+            X_secondary,
+            require_common_axis=True,
+        )
         params = self._resolve_params()
-        half_window = int(params.get("half_window", 3))
-        n_components = int(params.get("n_components", 2))
-
-        lines: list[str] = []
-        lines.append(f"{indent}# --- PDS Calibration Transfer ({self.node_id}) ---")
-        lines.append(f"{indent}# Piecewise Direct Standardization (Wang et al., Anal. Chem. 1991)")
-        lines.append(
-            f"{indent}_X_pri = np.asarray("
-            f"{X_pri_expr}.data if hasattr({X_pri_expr}, 'data') else {X_pri_expr}, dtype=np.float64)"
+        half_window = int(params["half_window"])
+        n_components = int(params["n_components"])
+        local_windows = [_window_bounds(index, secondary.shape[1], half_window) for index in range(primary.shape[1])]
+        maximum_rank = min(
+            int(np.linalg.matrix_rank(secondary[:, lo:hi] - np.mean(secondary[:, lo:hi], axis=0, dtype=np.float64)))
+            for lo, hi in local_windows
         )
-        lines.append(
-            f"{indent}_X_sec = np.asarray("
-            f"{X_sec_expr}.data if hasattr({X_sec_expr}, 'data') else {X_sec_expr}, dtype=np.float64)"
-        )
-        lines.append(
-            f"{indent}_X_new_arr = np.asarray("
-            f"{X_new_expr}.data if hasattr({X_new_expr}, 'data') else {X_new_expr}, dtype=np.float64)"
-        )
-        lines.append(f"{indent}_X_pri = np.atleast_2d(_X_pri)")
-        lines.append(f"{indent}_X_sec = np.atleast_2d(_X_sec)")
-        lines.append(f"{indent}_X_new_arr = np.atleast_2d(_X_new_arr)")
-        lines.append(f"{indent}_half_window = {half_window}")
-        lines.append(f"{indent}_n_comp_pds = {n_components}")
-        lines.append(f"{indent}_n_feat = _X_pri.shape[1]")
-        lines.append("")
-        lines.append(f"{indent}# Fit PDS: local regression at each wavelength")
-        lines.append(f"{indent}_pds_transforms = []")
-        lines.append(f"{indent}for _j in range(_n_feat):")
-        lines.append(f"{indent}    _lo = max(0, _j - _half_window)")
-        lines.append(f"{indent}    _hi = min(_n_feat, _j + _half_window + 1)")
-        lines.append(f"{indent}    _X_win = _X_sec[:, _lo:_hi]")
-        lines.append(f"{indent}    _y_j = _X_pri[:, _j]")
-        lines.append(f"{indent}    _ws = _hi - _lo")
-        lines.append(f"{indent}    _X_mean = _X_win.mean(axis=0)")
-        lines.append(f"{indent}    _y_mean = _y_j.mean()")
-        lines.append(f"{indent}    _Xc = _X_win - _X_mean")
-        lines.append(f"{indent}    _yc = _y_j - _y_mean")
-        lines.append(f"{indent}    if _n_comp_pds > 0 and _ws > 1:")
-        lines.append(f"{indent}        _nc = min(_n_comp_pds, _ws, _X_sec.shape[0] - 1)")
-        lines.append(f"{indent}        try:")
-        lines.append(f"{indent}            _U, _s, _Vt = np.linalg.svd(_Xc, full_matrices=False)")
-        lines.append(f"{indent}            _s_inv = np.zeros_like(_s)")
-        lines.append(f"{indent}            _s_inv[:_nc] = 1.0 / np.maximum(_s[:_nc], 1e-12)")
-        lines.append(f"{indent}            _beta = _Vt.T @ np.diag(_s_inv) @ _U.T @ _yc")
-        lines.append(f"{indent}        except np.linalg.LinAlgError:")
-        lines.append(f"{indent}            _lam = 1e-6 * np.trace(_Xc.T @ _Xc) / max(_ws, 1)")
-        lines.append(f"{indent}            _beta = np.linalg.solve(_Xc.T @ _Xc + _lam * np.eye(_ws), _Xc.T @ _yc)")
-        lines.append(f"{indent}    else:")
-        lines.append(f"{indent}        _lam = 1e-6 * max(np.trace(_Xc.T @ _Xc) / max(_ws, 1), 1e-12)")
-        lines.append(f"{indent}        _beta = np.linalg.solve(_Xc.T @ _Xc + _lam * np.eye(_ws), _Xc.T @ _yc)")
-        lines.append(f"{indent}    _intercept = _y_mean - _X_mean @ _beta")
-        lines.append(
-            f"{indent}    _pds_transforms.append({{'beta': _beta, 'intercept': _intercept, 'lo': _lo, 'hi': _hi}})"
-        )
-        lines.append("")
-        lines.append(f"{indent}# Apply PDS to new secondary spectra")
-        lines.append(f"{indent}_X_std = np.zeros_like(_X_new_arr)")
-        lines.append(f"{indent}for _j, _t in enumerate(_pds_transforms):")
-        lines.append(f"{indent}    _X_std[:, _j] = _X_new_arr[:, _t['lo']:_t['hi']] @ _t['beta'] + _t['intercept']")
-        lines.append("")
-
-        # Wrap as SherpaDataset
-        lines.append(f"{indent}_fa = getattr({X_new_expr}, 'feature_axis', None)")
-        lines.append(f"{indent}_X_std_ds = SherpaDataset(_X_std, feature_axis=_fa)")
-
-        # Transfer diagnostics
-        lines.append(f"{indent}_X_sec_std = np.zeros_like(_X_sec)")
-        lines.append(f"{indent}for _j, _t in enumerate(_pds_transforms):")
-        lines.append(f"{indent}    _X_sec_std[:, _j] = _X_sec[:, _t['lo']:_t['hi']] @ _t['beta'] + _t['intercept']")
-        lines.append(f"{indent}_resid = _X_pri - _X_sec_std")
-        lines.append(f"{indent}_rmse_transfer = float(np.sqrt(np.mean(_resid ** 2)))")
-        lines.append(f"{indent}results['{self.node_id}'] = {{")
-        lines.append(f"{indent}    'X_standardized': _X_std_ds,")
-        lines.append(
-            f"{indent}    'transfer_error': {{'rmse_transfer': _rmse_transfer,"
-            f" 'n_features': _n_feat, 'half_window': _half_window}},"
-        )
-        lines.append(f"{indent}}}")
-        lines.append(
-            f'{indent}print(f"  PDS Transfer: {{_X_new_arr.shape[0]}} spectra standardized,'
-            f' RMSE={{_rmse_transfer:.6f}}")'
-        )
-
-        return lines
-
-    async def execute(
-        self,
-        X_primary: Any = None,
-        X_secondary: Any = None,
-        X_new: Any = None,
-        **kwargs: Any,
-    ) -> NodeResult:
-        params = self._resolve_params()
-        half_window = int(params.get("half_window", 3))
-        n_components = int(params.get("n_components", 2))
-
-        X_pri_ds = bind_X(
-            X_primary, missing_message="PDS requires X_primary (master transfer spectra)", allow_array=True
-        )
-        X_sec_ds = bind_X(
-            X_secondary, missing_message="PDS requires X_secondary (secondary transfer spectra)", allow_array=True
-        )
-        X_new_ds = bind_X(
-            X_new, missing_message="PDS requires X_new (new secondary spectra to standardize)", allow_array=True
-        )
-
-        X_pri = to_numpy_2d(X_pri_ds, name="X_primary", dtype=np.float64)
-        X_sec = to_numpy_2d(X_sec_ds, name="X_secondary", dtype=np.float64)
-        X_new_arr = to_numpy_2d(X_new_ds, name="X_new", dtype=np.float64)
-
-        # Validate paired samples
-        if X_pri.shape[0] != X_sec.shape[0]:
+        if n_components > maximum_rank:
             raise ValueError(
-                f"Transfer samples must be paired: X_primary has {X_pri.shape[0]} samples "
-                f"but X_secondary has {X_sec.shape[0]}"
+                f"PDS n_components={n_components} exceeds the admitted local rank {maximum_rank}; "
+                "choose an explicit supported rank"
             )
-        if X_pri.shape[1] != X_sec.shape[1]:
-            raise ValueError(f"Primary and secondary must have same features: " f"{X_pri.shape[1]} vs {X_sec.shape[1]}")
-        if X_new_arr.shape[1] != X_sec.shape[1]:
-            raise ValueError(
-                f"X_new must have same features as secondary: " f"{X_new_arr.shape[1]} vs {X_sec.shape[1]}"
+        windows: list[dict[str, object]] = []
+        for index, (lo, hi) in enumerate(local_windows):
+            coefficients, intercept = _fit_local_pls(
+                secondary[:, lo:hi],
+                primary[:, index],
+                n_components=n_components,
             )
+            windows.append(
+                {
+                    "lo": lo,
+                    "hi": hi,
+                    "coefficients": coefficients.tolist(),
+                    "intercept": intercept,
+                }
+            )
+        return {
+            "serializer": PDS_STATE_SERIALIZER,
+            "method": "pds",
+            **binding,
+            "half_window": half_window,
+            "n_components": n_components,
+            "windows": windows,
+        }
 
-        n_features = X_pri.shape[1]
+    def validate_fitted_state(self, state: object) -> dict[str, object]:
+        if not isinstance(state, Mapping) or set(state) != _STATE_FIELDS or state["serializer"] != PDS_STATE_SERIALIZER:
+            raise ValueError("PDS state does not use the closed serializer schema")
+        common = _core.normalize_common_state(state, method="pds")
+        half_window = _whole_number(state["half_window"], name="half_window", minimum=0)
+        n_components = _whole_number(state["n_components"], name="n_components", minimum=1)
+        windows = state["windows"]
+        primary_features = int(common["primary_features"])
+        secondary_features = int(common["secondary_features"])
+        if not isinstance(windows, list) or len(windows) != primary_features:
+            raise ValueError("PDS state must contain one local relation per primary feature")
+        normalized_windows: list[dict[str, object]] = []
+        minimum_window = secondary_features
+        for index, window in enumerate(windows):
+            if not isinstance(window, Mapping) or set(window) != {"lo", "hi", "coefficients", "intercept"}:
+                raise ValueError("PDS state contains an invalid local relation")
+            lo = window["lo"]
+            hi = window["hi"]
+            expected_lo, expected_hi = _window_bounds(index, secondary_features, half_window)
+            if lo != expected_lo or hi != expected_hi:
+                raise ValueError("PDS state local-window identity does not match its declared half_window")
+            width = expected_hi - expected_lo
+            minimum_window = min(minimum_window, width)
+            coefficients = _core.finite_vector(window["coefficients"], name="PDS coefficients", size=width)
+            intercept = window["intercept"]
+            if isinstance(intercept, bool) or not isinstance(intercept, (int, float)) or not np.isfinite(intercept):
+                raise ValueError("PDS state contains an invalid intercept")
+            normalized_windows.append(
+                {
+                    "lo": expected_lo,
+                    "hi": expected_hi,
+                    "coefficients": coefficients.tolist(),
+                    "intercept": float(intercept),
+                }
+            )
+        maximum_rank = min(int(common["reference_samples"]) - 1, minimum_window)
+        if n_components > maximum_rank:
+            raise ValueError("PDS state declares a rank unsupported by its transfer standards and local windows")
+        return {
+            "serializer": PDS_STATE_SERIALIZER,
+            **common,
+            "half_window": half_window,
+            "n_components": n_components,
+            "windows": normalized_windows,
+        }
 
-        # Fit PDS
-        transforms = _pds_fit(X_pri, X_sec, half_window, n_components)
-
-        # Apply to transfer samples for diagnostics
-        X_sec_std = _pds_transform(X_sec, transforms)
-        residuals = X_pri - X_sec_std
-        rmse_transfer = float(np.sqrt(np.mean(residuals**2)))
-        max_error = float(np.max(np.abs(residuals)))
-        per_feature_rmse = np.sqrt(np.mean(residuals**2, axis=0))
-
-        # Apply to new spectra
-        X_standardized = _pds_transform(X_new_arr, transforms)
-        X_std_ds = build_dataset_like(X_standardized, X_new_ds)
-
-        # Copy feature axis from the new dataset
-        fa = getattr(X_new_ds, "feature_axis", None)
-        if fa is not None:
-            X_std_ds.feature_axis = fa
-
+    def apply_fitted_state(self, input_data: Any, state: Mapping[str, object]):
+        normalized = self.validate_fitted_state(state)
+        source, matrix = _core.apply_input(input_data, normalized)
+        output = np.empty((matrix.shape[0], int(normalized["primary_features"])), dtype=np.float64)
+        for index, window in enumerate(normalized["windows"]):
+            assert isinstance(window, Mapping)
+            lo = int(window["lo"])
+            hi = int(window["hi"])
+            coefficients = np.asarray(window["coefficients"], dtype=np.float64)
+            output[:, index] = matrix[:, lo:hi] @ coefficients + float(window["intercept"])
+        result = _core.build_primary_output(output, source, normalized)
         add_processing_step(
-            X_std_ds,
+            result,
             "transfer.pds",
             {
-                "half_window": half_window,
-                "n_components": n_components,
-                "n_transfer_samples": X_pri.shape[0],
-                "rmse_transfer": rmse_transfer,
+                "half_window": normalized["half_window"],
+                "n_components": normalized["n_components"],
+                "state_serializer": PDS_STATE_SERIALIZER,
             },
             self.node_id,
         )
+        return result
 
-        transfer_diagnostics = {
-            "rmse_transfer": rmse_transfer,
-            "max_error": max_error,
-            "per_feature_rmse": per_feature_rmse.tolist(),
-            "n_transfer_samples": X_pri.shape[0],
-            "n_features": n_features,
-            "half_window": half_window,
-            "window_size": 2 * half_window + 1,
-        }
-
-        logger.info(
-            f"PDS: {X_new_arr.shape[0]} spectra standardized, "
-            f"transfer RMSE={rmse_transfer:.6f}, window={2*half_window+1}"
+    def _execute_sync(self, X_primary: Any, X_secondary: Any) -> NodeResult:
+        _, _, primary_matrix, _, _ = _core.admit_paired_spectra(
+            X_primary,
+            X_secondary,
+            require_common_axis=True,
         )
-
+        state = self.fit_fitted_state(X_primary, X_secondary)
+        fitted_secondary = np.asarray(self.apply_fitted_state(X_secondary, state).X, dtype=np.float64)
+        diagnostics = _core.transfer_diagnostics(primary_matrix, fitted_secondary)
+        diagnostics.update({"half_window": state["half_window"], "n_components": state["n_components"]})
         return NodeResult(
             outputs={
-                "X_standardized": X_std_ds,
-                "transfer_error": transfer_diagnostics,
+                "X_standardized": self.apply_fitted_state(X_secondary, state),
+                "fitted_state": self.make_fitted_state_envelope(state),
+                "transfer_error": diagnostics,
             },
-            diagnostics={
-                "rmse_transfer": rmse_transfer,
-                "max_error": max_error,
-                "half_window": half_window,
-                "n_features": n_features,
-                "n_transfer_samples": X_pri.shape[0],
-            },
+            diagnostics=dict(diagnostics),
         )
+
+    async def execute(self, X_primary: Any = None, X_secondary: Any = None, **kwargs: Any) -> NodeResult:
+        del kwargs
+        return self._execute_sync(X_primary, X_secondary)
+
+    def generate_python(self, inputs: dict[str, str], indent: str = "    ", use_scp: bool = True) -> list[str]:
+        del use_scp
+        return [
+            f"{indent}from spectra_sherpa.app.services.dag.nodes.transfer.pds_node import execute_pds",
+            f"{indent}results[{self.node_id!r}] = execute_pds(",
+            f"{indent}    {inputs.get('X_primary', 'X_primary')},",
+            f"{indent}    {inputs.get('X_secondary', 'X_secondary')},",
+            f"{indent}    node_id={self.node_id!r}, parameters={self._resolve_params()!r},",
+            f"{indent}).outputs",
+        ]
+
+
+def execute_pds(
+    X_primary: Any,
+    X_secondary: Any,
+    *,
+    node_id: str,
+    parameters: dict[str, object],
+) -> NodeResult:
+    return PDSNode(node_id, parameters)._execute_sync(X_primary, X_secondary)
+
+
+bind_stable_execution_contract(
+    PDSNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.FITTED_TRANSFORM,
+    implementation_id="spectrasherpa.transfer.pds",
+    implementation_version="1.1.1",
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="preserves_samples",
+    feature_effect="transforms_features",
+    axis_effect="changes_axis",
+    unit_effect="requires_compatible_units",
+    resource_hints={"timeout_seconds": 60, "cpu_seconds": 60, "memory_bytes": 1_073_741_824},
+    license_id="Apache-2.0",
+    help_reference="docs/nodes/preprocessing.md",
+    implementation_modules=(_core, _fitted_state, pls_core, _core.supervision_binding),
+    implementation_distributions=("numpy",),
+    runtime_requirements=(("numpy", "1.26.4"),),
+    citations=(
+        "Wang, Veltkamp, and Kowalski, Analytical Chemistry 63 (1991) 2750-2756, doi:10.1021/ac00023a016",
+        "Bouveresse and Massart, Chemometrics and Intelligent Laboratory Systems "
+        "32 (1996) 201-213, doi:10.1016/0169-7439(95)00074-7",
+        pls_core.CITATION,
+    ),
+    fitted_state_serializer=PDS_STATE_SERIALIZER,
+)
+
+
+__all__ = ["PDSNode", "PDS_STATE_SERIALIZER", "execute_pds"]

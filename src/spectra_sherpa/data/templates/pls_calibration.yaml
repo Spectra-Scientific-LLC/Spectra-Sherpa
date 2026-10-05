@@ -5,54 +5,50 @@ description: PLS regression for quantitative calibration. Reports RMSEP and R² 
   a held-out test set.
 category: calibration
 is_active: true
+status: ready
 data_modalities:
 - spectra
 - features
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Data
-    parameters:
+    parameters: {}
+    example_binding:
       source: eigenvector
-      eigenvector_dataset: corn_m5
+      dataset_name: corn_m5
+      selected_target: Moisture
+      target_type: continuous
     position_x: 175
     position_y: 50
-  - node_id: preprocess_1
-    node_type: preprocess.scale
-    label: Autoscale
-    parameters:
-      method: autoscale
-    position_x: 175
-    position_y: 250
   - node_id: partition_1
-    node_type: selection.sample_partition
+    node_type: data.train_test_split
     label: Train/Test Split
     parameters:
-      method: kennard_stone
+      split_method: kennard_stone
       test_size: 0.25
-      n_pcs: 5
+      n_components: 5
     position_x: 175
     position_y: 450
   - node_id: model_1
-    node_type: model.pls
+    node_type: model.fitted_pls
     label: Train PLS Regression
     parameters:
       n_components: 3
-      scale: false
+      scale: true
     position_x: 175
     position_y: 650
   - node_id: predict_1
-    node_type: model.pls_predict
+    node_type: model.predict_regression
     label: Predict Test Set
     parameters: {}
     position_x: 500
     position_y: 650
   - node_id: eval_1
-    node_type: diagnostics.holdout_evaluation
+    node_type: diagnostics.labeled_regression_evaluator
     label: Test Evaluation
-    parameters:
-      task_type: regression
+    parameters: {}
     position_x: 500
     position_y: 850
   - node_id: table_1
@@ -70,51 +66,48 @@ template_data:
     position_y: 1050
   edges:
   - from_node_id: data_1
-    to_node_id: preprocess_1
-  - from_node_id: preprocess_1
     to_node_id: partition_1
     to_input: X
+  - from_node_id: data_1
+    to_node_id: partition_1
+    from_output: target
+    to_input: y
   - from_node_id: partition_1
     to_node_id: model_1
     from_output: X_train
-    to_input: X
+    to_input: default
+  - from_node_id: partition_1
+    to_node_id: model_1
+    from_output: y_train
+    to_input: y
   - from_node_id: partition_1
     to_node_id: predict_1
     from_output: X_test
-    to_input: X_new
+    to_input: default
   - from_node_id: model_1
     to_node_id: predict_1
-    from_output: model
-    to_input: model
+    from_output: fitted_state
+    to_input: fitted_state
   - from_node_id: predict_1
     to_node_id: eval_1
-    from_output: y_pred
-    to_input: y_pred
+    from_output: default
+    to_input: default
   - from_node_id: partition_1
     to_node_id: eval_1
     from_output: y_test
     to_input: y_true
-  - from_node_id: model_1
-    to_node_id: eval_1
-    from_output: y_pred
-    to_input: y_train_pred
-  - from_node_id: model_1
-    to_node_id: eval_1
-    from_output: y_true
-    to_input: y_train_true
-  # Carry the X_test dataset to eval_1 purely so it can resolve real
-  # reference property names (Moisture, Oil, ...) from its target_context
-  # instead of falling back to Target_1..N labels.
   - from_node_id: partition_1
     to_node_id: eval_1
     from_output: X_test
-    to_input: context
+    to_input: sample_context
   - from_node_id: eval_1
     to_node_id: table_1
-    from_output: metrics
+    from_output: default
+    to_input: default
   - from_node_id: eval_1
     to_node_id: viz_1
-    from_output: visualization
+    from_output: comparison
+    to_input: default
   canvas_state:
     zoom: 0.85
     pan_x: 0
@@ -161,3 +154,50 @@ template_data:
     name: nir_shootout_test1
   - source: eigenvector
     name: nir_shootout_test2
+  canonical_project:
+    schema_version: spectra-canonical-starter-project/1
+    scientific_objective: quantitative_regression
+    qualification_dataset_ids:
+    - public-atmospheric-regression-v1
+    - public-corn-m5-moisture-v1
+    managed_candidate:
+      schema_version: spectra-managed-candidate-template/1
+      name: Harness-only PLS Candidate Authority
+      description: >-
+        Exact ordinary PLS starting point for fold-local managed validation.
+        Harness supplies training and held-out targets through the governed
+        validation lifecycle; this sheet is the persisted candidate authority,
+        not a second scientific implementation and not a locally runnable
+        train/test sheet.
+      scientist_source_node_id: data_1
+      source_node_id: candidate_data
+      nodes:
+      - node_id: candidate_data
+        node_type: data.file_load
+        label: Managed Dataset Binding
+        parameters: {}
+        position_x: 175
+        position_y: 225
+      - node_id: candidate_model
+        node_type: model.fitted_pls
+        label: Ordinary PLS Starting Point
+        parameters:
+          n_components: 3
+          scale: true
+        position_x: 475
+        position_y: 225
+      - node_id: candidate_evaluator
+        node_type: diagnostics.regression_evaluator
+        label: Governed Fold Evaluation
+        parameters: {}
+        position_x: 775
+        position_y: 225
+      edges:
+      - from_node_id: candidate_data
+        to_node_id: candidate_model
+      - from_node_id: candidate_model
+        to_node_id: candidate_evaluator
+      canvas_state:
+        zoom: 1.0
+        pan_x: 0
+        pan_y: 0

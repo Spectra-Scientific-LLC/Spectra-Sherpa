@@ -7,14 +7,19 @@ from __future__ import annotations
 import logging
 from collections import defaultdict, deque
 from datetime import datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session, require_project
+from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
+from spectra_sherpa.app.contracts.scientific_access import require_scientific_access, scientific_project_ids
+from spectra_sherpa.app.lib.workflow_purpose import ANALYSIS_WORKFLOW, MANAGED_CANDIDATE_AUTHORITY
 from spectra_sherpa.app.models.advisor_channel import AdvisorChannel
+from spectra_sherpa.app.models.project import live_project_filter
 from spectra_sherpa.app.models.project_data_source import ProjectDataSource, WorkflowDataSource
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
@@ -36,16 +41,19 @@ from spectra_sherpa.app.schemas.workflows import (
     WorkflowTabColorUpdate,
     WorkflowUpdate,
 )
-from spectra_sherpa.app.services.dag import node_registry
 from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
+from spectra_sherpa.app.services.dag.saved_graph_admission import (
+    SavedGraphAdmission,
+    SavedGraphAdmissionError,
+    admit_saved_workflow_graph,
+)
 from spectra_sherpa.app.services.project_data_sources import (
     effective_workflow_tab_color,
     ensure_sheet_advisor_channel,
     sync_workflow_data_sources,
 )
+from spectra_sherpa.app.services.run_params import build_workflow_version_snapshot
 from spectra_sherpa.app.services.tools.builtin.workflow import validate_dag_spec_for_parent
-
-from ._helpers import _validate_edge_refs
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +65,14 @@ AI_FORK_LAYOUT_COLUMN_GAP = 325.0
 AI_FORK_LAYOUT_ROW_GAP = 200.0
 AI_FORK_MIN_NODE_GAP_X = 90.0
 AI_FORK_MIN_NODE_GAP_Y = 70.0
+
+
+def _require_mutable_analysis_workflow(workflow: Workflow) -> None:
+    if workflow.purpose == MANAGED_CANDIDATE_AUTHORITY:
+        raise HTTPException(
+            status_code=409,
+            detail="Managed candidate authority is immutable; use the separate starter analysis workflow to edit",
+        )
 
 
 def _dag_spec_positions_are_usable(nodes: list[WorkflowDagSpecNode]) -> bool:
@@ -72,6 +88,48 @@ def _dag_spec_positions_are_usable(nodes: list[WorkflowDagSpecNode]) -> bool:
             if abs(x1 - x2) < AI_FORK_MIN_NODE_GAP_X and abs(y1 - y2) < AI_FORK_MIN_NODE_GAP_Y:
                 return False
     return True
+
+
+def _workflow_node_graph_payload(node: object) -> dict[str, object]:
+    """Project an API or ORM node into the one graph-admission shape."""
+
+    if hasattr(node, "model_dump"):
+        return node.model_dump()
+    return {
+        "node_id": node.node_id,
+        "node_type": node.node_type,
+        "label": node.label,
+        "parameters": node.parameters,
+        "annotation": node.annotation,
+        "position_x": node.position_x,
+        "position_y": node.position_y,
+    }
+
+
+def _workflow_edge_graph_payload(edge: object) -> dict[str, object]:
+    """Project an API or ORM edge into the one graph-admission shape."""
+
+    if hasattr(edge, "model_dump"):
+        return edge.model_dump()
+    return {
+        "from_node_id": edge.from_node_id,
+        "to_node_id": edge.to_node_id,
+        "from_output": edge.from_output,
+        "to_input": edge.to_input,
+    }
+
+
+def _admit_current_workflow_graph(nodes: list[object], edges: list[object]) -> SavedGraphAdmission:
+    """Fail before mutation unless the complete prospective graph is current."""
+
+    try:
+        return admit_saved_workflow_graph(
+            [_workflow_node_graph_payload(node) for node in nodes],
+            [_workflow_edge_graph_payload(edge) for edge in edges],
+            current_graph=True,
+        )
+    except SavedGraphAdmissionError as exc:
+        raise HTTPException(status_code=400, detail=f"Workflow graph is not current: {exc}") from exc
 
 
 def _layout_dag_spec_nodes(
@@ -91,7 +149,7 @@ def _layout_dag_spec_nodes(
             continue
         outgoing[edge.source].append(edge.target)
         incoming[edge.target].append(edge.source)
-        if edge.to_input != "model" and edge.from_output != "model":
+        if edge.to_input != "fitted_state" and edge.from_output != "fitted_state":
             indegree[edge.target] += 1
 
     for targets in outgoing.values():
@@ -113,7 +171,7 @@ def _layout_dag_spec_nodes(
             if any(
                 edge.source == source
                 and edge.target == target
-                and (edge.to_input == "model" or edge.from_output == "model")
+                and (edge.to_input == "fitted_state" or edge.from_output == "fitted_state")
                 for edge in edges
             ):
                 continue
@@ -171,11 +229,16 @@ def _workflow_summary_payload(workflow: Workflow, node_count: int = 0, edge_coun
         "name": workflow.name,
         "description": workflow.description,
         "status": workflow.status,
+        "purpose": workflow.purpose,
         "canvas_state": workflow.canvas_state,
         "tab_color": effective_workflow_tab_color(workflow),
         "tab_color_override": workflow.tab_color_override,
         "color_source": workflow.color_source,
         "primary_data_source_id": workflow.primary_data_source_id,
+        "primary_data_source_name": (
+            workflow.primary_data_source.display_name if workflow.primary_data_source is not None else None
+        ),
+        "data_origin": workflow.data_origin if workflow.data_origin in {"current", "example"} else None,
         "data_source_ids": _workflow_data_source_ids(workflow),
         "advisor_channel_id": _workflow_advisor_channel_id(workflow),
         "created_from_template_name": workflow.created_from_template_name,
@@ -208,7 +271,11 @@ async def _project_sheet_summaries(
         )
         .outerjoin(WorkflowNode)
         .outerjoin(WorkflowEdge)
-        .where(Workflow.user_id == user_id, Workflow.project_id == project_id)
+        .where(
+            Workflow.user_id == user_id,
+            Workflow.project_id == project_id,
+            Workflow.purpose == ANALYSIS_WORKFLOW,
+        )
         .group_by(Workflow.id)
         .options(
             selectinload(Workflow.tags),
@@ -234,7 +301,11 @@ async def _normalize_project_sheet_order(
 ) -> None:
     result = await session.execute(
         select(Workflow)
-        .where(Workflow.project_id == project_id, Workflow.user_id == user_id)
+        .where(
+            Workflow.project_id == project_id,
+            Workflow.user_id == user_id,
+            Workflow.purpose == ANALYSIS_WORKFLOW,
+        )
         .order_by(Workflow.sheet_order.asc(), Workflow.updated_at.desc())
     )
     for index, workflow in enumerate(result.scalars().all()):
@@ -327,6 +398,7 @@ async def _apply_explicit_workflow_data_sources(
         )
 
     workflow.primary_data_source_id = resolved_primary_id
+    workflow.data_origin = "current" if resolved_primary_id is not None else None
     if workflow.tab_color_override:
         workflow.color_source = "manual"
     elif resolved_primary_id is not None:
@@ -418,7 +490,7 @@ async def list_workflows(
         raise HTTPException(status_code=400, detail="project_id is required when in_workbook=true")
 
     if project_id is not None:
-        await require_project(project_id, user_id, session)
+        await require_scientific_access(session, user_id, project_id, "read")
 
     # Build base query with tags and folder relationships
     # Use DISTINCT count to handle potential duplicates from joins
@@ -430,7 +502,8 @@ async def list_workflows(
         )
         .outerjoin(WorkflowNode)
         .outerjoin(WorkflowEdge)
-        .where(Workflow.user_id == user_id)
+        .where(or_(Workflow.user_id == user_id, uses_managed_project_access()))
+        .where(live_project_filter(Workflow.project_id))
         .group_by(Workflow.id)
         .options(
             selectinload(Workflow.tags),
@@ -441,6 +514,9 @@ async def list_workflows(
         )
     )
 
+    admitted_projects = await scientific_project_ids(session, user_id)
+    if admitted_projects is not None:
+        query = query.where(Workflow.project_id.in_(admitted_projects))
     # Apply filters
     if status:
         query = query.where(Workflow.status == status)
@@ -457,7 +533,9 @@ async def list_workflows(
         query = query.where(Workflow.project_id == project_id)
 
     if in_workbook:
-        query = query.where(Workflow.sheet_order.is_not(None))
+        # Candidate authorities remain addressable by managed consumers, but
+        # are not interactive scientific sheets (including retained projects).
+        query = query.where(Workflow.sheet_order.is_not(None), Workflow.purpose == ANALYSIS_WORKFLOW)
 
     if tag_ids:
         # Filter workflows that have ANY of the specified tags
@@ -518,8 +596,13 @@ async def create_workflow(
     """Create a new workflow for the authenticated user."""
     user_id = current_user.id
 
-    if payload.project_id is not None:
-        await require_project(payload.project_id, user_id, session)
+    if payload.purpose != ANALYSIS_WORKFLOW:
+        raise HTTPException(
+            status_code=400,
+            detail="Ordinary workflow creation may create only analysis workflows",
+        )
+
+    await require_scientific_access(session, user_id, payload.project_id, "write")
     if payload.primary_data_source_id is not None:
         await _require_project_data_source(payload.primary_data_source_id, payload.project_id, session)
 
@@ -531,17 +614,7 @@ async def create_workflow(
     max_order = await session.scalar(max_order_query)
     sheet_order = (max_order if max_order is not None else -1) + 1
 
-    # Validate all node types exist in the registry
-    unknown_types = [n.node_type for n in payload.nodes if n.node_type not in node_registry]
-    if unknown_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown node type(s): {', '.join(unknown_types)}",
-        )
-
-    # Validate edge references point to actual nodes
-    if payload.edges:
-        _validate_edge_refs(payload.nodes, payload.edges)
+    admission = _admit_current_workflow_graph(list(payload.nodes), list(payload.edges))
 
     # Create workflow
     workflow = Workflow(
@@ -549,6 +622,7 @@ async def create_workflow(
         name=payload.name,
         description=payload.description,
         status=payload.status,
+        purpose=payload.purpose,
         canvas_state=payload.canvas_state,
         technique=payload.technique,
         sample_type=payload.sample_type,
@@ -557,38 +631,40 @@ async def create_workflow(
         tab_color_override=payload.tab_color,
         color_source=payload.color_source or ("manual" if payload.tab_color else "blank"),
         primary_data_source_id=payload.primary_data_source_id,
+        data_origin="current" if payload.primary_data_source_id is not None else None,
         sheet_order=sheet_order,
     )
     session.add(workflow)
     await session.flush()  # Get workflow ID
 
     # Create nodes
-    for node_data in payload.nodes:
+    for node_data in admission.nodes:
         node = WorkflowNode(
             workflow_id=workflow.id,
-            node_id=node_data.node_id,
-            node_type=node_data.node_type,
-            label=node_data.label,
-            parameters=node_data.parameters,
-            position_x=node_data.position_x,
-            position_y=node_data.position_y,
+            node_id=node_data["node_id"],
+            node_type=node_data["node_type"],
+            label=node_data.get("label"),
+            parameters=node_data.get("parameters", {}),
+            annotation=node_data.get("annotation"),
+            position_x=node_data.get("position_x"),
+            position_y=node_data.get("position_y"),
         )
         session.add(node)
 
     # Create edges
-    for edge_data in payload.edges:
+    for edge_data in admission.edges:
         edge = WorkflowEdge(
             workflow_id=workflow.id,
-            from_node_id=edge_data.from_node_id,
-            to_node_id=edge_data.to_node_id,
-            from_output=edge_data.from_output,
-            to_input=edge_data.to_input,
+            from_node_id=edge_data["from_node_id"],
+            to_node_id=edge_data["to_node_id"],
+            from_output=edge_data.get("from_output", "default"),
+            to_input=edge_data.get("to_input", "default"),
         )
         session.add(edge)
 
     # Compute integrity hash from nodes/edges
-    node_dicts = [n.model_dump() for n in payload.nodes]
-    edge_dicts = [e.model_dump() for e in payload.edges]
+    node_dicts = list(admission.nodes)
+    edge_dicts = list(admission.edges)
     workflow.integrity_hash = compute_workflow_hash(
         nodes=node_dicts,
         edges=edge_dicts,
@@ -611,11 +687,13 @@ async def create_workflow(
             "project_id": workflow.project_id,
             "technique": workflow.technique,
             "integrity_hash": workflow.integrity_hash,
-            "node_count": len(payload.nodes),
-            "edge_count": len(payload.edges),
+            "node_count": len(admission.nodes),
+            "edge_count": len(admission.edges),
         },
         context={
-            "parameter_set": {n.node_id: n.parameters for n in payload.nodes if n.parameters},
+            "parameter_set": {
+                str(node["node_id"]): node.get("parameters", {}) for node in admission.nodes if node.get("parameters")
+            },
         },
     )
 
@@ -649,12 +727,16 @@ async def reorder_sheets(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> list[WorkflowSummary]:
-    """Persist dense sheet tab ordering for all workflows in a project."""
+    """Persist dense ordering for interactive analysis sheets in a project."""
     user_id = current_user.id
     await require_project(project_id, user_id, session)
 
     result = await session.execute(
-        select(Workflow).where(Workflow.project_id == project_id, Workflow.user_id == user_id)
+        select(Workflow).where(
+            Workflow.project_id == project_id,
+            Workflow.user_id == user_id,
+            Workflow.purpose == ANALYSIS_WORKFLOW,
+        )
     )
     workflows = result.scalars().all()
     workflows_by_id = {workflow.id: workflow for workflow in workflows}
@@ -702,8 +784,35 @@ async def duplicate_workflow(
     source = source_result.scalar_one_or_none()
     if source is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    _require_mutable_analysis_workflow(source)
     if source.project_id is None:
         raise HTTPException(status_code=400, detail="Only project workflows can be duplicated as sheets")
+
+    node_dicts = [
+        {
+            "node_id": node.node_id,
+            "node_type": node.node_type,
+            "label": node.label,
+            "parameters": node.parameters,
+            "annotation": node.annotation,
+            "position_x": node.position_x,
+            "position_y": node.position_y,
+        }
+        for node in source.nodes
+    ]
+    edge_dicts = [
+        {
+            "from_node_id": edge.from_node_id,
+            "to_node_id": edge.to_node_id,
+            "from_output": edge.from_output,
+            "to_input": edge.to_input,
+        }
+        for edge in source.edges
+    ]
+    try:
+        admission = admit_saved_workflow_graph(node_dicts, edge_dicts, current_graph=True)
+    except SavedGraphAdmissionError as exc:
+        raise HTTPException(status_code=409, detail=f"Saved workflow graph is not current: {exc}") from exc
 
     await require_project(source.project_id, user_id, session)
     max_order = await session.scalar(
@@ -720,6 +829,7 @@ async def duplicate_workflow(
         name=copy_name,
         description=source.description,
         status=source.status,
+        purpose=source.purpose,
         canvas_state=source.canvas_state,
         notes=source.notes,
         technique=source.technique,
@@ -730,54 +840,39 @@ async def duplicate_workflow(
         created_from_template_id=source.created_from_template_id,
         created_from_template_name=source.created_from_template_name,
         created_from_template_version=source.created_from_template_version,
+        data_origin=source.data_origin,
+        # A copy of a campaign-candidate sheet keeps the same validation scope.
+        fold_validation_plan=source.fold_validation_plan,
         sheet_order=(max_order if max_order is not None else -1) + 1,
     )
     session.add(duplicate)
     await session.flush()
 
-    node_dicts = []
-    for node_data in source.nodes:
+    node_dicts = list(admission.nodes)
+    edge_dicts = list(admission.edges)
+
+    for node_data in node_dicts:
         node = WorkflowNode(
             workflow_id=duplicate.id,
-            node_id=node_data.node_id,
-            node_type=node_data.node_type,
-            label=node_data.label,
-            parameters=node_data.parameters,
-            annotation=node_data.annotation,
-            position_x=node_data.position_x,
-            position_y=node_data.position_y,
+            node_id=node_data["node_id"],
+            node_type=node_data["node_type"],
+            label=node_data.get("label"),
+            parameters=node_data.get("parameters", {}),
+            annotation=node_data.get("annotation"),
+            position_x=node_data.get("position_x"),
+            position_y=node_data.get("position_y"),
         )
         session.add(node)
-        node_dicts.append(
-            {
-                "node_id": node_data.node_id,
-                "node_type": node_data.node_type,
-                "label": node_data.label,
-                "parameters": node_data.parameters,
-                "annotation": node_data.annotation,
-                "position_x": node_data.position_x,
-                "position_y": node_data.position_y,
-            }
-        )
 
-    edge_dicts = []
-    for edge_data in source.edges:
+    for edge_data in edge_dicts:
         edge = WorkflowEdge(
             workflow_id=duplicate.id,
-            from_node_id=edge_data.from_node_id,
-            to_node_id=edge_data.to_node_id,
-            from_output=edge_data.from_output,
-            to_input=edge_data.to_input,
+            from_node_id=edge_data["from_node_id"],
+            to_node_id=edge_data["to_node_id"],
+            from_output=edge_data.get("from_output", "default"),
+            to_input=edge_data.get("to_input", "default"),
         )
         session.add(edge)
-        edge_dicts.append(
-            {
-                "from_node_id": edge_data.from_node_id,
-                "to_node_id": edge_data.to_node_id,
-                "from_output": edge_data.from_output,
-                "to_input": edge_data.to_input,
-            }
-        )
 
     duplicate.integrity_hash = compute_workflow_hash(nodes=node_dicts, edges=edge_dicts)
     await sync_workflow_data_sources(duplicate, session, source.nodes)
@@ -811,6 +906,7 @@ async def update_workflow_data_sources(
 ) -> WorkflowDetail:
     """Explicitly set the project data sources associated with a workflow sheet."""
     workflow = await _load_workflow_for_sheet_metadata(workflow_id, current_user.id, session)
+    _require_mutable_analysis_workflow(workflow)
     await _apply_explicit_workflow_data_sources(
         workflow,
         payload.data_source_ids,
@@ -830,6 +926,7 @@ async def update_workflow_primary_data_source(
 ) -> WorkflowDetail:
     """Change the workflow sheet's primary project data source."""
     workflow = await _load_workflow_for_sheet_metadata(workflow_id, current_user.id, session)
+    _require_mutable_analysis_workflow(workflow)
     existing_ids = _workflow_data_source_ids(workflow)
     await _apply_explicit_workflow_data_sources(
         workflow,
@@ -850,6 +947,7 @@ async def update_workflow_tab_color(
 ) -> WorkflowDetail:
     """Set or clear the manual sheet tab color override."""
     workflow = await _load_workflow_for_sheet_metadata(workflow_id, current_user.id, session)
+    _require_mutable_analysis_workflow(workflow)
     workflow.tab_color_override = payload.tab_color
     workflow.color_source = "manual" if payload.tab_color else ("data" if workflow.primary_data_source_id else "blank")
     workflow.tab_color = effective_workflow_tab_color(workflow)
@@ -886,7 +984,7 @@ async def get_workflow(
     query = (
         select(Workflow)
         .where(Workflow.id == workflow_id)
-        .where(Workflow.user_id == user_id)
+        .where(or_(Workflow.user_id == user_id, uses_managed_project_access()))
         .options(
             selectinload(Workflow.nodes),
             selectinload(Workflow.edges),
@@ -902,6 +1000,7 @@ async def get_workflow(
 
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    await require_scientific_access(session, user_id, workflow.project_id, "read", resource_owner_id=workflow.user_id)
 
     return WorkflowDetail.model_validate(workflow)
 
@@ -919,7 +1018,7 @@ async def update_workflow(
     query = (
         select(Workflow)
         .where(Workflow.id == workflow_id)
-        .where(Workflow.user_id == user_id)
+        .where(or_(Workflow.user_id == user_id, uses_managed_project_access()))
         .options(
             selectinload(Workflow.nodes),
             selectinload(Workflow.edges),
@@ -934,6 +1033,12 @@ async def update_workflow(
 
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    await require_scientific_access(session, user_id, workflow.project_id, "write", resource_owner_id=workflow.user_id)
+    _require_mutable_analysis_workflow(workflow)
+
+    prospective_nodes: list[object] = list(payload.nodes) if payload.nodes is not None else list(workflow.nodes)
+    prospective_edges: list[object] = list(payload.edges) if payload.edges is not None else list(workflow.edges)
+    admission = _admit_current_workflow_graph(prospective_nodes, prospective_edges)
 
     # Capture before-state for audit. Pre-mutation snapshot of fields
     # the route is allowed to change. Picked to support reproducibility
@@ -947,13 +1052,9 @@ async def update_workflow(
     }
 
     if payload.nodes is not None:
-        node_types = [n.node_type for n in payload.nodes]
-        unknown_types = [node_type for node_type in node_types if node_type not in node_registry]
-        if unknown_types:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown node type(s): {', '.join(unknown_types)}",
-            )
+        admitted_nodes = list(admission.nodes)
+    else:
+        admitted_nodes = []
 
     # Update workflow fields
     if payload.name is not None:
@@ -1009,42 +1110,39 @@ async def update_workflow(
         workflow.nodes.clear()
 
         # Create new nodes through the relationship
-        for node_data in payload.nodes:
+        for node_data in admitted_nodes:
             node = WorkflowNode(
                 workflow_id=workflow.id,
-                node_id=node_data.node_id,
-                node_type=node_data.node_type,
-                label=node_data.label,
-                parameters=node_data.parameters,
-                position_x=node_data.position_x,
-                position_y=node_data.position_y,
+                node_id=node_data["node_id"],
+                node_type=node_data["node_type"],
+                label=node_data.get("label"),
+                parameters=node_data.get("parameters", {}),
+                annotation=node_data.get("annotation"),
+                position_x=node_data.get("position_x"),
+                position_y=node_data.get("position_y"),
             )
             workflow.nodes.append(node)
 
     # Update edges if provided
     if payload.edges is not None:
-        # Validate edge references against the node set (new or existing)
-        ref_nodes = payload.nodes if payload.nodes is not None else workflow.nodes
-        _validate_edge_refs(ref_nodes, payload.edges)
-
         # Clear via ORM relationship (delete-orphan cascade handles DB deletion)
         workflow.edges.clear()
 
         # Create new edges through the relationship
-        for edge_data in payload.edges:
+        for edge_data in admission.edges:
             edge = WorkflowEdge(
                 workflow_id=workflow.id,
-                from_node_id=edge_data.from_node_id,
-                to_node_id=edge_data.to_node_id,
-                from_output=edge_data.from_output,
-                to_input=edge_data.to_input,
+                from_node_id=edge_data["from_node_id"],
+                to_node_id=edge_data["to_node_id"],
+                from_output=edge_data.get("from_output", "default"),
+                to_input=edge_data.get("to_input", "default"),
             )
             workflow.edges.append(edge)
 
     # Recompute integrity hash if nodes or edges changed
     if payload.nodes is not None or payload.edges is not None:
         hash_nodes = (
-            [n.model_dump() for n in payload.nodes]
+            list(admission.nodes)
             if payload.nodes
             else (
                 [{"node_id": n.node_id, "node_type": n.node_type, "parameters": n.parameters} for n in workflow.nodes]
@@ -1053,7 +1151,7 @@ async def update_workflow(
             )
         )
         hash_edges = (
-            [e.model_dump() for e in payload.edges]
+            list(admission.edges)
             if payload.edges
             else (
                 [
@@ -1112,45 +1210,7 @@ async def update_workflow(
         new_version_number = latest_version + 1
 
         # Create snapshot of current workflow state from database
-        snapshot = {
-            "name": workflow_with_relationships.name,
-            "description": workflow_with_relationships.description,
-            "status": workflow_with_relationships.status,
-            "canvas_state": workflow_with_relationships.canvas_state,
-            "notes": workflow_with_relationships.notes,
-            "integrity_hash": workflow_with_relationships.integrity_hash,
-            "technique": workflow_with_relationships.technique,
-            "sample_type": workflow_with_relationships.sample_type,
-            "tab_color": workflow_with_relationships.tab_color,
-            "tab_color_override": workflow_with_relationships.tab_color_override,
-            "color_source": workflow_with_relationships.color_source,
-            "primary_data_source_id": workflow_with_relationships.primary_data_source_id,
-            "data_source_ids": workflow_with_relationships.data_source_ids,
-            "created_from_template_name": workflow_with_relationships.created_from_template_name,
-            "created_from_template_version": workflow_with_relationships.created_from_template_version,
-            "sheet_order": workflow_with_relationships.sheet_order,
-            "nodes": [
-                {
-                    "node_id": n.node_id,
-                    "node_type": n.node_type,
-                    "label": n.label,
-                    "parameters": n.parameters,
-                    "annotation": n.annotation,
-                    "position_x": n.position_x,
-                    "position_y": n.position_y,
-                }
-                for n in workflow_with_relationships.nodes
-            ],
-            "edges": [
-                {
-                    "from_node_id": e.from_node_id,
-                    "to_node_id": e.to_node_id,
-                    "from_output": e.from_output,
-                    "to_input": e.to_input,
-                }
-                for e in workflow_with_relationships.edges
-            ],
-        }
+        snapshot = build_workflow_version_snapshot(workflow_with_relationships)
 
         version = WorkflowVersion(
             workflow_id=workflow_id,
@@ -1245,6 +1305,7 @@ async def delete_workflow(
 
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    _require_mutable_analysis_workflow(workflow)
 
     project_id = workflow.project_id
 
@@ -1265,11 +1326,15 @@ async def delete_workflow(
         },
     )
 
-    await session.delete(workflow)
-    if project_id is not None:
-        await session.flush()
-        await _normalize_project_sheet_order(project_id, user_id, session)
-    await session.commit()
+    from spectra_sherpa.app.services.run_provenance import provenance_cleanup, require_unretained_source
+
+    await require_unretained_source(session, workflow_id=workflow_id)
+    async with provenance_cleanup(session):
+        await session.delete(workflow)
+        if project_id is not None:
+            await session.flush()
+            await _normalize_project_sheet_order(project_id, user_id, session)
+        await session.commit()
 
 
 @router.post("/{workflow_id}/ai-fork", response_model=AIForkResponse)
@@ -1279,6 +1344,18 @@ async def ai_fork_workflow(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
+    return await persist_ai_fork(workflow_id, payload, session, current_user)
+
+
+async def persist_ai_fork(
+    workflow_id: int,
+    payload: AIForkRequest,
+    session: AsyncSession,
+    current_user: User,
+    *,
+    server_request: dict[str, Any] | None = None,
+    commit: bool = True,
+):
     """
     Agentic Workflow Generation endpoint.
     Forks an existing workflow, creates a new one with the proposed DAG,
@@ -1286,44 +1363,92 @@ async def ai_fork_workflow(
     """
     from spectra_sherpa.app.contracts.ai_provider_registry import get_sherpa_advisor
 
+    payload = payload.model_copy(deep=True)
     user_id = current_user.id
     provider = get_sherpa_advisor()
     has_agentic_tools = getattr(provider, "has_feature", lambda _feature: False)("agentic_tools")
     if not provider.is_available or not has_agentic_tools:
         raise HTTPException(status_code=403, detail="SherpaAdvisor is not available.")
 
-    # Idempotency check: if a channel already exists for this conversation_id,
-    # return it only when it belongs to the current user's workflow.
-    existing_channel_query = select(AdvisorChannel).where(AdvisorChannel.conversation_id == payload.new_conversation_id)
-    existing_channel_result = await session.execute(existing_channel_query)
-    existing_channel = existing_channel_result.scalar_one_or_none()
-    if existing_channel:
-        if existing_channel.workflow_id is None:
-            raise HTTPException(status_code=409, detail="Conversation is already bound to a non-sheet channel")
-        owner_result = await session.execute(
-            select(Workflow.user_id).where(Workflow.id == existing_channel.workflow_id)
-        )
-        owner_id = owner_result.scalar_one_or_none()
-        if owner_id != user_id:
-            raise HTTPException(status_code=404, detail="Parent workflow not found")
-        return AIForkResponse(
-            new_workflow_id=existing_channel.workflow_id,
-            new_channel_id=existing_channel.id,
-        )
-
     # 1. Fetch parent workflow
     query = (
         select(Workflow)
         .options(
             selectinload(Workflow.nodes),
+            selectinload(Workflow.edges),
             selectinload(Workflow.data_source_links),
         )
         .where(Workflow.id == workflow_id, Workflow.user_id == user_id)
+        .execution_options(populate_existing=True)
     )
     result = await session.execute(query)
     parent_wf = result.scalar_one_or_none()
     if not parent_wf:
         raise HTTPException(status_code=404, detail="Parent workflow not found")
+    _require_mutable_analysis_workflow(parent_wf)
+    await require_scientific_access(
+        session, user_id, parent_wf.project_id, "write", resource_owner_id=parent_wf.user_id
+    )
+
+    if server_request is not None and server_request.get("project_id") != parent_wf.project_id:
+        raise HTTPException(status_code=409, detail="Proposal project authority does not match parent")
+    initial_project_id = parent_wf.project_id
+    parent_wf = (await session.execute(query.with_for_update())).scalar_one()
+    if parent_wf.project_id != initial_project_id:
+        raise HTTPException(status_code=409, detail="Parent project changed during proposal admission")
+
+    from spectra_sherpa.app.services.dag.proposal_contract import (
+        admit_ordinary_definition,
+        build_proposal_receipt,
+        content_digest,
+        definition_digest,
+        read_proposal_receipt,
+        saved_definition,
+    )
+
+    parent_definition = saved_definition(parent_wf.nodes, parent_wf.edges)
+    parent_digest = definition_digest(parent_definition)
+    if payload.expected_parent_definition_hash is not None and parent_digest != payload.expected_parent_definition_hash:
+        raise HTTPException(status_code=409, detail="Parent workflow changed during proposal generation")
+    request_digest = content_digest(
+        {
+            "parent_workflow_id": workflow_id,
+            "request": payload.model_dump(mode="json"),
+            "server_request": server_request,
+        }
+    )
+    existing_channel = (
+        await session.execute(
+            select(AdvisorChannel).where(AdvisorChannel.conversation_id == payload.new_conversation_id)
+        )
+    ).scalar_one_or_none()
+    if existing_channel is not None:
+        child = await session.get(Workflow, existing_channel.workflow_id) if existing_channel.workflow_id else None
+        if child is None or child.user_id != user_id:
+            raise HTTPException(status_code=404, detail="Proposal not found")
+        if (
+            child.created_from_workflow_id != workflow_id
+            or not child.proposal_receipt
+            or child.proposal_receipt.get("request_digest") != request_digest
+        ):
+            raise HTTPException(status_code=409, detail="Proposal request identity was reused with different content")
+        try:
+            retained = read_proposal_receipt(child.proposal_receipt)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="Proposal receipt is unavailable") from exc
+        child = (
+            await session.execute(
+                select(Workflow)
+                .where(Workflow.id == child.id)
+                .options(selectinload(Workflow.nodes), selectinload(Workflow.edges))
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+        if definition_digest(saved_definition(child.nodes, child.edges)) != definition_digest(
+            retained.admitted_definitions[0]
+        ):
+            raise HTTPException(status_code=409, detail="Proposed workflow changed after admission")
+        return AIForkResponse(new_workflow_id=child.id, new_channel_id=existing_channel.id)
 
     if not parent_wf.project_id:
         raise HTTPException(status_code=400, detail="Cannot fork a workflow that doesn't belong to a project")
@@ -1334,11 +1459,27 @@ async def ai_fork_workflow(
             detail="Cannot generate an AI fork for a workflow without data sources",
         )
 
+    # Omitted non-scalar settings never enter the model context. Preserve
+    # unchanged settings by stable identity instead of silently resetting them.
+    from copy import deepcopy
+
+    from spectra_sherpa.app.services.dag.node_base import node_registry
+
+    parent_nodes = {node.node_id: node for node in parent_wf.nodes}
+    for node in payload.dag_spec.nodes:
+        prior_node = parent_nodes.get(node.id)
+        if prior_node is not None and prior_node.node_type == node.type:
+            metadata = node_registry.get_metadata(node.type)
+            if metadata.input_ports:
+                node.parameters = {**deepcopy(prior_node.parameters or {}), **node.parameters}
+
     validation = await validate_dag_spec_for_parent(
         payload.dag_spec,
         workflow_id,
         session,
         current_user,
+        expected_source_bindings=payload.expected_source_bindings,
+        lock_parent=True,
     )
     if not validation["valid"]:
         raise HTTPException(
@@ -1348,6 +1489,66 @@ async def ai_fork_workflow(
                 "issues": validation["issues"],
             },
         )
+
+    definition = {
+        "nodes": [{"node_id": n.id, "node_type": n.type, "parameters": n.parameters} for n in payload.dag_spec.nodes],
+        "edges": [
+            {"from_node_id": e.source, "to_node_id": e.target, "from_output": e.from_output, "to_input": e.to_input}
+            for e in payload.dag_spec.edges
+        ],
+    }
+    try:
+        definition, populations, contracts = admit_ordinary_definition(definition)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    by_id = {n["node_id"]: n for n in definition["nodes"]}
+    for node in payload.dag_spec.nodes:
+        node.parameters = by_id[node.id]["parameters"]
+    from spectra_sherpa.app.services.tools.builtin.workflow import source_binding_snapshot
+
+    prior = {n["node_id"]: n for n in parent_definition["nodes"]}
+    changes = [
+        {
+            "node_id": n["node_id"],
+            "change": "added" if n["node_id"] not in prior else "modified",
+            "before": prior.get(n["node_id"]),
+            "after": n,
+        }
+        for n in definition["nodes"]
+        if prior.get(n["node_id"]) != n
+    ] + [
+        {"node_id": node_id, "change": "removed", "before": prior[node_id], "after": None}
+        for node_id in prior
+        if node_id not in by_id
+    ]
+    if parent_definition["edges"] != definition["edges"]:
+        changes.append(
+            {"change": "connections_changed", "before": parent_definition["edges"], "after": definition["edges"]}
+        )
+    context = server_request or {}
+    receipt = build_proposal_receipt(
+        kind="ordinary_workflow",
+        actor_user_id=user_id,
+        request_id=payload.new_conversation_id,
+        request_digest=request_digest,
+        parent_identity={
+            "workflow_id": workflow_id,
+            "project_id": parent_wf.project_id,
+            "definition_digest": parent_digest,
+        },
+        source_bindings=source_binding_snapshot(parent_wf.nodes),
+        admitted_definitions=[definition],
+        operation_contracts=contracts,
+        population_receipts=populations,
+        changes=changes,
+        effective_parameters={
+            n["node_id"]: node_registry.create_node(n["node_type"], n["node_id"], n["parameters"]).parameters
+            for n in definition["nodes"]
+        },
+        disclosure_manifest=context.get("disclosure_manifest", []),
+        requests_execution=bool(context.get("requests_execution", False)),
+        qualifications=["Graph admitted; data-dependent runtime validation remains required."],
+    )
 
     # 2. Get order for new sheet
     max_order_query = select(func.max(Workflow.sheet_order)).where(
@@ -1366,9 +1567,14 @@ async def ai_fork_workflow(
         project_id=parent_wf.project_id,
         name=sheet_name,
         status="draft",
+        purpose=ANALYSIS_WORKFLOW,
         color_source="ai",
         tab_color=AI_PURPLE,
         created_from_workflow_id=parent_wf.id,
+        integrity_hash=definition_digest(definition),
+        proposal_receipt=receipt,
+        fold_validation_plan=parent_wf.fold_validation_plan,
+        data_origin=parent_wf.data_origin,
         sheet_order=next_order,
     )
     session.add(new_wf)
@@ -1430,7 +1636,10 @@ async def ai_fork_workflow(
     )
     session.add(channel)
 
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
 
     return AIForkResponse(
         new_workflow_id=new_wf.id,

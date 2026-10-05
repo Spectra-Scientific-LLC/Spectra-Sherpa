@@ -10,23 +10,6 @@ from __future__ import annotations
 
 import logging
 
-from spectra_sherpa.app.lib.adapters.scp_adapter import scp_roundtrip  # noqa: F401
-
-# --- Preprocessing library functions ---
-from spectra_sherpa.app.lib.preprocessing import (  # noqa: F401
-    baseline_penalized_ls,
-    gaussian_smooth,
-    norris_williams,
-    whittaker_smooth,
-)
-
-# --- SpectroChemPy compatibility ---
-from spectra_sherpa.app.lib.scp_compat import (  # noqa: F401
-    HAS_SCP,
-    NDDataset,
-    scp,
-)
-
 # --- Core data container ---
 from spectra_sherpa.app.lib.sherpa_dataset import (  # noqa: F401
     EFFECT_BASELINE_CORRECTED,
@@ -70,6 +53,9 @@ from ...spec_nodes import (  # noqa: F401
     to_numpy_2d,
 )
 
+# --- Preprocessing library functions ---
+from .norris_williams import norris_williams  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 
@@ -105,20 +91,3 @@ def estimate_snr(data: "np.ndarray") -> float:
     if noise_std < 1e-15:
         return 100.0  # effectively noiseless
     return float(20 * np.log10(signal_rms / noise_std))
-
-
-# ---------------------------------------------------------------------------
-# Technology-aware baseline lambda defaults
-# ---------------------------------------------------------------------------
-_BASELINE_LAMBDA_DEFAULT = 1e5  # node metadata default — "no technique set"
-
-_LAMBDA_BY_TECHNIQUE: dict[str, float] = {
-    "NIR": 1e6,
-    "NEAR_INFRARED": 1e6,
-    "RAMAN": 1e5,
-    "FTIR": 1e7,
-    "IR": 1e7,
-    "MIR": 1e7,
-    "OES": 1e4,
-    "OPTICAL_EMISSION": 1e4,
-}

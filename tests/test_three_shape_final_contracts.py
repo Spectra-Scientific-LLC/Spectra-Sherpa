@@ -38,11 +38,13 @@ def _feature_dataset() -> SherpaDataset:
     )
 
 
-def test_plsda_declares_latent_and_probability_ports() -> None:
+def test_plsda_declares_latent_and_reference_faithful_class_score_ports() -> None:
     ports = {port.name for port in PLSDANode.metadata.output_ports or []}
 
     assert {"default", "X_scores", "loadings", "X_loadings"}.issubset(ports)
-    assert {"predictions", "probabilities", "class_probabilities", "metrics"}.issubset(ports)
+    assert {"predictions", "class_scores", "metrics"}.issubset(ports)
+    assert "probabilities" not in ports
+    assert "class_probabilities" not in ports
 
 
 def test_classifiers_declare_canonical_metrics_port() -> None:
@@ -73,17 +75,17 @@ def test_generated_python_outputs_match_declared_latent_contracts() -> None:
     hca_code = "\n".join(HCANode(node_id="hca").generate_python({"default": "X"}))
     simca_code = "\n".join(SIMCANode(node_id="simca").generate_python({"X": "X", "y": "y"}))
 
-    assert "'default': _sample_coordinates" in knn_code
-    assert "'embedding': _embedding.tolist()" in hca_code
-    assert "'dendrogram_data': _dendrogram_data" in hca_code
-    assert "'default': _default_scores" in simca_code
-    assert "'class_distance_matrix': _class_distance_matrix" in simca_code
+    assert "_knn_export_outputs" in knn_code
+    assert "hca_export_outputs" in hca_code
+    assert "scipy.cluster.hierarchy" not in hca_code
+    assert "_simca_export_outputs" in simca_code
+    assert "def _fit_simca_export_models" not in simca_code
 
 
 @pytest.mark.anyio
 async def test_knn_emits_comparable_feature_outputs() -> None:
     dataset = _feature_dataset()
-    node = KNNNode(node_id="knn_contract", parameters={"n_neighbors": 3, "cv_folds": 4})
+    node = KNNNode(node_id="knn_contract", parameters={"n_neighbors": 3})
 
     result = await node.execute(X=dataset, y=dataset.target)
     outputs = result.outputs
@@ -94,15 +96,12 @@ async def test_knn_emits_comparable_feature_outputs() -> None:
     assert outputs["class_probabilities"] == outputs["probabilities"]
     assert outputs["metrics"]["task_type"] == "classification"
     assert outputs["metrics"]["method"] == "knn"
-    assert set(outputs["metrics"]["splits"]) >= {"train", "cv"}
+    assert set(outputs["metrics"]["splits"]) == {"train"}
     assert np.asarray(outputs["distances"]).shape == (dataset.shape[0], 3)
     assert np.asarray(outputs["neighbor_indices"]).shape == (dataset.shape[0], 3)
     assert 0.0 <= outputs["train_accuracy"] <= 1.0
-    assert 0.0 <= outputs["cv_accuracy"] <= 1.0
-    assert 0.0 <= outputs["cv_balanced_accuracy"] <= 1.0
-    assert 0.0 <= outputs["cv_f1_macro"] <= 1.0
-    assert 0.0 <= outputs["cv_sensitivity_macro"] <= 1.0
-    assert 0.0 <= outputs["cv_specificity_macro"] <= 1.0
+    assert "cv_accuracy" not in outputs
+    assert outputs["metrics"]["evidence_scope"] == "calibration_fit_diagnostics_not_validation_evidence"
 
 
 @pytest.mark.anyio
@@ -117,6 +116,28 @@ async def test_hca_exposes_cluster_assignment_and_dendrogram_data() -> None:
     assert len(outputs["cluster_assignment"]) == dataset.shape[0]
     assert np.asarray(outputs["linkage_matrix"]).shape[1] == 4
     assert outputs["dendrogram_data"] == outputs["plots"]["dendrogram"]
+
+
+@pytest.mark.anyio
+async def test_hca_large_cohort_preserves_all_branches_inside_plot_trace_limit() -> None:
+    rng = np.random.default_rng(90210)
+    sample_count = 569
+    dataset = SherpaDataset(
+        X=rng.normal(size=(sample_count, 4)),
+        feature_axis=FeatureAxis(values=np.arange(4), title="Feature"),
+        data_role="X_features",
+    )
+    node = HCANode(node_id="hca_large", parameters={"n_clusters": 3, "linkage": "ward", "metric": "euclidean"})
+
+    result = await node.execute(input_data=dataset)
+    dendrogram = result.outputs["dendrogram_data"]
+
+    assert dendrogram["metadata"]["sample_count"] == sample_count
+    assert dendrogram["metadata"]["branch_count"] == sample_count - 1
+    assert dendrogram["metadata"]["presentation"] == "exact_color_grouped_segments"
+    assert len(dendrogram["data"]) == dendrogram["metadata"]["trace_count"]
+    assert len(dendrogram["data"]) <= 512
+    assert sum(trace["x"].count(None) + 1 for trace in dendrogram["data"]) == sample_count - 1
 
 
 @pytest.mark.anyio

@@ -4,14 +4,19 @@ slug: region_selection_pls
 description: Spectral region selection followed by PLS regression for targeted calibration.
 category: calibration
 is_active: true
+status: pending_qualification
+status_detail: A unit-bound scientist-selected interval and explicit held-out evaluation must replace the current training-only graph before qualification.
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Data
-    parameters:
+    parameters: {}
+    example_binding:
       source: eigenvector
-      eigenvector_dataset: corn_m5
+      dataset_name: corn_m5
+      selected_target: Moisture
+      target_type: continuous
     position_x: 175
     position_y: 50
   - node_id: preprocess_1
@@ -25,12 +30,12 @@ template_data:
     node_type: preprocess.clip_range
     label: Region Selection
     parameters:
-      min_wavenumber: 400
-      max_wavenumber: 4000
+      minimum: 400
+      maximum: 4000
     position_x: 175
     position_y: 550
   - node_id: model_1
-    node_type: model.pls
+    node_type: model.fitted_pls
     label: Train PLS Regression
     parameters:
       n_components: 5
@@ -51,10 +56,15 @@ template_data:
     to_node_id: feature_1
   - from_node_id: feature_1
     to_node_id: model_1
-    to_input: X
+    to_input: default
+  - from_node_id: data_1
+    to_node_id: model_1
+    from_output: target
+    to_input: y
   - from_node_id: model_1
     to_node_id: viz_1
-    from_output: Y_scores
+    from_output: default
+    to_input: default
   canvas_state:
     zoom: 1.0
     pan_x: 0

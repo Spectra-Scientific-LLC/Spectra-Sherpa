@@ -76,7 +76,7 @@ class TestRegistryLoading:
         assert registry.is_loaded is True
 
     def test_version(self, registry: TypeRegistry):
-        assert registry.version == "1.0"
+        assert registry.version == "1.1"
 
     def test_all_types_have_category(self, registry: TypeRegistry):
         """Every type should have a non-empty category."""
@@ -330,6 +330,12 @@ class TestApiJson:
         assert entry["parent"] == "Array2D"
         assert entry["category"] == "dataset"
         assert entry["version"] == "1.0"
+        assert entry["scientific_kind"] == "spectral_dataset"
+        assert entry["view_kind"] == "matrix"
+        assert entry["rank"] == [2, 3, 4, 5, 6]
+        assert entry["dimension_roles"] == ["sample", "spectral_variable"]
+        assert entry["view_modes"] == ["table", "spectral_plot"]
+        assert entry["content_categories"] == ["sample_measurements"]
 
     def test_subtypes_map(self, registry: TypeRegistry):
         data = registry.to_api_json()

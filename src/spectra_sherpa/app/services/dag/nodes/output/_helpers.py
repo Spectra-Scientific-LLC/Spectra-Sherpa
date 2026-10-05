@@ -44,8 +44,25 @@ def get_axis_display_info(axis: Any) -> dict[str, Any]:
 
     # Determine title and default based on axis type
     if isinstance(axis, SpectralAxis):
-        default_title = "Wavenumber" if "cm" in units_str else "Wavelength"
-        should_reverse = "cm" in units_str  # Reverse wavenumber axes
+        quantity = getattr(axis, "quantity", None)
+        quantity_value = getattr(quantity, "value", quantity)
+        declared_title = str(getattr(axis, "title", "") or "").strip()
+        title_key = declared_title.casefold().replace("-", " ")
+        if quantity_value == "wavenumber" or "wavenumber" in title_key or "wave number" in title_key:
+            default_title = "Wavenumber"
+            should_reverse = True
+        elif quantity_value == "raman_shift" or "raman shift" in title_key:
+            default_title = "Raman Shift"
+            should_reverse = False
+        elif quantity_value == "wavelength":
+            default_title = "Wavelength"
+            should_reverse = False
+        else:
+            # Inverse centimetres alone do not distinguish absolute
+            # wavenumber from Raman shift, so an unknown quantity remains in
+            # acquisition order rather than being reversed by guesswork.
+            default_title = "Spectral Coordinate"
+            should_reverse = False
     elif isinstance(axis, TimeAxis):
         default_title = "Time"
         should_reverse = False

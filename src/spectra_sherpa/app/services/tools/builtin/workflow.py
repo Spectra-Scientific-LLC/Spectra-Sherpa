@@ -109,240 +109,115 @@ def _data_loader_fingerprints(nodes: list[dict[str, Any]]) -> set[str]:
     return fingerprints
 
 
-def substitute_parent_data_loaders(dag_spec: Any, parent_nodes: list[Any]) -> None:
-    """Replace LLM-emitted loader params with the parent's verbatim, in place.
-
-    The agentic prompt instructs the model to copy parent data-loader nodes
-    verbatim, but cheaper models (Haiku 4.5 and below) drift on loader
-    params — most commonly omitting ``stage`` so it defaults to ``"raw"`` —
-    which flips the data-source fingerprint and fails parent-inheritance
-    validation. Substituting params from the matching parent loader (by
-    node-type, in workflow order) makes the agentic feature robust to
-    loader-param drift regardless of which model proposed the DAG.
-
-    Mutates ``dag_spec`` in place. Accepts both Pydantic ``WorkflowDagSpec``
-    instances (route-handler path) and plain dicts (LLM tool path).
-    """
+def _is_scientific_source_node(node: Any) -> bool:
+    from spectra_sherpa.app.services.dag.node_base import node_registry
     from spectra_sherpa.app.services.project_data_sources import _node_value, describe_node_data_source
 
-    parent_fingerprints = {
-        candidate.fingerprint
-        for parent_node in parent_nodes
-        if (candidate := describe_node_data_source(parent_node)) is not None
-    }
-    if not parent_fingerprints:
-        return
-
-    parent_pool: dict[str, list[dict[str, Any]]] = {}
-    for parent_node in parent_nodes:
-        if describe_node_data_source(parent_node) is None:
-            continue
-        node_type = _node_value(parent_node, "node_type", None) or _node_value(parent_node, "type", None)
-        if not node_type:
-            continue
-        params = _node_value(parent_node, "parameters", None) or _node_value(parent_node, "params", None) or {}
-        parent_pool.setdefault(str(node_type), []).append(dict(params))
-
-    proposed_nodes = dag_spec.nodes if hasattr(dag_spec, "nodes") else dag_spec.get("nodes", [])
-    for proposed_node in proposed_nodes:
-        candidate = describe_node_data_source(proposed_node)
-        if candidate is None or candidate.fingerprint in parent_fingerprints:
-            continue
-        node_type = _node_value(proposed_node, "type", None) or _node_value(proposed_node, "node_type", None)
-        pool = parent_pool.get(str(node_type)) if node_type else None
-        if not pool:
-            continue
-        substituted = pool.pop(0)
-        if hasattr(proposed_node, "parameters"):
-            proposed_node.parameters = substituted
-        elif isinstance(proposed_node, dict):
-            proposed_node["parameters"] = substituted
-
-
-def _partition_outputs_upstream_of(
-    node_id: str,
-    node_types: dict[str, str],
-    edges: list[dict[str, Any]],
-    *,
-    skip_inputs: set[str] | None = None,
-) -> set[str]:
-    """Return sample-partition outputs feeding a node's main branch."""
-    skip_inputs = skip_inputs or set()
-    incoming: dict[str, list[dict[str, Any]]] = {}
-    for edge in edges:
-        incoming.setdefault(edge["to_node_id"], []).append(edge)
-
-    outputs: set[str] = set()
-    stack = [node_id]
-    seen: set[str] = set()
-    while stack:
-        current = stack.pop()
-        if current in seen:
-            continue
-        seen.add(current)
-        for edge in incoming.get(current, []):
-            if edge["to_input"] in skip_inputs:
-                continue
-            source = edge["from_node_id"]
-            if node_types.get(source) == "selection.sample_partition":
-                outputs.add(edge["from_output"])
-            else:
-                stack.append(source)
-    return outputs
-
-
-def _has_edge(
-    edges: list[dict[str, Any]],
-    *,
-    source: str,
-    target: str,
-    from_output: str | None = None,
-    to_input: str | None = None,
-) -> bool:
-    for edge in edges:
-        if edge["from_node_id"] != source or edge["to_node_id"] != target:
-            continue
-        if from_output is not None and edge["from_output"] != from_output:
-            continue
-        if to_input is not None and edge["to_input"] != to_input:
-            continue
+    if describe_node_data_source(node) is not None:
         return True
-    return False
+    kind = _node_value(node, "node_type", None) or _node_value(node, "type", None)
+    try:
+        metadata = node_registry.get_metadata(kind)
+    except (KeyError, TypeError):
+        return False
+    # NodeMetadata explicitly defines empty input_ports as a source operation.
+    # This also covers reference/model sources absent from the project asset tree.
+    return not metadata.input_ports
 
 
-def _partition_outputs_feeding_input(
-    target_id: str,
-    input_name: str,
-    node_types: dict[str, str],
-    edges: list[dict[str, Any]],
-) -> set[str]:
-    outputs: set[str] = set()
-    for edge in edges:
-        if edge["to_node_id"] != target_id or edge["to_input"] != input_name:
+def source_binding_snapshot(nodes: list[Any]) -> dict[str, str]:
+    """Hash complete scientific bindings separately from catalog asset identity."""
+    import hashlib
+    import json
+
+    from spectra_sherpa.app.services.project_data_sources import _node_value
+
+    bindings = {}
+    for node in nodes:
+        if not _is_scientific_source_node(node):
             continue
-        source = edge["from_node_id"]
-        if node_types.get(source) == "selection.sample_partition":
-            outputs.add(edge["from_output"])
-        else:
-            outputs.update(_partition_outputs_upstream_of(source, node_types, edges, skip_inputs={"reference"}))
-    return outputs
-
-
-def _validate_holdout_classification_topology(
-    nodes: list[dict[str, Any]],
-    edges: list[dict[str, Any]],
-) -> list[dict[str, str]]:
-    """Reject structurally valid but leakage-prone train/test classification DAGs."""
-    node_types = {node["node_id"]: node["node_type"] for node in nodes}
-    partition_ids = {node_id for node_id, node_type in node_types.items() if node_type == "selection.sample_partition"}
-    predict_ids = {node_id for node_id, node_type in node_types.items() if node_type == "classification.predict"}
-    evaluation_ids = {
-        node_id for node_id, node_type in node_types.items() if node_type == "diagnostics.holdout_evaluation"
-    }
-    if not partition_ids or not predict_ids or not evaluation_ids:
-        return []
-
-    classification_model_ids = {
-        node_id
-        for node_id, node_type in node_types.items()
-        if node_type.startswith("classification.") and node_type != "classification.predict"
-    }
-    issues: list[dict[str, str]] = []
-
-    for model_id in classification_model_ids:
-        model_inputs = [edge for edge in edges if edge["to_node_id"] == model_id and edge["to_input"] == "X"]
-        if not model_inputs:
-            continue
-        outputs = _partition_outputs_feeding_input(model_id, "X", node_types, edges)
-        if "X_train" not in outputs or "X_test" in outputs:
-            issues.append(
-                _issue(
-                    "error",
-                    "Holdout classification models must train from the partition X_train branch, not X_test.",
-                    model_id,
-                    "X",
-                    code="classification_model_must_use_x_train",
-                )
-            )
-
-    for predict_id in predict_ids:
-        model_edges = [edge for edge in edges if edge["to_node_id"] == predict_id and edge["to_input"] == "model"]
-        model_sources = [edge["from_node_id"] for edge in model_edges]
-        if model_sources and not any(source in classification_model_ids for source in model_sources):
-            issues.append(
-                _issue(
-                    "error",
-                    "Prediction must use the trained classification model output.",
-                    predict_id,
-                    "model",
-                    code="classification_predict_model_missing",
-                )
-            )
-
-        x_new_edges = [edge for edge in edges if edge["to_node_id"] == predict_id and edge["to_input"] == "X_new"]
-        if not x_new_edges:
-            continue
-        outputs = _partition_outputs_feeding_input(predict_id, "X_new", node_types, edges)
-        if "X_test" not in outputs or "X_train" in outputs:
-            issues.append(
-                _issue(
-                    "error",
-                    "Holdout predictions must use the partition X_test branch for X_new.",
-                    predict_id,
-                    "X_new",
-                    code="classification_predict_must_use_x_test",
-                )
-            )
-
-    for scale_id, node_type in node_types.items():
-        if node_type != "preprocess.scale":
-            continue
-        main_outputs = _partition_outputs_upstream_of(scale_id, node_types, edges, skip_inputs={"reference"})
-        if "X_test" not in main_outputs:
-            continue
-        has_train_reference = any(
-            _has_edge(
-                edges,
-                source=partition_id,
-                target=scale_id,
-                from_output="X_train",
-                to_input="reference",
-            )
-            for partition_id in partition_ids
+        node_id = str(_node_value(node, "node_id", None) or _node_value(node, "id", ""))
+        if not node_id or node_id in bindings:
+            raise ValueError("Parent source identities must be present and unique")
+        node_type = _node_value(node, "node_type", None) or _node_value(node, "type", None)
+        parameters = _node_value(node, "parameters", None) or _node_value(node, "params", None) or {}
+        encoded = json.dumps(
+            {"type": node_type, "parameters": parameters}, sort_keys=True, separators=(",", ":"), allow_nan=False
         )
-        if not has_train_reference:
-            issues.append(
-                _issue(
-                    "error",
-                    "A scaled X_test branch must connect partition X_train to the scale node's reference input "
-                    "so preprocessing parameters are fitted on training data only.",
-                    scale_id,
-                    "reference",
-                    code="classification_test_scale_requires_train_reference",
-                )
-            )
+        bindings[node_id] = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    return bindings
 
-    for evaluation_id in evaluation_ids:
-        y_true_outputs = set()
-        for edge in edges:
-            if edge["to_node_id"] != evaluation_id or edge["to_input"] != "y_true":
-                continue
-            if node_types.get(edge["from_node_id"]) == "selection.sample_partition":
-                y_true_outputs.add(edge["from_output"])
-            else:
-                y_true_outputs.update(_partition_outputs_upstream_of(edge["from_node_id"], node_types, edges))
-        if y_true_outputs and "y_test" not in y_true_outputs:
-            issues.append(
-                _issue(
-                    "error",
-                    "Holdout evaluation y_true must come from the partition y_test output.",
-                    evaluation_id,
-                    "y_true",
-                    code="classification_eval_must_use_y_test",
-                )
-            )
 
-    return issues
+def substitute_parent_data_loaders(dag_spec: Any, parent_nodes: list[Any]) -> list[dict[str, Any]]:
+    """Inherit complete source authority by stable node identity, never position.
+
+    Keeping a parent's loader ID is an explicit inheritance reference. Omitted
+    parameters are copied from that source with a receipt; conflicting values,
+    renamed/missing sources and extra sources are refused. All checks precede
+    mutation so a refused proposal is not partially rewritten.
+    """
+    import json
+    from copy import deepcopy
+
+    from spectra_sherpa.app.services.project_data_sources import _node_value
+
+    def identity(node: Any) -> str:
+        return str(_node_value(node, "node_id", None) or _node_value(node, "id", ""))
+
+    def kind(node: Any) -> str:
+        return str(_node_value(node, "node_type", None) or _node_value(node, "type", ""))
+
+    def parameters(node: Any) -> dict[str, Any]:
+        return _node_value(node, "parameters", None) or _node_value(node, "params", None) or {}
+
+    bindings = source_binding_snapshot(parent_nodes)
+    parents = {identity(node): node for node in parent_nodes if identity(node) in bindings}
+    if not parents:
+        return []
+    proposed = dag_spec.nodes if hasattr(dag_spec, "nodes") else dag_spec.get("nodes", [])
+    identities = [identity(node) for node in proposed]
+    if len(set(identities)) != len(identities):
+        raise ValueError("Proposal node identities must be unique for source inheritance")
+    if set(parents) - set(identities):
+        raise ValueError(
+            "Preserve every parent source node ID; source rebinding requires an explicit data-selection change"
+        )
+    source_types = {kind(node) for node in parents.values()}
+    replacements = []
+    receipts = []
+    for node in proposed:
+        node_id = identity(node)
+        parent = parents.get(node_id)
+        if parent is None:
+            if _is_scientific_source_node(node) or kind(node) in source_types:
+                raise ValueError("A proposed source has no parent source identity; select its data explicitly first")
+            continue
+        if kind(node) != kind(parent):
+            raise ValueError("An inherited source node cannot change operation type")
+        actual = parameters(parent)
+        supplied = parameters(node)
+        if not isinstance(supplied, dict) or any(
+            key not in actual
+            or json.dumps(value, sort_keys=True, allow_nan=False)
+            != json.dumps(actual[key], sort_keys=True, allow_nan=False)
+            for key, value in supplied.items()
+        ):
+            raise ValueError("An inherited source conflicts with its saved parameters, target or asset authority")
+        receipts.append(
+            {
+                "node_id": node_id,
+                "source_node_id": node_id,
+                "binding_sha256": bindings[node_id],
+                "restored_fields": sorted(set(actual) - set(supplied)),
+            }
+        )
+        replacements.append((node, deepcopy(actual)))
+    for node, params in replacements:
+        if hasattr(node, "parameters"):
+            node.parameters = params
+        else:
+            node["parameters"] = params
+    return receipts
 
 
 async def _llm_context_permissions(session: Any, user: Any) -> dict[str, bool]:
@@ -415,14 +290,15 @@ def validate_workflow(
     callers. Async tool/orchestrator paths can pass precomputed parent loader
     fingerprints to enforce same-data inheritance without doing DB work here.
     """
-    from spectra_sherpa.app.services.dag.executor import DAGExecutor
-    from spectra_sherpa.app.services.dag.executor_types import (
-        WorkflowEdge as DagEdge,
-    )
-    from spectra_sherpa.app.services.dag.executor_types import (
-        WorkflowNode as DagNode,
-    )
-    from spectra_sherpa.app.services.dag.node_base import node_registry
+    from spectra_sherpa.app.services.dag.executor_types import WorkflowEdge as DagEdge
+    from spectra_sherpa.app.services.dag.executor_types import WorkflowNode as DagNode
+    from spectra_sherpa.app.services.dag.workflow_preflight import preflight_workflow
+    from spectra_sherpa.app.types import ensure_type_registry_loaded
+
+    # Direct support/SDK use does not run ASGI lifespan.  It explicitly opts
+    # into the packaged vocabulary before asking the shared preflight for an
+    # answer; server admission itself remains fail-closed at its startup seam.
+    ensure_type_registry_loaded()
 
     normalized_nodes = [
         {
@@ -443,68 +319,29 @@ def validate_workflow(
         for edge in edges
     ]
 
-    issues: list[dict[str, str]] = []
-    node_ids = {node["node_id"] for node in normalized_nodes}
-    seen_node_ids: set[str] = set()
-    executor = DAGExecutor()
-
-    for node in normalized_nodes:
-        node_id = node["node_id"]
-        node_type = node["node_type"]
-        if not node_id:
-            issues.append(_issue("error", "Node is missing node_id"))
-            continue
-        if node_id in seen_node_ids:
-            issues.append(_issue("error", f"Duplicate node id: {node_id}", node_id, code="duplicate_node_id"))
-            continue
-        seen_node_ids.add(node_id)
-        if node_type not in node_registry._nodes:
-            issues.append(_issue("error", f"Unknown node type: {node_type}", node_id))
-            continue
-        try:
-            executor.add_node(
-                DagNode(
-                    node_id=node_id,
-                    node_type=node_type,
-                    parameters=node["parameters"],
-                    position=node.get("position"),
-                )
+    preflight = preflight_workflow(
+        [
+            DagNode(
+                node_id=node["node_id"],
+                node_type=node["node_type"],
+                parameters=node["parameters"],
+                position=node.get("position"),
             )
-        except Exception as exc:
-            issues.append(_issue("error", f"Invalid node: {exc}", node_id))
-
-    for edge in normalized_edges:
-        source = edge["from_node_id"]
-        target = edge["to_node_id"]
-        if source not in node_ids:
-            issues.append(_issue("error", f"Edge source not in node list: {source}", source))
-            continue
-        if target not in node_ids:
-            issues.append(_issue("error", f"Edge target not in node list: {target}", target))
-            continue
-        executor.add_edge(
+            for node in normalized_nodes
+        ],
+        [
             DagEdge(
-                from_node=source,
-                to_node=target,
+                from_node=edge["from_node_id"],
+                to_node=edge["to_node_id"],
                 from_output=edge["from_output"],
                 to_input=edge["to_input"],
             )
-        )
-
-    if not any(issue["severity"] == "error" for issue in issues):
-        result = executor.validate_full()
-        for validation_issue in result.issues:
-            issues.append(
-                _issue(
-                    validation_issue.level,
-                    validation_issue.message,
-                    validation_issue.node_id,
-                    validation_issue.port,
-                )
-            )
-
-    if not any(issue["severity"] == "error" for issue in issues):
-        issues.extend(_validate_holdout_classification_topology(normalized_nodes, normalized_edges))
+            for edge in normalized_edges
+        ],
+    )
+    issues = [
+        _issue(issue.level, issue.message, issue.node_id, issue.port, code=issue.code) for issue in preflight.issues
+    ]
 
     if parent_loader_fingerprints is not None:
         proposed_fingerprints = _data_loader_fingerprints(normalized_nodes)
@@ -538,6 +375,9 @@ async def validate_dag_spec_for_parent(
     parent_workflow_id: int,
     session: Any,
     user: Any,
+    expected_source_bindings: dict[str, str] | None = None,
+    *,
+    lock_parent: bool = False,
 ) -> dict[str, Any]:
     """Validate an agent-proposed DAG and enforce parent data-source inheritance."""
     from sqlalchemy import select
@@ -546,11 +386,17 @@ async def validate_dag_spec_for_parent(
     from spectra_sherpa.app.models.workflow import Workflow
     from spectra_sherpa.app.services.project_data_sources import describe_node_data_source
 
-    result = await session.execute(
+    statement = (
         select(Workflow)
         .options(selectinload(Workflow.nodes))
         .where(Workflow.id == parent_workflow_id, Workflow.user_id == user.id)
+        .execution_options(populate_existing=True)
     )
+    # Advisory tool validation spans provider yields. Never retain a row lock
+    # there: the proposal consumer persists using a different transaction.
+    if lock_parent:
+        statement = statement.with_for_update()
+    result = await session.execute(statement)
     parent = result.scalar_one_or_none()
     if parent is None:
         return {
@@ -559,17 +405,24 @@ async def validate_dag_spec_for_parent(
             "issues": [_issue("error", "Parent workflow not found.", code="parent_workflow_missing")],
         }
 
-    # Substitute parent loader params into the proposal before fingerprinting,
-    # so models that drift on loader fields (e.g. omit `stage`) still pass
-    # parent-inheritance validation. Mutation propagates to the route-handler
-    # persist path, which iterates the same dag_spec after this call.
-    substitute_parent_data_loaders(dag_spec, parent.nodes)
+    try:
+        if expected_source_bindings is not None and source_binding_snapshot(parent.nodes) != expected_source_bindings:
+            raise ValueError("Parent source bindings changed during generation; request a fresh proposal")
+        source_bindings = substitute_parent_data_loaders(dag_spec, parent.nodes)
+    except (TypeError, ValueError) as exc:
+        return {
+            "valid": False,
+            "issue_count": 1,
+            "issues": [_issue("error", str(exc), code="source_binding_refused")],
+        }
 
     nodes, edges = _normalize_dag_spec(dag_spec)
     parent_fingerprints = {
         candidate.fingerprint for node in parent.nodes if (candidate := describe_node_data_source(node)) is not None
     }
-    return validate_workflow(nodes, edges, parent_fingerprints)
+    result = validate_workflow(nodes, edges, parent_fingerprints)
+    result["source_bindings"] = source_bindings
+    return result
 
 
 @register_tool(
@@ -711,8 +564,7 @@ async def list_nodes(
 
     search_text = (search or "").strip().lower()
     results = []
-    for node_type, node_cls in sorted(node_registry._nodes.items()):
-        meta = node_cls.metadata
+    for meta in sorted(node_registry.list_catalog_nodes(), key=lambda item: item.node_type):
         if category and meta.category != category:
             continue
         haystack = f"{meta.node_type} {meta.label} {meta.category} {meta.description}".lower()
@@ -758,12 +610,11 @@ async def describe_nodes(
     node_types = requested_node_types[:MAX_DESCRIBE_NODE_TYPES]
     results = []
     for nt in node_types:
-        cls = node_registry._nodes.get(nt)
-        if not cls:
+        try:
+            md = node_registry.get_catalog_metadata(nt)
+        except KeyError:
             results.append({"type": nt, "error": f"Unknown node type: {nt}"})
             continue
-
-        md = cls.metadata
         results.append(
             {
                 "type": nt,
@@ -827,7 +678,7 @@ async def describe_nodes(
             "nodes": {
                 "type": "array",
                 "description": (
-                    "Array of node objects. Use either DAG spec keys (id/type) " "or workflow keys (node_id/node_type)."
+                    "Array of node objects. Use either DAG spec keys (id/type) or workflow keys (node_id/node_type)."
                 ),
                 "items": {
                     "type": "object",

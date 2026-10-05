@@ -1,0 +1,287 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://spectrascientific.ai/schemas/benchmark_preregistration_v1.json",
+  "title": "SpectraSherpa Benchmark Preregistration v1",
+  "description": "Closed contract for freezing a benchmark question, validation design, baselines, search budget, interventions, and confirmation recovery policy before protected confirmation access.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "protocol_id",
+    "frozen_at",
+    "objective",
+    "benchmark",
+    "primary_metric",
+    "uncertainty",
+    "baselines",
+    "search",
+    "confirmation",
+    "permitted_interventions",
+    "exclusion_policy_ref",
+    "intended_claim_class"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "protocol_id": {
+      "$ref": "#/definitions/opaque_ref"
+    },
+    "frozen_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "objective": {
+      "type": "object",
+      "required": [
+        "task_type",
+        "intended_use_ref",
+        "target_population_ref",
+        "independent_unit"
+      ],
+      "properties": {
+        "task_type": {
+          "type": "string",
+          "enum": ["regression", "classification", "unmixing"]
+        },
+        "intended_use_ref": {
+          "$ref": "#/definitions/opaque_ref"
+        },
+        "target_population_ref": {
+          "$ref": "#/definitions/opaque_ref"
+        },
+        "independent_unit": {
+          "type": "string",
+          "enum": [
+            "specimen",
+            "batch",
+            "instrument",
+            "site",
+            "production_campaign",
+            "patient",
+            "time"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "benchmark": {
+      "type": "object",
+      "required": [
+        "benchmark_id",
+        "development_split_digest",
+        "confirmation_split_digest"
+      ],
+      "properties": {
+        "benchmark_id": {
+          "type": "string",
+          "pattern": "^pbm-[a-z0-9][a-z0-9-]{7,59}$"
+        },
+        "development_split_digest": {
+          "$ref": "#/definitions/sha256"
+        },
+        "confirmation_split_digest": {
+          "$ref": "#/definitions/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "primary_metric": {
+      "type": "object",
+      "required": [
+        "metric_id",
+        "registry_version",
+        "direction",
+        "minimum_meaningful_change",
+        "reproducibility_tolerance"
+      ],
+      "properties": {
+        "metric_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,63}$"
+        },
+        "registry_version": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["minimize", "maximize"]
+        },
+        "minimum_meaningful_change": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "reproducibility_tolerance": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "uncertainty": {
+      "type": "object",
+      "required": ["method_id", "method_version", "confidence_level"],
+      "properties": {
+        "method_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]{1,63}$"
+        },
+        "method_version": {
+          "type": "string",
+          "pattern": "^[1-9][0-9]*$"
+        },
+        "confidence_level": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "exclusiveMaximum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "baselines": {
+      "type": "object",
+      "required": ["frozen", "transparent_grid"],
+      "properties": {
+        "frozen": {
+          "type": "object",
+          "required": ["workflow_digest", "evidence_digest"],
+          "properties": {
+            "workflow_digest": {
+              "$ref": "#/definitions/sha256"
+            },
+            "evidence_digest": {
+              "$ref": "#/definitions/sha256"
+            }
+          },
+          "additionalProperties": false
+        },
+        "transparent_grid": {
+          "type": "object",
+          "required": [
+            "search_space_digest",
+            "execution_profile_digest",
+            "implementation_id"
+          ],
+          "properties": {
+            "search_space_digest": {
+              "$ref": "#/definitions/sha256"
+            },
+            "execution_profile_digest": {
+              "$ref": "#/definitions/sha256"
+            },
+            "implementation_id": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_.-]{2,127}$"
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "search": {
+      "type": "object",
+      "required": [
+        "allowed_space_digest",
+        "max_candidate_evaluations",
+        "max_wall_clock_seconds",
+        "max_concurrent_evaluations",
+        "stopping_rule"
+      ],
+      "properties": {
+        "allowed_space_digest": {
+          "$ref": "#/definitions/sha256"
+        },
+        "max_candidate_evaluations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_wall_clock_seconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_concurrent_evaluations": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "stopping_rule": {
+          "type": "object",
+          "required": ["kind", "value"],
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "budget_exhausted",
+                "no_improvement_patience",
+                "metric_threshold"
+              ]
+            },
+            "value": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "confirmation": {
+      "type": "object",
+      "required": [
+        "release_rule",
+        "max_replacements",
+        "consume_on_failure",
+        "replacement_policy_ref"
+      ],
+      "properties": {
+        "release_rule": {
+          "const": "one_valid_aggregate_result"
+        },
+        "max_replacements": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2
+        },
+        "consume_on_failure": {
+          "const": true
+        },
+        "replacement_policy_ref": {
+          "$ref": "#/definitions/opaque_ref"
+        }
+      },
+      "additionalProperties": false
+    },
+    "permitted_interventions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "pause",
+          "resume",
+          "terminate",
+          "approve_infrastructure_replacement"
+        ]
+      }
+    },
+    "exclusion_policy_ref": {
+      "$ref": "#/definitions/opaque_ref"
+    },
+    "intended_claim_class": {
+      "type": "string",
+      "enum": ["internal_architectural", "public_performance"]
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "opaque_ref": {
+      "type": "string",
+      "pattern": "^urn:spectra:[a-z][a-z0-9-]*:[A-Za-z0-9][A-Za-z0-9._:-]{2,127}$"
+    }
+  }
+}

@@ -1,363 +1,203 @@
-"""
-SCP Contract Tests — pin the SpectroChemPy API surface that Sherpa depends on.
-
-These tests fail fast when an SCP upgrade changes return types, attribute names,
-or normalization conventions.  Every test is skipped when SCP is not installed.
-"""
+"""Contracts for the deliberately narrow optional SpectroChemPy adapter."""
 
 from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import numpy as np
 import pytest
 
-from spectra_sherpa.app.lib.scp_compat import HAS_SCP
+from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.interoperability import spectrochempy_adapter
 
-pytestmark = pytest.mark.skipif(not HAS_SCP, reason="spectrochempy not installed")
+try:
+    import spectrochempy as scp
+except ImportError:
+    scp = None
 
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-@pytest.fixture(scope="module")
-def scp():
-    import spectrochempy as _scp
-
-    return _scp
+requires_scp = pytest.mark.skipif(scp is None, reason="spectrochempy not installed")
 
 
-@pytest.fixture(scope="module")
-def sample_ndd(scp):
-    """10 samples x 50 features — generic spectral data."""
-    rng = np.random.default_rng(42)
-    return scp.NDDataset(rng.standard_normal((10, 50)))
-
-
-@pytest.fixture(scope="module")
-def sample_ndd_positive(scp):
-    """10 samples x 50 features — positive values with x and y coords (required by .basc)."""
-    from spectrochempy import Coord
-
-    rng = np.random.default_rng(42)
-    data = np.abs(rng.standard_normal((10, 50))) + 0.1
-    ndd = scp.NDDataset(data)
-    ndd.set_coordset(
-        x=Coord(np.linspace(4000, 400, 50), units="cm^-1", title="wavenumber"),
-        y=Coord(np.arange(10), title="samples"),
+def _dataset(*, descending: bool = False) -> SherpaDataset:
+    axis = np.asarray([400.0, 517.0, 801.0])
+    if descending:
+        axis = axis[::-1]
+    return SherpaDataset(
+        X=np.asarray([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+        feature_axis=SpectralAxis(values=axis, units="nm", title="Wavelength"),
+        sample_axis=SampleAxis(labels=["first", "second"], title="Samples"),
+        title="native",
     )
-    return ndd
 
 
-# ---------------------------------------------------------------------------
-# Preprocessing Contracts
-# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("descending", [False, True])
+@requires_scp
+def test_adapter_projects_only_the_exact_matrix_in_original_order(descending: bool) -> None:
+    source = _dataset(descending=descending)
+    projected = spectrochempy_adapter.to_spectrochempy_dataset(source, operation_id="model.efa")
+    np.testing.assert_array_equal(np.asarray(projected.data), source.X)
 
 
-class TestPreprocessingContracts:
-    """Verify SCP preprocessing methods are in-place and row-preserving."""
-
-    def test_basc_is_row_preserving(self, scp, sample_ndd_positive):
-        from spectrochempy import Coord
-
-        ndd = scp.NDDataset(sample_ndd_positive.data.copy())
-        ndd.set_coordset(
-            x=Coord(np.linspace(4000, 400, ndd.shape[1]), units="cm^-1", title="wavenumber"),
-            y=Coord(np.arange(ndd.shape[0]), title="samples"),
-        )
-        original_shape = ndd.shape
-        # SCP 0.8.1: basc() returns a new NDDataset (not in-place)
-        result = ndd.basc(method="rubberband")
-        assert result.shape == original_shape, "basc() must not change shape"
-        assert result.shape[0] == original_shape[0], "basc() must preserve row count"
-
-    def test_numpy_msc_is_row_preserving(self):
-        """MSC is now pure-numpy (scp.msc removed in SCP 0.8.1). Validate the algorithm."""
-        # Synthetic data with known multiplicative scatter: y_i = a_i * ref + b_i + noise
-        rng = np.random.default_rng(42)
-        true_ref = np.abs(rng.standard_normal(50)) + 1.0
-        n_samples = 10
-        data = np.zeros((n_samples, 50))
-        for i in range(n_samples):
-            a = 0.8 + 0.4 * rng.random()  # scale factor
-            b = rng.standard_normal() * 0.1  # offset
-            data[i] = a * true_ref + b + rng.standard_normal(50) * 0.01
-
-        original_shape = data.shape
-        ref = np.mean(data, axis=0)
-        A = np.vstack([ref, np.ones(len(ref))]).T
-        corrected = np.zeros_like(data)
-        for i in range(data.shape[0]):
-            m, c = np.linalg.lstsq(A, data[i], rcond=None)[0]
-            if abs(m) > 1e-10:
-                corrected[i] = (data[i] - c) / m
-            else:
-                corrected[i] = data[i]
-        assert corrected.shape == original_shape, "MSC must not change shape"
-        assert corrected.shape[0] == original_shape[0], "MSC must preserve row count"
-        assert np.all(np.isfinite(corrected)), "MSC must produce finite values"
-        # Corrected spectra should have reduced inter-sample variance
-        var_before = np.var(data, axis=0).mean()
-        var_after = np.var(corrected, axis=0).mean()
-        assert var_after < var_before, "MSC should reduce inter-sample variance from scatter"
+@requires_scp
+def test_mcr_initial_concentration_projection_is_exact() -> None:
+    c0 = np.asarray([[1.0, 0.0], [0.5, 0.5], [0.0, 1.0]])
+    projected = spectrochempy_adapter.spectrochempy_dataset_from_array(
+        c0,
+        operation_id="model.mcr_als",
+    )
+    np.testing.assert_array_equal(np.asarray(projected.data), c0)
 
 
-# ---------------------------------------------------------------------------
-# NDDataset Adapter Contracts
-# ---------------------------------------------------------------------------
-
-
-class TestAdapterContracts:
-    """Verify nD coordinate mapping in NDDataset <-> SherpaDataset adapters."""
-
-    def test_from_nddataset_3d_maps_sample_inner_feature_dims(self, scp):
-        from spectrochempy import Coord
-
-        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset
-        from spectra_sherpa.app.lib.axes import TimeAxis
-
-        rng = np.random.default_rng(7)
-        ndd = scp.NDDataset(rng.standard_normal((2, 3, 4)))
-        ndd.set_coordset(
-            x=Coord(np.linspace(100, 900, 4), units="amu", title="m/z"),
-            y=Coord(np.linspace(0, 2, 3), units="min", title="rt"),
-            z=Coord(np.arange(2), title="samples"),
-        )
-
-        ds = from_nddataset(ndd)
-        assert ds.shape == (2, 3, 4)
-        assert ds.sample_axis is not None
-        assert ds.sample_axis.length == 2
-        assert isinstance(ds.axis(1), TimeAxis)
-        assert ds.axis(1).length == 3
-        assert ds.get_feature_axis() is not None
-        assert ds.get_feature_axis().length == 4
-
-    def test_roundtrip_4d_preserves_dimension_roles(self, scp):
-        from spectra_sherpa.app.lib.adapters.scp_adapter import from_nddataset, to_nddataset
-        from spectra_sherpa.app.lib.axes import SampleAxis, SpatialAxis, SpectralAxis, TimeAxis
-        from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-
-        ds = SherpaDataset(
-            X=np.random.default_rng(11).standard_normal((2, 3, 4, 5)),
-            sample_axis=SampleAxis(values=np.arange(2), title="sample axis"),
-            axes={
-                1: TimeAxis(values=np.linspace(0, 1, 3), units="min", title="rt"),
-                2: SpatialAxis(values=np.arange(4), units="px", title="x-px"),
-            },
-            feature_axis=SpectralAxis(values=np.linspace(400, 800, 5), units="nm", title="wavelength"),
-        )
-
-        ndd = to_nddataset(ds)
-        dim_names = [str(name) for name in ndd.dims]
-        assert len(dim_names) == 4
-        assert getattr(ndd, dim_names[0]).size == 2
-        assert str(getattr(ndd, dim_names[0]).title) == "sample axis"
-        assert getattr(ndd, dim_names[1]).size == 3
-        assert str(getattr(ndd, dim_names[1]).title) == "rt"
-        assert getattr(ndd, dim_names[2]).size == 4
-        assert str(getattr(ndd, dim_names[2]).title) == "x-px"
-        assert getattr(ndd, dim_names[3]).size == 5
-        assert str(getattr(ndd, dim_names[3]).title) == "wavelength"
-
-        back = from_nddataset(ndd)
-        assert back.shape == (2, 3, 4, 5)
-        assert back.sample_axis is not None
-        assert back.sample_axis.length == 2
-        assert back.axis(1).length == 3
-        assert back.axis(2).length == 4
-        assert back.get_feature_axis() is not None
-        assert back.get_feature_axis().length == 5
-
-
-# ---------------------------------------------------------------------------
-# PCA Contracts
-# ---------------------------------------------------------------------------
-
-
-class TestPCAContracts:
-    """Verify SCP PCA return types and attribute names."""
-
-    @pytest.fixture()
-    def fitted_pca(self, scp, sample_ndd):
-        pca = scp.PCA(n_components=3)
-        pca.fit(sample_ndd)
-        return pca, sample_ndd
-
-    def test_pca_transform_returns_nddataset(self, scp, fitted_pca):
-        pca, input_ndd = fitted_pca
-        result = pca.transform()
-        assert isinstance(result, scp.NDDataset), f"PCA.transform() must return NDDataset, got {type(result).__name__}"
-        assert result.shape[0] == input_ndd.shape[0], "PCA.transform() must preserve row count"
-
-    def test_pca_components_is_nddataset(self, scp, fitted_pca):
-        pca, _ = fitted_pca
-        components = pca.components
-        assert isinstance(
-            components, scp.NDDataset
-        ), f"PCA.components must be NDDataset, got {type(components).__name__}"
-
-    def test_pca_evr_is_extractable(self, fitted_pca):
-        pca, _ = fitted_pca
-        evr = pca.explained_variance_ratio
-        assert evr is not None, "PCA must expose explained_variance_ratio"
-        # Must be extractable as numpy array
-        data = evr.data if hasattr(evr, "data") else np.asarray(evr)
-        assert isinstance(data, np.ndarray), "EVR .data must be a numpy array"
-        assert len(data) > 0, "EVR must have at least one element"
-
-    def test_pca_transform_preserves_rows_on_new_data(self, scp, fitted_pca):
-        pca, _ = fitted_pca
-        rng = np.random.default_rng(99)
-        new_data = scp.NDDataset(rng.standard_normal((5, 50)))
-        result = pca.transform(new_data)
-        assert result.shape[0] == 5, "PCA.transform(new_data) must preserve input row count"
-
-    def test_pca_evr_is_ratio_not_percentage(self, scp, sample_ndd):
-        """Verify EVR normalization contract — SCP returns percentages, we need ratios.
-
-        This pins the normalization contract. If SCP changes to return 0-1 ratios
-        instead of 0-100 percentages, PCAExtract.from_scp() will need updating.
-        """
-        pca = scp.PCA(n_components=3)
-        pca.fit(sample_ndd)
-        evr = pca.explained_variance_ratio
-        evr_data = evr.data if hasattr(evr, "data") else np.asarray(evr)
-
-        # Pin current SCP behavior: returns percentages (0-100)
-        # If this assertion fails, SCP changed its API — update PCAExtract.from_scp()
-        assert evr_data.max() > 1.0, (
-            "SCP API changed: EVR is now a ratio (0-1) instead of percentage (0-100). "
-            f"Got max={evr_data.max():.2f}. Update PCAExtract.from_scp() to remove "
-            "normalization logic."
-        )
-        assert evr_data.min() >= 0.0, f"EVR must be non-negative. Got min={evr_data.min():.2f}"
-
-        # Verify our extractor normalizes it correctly
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
-
-        extracted = PCAExtract.from_scp(pca, sample_ndd)
-        assert extracted.explained_variance_ratio.max() <= 1.0, (
-            "PCAExtract.from_scp() failed to normalize EVR to 0-1 ratio. "
-            f"Got max={extracted.explained_variance_ratio.max():.2f}"
-        )
-        assert extracted.explained_variance_ratio.min() >= 0.0, (
-            f"PCAExtract EVR must be non-negative. " f"Got min={extracted.explained_variance_ratio.min():.2f}"
+@pytest.mark.parametrize(
+    "bad",
+    [np.asarray([1.0, 2.0]), np.asarray([[1.0, np.nan]]), np.empty((0, 2))],
+)
+@requires_scp
+def test_adapter_rejects_non_matrix_nonfinite_or_empty_input(bad: np.ndarray) -> None:
+    with pytest.raises(ValueError):
+        spectrochempy_adapter.spectrochempy_dataset_from_array(
+            bad,
+            operation_id="model.mcr_als",
         )
 
 
-# ---------------------------------------------------------------------------
-# PLS Contracts
-# ---------------------------------------------------------------------------
+@requires_scp
+def test_adapter_nonfinite_refusal_identifies_rows_and_recovery() -> None:
+    source = _dataset()
+    source.X[0, 1] = np.nan
+    source.X[1, 2] = np.inf
+
+    with pytest.raises(ValueError) as captured:
+        spectrochempy_adapter.to_spectrochempy_dataset(source, operation_id="model.efa")
+
+    message = str(captured.value)
+    assert "SherpaDataset.X contains 2 missing or non-finite values" in message
+    assert "sample row(s) 1, 2" in message
+    assert "Prepare Samples" in message
+    assert "do not infer replacement values implicitly" in message
 
 
-class TestPLSContracts:
-    """Verify SCP PLS return types and attribute names."""
-
-    @pytest.fixture()
-    def fitted_pls(self, scp, sample_ndd):
-        y = scp.NDDataset(np.random.default_rng(42).standard_normal((10, 1)))
-        pls = scp.PLSRegression(n_components=2)
-        pls.fit(sample_ndd, y)
-        return pls, sample_ndd, y
-
-    def test_pls_fit_predict_preserves_rows(self, scp, fitted_pls):
-        pls, input_ndd, _ = fitted_pls
-        y_pred = pls.predict(input_ndd)
-        pred_data = y_pred.data if hasattr(y_pred, "data") else np.asarray(y_pred)
-        assert pred_data.shape[0] == input_ndd.shape[0], "PLS.predict() must preserve row count"
-
-    def test_pls_has_transform(self, fitted_pls):
-        pls, _, _ = fitted_pls
-        assert hasattr(pls, "transform"), "PLS must have transform() method"
+def test_unknown_operation_cannot_expand_the_adapter_surface() -> None:
+    with pytest.raises(ValueError, match="not an authority"):
+        spectrochempy_adapter.require_spectrochempy("model.unapproved")
 
 
-# ---------------------------------------------------------------------------
-# MCR-ALS Contracts
-# ---------------------------------------------------------------------------
+def test_adapter_public_surface_is_exactly_the_private_matrix_boundary() -> None:
+    assert spectrochempy_adapter.__all__ == (
+        "extract_efa_state",
+        "extract_mcr_state",
+        "extract_simplisma_state",
+        "require_spectrochempy",
+        "spectrochempy_dataset_from_array",
+        "to_spectrochempy_dataset",
+    )
 
 
-class TestMCRALSContracts:
-    """Verify SCP MCR-ALS return types."""
-
-    def test_mcrals_c_preserves_rows(self, scp):
-        rng = np.random.default_rng(42)
-        data = np.abs(rng.standard_normal((10, 50))) + 0.1
-        ndd = scp.NDDataset(data)
+def test_optional_runtime_state_is_closed_inside_the_adapter() -> None:
+    class EFA:
         n_components = 2
+        f_ev = np.asarray([[4.0, 2.0], [3.0, 1.0]])
+        b_ev = np.asarray([[1.0, 3.0], [2.0, 4.0]])
 
-        # Initial C guess
-        from numpy.linalg import svd
+    class MCR:
+        C = np.asarray([[1.0, 0.0], [0.25, 0.75]])
+        St = np.asarray([[2.0, 3.0, 4.0], [5.0, 6.0, 7.0]])
 
-        U, S, _ = svd(data, full_matrices=False)
-        C0 = scp.NDDataset(np.abs(U[:, :n_components] @ np.diag(S[:n_components])))
+    class SIMPLISMA:
+        C = MCR.C
+        St = MCR.St
+        Pt = np.asarray([[0.1, 0.9, 0.2], [0.3, 0.4, 0.8]])
+        purities = None
 
-        mcr = scp.MCRALS(max_iter=10, tol=0.5)
-        mcr.fit(ndd, C0)
+    efa = spectrochempy_adapter.extract_efa_state(EFA())
+    mcr = spectrochempy_adapter.extract_mcr_state(MCR(), concentration_solver="nnls")
+    simplisma = spectrochempy_adapter.extract_simplisma_state(SIMPLISMA())
 
-        C_data = mcr.C.data if hasattr(mcr.C, "data") else np.asarray(mcr.C)
-        assert C_data.shape[0] == 10, "MCR C matrix must preserve input row count"
-
-
-# ---------------------------------------------------------------------------
-# EFA Contracts
-# ---------------------------------------------------------------------------
-
-
-class TestEFAContracts:
-    """Verify SCP EFA return types."""
-
-    def test_efa_fit_returns_eigenvalues(self, scp, sample_ndd):
-        efa = scp.EFA(n_components=2)
-        efa.fit(sample_ndd)
-        assert hasattr(efa, "f_ev"), "EFA must have f_ev (forward eigenvalues)"
-        assert hasattr(efa, "b_ev"), "EFA must have b_ev (backward eigenvalues)"
+    np.testing.assert_array_equal(efa.forward_ev, EFA.f_ev)
+    np.testing.assert_array_equal(efa.backward_ev, EFA.b_ev)
+    np.testing.assert_array_equal(mcr.C, MCR.C)
+    np.testing.assert_array_equal(mcr.St, MCR.St)
+    np.testing.assert_array_equal(simplisma.purities, np.asarray([0.9, 0.8]))
 
 
-# ---------------------------------------------------------------------------
-# SIMPLISMA Contracts
-# ---------------------------------------------------------------------------
+def test_all_three_optional_contracts_digest_bind_the_adapter() -> None:
+    from spectra_sherpa.app.services.dag.node_base import node_registry
+
+    for operation_id in ("model.efa", "model.mcr_als", "model.simplisma"):
+        contract = node_registry.get_metadata(operation_id).resolved_execution_contract()
+        component_ids = {component["component_id"] for component in contract.payload["implementation_components"]}
+        assert "spectra_sherpa.interoperability.spectrochempy_adapter" in component_ids
 
 
-class TestSIMPLISMAContracts:
-    """Verify SCP SIMPLISMA return types."""
+@pytest.mark.parametrize("preimport", [False, True])
+@requires_scp
+def test_adapter_first_import_is_local_only_without_update_or_testdata_network(tmp_path: Path, preimport: bool) -> None:
+    runtime_home = tmp_path / "home"
+    config_home = runtime_home / "config"
+    projects_home = runtime_home / "projects"
+    for path in (runtime_home, config_home, projects_home):
+        path.mkdir(parents=True, exist_ok=True)
+    probe = r"""
+import json
+import os
+import socket
+import threading
 
-    def test_simplisma_fit_returns_c(self, scp):
-        rng = np.random.default_rng(42)
-        data = np.abs(rng.standard_normal((10, 50))) + 0.1
-        ndd = scp.NDDataset(data)
-        simplisma = scp.SIMPLISMA(n_components=2)
-        simplisma.fit(ndd)
-        assert hasattr(simplisma, "C"), "SIMPLISMA must have C attribute"
+attempts = []
+thread_targets = []
+def blocked(*args, **kwargs):
+    del kwargs
+    attempts.append(repr(args))
+    raise RuntimeError("network blocked")
 
-
-# ---------------------------------------------------------------------------
-# NDDataset Core Contracts
-# ---------------------------------------------------------------------------
-
-
-class TestNDDatasetContracts:
-    """Verify core NDDataset behaviors that Sherpa depends on."""
-
-    def test_nddataset_coord_assignment(self, scp):
-        ndd = scp.NDDataset(np.random.default_rng(42).standard_normal((3, 5)))
-        coord = scp.Coord(np.linspace(400, 4000, 5), title="wavenumber")
-        ndd.x = coord
-        assert ndd.x is not None, "Coord x assignment must stick"
-        assert ndd.x.title == "wavenumber"
-
-    def test_nddataset_meta_round_trip(self, scp):
-        ndd = scp.NDDataset(np.ones((2, 3)))
-        ndd.meta = {"key1": "value1", "key2": [1, 2, 3]}
-        assert ndd.meta["key1"] == "value1", "meta dict must survive set/get"
-        assert ndd.meta["key2"] == [1, 2, 3], "meta list values must survive"
-
-    def test_nddataset_data_is_numpy(self, scp):
-        arr = np.ones((3, 5))
-        ndd = scp.NDDataset(arr)
-        assert isinstance(ndd.data, np.ndarray), f"NDDataset.data must be numpy array, got {type(ndd.data).__name__}"
-
-    def test_nddataset_shape_and_ndim(self, scp):
-        ndd = scp.NDDataset(np.ones((4, 6)))
-        assert ndd.shape == (4, 6)
-        assert ndd.ndim == 2
+socket.socket.connect = blocked
+socket.socket.connect_ex = blocked
+socket.getaddrinfo = blocked
+original_start = threading.Thread.start
+def tracked_start(thread):
+    target = getattr(thread, "_target", None)
+    thread_targets.append(
+        f"{getattr(target, '__module__', '')}.{getattr(target, '__qualname__', '')}"
+    )
+    return original_start(thread)
+threading.Thread.start = tracked_start
+if os.getenv("SPECTRA_SCP_PREIMPORT") == "1":
+    import spectrochempy
+from spectra_sherpa.interoperability.spectrochempy_adapter import require_spectrochempy
+module = require_spectrochempy("model.efa")
+print(json.dumps({"attempts": attempts, "version": module.__version__, "thread_targets": thread_targets}))
+"""
+    environment = {
+        **os.environ,
+        "HOME": str(runtime_home),
+        "XDG_CONFIG_HOME": str(runtime_home / ".config"),
+        "SCP_CONFIG_HOME": str(config_home),
+        "SCP_PROJECTS_HOME": str(projects_home),
+        "MPLCONFIGDIR": str(runtime_home / "matplotlib"),
+        "PYTHONNOUSERSITE": "1",
+        "SPECTRA_SCP_PREIMPORT": "1" if preimport else "0",
+    }
+    environment.pop("DISABLE_AUTO_UPDATE", None)
+    environment.pop("DOC_BUILDING", None)
+    completed = subprocess.run(
+        [sys.executable, "-c", probe],
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+    report = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert report["attempts"] == []
+    assert report["version"] == "0.8.1"
+    forbidden_targets = {
+        "spectrochempy.application.check_update.check_update",
+        "spectrochempy.application.testdata.download_full_testdata_directory",
+    }
+    assert forbidden_targets.isdisjoint(report["thread_targets"])

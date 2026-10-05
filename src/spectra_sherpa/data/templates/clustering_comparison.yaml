@@ -1,0 +1,78 @@
+schema_version: 1
+name: Partition Clustering Comparison
+slug: clustering_comparison
+description: Compare centroid-based K-Means with cohort-only density clustering on one autoscaled dataset.
+category: clustering
+is_active: true
+status: ready
+data_modalities:
+- spectra
+- features
+template_data:
+  nodes:
+  - node_id: data_1
+    node_type: data.file_load
+    label: Load Data
+    parameters: {}
+    example_binding:
+      source: sklearn
+      dataset_name: wine
+    position_x: 100
+    position_y: 50
+  - node_id: preprocess_1
+    node_type: preprocess.scale
+    label: Autoscale
+    parameters:
+      method: autoscale
+    position_x: 350
+    position_y: 250
+  - node_id: kmeans_1
+    node_type: model.kmeans
+    label: K-Means Partition
+    parameters:
+      n_clusters: 3
+      n_init: 10
+      max_iter: 300
+      random_state: 42
+    position_x: 175
+    position_y: 500
+  - node_id: dbscan_1
+    node_type: model.dbscan
+    label: DBSCAN Cohort Partition
+    parameters:
+      eps: 0.45
+      min_samples: 4
+      metric: euclidean
+    position_x: 525
+    position_y: 500
+  edges:
+  - from_node_id: data_1
+    to_node_id: preprocess_1
+  - from_node_id: preprocess_1
+    to_node_id: kmeans_1
+  - from_node_id: preprocess_1
+    to_node_id: dbscan_1
+  canvas_state:
+    zoom: 1.0
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: data_1
+      required: true
+      binding_mode: embedded
+      description: Spectral or multivariate data for clustering
+      accepted_data_roles:
+      - X_spectra
+      - X_features
+      accepted_techniques:
+      - FTIR
+      - NIR
+      - Raman
+      - UV-Vis
+  certified_datasets:
+  - source: sklearn
+    name: wine
+  - source: sklearn
+    name: iris

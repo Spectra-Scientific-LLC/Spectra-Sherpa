@@ -1,21 +1,21 @@
 schema_version: 1
-name: PCA with Outlier Diagnostics
+name: PCA Exploration & Outlier Diagnostics
 slug: pca
-description: 'Detailed PCA workflow with scores, loadings, scree plots, Hotelling
-  T-squared, and Q residuals for outlier diagnostics.'
+description: 'Three-component PCA exploration with role-appropriate scaling, interactive scores,
+  loadings, explained variance, Hotelling T-squared, and Q-residual diagnostics.'
 category: exploratory
 is_active: true
+status: ready
 data_modalities:
 - spectra
 - features
+- hsi
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Data
-    parameters:
-      source: spectrochempy
-      example_dataset: irdata
+    parameters: {}
     position_x: 175
     position_y: 50
   - node_id: preprocess_1
@@ -25,11 +25,29 @@ template_data:
       method: mean_center
     position_x: 425
     position_y: 300
+  - node_id: inclusion_1
+    node_type: data.filter_samples
+    label: Filter
+    parameters:
+      field: source_inclusion
+      pattern: ''
+      match_mode: contains
+      case_sensitive: false
+      invert: false
+      sample_table_column: ''
+      allow_empty: false
+      intensity_metric: max
+      intensity_operator: gte
+      intensity_threshold: 0.0
+      intensity_upper_threshold: 1.0
+      filter_values: null
+    position_x: 175
+    position_y: 300
   - node_id: model_1
     node_type: model.pca
     label: Fit PCA Transform
     parameters:
-      n_components: 2
+      n_components: "3"
     position_x: 175
     position_y: 550
   - node_id: viz_1
@@ -43,14 +61,14 @@ template_data:
     node_type: output.plot
     label: Loadings
     parameters:
-      plot_type: spectra
+      plot_type: loadings
     position_x: 850
     position_y: 800
   - node_id: viz_3
     node_type: output.plot
-    label: Variance
+    label: Explained Variance
     parameters:
-      plot_type: spectra
+      plot_type: explained_variance
     position_x: 1250
     position_y: 800
   - node_id: stats_1
@@ -59,8 +77,18 @@ template_data:
     parameters: {}
     position_x: 450
     position_y: 800
+  - node_id: outliers_1
+    node_type: diagnostics.outliers
+    label: Screen PCA Outliers
+    parameters:
+      confidence_level: 0.95
+    position_x: 750
+    position_y: 550
   edges:
   - from_node_id: data_1
+    to_node_id: inclusion_1
+    to_input: X
+  - from_node_id: inclusion_1
     to_node_id: preprocess_1
     to_input: default
   - from_node_id: preprocess_1
@@ -76,6 +104,10 @@ template_data:
     from_output: explained_variance
   - from_node_id: model_1
     to_node_id: stats_1
+  - from_node_id: model_1
+    to_node_id: outliers_1
+    from_output: diagnostic_state
+    to_input: default
   canvas_state:
     zoom: 1.0
     pan_x: 0
@@ -90,19 +122,15 @@ template_data:
       accepted_data_roles:
       - X_spectra
       - X_features
+      - X_hsi
       accepted_techniques:
       - FTIR
       - NIR
       - Raman
       - UV-Vis
       - OES
+      - Hyperspectral image
   certified_datasets:
-  - source: spectrochempy
-    name: irdata
-  - source: spectrochempy
-    name: ramandata
-  - source: spectrochempy
-    name: matlabdata/als2004dataset.MAT
   - source: eigenvector
     name: diesel_nir
   - source: eigenvector

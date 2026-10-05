@@ -35,7 +35,6 @@ from spectra_sherpa.app.services.tools.builtin.workflow import validate_workflow
 # source module is the only reliable approach.
 _ADVISOR_REGISTRY_PATH = "spectra_sherpa.app.contracts.ai_provider_registry.get_sherpa_advisor"
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -51,7 +50,7 @@ async def _create_project(auth_client: AsyncClient) -> int:
 
 
 async def _create_parent_workflow(auth_client: AsyncClient, project_id: int) -> dict:
-    """Workflow with a sklearn wine data source (auto-infers ProjectDataSource)."""
+    """Workflow with one exact project file source."""
     resp = await auth_client.post(
         "/api/v1/workflows",
         json={
@@ -62,9 +61,9 @@ async def _create_parent_workflow(auth_client: AsyncClient, project_id: int) -> 
             "nodes": [
                 {
                     "node_id": "src_1",
-                    "node_type": "data.source",
-                    "label": "Wine Data",
-                    "parameters": {"source": "sklearn", "sklearn_dataset": "wine"},
+                    "node_type": "data.file_load",
+                    "label": "Project Data",
+                    "parameters": {"experiment_id": 1, "file_id": 1, "stage": "raw"},
                     "position_x": 0,
                     "position_y": 0,
                 }
@@ -80,13 +79,13 @@ _PCA_DAG_SPEC = {
     "nodes": [
         {
             "id": "src_1",
-            "type": "data.source",
-            "parameters": {"source": "sklearn", "sklearn_dataset": "wine"},
+            "type": "data.file_load",
+            "parameters": {"experiment_id": 1, "file_id": 1, "stage": "raw"},
         },
         {
             "id": "pca_1",
             "type": "model.pca",
-            "parameters": {"n_components": 3},
+            "parameters": {"n_components": "3"},
         },
     ],
     "edges": [
@@ -103,13 +102,13 @@ _PCA_DAG_SPEC = {
 _PLSDA_HOLDOUT_NODES = [
     {
         "id": "data_1",
-        "type": "data.source",
-        "parameters": {"source": "sklearn", "sklearn_dataset": "iris"},
+        "type": "data.file_load",
+        "parameters": {"experiment_id": 1, "file_id": 1, "stage": "raw"},
     },
     {
         "id": "partition_1",
-        "type": "selection.sample_partition",
-        "parameters": {"method": "stratified", "test_size": 0.25},
+        "type": "data.train_test_split",
+        "parameters": {"split_method": "stratified", "test_size": 0.25},
     },
     {
         "id": "preprocess_train",
@@ -126,11 +125,11 @@ _PLSDA_HOLDOUT_NODES = [
         "type": "classification.plsda",
         "parameters": {"n_components": 3},
     },
-    {"id": "predict_1", "type": "classification.predict", "parameters": {}},
+    {"id": "predict_1", "type": "classification.apply_plsda", "parameters": {}},
     {
         "id": "eval_1",
-        "type": "diagnostics.holdout_evaluation",
-        "parameters": {"task_type": "classification"},
+        "type": "diagnostics.classification_evaluator",
+        "parameters": {},
     },
 ]
 
@@ -155,18 +154,18 @@ _PLSDA_HOLDOUT_EDGES = [
         "to_input": "reference",
     },
     {"source": "preprocess_train", "target": "model_1", "to_input": "X"},
-    {"source": "preprocess_test", "target": "predict_1", "to_input": "X_new"},
+    {"source": "preprocess_test", "target": "predict_1", "to_input": "default"},
     {
         "source": "model_1",
         "target": "predict_1",
-        "from_output": "model",
-        "to_input": "model",
+        "from_output": "fitted_state",
+        "to_input": "fitted_state",
     },
     {
         "source": "predict_1",
         "target": "eval_1",
         "from_output": "y_pred",
-        "to_input": "y_pred",
+        "to_input": "default",
     },
     {
         "source": "partition_1",
@@ -194,13 +193,13 @@ def _mock_provider_without_agentic_tools():
 def test_ai_fork_layout_matches_vertical_classification_template_lanes() -> None:
     """Fallback positions should follow the train/test template layout convention."""
     nodes = [
-        WorkflowDagSpecNode(id="data_1", type="data.source"),
-        WorkflowDagSpecNode(id="partition_1", type="selection.sample_partition"),
+        WorkflowDagSpecNode(id="data_1", type="data.file_load"),
+        WorkflowDagSpecNode(id="partition_1", type="data.train_test_split"),
         WorkflowDagSpecNode(id="preprocess_train", type="preprocess.scale"),
         WorkflowDagSpecNode(id="preprocess_test", type="preprocess.scale"),
         WorkflowDagSpecNode(id="model_1", type="classification.plsda"),
-        WorkflowDagSpecNode(id="predict_1", type="classification.predict"),
-        WorkflowDagSpecNode(id="eval_1", type="diagnostics.holdout_evaluation"),
+        WorkflowDagSpecNode(id="predict_1", type="classification.apply_plsda"),
+        WorkflowDagSpecNode(id="eval_1", type="diagnostics.classification_evaluator"),
         WorkflowDagSpecNode(id="table_1", type="output.data_table"),
         WorkflowDagSpecNode(id="viz_1", type="output.plot"),
     ]
@@ -225,12 +224,12 @@ def test_ai_fork_layout_matches_vertical_classification_template_lanes() -> None
             to_input="reference",
         ),
         WorkflowDagSpecEdge(source="preprocess_train", target="model_1", to_input="X"),
-        WorkflowDagSpecEdge(source="preprocess_test", target="predict_1", to_input="X_new"),
+        WorkflowDagSpecEdge(source="preprocess_test", target="predict_1", to_input="default"),
         WorkflowDagSpecEdge(
             source="model_1",
             target="predict_1",
-            from_output="model",
-            to_input="model",
+            from_output="fitted_state",
+            to_input="fitted_state",
         ),
         WorkflowDagSpecEdge(
             source="predict_1",
@@ -285,12 +284,12 @@ def test_validate_workflow_rejects_collapsed_classification_test_branch() -> Non
     ]
     collapsed_edges.extend(
         [
-            {"source": "preprocess_train", "target": "predict_1", "to_input": "X_new"},
+            {"source": "preprocess_train", "target": "predict_1", "to_input": "default"},
             {
                 "source": "model_1",
                 "target": "predict_1",
-                "from_output": "model",
-                "to_input": "model",
+                "from_output": "fitted_state",
+                "to_input": "fitted_state",
             },
         ]
     )
@@ -299,7 +298,7 @@ def test_validate_workflow_rejects_collapsed_classification_test_branch() -> Non
     codes = {issue.get("code") for issue in result["issues"]}
 
     assert result["valid"] is False
-    assert "classification_predict_must_use_x_test" in codes
+    assert "population_authority" in codes
 
 
 def test_validate_workflow_requires_training_reference_for_scaled_test_branch() -> None:
@@ -317,7 +316,7 @@ def test_validate_workflow_requires_training_reference_for_scaled_test_branch() 
     codes = {issue.get("code") for issue in result["issues"]}
 
     assert result["valid"] is False
-    assert "classification_test_scale_requires_train_reference" in codes
+    assert "population_authority" in codes
 
 
 def test_validate_workflow_requires_holdout_eval_to_use_y_test() -> None:
@@ -339,7 +338,7 @@ def test_validate_workflow_requires_holdout_eval_to_use_y_test() -> None:
     codes = {issue.get("code") for issue in result["issues"]}
 
     assert result["valid"] is False
-    assert "classification_eval_must_use_y_test" in codes
+    assert "population_authority" in codes
 
 
 # ---------------------------------------------------------------------------
@@ -412,7 +411,7 @@ async def test_ai_fork_creates_pca_workflow(
         )
     ).scalar_one_or_none()
     assert pca_node is not None, "PCA node was not created in the forked workflow"
-    assert pca_node.parameters.get("n_components") == 3
+    assert pca_node.parameters.get("n_components") == "3"
 
     # Verify advisor channel
     channel = (
@@ -564,3 +563,126 @@ async def test_ai_fork_requires_parent_data_source(auth_client: AsyncClient) -> 
 # server's test suite because it directly imports that server's
 # WS-handler internals and patches private symbols. See the
 # corresponding server-side test.
+
+
+@pytest.mark.asyncio
+async def test_ai_fork_persists_exact_target_binding_and_refuses_stale_receipt(auth_client, test_session):
+    from copy import deepcopy
+
+    from spectra_sherpa.app.services.tools.builtin.workflow import source_binding_snapshot
+
+    project_id = await _create_project(auth_client)
+    parent = await _create_parent_workflow(auth_client, project_id)
+    loader = (
+        await test_session.execute(select(WorkflowNode).where(WorkflowNode.workflow_id == parent["id"]))
+    ).scalar_one()
+    loader.parameters = {
+        **loader.parameters,
+        "target_authority": {
+            "schema_version": "spectrasherpa-target-authority/1",
+            "column": "cetane",
+            "target_type": "continuous",
+            "units": "index",
+            "source_digest": "a" * 64,
+        },
+    }
+    await test_session.commit()
+    expected = source_binding_snapshot([loader])
+    original_parameters = deepcopy(loader.parameters)
+    candidate = deepcopy(_PCA_DAG_SPEC)
+    candidate["nodes"][0]["parameters"] = {}
+    with patch(_ADVISOR_REGISTRY_PATH, return_value=_mock_available_provider()):
+        created = await auth_client.post(
+            f"/api/v1/workflows/{parent['id']}/ai-fork",
+            json={
+                "dag_spec": candidate,
+                "expected_source_bindings": expected,
+                "new_conversation_id": str(uuid.uuid4()),
+            },
+        )
+        assert created.status_code == 200, created.text
+        child_id = created.json()["new_workflow_id"]
+        reopened = await auth_client.get(f"/api/v1/workflows/{child_id}")
+        assert reopened.status_code == 200
+        child_source = next(node for node in reopened.json()["nodes"] if node["node_id"] == "src_1")
+        assert child_source["parameters"] == original_parameters
+        assert loader.parameters == original_parameters
+
+        loader.parameters = {
+            **loader.parameters,
+            "target_authority": {**loader.parameters["target_authority"], "column": "viscosity"},
+        }
+        await test_session.commit()
+        refused = await auth_client.post(
+            f"/api/v1/workflows/{parent['id']}/ai-fork",
+            json={
+                "dag_spec": candidate,
+                "expected_source_bindings": expected,
+                "new_conversation_id": str(uuid.uuid4()),
+            },
+        )
+        assert refused.status_code == 400, refused.text
+        assert refused.json()["detail"]["issues"][0]["code"] == "source_binding_refused"
+        children = (
+            (await test_session.execute(select(Workflow).where(Workflow.created_from_workflow_id == parent["id"])))
+            .scalars()
+            .all()
+        )
+        assert [child.id for child in children] == [child_id]
+
+
+@pytest.mark.asyncio
+async def test_ai_fork_receipt_reopens_and_rejects_reused_identity(auth_client, test_session):
+    from copy import deepcopy
+
+    from spectra_sherpa.app.services.dag.proposal_contract import definition_digest, read_proposal_receipt
+
+    project_id = await _create_project(auth_client)
+    parent = await _create_parent_workflow(auth_client, project_id)
+    payload = {"dag_spec": deepcopy(_PCA_DAG_SPEC), "new_conversation_id": str(uuid.uuid4())}
+    with patch(_ADVISOR_REGISTRY_PATH, return_value=_mock_available_provider()):
+        first = await auth_client.post(f"/api/v1/workflows/{parent['id']}/ai-fork", json=payload)
+        assert first.status_code == 200, first.text
+        child = (await auth_client.get(f"/api/v1/workflows/{first.json()['new_workflow_id']}")).json()
+        receipt = read_proposal_receipt(child["proposal_receipt"])
+        assert receipt.kind == "ordinary_workflow"
+        assert receipt.execution["state"] == "draft"
+        assert receipt.execution["requested"] is False
+        assert receipt.parent_identity["workflow_id"] == parent["id"]
+        assert receipt.effective_parameters["pca_1"]["n_components"] == "3"
+        assert definition_digest(receipt.admitted_definitions[0]) == child["integrity_hash"]
+        assert receipt.source_bindings
+        assert "model.pca" in receipt.operation_contracts
+        replay = await auth_client.post(f"/api/v1/workflows/{parent['id']}/ai-fork", json=payload)
+        assert replay.json() == first.json()
+        payload["dag_spec"]["nodes"][1]["parameters"]["n_components"] = 2
+        conflict = await auth_client.post(f"/api/v1/workflows/{parent['id']}/ai-fork", json=payload)
+        assert conflict.status_code == 409
+    after = (await auth_client.get(f"/api/v1/workflows/{parent['id']}")).json()
+    assert after["nodes"] == parent["nodes"]
+    assert after["proposal_receipt"] is None
+
+
+@pytest.mark.asyncio
+async def test_ai_fork_refuses_changed_parent_graph_with_unchanged_sources(auth_client, test_session):
+    from spectra_sherpa.app.services.dag.proposal_contract import definition_digest
+
+    project_id = await _create_project(auth_client)
+    parent = await _create_parent_workflow(auth_client, project_id)
+    expected = definition_digest(parent)
+    test_session.add(WorkflowNode(workflow_id=parent["id"], node_id="later", node_type="model.pca", parameters={}))
+    await test_session.commit()
+    with patch(_ADVISOR_REGISTRY_PATH, return_value=_mock_available_provider()):
+        response = await auth_client.post(
+            f"/api/v1/workflows/{parent['id']}/ai-fork",
+            json={
+                "dag_spec": _PCA_DAG_SPEC,
+                "new_conversation_id": str(uuid.uuid4()),
+                "expected_parent_definition_hash": expected,
+            },
+        )
+    assert response.status_code == 409, response.text
+    assert "changed during proposal" in response.json()["detail"]
+    assert not (
+        await test_session.scalars(select(Workflow).where(Workflow.created_from_workflow_id == parent["id"]))
+    ).all()

@@ -1,119 +1,89 @@
 schema_version: 1
 name: Classification (PLS-DA)
 slug: classification_plsda
-description: Supervised PLS-DA classification with stratified train/test split. Reports
-  accuracy and confusion matrix on a held-out test set.
+description: Supervised PLS2 discriminant analysis with stratified train/test split.
+  Scaling is fitted on the training partition and retained in the fitted model;
+  the separate evaluator reports held-out classification evidence.
 category: classification
 is_active: true
+status: ready
 data_modalities:
 - spectra
 - features
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Data
-    parameters:
+    parameters: {}
+    example_binding:
       source: sklearn
-      sklearn_dataset: wine
+      dataset_name: wine
+      selected_target: target
+      target_type: categorical
     position_x: 175
     position_y: 50
   - node_id: partition_1
-    node_type: selection.sample_partition
+    node_type: data.train_test_split
     label: Train/Test Split
     parameters:
-      method: stratified
+      split_method: stratified
       test_size: 0.25
+      random_seed: 42
     position_x: 175
     position_y: 250
-  - node_id: preprocess_train
-    node_type: preprocess.scale
-    label: Autoscale (Train)
-    parameters:
-      method: autoscale
-    position_x: 175
-    position_y: 450
-  - node_id: preprocess_test
-    node_type: preprocess.scale
-    label: Autoscale (Test)
-    parameters:
-      method: autoscale
-    position_x: 500
-    position_y: 450
   - node_id: model_1
     node_type: classification.plsda
     label: Train PLS-DA Classifier
     parameters:
-      n_components: 5
-      scale: false
+      n_components: 2
+      scale: true
     position_x: 175
     position_y: 650
   - node_id: predict_1
-    node_type: classification.predict
+    node_type: classification.apply_plsda
     label: Predict Test Set
     parameters: {}
     position_x: 500
     position_y: 650
   - node_id: eval_1
-    node_type: diagnostics.holdout_evaluation
+    node_type: diagnostics.classification_evaluator
     label: Test Evaluation
-    parameters:
-      task_type: classification
+    parameters: {}
     position_x: 500
     position_y: 850
-  - node_id: table_1
-    node_type: output.data_table
-    label: Test Metrics
-    parameters: {}
-    position_x: 175
-    position_y: 1050
-  - node_id: viz_1
-    node_type: output.plot
-    label: Confusion Matrix
-    parameters:
-      plot_type: heatmap
-    position_x: 500
-    position_y: 1050
   edges:
   - from_node_id: data_1
     to_node_id: partition_1
     to_input: X
+  - from_node_id: data_1
+    to_node_id: partition_1
+    from_output: target
+    to_input: y
   - from_node_id: partition_1
-    to_node_id: preprocess_train
+    to_node_id: model_1
     from_output: X_train
-    to_input: default
+    to_input: X
   - from_node_id: partition_1
-    to_node_id: preprocess_test
+    to_node_id: model_1
+    from_output: y_train
+    to_input: y
+  - from_node_id: partition_1
+    to_node_id: predict_1
     from_output: X_test
     to_input: default
-  - from_node_id: partition_1
-    to_node_id: preprocess_test
-    from_output: X_train
-    to_input: reference
-  - from_node_id: preprocess_train
-    to_node_id: model_1
-    to_input: X
-  - from_node_id: preprocess_test
-    to_node_id: predict_1
-    to_input: X_new
   - from_node_id: model_1
     to_node_id: predict_1
-    from_output: model
-    to_input: model
+    from_output: fitted_state
+    to_input: fitted_state
   - from_node_id: predict_1
     to_node_id: eval_1
     from_output: y_pred
-    to_input: y_pred
+    to_input: default
   - from_node_id: partition_1
     to_node_id: eval_1
     from_output: y_test
     to_input: y_true
-  - from_node_id: eval_1
-    to_node_id: table_1
-    from_output: metrics
-  - from_node_id: eval_1
-    to_node_id: viz_1
-    from_output: visualization
   canvas_state:
     zoom: 0.85
     pan_x: 0

@@ -7,10 +7,26 @@ from __future__ import annotations
 import io
 import json
 import os
+import shutil
+import threading
 import time
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
+
+
+def _bind_model_application_runtime(node, store) -> None:
+    from spectra_sherpa.app.services.execution_runtime import ApplicationModelArtifactReplay
+    from spectra_sherpa.core.execution_runtime import ExecutionRuntime
+
+    node.bind_execution_runtime(
+        ExecutionRuntime(
+            model_artifact_reader=store,
+            model_artifact_replay=ApplicationModelArtifactReplay(),
+        )
+    )
+
 
 # ---------------------------------------------------------------------------
 # Phase 1: ModelStore file persistence
@@ -215,7 +231,11 @@ class TestModelArtifactModel:
             "feature_axis_json",
             "metrics_json",
             "training_data_hash",
+            "training_scientific_digest",
             "preprocessing_summary",
+            "artifact_origin",
+            "canonical_lineage_digest",
+            "validation_evidence_digest",
             "is_active",
             "is_deploy_ready",
             "tags",
@@ -241,7 +261,7 @@ class TestPCAExtractArtifact:
 
     @pytest.fixture()
     def pca_extract(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
         rng = np.random.default_rng(42)
         n_samples, n_features, n_components = 20, 50, 3
@@ -262,7 +282,7 @@ class TestPCAExtractArtifact:
         )
 
     def test_roundtrip(self, pca_extract):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
         metadata, arrays = pca_extract.to_artifact()
         restored = PCAExtract.from_artifact(metadata, arrays)
@@ -274,8 +294,8 @@ class TestPCAExtractArtifact:
         np.testing.assert_array_equal(restored.explained_variance, pca_extract.explained_variance)
         np.testing.assert_array_equal(restored.scores, pca_extract.scores)
 
-    def test_roundtrip_without_mean(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+    def test_current_artifact_rejects_unreplayable_missing_mean(self):
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
         extract = PCAExtract(
             scores=np.zeros((5, 2)),
@@ -286,9 +306,8 @@ class TestPCAExtractArtifact:
             mean=None,
         )
         metadata, arrays = extract.to_artifact()
-        restored = PCAExtract.from_artifact(metadata, arrays)
-        assert restored.mean is None
-        assert restored.n_components == 2
+        with pytest.raises(ValueError, match="missing fitted preprocessing state"):
+            PCAExtract.from_artifact(metadata, arrays)
 
     def test_transform_with_mean(self, pca_extract):
         rng = np.random.default_rng(99)
@@ -301,7 +320,7 @@ class TestPCAExtractArtifact:
         np.testing.assert_allclose(scores, expected)
 
     def test_transform_without_mean(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
         loadings = np.eye(2, 5, dtype=np.float64)
         extract = PCAExtract(
@@ -325,7 +344,7 @@ class TestPCAExtractArtifact:
         """PCAExtract.transform() must match sklearn PCA.transform()."""
         from sklearn.decomposition import PCA
 
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
         rng = np.random.default_rng(123)
         X_train = rng.standard_normal((30, 10)).astype(np.float64)
@@ -347,7 +366,7 @@ class TestPCAExtractArtifact:
 
     def test_transform_replays_saved_scaling_state(self):
         """PCAExtract.transform() must replay raw-space standardization state before projection."""
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
         loadings = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
         extract = PCAExtract(
@@ -358,6 +377,7 @@ class TestPCAExtractArtifact:
             n_components=2,
             mean=np.array([10.0, 20.0], dtype=np.float64),
             scale=np.array([2.0, 5.0], dtype=np.float64),
+            center=np.zeros(2, dtype=np.float64),
             scale_mode="standard",
         )
 
@@ -367,8 +387,8 @@ class TestPCAExtractArtifact:
         np.testing.assert_allclose(scores, np.array([[1.0, 2.0]], dtype=np.float64))
 
     def test_transform_replays_saved_minmax_scaled_state(self):
-        """SCP PCA scaled=True must replay centered min-max data before projection."""
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+        """Native PCA min-max state must replay centering before projection."""
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
         loadings = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float64)
         extract = PCAExtract(
@@ -391,20 +411,9 @@ class TestPCAExtractArtifact:
         scores = restored.transform(np.array([[12.0, 30.0]], dtype=np.float64))
         np.testing.assert_allclose(scores, np.array([[0.75, 1.5]], dtype=np.float64))
 
-    def test_from_scp_scaled_persists_minmax_state(self, monkeypatch):
-        """Extractor must persist SCP scaled=True as min/range plus scaled-space center."""
-        from spectra_sherpa.app.lib.adapters import scp_extractors
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
-
-        monkeypatch.setattr(scp_extractors, "require_scp", lambda _reason: None)
-
-        class FakePCA:
-            components = np.eye(2, 3, dtype=np.float64)
-            explained_variance_ratio = np.array([0.7, 0.2], dtype=np.float64)
-            explained_variance = np.array([2.0, 1.0], dtype=np.float64)
-
-            def transform(self):
-                return np.zeros((3, 2), dtype=np.float64)
+    def test_native_fit_persists_minmax_state(self):
+        """Native PCA must persist min/range plus fitted scaled-space center."""
+        from spectra_sherpa.app.lib.pca import fit_pca
 
         X_train = np.array(
             [
@@ -414,8 +423,7 @@ class TestPCAExtractArtifact:
             ],
             dtype=np.float64,
         )
-
-        extract = PCAExtract.from_scp(FakePCA(), X_train, scaled=True)
+        extract = fit_pca(X_train, n_components=2, standardized=False, scaled=True)
 
         np.testing.assert_allclose(extract.offset, np.array([10.0, 20.0, 1.0], dtype=np.float64))
         np.testing.assert_allclose(extract.scale, np.array([4.0, 10.0, 1.0], dtype=np.float64))
@@ -423,26 +431,25 @@ class TestPCAExtractArtifact:
         assert extract.mean is None
         assert extract.scale_mode == "minmax"
         scores = extract.transform(np.array([[12.0, 25.0, 1.0]], dtype=np.float64))
-        np.testing.assert_allclose(scores, np.array([[0.0, 0.0]], dtype=np.float64))
+        np.testing.assert_allclose(scores, np.zeros((1, 2)), atol=1e-12)
 
-    def test_scaled_artifact_without_center_fails_loudly(self):
-        """Legacy scaled PCA artifacts without post-scale center cannot be replayed safely."""
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+    def test_noncurrent_scaled_artifact_fails_at_admission(self):
+        """Prototype PCA artifacts cannot enter the current application path."""
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
-        extract = PCAExtract.from_artifact(
-            {"model_type": "pca", "n_components": 2, "scaled": True},
-            {
-                "loadings": np.eye(2, 2, dtype=np.float64),
-                "scale": np.array([2.0, 5.0], dtype=np.float64),
-                "offset": np.array([10.0, 20.0], dtype=np.float64),
-            },
-        )
-        with pytest.raises(ValueError, match="post-scale center"):
-            extract.transform(np.array([[12.0, 30.0]], dtype=np.float64))
+        with pytest.raises(ValueError, match="current closed serializer"):
+            PCAExtract.from_artifact(
+                {"model_type": "pca", "n_components": 2, "scaled": True},
+                {
+                    "loadings": np.eye(2, 2, dtype=np.float64),
+                    "scale": np.array([2.0, 5.0], dtype=np.float64),
+                    "offset": np.array([10.0, 20.0], dtype=np.float64),
+                },
+            )
 
     def test_modelstore_integration(self, tmp_path, pca_extract):
         """Full pipeline: to_artifact → ModelStore.save → load → from_artifact."""
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+        from spectra_sherpa.app.lib.pca import PCAExtract
         from spectra_sherpa.app.services.model_store import ModelStore
 
         store = ModelStore(tmp_path)
@@ -467,7 +474,7 @@ class TestPLSExtractArtifact:
 
     @pytest.fixture()
     def pls_extract(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
+        from spectra_sherpa.app.lib.fitted_state import PLSExtract
 
         rng = np.random.default_rng(42)
         n_features, n_targets, n_components = 50, 1, 3
@@ -487,7 +494,7 @@ class TestPLSExtractArtifact:
         )
 
     def test_roundtrip(self, pls_extract):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
+        from spectra_sherpa.app.lib.fitted_state import PLSExtract
 
         metadata, arrays = pls_extract.to_artifact()
         restored = PLSExtract.from_artifact(metadata, arrays)
@@ -512,8 +519,8 @@ class TestPLSExtractArtifact:
         expected = (X_new - pls_extract.x_mean) @ pls_extract.coef + pls_extract.y_mean
         np.testing.assert_allclose(y_pred, expected)
 
-    def test_applicability_diagnostics_flags_out_of_domain_samples(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
+    def test_legacy_applicability_diagnostics_refuses_unqualified_limits(self):
+        from spectra_sherpa.app.lib.fitted_state import PLSExtract
 
         extract = PLSExtract(
             x_scores=np.array([[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [-1.0, 0.0], [0.0, -1.0]]),
@@ -534,12 +541,14 @@ class TestPLSExtractArtifact:
 
         assert diagnostics is not None
         assert diagnostics["type"] == "pls_applicability"
-        assert diagnostics["out_of_domain"] == [False, True]
-        assert diagnostics["n_out_of_domain"] == 1
-        assert diagnostics["t2_limit"] == 2.0
+        assert diagnostics["out_of_domain"] == [None, None]
+        assert diagnostics["n_out_of_domain"] is None
+        assert diagnostics["t2_limit"] is None
+        assert diagnostics["claim_scope"] == "unavailable_legacy_authority"
+        assert diagnostics["unavailable_reason"] == "refit_required_for_exact_projection_and_screening_authority"
 
     def test_predict_no_coef_raises(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
+        from spectra_sherpa.app.lib.fitted_state import PLSExtract
 
         extract = PLSExtract(
             x_scores=None,
@@ -556,7 +565,7 @@ class TestPLSExtractArtifact:
         """PLSExtract.predict() must match sklearn PLSRegression.predict()."""
         from sklearn.cross_decomposition import PLSRegression
 
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
+        from spectra_sherpa.app.lib.fitted_state import PLSExtract
 
         rng = np.random.default_rng(456)
         X_train = rng.standard_normal((40, 20)).astype(np.float64)
@@ -585,48 +594,24 @@ class TestPLSExtractArtifact:
         sk_pred = sk_pls.predict(X_test)
         np.testing.assert_allclose(our_pred, sk_pred, atol=1e-10)
 
-    def test_from_scp_predict_matches_scaled_scp_model(self):
-        from spectra_sherpa.app.lib.scp_compat import HAS_SCP, scp
-
-        if not HAS_SCP:
-            pytest.skip("SpectroChemPy is optional")
-
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
-
-        rng = np.random.default_rng(1234)
-        X_train = rng.standard_normal((40, 12)) * np.linspace(1.0, 4.0, 12)
-        y_train = rng.standard_normal((40, 1))
-        X_test = rng.standard_normal((6, 12)) * np.linspace(1.0, 4.0, 12)
-
-        X_ndd = scp.NDDataset(X_train)
-        y_ndd = scp.NDDataset(y_train)
-        pls = scp.PLSRegression(n_components=3, scale=True)
-        pls.fit(X_ndd, y_ndd)
-
-        extract = PLSExtract.from_scp(pls, X_ndd, Y_ndd=y_ndd)
-        our_pred = extract.predict(X_test)
-        scp_pred = np.asarray(pls.predict(scp.NDDataset(X_test)).data).reshape(our_pred.shape)
-
-        assert extract.x_scale is not None
-        np.testing.assert_allclose(our_pred, scp_pred, atol=1e-10)
-
 
 class TestMCRExtractArtifact:
     """Verify MCRExtract to_artifact/from_artifact roundtrip and transform."""
 
     @pytest.fixture()
     def mcr_extract(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import MCRExtract
+        from spectra_sherpa.app.lib.fitted_state import MCRExtract
 
         rng = np.random.default_rng(42)
         return MCRExtract(
             C=rng.standard_normal((20, 3)).astype(np.float64),
             St=rng.standard_normal((3, 50)).astype(np.float64),
             n_components=3,
+            concentration_solver="lstsq",
         )
 
     def test_roundtrip(self, mcr_extract):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import MCRExtract
+        from spectra_sherpa.app.lib.fitted_state import MCRExtract
 
         metadata, arrays = mcr_extract.to_artifact()
         restored = MCRExtract.from_artifact(metadata, arrays)
@@ -644,72 +629,19 @@ class TestMCRExtractArtifact:
         expected = X_new @ np.linalg.pinv(mcr_extract.St)
         np.testing.assert_allclose(C_new, expected, atol=1e-10)
 
+    def test_nonnegative_transform_preserves_fitted_constraint(self):
+        from scipy.optimize import nnls
 
-class TestEFAExtractArtifact:
-    """Verify EFAExtract to_artifact/from_artifact roundtrip."""
+        from spectra_sherpa.app.lib.fitted_state import MCRExtract
 
-    def test_roundtrip(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import EFAExtract
+        St = np.array([[1.0, 0.0, 1.0], [0.0, 1.0, 1.0]])
+        X_new = np.array([[1.0, -0.2, 0.8]])
+        extract = MCRExtract(C=np.ones((2, 2)), St=St, n_components=2, concentration_solver="nnls")
 
-        rng = np.random.default_rng(42)
-        extract = EFAExtract(
-            forward_ev=rng.standard_normal((20, 3)).astype(np.float64),
-            backward_ev=rng.standard_normal((20, 3)).astype(np.float64),
-            n_components=3,
-        )
-        metadata, arrays = extract.to_artifact()
-        restored = EFAExtract.from_artifact(metadata, arrays)
+        actual = extract.transform(X_new)
 
-        assert restored.n_components == 3
-        np.testing.assert_array_equal(restored.forward_ev, extract.forward_ev)
-        np.testing.assert_array_equal(restored.backward_ev, extract.backward_ev)
-
-    def test_roundtrip_none_arrays(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import EFAExtract
-
-        extract = EFAExtract(forward_ev=None, backward_ev=None, n_components=2)
-        metadata, arrays = extract.to_artifact()
-        restored = EFAExtract.from_artifact(metadata, arrays)
-
-        assert restored.forward_ev is None
-        assert restored.backward_ev is None
-        assert restored.n_components == 2
-
-
-class TestSIMPLISMAExtractArtifact:
-    """Verify SIMPLISMAExtract roundtrip and transform."""
-
-    @pytest.fixture()
-    def simplisma_extract(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import SIMPLISMAExtract
-
-        rng = np.random.default_rng(42)
-        return SIMPLISMAExtract(
-            C=rng.standard_normal((20, 3)).astype(np.float64),
-            St=rng.standard_normal((3, 50)).astype(np.float64),
-            purities=np.array([0.9, 0.85, 0.7], dtype=np.float64),
-            n_components=3,
-        )
-
-    def test_roundtrip(self, simplisma_extract):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import SIMPLISMAExtract
-
-        metadata, arrays = simplisma_extract.to_artifact()
-        restored = SIMPLISMAExtract.from_artifact(metadata, arrays)
-
-        assert restored.n_components == 3
-        np.testing.assert_array_equal(restored.C, simplisma_extract.C)
-        np.testing.assert_array_equal(restored.St, simplisma_extract.St)
-        np.testing.assert_array_equal(restored.purities, simplisma_extract.purities)
-
-    def test_transform(self, simplisma_extract):
-        rng = np.random.default_rng(99)
-        X_new = rng.standard_normal((5, 50))
-        C_new = simplisma_extract.transform(X_new)
-
-        assert C_new.shape == (5, 3)
-        expected = X_new @ np.linalg.pinv(simplisma_extract.St)
-        np.testing.assert_allclose(C_new, expected, atol=1e-10)
+        np.testing.assert_allclose(actual[0], nnls(St.T, X_new[0])[0])
+        assert np.all(actual >= 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -717,83 +649,12 @@ class TestSIMPLISMAExtractArtifact:
 # ---------------------------------------------------------------------------
 
 
-class TestPLSDAExtractArtifact:
-    """Verify PLSDAExtract roundtrip and predict."""
-
-    @pytest.fixture()
-    def plsda_extract(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSDAExtract
-
-        rng = np.random.default_rng(42)
-        n_features, n_classes = 20, 3
-        return PLSDAExtract(
-            coef=rng.standard_normal((n_features, n_classes)).astype(np.float64),
-            x_mean=rng.standard_normal(n_features).astype(np.float64),
-            y_mean=np.array([1 / 3, 1 / 3, 1 / 3], dtype=np.float64),
-            classes=["A", "B", "C"],
-            x_loadings=rng.standard_normal((n_features, 3)).astype(np.float64),
-            y_loadings=rng.standard_normal((n_classes, 3)).astype(np.float64),
-            n_components=3,
-        )
-
-    def test_roundtrip(self, plsda_extract):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSDAExtract
-
-        metadata, arrays = plsda_extract.to_artifact()
-        restored = PLSDAExtract.from_artifact(metadata, arrays)
-
-        assert restored.classes == ["A", "B", "C"]
-        assert restored.n_components == 3
-        np.testing.assert_array_equal(restored.coef, plsda_extract.coef)
-        np.testing.assert_array_equal(restored.x_mean, plsda_extract.x_mean)
-        np.testing.assert_array_equal(restored.y_mean, plsda_extract.y_mean)
-
-    def test_predict_returns_labels_and_probs(self, plsda_extract):
-        rng = np.random.default_rng(99)
-        X_new = rng.standard_normal((5, 20))
-        labels, probs = plsda_extract.predict(X_new)
-
-        assert labels.shape == (5,)
-        assert probs.shape == (5, 3)
-        # Probabilities sum to 1 (softmax)
-        np.testing.assert_allclose(probs.sum(axis=1), np.ones(5), atol=1e-12)
-        # All probabilities non-negative
-        assert np.all(probs >= 0)
-        # Labels are from the class list
-        assert all(label in ["A", "B", "C"] for label in labels)
-
-    def test_predict_single_sample(self, plsda_extract):
-        X = np.random.default_rng(7).standard_normal(20)
-        labels, probs = plsda_extract.predict(X)
-        assert labels.shape == (1,)
-        assert probs.shape == (1, 3)
-
-    def test_modelstore_integration(self, tmp_path, plsda_extract):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSDAExtract
-        from spectra_sherpa.app.services.model_store import ModelStore
-
-        store = ModelStore(tmp_path)
-        metadata, arrays = plsda_extract.to_artifact()
-        metadata["n_features"] = 20
-        store.save("plsda-test", metadata, arrays)
-
-        loaded_manifest, loaded_arrays = store.load("plsda-test")
-        restored = PLSDAExtract.from_artifact(loaded_manifest, loaded_arrays)
-
-        rng = np.random.default_rng(77)
-        X = rng.standard_normal((3, 20))
-        labels_orig, probs_orig = plsda_extract.predict(X)
-        labels_rest, probs_rest = restored.predict(X)
-        np.testing.assert_array_equal(labels_orig, labels_rest)
-        np.testing.assert_allclose(probs_orig, probs_rest, atol=1e-12)
-
-
 class TestKNNExtractArtifact:
     """Verify KNNExtract roundtrip and predict."""
 
     @pytest.fixture()
     def knn_extract(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import KNNExtract
+        from spectra_sherpa.app.lib.fitted_state import KNNExtract
 
         rng = np.random.default_rng(42)
         n_train, n_features = 30, 10
@@ -811,7 +672,7 @@ class TestKNNExtractArtifact:
         )
 
     def test_roundtrip(self, knn_extract):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import KNNExtract
+        from spectra_sherpa.app.lib.fitted_state import KNNExtract
 
         metadata, arrays = knn_extract.to_artifact()
         restored = KNNExtract.from_artifact(metadata, arrays)
@@ -838,7 +699,7 @@ class TestKNNExtractArtifact:
         """KNNExtract.predict() must match sklearn KNN for uniform weights."""
         from sklearn.neighbors import KNeighborsClassifier
 
-        from spectra_sherpa.app.lib.adapters.scp_extractors import KNNExtract
+        from spectra_sherpa.app.lib.fitted_state import KNNExtract
 
         rng = np.random.default_rng(789)
         classes = ["alpha", "beta", "gamma"]
@@ -864,7 +725,7 @@ class TestKNNExtractArtifact:
 
     def test_distance_weights(self):
         """Distance-weighted KNN gives different results from uniform."""
-        from spectra_sherpa.app.lib.adapters.scp_extractors import KNNExtract
+        from spectra_sherpa.app.lib.fitted_state import KNNExtract
 
         # Place training points at known locations
         X_train = np.array([[0, 0], [1, 0], [0.4, 0]], dtype=np.float64)
@@ -891,7 +752,7 @@ class TestSIMCAExtractArtifact:
 
     @pytest.fixture()
     def simca_extract(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import SIMCAExtract
+        from spectra_sherpa.app.lib.fitted_state import SIMCAExtract
 
         rng = np.random.default_rng(42)
         n_features, n_comp = 20, 2
@@ -920,7 +781,7 @@ class TestSIMCAExtractArtifact:
         )
 
     def test_roundtrip(self, simca_extract):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import SIMCAExtract
+        from spectra_sherpa.app.lib.fitted_state import SIMCAExtract
 
         metadata, arrays = simca_extract.to_artifact()
         restored = SIMCAExtract.from_artifact(metadata, arrays)
@@ -950,7 +811,7 @@ class TestSIMCAExtractArtifact:
 
     def test_predict_assigns_to_nearest_class(self):
         """Samples near a class mean should be assigned to that class."""
-        from spectra_sherpa.app.lib.adapters.scp_extractors import SIMCAExtract
+        from spectra_sherpa.app.lib.fitted_state import SIMCAExtract
 
         n_feat = 5
         loadings = np.eye(2, n_feat, dtype=np.float64)
@@ -979,7 +840,7 @@ class TestSIMCAExtractArtifact:
         assert labels[0] == "B"
 
     def test_modelstore_integration(self, tmp_path, simca_extract):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import SIMCAExtract
+        from spectra_sherpa.app.lib.fitted_state import SIMCAExtract
         from spectra_sherpa.app.services.model_store import ModelStore
 
         store = ModelStore(tmp_path)
@@ -1007,7 +868,7 @@ class TestExtractRegistry:
     """Verify the extract registry maps all model types."""
 
     def test_registry_contains_all_types(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import EXTRACT_REGISTRY
+        from spectra_sherpa.app.lib.model_extract_registry import EXTRACT_REGISTRY
 
         expected = {
             "pca",
@@ -1018,16 +879,13 @@ class TestExtractRegistry:
             "mcr",
             "nmf",
             "fastica",
-            "efa",
-            "simplisma",
-            "plsda",
             "knn",
             "simca",
         }
         assert set(EXTRACT_REGISTRY.keys()) == expected
 
     def test_registry_classes_have_from_artifact(self):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import EXTRACT_REGISTRY
+        from spectra_sherpa.app.lib.model_extract_registry import EXTRACT_REGISTRY
 
         for name, cls in EXTRACT_REGISTRY.items():
             assert hasattr(cls, "from_artifact"), f"{name} missing from_artifact"
@@ -1073,7 +931,7 @@ class TestLoadApplyModelNode:
 
     @pytest.fixture()
     def pca_uid(self, tmp_path):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PCAExtract
+        from spectra_sherpa.app.lib.pca import PCAExtract
 
         rng = np.random.default_rng(42)
         n_features, n_components = 50, 3
@@ -1093,7 +951,7 @@ class TestLoadApplyModelNode:
 
     @pytest.fixture()
     def pls_uid(self, tmp_path):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSExtract
+        from spectra_sherpa.app.lib.fitted_state import PLSExtract
 
         rng = np.random.default_rng(42)
         n_features, n_targets = 50, 1
@@ -1112,23 +970,24 @@ class TestLoadApplyModelNode:
 
     @pytest.fixture()
     def plsda_uid(self, tmp_path):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import PLSDAExtract
+        from spectra_sherpa.app.services.dag.nodes.classification.plsda_state import SherpaPLSDAArtifact
+        from spectra_sherpa.app.services.dag.nodes.modeling import pls_core
 
-        rng = np.random.default_rng(42)
-        n_features, n_classes = 50, 3
-        extract = PLSDAExtract(
-            coef=rng.standard_normal((n_features, n_classes)),
-            x_mean=rng.standard_normal(n_features),
-            y_mean=np.array([1 / 3, 1 / 3, 1 / 3]),
-            classes=["A", "B", "C"],
-            n_components=3,
+        training = _make_sherpa_dataset_2d(30, 50, seed=42)
+        X = np.asarray(training.X, dtype=np.float64)
+        dummy = np.eye(3, dtype=np.float64)[np.tile(np.arange(3), 10)]
+        fit = pls_core.fit_simpls(X, dummy, n_components=3, scale=False)
+        extract = SherpaPLSDAArtifact.from_fit(
+            fit,
+            np.asarray(["A", "B", "C"], dtype=object),
+            training,
         )
         uid, _ = _init_store_and_save(tmp_path, "plsda", extract)
         return uid, extract
 
     @pytest.fixture()
     def knn_uid(self, tmp_path):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import KNNExtract
+        from spectra_sherpa.app.lib.fitted_state import KNNExtract
 
         rng = np.random.default_rng(42)
         n_train, n_features = 30, 50
@@ -1143,7 +1002,7 @@ class TestLoadApplyModelNode:
 
     @pytest.fixture()
     def simca_uid(self, tmp_path):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import SIMCAExtract
+        from spectra_sherpa.app.lib.fitted_state import SIMCAExtract
 
         rng = np.random.default_rng(42)
         n_features, n_comp = 50, 2
@@ -1170,7 +1029,7 @@ class TestLoadApplyModelNode:
 
     @pytest.fixture()
     def mcr_uid(self, tmp_path):
-        from spectra_sherpa.app.lib.adapters.scp_extractors import MCRExtract
+        from spectra_sherpa.app.lib.fitted_state import MCRExtract
 
         rng = np.random.default_rng(42)
         extract = MCRExtract(
@@ -1183,12 +1042,15 @@ class TestLoadApplyModelNode:
 
     def _create_node(self, model_id=""):
         from spectra_sherpa.app.services.dag import node_registry
+        from spectra_sherpa.app.services.model_store import get_model_store
 
-        return node_registry.create_node(
+        node = node_registry.create_node(
             node_type="model.load_apply",
             node_id="load_apply_test",
             parameters={"model_id": model_id},
         )
+        _bind_model_application_runtime(node, get_model_store())
+        return node
 
     @pytest.mark.asyncio
     async def test_pca_transform(self, pca_uid):
@@ -1239,8 +1101,7 @@ class TestLoadApplyModelNode:
         assert result["metadata"]["output_type"] == "classification"
         assert result["metadata"]["classes"] == ["A", "B", "C"]
 
-        X_data = np.asarray(X_ds.data, dtype=np.float64)
-        expected_labels, expected_probs = extract.predict(X_data)
+        expected_labels, expected_probs = extract.predict(X_ds)
         assert result["labels"] == list(expected_labels)
         np.testing.assert_allclose(result["result"], expected_probs, atol=1e-12)
 
@@ -1355,25 +1216,6 @@ class TestLoadApplyModelNode:
         with pytest.raises(ValueError, match="Feature count mismatch"):
             await node.execute(X_new=X_ds)
 
-    @pytest.mark.asyncio
-    async def test_efa_model_raises(self, tmp_path):
-        """EFA is diagnostic-only — LoadApplyModelNode should refuse it."""
-        from spectra_sherpa.app.lib.adapters.scp_extractors import EFAExtract
-
-        rng = np.random.default_rng(42)
-        extract = EFAExtract(
-            forward_ev=rng.standard_normal((20, 3)),
-            backward_ev=rng.standard_normal((20, 3)),
-            n_components=3,
-        )
-        uid, _ = _init_store_and_save(tmp_path, "efa", extract)
-
-        node = self._create_node(model_id=uid)
-        X_ds = _make_sherpa_dataset_2d(5, 50)
-
-        with pytest.raises(ValueError, match="diagnostic"):
-            await node.execute(X_new=X_ds)
-
     def test_node_registered(self):
         """LoadApplyModelNode should be discoverable in the node registry."""
         from spectra_sherpa.app.services.dag import node_registry
@@ -1470,6 +1312,112 @@ class TestModelStoreDurability:
         assert store.verify_integrity("uid-rs") is True
         assert [p.name for p in store.models_dir.iterdir()] == ["uid-rs"]
 
+    def test_save_new_refuses_an_existing_empty_artifact_directory(self, store, manifest, arrays):
+        from spectra_sherpa.app.services.model_store import ModelArtifactCollisionError
+
+        target = store._artifact_dir("uid-empty")
+        target.mkdir()
+        with pytest.raises(ModelArtifactCollisionError, match="already exists"):
+            store.save_new("uid-empty", dict(manifest), dict(arrays))
+        assert target.is_dir()
+        assert list(target.iterdir()) == []
+
+    def test_simultaneous_save_new_has_one_unchanged_winner(self, store, manifest):
+        from spectra_sherpa.app.services.model_store import ModelArtifactCollisionError
+
+        barrier = threading.Barrier(2)
+        outcomes: list[tuple[str, int]] = []
+
+        def publish(value: int) -> None:
+            barrier.wait(timeout=5)
+            try:
+                store.save_new(
+                    "uid-concurrent-new",
+                    {**manifest, "publisher": value},
+                    {"coef": np.full((2, 10), value, dtype=np.float64)},
+                )
+            except ModelArtifactCollisionError:
+                outcomes.append(("collision", value))
+            else:
+                outcomes.append(("winner", value))
+
+        threads = [threading.Thread(target=publish, args=(value,)) for value in (1, 2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=10)
+            assert not thread.is_alive()
+
+        assert sorted(kind for kind, _value in outcomes) == ["collision", "winner"]
+        winner = next(value for kind, value in outcomes if kind == "winner")
+        stored_manifest, stored_arrays = store.load("uid-concurrent-new")
+        assert stored_manifest["publisher"] == winner
+        np.testing.assert_array_equal(stored_arrays["coef"], np.full((2, 10), winner, dtype=np.float64))
+
+    def test_save_new_cannot_claim_replacement_absent_window(self, store, manifest, monkeypatch):
+        from spectra_sherpa.app.services.model_store import ModelArtifactCollisionError
+
+        uid = "uid-replace-claim"
+        store.save(uid, {**manifest, "publisher": "old"}, {"coef": np.ones((2, 10))})
+        target = store._artifact_dir(uid)
+        old_manifest = (target / "manifest.json").read_bytes()
+        target_absent = threading.Event()
+        allow_replace = threading.Event()
+        create_entered_promotion = threading.Event()
+        replace_errors: list[BaseException] = []
+        create_errors: list[BaseException] = []
+        original_promote_new = store._promote_new
+
+        def controlled_replace(staging, destination):
+            backup = destination.with_name(destination.name + ".old-controlled")
+            os.replace(destination, backup)
+            target_absent.set()
+            assert allow_replace.wait(timeout=5)
+            os.replace(staging, destination)
+            shutil.rmtree(backup)
+
+        def observed_create(staging, destination):
+            create_entered_promotion.set()
+            return original_promote_new(staging, destination)
+
+        monkeypatch.setattr(store, "_promote", controlled_replace)
+        monkeypatch.setattr(store, "_promote_new", observed_create)
+
+        def replace() -> None:
+            try:
+                store.save(uid, {**manifest, "publisher": "replacement"}, {"coef": np.full((2, 10), 9.0)})
+            except BaseException as exc:  # pragma: no cover - asserted below
+                replace_errors.append(exc)
+
+        def create() -> None:
+            try:
+                store.save_new(uid, {**manifest, "publisher": "intruder"}, {"coef": np.full((2, 10), 7.0)})
+            except BaseException as exc:
+                create_errors.append(exc)
+
+        replace_thread = threading.Thread(target=replace)
+        replace_thread.start()
+        assert target_absent.wait(timeout=5)
+        assert not target.exists()
+        create_thread = threading.Thread(target=create)
+        create_thread.start()
+        try:
+            assert not create_entered_promotion.wait(timeout=0.2)
+        finally:
+            allow_replace.set()
+        replace_thread.join(timeout=10)
+        create_thread.join(timeout=10)
+        assert not replace_thread.is_alive()
+        assert not create_thread.is_alive()
+        assert replace_errors == []
+        assert len(create_errors) == 1
+        assert isinstance(create_errors[0], ModelArtifactCollisionError)
+
+        stored_manifest, stored_arrays = store.load(uid)
+        assert stored_manifest["publisher"] == "replacement"
+        assert (target / "manifest.json").read_bytes() != old_manifest
+        np.testing.assert_array_equal(stored_arrays["coef"], np.full((2, 10), 9.0))
+
     # ── Verified load ────────────────────────────────────────────────
 
     def test_load_raises_on_corrupt_npz(self, store, manifest, arrays):
@@ -1503,7 +1451,9 @@ class TestModelStoreDurability:
 
         store.save("uid-nohash", manifest, arrays)
         mpath = store._artifact_dir("uid-nohash") / "manifest.json"
-        mpath.write_text(json.dumps({"model_type": "pls"}))
+        stored = json.loads(mpath.read_text())
+        stored.pop("integrity_hash")
+        mpath.write_text(json.dumps(stored))
         with pytest.raises(ModelArtifactIntegrityError, match="no integrity_hash"):
             store.load("uid-nohash")
 
@@ -1518,6 +1468,7 @@ class TestModelStoreDurability:
         monkeypatch.setattr(ms, "_store", store)
 
         node = LoadApplyModelNode(node_id="n1", parameters={"model_id": "uid-bad"})
+        _bind_model_application_runtime(node, store)
         with pytest.raises(ValueError, match="corrupt"):
             await node.execute(X_new=np.zeros((2, 3)))
 
@@ -1622,33 +1573,46 @@ class TestModelStoreDurability:
 
     # ── Import collision safety ──────────────────────────────────────
 
-    def test_remap_model_uids_in_snapshot(self):
+    async def test_remap_imported_workflow_model_uids(self):
         from spectra_sherpa.app.api.v1.routes.projects import (
-            _remap_model_uids_in_snapshot,
+            _remap_imported_workflow_model_uids,
         )
 
-        snap = {
-            "models": [{"artifact_uid": "old1"}, {"artifact_uid": "untouched"}],
-            "workflows": [
-                {
-                    "nodes": [
-                        {"parameters": {"model_id": "old1"}},
-                        {"parameters": {"threshold": 5}},
-                        {"parameters": None},
-                    ]
-                }
-            ],
-        }
-        _remap_model_uids_in_snapshot(snap, {"old1": "new1"})
-        assert snap["models"][0]["artifact_uid"] == "new1"
-        assert snap["models"][1]["artifact_uid"] == "untouched"
-        assert snap["workflows"][0]["nodes"][0]["parameters"]["model_id"] == "new1"
-        assert snap["workflows"][0]["nodes"][1]["parameters"] == {"threshold": 5}
+        nodes = [
+            SimpleNamespace(parameters={"model_id": "old1"}),
+            SimpleNamespace(parameters={"model_id": "untouched"}),
+            SimpleNamespace(parameters={"threshold": 5}),
+            SimpleNamespace(parameters=None),
+        ]
 
-        # Empty remap is a no-op.
-        frozen = json.loads(json.dumps(snap))
-        _remap_model_uids_in_snapshot(snap, {})
-        assert snap == frozen
+        class _Scalars:
+            def all(self):
+                return nodes
+
+        class _Result:
+            def scalars(self):
+                return _Scalars()
+
+        class _Session:
+            execute_count = 0
+
+            async def execute(self, _statement):
+                self.execute_count += 1
+                return _Result()
+
+        session = _Session()
+        await _remap_imported_workflow_model_uids(session, {7: 70}, {"old1": "new1"})
+
+        assert session.execute_count == 1
+        assert nodes[0].parameters == {"model_id": "new1"}
+        assert nodes[1].parameters == {"model_id": "untouched"}
+        assert nodes[2].parameters == {"threshold": 5}
+        assert nodes[3].parameters is None
+
+        # Either empty identity map is a no-op and does not query workflow rows.
+        await _remap_imported_workflow_model_uids(session, {}, {"old1": "new1"})
+        await _remap_imported_workflow_model_uids(session, {7: 70}, {})
+        assert session.execute_count == 1
 
     def test_purge_artifacts(self, store, manifest, arrays, monkeypatch):
         from spectra_sherpa.app.api.v1.routes import projects as proj

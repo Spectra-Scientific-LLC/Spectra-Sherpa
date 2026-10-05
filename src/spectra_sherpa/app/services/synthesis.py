@@ -8,6 +8,7 @@ import math
 import os
 import re
 import shutil
+import sys
 import threading
 import uuid
 from contextlib import contextmanager
@@ -21,14 +22,15 @@ from urllib.parse import urljoin
 
 import httpx
 import numpy as np
-from bs4 import BeautifulSoup
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.core.path_security import resolve_existing_file_path
+from spectra_sherpa.app.lib import synthetic_npz
+from spectra_sherpa.app.lib.axes import SpectralAxis
 from spectra_sherpa.app.lib.curves import evaluate_catmull_rom_samples
-from spectra_sherpa.app.lib.jcamp_reader import parse_jcamp
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
 from spectra_sherpa.app.lib.wavenumber_grid import (
     SAME_GRID_EPS_CM1,
     align_to_median_grid,
@@ -54,8 +56,21 @@ from spectra_sherpa.app.services.experiments import (
     create_experiment,
     experiment_dir,
 )
+from spectra_sherpa.io import ingest
+from spectra_sherpa.sdk.canonical_synthesis import execute_reference_synthesis, reference_synthesis_output
 
 logger = logging.getLogger(__name__)
+
+# Application-facing names remain stable while the portable file-format
+# authority lives in ``app.lib`` for scientific-core consumers.
+SYNTHETIC_NPZ_SIGNATURE = synthetic_npz.SYNTHETIC_NPZ_SIGNATURE
+HITRAN_CROSS_SECTION_TO_MOLAR_ABSORPTIVITY = synthetic_npz.HITRAN_CROSS_SECTION_TO_MOLAR_ABSORPTIVITY
+MOLAR_ABSORPTION_COEFFICIENT_UNITS = synthetic_npz.MOLAR_ABSORPTION_COEFFICIENT_UNITS
+_npz_has_synthesis_signature = synthetic_npz.has_synthesis_signature
+_read_synthesis_npz_metadata = synthetic_npz.read_synthesis_npz_metadata
+hitran_cross_section_to_molar_absorptivity = synthetic_npz.hitran_cross_section_to_molar_absorptivity
+is_hitran_cross_section_units = synthetic_npz.is_hitran_cross_section_units
+is_synthetic_npz = synthetic_npz.is_synthetic_npz
 
 NIST_SOURCE = "nist_quant_ir"
 HITRAN_SOURCE = "hitran"
@@ -68,16 +83,12 @@ DEFAULT_HITRAN_TEMPERATURE_K = 293.0
 DEFAULT_HITRAN_PRESSURE_ATM = 1.0
 SYNTHETIC_STAGE = "synthetic"
 SYNTHETIC_FILE_TYPE = "application/x.spectra-sherpa.synthetic+npz"
-SYNTHETIC_NPZ_SIGNATURE = "spectra_sherpa_synthetic_v1"
 MAX_SYNTHESIS_OUTPUT_VALUES = 2_000_000
 MAX_RESPONSE_SAMPLES = 50
 MAX_RESPONSE_FEATURES = 2_000
-_BOLTZMANN_J_PER_K = 1.380649e-23
-_ATM_PA = 101325.0
-_AVOGADRO_MOL = 6.02214076e23
+_NIST_PAGE_MAX_BYTES = 1 * 1024 * 1024
+_NIST_JCAMP_MAX_BYTES = 16 * 1024 * 1024
 HITRAN_CROSS_SECTION_UNITS = "cm^2 molecule^-1"
-MOLAR_ABSORPTION_COEFFICIENT_UNITS = "L mol^-1 cm^-1"
-HITRAN_CROSS_SECTION_TO_MOLAR_ABSORPTIVITY = _AVOGADRO_MOL / (1000.0 * math.log(10.0))
 _NIST_WEBBOOK_URL = "https://webbook.nist.gov/cgi/cbook.cgi"
 _SECRET_QUERY_RE = re.compile(r"(?i)(api[_-]?key|apikey|key|token|access[_-]?token)=([^&\s]+)")
 _AUTHORIZATION_RE = re.compile(r"(?i)(authorization:\s*bearer\s+)[^\s]+")
@@ -440,12 +451,10 @@ async def validate_hitran_api_key(api_key: str) -> None:
         raise SynthesisError("HITRAN API key is required.")
     try:
         await asyncio.to_thread(_validate_hitran_api_key_blocking, key)
-    except SynthesisError:
-        raise
     except Exception as exc:  # pragma: no cover - provider/package dependent
         detail = _sanitize_provider_error(exc, api_key=key)
-        logger.warning("HITRAN API key validation failed: %s", detail, exc_info=True)
-        raise SynthesisError(f"HITRAN key validation failed: {detail}") from exc
+        logger.warning("HITRAN API key validation failed: %s", detail)
+        raise SynthesisError(f"HITRAN key validation failed: {detail}") from None
 
 
 def _validate_hitran_api_key_blocking(api_key: str) -> None:
@@ -540,29 +549,59 @@ def synthesize(request: SynthesisRequest) -> SynthesisResult:
     ).T
 
     spectra = np.vstack([item.intensity for item in aligned])
-    if source == NIST_SOURCE:
-        # NIST Quant IR coefficients are decadic: A10(nu)=a(nu)*ppm*L_m.
-        pathlength_m = float(request.settings.pathlength_cm) / 100.0
-        absorbance = concentration @ spectra * pathlength_m
-    elif source in {HITRAN_SOURCE, HITRAN_XSEC_SOURCE}:
-        # HITRAN/HAPI cross sections are treated as napierian cm^2/molecule.
-        # ppm -> molecules/cm^3 via ideal gas law; A10=tau/ln(10).
-        number_density_cm3 = _ppm_to_number_density_cm3(
-            concentration,
-            temperature_k=request.settings.temperature_k,
-            pressure_atm=request.settings.pressure_atm,
-        )
-        optical_depth = number_density_cm3 @ spectra * float(request.settings.pathlength_cm)
-        absorbance = optical_depth / math.log(10.0)
-    else:  # pragma: no cover - guarded by _normalize_source
-        raise SynthesisError(f"Unsupported synthesis source: {source}")
-
     seed = request.settings.seed
     if request.settings.noise_sigma_au > 0:
         if seed is None:
             seed = int(np.random.default_rng().integers(0, np.iinfo(np.int32).max))
-        rng = np.random.default_rng(seed)
-        absorbance = absorbance + rng.normal(0.0, request.settings.noise_sigma_au, size=absorbance.shape)
+    elif seed is None:
+        # The noise node is absent, but a closed workflow still requires one
+        # bounded seed value in its projection.  Zero has no numerical effect.
+        seed = 0
+
+    pure_responses = [
+        SherpaDataset(
+            X=np.asarray([item.intensity], dtype=np.float64),
+            feature_axis=SpectralAxis(
+                values=wavenumber.copy(),
+                title="Wavenumber",
+                units="cm-1",
+            ),
+            units=_component_units(item.component.spectrum),
+            title=_component_name(item.component),
+            data_role="X_spectra",
+        )
+        for item in aligned
+    ]
+    concentration_dataset = SherpaDataset(
+        X=concentration,
+        target=concentration,
+        target_context=TargetContext(
+            target_type="continuous",
+            target_names=[_component_name(item.component) for item in aligned],
+            target_units="ppm",
+        ),
+        units="ppm",
+        title="Reference synthesis concentrations",
+        data_role="X_features",
+    )
+    try:
+        execution = execute_reference_synthesis(
+            pure_responses=pure_responses,
+            concentrations_ppm=concentration_dataset,
+            component_names=[_component_name(item.component) for item in aligned],
+            source=source,
+            pathlength_cm=request.settings.pathlength_cm,
+            temperature_k=request.settings.temperature_k,
+            pressure_atm=request.settings.pressure_atm,
+            noise_sigma_au=request.settings.noise_sigma_au,
+            seed=seed,
+        )
+        absorbance = np.asarray(
+            reference_synthesis_output(execution, noise_added=request.settings.noise_sigma_au > 0).X,
+            dtype=np.float64,
+        )
+    except (TypeError, ValueError, RuntimeError) as exc:
+        raise SynthesisError(f"Canonical reference synthesis failed: {exc}") from exc
 
     recipe = _build_recipe(request, wavenumber=wavenumber, seed=seed, grid_info=grid_info)
     ground_truth = {
@@ -721,43 +760,6 @@ def evaluate_catmull_rom_ppm(points: list[tuple[float, float]], *, n_samples: in
         raise SynthesisError(str(exc)) from exc
 
 
-def load_synthetic_npz(path: str | Path) -> dict[str, Any]:
-    with np.load(path, allow_pickle=False) as data:
-        if not _npz_has_synthesis_signature(data):
-            raise ValueError("NPZ file is not a SpectraSherpa synthetic dataset")
-        ground_truth_json = str(data["ground_truth_json"].item())
-        payload = {
-            "X": np.asarray(data["X"], dtype=float),
-            "wavenumber": np.asarray(data["wavenumber"], dtype=float),
-            "C": np.asarray(data["C"], dtype=float),
-            "S": np.asarray(data["S"], dtype=float),
-            "sample_labels": [str(x) for x in data["sample_labels"].tolist()],
-            "feature_units": str(data["feature_units"].item()),
-            "units": str(data["units"].item()),
-            "recipe_json": str(data["recipe_json"].item()),
-            "ground_truth_json": ground_truth_json,
-            "metadata": _read_synthesis_npz_metadata(data),
-        }
-        if "concentration_units" in data.files:
-            payload["concentration_units"] = str(data["concentration_units"].item())
-        else:
-            try:
-                ground_truth = json.loads(ground_truth_json)
-                if isinstance(ground_truth, dict) and ground_truth.get("C_units") is not None:
-                    payload["concentration_units"] = str(ground_truth["C_units"])
-            except Exception:
-                pass
-    return _normalize_synthetic_npz_payload(payload)
-
-
-def is_synthetic_npz(path: str | Path) -> bool:
-    try:
-        with np.load(path, allow_pickle=False) as data:
-            return _npz_has_synthesis_signature(data)
-    except Exception:
-        return False
-
-
 def _ground_truth_metadata_for_npz(ground_truth: dict[str, Any]) -> dict[str, Any]:
     """Ground-truth JSON stores labels/units/grid metadata; arrays live in C/S."""
 
@@ -846,89 +848,6 @@ def _default_synthesis_npz_metadata(result: SynthesisResult, *, title: str | Non
     if value_units is not None:
         metadata["value_units"] = value_units
     return metadata
-
-
-def _read_synthesis_npz_metadata(data: np.lib.npyio.NpzFile) -> dict[str, Any]:
-    if "metadata_json" not in data.files:
-        return {}
-    try:
-        raw = str(data["metadata_json"].item())
-        parsed = json.loads(raw)
-    except Exception:
-        logger.warning("Failed to parse synthetic npz metadata_json", exc_info=True)
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _is_hitran_cross_section_units(value: Any) -> bool:
-    normalized = str(value or "").strip().lower().replace("²", "^2").replace("⁻¹", "^-1")
-    normalized = normalized.replace("⋅", " ").replace("/", " ")
-    return "cm^2" in normalized and ("molecule" in normalized or "particle" in normalized)
-
-
-def _molar_absorptivity_from_cross_section(values: Any) -> np.ndarray:
-    return np.asarray(values, dtype=float) * HITRAN_CROSS_SECTION_TO_MOLAR_ABSORPTIVITY
-
-
-def hitran_cross_section_to_molar_absorptivity(values: Any) -> np.ndarray:
-    """Convert HITRAN cross-section values to decadic molar absorptivity."""
-
-    return _molar_absorptivity_from_cross_section(values)
-
-
-def is_hitran_cross_section_units(value: Any) -> bool:
-    return _is_hitran_cross_section_units(value)
-
-
-def _normalize_synthetic_npz_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Patch legacy synthetic-library metadata on read.
-
-    The atmospheric benchmark stores mixture absorbance in X. Its paired
-    component-library file stores HITRAN pure-component absorption cross
-    sections in X/S. Normalize legacy cross-section payloads to decadic molar
-    absorption coefficient, while leaving synthetic mixture X as absorbance.
-    """
-
-    try:
-        ground_truth = json.loads(str(payload.get("ground_truth_json") or "{}"))
-    except (TypeError, ValueError):
-        ground_truth = {}
-    if not isinstance(ground_truth, dict):
-        return payload
-
-    metadata = dict(payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {})
-    s_units = ground_truth.get("S_units")
-    legacy_s_units = (
-        isinstance(s_units, list)
-        and any(_is_hitran_cross_section_units(unit) for unit in s_units)
-        or _is_hitran_cross_section_units(payload.get("units"))
-        or _is_hitran_cross_section_units(metadata.get("value_units"))
-    )
-    if not legacy_s_units:
-        return payload
-
-    is_component_library = ground_truth.get("role") == "pure_component_library"
-    spectra = np.asarray(payload.get("S"), dtype=float)
-    if spectra.ndim == 2 and spectra.size:
-        payload["S"] = _molar_absorptivity_from_cross_section(spectra)
-        if isinstance(ground_truth.get("S"), list):
-            ground_truth["S"] = payload["S"].tolist()
-
-    n_spectra = int(payload["S"].shape[0]) if isinstance(payload.get("S"), np.ndarray) and payload["S"].ndim == 2 else 0
-    ground_truth["S_units"] = [MOLAR_ABSORPTION_COEFFICIENT_UNITS] * n_spectra
-    payload["ground_truth_json"] = json.dumps(ground_truth)
-
-    if not is_component_library:
-        return payload
-
-    payload["X"] = _molar_absorptivity_from_cross_section(payload.get("X"))
-    payload["units"] = MOLAR_ABSORPTION_COEFFICIENT_UNITS
-    metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
-    metadata = dict(metadata)
-    metadata["data_quantity"] = "Molar absorption coefficient"
-    metadata["value_units"] = MOLAR_ABSORPTION_COEFFICIENT_UNITS
-    payload["metadata"] = metadata
-    return payload
 
 
 def _align_components(
@@ -1157,7 +1076,7 @@ def _align_components_to_requested_interval_grid(
     k_max = int(math.floor((high - low) / float(interval_cm1) + 1e-9))
     if k_max < 1:
         raise SynthesisError(
-            "Preview interval leaves fewer than two grid points. " "Widen the range or use a smaller interval."
+            "Preview interval leaves fewer than two grid points. Widen the range or use a smaller interval."
         )
     reference = low + np.arange(k_max + 1, dtype=float) * float(interval_cm1)
 
@@ -1273,8 +1192,7 @@ def _apply_preview_wavenumber_window(
     mask = (reference >= low) & (reference <= high)
     if int(np.count_nonzero(mask)) < 2:
         raise SynthesisError(
-            "Preview wavenumber range leaves fewer than two grid points. "
-            "Widen the range or choose a coarser spectrum."
+            "Preview wavenumber range leaves fewer than two grid points. Widen the range or choose a coarser spectrum."
         )
 
     cropped = [
@@ -1486,15 +1404,6 @@ def _even_indices(length: int, limit: int) -> list[int]:
     return sorted(set(int(round(i)) for i in np.linspace(0, length - 1, limit)))
 
 
-def _npz_has_synthesis_signature(data: np.lib.npyio.NpzFile) -> bool:
-    if "spectra_sherpa_synthetic" not in data.files:
-        return False
-    try:
-        return str(data["spectra_sherpa_synthetic"].item()) == SYNTHETIC_NPZ_SIGNATURE
-    except Exception:
-        return False
-
-
 def _normalize_source(source: str) -> str:
     normalized = source.strip().lower().replace("-", "_")
     if normalized in {"nist", "nist_quant_ir", "nist_quantitative_ir"}:
@@ -1568,20 +1477,28 @@ async def _get_nist_component_spectrum(
     index = _nist_quant_ir_index(variant.resolution_cm1, variant.apodization)
     cache_path = _nist_cache_path(component_id, variant.resolution_cm1, variant.apodization)
     cached = cache_path.exists()
-    if cached:
-        text = cache_path.read_text(encoding="utf-8", errors="replace")
-    else:
-        text = await _download_nist_quant_ir_jcamp(summary.cas, index=index)
-        if not _looks_like_jcamp_spectrum(text):
-            raise SynthesisError("NIST did not return a JCAMP-DX spectrum for the selected variant")
-        cache_path.write_text(text, encoding="utf-8")
+    staged_path: Path | None = None
+    if not cached:
+        staged_path = cache_path.with_name(f".{cache_path.stem}.{uuid.uuid4().hex}.staged.jdx")
+        await _download_nist_quant_ir_jcamp(summary.cas, index=index, destination=staged_path)
+    source_path = cache_path if staged_path is None else staged_path
     try:
-        parsed = parse_jcamp(text)
+        ingested = ingest(source_path)
+        if ingested.format_id != "jcamp-dx" or ingested.variant != "dx-text" or len(ingested.assets) != 1:
+            raise SynthesisError("NIST did not return exactly one JCAMP-DX spectrum")
+        dataset = ingested.assets[0].dataset
+        axis = dataset.feature_axis
+        x = None if axis is None or axis.values is None else np.asarray(axis.values, dtype=float)
+        matrix = np.asarray(dataset.X, dtype=float)
+        if x is None or matrix.ndim != 2 or matrix.shape[0] != 1 or matrix.shape[1] != x.size:
+            raise SynthesisError("NIST JCAMP-DX did not contain one typed spectrum with a spectral axis")
+        if staged_path is not None:
+            os.replace(staged_path, cache_path)
     except Exception as exc:
+        source_path.unlink(missing_ok=True)
         detail = _sanitize_provider_error(exc)
         raise SynthesisError(f"NIST JCAMP-DX parsing failed: {detail}") from exc
-    x = np.asarray(parsed.x, dtype=float)
-    y = np.asarray(parsed.y, dtype=float)
+    y = matrix[0]
     x, y = _crop_spectrum(x, y, wavenumber_min=wavenumber_min, wavenumber_max=wavenumber_max)
     return SynthesisSpectrumResponse(
         component_id=summary.id,
@@ -1669,13 +1586,12 @@ async def _get_hitran_component_spectrum(
                         wavenumber_min,
                         wavenumber_max,
                         detail,
-                        exc_info=True,
                     )
                     raise SynthesisError(
                         "HITRAN spectrum generation failed"
                         + (f": {detail}" if detail else "")
                         + ". Verify the API key, molecule, and wavenumber range."
-                    ) from exc
+                    ) from None
                 x = np.asarray(nu, dtype=float)
                 y = np.asarray(coef, dtype=float)
                 x, y = _crop_spectrum(x, y, wavenumber_min=wavenumber_min, wavenumber_max=wavenumber_max)
@@ -1750,13 +1666,12 @@ async def _get_hitran_xsec_component_spectrum(
                         wmin,
                         wmax,
                         detail,
-                        exc_info=True,
                     )
                     raise SynthesisError(
                         "HITRAN absorption cross-section load failed"
                         + (f": {detail}" if detail else "")
                         + ". Verify the API key, molecule, and selected measurement conditions."
-                    ) from exc
+                    ) from None
                 _write_hitran_spectrum_cache(spectrum_cache_path, x, y, metadata=metadata)
     return SynthesisSpectrumResponse(
         component_id=component_id,
@@ -2105,8 +2020,9 @@ def _select_hapi2_xsec_header_group(
     selected = min(groups.values(), key=score)
     return sorted(
         selected,
-        key=lambda item: _coerce_optional_float(_xsec_attr(item, "numin", "nu_min", "wavenumber_min"))
-        or wavenumber_min,
+        key=lambda item: (
+            _coerce_optional_float(_xsec_attr(item, "numin", "nu_min", "wavenumber_min")) or wavenumber_min
+        ),
     )
 
 
@@ -2598,18 +2514,61 @@ def _hapi2_fetch_transitions_with_api_key(
                         settings_obj["display_fetch_url"] = previous_display
 
 
-async def _download_nist_quant_ir_jcamp(cas: str, *, index: int) -> str:
+async def _bounded_http_bytes(
+    client: httpx.AsyncClient,
+    url: str,
+    *,
+    max_bytes: int,
+    params: dict[str, str] | None = None,
+) -> bytes:
+    payload = bytearray()
+    async with client.stream("GET", url, params=params) as response:
+        response.raise_for_status()
+        async for chunk in response.aiter_bytes():
+            if len(payload) + len(chunk) > max_bytes:
+                raise SynthesisError(f"NIST response exceeds the {max_bytes}-byte acquisition limit")
+            payload.extend(chunk)
+    return bytes(payload)
+
+
+async def _download_nist_quant_ir_jcamp(cas: str, *, index: int, destination: Path) -> None:
     params = {"ID": cas, "Index": f"QUANT-IR,{index}", "Type": "IR-SPEC"}
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        page_response = await client.get(_NIST_WEBBOOK_URL, params=params)
-        page_response.raise_for_status()
-        download_url = _extract_nist_jcamp_download_url(page_response.text)
-        jcamp_response = await client.get(download_url)
-        jcamp_response.raise_for_status()
-    return jcamp_response.text
+        page = await _bounded_http_bytes(
+            client,
+            _NIST_WEBBOOK_URL,
+            params=params,
+            max_bytes=_NIST_PAGE_MAX_BYTES,
+        )
+        download_url = _extract_nist_jcamp_download_url(page.decode("utf-8", errors="replace"))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(f".{destination.name}.{uuid.uuid4().hex}.download")
+        try:
+            written = 0
+            async with client.stream("GET", download_url) as response:
+                response.raise_for_status()
+                with temporary.open("xb") as stream:
+                    async for chunk in response.aiter_bytes():
+                        written += len(chunk)
+                        if written > _NIST_JCAMP_MAX_BYTES:
+                            raise SynthesisError(
+                                f"NIST JCAMP-DX exceeds the {_NIST_JCAMP_MAX_BYTES}-byte acquisition limit"
+                            )
+                        stream.write(chunk)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+            os.replace(temporary, destination)
+        finally:
+            temporary.unlink(missing_ok=True)
 
 
 def _extract_nist_jcamp_download_url(html: str) -> str:
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError as exc:
+        raise SynthesisError(
+            "NIST WebBook acquisition requires the optional dependency: pip install 'spectra-sherpa[nist]'"
+        ) from exc
     soup = BeautifulSoup(html, "html.parser")
     for anchor in soup.find_all("a", href=True):
         href = str(anchor["href"])
@@ -2617,13 +2576,6 @@ def _extract_nist_jcamp_download_url(html: str) -> str:
         if "JCAMP=" in href_upper and "TYPE=IR" in href_upper:
             return urljoin(_NIST_WEBBOOK_URL, href)
     raise SynthesisError("NIST Quant IR page did not include a JCAMP-DX download link")
-
-
-def _looks_like_jcamp_spectrum(text: str) -> bool:
-    upper = text.upper()
-    return upper.lstrip().startswith("##") and (
-        "##XYDATA=" in upper or "##XYPOINTS=" in upper or "##PEAK TABLE=" in upper
-    )
 
 
 def _select_nist_variant(
@@ -2670,7 +2622,9 @@ def _import_hapi1_module() -> Any:
 
         return hapi
     except Exception as exc:  # pragma: no cover - depends on optional extra
-        raise SynthesisError("HITRAN synthesis requires the optional 'hitran' extra to be installed") from exc
+        raise SynthesisError(
+            "HITRAN synthesis requires the optional capability; install with: pip install 'spectra-sherpa[hitran]'"
+        ) from exc
 
 
 def _import_hapi2_module(work_dir: Path | None = None) -> Any:
@@ -2680,6 +2634,14 @@ def _import_hapi2_module(work_dir: Path | None = None) -> Any:
     work_dir.mkdir(parents=True, exist_ok=True)
     try:
         with _HAPI2_LOCK:
+            if getattr(sys, "frozen", False):
+                import numba
+
+                # Frozen HAPI2 ships source for its cached JIT functions. Keep
+                # their generated code outside the signed/read-only installer.
+                numba_cache = work_dir.resolve() / "numba-cache"
+                numba_cache.mkdir(parents=True, exist_ok=True)
+                numba.config.CACHE_DIR = str(numba_cache)
             os.chdir(work_dir)
             try:
                 import hapi2 as hapi  # type: ignore
@@ -2689,8 +2651,8 @@ def _import_hapi2_module(work_dir: Path | None = None) -> Any:
     except Exception as exc:  # pragma: no cover - depends on optional extra
         detail = _sanitize_provider_error(exc)
         raise SynthesisError(
-            "HITRAN downloads require HAPI2 from the optional 'hitran' extra "
-            f"and a writable cache directory ({detail})"
+            "HITRAN downloads require HAPI2 and a writable cache directory; install with: "
+            f"pip install 'spectra-sherpa[hitran]' ({detail})"
         ) from exc
 
 
@@ -2760,17 +2722,6 @@ def _hitran_import_available() -> bool:
     except Exception:
         return False
     return True
-
-
-def _ppm_to_number_density_cm3(
-    concentration_ppm: np.ndarray,
-    *,
-    temperature_k: float,
-    pressure_atm: float,
-) -> np.ndarray:
-    pressure_pa = pressure_atm * _ATM_PA
-    molecules_per_m3 = pressure_pa / (_BOLTZMANN_J_PER_K * temperature_k)
-    return concentration_ppm * 1e-6 * molecules_per_m3 / 1e6
 
 
 def _component_name(component: SynthesisComponentInput) -> str:

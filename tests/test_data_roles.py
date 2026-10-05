@@ -26,8 +26,8 @@ def test_template_loader_surfaces_dual_modalities():
     templates = TemplateLoader().load_all()
     by_slug = {template["slug"]: template for template in templates}
 
-    assert by_slug["pca"]["name"] == "PCA with Outlier Diagnostics"
-    assert by_slug["pca"]["template_data"]["data_modalities"] == ["spectra", "features"]
+    assert by_slug["pca"]["name"] == "PCA Exploration & Outlier Diagnostics"
+    assert by_slug["pca"]["template_data"]["data_modalities"] == ["spectra", "features", "hsi"]
     assert by_slug["classification_plsda"]["template_data"]["data_modalities"] == ["spectra", "features"]
 
 

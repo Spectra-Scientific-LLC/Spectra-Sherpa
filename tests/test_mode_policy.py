@@ -7,7 +7,7 @@ coverage for the helpers the migrations rely on, so each migration PR can
 assert "behavior matches the helper" without re-deriving truth tables.
 
 Coverage shape: each helper is exercised across all three documented
-modes (``local``, ``hybrid``, ``enterprise``). Helpers that depend on
+modes (``local``, ``extension_test``, ``enterprise``). Helpers that depend on
 the ``auth_policy`` contract are exercised against both registered
 flag values.
 """
@@ -20,7 +20,7 @@ from spectra_sherpa.app.contracts import auth_policy
 from spectra_sherpa.app.core import mode_policy
 from spectra_sherpa.app.core.config import app_config
 
-MODES = ("local", "hybrid", "enterprise")
+MODES = ("local", "extension_test", "enterprise")
 
 
 @pytest.fixture
@@ -45,7 +45,7 @@ def _reset_auth_policy_flags():
 
 @pytest.mark.parametrize(
     "mode,expected",
-    [("local", True), ("hybrid", False), ("enterprise", False)],
+    [("local", True), ("extension_test", False), ("enterprise", False)],
 )
 def test_is_local(set_mode, mode: str, expected: bool) -> None:
     set_mode(mode)
@@ -54,16 +54,16 @@ def test_is_local(set_mode, mode: str, expected: bool) -> None:
 
 @pytest.mark.parametrize(
     "mode,expected",
-    [("local", False), ("hybrid", True), ("enterprise", False)],
+    [("local", False), ("extension_test", True), ("enterprise", False)],
 )
-def test_is_hybrid(set_mode, mode: str, expected: bool) -> None:
+def test_is_extension_test(set_mode, mode: str, expected: bool) -> None:
     set_mode(mode)
-    assert mode_policy.is_hybrid() is expected
+    assert mode_policy.allows_implicit_loopback_identity() is expected
 
 
 @pytest.mark.parametrize(
     "mode,expected",
-    [("local", False), ("hybrid", False), ("enterprise", True)],
+    [("local", False), ("extension_test", False), ("enterprise", True)],
 )
 def test_is_enterprise(set_mode, mode: str, expected: bool) -> None:
     set_mode(mode)
@@ -72,7 +72,7 @@ def test_is_enterprise(set_mode, mode: str, expected: bool) -> None:
 
 @pytest.mark.parametrize(
     "mode,expected",
-    [("local", False), ("hybrid", True), ("enterprise", True)],
+    [("local", False), ("extension_test", True), ("enterprise", True)],
 )
 def test_is_multi_user(set_mode, mode: str, expected: bool) -> None:
     """``is_multi_user`` is the negation of ``is_local`` for the documented modes.
@@ -86,9 +86,9 @@ def test_is_multi_user(set_mode, mode: str, expected: bool) -> None:
 
 @pytest.mark.parametrize("mode", MODES)
 def test_modes_are_mutually_exclusive(set_mode, mode: str) -> None:
-    """Exactly one of is_local / is_hybrid / is_enterprise is True per mode."""
+    """Exactly one of is_local / is_extension_test / is_enterprise is True per mode."""
     set_mode(mode)
-    truths = [mode_policy.is_local(), mode_policy.is_hybrid(), mode_policy.is_enterprise()]
+    truths = [mode_policy.is_local(), mode_policy.allows_implicit_loopback_identity(), mode_policy.is_enterprise()]
     assert sum(truths) == 1
 
 
@@ -137,14 +137,14 @@ def test_blocks_local_network_client_allows_explicit_opt_in(set_mode, monkeypatc
     assert mode_policy.blocks_local_network_client("10.0.0.1") is False
 
 
-@pytest.mark.parametrize("mode", ["hybrid", "enterprise"])
+@pytest.mark.parametrize("mode", ["extension_test", "enterprise"])
 def test_blocks_local_network_client_only_applies_to_local(set_mode, mode: str) -> None:
     set_mode(mode)
     assert mode_policy.blocks_local_network_client("10.0.0.1") is False
 
 
-def test_requires_http_auth_hybrid_loopback_exempt(set_mode) -> None:
-    set_mode("hybrid")
+def test_requires_http_auth_extension_test_loopback_exempt(set_mode) -> None:
+    set_mode("extension_test")
     assert mode_policy.requires_http_auth("127.0.0.1") is False
     assert mode_policy.requires_http_auth("10.0.0.1") is True
 
@@ -173,7 +173,7 @@ def test_allows_registration_false_in_local_regardless_of_flag(set_mode) -> None
 
 
 def test_allows_registration_requires_both_multi_user_and_flag(set_mode) -> None:
-    set_mode("hybrid")
+    set_mode("extension_test")
     auth_policy.set_registration_enabled(False)
     assert mode_policy.allows_registration() is False
     auth_policy.set_registration_enabled(True)
@@ -191,7 +191,7 @@ def test_allows_registration_in_enterprise_with_flag(set_mode) -> None:
 
 @pytest.mark.parametrize(
     "mode,expected",
-    [("local", False), ("hybrid", True), ("enterprise", True)],
+    [("local", False), ("extension_test", True), ("enterprise", True)],
 )
 def test_has_rate_limits(set_mode, mode: str, expected: bool) -> None:
     set_mode(mode)
@@ -200,7 +200,7 @@ def test_has_rate_limits(set_mode, mode: str, expected: bool) -> None:
 
 @pytest.mark.parametrize(
     "mode,expected",
-    [("local", True), ("hybrid", False), ("enterprise", False)],
+    [("local", True), ("extension_test", False), ("enterprise", False)],
 )
 def test_export_always_allowed(set_mode, mode: str, expected: bool) -> None:
     set_mode(mode)
@@ -219,9 +219,19 @@ def test_cors_allow_all_is_always_false(set_mode) -> None:
 
 @pytest.mark.parametrize(
     "mode,expected",
-    [("local", True), ("hybrid", False), ("enterprise", False)],
+    [("local", True), ("extension_test", False), ("enterprise", False)],
 )
 def test_api_key_always_valid(set_mode, mode: str, expected: bool) -> None:
     set_mode(mode)
     assert mode_policy.api_key_always_valid() is expected
     assert mode_policy.system_api_key_always_accepted() is expected
+
+
+@pytest.fixture(autouse=True)
+def explicit_test_extension(monkeypatch):
+    from spectra_sherpa.app.contracts import runtime_mode
+
+    monkeypatch.setattr(runtime_mode, "_policies", {})
+    runtime_mode.register_runtime_mode(
+        runtime_mode.RuntimeModePolicy(name="extension_test", implicit_loopback_identity=True)
+    )

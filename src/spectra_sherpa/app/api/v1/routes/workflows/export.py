@@ -15,23 +15,75 @@ from spectra_sherpa.app.api.deps import get_current_user, get_session
 from spectra_sherpa.app.api.v1.routes._http_utils import attachment_headers, safe_download_stem
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.core.security import check_export_allowed
+from spectra_sherpa.app.lib.data_formats import client_data_formats
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.schemas.workflows import WorkflowPythonExportResponse
 from spectra_sherpa.app.services.export_store import save_jupyter_workflow_export, save_python_workflow_export
 from spectra_sherpa.app.services.notebook_export import generate_notebook
-from spectra_sherpa.app.services.python_export import generate_python_code
-from spectra_sherpa.app.services.workflow_export_context import build_workflow_export_context
+from spectra_sherpa.app.services.python_export import build_canonical_executable_export, generate_python_code
+from spectra_sherpa.app.services.workflow_export_context import WorkflowExportContext, build_workflow_export_context
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/workflows")
 
 
+def _workflow_data_readme(export_context: WorkflowExportContext, format_capabilities: list[dict]) -> str:
+    available_formats = "\n".join(
+        f"- {item['name']} ({', '.join(item['extensions'])})" for item in format_capabilities if item.get("available")
+    )
+    pending_formats = "\n".join(
+        f"- {item['name']}: {item['unsupportedReason']}" for item in format_capabilities if not item.get("available")
+    )
+    external_sections: list[str] = []
+    for bundle in export_context.iter_external_reference_files():
+        reference = dict(bundle.external_reference or {})
+        external_sections.append(
+            "\n".join(
+                [
+                    f"### {reference['projection_id']}",
+                    "",
+                    f"- Provider: {reference['provider']}",
+                    f"- Provider page: {reference['provider_page']}",
+                    f"- Direct download: {reference['download_url']}",
+                    (
+                        f"- Downloaded artifact: {reference['artifact_size_bytes']} bytes; "
+                        f"SHA-256 `{reference['artifact_sha256']}`"
+                    ),
+                    f"- Required extracted member: `{reference['member_path']}`",
+                    (
+                        f"- Required member: {reference['member_size_bytes']} bytes; "
+                        f"SHA-256 `{reference['member_sha256']}`"
+                    ),
+                ]
+            )
+        )
+    external_guidance = ""
+    if external_sections:
+        external_guidance = (
+            "\n\n## Registered third-party reference files\n\n"
+            "The files listed below are not included in this export. Spectra Sherpa does not retrieve, "
+            "proxy, cache, mirror, or redistribute them. Obtain each artifact directly from the provider, "
+            "extract the required member, and set `SPECTRA_REFERENCE_DIR` to that exact member or to a "
+            "directory containing it. The generated workflow scans at most 1,000 directory entries and accepts "
+            "exactly one size-and-SHA-256 match, so moving or renaming an exact member is safe.\n\n"
+            + "\n\n".join(external_sections)
+        )
+    return (
+        "# Data Directory\n\n"
+        "This folder contains ordinary source files used by the exported workflow when those bytes may be bundled.\n\n"
+        "The generated Python script and notebook look here by default, or you can set the `SHERPA_DATA_DIR` "
+        "environment variable to point somewhere else.\n"
+        f"{external_guidance}\n\n"
+        f"Supported native formats:\n{available_formats}\n\n"
+        f"Pending native readers:\n{pending_formats}\n"
+    )
+
+
 @router.get("/{workflow_id}/export/python", response_model=WorkflowPythonExportResponse)
 async def export_workflow_to_python(
     workflow_id: int,
-    mode: str = Query("sdk", pattern="^(sdk|standalone)$", description="Python export mode: sdk or standalone"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> WorkflowPythonExportResponse:
@@ -58,10 +110,16 @@ async def export_workflow_to_python(
 
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    if getattr(workflow, "fold_validation_plan", None) is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="Python/notebook export does not yet retain sheet cross-validation semantics. "
+            "Export the project (.sherpa) to preserve its validation plan, or use the Campaign Review Package.",
+        )
 
     try:
-        export_context = await build_workflow_export_context(workflow, session)
-        python_code = generate_python_code(workflow, export_context=export_context, mode=mode)
+        export_context = await build_workflow_export_context(workflow, session, actor_user_id=user_id)
+        python_code = generate_python_code(workflow, export_context=export_context)
         saved_path = save_python_workflow_export(workflow.id, workflow.name, python_code)
         return {
             "workflow_id": workflow_id,
@@ -69,7 +127,7 @@ async def export_workflow_to_python(
             "python_code": python_code,
             "filename": f"{safe_download_stem(workflow.name, fallback='workflow', lowercase=True)}_workflow.py",
             "saved_path": str(saved_path.relative_to(settings.data_dir)),
-            "export_mode": mode,
+            "export_mode": "canonical_dag",
         }
     except ValueError as e:
         # Unsupported node types or cycles — client-actionable error
@@ -111,9 +169,15 @@ async def export_workflow_to_notebook(
 
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    if getattr(workflow, "fold_validation_plan", None) is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="Python/notebook export does not yet retain sheet cross-validation semantics. "
+            "Export the project (.sherpa) to preserve its validation plan, or use the Campaign Review Package.",
+        )
 
     try:
-        export_context = await build_workflow_export_context(workflow, session)
+        export_context = await build_workflow_export_context(workflow, session, actor_user_id=user_id)
         notebook = generate_notebook(workflow, export_context=export_context)
         saved_path = save_jupyter_workflow_export(workflow.id, workflow.name, notebook)
         safe_name = safe_download_stem(workflow.name, fallback="workflow", lowercase=True)
@@ -139,7 +203,6 @@ async def export_workflow_to_notebook(
 async def download_workflow_export(
     workflow_id: int,
     format: str = Query("python", description="Export format: python, notebook, or zip"),
-    mode: str = Query("sdk", pattern="^(sdk|standalone)$", description="Python export mode: sdk or standalone"),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ):
@@ -181,12 +244,18 @@ async def download_workflow_export(
 
     if workflow is None:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    if getattr(workflow, "fold_validation_plan", None) is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="Python/notebook export does not yet retain sheet cross-validation semantics. "
+            "Export the project (.sherpa) to preserve its validation plan, or use the Campaign Review Package.",
+        )
 
     safe_name = safe_download_stem(workflow.name, fallback="workflow", lowercase=True)
 
     try:
-        export_context = await build_workflow_export_context(workflow, session)
-        python_code = generate_python_code(workflow, export_context=export_context, mode=mode)
+        export_context = await build_workflow_export_context(workflow, session, actor_user_id=user_id)
+        python_code = generate_python_code(workflow, export_context=export_context)
     except ValueError as e:
         logger.info("Workflow %s download export rejected: %s", workflow_id, e)
         raise HTTPException(
@@ -231,34 +300,24 @@ async def download_workflow_export(
                     "source": spec.source,
                     "loader_mode": spec.loader_mode,
                     "bundle_files": [bundle.bundle_relative_path for bundle in spec.bundle_files],
-                    "source_files": [bundle.source_relative_path for bundle in spec.bundle_files],
+                    "source_files": [
+                        bundle.source_relative_path if bundle.external_reference is None else None
+                        for bundle in spec.bundle_files
+                    ],
+                    "external_references": [
+                        dict(bundle.external_reference)
+                        for bundle in spec.bundle_files
+                        if bundle.external_reference is not None
+                    ],
                     "overrides": spec.overrides.to_sidecar_dict(),
                 }
                 for spec in export_context.source_specs.values()
             ]
         }
-        workflow_manifest = {
-            "workflow_id": workflow.id,
-            "workflow_name": workflow.name,
-            "description": workflow.description,
-            "nodes": [
-                {
-                    "node_id": node.node_id,
-                    "node_type": node.node_type,
-                    "parameters": node.parameters,
-                }
-                for node in workflow.nodes
-            ],
-            "edges": [
-                {
-                    "from_node_id": edge.from_node_id,
-                    "to_node_id": edge.to_node_id,
-                    "from_output": edge.from_output,
-                    "to_input": edge.to_input,
-                }
-                for edge in workflow.edges
-            ],
-        }
+        workflow_manifest = build_canonical_executable_export(
+            workflow,
+            export_context=export_context,
+        ).workflow.as_dict()
 
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             # Python script
@@ -282,26 +341,17 @@ async def download_workflow_export(
             )
             zf.writestr(f"{safe_name}/requirements.txt", requirements)
 
-            for bundle in export_context.iter_bundle_files():
+            for bundle in export_context.iter_embedded_bundle_files():
                 if bundle.absolute_path.exists():
                     zf.write(bundle.absolute_path, f"{safe_name}/data/{bundle.bundle_relative_path}")
 
             zf.writestr(f"{safe_name}/prepared_data_manifest.json", json.dumps(prepared_manifest, indent=2))
             zf.writestr(f"{safe_name}/workflow_manifest.json", json.dumps(workflow_manifest, indent=2))
 
-            # Data directory README
-            data_readme = (
-                "# Data Directory\n\n"
-                "This folder contains the source files used by the exported workflow.\n\n"
-                "The generated Python script and notebook look here by default, or you can\n"
-                "set the `SHERPA_DATA_DIR` environment variable to point somewhere else.\n\n"
-                "Supported formats:\n"
-                "- CSV (.csv) — rows=samples, columns=wavelengths\n"
-                "- SpectroChemPy (.scp)\n"
-                "- JCAMP-DX (.dx, .jdx)\n"
-                "- SPC (.spc)\n"
-                "- MATLAB (.mat)\n"
-            )
+            # Data directory README: derive format availability from the same
+            # registry projection used by upload and the Workbench.
+            format_capabilities = client_data_formats()["formats"]
+            data_readme = _workflow_data_readme(export_context, format_capabilities)
             zf.writestr(f"{safe_name}/data/README.md", data_readme)
 
         buf.seek(0)

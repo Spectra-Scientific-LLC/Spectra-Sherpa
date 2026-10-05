@@ -34,12 +34,17 @@ router = APIRouter()
 
 
 def _require_api_key_capability(service_name: str) -> None:
-    if app_config.site_profile != "demo":
+    if service_name == "hitran":
+        if app_config.site_profile == "demo" and "hitran_api_key_management" in get_demo_policy().disabled_capabilities:
+            raise HTTPException(status_code=403, detail="HITRAN API keys are not available in demo mode.")
         return
-    capability = "hitran_api_key_management" if service_name == "hitran" else "api_key_management"
-    disabled_capabilities = get_demo_policy().disabled_capabilities
-    if capability in disabled_capabilities or (capability == "api_key_management" and not disabled_capabilities):
-        raise HTTPException(status_code=403, detail="This API key type is not available in demo mode.")
+    # Keep this router usable in the public OSS package. Hosted server policy
+    # enforcement belongs to the server routes; the OSS app only knows its
+    # local profile and demo contract. Pro intentionally has no user LLM BYOK.
+    if app_config.site_profile == "pro":
+        raise HTTPException(status_code=403, detail="User-supplied LLM keys are not available in this deployment.")
+    if app_config.site_profile == "demo" and "api_key_management" in get_demo_policy().disabled_capabilities:
+        raise HTTPException(status_code=403, detail="LLM API keys are not available in demo mode.")
 
 
 @router.get("/api-keys", response_model=list[APIKeyInfo])
@@ -50,6 +55,10 @@ async def list_api_keys(
     """List API keys for the authenticated user."""
     result = await session.execute(select(APIKey).where(APIKey.user_id == current_user.id))
     keys = result.scalars().all()
+    if app_config.site_profile in {"demo", "pro"}:
+        # Existing encrypted LLM rows remain inaccessible and are omitted from
+        # the user-facing list. Deletion is a separate retention decision.
+        keys = [key for key in keys if key.service_name == "hitran"]
     return [APIKeyInfo(service_name=key.service_name, last_used_at=key.last_used_at) for key in keys]
 
 

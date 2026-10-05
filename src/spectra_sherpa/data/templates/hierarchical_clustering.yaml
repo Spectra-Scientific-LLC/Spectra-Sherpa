@@ -2,20 +2,22 @@ schema_version: 1
 name: Hierarchical Clustering
 slug: hierarchical_clustering
 description: Unsupervised clustering workflow using hierarchical clustering to group
-  similar spectra.
+  one current cohort of similar spectra. The hierarchy does not classify new samples.
 category: clustering
 is_active: true
+status: ready
 data_modalities:
 - spectra
 - features
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Data
-    parameters:
+    parameters: {}
+    example_binding:
       source: sklearn
-      sklearn_dataset: wine
+      dataset_name: wine
     position_x: 175
     position_y: 50
   - node_id: preprocess_1
@@ -31,6 +33,7 @@ template_data:
     parameters:
       n_clusters: 3
       linkage: ward
+      metric: euclidean
     position_x: 175
     position_y: 550
   - node_id: viz_1
@@ -92,7 +95,3 @@ template_data:
     name: nir_shootout_test1
   - source: eigenvector
     name: nir_shootout_test2
-  - source: spectrochempy
-    name: irdata
-  - source: spectrochempy
-    name: ramandata

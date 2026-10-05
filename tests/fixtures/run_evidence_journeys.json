@@ -1,0 +1,71 @@
+{
+  "schema": "run-evidence-journeys/v1",
+  "baseline": "614a5d6f94b5ef3aa6eb38521f1e3b0916a94729",
+  "outcomes": ["success", "partial_failure", "total_failure", "historical_incomplete"],
+  "navigation": ["refresh", "browser_reopen", "backend_restart", "workflow_edited", "node_deep_link", "return_to_list"],
+  "release_cases": [
+    {
+      "id": "canvas_retention_reduction_notice",
+      "owner": "PR8",
+      "status": "pending",
+      "assertions": ["canvas restore visibly identifies reduced previews", "per-output reduced retained evidence is disclosed", "exact retained evidence links to the saved run inspector", "absence of exact evidence never triggers reconstruction"]
+    }
+  ],
+  "editions": ["oss_without_server", "paid_enabled", "paid_disabled", "paid_revoked", "extension_incompatible", "extension_load_failed"],
+  "fixtures": [
+    {
+      "id": "pca",
+      "producer_tests": ["test_c2_pca_contract.py", "test_pca_block_reporting.py"],
+      "outputs": ["scores", "loadings", "explained_variance", "hotelling_t2", "q_residuals"],
+      "labels": ["sample_id", "component", "feature_label", "feature_units"],
+      "validation": ["model_space_q", "explained_variance_fraction", "diagnostic_limits"],
+      "retention": ["exact_matrices", "fitted_preprocessing", "selection_masks", "workflow_snapshot"],
+      "interpretation": "Scores describe sample relationships; loadings identify contributing variables; Q is in fitted model space, and T2 measures modeled leverage."
+    },
+    {
+      "id": "pls",
+      "producer_tests": ["test_fitted_pls_node.py", "test_pls_core.py"],
+      "outputs": ["predictions", "residuals", "coefficients", "metrics"],
+      "labels": ["sample_id", "target_name", "target_units", "feature_label"],
+      "validation": ["evaluation_scope", "split_identity", "rmse", "r2"],
+      "retention": ["observed_targets", "predicted_targets", "selection_masks", "workflow_snapshot"],
+      "interpretation": "Predicted versus observed values use the same target and units; training fit is not independent predictive validation."
+    },
+    {
+      "id": "classification",
+      "producer_tests": ["test_c2_plsda_contract.py", "test_phase7_classification_authority.py"],
+      "outputs": ["predictions", "confusion_matrix", "class_scores", "metrics"],
+      "labels": ["sample_id", "class_name", "observed_class", "predicted_class"],
+      "validation": ["evaluation_scope", "split_identity", "class_order", "support"],
+      "retention": ["observed_classes", "predicted_classes", "selection_masks", "workflow_snapshot"],
+      "interpretation": "Confusion counts and sample predictions agree in declared class order; class scores are not labeled probabilities unless calibrated."
+    },
+    {
+      "id": "hca",
+      "producer_tests": ["test_c2_hca_contract.py"],
+      "outputs": ["linkage", "cluster_assignments", "dendrogram"],
+      "labels": ["sample_id", "distance_metric", "linkage_method"],
+      "validation": ["leaf_identity", "cut_threshold"],
+      "retention": ["linkage_matrix", "leaf_order", "selection_masks", "workflow_snapshot"],
+      "interpretation": "Leaf labels identify exact samples and merge heights describe the declared distance and linkage, not classification accuracy."
+    },
+    {
+      "id": "transformed_data",
+      "producer_tests": ["test_c2_pca_contract.py"],
+      "outputs": ["transformed_matrix"],
+      "labels": ["sample_id", "feature_label", "feature_units"],
+      "validation": ["sample_alignment", "feature_alignment", "transform_parameters"],
+      "retention": ["exact_matrix", "selection_masks", "workflow_snapshot"],
+      "interpretation": "Plotted and tabulated values represent the same transformed samples and features; exclusions remain excluded."
+    },
+    {
+      "id": "model_application",
+      "producer_tests": ["test_model_application.py", "test_phase8_saved_model_application.py"],
+      "outputs": ["predictions", "per_item_outcomes", "applicability"],
+      "labels": ["sample_id", "model_uid", "target_or_class"],
+      "validation": ["input_compatibility", "exact_model_identity", "evaluation_scope"],
+      "retention": ["input_identity", "selection_masks", "model_lineage", "failure_reasons"],
+      "interpretation": "Every selected model has an outcome; predictions are traceable to exact supported input and model identities, including failed items."
+    }
+  ]
+}

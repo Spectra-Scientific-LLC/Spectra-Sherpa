@@ -1,99 +1,58 @@
-"""
-Catalog endpoints: SpectroChemPy examples, node library, type registry.
-"""
+"""Canonical node-library and type-registry endpoints."""
 
 from __future__ import annotations
 
-import logging
+from itertools import product
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from spectra_sherpa.app.api.deps import get_current_user
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.schemas.workflows import (
+    NodeCatalogClassificationInfo,
+    NodeDependencyReadinessInfo,
+    NodeExecutionContractInfo,
     NodeLibraryResponse,
+    NodeManagedOptimizationProfileInfo,
     NodeMetadataInfo,
     NodeParameterInfo,
     NodePortInfo,
+    NodePresentationContractInfo,
 )
 from spectra_sherpa.app.services.dag import node_registry
-
-logger = logging.getLogger(__name__)
+from spectra_sherpa.app.services.dag.node_base import NodeMetadata, NodeParameter
+from spectra_sherpa.app.services.dag.node_catalog_contract import (
+    NODE_LIBRARY_SCHEMA_VERSION,
+    build_node_contract_census,
+    census_digest,
+    dependency_readiness,
+    node_library_cache_identity,
+)
 
 router = APIRouter(prefix="/workflows")
 
-ADVISOR_ONLY_NODE_TYPES = {"analysis.peak_id"}
 
+def _parameter_options(metadata: NodeMetadata, parameter: NodeParameter, *, managed: bool):
+    """Project selectable defaults through the same node-owned admission rule.
 
-def filter_unavailable_node_types(nodes):
-    """Hide node types whose required service is not available in this deployment."""
-    from spectra_sherpa.app.contracts.ai_provider_registry import get_sherpa_advisor
-
-    if getattr(get_sherpa_advisor(), "is_available", False):
-        return nodes
-    return [node for node in nodes if node.node_type not in ADVISOR_ONLY_NODE_TYPES]
-
-
-# IMPORTANT: This route must be defined BEFORE /{workflow_id} routes
-# to avoid "spectrochempy-examples" being parsed as a workflow_id
-@router.get("/spectrochempy-examples", response_model=dict[str, list[dict[str, str]]])
-async def list_spectrochempy_examples(
-    current_user: User = Depends(get_current_user),
-) -> dict[str, list[dict[str, str]]]:
+    This does not alter saved values or replace validation of the complete
+    effective parameter record at execution. Standalone retains all options.
     """
-    List available files in SpectroChemPy example datasets.
-
-    Scans configured SpectroChemPy datadirs (``SCP_DATADIR``,
-    ``scp.preferences.datadir``, and ``~/.spectrochempy/testdata``),
-    deduplicates files, and returns metadata for each file.
-
-    Returns a dictionary mapping dataset names (e.g., 'irdata', 'ramandata')
-    to lists of available files with their labels, paths, and metadata.
-    """
-    from pathlib import Path
-
-    from spectra_sherpa.app.lib.scp_catalog import build_scp_catalog
-    from spectra_sherpa.app.lib.scp_compat import HAS_SCP, get_preferred_scp_datadir, scp
-
-    if not HAS_SCP:
-        raise HTTPException(
-            status_code=501,
-            detail=(
-                "SpectroChemPy is not installed. "
-                "Example datasets are unavailable. "
-                "Install with: pip install spectra-sherpa[scp]"
-            ),
-        )
-
-    try:
-        preferred_datadir = get_preferred_scp_datadir()
-        primary_datadir = scp.preferences.datadir
-        primary_resolved = Path(primary_datadir).expanduser().resolve(strict=False)
-        selected_resolved = preferred_datadir.expanduser().resolve(strict=False) if preferred_datadir else None
-        source_kind = "primary" if selected_resolved == primary_resolved else "fallback"
-
-        result: dict[str, list[dict[str, str]]] = {}
-        for entry in build_scp_catalog(force=True):
-            dataset_name = entry["category"]
-            path = entry["file_path"].rstrip("/")
-            format_name = "dir" if entry["entry_type"] == "group" else Path(path).suffix.lower()
-            result.setdefault(dataset_name, []).append(
-                {
-                    "label": entry["label"],
-                    "value": path,
-                    "path": path,
-                    "format": format_name,
-                    "source": source_kind,
-                }
-            )
-
-        for dataset_name, files in result.items():
-            files.sort(key=lambda item: item["label"].lower())
-
-        return result
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to list SpectroChemPy examples: {str(e)}")
+    if not managed or parameter.param_type != "select" or metadata.managed_parameter_validator is None:
+        return parameter.options
+    conditions = parameter.visible_when or {}
+    contexts = [dict(zip(conditions, values)) for values in product(*conditions.values())]
+    options = []
+    for option in parameter.options or []:
+        value = option.get("value") if isinstance(option, dict) else option
+        for context in contexts:
+            try:
+                metadata.canonicalize_managed_parameters({**context, parameter.name: value})
+            except ValueError:
+                continue
+            options.append(option)
+            break
+    return options
 
 
 @router.get("/nodes/library", response_model=NodeLibraryResponse)
@@ -107,7 +66,13 @@ async def get_node_library(
     """
     from spectra_sherpa.app.core.config import settings
 
-    nodes = filter_unavailable_node_types(list(node_registry.list_nodes()))
+    nodes = list(node_registry.list_catalog_nodes())
+    from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
+    from spectra_sherpa.app.contracts.scientific_access import QUALIFIED_SCIENTIFIC_NODES
+
+    managed = uses_managed_project_access()
+    if managed:
+        nodes = [node for node in nodes if node.node_type in QUALIFIED_SCIENTIFIC_NODES]
 
     # In demo mode, hide nodes associated with disabled capabilities.
     from spectra_sherpa.app.core.config import app_config
@@ -119,8 +84,11 @@ async def get_node_library(
         if hidden_types:
             nodes = [n for n in nodes if n.node_type not in hidden_types]
 
+    census = build_node_contract_census(nodes)
+    census_by_node_type = {row["node_type"]: row for row in census["nodes"]}
     node_infos = []
     for node_meta in nodes:
+        census_row = census_by_node_type[node_meta.node_type]
         params = [
             NodeParameterInfo(
                 name=p.name,
@@ -129,8 +97,9 @@ async def get_node_library(
                 default=p.default,
                 min_value=p.min_value,
                 max_value=p.max_value,
+                max_value_reason=p.max_value_reason,
                 step=p.step,
-                options=p.options,
+                options=_parameter_options(node_meta, p, managed=managed),
                 description=p.description,
                 required=p.required,
                 category=p.category,
@@ -171,6 +140,9 @@ async def get_node_library(
                 for port in node_meta.output_ports
             ]
 
+        contract = node_meta.resolved_execution_contract()
+        presentation = node_meta.resolved_presentation_contract()
+        readiness = dependency_readiness(node_meta).as_dict()
         node_infos.append(
             NodeMetadataInfo(
                 node_type=node_meta.node_type,
@@ -184,11 +156,36 @@ async def get_node_library(
                 output_ports=output_ports,
                 diagnostics=node_meta.diagnostics,
                 help_url=node_meta.help_url,
+                execution_contract=(
+                    NodeExecutionContractInfo(digest=contract.digest, payload=contract.as_dict())
+                    if contract is not None
+                    else None
+                ),
+                presentation_contract=(
+                    NodePresentationContractInfo(digest=presentation.digest, payload=presentation.as_dict())
+                    if presentation is not None
+                    else None
+                ),
+                dependency_readiness=NodeDependencyReadinessInfo(**readiness),
+                requires_scp=bool(census_row["requires_scp"]),
+                catalog_classification=NodeCatalogClassificationInfo(**census_row["catalog_classification"]),
+                managed_optimization_profile=NodeManagedOptimizationProfileInfo(
+                    **census_row["managed_optimization_profile"]
+                ),
             )
         )
 
+    registry_digest = census_digest(census)
     return NodeLibraryResponse(
-        nodes=node_infos, total=len(node_infos), version=settings.app_version  # For cache invalidation
+        nodes=node_infos,
+        total=len(node_infos),
+        # ``version`` remains the application version for older clients. New
+        # clients consume the digest-based identity because app releases do not
+        # cover contract drift.
+        version=settings.app_version,
+        contract_schema_version=NODE_LIBRARY_SCHEMA_VERSION,
+        registry_digest=registry_digest,
+        cache_identity=node_library_cache_identity(nodes),
     )
 
 

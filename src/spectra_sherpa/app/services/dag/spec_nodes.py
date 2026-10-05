@@ -172,9 +172,7 @@ class TransformSpecNode(Node):
                 return True
             if self.spec.numpy_expr is not None:
                 return True
-        # Fall back to scp_method check (skip the generate_python override
-        # check in Node base — our override delegates, it doesn't add logic).
-        return self.scp_method is not None
+        return False
 
     def generate_python(
         self,
@@ -208,7 +206,7 @@ class TransformSpecNode(Node):
             lines += wrap_result_lines(self.node_id, "_result", inp, indent, use_scp)
             return lines
 
-        # Priority 3: base class scp_method pattern
+        # No generic scientific fallback is permitted.
         return super().generate_python(inputs, indent, use_scp)
 
 
@@ -479,7 +477,7 @@ class EstimatorSpecNode(Node):
                 return True
             if self.spec.estimator_import is not None:
                 return True
-        return self.scp_method is not None
+        return False
 
     def generate_python(
         self,
@@ -502,7 +500,7 @@ class EstimatorSpecNode(Node):
         if self.spec is not None and self.spec.estimator_import is not None:
             return self._auto_export_estimator(inputs, indent)
 
-        # Priority 3: base class scp_method pattern
+        # No generic scientific fallback is permitted.
         return super().generate_python(inputs, indent, use_scp)
 
     def _auto_export_estimator(

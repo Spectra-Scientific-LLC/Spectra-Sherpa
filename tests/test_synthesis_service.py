@@ -10,6 +10,7 @@ import httpx
 import numpy as np
 import pytest
 
+from spectra_sherpa.app.lib.synthetic_npz import load_synthetic_npz
 from spectra_sherpa.app.schemas.synthesis import (
     SynthesisComponentInput,
     SynthesisControlPoint,
@@ -24,7 +25,6 @@ from spectra_sherpa.app.services.synthesis import (
     MOLAR_ABSORPTION_COEFFICIENT_UNITS,
     SynthesisError,
     is_synthetic_npz,
-    load_synthetic_npz,
     save_synthesis_result,
     synthesize,
     update_synthetic_npz_metadata,
@@ -964,9 +964,8 @@ def test_synthetic_npz_round_trip_preserves_xsec_gap_grid(tmp_path) -> None:
 def test_synthetic_npz_metadata_updates_round_trip(tmp_path) -> None:
     pytest.importorskip("spectrochempy")
 
-    from spectra_sherpa.app.lib.scp_compat import from_nddataset
-    from spectra_sherpa.app.services.dag.node_base import node_registry
-    from spectra_sherpa.app.services.prepared_data import save_prepared_data_overrides
+    from spectra_sherpa.app.services.dag.nodes.data.file_load_node import FileLoadNode
+    from spectra_sherpa.app.services.prepared_data import load_prepared_data_overrides, save_prepared_data_overrides
     from spectra_sherpa.app.services.synthesis import _write_synthesis_npz
 
     result = synthesize(
@@ -1007,9 +1006,11 @@ def test_synthetic_npz_metadata_updates_round_trip(tmp_path) -> None:
         },
         file_path=str(path.resolve()),
     )
-    node = node_registry.create_node("data.my_dataset", "data_my_dataset_test", {"dataset_id": 1})
-    loaded = node._load_file(str(path), file_name=path.name)
-    workflow_dataset = node._apply_loaded_overrides(from_nddataset(loaded.dataset), [loaded])
+    node = FileLoadNode("file_load_test", {"experiment_id": 1, "file_id": 1})
+    workflow_dataset = node._load_file(
+        path,
+        prepared_overrides=load_prepared_data_overrides(file_path=str(path.resolve())).to_sidecar_dict(),
+    )
     assert workflow_dataset.feature_axis.title == "Shift after sidecar"
     assert workflow_dataset.feature_axis.units == "cm^-1"
     assert workflow_dataset.domain.data_quantity == "Absorbance after sidecar"
@@ -1035,9 +1036,7 @@ def test_synthetic_npz_payload_exposes_component_target_names(tmp_path) -> None:
 
 
 def test_synthetic_npz_loader_exposes_concentration_targets(tmp_path) -> None:
-    pytest.importorskip("spectrochempy")
-
-    from spectra_sherpa.app.services.dag.nodes.data.loaders import _load_synthesis_npz_as_loaded_dataset
+    from spectra_sherpa.app.services.dag.nodes.data.loaders import _load_registry_asset
     from spectra_sherpa.app.services.synthesis import _write_synthesis_npz
 
     result = synthesize(
@@ -1049,7 +1048,7 @@ def test_synthetic_npz_loader_exposes_concentration_targets(tmp_path) -> None:
     path = tmp_path / "synthetic.npz"
     _write_synthesis_npz(path, result)
 
-    loaded = _load_synthesis_npz_as_loaded_dataset(str(path))
+    loaded = _load_registry_asset(path)
 
     assert loaded.embedded_target_names == ["water"]
     assert loaded.embedded_target_units == "ppm"
@@ -1060,18 +1059,38 @@ def test_synthetic_npz_loader_exposes_concentration_targets(tmp_path) -> None:
 
 
 def test_synthetic_library_npz_loader_uses_molar_absorption_units() -> None:
-    pytest.importorskip("spectrochempy")
-
     from spectra_sherpa.app.lib.synthetic_references import synthetic_reference_path
-    from spectra_sherpa.app.services.dag.nodes.data.loaders import _load_synthesis_npz_as_loaded_dataset
+    from spectra_sherpa.app.services.dag.nodes.data.loaders import _load_registry_asset
 
-    loaded = _load_synthesis_npz_as_loaded_dataset(str(synthetic_reference_path("Library_atmospheric-9")))
+    loaded = _load_registry_asset(synthetic_reference_path("Library_atmospheric-9"))
 
-    assert str(loaded.dataset.units) == "l\u22c5cm\u207b\u00b9\u22c5mol\u207b\u00b9"
-    assert loaded.dataset.meta["data_quantity"] == "Molar absorption coefficient"
-    assert loaded.dataset.meta["value_units_label"] == "L mol^-1 cm^-1"
+    assert str(loaded.dataset.units) == "L mol^-1 cm^-1"
+    assert loaded.dataset.domain.data_quantity == "Molar absorption coefficient"
+    assert loaded.dataset.get_extra("value_units_label") == "L mol^-1 cm^-1"
     assert loaded.ground_truth_spectra_units == ["L mol^-1 cm^-1"] * 9
     assert np.nanmax(np.asarray(loaded.dataset.data, dtype=float)) == pytest.approx(3053.589386031034)
+
+
+def test_synthetic_library_npz_assembles_without_duplicate_raw_json_metadata() -> None:
+    from spectra_sherpa.app.lib.synthetic_references import synthetic_reference_path
+    from spectra_sherpa.app.services.dag.nodes.data.loaders import _load_registry_asset
+    from spectra_sherpa.app.services.model_application import _loaded_files_to_sherpa
+
+    loaded = _load_registry_asset(synthetic_reference_path("Library_atmospheric-9"))
+
+    assert loaded.dataset.get_extra("synthetic.recipe_json") is None
+    assert loaded.dataset.get_extra("synthetic.ground_truth_json") is None
+    assert isinstance(loaded.dataset.get_extra("recipe"), dict)
+    assert isinstance(loaded.dataset.get_extra("ground_truth"), dict)
+
+    collection = _loaded_files_to_sherpa(
+        [loaded],
+        "Library_atmospheric-9",
+        definition=None,
+    )
+
+    assert collection.shape == (9, 7199)
+    assert collection.meta["source_collection"]["scientific_collection_sha256"]
 
 
 def test_non_synthetic_npz_is_not_claimed_by_synthesis_loader(tmp_path) -> None:
@@ -1121,10 +1140,19 @@ async def test_nist_download_follows_quant_ir_page_jcamp_link(monkeypatch, tmp_p
 
     class _FakeResponse:
         def __init__(self, text: str) -> None:
-            self.text = text
+            self._payload = text.encode()
 
         def raise_for_status(self) -> None:
             return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def aiter_bytes(self):
+            yield self._payload
 
     class _FakeClient:
         def __init__(self, *args, **kwargs) -> None:
@@ -1136,7 +1164,8 @@ async def test_nist_download_follows_quant_ir_page_jcamp_link(monkeypatch, tmp_p
         async def __aexit__(self, exc_type, exc, tb) -> None:
             return None
 
-        async def get(self, url, params=None):
+        def stream(self, method, url, params=None):
+            assert method == "GET"
             calls.append({"url": str(url), "params": params})
             if params is not None:
                 assert params == {"ID": "71-43-2", "Index": "QUANT-IR,16", "Type": "IR-SPEC"}
@@ -1149,6 +1178,15 @@ async def test_nist_download_follows_quant_ir_page_jcamp_link(monkeypatch, tmp_p
 
     monkeypatch.setattr(synthesis_service, "_synthesis_cache_dir", lambda _source: tmp_path)
     monkeypatch.setattr(synthesis_service.httpx, "AsyncClient", _FakeClient)
+    # This test owns the two-request acquisition flow, not BeautifulSoup.
+    # Keep it runnable in the default product profile, where the optional
+    # NIST parser is deliberately absent; parser behavior is covered below
+    # when the ``nist`` extra is installed.
+    monkeypatch.setattr(
+        synthesis_service,
+        "_extract_nist_jcamp_download_url",
+        lambda _html: "https://webbook.nist.gov/cgi/cbook.cgi?Index=19&JCAMP=C71432&Type=IR",
+    )
 
     spectrum = await synthesis_service.get_component_spectrum(
         "nist_quant_ir",
@@ -1161,6 +1199,115 @@ async def test_nist_download_follows_quant_ir_page_jcamp_link(monkeypatch, tmp_p
     assert spectrum.wavenumber == [1000.0, 1001.0]
     assert spectrum.intensity == [0.1, 0.2]
     assert (tmp_path / "nist_quant_ir-benzene-1-Blackman-Harris.jdx").exists()
+
+
+async def test_nist_jcamp_download_fails_before_exceeding_bounded_cache(monkeypatch, tmp_path) -> None:
+    from spectra_sherpa.app.services import synthesis as synthesis_service
+
+    class _FakeResponse:
+        def __init__(self, chunks: list[bytes]) -> None:
+            self._chunks = chunks
+
+        def raise_for_status(self) -> None:
+            return None
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def aiter_bytes(self):
+            for chunk in self._chunks:
+                yield chunk
+
+    class _FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        def stream(self, method, url, params=None):
+            assert method == "GET"
+            if params is not None:
+                return _FakeResponse([b"<html>bounded page</html>"])
+            return _FakeResponse([b"1234", b"5678"])
+
+    destination = tmp_path / "received.jdx"
+    monkeypatch.setattr(synthesis_service.httpx, "AsyncClient", _FakeClient)
+    monkeypatch.setattr(synthesis_service, "_extract_nist_jcamp_download_url", lambda _html: "https://nist/jcamp")
+    monkeypatch.setattr(synthesis_service, "_NIST_JCAMP_MAX_BYTES", 7)
+
+    with pytest.raises(synthesis_service.SynthesisError, match="7-byte acquisition limit"):
+        await synthesis_service._download_nist_quant_ir_jcamp(
+            "71-43-2",
+            index=16,
+            destination=destination,
+        )
+
+    assert destination.exists() is False
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_nist_invalid_download_is_never_published_to_cache(monkeypatch, tmp_path) -> None:
+    from spectra_sherpa.app.services import synthesis as synthesis_service
+
+    async def fake_download(_cas, *, index, destination):
+        assert index == 16
+        destination.write_text("provider returned an HTML error", encoding="utf-8")
+
+    monkeypatch.setattr(synthesis_service, "_synthesis_cache_dir", lambda _source: tmp_path)
+    monkeypatch.setattr(synthesis_service, "_download_nist_quant_ir_jcamp", fake_download)
+
+    with pytest.raises(synthesis_service.SynthesisError, match="NIST JCAMP-DX parsing failed"):
+        await synthesis_service.get_component_spectrum(
+            "nist_quant_ir",
+            "nist_quant_ir:benzene",
+            resolution_cm1=1.0,
+            apodization="Blackman-Harris",
+        )
+
+    assert list(tmp_path.iterdir()) == []
+
+
+async def test_nist_invalid_existing_cache_is_removed(monkeypatch, tmp_path) -> None:
+    from spectra_sherpa.app.services import synthesis as synthesis_service
+
+    monkeypatch.setattr(synthesis_service, "_synthesis_cache_dir", lambda _source: tmp_path)
+    cache_path = synthesis_service._nist_cache_path(
+        "nist_quant_ir:benzene",
+        1.0,
+        "Blackman-Harris",
+    )
+    cache_path.write_text("invalid cached provider response", encoding="utf-8")
+
+    with pytest.raises(synthesis_service.SynthesisError, match="NIST JCAMP-DX parsing failed"):
+        await synthesis_service.get_component_spectrum(
+            "nist_quant_ir",
+            "nist_quant_ir:benzene",
+            resolution_cm1=1.0,
+            apodization="Blackman-Harris",
+        )
+
+    assert cache_path.exists() is False
+
+
+def test_nist_html_parser_finds_quant_ir_jcamp_link_when_extra_is_installed() -> None:
+    try:
+        import bs4  # noqa: F401
+    except ImportError:
+        pytest.skip("NIST acquisition extra is not installed")
+    from spectra_sherpa.app.services.synthesis import _extract_nist_jcamp_download_url
+
+    download_url = _extract_nist_jcamp_download_url(
+        '<html><a href="/cgi/cbook.cgi?Index=19&JCAMP=C71432&Type=IR">Download spectrum</a></html>'
+    )
+
+    assert download_url == "https://webbook.nist.gov/cgi/cbook.cgi?Index=19&JCAMP=C71432&Type=IR"
 
 
 def test_hapi_modules_receive_temporary_api_key(monkeypatch) -> None:
@@ -1740,7 +1887,7 @@ async def test_hitran_key_validation_uses_hapi2_without_echoing_key(monkeypatch)
     assert "API_KEY" not in _FakeHapi2.VARIABLES
 
 
-async def test_hitran_key_validation_sanitizes_provider_errors(monkeypatch) -> None:
+async def test_hitran_key_validation_sanitizes_provider_errors(monkeypatch, caplog) -> None:
     from spectra_sherpa.app.services import synthesis as synthesis_service
 
     class _FakeHapi2:
@@ -1765,6 +1912,8 @@ async def test_hitran_key_validation_sanitizes_provider_errors(monkeypatch) -> N
     assert "apikey=" not in message.lower()
     assert "credential=[redacted]" in message
     assert "RuntimeError" in message
+    assert "hitran-secret" not in caplog.text
+    assert all(record.exc_info is None for record in caplog.records)
 
 
 async def test_hitran_key_validate_endpoint_accepts_unsaved_key(auth_client, monkeypatch) -> None:
@@ -2226,6 +2375,15 @@ async def test_synthesis_save_creates_synthetic_experiment_file(auth_client) -> 
     files = await auth_client.get(f"/api/v1/experiments/{body['experiment_id']}/files?stage=synthetic")
     assert files.status_code == 200
     assert files.json()[0]["file_path"] == body["file_path"]
+
+    available = await auth_client.get("/api/v1/datasets/available")
+    assert available.status_code == 200
+    available_dataset = next(item for item in available.json()["experiments"] if item["id"] == body["experiment_id"])
+    available_file = available_dataset["stages"]["synthetic"][0]
+    assert available_file["target_names"] == ["water"]
+    assert available_file["target_types"] == {"water": "continuous"}
+    assert available_dataset["target_names"] == ["water"]
+    assert available_dataset["selected_target"] == "water"
 
     dataset_info = await auth_client.post("/api/v1/builder/file-info", json={"experiment_id": body["experiment_id"]})
     assert dataset_info.status_code == 200

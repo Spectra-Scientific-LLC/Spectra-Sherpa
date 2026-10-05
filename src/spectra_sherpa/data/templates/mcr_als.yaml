@@ -5,14 +5,13 @@ description: Multivariate Curve Resolution - Alternating Least Squares for resol
   overlapping spectral components.
 category: curve_resolution
 is_active: true
+status: ready
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Data
-    parameters:
-      source: spectrochempy
-      example_dataset: irdata
+    parameters: {}
     position_x: 175
     position_y: 50
   - node_id: model_1
@@ -76,12 +75,6 @@ template_data:
       - Raman
       - UV-Vis
   certified_datasets:
-  - source: spectrochempy
-    name: irdata
-  - source: spectrochempy
-    name: ramandata
-  - source: spectrochempy
-    name: matlabdata/als2004dataset.MAT
   - source: eigenvector
     name: diesel_nir
   - source: eigenvector

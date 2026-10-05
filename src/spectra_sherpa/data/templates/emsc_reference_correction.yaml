@@ -1,0 +1,81 @@
+schema_version: 1
+name: EMSC Reference Correction
+slug: emsc_reference_correction
+description: Correct application spectra against one explicit reference spectrum and one explicit known-interferent spectrum through a fitted EMSC state.
+category: preprocessing
+is_active: true
+status: ready
+template_data:
+  nodes:
+  - node_id: application_1
+    node_type: data.file_load
+    label: Load Application Spectra
+    parameters: {}
+    example_binding:
+      source: synthetic
+      dataset_name: emsc_application_spectra
+    position_x: 80
+    position_y: 100
+  - node_id: reference_1
+    node_type: data.file_load
+    label: Load Explicit Reference Spectrum
+    parameters: {}
+    example_binding:
+      source: synthetic
+      dataset_name: emsc_reference_spectrum
+    position_x: 400
+    position_y: 100
+  - node_id: constituent_1
+    node_type: data.file_load
+    label: Load Known Interferent Spectrum
+    parameters: {}
+    example_binding:
+      source: synthetic
+      dataset_name: emsc_known_interferent
+    position_x: 720
+    position_y: 100
+  - node_id: emsc_1
+    node_type: preprocess.emsc
+    label: Fit and Apply EMSC
+    parameters:
+      reference_method: first
+      poly_order: 2
+    position_x: 400
+    position_y: 400
+  edges:
+  - from_node_id: application_1
+    to_node_id: emsc_1
+  - from_node_id: reference_1
+    to_node_id: emsc_1
+    to_input: reference
+  - from_node_id: constituent_1
+    to_node_id: emsc_1
+    to_input: constituents
+  canvas_state:
+    zoom: 0.9
+    pan_x: 0
+    pan_y: 0
+  data_roles:
+    X_spectra:
+      role_type: X_spectra
+      node_binding: application_1
+      required: true
+      binding_mode: separate_source
+      description: Finite application spectra on the exact fitted feature axis
+      accepted_techniques: [FTIR, NIR, Raman]
+    emsc_reference:
+      role_type: X_spectra
+      node_binding: reference_1
+      required: true
+      binding_mode: separate_source
+      connects_to_port: reference
+      description: One explicit reference spectrum used to fit the EMSC state
+      accepted_techniques: [FTIR, NIR, Raman]
+    known_interferent:
+      role_type: X_spectra
+      node_binding: constituent_1
+      required: true
+      binding_mode: separate_source
+      connects_to_port: constituents
+      description: One measured nuisance spectrum included in the frozen EMSC design
+      accepted_techniques: [FTIR, NIR, Raman]

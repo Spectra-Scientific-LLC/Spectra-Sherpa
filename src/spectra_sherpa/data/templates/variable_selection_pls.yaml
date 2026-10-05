@@ -1,19 +1,22 @@
 schema_version: 1
 name: Variable Selection + PLS Calibration
 slug: variable_selection_pls
-description: PLS calibration with VIP-based variable selection to identify the most
-  informative spectral regions.
+description: Leakage-safe PLS calibration with producer-owned VIP scores and held-out evaluation.
 category: selection_design
 is_active: true
+status: ready
 template_data:
   nodes:
   - node_id: data_1
-    node_type: data.source
+    node_type: data.file_load
     label: Load Spectral Data
-    parameters:
+    parameters: {}
+    example_binding:
       source: eigenvector
-      eigenvector_dataset: corn_m5
-    position_x: 175
+      dataset_name: corn_m5
+      selected_target: Moisture
+      target_type: continuous
+    position_x: 100
     position_y: 50
   - node_id: preprocess_1
     node_type: preprocess.smooth
@@ -22,74 +25,142 @@ template_data:
       method: savitzky_golay
       size: 15
       order: 2
-    position_x: 175
+    position_x: 100
     position_y: 250
   - node_id: partition_1
-    node_type: selection.sample_partition
+    node_type: data.train_test_split
     label: Kennard-Stone Partition
     parameters:
-      method: kennard_stone
+      split_method: kennard_stone
       test_size: 0.25
-      metric: euclidean
-    position_x: 175
+      distance_metric: euclidean
+      n_components: 0
+    position_x: 100
     position_y: 450
   - node_id: model_full
-    node_type: model.pls
-    label: PLS (Full Spectrum)
+    node_type: model.fitted_pls
+    label: Fit Full-Spectrum PLS
     parameters:
       n_components: 5
       scale: false
-    position_x: 175
+    position_x: 100
     position_y: 650
-  - node_id: varsel_1
+  - node_id: select_train
     node_type: selection.variable_select
-    label: VIP Variable Selection
+    label: Select Training Variables by VIP
     parameters:
       method: vip
       threshold: 1.0
-    position_x: 500
+    position_x: 400
+    position_y: 650
+  - node_id: select_test
+    node_type: selection.variable_select
+    label: Apply Training-Owned VIP Mask to Test Spectra
+    parameters:
+      method: apply_mask
+    position_x: 700
     position_y: 650
   - node_id: model_selected
-    node_type: model.pls
-    label: PLS (Selected Variables)
+    node_type: model.fitted_pls
+    label: Fit Selected-Variable PLS
     parameters:
       n_components: 5
       scale: false
-    position_x: 500
+    position_x: 400
     position_y: 900
+  - node_id: predict_1
+    node_type: model.predict_regression
+    label: Predict Held-Out Spectra
+    parameters: {}
+    position_x: 700
+    position_y: 900
+  - node_id: eval_1
+    node_type: diagnostics.regression_evaluator
+    label: Held-Out Evaluation
+    parameters: {}
+    position_x: 700
+    position_y: 1100
+  - node_id: table_1
+    node_type: output.data_table
+    label: Held-Out Metrics
+    parameters: {}
+    position_x: 400
+    position_y: 1300
   - node_id: viz_1
     node_type: output.plot
-    label: Calibration Results
+    label: Predicted vs Actual
     parameters:
-      plot_type: spectra
-    position_x: 175
-    position_y: 900
+      plot_type: scatter
+    position_x: 700
+    position_y: 1300
   edges:
   - from_node_id: data_1
     to_node_id: preprocess_1
   - from_node_id: preprocess_1
     to_node_id: partition_1
     to_input: X
+  - from_node_id: data_1
+    to_node_id: partition_1
+    from_output: target
+    to_input: y
   - from_node_id: partition_1
     to_node_id: model_full
     from_output: X_train
-    to_input: X
-  - from_node_id: model_full
-    to_node_id: varsel_1
-    from_output: model
-    to_input: model
+    to_input: default
   - from_node_id: partition_1
-    to_node_id: varsel_1
+    to_node_id: model_full
+    from_output: y_train
+    to_input: y
+  - from_node_id: partition_1
+    to_node_id: select_train
     from_output: X_train
     to_input: X
-  - from_node_id: varsel_1
+  - from_node_id: model_full
+    to_node_id: select_train
+    from_output: vip_scores
+    to_input: importance_scores
+  - from_node_id: partition_1
+    to_node_id: select_test
+    from_output: X_test
+    to_input: X
+  - from_node_id: select_train
+    to_node_id: select_test
+    from_output: mask
+    to_input: mask
+  - from_node_id: select_train
     to_node_id: model_selected
     from_output: X_selected
-    to_input: X
+    to_input: default
+  - from_node_id: partition_1
+    to_node_id: model_selected
+    from_output: y_train
+    to_input: y
+  - from_node_id: select_test
+    to_node_id: predict_1
+    from_output: X_selected
+    to_input: default
   - from_node_id: model_selected
+    to_node_id: predict_1
+    from_output: fitted_state
+    to_input: fitted_state
+  - from_node_id: predict_1
+    to_node_id: eval_1
+    from_output: default
+    to_input: default
+  - from_node_id: partition_1
+    to_node_id: eval_1
+    from_output: y_test
+    to_input: y_true
+  - from_node_id: eval_1
+    to_node_id: table_1
+    from_output: default
+    to_input: default
+  - from_node_id: eval_1
     to_node_id: viz_1
+    from_output: comparison
+    to_input: default
   canvas_state:
-    zoom: 0.85
+    zoom: 0.75
     pan_x: 0
     pan_y: 0
   data_roles:
@@ -99,35 +170,22 @@ template_data:
       required: true
       binding_mode: embedded
       description: Spectral data with concentration targets
-      accepted_techniques:
-      - FTIR
-      - NIR
-      - Raman
+      accepted_techniques: [FTIR, NIR, Raman]
     Y_reference:
       role_type: Y_reference
       node_binding: data_1
       required: true
       binding_mode: embedded
       target_type: continuous
-      description: Reference values (embedded in spectral data file)
+      description: Reference values embedded in the spectral data file
   certified_datasets:
-  - source: eigenvector
-    name: corn_m5
-  - source: eigenvector
-    name: corn_mp5
-  - source: eigenvector
-    name: corn_mp6
-  - source: eigenvector
-    name: diesel_nir
-  - source: eigenvector
-    name: cgl_nir
-  - source: eigenvector
-    name: diesel_nir_mat
-  - source: eigenvector
-    name: nir_shootout_cal1
-  - source: eigenvector
-    name: nir_shootout_cal2
-  - source: eigenvector
-    name: nir_shootout_test1
-  - source: eigenvector
-    name: nir_shootout_test2
+  - {source: eigenvector, name: corn_m5}
+  - {source: eigenvector, name: corn_mp5}
+  - {source: eigenvector, name: corn_mp6}
+  - {source: eigenvector, name: diesel_nir}
+  - {source: eigenvector, name: cgl_nir}
+  - {source: eigenvector, name: diesel_nir_mat}
+  - {source: eigenvector, name: nir_shootout_cal1}
+  - {source: eigenvector, name: nir_shootout_cal2}
+  - {source: eigenvector, name: nir_shootout_test1}
+  - {source: eigenvector, name: nir_shootout_test2}

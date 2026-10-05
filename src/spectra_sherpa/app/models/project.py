@@ -1,13 +1,6 @@
 """
-Project database models — hierarchical container for experiments and workflows.
-
-Aligned with SpectroChemPy's ``scp.Project`` concept:
-  scp.datasets  → Experiment (owns ExperimentFiles holding spectroscopic data)
-  scp.projects  → sub-Project (self-referential FK)
-  scp.scripts   → Workflow (DAG-based processing pipelines) [Script integration: next phase]
-  scp.meta      → metadata JSON column
-  scp.parent    → parent_id FK to self
-  save()/load() → ProjectVersion snapshots + export/import
+Project database models — hierarchical native container for experiments,
+workflows, scripts, model artifacts, versions, and export/import state.
 """
 
 from __future__ import annotations
@@ -15,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text, func, or_, select
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from spectra_sherpa.app.db.base import Base
@@ -54,6 +47,8 @@ class Project(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     # Relationships
     user: Mapped[User] = relationship("User", back_populates="projects")
@@ -126,3 +121,19 @@ class ProjectVersion(Base):
     # Relationships
     project: Mapped[Project] = relationship("Project", back_populates="versions")
     user: Mapped[User] = relationship("User")
+
+
+def live_project_filter(project_column):
+    """Restrict a user-scoped listing to rows outside a deleted project.
+
+    Permanent project deletion keeps a tree that still holds retained model
+    evidence as a hidden provenance tombstone, so its rows are never removed.
+    Without this filter the experiments and workflows inside that tree keep
+    their ``project_id`` and stay listed and editable after the owner
+    confirmed a permanent deletion. Unfiled rows (NULL ``project_id``) stay
+    visible, so this cannot be written as a bare ``NOT IN``.
+    """
+    return or_(
+        project_column.is_(None),
+        project_column.in_(select(Project.id).where(Project.deleted_at.is_(None))),
+    )

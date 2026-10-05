@@ -403,23 +403,23 @@ class TestBuildDatasetLikeRestoreShape:
 
 
 # ═══════════════════════════════════════════════════════════════════
-# Serialization v2
+# Current serialization
 # ═══════════════════════════════════════════════════════════════════
 
 
 class TestNDSerialization:
-    def test_2d_produces_v1(self):
+    def test_2d_produces_current_wire(self):
         ds = SherpaDataset(
             X=np.random.rand(10, 50),
             feature_axis=SpectralAxis(values=np.arange(50.0), units="cm-1"),
         )
         d = ds.to_dict()
-        assert d["version"] == "1.0"
+        assert d["version"] == "3.0"
         assert d["ndim"] == 2
         assert "inner_axes" not in d
         assert "feature_axis" in d
 
-    def test_3d_produces_v2(self):
+    def test_3d_produces_current_wire(self):
         data = np.random.rand(5, 30, 100)
         ds = SherpaDataset(
             X=data,
@@ -427,7 +427,7 @@ class TestNDSerialization:
             feature_axis=MZAxis(values=np.arange(100.0), units="m/z"),
         )
         d = ds.to_dict()
-        assert d["version"] == "2.0"
+        assert d["version"] == "3.0"
         assert d["ndim"] == 3
         assert "inner_axes" in d
         assert "1" in d["inner_axes"]
@@ -476,24 +476,17 @@ class TestNDSerialization:
         assert isinstance(ds2.axis(2), SpatialAxis)
         assert isinstance(ds2.get_feature_axis(), SpectralAxis)
 
-    def test_v2_format_loads(self):
-        """v2 dict with feature_axis loads correctly."""
-        v2 = {
-            "type": "SherpaDataset",
-            "version": "2.0",
-            "data": np.random.rand(10, 50).tolist(),
-            "shape": [10, 50],
-            "n_samples": 10,
-            "n_features": 50,
-            "backend": "numpy",
-            "feature_axis": {
-                "axis_class": "SpectralAxis",
-                "data": np.arange(50.0).tolist(),
-                "units": "cm-1",
-                "title": "wavenumber",
-            },
-        }
-        ds = SherpaDataset.from_dict(v2)
+    def test_current_wire_with_feature_axis_loads(self):
+        original = SherpaDataset(
+            X=np.random.rand(10, 50),
+            feature_axis=SpectralAxis(
+                values=np.arange(50.0),
+                units="cm-1",
+                title="wavenumber",
+            ),
+        )
+        current = original.to_dict()
+        ds = SherpaDataset.from_dict(current)
         assert ds.shape == (10, 50)
         fa = ds.get_feature_axis()
         assert fa is not None

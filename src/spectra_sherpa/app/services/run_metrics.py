@@ -8,6 +8,8 @@ from typing import Any
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.schemas.execution_runs import ComparisonResponse, ExecutionRunOut
 from spectra_sherpa.app.services.dag.nodes.classification.core_utils import flatten_classification_metrics_contract
+from spectra_sherpa.app.services.run_comparison import saved_run_result_pairs
+from spectra_sherpa.app.services.run_evaluation_comparison import qualified_evaluation_comparison
 
 COMPARABLE_METRIC_KEYS = {
     "accuracy",
@@ -305,7 +307,7 @@ def _metric_values_equal(left: Any, right: Any) -> bool:
     return left == right
 
 
-def comparison_response(runs: list[ExecutionRun]) -> ComparisonResponse:
+def comparison_response(runs: list[ExecutionRun], evaluation_selections=None) -> ComparisonResponse:
     comparable_by_run = {run.id: comparable_results_for_run(run.results_summary) for run in runs}
     metric_keys = sorted(
         {key for metrics in comparable_by_run.values() for key in metrics},
@@ -323,8 +325,33 @@ def comparison_response(runs: list[ExecutionRun]) -> ComparisonResponse:
             if key in run_metrics:
                 diff[key][str(run.id)] = run_metrics[key]
 
+    evaluation_pairs, qualified_diff = qualified_evaluation_comparison(runs, evaluation_selections)
+    result_pairs = saved_run_result_pairs(runs)
+    for evaluation in evaluation_pairs:
+        matched = next(
+            (
+                pair
+                for pair in result_pairs
+                if pair.left_run_id == evaluation.left_run_id
+                and pair.right_run_id == evaluation.right_run_id
+                and pair.kind == "out_of_fold_evidence"
+                and not pair.requires_pairing
+                and pair.left == evaluation.left
+                and pair.right == evaluation.right
+                and evaluation.left
+                and evaluation.right
+            ),
+            None,
+        )
+        if matched is None:
+            result_pairs.append(evaluation)
+        else:
+            matched.state, matched.reason = evaluation.state, evaluation.reason
+    diff.update(qualified_diff)
     return ComparisonResponse(
         runs=[ExecutionRunOut.model_validate(run) for run in runs],
-        metric_keys=metric_keys,
+        result_pairs=result_pairs,
+        rankable_metric_keys=list(qualified_diff),
+        metric_keys=metric_keys + list(qualified_diff),
         diff=diff,
     )

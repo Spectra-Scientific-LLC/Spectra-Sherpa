@@ -1,0 +1,11 @@
+#!/bin/sh
+# Preserve Chromium's sandbox. Never inject --no-sandbox or weaken host policy.
+set -eu
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+if [ "${1:-}" = "--print-sandbox-policy" ]; then
+    IMAGE=${APPIMAGE:?Run this option from the AppImage, not an extracted directory}
+    case "$IMAGE" in *[!a-zA-Z0-9/._-]*) echo 'Use a path containing only letters, numbers, / . _ - for policy installation.' >&2; exit 1;; esac
+    printf 'abi <abi/4.0>,\ninclude <tunables/global>\nprofile spectrasherpa-appimage "%s" flags=(unconfined) {\n  userns,\n}\n' "$IMAGE"
+    exit 0
+fi
+exec "$HERE/SpectraSherpa" "$@"

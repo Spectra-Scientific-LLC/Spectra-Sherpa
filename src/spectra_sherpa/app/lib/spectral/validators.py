@@ -14,7 +14,7 @@ from .conversions import ensure_absorbance
 from .dataset import parse_spectral_unit, validate_unit_compatibility
 
 if TYPE_CHECKING:
-    from spectra_sherpa.app.lib.scp_compat import NDDataset
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,7 @@ class UnitMismatchWarning(UserWarning):
 
 
 def assert_compatible_units(
-    datasets: List["NDDataset"],
+    datasets: List["SherpaDataset"],
     operation: str,
 ) -> None:
     """
@@ -34,7 +34,7 @@ def assert_compatible_units(
 
     Parameters
     ----------
-    datasets : list[NDDataset]
+    datasets : list[SherpaDataset]
         Datasets to validate
     operation : str
         Name of the operation (for error messages)
@@ -60,9 +60,9 @@ def assert_compatible_units(
 
 
 def validate_and_normalize_units(
-    datasets: List["NDDataset"],
+    datasets: List["SherpaDataset"],
     operation: str,
-) -> List["NDDataset"]:
+) -> List["SherpaDataset"]:
     """
     Check unit compatibility. If incompatible, warn and auto-convert.
 
@@ -70,14 +70,14 @@ def validate_and_normalize_units(
 
     Parameters
     ----------
-    datasets : list[NDDataset]
+    datasets : list[SherpaDataset]
         Input datasets
     operation : str
         Name of the operation (for warning messages)
 
     Returns
     -------
-    list[NDDataset]
+    list[SherpaDataset]
         Datasets with compatible units (auto-converted if necessary)
     """
     if len(datasets) < 2:

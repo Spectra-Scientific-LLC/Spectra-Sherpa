@@ -1,10 +1,6 @@
 """
-ProjectScript database model — stores Python scripts within a Project.
-
-Aligned with SpectroChemPy's ``scp.Script`` concept:
-  scp.Script.name    → name
-  scp.Script.content → code (Text column)
-  scp.Script.priority → priority (Float, execution order)
+ProjectScript database model — stores ordered Python scripts within a native
+Project.
 """
 
 from __future__ import annotations

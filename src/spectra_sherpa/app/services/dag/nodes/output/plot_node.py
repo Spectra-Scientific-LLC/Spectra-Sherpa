@@ -8,12 +8,22 @@ from typing import Any, Dict, List
 
 import numpy as np
 
+import spectra_sherpa.app.services.dag.regression_comparison as regression_comparison_contract
+import spectra_sherpa.sdk.plot_spec as plot_spec_contract
 from spectra_sherpa.app.lib.data_roles import get_dataset_data_role
-from spectra_sherpa.app.lib.scp_compat import NDDataset
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
+from spectra_sherpa.app.services.dag import presentation_limits
+from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.execution_contract_vocabulary import (
+    LifecycleKind,
+    ManagedOptimizationEligibility,
+    RuntimeFamily,
+    WorkerCapability,
+)
+from spectra_sherpa.sdk.plot_spec import canonical_plot_spec_from_projection
 
-from ...node_base import Node, NodeMetadata, NodeParameter, PortMetadata, register_node
+from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, register_node
+from . import stats_summary_node as stats_summary_contract
 from ._helpers import get_axis_display_info
 
 
@@ -57,7 +67,61 @@ def _is_profile_dataset(dataset: SherpaDataset) -> bool:
 def _looks_like_plot_payload(value: Any) -> bool:
     if not isinstance(value, dict):
         return False
-    return isinstance(value.get("data"), list) and isinstance(value.get("layout"), dict)
+    return bool(value.get("data")) and isinstance(value.get("data"), list) and isinstance(value.get("layout"), dict)
+
+
+def _canonical_plot_parameters(raw: dict[str, object]) -> dict[str, object]:
+    """Close the scientist-controlled presentation options."""
+
+    allowed = {"plot_type", "colorscale", "x_axis", "y_axis", "plot_key"}
+    unknown = sorted(set(raw) - allowed)
+    if unknown:
+        raise ValueError(f"output.plot received unknown parameters: {', '.join(unknown)}")
+
+    plot_type = raw.get("plot_type", "spectra")
+    if plot_type not in {
+        "spectra",
+        "contour",
+        "heatmap",
+        "scores",
+        "biplot",
+        "loadings",
+        "scatter",
+        "dendrogram",
+        "explained_variance",
+    }:
+        raise ValueError("output.plot plot_type is not supported")
+    colorscale = raw.get("colorscale", "Viridis")
+    if colorscale not in {"Viridis", "Hot", "RdBu", "Blues", "Greys", "Jet", "Spectral"}:
+        raise ValueError("output.plot colorscale is not supported")
+
+    axes: dict[str, int] = {}
+    for name, default in (("x_axis", 0), ("y_axis", 1)):
+        value = raw.get(name, default)
+        if isinstance(value, bool) or not isinstance(value, (int, np.integer)):
+            raise ValueError(f"output.plot {name} must be an integer")
+        value = int(value)
+        if not 0 <= value <= 63:
+            raise ValueError(f"output.plot {name} must be between 0 and 63")
+        axes[name] = value
+
+    plot_key = raw.get("plot_key", "")
+    if not isinstance(plot_key, str) or len(plot_key) > 128:
+        raise ValueError("output.plot plot_key must be text no longer than 128 characters")
+    return {
+        "plot_type": plot_type,
+        "colorscale": colorscale,
+        **axes,
+        "plot_key": plot_key,
+    }
+
+
+def _managed_plot_parameters(parameters: dict[str, object]) -> dict[str, object]:
+    if parameters["plot_type"] not in {"spectra", "scores", "loadings", "explained_variance", "scatter"}:
+        raise ValueError("managed plots admit spectra, scores, loadings, explained variance, or scatter")
+    if parameters["plot_key"]:
+        raise ValueError("managed plots do not admit arbitrary structured plot-key selection")
+    return parameters
 
 
 @register_node
@@ -69,6 +133,12 @@ class PlotNode(Node):
     """
 
     metadata = NodeMetadata(
+        policy=NodePolicy(
+            safe_for_auto_apply=True,
+            requires_human_review=False,
+            data_egress_risk="none",
+            offload_to_pool=False,
+        ),
         node_type="output.plot",
         category="output",
         label="Plot",
@@ -79,8 +149,21 @@ class PlotNode(Node):
                 label="Plot Type",
                 param_type="select",
                 default="spectra",
-                options=["spectra", "contour", "heatmap", "scores", "biplot", "loadings", "scatter", "dendrogram"],
-                description="Type of plot to generate",
+                options=[
+                    "spectra",
+                    "contour",
+                    "heatmap",
+                    "scores",
+                    "biplot",
+                    "loadings",
+                    "scatter",
+                    "dendrogram",
+                    "explained_variance",
+                ],
+                description=(
+                    "Type of plot to generate. Hosted execution admits spectra, scores, loadings, explained variance, "
+                    "or scatter. Plot input is bounded to 500,000 values and 2 MiB of text before expansion."
+                ),
                 required=False,
             ),
             NodeParameter(
@@ -97,6 +180,9 @@ class PlotNode(Node):
                 label="X Axis",
                 param_type="number",
                 default=0,
+                min_value=0,
+                max_value=63,
+                max_value_reason="Bounds component selection to a practical visualization range.",
                 description="Index or label for X axis",
                 required=False,
             ),
@@ -105,11 +191,26 @@ class PlotNode(Node):
                 label="Y Axis",
                 param_type="number",
                 default=1,
+                min_value=0,
+                max_value=63,
+                max_value_reason="Bounds component selection to a practical visualization range.",
                 description="Index or label for Y axis",
                 required=False,
             ),
+            NodeParameter(
+                name="plot_key",
+                label="Structured Plot Key",
+                param_type="text",
+                default="",
+                description=(
+                    "Optional exact key selecting a plot payload from a structured input. "
+                    "Hosted execution requires this field to remain blank."
+                ),
+                required=False,
+                category="advanced",
+            ),
         ],
-        input_types=["NDDataset", "dict"],
+        input_types=["SherpaDataset", "dict"],
         output_type="dict",
         input_ports=[
             PortMetadata(
@@ -118,6 +219,7 @@ class PlotNode(Node):
                 required=True,
                 label="Input Data",
                 description="Input data to process",
+                variadic=True,
             ),
         ],
         output_ports=[
@@ -129,6 +231,8 @@ class PlotNode(Node):
                 description="Plotly configuration and data",
             ),
         ],
+        canonical_parameter_validator=_canonical_plot_parameters,
+        managed_parameter_validator=_managed_plot_parameters,
     )
 
     def generate_python(
@@ -137,259 +241,43 @@ class PlotNode(Node):
         indent: str = "    ",
         use_scp: bool = True,
     ) -> List[str]:
-        """Generate Python code for Plotly-based visualization."""
+        """Generate a call to the same presentation authority used live."""
         input_expr = inputs.get("default", next(iter(inputs.values()), "input_data"))
+        if isinstance(input_expr, list):
+            input_expr = "[" + ", ".join(input_expr) + "]"
+        parameters = self.metadata.canonicalize_parameters(self._resolve_params())
+        return [
+            f"{indent}# --- Plot ({self.node_id}) ---",
+            (f"{indent}from spectra_sherpa.app.services.dag.nodes.output.plot_node import build_plot_result"),
+            f"{indent}results[{self.node_id!r}] = build_plot_result(",
+            f"{indent}    {input_expr}, parameters={parameters!r},",
+            f"{indent})",
+        ]
+
+    async def execute(self, input_data: Any = None, default: Any = None, **kwargs: Any) -> Dict[str, Any]:
+        """Generate a deterministic frontend payload through the shared authority."""
+        del kwargs
+        parameters = self.metadata.canonicalize_parameters(self._resolve_params())
+        source = input_data if input_data is not None else default
+        return build_plot_result(source, parameters=parameters)
+
+    def _build(self, input_data: Any) -> Dict[str, Any]:
+        """Dispatch one supported scientific result to its presentation projection."""
         plot_type = self.parameters.get("plot_type", "spectra")
         x_axis = self.parameters.get("x_axis", 0)
         y_axis = self.parameters.get("y_axis", 1)
 
-        _nid = self.node_id.replace("-", "_")
+        if isinstance(input_data, (list, tuple)):
+            if len(input_data) == 1 and isinstance(input_data[0], (SherpaDataset, dict, list, tuple, np.ndarray)):
+                return self._build(input_data[0])
+            if all(isinstance(item, SherpaDataset) for item in input_data):
+                if plot_type != "spectra":
+                    raise ValueError("multiple output.plot inputs are supported only for spectral comparison")
+                return self._plot_spectral_comparison(input_data)
+            if any(isinstance(item, SherpaDataset) for item in input_data):
+                raise ValueError("spectral comparison inputs must all be SherpaDataset instances")
 
-        lines: List[str] = []
-        lines.append(f"{indent}# --- Plot ({self.node_id}) ---")
-        lines.append(f"{indent}try:")
-        lines.append(f"{indent}    import plotly.graph_objects as go")
-        lines.append(f"{indent}except ImportError:")
-        lines.append(f"{indent}    class _SherpaFallbackFigure(dict):")
-        lines.append(f"{indent}        def __init__(self, data=None):")
-        lines.append(f"{indent}            super().__init__()")
-        lines.append(f"{indent}            self['data'] = []")
-        lines.append(f"{indent}            self['layout'] = {{}}")
-        lines.append(f"{indent}            if data is not None:")
-        lines.append(f"{indent}                self['data'] = data if isinstance(data, list) else [data]")
-        lines.append(f"{indent}        def add_trace(self, trace):")
-        lines.append(f"{indent}            self.setdefault('data', []).append(trace)")
-        lines.append(f"{indent}        def update_layout(self, **kwargs):")
-        lines.append(f"{indent}            self.setdefault('layout', {{}}).update(kwargs)")
-        lines.append(f"{indent}        def show(self):")
-        lines.append(f"{indent}            return None")
-        lines.append(f"{indent}        def to_plotly_json(self):")
-        lines.append(f"{indent}            return dict(self)")
-        lines.append(f"{indent}        def write_html(self, path):")
-        lines.append(f"{indent}            with open(path, 'w', encoding='utf-8') as _f:")
-        lines.append(f"{indent}                _f.write('<html><body><pre>')")
-        lines.append(f"{indent}                _f.write(json.dumps(self.to_plotly_json(), indent=2))")
-        lines.append(f"{indent}                _f.write('</pre></body></html>')")
-        lines.append(f"{indent}    class _SherpaFallbackGO:")
-        lines.append(f"{indent}        Figure = _SherpaFallbackFigure")
-        lines.append(f"{indent}        @staticmethod")
-        lines.append(f"{indent}        def Scatter(**kwargs):")
-        lines.append(f"{indent}            return {{'type': 'scatter', **kwargs}}")
-        lines.append(f"{indent}        @staticmethod")
-        lines.append(f"{indent}        def Contour(**kwargs):")
-        lines.append(f"{indent}            return {{'type': 'contour', **kwargs}}")
-        lines.append(f"{indent}        @staticmethod")
-        lines.append(f"{indent}        def Heatmap(**kwargs):")
-        lines.append(f"{indent}            return {{'type': 'heatmap', **kwargs}}")
-        lines.append(f"{indent}    go = _SherpaFallbackGO()")
-        _p = f"_plot_input_{_nid}"  # shorthand for generated variable
-        lines.append(f"{indent}{_p} = {input_expr}")
-        lines.append(f"{indent}_plot_kind_{_nid} = None")
-        lines.append(f"{indent}_plot_metadata_{_nid} = {{}}")
-        lines.append(f"{indent}if isinstance({_p}, dict)" f" and {_p}.get('type') == 'predicted_vs_actual':")
-        lines.append(f"{indent}    _plot_kind_{_nid} = 'predicted_vs_actual'")
-        lines.append(f"{indent}    _plot_source_{_nid} = {_p}")
-        lines.append(f"{indent}    _plot_metadata_{_nid} = {_p}.get('metadata') or {{}}")
-        lines.append(
-            f"{indent}    _plot_data_{_nid} = np.atleast_2d(" f"np.asarray({_p}.get('data', []), dtype=np.float64))"
-        )
-        lines.append(f"{indent}elif isinstance({_p}, dict)" f" and {_p}.get('type') == 'confusion_matrix':")
-        lines.append(f"{indent}    _plot_kind_{_nid} = 'confusion_matrix'")
-        lines.append(f"{indent}    _plot_source_{_nid} = {_p}")
-        lines.append(f"{indent}    _plot_metadata_{_nid} = {_p}.get('metadata') or {{}}")
-        lines.append(
-            f"{indent}    _plot_data_{_nid} = np.atleast_2d(" f"np.asarray({_p}.get('data', []), dtype=np.float64))"
-        )
-        lines.append(f"{indent}elif isinstance(_plot_input_{_nid}, dict) and 'scores' in _plot_input_{_nid}:")
-        lines.append(f"{indent}    _plot_source_{_nid} = _plot_input_{_nid}['scores']")
-        lines.append(f"{indent}    _plot_data_{_nid} = (")
-        lines.append(f"{indent}        np.asarray(_plot_source_{_nid}.data, dtype=np.float64)")
-        lines.append(f"{indent}        if hasattr(_plot_source_{_nid}, 'data')")
-        lines.append(f"{indent}        else np.asarray(_plot_source_{_nid}, dtype=np.float64)")
-        lines.append(f"{indent}    )")
-        lines.append(f"{indent}    _plot_data_{_nid} = np.atleast_2d(_plot_data_{_nid})")
-        lines.append(f"{indent}elif isinstance(_plot_input_{_nid}, dict) and 'loadings' in _plot_input_{_nid}:")
-        lines.append(f"{indent}    _plot_source_{_nid} = _plot_input_{_nid}['loadings']")
-        lines.append(f"{indent}    _plot_data_{_nid} = (")
-        lines.append(f"{indent}        np.asarray(_plot_source_{_nid}.data, dtype=np.float64)")
-        lines.append(f"{indent}        if hasattr(_plot_source_{_nid}, 'data')")
-        lines.append(f"{indent}        else np.asarray(_plot_source_{_nid}, dtype=np.float64)")
-        lines.append(f"{indent}    )")
-        lines.append(f"{indent}    _plot_data_{_nid} = np.atleast_2d(_plot_data_{_nid})")
-        lines.append(f"{indent}else:")
-        lines.append(f"{indent}    _plot_source_{_nid} = _plot_input_{_nid}")
-        lines.append(f"{indent}    _plot_data_{_nid} = (")
-        lines.append(f"{indent}        np.asarray(_plot_source_{_nid}.data, dtype=np.float64)")
-        lines.append(f"{indent}        if hasattr(_plot_source_{_nid}, 'data')")
-        lines.append(f"{indent}        else np.asarray(_plot_source_{_nid}, dtype=np.float64)")
-        lines.append(f"{indent}    )")
-        lines.append(f"{indent}    _plot_data_{_nid} = np.atleast_2d(_plot_data_{_nid})")
-        lines.append(f"{indent}_x_values_{_nid} = None")
-        lines.append(f"{indent}_x_title_{_nid} = 'Feature'")
-        lines.append(f"{indent}_x_units_{_nid} = ''")
-        lines.append(f"{indent}_y_title_{_nid} = 'Intensity'")
-        lines.append(f"{indent}if _plot_kind_{_nid} == 'predicted_vs_actual':")
-        lines.append(f"{indent}    _x_title_{_nid} = 'Actual'")
-        lines.append(f"{indent}    _y_title_{_nid} = 'Predicted'")
-        lines.append(f"{indent}elif _plot_kind_{_nid} == 'confusion_matrix':")
-        lines.append(f"{indent}    _x_title_{_nid} = 'Predicted Class'")
-        lines.append(f"{indent}    _y_title_{_nid} = 'True Class'")
-        lines.append(f"{indent}if getattr(_plot_source_{_nid}, 'feature_axis', None) is not None:")
-        lines.append(f"{indent}    _x_values_{_nid} = np.asarray(_plot_source_{_nid}.feature_axis.data)")
-        lines.append(
-            f"{indent}    _x_title_{_nid} = " f"getattr(_plot_source_{_nid}.feature_axis, 'title', None) or 'Feature'"
-        )
-        lines.append(
-            f"{indent}    _x_units_{_nid} = " f"getattr(_plot_source_{_nid}.feature_axis, 'units', None) or ''"
-        )
-        lines.append(f"{indent}if getattr(_plot_source_{_nid}, 'domain', None) is not None:")
-        lines.append(f"{indent}    _y_title_{_nid} = _plot_source_{_nid}.domain.data_quantity or _y_title_{_nid}")
-        lines.append(f"{indent}elif getattr(_plot_source_{_nid}, 'units', None):")
-        lines.append(f"{indent}    _y_title_{_nid} = str(_plot_source_{_nid}.units)")
-        lines.append(
-            f"{indent}_x_label_{_nid} = "
-            f'f"{{_x_title_{_nid}}} ({{_x_units_{_nid}}})" if _x_units_{_nid} else _x_title_{_nid}'
-        )
-
-        if plot_type == "scatter":
-            lines.append(f"{indent}_fig_{_nid} = go.Figure()")
-            lines.append(f"{indent}if _plot_kind_{_nid} == 'predicted_vs_actual' and _plot_data_{_nid}.shape[1] >= 2:")
-            lines.append(
-                f"{indent}    _fig_{_nid}.add_trace(go.Scatter("
-                f"x=_plot_data_{_nid}[:, 0], y=_plot_data_{_nid}[:, 1], mode='markers', name='Predictions'))"
-            )
-            lines.append(f"{indent}    _min_v = float(np.min(_plot_data_{_nid})) if _plot_data_{_nid}.size else 0.0")
-            lines.append(f"{indent}    _max_v = float(np.max(_plot_data_{_nid})) if _plot_data_{_nid}.size else 1.0")
-            lines.append(
-                f"{indent}    _fig_{_nid}.add_trace(go.Scatter("
-                f"x=[_min_v, _max_v], y=[_min_v, _max_v], mode='lines', name='Ideal'))"
-            )
-            lines.append(
-                f"{indent}    _fig_{_nid}.update_layout("
-                f"template='plotly_white', title='Predicted vs Actual', "
-                f"xaxis_title=_x_title_{_nid}, yaxis_title=_y_title_{_nid})"
-            )
-            lines.append(f"{indent}else:")
-            lines.append(
-                f"{indent}    _fig_{_nid}.add_trace(go.Scatter("
-                f"x=_plot_data_{_nid}[:, 0], "
-                f"y=_plot_data_{_nid}[:, 1] if _plot_data_{_nid}.shape[1] > 1 else _plot_data_{_nid}[:, 0], "
-                f"mode='markers', name='Scatter'))"
-            )
-            lines.append(
-                f"{indent}    _fig_{_nid}.update_layout("
-                f"template='plotly_white', title='Scatter Plot', "
-                f"xaxis_title=_x_title_{_nid}, "
-                f"yaxis_title=_y_title_{_nid})"
-            )
-        elif plot_type in ("spectra",):
-            lines.append(f"{indent}_fig_{_nid} = go.Figure()")
-            lines.append(f"{indent}for _si in range(min(_plot_data_{_nid}.shape[0], 50)):")
-            lines.append(
-                f"{indent}    _xv = _x_values_{_nid} if _x_values_{_nid} is not None "
-                f"else np.arange(_plot_data_{_nid}.shape[1])"
-            )
-            lines.append(
-                f"{indent}    _fig_{_nid}.add_trace("
-                f"go.Scatter(x=_xv, y=_plot_data_{_nid}[_si], mode='lines', name=f'Trace {{_si+1}}'))"
-            )
-            lines.append(
-                f"{indent}_fig_{_nid}.update_layout(template='plotly_white', title='Spectra Plot', "
-                f"xaxis_title=_x_label_{_nid}, yaxis_title=_y_title_{_nid})"
-            )
-        elif plot_type in ("scores", "biplot"):
-            lines.append(f"{indent}_fig_{_nid} = go.Figure()")
-            lines.append(f"{indent}if _plot_data_{_nid}.shape[1] > {max(x_axis, y_axis)}:")
-            lines.append(
-                f"{indent}    _fig_{_nid}.add_trace(go.Scatter("
-                f"x=_plot_data_{_nid}[:, {x_axis}], y=_plot_data_{_nid}[:, {y_axis}], "
-                f"mode='markers', name='Scores'))"
-            )
-            lines.append(
-                f"{indent}_fig_{_nid}.update_layout(template='plotly_white', title='Scores Plot', "
-                f"xaxis_title='PC {x_axis + 1}', yaxis_title='PC {y_axis + 1}')"
-            )
-        elif plot_type == "loadings":
-            lines.append(f"{indent}_fig_{_nid} = go.Figure()")
-            lines.append(f"{indent}for _ci in range(min(_plot_data_{_nid}.shape[0], 5)):")
-            lines.append(
-                f"{indent}    _xv = _x_values_{_nid} if _x_values_{_nid} is not None "
-                f"else np.arange(_plot_data_{_nid}.shape[1])"
-            )
-            lines.append(
-                f"{indent}    _fig_{_nid}.add_trace(go.Scatter("
-                f"x=_xv, y=_plot_data_{_nid}[_ci], mode='lines', name=f'PC {{_ci+1}}'))"
-            )
-            lines.append(
-                f"{indent}_fig_{_nid}.update_layout(template='plotly_white', title='Loadings Plot', "
-                f"xaxis_title=_x_label_{_nid}, yaxis_title='Loading')"
-            )
-        elif plot_type in ("contour", "heatmap"):
-            lines.append(
-                f"{indent}_xv = _x_values_{_nid} if _x_values_{_nid} is not None "
-                f"else np.arange(_plot_data_{_nid}.shape[1])"
-            )
-            lines.append(f"{indent}_yv = np.arange(_plot_data_{_nid}.shape[0])")
-            lines.append(f"{indent}if _plot_kind_{_nid} == 'confusion_matrix':")
-            lines.append(f"{indent}    _classes = _plot_metadata_{_nid}.get('classes')")
-            _pd = f"_plot_data_{_nid}"
-            lines.append(
-                f"{indent}    if isinstance(_classes, list)" f" and len(_classes) == {_pd}.shape[0] == {_pd}.shape[1]:"
-            )
-            lines.append(f"{indent}        _xv = _classes")
-            lines.append(f"{indent}        _yv = _classes")
-            lines.append(f"{indent}    else:")
-            lines.append(f"{indent}        _xv = np.arange(_plot_data_{_nid}.shape[1])")
-            lines.append(f"{indent}        _yv = np.arange(_plot_data_{_nid}.shape[0])")
-            lines.append(f"{indent}_fig_{_nid} = go.Figure(")
-            if plot_type == "contour":
-                lines.append(f"{indent}    data=go.Contour(z=_plot_data_{_nid}, x=_xv, y=_yv, colorscale='Viridis')")
-            else:
-                lines.append(f"{indent}    data=go.Heatmap(z=_plot_data_{_nid}, x=_xv, y=_yv, colorscale='Viridis')")
-            lines.append(f"{indent})")
-            lines.append(
-                f"{indent}_fig_{_nid}.update_layout(template='plotly_white', title='{plot_type.title()} Plot', "
-                f"xaxis_title=_x_title_{_nid} if _plot_kind_{_nid} == 'confusion_matrix' else _x_label_{_nid}, "
-                f"yaxis_title=_y_title_{_nid} if _plot_kind_{_nid} == 'confusion_matrix' else 'Sample Index')"
-            )
-        else:
-            lines.append(f"{indent}_fig_{_nid} = go.Figure()")
-            lines.append(
-                f"{indent}_fig_{_nid}.add_trace(go.Scatter("
-                f"x=_plot_data_{_nid}[:, 0], "
-                f"y=_plot_data_{_nid}[:, 1] if _plot_data_{_nid}.shape[1] > 1 else _plot_data_{_nid}[:, 0], "
-                f"mode='markers', name='Scatter'))"
-            )
-            lines.append(f"{indent}_fig_{_nid}.update_layout(template='plotly_white', title='Scatter Plot')")
-
-        lines.append(f"{indent}try:")
-        lines.append(f"{indent}    _fig_{_nid}.show()")
-        lines.append(f"{indent}except Exception:")
-        lines.append(f"{indent}    pass")
-        lines.append(f"{indent}results['{self.node_id}'] = {{'visualization': _fig_{_nid}}}")
-        lines.append(f'{indent}print(f"  Plot ({self.node_id}): {plot_type} figure created")')
-
-        return lines
-
-    async def execute(self, input_data: Any) -> Dict[str, Any]:
-        """
-        Generate plot data from input.
-
-        Args:
-            input_data: SherpaDataset or dict with spectral/model data
-
-        Returns:
-            Dict with plot configuration and data
-        """
-        plot_type = self.parameters.get("plot_type", "spectra")
-        x_axis = self.parameters.get("x_axis", 0)
-        y_axis = self.parameters.get("y_axis", 1)
-
-        # Coerce NDDataset -> SherpaDataset so all dataset paths work
-        if isinstance(input_data, NDDataset):
-            input_data = coerce_to_sherpa(input_data)
-
-        # Handle NDDataset / SherpaDataset input
+        # Handle the canonical scientific dataset directly.
         if isinstance(input_data, SherpaDataset):
             if plot_type == "biplot":
                 return self._plot_biplot({"scores": input_data}, x_axis, y_axis)
@@ -406,6 +294,8 @@ class PlotNode(Node):
 
         # Handle dict input (e.g., from PCA node)
         if isinstance(input_data, dict):
+            if input_data.get("schema_version") == regression_comparison_contract.REGRESSION_COMPARISON_SCHEMA:
+                return self._plot_regression_comparison(input_data)
             plot_payload = self._select_plot_payload(input_data)
             if plot_payload is not None:
                 return plot_payload
@@ -434,11 +324,15 @@ class PlotNode(Node):
             if self._is_regression_cv_metrics(input_data):
                 return self._plot_regression_cv_metrics(input_data)
             if "data" in input_data:
-                return self._plot_generic(input_data)
+                if isinstance(input_data.get("layout"), dict):
+                    return self._plot_generic(input_data)
+                if isinstance(input_data.get("metadata"), dict) and input_data["metadata"].get("column_names"):
+                    return self._plot_table_column(input_data)
+                return self._plot_array(input_data["data"], plot_type, x_axis, y_axis)
             if isinstance(input_data.get("default"), SherpaDataset):
-                return await self.execute(input_data["default"])
+                return self._build(input_data["default"])
             if isinstance(input_data.get("default"), dict):
-                return await self.execute(input_data["default"])
+                return self._build(input_data["default"])
             for key in (
                 "transformed",
                 "result",
@@ -464,14 +358,115 @@ class PlotNode(Node):
         if isinstance(input_data, (list, tuple, np.ndarray)):
             return self._plot_array(input_data, plot_type, x_axis, y_axis)
 
-        # Fallback
-        # Fallback
-        result = {
-            "plot_type": plot_type,
-            "data": [],
-            "layout": {"title": "No data to plot"},
+        raise ValueError("output.plot requires a supported canonical dataset or structured result payload")
+
+    def _plot_regression_comparison(self, comparison: dict[str, Any]) -> Dict[str, Any]:
+        """Render the canonical long-form regression comparison without guessing.
+
+        A comparison is a table of row objects, not a categorical vector.  The
+        former generic fallback stringified those objects and counted the
+        resulting strings, producing a scientifically meaningless bar chart.
+        This projection validates the closed comparison fields and preserves
+        target identity, residuals, sample labels, and the 1:1 reference line.
+        """
+
+        expected_fields = {"sample", "target", "reference", "predicted", "residual", "role"}
+        rows = comparison.get("data")
+        if not isinstance(rows, list) or not rows:
+            raise ValueError("output.plot regression comparison requires non-empty rows")
+
+        normalized: list[dict[str, Any]] = []
+        for index, row in enumerate(rows):
+            if not isinstance(row, dict) or set(row) != expected_fields:
+                raise ValueError(f"output.plot regression comparison row {index} has an invalid schema")
+            if not all(isinstance(row[name], str) and row[name] for name in ("sample", "target", "role")):
+                raise ValueError(f"output.plot regression comparison row {index} has invalid labels")
+            numeric = {}
+            for name in ("reference", "predicted", "residual"):
+                value = row[name]
+                if isinstance(value, bool) or not isinstance(value, (int, float, np.integer, np.floating)):
+                    raise ValueError(f"output.plot regression comparison row {index} has invalid {name}")
+                value = float(value)
+                if not np.isfinite(value):
+                    raise ValueError(f"output.plot regression comparison row {index} has non-finite {name}")
+                numeric[name] = value
+            normalized.append({**row, **numeric})
+
+        targets = list(dict.fromkeys(str(row["target"]) for row in normalized))
+        traces: list[dict[str, Any]] = []
+        for target in targets:
+            selected = [row for row in normalized if row["target"] == target]
+            traces.append(
+                {
+                    "x": [row["reference"] for row in selected],
+                    "y": [row["predicted"] for row in selected],
+                    "text": [row["sample"] for row in selected],
+                    "customdata": [[row["residual"], row["role"]] for row in selected],
+                    "type": "scatter",
+                    "mode": "markers",
+                    "marker": {"size": 8, "opacity": 0.75},
+                    "name": target,
+                    "hovertemplate": (
+                        "Sample %{text}<br>Reference: %{x:.4f}<br>Predicted: %{y:.4f}<br>"
+                        "Residual: %{customdata[0]:.4f}<br>Role: %{customdata[1]}<extra>%{fullData.name}</extra>"
+                    ),
+                }
+            )
+
+        values = [float(row[name]) for row in normalized for name in ("reference", "predicted")]
+        minimum = min(values)
+        maximum = max(values)
+        padding = (maximum - minimum) * 0.05 or 0.1
+        axis_range = [minimum - padding, maximum + padding]
+        traces.append(
+            {
+                "x": axis_range,
+                "y": axis_range,
+                "type": "scatter",
+                "mode": "lines",
+                "line": {"color": "#94a3b8", "dash": "dash", "width": 1.5},
+                "name": "1:1 Line",
+                "showlegend": False,
+                "hoverinfo": "skip",
+            }
+        )
+        role = str(normalized[0]["role"]).replace("_", " ")
+        single_target = targets[0] if len(targets) == 1 else None
+        title_suffix = f"{single_target} · {role}" if single_target else role
+        reference_title = f"Reference — {single_target}" if single_target else "Reference"
+        predicted_title = f"Predicted — {single_target}" if single_target else "Predicted"
+        return {
+            "visualization": {
+                # ``plot_type`` describes the renderer primitive.  The
+                # scientific meaning remains explicit in ``source_schema``;
+                # inventing a renderer-only type would unnecessarily widen
+                # the portable plot-spec vocabulary.
+                "plot_type": "scatter",
+                "data": traces,
+                "layout": {
+                    "title": f"Predicted vs Reference — {title_suffix}",
+                    "xaxis": {
+                        "title": reference_title,
+                        "range": axis_range,
+                        "constrain": "domain",
+                    },
+                    "yaxis": {
+                        "title": predicted_title,
+                        "range": axis_range,
+                        "scaleanchor": "x",
+                        "scaleratio": 1,
+                        "constrain": "domain",
+                    },
+                    "showlegend": len(targets) > 1,
+                },
+                "metadata": {
+                    "source_schema": regression_comparison_contract.REGRESSION_COMPARISON_SCHEMA,
+                    "n_rows": len(normalized),
+                    "n_targets": len(targets),
+                    "role": normalized[0]["role"],
+                },
+            }
         }
-        return {"visualization": result}
 
     def _select_plot_payload(self, input_data: dict[str, Any]) -> dict[str, Any] | None:
         """Pass through pre-built Plotly payloads from modeling/classification nodes."""
@@ -541,12 +536,14 @@ class PlotNode(Node):
 
     def _plot_spectra(self, dataset: Any) -> Dict[str, Any]:
         """Generate spectra plot data, preserving axis titles from dataset."""
+        from spectra_sherpa.app.lib.axes import SpectralAxis
+
         traces = []
         data_role = get_dataset_data_role(dataset)
-        is_feature_table = data_role == "X_features"
 
         # Get x-axis data and display info from dataset (preferred property accessor)
         x_coord = dataset.feature_axis
+        is_feature_table = data_role == "X_features" and not isinstance(x_coord, SpectralAxis)
         if x_coord is not None:
             axis_labels = getattr(x_coord, "labels", None)
             if is_feature_table and axis_labels is not None and len(axis_labels) == dataset.shape[-1]:
@@ -605,7 +602,7 @@ class PlotNode(Node):
             subsampling_warning = None
 
         for i in indices:
-            name = sample_labels[i] if sample_labels and i < len(sample_labels) else f"Sample {i+1}"
+            name = sample_labels[i] if sample_labels and i < len(sample_labels) else f"Sample {i + 1}"
             trace: dict[str, Any] = {
                 "x": x_data,
                 "y": data[i].tolist(),
@@ -640,6 +637,164 @@ class PlotNode(Node):
                 "data": traces,
                 "layout": layout,
                 "metadata": metadata,
+            }
+        }
+
+    def _plot_spectral_comparison(self, sources: list[Any] | tuple[Any, ...]) -> Dict[str, Any]:
+        """Compare independently bound spectral cohorts without pooling their rows."""
+
+        datasets = list(sources)
+        if not 2 <= len(datasets) <= 8:
+            raise ValueError("spectral comparison requires between two and eight independent datasets")
+        if not all(isinstance(dataset, SherpaDataset) for dataset in datasets):
+            raise ValueError("spectral comparison inputs must all be SherpaDataset instances")
+        if any(get_dataset_data_role(dataset) != "X_spectra" for dataset in datasets):
+            raise ValueError("spectral comparison inputs must all have the X_spectra data role")
+
+        first = datasets[0]
+        first_axis = first.feature_axis
+        if first_axis is None or first_axis.data is None:
+            raise ValueError("spectral comparison requires explicit feature coordinates")
+        coordinates = np.asarray(first_axis.data)
+        if not np.issubdtype(coordinates.dtype, np.number) or not np.isfinite(coordinates).all():
+            raise ValueError("spectral comparison feature coordinates must be finite and numeric")
+        contexts: list[dict[str, Any]] = []
+        labels: list[str] = []
+        for index, dataset in enumerate(datasets):
+            axis = dataset.feature_axis
+            if axis is None or axis.data is None:
+                raise ValueError(f"spectral comparison input {index} lacks feature coordinates")
+            values = np.asarray(axis.data)
+            if values.shape != coordinates.shape or not np.array_equal(values, coordinates):
+                raise ValueError("spectral comparison inputs must have identical feature coordinates")
+            if axis.units != first_axis.units or getattr(axis, "quantity", None) != getattr(
+                first_axis, "quantity", None
+            ):
+                raise ValueError("spectral comparison inputs must have identical axis quantity and units")
+            if dataset.units != first.units:
+                raise ValueError("spectral comparison inputs must have identical signal units")
+            matrix = np.asarray(dataset.X)
+            if matrix.ndim != 2 or matrix.shape[0] < 2 or not np.isfinite(matrix).all():
+                raise ValueError("each spectral comparison cohort requires at least two finite spectra")
+            context = stats_summary_contract.build_dataset_source_context(dataset)
+            reference = context["reference"]
+            cohort = reference.get("reference.cohort")
+            instrument = reference.get("reference.instrument_view")
+            label_parts = [part for part in (cohort, instrument) if part]
+            label = " / ".join(label_parts) or context.get("dataset_title")
+            if not isinstance(label, str) or not label:
+                raise ValueError(
+                    "spectral comparison inputs require a bounded cohort, instrument, or dataset title label"
+                )
+            contexts.append(context)
+            labels.append(label)
+
+        if len(set(labels)) != len(labels):
+            raise ValueError("spectral comparison inputs require distinct cohort labels")
+
+        # Variadic port accumulation follows graph-edge order, while direct and
+        # generated callers may supply a different list order. Bind presentation
+        # order to scientist-visible cohort identity plus exact source identity so
+        # trace colors and metadata remain stable across every execution path.
+        ordered_sources = sorted(
+            zip(datasets, labels, contexts, strict=True),
+            key=lambda item: (
+                item[1].casefold(),
+                item[1],
+                item[2].get("scientific_digest") or "",
+                item[2]["data_fingerprint"],
+            ),
+        )
+        datasets = [item[0] for item in ordered_sources]
+        labels = [item[1] for item in ordered_sources]
+        contexts = [item[2] for item in ordered_sources]
+
+        colors = (
+            (31, 119, 180),
+            (255, 127, 14),
+            (44, 160, 44),
+            (214, 39, 40),
+            (148, 103, 189),
+            (140, 86, 75),
+            (227, 119, 194),
+            (127, 127, 127),
+        )
+        x_data = coordinates.tolist()
+        traces: list[dict[str, Any]] = []
+        cohort_metadata: list[dict[str, Any]] = []
+        for index, (dataset, label, context) in enumerate(zip(datasets, labels, contexts, strict=True)):
+            matrix = np.asarray(dataset.X, dtype=np.float64)
+            lower = np.quantile(matrix, 0.25, axis=0)
+            upper = np.quantile(matrix, 0.75, axis=0)
+            mean = np.mean(matrix, axis=0)
+            red, green, blue = colors[index]
+            traces.extend(
+                [
+                    {
+                        "x": x_data,
+                        "y": lower.tolist(),
+                        "type": "scatter",
+                        "mode": "lines",
+                        "line": {"color": f"rgba({red},{green},{blue},0)", "width": 0},
+                        "name": f"{label} Q1",
+                        "legendgroup": label,
+                        "showlegend": False,
+                    },
+                    {
+                        "x": x_data,
+                        "y": upper.tolist(),
+                        "type": "scatter",
+                        "mode": "lines",
+                        "line": {"color": f"rgba({red},{green},{blue},0)", "width": 0},
+                        "fill": "tonexty",
+                        "fillcolor": f"rgba({red},{green},{blue},0.18)",
+                        "name": f"{label} interquartile envelope",
+                        "legendgroup": label,
+                        "showlegend": False,
+                    },
+                    {
+                        "x": x_data,
+                        "y": mean.tolist(),
+                        "type": "scatter",
+                        "mode": "lines",
+                        "line": {"color": f"rgb({red},{green},{blue})", "width": 2},
+                        "name": f"{label} mean",
+                        "legendgroup": label,
+                    },
+                ]
+            )
+            cohort_metadata.append(
+                {
+                    "label": label,
+                    "n_samples": dataset.n_samples,
+                    "source_context": context,
+                }
+            )
+
+        x_info = get_axis_display_info(first_axis)
+        x_axis: dict[str, Any] = {"title": x_info["label"]}
+        if x_info["should_reverse"]:
+            x_axis["autorange"] = "reversed"
+        return {
+            "visualization": {
+                "plot_type": "spectra",
+                "data": traces,
+                "layout": {
+                    "title": "Cohort spectral comparison: mean and interquartile envelope",
+                    "xaxis": x_axis,
+                    "yaxis": {
+                        "title": str(first.units) if first.units is not None else "Signal value (units not supplied)"
+                    },
+                },
+                "metadata": {
+                    "comparison_mode": "independent_cohort_distribution_overlay",
+                    "distribution_summary": "mean_with_25th_to_75th_percentile_envelope",
+                    "source_count": len(datasets),
+                    "pooled_before_plot": False,
+                    "signal_units": first.units,
+                    "signal_units_present": first.units is not None,
+                    "cohort_sources": cohort_metadata,
+                },
             }
         }
 
@@ -717,9 +872,9 @@ class PlotNode(Node):
         """Generate PCA scores plot data."""
         scores = model_data.get("scores")
         if scores is None:
-            return {"plot_type": "scores", "data": [], "layout": {}}
+            raise ValueError("output.plot scores presentation requires a scores payload")
 
-        # Convert to numpy if NDDataset/SherpaDataset
+        # Convert the canonical dataset payload to NumPy for plotting.
         title = "PCA Scores Plot"
         pc_labels: list[str] | None = None
         sample_labels: list[str] | None = None
@@ -751,26 +906,80 @@ class PlotNode(Node):
         x_label = pc_labels[pc_x] if pc_labels and len(pc_labels) > pc_x else f"PC{pc_x + 1}"
         y_label = pc_labels[pc_y] if pc_labels and len(pc_labels) > pc_y else f"PC{pc_y + 1}"
 
-        trace = {
-            "x": scores_array[:, pc_x].tolist(),
-            "y": scores_array[:, pc_y].tolist(),
-            "type": "scatter",
-            "mode": "markers",
-            "marker": {"size": 8, "color": "#3b82f6"},
-            "name": "Scores",
-        }
-        if sample_labels and len(sample_labels) == scores_array.shape[0]:
-            trace["text"] = sample_labels
-            trace["hovertemplate"] = "%{text}<br>%{x:.4g}, %{y:.4g}<extra></extra>"
+        traces: list[dict[str, Any]] = []
+        target = np.asarray(scores.target) if isinstance(scores, SherpaDataset) and scores.target is not None else None
+        target_context = scores.target_context if isinstance(scores, SherpaDataset) else None
+        if target is not None and target.ndim == 1 and target.shape[0] == scores_array.shape[0]:
+            if target_context is not None and target_context.target_type == "categorical":
+                class_names = [str(value) for value in (target_context.class_names or [])]
+
+                def _class_label(value: Any) -> str:
+                    try:
+                        index = int(value)
+                    except (TypeError, ValueError):
+                        return str(value)
+                    return class_names[index] if 0 <= index < len(class_names) else str(value)
+
+                labels = [_class_label(value) for value in target.tolist()]
+                for label in dict.fromkeys(labels):
+                    indices = [index for index, value in enumerate(labels) if value == label]
+                    trace = {
+                        "x": scores_array[indices, pc_x].tolist(),
+                        "y": scores_array[indices, pc_y].tolist(),
+                        "type": "scatter",
+                        "mode": "markers",
+                        "marker": {"size": 8, "opacity": 0.8},
+                        "name": label,
+                    }
+                    if sample_labels and len(sample_labels) == scores_array.shape[0]:
+                        trace["text"] = [sample_labels[index] for index in indices]
+                        trace["hovertemplate"] = "%{text}<br>%{x:.4g}, %{y:.4g}<extra>%{fullData.name}</extra>"
+                    traces.append(trace)
+            elif np.issubdtype(target.dtype, np.number) and np.isfinite(target.astype(np.float64)).all():
+                target_name = str(getattr(target_context, "target_name", None) or "Response")
+                trace = {
+                    "x": scores_array[:, pc_x].tolist(),
+                    "y": scores_array[:, pc_y].tolist(),
+                    "type": "scatter",
+                    "mode": "markers",
+                    "marker": {
+                        "size": 8,
+                        "color": target.astype(np.float64).tolist(),
+                        "colorscale": "Viridis",
+                        "showscale": True,
+                        "colorbar": {"title": target_name},
+                    },
+                    "name": target_name,
+                }
+                if sample_labels and len(sample_labels) == scores_array.shape[0]:
+                    trace["text"] = sample_labels
+                    trace["hovertemplate"] = (
+                        f"%{{text}}<br>%{{x:.4g}}, %{{y:.4g}}<br>{target_name}: %{{marker.color:.4g}}<extra></extra>"
+                    )
+                traces.append(trace)
+        if not traces:
+            trace = {
+                "x": scores_array[:, pc_x].tolist(),
+                "y": scores_array[:, pc_y].tolist(),
+                "type": "scatter",
+                "mode": "markers",
+                "marker": {"size": 8, "color": "#3b82f6"},
+                "name": "Scores",
+            }
+            if sample_labels and len(sample_labels) == scores_array.shape[0]:
+                trace["text"] = sample_labels
+                trace["hovertemplate"] = "%{text}<br>%{x:.4g}, %{y:.4g}<extra></extra>"
+            traces.append(trace)
 
         return {
             "visualization": {
                 "plot_type": "scores",
-                "data": [trace],
+                "data": traces,
                 "layout": {
                     "title": title,
                     "xaxis": {"title": x_label},
                     "yaxis": {"title": y_label},
+                    "showlegend": len(traces) > 1,
                 },
             }
         }
@@ -834,6 +1043,61 @@ class PlotNode(Node):
             axis["type"] = "log"
         return axis
 
+    def _plot_table_column(self, table: dict[str, Any]) -> Dict[str, Any]:
+        """Display one retained table column against original one-based row index."""
+        names = table["metadata"]["column_names"]
+        rows = table["data"]
+        key = self.parameters.get("plot_key", "")
+        name = key.removeprefix("column:") if key.startswith("column:") else names[0]
+        if name not in names:
+            raise ValueError(f"Table column {name!r} is not present")
+        index = names.index(name)
+        values = [row.get(name) if isinstance(row, dict) else row[index] for row in rows]
+        structured = any(isinstance(value, (dict, list, tuple)) for value in values)
+        categorical = any(isinstance(value, (str, bool)) for value in values)
+        values = [
+            (
+                None
+                if structured or value is None or (isinstance(value, (int, float)) and not np.isfinite(value))
+                else str(value) if categorical else value
+            )
+            for value in values
+        ]
+        unit = table["metadata"].get("column_units", {}).get(name)
+        title = f"{name} ({unit})" if unit else name
+        notice = (
+            "Nested records or lists cannot be plotted as scalar values; inspect Data Table."
+            if structured
+            else (
+                "No observed values in this column (all values are missing)."
+                if all(value is None for value in values)
+                else None
+            )
+        )
+        layout = {"title": title, "xaxis": {"title": "Row index"}, "yaxis": {"title": title}}
+        if categorical:
+            layout["yaxis"]["type"] = "category"
+        if notice:
+            layout["annotations"] = [
+                {"text": notice, "xref": "paper", "yref": "paper", "x": 0.5, "y": 0.5, "showarrow": False}
+            ]
+        return {
+            "visualization": {
+                "plot_type": "scatter",
+                "data": [
+                    {
+                        "type": "scatter",
+                        "mode": "markers",
+                        "name": name,
+                        "x": list(range(1, len(rows) + 1)),
+                        "y": values,
+                        "connectgaps": False,
+                    }
+                ],
+                "layout": layout,
+            }
+        }
+
     def _plot_array(
         self,
         values: Any,
@@ -845,24 +1109,23 @@ class PlotNode(Node):
         """Plot generic numeric matrices or categorical vectors from model outputs."""
         arr = np.asarray(values)
         if arr.size == 0:
-            return {
-                "visualization": {
-                    "plot_type": plot_type,
-                    "data": [],
-                    "layout": {"title": "No data to plot"},
-                }
-            }
+            raise ValueError("output.plot requires non-empty values")
 
         if not _is_numeric_array(arr):
             return self._plot_categorical_vector(arr, title=title)
+
+        if plot_type == "explained_variance":
+            return self._plot_explained_variance(arr)
 
         numeric = arr.astype(np.float64, copy=False)
         if numeric.ndim == 0:
             numeric = numeric.reshape(1, 1)
         elif numeric.ndim == 1:
             numeric = numeric.reshape(-1, 1)
-        else:
-            numeric = np.atleast_2d(numeric)
+        elif numeric.ndim != 2:
+            raise ValueError("output.plot requires a scalar, vector, or two-dimensional numeric matrix")
+        if not np.isfinite(numeric).all():
+            raise ValueError("output.plot requires finite numeric values")
 
         if plot_type in ("contour", "heatmap") and numeric.shape[0] > 1 and numeric.shape[1] > 1:
             trace_type = "contour" if plot_type == "contour" else "heatmap"
@@ -930,6 +1193,52 @@ class PlotNode(Node):
                     "title": title,
                     "xaxis": {"title": "Index"},
                     "yaxis": {"title": "Value"},
+                },
+            }
+        }
+
+    def _plot_explained_variance(self, values: Any) -> Dict[str, Any]:
+        """Render individual and cumulative PCA variance as a scree plot."""
+
+        variance = np.asarray(values, dtype=np.float64)
+        if variance.ndim == 2 and 1 in variance.shape:
+            variance = variance.reshape(-1)
+        if variance.ndim != 1 or variance.size == 0 or not np.isfinite(variance).all():
+            raise ValueError("explained variance requires one finite component vector")
+        if np.any(variance < 0):
+            raise ValueError("explained variance cannot contain negative values")
+        percent = variance * 100.0 if float(np.max(variance)) <= 1.0 + 1e-12 else variance
+        cumulative = np.cumsum(percent)
+        labels = [f"PC{index + 1}" for index in range(variance.size)]
+        return {
+            "visualization": {
+                "plot_type": "explained_variance",
+                "data": [
+                    {
+                        "x": labels,
+                        "y": percent.tolist(),
+                        "type": "bar",
+                        "name": "Individual variance",
+                        "marker": {"color": "#2563eb"},
+                        "hovertemplate": "%{x}: %{y:.1f}%<extra>Individual variance</extra>",
+                    },
+                    {
+                        "x": labels,
+                        "y": cumulative.tolist(),
+                        "type": "scatter",
+                        "mode": "lines+markers",
+                        "name": "Cumulative variance",
+                        "line": {"color": "#b45309", "width": 2},
+                        "marker": {"size": 7},
+                        "hovertemplate": "%{x}: %{y:.1f}%<extra>Cumulative variance</extra>",
+                    },
+                ],
+                "layout": {
+                    "title": "PCA Explained Variance",
+                    "xaxis": {"title": "Principal Component"},
+                    "yaxis": {"title": "Explained Variance (%)", "range": [0, 105]},
+                    "barmode": "overlay",
+                    "legend": {"orientation": "h"},
                 },
             }
         }
@@ -1027,7 +1336,7 @@ class PlotNode(Node):
         scores = model_data.get("scores")
         loadings = model_data.get("loadings")
         if scores is None:
-            return {"visualization": {"plot_type": "biplot", "data": [], "layout": {}}}
+            raise ValueError("output.plot biplot requires a scores payload")
 
         if isinstance(scores, SherpaDataset):
             scores_array = np.array(scores.data)
@@ -1036,7 +1345,7 @@ class PlotNode(Node):
         if scores_array.ndim == 1:
             scores_array = scores_array.reshape(-1, 1)
         if scores_array.size == 0:
-            return {"visualization": {"plot_type": "biplot", "data": [], "layout": {}}}
+            raise ValueError("output.plot biplot requires non-empty scores")
 
         n_components = scores_array.shape[1]
         pc_x = min(max(0, pc_x), max(0, n_components - 1))
@@ -1253,6 +1562,8 @@ class PlotNode(Node):
 
     def _plot_generic(self, data: dict) -> Dict[str, Any]:
         """Generate generic plot from data dict."""
+        if not _looks_like_plot_payload(data):
+            raise ValueError("output.plot pre-rendered payload requires non-empty data and a layout mapping")
         plot_type = data.get("plot_type") or data.get("type") or "generic"
         layout = data.get("layout", {})
         if plot_type == "generic" and isinstance(layout, dict) and "dendrogram" in str(layout.get("title", "")).lower():
@@ -1269,13 +1580,7 @@ class PlotNode(Node):
         """Pass through an already-renderable dendrogram payload."""
         if "data" in data and "layout" in data:
             return self._plot_generic({**data, "plot_type": "dendrogram"})
-        return {
-            "visualization": {
-                "plot_type": "dendrogram",
-                "data": [],
-                "layout": {"title": "Dendrogram data unavailable"},
-            }
-        }
+        raise ValueError("output.plot dendrogram requires explicit data and layout")
 
     @staticmethod
     def _is_regression_cv_metrics(data: dict[str, Any]) -> bool:
@@ -1285,30 +1590,18 @@ class PlotNode(Node):
         )
 
     def _plot_regression_cv_metrics(self, data: dict[str, Any]) -> Dict[str, Any]:
-        """Render nested-CV metrics as an explicit metrics plot instead of a blank fallback."""
-        summary_keys = ("rmsecv", "r2_cv", "q2", "bias", "sep", "rer")
-        x_values: list[str] = []
-        y_values: list[float] = []
-        for key in summary_keys:
-            value = data.get(key)
-            if isinstance(value, (int, float)) and np.isfinite(float(value)):
-                x_values.append(key.upper() if key in {"q2"} else key.replace("_", " ").upper())
-                y_values.append(float(value))
-
+        """Render fold behavior without putting incompatible metrics on one axis."""
         traces: list[dict[str, Any]] = []
-        if x_values:
-            traces.append({"x": x_values, "y": y_values, "type": "bar", "name": "Summary"})
-
         fold_mse = data.get("per_fold_mse")
         if isinstance(fold_mse, list) and fold_mse:
+            fold_rmse = [float(np.sqrt(float(value))) for value in fold_mse]
             traces.append(
                 {
-                    "x": list(range(1, len(fold_mse) + 1)),
-                    "y": [float(v) for v in fold_mse],
+                    "x": list(range(1, len(fold_rmse) + 1)),
+                    "y": fold_rmse,
                     "type": "scatter",
                     "mode": "lines+markers",
-                    "name": "Fold MSE",
-                    "yaxis": "y2",
+                    "name": "Outer-fold RMSE",
                 }
             )
 
@@ -1325,13 +1618,63 @@ class PlotNode(Node):
                 }
             )
 
+        if not traces:
+            error_keys = (("RMSECV", "rmsecv"), ("SEP", "sep"), ("Bias", "bias"))
+            error_values = [
+                (label, float(data[key]))
+                for label, key in error_keys
+                if isinstance(data.get(key), (int, float)) and np.isfinite(float(data[key]))
+            ]
+            if error_values:
+                traces.append(
+                    {
+                        "x": [label for label, _ in error_values],
+                        "y": [value for _, value in error_values],
+                        "type": "bar",
+                        "name": "Error statistics",
+                    }
+                )
+
+        summary_labels = (
+            ("RMSECV", "rmsecv"),
+            ("R² CV", "r2_cv"),
+            ("Q²", "q2"),
+            ("SEP", "sep"),
+            ("Bias", "bias"),
+            ("RER", "rer"),
+        )
+        summary = [
+            f"{label} {float(data[key]):.4g}"
+            for label, key in summary_labels
+            if isinstance(data.get(key), (int, float)) and np.isfinite(float(data[key]))
+        ]
+
         layout: dict[str, Any] = {
             "title": f"Nested CV Metrics ({data.get('selection_method', 'selection')})",
-            "xaxis": {"title": "Metric / Fold"},
-            "yaxis": {"title": "Metric Value"},
+            "xaxis": {"title": "Outer Fold", "dtick": 1},
+            "yaxis": {"title": "Outer-fold RMSE", "rangemode": "tozero"},
+            "margin": {"t": 105},
         }
-        if len(traces) > 1:
-            layout["yaxis2"] = {"title": "Fold Value", "overlaying": "y", "side": "right"}
+        if fold_selected:
+            layout["yaxis2"] = {
+                "title": "Variables Selected",
+                "overlaying": "y",
+                "side": "right",
+                "rangemode": "tozero",
+            }
+        if summary:
+            layout["annotations"] = [
+                {
+                    "xref": "paper",
+                    "yref": "paper",
+                    "x": 0,
+                    "y": 1.16,
+                    "xanchor": "left",
+                    "yanchor": "bottom",
+                    "showarrow": False,
+                    "text": " · ".join(summary),
+                }
+            ]
 
         return {
             "visualization": {
@@ -1584,3 +1927,45 @@ class PlotNode(Node):
                 },
             }
         }
+
+
+def build_plot_result(input_data: Any, *, parameters: dict[str, object] | None = None) -> dict[str, Any]:
+    """Return the sole live/generated presentation payload for ``output.plot``."""
+
+    canonical = PlotNode.metadata.canonicalize_parameters(parameters or {})
+    presentation_limits.require_bounded_presentation(input_data, surface="Plot", max_values=500_000)
+    node = PlotNode("canonical-plot-authority", canonical)
+    projection = node._build(input_data)
+    visualization = projection.get("visualization")
+    if not isinstance(visualization, dict):
+        raise ValueError("output.plot did not produce a visualization projection")
+    return {"visualization": canonical_plot_spec_from_projection(visualization).as_dict()}
+
+
+bind_stable_execution_contract(
+    PlotNode,
+    runtime_family=RuntimeFamily.SHERPA_NATIVE,
+    lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
+    implementation_id="spectrasherpa.output.plot",
+    implementation_version="2.2.0",
+    implementation_modules=(
+        presentation_limits,
+        plot_spec_contract,
+        regression_comparison_contract,
+        stats_summary_contract,
+    ),
+    implementation_distributions=("numpy",),
+    runtime_requirements=(("numpy", "1.26.4"),),
+    required_worker_capabilities=(WorkerCapability.READ_DATASET,),
+    managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
+    sample_effect="filters_samples",
+    feature_effect="preserves_features",
+    axis_effect="preserves_axis",
+    unit_effect="preserves_units",
+    resource_hints={"timeout_seconds": 10, "cpu_seconds": 5, "memory_bytes": 536_870_912},
+    license_id="Apache-2.0",
+    help_reference="docs/nodes/output.md",
+)
+
+
+__all__ = ["PlotNode", "build_plot_result"]

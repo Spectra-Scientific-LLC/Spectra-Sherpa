@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import hashlib
+import json
+import re
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, Mapping
 
 import httpx
 import numpy as np
@@ -13,10 +16,29 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app.api.deps import get_current_user, get_session, require_project
+from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session, require_project
+from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
+from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.security import check_egress_permission, check_export_allowed
 from spectra_sherpa.app.db.session import async_session
+from spectra_sherpa.app.lib.collection_assembly import (
+    MAX_COLLECTION_MEMBERS,
+    MAX_COLLECTION_SOURCE_BYTES,
+    canonical_collection_file_name,
+    lossless_sample_table_scalar,
+)
+from spectra_sherpa.app.lib.collection_definition import (
+    scientific_collection_identity_from_digest,
+    scientific_dataset_projection,
+    scientific_dataset_projection_sha256,
+)
+from spectra_sherpa.app.lib.registered_reference_storage import (
+    RegisteredReferenceStorageError,
+    read_registered_reference_sidecar,
+)
+from spectra_sherpa.app.lib.sherpa_dataset import axis_to_wire
+from spectra_sherpa.app.lib.target_summary import target_summary
 from spectra_sherpa.app.models.api_key import APIKey
 from spectra_sherpa.app.models.background_job import BackgroundJob
 from spectra_sherpa.app.models.data_egress import EgressDestination
@@ -34,6 +56,7 @@ from spectra_sherpa.app.services.file_storage import FileValidationError, saniti
 from spectra_sherpa.app.services.job_manager import job_manager
 from spectra_sherpa.app.services.prepared_data import (
     PreparedDataOverrides,
+    apply_dataset_prepared_data_overrides,
     load_prepared_data_overrides,
     save_prepared_data_overrides,
 )
@@ -58,6 +81,7 @@ class ExperimentDataset(BaseModel):
     project_id: int | None = None
     stages: dict[str, list[dict]]
     target_names: list[str] | None = None
+    target_types: dict[str, str] | None = None
     target_mode: str | None = None
     selected_target: str | None = None
     target_complete_rows: int | None = None
@@ -127,6 +151,292 @@ class LibraryImportResponse(BaseModel):
 
 router = APIRouter(prefix="/datasets")
 _HITRAN_LIBRARY_SOURCES = {"hitran", "hitran_xsec"}
+_COLLECTION_SAMPLE_TABLE_SCHEMA = "spectrasherpa-collection-sample-table/1"
+_SOURCE_COLLECTION_SCHEMA = "spectrasherpa-source-collection/1"
+_COLLECTION_SAMPLE_TABLE_MAX_ROWS = 10_000
+_COLLECTION_SAMPLE_TABLE_MAX_COLUMNS = 64
+_COLLECTION_SAMPLE_TABLE_MAX_CELL_CHARS = 4_096
+_COLLECTION_SAMPLE_TABLE_MAX_JSON_BYTES = 4 * 1024 * 1024
+_DATASET_AXIS_INVENTORY_SCHEMA = "spectrasherpa-dataset-axis-inventory/1"
+_DATASET_AXIS_INVENTORY_MAX_VALUES = 200_000
+_DATASET_AXIS_INVENTORY_MAX_JSON_BYTES = 4 * 1024 * 1024
+_SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+_SOURCE_COLLECTION_BASE_KEYS = frozenset({"schema_version", "file_count", "files", "manifest_digest"})
+_SOURCE_COLLECTION_SCIENTIFIC_V1_KEYS = frozenset(
+    {
+        "scientific_collection_schema_version",
+        "source_manifest_sha256",
+        "collection_definition_sha256",
+        "scientific_collection_sha256",
+    }
+)
+_SOURCE_COLLECTION_SCIENTIFIC_V2_KEYS = _SOURCE_COLLECTION_SCIENTIFIC_V1_KEYS | frozenset(
+    {"scientific_dataset_projection_sha256"}
+)
+
+
+def _canonical_json_sha256(value: object) -> str:
+    """Hash bounded canonical JSON without first materializing aggregate bytes."""
+
+    digest = hashlib.sha256()
+    encoder = json.JSONEncoder(sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    for chunk in encoder.iterencode(value):
+        digest.update(chunk.encode("utf-8"))
+    return digest.hexdigest()
+
+
+def _json_scalar_size(value: str | int | float | bool | None) -> int:
+    """Return the exact UTF-8 JSON size of one already-qualified scalar."""
+
+    if isinstance(value, str):
+        return len(json.encoder.encode_basestring(value).encode("utf-8"))
+    if value is None:
+        return 4
+    if isinstance(value, bool):
+        return 4 if value else 5
+    return len(str(value).encode("ascii"))
+
+
+def _sample_table_scalar(value: object) -> str | int | float | bool | None:
+    """Project one typed table cell without collapsing scientific identity."""
+
+    return lossless_sample_table_scalar(value, max_text_chars=_COLLECTION_SAMPLE_TABLE_MAX_CELL_CHARS)
+
+
+def _complete_dataset_axis_inventory(dataset: Any) -> dict[str, object]:
+    """Project every mode/set through one pre-allocation-bounded authority."""
+
+    axes = [(0, dataset.sample_axis), *sorted(dataset.inner_axes.items()), (dataset.ndim - 1, dataset.feature_axis)]
+    if len(axes) > 16 or len({dimension for dimension, _axis in axes}) != len(axes):
+        raise ValueError("dataset axis inventory has an invalid dimension census")
+    budget = {"values": 0, "estimated_bytes": 2_048}
+
+    def account(value: object) -> None:
+        if isinstance(value, np.ndarray):
+            count = int(value.size)
+            budget["values"] += count
+            budget["estimated_bytes"] += 32 * count
+        elif isinstance(value, Mapping):
+            for key, nested in value.items():
+                if not isinstance(key, str):
+                    raise ValueError("dataset axis inventory contains a non-text field")
+                budget["estimated_bytes"] += 2 * len(key.encode("utf-8")) + 8
+                account(nested)
+        elif isinstance(value, (list, tuple)):
+            budget["estimated_bytes"] += 2 * len(value)
+            for nested in value:
+                account(nested)
+        elif isinstance(value, str):
+            budget["estimated_bytes"] += 2 * len(value.encode("utf-8")) + 4
+        elif value is not None:
+            budget["values"] += 1
+            budget["estimated_bytes"] += 32
+        if budget["values"] > _DATASET_AXIS_INVENTORY_MAX_VALUES:
+            raise ValueError("dataset axis inventory exceeds the 200,000-value retrieval limit")
+        if budget["estimated_bytes"] > _DATASET_AXIS_INVENTORY_MAX_JSON_BYTES:
+            raise ValueError("dataset axis inventory exceeds the 4 MiB retrieval limit")
+
+    for _dimension, axis in axes:
+        if axis is None:
+            continue
+        account(axis.model_dump(mode="python", exclude={"sample_table"}))
+    records = [
+        {"dimension": dimension, "axis": axis_to_wire(axis, include_sample_table=False)}
+        for dimension, axis in axes
+        if axis is not None
+    ]
+    payload: dict[str, object] = {
+        "schema_version": _DATASET_AXIS_INVENTORY_SCHEMA,
+        "dataset_id": dataset.dataset_id,
+        "scientific_projection_schema": dataset.manifest.scientific_projection_schema,
+        "scientific_digest": dataset.scientific_digest,
+        "shape": list(dataset.shape),
+        "axes": records,
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
+    if len(encoded) > _DATASET_AXIS_INVENTORY_MAX_JSON_BYTES:
+        raise ValueError("dataset axis inventory exceeds the 4 MiB retrieval limit")
+    return payload
+
+
+def _validated_collection_source_identity(source: object, dataset: object) -> tuple[int, str, dict[str, object]]:
+    """Validate and recompute the closed source and optional scientific identity."""
+
+    if not isinstance(source, dict):
+        raise ValueError("dataset is not an exact project collection")
+    source_keys = frozenset(source)
+    if source_keys not in {
+        _SOURCE_COLLECTION_BASE_KEYS,
+        _SOURCE_COLLECTION_BASE_KEYS | _SOURCE_COLLECTION_SCIENTIFIC_V1_KEYS,
+        _SOURCE_COLLECTION_BASE_KEYS | _SOURCE_COLLECTION_SCIENTIFIC_V2_KEYS,
+    }:
+        raise ValueError("dataset has a malformed source-collection identity")
+    if source.get("schema_version") != _SOURCE_COLLECTION_SCHEMA:
+        raise ValueError("dataset has an unsupported source-collection identity")
+    file_count = source.get("file_count")
+    files = source.get("files")
+    manifest_digest = source.get("manifest_digest")
+    if (
+        not isinstance(file_count, int)
+        or isinstance(file_count, bool)
+        or file_count < 1
+        or file_count > MAX_COLLECTION_MEMBERS
+        or not isinstance(files, list)
+        or len(files) != file_count
+        or not isinstance(manifest_digest, str)
+        or _SHA256_RE.fullmatch(manifest_digest) is None
+    ):
+        raise ValueError("dataset has a malformed source-collection identity")
+    seen_file_names: set[str] = set()
+    source_bytes = 0
+    for item in files:
+        if not isinstance(item, dict) or set(item) != {
+            "file_name",
+            "size_bytes",
+            "sha256",
+            "prepared_data_sha256",
+        }:
+            raise ValueError("dataset has a malformed source-collection member")
+        if (
+            not isinstance(item["file_name"], str)
+            or not item["file_name"]
+            or not isinstance(item["size_bytes"], int)
+            or isinstance(item["size_bytes"], bool)
+            or item["size_bytes"] < 0
+            or not isinstance(item["sha256"], str)
+            or _SHA256_RE.fullmatch(item["sha256"]) is None
+            or not isinstance(item["prepared_data_sha256"], str)
+            or _SHA256_RE.fullmatch(item["prepared_data_sha256"]) is None
+        ):
+            raise ValueError("dataset has a malformed source-collection member")
+        try:
+            canonical_name = canonical_collection_file_name(item["file_name"])
+        except ValueError as exc:
+            raise ValueError("dataset has a malformed source-collection member") from exc
+        folded_name = canonical_name.casefold()
+        if folded_name in seen_file_names:
+            raise ValueError("dataset has a malformed source-collection member")
+        seen_file_names.add(folded_name)
+        source_bytes += item["size_bytes"]
+        if source_bytes > MAX_COLLECTION_SOURCE_BYTES:
+            raise ValueError("dataset source collection exceeds the 512 MiB source limit")
+
+    identity = {"schema_version": _SOURCE_COLLECTION_SCHEMA, "files": files}
+    if _canonical_json_sha256(identity) != manifest_digest:
+        raise ValueError("dataset source-collection digest does not match its members")
+    scientific_identity: dict[str, object] = {}
+    if _SOURCE_COLLECTION_SCIENTIFIC_V1_KEYS.issubset(source_keys):
+        projection_digest = (
+            scientific_dataset_projection_sha256(scientific_dataset_projection(dataset))
+            if source.get("collection_definition_sha256") is not None
+            else None
+        )
+        try:
+            scientific_identity = scientific_collection_identity_from_digest(
+                source,
+                source.get("collection_definition_sha256"),
+                projection_digest,
+            )
+        except ValueError as exc:
+            raise ValueError("dataset has a malformed scientific-collection identity") from exc
+        if any(source.get(key) != value for key, value in scientific_identity.items()):
+            raise ValueError("dataset scientific-collection identity does not match its source manifest")
+    return file_count, manifest_digest, scientific_identity
+
+
+def _complete_collection_sample_table(dataset) -> dict[str, object]:
+    """Return one closed, complete, size-bounded collection table projection."""
+
+    source = dataset.meta.get("source_collection") if isinstance(dataset.meta, dict) else None
+    file_count, manifest_digest, scientific_identity = _validated_collection_source_identity(source, dataset)
+
+    axis = dataset.sample_axis
+    if axis is None or axis.labels is None:
+        raise ValueError("project collection has no complete typed sample identity")
+    row_count = int(dataset.n_samples)
+    if row_count > _COLLECTION_SAMPLE_TABLE_MAX_ROWS:
+        raise ValueError(f"collection sample table exceeds the {_COLLECTION_SAMPLE_TABLE_MAX_ROWS}-row retrieval limit")
+    if len(axis.labels) != row_count:
+        raise ValueError("collection sample labels do not match its retained rows")
+    labels = list(axis.labels)
+    if (
+        any(
+            not isinstance(label, str) or not label or len(label) > _COLLECTION_SAMPLE_TABLE_MAX_CELL_CHARS
+            for label in labels
+        )
+        or len(set(labels)) != row_count
+    ):
+        raise ValueError("collection sample labels must be unique non-empty strings")
+    retained_table = dict(axis.sample_table or {})
+    # The typed sample-axis labels are already the row-identity authority.  A
+    # generic native collection need not duplicate those labels in a
+    # scientific sample table merely so the Workbench can display them.
+    # Project a synthetic sample_id column at this bounded API boundary while
+    # leaving the retained dataset—and therefore its scientific digest—exact.
+    table = {
+        "sample_id": retained_table.get("sample_id", labels),
+        **{key: values for key, values in retained_table.items() if key != "sample_id"},
+    }
+    columns = list(table)
+    if len(columns) > _COLLECTION_SAMPLE_TABLE_MAX_COLUMNS:
+        raise ValueError(f"collection sample table must contain 1-{_COLLECTION_SAMPLE_TABLE_MAX_COLUMNS} columns")
+
+    # This running charge is checked before appending each projected cell, so
+    # received tables cannot construct an oversized aggregate and only then
+    # discover the 4 MiB response ceiling. The fixed reserve covers the closed
+    # envelope, punctuation, counts, and source-collection projection.
+    projected_json_bytes = 2_048
+    for column in columns:
+        if not isinstance(column, str) or not column or len(column) > 128:
+            raise ValueError("collection sample table contains an invalid column identity")
+        projected_json_bytes += 2 * _json_scalar_size(column) + 4
+    for label in labels:
+        projected_json_bytes += _json_scalar_size(label) + 1
+        if projected_json_bytes > _COLLECTION_SAMPLE_TABLE_MAX_JSON_BYTES:
+            raise ValueError("collection sample table exceeds the 4 MiB retrieval limit")
+
+    projected: dict[str, list[str | int | float | bool | None]] = {}
+    for column in columns:
+        values = table[column]
+        if len(values) != row_count:
+            raise ValueError(f"collection sample-table column {column!r} does not match its retained rows")
+        projected_values: list[str | int | float | bool | None] = []
+        for index, value in enumerate(values):
+            scalar = _sample_table_scalar(value)
+            if column == "sample_id" and (not isinstance(scalar, str) or scalar != labels[index]):
+                raise ValueError(f"collection sample identity at row {index + 1} does not match its label")
+            # Grouping columns are optional for a generic scientific
+            # collection.  When present they must still be complete: an
+            # apparently grouped table with missing group identities is more
+            # dangerous than an explicitly ungrouped table.
+            if column in {"specimen_id", "block"} and (scalar is None or scalar == ""):
+                raise ValueError(f"collection grouping column {column!r} contains an empty identity")
+            projected_json_bytes += _json_scalar_size(scalar) + 1
+            if projected_json_bytes > _COLLECTION_SAMPLE_TABLE_MAX_JSON_BYTES:
+                raise ValueError("collection sample table exceeds the 4 MiB retrieval limit")
+            projected_values.append(scalar)
+        projected[column] = projected_values
+
+    payload: dict[str, object] = {
+        "schema_version": _COLLECTION_SAMPLE_TABLE_SCHEMA,
+        "complete": True,
+        "row_count": row_count,
+        "columns": columns,
+        "labels": labels,
+        "sample_table": projected,
+        "source_collection": {
+            "schema_version": _SOURCE_COLLECTION_SCHEMA,
+            "file_count": file_count,
+            "manifest_digest": manifest_digest,
+            **scientific_identity,
+        },
+    }
+    encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > _COLLECTION_SAMPLE_TABLE_MAX_JSON_BYTES:
+        raise ValueError("collection sample table exceeds the 4 MiB retrieval limit")
+    return payload
+
+
 MAX_NIST_LIBRARY_IMPORT_COUNT = 500
 
 
@@ -211,11 +521,20 @@ def _axis_title_from_units(units: str | None, *, fallback: str | None = None) ->
 
 
 def _load_nist_library_spectrum(entry: NistLibrary) -> _LibrarySpectrum:
-    from spectra_sherpa.app.lib.jcamp_reader import read_jcamp
+    from spectra_sherpa.io import ingest
 
     source = _library_source_path(entry.file_path)
-    jcamp = read_jcamp(str(source))
-    yunits = jcamp.yunits or None
+    result = ingest(source)
+    if len(result.assets) != 1:
+        raise ValueError("NIST JCAMP entry must contain exactly one spectrum")
+    dataset = result.assets[0].dataset
+    axis = dataset.feature_axis
+    x = np.asarray(None if axis is None else axis.values, dtype=float).reshape(-1)
+    values = np.asarray(dataset.X, dtype=float)
+    if values.ndim != 2 or values.shape[0] != 1 or values.shape[1] != x.size:
+        raise ValueError("NIST JCAMP entry is not one sample-aligned spectrum")
+    y = values[0]
+    yunits = dataset.units or None
     yunits_lower = yunits.lower() if yunits is not None else ""
     if yunits is None:
         y_title = None
@@ -225,15 +544,15 @@ def _load_nist_library_spectrum(entry: NistLibrary) -> _LibrarySpectrum:
         y_title = "Absorbance"
     else:
         y_title = yunits
-    axis_title = _axis_title_from_units(jcamp.xunits)
+    axis_title = None if axis is None else axis.title
     return _LibrarySpectrum(
         component_id=f"nist:{entry.id}",
         name=entry.compound_name,
         source="nist",
-        x=np.asarray(jcamp.x, dtype=float).tolist(),
-        y=np.asarray(jcamp.y, dtype=float).tolist(),
+        x=x.tolist(),
+        y=y.tolist(),
         x_title=axis_title,
-        x_units=jcamp.xunits or None,
+        x_units=None if axis is None else axis.units,
         y_title=y_title,
         y_units=yunits,
         metadata={
@@ -261,7 +580,10 @@ def _load_nist_library_spectra(entries: list[NistLibrary]) -> tuple[list[_Librar
     return spectra, failures
 
 
-@router.get("/library/{library_id}/spectrum")
+@router.get(
+    "/library/{library_id}/spectrum",
+    dependencies=[Depends(demo_guard("reference_data_import"))],
+)
 async def get_nist_library_spectrum(
     library_id: int,
     session: AsyncSession = Depends(get_session),
@@ -675,18 +997,34 @@ def _experiment_file_payload(file_record: ExperimentFile) -> dict:
         "file_size_bytes": file_record.file_size_bytes,
     }
 
-    file_type = (file_record.file_type or "").lower()
-    if file_type != "csv" and not file_record.file_path.lower().endswith(".csv"):
-        return payload
-
     try:
-        from spectra_sherpa.app.lib.io import load_csv_as_sherpa
+        from spectra_sherpa.app.services.dag.nodes.data.sample_table import (
+            inspect_portable_sample_table,
+        )
 
-        dataset = load_csv_as_sherpa(experiment_dir(file_record.experiment_id) / file_record.file_path)
+        target_definitions = inspect_portable_sample_table(
+            experiment_dir(file_record.experiment_id) / file_record.file_path
+        )
+        if target_definitions is not None:
+            payload["target_names"] = list(target_definitions)
+            payload["target_types"] = target_definitions
+
+        from spectra_sherpa.app.lib.io import load_canonical_file_as_sherpa
+
+        source_path = experiment_dir(file_record.experiment_id) / file_record.file_path
+        prepared = load_prepared_data_overrides(file_path=str(source_path))
+        dataset = load_canonical_file_as_sherpa(
+            source_path,
+            prepared_overrides=prepared.to_sidecar_dict(),
+        )
+        dataset = apply_dataset_prepared_data_overrides(dataset, prepared.to_sidecar_dict())
         feature_axis = getattr(dataset, "feature_axis", None)
         target_context = getattr(dataset, "target_context", None)
         target_names = list(getattr(target_context, "target_names", None) or [])
-        target = getattr(dataset, "target", None)
+        target_name = getattr(target_context, "target_name", None)
+        target_type = getattr(target_context, "target_type", None)
+        if not target_names and target_name:
+            target_names = [str(target_name)]
         payload.update(
             {
                 "shape": list(dataset.shape),
@@ -698,17 +1036,11 @@ def _experiment_file_payload(file_record: ExperimentFile) -> dict:
                 "is_spectra": dataset.data_role == "X_spectra",
             }
         )
-        if target_names:
+        if target_names and "target_names" not in payload:
             payload["target_names"] = [str(name) for name in target_names]
-        if target is not None:
-            target_arr = np.asarray(target, dtype=np.float64)
-            if target_arr.ndim == 1:
-                target_arr = target_arr.reshape(-1, 1)
-            if target_arr.ndim == 2:
-                finite = np.isfinite(target_arr)
-                payload["target_row_count"] = int(target_arr.shape[0])
-                payload["target_any_rows"] = int(finite.any(axis=1).sum())
-                payload["target_complete_rows"] = int(finite.all(axis=1).sum())
+        if target_name and target_type and "target_types" not in payload:
+            payload["target_types"] = {str(target_name): str(target_type)}
+        payload.update({key: value for key, value in target_summary(dataset).items() if value is not None})
     except Exception:
         pass
 
@@ -716,8 +1048,10 @@ def _experiment_file_payload(file_record: ExperimentFile) -> dict:
 
 
 def _experiment_target_summary(exp: Experiment, stage_payloads: dict[str, list[dict]]) -> dict:
-    raw_payloads = stage_payloads.get("raw") or []
-    target_payload = next((payload for payload in raw_payloads if payload.get("target_names")), None)
+    all_payloads = [
+        payload for stage in ("preprocessed", "raw", "synthetic") for payload in (stage_payloads.get(stage) or [])
+    ]
+    target_payload = next((payload for payload in all_payloads if payload.get("target_names")), None)
     if target_payload is None:
         return {}
 
@@ -728,6 +1062,7 @@ def _experiment_target_summary(exp: Experiment, stage_payloads: dict[str, list[d
         selected = target_names[0]
     return {
         "target_names": target_names or None,
+        "target_types": target_payload.get("target_types"),
         "target_mode": overrides.target_mode,
         "selected_target": selected,
         "target_complete_rows": target_payload.get("target_complete_rows"),
@@ -750,11 +1085,13 @@ async def list_available_datasets(
     - library: List of NIST library entries (user-owned only)
     - builder: Placeholder for saved builder outputs (future feature)
     """
-    if project_id is not None:
-        await require_project(project_id, current_user.id, session)
-
-    # Get experiments owned by current user
-    experiments_query = select(Experiment).where(Experiment.user_id == current_user.id)
+    if uses_managed_project_access():
+        await require_scientific_access(session, current_user.id, project_id, "read")
+        experiments_query = select(Experiment).where(Experiment.project_id == project_id)
+    else:
+        if project_id is not None:
+            await require_project(project_id, current_user.id, session)
+        experiments_query = select(Experiment).where(Experiment.user_id == current_user.id)
     if project_id is not None:
         experiments_query = experiments_query.where(Experiment.project_id == project_id)
     experiments_result = await session.execute(experiments_query.order_by(Experiment.created_at.desc()))
@@ -762,6 +1099,21 @@ async def list_available_datasets(
 
     experiment_datasets: list[ExperimentDataset] = []
     for exp in experiments:
+        if app_config.site_profile == "demo":
+            from spectra_sherpa.app.contracts.demo_policy import require_trial_dataset_access
+
+            try:
+                await require_trial_dataset_access(
+                    session=session,
+                    user_id=current_user.id,
+                    workflow_project_id=exp.project_id,
+                    experiment_id=exp.id,
+                    stage="raw",
+                    file_id=None,
+                    asset_id=None,
+                )
+            except (HTTPException, ValueError):
+                continue
         # Get files grouped by stage for this experiment
         files_result = await session.execute(
             select(ExperimentFile)
@@ -773,7 +1125,20 @@ async def list_available_datasets(
         # Group files by stage
         stages: dict[str, list[dict]] = {"raw": [], "preprocessed": [], "synthetic": []}
         stage_files = [file for file in files if file.stage in stages]
-        payloads = await asyncio.gather(*(asyncio.to_thread(_experiment_file_payload, file) for file in stage_files))
+        if app_config.site_profile == "demo":
+            payloads = [
+                {
+                    "id": file.id,
+                    "file_path": file.file_path,
+                    "file_type": file.file_type,
+                    "file_size_bytes": file.file_size_bytes,
+                }
+                for file in stage_files
+            ]
+        else:
+            payloads = await asyncio.gather(
+                *(asyncio.to_thread(_experiment_file_payload, file) for file in stage_files)
+            )
         for file, payload in zip(stage_files, payloads):
             stages[file.stage].append(payload)
 
@@ -789,8 +1154,10 @@ async def list_available_datasets(
         )
 
     # Get all library entries (NIST library is shared, not per-user)
-    library_result = await session.execute(select(NistLibrary).order_by(NistLibrary.compound_name))
-    library_entries = list(library_result.scalars())
+    library_entries: list[NistLibrary] = []
+    if app_config.site_profile != "demo" and not uses_managed_project_access():
+        library_result = await session.execute(select(NistLibrary).order_by(NistLibrary.compound_name))
+        library_entries = list(library_result.scalars())
 
     library_datasets = [
         LibraryDataset(
@@ -810,7 +1177,11 @@ async def list_available_datasets(
     )
 
 
-@router.post("/library/import", response_model=LibraryImportResponse)
+@router.post(
+    "/library/import",
+    response_model=LibraryImportResponse,
+    dependencies=[Depends(demo_guard("reference_data_import"))],
+)
 async def import_library_datasets(
     payload: LibraryImportRequest,
     session: AsyncSession = Depends(get_session),
@@ -976,7 +1347,10 @@ async def import_library_datasets(
     )
 
 
-@router.get("/download/{file_id}")
+@router.get(
+    "/download/{file_id}",
+    dependencies=[Depends(demo_guard("raw_data_export"))],
+)
 async def download_dataset(
     file_id: int,
     session: AsyncSession = Depends(get_session),
@@ -1013,6 +1387,27 @@ async def download_dataset(
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File missing from storage")
 
+    # A registered-reference member is admitted for user-directed analysis,
+    # not republished as a Sherpa download.  Ordinary scientist uploads have
+    # no registered-reference sidecar and retain the normal download path in
+    # paid cloud, local, desktop, and hybrid deployments.
+    try:
+        registered_reference = read_registered_reference_sidecar(file_path)
+    except RegisteredReferenceStorageError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Registered reference identity is invalid; the source cannot be downloaded.",
+        ) from exc
+    if registered_reference is not None:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Registered provider source bytes are not redistributed by Spectra Sherpa. "
+                "Download the source from its provider; project and workflow exports retain "
+                "the external reference needed to rebind it."
+            ),
+        )
+
     # 4. Stream File
     return FileResponse(path=file_path, filename=file_path.name, media_type="application/octet-stream")
 
@@ -1026,7 +1421,7 @@ async def dataset_manifest(
     return ds.manifest.model_dump(mode="json")
 
 
-@router.get("/{dataset_id}/preview")
+@router.get("/{dataset_id}/preview", dependencies=[Depends(demo_guard("raw_data_export"))])
 async def dataset_preview(
     dataset_id: str,
     n_rows: int = Query(5, ge=1, le=100),
@@ -1042,7 +1437,35 @@ async def dataset_preview(
     return preview
 
 
-@router.get("/{dataset_id}/provenance")
+@router.get("/{dataset_id}/axes", dependencies=[Depends(demo_guard("raw_data_export"))])
+async def dataset_axes(
+    dataset_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Return complete owner-scoped axis/set metadata within closed bounds."""
+
+    ds = _resolve_handle_or_raise(dataset_id, current_user)
+    try:
+        return _complete_dataset_axis_inventory(ds)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+
+@router.get("/{dataset_id}/sample-table", dependencies=[Depends(demo_guard("raw_data_export"))])
+async def dataset_sample_table(
+    dataset_id: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Return one complete owner-scoped collection table within closed bounds."""
+
+    ds = _resolve_handle_or_raise(dataset_id, current_user)
+    try:
+        return _complete_collection_sample_table(ds)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+
+
+@router.get("/{dataset_id}/provenance", dependencies=[Depends(demo_guard("raw_data_export"))])
 async def dataset_provenance(
     dataset_id: str,
     current_user: User = Depends(get_current_user),
@@ -1051,7 +1474,7 @@ async def dataset_provenance(
     return ds.provenance.to_list()
 
 
-@router.get("/{dataset_id}/quality")
+@router.get("/{dataset_id}/quality", dependencies=[Depends(demo_guard("raw_data_export"))])
 async def dataset_quality(
     dataset_id: str,
     current_user: User = Depends(get_current_user),
@@ -1060,7 +1483,7 @@ async def dataset_quality(
     return ds.quality.model_dump(exclude_none=True)
 
 
-@router.get("/{dataset_id}/summary")
+@router.get("/{dataset_id}/summary", dependencies=[Depends(demo_guard("raw_data_export"))])
 async def dataset_summary(
     dataset_id: str,
     tier: int = Query(1, ge=0, le=3),
@@ -1081,7 +1504,7 @@ class BranchRequest(BaseModel):
     label: str
 
 
-@router.post("/{dataset_id}/branch")
+@router.post("/{dataset_id}/branch", dependencies=[Depends(demo_guard("raw_data_export"))])
 @audit_excluded("process-local dataset handle; persistent DatasetVersion ledger required before audit coverage")
 async def dataset_branch(
     dataset_id: str,

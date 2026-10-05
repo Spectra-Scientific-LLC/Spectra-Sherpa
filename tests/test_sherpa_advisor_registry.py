@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib.util
+
 from spectra_sherpa.app.contracts.ai_provider_registry import (
     DisabledAIProvider,
     get_sherpa_advisor,
@@ -33,19 +35,6 @@ def test_set_and_reset_sherpa_advisor():
     assert isinstance(advisor, DisabledAIProvider)
 
 
-def test_deprecated_shim_still_works():
-    """The services.sherpa_advisor shim re-exports correctly."""
-    import warnings
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        from spectra_sherpa.app.services.sherpa_advisor import (
-            get_sherpa_advisor as get_via_shim,
-        )
-        from spectra_sherpa.app.services.sherpa_advisor import (
-            reset_sherpa_advisor as reset_via_shim,
-        )
-
-    reset_via_shim()
-    advisor = get_via_shim()
-    assert isinstance(advisor, DisabledAIProvider)
+def test_expired_ai_provider_compatibility_modules_are_absent():
+    assert importlib.util.find_spec("spectra_sherpa.app.services.sherpa_advisor") is None
+    assert importlib.util.find_spec("spectra_sherpa.app.services.ai_provider_errors") is None

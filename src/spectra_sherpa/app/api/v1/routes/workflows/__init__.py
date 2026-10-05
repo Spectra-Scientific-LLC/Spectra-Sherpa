@@ -11,6 +11,7 @@ from fastapi import APIRouter
 
 from spectra_sherpa.app.api.v1.routes.workflows.catalog import router as _catalog_router
 from spectra_sherpa.app.api.v1.routes.workflows.crud import router as _crud_router
+from spectra_sherpa.app.api.v1.routes.workflows.data_selections import router as _data_selections_router
 from spectra_sherpa.app.api.v1.routes.workflows.execute import router as _execute_router
 from spectra_sherpa.app.api.v1.routes.workflows.export import router as _export_router
 from spectra_sherpa.app.api.v1.routes.workflows.versions import router as _versions_router
@@ -21,6 +22,7 @@ router = APIRouter()
 # that define /{workflow_id} catch-all patterns, so FastAPI matches them first.
 router.include_router(_catalog_router)
 router.include_router(_execute_router)
+router.include_router(_data_selections_router)
 router.include_router(_crud_router)
 router.include_router(_export_router)
 router.include_router(_versions_router)

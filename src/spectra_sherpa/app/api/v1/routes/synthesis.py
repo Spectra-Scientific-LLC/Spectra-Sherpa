@@ -8,7 +8,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app.api.deps import get_current_user, get_session
+from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session
+from spectra_sherpa.app.contracts.demo_policy import run_managed_synthesis
 from spectra_sherpa.app.core.config import app_config, settings
 from spectra_sherpa.app.core.security import check_egress_permission
 from spectra_sherpa.app.db.session import async_session
@@ -42,6 +43,23 @@ _nist_download_limiter = RateLimiter(
     settings.data_dir / "rate_limits" / "nist_synthesis_downloads.json",
 )
 _HITRAN_SOURCES = {"hitran", "hitran_xsec"}
+
+
+def _require_source(source: str) -> None:
+    if app_config.site_profile == "demo" and source not in _HITRAN_SOURCES:
+        raise HTTPException(status_code=403, detail="Demo synthesis supports HITRAN sources only")
+
+
+async def _attest_spectrum(spectrum, session, user, *, temperature_k, pressure_atm):
+    if app_config.site_profile == "demo":
+        return await run_managed_synthesis(
+            operation="attest",
+            payload=spectrum,
+            session=session,
+            user=user,
+            conditions={"temperature_k": temperature_k, "pressure_atm": pressure_atm},
+        )
+    return spectrum
 
 
 def _http_synthesis_error(exc: SynthesisError) -> HTTPException:
@@ -93,7 +111,10 @@ async def _check_synthesis_egress(
 
 @router.get("/sources", response_model=SynthesisSourcesResponse)
 async def list_synthesis_sources() -> SynthesisSourcesResponse:
-    return SynthesisSourcesResponse(sources=synthesis_service.list_sources())
+    sources = synthesis_service.list_sources()
+    if app_config.site_profile == "demo":
+        sources = [item for item in sources if item["id"] in _HITRAN_SOURCES]
+    return SynthesisSourcesResponse(sources=sources)
 
 
 @router.get("/search", response_model=SynthesisSearchResponse)
@@ -102,6 +123,7 @@ async def search_synthesis_components(
     query: str = Query("", max_length=100),
     limit: int = Query(25, ge=1, le=1000),
 ) -> SynthesisSearchResponse:
+    _require_source(source)
     try:
         components = synthesis_service.search_components(source, query, limit=limit)
     except SynthesisError as exc:
@@ -114,13 +136,18 @@ async def get_synthesis_component(
     source: SynthesisSource = Query(...),
     component_id: str = Query(..., min_length=1, max_length=120),
 ) -> SynthesisComponentSummary:
+    _require_source(source)
     try:
         return synthesis_service.get_component_summary(source, component_id)
     except SynthesisError as exc:
         raise _http_synthesis_error(exc) from exc
 
 
-@router.get("/spectrum", response_model=SynthesisSpectrumResponse)
+@router.get(
+    "/spectrum",
+    response_model=SynthesisSpectrumResponse,
+    dependencies=[Depends(demo_guard("hitran_synthesis"))],
+)
 async def get_synthesis_spectrum(
     source: SynthesisSource = Query(...),
     component_id: str = Query(..., min_length=1, max_length=120),
@@ -133,6 +160,7 @@ async def get_synthesis_spectrum(
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> SynthesisSpectrumResponse:
+    _require_source(source)
     if source == "nist_quant_ir":
         try:
             cached = synthesis_service.is_component_spectrum_cached(
@@ -185,7 +213,7 @@ async def get_synthesis_spectrum(
                     detail="HITRAN synthesis requires a HITRAN API key. Add it in Settings > API Keys.",
                 )
     try:
-        return await synthesis_service.get_component_spectrum(
+        spectrum = await synthesis_service.get_component_spectrum(
             source,
             component_id,
             resolution_cm1=resolution_cm1,
@@ -195,6 +223,9 @@ async def get_synthesis_spectrum(
             temperature_k=temperature_k,
             pressure_atm=pressure_atm,
             hitran_api_key=hitran_api_key,
+        )
+        return await _attest_spectrum(
+            spectrum, session, current_user, temperature_k=temperature_k, pressure_atm=pressure_atm
         )
     except httpx.HTTPStatusError as exc:
         raise HTTPException(status_code=502, detail="Source spectrum download failed") from exc
@@ -207,7 +238,11 @@ async def get_synthesis_spectrum(
         raise _http_synthesis_error(exc) from exc
 
 
-@router.post("/spectrum/load", response_model=SynthesisSpectrumLoadResponse)
+@router.post(
+    "/spectrum/load",
+    response_model=SynthesisSpectrumLoadResponse,
+    dependencies=[Depends(demo_guard("hitran_synthesis"))],
+)
 async def load_synthesis_spectrum(
     payload: SynthesisSpectrumLoadRequest,
     session: AsyncSession = Depends(get_session),
@@ -220,6 +255,7 @@ async def load_synthesis_spectrum(
     path and moves uncached HITRAN work into the background job system.
     """
 
+    _require_source(payload.source)
     if payload.source not in _HITRAN_SOURCES:
         try:
             spectrum = await get_synthesis_spectrum(
@@ -264,7 +300,11 @@ async def load_synthesis_spectrum(
             )
         except SynthesisError as exc:
             raise _http_synthesis_error(exc) from exc
-        return SynthesisSpectrumLoadResponse(spectrum=spectrum)
+        return SynthesisSpectrumLoadResponse(
+            spectrum=await _attest_spectrum(
+                spectrum, session, current_user, temperature_k=payload.temperature_k, pressure_atm=payload.pressure_atm
+            )
+        )
 
     allowed = await _check_synthesis_egress(
         current_user,
@@ -369,36 +409,54 @@ async def _tick_hitran_spectrum_load_progress(job_id: int, label: str) -> None:
             )
 
 
-@router.post("/preview", response_model=SynthesisResult)
+@router.post(
+    "/preview",
+    response_model=SynthesisResult,
+    dependencies=[Depends(demo_guard("hitran_synthesis"))],
+)
 async def preview_synthesis(
     payload: SynthesisRequest,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> SynthesisResult:
+    if app_config.site_profile == "demo":
+        return await run_managed_synthesis(operation="preview", payload=payload, session=session, user=current_user)
     try:
         return synthesis_service.truncate_result_for_response(synthesis_service.synthesize(payload))
     except SynthesisError as exc:
         raise _http_synthesis_error(exc) from exc
 
 
-@router.post("/synthesize", response_model=SynthesisResult)
+@router.post(
+    "/synthesize",
+    response_model=SynthesisResult,
+    dependencies=[Depends(demo_guard("hitran_synthesis"))],
+)
 async def synthesize(
     payload: SynthesisRequest,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> SynthesisResult:
+    if app_config.site_profile == "demo":
+        return await run_managed_synthesis(operation="synthesize", payload=payload, session=session, user=current_user)
     try:
         return synthesis_service.truncate_result_for_response(synthesis_service.synthesize(payload))
     except SynthesisError as exc:
         raise _http_synthesis_error(exc) from exc
 
 
-@router.post("/save", response_model=SynthesisSaveResponse)
+@router.post(
+    "/save",
+    response_model=SynthesisSaveResponse,
+    dependencies=[Depends(demo_guard("hitran_synthesis"))],
+)
 async def save_synthesis(
     payload: SynthesisSaveRequest,
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> SynthesisSaveResponse:
+    if app_config.site_profile == "demo":
+        return await run_managed_synthesis(operation="save", payload=payload, session=session, user=current_user)
     try:
         response = await synthesis_service.save_synthesis_result(session, current_user, payload)
         response.result = synthesis_service.truncate_result_for_response(response.result)
