@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -8,6 +9,28 @@ import pytest
 import yaml
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "pypi-release.yml"
+
+
+@pytest.fixture
+def workflow_bash() -> str:
+    if os.name == "nt":
+        # PATH may find Windows' WSL launcher first. Actions shell:bash uses
+        # Git for Windows; select that same shell without requiring WSL.
+        git = shutil.which("git")
+        if git:
+            git_path = Path(git).resolve()
+            candidates = (
+                git_path.parent / "bash.exe",
+                git_path.parent.parent / "bin" / "bash.exe",
+                git_path.parent.parent.parent / "bin" / "bash.exe",
+            )
+            for candidate in candidates:
+                if candidate.is_file():
+                    return str(candidate)
+        pytest.fail("These workflow tests require Git for Windows with Git Bash installed")
+    bash = shutil.which("bash")
+    assert bash is not None, "These workflow tests require Bash"
+    return bash
 
 
 def _section(source: str, start: str, end: str | None = None) -> str:
@@ -106,7 +129,7 @@ def test_public_ci_install_profiles_exist_in_package_metadata() -> None:
 @pytest.mark.parametrize("annotated", [True, False])
 @pytest.mark.parametrize("crlf_python", [True, False])
 def test_release_resolver_checks_real_tag_ancestry(
-    tmp_path: Path, on_main: bool, annotated: bool, crlf_python: bool
+    tmp_path: Path, on_main: bool, annotated: bool, crlf_python: bool, workflow_bash: str
 ) -> None:
     """Exercise the workflow shell against a release older than the checkout."""
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
@@ -153,7 +176,7 @@ def test_release_resolver_checks_real_tag_ancestry(
     git(tmp_path, *clone_args, origin.as_uri(), str(clone))
     output = tmp_path / "outputs"
     result = subprocess.run(
-        ["bash", "-euo", "pipefail", "-c", resolver],
+        [workflow_bash, "-euo", "pipefail", "-c", resolver],
         cwd=clone,
         env={**os.environ, "RELEASE_TAG": tag, "GITHUB_OUTPUT": output.as_posix()},
         capture_output=True,
@@ -170,7 +193,7 @@ def test_release_resolver_checks_real_tag_ancestry(
 
 
 @pytest.mark.parametrize("line_ending", ["\n", "\r\n"])
-def test_qualification_preserves_selected_artifact_path(line_ending: str) -> None:
+def test_qualification_preserves_selected_artifact_path(line_ending: str, workflow_bash: str) -> None:
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     steps = workflow["jobs"]["qualify"]["steps"]
     script = next(step["run"] for step in steps if "run" in step)
@@ -179,7 +202,7 @@ def test_qualification_preserves_selected_artifact_path(line_ending: str) -> Non
     # Model Windows Python stdout without installing a package during this test.
     shell = 'python() { if [[ "$*" == *" select "* ]]; then printf "%s%s" "$SELECTED_PATH" "$LINE_ENDING"; fi; };\n'
     result = subprocess.run(
-        ["bash", "-euo", "pipefail", "-c", shell + selection + '\nprintf "%s" "$artifact"'],
+        [workflow_bash, "-euo", "pipefail", "-c", shell + selection + '\nprintf "%s" "$artifact"'],
         env={**os.environ, "ARTIFACT_KIND": "wheel", "SELECTED_PATH": expected, "LINE_ENDING": line_ending},
         capture_output=True,
     )
