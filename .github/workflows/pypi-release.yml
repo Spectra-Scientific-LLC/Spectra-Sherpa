@@ -63,7 +63,9 @@ jobs:
       # checkout resolve a branch that happens to have the same text as a tag.
       - uses: actions/checkout@v6
         with:
-          fetch-depth: 1
+          # An older release tag must remain provably reachable from main.
+          # Fetching that tag later does not remove a depth-one boundary.
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Set up release-build Python
@@ -82,10 +84,14 @@ jobs:
           git fetch --no-tags origin \
             "+refs/heads/main:refs/remotes/origin/main"
           source_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
-          git merge-base --is-ancestor "$source_commit" refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$source_commit" refs/remotes/origin/main; then
+            echo "::error::Release tag must be an ancestor of protected public main."
+            exit 1
+          fi
           git checkout --detach "$source_commit"
           version="${RELEASE_TAG#spectra-sherpa-v}"
           package_version="$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['tool']['poetry']['version'])")"
+          package_version="${package_version%$'\r'}"
           if [ "$version" != "$package_version" ]; then
             echo "::error::Tag version ($version) does not match pyproject version ($package_version)."
             exit 1
@@ -183,6 +189,8 @@ jobs:
             --dist release/dist \
             --manifest release/artifact-manifest.json \
             --kind "$ARTIFACT_KIND")"
+          # Windows Python emits CRLF; Bash command substitution removes only LF.
+          artifact="${artifact%$'\r'}"
           mkdir clean-runtime
           cd clean-runtime
           python -m pip install "poetry-core==2.2.1"
