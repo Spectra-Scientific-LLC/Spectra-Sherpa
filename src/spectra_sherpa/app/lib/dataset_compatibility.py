@@ -9,11 +9,14 @@ compatible dataset disappear from the catalog.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from typing import Any, Literal, TypedDict, get_args
 
 from spectra_sherpa.app.lib.data_roles import DATA_ROLES, ROLE_TO_MODALITY, get_dataset_data_role
 from spectra_sherpa.app.schemas.template_schema import TemplateStatus
+
+logger = logging.getLogger(__name__)
 
 COMPATIBILITY_SCHEMA = "spectra-sherpa-dataset-template-compatibility/1"
 
@@ -388,11 +391,12 @@ def build_dataset_analysis_readiness(
 
     try:
         profile = analysis_profile_from_dataset(dataset)
-    except (KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError):
+        logger.warning("Dataset analysis metadata is incomplete", exc_info=True)
         return unavailable_dataset_analysis_readiness(
             code="analysis_profile_incomplete",
             message="Analysis matching is unavailable until the dataset target metadata is reconciled.",
-            detail=str(exc),
+            detail="The dataset target metadata is incomplete or invalid.",
         )
     return build_analysis_profile_readiness(profile, templates)
 
@@ -411,11 +415,12 @@ def build_analysis_profile_readiness(
 
     try:
         profile = normalize_analysis_profile(analysis_profile)
-    except (KeyError, TypeError, ValueError) as exc:
+    except (KeyError, TypeError, ValueError):
+        logger.warning("Dataset analysis metadata is incomplete", exc_info=True)
         return unavailable_dataset_analysis_readiness(
             code="analysis_profile_incomplete",
             message="Analysis matching is unavailable until the dataset target metadata is reconciled.",
-            detail=str(exc),
+            detail="The dataset target metadata is incomplete or invalid.",
         )
     decisions: list[dict[str, Any]] = []
     counts = _empty_readiness_counts()
@@ -423,13 +428,14 @@ def build_analysis_profile_readiness(
     for template in sorted(templates, key=lambda item: str(item["name"])):
         try:
             decision = evaluate_template_compatibility(profile, template)
-        except (KeyError, TypeError, ValueError) as exc:
+        except (KeyError, TypeError, ValueError):
+            logger.warning("Analysis template contract is invalid", exc_info=True)
             counts["unavailable"] += 1
             diagnostics.append(
                 {
                     "code": "template_contract_invalid",
                     "message": f"Analysis {template.get('name') or template.get('slug') or 'unknown'} is unavailable.",
-                    "detail": str(exc),
+                    "detail": "The analysis template configuration is invalid.",
                 }
             )
             continue

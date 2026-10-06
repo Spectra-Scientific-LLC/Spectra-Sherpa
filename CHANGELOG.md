@@ -5,6 +5,13 @@ All notable changes to SpectraSherpa will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- Keep deployment and analysis-readiness exception details in server logs instead of API responses.
+- Require Mako 1.4.2 or newer to address Windows template URI traversal.
+
 ## [0.6.0] - 2026-10-05
 
 ### Security
