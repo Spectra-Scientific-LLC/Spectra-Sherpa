@@ -13,8 +13,19 @@ permissions:
   contents: read
 
 jobs:
+  references:
+    name: Standalone reference preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+      - run: python scripts/verify_public_references.py
+
   lint:
     name: Lint
+    needs: references
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -67,6 +78,7 @@ jobs:
 
   backend:
     name: Backend Tests (${{ matrix.os }} / ${{ matrix.install_profile }})
+    needs: references
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -123,6 +135,7 @@ jobs:
 
   scp-compat:
     name: SCP Compat (3.11 / ${{ matrix.scp_version }})
+    needs: references
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -157,7 +170,13 @@ jobs:
       - name: Run SCP compatibility suite
         run: |
           poetry run pytest \
-            tests/test_scp_compat.py \
+            tests/test_scp_contracts.py \
+            tests/test_scp_node_contracts.py \
+            tests/test_c2_scp_unmixing_contracts.py \
+            tests/test_nddataset_containment.py \
+            tests/test_algo_audit_fixes.py \
+            tests/test_artifact_emission.py \
+            tests/test_node_result_contract.py \
             tests/test_modeling_nodes.py \
             tests/test_data_loading_golden.py \
             tests/test_notebook_export.py \
@@ -167,6 +186,7 @@ jobs:
 
   frontend:
     name: Frontend Build
+    needs: references
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -261,6 +281,7 @@ jobs:
 
   security:
     name: Security Scan
+    needs: references
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -288,6 +309,7 @@ jobs:
 
   docs:
     name: Docs Build & Hygiene
+    needs: references
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6

@@ -12,10 +12,6 @@ import asyncio
 import numpy as np
 import pytest
 
-from tests._optional_scp import HAS_SCP
-
-pytestmark = pytest.mark.skipif(not HAS_SCP, reason="requires SpectroChemPy")
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -176,7 +172,7 @@ class TestCanonicalPLSStateEmission:
         node = FittedPLSV2Node(node_id="pls_1", parameters={"n_components": 3, "scale": True})
         result = _run(node.execute(input_data=sherpa_dataset, y=sherpa_dataset.target))
         envelope = result.outputs["fitted_state"]
-        assert envelope["schema_version"] == "spectrasherpa.fitted-pls-state/6"
+        assert envelope["schema_version"] == "spectrasherpa.fitted-pls-state/9"
         assert envelope["state"]["features"] == 50
         assert len(envelope["state"]["coefficients"]) == 50
 

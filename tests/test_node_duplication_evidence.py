@@ -11,7 +11,7 @@ from pathlib import Path
 from spectra_sherpa.app.services.dag.nodes.transfer import DSNode, PDSNode, SWSNode
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
-_TOOL = _REPOSITORY_ROOT / "packages/spectra-sherpa/tools/detect_node_duplication.py"
+_TOOL = Path(__file__).resolve().parents[1] / "tools/detect_node_duplication.py"
 _EVIDENCE = _REPOSITORY_ROOT / "docs/evidence/canonical-node-near-duplicate-families.json"
 
 
@@ -24,7 +24,7 @@ def _load_tool():
     return module
 
 
-def test_checked_near_duplicate_evidence_is_current() -> None:
+def test_checked_near_duplicate_evidence_is_current(monorepo_root: Path) -> None:
     result = subprocess.run(
         [sys.executable, str(_TOOL), "--check-evidence", str(_EVIDENCE)],
         cwd=_REPOSITORY_ROOT,
@@ -35,7 +35,7 @@ def test_checked_near_duplicate_evidence_is_current() -> None:
     assert result.returncode == 0, result.stdout + result.stderr
 
 
-def test_every_reported_pair_has_one_canonical_identity_and_classification() -> None:
+def test_every_reported_pair_has_one_canonical_identity_and_classification(monorepo_root: Path) -> None:
     evidence = json.loads(_EVIDENCE.read_text(encoding="utf-8"))
     identities = [
         (

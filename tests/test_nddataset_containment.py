@@ -136,30 +136,37 @@ def test_retired_compatibility_and_product_authorities_do_not_exist() -> None:
     assert occurrences == []
 
 
+_RETIRED_PRODUCT_AUTHORITIES = (
+    "SCP_DATA_BOOTSTRAP",
+    "SCP_DATADIR",
+    "spectrochempy-examples",
+    "SCP dataset not found",
+    "_resolve_scp_path",
+)
+
+
+def _assert_no_retired_product_authorities(product_files: list[Path], root: Path) -> None:
+    occurrences = [
+        (path.relative_to(root).as_posix(), symbol)
+        for path in product_files
+        for symbol in _RETIRED_PRODUCT_AUTHORITIES
+        if symbol in path.read_text(encoding="utf-8")
+    ]
+    assert occurrences == []
+
+
 def test_retired_product_authorities_are_absent_from_delivery_sources() -> None:
     package_root = Path(__file__).resolve().parent.parent
-    repository_root = package_root.parents[1]
-    roots = (
-        package_root / ".env.example",
-        repository_root / "packages" / "spectra-ops" / "docker" / "Dockerfile.backend",
-    )
-    product_files = [*roots]
+    product_files = [package_root / ".env.example"]
     product_files.extend(
         path
         for path in (package_root / "frontend" / "src").rglob("*")
         if path.is_file() and path.suffix in {".ts", ".vue"} and "test" not in path.parts
     )
-    retired = (
-        "SCP_DATA_BOOTSTRAP",
-        "SCP_DATADIR",
-        "spectrochempy-examples",
-        "SCP dataset not found",
-        "_resolve_scp_path",
+    _assert_no_retired_product_authorities(product_files, package_root)
+
+
+def test_retired_product_authorities_are_absent_from_hosted_backend(monorepo_root: Path) -> None:
+    _assert_no_retired_product_authorities(
+        [monorepo_root / "packages/spectra-ops/docker/Dockerfile.backend"], monorepo_root
     )
-    occurrences = [
-        (path.relative_to(repository_root).as_posix(), symbol)
-        for path in product_files
-        for symbol in retired
-        if symbol in path.read_text(encoding="utf-8")
-    ]
-    assert occurrences == []

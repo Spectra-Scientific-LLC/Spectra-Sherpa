@@ -15,7 +15,7 @@ def _load_module():
     return module
 
 
-def test_manifest_assigns_real_scientific_evidence_to_pca() -> None:
+def test_manifest_assigns_real_scientific_evidence_to_pca(monorepo_root: Path) -> None:
     module = _load_module()
     row = module._manifest_row("model.pca")
     assert row is not None

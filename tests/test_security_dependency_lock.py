@@ -72,7 +72,7 @@ def test_pypdf_install_paths_exclude_versions_before_the_reviewed_security_floor
         assert Version("7.0.0") not in constraint
 
 
-def test_public_security_workflow_blocks_all_extras_and_dev_tool_findings() -> None:
+def test_monorepo_security_workflow_blocks_all_extras_and_dev_tool_findings(monorepo_root: Path) -> None:
     workflow = SECURITY_WORKFLOW.read_text(encoding="utf-8")
 
     assert "--all-extras-mode block" in workflow
@@ -103,9 +103,12 @@ def test_sqlalchemy_install_paths_exclude_malformed_210_metadata() -> None:
     declared = SpecifierSet(project["tool"]["poetry"]["dependencies"]["sqlalchemy"])
     requirements = (PACKAGE_ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
     runtime = next(Requirement(line).specifier for line in requirements if line.startswith("sqlalchemy"))
-    ci = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-    assert '"sqlalchemy>=2.0.31,<3,!=2.1.0"' in ci
     for constraint in (declared, runtime):
         assert Version("2.1.0") not in constraint
         assert _python_versions()["sqlalchemy"] in constraint
         assert Version("2.1.1") in constraint
+
+
+def test_monorepo_sqlalchemy_install_excludes_malformed_210_metadata(monorepo_root: Path) -> None:
+    ci = (monorepo_root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    assert '"sqlalchemy>=2.0.31,<3,!=2.1.0"' in ci

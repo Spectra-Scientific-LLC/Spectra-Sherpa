@@ -343,7 +343,6 @@ class TestChemometricTemplatePresentationWiring:
 
 
 class TestCanonicalPlsEmission:
-    @_skip_no_scp
     @pytest.mark.asyncio
     async def test_pls_emits_predictions_and_closed_fitted_state(self, make_node):
         ds = _make_spectral_dataset(n_samples=30, n_features=50, n_targets=1)
@@ -352,10 +351,9 @@ class TestCanonicalPlsEmission:
 
         predictions = np.asarray(result.outputs["default"], dtype=np.float64)
         assert predictions.shape == (ds.X.shape[0], 1)
-        assert result.outputs["fitted_state"]["serializer"] == "spectra.sherpa-simpls-regression-json/6"
-        assert result.diagnostics["fitted_state_serializer"] == "spectra.sherpa-simpls-regression-json/6"
+        assert result.outputs["fitted_state"]["serializer"] == "spectra.sherpa-simpls-regression-json/9"
+        assert result.diagnostics["fitted_state_serializer"] == "spectra.sherpa-simpls-regression-json/9"
 
-    @_skip_no_scp
     @pytest.mark.asyncio
     async def test_pls_emits_vip_scores_bound_to_the_fitted_state(self, make_node):
         ds = _make_spectral_dataset(n_samples=32, n_features=45, n_targets=1)
