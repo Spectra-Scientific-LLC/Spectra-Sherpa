@@ -73,6 +73,15 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Qualification belongs to this protected workflow revision. Preserve it
+      # before checkout so an older immutable product tag can be requalified.
+      - name: Preserve protected-main qualification helper
+        run: |
+          set -euo pipefail
+          cp scripts/qualify_release_artifacts.py "$RUNNER_TEMP/qualify_release_artifacts.py"
+          echo "Qualification workflow commit: $GITHUB_SHA"
+          sha256sum "$RUNNER_TEMP/qualify_release_artifacts.py"
+
       - name: Resolve and check out the exact tag ref
         id: release
         env:
@@ -130,12 +139,12 @@ jobs:
             --package-root . \
             --scan-root . \
             --artifacts release/dist
-          python scripts/qualify_release_artifacts.py create-manifest \
+          python "$RUNNER_TEMP/qualify_release_artifacts.py" create-manifest \
             --dist release/dist \
             --output release/artifact-manifest.json \
             --release-tag "${{ inputs.tag }}" \
             --source-commit "${{ steps.release.outputs.source_commit }}"
-          cp scripts/qualify_release_artifacts.py release/
+          cp "$RUNNER_TEMP/qualify_release_artifacts.py" release/
 
       - name: Upload the only artifact eligible for qualification and publication
         id: upload

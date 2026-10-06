@@ -208,3 +208,31 @@ def test_qualification_preserves_selected_artifact_path(line_ending: str, workfl
     )
     assert result.returncode == 0, result.stderr.decode()
     assert result.stdout == expected.encode()
+
+
+def test_protected_helper_survives_product_tag_checkout(tmp_path: Path, workflow_bash: str) -> None:
+    document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    steps = document["jobs"]["build"]["steps"]
+    capture = next(step for step in steps if step.get("name") == "Preserve protected-main qualification helper")
+    resolve = next(step for step in steps if step.get("name") == "Resolve and check out the exact tag ref")
+    assert steps.index(capture) < steps.index(resolve)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    helper = scripts / "qualify_release_artifacts.py"
+    helper.write_text("protected-main helper\n", encoding="utf-8")
+    temporary = tmp_path / "runner temp"
+    temporary.mkdir()
+    result = subprocess.run(
+        [workflow_bash, "-c", capture["run"]],
+        cwd=tmp_path,
+        env={**os.environ, "RUNNER_TEMP": temporary.as_posix(), "GITHUB_SHA": "a" * 40},
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    helper.write_text("older-tag helper\n", encoding="utf-8")
+    assert (temporary / helper.name).read_text() == "protected-main helper\n"
+    assert "a" * 40 in result.stdout
+    build = next(step["run"] for step in steps if step.get("name") == "Build one wheel and one source distribution")
+    assert 'python "$RUNNER_TEMP/qualify_release_artifacts.py" create-manifest' in build
+    assert 'cp "$RUNNER_TEMP/qualify_release_artifacts.py" release/' in build

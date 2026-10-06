@@ -19,6 +19,7 @@ import stat
 import tarfile
 import tempfile
 import zipfile
+from contextlib import asynccontextmanager
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as distribution_version
 from pathlib import Path, PurePosixPath
@@ -372,6 +373,23 @@ def select_artifact(*, dist: Path, manifest_path: Path, kind: str) -> Path:
     return (dist / str(matches[0]["filename"])).resolve()
 
 
+def _close_smoke_database_after_shutdown(app, engine) -> None:
+    """Release pooled SQLite handles on TestClient's loop before temp cleanup."""
+    lifespan = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def smoke_lifespan(application):
+        try:
+            async with lifespan(application) as state:
+                yield state
+        finally:
+            # Application tasks must finish before the test-owned database is
+            # disposed. Windows refuses to delete an open SQLite database.
+            await engine.dispose()
+
+    app.router.lifespan_context = smoke_lifespan
+
+
 def installed_smoke(expected_version: str) -> None:
     try:
         observed_version = distribution_version("spectra-sherpa")
@@ -396,9 +414,11 @@ def installed_smoke(expected_version: str) -> None:
 
         from starlette.testclient import TestClient
 
+        from spectra_sherpa.app.db.session import engine
         from spectra_sherpa.app.main import create_app
 
         app = create_app(include_server_routers=False, include_actor_compat_route=False)
+        _close_smoke_database_after_shutdown(app, engine)
         with TestClient(app, client=("127.0.0.1", 50000)) as client:
             health = client.get("/api/v1/health")
             version_response = client.get("/api/v1/version")

@@ -228,3 +228,64 @@ def test_frontend_archive_requires_the_exact_installable_package_path(tmp_path: 
             archive.addfile(info, io.BytesIO(payload))
     with pytest.raises(tool.QualificationError, match="outside the exact installable path"):
         tool.verify_frontend_archive(artifact=sdist, bundle=bundle)
+
+
+@pytest.mark.parametrize("failure", [None, "startup", "request", "shutdown"])
+def test_smoke_disposes_database_on_client_loop_after_shutdown(tmp_path: Path, failure: str | None) -> None:
+    import asyncio
+    from contextlib import asynccontextmanager
+
+    from fastapi import FastAPI
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from starlette.testclient import TestClient
+
+    tool = _module()
+    database = tmp_path / "smoke.db"
+    engine = create_async_engine(f"sqlite+aiosqlite:///{database}")
+    events = []
+
+    @asynccontextmanager
+    async def lifespan(app):
+        events.append(("startup", asyncio.get_running_loop()))
+        async with engine.connect() as connection:
+            await connection.execute(text("SELECT 1"))
+        if failure == "startup":
+            raise RuntimeError("startup failure")
+        try:
+            yield {"retained": "state"}
+        finally:
+            events.append(("shutdown", asyncio.get_running_loop()))
+            if failure == "shutdown":
+                raise RuntimeError("shutdown failure")
+
+    app = FastAPI(lifespan=lifespan)
+
+    @app.get("/")
+    async def check():
+        if failure == "request":
+            raise RuntimeError("request failure")
+        return {"ok": True}
+
+    class ObservedEngine:
+        async def dispose(self):
+            events.append(("dispose", asyncio.get_running_loop()))
+            await engine.dispose()
+
+    tool._close_smoke_database_after_shutdown(app, ObservedEngine())
+
+    def exercise():
+        with TestClient(app) as client:
+            assert client.app_state["retained"] == "state"
+            assert client.get("/").json() == {"ok": True}
+
+    if failure:
+        with pytest.raises(RuntimeError, match=f"{failure} failure"):
+            exercise()
+    else:
+        exercise()
+    assert [name for name, _ in events] == (
+        ["startup", "dispose"] if failure == "startup" else ["startup", "shutdown", "dispose"]
+    )
+    assert len({id(loop) for _, loop in events}) == 1
+    database.unlink()  # Windows fails here if the pooled SQLite handle survives.
