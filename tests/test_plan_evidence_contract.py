@@ -472,7 +472,9 @@ def test_current_gate_status_keeps_external_work_and_publication_locked() -> Non
     assert "Access-code registration" not in project_memory
     assert "Six-digit single-use email-passcode registration" in project_memory
     assert "eventual signed release artifact" not in release
-    assert "Signed/notarized desktop installers ship with 0.6.0 for Windows and macOS" in release
+    assert "Desktop installers for Windows, macOS and Ubuntu will be verified separately" in release
+    assert "their publication is not part of this source and PyPI release" in release
+    assert "Signed/notarized desktop installers ship with 0.6.0" not in release
 
 
 def test_avatar_distribution_contract_records_exact_nonpublishing_phase1_preflight() -> None:
