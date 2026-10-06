@@ -698,8 +698,9 @@ async def list_canonical_targets(
                 artifact_uid=None,
                 canonical_artifact_id=record.id,
             )
-        except (ValueError, PermissionError, OSError) as exc:
-            refusal = str(exc)
+        except (ValueError, PermissionError, OSError):
+            logger.warning("Canonical application binding is unavailable", exc_info=True)
+            refusal = "This application is unavailable or its saved model no longer matches."
         application_handle = None
         if refusal is None:
             release = await ensure_canonical_release(
@@ -1105,9 +1106,10 @@ async def get_watch_qc(
         binding = await _qc_binding(session, watch)
         artifact_digest = binding.canonical_read_grant.artifact_digest if binding.canonical_read_grant else None
         plan_digest = binding.canonical_plan_digest
-    except (ValueError, PermissionError, OSError) as exc:
+    except (ValueError, PermissionError, OSError):
+        logger.warning("Folder watch QC application binding is unavailable", exc_info=True)
         artifact_digest = plan_digest = None
-        error = str(exc)
+        error = "This application is unavailable or its saved model no longer matches."
     evaluated_at = datetime.now(timezone.utc).isoformat()
     snapshot = evaluate_qc(
         events,

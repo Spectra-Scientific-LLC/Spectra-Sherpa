@@ -81,7 +81,7 @@ def test_retained_public_profile_qualification_is_commit_and_lock_bound() -> Non
     report = json.loads(QUALIFICATION_REPORT.read_text(encoding="utf-8"))
 
     assert report["schema_version"] == "spectra-public-install-qualification/1"
-    assert report["source_revision"] == "0cf33a13effd1f259f6fbc1f18b368e15f1601e4"
+    assert report["source_revision"] == "b8821e6dd372ccb31315596a2bccb5cb5c7e5ae3"
     lock_bytes = (PACKAGE_ROOT / "poetry.lock").read_bytes()
     lock_hash = hashlib.sha256(lock_bytes).hexdigest()
     assert report["poetry_lock_sha256"] == lock_hash
