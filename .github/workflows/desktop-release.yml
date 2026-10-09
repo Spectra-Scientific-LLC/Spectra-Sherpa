@@ -42,7 +42,7 @@ jobs:
         with:
           ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.ref }}
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: '3.11.9'
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
@@ -71,7 +71,7 @@ jobs:
       - name: Prepare Ubuntu release identity
         run: python desktop/release_manifest.py prepare --target ubuntu-x86_64 --tag "$RELEASE_TAG" --commit "$BUILD_COMMIT" --directory desktop/release
       - name: Attest Ubuntu artifact
-        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
         with:
           subject-path: desktop/release/*
       - name: Retain Ubuntu artifact
@@ -123,7 +123,7 @@ jobs:
           echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
 
       - name: Set up Python 3.11.9
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11.9"
 
@@ -249,7 +249,7 @@ jobs:
 
       - name: Azure Login (Windows)
         if: runner.os == 'Windows'
-        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -434,7 +434,7 @@ jobs:
         run: python desktop/release_manifest.py prepare --target "$TARGET" --tag "$RELEASE_TAG" --commit "$BUILD_COMMIT" --directory desktop/release
 
       - name: Attest final artifact provenance
-        uses: actions/attest-build-provenance@ef244123eb79f2f7a7e75d99086184180e6d0018 # v1
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: desktop/release/*
 
@@ -458,11 +458,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.11.9"
       - name: Download artifacts
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           path: artifacts
           pattern: "*-artifact"
