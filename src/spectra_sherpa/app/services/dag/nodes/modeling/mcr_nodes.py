@@ -689,6 +689,10 @@ def _mcr_scientific_core(input_data: Any, *, parameters: dict[str, object]) -> d
             raise ValueError("MCR-ALS produced a degenerate pure-spectrum component")
         C_data = C_data * scale_factors.reshape(1, -1)
         St_data = St_data / scale_factors.reshape(-1, 1)
+    # SCP 0.12 exposes the last accepted alternating-iteration C, which can
+    # precede the final spectral update. Close the canonical fitted model with
+    # the same projection used on replay so training and saved application agree.
+    C_data = MCRExtract(C=C_data, St=St_data, n_components=n_components, concentration_solver=solver_c).transform(data)
     if not np.isfinite(C_data).all() or not np.isfinite(St_data).all():
         raise ValueError("MCR-ALS produced non-finite concentration or spectral components")
     reconstructed = C_data @ St_data

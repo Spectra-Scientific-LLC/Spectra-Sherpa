@@ -1055,7 +1055,9 @@ def _build_and_run(args: argparse.Namespace) -> int:
         wheel = wheels[0]
         wheel_digest = _digest_bytes(wheel.read_bytes())
 
-        venv.EnvBuilder(with_pip=True, clear=True).create(environment)
+        # Match `python -m venv` on POSIX: copied relocatable interpreters can
+        # lose their shared-library paths (notably uv-managed macOS Python).
+        venv.EnvBuilder(with_pip=True, clear=True, symlinks=os.name != "nt").create(environment)
         python = _venv_python(environment)
         _run(
             [str(python), "-m", "pip", "install", "--constraint", str(constraints_path), *roots],
