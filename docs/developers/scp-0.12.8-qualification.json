@@ -1,0 +1,206 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-12",
+  "scope": "Software compatibility and numerical regression qualification of SpectroChemPy 0.12.8; not analytical-method certification or numerical equivalence to every 0.8.1 fit.",
+  "retained_scikit_learn": "1.9.0",
+  "operations": [
+    "model.efa",
+    "model.mcr_als",
+    "model.simplisma"
+  ],
+  "implementation_version": "1.1.0",
+  "changes": [
+    "Use SpectroChemPy 0.12 solver_C, solver_St and tol_residual_change; convert public percent tolerance to fractional tolerance.",
+    "Disable implicit legacy constraints; NNLS follows explicit nonnegativity flags. Normalize C and St jointly after fitting.",
+    "Project training concentrations onto final spectra with the saved-model solver to preserve live/export/replay agreement.",
+    "Update exact runtime requirements and CI to 0.12.8; retain historical evidence and artifacts unchanged."
+  ],
+  "numerical_acceptance": {
+    "mixture": "Deterministic 24x24 exact rank-three nonnegative matrix with pure-sample and pure-variable anchors, seed 1208.",
+    "efa": "Forward/backward eigenvalues versus independently calculated uncentered SVD squared, rtol 1e-10 / atol 1e-12.",
+    "unmixing": "MCR constrained/unconstrained and SIMPLISMA relative reconstruction error <1e-6; repeated factors rtol 1e-10 / atol 1e-12; finite shape-correct outputs and input unchanged.",
+    "mcr": "Nonnegative factors when requested; residual equals X-C@St; existing strict live/generated/fitted replay tests retained."
+  },
+  "profiles": [
+    {
+      "profile_id": "R1",
+      "status": "passed",
+      "source_revision": "1ee8544b370cfcc3e4644523858efcf880b6904b",
+      "fixture_revision": "4f540ab00f9db9fe58a4fc261a8c8acf47163e67",
+      "platform": "macOS-26.5.1-arm64-arm-64bit",
+      "python_version": "3.11.14 (main, Dec  9 2025, 19:11:45) [Clang 21.1.4 ]",
+      "wheel_sha256": "cd8010ffa59cc77e8fce8bafd1a1bae4cdf160af10d941c031acecb2b8fd6dd1",
+      "poetry_lock_sha256": "c02c6741216d634099d209eafac1a336ba6b57a9d639ca8411a2e83c4c6ca327",
+      "dependency_projection_sha256": "2222ca16650b994957f5d95e1e1f79ab22af9d7bd13389d11da36583168ad735",
+      "harness_sha256": "b1e106e9913f29c14ce9ee9c8c0c2226fc9759e1f3b84ae9903b6587055318f6",
+      "forbidden_distributions_installed": [],
+      "forbidden_modules_imported": [],
+      "raw_report_sha256": "8a6a30c9b37c0ccda910742f203035fe7e0ab563cca2cd4e2df2e7844170d77a",
+      "stages": [
+        {
+          "name": "sdk_import",
+          "status": "passed"
+        },
+        {
+          "name": "portable_surfaces",
+          "status": "passed"
+        },
+        {
+          "base_ready_count": 98,
+          "contract_count": 101,
+          "name": "canonical_registry",
+          "node_count": 101,
+          "registry_digest": "9b30b532b84350600a4b5466fd5b9267921e66160b2c2fb8eb911e134d15a932",
+          "status": "passed"
+        },
+        {
+          "name": "optional_runtime_lazy_before_execution",
+          "status": "passed"
+        },
+        {
+          "name": "native_ingestion",
+          "status": "passed"
+        },
+        {
+          "name": "native_group",
+          "status": "passed"
+        },
+        {
+          "fit_apply_max_abs_difference": 0.0,
+          "name": "canonical_prediction",
+          "status": "passed"
+        },
+        {
+          "name": "saved_workflow_execution",
+          "status": "passed"
+        },
+        {
+          "name": "profile_isolation",
+          "network_attempts": [],
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "profile_id": "R2",
+      "status": "passed",
+      "source_revision": "1ee8544b370cfcc3e4644523858efcf880b6904b",
+      "fixture_revision": "4f540ab00f9db9fe58a4fc261a8c8acf47163e67",
+      "platform": "macOS-26.5.1-arm64-arm-64bit",
+      "python_version": "3.11.14 (main, Dec  9 2025, 19:11:45) [Clang 21.1.4 ]",
+      "wheel_sha256": "cd8010ffa59cc77e8fce8bafd1a1bae4cdf160af10d941c031acecb2b8fd6dd1",
+      "poetry_lock_sha256": "c02c6741216d634099d209eafac1a336ba6b57a9d639ca8411a2e83c4c6ca327",
+      "dependency_projection_sha256": "8aa428aa2704fa6f9aebde440a506dd5e113af4b18b5d6c41d2f34012a885ab0",
+      "harness_sha256": "b1e106e9913f29c14ce9ee9c8c0c2226fc9759e1f3b84ae9903b6587055318f6",
+      "forbidden_distributions_installed": [],
+      "forbidden_modules_imported": [],
+      "raw_report_sha256": "445be2116c893d99754fd2dfd2c97ee3bc3d06c983dd0b0ed74d3d8d9ede5cbe",
+      "stages": [
+        {
+          "name": "sdk_import",
+          "status": "passed"
+        },
+        {
+          "name": "portable_surfaces",
+          "status": "passed"
+        },
+        {
+          "base_ready_count": 98,
+          "contract_count": 101,
+          "name": "canonical_registry",
+          "node_count": 101,
+          "registry_digest": "9b30b532b84350600a4b5466fd5b9267921e66160b2c2fb8eb911e134d15a932",
+          "status": "passed"
+        },
+        {
+          "name": "optional_runtime_lazy_before_execution",
+          "status": "passed"
+        },
+        {
+          "name": "native_ingestion",
+          "status": "passed"
+        },
+        {
+          "name": "native_group",
+          "status": "passed"
+        },
+        {
+          "fit_apply_max_abs_difference": 0.0,
+          "name": "canonical_prediction",
+          "status": "passed"
+        },
+        {
+          "name": "saved_workflow_execution",
+          "status": "passed"
+        },
+        {
+          "name": "scp_execution",
+          "operations": {
+            "model.efa": {
+              "result_digest": "c26af89cc5f4dd003b2a59a1d31367cefd705187f306de4b8969816506054c9c",
+              "shape": [
+                12,
+                2
+              ]
+            },
+            "model.mcr_als": {
+              "result_digest": "bd116f1f809976e37ef853f72347b73adf7e0135d703f49583144b6783ecc1a0",
+              "shape": [
+                12,
+                2
+              ]
+            },
+            "model.simplisma": {
+              "result_digest": "a088ad67d1ff2bd05be2fc7d1a228818b2971f01b80e4fd30003751b9e6ed62a",
+              "shape": [
+                12,
+                2
+              ]
+            }
+          },
+          "status": "passed"
+        },
+        {
+          "name": "profile_isolation",
+          "network_attempts": [],
+          "status": "passed"
+        }
+      ]
+    }
+  ],
+  "profile_comparison": {
+    "status": "passed",
+    "base_ready_count": 98,
+    "node_count": 101,
+    "optional_operations": [
+      "model.efa",
+      "model.mcr_als",
+      "model.simplisma"
+    ]
+  },
+  "limitations": [
+    "Local qualification platform is macOS arm64 / Python 3.11.14; CI separately exercises its declared matrix.",
+    "Fresh runtime profiles use native conformance fixtures from the recorded clean upstream revision; fixture payloads are not redistributed here.",
+    "MCR factors can change with the new optimizer. New scientific implementation identity prevents treating this upgrade as identical historical execution.",
+    "Synthetic reconstruction tests do not establish performance on every real-world mixture."
+  ],
+  "checks": {
+    "scp_compatibility_suite": {
+      "passed": 239,
+      "skipped": 1,
+      "deselected": 4,
+      "revision": "abbdec9f"
+    },
+    "final_mcr_replay_and_numerical": {
+      "passed": 10,
+      "revision": "1ee8544b"
+    },
+    "ruff_ci_scope": "passed",
+    "black_ci_scope": "passed (1103 files including harness)",
+    "poetry_check_lock": "passed",
+    "installed_dependency_consistency": "passed (108 packages)",
+    "actionlint": "passed",
+    "standalone_reference_preflight": "passed",
+    "python_lock_audit": "zero findings across 154 all-extras/dev dependencies; lock unchanged by qualification"
+  }
+}
