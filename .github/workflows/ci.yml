@@ -140,7 +140,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        scp_version: ["0.8.1"]
+        scp_version: ["0.12.8"]
     steps:
       - uses: actions/checkout@v6
 
@@ -171,6 +171,7 @@ jobs:
         run: |
           poetry run pytest \
             tests/test_scp_contracts.py \
+            tests/test_scp_0128_qualification.py \
             tests/test_scp_node_contracts.py \
             tests/test_c2_scp_unmixing_contracts.py \
             tests/test_nddataset_containment.py \

@@ -31,12 +31,14 @@ def test_python_lock_retains_reviewed_security_floors_and_scp_authority() -> Non
         "mistune": "3.3.0",
         "pillow": "12.3.0",
         "pypdf": "6.19.0",
-        "setuptools": "83.0.0",
         "soupsieve": "2.8.4",
     }
     for package, floor in floors.items():
         assert versions[package] >= Version(floor), f"{package} regressed below its reviewed security floor"
-    assert versions["spectrochempy"] == Version("0.8.1")
+    # SCP 0.12.8 no longer requires setuptools. Enforce its floor if reintroduced.
+    if "setuptools" in versions:
+        assert versions["setuptools"] >= Version("83.0.0")
+    assert versions["spectrochempy"] == Version("0.12.8")
 
 
 def test_frontend_lock_retains_current_yaml_and_expansion_floors() -> None:

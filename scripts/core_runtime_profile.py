@@ -886,6 +886,7 @@ def _probe(
         "profile_id": profile_id,
         "status": status,
         "source_revision": os.environ.get("SPECTRA_PROFILE_SOURCE_REVISION"),
+        "fixture_revision": os.environ.get("SPECTRA_PROFILE_FIXTURE_REVISION"),
         "platform": platform.platform(),
         "python_version": sys.version,
         "wheel_sha256": os.environ.get("SPECTRA_PROFILE_WHEEL_SHA256"),
@@ -1018,8 +1019,19 @@ def _compare_command(args: argparse.Namespace) -> int:
 
 def _build_and_run(args: argparse.Namespace) -> int:
     package_root = Path(__file__).resolve().parents[1]
-    repository_root = package_root.parents[1]
+    # Resolve both the monorepo subtree and the standalone public checkout.
+    repository_root = Path(
+        subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=package_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    )
     source_revision = _source_revision(repository_root)
+    fixture_root = args.fixture_repository.resolve() if args.fixture_repository else repository_root
+    fixture_revision = _source_revision(fixture_root)
     lock_path = package_root / "poetry.lock"
     child_environment = _clean_child_environment()
     with tempfile.TemporaryDirectory(prefix="spectra-r1-build-") as raw_build:
@@ -1063,7 +1075,8 @@ def _build_and_run(args: argparse.Namespace) -> int:
                 "SPECTRA_PROFILE_LOCK_SHA256": lock_digest,
                 "SPECTRA_PROFILE_PROJECTION_SHA256": projection_digest,
                 "SPECTRA_PROFILE_HARNESS_SHA256": _digest_bytes(Path(__file__).resolve().read_bytes()),
-                "SPECTRA_PROFILE_REPOSITORY_ROOT": str(repository_root),
+                "SPECTRA_PROFILE_REPOSITORY_ROOT": str(fixture_root),
+                "SPECTRA_PROFILE_FIXTURE_REVISION": fixture_revision,
                 "SPECTRA_PROFILE_HOME": str(build_root / "profile-home"),
                 "HOME": str(build_root / "profile-home"),
                 "XDG_CONFIG_HOME": str(build_root / "profile-home" / ".config"),
@@ -1091,6 +1104,9 @@ def _parser() -> argparse.ArgumentParser:
     run_parser = subparsers.add_parser("run", help="Build the wheel and execute the fresh R1 profile")
     run_parser.add_argument("--python", default=sys.executable)
     run_parser.add_argument("--environment", type=Path)
+    run_parser.add_argument(
+        "--fixture-repository", type=Path, help="Clean upstream checkout containing native conformance fixtures"
+    )
     run_parser.add_argument("--output", type=Path, required=True)
     run_parser.add_argument("--expect", choices=("passed", "blocked", "failed"), default="passed")
     run_parser.add_argument("--profile", choices=("R1", "R2"), default="R1")

@@ -642,14 +642,18 @@ def _mcr_scientific_core(input_data: Any, *, parameters: dict[str, object]) -> d
     C0_data = np.abs(U[:, :n_components] * singular_values[:n_components])
     solver_c = "nnls" if params["non_negative_C"] else "lstsq"
     solver_s = "nnls" if params["non_negative_St"] else "lstsq"
-    norm_spec = None if params["normSpec"] == "none" else str(params["normSpec"])
     scp = spectrochempy_adapter.require_spectrochempy("model.mcr_als")
     mcr = scp.MCRALS(
         max_iter=int(params["max_iter"]),
-        tol=tol,
-        solverConc=solver_c,
-        solverSpec=solver_s,
-        normSpec=norm_spec,
+        # The public Sherpa tolerance retains SCP 0.8's percentage units.
+        tol_residual_change=tol / 100.0,
+        solver_C=solver_c,
+        solver_St=solver_s,
+        # NNLS supplies exactly the requested nonnegativity constraints.
+        # SCP 0.12's legacy normalization changes reconstruction on exact-rank
+        # mixtures. Normalize once below, jointly rescaling C and St so their
+        # product is preserved, without adding hidden post-solve constraints.
+        constraints=[],
     )
     mcr.fit(
         spectrochempy_adapter.to_spectrochempy_dataset(
@@ -1257,7 +1261,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SPECTROCHEMPY,
     lifecycle_kind=LifecycleKind.FITTED_MODEL,
     implementation_id="spectrasherpa.model.mcr_als",
-    implementation_version="1.0.0",
+    implementation_version="1.1.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="preserves_samples",
@@ -1268,7 +1272,7 @@ bind_stable_execution_contract(
     license_id="BSD-3-Clause",
     help_reference="docs/nodes/exploratory.md",
     implementation_distributions=("numpy", "scipy", "spectrochempy"),
-    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("spectrochempy", "0.8.1")),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("spectrochempy", "0.12.8")),
     citations=(
         "Tauler, Multivariate curve resolution applied to second order data, Chemometrics and Intelligent "
         "Laboratory Systems 30 (1995) 133-146",

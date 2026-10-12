@@ -324,7 +324,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SPECTROCHEMPY,
     lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
     implementation_id="spectrasherpa.model.efa",
-    implementation_version="1.0.0",
+    implementation_version="1.1.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="preserves_samples",
@@ -341,7 +341,7 @@ bind_stable_execution_contract(
         meta_helpers,
     ),
     implementation_distributions=("numpy", "scipy", "spectrochempy"),
-    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("spectrochempy", "0.8.1")),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("spectrochempy", "0.12.8")),
     citations=(
         "Maeder, Evolving factor analysis for the resolution of overlapping chromatographic peaks, "
         "Analytical Chemistry 59 (1987) 527-530",

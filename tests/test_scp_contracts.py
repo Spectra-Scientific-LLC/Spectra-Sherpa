@@ -195,7 +195,7 @@ print(json.dumps({"attempts": attempts, "version": module.__version__, "thread_t
     assert completed.returncode == 0, completed.stderr or completed.stdout
     report = json.loads(completed.stdout.strip().splitlines()[-1])
     assert report["attempts"] == []
-    assert report["version"] == "0.8.1"
+    assert report["version"] == "0.12.8"
     forbidden_targets = {
         "spectrochempy.application.check_update.check_update",
         "spectrochempy.application.testdata.download_full_testdata_directory",
