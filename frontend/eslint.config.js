@@ -1,12 +1,39 @@
 import js from "@eslint/js";
 import pluginVue from "eslint-plugin-vue";
-import vueTsConfig from "@vue/eslint-config-typescript";
+import tseslint from "typescript-eslint";
+import vueParser from "vue-eslint-parser";
 import skipFormatting from "@vue/eslint-config-prettier/skip-formatting";
 
 export default [
   js.configs.recommended,
   ...pluginVue.configs["flat/recommended"],
-  ...vueTsConfig(),
+  // Use the underlying parsers directly: the Vue wrapper scans the source tree
+  // through fast-glob/micromatch/braces even for this non-type-aware config.
+  ...tseslint.configs.recommended.map((config) => ({
+    ...config,
+    files: ["**/*.{ts,tsx,mts,cts,vue}"],
+  })),
+  ...pluginVue.configs["flat/base"],
+  {
+    files: ["**/*.vue"],
+    languageOptions: {
+      parser: vueParser,
+      parserOptions: {
+        parser: {
+          js: "espree",
+          jsx: "espree",
+          ts: tseslint.parser,
+          tsx: tseslint.parser,
+        },
+        ecmaVersion: 2024,
+        ecmaFeatures: { jsx: false },
+        extraFileExtensions: [".vue"],
+      },
+    },
+    rules: {
+      "vue/block-lang": ["error", { script: { lang: ["ts"], allowNoLang: false } }],
+    },
+  },
   skipFormatting,
   {
     files: ["src/**/*.{ts,vue}"],
