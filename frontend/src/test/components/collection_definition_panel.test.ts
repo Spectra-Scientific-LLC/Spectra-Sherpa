@@ -85,6 +85,19 @@ describe("CollectionDefinitionPanel", () => {
     mocks.delete.mockReset();
   });
 
+  it("loads source collection metadata inside acquisition settings without a second dropdown", async () => {
+    mocks.get.mockResolvedValue({ data: receipt("attached") });
+    const wrapper = mount(CollectionDefinitionPanel, {
+      props: { experimentId: 12, refreshKey: "source", embedded: true },
+    });
+    await flushPromises();
+    expect(wrapper.find("details").exists()).toBe(false);
+    expect(wrapper.get("[aria-label='Source collection metadata']").text()).toContain(
+      "Source collection",
+    );
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+  });
+
   it("loads only on expansion and invalidates a closed panel when its source changes", async () => {
     mocks.get.mockResolvedValue({ data: receipt("attached") });
     const wrapper = mount(CollectionDefinitionPanel, {
@@ -139,7 +152,7 @@ describe("CollectionDefinitionPanel", () => {
       props: {
         experimentId: 12,
         refreshKey: "governed-attached",
-        allowDefinitionImport: false,
+        allowDefinitionImport: true,
         governedSource: true,
       },
     });
@@ -151,6 +164,17 @@ describe("CollectionDefinitionPanel", () => {
     expect(button(wrapper, "Replace JSON")).toBeUndefined();
     expect(button(wrapper, "Remove")).toBeUndefined();
     expect(wrapper.text()).toContain("Attached and current");
+  });
+  it("hides Replace and Remove when the receipt identifies the reference by digest", async () => {
+    mocks.get.mockResolvedValue({ data: { ...receipt("attached"), reference_governed: true } });
+    const wrapper = mount(CollectionDefinitionPanel, {
+      props: { experimentId: 12, refreshKey: "reference", embedded: true },
+    });
+    await flushPromises();
+    expect(wrapper.text()).toContain("Source collection");
+    expect(button(wrapper, "Replace JSON")).toBeUndefined();
+    expect(button(wrapper, "Remove")).toBeUndefined();
+    expect(wrapper.find('input[type="file"]').exists()).toBe(false);
   });
 
   it("prioritizes scientific metadata and keeps explained identities on hover", async () => {

@@ -2,11 +2,13 @@
 import { computed, ref } from "vue";
 import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
-import type { DatasetAnalysisReadiness, SherpaDatasetDict } from "@/types";
+import ReferenceQualityCard from "@/components/ReferenceQualityCard.vue";
+import type { DatasetAnalysisReadiness, ReferenceValueEvidence, SherpaDatasetDict } from "@/types";
 
 const props = defineProps<{
   readiness: DatasetAnalysisReadiness;
   binding?: SherpaDatasetDict["analysis_binding"];
+  referenceEvidence?: ReferenceValueEvidence;
   unbinding?: boolean;
   targetOptions?: Array<{
     label: string;
@@ -31,6 +33,9 @@ const emit = defineEmits<{
 const expandedGroup = ref<string | null>(null);
 const groupsHelpVisible = ref(false);
 
+const needsResponseSelection = computed(() => !props.selectedTarget
+  && props.targetOptions?.some((option) => option.value && option.type && !option.disabled));
+
 const groups = computed(() => [
   {
     key: "compatible" as const,
@@ -40,7 +45,7 @@ const groups = computed(() => [
   },
   {
     key: "needs_target" as const,
-    label: "Needs target / labels",
+    label: needsResponseSelection.value ? "Choose response / labels" : "Needs target / labels",
     value: props.readiness.counts.needs_target,
     title: detailsFor("needs_target"),
   },
@@ -179,6 +184,10 @@ const expandedDetails = computed(() => {
       {{ readiness.diagnostics?.[0]?.message }}
     </p>
 
+    <p v-if="needsResponseSelection" class="analysis-readiness__diagnostic" role="status">
+      Reference values are available. Select a response or class labels to enable supervised analyses.
+    </p>
+
     <dl v-if="readiness.profile" class="analysis-readiness__profile">
       <div
         title="The admitted scientific role and dimensional modality used for matching analyses."
@@ -260,6 +269,8 @@ const expandedDetails = computed(() => {
         </p>
       </div>
     </dl>
+
+    <ReferenceQualityCard v-if="referenceEvidence" :evidence="referenceEvidence" />
 
     <p
       v-if="

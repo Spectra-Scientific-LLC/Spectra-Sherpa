@@ -51,6 +51,7 @@ import { useProjectStore } from "@/stores/project";
 import { setActionContext, useContextualActions } from "@/composables/useContextualActions";
 import { useTopbarMenu } from "@/composables/useTopbarMenu";
 import { usePrimaryNavigation } from "@/composables/usePrimaryNavigation";
+import { pendingConfirmation, settleConfirmation } from "@/composables/useConfirmAction";
 
 const makeRouter = () =>
   createRouter({
@@ -73,6 +74,7 @@ describe("bootServerModules", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     __resetServerModulesForTests();
+    vi.spyOn(useProjectStore(), "ensureProjectForBrowserTab").mockResolvedValue(null);
     const stylesheet = document.createElement("link");
     stylesheet.setAttribute("data-server-styles", "");
     document.head.appendChild(stylesheet);
@@ -88,6 +90,46 @@ describe("bootServerModules", () => {
     mockLoadConfig.mockResolvedValue(true);
     useAuthStore().user = { id: 1, username: "scientist", capabilities: { admin: false } };
   }
+
+  it.each(["project_id", "project"])("restores the linked %s before extension registration", async (key) => {
+    extensionConfig();
+    const router = makeRouter();
+    router.options.history.replace(`/mock?${key}=2`);
+    const project = useProjectStore();
+    vi.spyOn(project, "fetchProject").mockImplementation(async (id) => {
+      project.currentProjectId = id;
+      return { id, name: "Linked project" } as any;
+    });
+    const register = vi.fn();
+    await bootServerModules(router, { importModule: async () => ({ contextualActionsVersion: 1, register }) });
+    expect(project.fetchProject).toHaveBeenCalledWith(2);
+    expect(register.mock.calls[0][0].extensions.projectId).toBe(2);
+    expect(project.ensureProjectForBrowserTab).not.toHaveBeenCalled();
+  });
+
+  it("restores the last project before registering an extension without a project link", async () => {
+    extensionConfig();
+    const project = useProjectStore();
+    vi.mocked(project.ensureProjectForBrowserTab).mockImplementation(async () => {
+      project.currentProjectId = 3;
+      return { id: 3, name: "Last project" } as any;
+    });
+    const register = vi.fn();
+    await bootServerModules(makeRouter(), { importModule: async () => ({ contextualActionsVersion: 1, register }) });
+    expect(register.mock.calls[0][0].extensions.projectId).toBe(3);
+  });
+
+  it.each(["0", "bad", "2"])("refuses an invalid or inaccessible project link: %s", async (id) => {
+    extensionConfig();
+    const router = makeRouter();
+    router.options.history.replace(`/mock?project_id=${id}`);
+    vi.spyOn(useProjectStore(), "fetchProject").mockResolvedValue(null);
+    const importModule = vi.fn();
+    await bootServerModules(router, { importModule });
+    expect(importModule).not.toHaveBeenCalled();
+    expect(serverModuleLoadFailed.value?.module).toBe("project");
+    expect(useProjectStore().ensureProjectForBrowserTab).not.toHaveBeenCalled();
+  });
 
   it("never requests optional modules in local OSS", async () => {
     extensionConfig();
@@ -191,6 +233,44 @@ describe("bootServerModules", () => {
     await boot;
     await flushAsync();
     expect(register).not.toHaveBeenCalled();
+  });
+
+  it("lets a module confirm through the shell dialog, but never after its registration ended", async () => {
+    extensionConfig();
+    const register = vi.fn();
+    await bootServerModules(makeRouter(), { importModule: async () => ({ contextualActionsVersion: 1, register }) });
+    await flushAsync();
+    const ctx = register.mock.calls[0][0];
+    const options = { title: "Hide campaigns", message: "Hidden campaigns keep running.", acceptLabel: "Hide from list" };
+
+    const accepted = ctx.confirmAction(options);
+    expect(pendingConfirmation.value?.options).toEqual(options);
+    settleConfirmation(true);
+    await expect(accepted).resolves.toBe(true);
+
+    // Ending the registration closes its open dialog as declined.
+    const afterLogout = ctx.confirmAction(options);
+    expect(pendingConfirmation.value?.options).toEqual(options);
+    useAuthStore().user = null;
+    await flushAsync();
+    expect(pendingConfirmation.value).toBeNull();
+    await expect(afterLogout).resolves.toBe(false);
+    await expect(ctx.confirmAction(options)).resolves.toBe(false);
+    expect(pendingConfirmation.value).toBeNull();
+  });
+
+  it("closes a module's dialog when the calling view's signal aborts", async () => {
+    extensionConfig();
+    const register = vi.fn();
+    await bootServerModules(makeRouter(), { importModule: async () => ({ contextualActionsVersion: 1, register }) });
+    await flushAsync();
+    const ctx = register.mock.calls[0][0];
+    const view = new AbortController();
+    const answer = ctx.confirmAction({ title: "Hide", message: "Hide it?", acceptLabel: "Hide" }, view.signal);
+    expect(pendingConfirmation.value).not.toBeNull();
+    view.abort();
+    expect(pendingConfirmation.value).toBeNull();
+    await expect(answer).resolves.toBe(false);
   });
 
   it("rolls back partially registered failed modules", async () => {

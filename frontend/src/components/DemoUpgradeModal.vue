@@ -9,7 +9,7 @@
   >
     <div class="upgrade-content">
       <div class="upgrade-icon">
-        <i class="pi pi-lock" style="font-size: 2rem; color: #f59e0b"></i>
+        <i class="pi pi-lock" aria-hidden="true"></i>
       </div>
       <p class="upgrade-message">{{ upgradeModalContext?.message }}</p>
 
@@ -36,17 +36,18 @@
         href="https://docs.spectrascientific.ai"
         target="_blank"
         rel="noopener"
-        style="text-decoration: none"
+        class="upgrade-link upgrade-link--outlined"
       >
-        <Button label="View Docs" icon="pi pi-book" class="p-button-outlined" />
+        <i class="pi pi-book" aria-hidden="true"></i> View Docs
       </a>
       <a
-        :href="upgradeModalContext?.upgradeUrl || '#'"
+        v-if="upgradeModalContext?.upgradeUrl"
+        :href="upgradeModalContext.upgradeUrl"
         target="_blank"
         rel="noopener"
-        style="text-decoration: none"
+        class="upgrade-link"
       >
-        <Button label="View Plans" icon="pi pi-external-link" />
+        <i class="pi pi-external-link" aria-hidden="true"></i> View Plans
       </a>
     </template>
   </Dialog>
@@ -81,9 +82,15 @@ function formatCapability(cap: string): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #fef3c7;
+  background: var(--surface-100);
   border-radius: 50%;
 }
+.upgrade-icon i { font-size: 2rem; color: var(--text-color); }
+.upgrade-link { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem;
+  border: 1px solid var(--primary-color); border-radius: var(--border-radius);
+  background: var(--primary-color); color: var(--primary-color-text); text-decoration: none; font-weight: 600; }
+.upgrade-link--outlined { background: transparent; color: var(--primary-color); }
+.upgrade-link:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 3px; }
 
 .upgrade-message {
   margin: 0;

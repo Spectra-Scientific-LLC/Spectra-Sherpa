@@ -70,8 +70,8 @@
 
           <div class="toggle-row" v-if="showSyncOption">
             <div class="toggle-info">
-              <strong>SpectraSherpa Cloud Sync</strong>
-              <p>Allow syncing workflow data with the SpectraSherpa cloud service.</p>
+              <strong>Hosted workflow sync</strong>
+              <p>Allow syncing workflow data with your hosted SpectraSherpa service.</p>
             </div>
             <InputSwitch v-model="privacyForm.allow_spectrasherpa_sync" @change="savePrivacy" />
           </div>
@@ -436,7 +436,7 @@ onMounted(async () => {
 }
 
 .mode-info {
-  text-align: center;
+  text-align: left;
   margin-bottom: 1.5rem;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reportRows } from "@/utils/reportValues";
+import { reportRows, reportGroups } from "@/utils/reportValues";
 import { generateProvenanceReport, type ReportData } from "@/utils/reportGenerator";
 import { generateMarkdownReport } from "@/utils/reportMarkdownGenerator";
 
@@ -12,6 +12,48 @@ const metrics = {
   _model_artifact: { arrays: { secret_weights: [1, 2] } },
   canonical_artifact_manifest: { storage_path: "/private/secret" },
 };
+
+describe("scientific metric report context", () => {
+  it("projects indexed producer errors and target statistics onto each response unit", () => {
+    const payload = { metadata: { target_units: ["%", "mg/L"], target_names: ["Moisture", "Protein"], role: "held_out_test" },
+      rmse_per_target: [0.2, 3.1], mae_per_target: [0.1, 2.4],
+      statistics: { targets: [{ target: "Moisture", metrics: { rmse: 0.2, bias: 0 } },
+        { target: "Protein", metrics: { rmse: 3.1, sep: 2.8 } }] } };
+    const rows = reportGroups({ evaluator: payload })[0][1];
+    expect(rows).toContainEqual(["rmse_per_target[1]", "0.2 (%) · Protocol: Held-out test"]);
+    expect(rows).toContainEqual(["rmse_per_target[2]", "3.1 (mg/L) · Protocol: Held-out test"]);
+    expect(rows).toContainEqual(["mae_per_target[2]", "2.4 (mg/L) · Protocol: Held-out test"]);
+    expect(rows).toContainEqual(["statistics / targets[1] / metrics / rmse", "0.2 (%) · Protocol: Held-out test"]);
+    expect(rows).toContainEqual(["statistics / targets[2] / metrics / rmse", "3.1 (mg/L) · Protocol: Held-out test"]);
+    expect(rows.some(([, text]) => text.includes("% / mg/L"))).toBe(false);
+    expect(reportGroups({ node: { rmse_per_target: [1, 2] } })[0][1])
+      .toContainEqual(["rmse_per_target[2]", "2 (units not declared) · Protocol: not declared"]);
+  });
+  it("honors local target units and nearest role over parent declarations", () => {
+    const rows = reportGroups({ node: { metadata: { target_units: ["%", "mg/L"], role: "held_out_test" },
+      statistics: { targets: [{ target: "Moisture", units: null, metrics: { rmse: 1 } },
+        { target: "Protein", units: "g/L", role: "cross_validation", metrics: { rmse: 2 } }] } } })[0][1];
+    expect(rows).toContainEqual(["statistics / targets[1] / metrics / rmse", "1 (units not declared) · Protocol: Held-out test"]);
+    expect(rows).toContainEqual(["statistics / targets[2] / metrics / rmse", "2 (g/L) · Protocol: Cross-validation (CV)"]);
+  });
+  it("qualifies every error endpoint with target units and recorded protocol without changing evidence", () => {
+    const evidence = { evaluator: { metadata: { role: "held_out_test", target_units: [null] },
+      metrics: { rmse: 0.2, mae: 0.1, bias: 0, sep: 0.3, r2: 0.9 }, x_units: "nm" } };
+    const rows = reportGroups(evidence)[0][1];
+    for (const key of ["rmse", "mae", "bias", "sep"]) {
+      expect(rows.find(([path]) => path === `metrics / ${key}`)?.[1]).toContain("(units not declared) · Protocol: Held-out test");
+    }
+    expect(rows.find(([path]) => path === "metrics / r2")?.[1]).toBe("0.9");
+    expect(evidence.evaluator.metadata.target_units).toEqual([null]);
+    expect(reportGroups({ cv: { target_units: "%", rmse: 1, n_folds: 5 } })[0][1])
+      .toContainEqual(["rmse", "1 (%) · Protocol: not declared"]);
+    expect(reportGroups({ node: { metadata: { target_units: ["wt %"], role: "held_out_test" }, metrics: { rmse: 0.2 } } })[0][1])
+      .toContainEqual(["metrics / rmse", "0.2 (wt %) · Protocol: Held-out test"]);
+    expect(reportGroups({ node: { metadata: { target_units: ["wt %"], role: "held_out_test" },
+      metrics: { metadata: { target_units: null, role: "cross_validation" }, rmse: 0.2 } } })[0][1])
+      .toContainEqual(["metrics / rmse", "0.2 (units not declared) · Protocol: Cross-validation (CV)"]);
+  });
+});
 
 function report(): ReportData {
   return {

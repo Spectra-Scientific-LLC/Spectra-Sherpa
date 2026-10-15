@@ -46,22 +46,20 @@
                 Selected: {{ selectedApplication.name }}
               </span>
             </div>
-            <div
+            <WorkspaceState
               v-if="deployStore.applicationsLoading && !applicationList.length"
-              class="loading-state compact"
-            >
-              <ProgressSpinner style="width: 24px; height: 24px" />
-              <span>Loading fitted applications...</span>
-            </div>
-            <div v-else-if="applicationError" class="error-state" role="alert">
-              {{ applicationError }}<Button label="Retry" @click="fetchArtifacts" />
-            </div>
-            <div v-else-if="!applicationList.length" class="empty-state compact">
-              <i class="pi pi-box"></i>
-              <p>
-                No fitted applications yet. Save a fitted model or import an application package.
-              </p>
-            </div>
+              kind="loading"
+              message="Loading fitted applications…"
+            />
+            <WorkspaceState v-else-if="applicationError" kind="error" :message="applicationError">
+              <Button label="Retry" @click="fetchArtifacts" />
+            </WorkspaceState>
+            <WorkspaceState
+              v-else-if="!applicationList.length"
+              kind="empty"
+              icon="pi pi-box"
+              message="No fitted applications yet. Save a fitted model or import an application package."
+            />
             <div v-else class="application-list" role="list">
               <button
                 v-for="application in applicationList"
@@ -116,22 +114,28 @@
         </TabPanel>
         <!-- ======================== FOLDER WATCHES TAB ======================== -->
         <TabPanel header="Folder Watches">
-          <div v-if="deployStore.loading && deployStore.watches.length === 0" class="loading-state">
-            <ProgressSpinner style="width: 32px; height: 32px" />
-            <span>Loading watches...</span>
-          </div>
+          <WorkspaceState
+            v-if="deployStore.loading && deployStore.watches.length === 0"
+            kind="loading"
+            variant="page"
+            message="Loading watches…"
+          />
 
-          <div v-else-if="deployStore.watchesError" class="error-state" role="alert">
-            {{ deployStore.watchesError }}<Button label="Retry" @click="syncOperationalState" />
-          </div>
-          <div v-else-if="deployStore.watches.length === 0" class="empty-state">
-            <i class="pi pi-eye"></i>
-            <h3>No folder watches</h3>
+          <WorkspaceState v-else-if="deployStore.watchesError" kind="error" :message="deployStore.watchesError">
+            <Button label="Retry" @click="syncOperationalState" />
+          </WorkspaceState>
+          <WorkspaceState
+            v-else-if="deployStore.watches.length === 0"
+            kind="empty"
+            variant="page"
+            icon="pi pi-eye"
+            message="No folder watches"
+          >
             <p>
               Create a folder watch to automatically process new spectral files as they appear in a
               server directory.
             </p>
-          </div>
+          </WorkspaceState>
 
           <DataTable
             v-else
@@ -232,7 +236,7 @@
             <Column header="Last Poll" style="width: 120px">
               <template #body="{ data }">
                 <span v-if="data.last_poll_at" class="timestamp">
-                  {{ formatRelativeTime(data.last_poll_at) }}
+                  <RelativeTime :value="data.last_poll_at" />
                 </span>
                 <span v-else class="timestamp">Never</span>
               </template>
@@ -275,22 +279,25 @@
 
         <!-- ======================== PREDICTION HISTORY TAB ======================== -->
         <TabPanel header="Prediction History">
-          <div
+          <WorkspaceState
             v-if="deployStore.runsLoading && deployStore.deployRuns.length === 0"
-            class="loading-state"
-          >
-            <ProgressSpinner style="width: 32px; height: 32px" />
-            <span>Loading runs...</span>
-          </div>
+            kind="loading"
+            variant="page"
+            message="Loading runs…"
+          />
 
-          <div v-else-if="deployStore.runsError" class="error-state" role="alert">
-            {{ deployStore.runsError }}<Button label="Retry" @click="syncOperationalState" />
-          </div>
-          <div v-else-if="deployStore.deployRuns.length === 0" class="empty-state">
-            <i class="pi pi-history"></i>
-            <h3>No prediction history</h3>
+          <WorkspaceState v-else-if="deployStore.runsError" kind="error" :message="deployStore.runsError">
+            <Button label="Retry" @click="syncOperationalState" />
+          </WorkspaceState>
+          <WorkspaceState
+            v-else-if="deployStore.deployRuns.length === 0"
+            kind="empty"
+            variant="page"
+            icon="pi pi-history"
+            message="No prediction history"
+          >
             <p>Runs from folder watches and batch predictions will appear here.</p>
-          </div>
+          </WorkspaceState>
 
           <DataTable
             v-else
@@ -372,7 +379,7 @@
             </Column>
             <Column field="executed_at" header="Date" sortable style="width: 130px">
               <template #body="{ data }">
-                <span class="timestamp">{{ formatRelativeTime(data.executed_at) }}</span>
+                <span class="timestamp"><RelativeTime :value="data.executed_at" /></span>
               </template>
             </Column>
 
@@ -629,6 +636,7 @@
 </template>
 
 <script setup lang="ts">
+import RelativeTime from "@/components/RelativeTime.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- deployment run payloads are backend-shaped and vary by execution status. */
 import { ref, computed, onMounted, onBeforeUnmount, watch, reactive } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -637,6 +645,7 @@ import InstrumentQCPanel from "./InstrumentQCPanel.vue";
 import WatchDryRun from "./WatchDryRun.vue";
 import QualificationPanel from "./QualificationPanel.vue";
 import SavedValue from "@/views/models/SavedValue.vue";
+import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
 import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
@@ -823,6 +832,7 @@ function inspectPrediction(prediction: BatchPredictionResult, projectId: number 
       query: {
         node: nodes[nodes.length - 1],
         view: "Results",
+        trust: "1",
         ...(projectId ? { project: projectId } : {}),
       },
     });
@@ -914,7 +924,9 @@ async function fetchArtifacts() {
   } catch (error: any) {
     if (request === artifactRequest) {
       artifactOptions.value = [];
-      applicationError.value = "Applications could not be loaded.";
+      applicationError.value = typeof error?.response?.data?.detail === "string"
+        ? error.response.data.detail
+        : "Applications could not be loaded. Retry to check availability.";
       toast.add({
         severity: "error",
         summary: "Deployment targets unavailable",
@@ -1336,19 +1348,6 @@ function statusSeverity(status: string): "success" | "danger" | "warning" | "inf
   return "info";
 }
 
-function formatRelativeTime(isoString: string): string {
-  const date = new Date(isoString);
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-  const diffMin = Math.floor(diffMs / 60000);
-  if (diffMin < 1) return "just now";
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDays = Math.floor(diffHr / 24);
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
-}
 </script>
 
 <style scoped>
@@ -1364,7 +1363,7 @@ function formatRelativeTime(isoString: string): string {
 }
 
 :global(.content:has(.deploy-content)) {
-  background: #e4e0fa;
+  background: var(--workspace-background);
 }
 
 .hosted-pro-deploy {
@@ -1407,16 +1406,6 @@ function formatRelativeTime(isoString: string): string {
   gap: 12px;
   padding: 48px;
   color: #64748b;
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 48px;
-  text-align: center;
-  color: #94a3b8;
 }
 
 .released-applications {
@@ -1486,27 +1475,6 @@ function formatRelativeTime(isoString: string): string {
 .application-card small {
   grid-column: 1 / -1;
   color: #64748b;
-}
-
-.empty-state.compact,
-.loading-state.compact {
-  padding: 1rem;
-}
-
-.empty-state i {
-  font-size: 2.5rem;
-}
-
-.empty-state h3 {
-  margin: 8px 0 0;
-  color: #475569;
-  font-size: 1.1rem;
-}
-
-.empty-state p {
-  max-width: 400px;
-  font-size: 0.9rem;
-  line-height: 1.5;
 }
 
 .watches-table,

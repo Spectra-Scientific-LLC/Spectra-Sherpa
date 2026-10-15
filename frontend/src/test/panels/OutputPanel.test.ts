@@ -221,11 +221,14 @@ describe("OutputPanel", () => {
     });
 
     expect(wrapper.text()).toContain("Evaluation Scope");
-    expect(wrapper.text()).toContain("Held Out Test");
-    expect(wrapper.text()).toContain("held_out_test");
+    // Scientist-facing labels; the recorded codes stay in the tooltip.
+    expect(wrapper.text()).toContain("Test set");
+    expect(wrapper.text()).not.toContain("held_out_test");
+    expect(wrapper.find('[title="held_out_test"]').exists()).toBe(true);
     expect(wrapper.text()).toContain("Lineage Qualification");
     expect(wrapper.text()).toContain("Graph Verified");
-    expect(wrapper.text()).toContain("graph_verified");
+    expect(wrapper.text()).not.toContain("graph_verified");
+    expect(wrapper.find('[title="graph_verified"]').exists()).toBe(true);
     expect(wrapper.text()).toContain("Evaluated Population");
     expect(wrapper.text()).toContain("split · test");
     expect(wrapper.text()).toContain("Fitted Population");
@@ -250,7 +253,7 @@ describe("OutputPanel", () => {
       },
     });
 
-    expect(wrapper.text()).toContain("Cross Validation");
+    expect(wrapper.text()).toContain("Cross-validation");
     expect(wrapper.text()).toContain("Fold Executor Verified");
     expect(wrapper.text()).toContain("Validation Folds");
     expect(wrapper.text()).toContain("5 cross-validation folds; protocol from campaign-1 · candidate-012. Original sample identity is not verified. Each sample predicted by a model not trained on it");
@@ -429,6 +432,17 @@ describe("OutputPanel", () => {
     });
     expect(wrapper.text()).toContain("Per-response metrics only");
     expect(wrapper.text()).toContain("1.0000e-9");
+    expect(wrapper.text()).toContain("RMSE (units not declared)");
+    expect(wrapper.text()).toContain("Protocol: not declared");
+  });
+  it("shows target-specific units for live indexed error summaries", () => {
+    const { wrapper } = factory({ metadata: { target_units: ["%", "mg/L"], role: "held_out_test" },
+      quality: { extras: { rmse_per_target: [0.2, 3.1] } },
+      subsections: { coordinates: false, metadata: false, processing: false, provenance: false, quality: true, ports: false },
+    });
+    expect(wrapper.text()).toContain("Target 1 (%): 0.2000");
+    expect(wrapper.text()).toContain("Target 2 (mg/L): 3.1000");
+    expect(wrapper.text()).toContain("Protocol: Held-out test");
   });
 
 });

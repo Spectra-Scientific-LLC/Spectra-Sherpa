@@ -440,7 +440,7 @@ describe("Project Store", () => {
 
       expect(store.projectList.length).toBe(1);
       expect(store.projectList[0].name).toBe("Test Project");
-      expect(store.projectList[0].modified).toBe("Today");
+      expect(store.projectList[0].modified).toBe("just now");
     });
 
     it("recentProjects sorts by updated_at descending", async () => {

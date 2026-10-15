@@ -1,600 +1,232 @@
 <template>
   <div class="batch-run-tab">
-    <PrivateBatchUpload v-if="effectiveArtifactUids.length === 1" :artifact-uid="effectiveArtifactUids[0]!" @completed="emit('completed', $event)" />
-    <div class="batch-form">
-      <div class="selection-summary">
-        <span class="eyebrow">Selected models</span>
-        <strong>{{ effectiveArtifactUids.length }}</strong>
-        <small v-if="effectiveArtifactUids.length">Ready for batch prediction.</small>
-        <small v-else>Select one or more fitted models.</small>
-      </div>
-
-      <div v-if="modelOptions.length" class="form-field">
-        <label for="batch-models">Models</label>
-        <MultiSelect
-          inputId="batch-models"
-          v-model="selectedArtifactUids"
-          :options="modelOptions"
-          optionLabel="label"
-          optionValue="value"
-          placeholder="Select fitted models"
-          display="chip"
-          class="w-full"
-          :disabled="submitting"
-        />
-      </div>
-
-      <div v-if="requiresAssetSelection" class="form-field">
-        <label for="batch-scientific-asset">Scientific Result</label>
-        <Dropdown
-          inputId="batch-scientific-asset"
-          v-model="selectedAssetId"
-          :disabled="submitting || selectedDatasetViewId != null"
-          :options="batchAssetOptions"
-          optionLabel="title"
-          optionValue="asset_id"
-          placeholder="Select the exact result for every source file"
-          class="w-full"
-        >
-          <template #option="{ option }">
-            <span>{{ option.title || option.asset_id }} · {{ option.asset_id }} · {{ option.shape.join(" × ") }}</span>
-          </template>
-        </Dropdown>
-        <small v-if="!assetSelectionError">The selected result identity is applied consistently to every file in this dataset.</small>
-      </div>
-
-      <p v-if="assetSelectionError && selectedDatasetViewId == null" role="alert" class="asset-error">{{ assetSelectionError }}</p>
-
-      <div class="form-row">
-        <div class="form-field">
-          <label for="batch-dataset">My Dataset</label>
-          <Dropdown
-            inputId="batch-dataset"
-            v-model="selectedExperimentId"
-            :disabled="submitting"
-            :options="experiments"
-            optionLabel="name"
-            optionValue="id"
-            placeholder="Select a project dataset"
-            class="w-full"
-            :loading="loadingExperiments"
-          />
-          <small>Uses raw source files, or synthetic files when raw files are unavailable.</small>
+    <h3>Verify workflows against dataset definitions</h3>
+    <p>Choose an execution mode, workflows, and datasets. Review each combination before starting.</p>
+    <fieldset :disabled="submitting || loading">
+      <legend>Execution mode</legend>
+      <label><input v-model="mode" type="radio" value="apply_model" /> Apply trained model — no refit</label>
+      <label><input v-model="mode" type="radio" value="run_workflow" /> Run workflow — train/evaluate</label>
+      <p v-if="mode === 'apply_model'">Use existing fitted models and preprocessing on the whole included dataset. Without reference targets, no accuracy statistics are reported.</p>
+      <p v-else>Start the saved workflow with this dataset. Its own split, training, and evaluation nodes determine the statistics. The original canvas and fitted models stay unchanged.</p>
+    </fieldset>
+    <p v-if="error" role="alert" class="batch-error">{{ error }}</p>
+    <p v-if="loading" role="status">Loading project workflows and dataset definitions…</p>
+    <div class="batch-selections">
+      <fieldset :disabled="submitting || loading">
+        <legend>Workflows</legend>
+        <div v-for="workflow in availableWorkflows" :key="workflow.id" class="selection-item">
+          <label><input v-model="selectedWorkflowIds" type="checkbox" :value="workflow.id" /> {{ workflow.name }}</label>
+          <div v-if="mode === 'apply_model' && selectedWorkflowIds.includes(workflow.id)" class="model-choices">
+            <label v-for="artifact in modelsFor(workflow.id)" :key="artifact.artifact_uid">
+              <input v-model="selectedArtifactUids" type="checkbox" :value="artifact.artifact_uid" />
+              {{ artifact.display_name || artifact.name }} <small>{{ modelContext(artifact) }}</small>
+            </label>
+            <small v-if="!modelsFor(workflow.id).length">No fitted model is available. Use train/evaluate first.</small>
+          </div>
         </div>
-        <div v-if="selectedExperimentId != null" class="form-field">
-          <label for="batch-dataset-definition">Definition</label>
-          <Dropdown
-            inputId="batch-dataset-definition"
-            v-model="selectedDatasetViewId"
-            :disabled="submitting"
-            :options="savedViewOptions"
-            optionLabel="name"
-            optionValue="id"
-            class="w-full"
-            :loading="loadingDatasetViews"
-          />
-          <small v-if="datasetViewsError" role="alert">{{ datasetViewsError }}</small>
-        </div>
-        <div class="form-field">
-          <label for="batch-scope">Scope</label>
-          <Dropdown
-            inputId="batch-scope"
-            v-model="scope"
-            :disabled="submitting || selectedDatasetViewId != null"
-            :options="scopeOptions"
-            optionLabel="label"
-            optionValue="value"
-            class="w-full"
-          />
-        </div>
-      </div>
-
-      <div
-        v-if="featurePreflightMessage"
-        class="feature-preflight"
-        :class="{ 'feature-preflight--warn': featurePreflightSeverity === 'warn' }"
-      >
-        <i :class="featurePreflightSeverity === 'warn' ? 'pi pi-exclamation-triangle' : 'pi pi-info-circle'"></i>
-        <span>{{ featurePreflightMessage }}</span>
-      </div>
-
-      <div class="form-field">
-        <label for="batch-name">Run Name</label>
-        <InputText
-          id="batch-name"
-          v-model="runName"
-          :placeholder="suggestedName"
-          class="w-full"
-        />
-      </div>
-
-      <div class="form-actions">
-        <Button
-          label="Run Batch"
-          icon="pi pi-play"
-          :loading="submitting"
-          :disabled="!canSubmit"
-          @click="handleSubmit"
-        />
-      </div>
+        <p v-if="!loading && !availableWorkflows.length">No eligible workflows for this mode. Train a model first, or choose train/evaluate.</p>
+      </fieldset>
+      <fieldset :disabled="submitting || loading">
+        <legend>Dataset definitions</legend>
+        <label v-for="definition in definitions" :key="definition.key" class="selection-item">
+          <input v-model="selectedDefinitionKeys" type="checkbox" :value="definition.key" /> {{ definition.label }}
+        </label>
+        <p v-if="!loading && !definitions.length">No dataset definitions in this project.</p>
+      </fieldset>
     </div>
-
-    <div class="batch-info">
-      <i class="pi pi-info-circle"></i>
-      <p>
-        Batch applies the selected fitted models to the chosen durable My Dataset.
-        Feature-count and feature-axis contracts are validated before predictions are saved.
-        Select up to eight models; the combined display is limited to 100,000 values. Larger inputs are refused without truncation.
-      </p>
-    </div>
+    <section aria-label="Batch combinations" class="batch-combinations">
+      <h4>Combinations ({{ combinations.length }})</h4>
+      <p v-if="!combinations.length" class="batch-hint">Choose at least one workflow and one dataset definition to see the combinations to run.</p>
+      <p v-if="checkedCombinationCount > 32" role="alert">Select at most 32 combinations for one batch. Deselect combinations below.</p>
+      <ul v-if="combinations.length">
+        <li v-for="(combination, index) in combinations" :key="combination.key">
+          <label>
+            <input type="checkbox" :checked="!excluded.includes(combination.key) && checks[index]?.compatible !== false" :disabled="submitting || checking || checks[index]?.compatible === false"
+              @change="toggleCombination(combination.key)" />
+            {{ combination.label }}
+          </label>
+          <small v-if="!checks[index]">Check compatibility before running.</small>
+          <small v-else-if="!checks[index]?.compatible" class="batch-error">Unavailable: {{ checks[index]?.reason }}</small>
+          <small v-else-if="mode === 'apply_model' && !checks[index]?.metadata?.accuracy_available">Compatible — predictions only; accuracy statistics unavailable.</small>
+          <small v-else>Compatible — {{ checks[index]?.metadata?.n_included_samples }} included samples.</small>
+        </li>
+      </ul>
+      <div class="batch-actions">
+        <Button label="Check compatibility" :loading="checking" :disabled="!canCheck" @click="checkCompatibility" />
+        <Button label="Run selected combinations" icon="pi pi-play" :loading="submitting" :disabled="!canSubmit" @click="handleSubmit" />
+      </div>
+      <p class="batch-hint">Each combination is saved separately in Run History with a shared batch identifier. Compare dataset-level statistics there; execution mode and cohort are descriptive labels, not restrictions on comparison.</p>
+      <p v-if="progress" role="status">{{ progress }}</p>
+    </section>
+    <PrivateBatchUpload v-if="mode === 'apply_model' && activeArtifactUids.length === 1"
+      :artifact-uid="activeArtifactUids[0]!" @completed="emit('completed', $event)" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import Button from "primevue/button";
-import Dropdown from "primevue/dropdown";
-import InputText from "primevue/inputtext";
-import MultiSelect from "primevue/multiselect";
 import { useToast } from "primevue/usetoast";
 import api from "@/api/client";
 import PrivateBatchUpload from "./PrivateBatchUpload.vue";
 import { useProjectStore } from "@/stores/project";
-import type {
-  ExecutionRunSummary,
-  ExperimentDetail,
-  ExperimentFile,
-  ExperimentFileAssets,
-  ExperimentSummary,
-  ScientificAsset,
-} from "@/types";
+import type { ExecutionRunSummary } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 
-interface BatchArtifactSummary {
-  artifact_uid: string;
-  name: string;
-  display_name?: string | null;
-  model_type: string;
-  n_features: number;
-}
-
-interface BatchRunItemResult {
-  artifact_uid: string;
-  status: "completed" | "failed";
-  metrics?: Record<string, unknown> | null;
-  n_samples?: number | null;
-  error?: string | null;
-}
-
-interface BatchRunResponse {
-  status: "completed" | "partial" | "failed";
-  run: ExecutionRunSummary | null;
-  results: BatchRunItemResult[];
-}
-
-const props = withDefaults(
-  defineProps<{
-    artifacts?: BatchArtifactSummary[];
-  }>(),
-  {
-    artifacts: () => [],
-  },
-);
-
-const emit = defineEmits<{
-  completed: [run: ExecutionRunSummary];
-}>();
-
+interface Artifact { artifact_uid: string; name: string; display_name?: string | null; workflow_id?: number | null;
+  source_run_id?: number | null; n_components?: number | null; created_at?: string | null }
+interface Workflow { id: number; name: string; purpose?: string }
+interface DatasetChoice { id: number; name: string }
+interface VerificationResponse { batch_id: string; results: { run_id: number; status: string }[] }
+interface Definition { key: string; label: string; experimentId: number; viewId: number | null }
+interface Check { compatible: boolean; receipt?: string; reason?: string;
+  metadata?: { accuracy_available?: boolean; n_included_samples: number } }
+const props = withDefaults(defineProps<{ artifacts?: Artifact[] }>(), { artifacts: () => [] });
+const emit = defineEmits<{ completed: [run: ExecutionRunSummary] }>();
 const projectStore = useProjectStore();
 const toast = useToast();
-
-const experiments = ref<ExperimentSummary[]>([]);
-const loadingExperiments = ref(false);
-const selectedExperimentId = ref<number | null>(null);
-type SavedDatasetView = { id: number; name: string; selection: { stage: "raw" | "preprocessed" | "synthetic"; asset_id: string | null } };
-const savedDatasetViews = ref<SavedDatasetView[]>([]);
-const selectedDatasetViewId = ref<number | null>(null);
-const loadingDatasetViews = ref(false);
-const datasetViewsError = ref("");
-const savedViewOptions = computed(() => [{ id: null, name: "Default" }, ...savedDatasetViews.value]);
-const scope = ref("all");
-const selectedStage = ref<"raw" | "preprocessed" | "synthetic">("raw");
-const runName = ref("");
-const submitting = ref(false);
+const mode = ref<"apply_model" | "run_workflow">("apply_model");
+const workflows = ref<Workflow[]>([]);
+const definitions = ref<Definition[]>([]);
+const selectedWorkflowIds = ref<number[]>([]);
+const selectedDefinitionKeys = ref<string[]>([]);
 const selectedArtifactUids = ref<string[]>([]);
-const selectedExperimentDetail = ref<ExperimentDetail | null>(null);
-const loadingExperimentDetail = ref(false);
-const selectedAssetId = ref<string | null>(null);
-const batchAssetOptions = ref<ScientificAsset[]>([]);
-const requiresAssetSelection = ref(false);
-const assetSelectionError = ref("");
-let experimentRequest = 0;
-let detailRequest = 0;
-let datasetViewRequest = 0;
-onBeforeUnmount(() => { ++experimentRequest; ++detailRequest; ++datasetViewRequest; });
-
-const scopeOptions = [
-  { label: "Included samples", value: "all" },
-  { label: "Included training samples", value: "train" },
-  { label: "Included test samples", value: "test" },
-];
-
-const modelOptions = computed(() => props.artifacts.map((artifact) => ({
-  label: artifact.display_name || artifact.name,
-  value: artifact.artifact_uid,
-})));
-const effectiveArtifactUids = computed(() => selectedArtifactUids.value);
-const selectedArtifacts = computed(() => {
-  const selected = new Set(effectiveArtifactUids.value);
-  return props.artifacts.filter((artifact) => selected.has(artifact.artifact_uid));
-});
-
-const suggestedName = computed(() => {
-  const count = effectiveArtifactUids.value.length;
-  return count > 0
-    ? `Batch prediction — ${count} model${count === 1 ? "" : "s"}`
-    : "Batch prediction";
-});
-
-const canSubmit = computed(
-  () =>
-    effectiveArtifactUids.value.length > 0 && effectiveArtifactUids.value.length <= 8 &&
-    selectedExperimentId.value != null &&
-    !loadingExperiments.value && !loadingExperimentDetail.value &&
-    selectedExperimentDetail.value != null &&
-    (selectedDatasetViewId.value != null || !requiresAssetSelection.value || Boolean(selectedAssetId.value)) &&
-    (selectedDatasetViewId.value != null || !assetSelectionError.value) &&
-    !loadingDatasetViews.value &&
-    !submitting.value,
-);
-
-const artifactFeatureCounts = computed(() => {
-  const counts = new Set<number>();
-  for (const artifact of selectedArtifacts.value) {
-    if (Number.isFinite(artifact.n_features)) counts.add(Number(artifact.n_features));
-  }
-  return [...counts].sort((a, b) => a - b);
-});
-
-const selectedExperimentFeatureCount = computed(() =>
-  extractFeatureCount(selectedExperimentDetail.value?.metadata ?? null),
-);
-
-const featurePreflightSeverity = computed<"info" | "warn">(() => {
-  const artifactCounts = artifactFeatureCounts.value;
-  const datasetCount = selectedExperimentFeatureCount.value;
-  if (artifactCounts.length > 1 || (artifactCounts.length === 1 && datasetCount != null && artifactCounts[0] !== datasetCount)) {
-    return "warn";
-  }
-  return "info";
-});
-
-const featurePreflightMessage = computed(() => {
-  if (selectedDatasetViewId.value != null) return "The saved definition's exact source and included cohort will be verified before prediction.";
-  if (loadingExperimentDetail.value) return "Checking dataset feature count...";
-  const artifactCounts = artifactFeatureCounts.value;
-  if (effectiveArtifactUids.value.length > 0 && selectedArtifacts.value.length === 0) {
-    return "Selected model metadata is unavailable in this view; the server will validate feature contracts before saving.";
-  }
-  if (artifactCounts.length > 1) {
-    return `Selected models have different fitted feature counts (${artifactCounts.join(", ")}). This can be valid after preprocessing or feature selection; the server will validate each full feature contract.`;
-  }
-  if (selectedExperimentId.value == null || artifactCounts.length === 0) return "";
-  const datasetCount = selectedExperimentFeatureCount.value;
-  if (datasetCount == null) {
-    return "Dataset feature count is not available for preflight; the server will validate the full feature contract before saving.";
-  }
-  if (artifactCounts[0] !== datasetCount) {
-    return `The fitted model feature count (${artifactCounts[0]}) differs from the dataset feature count (${datasetCount}). This can be valid after feature selection; the server will validate before saving.`;
-  }
-  return `Feature-count preflight passed (${datasetCount} features).`;
-});
-
-onMounted(fetchExperiments);
-
-watch(
-  () => projectStore.currentProjectId,
-  () => {
-    selectedExperimentId.value = null;
-    selectedArtifactUids.value = [];
-    runName.value = "";
-    selectedExperimentDetail.value = null;
-    void fetchExperiments();
-  },
-);
-
-watch(selectedExperimentId, (experimentId) => {
-  ++detailRequest;
-  loadingExperimentDetail.value = false;
-  selectedExperimentDetail.value = null;
-  selectedAssetId.value = null;
-  batchAssetOptions.value = [];
-  requiresAssetSelection.value = false;
-  assetSelectionError.value = "";
-  selectedDatasetViewId.value = null;
-  savedDatasetViews.value = [];
-  ++datasetViewRequest;
-  if (experimentId != null) {
-    void fetchExperimentDetail(experimentId);
-    void fetchDatasetViews(experimentId);
-  }
+const excluded = ref<string[]>([]);
+const checks = ref<Check[]>([]);
+const loading = ref(false);
+const checking = ref(false);
+const submitting = ref(false);
+const error = ref("");
+const progress = ref("");
+let generation = 0;
+let inventoryGeneration = 0;
+onBeforeUnmount(() => { ++generation; ++inventoryGeneration; });
+const modelContext = (model: Artifact) => [
+  model.source_run_id != null ? `Run #${model.source_run_id}` : null,
+  model.n_components != null ? `${model.n_components} LV` : null,
+  model.created_at && Number.isFinite(Date.parse(model.created_at)) ? new Date(model.created_at).toLocaleString() : null,
+].filter(Boolean).join(" · ");
+const modelsFor = (id: number) => props.artifacts.filter(model => model.workflow_id === id);
+const availableWorkflows = computed(() => workflows.value.filter(workflow =>
+  workflow.purpose !== "managed_candidate_authority"
+  && (mode.value === "run_workflow" || modelsFor(workflow.id).length > 0),
+));
+const activeArtifactUids = computed(() => props.artifacts.filter(model =>
+  selectedWorkflowIds.value.includes(model.workflow_id ?? -1) && selectedArtifactUids.value.includes(model.artifact_uid),
+).map(model => model.artifact_uid));
+const combinations = computed(() => availableWorkflows.value.filter(w => selectedWorkflowIds.value.includes(w.id)).flatMap(workflow => {
+  const models = mode.value === "apply_model"
+    ? modelsFor(workflow.id).filter(model => selectedArtifactUids.value.includes(model.artifact_uid)) : [];
+  const choices: (Artifact | null)[] = mode.value === "run_workflow" ? [null] : models;
+  return choices.flatMap(model => definitions.value.filter(d => selectedDefinitionKeys.value.includes(d.key)).map(definition => ({
+    key: workflow.id + ":" + (model?.artifact_uid ?? "workflow") + ":" + definition.key,
+    label: workflow.name + (model ? " / " + (model.display_name || model.name) : "") + " × " + definition.label,
+    payload: { workflow_id: workflow.id, artifact_uid: model?.artifact_uid ?? null,
+      dataset: { experiment_id: definition.experimentId }, dataset_view_id: definition.viewId },
+  })));
+}));
+const checkedCombinationCount = computed(() => combinations.value.filter(pair => !excluded.value.includes(pair.key)).length);
+const canCheck = computed(() => !loading.value && !checking.value && !submitting.value &&
+  checkedCombinationCount.value > 0 && checkedCombinationCount.value <= 32);
+const selectedPairs = computed(() => combinations.value.flatMap((pair, index) =>
+  checks.value[index]?.compatible && !excluded.value.includes(pair.key)
+    ? [{ ...pair.payload, receipt: checks.value[index]!.receipt }] : []));
+const canSubmit = computed(() => canCheck.value && selectedPairs.value.length > 0);
+watch([mode, combinations], () => {
+  ++generation; checks.value = []; excluded.value = []; checking.value = false; progress.value = "";
 }, { flush: "sync" });
 
-watch(selectedDatasetViewId, (viewId) => {
-  const view = savedDatasetViews.value.find((candidate) => candidate.id === viewId);
-  if (!view) return;
-  scope.value = "all";
-  selectedStage.value = view.selection.stage;
-  selectedAssetId.value = view.selection.asset_id;
-});
-
-async function fetchDatasetViews(experimentId: number): Promise<void> {
-  const request = ++datasetViewRequest;
-  loadingDatasetViews.value = true;
-  datasetViewsError.value = "";
+watch(() => projectStore.currentProjectId, async projectId => {
+  const request = ++inventoryGeneration;
+  ++generation;
+  workflows.value = []; definitions.value = []; selectedWorkflowIds.value = [];
+  selectedDefinitionKeys.value = []; selectedArtifactUids.value = []; error.value = "";
+  loading.value = true;
   try {
-    const response = await api.get<SavedDatasetView[]>(`/experiments/${experimentId}/dataset-views`);
-    if (request === datasetViewRequest && selectedExperimentId.value === experimentId) {
-      if (!Array.isArray(response.data)) throw new Error("Saved definition list is invalid.");
-      savedDatasetViews.value = response.data;
-    }
-  } catch (error) {
-    if (request === datasetViewRequest) datasetViewsError.value = getErrorMessage(error, "Saved definitions are unavailable.");
-  } finally {
-    if (request === datasetViewRequest) loadingDatasetViews.value = false;
-  }
-}
-
-async function fetchExperiments(): Promise<void> {
-  const request = ++experimentRequest;
-  loadingExperiments.value = true;
-  try {
-    const projectId = projectStore.currentProjectId;
-    if (projectId == null) {
-      experiments.value = [];
-      return;
-    }
-    const response = await api.get<ExperimentSummary[]>("/experiments", {
-      params: { project_id: projectId },
-    });
-    if (request !== experimentRequest || projectId !== projectStore.currentProjectId) return;
-    experiments.value = response.data;
-  } catch (err) {
-    if (request !== experimentRequest) return;
-    experiments.value = [];
-    toast.add({
-      severity: "error",
-      summary: "Datasets unavailable",
-      detail: getErrorMessage(err, "Could not load project datasets."),
-      life: 4000,
-    });
-  } finally {
-    if (request === experimentRequest) loadingExperiments.value = false;
-  }
-}
-
-async function fetchExperimentDetail(experimentId: number): Promise<void> {
-  const request = ++detailRequest;
-  const projectId = projectStore.currentProjectId;
-  const current = () => request === detailRequest && experimentId === selectedExperimentId.value && projectId === projectStore.currentProjectId;
-  loadingExperimentDetail.value = true;
-  try {
-    const [detailResponse, filesResponse] = await Promise.all([
-      api.get<ExperimentDetail>(`/experiments/${experimentId}`),
-      api.get<ExperimentFile[]>(`/experiments/${experimentId}/files`, { params: { stage: "raw" } }),
+    if (projectId == null) return;
+    const [workflowResponse, datasetResponse] = await Promise.all([
+      api.get<Workflow[]>("/workflows", { params: { project_id: projectId, limit: 200 } }),
+      api.get<DatasetChoice[]>("/experiments", { params: { project_id: projectId } }),
     ]);
-    if (!current()) return;
-    if (selectedDatasetViewId.value == null) selectedStage.value = filesResponse.data.length ? "raw" : "synthetic";
-    const files = filesResponse.data.length ? filesResponse.data : (await api.get<ExperimentFile[]>(
-      `/experiments/${experimentId}/files`, { params: { stage: "synthetic" } },
-    )).data;
-    if (!current()) return;
-    if (!files.length) throw new Error("Dataset has no importable source files.");
-    const inventories = await Promise.all(
-      files.map((file) =>
-        api.get<ExperimentFileAssets>(`/experiments/${experimentId}/files/${file.id}/scientific-assets`),
-      ),
-    );
-    const inventoryValues = inventories.map((response) => response.data);
-    if (!current()) return;
-    selectedExperimentDetail.value = detailResponse.data;
-    requiresAssetSelection.value = inventoryValues.some((inventory) => inventory.assets.length > 1);
-    if (requiresAssetSelection.value) {
-      const commonIds = inventoryValues.reduce<Set<string>>((common, inventory, index) => {
-        const ids = new Set(inventory.assets.map((asset) => asset.asset_id));
-        return index === 0 ? ids : new Set([...common].filter((assetId) => ids.has(assetId)));
-      }, new Set<string>());
-      batchAssetOptions.value = (inventoryValues[0]?.assets ?? []).filter((asset) => commonIds.has(asset.asset_id));
-      assetSelectionError.value = batchAssetOptions.value.length
-        ? ""
-        : "Files in this dataset do not share one scientific result identity. Split them into compatible datasets before batch inference.";
-    }
+    const inventories = await Promise.all(datasetResponse.data.map(async dataset => {
+      const { data } = await api.get<DatasetChoice[]>(`/experiments/${dataset.id}/dataset-views`);
+      if (!Array.isArray(data)) throw new Error("Saved dataset definitions are unavailable.");
+      return [{ key: dataset.id + ":default", label: dataset.name + " — Default", experimentId: dataset.id, viewId: null },
+        ...data.map(view => ({ key: dataset.id + ":" + view.id, label: dataset.name + " — " + view.name,
+          experimentId: dataset.id, viewId: view.id }))];
+    }));
+    if (request !== inventoryGeneration) return;
+    workflows.value = workflowResponse.data;
+    definitions.value = inventories.flat();
   } catch (err) {
-    if (!current()) return;
-    selectedExperimentDetail.value = null;
-    assetSelectionError.value = getErrorMessage(err, "Scientific result inventory could not be loaded.");
-  } finally {
-    if (current()) loadingExperimentDetail.value = false;
-  }
-}
+    if (request === inventoryGeneration) error.value = getErrorMessage(err, "Could not load Batch choices.");
+  } finally { if (request === inventoryGeneration) loading.value = false; }
+}, { immediate: true });
 
-function extractFeatureCount(metadata: Record<string, unknown> | null): number | null {
-  if (!metadata) return null;
-  const directKeys = ["n_features", "feature_count", "features"];
-  for (const key of directKeys) {
-    const value = metadata[key];
-    if (typeof value === "number" && Number.isFinite(value) && value > 0) return Math.trunc(value);
-  }
-  const nestedDataset = metadata.dataset;
-  if (nestedDataset && typeof nestedDataset === "object") {
-    const nested = extractFeatureCount(nestedDataset as Record<string, unknown>);
-    if (nested != null) return nested;
-  }
-  for (const key of ["shape", "dataset_shape", "X_shape", "x_shape"]) {
-    const value = metadata[key];
-    if (Array.isArray(value) && value.length >= 2) {
-      const count = Number(value[1]);
-      if (Number.isFinite(count) && count > 0) return Math.trunc(count);
-    }
-  }
-  return null;
+function toggleCombination(key: string) {
+  excluded.value = excluded.value.includes(key) ? excluded.value.filter(value => value !== key) : [...excluded.value, key];
 }
-
-async function handleSubmit(): Promise<void> {
-  if (!canSubmit.value || selectedExperimentId.value == null) return;
-  submitting.value = true;
-  const projectId = projectStore.currentProjectId;
+async function checkCompatibility() {
+  if (!canCheck.value) return;
+  const request = ++generation;
+  checking.value = true; checks.value = []; error.value = "";
+  const selected = combinations.value.map((pair, index) => ({ pair, index })).filter(({ pair }) => !excluded.value.includes(pair.key));
   try {
-    const response = await api.post<BatchRunResponse>("/runs/batch", {
-      artifact_uids: effectiveArtifactUids.value,
-      dataset: {
-        experiment_id: selectedExperimentId.value,
-        stage: selectedStage.value,
-        asset_id: selectedDatasetViewId.value == null ? selectedAssetId.value : null,
-      },
-      ...(selectedDatasetViewId.value != null ? { dataset_view_id: selectedDatasetViewId.value } : {}),
-      scope: scope.value,
-      run_name: runName.value.trim() || suggestedName.value,
+    const { data } = await api.post<{ pairs: Check[] }>("/runs/verification/preflight", {
+      project_id: projectStore.currentProjectId, mode: mode.value, pairs: selected.map(({ pair }) => pair.payload),
     });
-    if (projectId !== projectStore.currentProjectId) return;
-    const failures = response.data.results.filter((result) => result.status === "failed");
-    if (response.data.run) {
-      emit("completed", response.data.run);
+    if (request === generation) {
+      const mapped: Check[] = [];
+      selected.forEach(({ index }, resultIndex) => { if (data.pairs[resultIndex]) mapped[index] = data.pairs[resultIndex]!; });
+      checks.value = mapped;
     }
-    toast.add({
-      severity: response.data.status === "completed" ? "success" : response.data.status === "partial" ? "warn" : "error",
-      summary:
-        response.data.status === "completed"
-          ? "Batch run saved"
-          : response.data.status === "partial"
-            ? "Batch run partially saved"
-            : "Batch run failed",
-      detail: failures.length
-        ? `${failures.length} model${failures.length === 1 ? "" : "s"} failed. ${
-            response.data.run?.name ?? "No run was saved."
-          }`
-        : response.data.run?.name ?? "No run was saved.",
-      life: response.data.status === "completed" ? 4000 : 7000,
-    });
   } catch (err) {
-    toast.add({
-      severity: "error",
-      summary: "Batch run failed",
-      detail: getErrorMessage(err, "Could not apply the selected models."),
-      life: 6000,
-    });
-  } finally {
-    submitting.value = false;
-  }
+    if (request === generation) error.value = getErrorMessage(err, "Batch compatibility check failed.");
+  } finally { if (request === generation) checking.value = false; }
+}
+async function handleSubmit() {
+  if (!canSubmit.value) return;
+  submitting.value = true; error.value = "";
+  progress.value = "Running " + selectedPairs.value.length + " combinations. Each result will appear in Run History.";
+  const projectId = projectStore.currentProjectId;
+  const request = generation;
+  try {
+    const { data } = await api.post<VerificationResponse>("/runs/verification", {
+      project_id: projectId, mode: mode.value, pairs: selectedPairs.value,
+    }, { timeout: 0 });
+    if (request !== generation || projectId !== projectStore.currentProjectId) return;
+    progress.value = "Batch " + data.batch_id + ": " + data.results.length + " results saved in Run History.";
+    const incomplete = data.results.filter(result => result.status !== "completed").length;
+    toast.add({ severity: incomplete ? "warn" : "success", summary: incomplete ? "Batch needs review" : "Batch saved",
+      detail: progress.value + (incomplete ? " " + incomplete + " combinations need review." : ""), life: 8000 });
+    checks.value = [];
+    const last = data.results[data.results.length - 1];
+    if (last) {
+      const result = await api.get<ExecutionRunSummary>(`/runs/${last.run_id}`, { params: { project_id: projectId } });
+      if (request === generation) emit("completed", result.data);
+    }
+  } catch (err) {
+    if (request === generation) {
+      error.value = getErrorMessage(err, "Batch did not finish. Check Run History before retrying.");
+      progress.value = "Check Run History before retrying; earlier combinations may already be saved.";
+      checks.value = [];
+    }
+  } finally { submitting.value = false; }
 }
 </script>
 
 <style scoped>
-.batch-run-tab {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-}
-
-.batch-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  max-width: 760px;
-}
-
-.selection-summary {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 0.15rem 0.75rem;
-  align-items: baseline;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--surface-border);
-}
-
-.selection-summary .eyebrow {
-  grid-column: 1 / -1;
-}
-
-.selection-summary strong {
-  font-size: 1.75rem;
-  font-weight: 500;
-}
-
-.selection-summary small {
-  color: var(--text-color-secondary);
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px;
-  gap: 1rem;
-}
-
-.form-field {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.form-field label,
-.eyebrow {
-  color: var(--text-color-secondary);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.asset-error {
-  color: var(--red-700, #b91c1c);
-}
-
-.form-actions {
-  display: flex;
-  justify-content: flex-start;
-}
-
-.feature-preflight {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  max-width: 760px;
-  padding: 0.65rem 0.75rem;
-  border: 1px solid var(--surface-border);
-  border-radius: 8px;
-  color: var(--text-color-secondary);
-  font-size: 0.85rem;
-  line-height: 1.35;
-}
-
-.feature-preflight--error {
-  border-color: rgba(220, 38, 38, 0.4);
-  color: var(--red-700, #b91c1c);
-}
-
-.feature-preflight--warn {
-  border-color: rgba(217, 119, 6, 0.35);
-  color: var(--yellow-800, #92400e);
-}
-
-.batch-info {
-  display: flex;
-  gap: 0.6rem;
-  align-items: flex-start;
-  max-width: 760px;
-  color: var(--text-color-secondary);
-  font-size: 0.875rem;
-  line-height: 1.45;
-}
-
-.batch-info p {
-  margin: 0;
-}
-
-@media (max-width: 720px) {
-  .form-row {
-    grid-template-columns: 1fr;
-  }
-}
+.batch-run-tab { display: flex; flex-direction: column; gap: 1rem; }
+.batch-selections { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+fieldset { border: 1px solid var(--surface-border); border-radius: 8px; padding: 1rem; }
+label { display: flex; align-items: baseline; gap: .6rem; padding: .35rem 0; }
+input { accent-color: var(--primary-color); }
+.model-choices { padding-left: 1.5rem; }
+small { display: block; color: var(--text-color-secondary); }
+.batch-combinations ul { list-style: none; padding: 0; }
+.batch-combinations li { padding: .6rem 0; border-bottom: 1px solid var(--surface-border); }
+.batch-error { color: var(--red-600, #b42318); }
+.batch-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: .5rem 0; }
+.batch-hint { color: var(--text-color-secondary); }
+p { margin: .4rem 0; line-height: 1.5; }
 </style>

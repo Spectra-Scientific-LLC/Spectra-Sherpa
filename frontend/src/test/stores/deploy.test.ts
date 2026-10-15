@@ -52,6 +52,15 @@ describe("deploy application projection", () => {
     expect(store.applications.map(item => item.campaign_validation_recorded)).toEqual([true, false]);
   });
 
+  it("treats an empty application list as authoritative, without calling demo-blocked legacy endpoints", async () => {
+    get.mockResolvedValueOnce({ data: [] });
+    const store = useDeployStore();
+    await store.fetchApplications(3);
+    expect(store.applications).toEqual([]);
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledWith("/deploy/applications", { params: { project_id: 3 } });
+  });
+
   it("falls back to legacy model and portable target reads during rollout", async () => {
     get
       .mockRejectedValueOnce({ response: { status: 404 } })

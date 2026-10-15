@@ -130,7 +130,8 @@ describe("canonical scientific projection evaluator metrics", () => {
       { key: "holdout_regression", label: "Evaluation Results" },
     ]);
     expect(plot.plotData.value.map((trace: any) => trace.name)).toEqual(["Test", "1:1 Line"]);
-    expect(plot.plotLayout.value.title.text).toContain("Test R²=0.940");
+    expect(plot.plotLayout.value.title.text).toBe("Predicted vs Actual");
+    expect(plot.plotLayout.value.meta.evaluation_metrics).toMatchObject({ r2: 0.94, rmse: 0.2 });
   });
 
   it("keeps PLS-DA quick plot options aligned with detailed view sections", () => {

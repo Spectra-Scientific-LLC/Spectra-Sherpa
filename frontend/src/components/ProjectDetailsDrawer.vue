@@ -31,11 +31,11 @@
           </div>
           <div class="meta-item">
             <span class="meta-label">Created</span>
-            <span class="meta-value">{{ formatDate(project.created_at) }}</span>
+            <span class="meta-value"><RelativeTime :value="project.created_at" /></span>
           </div>
           <div class="meta-item">
             <span class="meta-label">Modified</span>
-            <span class="meta-value">{{ formatDate(project.updated_at) }}</span>
+            <span class="meta-value"><RelativeTime :value="project.updated_at" /></span>
           </div>
         </div>
 
@@ -200,7 +200,7 @@
             </div>
             <div class="exp-details">
               <span class="exp-description">
-                {{ version.change_description || "—" }} · {{ formatDate(version.created_at) }}
+                {{ version.change_description || "—" }} · <RelativeTime :value="version.created_at" />
               </span>
             </div>
           </div>
@@ -235,6 +235,7 @@
 </template>
 
 <script setup lang="ts">
+import RelativeTime from "@/components/RelativeTime.vue";
 import { computed, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useToast } from "primevue/usetoast";
@@ -266,23 +267,6 @@ const visible = computed({
 });
 
 const project = computed<ProjectDetail | null>(() => projectStore.currentProject);
-
-function formatDate(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-  if (days === 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days} days ago`;
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
-  });
-}
 
 function truncate(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;

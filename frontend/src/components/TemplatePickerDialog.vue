@@ -32,7 +32,15 @@
           <span class="tp-group-count">({{ group.items.length }})</span>
         </h4>
         <ul class="tp-list">
-          <li v-for="tpl in group.items" :key="tpl.id" class="tp-row">
+          <li v-for="tpl in group.items" :key="tpl.id" class="tp-row" :class="{ 'tp-row-unavailable': compactUnavailable(tpl) }">
+            <template v-if="compactUnavailable(tpl)">
+              <div class="tp-unavailable-summary" tabindex="0" :aria-label="`${tpl.name}. Not Available for Current Dataset. ${unavailableReason(tpl)}`">
+                <span class="tp-unavailable-name">{{ tpl.name }}</span>
+                <span class="tp-unavailable-status">Not Available for Current Dataset</span>
+                <span role="tooltip" class="tp-unavailable-tooltip">{{ unavailableReason(tpl) }}</span>
+              </div>
+            </template>
+            <template v-else>
             <div class="tp-row-main">
               <div class="tp-row-title">
                 {{ tpl.name }}
@@ -52,10 +60,10 @@
                 </span>
               </div>
               <p v-if="tpl.description" class="tp-row-description">{{ tpl.description }}</p>
-              <p v-if="tpl.example_unavailable_reason" class="tp-row-requirement">
+              <p v-if="!hasCurrentData && tpl.example_unavailable_reason" class="tp-row-requirement">
                 {{ tpl.example_unavailable_reason }}
               </p>
-              <p v-else-if="exampleDataSummary(tpl)" class="tp-row-requirement">
+              <p v-else-if="!hasCurrentData && exampleDataSummary(tpl)" class="tp-row-requirement">
                 <i class="pi pi-database" aria-hidden="true" />
                 {{ exampleDataSummary(tpl) }}
               </p>
@@ -84,7 +92,7 @@
                 @click="onUse(tpl, 'current')"
               />
               <Button
-                v-if="supportsExample(tpl)"
+                v-if="!hasCurrentData && supportsExample(tpl)"
                 label="Use Bundled Example"
                 :icon="instantiating === tpl.id ? 'pi pi-spin pi-spinner' : 'pi pi-box'"
                 icon-pos="right"
@@ -109,6 +117,7 @@
                 @click="openDatasetReadiness"
               />
             </div>
+            </template>
           </li>
         </ul>
         <hr v-if="idx < groupedTemplates.length - 1" class="tp-group-sep" />
@@ -135,6 +144,8 @@ import { useToast } from "primevue/usetoast";
 import { api } from "@/api";
 import { useWorkbookStore } from "@/stores/workbook";
 import { useWorkflowStore } from "@/stores/workflow";
+import { useAppConfig } from "@/composables/useAppConfig";
+import { usePrimaryNavigation } from "@/composables/usePrimaryNavigation";
 import type { TargetAuthority, TemplateDataBinding, WorkflowNode } from "@/stores/workflow-types";
 import type {
   DatasetAnalysisReadiness,
@@ -250,17 +261,29 @@ const labelFor = (category: string): string =>
 
 const groupedTemplates = computed(() => {
   const groups = new Map<string, TemplateOut[]>();
+  const unavailable: TemplateOut[] = [];
   for (const tpl of templates.value) {
+    if (compactUnavailable(tpl)) {
+      unavailable.push(tpl);
+      continue;
+    }
     const arr = groups.get(tpl.category) ?? [];
     arr.push(tpl);
     groups.set(tpl.category, arr);
   }
-  return Array.from(groups.entries())
+  const availableGroups = Array.from(groups.entries())
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([category, items]) => ({
       category: labelFor(category),
       items: items.slice().sort((a, b) => a.name.localeCompare(b.name)),
     }));
+  if (unavailable.length) {
+    availableGroups.push({
+      category: "Not Available for Current Dataset",
+      items: unavailable.sort((a, b) => a.name.localeCompare(b.name)),
+    });
+  }
+  return availableGroups;
 });
 
 // Example selection is template metadata. The persisted DAG receives only an
@@ -573,6 +596,12 @@ const inheritedDataBindingsForTemplate = (
   return binding ? { [sourceNodeIds[0]]: binding } : null;
 };
 
+const { appConfig } = useAppConfig();
+const { items: navigationItems } = usePrimaryNavigation();
+const canOptimize = computed(() =>
+  (appConfig.value?.features as Record<string, unknown> | undefined)?.managedCampaigns === true
+  && navigationItems.value.some(item => item.label === "Optimize"),
+);
 const managedCandidateSelectionWarning = (tpl: TemplateOut): string | null => {
   if (!tpl.template_data.canonical_project) return null;
   const bindings = inheritedDataBindingsForTemplate(tpl);
@@ -581,7 +610,9 @@ const managedCandidateSelectionWarning = (tpl: TemplateOut): string | null => {
     (binding) => binding.allFiles || (binding.fileIds?.length ?? 0) > 1,
   );
   return collectionSelected
-    ? "This selection starts an analysis workflow. After a successful run, choose Optimize; its exact data and fold-safe recipe will be checked there. No companion workflow is required."
+    ? canOptimize.value
+      ? "This selection starts an analysis workflow. After a successful run, choose Optimize; its exact data and fold-safe recipe will be checked there. No companion workflow is required."
+      : "This selection starts an analysis workflow. Save successful runs and compare them manually in Runs using the same data and evaluation protocol. No companion workflow is required."
     : null;
 };
 
@@ -617,7 +648,17 @@ const currentDataButtonLabel = (tpl: TemplateOut): string => {
         ? "Use Current Data"
         : "Use Sheet Data";
   }
-  return "Not Ready";
+  return "Not Available for Current Dataset";
+};
+
+const compactUnavailable = (tpl: TemplateOut): boolean =>
+  (hasCurrentData.value || !!projectDatasetChoiceError.value) && !canUseCurrentData(tpl);
+
+const unavailableReason = (tpl: TemplateOut): string => {
+  const decision = currentSelectionDecisionMessage(tpl);
+  return [projectDatasetChoiceError.value, templateRuntimeMessage(tpl),
+    decision ? `Current selection: ${decision}` : null,
+  ].filter(Boolean).join(" ") || currentDataButtonTitle(tpl);
 };
 
 const currentDataButtonIcon = (tpl: TemplateOut): string => {
@@ -686,8 +727,11 @@ const loadTemplates = async () => {
             .catch(() => undefined)
         : Promise.resolve(null),
       activeBinding && workbookStore.projectId != null
-        ? api.post<DatasetAnalysisReadiness>("/workflow-templates/binding-compatibility-preview", {
+        ? api.post<DatasetAnalysisReadiness & { binding: {
+              target_authority: TargetAuthority | null; group_column: string | null;
+            } }>("/workflow-templates/binding-compatibility-preview", {
               project_id: workbookStore.projectId,
+              use_saved_analysis_selection: activeProjectDataset.value !== null,
               binding: {
                 source: activeBinding.source ?? "experiment",
                 experiment_id: activeBinding.experimentId,
@@ -717,6 +761,20 @@ const loadTemplates = async () => {
     if (!receipt && activeBinding) {
       activeBindingReadiness.value = activeReadinessResponse?.data ?? null;
       selectedExperimentId.value = activeBinding.experimentId;
+      if (activeProjectDataset.value) {
+        const admitted = activeReadinessResponse?.data?.binding;
+        if (!admitted) {
+          projectDatasetChoiceError.value =
+            "Saved target could not be verified. Open My Dataset, check the target and grouping, then reopen Analysis Starters.";
+          activeBindingReadiness.value = null;
+        } else {
+          activeProjectDataset.value = {
+            ...activeProjectDataset.value,
+            definition: { ...activeProjectDataset.value.definition,
+              target_authority: admitted.target_authority, group_column: admitted.group_column },
+          };
+        }
+      }
     }
   } catch (err) {
     loadError.value = getErrorMessage(err, "Failed to load analysis starters.");
@@ -845,6 +903,13 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
 </script>
 
 <style scoped>
+.tp-row-unavailable { padding: 8px 0; }
+.tp-unavailable-summary { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; color: #94a3b8; cursor: help; }
+.tp-unavailable-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tp-unavailable-status { flex: 0 0 auto; font-size: 0.7rem; }
+.tp-unavailable-tooltip { display: none; position: absolute; top: 100%; left: 0; right: 0; z-index: 20; padding: 10px; border-radius: 6px; background: #0f172a; color: #f1f5f9; border: 1px solid #64748b; font-size: 0.8125rem; line-height: 1.4; }
+.tp-unavailable-summary:hover .tp-unavailable-tooltip, .tp-unavailable-summary:focus .tp-unavailable-tooltip { display: block; }
+
 .tp-status {
   padding: 20px 8px;
   text-align: center;

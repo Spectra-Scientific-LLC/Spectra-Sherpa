@@ -4,6 +4,7 @@ import {
   buildMetadataLineTraces,
   buildMetadataScoreTraces,
   metadataGroupingState,
+  datasetMetadataGroupingState,
 } from "@/utils/sampleMetadataGrouping";
 
 function fixture() {
@@ -100,7 +101,7 @@ describe("PCA typed specimen/block grouping", () => {
       },
       ids.length,
     );
-    expect(state).toMatchObject({ kind: "valid", colorOptions: [] });
+    expect(state).toMatchObject({ kind: "valid", colorOptions: [{ label: "None", value: "__none__" }] });
   });
 
   it("refuses malformed columns instead of silently skipping them", () => {
@@ -166,7 +167,7 @@ describe("PCA typed specimen/block grouping", () => {
     );
     expect(state.kind).toBe("valid");
     if (state.kind !== "valid") throw new Error("expected valid DSO class grouping");
-    expect(state.colorOptions.map((option) => option.value)).toEqual(["Species", "Batch"]);
+    expect(state.colorOptions.map((option) => option.value)).toEqual(["Species", "Batch", "__none__"]);
     expect(state.columnLabels.Species).toEqual(["Lavender", "Lavender", "Lemon", "Lemon"]);
     const traces = buildMetadataScoreTraces(
       labels.map((_, index) => [index, index * 2]),
@@ -222,4 +223,29 @@ it("keeps micro-values in metadata-styled score and selected-spectra hover",()=>
     expect(traces[0].hovertemplate).toContain(".15g}");
     expect(traces[0].hovertemplate).not.toContain(".4f}");
   }
+});
+
+
+describe("categorical response display grouping", () => {
+  it("offers the aligned native response alongside sample metadata", () => {
+    const state = datasetMetadataGroupingState({ y_axis: { labels: ["A", "B", "C"] },
+      target_context: { target_type: "categorical", target_name: "Wine class" }, target: [[1], [2], [3]],
+    }, 3);
+    expect(state.kind).toBe("valid");
+    if (state.kind !== "valid") throw new Error("Expected aligned classes");
+    expect(state.colorOptions).toContainEqual({ label: "Response: Wine class", value: "Response: Wine class" });
+    expect(state.columnLabels["Response: Wine class"]).toEqual(["1", "2", "3"]);
+    expect(state.colorOptions).toContainEqual({ label: "None", value: "__none__" });
+    expect(state.symbolOptions).toContainEqual({ label: "None", value: "__none__" });
+    const traces = buildMetadataScoreTraces(
+      [[0, 1], [1, 2], [2, 3]], state, "__none__", "Response: Wine class", 0, 1, "PC1", "PC2",
+    );
+    expect(traces[0].marker).toMatchObject({ color: "#3b82f6", symbol: ["circle", "diamond", "square"] });
+    expect(traces[0].x).toEqual([0, 1, 2]);
+  });
+  it.each(["continuous", undefined])("does not invent classes for %s targets", (target_type) => {
+    expect(datasetMetadataGroupingState({ y_axis: { labels: ["A", "B"] },
+      target_context: { target_type }, target: [1, 2],
+    }, 2)).toEqual({ kind: "absent" });
+  });
 });

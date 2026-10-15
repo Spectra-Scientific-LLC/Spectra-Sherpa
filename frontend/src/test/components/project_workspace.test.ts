@@ -17,6 +17,7 @@ vi.mock("@/composables/useAppConfig", () => ({ useAppConfig: () => ({ config: re
 vi.mock("@/composables/useProjectAvailability", () => ({ useProjectAvailability: () => ({ qualified: ref(false), availability: ref(null) }) }));
 vi.mock("@/composables/useDemoMode", () => ({ useDemoMode: () => ({ isDemoMode: ref(false), uploadsLastWeek: ref(null), uploadsLimitWeek: ref(0), fetchQuota: vi.fn() }) }));
 import ProjectContent from "@/views/project/ProjectContent.vue";
+import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import { installProjectCollections, projectCollectionsLoader } from "@/lib/projectCollections";
 const project = (id: number) => ({ id, name: `Project ${id}`, description: "Wide project description", model_count: 60, experiment_count: 1, workflow_count: 1, created_at: "2026-10-01", updated_at: "2026-10-01" });
 function mountView() { return shallowMount(ProjectContent, { global: { renderStubDefaultSlot: true } }); }
@@ -31,16 +32,17 @@ describe("Project resource workspace", () => {
     const view = mountView(); await flushPromises();
     expect(view.get('[data-testid="project-runs"]').text()).toContain("12");
     expect(view.text()).toContain("Showing 1 of 12 runs");
-    expect(view.text()).toContain("60 artifacts");
+    expect(view.text()).toContain("60 models");
     const header = view.findComponent({ name: "WorkspaceHeader" });
     expect(header.findAllComponents({ name: "Button" }).map(b => b.attributes("label"))).toEqual(expect.arrayContaining(["Edit", "Export"]));
-    const button = view.findAllComponents({ name: "Button" }).find(b => b.attributes("label") === "Artifacts")!;
-    button.vm.$emit("click"); expect(mocks.push).toHaveBeenCalledWith("/runs?tab=artifacts"); view.unmount();
+    const button = view.findAllComponents({ name: "Button" }).find(b => b.attributes("label") === "Models")!;
+    button.vm.$emit("click"); expect(mocks.push).toHaveBeenCalledWith("/runs?tab=models"); view.unmount();
   });
   it("distinguishes failure from an empty history", async () => {
     mocks.get.mockRejectedValue(new Error("offline"));
     const view = mountView(); await flushPromises();
-    expect(view.get('[role="alert"]').text()).toContain("Runs");
+    const failure = view.getComponent(WorkspaceState);
+    expect(failure.props("kind")).toBe("error"); expect(failure.props("message")).toContain("Runs");
     expect(view.text()).toContain("Runs unavailable"); expect(view.text()).not.toContain("No saved runs"); view.unmount();
   });
   it("discards previous project responses", async () => {

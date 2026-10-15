@@ -1,101 +1,157 @@
 import { mount, flushPromises } from '@vue/test-utils';
+import { reactive } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import BatchRunTab from '@/views/experiments/BatchRunTab.vue';
 
-const { get, post, toast } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), toast: vi.fn() }));
-vi.mock('@/api/client', () => ({ default: { get, post } }));
-vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: toast }) }));
-vi.mock('@/stores/project', () => ({ useProjectStore: () => ({ currentProjectId: 1 }) }));
-vi.mock('@/composables/useDemoMode', () => ({ useDemoMode: () => ({ isDemoMode: { value: false } }) }));
-
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), project: null as any }));
+vi.mock('@/api/client', () => ({ default: { get: mocks.get, post: mocks.post } }));
+vi.mock('@/stores/project', () => ({ useProjectStore: () => mocks.project }));
+vi.mock('primevue/usetoast', () => ({ useToast: () => ({ add: vi.fn() }) }));
 function open() {
-  return mount(BatchRunTab, { props: { artifacts: [{
-    artifact_uid: 'exact-model', name: 'Exact model', model_type: 'pls_da', n_features: 2,
-  }] }, global: {
-    stubs: { Button: true, Dropdown: true, InputText: true, MultiSelect: true },
-  } });
+  return mount(BatchRunTab, { props: { artifacts: [
+    { artifact_uid: 'm1', name: 'Model one', workflow_id: 1, source_run_id: 17, n_components: 5, created_at: '2026-10-09T12:00:00Z' },
+    { artifact_uid: 'm2', name: 'Model two', workflow_id: 2 },
+  ] }, global: { stubs: { PrivateBatchUpload: true,
+    Button: { props: ['label', 'disabled'], template: '<button :disabled="disabled">{{ label }}</button>' },
+  } } });
 }
-
 beforeEach(() => {
   vi.clearAllMocks();
-  get.mockImplementation(async (url: string) => {
-    if (url === '/experiments') return { data: [{ id: 1, name: 'First' }, { id: 2, name: 'Second' }] };
-    if (url.endsWith('/scientific-assets')) return { data: { assets: [{ asset_id: 'only', title: 'Only', shape: [3, 2] }] } };
-    if (url.endsWith('/files')) return { data: [{ id: 10 }] };
-    return { data: { id: Number(url.split('/').at(-1)), metadata: { n_features: 2 } } };
-  });
+  mocks.project = reactive({ currentProjectId: 3 });
+  mocks.get.mockImplementation(async (url: string) => ({ data:
+    url === '/workflows' ? [{ id: 1, name: 'PLS' }, { id: 2, name: 'PCR' }] :
+    url === '/experiments' ? [{ id: 4, name: 'Corn' }] :
+    url.endsWith('/dataset-views') ? [{ id: 7, name: 'Included cohort' }] : { id: 9 },
+  }));
+  mocks.post.mockImplementation(async (url: string, payload: any) => ({ data:
+    url.endsWith('/preflight') ? { pairs: payload.pairs.map(() => ({
+      compatible: true, receipt: 'a'.repeat(64), metadata: { accuracy_available: true, n_included_samples: 80 },
+    })) } : { batch_id: 'batch-id', results: [{ run_id: 9, status: 'completed' }] },
+  }));
 });
-
-describe('Persisted application preflight', () => {
-  it('blocks during inventory loading and discards a late previous selection', async () => {
-    let release!: (value: unknown) => void;
-    const original = get.getMockImplementation()!;
-    get.mockImplementation((url: string) => url === '/experiments/1/files/10/scientific-assets'
-      ? new Promise(resolve => { release = resolve; }) : original(url));
+async function choose(wrapper: ReturnType<typeof open>) {
+  await flushPromises();
+  const vm = wrapper.vm as any;
+  vm.selectedWorkflowIds = [1, 2];
+  vm.selectedArtifactUids = ['m1', 'm2'];
+  vm.selectedDefinitionKeys = ['4:default', '4:7'];
+  await flushPromises();
+  return vm;
+}
+describe('Batch workflow verification', () => {
+  it('excludes internal candidate sheets and workflows without fitted models in application mode', async () => {
     const wrapper = open();
+    const vm = await choose(wrapper);
+    vm.workflows = [
+      { id: 1, name: 'Calibration', purpose: 'analysis' },
+      { id: 2, name: 'Internal authority', purpose: 'managed_candidate_authority' },
+      { id: 3, name: 'Preprocessing', purpose: 'analysis' },
+    ];
+    vm.selectedWorkflowIds = [1, 2, 3];
     await flushPromises();
-    const vm = wrapper.vm as unknown as {
-      selectedExperimentId: number; selectedExperimentDetail: { id: number }; canSubmit: boolean;
-      requiresAssetSelection: boolean; selectedArtifactUids: string[];
-    };
-    vm.selectedArtifactUids = ['exact-model'];
-    vm.selectedExperimentId = 1;
-    expect(vm.canSubmit).toBe(false);
+    expect(wrapper.text()).not.toContain('Internal authority');
+    expect(wrapper.text()).not.toContain('Preprocessing');
+    expect(vm.combinations.every((pair: any) => pair.payload.workflow_id === 1 && pair.payload.artifact_uid)).toBe(true);
+    vm.mode = 'run_workflow';
     await flushPromises();
-    expect(vm.canSubmit).toBe(false);
-    vm.selectedExperimentId = 2;
-    await flushPromises();
-    expect(vm.selectedExperimentDetail.id).toBe(2);
-    expect(vm.canSubmit).toBe(true);
-    release({ data: { assets: [{ asset_id: 'a' }, { asset_id: 'b' }] } });
-    await flushPromises();
-    expect(vm.selectedExperimentDetail.id).toBe(2);
-    expect(vm.requiresAssetSelection).toBe(false);
+    expect(wrapper.text()).toContain('Preprocessing');
+    expect(wrapper.text()).not.toContain('Internal authority');
     wrapper.unmount();
   });
-
-  it('persists even one model through runs/batch and exposes its failed run', async () => {
-    post.mockResolvedValue({ data: { status: 'failed', run: { id: 7, name: 'Failed attempt' },
-      results: [{ artifact_uid: 'exact-model', status: 'failed', error: 'Axis mismatch' }] } });
+  it('offers two modes and a checkbox list, never a table or sample-partition scope', async () => {
     const wrapper = open();
-    await flushPromises();
-    const vm = wrapper.vm as unknown as {
-      selectedExperimentId: number; selectedArtifactUids: string[]; handleSubmit: () => Promise<void>;
-    };
-    vm.selectedArtifactUids = ['exact-model'];
-    vm.selectedExperimentId = 2;
-    await flushPromises();
-    await vm.handleSubmit();
-    expect(post).toHaveBeenCalledWith('/runs/batch', expect.objectContaining({
-      artifact_uids: ['exact-model'], dataset: expect.objectContaining({ experiment_id: 2 }), scope: 'all',
-    }));
-    expect(wrapper.emitted('completed')?.[0]).toEqual([{ id: 7, name: 'Failed attempt' }]);
+    const vm = await choose(wrapper);
+    expect(vm.combinations).toHaveLength(4);
+    expect(wrapper.text()).toContain('Run #17');
+    expect(wrapper.text()).toContain('5 LV');
+    expect(wrapper.findAll('input[type="radio"]')).toHaveLength(2);
+    expect(wrapper.find('table').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Included test samples');
+    expect(vm.canSubmit).toBe(false);
+    await vm.checkCompatibility();
+    expect(vm.canSubmit).toBe(true);
     wrapper.unmount();
   });
-
-  it('uses the selected saved definition as the exact batch dataset', async () => {
-    const original = get.getMockImplementation()!;
-    get.mockImplementation((url: string) => url === '/experiments/2/dataset-views'
-      ? Promise.resolve({ data: [{ id: 41, name: 'MP5 held-out', selection: { stage: 'raw', asset_id: 'spectra' } }] })
-      : original(url));
-    post.mockResolvedValue({ data: { status: 'completed', run: { id: 9, name: 'MP5 prediction' }, results: [] } });
+  it('submits only compatible, checked combinations with exact preflight receipts', async () => {
+    const wrapper = open();
+    const vm = await choose(wrapper);
+    await vm.checkCompatibility();
+    vm.toggleCombination(vm.combinations[0].key);
+    await vm.handleSubmit();
+    const call = mocks.post.mock.calls.find(([url]) => url === '/runs/verification')!;
+    expect(call[1].pairs).toHaveLength(3);
+    expect(call[1].mode).toBe('apply_model');
+    expect(call[1].pairs[0]).toEqual(expect.objectContaining({ dataset_view_id: 7, receipt: 'a'.repeat(64) }));
+    expect(wrapper.emitted('completed')).toEqual([[{ id: 9 }]]);
+    expect(vm.canSubmit).toBe(false);
+    wrapper.unmount();
+  });
+  it('disables incompatible combinations and explains targetless inference', async () => {
+    mocks.post.mockResolvedValue({ data: { pairs: [
+      { compatible: false, reason: 'Target units mismatch' },
+      { compatible: true, receipt: 'b'.repeat(64), metadata: { accuracy_available: false, n_included_samples: 80 } },
+      { compatible: false, reason: 'Wrong feature axis' }, { compatible: false, reason: 'Missing fitted model' },
+    ] } });
+    const wrapper = open();
+    const vm = await choose(wrapper);
+    await vm.checkCompatibility();
+    await flushPromises();
+    expect(vm.selectedPairs).toHaveLength(1);
+    expect(wrapper.text()).toContain('Target units mismatch');
+    expect(wrapper.text()).toContain('predictions only');
+    expect(wrapper.findAll('.batch-combinations input[disabled]')).toHaveLength(3);
+    wrapper.unmount();
+  });
+  it('uses workflow mode without an old model and invalidates preflight on mode change', async () => {
+    const wrapper = open();
+    const vm = await choose(wrapper);
+    await vm.checkCompatibility();
+    vm.mode = 'run_workflow';
+    await flushPromises();
+    expect(vm.canSubmit).toBe(false);
+    expect(vm.combinations.every((pair: any) => pair.payload.artifact_uid === null)).toBe(true);
+    await vm.checkCompatibility();
+    await vm.handleSubmit();
+    expect(mocks.post.mock.calls.find(([url]) => url === '/runs/verification')![1].mode).toBe('run_workflow');
+    wrapper.unmount();
+  });
+  it('discards a late compatibility response after the selection changes', async () => {
+    let finish!: (value: any) => void;
+    mocks.post.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const wrapper = open();
+    const vm = await choose(wrapper);
+    const check = vm.checkCompatibility();
+    vm.selectedWorkflowIds = [1];
+    await flushPromises();
+    finish({ data: { pairs: [{ compatible: true, receipt: 'stale' }] } });
+    await check;
+    expect(vm.checks).toEqual([]);
+    expect(vm.canSubmit).toBe(false);
+    wrapper.unmount();
+  });
+  it('does not attach a late result to another project', async () => {
+    const wrapper = open();
+    const vm = await choose(wrapper);
+    await vm.checkCompatibility();
+    let finish!: (value: any) => void;
+    mocks.post.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const submit = vm.handleSubmit();
+    mocks.project.currentProjectId = 8;
+    await flushPromises();
+    finish({ data: { batch_id: 'old-project', results: [{ run_id: 9 }] } });
+    await submit;
+    expect(wrapper.emitted('completed')).toBeUndefined();
+    expect(vm.canSubmit).toBe(false);
+    wrapper.unmount();
+  });
+  it('fails closed when a saved-definition inventory is unavailable', async () => {
+    const original = mocks.get.getMockImplementation()!;
+    mocks.get.mockImplementation((url: string) => url.endsWith('/dataset-views')
+      ? Promise.reject(new Error('Definition inventory failed')) : original(url));
     const wrapper = open();
     await flushPromises();
-    const vm = wrapper.vm as unknown as {
-      selectedExperimentId: number; selectedDatasetViewId: number; selectedArtifactUids: string[];
-      canSubmit: boolean; handleSubmit: () => Promise<void>;
-    };
-    vm.selectedArtifactUids = ['exact-model'];
-    vm.selectedExperimentId = 2;
-    await flushPromises();
-    vm.selectedDatasetViewId = 41;
-    await flushPromises();
-    expect(vm.canSubmit).toBe(true);
-    await vm.handleSubmit();
-    expect(post).toHaveBeenCalledWith('/runs/batch', expect.objectContaining({
-      dataset_view_id: 41, scope: 'all',
-      dataset: expect.objectContaining({ experiment_id: 2, stage: 'raw', asset_id: null }),
-    }));
+    expect((wrapper.vm as any).canCheck).toBe(false);
+    expect(wrapper.find('[role="alert"]').exists()).toBe(true);
     wrapper.unmount();
   });
 });

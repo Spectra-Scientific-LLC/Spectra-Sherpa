@@ -340,6 +340,10 @@ export interface components {
             role: string;
             /** Content */
             content: string;
+            /** Diagnostic Scope */
+            diagnostic_scope?: {
+                [key: string]: unknown;
+            } | null;
         };
     };
     responses: never;

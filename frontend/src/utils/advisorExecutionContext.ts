@@ -36,7 +36,10 @@ export function bindAdvisorExecutionContext<T extends { nodes: Array<Record<stri
     : "Draft workflow only. Execution results are unavailable for interpretation because the draft changed or its producing run identity is missing. Inspect the saved run or execute the current draft.";
   return {
     ...context,
-    execution_run_id: Number.isInteger(runId) && Number(runId) > 0 ? runId : null,
+    // A selection reference is not browser-authored result authority. Hosted
+    // Advisor resolves this historical run under server ownership/disclosure checks.
+    retained_run_id: Number.isInteger(runId) && Number(runId) > 0 ? runId : null,
+    execution_run_id: allowed ? runId : null,
     result_interpretation_allowed: allowed,
     execution_notice: execution.restoredEvidenceNotice || notice,
     execution_evidence_scope: scope,

@@ -10,8 +10,10 @@ const mocks = vi.hoisted(() => ({
   download: vi.fn(),
   predictions: vi.fn(),
   toast: vi.fn(),
+  audit: {} as Record<string, boolean>,
+  profile: null as string | null,
 }));
-let report: any, project: any, deploy: any;
+let report: any, project: any, deploy: any, workbook: any;
 vi.mock("@/api/client", () => ({ default: { get: mocks.get } }));
 vi.mock("@/utils/download", () => ({
   downloadText: mocks.download,
@@ -20,13 +22,14 @@ vi.mock("@/utils/download", () => ({
 }));
 vi.mock("@/stores/report", () => ({ useReportStore: () => report }));
 vi.mock("@/stores/project", () => ({ useProjectStore: () => project }));
+vi.mock("@/stores/workbook", () => ({ useWorkbookStore: () => workbook }));
 vi.mock("@/stores/deploy", () => ({ useDeployStore: () => deploy }));
 vi.mock("@/stores/runs", () => ({ useRunsStore: () => ({ fetchPredictions: mocks.predictions }) }));
 vi.mock("@/stores/advisor", () => ({
   useAdvisorStore: () => ({ switchScope: vi.fn().mockResolvedValue(null) }),
 }));
 vi.mock("@/composables/useAppConfig", () => ({
-  useAppConfig: () => ({ isFeatureEnabled: () => false, appConfig: ref({}) }),
+  useAppConfig: () => ({ isFeatureEnabled: () => false, appConfig: ref({ audit: mocks.audit, siteProfile: mocks.profile }) }),
 }));
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: mocks.toast }) }));
 const slot = { template: "<div><slot /></div>" };
@@ -34,7 +37,6 @@ const stubs = {
   Button: { props: ["label"], template: "<button @click=\"$emit('click')\">{{label}}</button>" },
   ResponsiveHeaderActions: slot,
   ContextualActions: true,
-  ValidationWalkthroughPanel: true,
   QualificationPanel: true,
   MemoryAttribution: true,
   Dropdown: true,
@@ -71,6 +73,8 @@ async function open(component: any, path = "/report") {
 }
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.audit = {};
+  mocks.profile = null;
   mocks.get.mockResolvedValue({ data: [] });
   mocks.predictions.mockReset();
   project = reactive({
@@ -78,6 +82,7 @@ beforeEach(() => {
     ensureProjectForBrowserTab: vi.fn().mockResolvedValue(null),
     selectProject: vi.fn().mockResolvedValue(null),
   });
+  workbook = reactive({ projectId: null, activeSheet: null });
   report = reactive({
     selectedWorkflowId: 7,
     selectedRunIds: [],
@@ -104,6 +109,24 @@ function executableMenus(w: any) {
   return w.vm.exportMenuItems.filter((item: any) => item.label?.includes("current workflow"));
 }
 describe("Report configuration layout and scientific summary", () => {
+  it("opens on the active sheet and newest completed run without generating a report", async () => {
+    report.selectedWorkflowId = null;
+    report.workflows = [{ id: 5, name: "Active sheet" }, { id: 7, name: "Other sheet" }];
+    workbook.projectId = 1;
+    workbook.activeSheet = { workflowId: 5 };
+    report.fetchRunsForWorkflow.mockImplementation(async () => {
+      report.availableRuns = [
+        { id: 3, status: "completed", executed_at: "2026-10-01T00:00:00Z" },
+        { id: 4, status: "completed", executed_at: "2026-10-02T00:00:00Z" },
+        { id: 5, status: "failed", executed_at: "2026-10-03T00:00:00Z" },
+      ];
+    });
+    const w = await open(ReportContent);
+    expect(report.selectedWorkflowId).toBe(5);
+    expect(report.selectedRunIds).toEqual([4]);
+    expect(report.fetchReportData).not.toHaveBeenCalled();
+    w.unmount();
+  });
   it("keeps removable runs outside aligned fields and switches preview/export detail", async () => {
     report.selectedRunIds = [42];
     report.availableRuns = [{ id: 42, name: "Long selected execution run" }];
@@ -115,7 +138,7 @@ describe("Report configuration layout and scientific summary", () => {
     expect(w.get("iframe").attributes("srcdoc")).toContain("Short summary");
     expect(w.get(".report-mode-help").text()).toContain("Key results and context");
     expect(w.find(".row-level-option").exists()).toBe(true);
-    expect(w.get(".row-level-option").text()).toContain("complete target lists");
+    expect(w.get(".row-level-option").text()).toContain("Include figures and individual reference/prediction values");
     report.reportMode = "detailed";
     await flushPromises();
     expect(w.find(".row-level-option").exists()).toBe(true);
@@ -127,6 +150,19 @@ describe("Report configuration layout and scientific summary", () => {
   });
 });
 describe("Report workspace generated evidence", () => {
+  it("uses the renamed run as the title for a single-run report without changing workflow identity", async () => {
+    report.isReady = true;
+    report.reportData = {
+      workflow_id: 7, name: "Original workflow", nodes: [], edges: [],
+      runs: [{ id: 42, name: "Reviewed Iris run", status: "completed", results_summary: {} }],
+    };
+    const w = await open(ReportContent, "/report?tab=preview");
+    const html = w.get("iframe").attributes("srcdoc") || "";
+    expect(html).toContain("<h1>Reviewed Iris run</h1>");
+    expect(html).not.toContain("<h1>Original workflow</h1>");
+    expect((w.vm as any).getExportFilename("pdf")).toBe("reviewed_iris_run_report.pdf");
+    w.unmount();
+  });
   it("renders and exports a detailed executed graph with optional node labels absent", async () => {
     report.isReady = true;
     report.reportMode = "detailed";
@@ -159,7 +195,8 @@ describe("Report workspace generated evidence", () => {
     expect(report.fetchReportData).not.toHaveBeenCalled();
     w.unmount();
   });
-  it("uses three tabs without regenerating or changing the retained preview on navigation", async () => {
+  it("keeps Report to two tabs even when audit is entitled, without changing retained preview", async () => {
+    mocks.audit = { localQuery: true, fullPipeline: true, reportPack: true, exportAudited: true };
     report.isReady = true;
     report.isStale = true;
     report.reportMode = "detailed";
@@ -168,7 +205,7 @@ describe("Report workspace generated evidence", () => {
     report.reportData = { workflow_id: 7, name: "Retained A", nodes: [], edges: [], runs: [] };
     const w = await open(ReportContent, "/report?tab=preview");
     expect(w.findAll("[header]").map(tab => tab.attributes("header")))
-      .toEqual(["Setup", "Preview", "ISO Validation"]);
+      .toEqual(["Setup", "Preview"]);
     expect(w.text()).toContain("Setup has changed");
     const before = w.get("iframe").attributes("srcdoc");
     expect(before).toContain("Short summary");
@@ -176,13 +213,50 @@ describe("Report workspace generated evidence", () => {
     (w.vm as any).activeTab = "setup";
     report.reportMode = "summary";
     await flushPromises();
-    (w.vm as any).activeTab = "validation";
+    (w.vm as any).activeTab = "preview";
     await flushPromises();
     expect(w.get("iframe").attributes("srcdoc")).toBe(before);
     expect(report.fetchReportData).not.toHaveBeenCalled();
     await (w.vm as any).exportMenuItems.find((item: any) => item.label === "Markdown").command();
     expect(mocks.download.mock.calls[0][0]).toContain("2026-10-02T10:00:00Z");
     expect(mocks.download.mock.calls[0][0]).toContain("Short summary");
+    w.unmount();
+  });
+  it.each([{}, { localQuery: true }, { fullPipeline: true, reportPack: true, exportAudited: true }])(
+    "keeps operator rehearsal out of Report and normalizes old deep links %j", async (audit) => {
+      mocks.audit = audit;
+      const w = await open(ReportContent, "/report?tab=validation");
+      expect(w.text()).not.toContain("Validation Walkthrough");
+      expect((w.vm as any).activeTab).toBe("setup");
+      expect(w.findAll("[header]").map(tab => tab.attributes("header"))).toEqual(["Setup", "Preview"]);
+      (w.vm as any).activeTab = "validation";
+      await flushPromises();
+      expect((w.vm as any).activeTab).toBe("setup");
+      w.unmount();
+    },
+  );
+  it.each([false, true])("offers the workflow Audit action only with query capability %s", async (enabled) => {
+    mocks.audit = { localQuery: enabled };
+    const w = await open(ReportContent);
+    const menu = (w.vm as any).reportHeaderActionItems;
+    expect(w.findAll('button').some(button => button.text() === 'Audit')).toBe(enabled);
+      expect(w.text()).not.toContain("Validation Walkthrough");
+    expect(menu.some((item: any) => item.label === 'Audit')).toBe(enabled);
+    await (w.vm as any).openWorkflowAudit();
+    await flushPromises();
+    expect(w.vm.$route.path).toBe(enabled ? '/audit' : '/report');
+    w.unmount();
+  });
+  it("does not offer Audit actions in Demo even when a backend advertises local audit", async () => {
+    mocks.profile = "demo";
+    mocks.audit = { localQuery: true, fullPipeline: true, reportPack: true, exportAudited: true };
+    const w = await open(ReportContent);
+    expect(w.findAll("[header]").map(tab => tab.attributes("header"))).toEqual(["Setup", "Preview"]);
+    expect(w.findAll("button").some(button => button.text() === "Audit")).toBe(false);
+    expect((w.vm as any).reportHeaderActionItems.some((item: any) => item.label === "Audit")).toBe(false);
+    await (w.vm as any).openWorkflowAudit();
+    await flushPromises();
+    expect(w.vm.$route.path).toBe("/report");
     w.unmount();
   });
 });
@@ -198,7 +272,7 @@ describe("GSC-12 saved-run executable export authority", () => {
         ReportContent,
         kind === "linked run" ? "/report?project=1&workflow=7&run=42" : "/report",
       );
-      expect(w.get(".execution-export-scope").text()).toContain("saved executions is unavailable");
+      expect(w.get(".execution-export-scope").text()).toContain("original executable code is unavailable");
       for (const item of executableMenus(w)) {
         expect(item.disabled).toBe(true);
         await item.command();

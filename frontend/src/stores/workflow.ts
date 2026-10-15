@@ -522,6 +522,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   function applyPersistedPreflight(preflight: WorkflowPreflightResponse) {
+    const previousMessages = new Set(workflowPreflight.value?.issues.map(issue => issue.message) ?? []);
+    workflowWarnings.value = workflowWarnings.value.filter(message => !previousMessages.has(message));
     workflowPreflight.value = preflight;
     const byEdge = new Map(
       preflight.semantic_edges.map((edge) => [
@@ -629,6 +631,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
           nodes: backendNodes,
           edges: backendEdges,
         });
+        useWorkbookStore().syncSavedSheetMetadata(response.data);
         workflowHash.value = response.data.integrity_hash || null;
         clearSavedDraft(response.data.id);
         hasUnsavedChanges.value = hasNewerEdits();
@@ -671,7 +674,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
   }
 
-  async function loadWorkflow(id: number, retainedRunId?: number): Promise<void> {
+  async function loadWorkflow(id: number, retainedRunId?: number, shouldApply?: () => boolean): Promise<void> {
     const loadGeneration = ++workflowLoadGeneration;
     isLoading.value = true;
     try {
@@ -689,7 +692,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       if (loadGeneration !== workflowLoadGeneration) return;
 
       const response = await api.get(`/workflows/${id}`);
-      if (loadGeneration !== workflowLoadGeneration) return;
+      if (loadGeneration !== workflowLoadGeneration || (shouldApply && !shouldApply())) return;
       const data = response.data;
 
       workflowId.value = data.id;
@@ -1001,36 +1004,40 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   const isExecuting = ref(false);
-  async function withExecutionOwnership(action: () => Promise<WorkflowExecuteResponse>) {
+  async function withExecutionOwnership(action: (begin: () => void) => Promise<WorkflowExecuteResponse>) {
     if (isExecuting.value) throw new Error("An execution is already in progress. Wait for it to finish.");
     isExecuting.value = true;
     const ownershipGeneration = workflowLoadGeneration;
-    // A new attempt owns the surface. Older evidence stays accessible through History.
-    lastExecutionResults.value = null;
-    lastExecutionDiagnostics.value = {};
-    lastExecutionResultDescriptors.value = {};
-    lastExecutionPresentations.value = {};
-    lastExecutionParams.value = {};
-    executionEvidenceScope.value = "unavailable";
-    restoredRunId.value = null;
-    restoredEvidenceNotice.value = "Execution pending. Prior run evidence is available in History.";
-    restoredEvidenceGaps.value = [];
-    markWorkflowStale();
-    try { return await action(); }
+    let evidenceClaimed = false;
+    const begin = () => {
+      evidenceClaimed = true;
+      // Only an admitted attempt replaces the current scientific evidence.
+      lastExecutionResults.value = null;
+      lastExecutionDiagnostics.value = {};
+      lastExecutionResultDescriptors.value = {};
+      lastExecutionPresentations.value = {};
+      lastExecutionParams.value = {};
+      executionEvidenceScope.value = "unavailable";
+      restoredRunId.value = null;
+      restoredEvidenceNotice.value = "Execution pending. Prior run evidence is available in History.";
+      restoredEvidenceGaps.value = [];
+      markWorkflowStale();
+    };
+    try { return await action(begin); }
     catch (error) {
       if (ownershipGeneration !== workflowLoadGeneration) throw new DOMException("Execution belongs to a previously active workflow.", "AbortError");
-      if (ownershipGeneration === workflowLoadGeneration) restoredEvidenceNotice.value = "Execution did not finish. No current execution evidence is available; inspect History or rerun.";
+      if (evidenceClaimed && ownershipGeneration === workflowLoadGeneration) restoredEvidenceNotice.value = "Execution did not finish. No current execution evidence is available; inspect History or rerun.";
       throw error;
     } finally { isExecuting.value = false; }
   }
   async function executeWorkflow(initialData?: ParamsMap): Promise<WorkflowExecuteResponse> {
-    return withExecutionOwnership(() => executeWorkflowSnapshot(initialData));
+    return withExecutionOwnership((begin) => executeWorkflowSnapshot(initialData, begin));
   }
   async function executeNode(nodeId: string, initialData?: ParamsMap): Promise<WorkflowExecuteResponse> {
-    return withExecutionOwnership(() => executeNodeSnapshot(nodeId, initialData));
+    return withExecutionOwnership((begin) => executeNodeSnapshot(nodeId, initialData, begin));
   }
 
-  async function executeWorkflowSnapshot(initialData?: ParamsMap): Promise<WorkflowExecuteResponse> {
+  async function executeWorkflowSnapshot(initialData: ParamsMap | undefined, begin: () => void): Promise<WorkflowExecuteResponse> {
     const activeSheet = useWorkbookStore().activeSheet;
     if (activeSheet?.purpose === "managed_candidate_authority") {
       throw new Error(
@@ -1047,6 +1054,18 @@ export const useWorkflowStore = defineStore("workflow", () => {
     if (hasUnsavedChanges.value || preparingGeneration !== workflowLoadGeneration) {
       throw new Error("The workflow changed while saving. Review the current draft and run again.");
     }
+    const reviewedSignature = workflowDraftSignature({ workflowName: workflowName.value,
+      workflowDescription: workflowDescription.value, nodes: nodes.value, edges: edges.value });
+    const preflight = await refreshPersistedPreflight();
+    if (preflight?.is_valid === false) {
+      throw new Error(preflight.issues.filter(issue => issue.level === "error").map(issue => issue.message).join("; ")
+        || "Connect required inputs before running this workflow.");
+    }
+    if (preparingGeneration !== workflowLoadGeneration || reviewedSignature !== workflowDraftSignature({
+      workflowName: workflowName.value, workflowDescription: workflowDescription.value,
+      nodes: nodes.value, edges: edges.value,
+    })) throw new Error("The workflow changed during validation. Review it and run again.");
+    begin();
     const executingWorkflowId = workflowId.value;
     const executingLoadGeneration = workflowLoadGeneration;
     const executionGeneration = ++executionRequestGeneration;
@@ -1242,7 +1261,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
   async function executeNodeSnapshot(
     nodeId: string,
-    initialData?: ParamsMap,
+    initialData: ParamsMap | undefined,
+    begin: () => void,
   ): Promise<WorkflowExecuteResponse> {
     if (useWorkbookStore().activeSheet?.purpose === "managed_candidate_authority") {
       throw new Error(
@@ -1258,6 +1278,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     if (hasUnsavedChanges.value || preparingGeneration !== workflowLoadGeneration) {
       throw new Error("The workflow changed while saving. Review the current draft and run again.");
     }
+    begin();
     const executingWorkflowId = workflowId.value;
     const executingLoadGeneration = workflowLoadGeneration;
     const executionGeneration = ++executionRequestGeneration;

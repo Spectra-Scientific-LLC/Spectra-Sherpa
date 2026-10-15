@@ -12,7 +12,15 @@ const mocks = vi.hoisted(() => ({
   toastAdd: vi.fn(),
   workflowNodes: [] as Array<Record<string, unknown>>,
   routerPush: vi.fn(),
+  optimization: false,
 }));
+
+vi.mock("@/composables/useAppConfig", () => ({ useAppConfig: () => ({
+  appConfig: { value: { features: { managedCampaigns: mocks.optimization } } },
+}) }));
+vi.mock("@/composables/usePrimaryNavigation", () => ({ usePrimaryNavigation: () => ({
+  items: { value: mocks.optimization ? [{ label: "Optimize", to: "/contributed-destination" }] : [] },
+}) }));
 
 vi.mock("@/api", () => ({ api: { get: mocks.apiGet, post: mocks.apiPost } }));
 vi.mock("@/stores/workbook", () => ({
@@ -62,6 +70,7 @@ const role = (targetType: "continuous" | "categorical") => ({
 describe("TemplatePickerDialog", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.optimization = false;
     mocks.workflowNodes = [];
     mocks.apiPost.mockResolvedValue({ data: null });
   });
@@ -188,7 +197,8 @@ describe("TemplatePickerDialog", () => {
     expect(wrapper.emitted("sheet-opened")).toHaveLength(1);
   });
 
-  it("discloses that a two-view starter creates no managed campaign", async () => {
+  it.each([false, true])("discloses two-view follow-up with optimization capability %s", async (optimization) => {
+    mocks.optimization = optimization;
     mocks.openTemplateAsSheet.mockResolvedValue({ name: "PLS Regression Calibration" });
     mocks.apiGet.mockResolvedValue({
       data: {
@@ -271,6 +281,8 @@ describe("TemplatePickerDialog", () => {
     expect(wrapper.text()).toContain(
       "No companion workflow is required.",
     );
+    expect(wrapper.text().includes("choose Optimize")).toBe(optimization);
+    if (!optimization) expect(wrapper.text()).toContain("compare them manually in Runs");
 
     await wrapper.get(".tp-row button").trigger("click");
     await flushPromises();
@@ -279,7 +291,7 @@ describe("TemplatePickerDialog", () => {
       expect.objectContaining({
         severity: "info",
         summary: "Analysis started",
-        detail: expect.stringContaining("After a successful run, choose Optimize"),
+        detail: expect.stringContaining(optimization ? "After a successful run, choose Optimize" : "compare them manually in Runs"),
       }),
     );
   });
@@ -410,8 +422,15 @@ describe("TemplatePickerDialog", () => {
     const classification = rows.find((row) => row.text().includes("Classification (PLS-DA)"));
     const regression = rows.find((row) => row.text().includes("PLS Regression"));
     expect(classification?.text()).toContain("Use Current Data");
-    expect(classification?.text()).toContain("Use Bundled Example");
-    expect(classification?.text()).toContain("Example source: wine (sklearn)");
+    expect(rows[0].text()).toContain("Classification (PLS-DA)");
+    expect(rows[rows.length - 1].text()).toContain("PLS Regression");
+    expect(wrapper.findAll(".tp-group-title").map((heading) => heading.text())).toEqual([
+      "Classification (1)", "Not Available for Current Dataset (1)",
+    ]);
+    expect(classification?.text()).not.toContain("Use Bundled Example");
+    expect(classification?.text()).not.toContain("Example source: wine (sklearn)");
+    expect(regression?.find(".tp-row-description").exists()).toBe(false);
+    expect(regression?.find("[role=tooltip]").text()).toContain("Requires a numeric target");
     expect(regression?.text()).toContain("Requires a numeric target");
     expect(regression?.text()).not.toContain("Use Current Data");
   });
@@ -499,16 +518,9 @@ describe("TemplatePickerDialog", () => {
       }),
     );
     expect(wrapper.text()).toContain("Requires a numeric target");
-    const buttons = wrapper.findAll("button");
-    const useButton = buttons.find((button) => button.text() === "Not Ready");
-    expect(useButton?.attributes("disabled")).toBeDefined();
-    const targetAction = buttons.find((button) => button.text() === "Set target in My Dataset");
-    expect(targetAction).toBeDefined();
-    await targetAction!.trigger("click");
-    expect(mocks.routerPush).toHaveBeenCalledWith({
-      path: "/data",
-      query: { tab: "my-dataset", project_id: "7", experiment: "8" },
-    });
+    expect(wrapper.findAll(".tp-row button")).toHaveLength(0);
+    expect(wrapper.get(".tp-unavailable-status").text()).toBe("Not Available for Current Dataset");
+    expect(mocks.routerPush).not.toHaveBeenCalled();
   });
 
   it("uses the verified project dataset instead of a stale active sheet source", async () => {
@@ -543,7 +555,10 @@ describe("TemplatePickerDialog", () => {
           category: "calibration", status: "ready", status_detail: null, is_active: true,
           template_data: role("continuous"),
         }], total: 1 } });
-    mocks.apiPost.mockResolvedValue({ data: { decisions: [{
+    const savedAuthority = { ...projectDataset.definition.target_authority, column: "Protein", units: "%" };
+    mocks.apiPost.mockResolvedValue({ data: { binding: {
+      target_authority: savedAuthority, group_column: "specimen_id",
+    }, decisions: [{
       template_slug: "pls-regression", status: "compatible", reason_codes: [], reasons: [],
     }] } });
     mocks.openTemplateAsSheet.mockResolvedValue({ name: "PLS Regression" });
@@ -555,7 +570,7 @@ describe("TemplatePickerDialog", () => {
     expect(wrapper.text()).toContain("Project dataset: Corn MP6 · Moisture");
     expect(mocks.apiPost).toHaveBeenCalledWith(
       "/workflow-templates/binding-compatibility-preview",
-      expect.objectContaining({ binding: expect.objectContaining({ file_ids: [11] }) }),
+      expect.objectContaining({ use_saved_analysis_selection: true, binding: expect.objectContaining({ file_ids: [11] }) }),
     );
     const button = wrapper.findAll("button").find((candidate) => candidate.text() === "Use Project Dataset");
     expect(button).toBeDefined();
@@ -565,7 +580,7 @@ describe("TemplatePickerDialog", () => {
       launchMode: "user",
       dataBindings: { data_1: expect.objectContaining({
         experimentId: 8, fileIds: [11], allFiles: false,
-        targetAuthority: projectDataset.definition.target_authority,
+        targetAuthority: savedAuthority, groupColumn: "specimen_id",
       }) },
     });
   });
@@ -586,7 +601,7 @@ describe("TemplatePickerDialog", () => {
           template_data: role("continuous"),
         }], total: 1 } });
     mocks.apiPost.mockImplementation(async (_url: string, payload: { binding: { asset_id: string | null } }) => ({
-      data: { decisions: [{
+      data: { binding: { target_authority: null, group_column: null }, decisions: [{
         template_slug: "pls-regression",
         status: payload.binding.asset_id === assetId ? "compatible" : "needs_input",
         reason_codes: [], reasons: [],
@@ -612,7 +627,7 @@ describe("TemplatePickerDialog", () => {
   });
 
   it.each(["Active project dataset is no longer exact", "Dataset service unavailable"])(
-    "keeps bundled examples available without falling back to an old sheet when the project choice fails: %s",
+    "fails closed without offering alternate data when the project choice fails: %s",
     async (reason) => {
     mocks.workflowNodes = [{
       id: "data_1", type: "data.file_load", params: { experiment_id: 8, file_id: 10, stage: "raw" },
@@ -639,15 +654,10 @@ describe("TemplatePickerDialog", () => {
     expect(wrapper.text()).toContain("PLS Regression");
     expect(wrapper.text()).toContain("Project dataset selection could not be verified");
     expect(wrapper.text()).not.toContain("Failed to load analysis starters");
-    const currentButton = wrapper.findAll("button").find((button) => button.text() === "Project Dataset Unavailable");
-    expect(currentButton?.attributes("disabled")).toBeDefined();
+    expect(wrapper.get(".tp-unavailable-status").text()).toBe("Not Available for Current Dataset");
+    expect(wrapper.findAll(".tp-row button")).toHaveLength(0);
     expect(mocks.apiPost).not.toHaveBeenCalledWith("/workflow-templates/binding-compatibility-preview", expect.anything());
     expect(mocks.openTemplateAsSheet).not.toHaveBeenCalled();
-    const exampleButton = wrapper.findAll("button").find((button) => button.text() === "Use Bundled Example");
-    expect(exampleButton?.attributes("disabled")).toBeUndefined();
-    await exampleButton!.trigger("click");
-    await flushPromises();
-    expect(mocks.openTemplateAsSheet).toHaveBeenCalledWith(2, "PLS Regression", { launchMode: "example" });
   });
 
   it("refreshes stale readiness before offering the selected dataset", async () => {
@@ -776,11 +786,11 @@ describe("TemplatePickerDialog", () => {
       analysis_profile: receipt.analysis_readiness?.profile,
     });
     expect(wrapper.text()).toContain("Requires Raman data; the dataset technique is FTIR.");
-    expect(wrapper.text()).toContain("Not Ready");
+    expect(wrapper.text()).toContain("Not Available for Current Dataset");
     expect(wrapper.text()).not.toContain("Use Current Data");
   });
 
-  it("keeps incompatible current data disabled while allowing a deliberate bundled example", async () => {
+  it("shows incompatible starters as compact unavailable rows without alternate data actions", async () => {
     const templateData = role("continuous");
     templateData.nodes = [
       {
@@ -881,23 +891,11 @@ describe("TemplatePickerDialog", () => {
     await wrapper.setProps({ visible: true });
     await flushPromises();
 
-    const buttons = wrapper.findAll(".tp-row button");
-    const currentButton = buttons.find((button) => button.text() === "Not Ready");
-    const exampleButton = buttons.find((button) => button.text() === "Use Bundled Example");
-    expect(currentButton?.attributes("disabled")).toBeDefined();
-    expect(currentButton?.attributes("title")).toContain("Requires a numeric target");
-    expect(exampleButton).toBeDefined();
-    expect(exampleButton?.attributes("title")).toContain("diabetes (sklearn)");
+    expect(wrapper.findAll(".tp-row button")).toHaveLength(0);
+    expect(wrapper.get(".tp-unavailable-status").text()).toBe("Not Available for Current Dataset");
+    expect(wrapper.get("[role=tooltip]").text()).toContain("Requires a numeric target");
+    expect(wrapper.find(".tp-row-description").exists()).toBe(false);
     expect(mocks.openTemplateAsSheet).not.toHaveBeenCalled();
-    mocks.openTemplateAsSheet.mockResolvedValue({
-      name: "PLS Regression",
-      primaryDataSourceName: "diabetes (bundled example)",
-    });
-    await exampleButton!.trigger("click");
-    await flushPromises();
-    expect(mocks.openTemplateAsSheet).toHaveBeenCalledWith(2, "PLS Regression", {
-      launchMode: "example",
-    });
   });
 
   it("does not advertise a starter whose runtime dependency is unavailable", async () => {

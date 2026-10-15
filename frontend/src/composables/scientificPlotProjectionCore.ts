@@ -1,4 +1,4 @@
-import { matrixColorEncoding, encodingAnnotation, scoreGeometry, scoreOrientationNotice, componentOrientationNotice, scientificNumber } from "@/utils/scientificEncoding";
+import { matrixColorEncoding, scoreGeometry, scientificNumber } from "@/utils/scientificEncoding";
 /**
  * Internal renderer core for the canonical scientific projection facade.
  *
@@ -25,7 +25,7 @@ import { datasetAxisDisplayState, projectDatasetAxisDisplay } from "@/utils/data
 import {
   buildMetadataLineTraces,
   buildMetadataScoreTraces,
-  metadataGroupingState,
+  datasetMetadataGroupingState,
   projectMetadataStyle,
 } from "@/utils/sampleMetadataGrouping";
 import {
@@ -242,8 +242,8 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
 
   const typedMetadataGrouping = computed(() => {
     const rows = nodeOutput.value?.data || [];
-    const state = metadataGroupingState(
-      primaryOutputPayload.value?.y_axis,
+    const state = datasetMetadataGroupingState(
+      primaryOutputPayload.value,
       Array.isArray(rows) ? rows.length : 0,
     );
     const displayLabels = sampleAxisDisplay.value?.labels;
@@ -823,8 +823,6 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         : {}),
       height: 400,
       showlegend: hasCategorical,
-      annotations: [encodingAnnotation(scoreOrientationNotice)],
-      margin: {...basePlotLayout.margin,t:85},
       xaxis: {
         ...basePlotLayout.xaxis,
         title: axisLabels[pcaXAxis.value] || `PC${pcaXAxis.value + 1}`,
@@ -842,6 +840,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         bgcolor: "rgba(30, 41, 59, 0.8)",
         bordercolor: "#334155",
         borderwidth: 1,
+        font: { color: "#f8fafc" },
         x: 1,
         y: 1,
         xanchor: "right",
@@ -1130,17 +1129,6 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         zerolinecolor: "#64748b",
         zerolinewidth: 1.2,
       },
-      annotations: [
-        {
-          xref: "paper",
-          yref: "paper",
-          x: 0,
-          y: 1.08,
-          showarrow: false,
-          text: `Loading vectors are scaled to score-space.<br>${componentOrientationNotice}`,
-          font: { size: 11, color: "#cbd5e1" },
-        },
-      ],
       hovermode: "closest",
     };
   });
@@ -1245,8 +1233,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       ...basePlotLayout,
       height: 350,
       ...(hasFeatureLabels ? { margin: { ...basePlotLayout.margin, b: 150 } } : {}),
-      annotations: [encodingAnnotation(componentOrientationNotice)],
-      margin: { ...basePlotLayout.margin, t:95, ...(hasFeatureLabels ? {b:150} : {}) },
+      margin: { ...basePlotLayout.margin, ...(hasFeatureLabels ? {b:150} : {}) },
       showlegend: true,
       legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
       xaxis: {
@@ -1263,6 +1250,141 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     editable: true,
     edits: { legendPosition: true },
   }));
+
+  const pcaVariableCorrelations = computed(() => {
+    const dedicated = isProjectedScientificKind(nodeOutput.value, "pca_variable_correlations");
+    if (!dedicated && !isProjectedScientificKind(nodeOutput.value, "pca_scores")) {
+      return { data: [] as any[], layout: basePlotLayout };
+    }
+    const sourcePort = nodeOutput.value?.ports?.variable_correlations;
+    const correlations = dedicated ? numericMatrix(nodeOutput.value) : numericMatrix(sourcePort);
+    const nFeatures = correlations?.[0]?.length ?? 0;
+    if (!correlations || nFeatures === 0) return { data: [] as any[], layout: basePlotLayout };
+
+    const sourcePayload = resolvePortPayload(sourcePort);
+    const metadata = { ...nodeOutput.value?.metadata, ...scientificPortMetadata(sourcePort) };
+    const axisLabels = pcLabels.value;
+    const xIndex = Math.min(pcaXAxis.value, correlations.length - 1);
+    const yIndex = Math.min(pcaYAxis.value, correlations.length - 1);
+    const undefinedIndices = new Set<number>(
+      Array.isArray(metadata.undefined_feature_indices) ? metadata.undefined_feature_indices : [],
+    );
+    const featureLabels = [metadata, scientificPortMetadata(sourcePort)]
+      .map((candidate) => exactScientificFeatureLabels(candidate, nFeatures))
+      .find((labels): labels is string[] => labels !== null);
+    const axis = sourcePayload?.x_axis || sourcePayload?.feature_axis || {};
+    const visibleLabels = featureAxisDisplay.value?.labels;
+    const names = Array.from({ length: nFeatures }, (_, index) => {
+      if (visibleLabels?.length === nFeatures) return String(visibleLabels[index]);
+      if (featureLabels) return featureLabels[index];
+      if (Array.isArray(axis.labels) && axis.labels.length === nFeatures) return String(axis.labels[index]);
+      if (Array.isArray(axis.data) && axis.data.length === nFeatures) return String(axis.data[index]);
+      return `Variable ${index + 1}`;
+    });
+    const vectors = Array.from({ length: nFeatures }, (_, index) => ({
+      index,
+      x: correlations[xIndex][index],
+      y: correlations[yIndex][index],
+      name: names[index],
+    }))
+      .filter((variable) => !undefinedIndices.has(variable.index))
+      .sort((a, b) => Math.hypot(b.x, b.y) - Math.hypot(a.x, a.y) || a.index - b.index);
+    const selected = vectors.slice(0, 80);
+    if (correlations.length === 1) {
+      const oneDimensional = vectors.slice(0, 20).reverse();
+      return {
+        data: [{
+          type: "bar",
+          orientation: "h",
+          x: oneDimensional.map((variable) => variable.x),
+          y: oneDimensional.map((variable) => variable.name),
+          customdata: oneDimensional.map((variable) => [variable.name, variable.x]),
+          marker: { color: "#ef4444" },
+          hovertemplate: "<b>%{customdata[0]}</b><br>Correlation: %{customdata[1]:.4f}<extra></extra>",
+        }],
+        layout: {
+          ...basePlotLayout,
+          height: Math.max(380, oneDimensional.length * 22 + 100),
+          title: vectors.length > oneDimensional.length
+            ? `Top ${oneDimensional.length} of ${vectors.length} variables by absolute correlation`
+            : "Variable correlations",
+          margin: { ...basePlotLayout.margin, l: 140 },
+          xaxis: { ...basePlotLayout.xaxis, title: axisLabels[0] || "PC1", range: [-1, 1] },
+          yaxis: { ...basePlotLayout.yaxis, automargin: true },
+        },
+      };
+    }
+    const labelled = selected.length <= 30 ? selected.length : 24;
+    const theta = Array.from({ length: 181 }, (_, index) => (2 * Math.PI * index) / 180);
+    const data = [
+      {
+        type: "scatter",
+        mode: "lines",
+        x: theta.map(Math.cos),
+        y: theta.map(Math.sin),
+        line: { color: "#94a3b8", width: 1 },
+        hoverinfo: "skip",
+        showlegend: false,
+      },
+      {
+        type: "scatter",
+        mode: "markers+text",
+        x: selected.map((variable) => variable.x),
+        y: selected.map((variable) => variable.y),
+        text: selected.map((variable, index) => index < labelled ? variable.name : ""),
+        textposition: "top center",
+        textfont: { color: "#334155", size: 10 },
+        customdata: selected.map((variable) => [variable.name, variable.x, variable.y]),
+        marker: { color: "#ef4444", size: 5 },
+        name: selected.length === vectors.length
+          ? "Variables"
+          : `Top ${selected.length} of ${vectors.length} by projected correlation`,
+        hovertemplate: `<b>%{customdata[0]}</b><br>Correlation with PC${xIndex + 1}: %{customdata[1]:.4f}` +
+          `<br>Correlation with PC${yIndex + 1}: %{customdata[2]:.4f}<extra></extra>`,
+      },
+    ];
+    return {
+      data,
+      layout: {
+        ...basePlotLayout,
+        height: 510,
+        showlegend: selected.length < vectors.length,
+        hovermode: "closest",
+        margin: { ...basePlotLayout.margin, t: 30 },
+        xaxis: {
+          ...basePlotLayout.xaxis,
+          title: `r(variable, PC${xIndex + 1})`,
+          range: [-1.12, 1.12],
+          zeroline: true,
+          zerolinecolor: "#64748b",
+        },
+        yaxis: {
+          ...basePlotLayout.yaxis,
+          ...scoreGeometry,
+          title: `r(variable, PC${yIndex + 1})`,
+          range: [-1.12, 1.12],
+          zeroline: true,
+          zerolinecolor: "#64748b",
+        },
+        annotations: selected.map((variable) => ({
+          x: variable.x,
+          y: variable.y,
+          ax: 0,
+          ay: 0,
+          xref: "x",
+          yref: "y",
+          axref: "x",
+          ayref: "y",
+          text: "",
+          showarrow: true,
+          arrowhead: 2,
+          arrowsize: 0.8,
+          arrowwidth: 1.2,
+          arrowcolor: "#ef4444",
+        })),
+      },
+    };
+  });
 
   const pcaScreeData = computed(() => {
     if (isProjectedScientificKind(nodeOutput.value, "pca_explained_variance")) {
@@ -1330,19 +1452,69 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       y: 1.15,
       orientation: "h",
       bgcolor: "rgba(0,0,0,0)",
-      font: { color: "#f8fafc" },
+      font: { color: basePlotLayout.font.color },
     },
     xaxis: {
       ...basePlotLayout.xaxis,
-      title: { text: "Principal Component", font: { color: "#f8fafc" } },
+      title: { text: "Principal Component", font: { color: basePlotLayout.font.color } },
     },
     yaxis: {
       ...basePlotLayout.yaxis,
-      title: { text: "Variance (%)", font: { color: "#f8fafc" } },
+      title: { text: "Variance (%)", font: { color: basePlotLayout.font.color } },
       rangemode: "tozero",
       range: [0, 105],
     },
   }));
+
+  const pcaSummary = computed(() => {
+    if (!isProjectedScientificKind(nodeOutput.value, "pca_scores") ||
+        !nodeOutput.value?.ports?.variable_correlations ||
+        !nodeOutput.value?.ports?.explained_variance) {
+      return { data: [] as any[], layout: basePlotLayout };
+    }
+    const scree = pcaScreeData.value;
+    const scores = pcaScoresData.value;
+    const correlations = pcaVariableCorrelations.value;
+    if (!scree.length || !scores.length || !correlations.data.length || correlations.data[0]?.type === "bar") {
+      return { data: [] as any[], layout: basePlotLayout };
+    }
+    const axisLabels = pcLabels.value;
+    const xLabel = axisLabels[pcaXAxis.value] || `PC${pcaXAxis.value + 1}`;
+    const yLabel = axisLabels[pcaYAxis.value] || `PC${pcaYAxis.value + 1}`;
+    return {
+      data: [
+        ...scree.map((trace: any) => ({ ...trace, xaxis: "x", yaxis: "y", showlegend: false })),
+        ...scores.map((trace: any) => ({ ...trace, xaxis: "x2", yaxis: "y2", showlegend: false })),
+        ...correlations.data.map((trace: any, index: number) => ({
+          ...trace,
+          xaxis: "x3",
+          yaxis: "y3",
+          showlegend: false,
+          ...(index === 1 && Array.isArray(trace.text)
+            ? { text: trace.text.map((label: string, labelIndex: number) => labelIndex < 12 ? label : "") }
+            : {}),
+        })),
+      ],
+      layout: {
+        ...basePlotLayout,
+        title: "PCA Summary",
+        height: 470,
+        showlegend: false,
+        margin: { t: 55, r: 25, b: 65, l: 55 },
+        xaxis: { ...basePlotLayout.xaxis, domain: [0, 0.18], title: "Component" },
+        yaxis: { ...basePlotLayout.yaxis, domain: [0.1, 0.95], visible: false, range: [0, 105] },
+        xaxis2: { ...basePlotLayout.xaxis, domain: [0.25, 0.59], title: xLabel, zeroline: true },
+        yaxis2: { ...basePlotLayout.yaxis, domain: [0.1, 0.95], title: yLabel, zeroline: true,
+          ...scoreGeometry, scaleanchor: "x2" },
+        xaxis3: { ...basePlotLayout.xaxis, domain: [0.66, 1], title: `r(variable, PC${pcaXAxis.value + 1})`, range: [-1.12, 1.12], zeroline: true },
+        yaxis3: { ...basePlotLayout.yaxis, domain: [0.1, 0.95], title: `r(variable, PC${pcaYAxis.value + 1})`, range: [-1.12, 1.12],
+          zeroline: true, scaleanchor: "x3", scaleratio: 1 },
+        annotations: (correlations.layout as any).annotations.map((arrow: any) => ({
+          ...arrow, xref: "x3", yref: "y3", axref: "x3", ayref: "y3",
+        })),
+      },
+    };
+  });
 
   const pcaDiagnosticsData = computed(() => {
     if (isProjectedScientificKind(nodeOutput.value, "t2_q_diagnostics")) {
@@ -1547,7 +1719,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         y: 1.15,
         orientation: "h",
         bgcolor: "rgba(0,0,0,0)",
-        font: { color: "#f8fafc" },
+        font: { color: basePlotLayout.font.color },
       },
       xaxis: { ...basePlotLayout.xaxis, title: "Sample" },
       yaxis: { ...basePlotLayout.yaxis, title: "T²" },
@@ -1726,28 +1898,20 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     ];
   });
 
-  const formatMcrMetric = (value: unknown) => {
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? scientificNumber(numeric) : "n/a";
-  };
-
   const mcrValidationScatterLayout = computed(() => {
     const comparison = mcrGroundTruthComparison.value;
     const metrics = comparison?.metrics || {};
     const target = metrics.target || "target";
     const component = metrics.recovered_component || "component";
     const units = comparison?.metadata?.target_units || comparison?.target_units;
-    const title = [
-      `Ground Truth Validation: ${component} vs ${target}`,
-      `R² = ${formatMcrMetric(metrics.R2)}  |  RMSE = ${formatMcrMetric(metrics.RMSE)}`,
-    ];
+    const title = `Ground Truth Validation: ${component} vs ${target}`;
     const targetTitle = units ? `Target (${units})` : "Target";
     return {
       ...basePlotLayout,
       height: 360,
       title: {
-        text: `${title[0]}<br><span style="font-size:11px;color:#94a3b8">${title[1]}</span>`,
-        font: { size: 14, color: "#f8fafc" },
+        text: title,
+        font: { size: 14, color: basePlotLayout.font.color },
       },
       xaxis: { ...basePlotLayout.xaxis, title: targetTitle },
       yaxis: { ...basePlotLayout.yaxis, title: "Affine-aligned recovered concentration" },
@@ -1792,7 +1956,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     return {
       ...basePlotLayout,
       height: 320,
-      title: { text: "Selected Normalized Pure Spectrum", font: { size: 14, color: "#f8fafc" } },
+      title: { text: "Selected Normalized Pure Spectrum", font: { size: 14, color: basePlotLayout.font.color } },
       xaxis: {
         ...basePlotLayout.xaxis,
         title: xLabel,
@@ -2129,8 +2293,6 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       ...basePlotLayout,
       height: 400,
       showlegend: hasCategorical,
-      annotations: [encodingAnnotation(scoreOrientationNotice)],
-      margin: {...basePlotLayout.margin,t:85},
       xaxis: {
         ...basePlotLayout.xaxis,
         title: axisLabels[pcaXAxis.value] || `Dimension ${pcaXAxis.value + 1}`,
@@ -2147,6 +2309,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         bgcolor: "rgba(30, 41, 59, 0.8)",
         bordercolor: "#334155",
         borderwidth: 1,
+        font: { color: "#f8fafc" },
         x: 1,
         y: 1,
         xanchor: "right",
@@ -2668,8 +2831,6 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
 
     return {
       ...basePlotLayout,
-      annotations: [encodingAnnotation(matrixColorEncoding(nodeOutput.value?.data, metadata.value_semantics).notice)],
-      margin: {...basePlotLayout.margin,t:95},
       height: 400,
       xaxis: {
         ...basePlotLayout.xaxis,
@@ -3194,7 +3355,8 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         x: outlier_T2,
         y: outlier_Q,
         text: outlier_labels,
-        mode: "markers",
+        mode: "markers+text",
+        textposition: "top center",
         type: "scatter",
         name: "Outlier",
         marker: { color: "#ef4444", size: 9, symbol: "diamond" },
@@ -3316,28 +3478,6 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     "#06b6d4",
     "#f97316",
   ];
-
-  const formatHoldoutMetric = (value: unknown, digits = 3) => {
-    const n = Number(value);
-    return Number.isFinite(n) ? scientificNumber(n, { decimalPlaces: digits }) : "n/a";
-  };
-
-  const holdoutSplitSummary = (viz: any) => {
-    const metadata = viz?.metadata || {};
-    const train = metadata.train || {};
-    const test = metadata.test || {};
-    const r2Train = metadata.r2_train ?? train.R2;
-    const rmseTrain = metadata.rmse_train ?? train.RMSE;
-    const r2Test = metadata.r2_test ?? metadata.r2 ?? test.R2;
-    const rmseTest = metadata.rmse_test ?? metadata.rmse ?? test.RMSE;
-    if (r2Train === undefined && rmseTrain === undefined) {
-      return `Test R²=${formatHoldoutMetric(r2Test)} · RMSE=${formatHoldoutMetric(rmseTest)}`;
-    }
-    return [
-      `Train R²=${formatHoldoutMetric(r2Train)} · RMSE=${formatHoldoutMetric(rmseTrain)}`,
-      `Test R²=${formatHoldoutMetric(r2Test)} · RMSE=${formatHoldoutMetric(rmseTest)}`,
-    ].join("    ");
-  };
 
   const holdoutRegressionData = computed(() => {
     const viz = holdoutVisualization.value;
@@ -3485,8 +3625,9 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
 
     return {
       ...basePlotLayout,
+      meta: { evaluation_metrics: viz?.metadata ?? {} },
       title: {
-        text: `${titleText}<br><sup>${holdoutSplitSummary(viz)}</sup>`,
+        text: titleText,
         font: { color: "#e2e8f0", size: 14 },
       },
       margin: { ...basePlotLayout.margin, t: 66 },
@@ -3886,7 +4027,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     return {
       ...basePlotLayout,
       height: 350,
-      title: { text: `Per-Class Accuracy (${splitLabel})`, font: { size: 14, color: "#f8fafc" } },
+      title: { text: `Per-Class Accuracy (${splitLabel})`, font: { size: 14, color: basePlotLayout.font.color } },
       xaxis: { ...basePlotLayout.xaxis, title: "Class" },
       yaxis: { ...basePlotLayout.yaxis, title: "Accuracy (%)", range: [0, 105] },
       showlegend: true,
@@ -3934,6 +4075,8 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     pcaLoadingsData: pcaLoadingsData.value,
     pcaLoadingsLayout: pcaLoadingsLayout.value,
     pcaLoadingsConfig: pcaLoadingsConfig.value,
+    pcaVariableCorrelationsData: pcaVariableCorrelations.value.data,
+    pcaVariableCorrelationsLayout: pcaVariableCorrelations.value.layout,
     pcaScreeData: pcaScreeData.value,
     pcaScreeLayout: pcaScreeLayout.value,
     pcaDiagnosticsData: pcaDiagnosticsData.value,
@@ -4019,6 +4162,8 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
 
   return {
     plotBag,
+    sampleColorFieldOptions,
+    sampleSymbolFieldOptions,
     handleContourClick,
     metadataGroupingError,
     projectPlot(key: string) {
@@ -4026,14 +4171,19 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       switch (key) {
         case "scientific_pca_scores":
         case "pca_scores": return { data: pcaScoresData.value, layout: pcaScoresLayout.value };
+        case "scientific_pca_summary": return pcaSummary.value;
         case "pca_biplot": return { data: pcaBiplotData.value, layout: pcaBiplotLayout.value };
         case "scientific_pca_loadings":
         case "pca_loadings": return { data: pcaLoadingsData.value, layout: pcaLoadingsLayout.value };
+        case "scientific_pca_variable_correlations": return pcaVariableCorrelations.value;
         case "scientific_pca_explained_variance":
         case "pca_scree": return { data: pcaScreeData.value, layout: pcaScreeLayout.value };
         case "scientific_t2_q_diagnostics":
         case "pca_diagnostics": return { data: pcaDiagnosticsData.value, layout: pcaDiagnosticsLayout.value };
         case "scientific_regression_comparison": return regressionPlot.value;
+        case "spectra_overlay": return { data: spectraOverlayData.value, layout: spectraOverlayLayout.value };
+        case "generic_scatter": return { data: genericScatterData.value, layout: genericScatterLayout.value };
+        case "generic_boxplot": return { data: genericBoxPlotData.value, layout: genericBoxPlotLayout.value };
         case "mcr_concentrations": return { data: mcrConcentrationData.value, layout: mcrConcentrationLayout.value };
         case "mcr_spectra": return { data: mcrSpectraData.value, layout: mcrSpectraLayout.value };
         case "mcr_original_contour": return { data: mcrOriginalContourData.value, layout: mcrOriginalContourLayout.value };

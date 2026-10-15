@@ -113,7 +113,7 @@
             <pre class="notif-detail-text">{{ n.detail }}</pre>
           </div>
           <div class="notif-meta">
-            <span class="notif-time">{{ timeAgo(n.timestamp) }}</span>
+            <span class="notif-time"><RelativeTime :value="n.timestamp" /></span>
             <span class="notif-source">{{ n.source }}</span>
           </div>
         </div>
@@ -154,7 +154,7 @@
             </button>
           </div>
           <div class="notif-meta">
-            <span class="notif-time">{{ timeAgo(Date.parse(n.created_at)) }}</span>
+            <span class="notif-time"><RelativeTime :value="Date.parse(n.created_at)" /></span>
             <span class="notif-source">{{ guidanceStatus(n) }}</span>
           </div>
         </div>
@@ -185,6 +185,7 @@
 </template>
 
 <script setup lang="ts">
+import RelativeTime from "@/components/RelativeTime.vue";
 import { ref, computed, watch } from "vue";
 import Sidebar from "primevue/sidebar";
 import Button from "primevue/button";
@@ -314,18 +315,6 @@ function severityIcon(severity: AppNotification["severity"]): string {
   }
 }
 
-function timeAgo(timestamp: number): string {
-  const diff = Date.now() - timestamp;
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "yesterday";
-  return `${days}d ago`;
-}
 </script>
 
 <style scoped>

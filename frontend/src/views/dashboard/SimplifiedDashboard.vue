@@ -38,7 +38,7 @@
           class="current-strip__time"
           :title="absoluteTimestamp(projectStore.currentProject.updated_at)"
         >
-          {{ formatRelative(projectStore.currentProject.updated_at) }}
+          <RelativeTime :value="projectStore.currentProject.updated_at" />
         </span>
       </div>
     </WorkspaceContext>
@@ -59,20 +59,17 @@
 
           <!-- Has projects + matches filter -->
           <div v-if="filteredProjects.length" class="projects-grid">
-            <div
+            <article
               v-for="project in filteredProjects"
               :key="project.id"
               class="project-card"
               :class="{ active: project.id === projectStore.currentProjectId }"
-              role="button"
-              tabindex="0"
-              @click="selectProject(project)"
-              @keydown.enter.prevent="selectProject(project)"
-              @keydown.space.prevent="selectProject(project)"
             >
               <div class="project-card-head">
                 <div class="title-stack">
-                  <strong>{{ project.name }}</strong>
+                  <button type="button" class="project-open"
+                    :aria-label="`${project.id === projectStore.currentProjectId ? 'Open' : 'Select'} project ${project.name}`"
+                    @click="selectProject(project)">{{ project.name }}</button>
                   <Tag
                     v-if="project.id === projectStore.currentProjectId"
                     value="Active"
@@ -81,7 +78,7 @@
                 </div>
                 <div class="card-head-right">
                   <span class="last-touched" :title="absoluteTimestamp(project.updated_at)">
-                    {{ formatRelative(project.updated_at) }}
+                    <RelativeTime :value="project.updated_at" />
                   </span>
                   <button
                     type="button"
@@ -105,21 +102,17 @@
                   ><strong>{{ project.workflow_count }}</strong> workflows</span
                 >
                 <span
-                  ><strong>{{ project.model_count }}</strong> artifacts</span
+                  ><strong>{{ project.model_count }}</strong> models</span
                 >
               </div>
-            </div>
+            </article>
           </div>
 
           <!-- No projects at all -->
-          <div v-else-if="!projectStore.projects.length" class="empty-state">
-            <p class="empty-state__title">No projects yet.</p>
-          </div>
+          <WorkspaceState v-else-if="!projectStore.projects.length" kind="empty" variant="page" message="No projects yet." />
 
           <!-- Has projects but none match search -->
-          <div v-else class="empty-state">
-            <p class="empty-state__title">No matches.</p>
-          </div>
+          <WorkspaceState v-else kind="empty" variant="page" message="No matches." />
         </div>
 
       </TabPanel>
@@ -128,9 +121,7 @@
           <div class="section-header">
             <h2>Archive</h2>
           </div>
-          <div v-if="!projectStore.archivedProjects.length" class="empty-state">
-            <p class="empty-state__title">No archived projects.</p>
-          </div>
+          <WorkspaceState v-if="!projectStore.archivedProjects.length" kind="empty" variant="page" message="No archived projects." />
           <div v-else class="projects-grid">
             <div
               v-for="project in projectStore.archivedProjects"
@@ -195,8 +186,17 @@
             option-label="label"
             option-value="value"
             placeholder="Choose dataset"
+            aria-describedby="analysis-dataset-help"
             class="analysis-dataset-filter__control"
           />
+          <small id="analysis-dataset-help" v-if="!isLocalMode && !selectedDatasetId">
+            Choose a dataset to enable Start.
+          </small>
+          <div v-if="selectedDatasetNeedsImport" class="dataset-import-notice" role="status">
+            <span>Needs file import. Starting creates a project; import the provider file before running.</span>
+            <Button label="Data → Import" icon="pi pi-upload" class="p-button-text p-button-sm"
+              :disabled="isStartingAnalysis" @click="startBlankProject" />
+          </div>
         </div>
         <article class="starter-card">
           <div class="starter-card__body">
@@ -278,9 +278,11 @@
 </template>
 
 <script setup lang="ts">
+import RelativeTime from "@/components/RelativeTime.vue";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
+import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import ProjectImportAction from "@/components/ProjectImportAction.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
@@ -349,15 +351,16 @@ const selectedDatasetId = ref<string | null>(null);
 const isStartingAnalysis = ref(false);
 
 const datasetSourceLabel = (source: ReferenceDatasetOption["source"]): string => {
-  if (source === "builtin") return "built-in";
-  if (source === "synthetic") return "Spectra synthetic";
-  if (source === "sklearn") return "scikit-learn";
-  return "user-acquired";
+  if (source === "builtin") return "Built-in reference data";
+  if (source === "synthetic") return "Spectra Scientific synthetic benchmarks";
+  if (source === "sklearn") return "scikit-learn datasets";
+  if (source === "eigenvector" || source === "registered") return "User-acquired Eigenvector datasets";
+  return "Additional scientific source catalog";
 };
 
 const analysisDatasetOptions = computed(() =>
   (workflowStore.compatibilityMatrix?.datasets || []).map((dataset) => ({
-    label: `${dataset.label} · ${datasetSourceLabel(dataset.source)}`,
+    label: `${dataset.label} · ${datasetSourceLabel(dataset.source)}${dataset.availability === 'exact_user_acquisition_required' ? ' · Needs file import' : ''}`,
     value: dataset.dataset_id || `${dataset.source}:${dataset.name}`,
   })),
 );
@@ -371,6 +374,9 @@ const selectedDataset = computed<ReferenceDatasetOption | null>(() => {
     ) ?? null
   );
 });
+const selectedDatasetNeedsImport = computed(() =>
+  selectedDataset.value?.availability === "exact_user_acquisition_required",
+);
 
 const projectFilter = ref("");
 
@@ -420,10 +426,9 @@ onMounted(async () => {
 });
 
 async function selectProject(project: ProjectSummary): Promise<void> {
-  // Click only makes the project active — the user stays on the dashboard
-  // and sees the Current Project strip light up. The arrow on that strip
-  // is the dedicated path into Projects V2.
-  if (project.id !== projectStore.currentProjectId) {
+  if (project.id === projectStore.currentProjectId) {
+    await router.push("/project");
+  } else {
     await projectStore.selectProject(project.id);
   }
 }
@@ -619,24 +624,6 @@ async function confirmDelete(): Promise<void> {
   }
 }
 
-function formatRelative(dateStr: string): string {
-  if (!dateStr) return "—";
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  if (diff < 0) return "Just now";
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "Just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days} days ago`;
-  if (days < 30) return `${Math.floor(days / 7)}w ago`;
-  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
 function absoluteTimestamp(dateStr: string): string {
   if (!dateStr) return "";
   try {
@@ -665,7 +652,7 @@ function absoluteTimestamp(dateStr: string): string {
 }
 
 :global(.content:has(.simplified-dashboard)) {
-  background: #e4e0fa;
+  background: var(--workspace-background);
 }
 
 /* Hero -------------------------------------------------------------- */
@@ -839,9 +826,12 @@ function absoluteTimestamp(dateStr: string): string {
   border-color: var(--text-color-secondary);
 }
 
-.project-card:focus-visible {
-  outline: 1px solid var(--primary-color);
-  outline-offset: 2px;
+.project-open { padding: 0; border: 0; background: none; color: var(--text-color);
+  font: inherit; font-weight: 500; text-align: left; cursor: pointer; }
+.project-open::after { content: ''; position: absolute; inset: 0; }
+.trash-btn { position: relative; z-index: 1; }
+.project-open:focus-visible, .trash-btn:focus-visible {
+  outline: 2px solid var(--primary-color); outline-offset: 3px;
 }
 
 /* Active state: a single 3px accent stripe at the leading edge, no fill. */
@@ -874,7 +864,7 @@ function absoluteTimestamp(dateStr: string): string {
   min-width: 0;
 }
 
-.title-stack strong {
+.title-stack .project-open {
   font-size: 1rem;
   font-weight: 500;
   overflow: hidden;
@@ -938,22 +928,6 @@ function absoluteTimestamp(dateStr: string): string {
 
 /* Empty / no-match state */
 
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 3rem 1rem;
-  text-align: center;
-}
-
-.empty-state__title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 500;
-  color: var(--text-color);
-}
-
 /* Shared bits */
 
 .eyebrow {
@@ -996,6 +970,7 @@ function absoluteTimestamp(dateStr: string): string {
 .analysis-dataset-filter__control {
   width: 100%;
 }
+.dataset-import-notice { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
 
 /* Blank Project starter — same visual language as TemplateGallery's
    template cards (border, radius, surface, internal layout), but laid

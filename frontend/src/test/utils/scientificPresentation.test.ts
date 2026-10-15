@@ -388,3 +388,24 @@ describe("scientific presentation resolver", () => {
     }
   });
 });
+
+
+describe("split membership identities", () => {
+  it.each([true, false])("does not copy training labels onto test indices (subset retained: %s)", (retained) => {
+    const contract = { ...metadata.presentation_contract!, payload: {
+      ...metadata.presentation_contract!.payload, default_presentation: "test_indices",
+      presentations: [{ presentation_id: "test_indices", label: "Test indices", kind: "numeric_matrix",
+        source_ports: ["test_indices"], modes: ["table"] }],
+    } } as NonNullable<NodeTypeMetadata["presentation_contract"]>;
+    const candidate = { data: [[1], [2]], metadata: { sample_labels: ["Wrong A", "Wrong B"] },
+      presentation_contract: contract, ports: {
+        test_indices: { data: [108, 35], value: [108, 35], metadata: {} },
+        ...(retained ? { X_test: { data: [[3], [4]], metadata: {},
+          value: { y_axis: { labels: ["Correct A", "Correct B"] } } } } : {}),
+      },
+    } as NodeOutput;
+    const projected = projectScientificPresentation(candidate, resolveScientificPresentation(undefined, candidate));
+    expect(projected?.metadata.sample_labels).toEqual(retained ? ["Correct A", "Correct B"] : ["Source row 109", "Source row 36"]);
+    expect(projected?.data).toEqual([108, 35]);
+  });
+});

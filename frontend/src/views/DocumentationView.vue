@@ -1,8 +1,7 @@
 <template>
   <section class="documentation-content">
-    <header class="tab-header">
-      <h1>Documentation</h1>
-    </header>
+    <WorkspaceHeader title="Documentation" />
+    <ProductMap />
 
     <div class="doc-tab">
       <div v-for="section in sections" :key="section.title" class="doc-group">
@@ -27,6 +26,8 @@
 </template>
 
 <script setup lang="ts">
+import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import ProductMap from "@/components/ProductMap.vue";
 const DOCS_BASE = "https://docs.spectrascientific.ai";
 
 interface DocLink {
@@ -52,7 +53,7 @@ const sections: DocSection[] = [
         path: "/",
       },
       {
-        title: "Cloud vs Local OSS",
+        title: "Demo, Pro and local OSS",
         desc: "Choose hosted evaluation or local compute",
         path: "/introduction/cloud-vs-local/",
       },
@@ -78,7 +79,7 @@ const sections: DocSection[] = [
     icon: "pi pi-compass",
     items: [
       {
-        title: "10 Minutes to Local Compute",
+        title: "Local onboarding",
         desc: "Install and run the OSS app locally",
         path: "/onboarding/local-30-minutes/",
       },
@@ -258,7 +259,7 @@ const sections: DocSection[] = [
 }
 
 :global(.content:has(.documentation-content)) {
-  background: #e4e0fa;
+  background: var(--workspace-background);
 }
 
 .doc-tab {

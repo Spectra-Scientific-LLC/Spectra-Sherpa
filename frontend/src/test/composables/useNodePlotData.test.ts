@@ -473,7 +473,7 @@ describe("useNodePlotData canonical fitted PLS presentation", () => {
       } as NodeOutput,
     });
     expect(plotBag.value.metadataGroupingError).toBe("");
-    expect(plotBag.value.sampleColorFieldOptions).toEqual([]);
+    expect(plotBag.value.sampleColorFieldOptions).toEqual([{ label: "None", value: "__none__" }]);
     expect(plotBag.value.pcaScoresData.length).toBeGreaterThan(0);
   });
 
@@ -650,7 +650,10 @@ describe("useNodePlotData canonical fitted PLS presentation", () => {
     expect(plotBag.value.featureScaleOptions.map((option) => option.value)).toContain(
       "scale:Wavelength",
     );
-    expect(plotBag.value.sampleColorFieldOptions).toEqual([{ label: "Species", value: "Species" }]);
+    expect(plotBag.value.sampleColorFieldOptions).toEqual([
+      { label: "Species", value: "Species" },
+      { label: "None", value: "__none__" },
+    ]);
     const sampleTraces = plotBag.value.spectraOverlayData.filter((trace: any) =>
       trace.y?.some((value: unknown) => typeof value === "number"),
     );

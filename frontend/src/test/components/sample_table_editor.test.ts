@@ -221,3 +221,20 @@ describe("SampleTableEditor acquisition-plan synchronization", () => {
     expect(wrapper.text()).toContain("Your edits are unchanged");
   });
 });
+
+
+it.each([false, true])("initializes native categorical responses without overwriting them with blanks (%s)", async column => {
+  vi.mocked(api.get).mockResolvedValue({ data: plan });
+  const wrapper = shallowMount(SampleTableEditor, {
+    props: { sampleCount: 3, sampleLabels: ["A", "B", "C"], sourceFileId: 41, sourceName: "Classes", experimentId: 12,
+      sourceTarget: column ? [["one"], ["two"], ["three"]] : ["one", "two", "three"],
+      sourceTargetContext: { target_type: "categorical", target_name: "Group" } },
+    global: { stubs: { Dialog: { template: "<div><slot /><slot name='footer' /></div>" }, DataTable: { template: "<div><slot /></div>" } } },
+  });
+  await wrapper.find('button-stub[label="Edit measured samples"]').trigger("click");
+  await flushPromises();
+  const state = wrapper.vm as unknown as { rows: Array<{ targets: Record<string, string> }>; targets: Array<{ name: string; type: string }> };
+  expect(state.targets).toEqual([{ name: "group", type: "categorical" }]);
+  expect(state.rows.map(row => row.targets.group)).toEqual(["one", "two", "three"]);
+  expect(api.get).not.toHaveBeenCalledWith("/builder/analysis-binding/41");
+});

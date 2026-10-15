@@ -248,7 +248,10 @@
             </div>
             <div class="field">
               <label>Target column</label>
-              <InputText v-model="localOverrides.target_column" placeholder="Optional" />
+              <Dropdown v-if="csvTargetOptions.length" v-model="localOverrides.target_column"
+                :options="csvTargetOptions" optionLabel="label" optionValue="value"
+                showClear placeholder="Select response" />
+              <InputText v-else v-model="localOverrides.target_column" placeholder="Optional" />
             </div>
             <div class="field">
               <label>Target type</label>
@@ -258,6 +261,12 @@
                 optionLabel="label"
                 optionValue="value"
               />
+            </div>
+            <div v-if="csvPlan?.assignment" class="field">
+              <label>Data assignment</label>
+              <Dropdown v-model="localOverrides.assignment_column"
+                :options="[{ label: csvPlan.assignment.column, value: csvPlan.assignment.column }]"
+                optionLabel="label" optionValue="value" showClear />
             </div>
           </div>
         </div>
@@ -451,6 +460,7 @@ const localOverrides = reactive<PreparedDataOverrides>({
   data_role: "",
   target_column: "",
   target_type: "",
+  assignment_column: "",
   is_time_series: false,
   csv_layout: "",
 });
@@ -477,6 +487,10 @@ const filesSummary = computed(() => {
   return `${count.toLocaleString()} files`;
 });
 const csvPlan = computed(() => props.csvPlan ?? null);
+const csvTargetOptions = computed(() => [...new Set([
+  ...(csvPlan.value?.target?.selectable ?? []),
+  ...(csvPlan.value?.target?.candidates ?? []),
+])].filter((name) => name !== csvPlan.value?.assignment?.column).map((name) => ({ label: name, value: name })));
 const csvLayoutOptions = computed(() => csvPlan.value?.layout_options ?? []);
 const csvSummary = computed(() => {
   const plan = csvPlan.value;
@@ -523,6 +537,7 @@ const matrixRequestSignature = computed(() => {
     data_role: overrides?.data_role ?? null,
     target_column: overrides?.target_column ?? null,
     target_type: overrides?.target_type ?? null,
+    assignment_column: overrides?.assignment_column ?? null,
     is_time_series: overrides?.is_time_series ?? null,
     csv_layout: overrides?.csv_layout ?? null,
   });
@@ -584,6 +599,7 @@ function setLocalOverrides(next: PreparedDataOverrides | undefined) {
     data_role: next?.data_role ?? "",
     target_column: next?.target_column ?? "",
     target_type: next?.target_type ?? "",
+    assignment_column: next?.assignment_column ?? "",
     is_time_series: next?.is_time_series ?? false,
     csv_layout: next?.csv_layout ?? props.csvPlan?.recommended_layout ?? "",
   });
@@ -616,6 +632,7 @@ watch(
     if (localOverrides.target_type && localOverrides.target_type !== "auto") {
       overrides.target_type = localOverrides.target_type;
     }
+    if (localOverrides.assignment_column) overrides.assignment_column = localOverrides.assignment_column;
     if (localOverrides.is_time_series || hasOwnOverride("is_time_series")) {
       overrides.is_time_series = Boolean(localOverrides.is_time_series);
     }

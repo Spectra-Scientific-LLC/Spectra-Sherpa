@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import api from "@/api/client";
+import { useWorkbookStore } from "@/stores/workbook";
 import { useWorkflowStore } from "@/stores/workflow";
 import { workflowDraftKey } from "@/utils/workflowDraft";
 
@@ -53,6 +54,16 @@ describe("server save recovery lifecycle", () => {
       expect(store.nodes[0].params).toEqual({ minimum: 600, maximum: 1400 });
     },
   );
+
+  it("synchronizes saved portfolio color without replacing active sheet state", async () => {
+    const { store } = prepareDraft();
+    const workbook = useWorkbookStore();
+    workbook.projectId = 1;
+    workbook.sheets = [{ workflowId: 101, name: "My analysis", purpose: "analysis", tabColor: "#111111", sheetOrder: 0, lastSelectedNodeId: "clip_new" }];
+    vi.mocked(api.put).mockResolvedValue({ data: { id: 101, project_id: 1, integrity_hash: "saved", tab_color: "#abcdef", tab_color_override: null, color_source: "data", created_at: "2026-10-13T16:52:48Z" } });
+    await store.saveWorkflow({ createVersion: false });
+    expect(workbook.activeSheet).toMatchObject({ tabColor: "#abcdef", colorSource: "data", lastSelectedNodeId: "clip_new", name: "My analysis" });
+  });
 
   it("preserves the recovery draft when saving fails", async () => {
     const { store, key } = prepareDraft();

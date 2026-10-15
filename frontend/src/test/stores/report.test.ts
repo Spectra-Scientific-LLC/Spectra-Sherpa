@@ -130,14 +130,23 @@ describe("report payload assembly", () => {
       workflow_name: "MCR and Library Benchmark", template_name: null, template_version: null,
       source_name: null, source_origin: "current" as const, source_node_id: null,
     } };
-    const records = [{ kind: "source", label: "Source file", state: "healthy", name: "corn.mat", digest: "a".repeat(64), record_id: 1, detail: "verified", destination: "/data" }];
+    const records = [
+      { kind: "run", label: "Run", state: "healthy", name: "Run 42", digest: "run-hash", record_id: 42, workflow_id: 7, detail: "Saved", destination: "/runs" },
+      { kind: "model", label: "Calibrated model", state: "faulty", artifact_integrity: { state: "healthy", detail: "Stored model integrity verified." }, name: "Run 42 model", digest: "model-hash", record_id: 11, source_run_id: 42, detail: "Saved", destination: "/models" },
+      { kind: "workflow", label: "Workflow", state: "healthy", name: report.name, digest: report.integrity_hash, record_id: 7, detail: "verified", destination: "/workflow" },
+      { kind: "workflow", label: "Workflow", state: "healthy", name: "Different workflow", digest: "other", record_id: 99, detail: "verified", destination: "/workflow" },
+      { kind: "dataset", label: "Dataset", state: "missing", name: null, digest: null, record_id: null, detail: "No active dataset", destination: "/data" },
+      { kind: "model", label: "Calibrated model", state: "faulty", name: "Unrelated model", digest: null, record_id: 10, source_run_id: 999, detail: "Different run", destination: "/models" },
+    ];
     mocks.apiGet.mockResolvedValueOnce({ data: report }).mockResolvedValueOnce({ data: {
       project_id: 17, project_name: "Corn", records, choice_event_ids: {},
     } });
     await store.fetchReportData();
     expect(mocks.apiGet).toHaveBeenCalledWith("/projects/17/provenance");
     expect(store.projectEvidenceSnapshot?.state).toBe("available");
-    expect(store.projectEvidenceSnapshot?.records[0].digest).toBe("a".repeat(64));
+    expect(store.projectEvidenceSnapshot?.records).toEqual([
+      records[0], { ...records[1], state: "healthy", detail: "Stored model integrity verified." }, records[2],
+    ]);
     store.reset();
     expect(store.projectEvidenceSnapshot).toBeNull();
 
@@ -147,6 +156,30 @@ describe("report payload assembly", () => {
     expect(store.reportData).not.toBeNull();
     expect(store.projectEvidenceSnapshot?.state).toBe("unavailable");
   });
+  it("links an older report run without substituting the active analysis or claiming integrity verification", async () => {
+    const store = useReportStore();
+    store.selectedWorkflowId = 7;
+    const identity = { schema_version: 1 as const, project_id: 17, workflow_id: 7,
+      workflow_name: "Saved analysis", template_name: null, template_version: null,
+      source_name: "Wine", source_origin: "example" as const, source_node_id: "data" };
+    const report = { ...makeReportData(), workflow_identity: identity };
+    report.runs![0].workflow_identity = identity;
+    // Same IDs from another project must not be admitted by fallback assembly.
+    report.runs!.push({ ...report.runs![0], id: 43, workflow_identity: { ...identity, project_id: 99 } });
+    mocks.apiGet.mockResolvedValueOnce({ data: report }).mockResolvedValueOnce({ data: {
+      project_id: 17, records: [{ kind: "run", workflow_id: 99, record_id: 999, name: "Active unrelated run" }],
+    } });
+    await store.fetchReportData();
+    const snapshot = store.projectEvidenceSnapshot!;
+    expect(snapshot.reason).toBeNull();
+    expect(snapshot.records.map(record => [record.kind, record.record_id, record.state])).toEqual([
+      ["workflow", 7, "retained"], ["run", 42, "retained"],
+    ]);
+    expect(snapshot.records[1].detail).toContain("recorded outcome: completed");
+    expect(snapshot.records[1].detail).toContain("do not imply independent model validation");
+    expect(snapshot.records[0].detail).toContain("no new integrity verification");
+  });
+
   it("discards an in-flight project snapshot when its report scope is reset", async () => {
     const store = useReportStore();
     store.selectedWorkflowId = 7;

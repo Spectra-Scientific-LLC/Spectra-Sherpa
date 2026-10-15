@@ -482,6 +482,7 @@
           :loading="previewing"
           :disabled="!canPreview"
           :title="previewDisabledReason"
+          :aria-describedby="previewDisabledReason ? previewReasonId : undefined"
           @click="previewSynthesis"
         />
         <div class="preview-range-mode">
@@ -565,6 +566,7 @@
           @click="showTransmittance = !showTransmittance"
         />
       </div>
+      <DisabledReason :id="previewReasonId" :reason="previewDisabledReason" />
       <div v-if="componentOverlayOptions.length" class="component-overlay-controls">
         <span>Component spectra</span>
         <label
@@ -691,7 +693,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, useId, watch } from "vue";
+import DisabledReason from "@/components/DisabledReason.vue";
 import { useRouter } from "vue-router";
 import { storeToRefs } from "pinia";
 import Button from "primevue/button";
@@ -1155,6 +1158,7 @@ const outputSizeEstimate = computed<OutputSizeEstimate | null>(() => {
     overLimit: totalValues > MAX_SYNTHESIS_OUTPUT_VALUES,
   };
 });
+const previewReasonId = useId();
 const previewDisabledReason = computed(() => {
   if (commonOverlapProblem.value) {
     return "Selected spectra do not share a common wavenumber overlap.";
@@ -2642,7 +2646,7 @@ function openGuide() {
 .compound-empty {
   color: var(--text-color-secondary);
   height: 5rem;
-  text-align: center;
+  text-align: left;
 }
 
 .xsec-native-select {
