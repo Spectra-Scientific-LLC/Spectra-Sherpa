@@ -63,7 +63,7 @@ cross-validation scores. Do not fit scaling or select variables on the complete
 dataset before splitting. Additional learned-preprocessing and branched-workflow
 support are not part of this expansion.
 
-Canonical PLS exposes training predictions, a closed fitted-state envelope, and producer-owned combined VIP scores. Validation metrics belong to explicit evaluator nodes supplied with out-of-fold or held-out predictions; the fitted node does not relabel training fit as validation evidence.
+Canonical PLS exposes training predictions, a closed fitted-state envelope, and producer-owned combined VIP scores. A local regression evaluator scores the arrays supplied to it without independently verifying their cohort. Call its metrics validation only when retained run and split lineage establish out-of-fold or held-out predictions; the fitted node does not relabel training fit as validation evidence.
 
 The implementation follows de Jong's SIMPLS algorithm: S. de Jong,
 *SIMPLS: an alternative approach to partial least squares regression*,

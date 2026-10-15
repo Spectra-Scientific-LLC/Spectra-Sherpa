@@ -89,7 +89,7 @@ SpectroChemPy to this frozen desktop installer.
 
 BYOK Assistance is optional. Use the workbench's provider/key settings for your
 chosen provider; no AI key is bundled. Leave it unconfigured for offline
-scientific work. See [Cloud vs Local OSS](../introduction/cloud-vs-local.md) for
+scientific work. See [Demo, Pro and local OSS](../introduction/cloud-vs-local.md) for
 the distinction between local Assistance and paid Sherpa Advisor.
 
 ## Uninstall while retaining your work
