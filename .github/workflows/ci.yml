@@ -83,10 +83,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
-          - windows-latest
-          - macos-latest
+        # Public PR qualification is Ubuntu-only. Native-platform release
+        # qualification is paused; do not start Windows or macOS jobs here.
+        os: [ubuntu-latest]
         install_profile:
           - base
           - postgres
