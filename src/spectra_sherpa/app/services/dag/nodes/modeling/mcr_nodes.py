@@ -11,8 +11,10 @@ from typing import Any
 import numpy as np
 
 from spectra_sherpa.app.lib import fitted_state
+from spectra_sherpa.app.services.dag import fitted_input_identity as input_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers
+from spectra_sherpa.app.services.dag.fitted_input_identity import fitted_input_identity, require_fitted_input_identity
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
@@ -61,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 from spectra_sherpa.app.lib.fitted_state import MCRExtract
 
-MCR_FITTED_STATE_SERIALIZER = MCRExtract.SERIALIZER
+MCR_FITTED_STATE_SERIALIZER = "spectrasherpa.model-artifact.mcr-als/2"
 _MCR_MAX_COMPONENTS = 50
 _MCR_MAX_ITERATIONS = 2_000
 
@@ -571,17 +573,18 @@ def _canonical_mcr_parameters(parameters: dict[str, object]) -> dict[str, object
     }
 
 
-def _mcr_fitted_state_from_extract(extract: MCRExtract) -> dict[str, object]:
+def _mcr_fitted_state_from_extract(extract: MCRExtract, dataset: Any) -> dict[str, object]:
     metadata, arrays = extract.to_artifact()
     return {
         "serializer": MCR_FITTED_STATE_SERIALIZER,
+        "input_identity": fitted_input_identity(dataset, features=dataset.shape[1]),
         "metadata": metadata,
         "arrays": {name: np.asarray(value, dtype=np.float64).tolist() for name, value in arrays.items()},
     }
 
 
 def _mcr_extract_from_state(state: Any) -> MCRExtract:
-    if not isinstance(state, dict) or set(state) != {"serializer", "metadata", "arrays"}:
+    if not isinstance(state, dict) or set(state) != {"serializer", "metadata", "arrays", "input_identity"}:
         raise ValueError("MCR-ALS fitted state must contain exact serializer, metadata, and arrays")
     if state["serializer"] != MCR_FITTED_STATE_SERIALIZER:
         raise ValueError("MCR-ALS fitted state has an unsupported serializer")
@@ -606,7 +609,9 @@ def apply_mcr_fitted_state(input_data: Any, state: Any) -> np.ndarray:
     """Resolve concentration profiles using the exact saved solver policy."""
 
     matrix = to_numpy_2d(input_data, name="input_data", dtype=np.float64)
-    return _mcr_extract_from_state(state).transform(matrix)
+    extract = _mcr_extract_from_state(state)
+    require_fitted_input_identity(input_data, state["input_identity"], features=matrix.shape[1])
+    return extract.transform(matrix)
 
 
 def _mcr_scientific_core(input_data: Any, *, parameters: dict[str, object]) -> dict[str, Any]:
@@ -705,7 +710,7 @@ def _mcr_scientific_core(input_data: Any, *, parameters: dict[str, object]) -> d
         "residuals": residuals,
         "reconstructed": reconstructed,
         "scale_factors": scale_factors,
-        "fitted_state": _mcr_fitted_state_from_extract(extract),
+        "fitted_state": _mcr_fitted_state_from_extract(extract, input_ds),
         "parameters": params,
     }
 
@@ -1277,6 +1282,7 @@ bind_stable_execution_contract(
         "SpectroChemPy MCRALS documentation and constrained alternating least-squares implementation",
     ),
     implementation_modules=(
+        input_identity_authority,
         fitted_state,
         spectrochempy_adapter,
         dag_io_contracts,

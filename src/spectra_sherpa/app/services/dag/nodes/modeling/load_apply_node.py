@@ -24,6 +24,7 @@ from spectra_sherpa.app.services.dag.classification_application import (
     CLASS_RESPONSE_SEMANTICS,
     validate_classification_application,
 )
+from spectra_sherpa.app.services.dag.fitted_input_identity import require_fitted_input_identity
 from spectra_sherpa.app.services.dag.nodes.classification import plsda_state as plsda_state_authority
 from spectra_sherpa.app.services.dag.nodes.classification.plsda_state import (
     CANONICAL_MODEL_ORIGIN,
@@ -163,7 +164,7 @@ def _apply_model_artifact(
         return apply_saved_native_model(manifest, arrays, X_new, X_data)
     if X_data.ndim != 2:
         raise ValueError("This saved model requires two-dimensional application data")
-    if native_state:
+    if native_state or model_type in {"knn", "simca", "mcr", "fastica", "plsda"}:
         X_new, replay_warnings = replay.prepare_dataset(X_data, X_new, manifest)
         X_data = np.asarray(X_new.X)
     else:
@@ -176,6 +177,8 @@ def _apply_model_artifact(
 
         return apply_saved_native_model(manifest, arrays, X_new, X_data)
 
+    if model_type in {"knn", "simca", "mcr", "fastica"}:
+        require_fitted_input_identity(X_new, manifest.get("input_identity"), features=X_data.shape[1])
     extract = extract_cls.from_artifact(manifest, arrays)  # type: ignore[attr-defined]
     if model_type == "plsda":
         extract.validate_application_features(X_new, feature_mask=manifest.get("feature_mask"))
@@ -208,6 +211,8 @@ def _apply_model_artifact(
         result.update(result=numeric_matrix, labels=list(labels))
         metadata["classes"] = list(extract.classes)
         if model_type == "plsda":
+            result["applicability"] = extract.applicability(X_data)
+            metadata["applicability_warning"] = result["applicability"].get("warning")
             application = validate_classification_application(
                 predictions=labels,
                 responses=numeric_matrix,

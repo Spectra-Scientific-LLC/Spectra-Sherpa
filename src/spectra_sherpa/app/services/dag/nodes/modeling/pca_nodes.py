@@ -14,13 +14,16 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib import numerical_scaling, pca_numerics
 from spectra_sherpa.app.lib import pca as pca_authority
 from spectra_sherpa.app.lib.axes import FeatureAxis, SampleAxis
 from spectra_sherpa.app.lib.pca import PCAExtract, fit_pca
+from spectra_sherpa.app.lib.pca_numerics import require_resolved_pca_eigenvalues
 from spectra_sherpa.app.lib.sherpa_dataset import (
     EvaluationResult,
     SherpaDataset,
 )
+from spectra_sherpa.app.services.dag import fitted_input_identity as input_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers
 from spectra_sherpa.app.services.dag.feature_axis_identity import (
@@ -29,15 +32,20 @@ from spectra_sherpa.app.services.dag.feature_axis_identity import (
 from spectra_sherpa.app.services.dag.feature_axis_identity import (
     validated_axis_quantity,
 )
+from spectra_sherpa.app.services.dag.fitted_input_identity import (
+    fitted_input_identity,
+    require_fitted_input_identity,
+    validate_fitted_input_identity,
+)
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
     inherit_origin_context,
     inherit_sample_flags,
 )
+from spectra_sherpa.app.services.dag.nodes import _chemometric_diagnostics
 from spectra_sherpa.app.services.dag.nodes._chemometric_diagnostics import (
     hotelling_t2_per_sample,
-    q_residuals_per_sample,
 )
 from spectra_sherpa.app.services.dag.presentation_contract import (
     NodePresentationContract,
@@ -51,6 +59,8 @@ from spectra_sherpa.app.services.dag.stable_execution_contract import (
     bind_stable_execution_contract,
     execution_contract_digest,
 )
+from spectra_sherpa.app.services.dag.supervision_binding import admit_attached_sample_table_supervision
+from spectra_sherpa.core.node_identity import node_contract_digest_is_compatible
 from spectra_sherpa.execution_contract_vocabulary import (
     DatasetRankPolicy,
     LifecycleKind,
@@ -74,7 +84,7 @@ from ...node_base import (
     PortMetadata,
     register_node,
 )
-from . import _artifact_builder
+from . import _artifact_builder, component_validation, pca_component_curve
 from .core_utils import (
     is_sequential_numeric as _is_sequential_numeric,
 )
@@ -82,7 +92,7 @@ from .core_utils import (
 logger = logging.getLogger(__name__)
 
 PCA_FITTED_STATE_SERIALIZER = PCAExtract.SERIALIZER
-PCA_FITTED_STATE_SCHEMA = "spectrasherpa.model.pca-state/4"
+PCA_FITTED_STATE_SCHEMA = "spectrasherpa.model.pca-state/5"
 PCA_SIGN_RULE = "largest_absolute_loading_positive"
 _PCA_PARAMETER_KEYS = {"n_components", "standardized", "scaled"}
 
@@ -186,6 +196,7 @@ def _pca_state_from_extract(
     metadata: dict[str, object] = {
         "n_components": int(extract.n_components),
         "n_features": features,
+        "input_identity": fitted_input_identity(dataset, features=features),
         "reference_samples": int(extract.scores.shape[0]),
         "standardized": extract.scale_mode == "standard",
         "scaled": extract.scale_mode == "minmax",
@@ -218,6 +229,23 @@ def _pca_state_from_extract(
     }
 
 
+def _validate_pca_input_identity(metadata: dict, features: int) -> None:
+    identity = validate_fitted_input_identity(metadata["input_identity"])
+    if identity["features"] != features:
+        raise ValueError("PCA fitted input identity has an invalid feature count")
+    axis = [
+        metadata[name]
+        for name in (
+            "feature_axis_values_sha256",
+            "feature_axis_labels_sha256",
+            "feature_axis_units",
+            "feature_axis_quantity",
+        )
+    ]
+    if identity["axis"] != axis:
+        raise ValueError("PCA fitted input identity contradicts its feature axis")
+
+
 def validate_pca_fitted_state(state: object) -> dict[str, object]:
     """Validate and normalize the sole portable PCA state boundary."""
 
@@ -233,11 +261,14 @@ def validate_pca_fitted_state(state: object) -> dict[str, object]:
         raise ValueError("PCA fitted state does not use the closed schema")
     if state["schema_version"] != PCA_FITTED_STATE_SCHEMA or state["serializer"] != PCA_FITTED_STATE_SERIALIZER:
         raise ValueError("PCA fitted state has an unsupported identity")
-    if state["source_contract_digest"] != execution_contract_digest(PCANode.metadata):
+    if not node_contract_digest_is_compatible(
+        "model.pca", state["source_contract_digest"], execution_contract_digest(PCANode.metadata)
+    ):
         raise ValueError("PCA fitted state producer contract is not current")
     metadata = state["metadata"]
     arrays = state["arrays"]
     metadata_fields = {
+        "input_identity",
         "n_components",
         "n_features",
         "reference_samples",
@@ -265,6 +296,7 @@ def validate_pca_fitted_state(state: object) -> dict[str, object]:
     components = int(metadata["n_components"])
     features = int(metadata["n_features"])
     reference_samples = int(metadata["reference_samples"])
+    _validate_pca_input_identity(metadata, features)
     if components > min(features, reference_samples):
         raise ValueError("PCA fitted state retains more components than its fitted matrix permits")
     standardized = metadata["standardized"]
@@ -335,6 +367,7 @@ def validate_pca_fitted_state(state: object) -> dict[str, object]:
         or np.any(np.diff(eigenvalues) > 1e-10)
     ):
         raise ValueError("PCA fitted state has invalid eigenvalues")
+    require_resolved_pca_eigenvalues(eigenvalues)
     mean = _state_vector(arrays["mean"], name="mean", length=features, required=not scaled)
     scale = _state_vector(arrays["scale"], name="scale", length=features, required=standardized or scaled)
     offset = _state_vector(arrays["offset"], name="offset", length=features, required=scaled)
@@ -425,6 +458,7 @@ def apply_pca_fitted_state(input_data: Any, state: object) -> np.ndarray:
         metadata["feature_axis_quantity"],
     ):
         raise ValueError("PCA application data does not match the fitted feature axis")
+    require_fitted_input_identity(projected, metadata["input_identity"], features=features)
     return _pca_extract_from_state(normalized).transform(to_numpy_2d(projected, name="input_data", dtype=np.float64))
 
 
@@ -453,7 +487,7 @@ def reconstruct_pca_fitted_state(scores: Any, state: object) -> np.ndarray:
     return np.asarray(reconstructed, dtype=np.float64)
 
 
-def pca_q_residuals_in_fitted_space(input_data: Any, scores: Any, state: object) -> np.ndarray:
+def pca_residual_matrix_in_fitted_space(input_data: Any, scores: Any, state: object) -> np.ndarray:
     """Compute PCA Q/SPE in the centered, optionally scaled model space."""
 
     normalized = validate_pca_fitted_state(state)
@@ -482,7 +516,21 @@ def pca_q_residuals_in_fitted_space(input_data: Any, scores: Any, state: object)
         fitted_input -= np.asarray(center, dtype=np.float64)
 
     fitted_reconstruction = score_matrix @ np.asarray(arrays["loadings"], dtype=np.float64)
-    return q_residuals_per_sample(fitted_input, fitted_reconstruction)
+    residual = fitted_input - fitted_reconstruction
+    q = np.sum(residual**2, axis=1)
+    # No orthogonal residual space exists when all feature directions are kept.
+    if components == features:
+        return np.zeros_like(residual)
+    # Remove only floating-point reconstruction error, relative to each row's
+    # fitted-space magnitude; never impose an absolute signal-unit threshold.
+    magnitude = np.linalg.norm(fitted_input, axis=1) + np.linalg.norm(fitted_reconstruction, axis=1)
+    roundoff = np.finfo(np.float64).eps * max(features, components) * magnitude
+    return np.where((q <= roundoff**2)[:, None], 0.0, residual)
+
+
+def pca_q_residuals_in_fitted_space(input_data: Any, scores: Any, state: object) -> np.ndarray:
+    residual = pca_residual_matrix_in_fitted_space(input_data, scores, state)
+    return np.sum(residual**2, axis=1)
 
 
 def _set_pca_score_semantics(dataset: SherpaDataset, pc_labels: list[str]) -> None:
@@ -514,8 +562,10 @@ def _set_pca_loading_semantics(
     dataset: SherpaDataset,
     source: SherpaDataset,
     pc_labels: list[str],
+    *,
+    quantity: str = "PCA loading",
 ) -> None:
-    """Apply algorithm-owned loading orientation while retaining the source feature axis."""
+    """Apply component-by-feature orientation while retaining the source feature axis."""
 
     source_feature_axis = source.feature_axis
     if source_feature_axis is not None:
@@ -527,10 +577,45 @@ def _set_pca_loading_semantics(
     )
     dataset.units = "dimensionless"
     domain = dataset.domain.model_copy(deep=True)
-    domain.data_quantity = "PCA loading"
+    domain.data_quantity = quantity
     domain.expected_units = "dimensionless"
     dataset.domain = domain
-    dataset.meta.update({"data_quantity": "PCA loading", "value_units": "dimensionless"})
+    dataset.meta.update({"data_quantity": quantity, "value_units": "dimensionless"})
+
+
+def pca_variable_correlations(
+    input_matrix: np.ndarray,
+    scores: np.ndarray,
+) -> tuple[np.ndarray, list[int]]:
+    """Pearson correlations of every fitted input variable with every PC score.
+
+    A positive affine rescaling of an input variable leaves its correlation
+    unchanged. Thus the original fitted observations are valid for centered,
+    unit-variance, and min-max PCA alike. Zero-variation variables have no
+    defined correlation; their indices are returned for explicit omission.
+    """
+
+    source = to_numpy_2d(input_matrix, name="PCA correlation input", dtype=np.float64)
+    score_matrix = to_numpy_2d(scores, name="PCA correlation scores", dtype=np.float64)
+    if source.shape[0] != score_matrix.shape[0] or source.shape[0] < 2:
+        raise ValueError("PCA variable correlations require aligned observations")
+    centered_source = source - np.mean(source, axis=0)
+    centered_scores = score_matrix - np.mean(score_matrix, axis=0)
+    source_norm = np.linalg.norm(centered_source, axis=0)
+    score_norm = np.linalg.norm(centered_scores, axis=0)
+    undefined = numerical_scaling.unresolved_variation(source, np.std(source, axis=0)) | (source_norm == 0)
+    if np.any(score_norm == 0):
+        raise ValueError("PCA variable correlations require non-degenerate component scores")
+    correlations = np.zeros((score_matrix.shape[1], source.shape[1]), dtype=np.float64)
+    valid = ~undefined
+    if np.any(valid):
+        numerators = centered_scores.T @ centered_source[:, valid]
+        correlations[:, valid] = np.clip(
+            numerators / (score_norm[:, None] * source_norm[valid][None, :]),
+            -1.0,
+            1.0,
+        )
+    return correlations, np.flatnonzero(undefined).astype(int).tolist()
 
 
 def _pca_diagnostic_state(
@@ -801,6 +886,13 @@ class PCANode(Node):
                 description="Alias of loadings for cross-technique wiring",
             ),
             PortMetadata(
+                name="variable_correlations",
+                type_ref="spectrasherpa://types/LoadingMatrix/1.0",
+                required=True,
+                label="Variable Correlations",
+                description="Pearson correlations of each input variable with each retained PC score",
+            ),
+            PortMetadata(
                 name="explained_variance",
                 type_ref="spectrasherpa://types/Array1D/1.0",
                 required=True,
@@ -824,6 +916,13 @@ class PCANode(Node):
                     "Hotelling T² and Q/SPE diagnostics"
                 ),
             ),
+            PortMetadata(
+                name="component_curve",
+                type_ref="spectrasherpa://types/ValidationResult/1.0",
+                required=True,
+                label="PCA Component Selection",
+                description="Explained X variance and fold-held-out reconstruction error by principal component.",
+            ),
         ],
         presentation_contract=NodePresentationContract(
             default_presentation="scores",
@@ -845,12 +944,28 @@ class PCANode(Node):
                     "Variable contributions for each retained principal component.",
                 ),
                 ScientificPresentation(
+                    "variable_correlations",
+                    "Variable Correlations",
+                    "pca_variable_correlations",
+                    ("variable_correlations",),
+                    ("plot", "table"),
+                    "Variable-to-score correlations on a unit circle; undefined constant variables are omitted.",
+                ),
+                ScientificPresentation(
                     "explained_variance",
                     "Explained Variance (Scree)",
                     "pca_explained_variance",
                     ("explained_variance",),
                     ("plot", "table"),
                     "Per-component and cumulative explained variance used to inspect model dimensionality.",
+                ),
+                ScientificPresentation(
+                    "component_selection",
+                    "PCA Component Selection",
+                    "validation_result",
+                    ("component_curve",),
+                    ("record",),
+                    "Reconstruction CV is development evidence, not response prediction error or an independent test.",
                 ),
                 ScientificPresentation(
                     "diagnostics",
@@ -1039,6 +1154,34 @@ class PCANode(Node):
         if loadings_dataset.data.shape != (actual_n_components, n_features):
             raise RuntimeError("PCA backend loading orientation differs from the current contract")
 
+        correlation_values, undefined_features = pca_variable_correlations(
+            to_numpy_2d(input_ds, name="PCA input", dtype=np.float64),
+            extracted.scores,
+        )
+        correlations_dataset = SherpaDataset(
+            X=correlation_values,
+            feature_axis=input_ds.feature_axis,
+            data_role="X_features",
+            title="PCA Variable Correlations",
+        )
+        inherit_origin_context(input_ds, correlations_dataset, preserve_feature_axis=True)
+        _set_pca_loading_semantics(
+            correlations_dataset,
+            input_ds,
+            pc_labels,
+            quantity="PCA variable correlation",
+        )
+        correlations_dataset.meta.update(
+            {
+                "type": "PCA",
+                "isPCA": True,
+                "pc_labels": pc_labels,
+                "n_components": actual_n_components,
+                "explained_variance_ratio": evr_ratio.tolist(),
+                "undefined_feature_indices": undefined_features,
+            }
+        )
+
         attach_evaluation(
             scores_dataset,
             EvaluationResult(
@@ -1066,6 +1209,16 @@ class PCANode(Node):
             "cumulative_variance": cumulative_variance_per_pc,
             "n_components_95pct": n_components_95pct,
         }
+        attached = admit_attached_sample_table_supervision(input_ds)
+        component_curve = pca_component_curve.build_pca_component_curve(
+            to_numpy_2d(input_ds, name="input_data", dtype=np.float64),
+            selected_components=actual_n_components,
+            maximum_components=min(max(10, min(actual_n_components, 20)), n_observations, n_features),
+            standardized=bool(standardized),
+            scaled=bool(scaled),
+            groups=None if attached is None else attached.groups,
+            cv_unavailable_reason=component_validation.cv_unavailable_reason(input_ds),
+        )
 
         # Build model artifact for persistence
         artifact = _artifact_builder.build_model_artifact(
@@ -1085,6 +1238,7 @@ class PCANode(Node):
                 "X_scores": scores_dataset,
                 "loadings": loadings_dataset,
                 "X_loadings": loadings_dataset,
+                "variable_correlations": correlations_dataset,
                 "model": fitted_state,
                 "fitted_state": fitted_state,
                 "explained_variance": evr_ratio.tolist(),
@@ -1095,6 +1249,7 @@ class PCANode(Node):
                     eigenvalues=eigenvalues,
                     input_data=input_ds,
                 ),
+                "component_curve": component_curve,
                 "_internal": {
                     "input_data": input_data,
                     "input_data_ds": input_ds,
@@ -1269,7 +1424,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.FITTED_TRANSFORM,
     implementation_id="spectrasherpa.model.pca",
-    implementation_version="2.0.1",
+    implementation_version="3.0.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="preserves_samples",
@@ -1279,9 +1434,18 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 60, "cpu_seconds": 60, "memory_bytes": 1_073_741_824},
     license_id="BSD-3-Clause",
     help_reference="docs/nodes/exploratory.md",
-    implementation_modules=(pca_authority, dag_io_contracts, meta_helpers, _artifact_builder),
-    implementation_distributions=("numpy", "scikit-learn"),
-    runtime_requirements=(("numpy", "1.26.4"), ("scikit-learn", "1.9.0")),
+    implementation_modules=(
+        pca_numerics,
+        numerical_scaling,
+        input_identity_authority,
+        _chemometric_diagnostics,
+        pca_authority,
+        dag_io_contracts,
+        meta_helpers,
+        _artifact_builder,
+    ),
+    implementation_distributions=("numpy", "scipy", "scikit-learn"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("scikit-learn", "1.9.0")),
     citations=(
         "Jolliffe & Cadima, Principal component analysis: a review and recent developments, "
         "Philosophical Transactions of the Royal Society A 374 (2016) 20150202",
@@ -1301,7 +1465,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.ARTIFACT_APPLICATION,
     implementation_id="spectrasherpa.model.pca_transform",
-    implementation_version="2.0.0",
+    implementation_version="3.0.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="preserves_samples",
@@ -1311,9 +1475,17 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
     license_id="BSD-3-Clause",
     help_reference="docs/nodes/exploratory.md",
-    implementation_modules=(pca_authority, dag_io_contracts, meta_helpers),
-    implementation_distributions=("numpy", "scikit-learn"),
-    runtime_requirements=(("numpy", "1.26.4"), ("scikit-learn", "1.9.0")),
+    implementation_modules=(
+        pca_numerics,
+        numerical_scaling,
+        input_identity_authority,
+        _chemometric_diagnostics,
+        pca_authority,
+        dag_io_contracts,
+        meta_helpers,
+    ),
+    implementation_distributions=("numpy", "scipy", "scikit-learn"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("scikit-learn", "1.9.0")),
     citations=(
         "Jolliffe & Cadima, Principal component analysis: a review and recent developments, "
         "Philosophical Transactions of the Royal Society A 374 (2016) 20150202",

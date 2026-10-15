@@ -7,7 +7,9 @@ from typing import Any, Mapping
 import numpy as np
 from sklearn.metrics import confusion_matrix
 
+from spectra_sherpa.app.lib import numerical_scaling, pca_numerics, pls_diagnostic_terms
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.app.services.dag import fitted_input_identity as input_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers
 from spectra_sherpa.app.services.dag.meta_helpers import (
@@ -16,6 +18,8 @@ from spectra_sherpa.app.services.dag.meta_helpers import (
     inherit_origin_flags,
     inherit_sample_flags,
 )
+from spectra_sherpa.app.services.dag.nodes.modeling import pls_applicability
+from spectra_sherpa.app.services.dag.supervision_binding import admit_attached_sample_table_supervision
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
     ManagedOptimizationEligibility,
@@ -23,18 +27,24 @@ from spectra_sherpa.execution_contract_vocabulary import (
     TargetAccess,
     WorkerCapability,
 )
+from spectra_sherpa.sdk import validate as sdk_validate
 
 from ...io_contracts import bind_X, bind_y, to_numpy_2d
 from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, NodeResult, PortMetadata, register_node
 from ...presentation_contract import NodePresentationContract, ScientificPresentation
 from ...stable_execution_contract import bind_stable_execution_contract
 from .. import visualization
-from ..modeling import _artifact_builder, create_spectral_dataset, pls_core
+from ..modeling import _artifact_builder, component_validation, create_spectral_dataset, pls_core
 from ..modeling import core_utils as modeling_core_utils
 from ..selection import _vip
 from ..visualization import generate_confusion_matrix_heatmap
-from . import core_utils, plsda_state
-from .core_utils import classification_metrics_contract, classification_scalar_metrics, make_labeled_coord
+from . import core_utils, plsda_component_curve, plsda_sample_diagnostics, plsda_state
+from .core_utils import (
+    classification_metrics_contract,
+    classification_scalar_metrics,
+    make_labeled_coord,
+    require_active_calibration_cohort,
+)
 from .plsda_state import SherpaPLSDAArtifact
 
 _PLSDA_MAX_COMPONENTS = 20
@@ -82,6 +92,7 @@ def _plsda_inputs(X: Any, y: Any) -> tuple[Any, np.ndarray, np.ndarray, np.ndarr
         target_type="categorical",
         missing_message="Missing required input: y (class labels)",
     )
+    require_active_calibration_cohort(dataset, model_label="PLSDA")
     matrix = to_numpy_2d(dataset, name="X", dtype=np.float64)
     labels = core_utils.prepare_class_labels(target, matrix.shape[0])
     if matrix.shape[0] < 4 or matrix.shape[1] < 1 or not np.isfinite(matrix).all():
@@ -185,6 +196,33 @@ def _plsda_scientific_core(
     }
 
 
+def _component_curve_for_core(core: dict[str, Any]) -> dict[str, object]:
+    dataset = core["dataset"]
+    matrix = core["matrix"]
+    selected = int(core["fit"].n_components)
+    requested = int(core["parameters"]["n_components"])
+    maximum = min(max(10, selected), _PLSDA_MAX_COMPONENTS, matrix.shape[1], matrix.shape[0] - 1)
+    attached = admit_attached_sample_table_supervision(dataset)
+    return plsda_component_curve.build_plsda_component_curve(
+        matrix,
+        core["labels"],
+        selected_components=selected,
+        requested_components=requested,
+        maximum_components=maximum,
+        scale=bool(core["parameters"]["scale"]),
+        fit_model=lambda x, y, classes, n, scale: _native_plsda_fit(x, y, classes, n_components=n, scale=scale)[0],
+        groups=None if attached is None else attached.groups,
+        cv_unavailable_reason=component_validation.cv_unavailable_reason(dataset),
+    )
+
+
+def _sample_diagnostics_for_core(core: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return plsda_sample_diagnostics.build_sample_diagnostics(core)
+    except (ValueError, TypeError, KeyError) as exc:
+        return {"schema_version": plsda_sample_diagnostics.SCHEMA, "unavailable_reason": str(exc)}
+
+
 def _plsda_export_outputs(X: Any, y: Any, *, parameters: dict[str, object]) -> dict[str, Any]:
     """Project the Sherpa-native PLS-DA operation into generated-Python values."""
 
@@ -202,6 +240,8 @@ def _plsda_export_outputs(X: Any, y: Any, *, parameters: dict[str, object]) -> d
         "vip_scores": np.asarray(core["vip_scores"], dtype=np.float64),
         "confusion_matrix_train": core["train_confusion"],
         "metrics": core["metrics"],
+        "component_curve": _component_curve_for_core(core),
+        "sample_diagnostics": _sample_diagnostics_for_core(core),
         "plots": _plsda_visualizations(core, core["dataset"]),
         "metadata": {
             "y_true": core["labels"].tolist(),
@@ -437,6 +477,20 @@ class PLSDANode(Node):
                 description="Calibration-fit metrics; use an explicit evaluator for validation evidence",
             ),
             PortMetadata(
+                name="component_curve",
+                type_ref="spectrasherpa://types/ValidationResult/1.0",
+                required=False,
+                label="PLS-DA Component Selection",
+                description="Calibration and stratified out-of-fold class performance by latent-variable count",
+            ),
+            PortMetadata(
+                name="sample_diagnostics",
+                type_ref="spectrasherpa://types/PLSDASampleDiagnostics/1.0",
+                required=False,
+                label="PLS-DA Sample Diagnostics",
+                description="Exact calibration T²/Q and bounded per-sample variable terms from the fitted classifier.",
+            ),
+            PortMetadata(
                 name="plots",
                 type_ref="spectrasherpa://types/Visualization/1.0",
                 required=False,
@@ -511,6 +565,14 @@ class PLSDANode(Node):
                     ("metrics",),
                     ("record", "table"),
                     "Training-fit metrics only; use an evaluator for held-out evidence.",
+                ),
+                ScientificPresentation(
+                    "component_selection",
+                    "PLS-DA Component Selection",
+                    "validation_result",
+                    ("component_curve",),
+                    ("record",),
+                    "Stratified out-of-fold class decisions are tuning evidence, not an independent test.",
                 ),
                 ScientificPresentation(
                     "model",
@@ -600,6 +662,23 @@ class PLSDANode(Node):
             node_id=self.node_id,
             metrics=core["metrics"],
         )
+        from spectra_sherpa.app.lib.reference_value_evidence import bound_reference_value_evidence
+
+        response_source = dataset if y is None else y
+        response_context = getattr(response_source, "target_context", None)
+        response_name = getattr(response_context, "selected_target", None) or getattr(
+            response_context, "target_name", None
+        )
+        reference_evidence = bound_reference_value_evidence(
+            response_source,
+            response_names=[response_name] if isinstance(response_name, str) else None,
+            response_units=[getattr(response_context, "target_units", None)],
+            target_type="categorical",
+        )
+        if reference_evidence is not None:
+            artifact["metadata"]["reference_value_evidence"] = reference_evidence
+            artifact["metadata"]["reference_fit_context"] = {"calibration_rows": int(core["matrix"].shape[0])}
+        component_curve = _component_curve_for_core(core)
         return NodeResult(
             outputs={
                 "default": score_dataset,
@@ -614,10 +693,13 @@ class PLSDANode(Node):
                 "vip_scores": np.asarray(core["vip_scores"], dtype=np.float64),
                 "confusion_matrix_train": core["train_confusion"],
                 "metrics": core["metrics"],
+                "component_curve": component_curve,
+                "sample_diagnostics": _sample_diagnostics_for_core(core),
                 "plots": plots,
                 "_model_artifact": artifact,
             },
             diagnostics={
+                "applicability": core["artifact"].applicability(core["matrix"]),
                 "metrics": core["metrics"],
                 "train_accuracy": float(core["metrics"]["splits"]["train"]["accuracy"]),
                 "train_f1_macro": float(core["metrics"]["splits"]["train"]["f1_macro"]),
@@ -673,7 +755,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.FITTED_MODEL,
     implementation_id="spectrasherpa.classification.plsda",
-    implementation_version="4.0.0",
+    implementation_version="4.1.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(
         ManagedOptimizationEligibility.LOCAL,
@@ -687,8 +769,8 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 60, "cpu_seconds": 60, "memory_bytes": 1_073_741_824},
     license_id="BSD-3-Clause",
     help_reference="docs/nodes/classification.md",
-    implementation_distributions=("numpy", "scikit-learn"),
-    runtime_requirements=(("numpy", "1.26.4"), ("scikit-learn", "1.9.0")),
+    implementation_distributions=("numpy", "scipy", "scikit-learn"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("scikit-learn", "1.9.0")),
     managed_optimization_profiles=("first_party_pls",),
     citations=(
         pls_core.CITATION,
@@ -697,6 +779,15 @@ bind_stable_execution_contract(
         "Kucheryavskiy, mdatools PLS-DA documentation; rchemo::plsrda maximum dummy-response rule",
     ),
     implementation_modules=(
+        pca_numerics,
+        numerical_scaling,
+        input_identity_authority,
+        pls_applicability,
+        pls_diagnostic_terms,
+        component_validation,
+        plsda_component_curve,
+        plsda_sample_diagnostics,
+        sdk_validate,
         dag_io_contracts,
         meta_helpers,
         modeling_core_utils,

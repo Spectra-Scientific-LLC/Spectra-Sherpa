@@ -11,8 +11,12 @@ from typing import Any
 
 import numpy as np
 
-SCHEMA = "spectrasherpa.pls-global-screening/1"
-METHOD = "calibration_quantile_linear_0.95_strict_greater"
+from spectra_sherpa.app.lib.pca_numerics import hotelling_t2_limit, residual_eigenvalues, residual_q_limit
+
+SCHEMA = "spectrasherpa.pls-global-screening/2"
+LEGACY_SCHEMA = "spectrasherpa.pls-global-screening/1"
+METHOD = "prediction_f_and_residual_spectrum_0.95_strict_greater"
+LEGACY_METHOD = "calibration_quantile_linear_0.95_strict_greater"
 
 
 def fit_screening(X: np.ndarray, model: Any) -> dict[str, Any]:
@@ -39,7 +43,11 @@ def fit_screening(X: np.ndarray, model: Any) -> dict[str, Any]:
     numerical_q_tolerance = float(64 * np.finfo(float).eps ** 2 * max(n, p, k) ** 2 * np.max(np.sum(z * z, axis=1)))
     q_reason = "no_residual_feature_dimensions" if k >= p else reason
     q_quantile = float(np.quantile(q, 0.95, method="linear"))
+    q_eigenvalues = residual_eigenvalues(residual)
+    theoretical_q, q_method = residual_q_limit(q_eigenvalues, 0.95)
     state = {
+        "q_residual_eigenvalues": q_eigenvalues.tolist(),
+        "q_limit_method": q_method,
         "schema_version": SCHEMA,
         "method": METHOD,
         "reference_samples": n,
@@ -52,11 +60,11 @@ def fit_screening(X: np.ndarray, model: Any) -> dict[str, Any]:
         "reconstruction": model.x_loadings.tolist(),
         "score_center": center.tolist(),
         "score_covariance_inverse": None if inverse is None else inverse.tolist(),
-        "t2_limit": None if t2 is None else float(np.quantile(t2, 0.95, method="linear")),
+        "t2_limit": None if t2 is None else hotelling_t2_limit(n, k, 0.95, prediction=True),
         "t2_unavailable_reason": reason,
         "q_calibration_quantile": q_quantile,
         "q_numerical_tolerance": numerical_q_tolerance,
-        "q_limit": None if q_reason else max(q_quantile, numerical_q_tolerance),
+        "q_limit": None if q_reason else max(theoretical_q, numerical_q_tolerance),
         "q_unavailable_reason": q_reason,
         "neighborhood_support": "unavailable_aggregate_state",
     }
@@ -85,11 +93,14 @@ def validate_screening(value: Any, *, features: int, components: int, samples: i
         "q_unavailable_reason",
         "neighborhood_support",
     }
+    modern = isinstance(value, Mapping) and value.get("schema_version") == SCHEMA
+    if modern:
+        fields.update({"q_residual_eigenvalues", "q_limit_method"})
     if not isinstance(value, Mapping) or set(value) != fields:
         raise ValueError("PLS screening state fields are closed")
     if (
-        value["schema_version"] != SCHEMA
-        or value["method"] != METHOD
+        value["schema_version"] != (SCHEMA if modern else LEGACY_SCHEMA)
+        or value["method"] != (METHOD if modern else LEGACY_METHOD)
         or value["neighborhood_support"] != "unavailable_aggregate_state"
     ):
         raise ValueError("PLS screening method is unsupported")
@@ -139,7 +150,14 @@ def validate_screening(value: Any, *, features: int, components: int, samples: i
     elif inverse is not None:
         raise ValueError("Unavailable PLS screening retains a covariance inverse")
     q_reason = "no_residual_feature_dimensions" if components >= features else reason
-    expected_limit = None if q_reason else max(value["q_calibration_quantile"], value["q_numerical_tolerance"])
+    q_authority = value["q_calibration_quantile"]
+    if modern:
+        q_authority, method = residual_q_limit(value["q_residual_eigenvalues"], 0.95)
+        if value["q_limit_method"] != method:
+            raise ValueError("PLS residual limit method contradicts its spectrum")
+        if reason is None and value["t2_limit"] != hotelling_t2_limit(samples, components, 0.95, prediction=True):
+            raise ValueError("PLS prediction T2 limit contradicts its reference dimensions")
+    expected_limit = None if q_reason else max(q_authority, value["q_numerical_tolerance"])
     if value["q_unavailable_reason"] != q_reason or value["q_limit"] != expected_limit:
         raise ValueError("PLS screening Q authority contradicts retained method")
     return out
@@ -176,8 +194,14 @@ def apply_screening(X: np.ndarray, offset: Any, state: Mapping[str, Any]) -> dic
             }
         )
     return {
-        "schema_version": SCHEMA,
-        "method": METHOD,
+        "schema_version": state["schema_version"],
+        "method": state["method"],
+        "q_limit_method": state.get("q_limit_method", "empirical_calibration_quantile"),
+        "warning": (
+            "Legacy empirical screening limits; refit to obtain residual-spectrum Q and prediction F limits"
+            if state["schema_version"] == LEGACY_SCHEMA
+            else None
+        ),
         "claim_scope": "provisional_calibration_screening",
         "reference_samples": state["reference_samples"],
         "components": state["components"],

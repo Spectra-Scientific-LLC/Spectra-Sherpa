@@ -19,6 +19,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from spectra_sherpa.app.lib.numerical_scaling import unresolved_variation
+
 ALGORITHM_ID = "sherpa.simpls.de_jong_1993"
 ALGORITHM_VERSION = "1"
 CITATION = (
@@ -47,13 +49,13 @@ def _orient(vector: np.ndarray) -> np.ndarray:
     return -vector if vector[pivot] < 0.0 else vector
 
 
-def _scales(centered: np.ndarray, *, enabled: bool, name: str) -> np.ndarray:
+def _scales(centered: np.ndarray, *, reference: np.ndarray, enabled: bool, name: str) -> np.ndarray:
     if not enabled:
         return np.ones(centered.shape[1], dtype=np.float64)
     scale = np.std(centered, axis=0, ddof=1)
-    threshold = np.finfo(np.float64).eps * max(1.0, float(np.max(np.abs(centered))))
-    if np.any(scale <= threshold):
-        indices = np.flatnonzero(scale <= threshold).astype(int).tolist()
+    unresolved = unresolved_variation(reference, scale)
+    if np.any(unresolved):
+        indices = np.flatnonzero(unresolved).astype(int).tolist()
         raise ValueError(f"SIMPLS cannot autoscale constant {name} column(s): {indices}")
     return np.asarray(scale, dtype=np.float64)
 
@@ -202,8 +204,8 @@ def fit_simpls(
     y_offset = np.mean(targets, axis=0, dtype=np.float64)
     centered_x = matrix - x_offset
     centered_y = targets - y_offset
-    x_scale = _scales(centered_x, enabled=scale, name="X")
-    y_scale = _scales(centered_y, enabled=scale, name="Y")
+    x_scale = _scales(centered_x, reference=matrix, enabled=scale, name="X")
+    y_scale = _scales(centered_y, reference=targets, enabled=scale, name="Y")
     scaled_x = centered_x / x_scale
     scaled_y = centered_y / y_scale
 

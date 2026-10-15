@@ -15,6 +15,10 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib import pca_numerics
+from spectra_sherpa.app.services.dag.nodes import _chemometric_diagnostics
+from spectra_sherpa.app.services.dag.nodes._chemometric_diagnostics import hotelling_t2_per_sample
+
 logger = logging.getLogger(__name__)
 from spectra_sherpa.app.lib.sherpa_dataset import EvaluationResult, SherpaDataset
 from spectra_sherpa.app.services.dag import presentation_limits
@@ -198,8 +202,8 @@ def _outlier_dispatch(pca_result: Any, *, confidence_level: Any = 0.95) -> tuple
 
     Hotelling T-squared uses the true PCA eigenvalues supplied by the PCA
     producer. Q/SPE is measured in the exact fitted feature space. The Q
-    threshold is deliberately an empirical calibration-set quantile; it is
-    not presented as an independent or theoretical confidence limit.
+    threshold uses the Jackson–Mudholkar residual-spectrum approximation.
+    These calibration diagnostics are not independent validation.
     """
 
     presentation_limits.require_bounded_presentation(pca_result, surface="PCA outlier diagnostics", max_values=500_000)
@@ -226,15 +230,8 @@ def _outlier_dispatch(pca_result: Any, *, confidence_level: Any = 0.95) -> tuple
     if n_components < 1 or n_observations <= n_components:
         raise ValueError("Hotelling T-squared requires n_observations greater than n_components")
 
-    from scipy.stats import f
-
-    t2 = np.sum((scores**2) / eigenvalues, axis=1)
-    f_critical = float(f.ppf(confidence, n_components, n_observations - n_components))
-    t2_limit = float(
-        (n_components * (n_observations - 1) * (n_observations + 1))
-        / (n_observations * (n_observations - n_components))
-        * f_critical
-    )
+    t2 = hotelling_t2_per_sample(scores, eigenvalues=eigenvalues)
+    t2_limit = pca_numerics.hotelling_t2_limit(n_observations, n_components, confidence)
     if not np.isfinite(t2).all() or not np.isfinite(t2_limit):
         raise ValueError("Hotelling T-squared calculation produced a non-finite result")
 
@@ -245,12 +242,13 @@ def _outlier_dispatch(pca_result: Any, *, confidence_level: Any = 0.95) -> tuple
     if not np.isfinite(input_matrix).all():
         raise ValueError("PCA fitted-space input data must be finite")
 
-    from spectra_sherpa.app.services.dag.nodes.modeling.pca_nodes import pca_q_residuals_in_fitted_space
+    from spectra_sherpa.app.services.dag.nodes.modeling.pca_nodes import pca_residual_matrix_in_fitted_space
 
     if input_matrix.shape[0] != n_observations:
         raise ValueError("PCA fitted-space input must have the declared sample shape")
-    q = pca_q_residuals_in_fitted_space(input_matrix, scores, model)
-    q_limit = float(np.quantile(q, confidence))
+    residual = pca_residual_matrix_in_fitted_space(input_matrix, scores, model)
+    q = np.sum(residual**2, axis=1)
+    q_limit, q_method = pca_numerics.residual_q_limit(pca_numerics.residual_eigenvalues(residual), confidence)
     flags = (t2 > t2_limit) | (q > q_limit)
     outlier_indices = np.flatnonzero(flags).tolist()
     score_dataset = pca_result.get("scores")
@@ -300,7 +298,7 @@ def _outlier_dispatch(pca_result: Any, *, confidence_level: Any = 0.95) -> tuple
             "Q_limit": q_limit,
             "Q_mean": float(np.mean(q)),
             "q_residual_space": "preprocessed_model_space",
-            "q_limit_method": "empirical_calibration_quantile",
+            "q_limit_method": q_method,
         },
     }
     diagnostics = {
@@ -308,10 +306,10 @@ def _outlier_dispatch(pca_result: Any, *, confidence_level: Any = 0.95) -> tuple
         "outlier_percentage": float(100.0 * len(outlier_indices) / n_observations),
         "confidence_level": confidence,
         "t2_limit": t2_limit,
-        "t2_limit_method": "nomikos_macgregor_f_distribution",
+        "t2_limit_method": "jackson_calibration_f_distribution",
         "q_limit": q_limit,
         "q_residual_space": "preprocessed_model_space",
-        "q_limit_method": "empirical_calibration_quantile",
+        "q_limit_method": q_method,
         "method": "hotelling_t2_q",
         "sample_labels": sample_labels,
         "outlier_sample_labels": outlier_sample_labels,
@@ -342,7 +340,7 @@ class OutlierDetectionNode(Node):
             "Connect directly to a PCA node output — eigenvalues from the PCA model are required to "
             "compute correct T² control limits (Nomikos & MacGregor 1995). "
             "Hotelling T² uses the selected confidence level; the Q/SPE boundary is the corresponding "
-            "quantile of the fitted calibration samples and is a screening aid, not independent validation."
+            "Jackson–Mudholkar residual spectrum limit. Screening is not independent validation."
         ),
         parameters=[
             NodeParameter(
@@ -354,9 +352,7 @@ class OutlierDetectionNode(Node):
                 max_value=0.999,
                 max_value_reason=("Keeps the F-distribution limit finite and bounds unstable extreme-tail screening"),
                 step=0.01,
-                description=(
-                    "Confidence level for the Hotelling T² limit and calibration-set quantile used to screen Q/SPE"
-                ),
+                description=("Confidence level for the calibration Hotelling T² and residual-spectrum Q/SPE limits"),
                 required=True,
             ),
         ],
@@ -472,8 +468,8 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.EVALUATOR,
     implementation_id="spectrasherpa.diagnostics.outliers",
-    implementation_modules=(presentation_limits,),
-    implementation_version="1.0.2",
+    implementation_modules=(presentation_limits, pca_numerics, _chemometric_diagnostics),
+    implementation_version="1.1.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="preserves_samples",
