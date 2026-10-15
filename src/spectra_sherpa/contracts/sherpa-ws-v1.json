@@ -55,6 +55,65 @@
       "type": "object",
       "required": ["type"],
       "properties": {
+        "diagnostic_scope": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Server-verified saved diagnostic selection and rendered citation facts; absent for ordinary chat.",
+          "properties": {
+            "schema": {
+              "const": "diagnostic-advisor-scope/1"
+            },
+            "project_id": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "digest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "reference": {
+              "type": "object"
+            },
+            "facts": {
+              "type": "object"
+            },
+            "samples": {
+              "type": "array",
+              "maxItems": 5
+            },
+            "sample_aliases": {
+              "type": "object",
+              "maxProperties": 5
+            },
+            "prompt_version": {
+              "type": "string"
+            },
+            "turn_id": {
+              "type": "string"
+            },
+            "model_kind": {
+              "enum": [
+                "pca",
+                "pls"
+              ]
+            },
+            "response_label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "schema",
+            "project_id",
+            "digest",
+            "reference"
+          ],
+          "additionalProperties": false
+        },
         "type": { "const": "sherpa_chat_done" },
         "request_id": { "type": "string" },
         "conversation_id": { "type": ["string", "null"] },

@@ -224,3 +224,36 @@ def test_peak_guided_pls_retains_training_mask_lineage_for_held_out_evaluation()
     assert receipts["eval"]["role"] == "held_out_test"
     assert receipts["eval"]["qualification"] == "graph_verified"
     assert receipts["eval"]["fitted_populations"] == [["split", "train"]]
+
+
+@pytest.mark.parametrize("qualified,wrong_count", [(True, False), (False, False), (True, True)])
+def test_classification_labels_come_only_from_verified_evaluation_branch(qualified, wrong_count):
+    import numpy as np
+
+    from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset
+    from spectra_sherpa.app.services.dag.classification_comparison import build_classification_comparison
+    from spectra_sherpa.app.services.dag.node_base import NodeResult
+    from spectra_sherpa.app.services.dag.population_authority import qualify_evaluation_result
+
+    labels = ["ACFL__B3", "CL__B1"] if not wrong_count else ["ACFL__B3"]
+    dataset = SherpaDataset(X=np.ones((len(labels), 3)), sample_axis=SampleAxis(labels=labels))
+    result = NodeResult(
+        outputs={
+            "comparison": build_classification_comparison(
+                ["A", "B"],
+                ["A", "A"],
+                role="unqualified_evaluation",
+            )
+        }
+    )
+    receipt = {
+        "role": "held_out_test" if qualified else "unqualified_evaluation",
+        "qualification": "graph_verified" if qualified else "unverified_lineage",
+        "population": ["split", "test"],
+    }
+    qualify_evaluation_result(result, receipt, source_results={"split": {"X_test": dataset}})
+    comparison = result.outputs["comparison"]
+    assert (comparison["metadata"]["sample_identity"] == "provided_labels") == (qualified and not wrong_count)
+    if qualified and not wrong_count:
+        assert [row["sample"] for row in comparison["data"]] == labels
+        assert [row["correct"] for row in comparison["data"]] == [True, False]

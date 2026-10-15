@@ -11,6 +11,7 @@ from spectra_sherpa.app.services.dag.nodes.classification.plsda_state import (
 )
 from spectra_sherpa.app.services.dag.nodes.classification.simca_nodes import SIMCA_FITTED_STATE_SERIALIZER
 from spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node import FITTED_PLS_STATE_SERIALIZER
+from spectra_sherpa.core.contract_compatibility import predecessor_catalog
 from spectra_sherpa.sdk.fitted_state_custody import (
     DATA_FREE_APPLICATION_STATE,
     RETAINS_TRAINING_ROWS,
@@ -20,16 +21,16 @@ from spectra_sherpa.sdk.fitted_state_custody import (
 )
 
 _CONTRACTS = {
-    "spectrasherpa.model.fitted_pcr/1": "905cef6cd41f355e0f9a8e6847a03377f4de3c62c262aa8ce718055124b44cb6",
-    "spectrasherpa.model.fitted_svr/1": "0daa0a05e555974ab7810bc97ddecc09abb00c24f7b5f6014be8a99aaee1b97b",
+    "spectrasherpa.model.fitted_pcr/1": "7f6040c174cae2889250e6a4bc22620af172207109a1d6ff0fe66ad35937f9de",
+    "spectrasherpa.model.fitted_svr/1": "6015b47482335d0931239f6a52fea6825979c43c055e319c69deb3129b344c67",
     "spectrasherpa.model.fitted_linear_regression/1": (
-        "29ba32c09e04d094afdc28724b86615a0d77e3946c3990f5f181a539ca8eff6c"
+        "63501135129058b92cd8b6d0db33d5d61d3407c0be4f25a53f984d4a0101e27a"
     ),
-    PLSDA_FITTED_STATE_SERIALIZER: "1875107445c8954ec79270de2b84c80507665cd069ea4558a9068fb2866c9cf7",
-    SIMCA_FITTED_STATE_SERIALIZER: "fcf0e470363f4723d5c9f7d23e3323575a12ee85d56c085f066340b565182d72",
-    FITTED_PLS_STATE_SERIALIZER: "5ae3215d3c522a75b16baecdf35e736537052f411fbf9833509a535320ee27d5",
+    PLSDA_FITTED_STATE_SERIALIZER: "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+    SIMCA_FITTED_STATE_SERIALIZER: "58ae844cdcd14833a6da09a7f658e979ed08d812fc5bed7ef9d230be6e79d72e",
+    FITTED_PLS_STATE_SERIALIZER: "3939dc715653c735c11d3993942bd8e8baf5343fd42e21341d5cde130dafdde3",
     "spectra.scale-reference-json.v2": "15bce0eb5aa942173878a911a7eba23cd3638f59fe37aa3c0e54f90506ff7e91",
-    KNN_FITTED_STATE_SERIALIZER: "8cab952a6aa59bf4e90b8037514c668a5e4318a017f6a98f870ffd1a77c8850a",
+    KNN_FITTED_STATE_SERIALIZER: "b75296b1e07af53623dfaf5e859b759d089eb1b4145a415bc555ff59cf4fec8a",
 }
 
 _OPERATIONS = {
@@ -49,7 +50,24 @@ def test_custody_capabilities_bind_the_current_registered_execution_contracts() 
         serializer: node_registry.get_metadata(operation_id).resolved_execution_contract().digest
         for serializer, operation_id in _OPERATIONS.items()
     }
-    assert observed == _CONTRACTS
+    current = predecessor_catalog()["current_contracts"]
+    assert observed == {
+        serializer: (
+            digest
+            if serializer
+            in {
+                FITTED_PLS_STATE_SERIALIZER,
+                PLSDA_FITTED_STATE_SERIALIZER,
+                "spectrasherpa.model.fitted_pcr/1",
+                "spectrasherpa.model.fitted_svr/1",
+                "spectrasherpa.model.fitted_linear_regression/1",
+            }
+            else current.get(_OPERATIONS[serializer], digest)
+        )
+        for serializer, digest in _CONTRACTS.items()
+    }
+    assert current["model.fitted_pls"] == "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4"
+    assert current["classification.plsda"] == "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb"
 
 
 @pytest.mark.parametrize(

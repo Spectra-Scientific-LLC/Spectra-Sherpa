@@ -102,18 +102,10 @@ template_data:
   - from_node_id: data_1
     to_node_id: partition_1
     to_input: X
-  - from_node_id: data_1
-    from_output: target
-    to_node_id: partition_1
-    to_input: y
   - from_node_id: partition_1
     from_output: X_train
     to_node_id: pls_1
     to_input: default
-  - from_node_id: partition_1
-    from_output: y_train
-    to_node_id: pls_1
-    to_input: y
   - from_node_id: partition_1
     from_output: X_train
     to_node_id: vip_1

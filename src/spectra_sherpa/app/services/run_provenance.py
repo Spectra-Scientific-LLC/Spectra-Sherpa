@@ -25,6 +25,10 @@ async def has_retained_source(
     if sum(value is not None for value in (run_id, workflow_id, project_id)) != 1:
         raise ValueError("Specify exactly one provenance deletion scope")
     if run_id is not None:
+        from spectra_sherpa.app.models.sample_review_revision import SampleReviewRevision
+
+        if await session.scalar(select(SampleReviewRevision.id).where(SampleReviewRevision.run_id == run_id).limit(1)):
+            return True
         predicate = ModelArtifact.source_run_id == run_id
     elif workflow_id is not None:
         versions = select(WorkflowVersion.id).where(WorkflowVersion.workflow_id == workflow_id)
@@ -63,7 +67,7 @@ async def require_unretained_source(
     if await has_retained_source(session, run_id=run_id, workflow_id=workflow_id, project_id=project_id):
         raise HTTPException(
             status_code=409,
-            detail="Cannot delete: a retained model or campaign depends on this source evidence. "
+            detail="Cannot delete: a retained model, campaign or sample review depends on this source evidence. "
             "No records were removed. The retained result and its source evidence must remain together.",
         )
 

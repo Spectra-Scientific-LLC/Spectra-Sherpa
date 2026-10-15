@@ -96,6 +96,7 @@ def build_application_execution_runtime(
     model_artifact_reader: Any = None,
     preloaded_datasets: dict[str, Any] | None = None,
     allowed_model_artifact_uids: tuple[str, ...] | None = None,
+    pin_preloaded_members: bool = False,
 ) -> ExecutionRuntime:
     """Project app configuration and durable custody into one closed runtime."""
 
@@ -121,7 +122,10 @@ def build_application_execution_runtime(
         model_artifact_replay=ApplicationModelArtifactReplay(),
         model_artifact_semantic_validator=ApplicationModelArtifactSemanticValidator(),
         canonical_artifact_reader=canonical_reader,
-        dataset_source_resolver=ApplicationDatasetSourceResolver(preloaded_datasets=preloaded_datasets),
+        dataset_source_resolver=ApplicationDatasetSourceResolver(
+            preloaded_datasets=preloaded_datasets,
+            pin_preloaded_members=pin_preloaded_members,
+        ),
     )
 
 

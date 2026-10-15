@@ -16,6 +16,7 @@ from spectra_sherpa.app.services.dag.nodes.data.split_planner import (
     bind_split_groups,
     materialize_split_outputs,
     plan_train_test_split,
+    require_independent_classification_groups,
     space_filling_coverage,
 )
 from tests.performance_contract import PerformanceCeiling
@@ -70,6 +71,117 @@ def _grouped_dataset() -> SherpaDataset:
         group_column="block",
         node_id="attach",
     )
+
+
+@pytest.mark.asyncio
+async def test_repeated_specimens_cannot_be_reported_as_held_out_classes_without_specimen_grouping() -> None:
+    source = SherpaDataset(
+        X=np.random.RandomState(14).normal(size=(9, 4)),
+        feature_axis=SpectralAxis(values=np.arange(4), units="cm-1"),
+        sample_axis=SampleAxis(
+            labels=[f"acq-{i}" for i in range(9)],
+            sample_table={
+                "sample_id": [f"acq-{i}" for i in range(9)],
+                "specimen_id": ["A"] * 3 + ["B"] * 3 + ["C"] * 3,
+                "block": ["1", "2", "3"] * 3,
+                "species": ["one"] * 3 + ["two"] * 3 + ["three"] * 3,
+            },
+        ),
+        extra={
+            "source_collection": {
+                "source_manifest_sha256": "1" * 64,
+                "manifest_digest": "1" * 64,
+                "collection_definition_sha256": "2" * 64,
+                "scientific_collection_sha256": "a" * 64,
+            }
+        },
+        backend="numpy",
+    )
+    ungrouped = attach_target_dataset(
+        source,
+        None,
+        target_type="categorical",
+        target_source="sample_table_column",
+        target_column="species",
+        group_column="",
+        node_id="attach",
+    )
+    with pytest.raises(ValueError, match="explicitly rebind"):
+        require_independent_classification_groups(ungrouped, None, ungrouped.target_context)
+    with pytest.raises(ValueError, match="explicitly rebind"):
+        require_independent_classification_groups(
+            ungrouped,
+            np.asarray(["1", "2", "3"] * 3),
+            ungrouped.target_context,
+        )
+    require_independent_classification_groups(
+        ungrouped,
+        np.asarray(["A"] * 3 + ["B"] * 3 + ["C"] * 3),
+        ungrouped.target_context,
+    )
+    with pytest.raises(ValueError, match="cannot hold repeated specimen_id"):
+        require_independent_classification_groups(
+            ungrouped,
+            np.asarray(["A"] * 3 + ["B"] * 3 + ["C"] * 3),
+            ungrouped.target_context,
+            split_method="kennard_stone",
+        )
+    grouped = attach_target_dataset(
+        source,
+        None,
+        target_type="categorical",
+        target_source="sample_table_column",
+        target_column="species",
+        group_column="specimen_id",
+        node_id="attach_grouped",
+    )
+    space_filling = node_registry.create_node(
+        "data.train_test_split",
+        "space_filling",
+        {"split_method": "kennard_stone", "test_size": 0.33},
+    )
+    with pytest.raises(ValueError, match="cannot hold repeated specimen_id"):
+        await space_filling.execute(X=grouped)
+    with pytest.raises(ValueError, match="cannot hold repeated specimen_id"):
+        exec(
+            "\n".join(space_filling.generate_python({"X": "dataset"}, indent="", use_scp=False)),
+            {  # noqa: S102
+                "dataset": grouped,
+                "np": np,
+                "results": {},
+            },
+        )
+    identity_target = attach_target_dataset(
+        source,
+        None,
+        target_type="categorical",
+        target_source="sample_table_column",
+        target_column="specimen_id",
+        group_column="specimen_id",
+        node_id="attach_identity",
+    )
+    with pytest.raises(ValueError, match="cannot be both the class target"):
+        require_independent_classification_groups(
+            identity_target,
+            np.asarray(["A"] * 3 + ["B"] * 3 + ["C"] * 3),
+            identity_target.target_context,
+        )
+    node = node_registry.create_node(
+        "data.train_test_split",
+        "split",
+        {"split_method": "stratified", "test_size": 0.33},
+    )
+    with pytest.raises(ValueError, match="explicitly rebind"):
+        await node.execute(X=ungrouped)
+    with pytest.raises(ValueError, match="explicitly rebind"):
+        exec(
+            "\n".join(node.generate_python({"X": "dataset"}, indent="", use_scp=False)),
+            {  # noqa: S102
+                "dataset": ungrouped,
+                "np": np,
+                "results": {},
+            },
+        )
 
 
 def _two_instrument_continuous_dataset() -> SherpaDataset:
@@ -546,6 +658,28 @@ async def test_exact_explicit_categorical_target_inherits_context_and_one_label_
 
 
 @pytest.mark.asyncio
+async def test_equal_explicit_response_does_not_inherit_laboratory_reference_record() -> None:
+    dataset = _dataset()
+    dataset.target_context.reference_value_evidence = {
+        "schema_version": "spectrasherpa.reference-value-evidence/1",
+        "target_name": "class",
+        "target_type": "categorical",
+        "sample_table_sha256": "a" * 64,
+    }
+    node = node_registry.create_node(
+        "data.train_test_split",
+        "partition",
+        {"split_method": "stratified", "test_size": 0.2, "random_seed": 42},
+    )
+    embedded = await node.execute(X=dataset)
+    explicit = await node.execute(X=dataset, y=np.asarray(dataset.target).copy())
+
+    assert embedded["X_train"].target_context.reference_value_evidence is not None
+    assert explicit["X_train"].target_context.reference_value_evidence is None
+    assert explicit["X_test"].target_context.reference_value_evidence is None
+
+
+@pytest.mark.asyncio
 async def test_unrelated_explicit_target_never_inherits_predictor_target_context() -> None:
     dataset = _dataset()
     embedded = np.repeat(np.asarray([0, 1], dtype=np.int64), 10)
@@ -666,7 +800,7 @@ def test_group_holdout_refuses_an_unknown_total_or_unbounded_selection() -> None
         plan_train_test_split(dataset.X, method="group_holdout", groups=groups, held_out_groups=[])
     with pytest.raises(ValueError, match="named twice"):
         plan_train_test_split(dataset.X, method="group_holdout", groups=groups, held_out_groups=[3, "3"])
-    with pytest.raises(ValueError, match="requires an attached grouping column"):
+    with pytest.raises(ValueError, match="requires a grouping column or a retained source assignment"):
         plan_train_test_split(dataset.X, method="group_holdout", held_out_groups=["3"])
     with pytest.raises(ValueError, match="does not admit a random_seed"):
         plan_train_test_split(dataset.X, method="group_holdout", groups=groups, held_out_groups=["3"], random_seed=7)

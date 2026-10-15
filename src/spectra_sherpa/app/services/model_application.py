@@ -27,6 +27,7 @@ from spectra_sherpa.app.lib.collection_definition import (
     project_collection_definition,
     scientific_collection_identity,
 )
+from spectra_sherpa.app.lib.dataset_view_receipts import LoadedProjectDataset as LoadedProjectDataset
 from spectra_sherpa.app.lib.registered_reference_collection_identity import (
     copy_registered_reference_collection_extras,
     registered_reference_collection_identity,
@@ -66,20 +67,6 @@ class _UsePersistedCollectionDefinition:
 _USE_PERSISTED_COLLECTION_DEFINITION = _UsePersistedCollectionDefinition()
 
 
-@dataclass
-class LoadedProjectDataset:
-    dataset: SherpaDataset
-    experiment_id: int
-    experiment_name: str
-    project_id: int | None
-    file_ids: list[int]
-    stage: str
-    asset_id: str | None
-    source_manifest_sha256: str
-    collection_definition_sha256: str | None = None
-    scientific_collection_sha256: str | None = None
-
-
 @dataclass(frozen=True)
 class _PinnedArtifactReader:
     """Serve one verified snapshot so application metadata and bytes cannot race."""
@@ -93,6 +80,15 @@ class _PinnedArtifactReader:
         if artifact_uid != self.artifact_uid:
             raise FileNotFoundError(f"Model artifact not found: {artifact_uid}")
         return dict(self.manifest), {name: np.array(values, copy=True) for name, values in self.arrays.items()}
+
+
+@dataclass(frozen=True)
+class VerifiedModelSnapshot:
+    """One storage-verified ModelStore read for an exact application."""
+
+    artifact_uid: str
+    manifest: dict[str, Any]
+    arrays: dict[str, np.ndarray]
 
 
 async def load_project_dataset(
@@ -314,38 +310,84 @@ def _loaded_files_to_sherpa(
     return spectra
 
 
+def preflight_model_application(dataset: SherpaDataset, manifest: dict[str, Any], arrays: dict[str, Any]):
+    """Admit saved state and preprocessing without fitting or predicting.
+
+    Reuse the application dispatch vocabulary and replay adapter. In particular,
+    cohort-only diagnostic artifacts are not new-population inference models.
+    """
+    from spectra_sherpa.app.lib.model_extract_registry import EXTRACT_REGISTRY
+    from spectra_sherpa.app.services.dag.nodes.classification.plsda_state import SherpaPLSDAArtifact
+    from spectra_sherpa.app.services.dag.nodes.modeling.load_apply_node import _DIAGNOSTIC_TYPES, _OUTPUT_TYPE_MAP
+    from spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model import (
+        COHORT_ONLY_TYPES,
+        admit_saved_native_model,
+        has_native_model_state,
+    )
+    from spectra_sherpa.app.services.execution_runtime import (
+        ApplicationModelArtifactReplay,
+        ApplicationModelArtifactSemanticValidator,
+    )
+
+    model_type = manifest.get("model_type")
+    if model_type in _DIAGNOSTIC_TYPES or model_type in COHORT_ONLY_TYPES:
+        raise ValueError("This artifact describes its fitted cohort; it cannot infer a new dataset.")
+    ApplicationModelArtifactSemanticValidator().validate(manifest, arrays)
+    target, warnings, metadata = _target_for_artifact(dataset, manifest)
+    kind = _OUTPUT_TYPE_MAP.get(model_type)
+    metadata["accuracy_available"] = target is not None and kind in {"regression", "classification"}
+    target_type = getattr(dataset.target_context, "target_type", None)
+    if target is not None:
+        if (kind == "regression" and target_type == "categorical") or (
+            kind == "classification" and target_type == "continuous"
+        ):
+            raise ValueError(f"The dataset's {target_type} target is incompatible with this {kind} model.")
+        if kind == "regression" and not np.issubdtype(target.dtype, np.number):
+            raise ValueError("Regression reference targets must be numeric.")
+    prepared, _ = ApplicationModelArtifactReplay().prepare_dataset(dataset.X, dataset, manifest)
+    if has_native_model_state(manifest, arrays):
+        admit_saved_native_model(manifest, arrays, prepared, np.asarray(prepared.X))
+    else:
+        if model_type in {"knn", "simca", "mcr", "fastica"}:
+            from spectra_sherpa.app.services.dag.fitted_input_identity import require_fitted_input_identity
+
+            require_fitted_input_identity(prepared, manifest.get("input_identity"), features=prepared.shape[1])
+        extract_cls = SherpaPLSDAArtifact if model_type == "plsda" else EXTRACT_REGISTRY.get(model_type)
+        if extract_cls is None:
+            raise ValueError("This model has no supported saved-state application adapter.")
+        extract = extract_cls.from_artifact(manifest, arrays)
+        if model_type == "plsda":
+            extract.validate_application_features(prepared, feature_mask=manifest.get("feature_mask"))
+    return target, warnings, metadata
+
+
 async def apply_model_to_dataset(
     artifact_uid: str,
     dataset: SherpaDataset,
     *,
     scope: str = "all",
     execution_evidence: dict[str, Any] | None = None,
-    presentation_multiplier: int = 1,
+    verified_snapshot: VerifiedModelSnapshot | None = None,
 ) -> dict[str, Any]:
     """Apply one artifact through the canonical DAG node and evaluator authorities."""
-    store = get_model_store()
-    try:
-        manifest, arrays = store.load(artifact_uid)
-    except FileNotFoundError as exc:
-        raise ValueError(f"Model artifact not found: {artifact_uid}") from exc
-    except ModelArtifactIntegrityError as exc:
-        raise ValueError(f"Model artifact is corrupt: {exc}") from exc
+    if verified_snapshot is not None:
+        if verified_snapshot.artifact_uid != artifact_uid:
+            raise ValueError("verified model snapshot differs from requested artifact")
+        manifest, arrays = verified_snapshot.manifest, verified_snapshot.arrays
+    else:
+        store = get_model_store()
+        try:
+            manifest, arrays = store.load(artifact_uid)
+        except FileNotFoundError as exc:
+            raise ValueError(f"Model artifact not found: {artifact_uid}") from exc
+        except ModelArtifactIntegrityError as exc:
+            raise ValueError(f"Model artifact is corrupt: {exc}") from exc
 
     model_type = str(manifest.get("model_type", ""))
     y, target_warnings, target_metadata = _target_for_artifact(dataset, manifest)
     if scope != "all":
         _validate_partition_population(dataset, y, manifest)
     sample_count = int(np.asarray(dataset.X).shape[0])
-    from spectra_sherpa.app.services.dag.presentation_limits import MAX_PRESENTATION_VALUES
-
-    output_width = max(
-        dataset.X.shape[1],
-        int(manifest.get("n_components") or 1),
-        len(manifest.get("classes") or []),
-        len(manifest.get("target_names") or []),
-    )
-    if sample_count * output_width * presentation_multiplier > MAX_PRESENTATION_VALUES:
-        raise ValueError("Model application exceeds its display limit (100,000 values); select a smaller cohort")
     sample_indices = _scope_indices_for_artifact(sample_count, manifest, scope=scope)
     if dataset.sample_axis is not None and dataset.sample_axis.include_mask is not None:
         sample_indices = sample_indices[np.asarray(dataset.sample_axis.include_mask, dtype=bool)[sample_indices]]
@@ -446,11 +488,47 @@ async def apply_model_to_dataset(
                 },
             )
     result_matrix = np.asarray(applied["result"])
+    from spectra_sherpa.app.services.dag.presentation_limits import require_bounded_presentation
+
+    # Scientific inputs are not browser output. Check the selected application
+    # result before expanding arrays, then check the complete response below.
+    require_bounded_presentation(
+        {
+            "result": result_matrix,
+            "sample_indices": sample_indices,
+            "feature_indices": feature_indices,
+            "labels": applied.get("labels"),
+            "decision_margins": applied.get("decision_margins"),
+            "applicability": applied.get("applicability"),
+        },
+        surface="Model application",
+    )
     node_metadata = dict(applied.get("metadata") or {})
     warnings = list(target_warnings)
     applicability_warning = node_metadata.get("applicability_warning")
     if isinstance(applicability_warning, str) and applicability_warning:
         warnings.append(applicability_warning)
+
+    from spectra_sherpa.app.lib.reference_value_evidence import bound_reference_value_evidence
+
+    recorded_response = manifest.get("response_identity")
+    response_names = recorded_response.get("names") if isinstance(recorded_response, dict) else None
+    response_units = recorded_response.get("units") if isinstance(recorded_response, dict) else None
+    if not isinstance(response_names, list):
+        selected_target = _artifact_selected_target(manifest)
+        response_names = [selected_target] if selected_target else None
+    if not isinstance(response_units, list):
+        response_units = [manifest.get("target_units")]
+    evaluation_reference = (
+        bound_reference_value_evidence(
+            dataset,
+            response_names=response_names,
+            response_units=response_units,
+            target_type="categorical" if model_type == "plsda" else "continuous",
+        )
+        if y_scoped is not None and model_type in {"pls", "plsda"}
+        else None
+    )
 
     response: dict[str, Any] = {
         "artifact_uid": artifact_uid,
@@ -464,6 +542,9 @@ async def apply_model_to_dataset(
             "classes": list(node_metadata.get("classes", manifest.get("classes", [])) or []),
             "preprocessing_chain": manifest.get("preprocessing_chain", []),
             "training_data_hash": manifest.get("training_data_hash"),
+            "training_reference_value_evidence": manifest.get("reference_value_evidence"),
+            "training_reference_fit_context": manifest.get("reference_fit_context"),
+            "evaluation_reference_value_evidence": evaluation_reference,
             **target_metadata,
         },
     }
@@ -474,7 +555,7 @@ async def apply_model_to_dataset(
         response["cluster_assignments"] = labels
         response["output_type"] = "clustering"
         response["metrics"] = None
-        return response
+        return _bounded_application_response(response)
 
     if node_metadata.get("output_type") == "classification":
         labels_list = [lossless_sample_table_scalar(label) for label in list(applied["labels"])]
@@ -487,6 +568,10 @@ async def apply_model_to_dataset(
         if model_type == "plsda":
             response["decision_margins"] = np.asarray(applied["decision_margins"], dtype=np.float64).tolist()
             response["classification_application_digest"] = str(applied["classification_application_digest"])
+            # The saved classifier already computes a fitted-state-bound T²/Q
+            # screen. Carry it with the class decision for both single and
+            # retained batch applications; a missing screen is never a pass.
+            response["applicability"] = _present_plsda_applicability(applied.get("applicability"))
         if y_scoped is not None:
             y_true = [lossless_sample_table_scalar(label) for label in y_scoped.tolist()]
             response["true_labels"] = y_true
@@ -497,7 +582,7 @@ async def apply_model_to_dataset(
             ).outputs["default"]
         else:
             response["metrics"] = None
-        return response
+        return _bounded_application_response(response)
 
     if node_metadata.get("output_type") == "regression":
         predicted_arr = np.asarray(result_matrix, dtype=np.float64)
@@ -514,14 +599,39 @@ async def apply_model_to_dataset(
         applicability = applied.get("applicability")
         if applicability is not None:
             response["applicability"] = applicability
-        return response
+        return _bounded_application_response(response)
 
     if node_metadata.get("output_type") == "decomposition":
         response["transformed"] = np.asarray(result_matrix).tolist()
         response["metrics"] = None
-        return response
+        return _bounded_application_response(response)
 
     raise ValueError(f"Model type {model_type!r} cannot be applied")
+
+
+def _bounded_application_response(response: dict[str, Any]) -> dict[str, Any]:
+    from spectra_sherpa.app.services.dag.presentation_limits import require_bounded_presentation
+
+    require_bounded_presentation(response, surface="Model application")
+    return response
+
+
+def _present_plsda_applicability(value: Any) -> dict[str, Any]:
+    """Preserve legacy screening warnings without changing fitted-state custody."""
+
+    from spectra_sherpa.app.services.dag.nodes.modeling.pls_applicability import LEGACY_SCHEMA
+
+    if not isinstance(value, dict) or not value:
+        return {"status": "unavailable", "warning": "This saved classifier has no retained applicability evidence"}
+    record = dict(value)
+    if record.get("schema_version") == LEGACY_SCHEMA:
+        legacy_warning = (
+            "Legacy empirical screening limits; refit to obtain residual-spectrum Q and prediction F limits"
+        )
+        previous = record.get("warning")
+        if not isinstance(previous, str) or legacy_warning not in previous:
+            record["warning"] = "; ".join(part for part in (previous, legacy_warning) if isinstance(part, str) and part)
+    return record
 
 
 def _artifact_selected_target(manifest: dict[str, Any]) -> str | None:
@@ -624,11 +734,11 @@ async def compare_models_on_dataset(
 ) -> dict[str, Any]:
     from spectra_sherpa.app.services.dag.presentation_limits import require_bounded_presentation
 
-    require_bounded_presentation(dataset, surface="Model comparison", multiplier=max(1, len(artifact_uids)))
-    results = [
-        await apply_model_to_dataset(uid, dataset, scope=scope, presentation_multiplier=len(artifact_uids))
-        for uid in artifact_uids
-    ]
+    results = []
+    for uid in artifact_uids:
+        result = await apply_model_to_dataset(uid, dataset, scope=scope)
+        require_bounded_presentation([*results, result], surface="Model comparison")
+        results.append(result)
     comparison: dict[str, Any] = {
         "scope": scope,
         "models": results,
@@ -652,6 +762,7 @@ async def compare_models_on_dataset(
                     "truncated": len(disagreements) > 1000,
                 }
             )
+    require_bounded_presentation(comparison, surface="Model comparison")
     return comparison
 
 
@@ -793,7 +904,8 @@ def _validate_partition_population(dataset: SherpaDataset, y: np.ndarray | None,
     if values["held_out_groups"] is not None:
         values["held_out_groups"] = tuple(values["held_out_groups"])
     plan = SplitPlan(**values)
-    _validate_plan_binding(np.asarray(dataset.X), y, plan, bind_split_groups(dataset))
+    groups = bind_split_groups(dataset, use_source_assignment=plan.method == "group_holdout")
+    _validate_plan_binding(np.asarray(dataset.X), y, plan, groups)
 
 
 def _scope_indices_for_artifact(

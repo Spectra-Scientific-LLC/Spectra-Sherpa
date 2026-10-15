@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -11,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.core.config import settings
+from spectra_sherpa.app.lib.builtin_lavender import LAVENDER_ARCHIVE_ENV, lavender_archive_path
 from spectra_sherpa.app.models.exp_version import ExpVersion
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
@@ -18,8 +18,7 @@ from spectra_sherpa.app.models.project import live_project_filter
 
 ALLOWED_STAGES = {"raw", "preprocessed", "synthetic"}
 _BUILTIN_LAVENDER_NAME = "lavender-essential-oil-v1"
-_BUILTIN_LAVENDER_ARCHIVE_ENV = "TRIAL_AVATAR_ARCHIVE_PATH"
-_BUILTIN_LAVENDER_ARCHIVE_DEFAULT = "/run/spectra-trial/lavender-essential-oil-v1.zip"
+_BUILTIN_LAVENDER_ARCHIVE_ENV = LAVENDER_ARCHIVE_ENV
 _BUILTIN_LAVENDER_PACKAGE_ROOT = "lavender-essential-oil-v1"
 _BUILTIN_LAVENDER_MANIFEST_SCHEMA = "spectrasherpa-avatar-essential-oils-distribution/2"
 _BUILTIN_LAVENDER_DATASET_ID = "avatar-essential-oils/1"
@@ -65,7 +64,7 @@ def _sha256(content: bytes) -> str:
 
 
 def _builtin_lavender_archive_path() -> Path:
-    return Path(os.getenv(_BUILTIN_LAVENDER_ARCHIVE_ENV) or _BUILTIN_LAVENDER_ARCHIVE_DEFAULT)
+    return lavender_archive_path()
 
 
 def _normalized_lavender_member(info: zipfile.ZipInfo) -> str:
@@ -146,8 +145,8 @@ async def _import_builtin_lavender_reference(
     archive_path = _builtin_lavender_archive_path()
     if not archive_path.exists():
         raise FileNotFoundError(
-            "Lavender Essential Oil FTIR Corpus v1 is not mounted on this server. "
-            f"Set {_BUILTIN_LAVENDER_ARCHIVE_ENV} to the operator-installed archive."
+            "Lavender Essential Oil FTIR Corpus v1 is missing from this installation. "
+            f"Reinstall SpectraSherpa or set {_BUILTIN_LAVENDER_ARCHIVE_ENV} to a qualified copy."
         )
 
     created: list[ExperimentFile] = []

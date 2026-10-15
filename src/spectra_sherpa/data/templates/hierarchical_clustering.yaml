@@ -22,9 +22,9 @@ template_data:
     position_y: 50
   - node_id: preprocess_1
     node_type: preprocess.scale
-    label: Autoscale
+    label: Mean-centre spectra
     parameters:
-      method: autoscale
+      method: mean_center
     position_x: 425
     position_y: 300
   - node_id: model_1

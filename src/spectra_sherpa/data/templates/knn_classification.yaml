@@ -38,7 +38,7 @@ template_data:
       n_neighbors: 5
       weights: uniform
       metric: euclidean
-      scale: true
+      scale: false
     position_x: 175
     position_y: 650
   - node_id: predict_1

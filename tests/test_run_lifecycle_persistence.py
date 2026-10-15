@@ -153,26 +153,50 @@ async def test_auto_persist_run_writes_cancelled_status(test_session, test_user:
 
 
 def test_timeout_handler_calls_auto_persist_run_with_cancelled_status():
-    """Static guard: the TimeoutError branch in execute.py threads the
-    Idempotency-Key + ``final_status="cancelled"`` to ``_auto_persist_run``.
-    A grep-style check is enough — the unit test above already verifies the
-    helper behaviour. Together they form the same coverage shape as the
-    happy-path tests for the route.
+    """The timeout branch awaits the shared wrapper, which forwards persistence.
+
+    Pin both hops, cancelled status, retry identity and ordering before the 504.
+    The database test above independently verifies terminal-row persistence.
     """
+    import ast
     from pathlib import Path
 
     src = (
         Path(__file__).resolve().parent.parent / "src/spectra_sherpa/app/api/v1/routes/workflows/execute.py"
     ).read_text()
-    # The handler must persist BEFORE raising 504.
-    assert "asyncio.TimeoutError" in src
-    assert "_auto_persist_run" in src
-    timeout_block = src.split("asyncio.TimeoutError")[1].split("except Exception")[0]
-    assert "_auto_persist_run" in timeout_block, "timeout handler must call _auto_persist_run"
-    assert 'final_status="cancelled"' in timeout_block, "timeout handler must mark status cancelled"
-    assert (
-        "idempotency_key=normalized_idempotency_key" in timeout_block
-    ), "timeout handler must thread the idempotency key so retries replay the timeout"
+    tree = ast.parse(src)
+    wrappers = [n for n in ast.walk(tree) if isinstance(n, ast.AsyncFunctionDef) and n.name == "persist_execution_run"]
+    assert len(wrappers) == 1
+    forwarded = wrappers[0].body[-1]
+    assert isinstance(forwarded, ast.Return) and isinstance(forwarded.value, ast.Await)
+    assert ast.unparse(forwarded.value.value) == "_auto_persist_run(*args, **kwargs)"
+    handlers = [
+        n
+        for n in ast.walk(tree)
+        if isinstance(n, ast.ExceptHandler) and n.type is not None and ast.unparse(n.type) == "asyncio.TimeoutError"
+    ]
+    assert len(handlers) == 1
+    handler = handlers[0]
+    calls = [
+        n.value
+        for n in ast.walk(handler)
+        if isinstance(n, ast.Await)
+        and isinstance(n.value, ast.Call)
+        and isinstance(n.value.func, ast.Name)
+        and n.value.func.id == "persist_execution_run"
+    ]
+    assert len(calls) == 1
+    keywords = {kw.arg: ast.unparse(kw.value) for kw in calls[0].keywords}
+    assert keywords["final_status"] == "'cancelled'"
+    assert keywords["idempotency_key"] == "normalized_idempotency_key"
+    assert keywords["reservation_id"] == "reservation_id"
+    terminal = handler.body[-1]
+    assert isinstance(terminal, ast.Raise) and isinstance(terminal.exc, ast.Call)
+    assert ast.unparse(terminal.exc.func) == "HTTPException"
+    assert {kw.arg: ast.literal_eval(kw.value) for kw in terminal.exc.keywords if kw.arg == "status_code"} == {
+        "status_code": 504
+    }
+    assert calls[0].lineno < terminal.lineno
 
 
 # Silence unused-import lint for the mock helper still referenced if

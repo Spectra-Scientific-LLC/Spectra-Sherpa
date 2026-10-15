@@ -217,6 +217,9 @@ async def test_apply_knn_artifact_replays_partition_and_scale_state(monkeypatch)
     metadata.update(
         {
             "n_features": 2,
+            "input_identity": fitted_input_identity(
+                SherpaDataset(X=X_train_scaled, feature_axis=FeatureAxis(labels=["f1", "f2"])), features=2
+            ),
             "preprocessing_chain": [
                 {
                     "op_id": "data.train_test_split",
@@ -293,6 +296,7 @@ async def test_compare_models_reports_pairwise_disagreements():
         k=1,
     ).to_artifact()
     left_meta["n_features"] = 1
+    left_meta["input_identity"] = fitted_input_identity(SherpaDataset(X=X), features=1)
     store.save("knn-left", left_meta, left_arrays)
 
     right_meta, right_arrays = KNNExtract(
@@ -302,6 +306,7 @@ async def test_compare_models_reports_pairwise_disagreements():
         k=1,
     ).to_artifact()
     right_meta["n_features"] = 1
+    right_meta["input_identity"] = fitted_input_identity(SherpaDataset(X=X), features=1)
     store.save("knn-right", right_meta, right_arrays)
 
     ds = SherpaDataset(X=X, target=y, target_context=TargetContext(target_type="categorical"))
@@ -359,6 +364,29 @@ async def test_apply_regression_artifact_reports_labeled_set_metrics(included, e
     assert result["metrics"]["n_samples"] == len(expected)
     assert result["sample_indices"] == ([0, 2] if included is not None else [0, 1, 2])
     assert result["feature_indices"] == [0, 1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("included_count", [20, 80])
+async def test_wide_corn_shaped_application_bounds_predictions_not_input(included_count):
+    from spectra_sherpa.app.lib.fitted_state import LinearRegressionExtract
+    from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset
+    from spectra_sherpa.app.services.model_application import compare_models_on_dataset
+    from spectra_sherpa.app.services.model_store import get_model_store
+
+    metadata, arrays = LinearRegressionExtract(coef=np.ones(700), intercept=np.array([0.5])).to_artifact()
+    metadata["n_features"] = 700
+    for uid in ("corn-shape-a", "corn-shape-b"):
+        get_model_store().save(uid, metadata, arrays)
+    dataset = SherpaDataset(
+        X=np.ones((80, 700)),
+        sample_axis=SampleAxis(include_mask=[i < included_count for i in range(80)]),
+    )
+    compared = await compare_models_on_dataset(["corn-shape-a", "corn-shape-b"], dataset, scope="all")
+    for result in compared["models"]:
+        assert result["n_samples"] == included_count
+        assert result["sample_indices"] == list(range(included_count))
+        np.testing.assert_allclose(result["predictions"], np.full((included_count, 1), 700.5))
 
 
 @pytest.mark.parametrize("names", [None, ["density"]])

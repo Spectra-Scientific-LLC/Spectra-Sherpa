@@ -86,6 +86,51 @@ def test_missing_retained_output_refuses_partition_claim():
     assert "Missing evidence is not a count of zero" in report
 
 
+def test_retained_plsda_permutation_reports_scope_and_finite_sample_p_value():
+    result = {
+        "schema_version": "spectrasherpa-plsda-response-permutation/1",
+        "status": "complete",
+        "observed": 0.9,
+        "permutations_requested": 19,
+        "permutations_successful": 19,
+        "exceedances": 0,
+        "p_value": 1 / 20,
+        "null": [{"balanced_accuracy": 0.5, "selected_components": 1, "split_digest": "b" * 64}] * 19,
+        "seed": 17,
+        "folds": 3,
+        "n_calibration": 30,
+        "n_classes": 2,
+        "class_counts": {"A": 15, "B": 15},
+        "n_units": 30,
+        "n_blocks": 2,
+        "exchangeability_block_column": "instrument",
+        "blocks_sha256": "c" * 64,
+        "grouping_sha256": None,
+        "model_state_sha256": "a" * 64,
+        "component_search_maximum": 2,
+        "upstream_preprocessing": "caller_declared_raw_array_no_recorded_preprocessing",
+    }
+    run = SimpleNamespace(
+        id=13,
+        user_id=1,
+        status="completed",
+        diagnostics={},
+        source_metadata={},
+        params_snapshot={"permutation": {"seed": 17}},
+        evidence_completeness=retention.retain_run_outputs(1, {"permutation": {"default": result}}, {}),
+    )
+    definition = {
+        "schema_version": 1,
+        "nodes": [{"node_id": "permutation", "node_type": "diagnostics.plsda_permutation"}],
+        "edges": [],
+    }
+    report = text(validation_summary(run, definition))
+    assert "PLS-DA permutation p-value (permutation): 0.05" in report
+    assert '"exchangeability_block_column": "instrument"' in report
+    assert "independent test validity is not established" in report
+    assert "CV-ANOVA is unavailable for this PLS-DA statistic" in report
+
+
 def test_changed_split_bytes_are_not_presented_as_verified():
     run, definition = split_run(grouped=True)
     for item in run.evidence_completeness["outputs"]["split"].values():
@@ -299,3 +344,18 @@ def test_complete_training_and_test_target_lists_are_opt_in_and_not_preview_limi
     assert [len(record["observations"]) for record in full["regression_results"]] == [174, 57]
     assert [record["reference_mean"] for record in full["regression_results"]] == [86.5, 28.0]
     assert full["regression_results"][0]["observations"][-1]["reference"] == 173
+
+
+def test_feature_table_report_does_not_claim_missing_spectral_units():
+    table = {"type": "SherpaDataset", "data": [[1.0, 2.0]], "metadata": {"is_spectra": False}}
+    run = SimpleNamespace(
+        id=25,
+        user_id=1,
+        status="completed",
+        diagnostics={},
+        source_metadata={},
+        params_snapshot={},
+        evidence_completeness=retention.retain_run_outputs(1, {"source": {"default": table}}, {}),
+    )
+    summary = validation_summary(run, {"nodes": [{"node_id": "source", "node_type": "data.file_load"}], "edges": []})
+    assert not any(row["label"].startswith("Spectral") for row in summary["rows"])

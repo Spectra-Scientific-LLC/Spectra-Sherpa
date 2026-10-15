@@ -22,6 +22,7 @@ from spectra_sherpa.app.contracts.scientific_access import require_scientific_ac
 from spectra_sherpa.app.models.background_job import BackgroundJob
 from spectra_sherpa.app.models.dataset_view import DatasetView
 from spectra_sherpa.app.models.execution_run import ExecutionRun
+from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.model_artifact import ModelArtifact
 from spectra_sherpa.app.models.user import User
 from spectra_sherpa.app.models.workflow import Workflow
@@ -35,7 +36,7 @@ from spectra_sherpa.app.schemas.execution_runs import (
     RunPage,
 )
 from spectra_sherpa.app.schemas.run_evidence import OutputEvidence, RunEvidence
-from spectra_sherpa.app.services.dataset_views import receipt_sha256, verify_selection_receipt
+from spectra_sherpa.app.services.dataset_views import materialize_selection_receipt, receipt_sha256
 from spectra_sherpa.app.services.deployment_binding import resolve_deployment_binding
 from spectra_sherpa.app.services.job_manager import job_manager
 from spectra_sherpa.app.services.model_application import apply_model_to_dataset, load_project_dataset
@@ -88,6 +89,309 @@ class ArtifactBatchRunResponse(BaseModel):
     status: Literal["completed", "partial", "failed"]
     run: ExecutionRunOut | None = None
     results: list[ArtifactBatchRunItemResult]
+
+
+class VerificationPair(BaseModel):
+    workflow_id: int = Field(..., gt=0)
+    artifact_uid: str | None = Field(None, max_length=255)
+    dataset: RunDatasetRef
+    dataset_view_id: int | None = Field(None, gt=0)
+    receipt: str | None = Field(None, pattern="^[a-f0-9]{64}$")
+
+
+class VerificationBatchRequest(BaseModel):
+    project_id: int = Field(..., gt=0)
+    mode: Literal["apply_model", "run_workflow"]
+    pairs: list[VerificationPair] = Field(..., min_length=1, max_length=32)
+
+
+async def _prepare_verification_pair(payload, pair, session, user_id):
+    from sqlalchemy.orm import selectinload
+
+    from spectra_sherpa.app.contracts.demo_policy import require_trial_dataset_access
+    from spectra_sherpa.app.lib.workflow_purpose import MANAGED_CANDIDATE_AUTHORITY
+    from spectra_sherpa.app.services.batch_verification import (
+        bind_workflow_definition,
+        included_dataset,
+        verification_digest,
+    )
+    from spectra_sherpa.app.services.model_application import preflight_model_application
+    from spectra_sherpa.app.services.model_store import get_model_store
+    from spectra_sherpa.app.services.run_params import build_saved_definition_snapshot
+    from spectra_sherpa.app.services.workflow_access import validate_workflow_execution_access
+
+    workflow = await session.scalar(
+        select(Workflow)
+        .where(
+            Workflow.id == pair.workflow_id,
+            Workflow.project_id == payload.project_id,
+            or_(Workflow.user_id == user_id, uses_managed_project_access()),
+        )
+        .options(selectinload(Workflow.nodes), selectinload(Workflow.edges), selectinload(Workflow.primary_data_source))
+        .execution_options(populate_existing=True)
+    )
+    if workflow is None:
+        raise HTTPException(404, "Workflow not found in this project")
+    await require_scientific_access(session, user_id, payload.project_id, "execute", resource_owner_id=workflow.user_id)
+    if workflow.purpose == MANAGED_CANDIDATE_AUTHORITY:
+        raise ValueError("Managed optimization candidates must run through their campaign.")
+    request = ArtifactBatchRunRequest(
+        artifact_uids=[pair.artifact_uid or "unused"],
+        dataset=pair.dataset,
+        dataset_view_id=pair.dataset_view_id,
+        scope="all",
+    )
+    loaded, view = await _load_batch_dataset(session, user_id, request)
+    if loaded.project_id != payload.project_id:
+        raise HTTPException(404, "Dataset not found in this project")
+    await require_trial_dataset_access(
+        session=session,
+        user_id=user_id,
+        workflow_project_id=payload.project_id,
+        experiment_id=loaded.experiment_id,
+        stage=loaded.stage,
+        file_id=None,
+        file_ids=loaded.file_ids,
+        asset_id=loaded.asset_id,
+        loaded_dataset=loaded,
+    )
+    original = build_saved_definition_snapshot(workflow)
+    selected = included_dataset(loaded.dataset)
+    metadata = {
+        "execution_mode": payload.mode,
+        "scope_label": (
+            "Included dataset — inference only"
+            if payload.mode == "apply_model"
+            else "Workflow-defined training/evaluation"
+        ),
+        "dataset": {
+            "experiment_id": loaded.experiment_id,
+            "name": loaded.experiment_name,
+            "file_ids": loaded.file_ids,
+            "stage": loaded.stage,
+            "asset_id": loaded.asset_id,
+            "scientific_digest": str(loaded.dataset.scientific_digest),
+            "source_manifest_sha256": loaded.source_manifest_sha256,
+            **_scientific_collection_fields(loaded),
+        },
+        "dataset_view": (
+            {"id": view.id, "name": view.name, "selection_sha256": view.selection_sha256} if view is not None else None
+        ),
+        "n_included_samples": int(selected.shape[0]),
+        "workflow_id": workflow.id,
+        "workflow_name": workflow.name,
+        "original_definition_digest": verification_digest(original),
+    }
+    if payload.mode == "apply_model":
+        if pair.artifact_uid is None:
+            raise ValueError("Choose one exact fitted model for this workflow.")
+        artifact = (await _load_artifacts(session, user_id=user_id, artifact_uids=[pair.artifact_uid]))[0]
+        if artifact.workflow_id != workflow.id or artifact.project_id != payload.project_id:
+            raise HTTPException(404, "Model does not belong to the selected workflow and project")
+        manifest, arrays = await to_thread(get_model_store().load, artifact.artifact_uid)
+        _, warnings, application_metadata = await to_thread(preflight_model_application, selected, manifest, arrays)
+        metadata.update(
+            artifact_uid=artifact.artifact_uid,
+            artifact_integrity_hash=artifact.integrity_hash,
+            accuracy_available=application_metadata["accuracy_available"],
+            warnings=warnings,
+        )
+        definition = None
+    else:
+        if pair.artifact_uid is not None:
+            raise ValueError("Train/evaluate uses the saved workflow, not an existing fitted model.")
+        definition, loaded = bind_workflow_definition(original, loaded)
+        from spectra_sherpa.app.services.dag.node_base import node_registry
+
+        metadata["run_kind"] = (
+            "training"
+            if any(
+                node_registry.get_metadata(node["node_type"]).resolved_execution_contract().payload["lifecycle_kind"]
+                == "fitted_model"
+                for node in definition["nodes"]
+            )
+            else "data"
+        )
+        from types import SimpleNamespace
+
+        await validate_workflow_execution_access(
+            [SimpleNamespace(**node) for node in definition["nodes"]],
+            None,
+            user_id,
+            payload.project_id,
+            session,
+        )
+    digest = verification_digest(metadata)
+    return {
+        "receipt": digest,
+        "metadata": metadata,
+        "loaded": loaded,
+        "definition": definition,
+        "original_definition": original,
+        "request": request,
+    }
+
+
+@router.post("/verification/preflight")
+async def preflight_verification_batch(
+    payload: VerificationBatchRequest,
+    _dg: None = Depends(demo_guard(MODEL_USE)),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Check every combination without fitting, prediction, quota or run writes."""
+    results = []
+    for index, pair in enumerate(payload.pairs):
+        try:
+            admitted = await _prepare_verification_pair(payload, pair, session, current_user.id)
+            results.append(
+                {"index": index, "compatible": True, "receipt": admitted["receipt"], "metadata": admitted["metadata"]}
+            )
+        except ValueError as exc:
+            results.append({"index": index, "compatible": False, "reason": str(exc)})
+        except HTTPException as exc:
+            if exc.status_code not in {400, 409, 422}:
+                raise
+            results.append({"index": index, "compatible": False, "reason": str(exc.detail)})
+    return {"pairs": results}
+
+
+@router.post("/verification", status_code=201)
+async def execute_verification_batch(
+    payload: VerificationBatchRequest,
+    _dg: None = Depends(demo_guard(MODEL_USE)),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Admit the whole selection first, then persist each pair independently."""
+    from uuid import uuid4
+
+    from spectra_sherpa.app.api.v1.routes.workflows.execute import execute_saved_workflow
+    from spectra_sherpa.app.schemas.workflows import WorkflowExecuteRequest
+    from spectra_sherpa.app.services.batch_verification import BatchAuthorityChanged, BatchWorkflowBinding
+
+    user_id = current_user.id
+    prepared = []
+    seen = set()
+    for pair in payload.pairs:
+        try:
+            admitted = await _prepare_verification_pair(payload, pair, session, user_id)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        if pair.receipt != admitted["receipt"]:
+            raise HTTPException(409, "Batch selection changed; review a fresh preflight before running")
+        if pair.receipt in seen:
+            raise HTTPException(422, "Duplicate Batch combination")
+        seen.add(pair.receipt)
+        # Do not retain up to 32 full matrices in memory. Re-admission below
+        # materializes only the pair currently being executed.
+        admitted.pop("loaded")
+        prepared.append(admitted)
+    batch_id = str(uuid4())
+    from spectra_sherpa.app.api.v1.routes.workflows._helpers import (
+        _reserve_run,
+        finalize_orphan_reservation_if_running,
+    )
+
+    reservation_ids = []
+    try:
+        for index, (pair, admitted) in enumerate(zip(payload.pairs, prepared)):
+            metadata = {
+                **admitted["metadata"],
+                "batch_id": batch_id,
+                "batch_index": index + 1,
+                "batch_size": len(prepared),
+                "preflight_receipt": admitted["receipt"],
+            }
+            reservation = await _reserve_run(
+                session,
+                workflow_id=pair.workflow_id,
+                user_id=user_id,
+                project_id=payload.project_id,
+                wf_version_id=None,
+                integrity_hash=None,
+                idempotency_key=f"{batch_id}_{index}",
+                params_snapshot={},
+                workflow_name=f"{metadata['workflow_name']} — {metadata['dataset']['name']}",
+                source_metadata=metadata,
+                source_type="batch",
+                commit=False,
+            )
+            reservation_ids.append(reservation.id)
+        # Every ID is known before the only commit: setup failure rolls back
+        # the whole set; interruption during/after commit can finalize all IDs.
+        await session.commit()
+        results = []
+        for index, (pair, admitted) in enumerate(zip(payload.pairs, prepared)):
+            metadata = {
+                **admitted["metadata"],
+                "batch_id": batch_id,
+                "batch_index": index + 1,
+                "batch_size": len(prepared),
+                "preflight_receipt": admitted["receipt"],
+            }
+
+            async def verify_current(pair=pair, receipt=admitted["receipt"]):
+                try:
+                    current = await _prepare_verification_pair(payload, pair, session, user_id)
+                except (HTTPException, ValueError) as exc:
+                    raise BatchAuthorityChanged() from exc
+                if current["receipt"] != receipt:
+                    raise BatchAuthorityChanged()
+                return current
+
+            async def verify_application(loaded, artifacts, expected=metadata):
+                await verify_current()
+                if (
+                    str(loaded.dataset.scientific_digest) != expected["dataset"]["scientific_digest"]
+                    or loaded.source_manifest_sha256 != expected["dataset"]["source_manifest_sha256"]
+                    or len(artifacts) != 1
+                    or artifacts[0].integrity_hash != expected["artifact_integrity_hash"]
+                ):
+                    raise BatchAuthorityChanged()
+
+            execution_admission = await verify_current()
+            if payload.mode == "apply_model":
+                result = await execute_artifact_batch(
+                    admitted["request"],
+                    Response(),
+                    session,
+                    current_user,
+                    verification_metadata=metadata,
+                    verification_check=verify_application,
+                    reservation_id=reservation_ids[index],
+                )
+                results.append({"index": index, "run_id": result.run.id, "status": result.status})
+            else:
+                result = await execute_saved_workflow(
+                    pair.workflow_id,
+                    WorkflowExecuteRequest(),
+                    session,
+                    current_user,
+                    batch_binding=BatchWorkflowBinding(
+                        loaded=execution_admission["loaded"],
+                        definition=admitted["definition"],
+                        original_definition=admitted["original_definition"],
+                        metadata=metadata,
+                        verify_current=verify_current,
+                        reservation_id=reservation_ids[index],
+                    ),
+                )
+                results.append({"index": index, "run_id": result.run_id, "status": result.status})
+        return {"batch_id": batch_id, "results": results}
+    finally:
+        # Numerical failures already have their own terminal evidence. Admission,
+        # quota, cancellation and transport failures must also leave every
+        # admitted combination visible, including pairs that never started.
+        await session.rollback()
+        for reservation_id in reservation_ids:
+            await finalize_orphan_reservation_if_running(
+                session,
+                reservation_id=reservation_id,
+                user_id=user_id,
+                error_msg="Batch interrupted before this combination completed. Review before retrying.",
+                exception_class="BatchInterrupted",
+            )
 
 
 async def _resolve_owned_deployment_binding(session: AsyncSession, *, user_id: int, artifact_uid: str):
@@ -282,7 +586,7 @@ def _workflow_name_query():
 def _run_navigation(run: ExecutionRun, workflow_name: str | None) -> RunListItem:
     item = RunListItem.model_validate(run)
     item.workflow_name = workflow_name
-    item.display_name = workflow_name if workflow_name and run.source_type == "auto" else run.name
+    item.display_name = run.name
     return item
 
 
@@ -367,6 +671,47 @@ async def get_project_run(
     )
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
+    return ExecutionRunOut.model_validate(run)
+
+
+class RunNameUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+
+
+@router.patch("/{run_id}/name", response_model=ExecutionRunOut)
+async def update_project_run_name(
+    run_id: int,
+    payload: RunNameUpdate,
+    project_id: int = Query(...),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> ExecutionRunOut:
+    """Change only the run's user-facing name; retained scientific evidence stays intact."""
+    run = await session.scalar(
+        select(ExecutionRun).where(
+            *_run_belongs_to_project_clause(current_user.id, project_id), ExecutionRun.id == run_id
+        )
+    )
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(status_code=422, detail="Run name cannot be blank")
+    if name != run.name:
+        from spectra_sherpa.app.services.audit import audit_emitter
+
+        previous_name = run.name
+        run.name = name
+        audit_emitter.emit(
+            session=session,
+            action="workflow.run.renamed",
+            target_type="ExecutionRun",
+            target_id=run.id,
+            before={"name": previous_name},
+            after={"name": name},
+        )
+        await session.commit()
+        await session.refresh(run)
     return ExecutionRunOut.model_validate(run)
 
 
@@ -457,6 +802,8 @@ async def inspect_run_evidence(
     workflow_name = await session.scalar(
         select(_workflow_name_query()).select_from(ExecutionRun).where(ExecutionRun.id == run.id)
     )
+    await session.refresh(run, attribute_names=["source_metadata"])
+    source = run.source_metadata or {}
     response = {
         "run": _run_navigation(run, workflow_name).model_dump(mode="json"),
         "evidence": evidence.model_dump(),
@@ -467,6 +814,24 @@ async def inspect_run_evidence(
         "notes": run.notes,
         "params_snapshot": run.params_snapshot,
         "environment_snapshot": run.environment_snapshot,
+        "batch": (
+            {
+                key: source.get(key)
+                for key in (
+                    "batch_id",
+                    "batch_index",
+                    "batch_size",
+                    "execution_mode",
+                    "scope_label",
+                    "dataset",
+                    "dataset_view",
+                    "n_included_samples",
+                    "artifact_uid",
+                )
+            }
+            if source.get("batch_id")
+            else None
+        ),
     }
     if len(json.dumps(response, ensure_ascii=True, separators=(",", ":")).encode()) > DETAIL_METADATA_BUDGET_BYTES:
         raise HTTPException(
@@ -618,9 +983,25 @@ async def _load_batch_dataset(session, user_id, payload):
             if loaded.project_id != view.project_id:
                 raise HTTPException(404, "Saved dataset definition is outside this project")
             try:
-                verify_selection_receipt(loaded, receipt)
+                loaded = materialize_selection_receipt(loaded, receipt)
             except ValueError as exc:
                 raise HTTPException(409, "Saved dataset definition no longer matches its source or cohort") from exc
+        # A saved view receipt does not identify the bound response table. Equal
+        # labels and Y values alone cannot establish reference provenance.
+        if view is None and len(loaded.file_ids) == 1 and loaded.asset_id is None:
+            source_file = await session.scalar(
+                select(ExperimentFile).where(
+                    ExperimentFile.id == loaded.file_ids[0],
+                    ExperimentFile.experiment_id == loaded.experiment_id,
+                    ExperimentFile.stage == loaded.stage,
+                )
+            )
+            if source_file is not None:
+                from spectra_sherpa.app.services.dataset_analysis_readiness import apply_saved_analysis_binding
+
+                loaded.dataset, _ = await apply_saved_analysis_binding(
+                    loaded.dataset, source_file=source_file, session=session
+                )
         return loaded, view
     except KeyError as exc:
         raise HTTPException(409, "Saved dataset definition is incomplete") from exc
@@ -641,6 +1022,19 @@ async def batch_run_artifacts(
     _dg: None = Depends(demo_guard(MODEL_USE)),
     session: AsyncSession = Depends(get_session),
     current_user: User = Depends(get_current_user),
+) -> ArtifactBatchRunResponse:
+    return await execute_artifact_batch(payload, response, session, current_user)
+
+
+async def execute_artifact_batch(
+    payload: ArtifactBatchRunRequest,
+    response: Response,
+    session: AsyncSession,
+    current_user: User,
+    *,
+    verification_metadata: dict[str, Any] | None = None,
+    verification_check=None,
+    reservation_id: int | None = None,
 ) -> ArtifactBatchRunResponse:
     """Apply saved artifacts to a durable My Dataset and persist every attempted batch.
 
@@ -690,9 +1084,10 @@ async def batch_run_artifacts(
         for artifact in artifacts:
             if artifact.project_id != loaded.project_id:
                 raise ValueError("All selected artifacts and the dataset must belong to the same project")
+        if verification_check is not None:
+            await verification_check(loaded, artifacts)
         from spectra_sherpa.app.services.dag.presentation_limits import require_bounded_presentation
 
-        require_bounded_presentation(loaded.dataset, surface="Batch application", multiplier=len(artifacts))
         enforce_demo_execution_quota(current_user.id)
         applied_results: list[dict[str, Any]] = []
         item_results: list[ArtifactBatchRunItemResult] = []
@@ -708,8 +1103,8 @@ async def batch_run_artifacts(
                     loaded.dataset,
                     scope=payload.scope,
                     execution_evidence=capture,
-                    presentation_multiplier=len(artifacts),
                 )
+                require_bounded_presentation([*applied_results, applied], surface="Batch application")
                 applied_results.append(applied)
                 item_results.append(
                     ArtifactBatchRunItemResult(
@@ -753,7 +1148,11 @@ async def batch_run_artifacts(
     ]:
         raise HTTPException(404, "Model project authority changed during batch application")
 
-    if uses_managed_project_access() or view is not None:
+    if (
+        uses_managed_project_access()
+        or view is not None
+        or getattr(getattr(loaded.dataset, "target_context", None), "reference_value_evidence", None) is not None
+    ):
         current_dataset, current_view = await _load_batch_dataset(session, current_user.id, payload)
         if view is not None and (current_view is None or current_view.selection_sha256 != view.selection_sha256):
             raise HTTPException(409, "Saved dataset definition changed during batch application")
@@ -771,7 +1170,13 @@ async def batch_run_artifacts(
             )
         ):
             raise HTTPException(409, "Dataset authority changed during batch application; rerun the batch")
+        if getattr(
+            getattr(current_dataset.dataset, "target_context", None), "reference_value_evidence", None
+        ) != getattr(getattr(loaded.dataset, "target_context", None), "reference_value_evidence", None):
+            raise HTTPException(409, "Reference-value binding changed during batch application; rerun the batch")
 
+    if verification_check is not None:
+        await verification_check(loaded, current_artifacts)
     successful_uids = [result["artifact_uid"] for result in applied_results]
     failed_items = [item for item in item_results if item.status == "failed"]
     outcome: Literal["failed", "partial", "completed"] = (
@@ -783,6 +1188,7 @@ async def batch_run_artifacts(
     )
     results_summary = {result["artifact_uid"]: _compact_model_metrics(result) for result in applied_results}
     source_metadata = {
+        **(verification_metadata or {}),
         "dataset": {
             "experiment_id": loaded.experiment_id,
             "name": loaded.experiment_name,
@@ -847,7 +1253,7 @@ async def batch_run_artifacts(
         retained["__workflow__"] = {"definition": definition}
     evidence = await to_thread(retain_run_outputs, current_user.id, retained, diagnostics)
     artifact_attempts = attempted_artifact_fields(artifact_uids)
-    run = ExecutionRun(
+    run_data = dict(
         project_id=loaded.project_id,
         workflow_id=primary_workflow_id,
         workflow_version_id=primary_workflow_version_id,
@@ -869,10 +1275,23 @@ async def batch_run_artifacts(
         attempted_artifact_uids=artifact_attempts["attempted_artifact_uids"],
         succeeded_artifact_uids=successful_uids,
         model_ids=successful_uids,
-        run_kind="batch_inference",
         applied_artifact_uids=artifact_attempts["applied_artifact_uids"],
         evidence_completeness=evidence,
     )
+    if reservation_id is not None:
+        run = await session.get(ExecutionRun, reservation_id, populate_existing=True)
+        if (
+            run is None
+            or run.user_id != current_user.id
+            or run.project_id != loaded.project_id
+            or run.status != "running"
+        ):
+            raise HTTPException(409, "Batch run reservation is no longer available")
+    else:
+        run = ExecutionRun(run_kind="batch_inference")
+    for key, value in run_data.items():
+        setattr(run, key, value)
+    run.run_kind = "batch_inference"
     session.add(run)
     await session.flush()
 

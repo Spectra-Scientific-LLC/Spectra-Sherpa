@@ -29,6 +29,7 @@ class PreparedDataOverrides:
     data_role: str | None = None
     target_column: str | None = None
     target_type: str | None = None
+    assignment_column: str | None = None
     target_mode: str | None = None
     selected_target: str | None = None
     csv_layout: str | None = None
@@ -44,6 +45,7 @@ class PreparedDataOverrides:
         "data_role",
         "target_column",
         "target_type",
+        "assignment_column",
         "target_mode",
         "selected_target",
         "csv_layout",
@@ -65,6 +67,7 @@ class PreparedDataOverrides:
             data_role=_normalize_data_role_value(overrides.get("data_role")),
             target_column=_normalize_text(overrides.get("target_column")),
             target_type=_normalize_target_type(overrides.get("target_type")),
+            assignment_column=_normalize_text(overrides.get("assignment_column")),
             target_mode=_normalize_target_mode(overrides.get("target_mode")),
             selected_target=_normalize_text(overrides.get("selected_target")),
             csv_layout=_normalize_csv_layout(overrides.get("csv_layout")),
@@ -271,6 +274,7 @@ def apply_serialized_prepared_data_overrides(
         ("data_role", "data_role"),
         ("target_column", "target_column"),
         ("target_type", "target_type"),
+        ("assignment_column", "assignment_column"),
         ("target_mode", "target_mode"),
         ("selected_target", "selected_target"),
         ("csv_layout", "csv_layout"),
@@ -302,6 +306,64 @@ def apply_serialized_prepared_data_overrides(
                 if selected is not None:
                     target_context["selected_target"] = selected
     return result
+
+
+def _bind_prepared_csv_target(dataset: SherpaDataset, prepared: PreparedDataOverrides) -> SherpaDataset:
+    selected = prepared.target_column
+    if selected is None:
+        return dataset
+    properties = dataset.get_extra("properties")
+    if isinstance(properties, Mapping) and selected in properties:
+        target = np.asarray(properties[selected])
+        if target.ndim != 1 or target.shape[0] != dataset.n_samples:
+            raise ValueError("Prepared target column does not align with the dataset samples")
+        target_type = prepared.target_type or ("categorical" if target.dtype.kind in {"O", "S", "U"} else "continuous")
+        class_names = None
+        if target_type == "categorical":
+            class_names = sorted(
+                {str(value).strip() for value in target.tolist() if value is not None and str(value).strip()}
+            )
+        dataset.target = target
+        dataset.target_context = TargetContext(
+            target_type=target_type,
+            target_name=selected,
+            target_names=[selected],
+            selected_target=prepared.selected_target or selected,
+            n_classes=len(class_names) if class_names is not None else None,
+            class_names=class_names,
+        )
+    feature_axis = dataset.get_feature_axis()
+    labels = list(feature_axis.labels or []) if feature_axis is not None else []
+    if dataset.data_role == "X_features" and selected in labels:
+        if prepared.target_type == "categorical":
+            raise ValueError("A numeric feature column cannot be a categorical target")
+        if len(labels) == 1:
+            raise ValueError("The selected target leaves no predictors")
+        target_values = np.asarray(dataset.X)[:, labels.index(selected)].copy()
+        dataset.target = target_values
+        dataset.target_context = TargetContext(
+            target_type="continuous",
+            target_name=selected,
+            target_names=[selected],
+            selected_target=selected,
+        )
+        dataset = dataset[:, [index for index, name in enumerate(labels) if name != selected]]
+    dataset.meta["csv.target_column"] = selected
+    return dataset
+
+
+def _bind_prepared_csv_assignment(dataset: SherpaDataset, column: str | None) -> None:
+    if column is None:
+        return
+    table = dataset.sample_axis.sample_table if dataset.sample_axis is not None else None
+    if not isinstance(table, Mapping) or column not in table:
+        raise ValueError(f"Assignment column {column!r} is not in the sample metadata")
+    values = list(table[column])
+    if len(values) != dataset.n_samples or any(value is None or not str(value).strip() for value in values):
+        raise ValueError("Assignment values must be present for every sample")
+    if len({str(value).strip() for value in values}) < 2:
+        raise ValueError("Assignment column must identify at least two partitions")
+    dataset.meta["csv.assignment_column"] = column
 
 
 def apply_dataset_prepared_data_overrides(
@@ -364,30 +426,8 @@ def apply_dataset_prepared_data_overrides(
     if allow_is_time_series and prepared.is_time_series is not None:
         dataset.is_time_series = prepared.is_time_series
         dataset.meta["is_time_series"] = prepared.is_time_series
-    if prepared.target_column is not None:
-        properties = dataset.get_extra("properties")
-        if isinstance(properties, Mapping) and prepared.target_column in properties:
-            target = np.asarray(properties[prepared.target_column])
-            if target.ndim != 1 or target.shape[0] != dataset.n_samples:
-                raise ValueError("Prepared target column does not align with the dataset samples")
-            target_type = prepared.target_type or (
-                "categorical" if target.dtype.kind in {"O", "S", "U"} else "continuous"
-            )
-            class_names = None
-            if target_type == "categorical":
-                class_names = sorted(
-                    {str(value).strip() for value in target.tolist() if value is not None and str(value).strip()}
-                )
-            dataset.target = target
-            dataset.target_context = TargetContext(
-                target_type=target_type,
-                target_name=prepared.target_column,
-                target_names=[prepared.target_column],
-                selected_target=prepared.selected_target or prepared.target_column,
-                n_classes=len(class_names) if class_names is not None else None,
-                class_names=class_names,
-            )
-        dataset.meta["csv.target_column"] = prepared.target_column
+    dataset = _bind_prepared_csv_target(dataset, prepared)
+    _bind_prepared_csv_assignment(dataset, prepared.assignment_column)
     if prepared.target_type is not None:
         dataset.meta["csv.target_type"] = prepared.target_type
     if prepared.target_mode is not None:
@@ -424,6 +464,7 @@ def merge_prepared_data_overrides(overrides: list[PreparedDataOverrides]) -> Pre
             "data_role",
             "target_column",
             "target_type",
+            "assignment_column",
             "target_mode",
             "selected_target",
             "csv_layout",

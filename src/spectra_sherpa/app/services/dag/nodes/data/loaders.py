@@ -21,6 +21,7 @@ import numpy as np
 
 from spectra_sherpa.app.lib import collection_assembly as collection_assembly_contract
 from spectra_sherpa.app.lib import collection_definition as collection_definition_contract
+from spectra_sherpa.app.lib import dataset_view_receipts as dataset_views_contract
 from spectra_sherpa.app.lib import sample_labels as sample_labels_contract
 from spectra_sherpa.app.lib.collection_assembly import (
     CollectionMember,
@@ -67,6 +68,7 @@ from spectra_sherpa.io import registry as ingestion_registry_contract
 from spectra_sherpa.io.types import ParserLimits, SourceMember
 
 from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, register_node
+from . import sample_preparation as sample_preparation_contract
 from . import source_contracts
 from .source_contracts import file_manifest
 
@@ -328,7 +330,7 @@ class ExperimentDatasetReader:
                     "parsed data or scientific metadata changed after binding, so re-import the dataset "
                     "or rebind the workflow"
                 )
-            result = self._apply_node_target_selection(result)
+            result = await self._apply_saved_selection(result, collection)
             add_processing_step(
                 result,
                 "spectrasherpa.experiment_dataset_read/2",
@@ -453,7 +455,7 @@ class ExperimentDatasetReader:
                 "parsed data or scientific metadata changed after binding, so re-import the dataset "
                 "or rebind the workflow"
             )
-        result = self._apply_node_target_selection(result)
+        result = await self._apply_saved_selection(result, collection)
         set_spectra_meta(
             result,
             SpectraMeta(
@@ -488,6 +490,48 @@ class ExperimentDatasetReader:
             node_id=self.node_id,
         )
         return {"default": result, "target": result.target}
+
+    async def _apply_saved_selection(self, dataset, collection):
+        view_id = self.parameters.get("dataset_view_id")
+        if view_id is None:
+            return self._apply_node_target_selection(dataset)
+        resolver = getattr(self.source_resolver, "resolve_dataset_view", None)
+        if resolver is None:
+            raise ValueError(
+                "This execution environment cannot verify saved dataset definitions; "
+                "run through the application with the original dataset binding."
+            )
+        from spectra_sherpa.app.lib.dataset_view_receipts import LoadedProjectDataset, materialize_selection_receipt
+
+        resolved = await resolver(
+            experiment_id=collection.experiment_id,
+            view_id=view_id,
+            selection_sha256=self.parameters.get("dataset_view_sha256", ""),
+        )
+        receipt = resolved["selection"]
+        expected = {
+            "stage": self.parameters.get("stage") or "raw",
+            "selected_file_ids": [int(v) for v in self.parameters.get("selected_file_ids", [])] or None,
+            "asset_id": self.parameters.get("asset_id") or None,
+            "target_authority": self.parameters.get("target_authority") or None,
+            "group_column": self.parameters.get("group_column") or None,
+        }
+        if any(receipt.get(k) != value for k, value in expected.items()):
+            raise ValueError("Source parameters differ from the pinned dataset definition")
+        source = dataset.meta.get("source_collection", {})
+        loaded = LoadedProjectDataset(
+            dataset=dataset,
+            experiment_id=collection.experiment_id,
+            experiment_name=collection.experiment_name,
+            project_id=resolved["project_id"],
+            file_ids=[f.file_id for f in collection.files],
+            stage=expected["stage"],
+            asset_id=expected["asset_id"],
+            source_manifest_sha256=source.get("manifest_digest", ""),
+            collection_definition_sha256=source.get("collection_definition_sha256"),
+            scientific_collection_sha256=source.get("scientific_collection_sha256"),
+        )
+        return materialize_selection_receipt(loaded, receipt).dataset
 
     def _processing_parameters(self, *, dataset_id: int, file_count: int, dataset: SherpaDataset) -> dict[str, Any]:
         params: dict[str, Any] = {"dataset_id": dataset_id, "file_count": file_count}
@@ -1377,7 +1421,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.DATA_SOURCE,
     implementation_id="spectrasherpa.data.collection_load",
-    implementation_version="1.0.1",
+    implementation_version="1.1.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="generates_samples",
@@ -1388,6 +1432,8 @@ bind_stable_execution_contract(
     license_id="CeCILL-B",
     help_reference="docs/nodes/data.md",
     implementation_modules=(
+        dataset_views_contract,
+        sample_preparation_contract,
         source_contracts,
         collection_assembly_contract,
         collection_definition_contract,

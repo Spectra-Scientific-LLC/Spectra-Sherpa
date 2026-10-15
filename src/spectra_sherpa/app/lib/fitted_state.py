@@ -1222,103 +1222,66 @@ class SIMCAExtract:
             n_components=metadata.get("n_components", 3),
         )
 
-    def predict(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Classify new samples by minimum combined distance to class models.
-
-        For each class:
-        1. Center: X_c = X - class_mean
-        2. Project: scores = X_c @ loadings.T
-        3. Reconstruct: X_hat = scores @ loadings + class_mean
-        4. T² = sum((scores / sqrt(eigenvalues))²)
-        5. Q = sum((X - X_hat)²)  (SPE residual)
-        6. Combined distance = T²/T²_limit + Q/Q_limit
-
-        Returns:
-            (labels, probabilities) where labels is 1D string array and
-            probabilities is (n_samples, n_classes) array of inverse-distance
-            scores normalized to sum to 1 (higher = closer to class).
-        """
+    def statistics(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Exact fitted-space T², Q, distances and membership; no unitful floors."""
         X = np.asarray(X, dtype=np.float64)
         if X.ndim == 1:
             X = X.reshape(1, -1)
+        if X.ndim != 2 or not np.isfinite(X).all():
+            raise ValueError("SIMCA application requires a finite matrix")
+        t2 = np.empty((X.shape[0], len(self.classes)), dtype=np.float64)
+        q = np.empty_like(t2)
+        t2_limits = np.asarray([self.T2_limits[label] for label in self.classes], dtype=np.float64)
+        q_limits = np.asarray([self.Q_limits[label] for label in self.classes], dtype=np.float64)
+        if (
+            not np.isfinite(t2_limits).all()
+            or not np.isfinite(q_limits).all()
+            or np.any(t2_limits <= 0)
+            or np.any(q_limits <= 0)
+        ):
+            raise ValueError("SIMCA requires finite positive fitted acceptance limits")
+        for j, label in enumerate(self.classes):
+            loadings = np.asarray(self.class_loadings[label], dtype=np.float64)
+            eigenvalues = np.asarray(self.class_eigenvalues[label], dtype=np.float64)
+            mean = np.asarray(self.class_means[label], dtype=np.float64)
+            if X.shape[1] != mean.size or not np.isfinite(eigenvalues).all() or np.any(eigenvalues <= 0):
+                raise ValueError("SIMCA application dimensions or fitted eigenvalues are invalid")
+            working = X - mean
+            if self.class_scales is not None:
+                scale = np.asarray(self.class_scales[label], dtype=np.float64)
+                if not np.isfinite(scale).all() or np.any(scale <= 0):
+                    raise ValueError("SIMCA requires finite positive fitted scales")
+                working = working / scale
+            center = self.pca_means.get(label) if self.pca_means else None
+            centered = working if center is None else working - center
+            scores = centered @ loadings.T
+            residual = centered - scores @ loadings
+            t2[:, j] = np.sum(scores**2 / eigenvalues, axis=1)
+            q[:, j] = np.sum(residual**2, axis=1)
+        distance = t2 / t2_limits + q / q_limits
+        if not np.isfinite(distance).all():
+            raise ValueError("SIMCA distances are not finitely representable")
+        membership = (t2 <= t2_limits) & (q <= q_limits)
+        return t2, q, distance, membership
 
-        n_samples = X.shape[0]
-        n_classes = len(self.classes)
-        labels = np.empty(n_samples, dtype=object)
-        dist_matrix = np.zeros((n_samples, n_classes), dtype=np.float64)
-
-        for i in range(n_samples):
-            sample = X[i]
-
-            for j, label in enumerate(self.classes):
-                loadings = self.class_loadings[label]
-                eigenvalues = self.class_eigenvalues[label]
-                class_mean = self.class_means[label]
-                class_scale = self.class_scales.get(label) if self.class_scales else None
-                pca_mean = self.pca_means.get(label) if self.pca_means else None
-                T2_lim = self.T2_limits.get(label, 1.0)
-                Q_lim = self.Q_limits.get(label, 1.0)
-
-                if class_scale is not None:
-                    safe_scale = np.maximum(class_scale, 1e-12)
-                    working = (sample - class_mean) / safe_scale
-                    pca_center = pca_mean if pca_mean is not None else np.zeros_like(working)
-                    centered = working - pca_center
-                else:
-                    centered = sample - class_mean
-                    pca_center = np.zeros_like(centered)
-                scores = centered @ loadings.T  # (n_comp,)
-                reconstructed = scores @ loadings + pca_center  # (n_feat,)
-                residual = (working if class_scale is not None else sample - class_mean) - reconstructed
-
-                # T² statistic
-                safe_ev = np.maximum(eigenvalues, 1e-12)
-                t2 = float(np.sum((scores**2) / safe_ev))
-
-                # Q statistic (SPE)
-                q = float(np.sum(residual**2))
-
-                # Combined normalized distance
-                combined = t2 / max(T2_lim, 1e-12) + q / max(Q_lim, 1e-12)
-                dist_matrix[i, j] = combined
-
-            accepted = []
-            for j, label in enumerate(self.classes):
-                t2_limit = max(float(self.T2_limits.get(label, 1.0)), 1e-12)
-                q_limit = max(float(self.Q_limits.get(label, 1.0)), 1e-12)
-                loadings = self.class_loadings[label]
-                class_mean = self.class_means[label]
-                class_scale = self.class_scales.get(label) if self.class_scales else None
-                pca_mean = self.pca_means.get(label) if self.pca_means else None
-                if class_scale is not None:
-                    safe_scale = np.maximum(class_scale, 1e-12)
-                    working = (sample - class_mean) / safe_scale
-                    pca_center = pca_mean if pca_mean is not None else np.zeros_like(working)
-                    centered = working - pca_center
-                    scores = centered @ loadings.T
-                    reconstructed = scores @ loadings + pca_center
-                    residual = working - reconstructed
-                else:
-                    centered = sample - class_mean
-                    scores = centered @ loadings.T
-                    residual = centered - scores @ loadings
-                safe_ev = np.maximum(self.class_eigenvalues[label], 1e-12)
-                t2 = float(np.sum((scores**2) / safe_ev))
-                q = float(np.sum(residual**2))
-                if t2 <= t2_limit and q <= q_limit:
-                    accepted.append((label, dist_matrix[i, j]))
-
-            if accepted:
-                labels[i] = min(accepted, key=lambda item: item[1])[0]
-            else:
-                labels[i] = "unassigned"
-
-        # Convert distances to probabilities: inverse distance, normalized
-        inv_dist = 1.0 / (dist_matrix + 1e-12)
-        row_sums = inv_dist.sum(axis=1, keepdims=True)
-        probs = inv_dist / row_sums
-
-        return labels, probs
+    def predict(self, X: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Return accepted nearest-class labels and normalized distance affinities."""
+        _, _, distance, membership = self.statistics(X)
+        labels = np.full(distance.shape[0], "unassigned", dtype=object)
+        accepted = membership.any(axis=1)
+        chosen = np.argmin(np.where(membership, distance, np.inf), axis=1)
+        labels[accepted] = np.asarray(self.classes, dtype=object)[chosen[accepted]]
+        # Normalize inverse distances without an absolute epsilon. Exact zero
+        # distances share all affinity; scaling distances cannot change affinity.
+        zeros = distance == 0
+        has_zero = zeros.any(axis=1)
+        affinity = np.zeros_like(distance)
+        affinity[has_zero] = zeros[has_zero] / zeros[has_zero].sum(axis=1, keepdims=True)
+        positive = distance[~has_zero]
+        if positive.size:
+            inverse = positive.min(axis=1, keepdims=True) / positive
+            affinity[~has_zero] = inverse / inverse.sum(axis=1, keepdims=True)
+        return labels, affinity
 
 
 # ---------------------------------------------------------------------------

@@ -27,7 +27,7 @@ _SEMANTICS_CENSUS_PATH = _REPOSITORY_ROOT / "docs/evidence/scientific-output-sem
 def test_every_type_has_closed_scientific_semantics() -> None:
     ensure_type_registry_loaded()
 
-    assert len(type_registry.list_types()) == 42
+    assert len(type_registry.list_types()) == 43
     for type_def in type_registry.list_types():
         assert type_def.scientific_kind
         assert type_def.view_kind
@@ -52,6 +52,23 @@ def test_every_builtin_output_port_resolves_to_scientific_semantics() -> None:
         assert type_def.scientific_kind, f"{node_type}.{port_name} has no scientific kind"
         assert type_def.view_kind, f"{node_type}.{port_name} has no view kind"
         assert type_def.content_categories, f"{node_type}.{port_name} has no content category"
+
+
+def test_plsda_sample_receipt_is_not_classified_as_aggregate_only() -> None:
+    metadata = node_registry.get_metadata("classification.plsda")
+    port = next(item for item in metadata.output_ports if item.name == "sample_diagnostics")
+    assert port.type_ref == "spectrasherpa://types/PLSDASampleDiagnostics/1.0"
+    descriptor = describe_node_outputs(
+        metadata,
+        {"sample_diagnostics": {"rows": [{"id": "s1", "class": "A", "q": 0.5}]}},
+    )["sample_diagnostics"]
+    assert set(descriptor["content_categories"]) >= {
+        "sample_membership",
+        "reference_targets",
+        "sample_level_results",
+        "variable_diagnostics",
+    }
+    assert "aggregate_metrics" not in descriptor["content_categories"]
 
 
 def test_live_scientific_output_census_matches_checked_authority() -> None:

@@ -423,7 +423,7 @@ class TestPCAExtractArtifact:
             ],
             dtype=np.float64,
         )
-        extract = fit_pca(X_train, n_components=2, standardized=False, scaled=True)
+        extract = fit_pca(X_train, n_components=1, standardized=False, scaled=True)
 
         np.testing.assert_allclose(extract.offset, np.array([10.0, 20.0, 1.0], dtype=np.float64))
         np.testing.assert_allclose(extract.scale, np.array([4.0, 10.0, 1.0], dtype=np.float64))
@@ -431,7 +431,7 @@ class TestPCAExtractArtifact:
         assert extract.mean is None
         assert extract.scale_mode == "minmax"
         scores = extract.transform(np.array([[12.0, 25.0, 1.0]], dtype=np.float64))
-        np.testing.assert_allclose(scores, np.zeros((1, 2)), atol=1e-12)
+        np.testing.assert_allclose(scores, np.zeros((1, 1)), atol=1e-12)
 
     def test_noncurrent_scaled_artifact_fails_at_admission(self):
         """Prototype PCA artifacts cannot enter the current application path."""
@@ -897,7 +897,7 @@ class TestExtractRegistry:
 # ---------------------------------------------------------------------------
 
 
-def _init_store_and_save(tmp_path, model_type, extract):
+def _init_store_and_save(tmp_path, model_type, extract, *, source_dataset=None):
     """Helper: init global ModelStore, save an artifact, return its uid."""
     from spectra_sherpa.app.services import model_store as _ms_mod
     from spectra_sherpa.app.services.model_store import ModelStore
@@ -907,6 +907,11 @@ def _init_store_and_save(tmp_path, model_type, extract):
     _ms_mod._store = store
 
     metadata, arrays = extract.to_artifact()
+    if source_dataset is not None:
+        from spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder import build_model_artifact
+
+        artifact = build_model_artifact(extract, source_dataset)
+        metadata, arrays = artifact["metadata"], artifact["arrays"]
     uid = f"test-{model_type}-uid"
     store.save(uid, metadata, arrays)
     return uid, store
@@ -997,7 +1002,7 @@ class TestLoadApplyModelNode:
             classes=["cat", "dog", "bird"],
             k=5,
         )
-        uid, _ = _init_store_and_save(tmp_path, "knn", extract)
+        uid, _ = _init_store_and_save(tmp_path, "knn", extract, source_dataset=_make_sherpa_dataset_2d(5, 50))
         return uid, extract
 
     @pytest.fixture()
@@ -1024,7 +1029,7 @@ class TestLoadApplyModelNode:
             Q_limits={"red": 2.0, "blue": 2.0},
             n_components=n_comp,
         )
-        uid, _ = _init_store_and_save(tmp_path, "simca", extract)
+        uid, _ = _init_store_and_save(tmp_path, "simca", extract, source_dataset=_make_sherpa_dataset_2d(5, 50))
         return uid, extract
 
     @pytest.fixture()
@@ -1037,7 +1042,7 @@ class TestLoadApplyModelNode:
             St=rng.standard_normal((3, 50)),
             n_components=3,
         )
-        uid, _ = _init_store_and_save(tmp_path, "mcr", extract)
+        uid, _ = _init_store_and_save(tmp_path, "mcr", extract, source_dataset=_make_sherpa_dataset_2d(5, 50))
         return uid, extract
 
     def _create_node(self, model_id=""):

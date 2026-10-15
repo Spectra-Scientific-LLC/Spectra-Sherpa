@@ -1,8 +1,11 @@
 schema_version: 1
 name: Representative Calibration (Kennard-Stone)
 slug: representative_calibration
-description: PLS calibration with Kennard-Stone partitioning for representative X-space
-  coverage. Reports RMSEP and R² on a held-out test set.
+description: PLS with 4 fixed latent variables and Kennard-Stone partitioning.
+  Reports held-out RMSEP and R²; the latent-variable count is not selected by cross-validation.
+  Compare saved runs with the same data and evaluation protocol; select latent-variable
+  counts within the training population before evaluating the held-out test set.
+  Spectra are mean-centred; feature tables are autoscaled using training samples.
 category: selection_design
 is_active: true
 status: ready
@@ -77,18 +80,10 @@ template_data:
   - from_node_id: preprocess_1
     to_node_id: partition_1
     to_input: X
-  - from_node_id: data_1
-    to_node_id: partition_1
-    from_output: target
-    to_input: y
   - from_node_id: partition_1
     to_node_id: model_1
     from_output: X_train
     to_input: default
-  - from_node_id: partition_1
-    to_node_id: model_1
-    from_output: y_train
-    to_input: y
   - from_node_id: partition_1
     to_node_id: predict_1
     from_output: X_test

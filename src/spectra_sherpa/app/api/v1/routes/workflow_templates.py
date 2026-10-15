@@ -579,6 +579,7 @@ async def _persist_managed_candidate(
     template_version: str,
     canonical_project: dict[str, Any],
     applied_bindings: dict[str, "DataBindingSpec"],
+    bound_profiles: dict[str, dict[str, Any]],
     user_id: int,
     project_id: int,
     workflow_name: str,
@@ -652,6 +653,19 @@ async def _persist_managed_candidate(
         _apply_managed_binding_to_source(managed_source, managed_binding)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    _adapt_starter_scaling_to_bound_role(
+        template=template,
+        source_node_id=managed_source_node_id,
+        analysis_profile=bound_profiles[scientist_source_node_id],
+        nodes=managed_nodes,
+        edges=managed_edges,
+    )
+    _adapt_pls_starter_to_source_assignment(
+        template=template,
+        analysis_profile=bound_profiles[scientist_source_node_id],
+        nodes=managed_nodes,
+    )
 
     managed_workflow, managed_node_records, managed_edge_records = await persist_template_workflow(
         session=session,
@@ -1073,6 +1087,23 @@ def _require_target_variation(dataset: Any, selected_target: str) -> None:
     raise ValueError(f"Selected target {selected_target!r} is constant or empty in the selected dataset members")
 
 
+def _binding_with_saved_selection(binding, dataset, selection, *, source_digest=None):
+    """Re-admit saved Data-page intent against this exact scientific source."""
+    if selection is None:
+        return binding
+    if selection.selected_target is None:
+        return binding.model_copy(update={"target_authority": None, "group_column": None})
+    authority = issue_target_authority(
+        dataset,
+        column=selection.selected_target,
+        target_type=selection.target_type,
+        source_digest=source_digest,
+    )
+    if selection.source_digest is not None and selection.source_digest != authority.source_digest:
+        raise ValueError("Saved target belongs to a different source revision; select the target again in My Dataset")
+    return binding.model_copy(update={"target_authority": authority, "group_column": selection.group_column})
+
+
 async def _validate_binding(
     session: AsyncSession,
     user_id: int,
@@ -1080,8 +1111,27 @@ async def _validate_binding(
     project_id: int | None,
     *,
     require_target_variation: bool = True,
+    use_saved_analysis_selection: bool = False,
+    require_independent_classification: bool = False,
 ) -> tuple["DataBindingSpec", dict[str, Any]]:
     await require_experiment_access(session, binding.experiment_id, user_id, project_id)
+    saved_selection = None
+    if use_saved_analysis_selection:
+        from spectra_sherpa.app.schemas.experiments import ExperimentAnalysisSelection
+
+        # Access was checked above. This is new-starter intent, never a mutation
+        # of an existing sheet or of the project's immutable dataset definition.
+        experiment = await session.get(Experiment, binding.experiment_id)
+        if experiment is None:
+            raise HTTPException(status_code=404, detail="Dataset is no longer available")
+        try:
+            metadata = read_metadata(resolve_data_path(experiment.metadata_path))
+            if metadata.get("analysis_selection") is not None:
+                saved_selection = ExperimentAnalysisSelection.model_validate(metadata["analysis_selection"])
+        except (OSError, ValueError) as exc:
+            raise HTTPException(
+                status_code=400, detail="Saved target could not be read. Select the target again in My Dataset."
+            ) from exc
     if binding.file_ids is not None or binding.all_files:
         try:
             loaded = await load_project_dataset(
@@ -1093,6 +1143,7 @@ async def _validate_binding(
                 asset_id=binding.asset_id,
             )
             dataset = loaded.dataset
+            binding = _binding_with_saved_selection(binding, dataset, saved_selection)
             if binding.target_authority is not None:
                 verify_target_authority(dataset, binding.target_authority)
                 dataset = attach_selected_target_dataset(
@@ -1105,7 +1156,9 @@ async def _validate_binding(
                 )
                 if require_target_variation:
                     _require_target_variation(dataset, binding.selected_target)
-            analysis_profile = analysis_profile_from_dataset(dataset)
+            analysis_profile = {**analysis_profile_from_dataset(dataset), **_source_assignment_profile(dataset)}
+            if require_independent_classification:
+                _require_independent_classification_group(dataset, binding, analysis_profile)
         except ValueError as exc:
             logger.warning(
                 "Scientific collection binding admission failed for experiment_id=%s file_ids=%s",
@@ -1191,6 +1244,10 @@ async def _validate_binding(
             file_path=str(source_path),
         )
         dataset = apply_dataset_prepared_data_overrides(dataset, prepared.to_sidecar_dict())
+        if saved_selection is not None:
+            binding = _binding_with_saved_selection(
+                binding, dataset, saved_selection, source_digest=await asyncio.to_thread(_sha256_path, source_path)
+            )
         if binding.target_authority is not None:
             source_digest = await asyncio.to_thread(_sha256_path, source_path)
             verify_target_authority(
@@ -1198,7 +1255,9 @@ async def _validate_binding(
                 binding.target_authority,
                 source_digest=source_digest,
             )
-        analysis_profile = analysis_profile_from_dataset(dataset)
+        analysis_profile = {**analysis_profile_from_dataset(dataset), **_source_assignment_profile(dataset)}
+        if require_independent_classification:
+            _require_independent_classification_group(dataset, binding, analysis_profile)
     except (OSError, ValueError) as exc:
         # The parser exception is retained in the application log for operator
         # diagnosis, but it may contain the deployment's absolute data path.
@@ -1247,6 +1306,9 @@ def _enforce_bound_dataset_requirements(
     template_data = template.template_data if isinstance(template.template_data, dict) else {}
     roles = template_data.get("data_roles") if isinstance(template_data.get("data_roles"), dict) else {}
     effective_profile = copy.deepcopy(analysis_profile)
+    # Source partition provenance informs the starter's split node, but it is
+    # not a field in the closed scientific compatibility profile.
+    effective_profile.pop("source_assignment", None)
     provided_roles: dict[str, str | None] = {}
     for role_name, raw_role in roles.items():
         if not isinstance(raw_role, dict) or not raw_role.get("required", True):
@@ -1290,7 +1352,7 @@ def _enforce_bound_dataset_requirements(
     raise HTTPException(status_code=400, detail=f"Template '{template.name}': {detail}")
 
 
-def _adapt_pca_scaling_to_bound_role(
+def _adapt_starter_scaling_to_bound_role(
     *,
     template: WorkflowTemplate,
     source_node_id: str,
@@ -1298,9 +1360,22 @@ def _adapt_pca_scaling_to_bound_role(
     nodes: list[dict[str, Any]],
     edges: list[dict[str, Any]],
 ) -> None:
-    """Make the PCA starter's scaling choice explicit for the bound X role."""
+    """Choose new-starter scaling from the admitted X role, before fitting.
 
-    if template.slug != "pca":
+    Feature tables can mix units; spectra share a physical response axis.
+    Supervised scaling remains inside the fitted model, owned by training rows.
+    This adapter never runs when editing or replaying an existing workflow.
+    """
+
+    if template.slug not in {
+        "pca",
+        "pls_calibration",
+        "representative_calibration",
+        "classification_plsda",
+        "knn_classification",
+        "hierarchical_clustering",
+        "clustering_comparison",
+    }:
         return
     primary_role = analysis_profile.get("primary_role")
     if primary_role not in {"X_spectra", "X_features"}:
@@ -1323,9 +1398,115 @@ def _adapt_pca_scaling_to_bound_role(
     method = "autoscale" if primary_role == "X_features" else "mean_center"
     label = "Autoscale Features" if primary_role == "X_features" else "Mean Center Spectra"
     for node in nodes:
-        if str(node.get("node_id") or "") in reachable and node.get("node_type") == "preprocess.scale":
+        if str(node.get("node_id") or "") not in reachable:
+            continue
+        if node.get("node_type") == "preprocess.scale":
             node["parameters"] = {**dict(node.get("parameters") or {}), "method": method, "center": True}
             node["label"] = label
+        elif node.get("node_type") in {"model.fitted_pls", "classification.plsda", "classification.knn"}:
+            node["parameters"] = {
+                **dict(node.get("parameters") or {}),
+                "scale": primary_role == "X_features",
+            }
+
+
+def _source_assignment_profile(dataset: Any) -> dict[str, Any]:
+    """Expose only an explicitly retained, complete CSV split to starter planning."""
+
+    column = dataset.meta.get("csv.assignment_column")
+    table = dataset.sample_axis.sample_table if dataset.sample_axis is not None else None
+    if not isinstance(column, str) or not isinstance(table, dict) or column not in table:
+        return {}
+    values = [str(value).strip() for value in table[column]]
+    if len(values) != dataset.n_samples or any(not value for value in values):
+        return {}
+    labels = {value.casefold(): value for value in values}
+    if len(labels) != 2:
+        return {}
+    training = next((labels[key] for key in ("training", "train", "calibration") if key in labels), None)
+    validation = next((labels[key] for key in ("validation", "test", "holdout") if key in labels), None)
+    if not training or not validation:
+        return {}
+    return {"source_assignment": {"column": column, "training_label": training, "validation_label": validation}}
+
+
+def _require_independent_classification_group(
+    dataset: Any, binding: "DataBindingSpec", analysis_profile: dict[str, Any]
+) -> None:
+    """Do not admit a held-out class score that leaks replicated specimens.
+
+    This is based on the selected dataset's declared sample identities and
+    complete attached metadata, never on a particular registered dataset ID.
+    A scientist may still inspect an ungrouped exploratory sheet; a new
+    supervised starter claiming a held-out test needs an independent split.
+    """
+
+    if binding.target_type != "categorical":
+        return
+    table = dataset.sample_axis.sample_table if dataset.sample_axis is not None else None
+    if not isinstance(table, dict):
+        return
+    group_values = table.get(binding.group_column) if binding.group_column else None
+    for field in analysis_profile.get("identity_fields", []):
+        if field not in {"specimen_id", "subject_id", "patient_id"}:
+            continue
+        values = table.get(field)
+        if not isinstance(values, (list, tuple, np.ndarray)) or len(values) != dataset.n_samples:
+            continue
+        identities = [str(value).strip() for value in values]
+        if any(not value for value in identities):
+            continue
+        independent_count = len(set(identities))
+        if 1 < independent_count < len(identities) and binding.selected_target == field:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{field} identifies repeated specimens. It cannot be both the class target and "
+                    "an independent held-out specimen group. Choose a scientific class label instead."
+                ),
+            )
+        if not 1 < independent_count < len(identities):
+            continue
+        if not isinstance(group_values, (list, tuple, np.ndarray)) or len(group_values) != len(identities):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"This dataset has repeated {field} identities. A row-wise or block-wise "
+                    "classification split could place one specimen on both sides and inflate "
+                    f"held-out accuracy. In My Dataset, choose {field} or a coarser identity under Groups, "
+                    "save the selection, then start a new analysis."
+                ),
+            )
+        identity_to_group: dict[str, str] = {}
+        for identity, group in zip(identities, group_values, strict=True):
+            group_label = str(group).strip() if group is not None else ""
+            if not group_label or (identity in identity_to_group and identity_to_group[identity] != group_label):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"The selected Groups column divides repeated {field} identities. "
+                        f"Choose {field} or a coarser identity in My Dataset, save the selection, "
+                        "then start a new analysis."
+                    ),
+                )
+            identity_to_group[identity] = group_label
+
+
+def _adapt_pls_starter_to_source_assignment(
+    *, template: WorkflowTemplate, analysis_profile: dict[str, Any], nodes: list[dict[str, Any]]
+) -> None:
+    """Preserve a scientist-confirmed source partition in the new PLS starter."""
+
+    assignment = analysis_profile.get("source_assignment")
+    if template.slug != "pls_calibration" or not isinstance(assignment, dict):
+        return
+    for node in nodes:
+        if node.get("node_type") == "data.train_test_split":
+            node["parameters"] = {
+                "split_method": "group_holdout",
+                "held_out_groups": [assignment["validation_label"]],
+            }
+            node["label"] = "Source Training/Validation Split"
 
 
 async def _is_portable_sample_table_binding(
@@ -1578,6 +1759,7 @@ class BindingCompatibilityPreviewRequest(BaseModel):
 
     project_id: int = Field(..., ge=1)
     binding: DataBindingSpec
+    use_saved_analysis_selection: bool = False
 
 
 @router.post("/binding-compatibility-preview")
@@ -1595,6 +1777,7 @@ async def preview_bound_source_compatibility(
         payload.binding,
         payload.project_id,
         require_target_variation=False,
+        use_saved_analysis_selection=payload.use_saved_analysis_selection,
     )
     if binding.selected_target is not None and binding.target_type is not None:
         analysis_profile = {
@@ -1606,7 +1789,7 @@ async def preview_bound_source_compatibility(
         select(WorkflowTemplate).where(WorkflowTemplate.is_active.is_(True)).order_by(WorkflowTemplate.slug)
     )
     templates = [template for template in result.scalars().all() if template_admitted_in_profile(template)]
-    return build_analysis_profile_readiness(
+    readiness = build_analysis_profile_readiness(
         analysis_profile,
         [
             {
@@ -1623,6 +1806,7 @@ async def preview_bound_source_compatibility(
             for template in templates
         ],
     )
+    return {**readiness, "binding": binding.model_dump(mode="json")}
 
 
 def _normalize_binding_target_authority(
@@ -2158,6 +2342,7 @@ async def instantiate_template(
             bindings_to_apply = payload.data_bindings
 
         applied_bindings: dict[str, DataBindingSpec] = {}
+        bound_profiles: dict[str, dict[str, Any]] = {}
         injected_targets: set[str] = set()
 
         for binding_key, binding_spec in bindings_to_apply.items():
@@ -2169,6 +2354,11 @@ async def instantiate_template(
                 binding_spec,
                 payload.project_id,
                 require_target_variation=_binding_consumes_target(template, node_id),
+                require_independent_classification=(
+                    payload.launch_mode == "user"
+                    and any(node.get("node_type") == "data.train_test_split" for node in nodes_data)
+                    and any(str(node.get("node_type", "")).startswith("classification.") for node in nodes_data)
+                ),
             )
             node = nodes_by_id.get(node_id)
             if node is None:
@@ -2201,17 +2391,23 @@ async def instantiate_template(
                     ),
                 )
             applied_bindings[node_id] = normalized_binding
+            bound_profiles[node_id] = analysis_profile
 
             try:
                 _apply_binding_to_template_source(node, normalized_binding)
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
-            _adapt_pca_scaling_to_bound_role(
+            _adapt_starter_scaling_to_bound_role(
                 template=template,
                 source_node_id=node_id,
                 analysis_profile=analysis_profile,
                 nodes=nodes_data,
                 edges=edges_data,
+            )
+            _adapt_pls_starter_to_source_assignment(
+                template=template,
+                analysis_profile=analysis_profile,
+                nodes=nodes_data,
             )
 
             if normalized_binding.target_binding is not None:
@@ -2317,6 +2513,7 @@ async def instantiate_template(
                 template_version=template_version,
                 canonical_project=canonical_project,
                 applied_bindings=applied_bindings,
+                bound_profiles=bound_profiles,
                 user_id=user_id,
                 project_id=payload.project_id,
                 workflow_name=payload.workflow_name,

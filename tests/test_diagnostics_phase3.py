@@ -7,7 +7,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import yaml
-from scipy.stats import f
+from scipy.stats import f, norm
 from sklearn.decomposition import PCA
 
 from spectra_sherpa.app.lib.pca import PCAExtract
@@ -65,15 +65,14 @@ def test_outlier_statistics_use_true_eigenvalues_and_declared_limits(pca_state):
     expected_limit = (
         n_components
         * (n_observations - 1)
-        * (n_observations + 1)
-        / (n_observations * (n_observations - n_components))
+        / (n_observations - n_components)
         * f.ppf(0.95, n_components, n_observations - n_components)
     )
 
     np.testing.assert_allclose(outputs["T2"], expected_t2, rtol=0.0, atol=1e-12)
     assert outputs["T2_limit"] == pytest.approx(expected_limit)
-    assert diagnostics["t2_limit_method"] == "nomikos_macgregor_f_distribution"
-    assert diagnostics["q_limit_method"] == "empirical_calibration_quantile"
+    assert diagnostics["t2_limit_method"] == "jackson_calibration_f_distribution"
+    assert diagnostics["q_limit_method"] == "jackson_mudholkar"
     assert diagnostics["q_residual_space"] == "preprocessed_model_space"
 
 
@@ -101,7 +100,13 @@ async def test_autoscaled_pca_q_residuals_use_preprocessed_model_space():
     np.testing.assert_allclose(state["Q"], expected_q, rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(outputs["Q"], expected_q, rtol=1e-12, atol=1e-12)
     assert not np.allclose(expected_q, raw_space_q)
-    assert outputs["Q_limit"] == pytest.approx(np.quantile(expected_q, 0.95))
+    residual_eigenvalues = np.linalg.svd(fitted_input - fitted_reconstruction, compute_uv=False) ** 2 / 47
+    theta1, theta2, theta3 = (np.sum(residual_eigenvalues**power) for power in (1, 2, 3))
+    h0 = 1 - 2 * theta1 * theta3 / (3 * theta2**2)
+    expected_limit = theta1 * (
+        1 + norm.ppf(0.95) * np.sqrt(2 * theta2) * h0 / theta1 + theta2 * h0 * (h0 - 1) / theta1**2
+    ) ** (1 / h0)
+    assert outputs["Q_limit"] == pytest.approx(expected_limit)
     assert diagnostics["q_residual_space"] == "preprocessed_model_space"
 
 
@@ -154,7 +159,7 @@ async def test_real_pca_output_drives_real_outlier_consumer():
     assert len(outlier_result.outputs["Q"]) == matrix.shape[0]
     assert np.isfinite(outlier_result.outputs["T2_limit"])
     assert np.isfinite(outlier_result.outputs["Q_limit"])
-    assert outlier_result.diagnostics["q_limit_method"] == "empirical_calibration_quantile"
+    assert outlier_result.diagnostics["q_limit_method"] == "jackson_mudholkar"
     assert set(pca_result.diagnostics) == {
         "explained_variance_ratio",
         "cumulative_variance",

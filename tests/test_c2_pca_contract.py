@@ -167,6 +167,18 @@ def test_pca_live_generated_application_and_artifact_paths_share_one_projection(
     exec("\n".join(node.generate_python({"default": "dataset"}, indent="")), namespace)  # noqa: S102
     generated = namespace["results"]["pca"]
     state = live.outputs["fitted_state"]
+    predecessor_state = copy.deepcopy(state)
+    predecessor_state["source_contract_digest"] = "ad9ee0dc72e2a6e9984134d8cfd7da6176ae725641c240f488f31713b57fcf94"
+    assert (
+        validate_pca_fitted_state(predecessor_state)["source_contract_digest"]
+        == predecessor_state["source_contract_digest"]
+    )
+    np.testing.assert_allclose(
+        apply_pca_fitted_state(dataset, predecessor_state),
+        apply_pca_fitted_state(dataset, state),
+        rtol=0.0,
+        atol=1e-12,
+    )
     applied = asyncio.run(PCATransformNode("apply", {}).execute(X_new=dataset, model=state))
     direct = apply_pca_fitted_state(dataset, state)
     artifact = live.outputs["_model_artifact"]
@@ -217,15 +229,15 @@ def test_standardized_pca_preserves_separate_reference_frames_for_large_offset_d
 
 
 @pytest.mark.parametrize("standardized,scaled", [(True, False), (False, True)])
-def test_pca_owns_component_axes_and_dimensionless_value_semantics_on_square_input(
+def test_pca_owns_component_axes_and_dimensionless_value_semantics_on_full_feature_input(
     standardized: bool,
     scaled: bool,
 ) -> None:
     rng = np.random.default_rng(20260821)
-    source_samples = [f"source-{index}" for index in range(5)]
+    source_samples = [f"source-{index}" for index in range(6)]
     source_features = [f"band-{index}" for index in range(5)]
     dataset = SherpaDataset(
-        X=rng.normal(size=(5, 5)),
+        X=rng.normal(size=(6, 5)),
         sample_axis=SampleAxis(labels=source_samples, title="Specimen"),
         feature_axis=FeatureAxis(
             values=np.linspace(450.0, 650.0, 5),

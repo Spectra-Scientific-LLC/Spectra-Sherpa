@@ -22,7 +22,7 @@ async function smoke() {
     page.on('pageerror', error => errors.push(error.message));
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+/, { timeout: 180000 });
     endpoint = new URL(page.url()).origin;
-    await page.getByRole('tab', { name: 'Your Project', exact: true, selected: true }).waitFor();
+    await page.getByRole('region', { name: 'Your Project', exact: true }).waitFor();
     assert.equal(await page.evaluate(() => typeof process), 'undefined');
     assert.equal(await page.evaluate(() => typeof require), 'undefined');
     assert.equal(await page.evaluate(async () => (await fetch('/api/health')).status), 200);

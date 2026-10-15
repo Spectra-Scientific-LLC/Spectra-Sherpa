@@ -37,8 +37,8 @@ def _get_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
-def _get_retention_limit(name: str, maximum: int) -> int:
-    value = _get_int(name, maximum)
+def _get_retention_limit(name: str, maximum: int, *, default: int | None = None) -> int:
+    value = _get_int(name, maximum if default is None else default)
     if not 0 < value <= maximum:
         raise ValueError(f"{name} must be between 1 and the qualified maximum {maximum}")
     return value
@@ -94,9 +94,11 @@ class Settings:
     parallel_threshold: int = _get_int("PARALLEL_THRESHOLD", 100)  # min spectra to enable multi-core preprocessing
     max_export_size_mb: int = _get_int("MAX_EXPORT_SIZE_MB", 1024)
     run_output_retention_enabled: bool = _get_bool("RUN_OUTPUT_RETENTION_ENABLED", True)
-    run_output_max_bytes: int = _get_retention_limit("RUN_OUTPUT_MAX_BYTES", 8 * 1024 * 1024)
+    run_output_max_bytes: int = _get_retention_limit("RUN_OUTPUT_MAX_BYTES", 16 * 1024 * 1024)
     run_output_run_max_bytes: int = _get_retention_limit("RUN_OUTPUT_RUN_MAX_BYTES", 64 * 1024 * 1024)
-    run_output_user_max_bytes: int = _get_retention_limit("RUN_OUTPUT_USER_MAX_BYTES", 512 * 1024 * 1024)
+    run_output_user_max_bytes: int = _get_retention_limit(
+        "RUN_OUTPUT_USER_MAX_BYTES", 1024 * 1024 * 1024, default=512 * 1024 * 1024
+    )
     folder_watch_files_per_poll: int = _get_retention_limit("FOLDER_WATCH_FILES_PER_POLL", 16)
     prediction_upload_max_files: int = _get_retention_limit("PREDICTION_UPLOAD_MAX_FILES", 16)
     prediction_upload_max_request_bytes: int = _get_retention_limit(

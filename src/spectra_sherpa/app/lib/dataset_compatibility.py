@@ -52,7 +52,9 @@ def analysis_profile_from_dataset(dataset: Any) -> dict[str, Any]:
     target_type = getattr(target_context, "target_type", None)
     target_fields = list(getattr(target_context, "target_names", None) or [])
     target_name = getattr(target_context, "target_name", None)
-    if target_name and target_name not in target_fields:
+    # A response-table title (for example "synthetic concentration") is not
+    # another response column. Match select_exact_target's named-column rule.
+    if target_name and not target_fields:
         target_fields.append(target_name)
 
     sample_axis = getattr(dataset, "sample_axis", None)
@@ -62,12 +64,22 @@ def analysis_profile_from_dataset(dataset: Any) -> dict[str, Any]:
 
     sample_table = getattr(sample_axis, "sample_table", None) if sample_axis is not None else None
     columns = list(sample_table) if isinstance(sample_table, Mapping) else []
-    identity_fields = [name for name in columns if name in {"sample_id", "specimen_id"}]
+    identity_fields = [name for name in columns if name in {"sample_id", "specimen_id", "subject_id", "patient_id"}]
     target_field_set = set(target_fields)
     group_fields = [
         name
         for name in columns
-        if name in {"block", "batch", "group", "instrument", "replicate_group", "specimen_id"}
+        if name
+        in {
+            "block",
+            "batch",
+            "group",
+            "instrument",
+            "replicate_group",
+            "specimen_id",
+            "subject_id",
+            "patient_id",
+        }
         and name not in target_field_set
         and _distinct_nonmissing_count(sample_table[name]) > 1
     ]
@@ -373,6 +385,22 @@ def build_compatibility_matrix(
     for dataset in sorted(datasets, key=lambda item: str(item["dataset_id"])):
         for template in sorted(templates, key=lambda item: str(item["slug"])):
             decision = evaluate_template_compatibility(dataset["analysis_profile"], template)
+            readiness = template.get("runtime_readiness")
+            if isinstance(readiness, Mapping) and readiness.get("ready") is False:
+                decision = {
+                    **decision,
+                    "status": "incompatible",
+                    "display_group": "unavailable",
+                    "reason_codes": list(readiness.get("blockers") or ["runtime_unavailable"]),
+                    "reasons": [
+                        {
+                            "code": "runtime_unavailable",
+                            "role": None,
+                            "message": " ".join(readiness.get("remediation") or [])
+                            or "The active server runtime cannot execute this analysis.",
+                        }
+                    ],
+                }
             matrix.append(
                 {
                     "dataset_id": str(dataset["dataset_id"]),

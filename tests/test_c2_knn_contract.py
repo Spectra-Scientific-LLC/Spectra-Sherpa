@@ -83,7 +83,7 @@ def test_knn_has_one_exact_local_fitted_model_contract() -> None:
     )
     assert contract.payload["managed_optimization_profiles"] == ("first_party_pls",)
     assert contract.payload["target_access"] == "fit_only"
-    assert contract.payload["fitted_state_serializer"] == "spectrasherpa.model-artifact.knn/1"
+    assert contract.payload["fitted_state_serializer"] == "spectrasherpa.model-artifact.knn/2"
     assert contract.payload["runtime_requirements"] == (
         {"distribution": "numpy", "version": "1.26.4"},
         {"distribution": "scikit-learn", "version": "1.9.0"},
@@ -96,7 +96,7 @@ def test_knn_application_has_one_matching_serializer_and_retires_generic_predict
     contract = node_registry.get_metadata("classification.apply_knn").resolved_execution_contract()
     assert contract is not None
     assert contract.payload["lifecycle_kind"] == LifecycleKind.ARTIFACT_APPLICATION.value
-    assert contract.payload["fitted_state_serializer"] == "spectrasherpa.model-artifact.knn/1"
+    assert contract.payload["fitted_state_serializer"] == "spectrasherpa.model-artifact.knn/2"
     assert "classification.predict" not in node_registry
 
 
@@ -338,7 +338,7 @@ def test_knn_rejects_invalid_data_training_bounds_and_fitted_state() -> None:
     node = KNNNode("knn", _parameters())
     state = node.fit_fitted_state(dataset, labels)
     for patch, message in (
-        ({"serializer": "spectrasherpa.model-artifact.knn/2"}, "serializer"),
+        ({"serializer": "spectrasherpa.model-artifact.knn/999"}, "serializer"),
         ({"feature_count": 99}, "training matrix"),
         ({"classes": ["only"]}, "class labels"),
         ({"x_scale": [0.0] * dataset.shape[1]}, "scaling vectors"),

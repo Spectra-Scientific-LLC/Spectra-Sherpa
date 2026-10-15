@@ -462,7 +462,10 @@ def _pca_artifact_fixture(tool, monkeypatch: pytest.MonkeyPatch):
         "offset": None,
         "center": None,
     }
+    from spectra_sherpa.app.services.dag.fitted_input_identity import fitted_input_identity
+
     state_metadata = {
+        "input_identity": fitted_input_identity(replay_input, features=1270),
         "n_components": 3,
         "n_features": 1270,
         "reference_samples": 33,
@@ -479,7 +482,7 @@ def _pca_artifact_fixture(tool, monkeypatch: pytest.MonkeyPatch):
         "rank_projection_strategy": "none",
     }
     state = {
-        "schema_version": "spectrasherpa.model.pca-state/4",
+        "schema_version": "spectrasherpa.model.pca-state/5",
         "serializer": "spectrasherpa.model-artifact.pca/3",
         "source_contract_digest": execution_contract_digest(PCANode.metadata),
         "state_content_digest": tool._json_digest({"metadata": state_metadata, "arrays": state_arrays}),

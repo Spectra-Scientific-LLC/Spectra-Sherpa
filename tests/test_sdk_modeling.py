@@ -86,4 +86,5 @@ def test_pls_result_resolves_named_target_and_exposes_manifest() -> None:
         "regression_coefficients",
         "calibration_comparison",
         "model_id",
+        "component_curve",
     }

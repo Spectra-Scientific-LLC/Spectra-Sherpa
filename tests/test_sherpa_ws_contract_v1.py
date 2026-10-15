@@ -166,8 +166,10 @@ async def test_byo_chat_stream_sse_events_are_well_formed():
         max_paragraphs: int = 2,
         metadata: dict | None = None,
         exchange_owner: int | None = None,
+        max_tokens: int | None = None,
     ) -> AsyncIterator[str]:
         assert exchange_owner == 1
+        assert max_tokens is None
         yield "chunk one"
         yield " chunk two"
 

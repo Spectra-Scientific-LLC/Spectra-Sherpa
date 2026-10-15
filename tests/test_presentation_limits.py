@@ -23,14 +23,38 @@ def test_strings_and_records_cannot_bypass_numeric_limit():
             require_bounded_presentation(payload, surface="Test")
 
 
-async def test_model_comparison_refuses_before_any_model_read(monkeypatch):
+async def test_model_comparison_bounds_actual_combined_results(monkeypatch):
     from spectra_sherpa.app.services import model_application
 
     calls = []
-    monkeypatch.setattr(model_application, "get_model_store", lambda: calls.append(True))
+
+    async def apply(uid, dataset, *, scope):
+        calls.append(uid)
+        return {"transformed": [0.0] * 30_000}
+
+    monkeypatch.setattr(model_application, "apply_model_to_dataset", apply)
     with pytest.raises(ValueError, match="display limit"):
-        await model_application.compare_models_on_dataset(["a", "b"], SherpaDataset(np.zeros((10001, 10))))
-    assert not calls
+        await model_application.compare_models_on_dataset(["a", "b", "c"], SherpaDataset(np.zeros((2, 10))))
+    assert calls == ["a", "b"]
+
+
+async def test_model_comparison_does_not_charge_input_features_as_output(monkeypatch):
+    from spectra_sherpa.app.services import model_application
+
+    async def apply(uid, dataset, *, scope):
+        return {"artifact_uid": uid, "predictions": [1.0] * 80}
+
+    monkeypatch.setattr(model_application, "apply_model_to_dataset", apply)
+    result = await model_application.compare_models_on_dataset(["a", "b"], SherpaDataset(np.ones((80, 700))))
+    assert len(result["models"]) == 2
+
+
+@pytest.mark.parametrize("payload", [{"predictions": [1.0] * 100_001}, {"labels": ["x" * 2_097_153]}])
+def test_model_application_retains_numeric_and_text_output_limits(payload):
+    from spectra_sherpa.app.services.model_application import _bounded_application_response
+
+    with pytest.raises(ValueError, match="Model application exceeds its display limit"):
+        _bounded_application_response(payload)
 
 
 async def test_peak_detection_refuses_before_scipy(monkeypatch):

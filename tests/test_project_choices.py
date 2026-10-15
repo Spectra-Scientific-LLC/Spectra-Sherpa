@@ -129,6 +129,19 @@ async def test_project_choices_preserve_history_and_refuse_cross_project_targets
     assert active.json()["dataset"]["id"] == named.json()["id"]
     assert active.json()["dataset"]["name"] == "M5 moisture"
     assert active.json()["dataset"]["definition"] == receipt
+    portfolios = await auth_client.get(f"{url}/dataset-portfolios")
+    assert portfolios.status_code == 200
+    assert portfolios.json()["active"]["dataset_view_id"] == view.id
+    assert portfolios.json()["views"] == [
+        {
+            "id": view.id,
+            "name": "M5 moisture",
+            "experiment_id": experiment.id,
+            "selection_sha256": view.selection_sha256,
+            "selection": receipt,
+        }
+    ]
+    assert (await auth_client.get(f"{foreign_url}/dataset-portfolios")).status_code == 404
     assert (await auth_client.get(f"{foreign_url}/current-dataset")).status_code == 404
     assert listed["current"]["workflow"]["workflow_id"] == workflow.id
     assert listed["current"]["workflow"]["selected_name"] == "PLS"
@@ -157,6 +170,9 @@ async def test_project_choices_preserve_history_and_refuse_cross_project_targets
     view.deleted_at = view.created_at
     await test_session.commit()
     assert (await auth_client.get(f"{url}/current-dataset")).status_code == 409
+    stale_portfolios = await auth_client.get(f"{url}/dataset-portfolios")
+    assert stale_portfolios.status_code == 200
+    assert stale_portfolios.json()["views"] == []
     assert (
         await auth_client.post(
             url, json={"kind": "dataset", "experiment_id": experiment.id, "dataset_view_id": view.id}

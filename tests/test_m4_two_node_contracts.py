@@ -254,7 +254,7 @@ async def test_scp_vertical_node_preserves_scientific_context_and_appends_only_i
         feature_axis=SpectralAxis(values=np.arange(5, dtype=float), units="cm-1", title="wavenumber"),
         sample_axis=SampleAxis(
             values=np.array([10.0, 20.0]),
-            include_mask=np.array([True, False]),
+            include_mask=np.array([True, True]),
             sample_table={"batch": ["A", "B"]},
         ),
         target=np.array([0.25, 0.75]),
@@ -274,7 +274,7 @@ async def test_scp_vertical_node_preserves_scientific_context_and_appends_only_i
     assert output.feature_axis.units == "cm-1"
     assert output.feature_axis.title == "wavenumber"
     assert output.sample_axis is not None
-    np.testing.assert_array_equal(output.sample_axis.include_mask, [True, False])
+    np.testing.assert_array_equal(output.sample_axis.include_mask, [True, True])
     assert output.sample_axis.sample_table == {"batch": ["A", "B"]}
     assert output.domain == input_data.domain
     assert output.title == input_data.title

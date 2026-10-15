@@ -211,6 +211,24 @@ EXECUTED_TEMPLATE_PROJECTS: dict[str, dict[str, str]] = {
 # collectible test executes the claimed current path; a source file or a plan
 # entry is never execution evidence by itself.
 SYSTEM_PROJECTS: dict[str, dict[str, Any]] = {
+    "preprocessed-heldout-pls-diagnostic": {
+        "kind": "canonical_qualification_project",
+        "required_evidence": "single_calibration_fit_dual_application_and_fixed_holdout_review",
+        "scientific_question": (
+            "Can one calibration-fitted scale state transform retained training and "
+            "original held-out spectra for a reviewable PLS analysis?"
+        ),
+        "source_paths": [
+            "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/shared_reference_scale_node.py",
+            "packages/spectra-sherpa/tests/test_scale_node.py",
+            "packages/spectra-sherpa/tests/test_pls_sample_review.py",
+        ],
+        "evidence_test_id": (
+            "tests/test_scale_node.py::test_canonical_sdk_scale_applies_one_training_state_to_both_ports"
+        ),
+        "evidence_test_path": "packages/spectra-sherpa/tests/test_scale_node.py",
+        "status": "existing_execution",
+    },
     "fitted-regression-delivery": {
         "kind": "canonical_qualification_project",
         "required_evidence": "fold_local_fit_and_bound_artifact_application",
@@ -602,6 +620,25 @@ SYSTEM_PROJECTS: dict[str, dict[str, Any]] = {
         "evidence_test_path": "packages/spectra-sherpa/tests/test_c2_cross_validation_contract.py",
         "status": "existing_execution",
     },
+    "plsda-response-permutation": {
+        "kind": "canonical_qualification_project",
+        "required_evidence": "model_bound_fold_local_response_permutation_and_generated_parity",
+        "scientific_question": (
+            "Does a fitted PLS-DA classifier outperform seeded, class-balanced label shuffles "
+            "under the same component search and exchangeability design?"
+        ),
+        "source_paths": [
+            "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_permutation.py",
+            "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_permutation_node.py",
+            "packages/spectra-sherpa/tests/test_plsda_response_permutation.py",
+        ],
+        "evidence_test_id": (
+            "tests/test_plsda_response_permutation.py::"
+            "test_workflow_node_and_python_export_share_one_result"
+        ),
+        "evidence_test_path": "packages/spectra-sherpa/tests/test_plsda_response_permutation.py",
+        "status": "existing_execution",
+    },
     "variable-selection-comparison": {
         "kind": "canonical_qualification_project",
         "required_evidence": "training_owned_ipls_selection_and_bounded_audit_execution",
@@ -664,6 +701,7 @@ EXACT_SYSTEM_BINDINGS: dict[str, tuple[str, ...]] = {
     "analysis.compare_library": ("spectral-library-comparison",),
     "classification.apply_plsda": ("plsda-fitted-application",),
     "classification.plsda": ("plsda-classification-fit",),
+    "diagnostics.plsda_permutation": ("plsda-response-permutation",),
     "data.file_load": ("canonical-managed-pls-campaign",),
     "model.apply_fitted_pls": ("imported-model-application",),
     "model.predict_regression": ("model-aware-regression-application",),
@@ -673,6 +711,7 @@ EXACT_SYSTEM_BINDINGS: dict[str, tuple[str, ...]] = {
     "preprocess.apply_fitted_msc": ("imported-model-application",),
     "preprocess.apply_fitted_osc": ("imported-model-application",),
     "preprocess.apply_fitted_scale": ("imported-model-application",),
+    "preprocess.shared_reference_scale": ("preprocessed-heldout-pls-diagnostic",),
     "output.export": ("scientific-dataset-export",),
     "output.contour": ("spectral-response-map",),
     "synthesis.hitran_response": ("reference-spectrum-synthesis",),

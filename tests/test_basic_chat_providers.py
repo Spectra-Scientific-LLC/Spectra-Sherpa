@@ -9,6 +9,7 @@ import pytest
 from spectra_sherpa.app.services import basic_chat
 from spectra_sherpa.app.services.chat_providers import ChatEndpointConfig, ChatRequest, get_chat_provider
 from spectra_sherpa.app.services.chat_providers.anthropic import ANTHROPIC_VERSION
+from spectra_sherpa.app.services.chat_providers.base import ChatOutputLimitError
 
 
 def _public_dns(*_args, **_kwargs):
@@ -60,6 +61,8 @@ def test_ollama_is_configured_without_api_key(monkeypatch):
     monkeypatch.setenv("CHAT_ENDPOINT_PROVIDER", "ollama")
     monkeypatch.setenv("CHAT_ENDPOINT_URL", "http://127.0.0.1:11434/v1")
     monkeypatch.delenv("CHAT_ENDPOINT_KEY", raising=False)
+    monkeypatch.setattr(basic_chat, "CHAT_ENDPOINT_KEY", "")
+    monkeypatch.setattr(basic_chat, "_decrypted_endpoint_key", lambda: "")
     config = basic_chat.get_config()
     assert config.provider == "ollama"
     assert config.key == ""
@@ -117,3 +120,15 @@ def test_anthropic_sse_error_is_not_silently_ignored():
 
     with pytest.raises(ValueError, match="Chat endpoint streaming error"):
         provider._text_delta({"type": "error", "error": {"type": "overloaded_error"}})  # type: ignore[attr-defined]
+
+
+def test_anthropic_output_limit_is_not_silent():
+    provider = get_chat_provider("anthropic")
+    with pytest.raises(ChatOutputLimitError):
+        provider._check_finish_reason({"type": "message_delta", "delta": {"stop_reason": "max_tokens"}})  # type: ignore[attr-defined]
+
+
+def test_openai_compatible_output_limit_is_not_silent():
+    provider = get_chat_provider("openai_compatible")
+    with pytest.raises(ChatOutputLimitError):
+        provider._check_finish_reason({"finish_reason": "length"})  # type: ignore[attr-defined]

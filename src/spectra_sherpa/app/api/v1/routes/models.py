@@ -26,6 +26,7 @@ from spectra_sherpa.app.contracts.demo_capabilities import MODEL_MANAGE, MODEL_U
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access, scientific_project_ids
 from spectra_sherpa.app.models.application_release import ApplicationRelease
+from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.folder_watch import FolderWatch
 from spectra_sherpa.app.models.model_artifact import ModelArtifact
 from spectra_sherpa.app.models.user import User
@@ -129,6 +130,73 @@ class ModelCompareResponse(BaseModel):
     dataset: dict[str, Any]
     models: list[dict[str, Any]]
     pairwise: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class SavedModelQualificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    dataset_view_id: int = Field(gt=0)
+    policy: dict[str, Any]
+    context: dict[str, Any]
+    independence_evidence: dict[str, Any] | None = None
+
+
+class SavedModelQualificationDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    dossier_digest: str = Field(pattern="^[a-f0-9]{64}$")
+    accepted_context_digest: str | None = Field(default=None, pattern="^[a-f0-9]{64}$")
+    decision: Literal["accepted_under_declared_policy", "rejected", "pending"]
+    reason: str = Field(min_length=1, max_length=4000)
+
+
+async def _qualification_model(
+    session: AsyncSession, user: User, artifact_uid: str, operation: Literal["read", "write", "execute"]
+) -> ModelArtifact:
+    model = await session.scalar(
+        select(ModelArtifact).where(
+            ModelArtifact.artifact_uid == artifact_uid,
+            ModelArtifact.is_active.is_(True),
+            or_(ModelArtifact.user_id == user.id, uses_managed_project_access()),
+        )
+    )
+    if model is None or model.project_id is None:
+        raise HTTPException(404, "Saved model is unavailable")
+    await require_scientific_access(session, user.id, model.project_id, operation, resource_owner_id=model.user_id)
+    return model
+
+
+async def _qualification_view(session: AsyncSession, user: User, model: ModelArtifact, view_id: int):
+    from spectra_sherpa.app.models.dataset_view import DatasetView
+    from spectra_sherpa.app.services.dataset_views import materialize_selection_receipt, receipt_sha256
+    from spectra_sherpa.app.services.model_application import load_project_dataset
+
+    view = await session.scalar(
+        select(DatasetView).where(
+            DatasetView.id == view_id,
+            DatasetView.project_id == model.project_id,
+            DatasetView.deleted_at.is_(None),
+        )
+    )
+    if view is None:
+        raise HTTPException(404, "Named validation dataset view is unavailable")
+    await require_scientific_access(session, user.id, view.project_id, "read")
+    try:
+        receipt = view.selection
+        if receipt_sha256(receipt) != view.selection_sha256:
+            raise ValueError("named validation view receipt changed")
+        loaded = await load_project_dataset(
+            session,
+            user_id=user.id,
+            experiment_id=view.experiment_id,
+            stage=receipt["stage"],
+            file_ids=receipt["selected_file_ids"],
+            asset_id=receipt["asset_id"],
+        )
+        if loaded.project_id != view.project_id:
+            raise ValueError("validation dataset is outside the model project")
+        loaded = materialize_selection_receipt(loaded, receipt)
+    except (ValueError, KeyError, TypeError) as exc:
+        raise HTTPException(409, "Named validation view no longer matches its exact source and cohort") from exc
+    return view, loaded
 
 
 class CanonicalFullRefitImportRequest(BaseModel):
@@ -370,6 +438,264 @@ async def list_models(
     result = await session.execute(query)
 
     return [_model_to_summary(m) for m in result.scalars().all()]
+
+
+@router.get("/project-overview")
+async def project_model_overview(
+    project_id: int = Query(..., ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Compare ordinary saved models using verified artifact and run receipts.
+
+    A model without exact evidence remains a row, but it cannot acquire a
+    fabricated metric, validation cohort, or qualification status.
+    """
+
+    from asyncio import to_thread
+
+    from spectra_sherpa.app.models.dataset_view import DatasetView
+    from spectra_sherpa.app.models.project_choice_event import ProjectChoiceEvent
+    from spectra_sherpa.app.models.saved_model_qualification import SavedModelQualificationRecord
+    from spectra_sherpa.app.models.workflow_version import WorkflowVersion
+    from spectra_sherpa.app.schemas.run_evidence import RunEvidence
+    from spectra_sherpa.app.services.model_store import get_model_store, verify_model_artifact_storage_record
+    from spectra_sherpa.app.services.run_output_retention import read_output
+    from spectra_sherpa.app.services.saved_model_overview import (
+        heldout_evaluator_nodes,
+        model_component_count,
+        project_model_row,
+        verified_heldout_classification,
+        verified_run_definition,
+    )
+    from spectra_sherpa.app.services.saved_model_qualification import qualification_status
+
+    await require_scientific_access(session, current_user.id, project_id, "read")
+    models = (
+        await session.scalars(
+            select(ModelArtifact)
+            .where(
+                ModelArtifact.project_id == project_id,
+                ModelArtifact.is_active.is_(True),
+                or_(ModelArtifact.user_id == current_user.id, uses_managed_project_access()),
+            )
+            .order_by(ModelArtifact.created_at.desc(), ModelArtifact.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).all()
+    run_ids = [model.source_run_id for model in models if model.source_run_id is not None]
+    runs = (
+        {
+            run.id: run
+            for run in (
+                await session.scalars(
+                    select(ExecutionRun).where(
+                        ExecutionRun.id.in_(run_ids),
+                        ExecutionRun.project_id == project_id,
+                    )
+                )
+            ).all()
+        }
+        if run_ids
+        else {}
+    )
+    version_ids = {run.workflow_version_id for run in runs.values() if run.workflow_version_id is not None}
+    versions = (
+        {
+            version.id: version
+            for version in (
+                await session.scalars(select(WorkflowVersion).where(WorkflowVersion.id.in_(version_ids)))
+            ).all()
+        }
+        if version_ids
+        else {}
+    )
+    artifact_uids = [model.artifact_uid for model in models]
+    qualification_records: dict[str, list[Any]] = {uid: [] for uid in artifact_uids}
+    if artifact_uids:
+        retained = (
+            await session.scalars(
+                select(SavedModelQualificationRecord).where(
+                    SavedModelQualificationRecord.project_id == project_id,
+                    SavedModelQualificationRecord.artifact_uid.in_(artifact_uids),
+                    SavedModelQualificationRecord.user_id == current_user.id,
+                )
+            )
+        ).all()
+        for record in retained:
+            qualification_records[record.artifact_uid].append(record)
+    view_ids = {record.validation_view_id for records in qualification_records.values() for record in records}
+    views = (
+        {
+            view.id: view
+            for view in (
+                await session.scalars(
+                    select(DatasetView).where(DatasetView.id.in_(view_ids), DatasetView.project_id == project_id)
+                )
+            ).all()
+        }
+        if view_ids
+        else {}
+    )
+    selected_choice = await session.scalar(
+        select(ProjectChoiceEvent)
+        .where(
+            ProjectChoiceEvent.project_id == project_id,
+            ProjectChoiceEvent.user_id == current_user.id,
+            ProjectChoiceEvent.kind == "dataset",
+        )
+        .order_by(ProjectChoiceEvent.id.desc())
+        .limit(1)
+    )
+    rows: list[dict[str, Any]] = []
+    verified_view_sources: dict[int, Any | None] = {}
+    for model in models:
+        try:
+            await to_thread(verify_model_artifact_storage_record, model)
+            manifest, arrays = await to_thread(get_model_store().load, model.artifact_uid, verify=True)
+            if manifest.get("integrity_hash") != model.integrity_hash:
+                raise ValueError("saved model integrity differs from its database record")
+            if (
+                manifest.get("artifact_uid") != model.artifact_uid
+                or manifest.get("node_id") != model.node_id
+                or manifest.get("model_type") != model.model_type
+                or (
+                    model_component_count(model, manifest) is None
+                    if model.model_type == "plsda"
+                    else manifest.get("n_components") != model.n_components
+                )
+            ):
+                raise ValueError("saved model producer identity differs from its database record")
+        except (FileNotFoundError, RuntimeError, ValueError, OSError) as exc:
+            logger.warning("Saved model %s cannot enter project overview: %s", model.artifact_uid, exc)
+            rows.append(
+                {
+                    "artifact_uid": model.artifact_uid,
+                    "name": model.display_name or model.name,
+                    "model_type": model.model_type,
+                    "unavailable_reason": "Saved model artifact could not be verified.",
+                    "comparison_key": None,
+                }
+            )
+            continue
+        run = runs.get(model.source_run_id)
+        curve: dict[str, Any] | None = None
+        heldout: dict[str, Any] | None = None
+        exclusions: dict[str, Any] | None = None
+        bound_run = (
+            run is not None
+            and run.user_id == model.user_id
+            and run.workflow_id == model.workflow_id
+            and model.artifact_uid in (run.produced_artifact_uids or [])
+        )
+        if bound_run:
+            try:
+                evidence = RunEvidence.model_validate(run.evidence_completeness)
+                item = evidence.outputs.get(model.node_id or "", {}).get("component_curve")
+                if (
+                    item is not None
+                    and item.state == "exact"
+                    and item.storage == "file"
+                    and item.byte_count
+                    and item.byte_count < 2_000_000
+                ):
+                    value = await to_thread(read_output, run.user_id, item)
+                    if isinstance(value, dict):
+                        curve = value
+                if model.model_type in {"pca", "pls"} and model.node_id:
+                    from spectra_sherpa.app.services.saved_model_diagnostics import saved_model_diagnostics
+
+                    reviewed = await saved_model_diagnostics(run, model.node_id)
+                    exclusions = reviewed.get("decision")
+                if model.model_type == "plsda" and model.node_id:
+                    definition_receipt = evidence.outputs.get("__workflow__", {}).get("definition")
+                    definition = None
+                    if definition_receipt is not None:
+                        if (
+                            definition_receipt.state == "exact"
+                            and definition_receipt.storage == "file"
+                            and definition_receipt.byte_count
+                            and definition_receipt.byte_count < 2_000_000
+                        ):
+                            retained_definition = await to_thread(read_output, run.user_id, definition_receipt)
+                            definition = verified_run_definition(retained_definition, run.integrity_hash)
+                    else:
+                        # Older runs may have only an immutable workflow-version snapshot.
+                        version = versions.get(run.workflow_version_id)
+                        if version is not None and version.workflow_id == run.workflow_id:
+                            definition = version.snapshot
+                    if definition is not None:
+                        candidates = []
+                        for node_id in heldout_evaluator_nodes(definition, model.node_id):
+                            retained = evidence.outputs.get(node_id, {}).get("default")
+                            if (
+                                retained is None
+                                or retained.state != "exact"
+                                or retained.storage != "file"
+                                or not retained.byte_count
+                                or retained.byte_count >= 2_000_000
+                            ):
+                                continue
+                            value = await to_thread(read_output, run.user_id, retained)
+                            if verified_heldout_classification(value):
+                                candidates.append(value)
+                        if len(candidates) == 1:
+                            heldout = candidates[0]
+            except (ValueError, TypeError, KeyError, FileNotFoundError, OSError):
+                # The verified artifact remains visible, but a missing run
+                # receipt cannot supply a scientific comparison statistic.
+                pass
+        model_qualification_records = qualification_records[model.artifact_uid]
+        latest_assessment = max(
+            (record for record in model_qualification_records if record.kind == "assessment"),
+            key=lambda record: record.id,
+            default=None,
+        )
+        latest_view = views.get(latest_assessment.validation_view_id) if latest_assessment is not None else None
+        if latest_view is not None and latest_view.id not in verified_view_sources:
+            try:
+                _view, loaded = await _qualification_view(session, current_user, model, latest_view.id)
+                verified_view_sources[latest_view.id] = loaded.dataset
+            except HTTPException:
+                verified_view_sources[latest_view.id] = None
+        rows.append(
+            project_model_row(
+                model,
+                manifest,
+                curve=curve,
+                run_source=run.source_metadata if bound_run else None,
+                exclusions=exclusions,
+                qualification=qualification_status(
+                    model,
+                    manifest,
+                    arrays,
+                    model_qualification_records,
+                    latest_view,
+                    selected_view_digest=selected_choice.selected_digest if selected_choice is not None else None,
+                    selection_present=selected_choice is not None,
+                    source_verified=latest_view is not None and verified_view_sources.get(latest_view.id) is not None,
+                    current_dataset=verified_view_sources.get(latest_view.id) if latest_view is not None else None,
+                ),
+                heldout=heldout,
+            )
+        )
+    groups: dict[str, list[str]] = {}
+    for row in rows:
+        key = row.get("comparison_key")
+        if isinstance(key, str):
+            groups.setdefault(key, []).append(row["artifact_uid"])
+    return {
+        "project_id": project_id,
+        "rows": rows,
+        "comparable_groups": [uids for uids in groups.values() if len(uids) > 1],
+        "scope": (
+            "Exact saved-model and producing-run evidence. CV is development evidence; "
+            "missing independent evidence is unavailable."
+        ),
+    }
 
 
 @router.get("/select", response_model=list[ModelSelectItem])
@@ -657,6 +983,335 @@ async def update_model(
     return _model_to_detail(model)
 
 
+@router.get("/{artifact_uid}/diagnostics")
+async def get_saved_model_diagnostics(
+    artifact_uid: str,
+    project_id: int = Query(...),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Read the exact diagnostic receipt and decisions of a saved model's fit."""
+    from spectra_sherpa.app.services.saved_model_diagnostics import saved_model_diagnostics
+
+    await require_scientific_access(session, current_user.id, project_id, "read")
+    model = await session.scalar(
+        select(ModelArtifact).where(
+            ModelArtifact.artifact_uid == artifact_uid,
+            ModelArtifact.project_id == project_id,
+            ModelArtifact.is_active.is_(True),
+            or_(ModelArtifact.user_id == current_user.id, uses_managed_project_access()),
+        )
+    )
+    if model is None:
+        raise HTTPException(404, "Model not found")
+    _verify_canonical_detail_storage(model)
+    if model.model_type not in {"pca", "pls"} or model.source_run_id is None or not model.node_id:
+        raise HTTPException(409, "This model has no retained PCA/PLS diagnostic receipt.")
+    run = await session.scalar(
+        select(ExecutionRun).where(
+            ExecutionRun.id == model.source_run_id,
+            ExecutionRun.project_id == project_id,
+            ExecutionRun.user_id == model.user_id,
+            ExecutionRun.workflow_id == model.workflow_id,
+        )
+    )
+    if run is None or artifact_uid not in (run.produced_artifact_uids or []):
+        raise HTTPException(409, "The model is not bound to its producing run.")
+    try:
+        result = await saved_model_diagnostics(run, model.node_id)
+        if result["receipt"].get("model_kind") != model.model_type:
+            raise ValueError("Saved diagnostics do not match the model family.")
+        return result
+    except (ValueError, KeyError, FileNotFoundError) as exc:
+        raise HTTPException(409, f"Saved diagnostics unavailable: {exc}") from exc
+
+
+@router.get("/{artifact_uid}/plsda-diagnostics")
+async def get_saved_plsda_diagnostics(
+    artifact_uid: str,
+    project_id: int = Query(...),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Read exact classifier sample terms bound to its saved fitted state."""
+    from spectra_sherpa.app.services.saved_model_diagnostics import saved_plsda_sample_diagnostics
+
+    await require_scientific_access(session, current_user.id, project_id, "read")
+    model = await session.scalar(
+        select(ModelArtifact).where(
+            ModelArtifact.artifact_uid == artifact_uid,
+            ModelArtifact.project_id == project_id,
+            ModelArtifact.is_active.is_(True),
+            or_(ModelArtifact.user_id == current_user.id, uses_managed_project_access()),
+        )
+    )
+    if model is None:
+        raise HTTPException(404, "Model not found")
+    _verify_canonical_detail_storage(model)
+    if model.model_type != "plsda" or model.source_run_id is None or not model.node_id:
+        raise HTTPException(409, "This model has no retained PLS-DA sample diagnostics.")
+    run = await session.scalar(
+        select(ExecutionRun).where(
+            ExecutionRun.id == model.source_run_id,
+            ExecutionRun.project_id == project_id,
+            ExecutionRun.user_id == model.user_id,
+            ExecutionRun.workflow_id == model.workflow_id,
+        )
+    )
+    if run is None or artifact_uid not in (run.produced_artifact_uids or []):
+        raise HTTPException(409, "The model is not bound to its producing run.")
+    try:
+        return await saved_plsda_sample_diagnostics(run, model)
+    except (ValueError, KeyError, TypeError, FileNotFoundError) as exc:
+        raise HTTPException(409, f"Saved PLS-DA diagnostics unavailable: {exc}") from exc
+
+
+@router.post("/{artifact_uid}/qualification", status_code=201)
+async def assess_saved_model_qualification(
+    artifact_uid: str,
+    payload: SavedModelQualificationRequest,
+    _dg: None = Depends(demo_guard(MODEL_USE)),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    """Execute an external cohort against a pinned native saved-model snapshot."""
+    from spectra_sherpa.app.models.saved_model_qualification import SavedModelQualificationRecord
+    from spectra_sherpa.app.services.saved_model_qualification import assess_saved_model
+    from spectra_sherpa.sdk.analytical_qualification import QualificationContext, QualificationPolicy
+    from spectra_sherpa.sdk.prediction_uncertainty import _digest
+
+    model = await _qualification_model(session, current_user, artifact_uid, "execute")
+    view, loaded = await _qualification_view(session, current_user, model, payload.dataset_view_id)
+    try:
+        policy = QualificationPolicy.model_validate(payload.policy)
+        context = QualificationContext.model_validate(payload.context)
+        dossier, plan = await assess_saved_model(
+            model,
+            loaded.dataset,
+            validation_experiment_id=view.experiment_id,
+            validation_view_digest=view.selection_sha256,
+            validation_source_manifest_digest=loaded.source_manifest_sha256,
+            policy=policy,
+            context=context,
+            independence_evidence=payload.independence_evidence,
+        )
+    except (ValueError, TypeError, KeyError, FileNotFoundError, RuntimeError) as exc:
+        raise HTTPException(422, f"Saved-model qualification unavailable: {exc}") from exc
+    existing = await session.scalar(
+        select(SavedModelQualificationRecord).where(
+            SavedModelQualificationRecord.user_id == current_user.id,
+            SavedModelQualificationRecord.artifact_uid == artifact_uid,
+            SavedModelQualificationRecord.record_digest == dossier.record_digest,
+        )
+    )
+    if existing is None:
+        session.add(
+            SavedModelQualificationRecord(
+                user_id=current_user.id,
+                project_id=model.project_id,
+                artifact_uid=artifact_uid,
+                record_digest=dossier.record_digest,
+                kind="assessment",
+                model_integrity_hash=plan.artifact_digest,
+                manifest_digest=plan.manifest_digest,
+                application_plan_digest=plan.application_plan_digest,
+                validation_view_id=view.id,
+                validation_view_digest=view.selection_sha256,
+                payload={"dossier": dossier.model_dump(mode="json"), "plan": plan.model_dump(mode="json")},
+            )
+        )
+        await session.commit()
+    return {
+        "dossier": dossier.model_dump(mode="json"),
+        "context_digest": _digest(context.model_dump()),
+        "validation_view_id": view.id,
+        "analytical_qualification": "awaiting_human_review",
+        "operational_readiness_changed": False,
+    }
+
+
+@router.get("/{artifact_uid}/qualification")
+async def saved_model_qualification_history(
+    artifact_uid: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    from asyncio import to_thread
+
+    from spectra_sherpa.app.models.dataset_view import DatasetView
+    from spectra_sherpa.app.models.project_choice_event import ProjectChoiceEvent
+    from spectra_sherpa.app.models.saved_model_qualification import SavedModelQualificationRecord
+    from spectra_sherpa.app.services.model_store import get_model_store, verify_model_artifact_storage_record
+    from spectra_sherpa.app.services.saved_model_qualification import qualification_status
+    from spectra_sherpa.sdk.analytical_qualification import QualificationDecision, QualificationDossier
+    from spectra_sherpa.sdk.prediction_uncertainty import _digest
+
+    model = await _qualification_model(session, current_user, artifact_uid, "read")
+    records = (
+        await session.scalars(
+            select(SavedModelQualificationRecord)
+            .where(
+                SavedModelQualificationRecord.project_id == model.project_id,
+                SavedModelQualificationRecord.artifact_uid == artifact_uid,
+                SavedModelQualificationRecord.user_id == current_user.id,
+            )
+            .order_by(SavedModelQualificationRecord.id)
+        )
+    ).all()
+    latest = next((record for record in reversed(records) if record.kind == "assessment"), None)
+    view = await session.get(DatasetView, latest.validation_view_id) if latest is not None else None
+    source_verified = False
+    current_dataset = None
+    if view is not None:
+        try:
+            _view, loaded = await _qualification_view(session, current_user, model, view.id)
+            current_dataset = loaded.dataset
+            source_verified = True
+        except HTTPException:
+            pass
+    choice = await session.scalar(
+        select(ProjectChoiceEvent)
+        .where(
+            ProjectChoiceEvent.project_id == model.project_id,
+            ProjectChoiceEvent.user_id == current_user.id,
+            ProjectChoiceEvent.kind == "dataset",
+        )
+        .order_by(ProjectChoiceEvent.id.desc())
+        .limit(1)
+    )
+    try:
+        await to_thread(verify_model_artifact_storage_record, model)
+        manifest, arrays = await to_thread(get_model_store().load, artifact_uid, verify=True)
+        status = qualification_status(
+            model,
+            manifest,
+            arrays,
+            records,
+            view,
+            selected_view_digest=choice.selected_digest if choice is not None else None,
+            selection_present=choice is not None,
+            source_verified=source_verified,
+            current_dataset=current_dataset,
+        )
+    except (ValueError, KeyError, TypeError, RuntimeError, FileNotFoundError, OSError):
+        status = {"state": "stale", "reason": "Saved model artifact can no longer be verified."}
+    history = []
+    for record in records:
+        evidence = (
+            QualificationDossier.load(record.payload["dossier"])
+            if record.kind == "assessment"
+            else QualificationDecision.model_validate(record.payload["decision"])
+        )
+        history.append(
+            {
+                "kind": record.kind,
+                "record_digest": record.record_digest,
+                "record_digest_verified": record.record_digest
+                == (evidence.record_digest if record.kind == "assessment" else evidence.decision_digest),
+                "parent_digest": record.parent_digest,
+                "context_digest": _digest(evidence.context.model_dump()) if record.kind == "assessment" else None,
+                "validation_view_id": record.validation_view_id,
+                "validation_view_digest": record.validation_view_digest,
+                "payload": evidence.model_dump(mode="json"),
+                "created_at": record.created_at,
+            }
+        )
+    return {
+        "artifact_uid": artifact_uid,
+        "status": status,
+        "records": history,
+        "operational_readiness_implies_analytical_qualification": False,
+    }
+
+
+@router.post("/{artifact_uid}/qualification/decisions", status_code=201)
+async def decide_saved_model_qualification(
+    artifact_uid: str,
+    payload: SavedModelQualificationDecisionRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    from asyncio import to_thread
+    from datetime import timezone
+
+    from spectra_sherpa.app.models.saved_model_qualification import SavedModelQualificationRecord
+    from spectra_sherpa.app.services.model_store import get_model_store, verify_model_artifact_storage_record
+    from spectra_sherpa.app.services.saved_model_qualification import verify_validation_cohort
+    from spectra_sherpa.sdk.analytical_qualification import QualificationDossier, decide_qualification
+    from spectra_sherpa.sdk.prediction_uncertainty import _digest
+    from spectra_sherpa.sdk.saved_model_qualification import SavedModelApplicationPlan
+
+    model = await _qualification_model(session, current_user, artifact_uid, "write")
+    assessment = await session.scalar(
+        select(SavedModelQualificationRecord)
+        .where(
+            SavedModelQualificationRecord.project_id == model.project_id,
+            SavedModelQualificationRecord.artifact_uid == artifact_uid,
+            SavedModelQualificationRecord.user_id == current_user.id,
+            SavedModelQualificationRecord.kind == "assessment",
+        )
+        .order_by(SavedModelQualificationRecord.id.desc())
+        .limit(1)
+    )
+    if assessment is None or assessment.record_digest != payload.dossier_digest:
+        raise HTTPException(404, "Current saved-model assessment is unavailable")
+    view, loaded = await _qualification_view(session, current_user, model, assessment.validation_view_id)
+    try:
+        dossier = QualificationDossier.load(assessment.payload["dossier"])
+        await to_thread(verify_model_artifact_storage_record, model)
+        manifest, arrays = await to_thread(get_model_store().load, artifact_uid, verify=True)
+        plan = SavedModelApplicationPlan.from_verified_snapshot(model, manifest, arrays)
+        if (
+            assessment.record_digest != dossier.record_digest
+            or f"validation-view-receipt-sha256:{assessment.validation_view_digest}" not in dossier.evidence_links
+            or plan != SavedModelApplicationPlan.model_validate(assessment.payload["plan"])
+            or assessment.model_integrity_hash != plan.artifact_digest
+            or assessment.manifest_digest != plan.manifest_digest
+            or assessment.application_plan_digest != plan.application_plan_digest
+            or dossier.terminal_state_digest != plan.state_content_digest
+            or assessment.validation_view_digest != view.selection_sha256
+        ):
+            raise ValueError("saved-model assessment is stale")
+        dossier.assert_application(
+            artifact_digest=plan.artifact_digest,
+            application_plan_digest=plan.application_plan_digest,
+            context=dossier.context,
+        )
+        verify_validation_cohort(dossier, loaded.dataset)
+        if payload.decision == "accepted_under_declared_policy":
+            if payload.accepted_context_digest != _digest(dossier.context.model_dump()):
+                raise ValueError("explicit intended-use context acceptance is required")
+            # Only this server's executed assessment endpoint writes this scoped row.
+            dossier._computed_here = True
+        decision = decide_qualification(
+            dossier,
+            decision=payload.decision,
+            actor=f"user:{current_user.id}",
+            recorded_at=datetime.now(timezone.utc).isoformat(),
+            reason=payload.reason,
+        )
+    except (ValueError, KeyError, TypeError, RuntimeError, FileNotFoundError) as exc:
+        raise HTTPException(409, f"Saved-model assessment no longer verifies: {exc}") from exc
+    session.add(
+        SavedModelQualificationRecord(
+            user_id=current_user.id,
+            project_id=model.project_id,
+            artifact_uid=artifact_uid,
+            record_digest=decision.decision_digest,
+            kind="decision",
+            parent_digest=dossier.record_digest,
+            model_integrity_hash=plan.artifact_digest,
+            manifest_digest=plan.manifest_digest,
+            application_plan_digest=plan.application_plan_digest,
+            validation_view_id=assessment.validation_view_id,
+            validation_view_digest=assessment.validation_view_digest,
+            payload={"decision": decision.model_dump(mode="json")},
+        )
+    )
+    await session.commit()
+    return {"decision": decision.model_dump(mode="json"), "operational_readiness_changed": False}
+
+
 @router.get("/{artifact_uid}", response_model=ModelDetail)
 async def get_model(
     artifact_uid: str,
@@ -748,7 +1403,9 @@ async def inspect_model(
         artifact_uid=artifact_uid,
         model_type=model.model_type,
         arrays=array_info,
-        manifest=manifest,
+        # Fitted specimen labels are needed only by the server-side overlap
+        # check. Keep them in the protected artifact, not routine UI inspection.
+        manifest={key: value for key, value in manifest.items() if key != "training_specimen_ids"},
     )
 
 
