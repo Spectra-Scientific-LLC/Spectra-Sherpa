@@ -32,10 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Local Batch can apply eligible 0.6.0 PLS-DA, PCA and FastICA artifacts with
-  exact retained feature axes only after an explicit exploratory-use
-  acknowledgement. The warning is retained; missing signal identity is never
-  silently treated as verified.
+- Local Batch can apply eligible 0.6.0 PLS-DA, PCA, FastICA, KNN and SIMCA
+  artifacts with exact retained feature axes only after an explicit
+  exploratory-use acknowledgement. The warning is retained; missing signal identity is never
+  silently treated as verified. KNN, SIMCA, PCA and FastICA models that 0.6.0 fitted on
+  tabular (non-spectral) data recorded no column identity, so they cannot be
+  verified and must be refit.
 - Saved PLS-DA comparisons show their target and verified classification
   validation, without borrowing a result from another model in the workflow.
 - Frontend unit tests reject unmocked Axios and fetch calls instead of

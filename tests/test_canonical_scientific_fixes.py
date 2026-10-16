@@ -295,8 +295,14 @@ def test_saved_classifier_roundtrip_binds_input_identity(kind, tmp_path):
     for action in (apply, lambda query: preflight_model_application(query, manifest, arrays)):
         with pytest.raises(ValueError, match="fitted input authority"):
             action(altered)
+    # Without signal identity the model can never apply as verified. The stored
+    # manifest's integrity hash prevents stripping it from a saved artifact;
+    # in memory it is indistinguishable from a 0.6.0 model, so it needs the
+    # explicit exploratory acknowledgement.
+    from spectra_sherpa.app.services.dag.legacy_model_application import LegacyAcknowledgementRequired
+
     manifest.pop("input_identity")
-    with pytest.raises(ValueError, match="rebuild the fitted state"):
+    with pytest.raises(LegacyAcknowledgementRequired, match="predates fitted signal identity"):
         apply(data)
 
 

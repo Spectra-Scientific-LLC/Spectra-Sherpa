@@ -17,6 +17,19 @@ from spectra_sherpa.core.axis_semantics import axis_semantics, canonical_axis_un
 _V060_PLSDA = "spectrasherpa.model-artifact.sherpa-plsda/3"
 _V060_FASTICA = "spectrasherpa.model-artifact.fastica/1"
 _V060_PCA = "spectrasherpa.model-artifact.pca/3"
+_V060_KNN = "spectrasherpa.model-artifact.knn/1"
+# SIMCA artifacts have never declared a serializer; a SIMCA manifest without
+# input identity can only predate fitted signal identity.
+_V060_SIMCA = None
+_LEGACY_ARTIFACTS = frozenset(
+    {
+        ("plsda", _V060_PLSDA),
+        ("fastica", _V060_FASTICA),
+        ("pca", _V060_PCA),
+        ("knn", _V060_KNN),
+        ("simca", _V060_SIMCA),
+    }
+)
 LEGACY_WARNING = (
     "This saved model predates fitted signal identity. Its ordered feature axis can be checked, "
     "but signal units and measurement mode cannot be authenticated from the model. "
@@ -44,9 +57,7 @@ def require_legacy_application_acknowledgement(
     """
     model_type = manifest.get("model_type")
     serializer = manifest.get("serializer")
-    legacy = manifest.get("input_identity") is None and (
-        (model_type, serializer) in {("plsda", _V060_PLSDA), ("fastica", _V060_FASTICA), ("pca", _V060_PCA)}
-    )
+    legacy = manifest.get("input_identity") is None and (model_type, serializer) in _LEGACY_ARTIFACTS
     if not legacy:
         return None
     if not local_allowed:
