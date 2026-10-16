@@ -1433,7 +1433,7 @@ def _source_assignment_profile(dataset: Any) -> dict[str, Any]:
 def _require_independent_classification_group(
     dataset: Any, binding: "DataBindingSpec", analysis_profile: dict[str, Any]
 ) -> None:
-    """Do not admit a held-out class score that leaks replicated specimens.
+    """Do not admit a held-out supervised score that leaks replicated specimens.
 
     This is based on the selected dataset's declared sample identities and
     complete attached metadata, never on a particular registered dataset ID.
@@ -1441,7 +1441,7 @@ def _require_independent_classification_group(
     supervised starter claiming a held-out test needs an independent split.
     """
 
-    if binding.target_type != "categorical":
+    if binding.target_type not in {"categorical", "continuous"}:
         return
     table = dataset.sample_axis.sample_table if dataset.sample_axis is not None else None
     if not isinstance(table, dict):
@@ -1461,8 +1461,8 @@ def _require_independent_classification_group(
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    f"{field} identifies repeated specimens. It cannot be both the class target and "
-                    "an independent held-out specimen group. Choose a scientific class label instead."
+                    f"{field} identifies repeated specimens. It cannot be both the response target and "
+                    "an independent held-out specimen group. Choose a different scientific target instead."
                 ),
             )
         if not 1 < independent_count < len(identities):
@@ -1472,8 +1472,8 @@ def _require_independent_classification_group(
                 status_code=409,
                 detail=(
                     f"This dataset has repeated {field} identities. A row-wise or block-wise "
-                    "classification split could place one specimen on both sides and inflate "
-                    f"held-out accuracy. In My Dataset, choose {field} or a coarser identity under Groups, "
+                    "supervised split could place one specimen on both sides and inflate "
+                    f"held-out performance. In My Dataset, choose {field} or a coarser identity under Groups, "
                     "save the selection, then start a new analysis."
                 ),
             )

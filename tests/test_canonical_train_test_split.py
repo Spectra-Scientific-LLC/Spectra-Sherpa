@@ -160,7 +160,7 @@ async def test_repeated_specimens_cannot_be_reported_as_held_out_classes_without
         group_column="specimen_id",
         node_id="attach_identity",
     )
-    with pytest.raises(ValueError, match="cannot be both the class target"):
+    with pytest.raises(ValueError, match="cannot be both the response target"):
         require_independent_classification_groups(
             identity_target,
             np.asarray(["A"] * 3 + ["B"] * 3 + ["C"] * 3),
@@ -182,6 +182,54 @@ async def test_repeated_specimens_cannot_be_reported_as_held_out_classes_without
                 "results": {},
             },
         )
+
+
+@pytest.mark.asyncio
+async def test_repeated_specimens_require_grouped_regression_split() -> None:
+    source = SherpaDataset(
+        X=np.random.RandomState(24).normal(size=(6, 4)),
+        feature_axis=SpectralAxis(values=np.arange(4), units="cm-1"),
+        sample_axis=SampleAxis(
+            labels=[f"acq-{i}" for i in range(6)],
+            sample_table={
+                "sample_id": [f"acq-{i}" for i in range(6)],
+                "specimen_id": ["A", "A", "B", "B", "C", "C"],
+                "block": ["1", "2"] * 3,
+                "response": [1.0, 1.1, 2.0, 2.1, 3.0, 3.1],
+            },
+        ),
+        extra={
+            "source_collection": {
+                "source_manifest_sha256": "1" * 64,
+                "manifest_digest": "1" * 64,
+                "collection_definition_sha256": "2" * 64,
+                "scientific_collection_sha256": "a" * 64,
+            }
+        },
+        backend="numpy",
+    )
+    regression = attach_target_dataset(
+        source,
+        None,
+        target_type="continuous",
+        target_source="sample_table_column",
+        target_column="response",
+        group_column="",
+        node_id="regression_target",
+    )
+    with pytest.raises(ValueError, match="independent grouped supervised split"):
+        require_independent_classification_groups(regression, None, regression.target_context)
+    with pytest.raises(ValueError, match="divides repeated specimen_id"):
+        require_independent_classification_groups(regression, np.asarray(["1", "2"] * 3), regression.target_context)
+    groups = np.asarray(["A", "A", "B", "B", "C", "C"])
+    require_independent_classification_groups(regression, groups, regression.target_context)
+    node = node_registry.create_node(
+        "data.train_test_split",
+        "regression_split",
+        {"split_method": "random", "test_size": 0.33},
+    )
+    with pytest.raises(ValueError, match="explicitly rebind"):
+        await node.execute(X=regression)
 
 
 def _two_instrument_continuous_dataset() -> SherpaDataset:
