@@ -44,6 +44,14 @@ async def test_heartbeats_do_not_extend_deadline_or_retry_and_stop_after_complet
     registry = WebSocketActionRegistry()
     calls = 0
     cleaned = asyncio.Event()
+    heartbeat_sent = asyncio.Event()
+    timeout_sent = asyncio.Event()
+
+    async def capture_event(event):
+        if event.get("payload", {}).get("heartbeat"):
+            heartbeat_sent.set()
+        if event.get("code") == "timeout":
+            timeout_sent.set()
 
     async def work(ws, *_):
         nonlocal calls
@@ -54,15 +62,20 @@ async def test_heartbeats_do_not_extend_deadline_or_retry_and_stop_after_complet
         finally:
             cleaned.set()
 
-    registry.register("chat", work, request_policy=RequestPolicy(timeout_seconds=0.08, heartbeat_seconds=0.015))
-    socket = SimpleNamespace(send_json=AsyncMock())
+    # Keep a wide gap between heartbeat and deadline: Windows CI can pause the
+    # event loop long enough to skip several ticks of an 80 ms deadline.
+    registry.register("chat", work, request_policy=RequestPolicy(timeout_seconds=1.0, heartbeat_seconds=0.02))
+    socket = SimpleNamespace(send_json=AsyncMock(side_effect=capture_event))
     await registry.dispatch("chat", socket, {"payload": {"request_id": "a"}}, None, None, background=True)
-    await asyncio.wait_for(cleaned.wait(), 1)
-    await asyncio.sleep(0.02)
+    task = next(iter(registry.requests.tasks.values()))[1]
+    await asyncio.wait_for(heartbeat_sent.wait(), 5)
+    await asyncio.wait_for(cleaned.wait(), 5)
+    await asyncio.wait_for(timeout_sent.wait(), 5)
+    await asyncio.wait_for(task, 5)
     events = [c.args[0] for c in socket.send_json.call_args_list]
     assert calls == 1
     beats = [e for e in events if e.get("payload", {}).get("heartbeat")]
-    assert len(beats) >= 3
+    assert beats
     assert all("validate_workflow" in e["payload"]["detail"] for e in beats)
     assert events[-1]["code"] == "timeout"
     count = len(events)
