@@ -26,9 +26,7 @@
         <div class="vh-row-main">
           <div class="vh-row-title">
             <span class="vh-version-tag">v{{ v.version_number }}</span>
-            <span class="vh-version-time" :title="formatFullTimestamp(v.created_at)">
-              {{ formatRelative(v.created_at) }}
-            </span>
+            <RelativeTime class="vh-version-time" :value="v.created_at" />
           </div>
           <div v-if="v.change_description" class="vh-row-description">
             {{ v.change_description }}
@@ -52,6 +50,7 @@
 </template>
 
 <script setup lang="ts">
+import RelativeTime from "@/components/RelativeTime.vue";
 import { computed, ref, watch } from "vue";
 import Dialog from "primevue/dialog";
 import Button from "primevue/button";
@@ -136,32 +135,6 @@ const onOpenAsNewSheet = async (versionId: number) => {
   }
 };
 
-// Display helpers — relative time for the row, full timestamp on hover.
-const RELATIVE_THRESHOLDS: Array<[number, Intl.RelativeTimeFormatUnit]> = [
-  [60, "second"],
-  [60 * 60, "minute"],
-  [60 * 60 * 24, "hour"],
-  [60 * 60 * 24 * 30, "day"],
-  [60 * 60 * 24 * 365, "month"],
-];
-
-const formatRelative = (iso: string): string => {
-  const then = new Date(iso).getTime();
-  const now = Date.now();
-  const diffSec = Math.round((then - now) / 1000);
-  const absSec = Math.abs(diffSec);
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  let previousDivisor = 1;
-  for (const [divisor, unit] of RELATIVE_THRESHOLDS) {
-    if (absSec < divisor) {
-      return rtf.format(Math.round(diffSec / previousDivisor), unit);
-    }
-    previousDivisor = divisor;
-  }
-  return rtf.format(Math.round(diffSec / (60 * 60 * 24 * 365)), "year");
-};
-
-const formatFullTimestamp = (iso: string): string => new Date(iso).toLocaleString();
 </script>
 
 <style scoped>

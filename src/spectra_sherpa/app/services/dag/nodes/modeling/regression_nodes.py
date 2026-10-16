@@ -50,6 +50,7 @@ from ...node_base import (
     PortMetadata,
     register_node,
 )
+from ...presentation_contract import NodePresentationContract, ScientificPresentation
 from . import _artifact_builder, regression_application
 from .core_utils import (
     create_spectral_dataset as _create_spectral_dataset,
@@ -1461,6 +1462,101 @@ def _canonical_linear_regression_parameters(parameters: dict[str, object]) -> di
     return {"fit_intercept": parameters["fit_intercept"]}
 
 
+def _linear_regression_effect_summary(
+    model: LinearRegression,
+    matrix: np.ndarray,
+    target: np.ndarray,
+    dataset: Any,
+    *,
+    fit_intercept: bool,
+) -> dict[str, Any] | None:
+    """JMP-style one-df OLS effect tests on the *training* rows only.
+
+    These conditional p-values describe the fitted model, not held-out
+    predictive utility. Rank-deficient and residual-df-free fits have no
+    defensible classical effect test, so they expose no effect plot.
+    """
+
+    if _as_target_matrix(target).shape[1] != 1:
+        return None
+    design = np.column_stack((np.ones(matrix.shape[0]), matrix)) if fit_intercept else matrix
+    degrees_of_freedom = design.shape[0] - design.shape[1]
+    if degrees_of_freedom <= 0 or np.linalg.matrix_rank(design) != design.shape[1]:
+        return None
+
+    from scipy.stats import t as student_t
+
+    residual = np.asarray(target, dtype=np.float64).reshape(-1) - np.asarray(model.predict(matrix)).reshape(-1)
+    residual_variance = float(residual @ residual) / degrees_of_freedom
+    if residual_variance <= 0 or not np.isfinite(residual_variance):
+        return None
+    _, triangular = np.linalg.qr(design, mode="reduced")
+    inverse_triangular = np.linalg.solve(triangular, np.eye(triangular.shape[0]))
+    standard_errors = np.sqrt(residual_variance * np.sum(inverse_triangular**2, axis=1))
+    if not np.isfinite(standard_errors).all() or np.any(standard_errors <= 0):
+        return None
+
+    coefficients = np.asarray(model.coef_, dtype=np.float64).reshape(-1)
+    effect_se = standard_errors[1:] if fit_intercept else standard_errors
+    p_values = 2 * student_t.sf(np.abs(coefficients / effect_se), degrees_of_freedom)
+    order = np.argsort(p_values, kind="stable")
+    adjusted = np.empty_like(p_values)
+    sorted_adjusted = np.minimum.accumulate((p_values[order] * len(p_values) / np.arange(1, len(p_values) + 1))[::-1])[
+        ::-1
+    ]
+    adjusted[order] = np.minimum(sorted_adjusted, 1.0)
+
+    axis = getattr(dataset, "feature_axis", None)
+    raw_labels = getattr(axis, "labels", None)
+    labels = (
+        [str(value) for value in raw_labels]
+        if raw_labels is not None and len(raw_labels) == len(coefficients)
+        else [f"Feature {index + 1}" for index in range(len(coefficients))]
+    )
+    effects = [
+        {
+            "name": labels[index],
+            "coefficient": float(coefficients[index]),
+            "standard_error": float(effect_se[index]),
+            "p_value": float(p_values[index]),
+            "fdr_p_value": float(adjusted[index]),
+            "logworth": float(-np.log10(max(float(p_values[index]), np.finfo(float).tiny))),
+        }
+        for index in range(len(coefficients))
+    ]
+    # Plotly places the last horizontal bar at the top.
+    ranked = [effects[index] for index in order[::-1]]
+    return {
+        "data": [
+            {
+                "type": "bar",
+                "orientation": "h",
+                "x": [effect["logworth"] for effect in ranked],
+                "y": [effect["name"] for effect in ranked],
+                "customdata": [[effect["p_value"], effect["fdr_p_value"], effect["coefficient"]] for effect in ranked],
+                "hovertemplate": (
+                    "%{y}<br>p=%{customdata[0]:.4g}<br>FDR p=%{customdata[1]:.4g}"
+                    "<br>Coefficient=%{customdata[2]:.4g}<extra></extra>"
+                ),
+                "marker": {"color": "#3b82f6"},
+            }
+        ],
+        "layout": {
+            "title": "MLR effect summary (training fit)",
+            "xaxis": {"title": "Logworth −log10(p)"},
+            "yaxis": {"title": "Predictor", "automargin": True},
+            "margin": {"l": 150},
+            "height": max(360, 28 * len(effects) + 130),
+        },
+        "metadata": {
+            "effects": effects,
+            "residual_degrees_of_freedom": degrees_of_freedom,
+            "evidence_scope": "training_fit_only_not_predictive_validation",
+            "test": "two_sided_t_test_conditional_on_all_included_predictors",
+        },
+    }
+
+
 def _linear_regression_execute(
     X: Any,
     y: Any,
@@ -1527,6 +1623,11 @@ def _linear_regression_execute(
             node_id=node_id,
         )
     )
+    effect_summary = _linear_regression_effect_summary(
+        model, matrix, target, X_ds, fit_intercept=bool(params["fit_intercept"])
+    )
+    if effect_summary is not None:
+        outputs["effect_summary"] = effect_summary
     outputs["metadata"]["evidence_scope"] = "training_fit_only_not_predictive_validation"
     if target_matrix.shape[1] > 1:
         _omit_multitarget_summaries(outputs)
@@ -1612,8 +1713,68 @@ class LinearRegressionNode(EstimatorSpecNode):
                 label="Residuals",
                 description="Regression residuals (y_true - y_pred)",
             ),
+            PortMetadata(
+                name="effect_summary",
+                type_ref="spectrasherpa://types/Visualization/1.0",
+                required=False,
+                label="MLR Effect Summary",
+                description="Conditional one-df effect tests on training rows; not held-out feature-selection evidence",
+            ),
         ],
         policy=NodePolicy(),
+        presentation_contract=NodePresentationContract(
+            default_presentation="population",
+            presentations=(
+                ScientificPresentation(
+                    "population",
+                    "Training population",
+                    "structured_record",
+                    ("population",),
+                    ("record",),
+                    "Original row identities, admitted rows and missing-reference exclusions",
+                ),
+                ScientificPresentation(
+                    "model",
+                    "Fitted Linear Regression Model",
+                    "regression_model",
+                    ("model",),
+                    ("model_summary",),
+                    "Fitted linear regression model",
+                ),
+                ScientificPresentation(
+                    "predictions",
+                    "Predictions",
+                    "target_matrix",
+                    ("predictions",),
+                    ("table",),
+                    "Predicted values (y_pred)",
+                ),
+                ScientificPresentation(
+                    "residuals",
+                    "Residuals",
+                    "target_matrix",
+                    ("residuals",),
+                    ("table",),
+                    "Regression residuals (y_true - y_pred)",
+                ),
+                ScientificPresentation(
+                    "fitted_state",
+                    "Fitted State",
+                    "regression_model",
+                    ("fitted_state",),
+                    ("model_summary",),
+                    "Portable linear-regression state for Predict Regression",
+                ),
+                ScientificPresentation(
+                    "effects",
+                    "MLR Effect Summary",
+                    "visualization",
+                    ("effect_summary",),
+                    ("plot", "table"),
+                    "Conditional training-fit effect tests; selection must be evaluated inside validation folds.",
+                ),
+            ),
+        ),
         canonical_parameter_validator=_canonical_linear_regression_parameters,
     )
 

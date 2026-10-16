@@ -1,4 +1,17 @@
 import { vi } from 'vitest'
+import axios from 'axios'
+
+// Unit tests must never reach a developer's running backend. Tests exercising
+// the API provide their own mock adapter or mock the client module explicitly.
+axios.defaults.adapter = async (config) => {
+  throw new Error(`Unmocked unit-test HTTP request: ${config.method?.toUpperCase()} ${config.url}`)
+}
+
+// The local data story and LLM store use fetch directly. Keep that path
+// offline too; individual tests can replace fetch with an explicit mock.
+globalThis.fetch = async () => {
+  throw new Error('Unmocked unit-test fetch request')
+}
 
 type MockIntersectionObserver = {
   new (): {

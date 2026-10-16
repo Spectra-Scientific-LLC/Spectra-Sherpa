@@ -1062,6 +1062,18 @@
           "content": {
             "type": "string",
             "title": "Content"
+          },
+          "diagnostic_scope": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Diagnostic Scope"
           }
         },
         "type": "object",

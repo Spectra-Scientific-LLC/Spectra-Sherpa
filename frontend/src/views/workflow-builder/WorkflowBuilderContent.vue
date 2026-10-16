@@ -22,6 +22,9 @@
                 ? 'Return to My Dataset to restore the missing selection receipt'
                 : undefined
             "
+            :aria-describedby="
+              pendingDataSelection && !dataSelectionReceipt ? 'workflow-selection-unavailable' : undefined
+            "
             @click="openTemplatePicker"
           />
           <Button
@@ -43,6 +46,14 @@
             :title="runButtonTitle"
           />
           <Button
+            label="Save"
+            icon="pi pi-save"
+            class="p-button-outlined p-button-sm"
+            :loading="autosaveStatus === 'saving'"
+            :disabled="isTrialTabActive || isManagedCandidateAuthority || !hasChanges || workflowParameterErrors.length > 0"
+            @click="triggerAutosave()"
+          />
+          <Button
             label="Export"
             icon="pi pi-download"
             class="p-button-outlined p-button-sm"
@@ -54,6 +65,7 @@
             icon="pi pi-shield"
             class="p-button-outlined p-button-sm"
             :disabled="isTrialTabActive || workflowStore.workflowId === null"
+            v-if="!['demo', 'pro'].includes(appConfig?.siteProfile || '') && (appConfig?.audit?.localQuery || appConfig?.audit?.fullPipeline)"
             @click="openWorkflowAudit"
             title="Open audit trail for this workflow"
           />
@@ -61,6 +73,12 @@
         <Menu ref="exportMenuRef" :model="exportMenuItems" :popup="true" />
 
         <template #after>
+          <span v-if="pendingRecoveryDraft" role="status">
+            Unsaved browser draft found. The saved workflow is shown.
+            <Button label="Restore draft" class="p-button-text p-button-sm" @click="applyRecoveryDraft" />
+            <Button label="Keep saved workflow" class="p-button-text p-button-sm" @click="discardRecoveryDraft" />
+          </span>
+          <span v-else-if="hasChanges && autosaveStatus === 'idle'" role="status">Unsaved changes</span>
           <span v-if="autosaveStatus === 'saving'" class="autosave-indicator">
             <i class="pi pi-spin pi-spinner"></i> Saving
           </span>
@@ -127,7 +145,10 @@
 
     <p v-if="workflowContextLoading" role="status" aria-label="Loading workflow">Loading workflow…</p>
     <p v-if="!workflowContextLoading && workflowStore.hasFoldValidationPlan" role="status" aria-label="Validated workflow export">
-      This campaign-derived sheet has a cross-validation plan. A project archive preserves the sheet, but is not a deployable campaign winner. For an application, use a signed Model package when Optimize offers one for a selected, refitted winner. Standalone Python, notebook, and ZIP exports cannot preserve this validation plan.
+      This campaign-derived sheet has a cross-validation plan. A project archive preserves the sheet, but is not a deployable campaign winner.
+      <template v-if="canOptimize">For an application, use a signed Model package when Optimize offers one for a selected, refitted winner.</template>
+      <template v-else>For an application, import an available signed Model package from Dashboard.</template>
+      Standalone Python, notebook, and ZIP exports cannot preserve this validation plan.
     </p>
     <aside v-if="!workflowContextLoading && workflowStore.workflowWarnings.length" role="status" aria-label="Workflow warnings">
       <p v-for="warning in workflowStore.workflowWarnings" :key="warning">{{ warning }}</p>
@@ -135,6 +156,7 @@
 
     <section
       v-if="!workflowContextLoading && pendingDataSelection && !dataSelectionReceipt"
+      id="workflow-selection-unavailable"
       class="workflow-data-selection pending invalid"
       aria-label="My Dataset selection unavailable"
       role="alert"
@@ -172,7 +194,7 @@
         <span>
           From {{ dataSelectionReceipt.datasets.length }} dataset{{
             dataSelectionReceipt.datasets.length === 1 ? "" : "s"
-          }}. This exact selection is waiting for Analysis Starter to create a bound sheet{{
+          }}. This exact selection is waiting for an analysis starter to create a bound sheet{{
             dataSelectionReceipt.group
               ? `, with ${dataSelectionReceipt.group} requested for grouping`
               : ""
@@ -180,7 +202,7 @@
         </span>
       </div>
       <Button
-        label="Choose Analysis Starter"
+        label="Analysis Starter"
         icon="pi pi-sparkles"
         class="p-button-sm p-button-outlined"
         @click="openTemplatePicker"
@@ -201,9 +223,12 @@
     />
 
     <WorkspaceContext label="Workflow workspace context" layout="workflow">
-      <WorkspaceContextItem label="Active Sheet" :value="activeSheetName" />
-      <WorkspaceContextItem label="Active Data" :value="linkedDataLabel" :detail="linkedDataTitle" />
+      <WorkspaceContextItem label="Active Sheet" :value="activeSheetName" wrap />
       <WorkspaceContextItem label="Canvas" :value="canvasSummaryLabel" />
+      <WorkspaceContextItem label="Data Portfolio" :value="portfolioName" wrap>
+        {{ portfolioSummary }}
+      </WorkspaceContextItem>
+      <WorkspaceContextItem label="Creation Time" :value="sheetCreationTime" wrap />
     </WorkspaceContext>
 
     <!-- Execution status banner -->
@@ -226,6 +251,7 @@
     <!-- Three-column layout: Toolbar | Canvas | Inspector Sidebar -->
     <div
       class="workflow-workspace"
+      :style="{ '--inspector-scale': inspectorScale }"
       :class="{
         'inspector-open': inspectorOpen,
         'toolbar-collapsed': toolbarCollapsed,
@@ -310,6 +336,7 @@
            v-show (not v-if) keeps it pre-mounted so there is no mount delay on the first click;
            display:none from v-show removes it from grid flow when hidden, preventing the phantom
            third-row that appeared with the old v-show="!isTrialTabActive" approach. -->
+      <ResizableInspectorPanel v-show="inspectorOpen && !isTrialTabActive" v-model="inspectorScale">
       <WorkflowInspector
         v-show="inspectorOpen && !isTrialTabActive"
         :class="{ 'trial-hidden': isTrialTabActive }"
@@ -320,7 +347,7 @@
         :execution-disabled="isManagedCandidateAuthority || pendingDataSelection"
         :execution-disabled-reason="
           pendingDataSelection
-            ? 'Choose an Analysis Starter to bind the incoming My Dataset selection before running.'
+            ? 'Choose an analysis starter to bind the incoming My Dataset selection before running.'
             : 'Managed candidate authority is inspectable here, but only the governed Harness may execute it.'
         "
         @update-params="onUpdateParams"
@@ -329,6 +356,7 @@
         @open-trial="openTrialTab"
         @close="onCloseInspector"
       />
+      </ResizableInspectorPanel>
     </div>
   </section>
 </template>
@@ -336,6 +364,7 @@
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any -- builder canvas mixes generic node-library metadata with loose drag/drop payloads. */
 import { ref, computed, provide, watch, onMounted, onUnmounted, nextTick } from "vue";
+import { useConfirmAction } from "@/composables/useConfirmAction";
 import { storeToRefs } from "pinia";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
@@ -354,11 +383,16 @@ import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
 import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
+import { portfolioDetail } from "@/utils/dataPortfolio";
+import { formatTimestamp } from "@/utils/format";
 import VersionHistoryDialog from "@/components/VersionHistoryDialog.vue";
 import TemplatePickerDialog from "@/components/TemplatePickerDialog.vue";
+import { useAppConfig } from "@/composables/useAppConfig";
+import { usePrimaryNavigation } from "@/composables/usePrimaryNavigation";
 import WorkflowToolbar from "./WorkflowToolbar.vue";
 import WorkflowCanvas from "./WorkflowCanvas.vue";
 import WorkflowInspector from "./WorkflowInspector.vue";
+import ResizableInspectorPanel from "@/components/ResizableInspectorPanel.vue";
 import NodeDetailView from "./NodeDetailView.vue";
 import { buildNodeOutput, type NodeOutput } from "@/utils/nodeOutput";
 import { downloadText } from "@/utils/download";
@@ -387,6 +421,12 @@ type DeletedWorkflowSnapshot = {
 };
 
 const toast = useToast();
+const { appConfig } = useAppConfig();
+const { items: navigationItems } = usePrimaryNavigation();
+const canOptimize = computed(() =>
+  (appConfig.value?.features as Record<string, unknown> | undefined)?.managedCampaigns === true
+  && navigationItems.value.some(item => item.label === "Optimize"),
+);
 const route = useRoute();
 const router = useRouter();
 const workflowStore = useWorkflowStore();
@@ -520,11 +560,13 @@ async function onTemplateSheetOpened(): Promise<void> {
   resetDialogOpenedSheetUi();
   clearAnalysisStarterIntent();
   const query = { ...route.query };
+  const activeQuery = activeWorkflowQuery(query, workbookStore.projectId, workbookStore.activeSheet?.workflowId ?? null);
+  if (activeQuery) Object.assign(query, activeQuery);
   if (query.fromDataSelection === "1") {
     delete query.fromDataSelection;
     delete query.selection;
-    await router.replace({ query });
   }
+  await router.replace({ query });
   if (dataSelectionReceipt.value) {
     consumeDataSelectionReceipt(dataSelectionReceipt.value.receipt_id);
   }
@@ -565,6 +607,7 @@ const workflowParameterErrors = computed(() =>
 const selectedNode = ref<WorkflowNode | null>(null);
 const nodeOutputs = ref<Map<string, NodeOutput>>(new Map());
 const inspectorOpen = ref(false);
+const inspectorScale = ref(1);
 // Mirrors WorkflowToolbar's collapsed state so the workspace grid can shrink the
 // toolbar column to just the chevron strip. Initialized from localStorage so the
 // layout matches the toolbar on first paint (no flash of expanded column).
@@ -728,19 +771,35 @@ const restoreDeletedNodes = () => {
   });
 };
 
-const deleteNodesById = (ids: Set<string>, options: { requireConfirmation?: boolean } = {}) => {
+const confirmAction = useConfirmAction();
+
+const deleteNodesById = async (ids: Set<string>, options: { requireConfirmation?: boolean } = {}) => {
   const requireConfirmation = options.requireConfirmation ?? true;
   if (ids.size === 0) return;
+  const requested = workflowStore.nodes.filter((node) => ids.has(node.id));
+  if (requested.length === 0) return;
+  const workflowId = workflowStore.workflowId;
+  const requestedLabel =
+    requested.length === 1 ? getNodeLabel(requested[0].type) : `${requested.length} nodes`;
+  if (
+    requireConfirmation &&
+    !(await confirmAction({
+      title: requested.length === 1 ? "Delete node" : "Delete nodes",
+      message: `Delete ${requestedLabel}? You can undo this immediately after deletion.`,
+      acceptLabel: "Delete",
+      destructive: true,
+    }))
+  ) {
+    return;
+  }
+  // The canvas may have changed while the dialog was open. Node ids repeat
+  // across workflows, so stop if another workflow is now open; otherwise
+  // delete only the confirmed nodes that still exist, named exactly.
+  if (workflowStore.workflowId !== workflowId) return;
   const deletedNodes = workflowStore.nodes.filter((node) => ids.has(node.id));
   if (deletedNodes.length === 0) return;
   const label =
     deletedNodes.length === 1 ? getNodeLabel(deletedNodes[0].type) : `${deletedNodes.length} nodes`;
-  if (
-    requireConfirmation &&
-    !window.confirm(`Delete ${label}? You can undo this immediately after deletion.`)
-  ) {
-    return;
-  }
   const deletedEdges = workflowStore.edges.filter((edge) => ids.has(edge.from) || ids.has(edge.to));
   const deletedOutputs = Array.from(nodeOutputs.value.entries()).filter(([nodeId]) =>
     ids.has(nodeId),
@@ -888,7 +947,7 @@ let autosaveInFlight: Promise<boolean> | null = null;
 const autoExecuteTimer = ref<number | null>(null);
 const recentlyDeletedSnapshot = ref<DeletedWorkflowSnapshot | null>(null);
 const deleteUndoTimer = ref<number | null>(null);
-const AUTOSAVE_DELAY = 30000; // 30 seconds
+const AUTOSAVE_DELAY = 2000; // Persist after a brief editing pause.
 const EXPENSIVE_AUTO_EXECUTE_TYPES = [
   "model.",
   "classification.",
@@ -909,6 +968,8 @@ type WorkflowDraftSnapshot = {
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
 };
+
+const pendingRecoveryDraft = ref<ReturnType<typeof editableWorkflowGraph> | null>(null);
 
 const currentWorkflowDraftKey = (): string | null => {
   const projectId = workbookStore.projectId;
@@ -967,6 +1028,7 @@ const clearWorkflowDraftSnapshot = () => {
 };
 
 const restoreWorkflowDraftSnapshot = () => {
+  pendingRecoveryDraft.value = null;
   if (workbookStore.activeSheet?.kind === "trial") return;
   const key = currentWorkflowDraftKey();
   if (!key) return;
@@ -992,22 +1054,29 @@ const restoreWorkflowDraftSnapshot = () => {
       clearWorkflowDraftSnapshot();
       return;
     }
-    workflowStore.workflowName = restoredGraph.workflowName;
-    workflowStore.workflowDescription = restoredGraph.workflowDescription;
-    workflowStore.setNodes(restoredGraph.nodes);
-    workflowStore.setEdges(restoredGraph.edges);
-    workflowStore.hasUnsavedChanges = true;
-    workflowStore.markWorkflowStale();
-    autosaveStatus.value = "idle";
-    toast.add({
-      severity: "info",
-      summary: "Draft restored",
-      detail: "Recovered unsaved workflow edits from this browser.",
-      life: 2500,
-    });
+    // A local draft may predate edits saved by another session. Never apply it
+    // silently or let it autosave over the server copy during initialization.
+    pendingRecoveryDraft.value = restoredGraph;
   } catch {
     // Corrupt drafts should not block loading the server copy.
   }
+};
+
+const applyRecoveryDraft = () => {
+  const draft = pendingRecoveryDraft.value;
+  if (!draft) return;
+  pendingRecoveryDraft.value = null;
+  workflowStore.workflowName = draft.workflowName;
+  workflowStore.workflowDescription = draft.workflowDescription;
+  workflowStore.setNodes(draft.nodes);
+  workflowStore.setEdges(draft.edges);
+  workflowStore.hasUnsavedChanges = true;
+  workflowStore.markWorkflowStale();
+};
+
+const discardRecoveryDraft = () => {
+  pendingRecoveryDraft.value = null;
+  clearWorkflowDraftSnapshot();
 };
 
 const flushWorkflowDraftBeforeUnload = () => {
@@ -1035,9 +1104,13 @@ onBeforeRouteLeave(async () => {
     if (saved && !workflowStore.hasUnsavedChanges) return true;
   }
 
-  return window.confirm(
-    "Autosave failed. Your edits are preserved in this browser but are not saved to the server. Leave this page?",
-  );
+  return confirmAction({
+    title: "Leave without saving to the server?",
+    message:
+      "Autosave failed. Your edits are preserved in this browser but are not saved to the server.",
+    acceptLabel: "Leave page",
+    destructive: true,
+  });
 });
 
 const sanitizeNodeIdSeed = (nodeType: string): string =>
@@ -1281,17 +1354,6 @@ const activeWorkflowDataSourceNames = computed(() => {
   return ids.map((id) => namesById.get(id)).filter((name): name is string => !!name);
 });
 
-const linkedDataTitle = computed(() => {
-  if (pendingDataSelection.value) {
-    const names = (dataSelectionReceipt.value?.datasets ?? [])
-      .map((dataset) => dataset.dataset_name)
-      .join(", ");
-    return names || "Incoming My Dataset selection is unavailable";
-  }
-  const names = activeWorkflowDataSourceNames.value;
-  return names.length > 0 ? names.join(", ") : linkedDataLabel.value;
-});
-
 const linkedDataLabel = computed(() => {
   if (pendingDataSelection.value) {
     const datasets = dataSelectionReceipt.value?.datasets ?? [];
@@ -1311,6 +1373,57 @@ const linkedDataLabel = computed(() => {
   // No active sheet yet — fall back to the project's total.
   const total = projectStore.currentProject?.experiment_count ?? 0;
   return total > 0 ? `${total} in project` : "No linked datasets";
+});
+
+const boundPortfolios = computed(() =>
+  nodes.value
+    .filter(
+      (node) =>
+        node.type === "data.collection_load" ||
+        (node.type === "data.load_group" && node.params.source_mode === "experiment_collection"),
+    )
+    .map((node) => {
+      const params = node.params;
+      const authority = params.target_authority as { column?: string } | null;
+      const files = Array.isArray(params.selected_file_ids) ? params.selected_file_ids : [];
+      return {
+        name: String(params.group_title || node.label || "Unnamed portfolio"),
+        detail: portfolioDetail(
+          files.length || null,
+          authority?.column,
+          params.group_column,
+        ),
+      };
+    }),
+);
+const portfolioName = computed(() =>
+  pendingDataSelection.value
+    ? linkedDataLabel.value
+    : boundPortfolios.value.length
+      ? boundPortfolios.value.map((item) => item.name).join(" + ")
+      : linkedDataLabel.value,
+);
+const portfolioSummary = computed(() => {
+  if (pendingDataSelection.value) {
+    const receipt = dataSelectionReceipt.value;
+    if (!receipt) return "Choose a selection in My Dataset";
+    return (
+      "Pending binding · " +
+      portfolioDetail(
+        dataSelectionFileCount.value,
+        receipt.target_authority?.column,
+        receipt.group,
+      )
+    );
+  }
+  return (
+    boundPortfolios.value.map((item) => item.detail).join("; ") ||
+    "Inspect source nodes for selection details"
+  );
+});
+const sheetCreationTime = computed(() => {
+  const created = workbookStore.activeSheet?.createdAt;
+  return created ? formatTimestamp(created) : "Not recorded";
 });
 
 const canvasSummaryLabel = computed(() => {
@@ -1801,6 +1914,8 @@ const addWorkbookSheet = async () => {
   try {
     await workbookStore.addSheet();
     resetCanvasUi();
+    const query = activeWorkflowQuery(route.query, workbookStore.projectId, workbookStore.activeSheet?.workflowId ?? null);
+    if (query) await router.replace({ query });
   } catch (err: unknown) {
     toast.add({
       severity: "error",
@@ -1815,6 +1930,8 @@ const duplicateWorkbookSheet = async (workflowId: number) => {
   try {
     await workbookStore.duplicateSheet(workflowId);
     resetCanvasUi();
+    const query = activeWorkflowQuery(route.query, workbookStore.projectId, workbookStore.activeSheet?.workflowId ?? null);
+    if (query) await router.replace({ query });
   } catch (err: unknown) {
     toast.add({
       severity: "error",
@@ -2098,16 +2215,18 @@ const actionMenuItems = computed(() => [
     disabled: isTrialTabActive.value,
     items: exportMenuItems.value,
   },
-  {
+  ...(!["demo", "pro"].includes(appConfig.value?.siteProfile || "")
+    && (appConfig.value?.audit?.localQuery || appConfig.value?.audit?.fullPipeline) ? [{
     label: "Audit",
     icon: "pi pi-shield",
     disabled: isTrialTabActive.value || workflowStore.workflowId === null,
     command: openWorkflowAudit,
-  },
+  }] : []),
 ]);
 
 const openWorkflowAudit = () => {
-  if (workflowStore.workflowId === null) return;
+  if (workflowStore.workflowId === null || ["demo", "pro"].includes(appConfig.value?.siteProfile || "")
+    || !(appConfig.value?.audit?.localQuery || appConfig.value?.audit?.fullPipeline)) return;
   void router.push({
     path: "/audit",
     query: {
@@ -2325,12 +2444,13 @@ const onAddNode = (nodeType: string) => {
   const newNode: WorkflowNode = {
     id: createNodeId(nodeType),
     type: nodeType,
-    x: 100 + ((workflowStore.nodes.length * 40) % 400),
-    y: 100 + Math.floor(workflowStore.nodes.length / 4) * 120,
+    x: workflowStore.nodes.length ? Math.max(...workflowStore.nodes.map(node => node.x)) + 280 : 100,
+    y: 100,
     params: getDefaultParams(nodeType),
   };
   workflowStore.addNode(newNode);
   selectedNode.value = newNode;
+  void nextTick(() => canvasRef.value?.centerNode?.(newNode.id));
 };
 
 const getDefaultParams = (nodeType: string): ParamsMap => {
@@ -2520,7 +2640,7 @@ const onDeleteNode = (nodeId: string) => {
 }
 
 :global(.content:has(.workflow-builder-content)) {
-  background: #e4e0fa;
+  background: var(--workspace-background);
 }
 
 .section-title-row {
@@ -2714,6 +2834,7 @@ const onDeleteNode = (nodeId: string) => {
 
 .workflow-workspace {
   display: grid;
+  --inspector-min: 320px;
   grid-template-columns: 200px 1fr;
   gap: 16px;
   flex: 1;
@@ -2727,7 +2848,7 @@ const onDeleteNode = (nodeId: string) => {
 
 /* Three-column layout when inspector is open */
 .workflow-workspace.inspector-open {
-  grid-template-columns: 200px 1fr 320px;
+  grid-template-columns: 200px 1fr calc(var(--inspector-min) * var(--inspector-scale, 1));
 }
 
 /* The canonical catalog carries complete scientific detail and therefore
@@ -2737,7 +2858,7 @@ const onDeleteNode = (nodeId: string) => {
 }
 
 .workflow-workspace.catalog-open.inspector-open:not(.toolbar-collapsed) {
-  grid-template-columns: minmax(340px, 30vw) 1fr 320px;
+  grid-template-columns: minmax(340px, 30vw) 1fr calc(var(--inspector-min) * var(--inspector-scale, 1));
 }
 
 /* Collapsed toolbar: shrink the left column to just the chevron strip. */
@@ -2746,7 +2867,7 @@ const onDeleteNode = (nodeId: string) => {
 }
 
 .workflow-workspace.toolbar-collapsed.inspector-open {
-  grid-template-columns: 44px 1fr 320px;
+  grid-template-columns: 44px 1fr calc(var(--inspector-min) * var(--inspector-scale, 1));
 }
 
 /* Trial active: canvas-stack is the only visible item — collapse to a single
@@ -2881,18 +3002,20 @@ const onDeleteNode = (nodeId: string) => {
 }
 
 @media (max-width: 1200px) {
+  .workflow-workspace { --inspector-min: 280px; }
   .workflow-workspace.inspector-open {
-    grid-template-columns: 180px 1fr 280px;
+    grid-template-columns: 180px 1fr calc(var(--inspector-min) * var(--inspector-scale, 1));
   }
   .workflow-workspace.toolbar-collapsed.inspector-open {
-    grid-template-columns: 44px 1fr 280px;
+    grid-template-columns: 44px 1fr calc(var(--inspector-min) * var(--inspector-scale, 1));
   }
   .workflow-workspace.catalog-open.inspector-open:not(.toolbar-collapsed) {
-    grid-template-columns: 320px 1fr 280px;
+    grid-template-columns: 320px 1fr calc(var(--inspector-min) * var(--inspector-scale, 1));
   }
 }
 
 @media (max-width: 900px) {
+  .workflow-workspace { --inspector-min: 260px; }
 
   .workflow-workspace {
     grid-template-columns: minmax(120px, 180px) minmax(120px, 1fr);
@@ -2900,7 +3023,7 @@ const onDeleteNode = (nodeId: string) => {
   }
 
   .workflow-workspace.inspector-open {
-    grid-template-columns: minmax(120px, 180px) minmax(120px, 1fr) 260px;
+    grid-template-columns: minmax(120px, 180px) minmax(120px, 1fr) calc(var(--inspector-min) * var(--inspector-scale, 1));
   }
 
   .workflow-workspace.toolbar-collapsed {
@@ -2908,7 +3031,7 @@ const onDeleteNode = (nodeId: string) => {
   }
 
   .workflow-workspace.toolbar-collapsed.inspector-open {
-    grid-template-columns: 44px minmax(120px, 1fr) 260px;
+    grid-template-columns: 44px minmax(120px, 1fr) calc(var(--inspector-min) * var(--inspector-scale, 1));
   }
 
   .workflow-workspace.catalog-open:not(.toolbar-collapsed),
@@ -2917,7 +3040,7 @@ const onDeleteNode = (nodeId: string) => {
   }
 
   .workflow-workspace.catalog-open.inspector-open:not(.toolbar-collapsed) {
-    grid-template-columns: minmax(220px, 280px) minmax(120px, 1fr) 260px;
+    grid-template-columns: minmax(220px, 280px) minmax(120px, 1fr) calc(var(--inspector-min) * var(--inspector-scale, 1));
   }
 }
 

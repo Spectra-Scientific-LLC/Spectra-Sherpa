@@ -381,6 +381,14 @@ async def current_project_provenance(
                 )
             ),
             source_run_id=model.source_run_id,
+            artifact_integrity={
+                "state": "healthy" if artifact_verified else "faulty",
+                "detail": (
+                    "Stored model integrity verified."
+                    if artifact_verified
+                    else "Stored model is inactive or its integrity could not be verified."
+                ),
+            },
         )
 
     imported = await session.scalar(

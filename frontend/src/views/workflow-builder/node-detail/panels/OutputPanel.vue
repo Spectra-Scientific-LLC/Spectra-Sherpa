@@ -54,17 +54,11 @@
             <template v-if="evaluationAuthority">
               <div class="info-item evaluation-authority-item">
                 <label>Evaluation Scope</label>
-                <span>
-                  {{ evaluationAuthority.roleLabel }}
-                  <code class="authority-code">{{ evaluationAuthority.role }}</code>
-                </span>
+                <span :title="evaluationAuthority.role">{{ evaluationAuthority.roleLabel }}</span>
               </div>
               <div class="info-item evaluation-authority-item">
                 <label>Lineage Qualification</label>
-                <span>
-                  {{ evaluationAuthority.qualificationLabel }}
-                  <code class="authority-code">{{ evaluationAuthority.qualification }}</code>
-                </span>
+                <span :title="evaluationAuthority.qualification">{{ evaluationAuthority.qualificationLabel }}</span>
               </div>
               <div
                 v-if="evaluationAuthority.population"
@@ -375,6 +369,7 @@
             </button>
             <div v-if="outputSubsections.quality" class="inspector-grid">
               <div v-if="qualitySummary.qualification" class="inspector-item wide">{{ qualitySummary.qualification }}</div>
+              <p class="inspector-item wide" role="note">{{ scientificProtocolLabel(metricContext) }}</p>
               <!-- Regression-specific controls -->
               <div
                 v-if="isRegressionComparison && regressionTargetOptions.length > 1"
@@ -398,7 +393,7 @@
                 <span class="insp-value">{{ scientificNumber(Number(qualitySummary.latest_r2), { decimalPlaces: 4 }) }}</span>
               </div>
               <div v-if="qualitySummary.latest_rmse != null" class="inspector-item">
-                <span class="insp-label">RMSE</span>
+                <span class="insp-label">{{ scientificErrorMetricLabel('latest_rmse', metricContext, 'RMSE') }}</span>
                 <span class="insp-value">{{ scientificNumber(Number(qualitySummary.latest_rmse), { decimalPlaces: 4 }) }}</span>
               </div>
               <div v-if="selectedRegressionR2 != null" class="inspector-item">
@@ -406,13 +401,14 @@
                 <span class="insp-value">{{ scientificNumber(Number(selectedRegressionR2), { decimalPlaces: 4 }) }}</span>
               </div>
               <div v-if="selectedRegressionRmse != null" class="inspector-item">
-                <span class="insp-label">Selected RMSE</span>
+                <span class="insp-label">{{ scientificErrorMetricLabel('rmse', selectedMetricContext, 'Selected RMSE') }}</span>
                 <span class="insp-value">{{ scientificNumber(Number(selectedRegressionRmse), { decimalPlaces: 4 }) }}</span>
               </div>
               <div v-if="qualitySummary.n_evaluations" class="inspector-item">
                 <span class="insp-label">Evaluations</span>
                 <span class="insp-value">{{ qualitySummary.n_evaluations }}</span>
               </div>
+              <p v-for="note in scientificMetricNotes(qualitySummary.extras)" :key="note" role="note">{{ note }}</p>
               <!-- Generic quality_summary rendering for non-regression nodes -->
               <template v-for="(val, key) in qualitySummary.extras" :key="String(key)">
                 <div
@@ -421,7 +417,10 @@
                   :class="{ wide: Array.isArray(val) }"
                 >
                   <span class="insp-label">{{ formatQualityLabel(String(key)) }}</span>
-                  <span class="insp-value">{{ formatQualityValue(val) }}</span>
+                  <span v-if="Array.isArray(val) && /_per_(target|response)$/.test(String(key))" class="insp-value">
+                    <span v-for="(value, index) in val" :key="index">{{ scientificErrorMetricLabel(String(key), scientificTargetMetricContext(metricContext, index), `Target ${index + 1}`) }}: {{ formatQualityValue(value) }}{{ index < val.length - 1 ? '; ' : '' }}</span>
+                  </span>
+                  <span v-else class="insp-value">{{ formatQualityValue(val) }}</span>
                 </div>
               </template>
             </div>
@@ -502,7 +501,7 @@
                 </div>
                 <div class="model-artifact__actions">
                   <Button
-                    label="Open in Runs › Artifacts"
+                    label="Open in Runs › Models"
                     icon="pi pi-external-link"
                     iconPos="right"
                     class="p-button-text p-button-sm"
@@ -645,6 +644,7 @@ import Dropdown from "primevue/dropdown";
 import api from "@/api/client";
 import { collectCanonicalClassificationMetrics } from "@/utils/classificationMetrics";
 import { getErrorMessage } from "@/utils/errors";
+import { evaluationRoleLabel, scientificMetricNotes, scientificErrorMetricLabel, scientificProtocolLabel, scientificTargetMetricContext } from "@/utils/scientificDisplay";
 import type { OutputSubsection } from "../composables/useNodeSections";
 import { NODE_DETAIL_STATE_KEY } from "../state/useNodeDetailState";
 
@@ -684,6 +684,8 @@ const labelPreviewLimit = output.labelPreviewLimit;
 const processingHistory = output.processingHistory;
 const provenanceInfo = output.provenance;
 const qualitySummary = output.quality;
+const metricContext = computed(() => ({ ...outputMetadata.value, ...qualitySummary.value?.extras }));
+const selectedMetricContext = computed(() => scientificTargetMetricContext(metricContext.value, writable.regressionTargetIdx.value));
 const presentationOptions = output.presentationOptions;
 const presentationError = output.presentationError;
 const isRegressionComparison = output.isRegressionComparison;
@@ -726,7 +728,7 @@ const evaluationAuthority = computed(() => {
     : "";
   return {
     role,
-    roleLabel: authorityLabel(role),
+    roleLabel: evaluationRoleLabel(role),
     qualification,
     qualificationLabel: authorityLabel(qualification),
     population: populationPath(authority.population),
@@ -811,7 +813,7 @@ const artifactHeadlineMetric = computed<{ label: string; value: string } | null>
         Math.abs(value) >= 10
           ? value.toFixed(2)
           : value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
-      return { label, value: formatted };
+      return { label: `${scientificErrorMetricLabel(key, metrics, label)} · ${scientificProtocolLabel(metrics)}`, value: formatted };
     }
   }
   return null;
@@ -924,8 +926,8 @@ const QUALITY_LABEL_MAP: Record<string, string> = {
   residual_rms: "Residual RMS",
 };
 
-const formatQualityLabel = (key: string): string =>
-  QUALITY_LABEL_MAP[key] || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const formatQualityLabel = (key: string): string => scientificErrorMetricLabel(key, metricContext.value,
+  QUALITY_LABEL_MAP[key] || key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()));
 
 const formatQualityValue = (val: unknown): string => {
   if (val == null) return "\u2014";
@@ -1018,9 +1020,9 @@ const regressionTargetIdx = writable.regressionTargetIdx;
 .empty-section {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   padding: 40px 20px;
-  text-align: center;
+  text-align: left;
   color: #64748b;
 }
 .empty-section i {
@@ -1068,13 +1070,6 @@ const regressionTargetIdx = writable.regressionTargetIdx;
 }
 .evaluation-authority-item {
   border: 1px solid #334155;
-}
-.authority-code {
-  display: block;
-  margin-top: 3px;
-  color: #94a3b8;
-  font-size: 0.72rem;
-  font-weight: 500;
 }
 
 /* Inspector sections (coordinates / metadata / processing / provenance / quality / ports) */

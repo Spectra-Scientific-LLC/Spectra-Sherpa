@@ -91,6 +91,8 @@ class ActiveAttention(BaseModel):
     plot_id: str | None = Field(default=None, max_length=96, pattern=r"^[A-Za-z0-9_:.-]+$")
     plot_key: str | None = Field(default=None, max_length=96, pattern=r"^[A-Za-z0-9_:.-]+$")
     node_id: str | None = Field(default=None, max_length=96, pattern=r"^[A-Za-z0-9_:.-]+$")
+    workflow_id: int | None = Field(default=None, gt=0, strict=True)
+    run_id: int | None = Field(default=None, gt=0, strict=True)
     # Optimize focus: identifiers only; a hosted Advisor resolves them under
     # its own authorization. Local BYOK chat has no campaigns and ignores them.
     section: str | None = Field(default=None, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$")

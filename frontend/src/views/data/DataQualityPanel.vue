@@ -1,6 +1,6 @@
 <template>
   <div class="dq-panel">
-    <div class="dq-header">
+    <div v-if="showHeader" class="dq-header">
       <span v-if="priorityLabel" class="dq-priority-label">{{ priorityLabel }}</span>
       <i v-else class="pi pi-check-circle"></i>
       <span>Data Quality Summary</span>
@@ -111,8 +111,9 @@ const props = withDefaults(
     loading?: boolean;
     priorityLabel?: string;
     selectedRowIndexes?: number[] | null;
+    showHeader?: boolean;
   }>(),
-  { loading: false, priorityLabel: "", selectedRowIndexes: null },
+  { loading: false, priorityLabel: "", selectedRowIndexes: null, showHeader: true },
 );
 
 function selectedRows<T>(rows: T[]): T[] {
@@ -369,11 +370,11 @@ const qcFlags = computed<QcFlag[]>(() => {
 .dq-empty {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 24px;
   color: #94a3b8;
-  text-align: center;
+  text-align: left;
   font-size: 0.9rem;
 }
 

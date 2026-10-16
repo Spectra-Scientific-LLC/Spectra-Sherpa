@@ -867,6 +867,46 @@ def test_phase7_ast_gate_accepts_the_current_repository() -> None:
     assert gate.scan_repository() == []
 
 
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (
+            "extract = extract_cls.from_artifact(manifest, arrays)",
+            "extract = extract_cls.from_artifact(manifest, arrays); "
+            "other = extract_cls.from_artifact(manifest, arrays)",
+            "bridge conversion is outside the closed inventory",
+        ),
+        (
+            "extract = extract_cls.from_artifact(manifest, arrays)",
+            "extract = None",
+            "bridge conversion inventory entry is stale or missing",
+        ),
+        (
+            "extract = extract_cls.from_artifact(manifest, arrays)",
+            "extract = extract_cls.from_artifact(manifest, arrays); node.fit_fitted_state(dataset)",
+            "fitted-node lifecycle callsite is outside the closed inventory",
+        ),
+    ],
+)
+def test_batch_preflight_retains_closed_state_conversion_inventory(tmp_path, old, new, message):
+    package_root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "check_plsda_execution_path", package_root / "tools/check_plsda_execution_path.py"
+    )
+    assert spec is not None and spec.loader is not None
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    relative = Path("packages/spectra-sherpa/src/spectra_sherpa/app/services/model_application.py")
+    source = (package_root / "src/spectra_sherpa/app/services/model_application.py").read_text()
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True)
+    path.write_text(source)
+    assert gate.scan_python_path(path, root=tmp_path) == []
+    assert source.count(old) == 1
+    path.write_text(source.replace(old, new))
+    assert any(message in item for item in gate.scan_python_path(path, root=tmp_path))
+
+
 def test_phase8_bridge_gate_rejects_manual_state_mapping(
     tmp_path: Path,
 ) -> None:
@@ -1071,3 +1111,43 @@ def test_public_plsda_starter_migrates_to_explicit_held_out_evaluation() -> None
     assert "split_method: stratified" in template
     assert "node_type: diagnostics.classification_evaluator" in template
     assert "cv_folds" not in template
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        (
+            "artifact = SherpaPLSDAArtifact.from_artifact(manifest, arrays)",
+            "artifact = SherpaPLSDAArtifact.from_artifact(manifest, arrays); "
+            "other = SherpaPLSDAArtifact.from_artifact(manifest, arrays)",
+            "bridge conversion is outside the closed inventory",
+        ),
+        (
+            "artifact = SherpaPLSDAArtifact.from_artifact(manifest, arrays)",
+            "artifact = None",
+            "bridge conversion inventory entry is stale or missing",
+        ),
+        (
+            "artifact = SherpaPLSDAArtifact.from_artifact(manifest, arrays)",
+            "artifact = SherpaPLSDAArtifact.from_artifact(manifest, arrays); node.fit_fitted_state(prepared)",
+            "fitted-node lifecycle callsite is outside the closed inventory",
+        ),
+    ],
+)
+def test_legacy_admission_has_only_one_read_only_conversion(tmp_path, old, new, message):
+    package_root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "check_plsda_execution_path", package_root / "tools/check_plsda_execution_path.py"
+    )
+    assert spec is not None and spec.loader is not None
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    relative = Path("packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/legacy_model_application.py")
+    source = (package_root / "src/spectra_sherpa/app/services/dag/legacy_model_application.py").read_text()
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True)
+    path.write_text(source)
+    assert gate.scan_python_path(path, root=tmp_path) == []
+    assert source.count(old) == 1
+    path.write_text(source.replace(old, new))
+    assert any(message in item for item in gate.scan_python_path(path, root=tmp_path))

@@ -20,14 +20,14 @@ describe("regression per-response metrics without aggregate fields", () => {
     const projection = useQuickPlotProjection(output, ref("model.pcr"));
     projection.selectedPlotKey.value = "regression";
     expect(JSON.stringify(projection.plotLayout.value.title)).toContain("CN");
-    expect(JSON.stringify(projection.plotLayout.value.title)).toContain("0.94");
+    expect(projection.plotLayout.value.meta.regression_metrics).toEqual({ r2: .94, rmse: .2 });
     projection.regressionTargetIdx.value = 1;
     await nextTick();
     const title = JSON.stringify(projection.plotLayout.value.title);
     expect(title).toContain("Density");
-    expect(title).toContain("0.001");
     expect(title).not.toContain("0.94");
     expect(title).not.toMatch(/R²\s*=\s*0/);
+    expect(projection.plotLayout.value.meta.regression_metrics).toEqual({ r2: null, rmse: .001 });
     expect(projection.plotData.value.length).toBeGreaterThan(0);
   });
 });

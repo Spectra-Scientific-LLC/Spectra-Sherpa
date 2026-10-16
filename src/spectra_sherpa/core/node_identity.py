@@ -14,6 +14,8 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
+from spectra_sherpa.core.contract_compatibility import saved_state_predecessor_is_compatible
+
 SERIALIZED_NODE_TYPE_ALIASES: Mapping[str, str] = {
     "model.fitted_pls_v2": "model.fitted_pls",
     "model.apply_fitted_pls_v2": "model.apply_fitted_pls",
@@ -44,13 +46,23 @@ def node_contract_digest_is_compatible(
     serialized_digest: object,
     current_digest: str,
 ) -> bool:
-    """Admit an exact identity-only predecessor without mutating artifacts."""
+    """Admit an exact saved-state predecessor without mutating artifacts.
 
-    return serialized_digest == current_digest or (
-        canonical_node_type(node_type) == "model.fitted_pls"
-        and isinstance(serialized_digest, str)
-        and current_digest == "87a0e85157f008126f53af7f8945c7e730535431f866df628e9a226532440ff6"
-        and serialized_digest in LEGACY_FITTED_PLS_CONTRACT_DIGESTS
+    This predicate is application-only. It must not be used to re-admit a
+    historical graph for fitting or to equate old and current evidence.
+    """
+
+    return (
+        serialized_digest == current_digest
+        or saved_state_predecessor_is_compatible(
+            serialized_digest, current_digest, operation_id=canonical_node_type(node_type)
+        )
+        or (
+            canonical_node_type(node_type) == "model.fitted_pls"
+            and isinstance(serialized_digest, str)
+            and current_digest == "87a0e85157f008126f53af7f8945c7e730535431f866df628e9a226532440ff6"
+            and serialized_digest in LEGACY_FITTED_PLS_CONTRACT_DIGESTS
+        )
     )
 
 

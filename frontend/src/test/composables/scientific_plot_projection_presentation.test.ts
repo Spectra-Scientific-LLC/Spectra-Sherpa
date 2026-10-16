@@ -145,6 +145,104 @@ describe("canonical scientific presentation projection", () => {
     expect(plot.plotData.value[0]).toMatchObject({ x: [1, 4], y: [3, 6] });
   });
 
+  it("renders PCA variable correlations on an equal-scale unit circle with exact labels", () => {
+    const output = projectedOutput("pca_variable_correlations", [
+      [0.8, -0.4, 0],
+      [0.3, 0.9, 0],
+      [-0.2, 0.1, 0],
+    ]) as any;
+    output.metadata = {
+      ...output.metadata,
+      pc_labels: ["PC1 (60.0%)", "PC2 (30.0%)", "PC3 (10.0%)"],
+      feature_names: ["Age", "Waist", "Constant"],
+      undefined_feature_indices: [2],
+    };
+    const plot = useQuickPlotProjection(ref(output), ref("model.pca"));
+    expect(plot.availablePlots.value).toEqual([
+      { key: "scientific_pca_variable_correlations", label: "Variable Correlations" },
+    ]);
+    expect(plot.showAxisControls.value).toBe(true);
+    expect(plot.plotData.value[1].customdata).toEqual([
+      ["Waist", -0.4, 0.9],
+      ["Age", 0.8, 0.3],
+    ]);
+    expect(plot.plotLayout.value.annotations).toHaveLength(2);
+    expect(plot.plotLayout.value.yaxis).toMatchObject({ scaleanchor: "x", range: [-1.12, 1.12] });
+    expect(plot.plotLayout.value.xaxis.title).toBe("r(variable, PC1)");
+    plot.yAxis.value = 2;
+    expect(plot.plotData.value[1].customdata).toEqual([
+      ["Age", 0.8, -0.2],
+      ["Waist", -0.4, 0.1],
+    ]);
+  });
+
+  it("offers the correlation circle directly from the PCA score quick plot when its port is retained", () => {
+    const output = projectedOutput("pca_scores", [[1, 2], [3, 4]]) as any;
+    output.presentation_contract.payload.presentations = [{
+      presentation_id: "variable_correlations",
+      kind: "pca_variable_correlations",
+      source_ports: ["variable_correlations"],
+    }];
+    output.metadata = {
+      ...output.metadata,
+      pc_labels: ["PC1 (70.0%)", "PC2 (20.0%)"],
+      explained_variance_ratio: [0.7, 0.2],
+    };
+    output.ports = {
+      variable_correlations: {
+        data: [[0.8, -0.4], [0.3, 0.9]],
+        metadata: { undefined_feature_indices: [], feature_names: ["Age", "Waist"] },
+      },
+      explained_variance: { data: [0.7, 0.2], metadata: {} },
+    };
+    const plot = useQuickPlotProjection(ref(output), ref("model.pca"));
+    expect(plot.availablePlots.value).toEqual([
+      { key: "scientific_pca_summary", label: "PCA Summary" },
+      { key: "scientific_pca_scores", label: "PCA Score Map" },
+      { key: "scientific_pca_variable_correlations", label: "Variable Correlations" },
+    ]);
+    expect(plot.plotData.value).toHaveLength(5);
+    expect(plot.plotLayout.value.xaxis3.range).toEqual([-1.12, 1.12]);
+    expect(plot.plotLayout.value.xaxis2.title).toBe("PC1 (70.0%)");
+    expect(plot.plotLayout.value.xaxis3.title).toBe("r(variable, PC1)");
+    expect(plot.plotLayout.value.yaxis3.title).toBe("r(variable, PC2)");
+    expect(plot.plotLayout.value.yaxis3.scaleanchor).toBe("x3");
+    expect(plot.plotLayout.value.annotations).toHaveLength(2);
+    plot.selectedPlotKey.value = "scientific_pca_variable_correlations";
+    expect(plot.plotData.value[1].customdata).toContainEqual(["Age", 0.8, 0.3]);
+    expect(plot.plotData.value[1].hovertemplate).toContain("Correlation with PC1");
+    expect(plot.plotLayout.value.xaxis.title).toBe("r(variable, PC1)");
+    expect(plot.plotLayout.value.annotations).toHaveLength(2);
+  });
+
+  it("shows one-component correlations without inventing a second PCA axis", () => {
+    const output = projectedOutput("pca_variable_correlations", [[0.8, -0.4]]) as any;
+    output.metadata = { ...output.metadata, pc_labels: ["PC1 (100%)"], feature_names: ["Age", "Waist"] };
+    const plot = useQuickPlotProjection(ref(output), ref("model.pca"));
+    expect(plot.plotData.value).toHaveLength(1);
+    expect(plot.plotData.value[0]).toMatchObject({ type: "bar", orientation: "h" });
+    expect(plot.plotLayout.value.xaxis.range).toEqual([-1, 1]);
+  });
+
+  it("keeps one PCA summary title and uses hover for the unlabeled variance axis", () => {
+    const output = projectedOutput("pca_scores", [[1, 2], [3, 4]]) as any;
+    output.presentation_contract.payload.presentations = [{
+      presentation_id: "variable_correlations", kind: "pca_variable_correlations",
+      source_ports: ["variable_correlations"],
+    }];
+    output.metadata = { ...output.metadata, pc_labels: ["PC1", "PC2"], explained_variance_ratio: [0.7, 0.3] };
+    output.ports = {
+      variable_correlations: {
+        data: [Array.from({ length: 90 }, (_, i) => i / 100), Array(90).fill(0)], metadata: {},
+      },
+      explained_variance: { data: [0.7, 0.3], metadata: {} },
+    };
+    const plot = useQuickPlotProjection(ref(output), ref("model.pca"));
+    expect(plot.plotLayout.value.title).toBe("PCA Summary");
+    expect(plot.plotLayout.value.yaxis.visible).toBe(false);
+    expect(plot.plotData.value[0].hovertemplate).toContain("%{x}");
+  });
+
   it("groups PCA scores by persisted classes while retaining sample IDs", () => {
     const output = projectedOutput("pca_scores", [
       [1, 2],
@@ -204,6 +302,26 @@ describe("canonical scientific presentation projection", () => {
       (count: number, trace: any) => count + trace.x.length,
       0,
     )).toBe(4);
+  });
+
+  it("styles a PCA score map by categorical target independently in color and symbol", () => {
+    const scores = [[1, 2], [3, 4], [5, 6]];
+    const output = projectedOutput("pca_scores", scores) as any;
+    const wire = { data: scores, y_axis: { labels: ["iris-1", "iris-2", "iris-3"] },
+      target_context: { target_type: "categorical", target_name: "Target" },
+      target: [0, 1, 2] };
+    output.primary_port = "scores";
+    output.ports = { scores: { value: wire } };
+    const plot = useQuickPlotProjection(ref(output), ref("model.pca"));
+    expect(plot.sampleColorFieldOptions.value).toContainEqual({ label: "None", value: "__none__" });
+    expect(plot.sampleSymbolFieldOptions.value).toContainEqual({ label: "Response: Target", value: "Response: Target" });
+    plot.sampleColorField.value = "__none__";
+    plot.sampleSymbolField.value = "Response: Target";
+    expect(plot.plotData.value[0].marker.symbol).toEqual(["circle", "diamond", "square"]);
+    expect(plot.plotData.value[0].marker.color).toBe("#3b82f6");
+    plot.sampleColorField.value = "Response: Target";
+    expect(plot.plotData.value.slice(0, 3).map((trace: any) => trace.marker.symbol[0]))
+      .toEqual(["circle", "diamond", "square"]);
   });
 
   it("falls back to one complete PCA score trace when declared classes lack assignments", () => {
@@ -784,6 +902,19 @@ describe("canonical scientific presentation projection", () => {
       rowLabel: "spectra",
       colLabel: "peak detections",
     });
+  });
+
+  it("renders a declared MLR effect summary without node-name heuristics", () => {
+    const output = projectedOutput("visualization", [], {
+      data: [{ type: "bar", orientation: "h", x: [0.599, 13.878, 25.646], y: ["Protein", "Fat", "Tot Carbo"] }],
+      layout: { title: "MLR effect summary (training fit)", xaxis: { title: "Logworth −log10(p)" } },
+      metadata: { evidence_scope: "training_fit_only_not_predictive_validation" },
+    });
+    const plot = useQuickPlotProjection(ref(output), ref("model.linear_regression"));
+
+    expect(plot.availablePlots.value).toEqual([{ key: "scientific_visualization", label: "Visualization" }]);
+    expect(plot.plotData.value[0]).toMatchObject({ type: "bar", x: [0.599, 13.878, 25.646] });
+    expect(plot.plotLayout.value.xaxis).toMatchObject({ title: { text: "Logworth −log10(p)" } });
   });
 
   it("reports grouped Plotly scores as series and total observations", () => {

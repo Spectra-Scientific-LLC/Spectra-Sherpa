@@ -1,10 +1,10 @@
 <template>
-  <section class="qualification-panel">
-    <h3>Analytical qualification</h3>
+  <section class="qualification-panel" :class="{ 'qualification-panel--embedded': headingless }">
+    <h3 v-if="!headingless">Analytical qualification</h3>
     <p>Deploy-ready means operational readiness. Intended-use acceptance requires separate validation and human review. No ASTM or regulatory compliance is implied.</p>
     <p v-if="error" role="alert">{{ error }}</p>
-    <button v-if="error" type="button" :disabled="busy" @click="loadHistory">Retry</button>
-    <button type="button" :disabled="!records.length || busy" @click="download">Export complete evidence history</button>
+    <button v-if="error" type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy" @click="loadHistory">Retry</button>
+    <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="!records.length || busy" @click="download">Export complete evidence history</button>
     <p v-if="!records.length && !busy">No qualification assessment is retained for this workflow.</p>
     <article v-for="record in records" :key="record.record_digest">
       <h4>{{ record.kind === 'assessment' ? record.payload.assessment : record.payload.decision }}</h4>
@@ -19,7 +19,7 @@
         {{ record.payload.calculation.independence.limitation }}
       </p>
       <details><summary>Exact retained evidence and assumptions</summary><pre>{{ JSON.stringify(record.payload, null, 2) }}</pre></details>
-      <button v-if="record.kind === 'assessment'" type="button" :disabled="busy" @click="selectReview(record)">Review this assessment</button>
+      <button v-if="record.kind === 'assessment'" type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy" @click="selectReview(record)">Review this assessment</button>
     </article>
     <fieldset v-if="review">
       <legend>Human decision for {{ review.record_digest }}</legend>
@@ -28,9 +28,9 @@
       <p>Instrument: {{ review.payload.context.instrument_id || 'Unavailable' }}</p>
       <label><input v-model="acceptContext" type="checkbox" /> I reviewed this exact policy, intended use, reference method and instrument assumptions.</label>
       <label>Review reason <textarea v-model="reason" /></label>
-      <button type="button" :disabled="busy || !acceptContext || !reason.trim() || review.payload.assessment !== 'criteria_met'" @click="decide('accepted_under_declared_policy')">Accept under declared policy</button>
-      <button type="button" :disabled="busy || !reason.trim()" @click="decide('rejected')">Reject</button>
-      <button type="button" :disabled="busy || !reason.trim()" @click="decide('pending')">Record pending review</button>
+      <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy || !acceptContext || !reason.trim() || review.payload.assessment !== 'criteria_met'" @click="decide('accepted_under_declared_policy')">Accept under declared policy</button>
+      <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy || !reason.trim()" @click="decide('rejected')">Reject</button>
+      <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy || !reason.trim()" @click="decide('pending')">Record pending review</button>
     </fieldset>
     <details v-if="canonicalArtifactId">
       <summary>Assess an independent validation cohort</summary>
@@ -43,7 +43,7 @@
       <label>Optional recorded independence evidence JSON <textarea v-model="independenceText" rows="5" placeholder="Specimen/batch IDs and their namespaces; blank retains declared or unknown status" /></label>
       <label>Optional interval calibration record JSON <textarea v-model="intervalText" rows="3" placeholder="Blank means interval evidence unavailable" /></label>
       <label><input v-model="allowExclusions" type="checkbox" /> Explicitly exclude missing reference rows and retain their identities and reasons. Infinite references and nonfinite predictors still refuse.</label>
-      <button type="button" :disabled="busy || !fileId || !policyText.trim() || !contextText.trim()" @click="assess">Execute frozen application and assess</button>
+      <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy || !fileId || !policyText.trim() || !contextText.trim()" @click="assess">Execute frozen application and assess</button>
     </details>
     <p v-else>Assessment execution currently requires an imported canonical PLS application. Saved-model readiness alone does not establish qualification.</p>
   </section>
@@ -53,7 +53,8 @@ import { ref, watch, onMounted, onBeforeUnmount } from "vue";
 import api from "@/api/client";
 import type { ExperimentSummary, ExperimentFile } from "@/types";
 type RecordEntry = { kind: string; record_digest: string; context_digest: string | null; payload: Record<string, any> };
-const props = defineProps<{ workflowId: number; canonicalArtifactId?: number | null; projectId?: number | null }>();
+// `headingless` when a parent disclosure already names the section.
+const props = defineProps<{ workflowId: number; canonicalArtifactId?: number | null; projectId?: number | null; headingless?: boolean }>();
 const records = ref<RecordEntry[]>([]);
 const review = ref<RecordEntry | null>(null);
 const acceptContext = ref(false);
@@ -135,10 +136,15 @@ watch(() => [props.workflowId, props.canonicalArtifactId, props.projectId], asyn
 }, { immediate: true });
 </script>
 <style scoped>
-.qualification-panel { margin: 1rem 0; padding: 1rem; border: 1px solid var(--surface-border); }
+.qualification-panel { display: flex; flex-direction: column; align-items: flex-start; gap: .75rem; margin: 1rem 0; padding: 1rem; border: 1px solid var(--surface-border); border-radius: 8px; }
+.qualification-panel--embedded { margin: .75rem 0 0; padding: 0; border: 0; }
+.qualification-panel > * { margin: 0; }
+.qualification-panel p { line-height: 1.5; color: var(--text-color-secondary); }
+h3 { font-size: 1rem; }
 label { display: block; margin: .6rem 0; }
 textarea { display: block; width: 100%; }
 pre { overflow: auto; max-height: 24rem; white-space: pre-wrap; }
-button { margin: .3rem; }
-article { border-top: 1px solid var(--surface-border); margin-top: 1rem; }
+article, fieldset, details { align-self: stretch; }
+article { border-top: 1px solid var(--surface-border); padding-top: .75rem; }
+article button, fieldset button, details button { margin: .25rem .5rem .25rem 0; }
 </style>

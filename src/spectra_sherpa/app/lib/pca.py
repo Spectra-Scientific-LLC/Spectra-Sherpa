@@ -23,6 +23,9 @@ from typing import Any, ClassVar
 import numpy as np
 from sklearn.decomposition import PCA as SklearnPCA
 
+from spectra_sherpa.app.lib.numerical_scaling import unresolved_variation
+from spectra_sherpa.app.lib.pca_numerics import require_resolved_pca_eigenvalues
+
 
 def _finite_matrix(value: Any, *, name: str) -> np.ndarray:
     matrix = np.asarray(value, dtype=np.float64)
@@ -33,9 +36,9 @@ def _finite_matrix(value: Any, *, name: str) -> np.ndarray:
     return matrix
 
 
-def _safe_positive_scale(values: np.ndarray) -> np.ndarray:
+def _safe_positive_scale(values: np.ndarray, raw: np.ndarray) -> np.ndarray:
     scale = np.asarray(values, dtype=np.float64).reshape(-1).copy()
-    scale[(scale == 0.0) | ~np.isfinite(scale)] = 1.0
+    scale[unresolved_variation(raw, scale) | ~np.isfinite(scale)] = 1.0
     return scale
 
 
@@ -96,7 +99,7 @@ class PCAExtract:
         scale_mode: str | None = None
         if standardized:
             raw_mean = np.mean(raw, axis=0)
-            raw_scale = _safe_positive_scale(np.std(raw, axis=0))
+            raw_scale = _safe_positive_scale(np.std(raw, axis=0), raw)
             # Keep the two reference frames separate.  Folding sklearn's
             # standardized-space center into a large raw-space mean loses the
             # small correction through catastrophic cancellation.
@@ -106,7 +109,7 @@ class PCAExtract:
             scale_mode = "standard"
         elif scaled:
             offset = np.min(raw, axis=0)
-            scale = _safe_positive_scale(np.ptp(raw, axis=0))
+            scale = _safe_positive_scale(np.ptp(raw, axis=0), raw)
             center = model_mean
             scale_mode = "minmax"
         else:
@@ -250,14 +253,15 @@ def fit_pca(
     fit_matrix = raw
     if standardized:
         mean = np.mean(raw, axis=0)
-        scale = _safe_positive_scale(np.std(raw, axis=0))
+        scale = _safe_positive_scale(np.std(raw, axis=0), raw)
         fit_matrix = (raw - mean) / scale
     elif scaled:
         offset = np.min(raw, axis=0)
-        scale = _safe_positive_scale(np.ptp(raw, axis=0))
+        scale = _safe_positive_scale(np.ptp(raw, axis=0), raw)
         fit_matrix = (raw - offset) / scale
     model = SklearnPCA(n_components=n_components, svd_solver="full")
     scores = model.fit_transform(fit_matrix)
+    require_resolved_pca_eigenvalues(model.explained_variance_)
     return PCAExtract.from_sklearn(
         model,
         raw,

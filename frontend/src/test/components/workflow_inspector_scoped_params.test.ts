@@ -94,6 +94,25 @@ describe("WorkflowInspector method-scoped parameters", () => {
     params,
   });
 
+  it("loads late catalog defaults without discarding a scientist's edits", async () => {
+    const original = [...nodeMetadata.parameters];
+    nodeMetadata.parameters = [];
+    const wrapper = mountInspector();
+    try {
+      await wrapper.setProps({ selectedNode: { ...splitNode({}), type: "preprocess.derivative" } });
+      wrapper.vm.localParams.deriv = "2";
+      nodeMetadata.parameters = [
+        { name: "size", label: "Window Size", param_type: "number", default: 11, required: false },
+        { name: "order", label: "Polynomial Order", param_type: "number", default: 2, required: false },
+      ] as typeof nodeMetadata.parameters;
+      await wrapper.vm.$nextTick();
+      expect(wrapper.vm.localParams).toMatchObject({ size: 11, order: 2, deriv: "2" });
+    } finally {
+      wrapper.unmount();
+      nodeMetadata.parameters = original;
+    }
+  });
+
   it("refuses stratified splitting against an upstream continuous target", async () => {
     // The staging graph: a source declaring a continuous Moisture target feeds
     // the split node, exactly as the PLS calibration sheet wires it.

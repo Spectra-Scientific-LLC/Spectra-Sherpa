@@ -4,11 +4,26 @@ import api from "@/api/client";
 import { buildNodeOutput } from "./nodeOutput";
 import { availableScientificPresentations, projectScientificPresentation } from "./scientificPresentation";
 import { scientificPlotRefusal } from "./scientificPlotState";
+import { displayPlot } from "./displayPlot";
+import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
 import { useQuickPlotProjection } from "@/composables/useScientificPlotProjection";
 import type { RunReportData } from "@/stores/report";
 import type { ReportNodePlotSection } from "./reportNodePlots";
 
 type RenderPlot = (data: any[], layout: Record<string, any>) => Promise<string>;
+export function reportGroupKey(data: any[], layout: Record<string, any>): string {
+  if (!layout.showlegend) return "";
+  const groups = new Map<string, string>();
+  for (const trace of data) {
+    const name = typeof trace.name === "string" ? trace.name.trim() : "";
+    const color = typeof trace.marker?.color === "string" ? trace.marker.color : "";
+    if (trace.type === "scatter" && String(trace.mode || "").includes("markers") &&
+      trace.showlegend !== false && name && color) groups.set(name, color);
+  }
+  return groups.size >= 2 && groups.size <= 12
+    ? `Group color key: ${[...groups].map(([name, color]) => `${name} (${color})`).join("; ")}.`
+    : "";
+}
 async function renderPlot(data: any[], layout: Record<string, any>): Promise<string> {
   const module = await import("plotly.js-cartesian-dist-min");
   const Plotly = ((module as any).default ?? module) as {
@@ -100,10 +115,16 @@ export async function captureReportPlots(run: RunReportData, projectId: number, 
             if (images >= 200) { section.plots.push({ title, notice: "200-image per-run export limit reached; view remaining plots in Runs." }); continue; }
             images++;
             const meta = plots.plotLayout.value.meta ?? {};
+            const displayed = displayPlot(plots.plotData.value, plots.plotLayout.value, useDisplayPreferences());
+            const groupKey = reportGroupKey(displayed.data, displayed.layout);
             const notice = ["Saved-run projection; default displayed axes. No fitting or validation is rerun.",
+              displayed.omitted ? `${displayed.omitted} sample rows omitted from this report plot by the visual display limit; the retained run is complete.` : "",
+              groupKey,
               meta.display_population ? `Display population: ${JSON.stringify(meta.display_population)}` : "",
               meta.comparison_scale_notice ?? "", ...(meta.comparison_notices ?? [])].filter(Boolean).join(" ");
-            try { section.plots.push({ title, image: await render(plots.plotData.value, plots.plotLayout.value), notice }); }
+            // Report figures are static and already have a descriptive heading;
+            // long per-sample legends overflow the page without adding evidence.
+            try { section.plots.push({ title, image: await render(displayed.data, { ...displayed.layout, showlegend: false, legend: undefined }), notice }); }
             catch { section.plots.push({ title, notice: "Plot rendering failed; inspect this node in Runs." }); }
           }
         }

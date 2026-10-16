@@ -1,4 +1,6 @@
 import { sherpaResponseTimeoutMs } from "@/lib/sherpaTimeouts";
+import { streamLocalDataStory } from "@/lib/localDataStory";
+import { useAppConfig } from "@/composables/useAppConfig";
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";
@@ -121,6 +123,7 @@ export interface PreparedDataOverrides {
   data_role?: string | null;
   target_column?: string | null;
   target_type?: string | null;
+  assignment_column?: string | null;
   is_time_series?: boolean | null;
   csv_layout?: string | null;
 }
@@ -158,7 +161,9 @@ export interface CsvImportPlan {
     column?: string | null;
     type?: string | null;
     candidates?: string[];
+    selectable?: string[];
   };
+  assignment?: { column: string; training_label: string; validation_label: string } | null;
   columns: CsvImportColumnRole[];
   warnings: string[];
   recommended_layout?: string | null;
@@ -181,6 +186,7 @@ export type DataMatrixRef =
       experiment_id: number;
       file_id: number;
       asset_id?: string | null;
+      row_start?: number;
       overrides?: PreparedDataOverrides | null;
     };
 
@@ -549,6 +555,15 @@ export const useDataStore = defineStore("data", () => {
   const dataStoryMemoryScopes = ref<string[]>([]);
   const dataStoryLoading = ref(false);
   const dataStoryContext = ref("");
+  let dataStoryRequestVersion = 0;
+  let dataStoryAbort: AbortController | null = null;
+  const dataStoryCache = new Map<string, string>();
+  const rememberDataStory = (key: string | null | undefined, story: string) => {
+    if (!key || !story.trim()) return;
+    dataStoryCache.delete(key);
+    dataStoryCache.set(key, story);
+    if (dataStoryCache.size > 20) dataStoryCache.delete(dataStoryCache.keys().next().value!);
+  };
 
   // Computed
   const experimentDatasets = computed<ExperimentDataset[]>(
@@ -915,6 +930,7 @@ export const useDataStore = defineStore("data", () => {
     expectedRevision: string | null;
     selectedTarget: string;
     targetType: "continuous" | "categorical";
+    referenceDeclaration?: import("@/types").ReferenceValueDeclaration | null;
   }) => {
     const response = await api.post("/builder/analysis-binding", {
       source_file_id: payload.sourceFileId,
@@ -922,6 +938,7 @@ export const useDataStore = defineStore("data", () => {
       expected_revision: payload.expectedRevision,
       selected_target: payload.selectedTarget,
       target_type: payload.targetType,
+      reference_declaration: payload.referenceDeclaration ?? null,
     });
     return response.data;
   };
@@ -1141,16 +1158,69 @@ export const useDataStore = defineStore("data", () => {
     }
   };
 
-  const generateDataStory = async () => {
-    const datasetInfo = catalogDatasetInfo.value || fileInfo.value;
-    if (!datasetInfo) return;
+  const invalidateDataStory = () => {
+    dataStoryAbort?.abort();
+    dataStoryAbort = null;
+    dataStoryRequestVersion++;
+    dataStoryText.value = null;
+    dataStoryMemoryScopes.value = [];
+    dataStoryLoading.value = false;
+  };
+
+  const generateDataStory = async (
+    inspectedSource?: SherpaDatasetDict | null,
+    options?: { cacheKey?: string | null; force?: boolean },
+  ) => {
+    const cacheKey = options?.cacheKey;
+    if (cacheKey && !options?.force && dataStoryCache.has(cacheKey)) {
+      dataStoryAbort?.abort();
+      dataStoryAbort = null;
+      dataStoryRequestVersion++;
+      dataStoryText.value = dataStoryCache.get(cacheKey)!;
+      dataStoryMemoryScopes.value = [];
+      dataStoryLoading.value = false;
+      return;
+    }
+    if (cacheKey && options?.force) dataStoryCache.delete(cacheKey);
+    dataStoryAbort?.abort();
+    dataStoryAbort = null;
+    const requestVersion = ++dataStoryRequestVersion;
+    dataStoryLoading.value = true;
     try {
-      const { useSherpaStore } = await import("@/stores/sherpa");
-      const sherpa = useSherpaStore();
-      if (sherpa.isSyncing || sherpa.isChatting) {
+      // The caller supplies the already-parsed, unfiltered source inspection.
+      // Never start a separate file-info request for Data Story.
+      const datasetInfo = inspectedSource ?? catalogDatasetInfo.value ?? fileInfo.value;
+      if (requestVersion !== dataStoryRequestVersion || !datasetInfo) return;
+
+      const { appMode, isFeatureEnabled } = useAppConfig();
+      if (appMode.value === "local") {
+        if (!isFeatureEnabled("chatAssistant")) {
+          throw new Error("Configure a local chat endpoint in Settings to generate a Data Story.");
+        }
+        const controller = new AbortController();
+        dataStoryAbort = controller;
+        dataStoryText.value = "";
+        dataStoryMemoryScopes.value = [];
+        const result = await streamLocalDataStory(
+          datasetInfo as StoryObject,
+          dataStoryContext.value,
+          (chunk) => {
+            if (requestVersion === dataStoryRequestVersion) {
+              dataStoryText.value = `${dataStoryText.value ?? ""}${chunk}`;
+            }
+          },
+          controller.signal,
+        );
+        if (requestVersion === dataStoryRequestVersion) {
+          dataStoryText.value = result;
+          rememberDataStory(cacheKey, result);
+        }
         return;
       }
-      dataStoryLoading.value = true;
+
+      const { useSherpaStore } = await import("@/stores/sherpa");
+      const sherpa = useSherpaStore();
+      if (sherpa.isSyncing || sherpa.isChatting) return;
 
       // Use the Sherpa WS proxy path: entitlement-gated, server-side prompt/template
       const { useLlmStore } = await import("@/stores/llm");
@@ -1158,6 +1228,7 @@ export const useDataStore = defineStore("data", () => {
       const advisorStore = useAdvisorStore();
       const projectStore = useProjectStore();
       await llm.connect();
+      if (requestVersion !== dataStoryRequestVersion) return;
       const ws = llm.wsRef;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         throw new Error("WebSocket not connected. Try again in a moment.");
@@ -1190,6 +1261,11 @@ export const useDataStore = defineStore("data", () => {
 
         const unsubscribe = subscribeSherpaEvents(
           (payload) => {
+            if (requestVersion !== dataStoryRequestVersion) {
+              cleanup();
+              resolve("");
+              return;
+            }
             if (payload.type === SHERPA_WS_EVENT.dataStoryChunk) {
               // Stream chunks progressively into the UI
               dataStoryText.value = `${dataStoryText.value ?? ""}${typeof payload.text === "string" ? payload.text : ""}`;
@@ -1248,24 +1324,36 @@ export const useDataStore = defineStore("data", () => {
         );
       });
 
-      dataStoryText.value = result;
+      if (requestVersion === dataStoryRequestVersion) {
+        dataStoryText.value = result;
+        rememberDataStory(cacheKey, result);
+      }
     } catch (error: unknown) {
-      console.error("Failed to generate data story:", error);
-      dataStoryMemoryScopes.value = [];
-      dataStoryText.value = getErrorMessage(
-        error,
-        "Unable to generate data story. Check your LLM configuration.",
-      );
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      if (requestVersion === dataStoryRequestVersion) {
+        console.error("Failed to generate data story:", error);
+        dataStoryMemoryScopes.value = [];
+        dataStoryText.value = getErrorMessage(
+          error,
+          "Unable to generate data story. Check your LLM configuration.",
+        );
+      }
     } finally {
-      dataStoryLoading.value = false;
+      if (requestVersion === dataStoryRequestVersion) {
+        dataStoryAbort = null;
+        dataStoryLoading.value = false;
+      }
     }
   };
 
   const clearCatalogExploration = () => {
+    dataStoryRequestVersion++;
     catalogDatasetInfo.value = null;
     catalogDatasetError.value = null;
     dataStoryText.value = null;
     dataStoryMemoryScopes.value = [];
+    dataStoryLoading.value = false;
+    dataStoryContext.value = "";
   };
 
   return {
@@ -1299,6 +1387,7 @@ export const useDataStore = defineStore("data", () => {
     dataStoryMemoryScopes,
     dataStoryLoading,
     dataStoryContext,
+    invalidateDataStory,
     experimentDatasets,
     libraryDatasets,
 

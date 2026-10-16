@@ -1099,7 +1099,9 @@ async def test_portable_sample_table_lists_all_typed_targets(auth_client: AsyncC
 
 
 @pytest.mark.anyio
-async def test_bound_sample_table_csv_recomputes_and_persists_dataset_readiness(auth_client: AsyncClient):
+async def test_bound_sample_table_csv_recomputes_and_persists_dataset_readiness(
+    auth_client: AsyncClient, test_session, test_user
+):
     project = (await auth_client.post("/api/v1/projects", json={"name": "Readiness Project"})).json()
     experiment = (
         await auth_client.post(
@@ -1156,6 +1158,24 @@ async def test_bound_sample_table_csv_recomputes_and_persists_dataset_readiness(
     assert initial_revision.status_code == 200
     assert initial_revision.json() == {"revision": None}
 
+    reference_declaration = {
+        "schema_version": "spectrasherpa.reference-value-declaration/1",
+        "target_name": "moisture",
+        "target_type": "continuous",
+        "units": "wt %",
+        "method": {
+            "method_id": "oven-dry",
+            "version": "2",
+            "response_identity": {"names": ["moisture"], "units": ["wt %"]},
+            "measurement_basis": "single_measurement",
+            "measurements_per_label": 1,
+            "precision": None,
+        },
+        "provenance": "Laboratory worksheet 42",
+        "precision_study_provenance": None,
+        "replicate_evidence_digest": None,
+    }
+
     bind_response = await auth_client.post(
         "/api/v1/builder/analysis-binding",
         json={
@@ -1164,6 +1184,7 @@ async def test_bound_sample_table_csv_recomputes_and_persists_dataset_readiness(
             "expected_revision": None,
             "selected_target": "moisture",
             "target_type": "continuous",
+            "reference_declaration": reference_declaration,
         },
     )
     assert bind_response.status_code == 200, bind_response.text
@@ -1178,6 +1199,7 @@ async def test_bound_sample_table_csv_recomputes_and_persists_dataset_readiness(
     assert editor_payload["revision"] == binding_revision
     assert editor_payload["sample_table_file_id"] == table["id"]
     assert editor_payload["selected_target"] == "moisture"
+    assert editor_payload["reference_declaration"] == reference_declaration
     assert editor_payload["target_definitions"] == [
         {"name": "moisture", "type": "continuous"},
         {"name": "cultivar", "type": "categorical"},
@@ -1234,12 +1256,33 @@ async def test_bound_sample_table_csv_recomputes_and_persists_dataset_readiness(
             "sample_table_file_id": table["id"],
             "selected_target": "moisture",
             "target_type": "continuous",
+            "reference_declaration": reference_declaration,
         }
+        evidence = payload["target_context"]["reference_value_evidence"]
+        assert evidence["method"]["method_id"] == "oven-dry"
+        assert evidence["units"] == "wt %"
+        assert evidence["source_included_count"] == 2
+        assert evidence["missing_included_count"] == evidence["missing_excluded_count"] == 0
+        assert evidence["sample_table_file_id"] == table["id"]
+        assert evidence["qualification_gaps"] == ["Reference measurement precision is not recorded"]
         assert payload["analysis_readiness"]["scope"] == "structural"
         assert payload["analysis_readiness"]["profile"]["target_type"] == "continuous"
         assert payload["analysis_readiness"]["profile"]["target_fields"] == ["moisture"]
         assert payload["analysis_readiness"]["profile"]["group_fields"] == ["batch"]
         assert payload["analysis_readiness"]["template_count"] == sum(payload["analysis_readiness"]["counts"].values())
+
+    from spectra_sherpa.app.api.v1.routes.runs import ArtifactBatchRunRequest, RunDatasetRef, _load_batch_dataset
+
+    applied, _ = await _load_batch_dataset(
+        test_session,
+        test_user.id,
+        ArtifactBatchRunRequest(
+            artifact_uids=["model-under-test"],
+            dataset=RunDatasetRef(experiment_id=experiment["id"], file_id=source["id"]),
+        ),
+    )
+    assert applied.dataset.target_context.reference_value_evidence["method"]["method_id"] == "oven-dry"
+    assert applied.dataset.target_context.reference_value_evidence["sample_table_file_id"] == table["id"]
 
     rebound = await auth_client.post(
         "/api/v1/builder/analysis-binding",

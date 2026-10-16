@@ -1,0 +1,2486 @@
+{
+  "profile": {
+    "profile_id": "first_party_pls",
+    "profile_version": "8",
+    "profile_digest": "9f37d08a914c3e276859c0ba10b5d2187d5d5ba4ff85f6d00b35cba23e7369f4",
+    "operations": {
+      "baseline.penalized_ls": "b3b824ef38585a9f7e1e673f2369f03c3d2e4900028168f79948aa35592095da",
+      "classification.knn": "8cab952a6aa59bf4e90b8037514c668a5e4318a017f6a98f870ffd1a77c8850a",
+      "classification.plsda": "1875107445c8954ec79270de2b84c80507665cd069ea4558a9068fb2866c9cf7",
+      "classification.simca": "fcf0e470363f4723d5c9f7d23e3323575a12ee85d56c085f066340b565182d72",
+      "diagnostics.classification_evaluator": "38d89772f68ee55e8bd7fac80409dfde71da853312c403140bd97b06d917b763",
+      "diagnostics.regression_evaluator": "b501f52469d6ae7d36cc2b1624a3f5bbdfd07295c04ca328a455987bb7637e1d",
+      "model.fitted_linear_regression": "a9e3e8ccb5a2033be36d6691cb39a7ff2d2b5d28c821afbf91898e216fdff7ec",
+      "model.fitted_pcr": "f333f49d9791790f0713fbc18a97d046047dec80be538548df4ac887be7831cd",
+      "model.fitted_pls": "d16ff1db7d4b2b04d542bb170328f96ba8792c28509e0a77d1b7afe1a27484c0",
+      "model.fitted_svr": "ffc885761a0195064821e9a02dc0189cc1c90344d6ff022cd91d473298e51205",
+      "preprocess.derivative": "cdbe35f81e20b253160da8a2d8fb874bec806610e5340308a7b27afc7a2bc779",
+      "preprocess.emsc": "631c4572049eb1905849bf92a2ea724a431e4b5adb1784833e94f9f362440d16",
+      "preprocess.msc": "7ef892787a6eba403892932a0fe46be310cd018bd9b7b912c91cf9107dc8b808",
+      "preprocess.normalize": "bd82b536be57256c0c54233d85bb5c8206b93a4c670aca4e878b1c3be824180e",
+      "preprocess.osc": "19ec510ef691f65db64da1a42f54c15ceac38ad4bc4040d1eda127ce71c2b944",
+      "preprocess.scale": "15bce0eb5aa942173878a911a7eba23cd3638f59fe37aa3c0e54f90506ff7e91",
+      "preprocess.smooth": "4d405cdbf887713619a462b33e9c941a62abcd281176f590415c46bf606507b6",
+      "selection.variable_select": "343bc33ee9853bbd8fc52eacf913aa94f662307e393d4570cd42dd8dfc6f0528"
+    }
+  },
+  "contracts": {
+    "baseline.penalized_ls": {
+      "digest": "b3b824ef38585a9f7e1e673f2369f03c3d2e4900028168f79948aa35592095da",
+      "payload": {
+        "axis_effect": "preserves_axis",
+        "citations": [
+          "Eilers and Boelens, Baseline Correction with Asymmetric Least Squares Smoothing (2005)",
+          "Baek et al., Baseline correction using asymmetrically reweighted penalized least squares (2015)",
+          "Zhang et al., Baseline correction using adaptive iteratively reweighted penalized least squares (2010)"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "preserves_features",
+        "fitted_state_serializer": null,
+        "group_access": "none",
+        "help_reference": "docs/nodes/preprocessing.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scipy",
+            "digest": "d88916f242e7baf3ce52f236d852f242fe86c9e8f4d391c2a57ee2093bda6193"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing.penalized_baseline_node",
+            "digest": "e8f5645ac5b67386a77ea476f5d775bc9aecb85ed6f085315284602374fea39d"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.supervision_binding",
+            "digest": "9af12931b99408e6181935bf79e35df85a5c61cdbe1fa6be4fee87af58a13ff3"
+          }
+        ],
+        "implementation_digest": "218cfbd27030e5ad0c3cb2a23054269d7bfca2c55d78859a2ea21dd7980fa517",
+        "implementation_id": "spectrasherpa.baseline.penalized_ls",
+        "implementation_version": "1.0.1",
+        "input_rank_policy": "requires_2d",
+        "license_id": "Apache-2.0",
+        "lifecycle_kind": "stateless_transform",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "baseline.penalized_ls",
+        "parameter_schema_digest": "924123ae99dd641e3ab50b8df01dfa6458931b46cf6de9674fe618962676ba40",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 60,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 60
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scipy",
+            "version": "1.17.1"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "none",
+        "target_access": "none",
+        "unit_effect": "preserves_units"
+      }
+    },
+    "classification.knn": {
+      "digest": "8cab952a6aa59bf4e90b8037514c668a5e4318a017f6a98f870ffd1a77c8850a",
+      "payload": {
+        "axis_effect": "changes_axis",
+        "citations": [
+          "Cover & Hart, Nearest Neighbor Pattern Classification, IEEE Transactions on Information Theory 13 (1967) 21-27, DOI 10.1109/TIT.1967.1053964"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "generates_features",
+        "fitted_state_serializer": "spectrasherpa.model-artifact.knn/1",
+        "group_access": "none",
+        "help_reference": "docs/nodes/classification.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scikit-learn",
+            "digest": "dd3d7a7f417f922a34836ca450d2132fc95b981e4d71b99b1e3802af6e0db05f"
+          },
+          {
+            "component_id": "distribution.scipy",
+            "digest": "d88916f242e7baf3ce52f236d852f242fe86c9e8f4d391c2a57ee2093bda6193"
+          },
+          {
+            "component_id": "spectra_sherpa.app.lib.fitted_state",
+            "digest": "d40dfcb3fc6b92f591f975b02727b1961d3819984eb76b0a518573f1c7e52b9c"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.io_contracts",
+            "digest": "a31e895287dee1e14768ea9d8db6fc5ea9670c7aa37123e225691b1c6da7d50e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.meta_helpers",
+            "digest": "883ab846e88e0e3b429314c4542277303b0c7698fec6ef6772dd0b4be725888e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.classification.core_utils",
+            "digest": "14761e6d46c3bddbc1a503ae64bbd6483cfb6660f2d56530e85c5f8b1c3f1e4e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.classification.knn_core",
+            "digest": "63a9aa22281272b2e5a6fad4392401a3b9993f09ffc09d8bbd0881916febd42e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.classification.knn_nodes",
+            "digest": "153156b65eb2dad293e691acb2bdbb883771439f96e276e481f78740911fc9d5"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
+            "digest": "eca3cf613ede43643378758d31fccabe84fdb89f40c41b3b8e5f376e954a73d1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.core_utils",
+            "digest": "a07846f3d92a7f8382961a8e39cb40186be4afd2dff7540daedd37ff5588efc1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.visualization",
+            "digest": "09ea4a373e0840abcd019890186b2c3764067348e13216915b5d9905bb206a6e"
+          }
+        ],
+        "implementation_digest": "269a8fc5114dd5ff89e94b1c6eb856032dba1d11dd75cea058ddebacc59b6ba5",
+        "implementation_id": "spectrasherpa.classification.knn",
+        "implementation_version": "2.0.0",
+        "input_rank_policy": "requires_2d",
+        "license_id": "BSD-3-Clause",
+        "lifecycle_kind": "fitted_model",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "classification.knn",
+        "parameter_schema_digest": "2326fbe37946407c358c511e94a9364efcdfcf10dedb0db93e1a60824029a6ff",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scikit-learn",
+            "version": "1.9.0"
+          },
+          {
+            "distribution": "scipy",
+            "version": "1.17.1"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_features",
+              "X_spectra"
+            ],
+            "name": "X",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Array2D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "y",
+            "required": false,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ScoreMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "fitted_state",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ClassificationModel/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "predictions",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Categorical/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "probabilities",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Array2D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "class_probabilities",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Array2D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "metrics",
+            "required": false,
+            "type_ref": "spectrasherpa://types/StatisticsSummary/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "distances",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Array2D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "neighbor_indices",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Array2D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "train_accuracy",
+            "required": false,
+            "type_ref": "spectrasherpa://types/Scalar/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "plots",
+            "required": false,
+            "type_ref": "spectrasherpa://types/Visualization/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "visualization",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Visualization/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "confusion_visualization",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Visualization/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "classification",
+        "target_access": "fit_only",
+        "unit_effect": "changes_units"
+      },
+      "read_only_declaration_changes": [
+        "fitted_state_serializer",
+        "implementation_version"
+      ]
+    },
+    "classification.plsda": {
+      "digest": "1875107445c8954ec79270de2b84c80507665cd069ea4558a9068fb2866c9cf7",
+      "payload": {
+        "axis_effect": "changes_axis",
+        "citations": [
+          "de Jong, Chemometrics and Intelligent Laboratory Systems 18 (1993) 251-263, doi:10.1016/0169-7439(93)85002-X",
+          "Barker & Rayens, Partial least squares for discrimination, Journal of Chemometrics 17 (2003) 166-173, DOI 10.1002/cem.785",
+          "Kucheryavskiy, mdatools PLS-DA documentation; rchemo::plsrda maximum dummy-response rule"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "generates_features",
+        "fitted_state_serializer": "spectrasherpa.sherpa-plsda-state/4",
+        "group_access": "none",
+        "help_reference": "docs/nodes/classification.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scikit-learn",
+            "digest": "dd3d7a7f417f922a34836ca450d2132fc95b981e4d71b99b1e3802af6e0db05f"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.io_contracts",
+            "digest": "a31e895287dee1e14768ea9d8db6fc5ea9670c7aa37123e225691b1c6da7d50e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.meta_helpers",
+            "digest": "883ab846e88e0e3b429314c4542277303b0c7698fec6ef6772dd0b4be725888e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.classification.core_utils",
+            "digest": "14761e6d46c3bddbc1a503ae64bbd6483cfb6660f2d56530e85c5f8b1c3f1e4e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.classification.plsda_nodes",
+            "digest": "4a0abb1b0a0ced73490e646250448985722393daa7eb7c6b0dd6c2330929a3eb"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.classification.plsda_state",
+            "digest": "3e7e033cfdb17acdec5a392aaabfea43ef4fff4cb2d0f1e8cd703faeb3aca064"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
+            "digest": "eca3cf613ede43643378758d31fccabe84fdb89f40c41b3b8e5f376e954a73d1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.core_utils",
+            "digest": "a07846f3d92a7f8382961a8e39cb40186be4afd2dff7540daedd37ff5588efc1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.pls_core",
+            "digest": "fab67cf30b4b64b9b8e30dae9d061ba4934f344f6dba0509264e42c3a1f593cb"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.selection._vip",
+            "digest": "c6cb1af4ee0f0a327c3a22503642f310c48d47ebdfaa3cea62f1c00d5e9707d8"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.visualization",
+            "digest": "09ea4a373e0840abcd019890186b2c3764067348e13216915b5d9905bb206a6e"
+          }
+        ],
+        "implementation_digest": "2cb2b7345b0cc0f4ddac0f083855250eb075a0cbf78245dbf3f25bd190540dcb",
+        "implementation_id": "spectrasherpa.classification.plsda",
+        "implementation_version": "4.0.0",
+        "input_rank_policy": "requires_2d",
+        "license_id": "BSD-3-Clause",
+        "lifecycle_kind": "fitted_model",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "classification.plsda",
+        "parameter_schema_digest": "464bf17960c9ffc0432401d64929081c23d53c9bd1bf5bdc026ce41a84ccbf25",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 60,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 60
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scikit-learn",
+            "version": "1.9.0"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_features",
+              "X_spectra"
+            ],
+            "name": "X",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Array2D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "y",
+            "required": false,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ScoreMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "X_scores",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ScoreMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "X_loadings",
+            "required": true,
+            "type_ref": "spectrasherpa://types/LoadingMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "loadings",
+            "required": true,
+            "type_ref": "spectrasherpa://types/LoadingMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "explained_variance",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ExplainedVarianceMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "class_coefficients",
+            "required": true,
+            "type_ref": "spectrasherpa://types/RegressionCoefficientMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "fitted_state",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ClassificationModel/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "predictions",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Categorical/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "class_scores",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Array2D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "vip_scores",
+            "required": true,
+            "type_ref": "spectrasherpa://types/VariableImportance/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "confusion_matrix_train",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ConfusionMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "metrics",
+            "required": true,
+            "type_ref": "spectrasherpa://types/StatisticsSummary/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "plots",
+            "required": false,
+            "type_ref": "spectrasherpa://types/Visualization/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "classification",
+        "target_access": "fit_only",
+        "unit_effect": "changes_units"
+      },
+      "read_only_declaration_changes": [
+        "fitted_state_serializer",
+        "implementation_version",
+        "runtime_requirements"
+      ]
+    },
+    "classification.simca": {
+      "digest": "fcf0e470363f4723d5c9f7d23e3323575a12ee85d56c085f066340b565182d72",
+      "payload": {
+        "axis_effect": "changes_axis",
+        "citations": [
+          "Wold & Sjostrom, SIMCA: A method for analyzing chemical data in terms of similarity and analogy, Chemometrics: Theory and Application (1977) 243-282",
+          "Pomerantsev, Acceptance areas for multivariate classification derived by projection methods, Journal of Chemometrics 22 (2008) 601-609",
+          "Kucheryavskiy, mdatools SIMCA documentation and class-model distance conventions"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "generates_features",
+        "fitted_state_serializer": "spectrasherpa.model-artifact.simca/1",
+        "group_access": "none",
+        "help_reference": "docs/nodes/classification.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scikit-learn",
+            "digest": "dd3d7a7f417f922a34836ca450d2132fc95b981e4d71b99b1e3802af6e0db05f"
+          },
+          {
+            "component_id": "distribution.scipy",
+            "digest": "d88916f242e7baf3ce52f236d852f242fe86c9e8f4d391c2a57ee2093bda6193"
+          },
+          {
+            "component_id": "spectra_sherpa.app.lib.fitted_state",
+            "digest": "d40dfcb3fc6b92f591f975b02727b1961d3819984eb76b0a518573f1c7e52b9c"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.io_contracts",
+            "digest": "a31e895287dee1e14768ea9d8db6fc5ea9670c7aa37123e225691b1c6da7d50e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.meta_helpers",
+            "digest": "883ab846e88e0e3b429314c4542277303b0c7698fec6ef6772dd0b4be725888e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes._chemometric_diagnostics",
+            "digest": "f70b1ce84fe2b937d1b1b49817d5783937c16a4da91e444f6007c8447eedfbdd"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.classification.core_utils",
+            "digest": "14761e6d46c3bddbc1a503ae64bbd6483cfb6660f2d56530e85c5f8b1c3f1e4e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.classification.simca_nodes",
+            "digest": "203b8d95b342befb2fe533bf72891480bf7d16a7671711b12ee3fe4fe9566546"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
+            "digest": "eca3cf613ede43643378758d31fccabe84fdb89f40c41b3b8e5f376e954a73d1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.core_utils",
+            "digest": "a07846f3d92a7f8382961a8e39cb40186be4afd2dff7540daedd37ff5588efc1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.visualization",
+            "digest": "09ea4a373e0840abcd019890186b2c3764067348e13216915b5d9905bb206a6e"
+          }
+        ],
+        "implementation_digest": "855304d810d940ca9aba26033a5a15b6a8675447dd75bf04f9bf45ca6cf8b688",
+        "implementation_id": "spectrasherpa.classification.simca",
+        "implementation_version": "2.1.0",
+        "input_rank_policy": "requires_2d",
+        "license_id": "BSD-3-Clause",
+        "lifecycle_kind": "fitted_model",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "classification.simca",
+        "parameter_schema_digest": "114edaef743d896d41d43e6e41d09c51c62b22b06e070bd8dfdb0ac19bd105eb",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 60,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 60
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scikit-learn",
+            "version": "1.9.0"
+          },
+          {
+            "distribution": "scipy",
+            "version": "1.17.1"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_features",
+              "X_spectra"
+            ],
+            "name": "X",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Array2D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "y",
+            "required": false,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ScoreMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "fitted_state",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ClassificationModel/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "predictions",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Categorical/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "class_assignment",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Categorical/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "distances",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Any/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "class_distance_matrix",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Array2D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "metrics",
+            "required": false,
+            "type_ref": "spectrasherpa://types/StatisticsSummary/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "train_accuracy",
+            "required": false,
+            "type_ref": "spectrasherpa://types/Scalar/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "confusion_matrix",
+            "required": false,
+            "type_ref": "spectrasherpa://types/ConfusionMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "plots",
+            "required": false,
+            "type_ref": "spectrasherpa://types/Visualization/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "acceptance_visualization",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Visualization/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "confusion_visualization",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Visualization/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "classification",
+        "target_access": "fit_only",
+        "unit_effect": "changes_units"
+      },
+      "read_only_declaration_changes": [
+        "fitted_state_serializer",
+        "implementation_version"
+      ]
+    },
+    "diagnostics.classification_evaluator": {
+      "digest": "38d89772f68ee55e8bd7fac80409dfde71da853312c403140bd97b06d917b763",
+      "payload": {
+        "axis_effect": "preserves_axis",
+        "citations": [
+          "Powers, D.M.W. (2011). Evaluation: From Precision, Recall and F-Measure to ROC, Informedness, Markedness and Correlation. Journal of Machine Learning Technologies 2(1), 37-63."
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "preserves_features",
+        "fitted_state_serializer": null,
+        "group_access": "none",
+        "help_reference": "docs/nodes/selection-validation.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scikit-learn",
+            "digest": "dd3d7a7f417f922a34836ca450d2132fc95b981e4d71b99b1e3802af6e0db05f"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.classification_evaluator_node",
+            "digest": "dda0420192e69a0a2cdf91065ed8d82e5bdab6733f24d3dfd300cc8371905c4b"
+          }
+        ],
+        "implementation_digest": "f0d3ac4cbbcb8bea0e800e0d50a1a887cf30d2653685d67985ec37cf0bc6efda",
+        "implementation_id": "spectrasherpa.classification_evaluator",
+        "implementation_version": "4.0.0",
+        "input_rank_policy": "requires_2d",
+        "license_id": "BSD-3-Clause",
+        "lifecycle_kind": "evaluator",
+        "managed_optimization_eligibility": [
+          "local",
+          "development"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "diagnostics.classification_evaluator",
+        "parameter_schema_digest": "8413ea91bdcc4d6004b9e7c19a29bef389974f13fb9b16237666f93fe2c35501",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 536870912,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scikit-learn",
+            "version": "1.9.0"
+          }
+        ],
+        "sample_effect": "aggregates_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Categorical/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "y_true",
+            "required": false,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ValidationResult/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "comparison",
+            "required": false,
+            "type_ref": "spectrasherpa://types/ClassificationComparison/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "visualization",
+            "required": false,
+            "type_ref": "spectrasherpa://types/Visualization/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "classification",
+        "target_access": "required",
+        "unit_effect": "preserves_units"
+      }
+    },
+    "diagnostics.regression_evaluator": {
+      "digest": "b501f52469d6ae7d36cc2b1624a3f5bbdfd07295c04ca328a455987bb7637e1d",
+      "payload": {
+        "axis_effect": "preserves_axis",
+        "citations": [
+          "Kucheryavskiy, mdatools regression-results reference (RMSE, R2, slope, and bias), https://search.r-project.org/CRAN/refmans/mdatools/html/regres.html"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "preserves_features",
+        "fitted_state_serializer": null,
+        "group_access": "none",
+        "help_reference": "docs/nodes/selection-validation.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scikit-learn",
+            "digest": "dd3d7a7f417f922a34836ca450d2132fc95b981e4d71b99b1e3802af6e0db05f"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.regression_evaluator_node",
+            "digest": "82cfa22fe9476aa23ac545e90dc855042c0ae8f1993b9b2cfb63bcdb3bf08fc3"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.regression_comparison",
+            "digest": "8006ffad26764f60a8fd863ce3ce16914e84a1a08243b26b7ceb1d06c2d17d54"
+          },
+          {
+            "component_id": "spectra_sherpa.sdk.validate",
+            "digest": "8df649e96bf8c50c5cbd808aa2018a8d5d742fba8b4669b0290abdbb2dfdc70d"
+          }
+        ],
+        "implementation_digest": "8a8224b642f8a8e2d890da9d761e5cc71cc5a96b327c01ed0cd4d31e638c31a6",
+        "implementation_id": "spectrasherpa.regression_evaluator",
+        "implementation_version": "5.0.0",
+        "input_rank_policy": "requires_2d",
+        "license_id": "BSD-3-Clause",
+        "lifecycle_kind": "evaluator",
+        "managed_optimization_eligibility": [
+          "local",
+          "development"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "diagnostics.regression_evaluator",
+        "parameter_schema_digest": "731e4106cb9b8545ebc7b88abfbc1fa603bd9ed528e2907c047915f8f8f9555f",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scikit-learn",
+            "version": "1.9.0"
+          },
+          {
+            "distribution": "scipy",
+            "version": "1.17.1"
+          }
+        ],
+        "sample_effect": "aggregates_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "y_true",
+            "required": false,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ValidationResult/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "comparison",
+            "required": false,
+            "type_ref": "spectrasherpa://types/RegressionComparison/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "regression",
+        "target_access": "required",
+        "unit_effect": "preserves_units"
+      }
+    },
+    "model.fitted_linear_regression": {
+      "digest": "a9e3e8ccb5a2033be36d6691cb39a7ff2d2b5d28c821afbf91898e216fdff7ec",
+      "payload": {
+        "axis_effect": "removes_axis",
+        "citations": [
+          "rchemo::lmr linear-regression reference, https://search.r-project.org/CRAN/refmans/rchemo/html/lmr.html"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "generates_features",
+        "fitted_state_serializer": "spectrasherpa.model.fitted_linear_regression/1",
+        "group_access": "none",
+        "help_reference": "docs/nodes/regression.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scikit-learn",
+            "digest": "dd3d7a7f417f922a34836ca450d2132fc95b981e4d71b99b1e3802af6e0db05f"
+          },
+          {
+            "component_id": "distribution.scipy",
+            "digest": "d88916f242e7baf3ce52f236d852f242fe86c9e8f4d391c2a57ee2093bda6193"
+          },
+          {
+            "component_id": "spectra_sherpa.app.lib.fitted_state",
+            "digest": "d40dfcb3fc6b92f591f975b02727b1961d3819984eb76b0a518573f1c7e52b9c"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.fitted_input_identity",
+            "digest": "216a0938dba4684454391fe1ee38937908e0359eb65f51c278256a0d5a40cff2"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
+            "digest": "eca3cf613ede43643378758d31fccabe84fdb89f40c41b3b8e5f376e954a73d1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node",
+            "digest": "ccc2cf22740e32c90e9108d1a07278865e50fee3cda6f21ef2de680d90c2bdb9"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.fitted_regression_nodes",
+            "digest": "a59b326db8a5daba304d9f2d341ddf0574b4933da1eaef3654a479bbfc99abc1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes",
+            "digest": "273fe736ff3e8c7e79b94729d15e964a26b286a15469d9cf5fde251c8bd7e8c3"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
+            "digest": "b8ec25344ff452d6fd20e653a56b242e8e31e71d6005ae5460f2a8037b5d2bd5"
+          }
+        ],
+        "implementation_digest": "a987db831dda8e099e154bf88d8093512e330a4627aaa91f3a6c5b4d8ba59355",
+        "implementation_id": "spectrasherpa.model.fitted_linear_regression",
+        "implementation_version": "1",
+        "input_rank_policy": "requires_2d",
+        "license_id": "BSD-3-Clause",
+        "lifecycle_kind": "fitted_model",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "model.fitted_linear_regression",
+        "parameter_schema_digest": "3f35e31a1ecfaed98973e6882db3252abef105e5841211f9e03941e610d2d5f4",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scikit-learn",
+            "version": "1.9.0"
+          },
+          {
+            "distribution": "scipy",
+            "version": "1.17.1"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "y",
+            "required": false,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "fitted_state",
+            "required": true,
+            "type_ref": "spectrasherpa://types/RegressionModel/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "regression",
+        "target_access": "fit_only",
+        "unit_effect": "changes_units"
+      }
+    },
+    "model.fitted_pcr": {
+      "digest": "f333f49d9791790f0713fbc18a97d046047dec80be538548df4ac887be7831cd",
+      "payload": {
+        "axis_effect": "removes_axis",
+        "citations": [
+          "Massy, Principal Components Regression in Exploratory Statistical Research, JASA 60 (1965) 234-256, DOI 10.1080/01621459.1965.10480787"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "generates_features",
+        "fitted_state_serializer": "spectrasherpa.model.fitted_pcr/1",
+        "group_access": "none",
+        "help_reference": "docs/nodes/regression.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scikit-learn",
+            "digest": "dd3d7a7f417f922a34836ca450d2132fc95b981e4d71b99b1e3802af6e0db05f"
+          },
+          {
+            "component_id": "distribution.scipy",
+            "digest": "d88916f242e7baf3ce52f236d852f242fe86c9e8f4d391c2a57ee2093bda6193"
+          },
+          {
+            "component_id": "spectra_sherpa.app.lib.fitted_state",
+            "digest": "d40dfcb3fc6b92f591f975b02727b1961d3819984eb76b0a518573f1c7e52b9c"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.fitted_input_identity",
+            "digest": "216a0938dba4684454391fe1ee38937908e0359eb65f51c278256a0d5a40cff2"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
+            "digest": "eca3cf613ede43643378758d31fccabe84fdb89f40c41b3b8e5f376e954a73d1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node",
+            "digest": "ccc2cf22740e32c90e9108d1a07278865e50fee3cda6f21ef2de680d90c2bdb9"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.fitted_regression_nodes",
+            "digest": "a59b326db8a5daba304d9f2d341ddf0574b4933da1eaef3654a479bbfc99abc1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes",
+            "digest": "273fe736ff3e8c7e79b94729d15e964a26b286a15469d9cf5fde251c8bd7e8c3"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
+            "digest": "b8ec25344ff452d6fd20e653a56b242e8e31e71d6005ae5460f2a8037b5d2bd5"
+          }
+        ],
+        "implementation_digest": "a987db831dda8e099e154bf88d8093512e330a4627aaa91f3a6c5b4d8ba59355",
+        "implementation_id": "spectrasherpa.model.fitted_pcr",
+        "implementation_version": "1",
+        "input_rank_policy": "requires_2d",
+        "license_id": "BSD-3-Clause",
+        "lifecycle_kind": "fitted_model",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "model.fitted_pcr",
+        "parameter_schema_digest": "94e76d2e778c662165f9957ab32e0635897cecc6af6ecf4bbf3f03b9c37536a5",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scikit-learn",
+            "version": "1.9.0"
+          },
+          {
+            "distribution": "scipy",
+            "version": "1.17.1"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "y",
+            "required": false,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "fitted_state",
+            "required": true,
+            "type_ref": "spectrasherpa://types/RegressionModel/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "regression",
+        "target_access": "fit_only",
+        "unit_effect": "changes_units"
+      }
+    },
+    "model.fitted_pls": {
+      "digest": "d16ff1db7d4b2b04d542bb170328f96ba8792c28509e0a77d1b7afe1a27484c0",
+      "payload": {
+        "axis_effect": "changes_axis",
+        "citations": [
+          "de Jong, Chemometrics and Intelligent Laboratory Systems 18 (1993) 251-263, DOI 10.1016/0169-7439(93)85002-X",
+          "Chong and Jun, Chemometrics and Intelligent Laboratory Systems 78 (2005) 103-112",
+          "mdatools vipscores reference, https://mda.tools/docs/pls--variable-selection.html"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "generates_features",
+        "fitted_state_serializer": "spectra.sherpa-simpls-regression-json/9",
+        "group_access": "none",
+        "help_reference": "docs/nodes/regression.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node",
+            "digest": "ccc2cf22740e32c90e9108d1a07278865e50fee3cda6f21ef2de680d90c2bdb9"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.pls_applicability",
+            "digest": "82d84a9f1c0bcf713868400349b6b89d8ce487c0d80f00471cef293792ce2943"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.pls_core",
+            "digest": "fab67cf30b4b64b9b8e30dae9d061ba4934f344f6dba0509264e42c3a1f593cb"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
+            "digest": "b8ec25344ff452d6fd20e653a56b242e8e31e71d6005ae5460f2a8037b5d2bd5"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.selection._vip",
+            "digest": "c6cb1af4ee0f0a327c3a22503642f310c48d47ebdfaa3cea62f1c00d5e9707d8"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.regression_comparison",
+            "digest": "8006ffad26764f60a8fd863ce3ce16914e84a1a08243b26b7ceb1d06c2d17d54"
+          }
+        ],
+        "implementation_digest": "a3c2c73f40f0e14233a38cc84e529dacd1fc690e12aa84042ca639558659d3c2",
+        "implementation_id": "spectrasherpa.simpls.pls_regression",
+        "implementation_version": "9.0.0",
+        "input_rank_policy": "requires_2d",
+        "license_id": "BSD-3-Clause",
+        "lifecycle_kind": "fitted_model",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "model.fitted_pls",
+        "parameter_schema_digest": "e439d3bd5561fca3b0383246725dbd8474f7b837c1ce0fab12ab4e07f7e9c13f",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "y",
+            "required": false,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "fitted_state",
+            "required": true,
+            "type_ref": "spectrasherpa://types/RegressionModel/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "vip_scores",
+            "required": true,
+            "type_ref": "spectrasherpa://types/VariableImportance/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "calibration_comparison",
+            "required": true,
+            "type_ref": "spectrasherpa://types/RegressionComparison/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "x_scores",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ScoreMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "x_loadings",
+            "required": true,
+            "type_ref": "spectrasherpa://types/LoadingMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "explained_variance",
+            "required": true,
+            "type_ref": "spectrasherpa://types/ExplainedVarianceMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "regression_coefficients",
+            "required": true,
+            "type_ref": "spectrasherpa://types/RegressionCoefficientMatrix/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "regression",
+        "target_access": "fit_only",
+        "unit_effect": "changes_units"
+      },
+      "read_only_declaration_changes": [
+        "runtime_requirements"
+      ]
+    },
+    "model.fitted_svr": {
+      "digest": "ffc885761a0195064821e9a02dc0189cc1c90344d6ff022cd91d473298e51205",
+      "payload": {
+        "axis_effect": "removes_axis",
+        "citations": [
+          "Drucker, Burges, Kaufman, Smola & Vapnik, Support Vector Regression Machines, NeurIPS 9 (1997) 155-161",
+          "Lesnoff, Metz & Roger, rchemo::svmr: SVM regression; delegates epsilon-regression to e1071::svm, https://search.r-project.org/CRAN/refmans/rchemo/html/svmr.html",
+          "Meyer et al., e1071: Misc Functions of the Department of Statistics, Probability Theory Group, TU Wien; svm implements libsvm epsilon-regression, https://search.r-project.org/CRAN/refmans/e1071/html/svm.html",
+          "Chang & Lin, LIBSVM: A Library for Support Vector Machines, ACM TIST 2 (2011), DOI 10.1145/1961189.1961199"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "generates_features",
+        "fitted_state_serializer": "spectrasherpa.model.fitted_svr/1",
+        "group_access": "none",
+        "help_reference": "docs/nodes/regression.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scikit-learn",
+            "digest": "dd3d7a7f417f922a34836ca450d2132fc95b981e4d71b99b1e3802af6e0db05f"
+          },
+          {
+            "component_id": "distribution.scipy",
+            "digest": "d88916f242e7baf3ce52f236d852f242fe86c9e8f4d391c2a57ee2093bda6193"
+          },
+          {
+            "component_id": "spectra_sherpa.app.lib.fitted_state",
+            "digest": "d40dfcb3fc6b92f591f975b02727b1961d3819984eb76b0a518573f1c7e52b9c"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.fitted_input_identity",
+            "digest": "216a0938dba4684454391fe1ee38937908e0359eb65f51c278256a0d5a40cff2"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
+            "digest": "eca3cf613ede43643378758d31fccabe84fdb89f40c41b3b8e5f376e954a73d1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node",
+            "digest": "ccc2cf22740e32c90e9108d1a07278865e50fee3cda6f21ef2de680d90c2bdb9"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.fitted_regression_nodes",
+            "digest": "a59b326db8a5daba304d9f2d341ddf0574b4933da1eaef3654a479bbfc99abc1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes",
+            "digest": "273fe736ff3e8c7e79b94729d15e964a26b286a15469d9cf5fde251c8bd7e8c3"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
+            "digest": "b8ec25344ff452d6fd20e653a56b242e8e31e71d6005ae5460f2a8037b5d2bd5"
+          }
+        ],
+        "implementation_digest": "a987db831dda8e099e154bf88d8093512e330a4627aaa91f3a6c5b4d8ba59355",
+        "implementation_id": "spectrasherpa.model.fitted_svr",
+        "implementation_version": "1",
+        "input_rank_policy": "requires_2d",
+        "license_id": "BSD-3-Clause",
+        "lifecycle_kind": "fitted_model",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "model.fitted_svr",
+        "parameter_schema_digest": "ed6fa746673170948484fc3f5015d7d7986039d85ad9533b241f430739d3292b",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scikit-learn",
+            "version": "1.9.0"
+          },
+          {
+            "distribution": "scipy",
+            "version": "1.17.1"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "y",
+            "required": false,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "fitted_state",
+            "required": true,
+            "type_ref": "spectrasherpa://types/RegressionModel/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "regression",
+        "target_access": "fit_only",
+        "unit_effect": "changes_units"
+      }
+    },
+    "preprocess.derivative": {
+      "digest": "cdbe35f81e20b253160da8a2d8fb874bec806610e5340308a7b27afc7a2bc779",
+      "payload": {
+        "axis_effect": "preserves_axis",
+        "citations": [
+          "Savitzky and Golay, Analytical Chemistry 36 (1964) 1627-1639, DOI 10.1021/ac60214a047",
+          "Norris and Williams, Cereal Chemistry 61 (1984) 158-165, Norris-Williams gap derivative"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "preserves_features",
+        "fitted_state_serializer": null,
+        "group_access": "none",
+        "help_reference": "docs/nodes/preprocessing.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scipy",
+            "digest": "d88916f242e7baf3ce52f236d852f242fe86c9e8f4d391c2a57ee2093bda6193"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing._shared",
+            "digest": "28174816329a2c386ec74f14780aa4c5ef67a4396e2d157efe701bea16a53ccb"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing.derivative_node",
+            "digest": "97cdd8d79c5d84e9adcbbdb5aa2574feebaf863195661f59eb2f2ad51c4f70f6"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing.norris_williams",
+            "digest": "ce253ebadfa2203b63dc77b5edc5888dd97b1733359a5dc8682759c0b1e3af7e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.supervision_binding",
+            "digest": "9af12931b99408e6181935bf79e35df85a5c61cdbe1fa6be4fee87af58a13ff3"
+          }
+        ],
+        "implementation_digest": "2e9b415a8ac3120342df9f381ef50f536abe7bcd31919bdaea083c986c084969",
+        "implementation_id": "spectrasherpa.preprocess.derivative",
+        "implementation_version": "1.0.1",
+        "input_rank_policy": "requires_2d",
+        "license_id": "Apache-2.0",
+        "lifecycle_kind": "stateless_transform",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "preprocess.derivative",
+        "parameter_schema_digest": "10547b0bc8ff8f5389b338f1d38c1a1d8244e61183bf819c869698cec9c5e19c",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scipy",
+            "version": "1.17.1"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "none",
+        "target_access": "none",
+        "unit_effect": "changes_units"
+      }
+    },
+    "preprocess.emsc": {
+      "digest": "631c4572049eb1905849bf92a2ea724a431e4b5adb1784833e94f9f362440d16",
+      "payload": {
+        "axis_effect": "preserves_axis",
+        "citations": [
+          "Martens and Stark, Journal of Pharmaceutical and Biomedical Analysis 9 (1991) 625-635, DOI 10.1016/0731-7085(91)80188-F"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "preserves_features",
+        "fitted_state_serializer": "spectra.emsc-reference-json.v1",
+        "group_access": "none",
+        "help_reference": "docs/nodes/preprocessing.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing._shared",
+            "digest": "28174816329a2c386ec74f14780aa4c5ef67a4396e2d157efe701bea16a53ccb"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing.emsc_node",
+            "digest": "7cee0a5e02bf5964b6dcba02c4fe1b82d8a60ed72ff19e140da0b0fca337bc30"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.supervision_binding",
+            "digest": "9af12931b99408e6181935bf79e35df85a5c61cdbe1fa6be4fee87af58a13ff3"
+          }
+        ],
+        "implementation_digest": "8f42744c5eeb1b7f13b010d3146f376cb8f40c4c32805d707bcc36b00eb99723",
+        "implementation_id": "spectrasherpa.preprocess.emsc",
+        "implementation_version": "1.0.1",
+        "input_rank_policy": "requires_2d",
+        "license_id": "Apache-2.0",
+        "lifecycle_kind": "fitted_transform",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "preprocess.emsc",
+        "parameter_schema_digest": "d1cee8474cd30441d325a57607b002b1b14c43db57e9c22b310fbb44abe50c71",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "reference",
+            "required": false,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "constituents",
+            "required": false,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "none",
+        "target_access": "none",
+        "unit_effect": "preserves_units"
+      }
+    },
+    "preprocess.msc": {
+      "digest": "7ef892787a6eba403892932a0fe46be310cd018bd9b7b912c91cf9107dc8b808",
+      "payload": {
+        "axis_effect": "preserves_axis",
+        "citations": [
+          "Geladi, MacDougall & Martens, Linearization and Scatter-Correction for Near-Infrared Reflectance Spectra of Meat, Applied Spectroscopy 39 (1985) 491-500",
+          "mdatools R package, msc preprocessing method"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "preserves_features",
+        "fitted_state_serializer": "spectra.msc-reference-json.v2",
+        "group_access": "none",
+        "help_reference": "docs/nodes/preprocessing.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing._shared",
+            "digest": "28174816329a2c386ec74f14780aa4c5ef67a4396e2d157efe701bea16a53ccb"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing.msc_node",
+            "digest": "3a688c00207fcd5bd888f4e0c64a615ea0c534fb9d03b4d54d242d848ba45aa8"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.supervision_binding",
+            "digest": "9af12931b99408e6181935bf79e35df85a5c61cdbe1fa6be4fee87af58a13ff3"
+          }
+        ],
+        "implementation_digest": "5acc903d553ec94bb3ec5b49c589b3c0b5076961bd024ffff1ab22278e99b197",
+        "implementation_id": "spectrasherpa.preprocess.msc",
+        "implementation_version": "2.0.0",
+        "input_rank_policy": "requires_2d",
+        "license_id": "Apache-2.0",
+        "lifecycle_kind": "fitted_transform",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "preprocess.msc",
+        "parameter_schema_digest": "8d29d3c9a02cf35e52ab48b9f9528da636616ab3344f176ecc44801cc23d0b75",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "reference",
+            "required": false,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "none",
+        "target_access": "none",
+        "unit_effect": "preserves_units"
+      }
+    },
+    "preprocess.normalize": {
+      "digest": "bd82b536be57256c0c54233d85bb5c8206b93a4c670aca4e878b1c3be824180e",
+      "payload": {
+        "axis_effect": "preserves_axis",
+        "citations": [
+          "Barnes, Dhanoa & Lister, Standard Normal Variate Transformation and De-trending of Near-Infrared Diffuse Reflectance Spectra, Applied Spectroscopy 43 (1989) 772-777",
+          "mdatools R package, row-wise spectral normalization methods"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "preserves_features",
+        "fitted_state_serializer": null,
+        "group_access": "none",
+        "help_reference": "docs/nodes/preprocessing.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing._shared",
+            "digest": "28174816329a2c386ec74f14780aa4c5ef67a4396e2d157efe701bea16a53ccb"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing.normalize_node",
+            "digest": "551fc7878225fc82dd6d29036a4b6fe01c9f497aa9cc43ce7bd37a6fd08d5db7"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.supervision_binding",
+            "digest": "9af12931b99408e6181935bf79e35df85a5c61cdbe1fa6be4fee87af58a13ff3"
+          }
+        ],
+        "implementation_digest": "8e8a45d19b9ef19feb1fdccf56884d65d4f7d35a1991781d70fa6bf783120fe1",
+        "implementation_id": "spectrasherpa.preprocess.normalize",
+        "implementation_version": "1.0.1",
+        "input_rank_policy": "requires_2d",
+        "license_id": "Apache-2.0",
+        "lifecycle_kind": "stateless_transform",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "preprocess.normalize",
+        "parameter_schema_digest": "87e06371ea7c68103bb5090545cd88c8b298b95810c08e99a796a0f21fb1db08",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "none",
+        "target_access": "none",
+        "unit_effect": "changes_units"
+      }
+    },
+    "preprocess.osc": {
+      "digest": "19ec510ef691f65db64da1a42f54c15ceac38ad4bc4040d1eda127ce71c2b944",
+      "payload": {
+        "axis_effect": "preserves_axis",
+        "citations": [
+          "Fearn, Chemometrics and Intelligent Laboratory Systems 50 (2000) 47-52, doi:10.1016/S0169-7439(99)00045-3"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "preserves_features",
+        "fitted_state_serializer": "spectra.osc-fearn-direct-json.v1",
+        "group_access": "none",
+        "help_reference": "docs/nodes/preprocessing.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.io_contracts",
+            "digest": "a31e895287dee1e14768ea9d8db6fc5ea9670c7aa37123e225691b1c6da7d50e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.meta_helpers",
+            "digest": "883ab846e88e0e3b429314c4542277303b0c7698fec6ef6772dd0b4be725888e"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing._shared",
+            "digest": "28174816329a2c386ec74f14780aa4c5ef67a4396e2d157efe701bea16a53ccb"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing.osc_node",
+            "digest": "8fb34ff10ff85a7998dce732024f929eb3b02615cfff33b3e9f03428beed65ae"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.supervision_binding",
+            "digest": "9af12931b99408e6181935bf79e35df85a5c61cdbe1fa6be4fee87af58a13ff3"
+          }
+        ],
+        "implementation_digest": "9380756ce3df424e6995b3fca18f9c49901451fe094bddff89e42b998aa8ad79",
+        "implementation_id": "spectrasherpa.preprocess.osc",
+        "implementation_version": "1.0.2",
+        "input_rank_policy": "requires_2d",
+        "license_id": "Apache-2.0",
+        "lifecycle_kind": "fitted_transform",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "preprocess.osc",
+        "parameter_schema_digest": "9045800109cdac5c364e22123e3452479698c35556219c30fd92a19a9b4317a5",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "reference",
+            "required": false,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [
+              "y_continuous"
+            ],
+            "name": "y",
+            "required": false,
+            "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "none",
+        "target_access": "fit_only",
+        "unit_effect": "preserves_units"
+      }
+    },
+    "preprocess.scale": {
+      "digest": "15bce0eb5aa942173878a911a7eba23cd3638f59fe37aa3c0e54f90506ff7e91",
+      "payload": {
+        "axis_effect": "preserves_axis",
+        "citations": [
+          "van den Berg et al., BMC Genomics 7 (2006) 142, DOI 10.1186/1471-2164-7-142",
+          "mdatools prep.autoscale reference, https://mdatools.com/docs/preprocessing--autoscaling.html"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "preserves_features",
+        "fitted_state_serializer": "spectra.scale-reference-json.v2",
+        "group_access": "none",
+        "help_reference": "docs/nodes/preprocessing.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing._shared",
+            "digest": "28174816329a2c386ec74f14780aa4c5ef67a4396e2d157efe701bea16a53ccb"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing.scale_node",
+            "digest": "c25de2a239b9f13320230a14a791a023c9c8cae68dd62001c2018c7b172457a1"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.supervision_binding",
+            "digest": "9af12931b99408e6181935bf79e35df85a5c61cdbe1fa6be4fee87af58a13ff3"
+          }
+        ],
+        "implementation_digest": "f91997ce3108c2ec0ebc536b42500c99f7374ef8d7cfe356136b60a21ddbb328",
+        "implementation_id": "spectrasherpa.preprocess.scale",
+        "implementation_version": "2.0.0",
+        "input_rank_policy": "requires_2d",
+        "license_id": "Apache-2.0",
+        "lifecycle_kind": "fitted_transform",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "preprocess.scale",
+        "parameter_schema_digest": "6adfc8d664611dc2e8c27430c3c094c38f9d0c8c8f1c1e8797f4d4292515b1d1",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_features",
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [
+              "X_features",
+              "X_spectra"
+            ],
+            "name": "reference",
+            "required": false,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [
+              "X_features",
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "none",
+        "target_access": "none",
+        "unit_effect": "changes_units"
+      }
+    },
+    "preprocess.smooth": {
+      "digest": "4d405cdbf887713619a462b33e9c941a62abcd281176f590415c46bf606507b6",
+      "payload": {
+        "axis_effect": "preserves_axis",
+        "citations": [
+          "Savitzky and Golay, Analytical Chemistry 36 (1964) 1627-1639, DOI 10.1021/ac60214a047",
+          "Eilers, Analytical Chemistry 75 (2003) 3631-3636, DOI 10.1021/ac034173t",
+          "Lindeberg, Journal of Applied Statistics 21 (1994) 225-270, Gaussian scale-space smoothing"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "preserves_features",
+        "fitted_state_serializer": null,
+        "group_access": "none",
+        "help_reference": "docs/nodes/preprocessing.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scipy",
+            "digest": "d88916f242e7baf3ce52f236d852f242fe86c9e8f4d391c2a57ee2093bda6193"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing._shared",
+            "digest": "28174816329a2c386ec74f14780aa4c5ef67a4396e2d157efe701bea16a53ccb"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.preprocessing.smooth_node",
+            "digest": "b3fff0dd2c04a633ef498029e91462abcb469164592c659043e7c768b66005f3"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.supervision_binding",
+            "digest": "9af12931b99408e6181935bf79e35df85a5c61cdbe1fa6be4fee87af58a13ff3"
+          }
+        ],
+        "implementation_digest": "d7f8581ed8ea1b00aa454a81a964255d3b7701008b463840ee96c80f6a92bfcd",
+        "implementation_id": "spectrasherpa.preprocess.smooth",
+        "implementation_version": "1.0.1",
+        "input_rank_policy": "requires_2d",
+        "license_id": "Apache-2.0",
+        "lifecycle_kind": "stateless_transform",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "preprocess.smooth",
+        "parameter_schema_digest": "61a4653f11fd183c3e7857c43382d378256fab431056779dca0d25481bfd8775",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 30,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 30
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scipy",
+            "version": "1.17.1"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [
+              "X_spectra"
+            ],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "none",
+        "target_access": "none",
+        "unit_effect": "preserves_units"
+      }
+    },
+    "selection.variable_select": {
+      "digest": "343bc33ee9853bbd8fc52eacf913aa94f662307e393d4570cd42dd8dfc6f0528",
+      "payload": {
+        "axis_effect": "changes_axis",
+        "citations": [
+          "mdatools PLS variable-selection reference, https://mda.tools/docs/pls--variable-selection.html",
+          "Chong and Jun, Chemometrics and Intelligent Laboratory Systems 78 (2005) 103-112",
+          "Kvalheim, Journal of Chemometrics 24 (2010) 496-504, doi:10.1002/cem.1289",
+          "Virtanen et al., Nature Methods 17 (2020) 261-272, doi:10.1038/s41592-019-0686-2"
+        ],
+        "contract_version": "4.0",
+        "custom_trust_class": "not_applicable",
+        "deterministic": true,
+        "feature_effect": "filters_features",
+        "fitted_state_serializer": null,
+        "group_access": "none",
+        "help_reference": "docs/nodes/selection-validation.md",
+        "implementation_components": [
+          {
+            "component_id": "distribution.numpy",
+            "digest": "d8679331abc88fb905aaf401a4de6d6093ec0061c42549898bbc4478be941e12"
+          },
+          {
+            "component_id": "distribution.scipy",
+            "digest": "d88916f242e7baf3ce52f236d852f242fe86c9e8f4d391c2a57ee2093bda6193"
+          },
+          {
+            "component_id": "spectra_sherpa.app.lib.fitted_state",
+            "digest": "d40dfcb3fc6b92f591f975b02727b1961d3819984eb76b0a518573f1c7e52b9c"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.selection._selectivity_ratio",
+            "digest": "213a2eb023cc19156cf5cd629b5cc1f84410d61d4e009872848df048e6f8f972"
+          },
+          {
+            "component_id": "spectra_sherpa.app.services.dag.nodes.selection.variable_select_node",
+            "digest": "df3bd112388bce947c503f0dfa8c52a755483092100d119eba053ba48cd4533f"
+          }
+        ],
+        "implementation_digest": "fd01475f6b7f60a445e602fb5a3cccb0ed8b77ba202f114ec89d56bdb2070441",
+        "implementation_id": "spectrasherpa.selection.variable_select",
+        "implementation_version": "2.1.0",
+        "input_rank_policy": "requires_2d",
+        "license_id": "Apache-2.0",
+        "lifecycle_kind": "stateless_transform",
+        "managed_optimization_eligibility": [
+          "local",
+          "development",
+          "full_refit"
+        ],
+        "managed_optimization_profiles": [
+          "first_party_pls"
+        ],
+        "operation_id": "selection.variable_select",
+        "parameter_schema_digest": "478ef01006413d2a1e9fcf2d2065ebe2acb78767ab2132768d5b41d0e1898c00",
+        "required_worker_capabilities": [
+          "read_dataset"
+        ],
+        "resource_hints": {
+          "cpu_seconds": 60,
+          "memory_bytes": 1073741824,
+          "timeout_seconds": 60
+        },
+        "runtime_family": "sherpa_native",
+        "runtime_requirements": [
+          {
+            "distribution": "numpy",
+            "version": "1.26.4"
+          },
+          {
+            "distribution": "scipy",
+            "version": "1.17.1"
+          }
+        ],
+        "sample_effect": "preserves_samples",
+        "seed_parameter": null,
+        "semantic_inputs": [
+          {
+            "accepted_data_roles": [
+              "X_features",
+              "X_spectra"
+            ],
+            "name": "X",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Array2D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "model",
+            "required": false,
+            "type_ref": "spectrasherpa://types/FittedModel/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "mask",
+            "required": false,
+            "type_ref": "spectrasherpa://types/Array1D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "importance_scores",
+            "required": false,
+            "type_ref": "spectrasherpa://types/VariableImportance/1.0",
+            "variadic": false
+          }
+        ],
+        "semantic_outputs": [
+          {
+            "accepted_data_roles": [],
+            "name": "default",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "X_selected",
+            "required": true,
+            "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "mask",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Array1D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "scores",
+            "required": false,
+            "type_ref": "spectrasherpa://types/Array1D/1.0",
+            "variadic": false
+          },
+          {
+            "accepted_data_roles": [],
+            "name": "selection_report",
+            "required": true,
+            "type_ref": "spectrasherpa://types/Any/1.0",
+            "variadic": false
+          }
+        ],
+        "supervised_task": "none",
+        "target_access": "none",
+        "unit_effect": "preserves_units"
+      }
+    }
+  },
+  "source_revision": "e304b9f38693c4bcd999ea78e292be9a43a491b3",
+  "current_contracts": {
+    "baseline.penalized_ls": "b3b824ef38585a9f7e1e673f2369f03c3d2e4900028168f79948aa35592095da",
+    "classification.knn": "b75296b1e07af53623dfaf5e859b759d089eb1b4145a415bc555ff59cf4fec8a",
+    "classification.plsda": "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
+    "classification.simca": "58ae844cdcd14833a6da09a7f658e979ed08d812fc5bed7ef9d230be6e79d72e",
+    "diagnostics.classification_evaluator": "38d89772f68ee55e8bd7fac80409dfde71da853312c403140bd97b06d917b763",
+    "diagnostics.regression_evaluator": "b501f52469d6ae7d36cc2b1624a3f5bbdfd07295c04ca328a455987bb7637e1d",
+    "model.fitted_linear_regression": "04d5ea448432137158df7b412286a17a5fe3498f5589ce53b33414fad2388b2b",
+    "model.fitted_pcr": "a207b7fc520763105b633ca6d99eb267872c38ed54dc6854082b7be1bd1756b8",
+    "model.fitted_pls": "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
+    "model.fitted_svr": "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
+    "preprocess.derivative": "99e268546748f7c1cbe0bbd1ad29f7d23291e77b5200e7900dbee3ae55e168a7",
+    "preprocess.emsc": "631c4572049eb1905849bf92a2ea724a431e4b5adb1784833e94f9f362440d16",
+    "preprocess.msc": "7ef892787a6eba403892932a0fe46be310cd018bd9b7b912c91cf9107dc8b808",
+    "preprocess.normalize": "bd82b536be57256c0c54233d85bb5c8206b93a4c670aca4e878b1c3be824180e",
+    "preprocess.osc": "02a4281542fe5fe2a349dbc5e61a42e82fa4a9f346ddb21fd5bf2d64b96c7b1b",
+    "preprocess.scale": "cbe147638d9ba374a04f1f333fb50c81e3cc031c3a62046012c979f0ec2472d7",
+    "preprocess.smooth": "4d405cdbf887713619a462b33e9c941a62abcd281176f590415c46bf606507b6",
+    "selection.variable_select": "3209ca10ae4dfa04fe81b944d866182bb88bf5f3f9677c2618c5c100542b4f52"
+  }
+}

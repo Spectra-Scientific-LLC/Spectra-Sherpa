@@ -580,6 +580,14 @@ class TestBuiltinWorkflowTools:
         assert descriptions["model.fitted_pls"]["category"] == "regression"
         assert "One response is PLS1" in descriptions["model.fitted_pls"]["summary"]
         assert descriptions["model.apply_fitted_pls"]["category"] == "regression"
+        from spectra_sherpa.app.services.dag.node_base import node_registry
+
+        method = descriptions["model.fitted_pls"]["scientific_method"]
+        canonical = node_registry.get_catalog_metadata("model.fitted_pls").resolved_execution_contract().payload
+        assert method["implementation_id"] == canonical["implementation_id"]
+        assert method["citations"] == list(canonical["citations"])
+        assert method["help_reference"] == canonical["help_reference"]
+        assert "not this workflow" in method["parameter_notice"]
 
     @pytest.mark.asyncio
     async def test_describe_nodes_returns_per_entry_error_for_unknown_type(self, monkeypatch):

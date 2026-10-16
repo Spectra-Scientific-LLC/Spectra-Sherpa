@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 from datetime import datetime
+from time import perf_counter
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -36,6 +37,7 @@ from spectra_sherpa.app.schemas.workflows import (
     WorkflowValidationIssue,
     WorkflowValidationResponse,
 )
+from spectra_sherpa.app.services.batch_verification import BatchAuthorityChanged
 from spectra_sherpa.app.services.canonical_project_binding import (
     CanonicalProjectBindingError,
 )
@@ -636,6 +638,18 @@ async def execute_workflow(
     current_user: User = Depends(get_current_user),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> WorkflowExecuteResponse:
+    return await execute_saved_workflow(workflow_id, payload, session, current_user, idempotency_key)
+
+
+async def execute_saved_workflow(
+    workflow_id: int,
+    payload: WorkflowExecuteRequest,
+    session: AsyncSession,
+    current_user: User,
+    idempotency_key: str | None = None,
+    *,
+    batch_binding=None,
+) -> WorkflowExecuteResponse:
     """Execute a workflow for the authenticated user.
 
     Honors an optional ``Idempotency-Key`` header (8-64 chars, [A-Za-z0-9_-]).
@@ -648,8 +662,14 @@ async def execute_workflow(
     for a new run.
     """
     user_id = current_user.id
+    request_started = perf_counter()
     normalized_idempotency_key = validate_idempotency_key(idempotency_key)
 
+    # SQLite ignores FOR UPDATE; use the existing local write-serialization
+    # authority so graph and review revision form one admission snapshot.
+    from spectra_sherpa.app.db.session import begin_serialized_sqlite_write
+
+    await begin_serialized_sqlite_write(session)
     # Load workflow with nodes and edges
     query = (
         select(Workflow)
@@ -662,6 +682,7 @@ async def execute_workflow(
             selectinload(Workflow.folder),
             selectinload(Workflow.primary_data_source),
         )
+        .with_for_update(of=Workflow)
     )
     result = await session.execute(query)
     workflow = result.scalar_one_or_none()
@@ -699,6 +720,28 @@ async def execute_workflow(
     wf_name = workflow.name
     wf_params_snapshot = build_effective_params_snapshot(workflow.nodes)
     wf_definition_snapshot = build_saved_definition_snapshot(workflow)
+    if batch_binding is not None:
+        if payload.initial_data or payload.node_id or payload.expected_definition:
+            raise HTTPException(422, "Batch execution cannot carry additional node overrides")
+        if wf_definition_snapshot != batch_binding.original_definition:
+            raise HTTPException(409, "Workflow changed after Batch preflight")
+        await batch_binding.verify_current()
+        wf_definition_snapshot = batch_binding.definition
+        wf_integrity_hash = wf_definition_snapshot["integrity_hash"]
+        wf_params_snapshot = build_effective_params_snapshot(batch_binding.nodes)
+    from spectra_sherpa.app.services.sample_review_custody import (
+        require_review_filters_preserved,
+        snapshot_review_provenance,
+    )
+
+    reviewed_exclusions = await require_review_filters_preserved(
+        session, workflow_id, wf_definition_snapshot["nodes"], wf_definition_snapshot["edges"]
+    )
+    if reviewed_exclusions and payload.initial_data:
+        raise HTTPException(
+            422,
+            "Persist settings before running a reviewed analysis; temporary overrides cannot change review custody.",
+        )
     if payload.expected_definition is not None:
         from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash, workflow_definitions_match
 
@@ -727,14 +770,38 @@ async def execute_workflow(
         if latest_version is not None and latest_version.snapshot == build_workflow_version_snapshot(workflow)
         else None
     )
-    wf_data_selection_revisions = await execution_selection_revisions(
-        session,
-        workflow_id=workflow_id,
-        graph_digest=wf_integrity_hash,
-        source_nodes=list(workflow.nodes),
-        user_id=current_user.id,
-        workflow_project_id=workflow.project_id,
+    wf_data_selection_revisions = (
+        []
+        if batch_binding is not None
+        else await execution_selection_revisions(
+            session,
+            workflow_id=workflow_id,
+            graph_digest=wf_integrity_hash,
+            source_nodes=list(workflow.nodes),
+            user_id=current_user.id,
+            workflow_project_id=workflow.project_id,
+        )
     )
+
+    if batch_binding is not None:
+        wf_version_id = None  # The rebound definition is not the saved canvas version.
+
+    wf_review_provenance = await snapshot_review_provenance(session, workflow_id)
+    # Release the shared workflow/review admission lock before numerical work.
+    # The graph and its decision revision are now an immutable execution receipt.
+    await session.commit()
+
+    async def persist_execution_run(*args, **kwargs):
+        kwargs["review_provenance_snapshot"] = wf_review_provenance
+        if payload.initial_data:
+            kwargs["review_unavailable_reason"] = (
+                "Persist temporary execution settings and rerun to enable sample review."
+            )
+        if batch_binding is not None:
+            kwargs["source_metadata"] = {**(kwargs.get("source_metadata") or {}), **batch_binding.metadata}
+            kwargs["source_type"] = "batch"
+            kwargs["run_kind"] = batch_binding.metadata["run_kind"]
+        return await _auto_persist_run(*args, **kwargs)
 
     # Idempotency: ownership check has passed (so an unauthenticated /
     # cross-user probe still 404'd above). Before we burn demo quota or
@@ -748,7 +815,7 @@ async def execute_workflow(
     #      a reservation row (REM-2); IntegrityError on the partial-unique
     #      index means someone else won the race in the meantime, re-fetch
     #      and dispatch by their row's state.
-    reservation_id: int | None = None
+    reservation_id: int | None = batch_binding.reservation_id if batch_binding is not None else None
     if normalized_idempotency_key is not None:
         from sqlalchemy.exc import IntegrityError
 
@@ -886,16 +953,10 @@ async def execute_workflow(
                         detail=f"Node type '{nt}' is not available in demo mode.",
                     )
 
-        # Audit Item 2: enforce the per-session demo execution quota.  Done
-        # after the hidden-node check so a rejected workflow doesn't burn a
-        # slot; no-op outside demo.
-        from spectra_sherpa.app.api.deps import enforce_demo_execution_quota
-
-        enforce_demo_execution_quota(user_id)
         # wf_integrity_hash / wf_version_id / wf_project_id / wf_params_snapshot
         # are snapshotted earlier in the idempotency block (the reservation
         # path needs them before this point).
-        execution_nodes = workflow.nodes
+        execution_nodes = batch_binding.nodes if batch_binding is not None else workflow.nodes
         if payload.node_id:
             from spectra_sherpa.app.services.dag.execution_scope import upstream_node_ids
 
@@ -918,7 +979,44 @@ async def execute_workflow(
             wf_project_id,
             session,
         )
+        if batch_binding is not None:
+            from types import SimpleNamespace
+
+            preflight_workflow_record = SimpleNamespace(
+                nodes=batch_binding.nodes,
+                edges=[SimpleNamespace(**edge) for edge in batch_binding.definition["edges"]],
+            )
+        else:
+            preflight_workflow_record = workflow
+        preflight = _workflow_preflight(preflight_workflow_record, target_node_id=payload.node_id)
+        if not preflight.is_valid:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "workflow_preflight_failed",
+                    "message": "Workflow is not admissible for execution; inspect validation for details.",
+                    "issues": [
+                        {
+                            "code": issue.code,
+                            "node_id": issue.node_id,
+                            "port": issue.port,
+                            "message": issue.message,
+                        }
+                        for issue in preflight.issues
+                        if issue.level == "error"
+                    ],
+                },
+            )
+
+        # Audit Item 2: enforce the per-session demo execution quota.  Done
+        # after access and graph validation so a rejected workflow doesn't burn a
+        # slot; no-op outside demo.
+        from spectra_sherpa.app.api.deps import enforce_demo_execution_quota
+
+        enforce_demo_execution_quota(user_id)
         allowed_model_artifact_uids = admitted_model_artifact_ids(execution_nodes, payload.initial_data)
+        if batch_binding is not None:
+            preloaded_datasets = {batch_binding.source_id: batch_binding.loaded}
         if workflow_requires_canonical_artifact_grant(workflow.nodes):
             from spectra_sherpa.app.services.canonical_project_custody import (
                 CanonicalProjectCustodyError,
@@ -985,26 +1083,6 @@ async def execute_workflow(
                 workflow.edges,
                 canonical_artifact_read_grant.application_integrity_hash,
             )
-        preflight = _workflow_preflight(workflow, target_node_id=payload.node_id)
-        if not preflight.is_valid:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "code": "workflow_preflight_failed",
-                    "message": "Workflow is not admissible for execution; inspect validation for details.",
-                    "issues": [
-                        {
-                            "code": issue.code,
-                            "node_id": issue.node_id,
-                            "port": issue.port,
-                            "message": issue.message,
-                        }
-                        for issue in preflight.issues
-                        if issue.level == "error"
-                    ],
-                },
-            )
-
         # ISO 17025 audit (Phase 1d): record workflow.run.started in its own
         # transaction so the started event survives even if the execution
         # session rolls back. No-op when audit_enabled is False. Failure of
@@ -1036,7 +1114,7 @@ async def execute_workflow(
         await session.rollback()
         # Retain the failed attempt without converting revoked output into a
         # successful/partial response or materializing readable result blobs.
-        await _auto_persist_run(
+        await persist_execution_run(
             session,
             workflow_id=workflow_id,
             workflow_name=wf_name,
@@ -1072,6 +1150,7 @@ async def execute_workflow(
                 canonical_artifact_read_grant=canonical_artifact_read_grant,
                 preloaded_datasets=preloaded_datasets,
                 allowed_model_artifact_uids=allowed_model_artifact_uids,
+                pin_preloaded_members=batch_binding is not None,
             )
         )
 
@@ -1113,7 +1192,20 @@ async def execute_workflow(
 
         from spectra_sherpa.app.services.websocket_manager import ws_manager
 
+        node_started: dict[str, float] = {}
+
         async def _broadcast_node_status(node_id: str, status: str, error: str | None = None) -> None:
+            now = perf_counter()
+            if status == "running":
+                node_started[node_id] = now
+            elif node_id in node_started:
+                logger.info(
+                    "workflow_timing workflow=%s node=%s status=%s seconds=%.3f",
+                    workflow_id,
+                    node_id,
+                    status,
+                    now - node_started.pop(node_id),
+                )
             try:
                 await ws_manager.broadcast(
                     f"workflow:{workflow_id}",
@@ -1133,6 +1225,7 @@ async def execute_workflow(
         execution_timeout = max(1, int(settings.max_job_duration_sec))
         timeout_ctx = asyncio.timeout(execution_timeout)
 
+        execution_started = perf_counter()
         async with timeout_ctx:
             if payload.node_id:
                 # Execute single node and its dependencies (with initial_data for DATA nodes)
@@ -1148,9 +1241,12 @@ async def execute_workflow(
                     status_callback=_broadcast_node_status,
                 )
 
+        execution_finished = perf_counter()
         # Authority may lapse during a run. Keep failure provenance, but do
         # not serialize or disclose output after access is withdrawn.
         await require_scientific_access(session, user_id, wf_project_id, "execute")
+        if batch_binding is not None:
+            await batch_binding.verify_current()
         # Serialize results to JSON-safe format (per-node, so one failure doesn't lose all)
         logger.debug("[Serialization] Starting serialization of %s node results...", len(results))
         serialized_results = {}
@@ -1192,7 +1288,11 @@ async def execute_workflow(
         if executor and getattr(executor, "saved_artifacts", None):
             from spectra_sherpa.app.services.model_store import persist_model_artifact_records
 
-            training_dataset_id = await _training_dataset_id_from_workflow(session, workflow)
+            training_dataset_id = (
+                batch_binding.loaded.experiment_id
+                if batch_binding is not None
+                else await _training_dataset_id_from_workflow(session, workflow)
+            )
             await persist_model_artifact_records(
                 session,
                 executor.saved_artifacts,
@@ -1266,13 +1366,23 @@ async def execute_workflow(
             payload.initial_data,
             scientific_receipts=scientific_receipts,
         )
+        if batch_binding is not None:
+            input_ports_record = [entry for entry in input_ports_record if entry["port_name"] != "primary"] + [
+                {
+                    "port_name": f"batch:{batch_binding.source_id}",
+                    "data_source_id": None,
+                    "dataset": batch_binding.metadata["dataset"],
+                    "dataset_view": batch_binding.metadata.get("dataset_view"),
+                }
+            ]
 
         # Auto-persist results so they survive page refresh. Retention can
         # reject a large output after computation succeeds; carry that
         # warning back to the HTTP response so the GUI does not report a
         # fully completed run when durable evidence is incomplete.
+        serialization_finished = perf_counter()
         retention_feedback: dict[str, Any] = {}
-        run_id = await _auto_persist_run(
+        run_id = await persist_execution_run(
             session,
             workflow_id=workflow_id,
             workflow_name=wf_name,
@@ -1304,6 +1414,17 @@ async def execute_workflow(
         )
         if run_id is None:
             _raise_execution_persistence_error()
+        logger.info(
+            "workflow_timing workflow=%s run=%s preflight=%.3f compute=%.3f "
+            "serialization=%.3f persistence=%.3f total=%.3f",
+            workflow_id,
+            run_id,
+            execution_started - request_started,
+            execution_finished - execution_started,
+            serialization_finished - execution_finished,
+            perf_counter() - serialization_finished,
+            perf_counter() - request_started,
+        )
         retention_warning = retention_feedback.get("warning")
         if retention_warning:
             final_status = "partial" if final_status == "completed" else final_status
@@ -1324,7 +1445,7 @@ async def execute_workflow(
             integrity_hash=wf_integrity_hash,
         )
 
-    except ScientificAccessDenied:
+    except (ScientificAccessDenied, BatchAuthorityChanged):
         await discard_withdrawn_output()
         raise
 
@@ -1344,7 +1465,7 @@ async def execute_workflow(
             # Roll back any dirty state the executor may have left in the
             # session before opening a fresh write for the cancelled run.
             await session.rollback()
-            await _auto_persist_run(
+            await persist_execution_run(
                 session,
                 workflow_id=workflow_id,
                 workflow_name=wf_name,
@@ -1377,6 +1498,12 @@ async def execute_workflow(
 
     except Exception as e:
         # A node failure must not turn revoked output into a partial response.
+        if batch_binding is not None:
+            try:
+                await batch_binding.verify_current()
+            except BatchAuthorityChanged:
+                await discard_withdrawn_output()
+                raise
         if uses_managed_project_access():
             await session.rollback()
             try:
@@ -1396,7 +1523,11 @@ async def execute_workflow(
 
                 from spectra_sherpa.app.services.model_store import persist_model_artifact_records
 
-                training_dataset_id = await _training_dataset_id_from_workflow(session, workflow)
+                training_dataset_id = (
+                    batch_binding.loaded.experiment_id
+                    if batch_binding is not None
+                    else await _training_dataset_id_from_workflow(session, workflow)
+                )
                 await persist_model_artifact_records(
                     session,
                     executor.saved_artifacts,
@@ -1487,7 +1618,7 @@ async def execute_workflow(
         partial_node_statuses = executor.get_status()["node_statuses"] if executor else {}
 
         # Auto-persist partial/error results too
-        run_id = await _auto_persist_run(
+        run_id = await persist_execution_run(
             session,
             workflow_id=workflow_id,
             workflow_name=wf_name,

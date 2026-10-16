@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 import spectra_sherpa.sdk as ss
-from spectra_sherpa.examples import canonical_workflow, ipls_selection, native_pca
+from spectra_sherpa.examples import canonical_workflow, ipls_selection, native_pca, pls_calibration
 
 
 def test_deployment_contract_imports_from_a_clean_public_module() -> None:
@@ -54,3 +54,15 @@ def test_shipped_native_pca_journey_executes_current_node() -> None:
     assert summary["n_components"] == 2
     assert summary["scores_shape"] == [12, 2]
     assert summary["loadings_shape"] == [2, 32]
+
+
+def test_shipped_pls_calibration_journey_fits_known_property() -> None:
+    summary = pls_calibration.run()
+
+    assert summary["model_type"] == "PLS"
+    assert summary["n_components"] == 2
+    assert summary["n_samples"] == 48
+    assert summary["predictions_shape"] == [48, 1]
+    assert summary["calibration_r2"] > 0.99
+    assert summary["calibration_rmse"] < 0.01
+    assert len(summary["state_content_digest"]) == 64

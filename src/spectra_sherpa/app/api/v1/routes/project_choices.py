@@ -145,6 +145,61 @@ async def current_project_dataset_choice(
     }
 
 
+@router.get("/dataset-portfolios")
+async def project_dataset_portfolios(
+    project_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Named definitions and the latest choice for the in-sheet source picker.
+
+    This is a list, not scientific admission: applying one still passes the
+    exact workflow data-selection verifier before it changes a sheet.
+    """
+    await require_project(project_id, current_user.id, session, operation="read")
+    views = (
+        await session.scalars(
+            select(DatasetView)
+            .where(DatasetView.project_id == project_id, DatasetView.deleted_at.is_(None))
+            .order_by(DatasetView.id)
+        )
+    ).all()
+    choice = await session.scalar(
+        select(ProjectChoiceEvent)
+        .where(
+            ProjectChoiceEvent.project_id == project_id,
+            ProjectChoiceEvent.user_id == current_user.id,
+            ProjectChoiceEvent.kind == "dataset",
+        )
+        .order_by(ProjectChoiceEvent.id.desc())
+        .limit(1)
+    )
+    active = None
+    if choice is not None and isinstance(choice.selected_definition, dict):
+        receipt = choice.selected_definition
+        if receipt_sha256(receipt) == choice.selected_digest:
+            active = {
+                "name": choice.selected_name,
+                "experiment_id": choice.selected_experiment_id,
+                "dataset_view_id": choice.selected_dataset_view_id,
+                "digest": choice.selected_digest,
+                "selection": receipt,
+            }
+    return {
+        "active": active,
+        "views": [
+            {
+                "id": view.id,
+                "name": view.name,
+                "experiment_id": view.experiment_id,
+                "selection_sha256": view.selection_sha256,
+                "selection": view.selection,
+            }
+            for view in views
+        ],
+    }
+
+
 @router.post("", status_code=201)
 async def select_project_choice(
     project_id: int,

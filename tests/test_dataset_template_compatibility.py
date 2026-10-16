@@ -80,6 +80,29 @@ def test_runtime_group_fields_require_multiple_levels_and_cannot_repeat_target()
     assert profile["group_fields"] == ["batch"]
 
 
+def test_runtime_profile_offers_repeated_subject_and_patient_ids_as_groups() -> None:
+    dataset = SimpleNamespace(
+        data_role="X_spectra",
+        target_context=SimpleNamespace(target_type="categorical", target_names=["class"], target_name="class"),
+        sample_axis=SimpleNamespace(
+            classes=None,
+            sample_table={
+                "sample_id": ["a", "b", "c", "d"],
+                "subject_id": ["S1", "S1", "S2", "S2"],
+                "patient_id": ["P1", "P1", "P2", "P2"],
+                "class": ["case", "case", "control", "control"],
+            },
+        ),
+        domain=SimpleNamespace(technique="FTIR"),
+        is_time_series=False,
+    )
+
+    profile = analysis_profile_from_dataset(dataset)
+
+    assert profile["identity_fields"] == ["sample_id", "subject_id", "patient_id"]
+    assert profile["group_fields"] == ["subject_id", "patient_id"]
+
+
 def test_technique_mismatch_is_an_advisory_not_an_admission_reason() -> None:
     templates = _templates()
     profile = {**_profile(target_type=None, target_fields=[]), "technique": "Customer-defined LIBS variant"}
@@ -475,3 +498,37 @@ def test_family_leader_interaction_matrix_is_total(monorepo_root: Path) -> None:
                 assert qualification == compatibility_row[family]
             else:
                 assert qualification in {"passed", "pending_live", "runtime_unavailable"}
+
+
+def test_reference_matrix_applies_current_runtime_readiness():
+    template = TemplateLoader().load_all()[0]
+    template = {
+        **template,
+        "runtime_readiness": {
+            "ready": False,
+            "blockers": ["dependency_missing"],
+            "remediation": ["Install the optional analysis dependency."],
+        },
+    }
+    dataset = model_neutral_dataset_catalog()[0]
+    result = build_compatibility_matrix([dataset], [template])[0]
+    assert result["display_group"] == "unavailable"
+    assert result["status"] == "incompatible"
+    assert result["reasons"][0]["message"] == "Install the optional analysis dependency."
+
+
+def test_demo_example_availability_matches_import_policy(monkeypatch):
+    from types import SimpleNamespace
+
+    from spectra_sherpa.app.contracts import demo_policy
+    from spectra_sherpa.app.core.config import app_config
+    from spectra_sherpa.app.services.template_availability import template_example_unavailable_reason
+
+    monkeypatch.setattr(app_config, "site_profile", "demo")
+    monkeypatch.setattr(
+        demo_policy,
+        "get_demo_policy",
+        lambda: demo_policy.DemoPolicy(disabled_capabilities=frozenset({"reference_data_import"})),
+    )
+    template = SimpleNamespace(template_data={"nodes": [{"example_binding": {"source": "synthetic"}}]})
+    assert "unavailable on the demo" in template_example_unavailable_reason(template)

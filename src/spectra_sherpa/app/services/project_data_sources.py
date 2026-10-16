@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterable
@@ -28,14 +29,28 @@ class DataSourceCandidate:
     metadata: dict[str, Any]
 
 
+def _portfolio_tab_color(nodes: Iterable[Any]) -> str | None:
+    """Stable color for the exact bound collection(s), independent of sheet origin/name."""
+    candidates = [candidate for node in nodes if (candidate := describe_node_data_source(node)) is not None]
+    if not any(candidate.metadata.get("source_mode") == "experiment_collection" for candidate in candidates):
+        return None
+    identity = "|".join(sorted({candidate.fingerprint for candidate in candidates}))
+    digest = hashlib.sha256(identity.encode()).digest()
+    # Bounded saturation/brightness, in the existing persisted hex-color format.
+    return "#" + "".join(f"{48 + value % 144:02x}" for value in digest[:3])
+
+
 def effective_workflow_tab_color(workflow: Workflow) -> str | None:
-    """Return the color the sheet tab should display today."""
+    """Manual choice wins; otherwise use the exact Data Portfolio."""
     if workflow.tab_color_override:
         return workflow.tab_color_override
-    if workflow.color_source == "ai":
-        return AI_PURPLE
+    portfolio = _portfolio_tab_color(workflow.__dict__.get("nodes", ()))
+    if portfolio:
+        return portfolio
     if workflow.primary_data_source is not None:
         return workflow.primary_data_source.color
+    if workflow.color_source == "ai":
+        return AI_PURPLE
     return None
 
 
@@ -119,8 +134,10 @@ def describe_node_data_source(node: Any) -> DataSourceCandidate | None:
             asset_id = params.get("asset_id")
             asset_selection = str(asset_id) if asset_id not in (None, "") else "single-auto"
             selected_file_ids = params.get("selected_file_ids") or []
-            selected_target = str(params.get("selected_target") or "")
-            target_type = str(params.get("target_type") or "")
+            authority = params.get("target_authority")
+            authority = authority if isinstance(authority, dict) else {}
+            selected_target = str(authority.get("column") or params.get("selected_target") or "")
+            target_type = str(authority.get("target_type") or params.get("target_type") or "")
             group_column = str(params.get("group_column") or "")
             manifest_digest = str(params.get("source_manifest_sha256") or "")
             definition_digest = str(params.get("collection_definition_sha256") or "")
@@ -169,6 +186,8 @@ def describe_node_data_source(node: Any) -> DataSourceCandidate | None:
                     target_type or "none",
                     "group",
                     group_column or "none",
+                    "target-authority",
+                    json.dumps(authority, sort_keys=True, separators=(",", ":")) if authority else "legacy",
                 )
             )
             return DataSourceCandidate(
@@ -187,6 +206,7 @@ def describe_node_data_source(node: Any) -> DataSourceCandidate | None:
                     "collection_definition_sha256": definition_digest or None,
                     "scientific_collection_sha256": scientific_digest or None,
                     "selected_file_ids": selected_file_ids,
+                    "target_authority": authority or None,
                     "selected_target": selected_target or None,
                     "target_type": target_type or None,
                     "group_column": group_column or None,
@@ -316,13 +336,11 @@ async def sync_workflow_data_sources(
     if workflow.tab_color_override:
         workflow.color_source = "manual"
         workflow.tab_color = workflow.tab_color_override
-    elif workflow.color_source == "ai":
-        from spectra_sherpa.app.core.constants import AI_PURPLE
-
-        workflow.tab_color = AI_PURPLE
     elif data_sources:
         workflow.color_source = "data"
-        workflow.tab_color = data_sources[0].color
+        workflow.tab_color = _portfolio_tab_color(candidate_nodes) or data_sources[0].color
+    elif workflow.color_source == "ai":
+        workflow.tab_color = AI_PURPLE
     else:
         workflow.color_source = "blank"
         workflow.tab_color = None

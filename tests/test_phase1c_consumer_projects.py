@@ -963,7 +963,7 @@ async def test_pca_project_executes_one_closed_fit_application_and_diagnostic_au
     assert inclusion.provenance[-1].op_id == "data.filter_samples"
     assert inclusion.provenance[-1].parameters["no_filter"] is True
     state = run.results["model_1"]["fitted_state"]
-    assert state["schema_version"] == "spectrasherpa.model.pca-state/4"
+    assert state["schema_version"] == "spectrasherpa.model.pca-state/5"
     assert state["metadata"]["n_components"] == 3
     assert run.results["model_1"]["model"] == state
     assert run.results["model_1"]["scores"].shape == (36, 3)
@@ -1020,7 +1020,7 @@ async def test_mcr_project_executes_one_replayable_constrained_decomposition(
         rtol=0.0,
         atol=1e-12,
     )
-    assert state["serializer"] == "spectrasherpa.model-artifact.mcr-als/1"
+    assert state["serializer"] == "spectrasherpa.model-artifact.mcr-als/2"
     assert state["metadata"]["concentration_solver"] == "nnls"
     assert run.executor.diagnostics["model_1"]["residual_definition"] == "observed_minus_reconstructed"
     assert run.results["viz_1"]["visualization"]["plot_type"] == "spectra"
@@ -1062,7 +1062,7 @@ async def test_ica_project_executes_one_seeded_replayable_decomposition(
     assert mixing.shape == (42, 3)
     reconstructed = scores.data @ mixing.T + np.asarray(state["arrays"]["mean"])
     np.testing.assert_allclose(residuals.data, source.data - reconstructed, rtol=0.0, atol=1e-12)
-    assert state["serializer"] == "spectrasherpa.model-artifact.fastica/1"
+    assert state["serializer"] == "spectrasherpa.model-artifact.fastica/2"
     assert state["metadata"]["random_seed"] == 42
     assert run.executor.diagnostics["model_1"]["sign_rule"] == "largest_absolute_mixing_loading_positive"
     assert run.results["sources_plot"]["visualization"]["plot_type"] == "scores"
@@ -1102,7 +1102,6 @@ async def test_variable_selection_comparison_project_executes_training_owned_agr
     }
     assert {
         ("partition_1", "X_train", "pls_1", "default"),
-        ("partition_1", "y_train", "pls_1", "y"),
         ("partition_1", "X_train", "vip_1", "X"),
         ("partition_1", "X_train", "cars_1", "X"),
         ("partition_1", "y_train", "cars_1", "y"),
@@ -1454,14 +1453,14 @@ async def test_knn_classification_project_executes_explicit_fit_apply_and_heldou
     held_out = np.asarray(partition["y_test"], dtype=object)
     evaluation = run.results["eval_1"]["default"]
 
-    assert fitted_state["serializer"] == "spectrasherpa.model-artifact.knn/1"
+    assert fitted_state["serializer"] == "spectrasherpa.model-artifact.knn/2"
     assert predictions.shape == held_out.shape == (15,)
     assert probabilities.shape == (15, 3)
     np.testing.assert_allclose(np.sum(probabilities, axis=1), np.ones(15), rtol=0.0, atol=1e-12)
     assert evaluation["n_samples"] == 15
     assert sum(sum(row) for row in evaluation["confusion_matrix"]) == 15
     assert evaluation["accuracy"] >= 0.9
-    assert run.executor.diagnostics["predict_1"]["serializer"] == "spectrasherpa.model-artifact.knn/1"
+    assert run.executor.diagnostics["predict_1"]["serializer"] == "spectrasherpa.model-artifact.knn/2"
 
 
 @pytest.mark.asyncio
@@ -1489,13 +1488,13 @@ async def test_simca_classification_project_executes_explicit_fit_apply_and_held
     held_out = np.asarray(partition["y_test"], dtype=object)
     evaluation = run.results["eval_1"]["default"]
 
-    assert fitted_state["serializer"] == "spectrasherpa.model-artifact.simca/1"
+    assert fitted_state["serializer"] == "spectrasherpa.model-artifact.simca/2"
     assert predictions.shape == held_out.shape == (15,)
     assert affinity.shape == (15, 3)
     assert np.isfinite(affinity).all()
     assert evaluation["n_samples"] == 15
     assert sum(sum(row) for row in evaluation["confusion_matrix"]) == 15
-    assert run.executor.diagnostics["predict_1"]["serializer"] == "spectrasherpa.model-artifact.simca/1"
+    assert run.executor.diagnostics["predict_1"]["serializer"] == "spectrasherpa.model-artifact.simca/2"
 
 
 @pytest.mark.asyncio

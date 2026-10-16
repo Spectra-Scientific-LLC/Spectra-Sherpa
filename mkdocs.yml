@@ -6,7 +6,7 @@ edit_uri: edit/main/docs/
 nav:
   - Introduction:
       - What SpectraSherpa Is: index.md
-      - Cloud vs Local OSS: introduction/cloud-vs-local.md
+      - Demo, Pro and local OSS: introduction/cloud-vs-local.md
       - Current Capabilities: introduction/capabilities.md
       - Supported File Types: introduction/file-types.md
       - License: introduction/license.md
@@ -14,12 +14,15 @@ nav:
       - Glossary: concepts/glossary.md
   - Onboarding:
       - Choose Your Path: onboarding/choose-your-path.md
-      - 10 Minutes to Local Compute: onboarding/local-30-minutes.md
+      - Local onboarding: onboarding/local-30-minutes.md
       - Import Your First Dataset: onboarding/import-first-dataset.md
+      - Your First Calibration: onboarding/first-calibration.md
       - Scientific Assistance: onboarding/scientific-assistance.md
       - Canonical Workflows from Python: onboarding/python-canonical-workflows.md
       - Migrate to 0.6: onboarding/migrate-to-0.6.md
   - Releases:
+      - SpectraSherpa 0.6.2: releases/0.6.2.md
+      - SpectraSherpa 0.6.1: releases/0.6.1.md
       - SpectraSherpa 0.6.0: releases/0.6.0.md
   - Support:
       - Desktop Downloads and Installation: support/local_install.md
@@ -41,6 +44,7 @@ nav:
       - SIMCA QC: chemometrics/simca.md
       - MCR-ALS and Curve Resolution: chemometrics/mcr-als.md
       - Peak Finding and Library Comparison: chemometrics/peaks-library.md
+      - Designing Validation: chemometrics/validation-design.md
       - Validation and Model Application: chemometrics/validation-application.md
   - Node Library:
       - Overview: nodes/index.md
@@ -89,6 +93,7 @@ nav:
       - Ubuntu desktop release: developers/ubuntu-desktop-release.md
   - Attributions:
       - Scientific and Software Attributions: attributions/index.md
+      - Scientific Python: attributions/scientific-python.md
       - SpectroChemPy: attributions/spectrochempy.md
       - Eigenvector Research: attributions/eigenvector.md
       - NIST: attributions/nist.md
@@ -129,6 +134,7 @@ plugins:
   - mkdocs-jupyter
 markdown_extensions:
   - admonition
+  - footnotes
   - attr_list
   - md_in_html
   - pymdownx.details

@@ -444,7 +444,9 @@ def _admit_application_operation(
         source_contract_digest,
         source_contract.digest,
     ):
-        raise CanonicalApplicationPlanError("canonical application source operation is not currently re-admitted")
+        raise CanonicalApplicationPlanError(
+            "canonical application source operation is not currently re-admitted; refit the model before application"
+        )
     if application_contract is None:
         raise CanonicalApplicationPlanError("canonical application operation lacks an immutable execution contract")
 

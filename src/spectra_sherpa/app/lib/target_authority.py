@@ -84,7 +84,10 @@ def verify_target_authority(
         source_digest=source_digest,
     )
     if observed != authority:
-        raise ValueError("target authority does not match the admitted dataset source, type, and units")
+        raise ValueError(
+            "The selected target no longer matches the current dataset. "
+            "Refresh the dataset, review the selected files and target, then try again."
+        )
     return observed
 
 

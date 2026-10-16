@@ -74,7 +74,7 @@ export const useDeployStore = defineStore("deploy", () => {
           params: { project_id: projectId },
         });
         if (request !== applicationRequest) return;
-        if (Array.isArray(response.data) && response.data.length > 0) {
+        if (Array.isArray(response.data)) {
           applications.value = response.data
             .filter((item) => item.state === undefined || item.state === "released")
             .map((item) => ({

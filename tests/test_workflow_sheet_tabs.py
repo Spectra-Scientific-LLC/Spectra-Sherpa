@@ -712,3 +712,18 @@ async def test_version_restore_refuses_default_omitted_legacy_classifier(
     response = await auth_client.post(f"/api/v1/workflows/{workflow['id']}/versions/{version.id}/restore")
     assert response.status_code == 409
     assert "no current classifier-validation authority" in response.json()["detail"]
+
+
+async def test_workflow_timestamps_include_explicit_timezone(auth_client: AsyncClient) -> None:
+    from datetime import datetime
+
+    project_id = await _create_project(auth_client)
+    workflow = await _create_workflow(auth_client, project_id, "Timezone test")
+    responses = [workflow]
+    listing = await auth_client.get("/api/v1/workflows", params={"project_id": project_id})
+    responses.extend(listing.json())
+    detail = await auth_client.get(f"/api/v1/workflows/{workflow['id']}")
+    responses.append(detail.json())
+    for item in responses:
+        for field in ("created_at", "updated_at"):
+            assert datetime.fromisoformat(item[field].replace("Z", "+00:00")).utcoffset() is not None

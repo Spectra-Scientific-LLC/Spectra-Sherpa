@@ -257,6 +257,26 @@ def dataset_retained_footprint(dataset: SherpaDataset) -> tuple[int, int]:
     )
 
 
+def _source_observation_retained_bytes(members: Sequence[CollectionMember]) -> int:
+    """Reserve bounded row receipts before constructing them or output arrays."""
+    if sum(member.dataset.n_samples for member in members) > 5000:
+        return 0
+    retained = 96
+    for member in members:
+        axis = member.dataset.sample_axis
+        labels = axis.labels if axis is not None else None
+        source_bytes = sum(
+            len(value.encode("utf-8"))
+            for value in (member.file_name, member.sha256, member.prepared_data_sha256, member.asset_id)
+        )
+        # Includes each row dict, six keys/values, list slot and integer index.
+        # Strings are charged per row, even when Python shares their objects.
+        for index in range(member.dataset.n_samples):
+            label = labels[index] if labels is not None else f"{Path(member.file_name).stem}_{index}"
+            retained += 2048 + source_bytes + len(str(label).encode("utf-8"))
+    return retained
+
+
 def collection_retained_footprint(members: Sequence[CollectionMember]) -> tuple[int, int]:
     """Charge retained inputs plus every array/list allocated by assembly."""
 
@@ -264,7 +284,7 @@ def collection_retained_footprint(members: Sequence[CollectionMember]) -> tuple[
     # Reserve space for the source-collection receipt added by assembly.
     if len(members) == 1:
         elements, retained_bytes = dataset_retained_footprint(members[0].dataset)
-        return elements, retained_bytes + 4096
+        return elements, retained_bytes + 4096 + _source_observation_retained_bytes(members)
 
     input_values: list[object] = []
     for member in members:
@@ -302,7 +322,7 @@ def collection_retained_footprint(members: Sequence[CollectionMember]) -> tuple[
         )
     input_elements, input_bytes = _retained_state_footprint(input_values)
     output_elements = 0
-    output_bytes = 4096 + 1024 * len(members)
+    output_bytes = 4096 + 1024 * len(members) + _source_observation_retained_bytes(members)
     total_samples = 0
     for member in members:
         dataset = member.dataset
@@ -709,6 +729,8 @@ def assemble_collection(
         if dataset_id is not None:
             first._dataset_id = dataset_id
         first.meta["source_collection"] = collection_manifest(members)
+        if first.ndim == 2:
+            first.meta["source_observations"] = source_observations(members)
         return first
 
     reference_table = _sample_table(first)
@@ -901,6 +923,7 @@ def assemble_collection(
     if len(set(labels)) != len(labels):
         raise ValueError("scientific collection contains duplicate sample identities")
     result.meta["source_collection"] = collection_manifest(members)
+    result.meta["source_observations"] = source_observations(members)
     return result
 
 
@@ -918,3 +941,78 @@ __all__ = [
     "prepared_data_digest",
     "require_collection_budget",
 ]
+
+
+def source_observations(members: Sequence[CollectionMember]) -> list[dict[str, Any]] | None:
+    """Capture row custody while the actual ordered collection members exist.
+
+    This receipt is supplementary evidence, outside the established scientific
+    projection: adding it must not invalidate existing collection bindings.
+    """
+    if sum(member.dataset.n_samples for member in members) > 5000:
+        return None
+    rows = []
+    for member in members:
+        labels = clean_sample_labels(
+            member.dataset.sample_axis.labels,
+            member.dataset.n_samples,
+            fallback_prefix=Path(member.file_name).stem,
+            source_name=member.file_name,
+        )
+        rows.extend(
+            {
+                "sample_id": label,
+                "file_name": member.file_name,
+                "sha256": member.sha256,
+                "prepared_data_sha256": member.prepared_data_sha256,
+                "asset_id": member.asset_id,
+                "source_row": index,
+            }
+            for index, label in enumerate(labels)
+        )
+    return rows
+
+
+def verified_source_observations(dataset: SherpaDataset) -> list[dict[str, Any]]:
+    """Require captured row custody; never infer member boundaries from labels."""
+    rows = dataset.meta.get("source_observations")
+    axis = dataset.sample_axis
+    labels = list(axis.labels) if axis is not None and axis.labels is not None else []
+    if dataset.ndim != 2 or not labels or len(labels) > 5000 or len(set(labels)) != len(labels):
+        raise ValueError("Dataset curation requires at most 5,000 uniquely identified observations.")
+    if not isinstance(rows, list) or len(rows) > 5000:
+        raise ValueError("Exact source row identity is unavailable; reload or rerun to enable dataset curation.")
+    files = {f["file_name"]: f for f in dataset.meta.get("source_collection", {}).get("files", [])}
+    lookup = {}
+    keys = set()
+    for row in rows:
+        if not isinstance(row, dict) or set(row) != {
+            "sample_id",
+            "file_name",
+            "sha256",
+            "prepared_data_sha256",
+            "asset_id",
+            "source_row",
+        }:
+            raise ValueError("Source observation identity is incomplete.")
+        source = files.get(row["file_name"])
+        key = (row["file_name"], row["asset_id"], row["source_row"])
+        if (
+            not source
+            or row["sha256"] != source["sha256"]
+            or row["prepared_data_sha256"] != source["prepared_data_sha256"]
+            or not isinstance(row["asset_id"], str)
+            or not row["asset_id"]
+            or type(row["source_row"]) is not int
+            or row["source_row"] < 0
+            or not isinstance(row["sample_id"], str)
+            or not row["sample_id"]
+            or row["sample_id"] in lookup
+            or key in keys
+        ):
+            raise ValueError("Source observation identity is ambiguous or changed.")
+        lookup[row["sample_id"]] = row
+        keys.add(key)
+    if any(label not in lookup for label in labels):
+        raise ValueError("Observations do not match the retained source identity.")
+    return [dict(lookup[label]) for label in labels]

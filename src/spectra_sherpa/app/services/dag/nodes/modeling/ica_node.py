@@ -17,8 +17,10 @@ from sklearn.exceptions import ConvergenceWarning
 
 from spectra_sherpa.app.lib import fitted_state
 from spectra_sherpa.app.lib.fitted_state import FastICAExtract
+from spectra_sherpa.app.services.dag import fitted_input_identity as input_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers
+from spectra_sherpa.app.services.dag.fitted_input_identity import fitted_input_identity, require_fitted_input_identity
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
@@ -48,7 +50,7 @@ from . import _artifact_builder
 from . import core_utils as modeling_core_utils
 from .core_utils import create_spectral_dataset, make_safe_coord
 
-ICA_FITTED_STATE_SERIALIZER = FastICAExtract.SERIALIZER
+ICA_FITTED_STATE_SERIALIZER = "spectrasherpa.model-artifact.fastica/2"
 _ICA_MAX_COMPONENTS = 50
 _ICA_MAX_ITERATIONS = 2_000
 _ICA_MAX_RANDOM_SEED = 2_147_483_647
@@ -163,17 +165,18 @@ def _canonicalize_ica_presentation(
     return sources, components, mixing, contribution[order]
 
 
-def _ica_fitted_state_from_extract(extract: FastICAExtract) -> dict[str, object]:
+def _ica_fitted_state_from_extract(extract: FastICAExtract, dataset: Any) -> dict[str, object]:
     metadata, arrays = extract.to_artifact()
     return {
         "serializer": ICA_FITTED_STATE_SERIALIZER,
+        "input_identity": fitted_input_identity(dataset, features=dataset.shape[1]),
         "metadata": metadata,
         "arrays": {name: np.asarray(value, dtype=np.float64).tolist() for name, value in arrays.items()},
     }
 
 
 def _ica_extract_from_state(state: Any) -> FastICAExtract:
-    if not isinstance(state, dict) or set(state) != {"serializer", "metadata", "arrays"}:
+    if not isinstance(state, dict) or set(state) != {"serializer", "metadata", "arrays", "input_identity"}:
         raise ValueError("FastICA fitted state must contain exact serializer, metadata, and arrays")
     if state["serializer"] != ICA_FITTED_STATE_SERIALIZER:
         raise ValueError("FastICA fitted state has an unsupported serializer")
@@ -205,7 +208,9 @@ def apply_ica_fitted_state(input_data: Any, state: Any) -> np.ndarray:
     """Project new observations through the exact fitted unmixing operator."""
 
     matrix = to_numpy_2d(input_data, name="input_data", dtype=np.float64)
-    return _ica_extract_from_state(state).transform(matrix)
+    extract = _ica_extract_from_state(state)
+    require_fitted_input_identity(input_data, state["input_identity"], features=matrix.shape[1])
+    return extract.transform(matrix)
 
 
 def _ica_scientific_core(input_data: Any, *, parameters: dict[str, object]) -> dict[str, Any]:
@@ -275,7 +280,7 @@ def _ica_scientific_core(input_data: Any, *, parameters: dict[str, object]) -> d
         whiten=str(params["whiten"]),
         random_seed=int(params["random_seed"]),
     )
-    state = _ica_fitted_state_from_extract(extract)
+    state = _ica_fitted_state_from_extract(extract, input_ds)
     replayed = extract.transform(matrix)
     if not np.allclose(replayed, sources, rtol=1e-10, atol=1e-10):
         raise _ica_recovery_failure(
@@ -587,6 +592,7 @@ bind_stable_execution_contract(
     license_id="BSD-3-Clause",
     help_reference="docs/nodes/exploratory.md",
     implementation_modules=(
+        input_identity_authority,
         fitted_state,
         dag_io_contracts,
         meta_helpers,

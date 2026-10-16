@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 
-from .base import ChatEndpointConfig, ChatRequest
+from .base import ChatEndpointConfig, ChatOutputLimitError, ChatRequest
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,11 @@ def _brief_system_prompt(max_paragraphs: int) -> str:
 class OpenAICompatibleProvider:
     id = "openai_compatible"
     requires_key = True
+
+    @staticmethod
+    def _check_finish_reason(choice: dict) -> None:
+        if choice.get("finish_reason") == "length":
+            raise ChatOutputLimitError("Chat output limit reached")
 
     def request_url(self, endpoint_url: str) -> str:
         base_url = endpoint_url.strip().rstrip("/")
@@ -92,14 +97,14 @@ class OpenAICompatibleProvider:
                         continue
                     observe_usage(chunk.get("usage"))
                     choices = chunk.get("choices") or [{}]
+                    self._check_finish_reason(choices[0])
                     text = choices[0].get("delta", {}).get("content")
                     if not text:
                         continue
                     output_chars += len(text)
                     if output_chars > MAX_OUTPUT_CHARS:
                         logger.warning("Chat endpoint response exceeded %d characters", MAX_OUTPUT_CHARS)
-                        yield "\n\n[Response truncated by SpectraSherpa output limit.]"
-                        return
+                        raise ChatOutputLimitError("Chat output character limit reached")
                     yield text
 
     async def test_connection(self, config: ChatEndpointConfig, request_url: str) -> tuple[bool, str]:

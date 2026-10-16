@@ -160,8 +160,8 @@ def _select_variables_inner(
         )
         vip = _vip.calculate_vip(
             pls.x_scores,
-            pls.x_weights.T,
-            pls.y_loadings.T,
+            pls.x_weights,
+            pls.y_loadings,
             n_features,
         )
         return vip >= vip_threshold

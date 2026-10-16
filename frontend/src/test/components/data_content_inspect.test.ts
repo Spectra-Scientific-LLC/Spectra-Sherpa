@@ -122,6 +122,7 @@ const mocks = vi.hoisted(() => ({
     fetchDataMatrix: vi.fn(),
     exploreCatalogDataset: vi.fn(),
     generateDataStory: vi.fn(),
+    invalidateDataStory: vi.fn(),
   },
   projectStore: {
     currentProjectId: 3 as number | null,
@@ -219,6 +220,9 @@ vi.mock("@/api/client", () => ({
   },
 }));
 
+const confirmAction = vi.hoisted(() => vi.fn(async () => true));
+vi.mock("@/composables/useConfirmAction", () => ({ useConfirmAction: () => confirmAction }));
+
 vi.mock("@/components/MemoryAttribution.vue", () => ({
   default: defineComponent({ name: "MemoryAttribution", template: "<div />" }),
 }));
@@ -241,7 +245,8 @@ vi.mock("@/views/data/DataContentsPanel.vue", () => ({
       analysisSelectionStatus: { type: String, default: "loading" },
     },
     emits: ["analysisChoice", "analysisSelectionCommit"],
-    template: "<div />",
+    template:
+      "<div><slot name='source-collection' /><slot name='sample-curation' /><slot name='portfolio-definitions' /></div>",
   }),
 }));
 
@@ -438,12 +443,48 @@ function latestWorkflowReceipt(): DataSelectionReceipt | null {
 }
 
 function storedWorkflowReceiptCount(): number {
-  return Array.from({ length: sessionStorage.length }, (_, index) => sessionStorage.key(index)).filter(
-    (key) => key?.startsWith("spectra-my-dataset-workflow-selection-v3:") && !key.endsWith(":index"),
+  return Array.from({ length: sessionStorage.length }, (_, index) =>
+    sessionStorage.key(index),
+  ).filter(
+    (key) =>
+      key?.startsWith("spectra-my-dataset-workflow-selection-v3:") && !key.endsWith(":index"),
   ).length;
 }
 
+function savedDatasetView(id: number) {
+  return {
+    id,
+    name: `Definition ${id}`,
+    selection_sha256: "c".repeat(64),
+    selection: {
+      schema_version: "spectrasherpa-dataset-view/1",
+      selected_file_ids: null,
+      stage: "raw",
+      asset_id: null,
+      target_authority: null,
+      group_column: null,
+      source_manifest_sha256: "a".repeat(64),
+      collection_definition_sha256: null,
+      scientific_collection_sha256: null,
+    },
+  };
+}
+
 type DataContentVm = {
+  saveDatasetView(): Promise<void>;
+  savePortfolio(): Promise<void>;
+  showDatasetView(view: Record<string, unknown>): Promise<void>;
+  sampleInclusion: { rows: Array<{ sampleId: string; included: boolean; editable: boolean }>; loading: boolean };
+  displaySampleInclusion: { rows: Array<{ sampleId: string; included: boolean; editable: boolean }>; loading: boolean };
+  datasetCurationSource: { parent_view_id?: number } | null;
+  analysisChoice: Record<string, unknown>;
+  newDatasetViewName: string;
+  datasetViewError: string | null;
+  selectedDatasetView: { id: number } | null;
+  datasetViews: Array<{ id: number }>;
+  confirmDeleteExperiment(experiment: unknown): void;
+  onDeleteExperiment(): Promise<void>;
+  deleteDatasetView(view: { id: number; name: string }): Promise<void>;
   selectedRefDatasets: Set<string>;
   previewRefKey: string | null;
   registeredCollapsed: boolean;
@@ -522,6 +563,17 @@ type DataContentVm = {
     members: Array<{ fileName: string }>;
   }>;
   plotFileSelections: Record<number, unknown>;
+  originalSourceFilesKey: string;
+  originalSourceSampleCount: number | null;
+  inspectedDatasetShape: string;
+  datasetViews: Array<Record<string, unknown>>;
+  selectedDatasetView: Record<string, unknown> | null;
+  currentPortfolioView: Record<string, unknown> | null;
+  countOriginalSourceSamples: (
+    experimentId: number,
+    files: Array<Record<string, unknown>>,
+    filesKey: string,
+  ) => Promise<void>;
 };
 
 describe("DataContent file inspection", () => {
@@ -643,30 +695,55 @@ describe("DataContent file inspection", () => {
     const wrapper = mountDataContent();
     await flushPromises();
     expect(wrapper.get(".upload-disabled-notice").text()).toContain("Select or create a project");
-    expect(wrapper.findAll("button").find(b => b.text() === "Choose sources")!.attributes("disabled")).toBeDefined();
-    expect(vi.mocked(api.get).mock.calls.some(([path]) => String(path).endsWith("/availability"))).toBe(false);
+    expect(
+      wrapper
+        .findAll("button")
+        .find((b) => b.text() === "Choose sources")!
+        .attributes("disabled"),
+    ).toBeDefined();
+    expect(
+      vi.mocked(api.get).mock.calls.some(([path]) => String(path).endsWith("/availability")),
+    ).toBe(false);
     wrapper.unmount();
   });
 
   it("shows loading, explains a failed check, and enables Pro upload after Retry", async () => {
     mocks.pro = true;
     let rejectAccess!: (reason: Error) => void;
-    const pending = new Promise<never>((_resolve, reject) => { rejectAccess = reject; });
-    vi.mocked(api.get).mockImplementation(path => String(path).endsWith("/availability")
-      ? pending : Promise.resolve({ data: {} }));
+    const pending = new Promise<never>((_resolve, reject) => {
+      rejectAccess = reject;
+    });
+    vi.mocked(api.get).mockImplementation((path) =>
+      String(path).endsWith("/availability") ? pending : Promise.resolve({ data: {} }),
+    );
     const wrapper = mountDataContent();
     await flushPromises();
     expect(wrapper.get(".upload-disabled-notice").text()).toContain("Checking project access");
-    expect(wrapper.findAll("button").find(b => b.text() === "Choose sources")!.attributes("disabled")).toBeDefined();
+    expect(
+      wrapper
+        .findAll("button")
+        .find((b) => b.text() === "Choose sources")!
+        .attributes("disabled"),
+    ).toBeDefined();
     rejectAccess(new Error("Network interrupted"));
     await flushPromises();
     expect(wrapper.get(".upload-disabled-notice").attributes("role")).toBe("alert");
-    expect(wrapper.get(".upload-disabled-notice").text()).toContain("Could not check project access");
+    expect(wrapper.get(".upload-disabled-notice").text()).toContain(
+      "Could not check project access",
+    );
     vi.mocked(api.get).mockResolvedValue({ data: { read: true, write: true } });
-    await wrapper.findAll("button").find(b => b.text() === "Retry access check")!.trigger("click");
+    await wrapper
+      .findAll("button")
+      .find((b) => b.text() === "Retry access check")!
+      .trigger("click");
     await flushPromises();
     expect(wrapper.find(".upload-disabled-notice").exists()).toBe(false);
-    expect(wrapper.findAll("button").find(b => b.text() === "Choose sources")!.attributes("disabled")).toBeUndefined();
+    expect(
+      wrapper
+        .findAll("button")
+        .find((b) => b.text() === "Choose sources")!
+        .attributes("disabled"),
+    ).toBeUndefined();
     expect(api.get).toHaveBeenLastCalledWith("/commercial/projects/3/availability");
     wrapper.unmount();
   });
@@ -678,7 +755,7 @@ describe("DataContent file inspection", () => {
     await flushPromises();
     expect(wrapper.get(".upload-disabled-notice").text()).toContain("This project is read-only");
     expect(wrapper.get(".upload-disabled-notice").attributes("role")).toBe("status");
-    expect(wrapper.findAll("button").some(b => b.text() === "Retry access check")).toBe(false);
+    expect(wrapper.findAll("button").some((b) => b.text() === "Retry access check")).toBe(false);
     wrapper.unmount();
   });
 
@@ -686,39 +763,44 @@ describe("DataContent file inspection", () => {
     mocks.disabledCapabilities.add("data_upload");
     const wrapper = mountDataContent();
     await flushPromises();
-    expect(wrapper.get(".upload-disabled-notice").text()).toBe("File upload is disabled for this deployment.");
-    expect(wrapper.findAll("button").some(b => b.text() === "Retry access check")).toBe(false);
+    expect(wrapper.get(".upload-disabled-notice").text()).toBe(
+      "File upload is disabled for this deployment.",
+    );
+    expect(wrapper.findAll("button").some((b) => b.text() === "Retry access check")).toBe(false);
     wrapper.unmount();
   });
 
-  it.each(["one", "all"])("opens inspection on the first %s Preview selection in a fresh session", async (mode) => {
-    const originalStore = mocks.dataStore;
-    mocks.dataStore = reactive(originalStore);
-    mocks.route.query = { tab: "my-dataset" };
-    mocks.dataStore.activeExperimentId = null;
-    const files = [...mocks.dataStore.experimentFiles];
-    mocks.dataStore.experimentFiles = [];
-    mocks.dataStore.selectExperiment.mockImplementationOnce(async (id: number) => {
-      mocks.dataStore.activeExperimentId = id;
-      mocks.dataStore.experimentFiles = files;
-    });
-    const wrapper = mountDataContent();
-    await flushPromises();
-    const vm = wrapper.vm as unknown as DataContentVm;
+  it.each(["one", "all"])(
+    "opens inspection on the first %s Preview selection in a fresh session",
+    async (mode) => {
+      const originalStore = mocks.dataStore;
+      mocks.dataStore = reactive(originalStore);
+      mocks.route.query = { tab: "my-dataset" };
+      mocks.dataStore.activeExperimentId = null;
+      const files = [...mocks.dataStore.experimentFiles];
+      mocks.dataStore.experimentFiles = [];
+      mocks.dataStore.selectExperiment.mockImplementationOnce(async (id: number) => {
+        mocks.dataStore.activeExperimentId = id;
+        mocks.dataStore.experimentFiles = files;
+      });
+      const wrapper = mountDataContent();
+      await flushPromises();
+      const vm = wrapper.vm as unknown as DataContentVm;
 
-    if (mode === "one") await vm.onPlotExperimentToggle(mocks.dataStore.experiments[0], true);
-    else await vm.onPlotAllExperiments(true);
-    await flushPromises();
+      if (mode === "one") await vm.onPlotExperimentToggle(mocks.dataStore.experiments[0], true);
+      else await vm.onPlotAllExperiments(true);
+      await flushPromises();
 
-    expect(mocks.dataStore.selectExperiment).toHaveBeenCalledWith(11);
-    expect(mocks.dataStore.inspectFile).toHaveBeenCalledWith(22, "raw/wine.csv", 11);
-    expect(mocks.dataStore.fileInfo?.n_samples).toBe(178);
-    expect(vm.plotDatasetSources.map((dataset) => dataset.experimentId)).toEqual([11]);
-    expect(wrapper.text()).not.toContain("No dataset selected");
-    expect(wrapper.text()).not.toContain("Select a dataset to view its files");
-    wrapper.unmount();
-    mocks.dataStore = originalStore;
-  });
+      expect(mocks.dataStore.selectExperiment).toHaveBeenCalledWith(11);
+      expect(mocks.dataStore.inspectFile).toHaveBeenCalledWith(22, "raw/wine.csv", 11);
+      expect(mocks.dataStore.fileInfo?.n_samples).toBe(178);
+      expect(vm.plotDatasetSources.map((dataset) => dataset.experimentId)).toEqual([11]);
+      expect(wrapper.text()).not.toContain("No dataset selected");
+      expect(wrapper.text()).not.toContain("Select a dataset to view its files");
+      wrapper.unmount();
+      mocks.dataStore = originalStore;
+    },
+  );
 
   it("offers qualified Pro reference import without fetching provider libraries", async () => {
     mocks.pro = true;
@@ -742,12 +824,18 @@ describe("DataContent file inspection", () => {
     mocks.dataStore.experimentFiles = [];
     mocks.dataStore.selectExperiment.mockImplementationOnce(async (id: number) => {
       mocks.dataStore.activeExperimentId = id;
-      mocks.dataStore.experimentFilesRefusal = { code: "unavailable", message: "Source files unavailable" };
+      mocks.dataStore.experimentFilesRefusal = {
+        code: "unavailable",
+        message: "Source files unavailable",
+      };
     });
     const wrapper = mountDataContent();
     await flushPromises();
 
-    await (wrapper.vm as unknown as DataContentVm).onPlotExperimentToggle(mocks.dataStore.experiments[0], true);
+    await (wrapper.vm as unknown as DataContentVm).onPlotExperimentToggle(
+      mocks.dataStore.experiments[0],
+      true,
+    );
     await flushPromises();
 
     expect(wrapper.text()).toContain("Source files unavailable");
@@ -762,16 +850,27 @@ describe("DataContent file inspection", () => {
     mocks.route.query = { tab: "my-dataset" };
     mocks.dataStore.activeExperimentId = null;
     mocks.dataStore.experimentFiles = [];
-    mocks.dataStore.experiments.push({ ...mocks.dataStore.experiments[0], id: 12, name: "Valid comparison" });
+    mocks.dataStore.experiments.push({
+      ...mocks.dataStore.experiments[0],
+      id: 12,
+      name: "Valid comparison",
+    });
     mocks.dataStore.selectExperiment.mockImplementationOnce(async (id: number) => {
       mocks.dataStore.activeExperimentId = id;
-      mocks.dataStore.experimentFilesRefusal = { code: "unavailable", message: "First source unavailable" };
+      mocks.dataStore.experimentFilesRefusal = {
+        code: "unavailable",
+        message: "First source unavailable",
+      };
     });
     // Even if the projection endpoint would succeed, do not bypass the refused
     // inventory by retrying the first dataset through that different endpoint.
-    vi.mocked(api.post).mockResolvedValue({ data: {
-      data: [[1, 2]], n_samples: 1, n_features: 2,
-    } } as never);
+    vi.mocked(api.post).mockResolvedValue({
+      data: {
+        data: [[1, 2]],
+        n_samples: 1,
+        n_features: 2,
+      },
+    } as never);
     const wrapper = mountDataContent();
     await flushPromises();
     const vm = wrapper.vm as unknown as DataContentVm;
@@ -791,8 +890,12 @@ describe("DataContent file inspection", () => {
     mocks.route.query = { tab: "import" };
     mocks.dataStore.activeExperimentId = null;
     const files = [22, 23, 24].map((id) => ({
-      id, experiment_id: 11, file_path: `raw/spectra-${id}.csv`, stage: "raw",
-      file_size_bytes: 2048, created_at: "2026-05-02T00:00:00Z",
+      id,
+      experiment_id: 11,
+      file_path: `raw/spectra-${id}.csv`,
+      stage: "raw",
+      file_size_bytes: 2048,
+      created_at: "2026-05-02T00:00:00Z",
     }));
     mocks.dataStore.experiments[0].file_count = 3;
     mocks.dataStore.restoreActiveExperimentForCurrentProject.mockImplementationOnce(async () => {
@@ -815,12 +918,15 @@ describe("DataContent file inspection", () => {
   it("does not undo a newer tab choice when initial inspection finishes late", async () => {
     mocks.route.query = { tab: "import" };
     let finishInspection!: () => void;
-    mocks.dataStore.inspectFile.mockImplementationOnce(() => new Promise((resolve) => {
-      finishInspection = () => {
-        mocks.dataStore.fileInfo = { label: "Wine", n_samples: 178, n_features: 13 };
-        resolve(mocks.dataStore.fileInfo);
-      };
-    }));
+    mocks.dataStore.inspectFile.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishInspection = () => {
+            mocks.dataStore.fileInfo = { label: "Wine", n_samples: 178, n_features: 13 };
+            resolve(mocks.dataStore.fileInfo);
+          };
+        }),
+    );
     const wrapper = mountDataContent();
     await flushPromises();
     const tabs = wrapper.getComponent({ name: "TabView" });
@@ -843,9 +949,14 @@ describe("DataContent file inspection", () => {
     mocks.dataStore.fileInfo = retained;
     const second = { ...mocks.dataStore.experiments[0], id: 12, name: "Comparison" };
     mocks.dataStore.experiments.push(second);
-    vi.mocked(api.post).mockResolvedValue({ data: {
-      data: [[1, 2]], n_samples: 1, n_features: 2, x_axis: { data: [1000, 1100] },
-    }} as never);
+    vi.mocked(api.post).mockResolvedValue({
+      data: {
+        data: [[1, 2]],
+        n_samples: 1,
+        n_features: 2,
+        x_axis: { data: [1000, 1100] },
+      },
+    } as never);
     const wrapper = mountDataContent();
     await flushPromises();
 
@@ -891,7 +1002,9 @@ describe("DataContent file inspection", () => {
     expect(mocks.dataStore.selectExperiment).not.toHaveBeenCalled();
     expect(mocks.dataStore.inspectFile).not.toHaveBeenCalled();
     expect(mocks.dataStore.inspectExperimentRawFiles).not.toHaveBeenCalled();
-    expect(mocks.dataStore.fetchFileAssets).not.toHaveBeenCalled();
+    // The source-count label may request a lightweight asset inventory;
+    // the retained dataset itself must not be parsed or inspected again.
+    expect(mocks.dataStore.fetchFileAssets).toHaveBeenCalledWith(11, 22);
     expect(wrapper.findComponent({ name: "DatasetSourcePreview" }).exists()).toBe(false);
     expect(wrapper.findComponent({ name: "SynthesisPanel" }).exists()).toBe(false);
     const tabs = wrapper.getComponent({ name: "TabView" });
@@ -1065,7 +1178,9 @@ describe("DataContent file inspection", () => {
 
     const context = wrapper.get('[aria-label="Workflow sheet data selection"]');
     expect(context.text()).toContain("Pending first binding");
-    expect(context.text()).toContain("Choose this source node's dataset, views, target, and groups");
+    expect(context.text()).toContain(
+      "Choose this source node's dataset, views, target, and groups",
+    );
     expect(context.text()).not.toContain("revision 1");
     wrapper.unmount();
   });
@@ -1215,19 +1330,30 @@ describe("DataContent file inspection", () => {
     });
     vi.mocked(api.get).mockImplementation(async (url: string) => {
       if (url.includes("/data-selections/")) {
-        return { data: {
-          workflow_id: 41, workflow_name: "Wine PLS-DA", source_node_id: "source-1",
-          source_node_label: "Training cohort", project_id: 3, current_revision: null,
-          saved_selection: {
-            experiment_id: 11, dataset_name: "Wine", stage: "raw",
-            selected_file_ids: [22], asset_id: null,
-            source_manifest_sha256: "a".repeat(64),
-            collection_definition_sha256: null,
-            scientific_collection_sha256: "c".repeat(64),
-            target_authority: null, group_column: null,
-            dataset_view_id: 41, dataset_view_sha256: "d".repeat(64),
+        return {
+          data: {
+            workflow_id: 41,
+            workflow_name: "Wine PLS-DA",
+            source_node_id: "source-1",
+            source_node_label: "Training cohort",
+            project_id: 3,
+            current_revision: null,
+            saved_selection: {
+              experiment_id: 11,
+              dataset_name: "Wine",
+              stage: "raw",
+              selected_file_ids: [22],
+              asset_id: null,
+              source_manifest_sha256: "a".repeat(64),
+              collection_definition_sha256: null,
+              scientific_collection_sha256: "c".repeat(64),
+              target_authority: null,
+              group_column: null,
+              dataset_view_id: 41,
+              dataset_view_sha256: "d".repeat(64),
+            },
           },
-        } } as never;
+        } as never;
       }
       if (url.includes("/dataset-views/41")) throw { response: { status: 404 } };
       return { data: {} } as never;
@@ -1253,6 +1379,100 @@ describe("DataContent file inspection", () => {
 
     expect(mocks.dataStore.inspectFile).toHaveBeenCalledWith(22, "raw/wine.csv", 11);
     expect(mocks.dataStore.inspectExperimentRawFiles).not.toHaveBeenCalled();
+  });
+
+  it("deletes a saved definition only for the dataset that is still open after confirming", async () => {
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    const view = { id: 5, name: "Included cohort" };
+
+    confirmAction.mockResolvedValueOnce(false);
+    await vm.deleteDatasetView(view);
+    expect(api.delete).not.toHaveBeenCalled();
+
+    let accept!: (value: boolean) => void;
+    confirmAction.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          accept = resolve;
+        }),
+    );
+    const pending = vm.deleteDatasetView(view);
+    mocks.dataStore.activeExperimentId = 12;
+    accept(true);
+    await pending;
+    expect(api.delete).not.toHaveBeenCalled();
+
+    mocks.dataStore.activeExperimentId = 11;
+    confirmAction.mockResolvedValueOnce(true);
+    await vm.deleteDatasetView(view);
+    expect(confirmAction).toHaveBeenLastCalledWith(
+      expect.objectContaining({ acceptLabel: "Delete definition", destructive: true }),
+    );
+    expect(api.delete).toHaveBeenCalledWith("/experiments/11/dataset-views/5");
+    wrapper.unmount();
+  });
+
+  it("restores the saved inclusion mask when a curated portfolio is shown", async () => {
+    const view = {
+      ...savedDatasetView(91),
+      name: "Wine without acquisition B",
+      selection: {
+        ...savedDatasetView(91).selection,
+        schema_version: "spectrasherpa-dataset-view/2",
+        n_samples: 3,
+        included_count: 2,
+        included_sample_mask_hex: "05",
+        source_selection: { included_sample_mask_hex: "07" },
+        observations: ["A", "B", "C"].map((sample_id) => ({ sample_id })),
+      },
+    };
+    vi.mocked(api.get).mockImplementation(async (url: string) => ({
+      data: url.endsWith("/dataset-views/91") ? view : url.endsWith("/dataset-views") ? [view] : {},
+    } as never));
+    vi.mocked(api.post).mockImplementation(async (url: string) => ({
+      data: url.endsWith("/curation-context") ? {
+        selection_sha256: "c".repeat(64),
+        observations_sha256: "d".repeat(64),
+        selection: view.selection,
+        rows: [
+          { sample_id: "A", included: true, source_included: true },
+          { sample_id: "B", included: false, source_included: true },
+          { sample_id: "C", included: true, source_included: true },
+        ],
+      } : {},
+    } as never));
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    await vm.showDatasetView(view);
+    await flushPromises();
+    expect(vm.currentPortfolioView).toMatchObject({ id: 91 });
+    expect(vm.datasetCurationSource).toMatchObject({ parent_view_id: 91 });
+    expect(vm.displaySampleInclusion.rows.map((row: { sampleId: string; included: boolean }) => [row.sampleId, row.included]))
+      .toEqual([["A", true], ["B", false], ["C", true]]);
+    vm.analysisChoice = { ...vm.analysisChoice, target: "new_target", targetType: "continuous" };
+    await flushPromises();
+    expect(vm.currentPortfolioView).toBeNull();
+    expect(vm.displaySampleInclusion.rows[1]).toMatchObject({ sampleId: "B", included: false, editable: false });
+    wrapper.unmount();
+  });
+
+  it("refuses a plain save that would silently drop a deselected sample", async () => {
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    vm.newDatasetViewName = "Keep exact inclusion";
+    vm.sampleInclusion = {
+      rows: [{ sampleId: "B", included: false, editable: true }],
+      loading: false,
+    };
+    vi.mocked(api.post).mockClear();
+    await vm.savePortfolio();
+    expect(api.post).not.toHaveBeenCalledWith("/experiments/11/dataset-views", expect.anything());
+    expect(vm.datasetViewError).toContain("Sample exclusions cannot be discarded");
+    wrapper.unmount();
   });
 
   it("presents one progressive source chooser instead of separate file, folder, and ZIP buttons", async () => {
@@ -1346,7 +1566,8 @@ describe("DataContent file inspection", () => {
     mocks.dataStore.experiments = [...mocks.dataStore.experiments, second];
     mocks.dataStore.selectExperiment.mockImplementation(async (id: number) => {
       mocks.dataStore.activeExperimentId = id;
-      mocks.dataStore.experimentFiles = id === 12 ? [secondFile] : [mocks.dataStore.experimentFiles[0]];
+      mocks.dataStore.experimentFiles =
+        id === 12 ? [secondFile] : [mocks.dataStore.experimentFiles[0]];
       mocks.dataStore.activeFileId = null;
       mocks.dataStore.activeFilePath = null;
       mocks.dataStore.fileInfo = null;
@@ -1653,6 +1874,287 @@ describe("DataContent file inspection", () => {
     expect(wrapper.text()).toContain("Optical emission spectra");
     expect(wrapper.text()).toContain("single view used for preview and workflow modeling");
   });
+
+  it.each(["saved", "changed", "unverified", "failed"])(
+    "refreshes the exact Lavender subset before saving (%s)",
+    async (outcome) => {
+      const wrapper = mountDataContent();
+      await flushPromises();
+      const vm = wrapper.vm as unknown as DataContentVm;
+      const panel = wrapper.getComponent({ name: "DataContentsPanel" });
+      const base = mocks.dataStore.experimentFiles[0];
+      mocks.dataStore.experimentFiles = Array.from({ length: 33 }, (_, i) => ({
+        ...base,
+        id: i + 1,
+        file_path: `raw/${i < 3 ? "MSL" : "LAV"}__${i}.spa`,
+      }));
+      vm.plotFileSelections = { 11: mocks.dataStore.experimentFiles.slice(3) };
+      vm.newDatasetViewName = "Lavender without MSL";
+      const choice = {
+        target: "botanical_group",
+        targetType: "categorical",
+        targetUnits: null,
+        sourceDigest: "a".repeat(64),
+        group: "",
+        readiness: null,
+      };
+      panel.vm.$emit("analysisChoice", choice);
+      vi.mocked(api.post).mockClear();
+      vi.mocked(api.post).mockResolvedValue({ data: savedDatasetView(42) });
+      mocks.dataStore.inspectExperimentRawFiles.mockImplementationOnce(async () => {
+        if (outcome === "failed") throw new Error("Dataset inspection failed");
+        const inspected = { n_samples: 30 };
+        mocks.dataStore.fileInfo = reactive(inspected);
+        panel.vm.$emit("analysisChoice", {
+          ...choice,
+          sourceDigest: outcome === "unverified" ? null : "b".repeat(64),
+        });
+        if (outcome === "changed") vm.plotFileSelections = { 11: null };
+        return inspected;
+      });
+      await vm.saveDatasetView();
+      expect(mocks.dataStore.inspectExperimentRawFiles).toHaveBeenCalledWith(
+        11,
+        null,
+        Array.from({ length: 30 }, (_, i) => i + 4),
+      );
+      if (outcome === "saved") {
+        expect(api.post).toHaveBeenCalledWith("/experiments/11/dataset-views", {
+          name: "Lavender without MSL",
+          stage: "raw",
+          asset_id: null,
+          selected_file_ids: Array.from({ length: 30 }, (_, i) => i + 4),
+          target_authority: {
+            schema_version: "spectrasherpa-target-authority/1",
+            column: "botanical_group",
+            target_type: "categorical",
+            units: null,
+            source_digest: "b".repeat(64),
+          },
+          group_column: null,
+        });
+      } else {
+        expect(api.post).not.toHaveBeenCalled();
+        expect(vm.datasetViewError).toContain(
+          outcome === "changed"
+            ? "Your selection changed"
+            : outcome === "unverified"
+              ? "target could not be verified"
+              : "Dataset inspection failed",
+        );
+        expect(vm.newDatasetViewName).toBe("Lavender without MSL");
+      }
+      wrapper.unmount();
+    },
+  );
+
+  it("reports the original Lavender sample count after a 30-of-33 portfolio selection", async () => {
+    const files = Array.from({ length: 33 }, (_, index) => ({
+      id: 1000 + index,
+      experiment_id: 11,
+      file_path: `raw/LAV__${index}.spa`,
+      file_size_bytes: 2048,
+      stage: "raw",
+      created_at: "2026-05-02T00:00:00Z",
+    }));
+    mocks.dataStore.experimentFiles = files;
+    mocks.dataStore.fileInfo = reactive({
+      n_samples: 30,
+      n_features: 1868,
+      metadata: { contents_file_count: 30 },
+    });
+    mocks.dataStore.fetchFileAssets.mockResolvedValue({
+      assets: [
+        {
+          asset_id: "spectra",
+          data_role: "X_spectra",
+          dimension_roles: ["sample", "spectral_variable"],
+          shape: [1, 1868],
+        },
+      ],
+    });
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    vm.plotFileSelections = { 11: files.slice(3) };
+    await vm.countOriginalSourceSamples(11, files, vm.originalSourceFilesKey);
+    await flushPromises();
+    expect(vm.originalSourceSampleCount).toBe(33);
+    expect(vm.inspectedDatasetShape).toBe("33 source samples × 1868 features");
+    wrapper.unmount();
+  });
+
+  it("does not mistake a filtered single-file inspection for the original source count", async () => {
+    const file = {
+      id: 1000,
+      experiment_id: 11,
+      file_path: "raw/lavender.mat",
+      file_size_bytes: 2048,
+      stage: "raw",
+      created_at: "2026-05-02T00:00:00Z",
+    };
+    mocks.dataStore.experimentFiles = [file];
+    mocks.dataStore.activeFileId = file.id;
+    mocks.dataStore.fileInfo = reactive({
+      n_samples: 30,
+      n_features: 1868,
+      metadata: { contents_file_count: 1 },
+    });
+    mocks.dataStore.fetchFileAssets.mockResolvedValue({
+      assets: [
+        {
+          asset_id: "spectra",
+          data_role: "X_spectra",
+          dimension_roles: ["sample", "spectral_variable"],
+          shape: [33, 1868],
+        },
+      ],
+    });
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    await vm.countOriginalSourceSamples(11, [file], vm.originalSourceFilesKey);
+    await flushPromises();
+    expect(vm.originalSourceSampleCount).toBe(33);
+    expect(vm.inspectedDatasetShape).toBe("33 source samples × 1868 features");
+    wrapper.unmount();
+  });
+
+  it("does not treat a matching saved curation as active until the user shows it", async () => {
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    const view = {
+      id: 91,
+      name: "Wine without defective acquisitions",
+      selection: {
+        schema_version: "spectrasherpa-dataset-view/2",
+        selected_file_ids: null,
+        target_authority: null,
+        group_column: null,
+        asset_id: null,
+        stage: "raw",
+        included_count: 170,
+      },
+    };
+    vm.datasetViews = [view];
+    expect(vm.currentPortfolioView).toBeNull();
+    vm.selectedDatasetView = view;
+    await flushPromises();
+    expect(vm.currentPortfolioView).toMatchObject({ id: 91 });
+    wrapper.unmount();
+  });
+
+  it.each(["project", "experiment"])(
+    "does not activate or refetch a saved definition after a %s switch during creation",
+    async (scope) => {
+      const wrapper = mountDataContent();
+      await flushPromises();
+      const vm = wrapper.vm as unknown as DataContentVm;
+      vm.newDatasetViewName = "Original definition";
+      let finishCreate!: (value: { data: { id: number } }) => void;
+      const created = new Promise<{ data: { id: number } }>((resolve) => {
+        finishCreate = resolve;
+      });
+      vi.mocked(api.post).mockReset();
+      vi.mocked(api.post).mockReturnValueOnce(created);
+      const saving = vm.saveDatasetView();
+      await flushPromises();
+      expect(api.post).toHaveBeenCalledWith(
+        "/experiments/11/dataset-views",
+        expect.objectContaining({
+          name: "Original definition",
+        }),
+      );
+      if (scope === "project") mocks.projectStore.currentProjectId = 4;
+      else mocks.dataStore.activeExperimentId = 12;
+      await flushPromises();
+      vm.newDatasetViewName = "New workspace draft";
+      vm.selectedDatasetView = savedDatasetView(99);
+      vm.datasetViews = [savedDatasetView(99)];
+      vi.mocked(api.get).mockClear();
+      mocks.provenanceStore.refresh.mockClear();
+      finishCreate({ data: savedDatasetView(42) });
+      await saving;
+      expect(api.post).toHaveBeenCalledTimes(1);
+      expect(api.get).not.toHaveBeenCalled();
+      expect(mocks.provenanceStore.refresh).not.toHaveBeenCalled();
+      expect(vm.newDatasetViewName).toBe("New workspace draft");
+      expect(vm.selectedDatasetView).toEqual(savedDatasetView(99));
+      expect(vm.datasetViews).toEqual([savedDatasetView(99)]);
+      wrapper.unmount();
+    },
+  );
+
+  it.each(["project", "experiment"])(
+    "ignores the old definition list after a %s switch during its refresh",
+    async (scope) => {
+      const wrapper = mountDataContent();
+      await flushPromises();
+      const vm = wrapper.vm as unknown as DataContentVm;
+      vm.newDatasetViewName = "Original definition";
+      let finishRefresh!: (value: { data: ReturnType<typeof savedDatasetView>[] }) => void;
+      const refreshed = new Promise<{ data: ReturnType<typeof savedDatasetView>[] }>((resolve) => {
+        finishRefresh = resolve;
+      });
+      vi.mocked(api.post).mockReset();
+      vi.mocked(api.post).mockResolvedValueOnce({ data: savedDatasetView(42) });
+      vi.mocked(api.get).mockReturnValueOnce(refreshed);
+      const saving = vm.saveDatasetView();
+      await flushPromises();
+      expect(api.get).toHaveBeenLastCalledWith("/experiments/11/dataset-views");
+      if (scope === "project") mocks.projectStore.currentProjectId = 4;
+      else mocks.dataStore.activeExperimentId = 12;
+      await flushPromises();
+      vm.selectedDatasetView = savedDatasetView(99);
+      vm.datasetViews = [savedDatasetView(99)];
+      mocks.provenanceStore.refresh.mockClear();
+      finishRefresh({ data: [savedDatasetView(42)] });
+      await saving;
+      expect(api.post).toHaveBeenCalledTimes(1);
+      expect(mocks.provenanceStore.refresh).not.toHaveBeenCalled();
+      expect(vm.selectedDatasetView).toEqual(savedDatasetView(99));
+      expect(vm.datasetViews).toEqual([savedDatasetView(99)]);
+      wrapper.unmount();
+    },
+  );
+
+  it.each(["project", "experiment"])(
+    "keeps the captured project and avoids stale activation after a %s switch during choice save",
+    async (scope) => {
+      const wrapper = mountDataContent();
+      await flushPromises();
+      const vm = wrapper.vm as unknown as DataContentVm;
+      vm.newDatasetViewName = "Original definition";
+      let finishChoice!: (value: { data: object }) => void;
+      const choice = new Promise<{ data: object }>((resolve) => {
+        finishChoice = resolve;
+      });
+      vi.mocked(api.post).mockReset();
+      vi.mocked(api.post)
+        .mockResolvedValueOnce({ data: savedDatasetView(42) })
+        .mockReturnValueOnce(choice);
+      vi.mocked(api.get).mockResolvedValue({ data: [] });
+      const saving = vm.saveDatasetView();
+      await flushPromises();
+      expect(api.post).toHaveBeenNthCalledWith(2, "/projects/3/choices", {
+        kind: "dataset",
+        experiment_id: 11,
+        dataset_view_id: 42,
+      });
+      if (scope === "project") mocks.projectStore.currentProjectId = 4;
+      else mocks.dataStore.activeExperimentId = 12;
+      await flushPromises();
+      vm.selectedDatasetView = savedDatasetView(99);
+      mocks.provenanceStore.refresh.mockClear();
+      finishChoice({ data: {} });
+      await saving;
+      expect(api.post).toHaveBeenCalledTimes(2);
+      expect(mocks.provenanceStore.refresh).not.toHaveBeenCalled();
+      expect(vm.selectedDatasetView).toEqual(savedDatasetView(99));
+      wrapper.unmount();
+    },
+  );
 
   it("resolves GUI-01 target authority from the current collection before workflow handoff", async () => {
     const wrapper = mountDataContent();
@@ -1971,7 +2473,7 @@ describe("DataContent file inspection", () => {
     expect(mocks.dataStore.activateFile).toHaveBeenCalledWith(22, "raw/wine.csv");
     expect(mocks.dataStore.inspectFile).not.toHaveBeenCalled();
     expect(wrapper.find('[data-testid="data-tabs"]').attributes("data-active-index")).toBe("5");
-    expect(localStorage.getItem("spectra_sherpa_data_active_tab_v3_7_3")).toBe("5");
+    expect(localStorage.getItem("spectra_sherpa_data_active_tab_v3_7_3")).toBe("my-dataset");
     expect(mocks.routerReplace).toHaveBeenCalledWith({
       path: "/data",
       query: {
@@ -2150,6 +2652,41 @@ describe("DataContent file inspection", () => {
     expect(notice.text()).toContain(warning);
   });
 
+  it("retains a staged CSV's source split while the scientist selects a numeric target", async () => {
+    mocks.dataStore.stageUploadBatch.mockResolvedValueOnce({
+      file_count: 1,
+      total_size_bytes: 1024,
+      refused_count: 0,
+      refusals: [],
+      files: [{
+        staging_id: "body-fat-stage",
+        filename: "Body Fat.csv",
+        size_bytes: 1024,
+        format_id: "csv",
+        variant: "feature-table",
+        assets: [],
+        csv_import_plan: {
+          layout: "feature_table_with_target",
+          target: { column: null, type: null, candidates: [], selectable: ["Percent body fat", "Age (years)"] },
+          assignment: { column: "Validation", training_label: "Training", validation_label: "Validation" },
+        },
+        suggested_overrides: { csv_layout: "headered", assignment_column: "Validation" },
+      }],
+    });
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    await vm.onFileSelect({ files: [new File(["body fat"], "Body Fat.csv")] });
+    await flushPromises();
+    expect(vm.uploadOverrides["body-fat-stage"]).toMatchObject({ assignment_column: "Validation" });
+    vm.uploadTargetColumn = "Percent body fat";
+    await flushPromises();
+    expect(vm.uploadOverrides["body-fat-stage"]).toMatchObject({
+      target_column: "Percent body fat",
+      assignment_column: "Validation",
+    });
+  });
+
   it("keeps admitted files and displays an exact refusal receipt for the rest", async () => {
     mocks.dataStore.stageUploadBatch.mockResolvedValueOnce({
       file_count: 1,
@@ -2201,7 +2738,10 @@ describe("DataContent file inspection", () => {
     await vm.onImportSelectedDatasets();
     await flushPromises();
 
-    expect(mocks.dataStore.createExperiment).toHaveBeenCalledWith("Iris demo", undefined, 3);
+    expect(mocks.dataStore.createExperiment).toHaveBeenCalledWith("Iris demo", undefined, 3, {
+      source_kind: "catalog_reference",
+      reference_sources: ["sklearn::iris"],
+    });
     expect(mocks.dataStore.selectExperiment).toHaveBeenCalledWith(33);
     expect(mocks.dataStore.importReferenceDatasets).toHaveBeenCalledWith(33, [
       { source: "sklearn", name: "iris", overrides: null },
@@ -2238,6 +2778,34 @@ describe("DataContent file inspection", () => {
     vm.toggleRefDataset(iris);
     expect(vm.selectedRefDatasets.size).toBe(0);
     expect(vm.previewRefKey).toBeNull();
+  });
+
+  it("never deletes a dataset on Enter, and sends one delete however often it is confirmed", async () => {
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    vm.confirmDeleteExperiment(mocks.dataStore.experiments[0]);
+    await flushPromises();
+
+    const question = wrapper.findAll("p").find((p) => p.text().includes("and all its files"));
+    expect(question).toBeDefined();
+    await question!.trigger("keydown", { key: "Enter" });
+    await flushPromises();
+    expect(mocks.dataStore.deleteExperiment).not.toHaveBeenCalled();
+
+    let release!: () => void;
+    mocks.dataStore.deleteExperiment.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    const first = vm.onDeleteExperiment();
+    const second = vm.onDeleteExperiment();
+    expect(mocks.dataStore.deleteExperiment).toHaveBeenCalledTimes(1);
+    release();
+    await Promise.all([first, second]);
+    wrapper.unmount();
   });
 
   it("removes the newly created My Dataset when reference import fails", async () => {
@@ -2282,7 +2850,10 @@ describe("DataContent file inspection", () => {
     // leaving the project with a zero-file placeholder. The intent remains
     // available to Workflow, but records the admitted experiment.
     expect(Array.from(vm.selectedRefDatasets)).toEqual([]);
-    expect(mocks.dataStore.createExperiment).toHaveBeenCalledWith("Iris", undefined, 3);
+    expect(mocks.dataStore.createExperiment).toHaveBeenCalledWith("Iris", undefined, 3, {
+      source_kind: "catalog_reference",
+      reference_sources: ["sklearn::iris"],
+    });
     expect(mocks.dataStore.importReferenceDatasets).toHaveBeenCalledWith(33, [
       { source: "sklearn", name: "iris", overrides: null },
     ]);
@@ -2432,6 +3003,7 @@ describe("DataContent file inspection", () => {
       "Lavender Essential Oil FTIR Corpus v1",
       undefined,
       3,
+      { source_kind: "catalog_reference", reference_sources: ["builtin::lavender-essential-oil-v1"] },
     );
     expect(mocks.dataStore.importReferenceDatasets).toHaveBeenCalledWith(33, [
       { source: "builtin", name: "lavender-essential-oil-v1", overrides: null },
@@ -2488,7 +3060,7 @@ describe("DataContent file inspection", () => {
 
     const text = wrapper.text();
     expect(text).toContain("Lavender Essential Oil FTIR Corpus v1");
-    expect(text).not.toContain("Spectra Scientific Synthetic Benchmarks");
+    expect(text).not.toContain("Spectra Scientific synthetic benchmarks");
     expect(text).not.toContain("User-acquired Eigenvector datasets");
     expect(text).not.toContain("scikit-learn datasets");
   });
@@ -2514,7 +3086,7 @@ describe("DataContent file inspection", () => {
 
     const text = wrapper.text();
     const builtInIndex = text.indexOf("Built-in reference data");
-    const syntheticIndex = text.indexOf("Spectra Scientific Synthetic Benchmarks");
+    const syntheticIndex = text.indexOf("Spectra Scientific synthetic benchmarks");
     const sklearnIndex = text.indexOf("scikit-learn datasets");
     const acquiredIndex = text.indexOf("User-acquired Eigenvector datasets");
     const additionalIndex = text.indexOf("Additional scientific source catalog");
@@ -2913,7 +3485,10 @@ describe("DataContent file inspection", () => {
     };
     mocks.dataStore.referenceCatalog.registered = [registered];
     mocks.dataStore.importRegisteredReference.mockRejectedValueOnce(
-      Object.assign(new Error("This file does not match the registered reference file. No data was retained."), { response: { status: 422 } }),
+      Object.assign(
+        new Error("This file does not match the registered reference file. No data was retained."),
+        { response: { status: 422 } },
+      ),
     );
     const wrapper = mountDataContent();
     await flushPromises();
@@ -2935,23 +3510,40 @@ describe("DataContent file inspection", () => {
     );
   });
 
-  it.each(["refresh", "unknown outcome"])("preserves registered data after %s failure", async (failure) => {
-    const registered = { source: "registered", name: "public-corn-m5-moisture-v1", label: "Corn", provider: "Eigenvector Research" };
-    mocks.dataStore.referenceCatalog.registered = [registered];
-    const wrapper = mountDataContent();
-    await flushPromises();
-    if (failure === "refresh") {
-      mocks.dataStore.importRegisteredReference.mockResolvedValueOnce({ imported: 1, experiment_id: 33, files: [], initial_file_ids: [] });
-      mocks.dataStore.selectExperiment.mockRejectedValueOnce(new Error("Display refresh failed"));
-    } else {
-      mocks.dataStore.importRegisteredReference.mockRejectedValueOnce(new Error("Connection lost after submission"));
-    }
-    const vm = wrapper.vm as unknown as DataContentVm;
-    vm.selectRegisteredReferenceFile(registered);
-    await vm.onRegisteredReferenceSelection({ target: { files: [new File(["exact"], "corn.zip")], value: "" } } as unknown as Event);
-    expect(mocks.dataStore.deleteExperiment).not.toHaveBeenCalled();
-    wrapper.unmount();
-  });
+  it.each(["refresh", "unknown outcome"])(
+    "preserves registered data after %s failure",
+    async (failure) => {
+      const registered = {
+        source: "registered",
+        name: "public-corn-m5-moisture-v1",
+        label: "Corn",
+        provider: "Eigenvector Research",
+      };
+      mocks.dataStore.referenceCatalog.registered = [registered];
+      const wrapper = mountDataContent();
+      await flushPromises();
+      if (failure === "refresh") {
+        mocks.dataStore.importRegisteredReference.mockResolvedValueOnce({
+          imported: 1,
+          experiment_id: 33,
+          files: [],
+          initial_file_ids: [],
+        });
+        mocks.dataStore.selectExperiment.mockRejectedValueOnce(new Error("Display refresh failed"));
+      } else {
+        mocks.dataStore.importRegisteredReference.mockRejectedValueOnce(
+          new Error("Connection lost after submission"),
+        );
+      }
+      const vm = wrapper.vm as unknown as DataContentVm;
+      vm.selectRegisteredReferenceFile(registered);
+      await vm.onRegisteredReferenceSelection({
+        target: { files: [new File(["exact"], "corn.zip")], value: "" },
+      } as unknown as Event);
+      expect(mocks.dataStore.deleteExperiment).not.toHaveBeenCalled();
+      wrapper.unmount();
+    },
+  );
 
   it("lists catalog source files without parsing archives", async () => {
     mocks.route.query = { tab: "import" };
@@ -3393,7 +3985,12 @@ describe("DataContent file inspection", () => {
     mocks.dataStore.experimentsError = "Project datasets could not be loaded.";
     const wrapper = mountDataContent();
     await flushPromises();
-    expect(wrapper.findAll('[role="alert"]').map((item) => item.text()).join(" ")).toContain("Project datasets could not be loaded");
+    expect(
+      wrapper
+        .findAll('[role="alert"]')
+        .map((item) => item.text())
+        .join(" "),
+    ).toContain("Project datasets could not be loaded");
     expect(wrapper.text()).not.toContain("No datasets yet");
     mocks.dataStore.fetchCatalog.mockClear();
     mocks.dataStore.fetchExperiments.mockClear();
@@ -3406,5 +4003,4 @@ describe("DataContent file inspection", () => {
     expect(buttons.some((button) => button.text() === "Refresh")).toBe(false);
     wrapper.unmount();
   });
-
 });

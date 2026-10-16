@@ -1,19 +1,18 @@
 <template>
   <section class="audit-page">
-    <header class="tab-header">
-      <h1>Audit</h1>
-      <AuditCapabilityStrip :caps="auditConfig" :can-query="canQuery" />
-    </header>
+    <WorkspaceHeader title="Audit">
+      <template #badge><AuditCapabilityStrip :caps="auditConfig" :can-query="canQuery" /></template>
+    </WorkspaceHeader>
 
     <section v-if="!hasAnyAuditCapability" class="notice">
       <i class="pi pi-lock" aria-hidden="true"></i>
-      <span>Audit capabilities are not enabled for this deployment.</span>
+      <span>{{ isHostedDemo ? "Audit evidence packs are unavailable in Demo." : "Audit capabilities are not enabled for this deployment." }}</span>
       <a v-if="!isHostedPro" class="notice-action" href="mailto:support@spectrascientific.ai?subject=Spectra%20Sherpa%20audit%20upgrade">
         Request upgrade
       </a>
     </section>
 
-    <section class="workbench-layout">
+    <section v-if="!isHostedDemo" class="workbench-layout">
       <AuditFilterChips
         v-model:scope-type="form.scopeType"
         v-model:scope-id="form.scopeId"
@@ -52,7 +51,7 @@
       </aside>
     </section>
 
-    <AuditTimeline
+    <AuditTimeline v-if="!isHostedDemo"
       :events="events"
       :can-query="canQuery"
       :is-loading-events="isLoadingEvents"
@@ -63,6 +62,7 @@
 </template>
 
 <script setup lang="ts">
+import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute } from "vue-router";
 
@@ -89,9 +89,10 @@ import type {
 
 const { appConfig, appMode, siteProfile } = useAppConfig();
 const isHostedPro = computed(() => appMode?.value === "enterprise" && siteProfile?.value === "pro");
+const isHostedDemo = computed(() => appMode?.value === "enterprise" && siteProfile?.value === "demo");
 const route = useRoute();
 
-const auditConfig = computed(() => isHostedPro.value
+const auditConfig = computed(() => isHostedPro.value || isHostedDemo.value
   ? { localQuery: false, fullPipeline: false, reportPack: false, exportAudited: false }
   : appConfig.value?.audit);
 const canQuery = computed(() => Boolean(auditConfig.value?.localQuery || auditConfig.value?.fullPipeline));
@@ -311,14 +312,14 @@ onMounted(() => {
 
 <style scoped>
 .audit-page {
-  background: #e4e0fa;
+  background: var(--workspace-background);
   color: #0f172a;
   min-height: 100%;
   padding: 0 1rem 1.5rem;
 }
 
 :global(.content:has(.audit-page)) {
-  background: #e4e0fa;
+  background: var(--workspace-background);
 }
 
 .notice {

@@ -181,7 +181,7 @@ async def test_plot_node_renders_train_and_test_predicted_vs_actual_payload() ->
     vis = result["visualization"]
 
     assert [trace["name"] for trace in vis["data"]] == ["Train", "Test", "Ideal"]
-    assert "Train R²=0.990" in vis["layout"]["title"]
+    assert vis["layout"]["title"] == "Predicted vs Actual"
 
 
 @pytest.mark.anyio

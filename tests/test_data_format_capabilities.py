@@ -245,8 +245,8 @@ def test_current_plan_capability_block_matches_live_registry_and_contracts() -> 
 
     nodes = node_registry.list_nodes()
     optional = sorted(item.node_type for item in nodes if item.requires_scp)
-    assert payload["registered_operations"] == len(nodes) == 101
-    assert payload["base_ready_operations"] == len(nodes) - len(optional) == 98
+    assert payload["registered_operations"] == len(nodes) == 103
+    assert payload["base_ready_operations"] == len(nodes) - len(optional) == 100
     assert (
         payload["optional_scp_operations"]
         == optional

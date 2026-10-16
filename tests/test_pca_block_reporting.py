@@ -158,7 +158,7 @@ def test_block_report_consumes_the_single_live_pca_result_without_refitting() ->
 
 
 def test_live_pca_node_does_not_require_block_fields_for_general_datasets() -> None:
-    matrix = np.arange(60, dtype=np.float64).reshape(5, 12)
+    matrix = np.random.default_rng(60).normal(size=(5, 12))
     labels = [f"sample-{index}" for index in range(5)]
     dataset = SherpaDataset(
         X=matrix,
@@ -173,7 +173,7 @@ def test_live_pca_node_does_not_require_block_fields_for_general_datasets() -> N
 
 
 def test_live_pca_node_does_not_require_balanced_optional_metadata() -> None:
-    matrix = np.arange(36, dtype=np.float64).reshape(3, 12)
+    matrix = np.random.default_rng(36).normal(size=(3, 12))
     labels = ["S1__B1", "S2__B1", "S1__B2"]
     dataset = SherpaDataset(
         X=matrix,

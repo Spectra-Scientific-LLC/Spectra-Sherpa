@@ -86,6 +86,7 @@ class TestDatasetTools:
         dataset_id = dataset_registry.register(ds)
         result = get_dataset_quality(dataset_id=dataset_id)
         assert result["n_evaluations"] == 0
+        assert "Zero does not imply no model was evaluated" in result["evaluation_scope"]
         assert result["snr"] is None
         assert result["dataset_id"] == dataset_id
 

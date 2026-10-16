@@ -15,6 +15,8 @@ from __future__ import annotations
 import numpy as np
 from scipy.stats import chi2
 
+from spectra_sherpa.app.lib.pca_numerics import require_resolved_pca_eigenvalues
+
 
 def hotelling_t2_per_sample(
     scores: np.ndarray,
@@ -48,7 +50,7 @@ def hotelling_t2_per_sample(
         raise ValueError("Provide either eigenvalues (PCA) or score_covariance (PLS)")
 
     if eigenvalues is not None:
-        eig = np.maximum(np.asarray(eigenvalues, dtype=np.float64), 1e-12)
+        eig = require_resolved_pca_eigenvalues(eigenvalues)
         result: np.ndarray = np.sum((scores**2) / eig, axis=1)
         return result
 

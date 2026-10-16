@@ -125,16 +125,17 @@ def test_every_active_node_is_five_star_only_through_the_retained_platform_pair(
     retired_assessments = [row for row in assessments["nodes"] if row["node_type"] in retired]
     pair_ref = str(_PAIR_RECEIPT_PATH.relative_to(_REPOSITORY_ROOT))
 
-    assert len(active_assessments) == len(audit["nodes"]) == manifest["node_count"] == 101
+    assert len(active_assessments) == len(audit["nodes"]) == 103
+    assert manifest["node_count"] == 103  # Current four-star manifest; paired receipts remain historical.
     assert len(retired_assessments) == 7
     assert all(row["stars"] == 1 for row in retired_assessments)
     assert all("superseded_duplicate" in row["fault_patterns"] for row in retired_assessments)
 
     if "paired_qualification" not in assessments:
         assert "paired_qualification" not in audit
-        assert audit["aggregates"]["stars"] == {"1": 0, "2": 0, "3": 0, "4": 101, "5": 0}
-        assert audit["aggregates"]["criticality"] == {"none": 101, "p0": 0, "p1": 0, "p2": 0}
-        assert audit["aggregates"]["fault_patterns"] == {"evidence_qualification_gap": 101}
+        assert audit["aggregates"]["stars"] == {"1": 0, "2": 0, "3": 0, "4": 103, "5": 0}
+        assert audit["aggregates"]["criticality"] == {"none": 103, "p0": 0, "p1": 0, "p2": 0}
+        assert audit["aggregates"]["fault_patterns"] == {"evidence_qualification_gap": 103}
         assert all(row["stars"] == 4 for row in active_assessments)
         assert all(row["fault_patterns"] == ["evidence_qualification_gap"] for row in active_assessments)
         assert all(pair_ref not in row["evidence_refs"] for row in active_assessments)

@@ -12,6 +12,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -665,7 +666,12 @@ def admit_retained_value(value: Any, *, max_values: int = 500_000, max_bytes: in
             for part in item:
                 visit(part, depth + 1)
         elif isinstance(item, str):
-            text_bytes += len(item) * 6
+            # CSV and plot payloads are often long ASCII strings. Charging every
+            # character as a six-byte escape rejects valid sub-limit artifacts.
+            # Bound the input first, then count the exact storage JSON spelling.
+            if len(item) > max_bytes:
+                raise ValueError("Output exceeds the retained materialization budget")
+            text_bytes += len(json.dumps(item, ensure_ascii=True))
         elif hasattr(item, "model_dump"):
             visit(item.model_dump(mode="python"), depth + 1)
         if remaining < 0 or text_bytes > max_bytes:
@@ -682,6 +688,23 @@ def _retained_dataset_projection(dataset: SherpaDataset) -> Dict[str, Any]:
     if not np.isfinite(dataset.X).all():
         result["retention_nonfinite_values"] = True
     return result
+
+
+def _add_value_unit_metadata(metadata: dict[str, Any], dataset: SherpaDataset) -> None:
+    # Data units: emit only when the dataset or source metadata defines them.
+    if dataset.units and str(dataset.units) != "dimensionless":
+        metadata["value_units"] = str(dataset.units)
+    semantic_units = dataset.get_extra("spectrasherpa.value_units_label")
+    # Normalization already records the transformed physical units. An inherited
+    # source display override must not relabel dimensionless SNV values as absorbance.
+    if str(dataset.units) in {"dimensionless", "normalized"} and any(
+        step.get("op_id") == "preprocess.normalize" for step in dataset.provenance.to_list()
+    ):
+        semantic_units = str(dataset.units)
+        metadata["value_units"] = semantic_units
+    if semantic_units:
+        metadata["value_units_label"] = str(semantic_units)
+        metadata.setdefault("value_units", str(semantic_units))
 
 
 def _serialize_sherpa_dataset(
@@ -776,13 +799,7 @@ def _serialize_sherpa_dataset(
         _add_sample_class_metadata(metadata, y_ax)
     _add_categorical_target_metadata(metadata, dataset)
 
-    # Data units: emit only when the dataset or source metadata defines them.
-    if dataset.units and str(dataset.units) != "dimensionless":
-        metadata["value_units"] = str(dataset.units)
-    semantic_units = dataset.get_extra("spectrasherpa.value_units_label")
-    if semantic_units:
-        metadata["value_units_label"] = str(semantic_units)
-        metadata.setdefault("value_units", str(semantic_units))
+    _add_value_unit_metadata(metadata, dataset)
 
     # Rich provenance from SherpaDataset.provenance
     history = dataset.provenance.to_list()

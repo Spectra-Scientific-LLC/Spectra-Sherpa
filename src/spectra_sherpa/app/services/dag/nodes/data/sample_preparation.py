@@ -238,6 +238,12 @@ def _sample_filter_values(dataset: Any, *, field: str, sample_table_column: str,
     if field == "sample_class":
         classes = getattr(sample_axis, "classes", None) if sample_axis is not None else None
         if classes is None:
+            # The serialized inspector exposes a single categorical response
+            # as sample classes. Apply exactly the same semantics at execution.
+            context = getattr(dataset, "target_context", None)
+            if getattr(context, "target_type", None) == "categorical":
+                classes = getattr(dataset, "target", None)
+        if classes is None:
             raise ValueError("Dataset has no sample classes to filter.")
         return _flatten_filter_values(classes, field=field, n_samples=n_samples)
     if field == "sample_table":
@@ -260,7 +266,11 @@ def _sample_filter_values(dataset: Any, *, field: str, sample_table_column: str,
 def _slice_dataset_rows(source: Any, data: np.ndarray, indices: np.ndarray) -> Any:
     mask = np.zeros(data.shape[0], dtype=bool)
     mask[indices] = True
-    return source[mask]
+    result = source[mask]
+    from spectra_sherpa.app.services.dag.sample_subset_supervision import rebind_sample_subset_supervision
+
+    rebind_sample_subset_supervision(source, result)
+    return result
 
 
 def _source_include_mask(dataset: Any, *, n_samples: int) -> np.ndarray:
@@ -300,11 +310,12 @@ def filter_samples_dataset(
 
     dataset = bind_X(
         X,
+        allow_excluded=True,
         missing_message="Missing required input: X (dataset)",
         dataset_error_message="X must be a SherpaDataset or compatible spectral dataset object",
         allow_array=True,
     )
-    data = to_numpy_2d(dataset, name="X", dtype=np.float64)
+    data = to_numpy_2d(dataset, name="X", dtype=np.float64, allow_excluded=True)
     n_samples = data.shape[0]
     eligible = np.ones(n_samples, dtype=bool)
 
@@ -461,7 +472,7 @@ def attach_target_dataset(
 ) -> Any:
     """Attach targets while preserving target identity and row alignment."""
 
-    dataset = bind_X(X, missing_message="Missing required input: X (dataset)", allow_array=True)
+    dataset = bind_X(X, allow_excluded=True, missing_message="Missing required input: X (dataset)", allow_array=True)
     if target_source == "sample_table_column":
         if y is not None or sample_table is not None:
             raise ValueError("sample-table-column target attachment does not accept connected y or sample_table input")

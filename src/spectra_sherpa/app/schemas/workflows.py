@@ -2,7 +2,7 @@
 Pydantic schemas for workflow API requests/responses.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
@@ -246,6 +246,15 @@ class WorkflowSummary(WorkflowBase):
     edge_count: int = Field(0, description="Number of edges in workflow")
     tags: list[WorkflowTagOut] = Field(default_factory=list, description="Tags applied to workflow")
     folder: WorkflowFolderOut | None = Field(None, description="Folder containing workflow")
+
+    @field_validator("created_at", "updated_at", "last_executed_at")
+    @classmethod
+    def explicit_timestamp_zone(cls, value: datetime | None) -> datetime | None:
+        # SQLite drops timezone information from UTC database timestamps.
+        # Emit an explicit offset so browsers cannot reinterpret UTC as local time.
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
 
 class WorkflowDetail(WorkflowSummary):

@@ -33,6 +33,7 @@ import * as pvUsetoast from "primevue/usetoast";
 import App from "./App.vue";
 import router from "./router";
 import { useNotificationStore } from "./stores/notification";
+import { persistWarningAndErrorToasts, stringifyErrorDetail, type ToastServiceApi } from "./lib/toastNotifications";
 import { useWorkflowStore } from "./stores/workflow";
 import { getErrorMessage } from "./utils/errors";
 import { hasStoredApiKey, readStoredApiKey, writeStoredApiKey } from "./utils/authStorage";
@@ -81,39 +82,6 @@ window.__OSS_VENDOR__ = {
 
 const app = createApp(App);
 const pinia = createPinia();
-
-type ToastMessage = {
-  severity?: string;
-  summary?: unknown;
-  detail?: unknown;
-};
-
-type ToastServiceApi = {
-  add?: (message: ToastMessage) => void;
-};
-
-function stringifyErrorDetail(value: unknown): string | undefined {
-  if (!value) return undefined;
-  if (value instanceof Error) {
-    return value.stack || value.message;
-  }
-  if (typeof value === "string") {
-    return value;
-  }
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-}
-
-function notificationSeverityFromToast(
-  severity: string | undefined,
-): "warning" | "error" | null {
-  if (severity === "warn" || severity === "warning") return "warning";
-  if (severity === "error") return "error";
-  return null;
-}
 
 function addSystemNotification(
   severity: "warning" | "error",
@@ -210,34 +178,10 @@ app.use(PrimeVue);
 app.use(ToastService);
 app.directive("tooltip", Tooltip);
 
-const toastService = app.config.globalProperties.$toast as
-  | ToastServiceApi
-  | undefined;
-if (toastService?.add) {
-  const originalAdd = toastService.add.bind(toastService);
-  toastService.add = (message: ToastMessage) => {
-    const severity = notificationSeverityFromToast(message.severity);
-    if (severity) {
-      const title =
-        typeof message.summary === "string" && message.summary.trim()
-          ? message.summary
-          : severity === "error"
-            ? "Error"
-            : "Warning";
-      const detail =
-        typeof message.detail === "string"
-          ? message.detail
-          : stringifyErrorDetail(message.detail);
-      addSystemNotification(
-        severity,
-        title,
-        detail || "A warning or error occurred.",
-        detail,
-      );
-    }
-    originalAdd(message);
-  };
-}
+persistWarningAndErrorToasts(
+  app.config.globalProperties.$toast as ToastServiceApi | undefined,
+  (notification) => useNotificationStore(pinia).add(notification),
+);
 
 window.addEventListener("error", (event) => {
   recordFrontendFailure(

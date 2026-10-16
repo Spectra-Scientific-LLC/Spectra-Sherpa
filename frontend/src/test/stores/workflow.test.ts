@@ -1014,8 +1014,36 @@ describe("Workflow partial execution status", () => {
     vi.clearAllMocks();
   });
 
+  it("replaces corrected preflight warnings while preserving unrelated warnings", async () => {
+    const store = useWorkflowStore();
+    store.workflowId = 77;
+    store.workflowWarnings = ["Project choice could not be saved"];
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: false, semantic_edges: [],
+      issues: [{ level: "error", message: "Derivative requires an input" }] } } as never);
+    await store.refreshPersistedPreflight();
+    expect(store.workflowWarnings).toContain("Derivative requires an input");
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: true, semantic_edges: [], issues: [] } } as never);
+    await store.refreshPersistedPreflight();
+    expect(store.workflowWarnings).toEqual(["Project choice could not be saved"]);
+  });
+
+  it("keeps prior results and does not submit execution when required inputs are missing", async () => {
+    const store = useWorkflowStore();
+    store.workflowId = 77;
+    store.nodes = [{ id: "derivative", type: "preprocess.derivative", x: 0, y: 0, params: {},
+      executionState: { status: "completed" } }];
+    store.hasUnsavedChanges = false;
+    store.lastExecutionResults = { source: { values: [1, 2] } };
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: false, semantic_edges: [],
+      issues: [{ level: "error", message: "Derivative requires an input" }] } } as never);
+    await expect(store.executeWorkflow()).rejects.toThrow("Derivative requires an input");
+    expect(store.lastExecutionResults).toEqual({ source: { values: [1, 2] } });
+    expect(store.nodes[0].executionState?.status).toBe("completed");
+    expect(vi.mocked(api.post).mock.calls.map(call => call[0])).toEqual(["/workflows/77/preflight"]);
+  });
+
   it("keeps skipped descendants pending when one node fails", async () => {
-    vi.mocked(api.post).mockResolvedValueOnce({
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: true, issues: [], semantic_edges: [] } } as never).mockResolvedValueOnce({
       data: {
         workflow_id: 77,
         status: "partial",
@@ -1062,7 +1090,7 @@ describe("Workflow partial execution status", () => {
   it("keeps FastICA descendants pending and preserves the recovery guidance", async () => {
     const recovery =
       "fit_fastica: FastICA did not converge under the declared settings (n_components=3, algorithm=parallel, contrast=logcosh, whiten=unit-variance, max_iter=400, tol=0.0001, random_seed=42). No component scores were accepted and downstream nodes were not run. Increase Maximum Iterations up to 2000 first; if convergence still fails, reduce Number of Components, review preprocessing, and then deliberately try the deflation algorithm or a looser tolerance.";
-    vi.mocked(api.post).mockResolvedValueOnce({
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: true, issues: [], semantic_edges: [] } } as never).mockResolvedValueOnce({
       data: {
         workflow_id: 78,
         status: "partial",

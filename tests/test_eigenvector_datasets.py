@@ -82,6 +82,9 @@ def eigenvector_fixture_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
         + ((sample_index % 17)[:, None] / 17.0) * 0.02
     )
 
+    # Multi-component PCA needs more than the original rank-one baseline shift.
+    spectra += np.random.default_rng(905).normal(scale=0.001, size=spectra.shape)
+
     prop_names = ["BP50", "CN", "D4052", "FLASH", "FREEZE", "TOTAL", "VISC"]
     props = np.column_stack(
         [
@@ -160,6 +163,7 @@ def eigenvector_fixture_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
         + 0.1 * np.cos(corn_x * 0.25)[None, :]
         + (corn_i[:, None] / corn_samples) * 0.18
     )
+    corn_base += np.random.default_rng(906).normal(scale=0.001, size=corn_base.shape)
     corn_props = np.column_stack(
         [
             10 + corn_i * 0.02,

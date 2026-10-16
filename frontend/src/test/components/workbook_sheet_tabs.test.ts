@@ -35,6 +35,14 @@ const mountTabs = (
   });
 
 describe("WorkbookSheetTabs", () => {
+  it("resets the active sheet portfolio color from the plus menu below Analysis Starter", () => {
+    const wrapper = mountTabs({ activeIndex: 1 });
+    const actions = wrapper.findComponent({ name: "Menu" }).props("model");
+    expect(actions[2].label).toBe("From Analysis Starter...");
+    expect(actions[3].label).toBe("Reset Color by Data Portfolio");
+    actions[3].command();
+    expect(wrapper.emitted("color")).toEqual([[2, null]]);
+  });
   it("exports the right-clicked sheet, including an inactive tab, and closes the menu", async () => {
     const wrapper = mountTabs();
     await wrapper.findAll(".sheet-tab")[1].trigger("contextmenu");

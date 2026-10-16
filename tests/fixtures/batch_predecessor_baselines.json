@@ -1,0 +1,755 @@
+{
+  "baselines": [
+    {
+      "baseline_digest": "3619fe3595f81d5144116b7f5393df8d78d5dad192d1929133c4ab725413e133",
+      "dataset": {
+        "asset_id": "a",
+        "experiment_id": 11,
+        "file_id": 12,
+        "group_column": null,
+        "source_node_id": "source",
+        "stage": "raw",
+        "target_authority": {
+          "column": "Moisture",
+          "schema_version": "spectrasherpa-target-authority/1",
+          "source_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "target_type": "continuous",
+          "units": null
+        }
+      },
+      "mutable_slots": [],
+      "schema_version": "spectra-canonical-workbench-baseline/6",
+      "validation_graph": {
+        "edges": [
+          {
+            "from_node": "scale",
+            "from_output": "default",
+            "to_input": "default",
+            "to_node": "model"
+          },
+          {
+            "from_node": "model",
+            "from_output": "default",
+            "to_input": "default",
+            "to_node": "score"
+          }
+        ],
+        "graph_digest": "4edfcad66f0b5b2d6b6b25f354b3caf14d44a278d1540a619e12a84a43f64bbc",
+        "nodes": [
+          {
+            "contract_digest": "15bce0eb5aa942173878a911a7eba23cd3638f59fe37aa3c0e54f90506ff7e91",
+            "node_id": "scale",
+            "operation_id": "preprocess.scale",
+            "parameters": {
+              "center": true,
+              "method": "autoscale"
+            }
+          },
+          {
+            "contract_digest": "5ae3215d3c522a75b16baecdf35e736537052f411fbf9833509a535320ee27d5",
+            "node_id": "model",
+            "operation_id": "model.fitted_pls",
+            "parameters": {
+              "n_components": 2,
+              "scale": true,
+              "target_names": []
+            }
+          },
+          {
+            "contract_digest": "b501f52469d6ae7d36cc2b1624a3f5bbdfd07295c04ca328a455987bb7637e1d",
+            "node_id": "score",
+            "operation_id": "diagnostics.regression_evaluator",
+            "parameters": {
+              "target_names": []
+            }
+          }
+        ],
+        "schema_version": "spectra-validation-graph/1"
+      },
+      "workflow_id": 10,
+      "workflow_integrity_hash": "723b949dfa69162742873d4bafad9600fe880e2580757fd7ea41eb67ee07e96d"
+    },
+    {
+      "baseline_digest": "39301c7bf2c2dabc65ee1142d70943e8d3b1a5d39a8d46c99fbb73acddac539a",
+      "dataset": {
+        "asset_id": "a",
+        "experiment_id": 11,
+        "file_id": 12,
+        "source_node_id": "source",
+        "stage": "raw",
+        "target_authority": {
+          "column": "Moisture",
+          "schema_version": "spectrasherpa-target-authority/1",
+          "source_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "target_type": "continuous",
+          "units": null
+        }
+      },
+      "mutable_slots": [],
+      "schema_version": "spectra-canonical-workbench-baseline/5",
+      "validation_graph": {
+        "edges": [
+          {
+            "from_node": "scale",
+            "from_output": "default",
+            "to_input": "default",
+            "to_node": "model"
+          },
+          {
+            "from_node": "model",
+            "from_output": "default",
+            "to_input": "default",
+            "to_node": "score"
+          }
+        ],
+        "graph_digest": "4edfcad66f0b5b2d6b6b25f354b3caf14d44a278d1540a619e12a84a43f64bbc",
+        "nodes": [
+          {
+            "contract_digest": "15bce0eb5aa942173878a911a7eba23cd3638f59fe37aa3c0e54f90506ff7e91",
+            "node_id": "scale",
+            "operation_id": "preprocess.scale",
+            "parameters": {
+              "center": true,
+              "method": "autoscale"
+            }
+          },
+          {
+            "contract_digest": "5ae3215d3c522a75b16baecdf35e736537052f411fbf9833509a535320ee27d5",
+            "node_id": "model",
+            "operation_id": "model.fitted_pls",
+            "parameters": {
+              "n_components": 2,
+              "scale": true,
+              "target_names": []
+            }
+          },
+          {
+            "contract_digest": "b501f52469d6ae7d36cc2b1624a3f5bbdfd07295c04ca328a455987bb7637e1d",
+            "node_id": "score",
+            "operation_id": "diagnostics.regression_evaluator",
+            "parameters": {
+              "target_names": []
+            }
+          }
+        ],
+        "schema_version": "spectra-validation-graph/1"
+      },
+      "workflow_id": 10,
+      "workflow_integrity_hash": "723b949dfa69162742873d4bafad9600fe880e2580757fd7ea41eb67ee07e96d"
+    },
+    {
+      "baseline_digest": "021bf44babad696345830cb3ed7bb9de1b56f49f0b9b312b26f559ff420b2fbc",
+      "examination_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "port_topology": {
+        "edges": [
+          {
+            "from_node": "scale",
+            "from_output": "default",
+            "resolved_input": "default",
+            "resolved_output": "default",
+            "to_input": "default",
+            "to_node": "model"
+          },
+          {
+            "from_node": "model",
+            "from_output": "default",
+            "resolved_input": "default",
+            "resolved_output": "default",
+            "to_input": "default",
+            "to_node": "score"
+          }
+        ],
+        "nodes": [
+          {
+            "input_ports": [
+              {
+                "accepted_data_roles": [
+                  "X_spectra",
+                  "X_features"
+                ],
+                "name": "default",
+                "required": true,
+                "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": [
+                  "X_spectra",
+                  "X_features"
+                ],
+                "name": "reference",
+                "required": false,
+                "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+                "variadic": false
+              }
+            ],
+            "node_id": "scale",
+            "operation_id": "preprocess.scale",
+            "output_ports": [
+              {
+                "accepted_data_roles": [
+                  "X_spectra",
+                  "X_features"
+                ],
+                "name": "default",
+                "required": true,
+                "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+                "variadic": false
+              }
+            ]
+          },
+          {
+            "input_ports": [
+              {
+                "accepted_data_roles": null,
+                "name": "default",
+                "required": true,
+                "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "y",
+                "required": false,
+                "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+                "variadic": false
+              }
+            ],
+            "node_id": "model",
+            "operation_id": "model.fitted_pls",
+            "output_ports": [
+              {
+                "accepted_data_roles": null,
+                "name": "default",
+                "required": true,
+                "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "fitted_state",
+                "required": true,
+                "type_ref": "spectrasherpa://types/RegressionModel/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "vip_scores",
+                "required": true,
+                "type_ref": "spectrasherpa://types/VariableImportance/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "calibration_comparison",
+                "required": true,
+                "type_ref": "spectrasherpa://types/RegressionComparison/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "x_scores",
+                "required": true,
+                "type_ref": "spectrasherpa://types/ScoreMatrix/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "x_loadings",
+                "required": true,
+                "type_ref": "spectrasherpa://types/LoadingMatrix/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "explained_variance",
+                "required": true,
+                "type_ref": "spectrasherpa://types/ExplainedVarianceMatrix/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "regression_coefficients",
+                "required": true,
+                "type_ref": "spectrasherpa://types/RegressionCoefficientMatrix/1.0",
+                "variadic": false
+              }
+            ]
+          },
+          {
+            "input_ports": [
+              {
+                "accepted_data_roles": null,
+                "name": "default",
+                "required": true,
+                "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "y_true",
+                "required": false,
+                "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+                "variadic": false
+              }
+            ],
+            "node_id": "score",
+            "operation_id": "diagnostics.regression_evaluator",
+            "output_ports": [
+              {
+                "accepted_data_roles": null,
+                "name": "default",
+                "required": true,
+                "type_ref": "spectrasherpa://types/ValidationResult/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "comparison",
+                "required": false,
+                "type_ref": "spectrasherpa://types/RegressionComparison/1.0",
+                "variadic": false
+              }
+            ]
+          }
+        ],
+        "schema_version": "spectra-managed-port-topology/1",
+        "topology_digest": "0d99dcc504ecf4c20cc050c55b051e8736d9f409fc40edc302fcfd75daab56ad"
+      },
+      "schema_version": "spectra-canonical-seed-execution-baseline/1",
+      "seed_evidence_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "seed_public_id": "seed-legacy",
+      "source_baseline": {
+        "baseline_digest": "3619fe3595f81d5144116b7f5393df8d78d5dad192d1929133c4ab725413e133",
+        "dataset": {
+          "asset_id": "a",
+          "experiment_id": 11,
+          "file_id": 12,
+          "group_column": null,
+          "source_node_id": "source",
+          "stage": "raw",
+          "target_authority": {
+            "column": "Moisture",
+            "schema_version": "spectrasherpa-target-authority/1",
+            "source_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "target_type": "continuous",
+            "units": null
+          }
+        },
+        "mutable_slots": [],
+        "schema_version": "spectra-canonical-workbench-baseline/6",
+        "validation_graph": {
+          "edges": [
+            {
+              "from_node": "scale",
+              "from_output": "default",
+              "to_input": "default",
+              "to_node": "model"
+            },
+            {
+              "from_node": "model",
+              "from_output": "default",
+              "to_input": "default",
+              "to_node": "score"
+            }
+          ],
+          "graph_digest": "4edfcad66f0b5b2d6b6b25f354b3caf14d44a278d1540a619e12a84a43f64bbc",
+          "nodes": [
+            {
+              "contract_digest": "15bce0eb5aa942173878a911a7eba23cd3638f59fe37aa3c0e54f90506ff7e91",
+              "node_id": "scale",
+              "operation_id": "preprocess.scale",
+              "parameters": {
+                "center": true,
+                "method": "autoscale"
+              }
+            },
+            {
+              "contract_digest": "5ae3215d3c522a75b16baecdf35e736537052f411fbf9833509a535320ee27d5",
+              "node_id": "model",
+              "operation_id": "model.fitted_pls",
+              "parameters": {
+                "n_components": 2,
+                "scale": true,
+                "target_names": []
+              }
+            },
+            {
+              "contract_digest": "b501f52469d6ae7d36cc2b1624a3f5bbdfd07295c04ca328a455987bb7637e1d",
+              "node_id": "score",
+              "operation_id": "diagnostics.regression_evaluator",
+              "parameters": {
+                "target_names": []
+              }
+            }
+          ],
+          "schema_version": "spectra-validation-graph/1"
+        },
+        "workflow_id": 10,
+        "workflow_integrity_hash": "723b949dfa69162742873d4bafad9600fe880e2580757fd7ea41eb67ee07e96d"
+      },
+      "validation_graph": {
+        "edges": [
+          {
+            "from_node": "scale",
+            "from_output": "default",
+            "to_input": "default",
+            "to_node": "model"
+          },
+          {
+            "from_node": "model",
+            "from_output": "default",
+            "to_input": "default",
+            "to_node": "score"
+          }
+        ],
+        "graph_digest": "4edfcad66f0b5b2d6b6b25f354b3caf14d44a278d1540a619e12a84a43f64bbc",
+        "nodes": [
+          {
+            "contract_digest": "15bce0eb5aa942173878a911a7eba23cd3638f59fe37aa3c0e54f90506ff7e91",
+            "node_id": "scale",
+            "operation_id": "preprocess.scale",
+            "parameters": {
+              "center": true,
+              "method": "autoscale"
+            }
+          },
+          {
+            "contract_digest": "5ae3215d3c522a75b16baecdf35e736537052f411fbf9833509a535320ee27d5",
+            "node_id": "model",
+            "operation_id": "model.fitted_pls",
+            "parameters": {
+              "n_components": 2,
+              "scale": true,
+              "target_names": []
+            }
+          },
+          {
+            "contract_digest": "b501f52469d6ae7d36cc2b1624a3f5bbdfd07295c04ca328a455987bb7637e1d",
+            "node_id": "score",
+            "operation_id": "diagnostics.regression_evaluator",
+            "parameters": {
+              "target_names": []
+            }
+          }
+        ],
+        "schema_version": "spectra-validation-graph/1"
+      }
+    },
+    {
+      "baseline_digest": "fee01f5ec1e05827f0ab08185852e2d961a7123e9ec938fa963251fb5f647913",
+      "examination_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "port_topology": {
+        "edges": [
+          {
+            "from_node": "scale",
+            "from_output": "default",
+            "resolved_input": "default",
+            "resolved_output": "default",
+            "to_input": "default",
+            "to_node": "model"
+          },
+          {
+            "from_node": "model",
+            "from_output": "default",
+            "resolved_input": "default",
+            "resolved_output": "default",
+            "to_input": "default",
+            "to_node": "score"
+          }
+        ],
+        "nodes": [
+          {
+            "input_ports": [
+              {
+                "accepted_data_roles": [
+                  "X_spectra",
+                  "X_features"
+                ],
+                "name": "default",
+                "required": true,
+                "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": [
+                  "X_spectra",
+                  "X_features"
+                ],
+                "name": "reference",
+                "required": false,
+                "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+                "variadic": false
+              }
+            ],
+            "node_id": "scale",
+            "operation_id": "preprocess.scale",
+            "output_ports": [
+              {
+                "accepted_data_roles": [
+                  "X_spectra",
+                  "X_features"
+                ],
+                "name": "default",
+                "required": true,
+                "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+                "variadic": false
+              }
+            ]
+          },
+          {
+            "input_ports": [
+              {
+                "accepted_data_roles": null,
+                "name": "default",
+                "required": true,
+                "type_ref": "spectrasherpa://types/SpectralDataset/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "y",
+                "required": false,
+                "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+                "variadic": false
+              }
+            ],
+            "node_id": "model",
+            "operation_id": "model.fitted_pls",
+            "output_ports": [
+              {
+                "accepted_data_roles": null,
+                "name": "default",
+                "required": true,
+                "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "fitted_state",
+                "required": true,
+                "type_ref": "spectrasherpa://types/RegressionModel/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "vip_scores",
+                "required": true,
+                "type_ref": "spectrasherpa://types/VariableImportance/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "calibration_comparison",
+                "required": true,
+                "type_ref": "spectrasherpa://types/RegressionComparison/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "x_scores",
+                "required": true,
+                "type_ref": "spectrasherpa://types/ScoreMatrix/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "x_loadings",
+                "required": true,
+                "type_ref": "spectrasherpa://types/LoadingMatrix/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "explained_variance",
+                "required": true,
+                "type_ref": "spectrasherpa://types/ExplainedVarianceMatrix/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "regression_coefficients",
+                "required": true,
+                "type_ref": "spectrasherpa://types/RegressionCoefficientMatrix/1.0",
+                "variadic": false
+              }
+            ]
+          },
+          {
+            "input_ports": [
+              {
+                "accepted_data_roles": null,
+                "name": "default",
+                "required": true,
+                "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "y_true",
+                "required": false,
+                "type_ref": "spectrasherpa://types/TargetMatrix/1.0",
+                "variadic": false
+              }
+            ],
+            "node_id": "score",
+            "operation_id": "diagnostics.regression_evaluator",
+            "output_ports": [
+              {
+                "accepted_data_roles": null,
+                "name": "default",
+                "required": true,
+                "type_ref": "spectrasherpa://types/ValidationResult/1.0",
+                "variadic": false
+              },
+              {
+                "accepted_data_roles": null,
+                "name": "comparison",
+                "required": false,
+                "type_ref": "spectrasherpa://types/RegressionComparison/1.0",
+                "variadic": false
+              }
+            ]
+          }
+        ],
+        "schema_version": "spectra-managed-port-topology/1",
+        "topology_digest": "0d99dcc504ecf4c20cc050c55b051e8736d9f409fc40edc302fcfd75daab56ad"
+      },
+      "saved_grouping": {
+        "custody_digest": "0406616d4c133e80102152c5fe6edd17530837212f98dac8e1e3f6c84c4808f4",
+        "grouping": {
+          "column": "block",
+          "dataset_content_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "grouped": true,
+          "mode": "required_column",
+          "schema_version": "spectra-development-grouping/1"
+        },
+        "grouping_digest": "5f37bd7939d590455f63876992d67ee27a1239eb0d878c4f9b56de6f5c63b16c",
+        "projection_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "projection_version": "spectra-saved-run-optimization-projection/1",
+        "retained_definition_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "schema_version": "spectra-saved-run-grouping/1"
+      },
+      "schema_version": "spectra-canonical-seed-execution-baseline/2",
+      "seed_evidence_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "seed_public_id": "seed-legacy",
+      "source_baseline": {
+        "baseline_digest": "3619fe3595f81d5144116b7f5393df8d78d5dad192d1929133c4ab725413e133",
+        "dataset": {
+          "asset_id": "a",
+          "experiment_id": 11,
+          "file_id": 12,
+          "group_column": null,
+          "source_node_id": "source",
+          "stage": "raw",
+          "target_authority": {
+            "column": "Moisture",
+            "schema_version": "spectrasherpa-target-authority/1",
+            "source_digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "target_type": "continuous",
+            "units": null
+          }
+        },
+        "mutable_slots": [],
+        "schema_version": "spectra-canonical-workbench-baseline/6",
+        "validation_graph": {
+          "edges": [
+            {
+              "from_node": "scale",
+              "from_output": "default",
+              "to_input": "default",
+              "to_node": "model"
+            },
+            {
+              "from_node": "model",
+              "from_output": "default",
+              "to_input": "default",
+              "to_node": "score"
+            }
+          ],
+          "graph_digest": "4edfcad66f0b5b2d6b6b25f354b3caf14d44a278d1540a619e12a84a43f64bbc",
+          "nodes": [
+            {
+              "contract_digest": "15bce0eb5aa942173878a911a7eba23cd3638f59fe37aa3c0e54f90506ff7e91",
+              "node_id": "scale",
+              "operation_id": "preprocess.scale",
+              "parameters": {
+                "center": true,
+                "method": "autoscale"
+              }
+            },
+            {
+              "contract_digest": "5ae3215d3c522a75b16baecdf35e736537052f411fbf9833509a535320ee27d5",
+              "node_id": "model",
+              "operation_id": "model.fitted_pls",
+              "parameters": {
+                "n_components": 2,
+                "scale": true,
+                "target_names": []
+              }
+            },
+            {
+              "contract_digest": "b501f52469d6ae7d36cc2b1624a3f5bbdfd07295c04ca328a455987bb7637e1d",
+              "node_id": "score",
+              "operation_id": "diagnostics.regression_evaluator",
+              "parameters": {
+                "target_names": []
+              }
+            }
+          ],
+          "schema_version": "spectra-validation-graph/1"
+        },
+        "workflow_id": 10,
+        "workflow_integrity_hash": "723b949dfa69162742873d4bafad9600fe880e2580757fd7ea41eb67ee07e96d"
+      },
+      "validation_graph": {
+        "edges": [
+          {
+            "from_node": "scale",
+            "from_output": "default",
+            "to_input": "default",
+            "to_node": "model"
+          },
+          {
+            "from_node": "model",
+            "from_output": "default",
+            "to_input": "default",
+            "to_node": "score"
+          }
+        ],
+        "graph_digest": "4edfcad66f0b5b2d6b6b25f354b3caf14d44a278d1540a619e12a84a43f64bbc",
+        "nodes": [
+          {
+            "contract_digest": "15bce0eb5aa942173878a911a7eba23cd3638f59fe37aa3c0e54f90506ff7e91",
+            "node_id": "scale",
+            "operation_id": "preprocess.scale",
+            "parameters": {
+              "center": true,
+              "method": "autoscale"
+            }
+          },
+          {
+            "contract_digest": "5ae3215d3c522a75b16baecdf35e736537052f411fbf9833509a535320ee27d5",
+            "node_id": "model",
+            "operation_id": "model.fitted_pls",
+            "parameters": {
+              "n_components": 2,
+              "scale": true,
+              "target_names": []
+            }
+          },
+          {
+            "contract_digest": "b501f52469d6ae7d36cc2b1624a3f5bbdfd07295c04ca328a455987bb7637e1d",
+            "node_id": "score",
+            "operation_id": "diagnostics.regression_evaluator",
+            "parameters": {
+              "target_names": []
+            }
+          }
+        ],
+        "schema_version": "spectra-validation-graph/1"
+      }
+    }
+  ],
+  "source_revision": "7861f66913b54d0a73120dce0b16471c9097d255"
+}

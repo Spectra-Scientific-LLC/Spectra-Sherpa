@@ -449,7 +449,7 @@ class TestSimcaCriticalLimits:
         train_node = make_node("classification.simca", {"n_components": 2})
         train_result = await train_node.execute(X=ds, y=ds.target)
         fitted_state = train_result.outputs["fitted_state"]
-        assert fitted_state["serializer"] == "spectrasherpa.model-artifact.simca/1"
+        assert fitted_state["serializer"] == "spectrasherpa.model-artifact.simca/2"
         assert set(fitted_state["metadata"]["T2_limits"]) == set(fitted_state["metadata"]["classes"])
         assert set(fitted_state["metadata"]["Q_limits"]) == set(fitted_state["metadata"]["classes"])
 

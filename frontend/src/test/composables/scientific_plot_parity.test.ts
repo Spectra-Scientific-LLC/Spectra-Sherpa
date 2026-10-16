@@ -41,6 +41,7 @@ const pca = (): NodeOutput => ({
 describe("Quick Plot and detailed plot parity", () => {
   it.each([
     ["pca_scores", "pcaScores"], ["pca_loadings", "pcaLoadings"],
+    ["pca_variable_correlations", "pcaVariableCorrelations"],
     ["pca_explained_variance", "pcaScree"],
   ])("shares the selected scientific %s presentation", (kind, prefix) => {
     const data = kind === "pca_explained_variance" ? [0.6, 0.4] : [[0.6, 0.3], [0.4, 0.7]];
@@ -175,5 +176,40 @@ describe("Quick Plot and detailed plot parity", () => {
     quick.selectedPlotKey.value = "pca_scores";
     const { detail } = views({ ...output, metadata: { ...output.metadata, sample_labels: labels } }, "model.pca");
     expect(quick.plotData.value).toEqual(detail.plotBag.value.pcaScoresData);
+  });
+
+  it("keeps exact PCA metadata color and shape encodings identical in Quick Plot and Detail", () => {
+    const labels = ["A__B1", "B__B1", "A__B2", "B__B2"];
+    const scores = [[0, 0], [1, 1], [0.1, 0.2], [1.1, 1.2]];
+    const wire = { data: scores, y_axis: { labels, sample_table: {
+      sample_id: labels, specimen_id: ["A", "B", "A", "B"],
+      block: ["1", "1", "2", "2"],
+    } } };
+    const output = { data: scores, metadata: { type: "PCA", isPCA: true, n_components: 2 },
+      primary_port: "scores", ports: { scores: { value: wire } } } as unknown as NodeOutput;
+    const selection: QuickPlotSelection = {
+      pcaXAxis: ref(0), pcaYAxis: ref(1), featureXAxis: ref(0), featureYAxis: ref(1),
+      regressionTargetIdx: ref(0), scoreColorMode: ref("auto"),
+      sampleColorField: ref("specimen_id"), sampleSymbolField: ref("block"),
+      selectedFeatureScale: ref("__primary__"), selectedFeatureLabels: ref("__primary__"),
+      selectedFeatureTitle: ref("__primary__"), selectedSampleLabels: ref("__primary__"),
+    };
+    const quick = useQuickPlotProjection(ref(output), ref("model.pca"), undefined, undefined, selection);
+    const detail = useNodePlotData({
+      nodeOutput: ref(output), nodeType: ref("model.pca"), nodeTypeKey: ref("model.pca"),
+      hasOutput: computed(() => true), isPCAOutput: computed(() => true),
+      pcaXAxis: selection.pcaXAxis, pcaYAxis: selection.pcaYAxis,
+      scoreColorMode: selection.scoreColorMode, sampleColorField: selection.sampleColorField,
+      sampleSymbolField: selection.sampleSymbolField,
+      selectedFeatureScale: selection.selectedFeatureScale, selectedFeatureLabels: selection.selectedFeatureLabels,
+      selectedFeatureTitle: selection.selectedFeatureTitle, selectedSampleLabels: selection.selectedSampleLabels,
+      plsdaLoadingsViewMode: ref("lines"), featureXAxis: selection.featureXAxis,
+      featureYAxis: selection.featureYAxis, contourClickPoint: ref(null), regressionTargetOptions: ref([]),
+    });
+    quick.selectedPlotKey.value = "pca_scores";
+    expect(quick.plotData.value).toEqual(detail.plotBag.value.pcaScoresData);
+    expect(quick.plotLayout.value).toEqual(detail.plotBag.value.pcaScoresLayout);
+    const traces = quick.plotData.value as Array<{ marker: { symbol: string } }>;
+    expect(new Set(traces.map((trace) => trace.marker.symbol)).size).toBeGreaterThan(1);
   });
 });

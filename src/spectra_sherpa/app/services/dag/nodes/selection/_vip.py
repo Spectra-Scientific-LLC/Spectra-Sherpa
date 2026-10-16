@@ -20,10 +20,8 @@ def calculate_vip(
 
     Args:
         x_scores: T matrix, shape (n_samples, n_components).
-        x_weights: W matrix in either common orientation,
-            (n_features, n_components) or (n_components, n_features).
-        y_loadings: Q matrix, shape (n_targets, n_components) or
-            (n_components,).
+        x_weights: W matrix, shape (n_features, n_components).
+        y_loadings: Q matrix, shape (n_targets, n_components).
         n_features: Number of spectral variables.
 
     Returns:
@@ -39,7 +37,7 @@ def calculate_vip(
     if (
         t.ndim != 2
         or w_raw.ndim != 2
-        or q_raw.ndim not in {1, 2}
+        or q_raw.ndim != 2
         or not np.isfinite(t).all()
         or not np.isfinite(w_raw).all()
         or not np.isfinite(q_raw).all()
@@ -48,22 +46,12 @@ def calculate_vip(
 
     n_components = t.shape[1]
 
-    # Normalise weight orientation to (n_features, n_components).
-    if w_raw.shape == (n_components, n_features):
-        w = w_raw.T
-    elif w_raw.shape == (n_features, n_components):
-        w = w_raw
-    else:
-        raise ValueError("VIP weight dimensions do not match scores and features")
-
-    # Normalise loading orientation to (n_components, n_targets).
-    q = q_raw.reshape(-1, 1) if q_raw.ndim == 1 else q_raw
-    if q.shape[0] == n_components:
-        pass
-    elif q.shape[1] == n_components:
-        q = q.T
-    else:
-        raise ValueError("VIP loading dimensions do not match score components")
+    if w_raw.shape != (n_features, n_components):
+        raise ValueError("VIP weights must have shape (n_features, n_components)")
+    w = w_raw
+    if q_raw.ndim != 2 or q_raw.shape[1] != n_components:
+        raise ValueError("VIP loadings must have shape (n_targets, n_components)")
+    q = q_raw.T
 
     # Each component contribution is ||t_h||² ||q_h||². A relative activity
     # floor makes the unitless VIP invariant to changing response units while

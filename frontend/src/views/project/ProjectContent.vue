@@ -14,7 +14,7 @@
           @click="openMemoryMap"
         />
         <Button
-          v-if="projectStore.currentProjectId"
+          v-if="projectStore.currentProjectId && !['demo', 'pro'].includes(appConfig?.siteProfile || '') && (appConfig?.audit?.localQuery || appConfig?.audit?.fullPipeline)"
           label="Audit"
           icon="pi pi-shield"
           class="p-button-text p-button-sm"
@@ -43,22 +43,20 @@
 
     <p v-if="qualified" role="status">{{ availabilityError || availability?.limitations }}</p>
     <!-- Loading -------------------------------------------------------- -->
-    <div v-if="projectStore.isLoading && !projectStore.projects.length" class="empty-state">
-      <ProgressSpinner style="width: 28px; height: 28px" />
-      <p>Loading projects…</p>
-    </div>
+    <WorkspaceState
+      v-if="projectStore.isLoading && !projectStore.projects.length"
+      kind="loading"
+      variant="page"
+      message="Loading projects…"
+    />
 
     <!-- No projects at all -->
-    <div v-else-if="!projectStore.projects.length" class="empty-state">
-      <p class="empty-state__title">No projects yet.</p>
-      <p class="empty-state__hint">
-        Choose New Project to start with your own data, or New Analysis on the Dashboard.
-      </p>
-    </div>
+    <WorkspaceState v-else-if="!projectStore.projects.length" kind="empty" variant="page" message="No projects yet.">
+      <p>Choose New Project to start with your own data, or New Analysis on the Dashboard.</p>
+    </WorkspaceState>
 
     <!-- Projects exist but none selected -->
-    <div v-else-if="!activeProject" class="empty-state">
-      <p class="empty-state__title">No project selected.</p>
+    <WorkspaceState v-else-if="!activeProject" kind="empty" variant="page" message="No project selected.">
       <Button
         label="Go to Dashboard"
         icon="pi pi-arrow-right"
@@ -66,12 +64,12 @@
         class="p-button-text p-button-sm"
         @click="router.push('/dashboard')"
       />
-    </div>
+    </WorkspaceState>
 
     <template v-else>
-      <div v-if="objectErrors.length" role="alert">Could not load {{ objectErrors.join(", ") }}.
+      <WorkspaceState v-if="objectErrors.length" kind="error" :message="`Could not load ${objectErrors.join(', ')}.`">
         <Button label="Retry" @click="loadObjects(activeProject.id)" />
-      </div>
+      </WorkspaceState>
       <!-- Active project header section ----------------------------- -->
       <section class="current-section">
         <div class="current-head">
@@ -83,7 +81,7 @@
             </p>
           </div>
           <span class="current-time" :title="absoluteTimestamp(activeProject.updated_at)">
-            {{ formatRelative(activeProject.updated_at) }}
+            <RelativeTime :value="activeProject.updated_at" />
           </span>
         </div>
 
@@ -97,9 +95,9 @@
             ><strong>{{ activeProject.workflow_count }}</strong> workflows</span
           >
           <span><strong>{{ runTotal ?? "—" }}</strong> runs</span>
-          <span><strong>{{ activeProject.model_count }}</strong> artifacts</span>
+          <span><strong>{{ activeProject.model_count }}</strong> models</span>
           <span v-for="collection in collections" :key="collection.key"><strong>{{ collection.total }}</strong> {{ collection.label.toLowerCase() }}</span>
-          <span>created {{ formatRelative(activeProject.created_at) }}</span>
+          <span>created <RelativeTime :value="activeProject.created_at" /></span>
         </div>
 
 
@@ -250,7 +248,7 @@
               </div>
             </div>
             <span class="object-row__time" :title="absoluteTimestamp(experiment.created_at)">
-              {{ formatRelative(experiment.created_at) }}
+              <RelativeTime :value="experiment.created_at" />
             </span>
             <span class="lifecycle-pill" :class="datasetStageTone(experiment)">
               {{ datasetStageLabel(experiment) }}
@@ -306,7 +304,7 @@
               </small>
             </div>
             <span class="object-row__time" :title="absoluteTimestamp(workflow.updated_at)">
-              {{ formatRelative(workflow.updated_at) }}
+              <RelativeTime :value="workflow.updated_at" />
             </span>
             <span class="lifecycle-pill" :class="workflowStageTone(workflow)">
               {{ workflowStageLabel(workflow) }}
@@ -324,7 +322,7 @@
         <div v-for="run in runs" :key="run.id" class="object-row" role="button" tabindex="0"
           @click="openRun(run.id)" @keydown.enter.prevent="openRun(run.id)" @keydown.space.prevent="openRun(run.id)">
           <div class="object-row__main"><strong>{{ run.name || 'Saved run' }}</strong><small>{{ run.run_kind }}</small></div>
-          <span class="object-row__time">{{ formatRelative(run.executed_at) }}</span><span>{{ run.status }}</span>
+          <span class="object-row__time"><RelativeTime :value="run.executed_at" /></span><span>{{ run.status }}</span>
         </div>
         <p v-if="!runs.length" class="object-empty">{{ objectsLoading ? "Loading runs…" : runTotal === null ? "Runs unavailable." : "No saved runs in this project." }}</p>
         <small v-if="runTotal !== null && runTotal > runs.length">Showing {{ runs.length }} of {{ runTotal }} runs.</small>
@@ -336,7 +334,7 @@
         </div>
         <div v-for="item in collection.items" :key="item.id" class="object-row collection-summary">
           <div class="object-row__main"><strong>{{ item.title }}</strong><small>{{ item.status }}</small></div>
-          <span class="object-row__time">{{ formatRelative(item.createdAt) }}</span>
+          <span class="object-row__time"><RelativeTime :value="item.createdAt" /></span>
         </div>
         <p v-if="!collection.items.length" class="object-empty">No {{ collection.label.toLowerCase() }} in this project.</p>
         <small v-if="collection.total > collection.items.length">Showing {{ collection.items.length }} of {{ collection.total }} {{ collection.label.toLowerCase() }}.</small>
@@ -345,11 +343,11 @@
       <section class="object-section">
         <div class="object-section__head">
           <div class="object-section__title">
-            <span class="eyebrow">Artifacts</span>
+            <span class="eyebrow">Models</span>
             <span class="object-section__count">{{ activeProject.model_count }}</span>
           </div>
           <Button
-            label="Artifacts"
+            label="Models"
             icon="pi pi-arrow-right"
             iconPos="right"
             class="p-button-text p-button-sm"
@@ -377,13 +375,13 @@
               class="object-row__time"
               :title="absoluteTimestamp(model.updated_at || model.created_at)"
             >
-              {{ formatRelative(model.updated_at || model.created_at) }}
+              <RelativeTime :value="model.updated_at || model.created_at" />
             </span>
             <span class="lifecycle-pill ready">Trained</span>
           </div>
         </div>
-        <p v-else class="object-empty">{{ objectsLoading ? "Loading artifacts…" : objectErrors.includes("Artifacts") ? "Artifacts unavailable." : "No artifacts in this project yet." }}</p>
-        <small v-if="activeProject.model_count > models.length">Showing {{ models.length }} of {{ activeProject.model_count }} artifacts.</small>
+        <p v-else class="object-empty">{{ objectsLoading ? "Loading models…" : objectErrors.includes("Models") ? "Models unavailable." : "No models in this project yet." }}</p>
+        <small v-if="activeProject.model_count > models.length">Showing {{ models.length }} of {{ activeProject.model_count }} models.</small>
       </section>
     </template>
 
@@ -406,17 +404,19 @@
 </template>
 
 <script setup lang="ts">
+import RelativeTime from "@/components/RelativeTime.vue";
+import { formatMetricValue } from "@/utils/format";
 import { regressionMetricPresentation, regressionMetricQualification } from "@/utils/regressionMetricPresentation";
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
-import ProgressSpinner from "primevue/progressspinner";
 import { useToast } from "primevue/usetoast";
 import api from "@/api/client";
 import CampaignReproduction from "./CampaignReproduction.vue";
 import ProjectDialog, { type ProjectFormData } from "@/components/ProjectDialog.vue";
+import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import { projectCollectionsLoader, type ProjectCollection } from "@/lib/projectCollections";
 import { useAdvisorStore } from "@/stores/advisor";
@@ -488,7 +488,9 @@ const headerActionItems = computed(() => [
         },
       ]
     : []),
-  ...(projectStore.currentProjectId
+  ...(!["demo", "pro"].includes(appConfig.value?.siteProfile || "")
+    && (appConfig.value?.audit?.localQuery || appConfig.value?.audit?.fullPipeline)
+    && projectStore.currentProjectId
     ? [
         {
           label: "Audit",
@@ -688,11 +690,7 @@ function modelMetricSummary(metrics: Record<string, unknown> | null): string | n
   return null;
 }
 
-function formatMetric(value: number): string {
-  if (Math.abs(value) >= 100) return value.toFixed(0);
-  if (Math.abs(value) >= 10) return value.toFixed(1);
-  return value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-}
+const formatMetric = formatMetricValue;
 
 // Data loading --------------------------------------------------------
 
@@ -788,7 +786,7 @@ async function loadObjects(projectId: number): Promise<void> {
   if (sheets.status === "fulfilled") workflows.value = [...sheets.value].sort((a,b) => b.updated_at.localeCompare(a.updated_at));
   else objectErrors.value.push("Workflows");
   if (artifacts.status === "fulfilled") models.value = artifacts.value.data || [];
-  else objectErrors.value.push("Artifacts");
+  else objectErrors.value.push("Models");
   if (history.status === "fulfilled") { runs.value = history.value.data.runs; runTotal.value = history.value.data.total; }
   else objectErrors.value.push("Runs");
   if (extra.status === "fulfilled") collections.value = extra.value;
@@ -824,7 +822,8 @@ function openMemoryMap(): void {
 
 function openProjectAudit(): void {
   const projectId = projectStore.currentProjectId;
-  if (!projectId) return;
+  if (!projectId || ["demo", "pro"].includes(appConfig.value?.siteProfile || "")
+    || !(appConfig.value?.audit?.localQuery || appConfig.value?.audit?.fullPipeline)) return;
   void router.push({
     path: "/audit",
     query: {
@@ -889,7 +888,7 @@ async function bindCanonicalData(): Promise<void> {
 }
 
 function openArtifacts(): void {
-  router.push("/runs?tab=artifacts");
+  router.push("/runs?tab=models");
 }
 
 // Project CRUD --------------------------------------------------------
@@ -951,28 +950,6 @@ async function onExportProject(project: ProjectSummary): Promise<void> {
 
 // Date helpers --------------------------------------------------------
 
-function formatRelative(dateStr: string): string {
-  if (!dateStr) return "—";
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  if (diff < 0) return "just now";
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "yesterday";
-  if (days < 7) return `${days} days ago`;
-  if (days < 30) return `${Math.floor(days / 7)}w ago`;
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 function absoluteTimestamp(dateStr: string): string {
   if (!dateStr) return "";
   try {
@@ -1003,7 +980,7 @@ function absoluteTimestamp(dateStr: string): string {
 }
 
 :global(.content:has(.project-content)) {
-  background: #e4e0fa;
+  background: var(--workspace-background);
 }
 
 /* Header ----------------------------------------------------------- */
@@ -1017,28 +994,6 @@ function absoluteTimestamp(dateStr: string): string {
 }
 
 /* Empty state ----------------------------------------------------- */
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 3rem 1rem;
-  text-align: center;
-}
-
-.empty-state__title {
-  margin: 0;
-  font-size: 1rem;
-  font-weight: 500;
-}
-
-.empty-state__hint,
-.empty-state p {
-  margin: 0;
-  color: var(--text-color-secondary);
-  font-size: 0.875rem;
-}
 
 /* Current Project section ----------------------------------------- */
 

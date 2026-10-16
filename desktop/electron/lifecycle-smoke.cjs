@@ -12,7 +12,7 @@ async function smoke() {
   try {
     let page = await application.firstWindow();
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+/, { timeout: 180000 });
-    await page.getByRole('tab', { name: 'Your Project', exact: true, selected: true }).waitFor();
+    await page.getByRole('region', { name: 'Your Project', exact: true }).waitFor();
     const oldEndpoint = new URL(page.url()).origin;
     // Exercise the real context-isolated bridge; substitute only the OS chooser.
     await application.evaluate(({ dialog }, selected) => {
@@ -70,7 +70,7 @@ async function smoke() {
       .find(item => item.label === 'Restart workbench…').click());
     page = await nextWindow;
     await page.waitForURL(/^http:\/\/127\.0\.0\.1:\d+/, { timeout: 180000 });
-    await page.getByRole('tab', { name: 'Your Project', exact: true, selected: true }).waitFor();
+    await page.getByRole('region', { name: 'Your Project', exact: true }).waitFor();
     assert.equal(await application.evaluate(() => global.lifecyclePrompts.length), 2,
       'Accepted restart must pass through the renderer unsaved-edit decision');
     await assert.rejects(fetch(`${oldEndpoint}/api/health`, { signal: AbortSignal.timeout(3000) }));

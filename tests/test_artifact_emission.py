@@ -166,6 +166,55 @@ class TestArtifactBuilder:
 
 
 class TestCanonicalPLSStateEmission:
+    def test_pls_reference_record_follows_embedded_response_only(self, sherpa_dataset):
+        from spectra_sherpa.app.lib.reference_value_evidence import ReferenceValueDeclaration, reference_value_evidence
+        from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+        from spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node import FittedPLSV2Node
+
+        sherpa_dataset.target_context = TargetContext(
+            target_type="continuous",
+            target_name="moisture",
+            target_names=["moisture"],
+            selected_target="moisture",
+            target_units="wt %",
+            reference_value_evidence=reference_value_evidence(
+                ReferenceValueDeclaration.model_validate(
+                    {
+                        "target_name": "moisture",
+                        "target_type": "continuous",
+                        "units": "wt %",
+                    }
+                ),
+                source_file_id=1,
+                sample_table_file_id=2,
+                table_sha256="a" * 64,
+                target_name="moisture",
+                target_type="continuous",
+                source_included_count=40,
+                missing_excluded_count=0,
+            ),
+        )
+        node = FittedPLSV2Node(node_id="pls_reference", parameters={"n_components": 2})
+        matched = _run(node.execute(input_data=sherpa_dataset))
+        manifest = matched.outputs["_model_artifact"]["metadata"]
+        assert manifest["response_identity"] == {"names": ["moisture"], "units": ["wt %"]}
+        assert manifest["reference_value_evidence"]["source_included_count"] == 40
+        assert manifest["reference_fit_context"]["calibration_rows"] == 30
+
+        # Equal values cannot establish the connected response's provenance.
+        unmatched = _run(node.execute(input_data=sherpa_dataset, y=np.asarray(sherpa_dataset.target).copy()))
+        assert "reference_value_evidence" not in unmatched.outputs["_model_artifact"]["metadata"]
+        assert unmatched.outputs["_model_artifact"]["metadata"]["response_identity"] != manifest["response_identity"]
+
+        from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
+
+        split = TrainTestSplitNode(node_id="split_reference", parameters={"test_size": 0.2, "random_seed": 7})
+        partition = _run(split.execute(X=sherpa_dataset))
+        saved_fit = _run(node.execute(input_data=partition["X_train"]))
+        split_manifest = saved_fit.outputs["_model_artifact"]["metadata"]
+        assert split_manifest["reference_value_evidence"]["sample_table_sha256"] == "a" * 64
+        assert split_manifest["reference_fit_context"]["calibration_rows"] == 24
+
     def test_pls_emits_closed_fitted_state(self, sherpa_dataset):
         from spectra_sherpa.app.services.dag.nodes.modeling.fitted_pls_node import FittedPLSV2Node
 
@@ -280,6 +329,51 @@ class TestClassificationArtifactEmission:
             "x_explained_variance",
             "y_explained_variance",
         } == set(artifact["arrays"])
+
+    def test_plsda_reference_record_requires_embedded_labels(self, classification_dataset):
+        from spectra_sherpa.app.lib.reference_value_evidence import ReferenceValueDeclaration, reference_value_evidence
+        from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+        from spectra_sherpa.app.services.dag.nodes.classification.plsda_nodes import PLSDANode
+
+        classification_dataset.target_context = TargetContext(
+            target_type="categorical",
+            target_name="class",
+            target_names=["class"],
+            selected_target="class",
+            reference_value_evidence=reference_value_evidence(
+                ReferenceValueDeclaration.model_validate(
+                    {
+                        "target_name": "class",
+                        "target_type": "categorical",
+                    }
+                ),
+                source_file_id=3,
+                sample_table_file_id=4,
+                table_sha256="c" * 64,
+                target_name="class",
+                target_type="categorical",
+                source_included_count=40,
+                missing_excluded_count=0,
+            ),
+        )
+        node = PLSDANode(node_id="plsda_reference", parameters={"n_components": 2})
+        matched = _run(node.execute(X=classification_dataset))
+        manifest = matched.outputs["_model_artifact"]["metadata"]
+        assert manifest["reference_value_evidence"]["source_included_count"] == 40
+        assert manifest["reference_fit_context"]["calibration_rows"] == 36
+        unmatched = _run(node.execute(X=classification_dataset, y=np.asarray(classification_dataset.target).copy()))
+        assert "reference_value_evidence" not in unmatched.outputs["_model_artifact"]["metadata"]
+
+        from spectra_sherpa.app.services.dag.nodes.data.transforms import TrainTestSplitNode
+
+        split = TrainTestSplitNode(
+            node_id="split_classes", parameters={"split_method": "stratified", "test_size": 0.25}
+        )
+        partition = _run(split.execute(X=classification_dataset))
+        saved_fit = _run(node.execute(X=partition["X_train"]))
+        split_manifest = saved_fit.outputs["_model_artifact"]["metadata"]
+        assert split_manifest["reference_value_evidence"]["sample_table_sha256"] == "c" * 64
+        assert split_manifest["reference_fit_context"]["calibration_rows"] == 27
 
     def test_knn_emits_artifact(self, classification_dataset):
         from spectra_sherpa.app.services.dag.nodes.classification.knn_nodes import KNNNode

@@ -66,11 +66,11 @@ inputId="project-workspace" v-model="selectedWorkspace"
       <div v-if="isEditMode && editProject" class="project-metadata">
         <div class="metadata-row">
           <span class="metadata-label">Created:</span>
-          <span class="metadata-value">{{ formatDate(editProject.created_at) }}</span>
+          <span class="metadata-value">{{ formatTimestamp(editProject.created_at) }}</span>
         </div>
         <div class="metadata-row">
           <span class="metadata-label">Last Modified:</span>
-          <span class="metadata-value">{{ formatDate(editProject.updated_at) }}</span>
+          <span class="metadata-value">{{ formatTimestamp(editProject.updated_at) }}</span>
         </div>
       </div>
     </div>
@@ -95,6 +95,7 @@ inputId="project-workspace" v-model="selectedWorkspace"
 </template>
 
 <script setup lang="ts">
+import { formatTimestamp } from "@/utils/format";
 import { ref, watch, computed } from "vue";
 import Dialog from "primevue/dialog";
 import Button from "primevue/button";
@@ -212,11 +213,6 @@ watch(
     submitted.value = false;
   }
 );
-
-const formatDate = (dateStr?: string): string => {
-  if (!dateStr) return "\u2014";
-  return new Date(dateStr).toLocaleString();
-};
 
 const onSubmit = () => {
   submitted.value = true;

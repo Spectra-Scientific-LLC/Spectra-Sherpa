@@ -28,7 +28,13 @@ from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMeta
 from . import _utils as data_utils
 from . import sample_preparation, sample_table, split_planner
 from .sample_preparation import attach_target_dataset, explicit_filter_values, filter_samples_dataset
-from .split_planner import bind_split_groups, bind_split_target, materialize_split_outputs, plan_train_test_split
+from .split_planner import (
+    bind_split_groups,
+    bind_split_target,
+    materialize_split_outputs,
+    plan_train_test_split,
+    require_independent_classification_groups,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -586,12 +592,18 @@ class TrainTestSplitNode(Node):
 
         # One imported authority is used by generated and live execution.
         lines.append(f"{indent}from spectra_sherpa.app.services.dag.nodes.data.split_planner import (")
-        lines.append(
-            f"{indent}    bind_split_groups, bind_split_target, materialize_split_outputs, plan_train_test_split,"
-        )
+        lines.append(f"{indent}    bind_split_groups, bind_split_target, materialize_split_outputs,")
+        lines.append(f"{indent}    plan_train_test_split, require_independent_classification_groups,")
         lines.append(f"{indent})")
         lines.append(f"{indent}_y_data, _target_context = bind_split_target(_X_input, _y_input)")
-        lines.append(f"{indent}_split_groups = bind_split_groups(_X_input)")
+        lines.append(
+            f"{indent}_split_groups = bind_split_groups("
+            f"_X_input, use_source_assignment={split_method == 'group_holdout'!r})"
+        )
+        lines.append(
+            f"{indent}require_independent_classification_groups(_X_input, _split_groups, _target_context, "
+            f"split_method={split_method!r})"
+        )
         lines.append(f"{indent}_split_plan = plan_train_test_split(")
         lines.append(f"{indent}    _X_data, _y_data,")
         lines.append(f"{indent}    method={split_method!r}, test_size={float(test_size)!r},")
@@ -639,7 +651,8 @@ class TrainTestSplitNode(Node):
         )
         X_array = to_numpy_2d(X_ds, name="X", dtype=np.float64)
         y_array, target_context = bind_split_target(X_ds, y)
-        groups = bind_split_groups(X_ds)
+        groups = bind_split_groups(X_ds, use_source_assignment=str(split_method) == "group_holdout")
+        require_independent_classification_groups(X_ds, groups, target_context, split_method=str(split_method))
 
         plan = plan_train_test_split(
             X_array,

@@ -230,6 +230,7 @@ async def stream_chat(
     max_paragraphs: int = 2,
     metadata: dict | None = None,
     exchange_owner: int | None = None,
+    max_tokens: int | None = None,
 ) -> AsyncIterator[str]:
     """Stream a single-turn chat completion from the configured endpoint.
 
@@ -264,6 +265,7 @@ async def stream_chat(
         max_paragraphs=max_paragraphs,
         metadata=metadata,
         system_prompt=scoped_prompt(attention_prompt),
+        max_tokens=max_tokens,
     )
     from spectra_sherpa.app.core.mode_policy import is_local
     from spectra_sherpa.app.services.chat_exchange import Exchange, _active

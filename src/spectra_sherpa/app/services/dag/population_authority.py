@@ -232,7 +232,9 @@ def analyze_populations(
     return issues, receipts
 
 
-def qualify_evaluation_result(result: Any, receipt: dict[str, Any] | None) -> Any:
+def qualify_evaluation_result(
+    result: Any, receipt: dict[str, Any] | None, *, source_results: dict[str, Any] | None = None
+) -> Any:
     """Project executor-owned evidence onto results after worker execution."""
     if receipt is None:
         return result
@@ -250,6 +252,33 @@ def qualify_evaluation_result(result: Any, receipt: dict[str, Any] | None) -> An
         comparison.setdefault("metadata", {}).update(role=role, population_authority=receipt)
         for row in comparison.get("data", []):
             row["role"] = role
+        # Graph authority identifies an exact row-preserving split branch. Do not
+        # borrow labels merely because another dataset has the same row count.
+        population = receipt.get("population")
+        if (
+            source_results is not None
+            and receipt.get("qualification") == "graph_verified"
+            and comparison.get("schema_version") == "spectrasherpa-classification-comparison/1"
+            and isinstance(population, list)
+            and len(population) == 2
+            and population[1] in {"train", "test"}
+        ):
+            from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+
+            outputs = source_results.get(population[0], {})
+            dataset = outputs.get("X_" + population[1]) if isinstance(outputs, dict) else None
+            labels = getattr(getattr(dataset, "sample_axis", None), "labels", None)
+            rows = comparison.get("data", [])
+            if (
+                isinstance(dataset, SherpaDataset)
+                and labels is not None
+                and len(labels) == len(rows)
+                and all(isinstance(label, str) and label for label in labels)
+            ):
+                for row, label in zip(rows, labels, strict=True):
+                    row["sample"] = label
+                comparison["metadata"]["sample_identity"] = "provided_labels"
+
     visualization = result.outputs.get("visualization")
     if isinstance(visualization, dict):
         visualization.setdefault("metadata", {}).update(role=role, population_authority=receipt)

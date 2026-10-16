@@ -6,8 +6,12 @@ from spectra_sherpa.app.services.dag.node_base import node_registry
 
 def template_example_unavailable_reason(template: WorkflowTemplate) -> str | None:
     """Expose provider-dependent examples without advertising a closed import."""
+    from spectra_sherpa.app.contracts.demo_policy import get_demo_policy
     from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
+    from spectra_sherpa.app.core.config import app_config
 
+    if app_config.site_profile == "demo" and "reference_data_import" in get_demo_policy().disabled_capabilities:
+        return "Bundled example import is unavailable on the demo. Select a dataset already in My Dataset."
     if not uses_managed_project_access():
         return None
     for node in (template.template_data or {}).get("nodes", []):

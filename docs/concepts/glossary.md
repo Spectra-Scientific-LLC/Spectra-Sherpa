@@ -5,13 +5,19 @@ definition links to the next practical place to use it.
 
 | Term | Meaning and example |
 | --- | --- |
+| **New Analysis** | Dashboard action that creates a Project workspace with a selected dataset and starter, or a blank project. It is distinct from Analysis Starter inside Workflow. |
+| **Analysis Starter** | Workflow action that adds a workflow template to the current Project workspace using the retained dataset selection. |
+| **Project** | The scientist's workspace containing named dataset selections, workflow sheets, saved Runs, reports, and models. See [Projects, Datasets, and Runs](../workflows/projects-datasets-runs.md). |
+| **Experiment** | Internal import/source data container holding files, specimens, metadata, and versions; it can belong to a Project. It is distinct from the Project workspace, not a synonym for it. |
+| **Runs** | Navigation for saved workflow executions and their evidence. Results are the scientific outputs within a run, not the navigation label. |
+| **Models** | User-facing collection of retained fitted models. An artifact is the underlying serialized fitted-state record, not a replacement navigation noun. |
 | **Admitted** | Accepted after the relevant structure, bounds, and identity checks pass. Example: a `.spa` file is admitted only by its qualified native reader. See [Data Import](../workflows/data-import.md). |
 | **Authority** | The single declared source allowed to decide a fact. Example: the node registry, rather than UI text, is the authority for a node's parameters. See [Workflow Execution](../architecture/workflows.md). |
 | **Canonical** | The one supported representation or computation used by every product path. Example: Workbench and SDK execute the same canonical node. |
 | **Closed contract** | A versioned record with a fixed set of allowed fields and explicit refusal of unknown fields. Example: a model artifact refuses an undeclared serializer. See [Model Artifacts](../architecture/model-artifacts.md). |
 | **Content identity** | A digest derived from the scientific content, independent of an editable display name. Example: renaming a dataset does not change its content identity. |
 | **Custody** | Who or what is permitted to hold data or fitted state, and for how long. Example: a trial workspace has temporary custody of an admitted reference. |
-| **Dataset** | An n-dimensional numeric array plus axes, labels, masks, targets, metadata, and provenance. Example: 80 NIR spectra by 700 wavelengths with a moisture target. See [SherpaDataset](../architecture/sherpa-dataset.md). |
+| **Dataset** | A named selection of data, views, target, and optional groups in the workspace. Its scientific payload is an n-dimensional array with axes, labels, masks, metadata, and provenance. See [SherpaDataset](../architecture/sherpa-dataset.md). |
 | **Digest-bound** | Linked to exact bytes or a normalized record by a cryptographic digest. Example: a registered reference grant is bound to the selected file's SHA-256. |
 | **Evidence** | A reviewable record showing that a claim was checked. Example: a split plan records which groups were held out. |
 | **Fitted state** | Learned model parameters needed for later application. Example: PCA loadings and centering values form fitted state. See [Model Artifacts](../architecture/model-artifacts.md). |

@@ -57,12 +57,13 @@ describe("Scientific plotted populations", () => {
       ]);
       expect(vm.plotData[0].hovertemplate).toContain("Validation fold (0-based)");
       expect(vm.plotLayout.title.text).toContain("Out-of-fold");
-      expect(vm.plotLayout.title.text).toContain("2 validation folds · selection.nested_cv / audit_nested_cv");
+      expect(vm.plotLayout.title.text).toBe("Out-of-fold Predicted vs Actual");
       expect(vm.plotLayout.meta).toMatchObject({
         claim_scope: "out_of_fold",
         producer: oof.producer,
         evidence_sha256: oof.evidence_sha256,
         split_plan_digest: oof.split_plan_digest,
+        validation_folds: 2,
       });
       w.unmount();
     },
@@ -194,11 +195,11 @@ describe("Scientific plotted populations", () => {
         source_row_indices: Array.from({ length: 50 }, (_, i) => i),
       });
       if (nodeType === "preprocess.normalize") {
-        expect(vm.plotLayout.annotations[1].text).toContain("50 of 80 active rows shown");
+        expect(vm.plotLayout.annotations[1].text).toBe("Preprocessed");
         expect(vm.plotLayout.meta.comparison_populations.original).toBeNull();
         expect(vm.plotLayout.meta.comparison_populations.preprocessed).toEqual(vm.plotLayout.meta.display_population);
       } else {
-        expect(vm.plotLayout.title.text).toContain("First 50 of 80");
+        expect(vm.plotLayout.title.text).toBe("Spectral overlay");
       }
       expect(w.get(".plot-sampling-disclosure").text()).toContain("50");
       expect(w.get(".plot-sampling-disclosure").text()).toContain("80");
