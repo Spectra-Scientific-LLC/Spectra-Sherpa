@@ -375,3 +375,21 @@ jobs:
             exit 1
           fi
           echo "No stale demo references in docs."
+
+  verdict:
+    name: CI verdict
+    if: ${{ always() }}
+    needs: ['references', 'lint', 'backend', 'desktop-shell', 'scp-compat', 'frontend', 'security', 'docs']
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every CI job to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python - <<'PYTHON'
+          import json, os
+          results = json.loads(os.environ["RESULTS"])
+          expected = set(['references', 'lint', 'backend', 'desktop-shell', 'scp-compat', 'frontend', 'security', 'docs'])
+          if set(results) != expected or any(item.get("result") != "success" for item in results.values()):
+              raise SystemExit("CI is incomplete or unsuccessful: " + str(results))
+          PYTHON

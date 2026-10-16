@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from pathlib import Path
 
@@ -9,28 +8,6 @@ import pytest
 import yaml
 
 WORKFLOW = Path(__file__).resolve().parents[1] / ".github" / "workflows" / "pypi-release.yml"
-
-
-@pytest.fixture
-def workflow_bash() -> str:
-    if os.name == "nt":
-        # PATH may find Windows' WSL launcher first. Actions shell:bash uses
-        # Git for Windows; select that same shell without requiring WSL.
-        git = shutil.which("git")
-        if git:
-            git_path = Path(git).resolve()
-            candidates = (
-                git_path.parent / "bash.exe",
-                git_path.parent.parent / "bin" / "bash.exe",
-                git_path.parent.parent.parent / "bin" / "bash.exe",
-            )
-            for candidate in candidates:
-                if candidate.is_file():
-                    return str(candidate)
-        pytest.fail("These workflow tests require Git for Windows with Git Bash installed")
-    bash = shutil.which("bash")
-    assert bash is not None, "These workflow tests require Bash"
-    return bash
 
 
 def _section(source: str, start: str, end: str | None = None) -> str:
@@ -221,6 +198,8 @@ def test_protected_helper_survives_product_tag_checkout(tmp_path: Path, workflow
     scripts.mkdir()
     helper = scripts / "qualify_release_artifacts.py"
     helper.write_text("protected-main helper\n", encoding="utf-8")
+    release_gate = scripts / "verify_release_ci.py"
+    release_gate.write_text("protected-main release gate\n", encoding="utf-8")
     temporary = tmp_path / "runner temp"
     temporary.mkdir()
     result = subprocess.run(
@@ -233,6 +212,8 @@ def test_protected_helper_survives_product_tag_checkout(tmp_path: Path, workflow
     )
     helper.write_text("older-tag helper\n", encoding="utf-8")
     assert (temporary / helper.name).read_text() == "protected-main helper\n"
+    release_gate.write_text("older-tag release gate\n", encoding="utf-8")
+    assert (temporary / release_gate.name).read_text() == "protected-main release gate\n"
     assert "a" * 40 in result.stdout
     build = next(step["run"] for step in steps if step.get("name") == "Build one wheel and one source distribution")
     assert 'python "$RUNNER_TEMP/qualify_release_artifacts.py" create-manifest' in build
@@ -268,7 +249,10 @@ def test_saved_model_compat_runs_on_sensitive_prs_main_and_weekly() -> None:
     root = Path(__file__).resolve().parents[1]
     workflow = yaml.safe_load((root / ".github/workflows/saved-model-compat.yml").read_text())
     triggers = workflow[True]
-    paths = triggers["pull_request"]["paths"]
+    import json
+
+    assert "paths" not in triggers["pull_request"]
+    paths = json.loads((root / "scripts/saved_model_compat_paths.json").read_text())
     for sensitive in (
         "src/spectra_sherpa/app/lib/fitted_state.py",
         "src/spectra_sherpa/app/services/model_application.py",
