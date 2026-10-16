@@ -75,6 +75,7 @@ class ArtifactBatchRunRequest(BaseModel):
     scope: str = Field("all", pattern="^(all|train|test)$")
     run_name: str | None = Field(None, min_length=1, max_length=255)
     notes: str | None = Field(None, max_length=2000)
+    acknowledge_legacy_input_uncertainty: bool = False
 
 
 class ArtifactBatchRunItemResult(BaseModel):
@@ -97,6 +98,7 @@ class VerificationPair(BaseModel):
     dataset: RunDatasetRef
     dataset_view_id: int | None = Field(None, gt=0)
     receipt: str | None = Field(None, pattern="^[a-f0-9]{64}$")
+    acknowledge_legacy_input_uncertainty: bool = False
 
 
 class VerificationBatchRequest(BaseModel):
@@ -140,6 +142,7 @@ async def _prepare_verification_pair(payload, pair, session, user_id):
         dataset=pair.dataset,
         dataset_view_id=pair.dataset_view_id,
         scope="all",
+        acknowledge_legacy_input_uncertainty=pair.acknowledge_legacy_input_uncertainty,
     )
     loaded, view = await _load_batch_dataset(session, user_id, request)
     if loaded.project_id != payload.project_id:
@@ -189,12 +192,23 @@ async def _prepare_verification_pair(payload, pair, session, user_id):
         if artifact.workflow_id != workflow.id or artifact.project_id != payload.project_id:
             raise HTTPException(404, "Model does not belong to the selected workflow and project")
         manifest, arrays = await to_thread(get_model_store().load, artifact.artifact_uid)
-        _, warnings, application_metadata = await to_thread(preflight_model_application, selected, manifest, arrays)
+        from spectra_sherpa.app.services.legacy_model_application import LEGACY_WARNING
+
+        _, warnings, application_metadata = await to_thread(
+            preflight_model_application,
+            selected,
+            manifest,
+            arrays,
+            acknowledge_legacy_input_uncertainty=pair.acknowledge_legacy_input_uncertainty,
+        )
         metadata.update(
             artifact_uid=artifact.artifact_uid,
             artifact_integrity_hash=artifact.integrity_hash,
             accuracy_available=application_metadata["accuracy_available"],
             warnings=warnings,
+            legacy_exploratory_acknowledged=bool(
+                pair.acknowledge_legacy_input_uncertainty and LEGACY_WARNING in warnings
+            ),
         )
         definition = None
     else:
@@ -248,6 +262,11 @@ async def preflight_verification_batch(
                 {"index": index, "compatible": True, "receipt": admitted["receipt"], "metadata": admitted["metadata"]}
             )
         except ValueError as exc:
+            from spectra_sherpa.app.services.legacy_model_application import LegacyAcknowledgementRequired
+
+            if isinstance(exc, LegacyAcknowledgementRequired):
+                results.append({"index": index, "compatible": False, "code": "legacy_ack_required", "reason": str(exc)})
+                continue
             results.append({"index": index, "compatible": False, "reason": str(exc)})
         except HTTPException as exc:
             if exc.status_code not in {400, 409, 422}:
@@ -1103,6 +1122,7 @@ async def execute_artifact_batch(
                     loaded.dataset,
                     scope=payload.scope,
                     execution_evidence=capture,
+                    acknowledge_legacy_input_uncertainty=payload.acknowledge_legacy_input_uncertainty,
                 )
                 require_bounded_presentation([*applied_results, applied], surface="Batch application")
                 applied_results.append(applied)
@@ -1200,6 +1220,7 @@ async def execute_artifact_batch(
             **_scientific_collection_fields(loaded),
         },
         "scope": payload.scope,
+        "acknowledge_legacy_input_uncertainty": payload.acknowledge_legacy_input_uncertainty,
         "dataset_view": (
             {"id": view.id, "name": view.name, "selection_sha256": view.selection_sha256} if view is not None else None
         ),

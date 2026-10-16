@@ -24,6 +24,8 @@ from ..modeling.pls_core import ALGORITHM_ID, ALGORITHM_VERSION, PLSFit
 
 FITTED_STATE_SERIALIZER = "spectrasherpa.sherpa-plsda-state/5"
 ARTIFACT_SERIALIZER = "spectrasherpa.model-artifact.sherpa-plsda/4"
+V060_FITTED_STATE_SERIALIZER = "spectrasherpa.sherpa-plsda-state/4"
+V060_ARTIFACT_SERIALIZER = "spectrasherpa.model-artifact.sherpa-plsda/3"
 LEGACY_FITTED_STATE_SERIALIZER = "spectrasherpa.sherpa-plsda-state/3"
 LEGACY_ARTIFACT_SERIALIZER = "spectrasherpa.model-artifact.sherpa-plsda/2"
 DECISION_RULE = "maximum_predicted_dummy_response"
@@ -384,6 +386,10 @@ class SherpaPLSDAArtifact:
             if not {"feature_identity", "input_identity", "screening"} <= set(metadata):
                 raise ValueError("Sherpa PLS-DA artifact metadata does not match its closed schema")
             feature_identity = _validate_feature_identity(metadata["feature_identity"], metadata["features"])
+        elif serializer == V060_ARTIFACT_SERIALIZER:
+            if "feature_identity" not in metadata or "input_identity" in metadata:
+                raise ValueError("v0.6.0 Sherpa PLS-DA artifact has invalid feature authority")
+            feature_identity = _validate_feature_identity(metadata["feature_identity"], metadata["features"])
         elif serializer == LEGACY_ARTIFACT_SERIALIZER:
             feature_identity = {"mode": "positional", "count": metadata["features"]}
         else:
@@ -441,14 +447,20 @@ class SherpaPLSDAArtifact:
     def from_fitted_state(cls, state: object) -> SherpaPLSDAArtifact:
         if not isinstance(state, dict) or set(state) != {"serializer", "metadata", "arrays"}:
             raise ValueError("Sherpa PLS-DA fitted state must contain exact serializer, metadata, and arrays")
-        if state["serializer"] not in {FITTED_STATE_SERIALIZER, LEGACY_FITTED_STATE_SERIALIZER}:
+        if state["serializer"] not in {
+            FITTED_STATE_SERIALIZER,
+            V060_FITTED_STATE_SERIALIZER,
+            LEGACY_FITTED_STATE_SERIALIZER,
+        }:
             raise ValueError("Sherpa PLS-DA fitted state has an unsupported serializer")
         metadata = state["metadata"]
         if not isinstance(metadata, dict):
             raise ValueError("Sherpa PLS-DA fitted-state metadata must be a mapping")
-        expected_artifact_serializer = (
-            ARTIFACT_SERIALIZER if state["serializer"] == FITTED_STATE_SERIALIZER else LEGACY_ARTIFACT_SERIALIZER
-        )
+        expected_artifact_serializer = {
+            FITTED_STATE_SERIALIZER: ARTIFACT_SERIALIZER,
+            V060_FITTED_STATE_SERIALIZER: V060_ARTIFACT_SERIALIZER,
+            LEGACY_FITTED_STATE_SERIALIZER: LEGACY_ARTIFACT_SERIALIZER,
+        }[state["serializer"]]
         if metadata.get("serializer") != expected_artifact_serializer:
             raise ValueError("Sherpa PLS-DA fitted-state and artifact serializers contradict each other")
         arrays = state["arrays"]

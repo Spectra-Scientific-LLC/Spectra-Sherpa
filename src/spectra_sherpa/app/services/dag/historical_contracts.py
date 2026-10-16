@@ -39,7 +39,11 @@ class HistoricalValidationGraph(ValidationGraph):
 _INSPECTION_CONSUMERS = {
     "classification.plsda": (
         "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-        "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+        "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+    ),
+    "model.load_apply": (
+        "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
+        "84661f74acefbafe2ecabaedb53dd5ced5fee24d03d030c20dcde31e003cb689",
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",
@@ -148,6 +152,10 @@ class HistoricalReconstructionContext:
                         raise ValidationGraphError("historical PLS recipe contains changed component controls")
                     for key in additions:
                         parameters.pop(key)
+            if node["operation_id"] == "model.load_apply":
+                parameters = node["parameters"]
+                if parameters.pop("acknowledge_legacy_input_uncertainty", None) is not False:
+                    raise ValidationGraphError("historical application cannot acknowledge a legacy model")
             node["contract_digest"] = membership[node["operation_id"]]
         wire["graph_digest"] = validation_graph_identity_digest({k: v for k, v in wire.items() if k != "graph_digest"})
         return self.graph(wire)
@@ -172,6 +180,7 @@ class HistoricalReconstructionContext:
         inspected_consumer = inspected == (catalog["current_contracts"][operation], current.digest)
         component_curve_consumer = inspected_consumer and operation == "model.fitted_pls"
         classifier_curve_consumer = inspected_consumer and operation == "classification.plsda"
+        legacy_application_consumer = inspected_consumer and operation == "model.load_apply"
         if current.digest != catalog["current_contracts"][operation] and not inspected_consumer:
             raise ValidationGraphError("current implementation is not qualified for historical reconstruction")
         # A parameter-schema digest alone is not a schema. Reusing the current
@@ -227,6 +236,16 @@ class HistoricalReconstructionContext:
             ):
                 raise ValidationGraphError("historical PLS-DA component output changed")
             non_semantic.add("semantic_outputs")
+        if legacy_application_consumer:
+            metadata = node_registry.get_metadata(operation)
+            addition = "acknowledge_legacy_input_uncertainty"
+            matching = [parameter for parameter in metadata.parameters if parameter.name == addition]
+            if len(matching) != 1 or matching[0].default is not False or matching[0].param_type != "boolean":
+                raise ValidationGraphError("historical application acknowledgement declaration changed")
+            old_metadata = replace(metadata, parameters=[p for p in metadata.parameters if p.name != addition])
+            if _canonical_digest(_parameter_schema(old_metadata)) != contract.payload["parameter_schema_digest"]:
+                raise ValidationGraphError("historical application parameter schema changed")
+            non_semantic.add("parameter_schema_digest")
         before = {k: v for k, v in contract.payload.items() if k not in non_semantic}
         after = {k: v for k, v in current.payload.items() if k not in non_semantic}
         if before != after:
@@ -293,6 +312,17 @@ class HistoricalReconstructionContext:
                     if parameter.name in additions
                 }
                 projected["parameters"] = {**parameters, **defaults}
+            if (
+                operation == "model.load_apply"
+                and contracts[node_id].digest
+                != node_registry.get_metadata(operation).resolved_execution_contract().digest
+            ):
+                parameters = raw["parameters"]
+                addition = "acknowledge_legacy_input_uncertainty"
+                if not isinstance(parameters, Mapping) or addition in parameters:
+                    raise ValidationGraphError("historical application contains post-profile acknowledgement")
+                historical_parameters[node_id] = dict(parameters)
+                projected["parameters"] = {**parameters, addition: False}
             projected["contract_digest"] = node_registry.get_metadata(operation).resolved_execution_contract().digest
         # Use the graph's existing canonical identity function, not a second
         # digest algorithm. Normal wire admission then checks every field.
@@ -304,7 +334,11 @@ class HistoricalReconstructionContext:
             if node.node_id in historical_parameters:
                 old = historical_parameters[node.node_id]
                 current = dict(node.parameters)
-                additions = {"component_selection_rule", "component_curve_max", "component_cv_folds"}
+                additions = (
+                    {"acknowledge_legacy_input_uncertainty"}
+                    if node.operation_id == "model.load_apply"
+                    else {"component_selection_rule", "component_curve_max", "component_cv_folds"}
+                )
                 metadata = node_registry.get_metadata(node.operation_id)
                 defaults = {
                     parameter.name: parameter.default

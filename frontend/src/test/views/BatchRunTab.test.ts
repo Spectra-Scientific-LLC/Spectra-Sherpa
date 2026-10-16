@@ -102,6 +102,32 @@ describe('Batch workflow verification', () => {
     expect(wrapper.findAll('.batch-combinations input[disabled]')).toHaveLength(3);
     wrapper.unmount();
   });
+  it('requires an explicit legacy acknowledgement and a fresh preflight receipt', async () => {
+    mocks.post.mockImplementation(async (url: string, payload: { pairs: { acknowledge_legacy_input_uncertainty?: boolean }[] }) => ({ data:
+      url.endsWith('/preflight') ? { pairs: payload.pairs.map(pair => pair.acknowledge_legacy_input_uncertainty
+        ? { compatible: true, receipt: 'c'.repeat(64), metadata: { n_included_samples: 6 } }
+        : { compatible: false, code: 'legacy_ack_required', reason: 'Model predates fitted signal identity.' }) }
+      : { batch_id: 'legacy-batch', results: [{ run_id: 9, status: 'completed' }] },
+    }));
+    const wrapper = open();
+    const vm = await choose(wrapper);
+    vm.selectedWorkflowIds = [1]; vm.selectedArtifactUids = ['m1']; vm.selectedDefinitionKeys = ['4:default'];
+    await flushPromises();
+    await vm.checkCompatibility();
+    await flushPromises();
+    expect(vm.canSubmit).toBe(false);
+    expect(wrapper.text()).toContain('predates fitted signal identity');
+    await wrapper.find('.legacy-ack input').trigger('change');
+    expect(vm.canSubmit).toBe(false);
+    await vm.checkCompatibility();
+    expect(vm.canSubmit).toBe(true);
+    await vm.handleSubmit();
+    const call = mocks.post.mock.calls.find(([url]) => url === '/runs/verification')!;
+    expect(call[1].pairs[0]).toEqual(expect.objectContaining({
+      acknowledge_legacy_input_uncertainty: true, receipt: 'c'.repeat(64),
+    }));
+    wrapper.unmount();
+  });
   it('uses workflow mode without an old model and invalidates preflight on mode change', async () => {
     const wrapper = open();
     const vm = await choose(wrapper);

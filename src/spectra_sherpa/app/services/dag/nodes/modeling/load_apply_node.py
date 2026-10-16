@@ -110,6 +110,7 @@ def _apply_model_artifact(
     model_id: str | None,
     replay: execution_runtime_contract.ModelArtifactReplay,
     semantic_validator: execution_runtime_contract.ModelArtifactSemanticValidator | None = None,
+    acknowledge_legacy_input_uncertainty: bool = False,
 ) -> dict[str, Any]:
     """Apply one verified saved artifact through the sole model-type adapter registry."""
 
@@ -164,7 +165,8 @@ def _apply_model_artifact(
         return apply_saved_native_model(manifest, arrays, X_new, X_data)
     if X_data.ndim != 2:
         raise ValueError("This saved model requires two-dimensional application data")
-    if native_state or model_type in {"knn", "simca", "mcr", "fastica", "plsda"}:
+    legacy_pca = model_type == "pca" and manifest.get("input_identity") is None
+    if native_state or legacy_pca or model_type in {"knn", "simca", "mcr", "fastica", "plsda"}:
         X_new, replay_warnings = replay.prepare_dataset(X_data, X_new, manifest)
         X_data = np.asarray(X_new.X)
     else:
@@ -177,16 +179,27 @@ def _apply_model_artifact(
 
         return apply_saved_native_model(manifest, arrays, X_new, X_data)
 
-    if model_type in {"knn", "simca", "mcr", "fastica"}:
+    from spectra_sherpa.app.services.legacy_model_application import require_legacy_application_acknowledgement
+
+    legacy_warning = require_legacy_application_acknowledgement(
+        manifest, arrays, X_new, acknowledged=acknowledge_legacy_input_uncertainty
+    )
+    if model_type in {"knn", "simca", "mcr", "fastica"} and legacy_warning is None:
         require_fitted_input_identity(X_new, manifest.get("input_identity"), features=X_data.shape[1])
     extract = extract_cls.from_artifact(manifest, arrays)  # type: ignore[attr-defined]
     if model_type == "plsda":
-        extract.validate_application_features(X_new, feature_mask=manifest.get("feature_mask"))
+        extract.validate_application_features(
+            X_new,
+            feature_mask=manifest.get("feature_mask"),
+            allow_unverified_positional=legacy_warning is not None,
+        )
     result: dict[str, Any] = {"model_id": artifact_uid}
     metadata: dict[str, Any] = {
         "type": model_type.upper(),
         "output_type": _OUTPUT_TYPE_MAP.get(model_type, "unknown"),
     }
+    if legacy_warning is not None:
+        metadata["legacy_exploratory_warning"] = legacy_warning
     if model_type in _TRANSFORM_TYPES:
         transformed = _finite_result_matrix(extract.transform(X_data), model_type=model_type)
         result.update(result=transformed, transformed=transformed)
@@ -263,6 +276,17 @@ class LoadApplyModelNode(Node):
                 description="Saved model artifact to load and apply",
                 required=False,
             ),
+            NodeParameter(
+                name="acknowledge_legacy_input_uncertainty",
+                label="Exploratory legacy application",
+                param_type="boolean",
+                description=(
+                    "I acknowledge that a pre-0.6.2 model lacks fitted signal identity. "
+                    "Use only when the retained feature axis matches; refit for verified application."
+                ),
+                required=False,
+                default=False,
+            ),
         ],
         input_ports=[
             PortMetadata(
@@ -336,6 +360,8 @@ class LoadApplyModelNode(Node):
             f"{indent}    _manifest, _arrays, {X_expr}, model_id={expected_identity},",
             f"{indent}    replay=ApplicationModelArtifactReplay(),",
             f"{indent}    semantic_validator=ApplicationModelArtifactSemanticValidator(),",
+            f"{indent}    acknowledge_legacy_input_uncertainty="
+            f"{self.parameters.get('acknowledge_legacy_input_uncertainty') is True},",
             f"{indent})",
         ]
 
@@ -368,6 +394,7 @@ class LoadApplyModelNode(Node):
             model_id=model_id,
             replay=replay,
             semantic_validator=semantic_validator,
+            acknowledge_legacy_input_uncertainty=self.parameters.get("acknowledge_legacy_input_uncertainty") is True,
         )
 
     def _resolve_model_id(self, model_ref: Any) -> str:
