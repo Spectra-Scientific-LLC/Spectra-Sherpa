@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import importlib.util
 import json
+import shlex
 import sys
 from pathlib import Path
 
@@ -192,7 +193,9 @@ def test_server_that_never_becomes_ready_is_stopped(tmp_path, monkeypatch) -> No
 
     monkeypatch.setattr(TOOL.time, "monotonic", iter([0.0, 0.0, 1000.0]).__next__)
     monkeypatch.setattr(TOOL.time, "sleep", lambda _seconds: None)
-    server = TOOL.Server(f"{sys.executable} -c 'import time; time.sleep(60)'", tmp_path, 1, tmp_path / "log")
+    # shlex.quote keeps a Windows interpreter path's backslashes through shlex.split.
+    command = f"{shlex.quote(sys.executable)} -c 'import time; time.sleep(60)'"
+    server = TOOL.Server(command, tmp_path, 1, tmp_path / "log")
     with pytest.raises(RuntimeError, match="did not become ready"):
         server.__enter__()
     assert server.process is not None and server.process.poll() is not None
