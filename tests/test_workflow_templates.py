@@ -67,11 +67,11 @@ def test_replicated_specimens_require_independent_classification_group() -> None
     )
     profile = {"identity_fields": ["specimen_id"], "group_fields": ["block"]}
     binding = SimpleNamespace(target_type="categorical", selected_target="species", group_column=None)
-    with pytest.raises(HTTPException, match="one specimen on both sides") as refused:
+    with pytest.raises(HTTPException, match="block-held-out") as refused:
         _require_independent_classification_group(dataset, binding, profile)
     assert refused.value.status_code == 409
     binding.group_column = "block"
-    with pytest.raises(HTTPException, match="divides repeated specimen_id"):
+    with pytest.raises(HTTPException, match="not cross-block repeatability"):
         _require_independent_classification_group(dataset, binding, profile)
     binding.group_column = "specimen_id"
     _require_independent_classification_group(dataset, binding, profile)
@@ -81,7 +81,7 @@ def test_replicated_specimens_require_independent_classification_group() -> None
     binding.selected_target = "species"
     binding.group_column = None
     binding.target_type = "continuous"
-    with pytest.raises(HTTPException, match="one specimen on both sides"):
+    with pytest.raises(HTTPException, match="block-held-out"):
         _require_independent_classification_group(dataset, binding, profile)
     binding.group_column = "specimen_id"
     _require_independent_classification_group(dataset, binding, profile)

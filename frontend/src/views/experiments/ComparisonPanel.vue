@@ -24,7 +24,12 @@
       </p>
 
       <div class="matrix-scroll">
-        <table class="comparison-matrix">
+        <table class="comparison-matrix" :style="{ minWidth: `${14 + runs.length * 9 + (runs.length === 2 ? 8 : 0)}rem` }">
+          <colgroup>
+            <col class="comparison-measure-column" />
+            <col v-for="run in runs" :key="run.id" class="comparison-run-column" />
+            <col v-if="runs.length === 2" class="comparison-delta-column" />
+          </colgroup>
           <thead>
             <tr>
               <th scope="col">Measure</th>
@@ -973,10 +978,18 @@ function shapeFromValue(value: unknown): DataShape {
 
 .comparison-matrix {
   width: 100%;
-  min-width: 680px;
+  table-layout: fixed;
   border-collapse: collapse;
   color: #334155;
   font-size: 0.8rem;
+}
+
+.comparison-measure-column {
+  width: 14rem;
+}
+
+.comparison-delta-column {
+  width: 8rem;
 }
 
 .comparison-matrix th,
@@ -985,6 +998,8 @@ function shapeFromValue(value: unknown): DataShape {
   border-bottom: 1px solid #e2e8f0;
   text-align: left;
   vertical-align: top;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 .comparison-matrix thead th {
@@ -998,8 +1013,7 @@ function shapeFromValue(value: unknown): DataShape {
 
 .comparison-matrix thead th:first-child,
 .comparison-matrix tbody th[scope="row"] {
-  width: 180px;
-  min-width: 180px;
+  width: 14rem;
 }
 
 .comparison-matrix tbody th[scope="row"] {
@@ -1027,6 +1041,8 @@ code {
   background: #f1f5f9;
   color: #475569;
   font-size: 0.78rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 </style>

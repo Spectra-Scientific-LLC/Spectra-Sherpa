@@ -1480,10 +1480,10 @@ def _require_independent_classification_group(
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    f"This dataset has repeated {field} identities. A row-wise or block-wise "
-                    "supervised split could place one specimen on both sides and inflate "
-                    f"held-out performance. In My Dataset, choose {field} or a coarser identity under Groups, "
-                    "save the selection, then start a new analysis."
+                    f"This starter tests prediction on unseen {field} identities. Repeated identities "
+                    f"need {field} or a coarser identity under Groups in My Dataset. A block-held-out "
+                    "test of measurements from known specimens answers a different repeatability question "
+                    "and is not available through this starter. Save the selection, then start a new analysis."
                 ),
             )
         identity_to_group: dict[str, str] = {}
@@ -1494,8 +1494,9 @@ def _require_independent_classification_group(
                     status_code=409,
                     detail=(
                         f"The selected Groups column divides repeated {field} identities. "
-                        f"Choose {field} or a coarser identity in My Dataset, save the selection, "
-                        "then start a new analysis."
+                        f"This starter tests unseen {field} identities, not cross-block repeatability "
+                        f"of known specimens. Choose {field} or a coarser identity in My Dataset, "
+                        "save the selection, then start a new analysis."
                     ),
                 )
             identity_to_group[identity] = group_label

@@ -257,9 +257,11 @@ def require_independent_classification_groups(
             )
         if groups is None:
             raise ValueError(
-                f"Repeated {field} values require an independent grouped supervised split. "
+                f"This split reports performance on unseen {field} identities. Repeated {field} values "
+                "therefore require an independent grouped supervised split. "
                 "Select a specimen or coarser patient/subject identity under Groups in My Dataset "
                 "and explicitly rebind the workflow source before running. "
+                "Cross-block repeatability of known specimens is a different validation question. "
                 "The previous run remains retained as historical evidence."
             )
         if split_method in _SPACE_FILLING_METHODS:
@@ -276,6 +278,8 @@ def require_independent_classification_groups(
             if not group_label or (identity in identity_to_group and identity_to_group[identity] != group_label):
                 raise ValueError(
                     f"The bound Groups column divides repeated {field} identities. "
+                    f"This split tests unseen {field} identities, not cross-block repeatability "
+                    "of known specimens. "
                     f"Select {field} or a coarser patient/subject identity and explicitly rebind "
                     "the workflow source before running."
                 )

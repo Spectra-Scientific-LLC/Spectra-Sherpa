@@ -8,6 +8,7 @@ import pytest
 
 from spectra_sherpa.app.lib.axes import FeatureAxis
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.app.services.dag.nodes.classification_evaluator_node import evaluate_classification_v2
 from spectra_sherpa.app.services.dag.nodes.output import PlotNode
 
 
@@ -203,6 +204,18 @@ async def test_plot_node_renders_confusion_matrix_payload() -> None:
     assert vis["data"][0]["y"] == ["Class A", "Class B"]
     assert vis["layout"]["xaxis"]["title"] == "Predicted Class"
     assert vis["layout"]["yaxis"]["title"] == "True Class"
+
+
+@pytest.mark.anyio
+async def test_plot_node_retains_evaluator_class_labels_including_predicted_only_classes() -> None:
+    evaluated = evaluate_classification_v2(["Lavender", "unassigned", "Spike"], ["Lavender", "Spike", "Spike"])
+    source = evaluated.outputs["visualization"]
+    result = await PlotNode(node_id="plot_evaluator", parameters={"plot_type": "heatmap"}).execute(source)
+    heatmap = result["visualization"]["data"][0]
+
+    assert heatmap["x"] == source["metadata"]["labels"]
+    assert heatmap["y"] == source["metadata"]["labels"]
+    assert heatmap["z"] == source["data"]
 
 
 @pytest.mark.anyio
