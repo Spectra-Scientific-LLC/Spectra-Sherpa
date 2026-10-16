@@ -19,6 +19,14 @@
       catalog.
     </div>
     <template v-else>
+      <div v-if="!hasCurrentData && projectAvailable" class="tp-status tp-status-warning">
+        To use your project's data, select or import it in My Dataset.
+        <Button
+          label="Choose project data"
+          class="p-button-sm p-button-text"
+          @click="openDatasetReadiness"
+        />
+      </div>
       <p v-if="activeProjectDataset" class="tp-row-requirement">
         <i class="pi pi-database" aria-hidden="true" />
         Project dataset: {{ activeProjectDataset.name }}

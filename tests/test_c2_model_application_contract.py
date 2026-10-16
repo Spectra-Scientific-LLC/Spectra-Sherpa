@@ -344,7 +344,10 @@ def test_application_rejects_unreplayed_material_provenance() -> None:
 
 
 def test_model_select_parameter_is_closed_text_identity() -> None:
-    assert LoadApplyModelNode("apply", {"model_id": "artifact-001"}).parameters == {"model_id": "artifact-001"}
+    assert LoadApplyModelNode("apply", {"model_id": "artifact-001"}).parameters == {
+        "model_id": "artifact-001",
+        "acknowledge_legacy_input_uncertainty": False,
+    }
     for invalid in (True, 7, ["artifact-001"]):
         try:
             LoadApplyModelNode("apply", {"model_id": invalid})

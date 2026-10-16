@@ -217,7 +217,7 @@ def require_independent_classification_groups(
     *,
     split_method: str = "stratified",
 ) -> None:
-    """Refuse a class holdout that divides repeated independent specimens.
+    """Refuse a supervised holdout that divides repeated independent specimens.
 
     Existing sheets retain their exact historical bindings when My Dataset is
     edited. Checking at execution protects those sheets as well as new starters
@@ -225,7 +225,7 @@ def require_independent_classification_groups(
     must explicitly bind one and create a new workflow revision.
     """
 
-    if target_context is None or target_context.target_type != "categorical":
+    if target_context is None or target_context.target_type not in {"categorical", "continuous"}:
         return
     dataset = coerce_to_sherpa(X_source, input_name="X", allow_array=True)
     table = dataset.sample_axis.sample_table if dataset.sample_axis is not None else None
@@ -246,12 +246,12 @@ def require_independent_classification_groups(
             continue
         if field in {target_context.selected_target, target_context.target_name}:
             raise ValueError(
-                f"{field} identifies repeated specimens and cannot be both the class target "
-                "and an independent held-out specimen group. Choose a scientific class label instead."
+                f"{field} identifies repeated specimens and cannot be both the response target "
+                "and an independent held-out specimen group. Choose a different scientific target instead."
             )
         if groups is None:
             raise ValueError(
-                f"Repeated {field} values require an independent grouped classification split. "
+                f"Repeated {field} values require an independent grouped supervised split. "
                 "Select a specimen or coarser patient/subject identity under Groups in My Dataset "
                 "and explicitly rebind the workflow source before running. "
                 "The previous run remains retained as historical evidence."

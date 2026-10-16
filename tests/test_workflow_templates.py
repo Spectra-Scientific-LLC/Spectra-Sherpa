@@ -76,11 +76,14 @@ def test_replicated_specimens_require_independent_classification_group() -> None
     binding.group_column = "specimen_id"
     _require_independent_classification_group(dataset, binding, profile)
     binding.selected_target = "specimen_id"
-    with pytest.raises(HTTPException, match="cannot be both the class target"):
+    with pytest.raises(HTTPException, match="cannot be both the response target"):
         _require_independent_classification_group(dataset, binding, profile)
     binding.selected_target = "species"
     binding.group_column = None
     binding.target_type = "continuous"
+    with pytest.raises(HTTPException, match="one specimen on both sides"):
+        _require_independent_classification_group(dataset, binding, profile)
+    binding.group_column = "specimen_id"
     _require_independent_classification_group(dataset, binding, profile)
 
 

@@ -88,7 +88,7 @@ type Row = {
   target_names?: string[]; target_units?: (string | null)[]; training_dataset_id?: number | null;
   preprocessing?: {op_id?: string}[] | null; components?: number | null; calibration_count?: number | null;
   validation?: {method?: string | null; folds?: number | null; unavailable_reason?: string | null};
-  held_out_validation?: {role?: string; count?: number} | null;
+  held_out_validation?: {role?: string; count?: number; rmse?: number} | null;
   classification_metrics?: {calibration_balanced_accuracy?: number | null; cv_balanced_accuracy?: number | null; held_out_balanced_accuracy?: number | null; held_out_accuracy?: number | null} | null;
   metrics?: {rmsec?: number | null; rmsecv?: number | null; rmsep?: number | null; r2_calibration?: number | null; q2_cv?: number | null};
   independent_test_count?: number | null; bias?: number | null; coverage?: number | null;
@@ -160,7 +160,11 @@ function groupLabel(row: Row): string {
 }
 function validation(row: Row): string {
   const cv = row.validation?.method ? `${row.validation.method}${row.validation.folds ? ` · ${row.validation.folds} folds` : ''} (development)` : null;
-  const held = row.held_out_validation?.role === 'held_out_test' ? `${row.held_out_validation.count} held-out samples` : null;
+  const held = row.held_out_validation?.role === 'held_out_test'
+    ? `${row.held_out_validation.count} held-out samples`
+    : row.held_out_validation?.role === 'within_dataset_held_out_test'
+      ? `Within-dataset held-out RMSE ${metric(row.held_out_validation.rmse)} (n=${row.held_out_validation.count})`
+      : null;
   return [cv, held].filter(Boolean).join('; ') || 'Unavailable';
 }
 function classificationAccuracy(row: Row): string {

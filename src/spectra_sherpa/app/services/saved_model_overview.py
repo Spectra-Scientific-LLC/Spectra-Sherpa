@@ -171,6 +171,59 @@ def verified_heldout_classification(value: object) -> bool:
     )
 
 
+def heldout_regression_evaluator_nodes(snapshot: object, model_node_id: str | None) -> list[str]:
+    """Find the default PLS starter's evaluator bound to this fit and split."""
+    graph = _mapping(snapshot)
+    if not model_node_id or not isinstance(graph.get("nodes"), list) or not isinstance(graph.get("edges"), list):
+        return []
+    node_types = {
+        node.get("node_id"): node.get("node_type")
+        for node in graph["nodes"]
+        if isinstance(node, dict) and isinstance(node.get("node_id"), str)
+    }
+    if node_types.get(model_node_id) != "model.fitted_pls":
+        return []
+    inputs: dict[tuple[str, str], set[tuple[str, str | None]]] = {}
+    for edge in graph["edges"]:
+        if not isinstance(edge, dict):
+            continue
+        source = edge.get("from_node_id", edge.get("source", edge.get("from_node")))
+        target = edge.get("to_node_id", edge.get("target", edge.get("to_node")))
+        if source in node_types and target in node_types and isinstance(edge.get("to_input"), str):
+            inputs.setdefault((target, edge["to_input"]), set()).add((source, edge.get("from_output")))
+    splits = {
+        split
+        for split, kind in node_types.items()
+        if kind == "data.train_test_split" and inputs.get((model_node_id, "default")) == {(split, "X_train")}
+    }
+    return sorted(
+        evaluator
+        for evaluator, kind in node_types.items()
+        if kind == "diagnostics.labeled_regression_evaluator"
+        for split in splits
+        for predictor, predictor_kind in node_types.items()
+        if predictor_kind == "model.predict_regression"
+        and inputs.get((predictor, "fitted_state")) == {(model_node_id, "fitted_state")}
+        and inputs.get((predictor, "default")) == {(split, "X_test")}
+        and inputs.get((evaluator, "default")) == {(predictor, "default")}
+        and inputs.get((evaluator, "y_true")) == {(split, "y_test")}
+        and inputs.get((evaluator, "sample_context")) == {(split, "X_test")}
+    )
+
+
+def verified_heldout_regression(value: object) -> bool:
+    """Admit only finite metric output; the caller must verify graph custody."""
+    result = _mapping(value)
+    return (
+        result.get("task_type") == "regression"
+        and type(result.get("n_samples")) is int
+        and result["n_samples"] > 0
+        and isinstance(result.get("registry_version"), str)
+        and bool(result["registry_version"])
+        and (_number(result.get("rmse")) is not None and result["rmse"] >= 0)
+    )
+
+
 def project_model_row(
     model: Any,
     manifest: Mapping[str, Any],
@@ -205,7 +258,7 @@ def project_model_row(
     cv = _mapping(curve.get("cross_validation"))
     validation = _selected_row(cv.get("rows"), selected) if cv.get("status") == "available" else {}
     classification = model.model_type == "plsda"
-    heldout = _mapping(heldout) if classification else {}
+    heldout = _mapping(heldout)
     single = len(names) == 1
     measured: dict[str, float | None] = {
         "rmsec": _at_response(calibration.get("rmsec"), 0) if single else None,
@@ -342,7 +395,15 @@ def project_model_row(
                 "population_authority": dict(_mapping(heldout.get("population_authority"))),
             }
             if classification and classification_metrics["held_out_balanced_accuracy"] is not None
-            else None
+            else (
+                {
+                    "role": "within_dataset_held_out_test",
+                    "count": heldout.get("n_samples"),
+                    "rmse": heldout.get("rmse"),
+                }
+                if model.model_type == "pls" and heldout.get("graph_verified") is True
+                else None
+            )
         ),
         "metrics": measured,
         "classification_metrics": classification_metrics,

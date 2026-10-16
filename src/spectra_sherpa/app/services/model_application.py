@@ -310,7 +310,13 @@ def _loaded_files_to_sherpa(
     return spectra
 
 
-def preflight_model_application(dataset: SherpaDataset, manifest: dict[str, Any], arrays: dict[str, Any]):
+def preflight_model_application(
+    dataset: SherpaDataset,
+    manifest: dict[str, Any],
+    arrays: dict[str, Any],
+    *,
+    acknowledge_legacy_input_uncertainty: bool = False,
+):
     """Admit saved state and preprocessing without fitting or predicting.
 
     Reuse the application dispatch vocabulary and replay adapter. In particular,
@@ -345,10 +351,17 @@ def preflight_model_application(dataset: SherpaDataset, manifest: dict[str, Any]
         if kind == "regression" and not np.issubdtype(target.dtype, np.number):
             raise ValueError("Regression reference targets must be numeric.")
     prepared, _ = ApplicationModelArtifactReplay().prepare_dataset(dataset.X, dataset, manifest)
+    from spectra_sherpa.app.services.legacy_model_application import require_legacy_application_acknowledgement
+
+    legacy_warning = require_legacy_application_acknowledgement(
+        manifest, arrays, prepared, acknowledged=acknowledge_legacy_input_uncertainty
+    )
+    if legacy_warning is not None:
+        warnings.append(legacy_warning)
     if has_native_model_state(manifest, arrays):
         admit_saved_native_model(manifest, arrays, prepared, np.asarray(prepared.X))
     else:
-        if model_type in {"knn", "simca", "mcr", "fastica"}:
+        if model_type in {"knn", "simca", "mcr", "fastica"} and legacy_warning is None:
             from spectra_sherpa.app.services.dag.fitted_input_identity import require_fitted_input_identity
 
             require_fitted_input_identity(prepared, manifest.get("input_identity"), features=prepared.shape[1])
@@ -357,7 +370,11 @@ def preflight_model_application(dataset: SherpaDataset, manifest: dict[str, Any]
             raise ValueError("This model has no supported saved-state application adapter.")
         extract = extract_cls.from_artifact(manifest, arrays)
         if model_type == "plsda":
-            extract.validate_application_features(prepared, feature_mask=manifest.get("feature_mask"))
+            extract.validate_application_features(
+                prepared,
+                feature_mask=manifest.get("feature_mask"),
+                allow_unverified_positional=legacy_warning is not None,
+            )
     return target, warnings, metadata
 
 
@@ -368,6 +385,7 @@ async def apply_model_to_dataset(
     scope: str = "all",
     execution_evidence: dict[str, Any] | None = None,
     verified_snapshot: VerifiedModelSnapshot | None = None,
+    acknowledge_legacy_input_uncertainty: bool = False,
 ) -> dict[str, Any]:
     """Apply one artifact through the canonical DAG node and evaluator authorities."""
     if verified_snapshot is not None:
@@ -430,7 +448,10 @@ async def apply_model_to_dataset(
         WorkflowNode(
             node_id=model_node_id,
             node_type="model.load_apply",
-            parameters={"model_id": artifact_uid},
+            parameters={
+                "model_id": artifact_uid,
+                "acknowledge_legacy_input_uncertainty": acknowledge_legacy_input_uncertainty,
+            },
         )
     )
     executor.add_edge(
@@ -508,6 +529,9 @@ async def apply_model_to_dataset(
     applicability_warning = node_metadata.get("applicability_warning")
     if isinstance(applicability_warning, str) and applicability_warning:
         warnings.append(applicability_warning)
+    legacy_warning = node_metadata.get("legacy_exploratory_warning")
+    if isinstance(legacy_warning, str) and legacy_warning:
+        warnings.append(legacy_warning)
 
     from spectra_sherpa.app.lib.reference_value_evidence import bound_reference_value_evidence
 
@@ -548,6 +572,8 @@ async def apply_model_to_dataset(
             **target_metadata,
         },
     }
+    if legacy_warning is not None:
+        response["metadata"]["legacy_exploratory_acknowledged"] = True
 
     if node_metadata.get("output_type") == "clustering":
         labels = [lossless_sample_table_scalar(label) for label in applied["labels"]]
@@ -800,6 +826,10 @@ def _prepare_artifact_input(
         "data.file_load",
         "data.attach_target",
         "data.train_test_split",
+        # This chooses the *training* cohort. Applying its saved row indices
+        # to a new population would discard observations or select the wrong
+        # people/spectra; only feature transformations are replayed.
+        "data.filter_samples",
     }
     for step in chain:
         if not isinstance(step, Mapping) or set(step) != {"op_id", "parameters"}:

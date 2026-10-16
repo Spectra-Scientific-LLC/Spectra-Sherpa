@@ -49,6 +49,13 @@
           <small v-else-if="!checks[index]?.compatible" class="batch-error">Unavailable: {{ checks[index]?.reason }}</small>
           <small v-else-if="mode === 'apply_model' && !checks[index]?.metadata?.accuracy_available">Compatible — predictions only; accuracy statistics unavailable.</small>
           <small v-else>Compatible — {{ checks[index]?.metadata?.n_included_samples }} included samples.</small>
+          <label
+            v-if="mode === 'apply_model' && (checks[index]?.code === 'legacy_ack_required' || acknowledgedLegacyKeys.includes(combination.key))"
+            class="legacy-ack">
+            <input type="checkbox" :checked="acknowledgedLegacyKeys.includes(combination.key)" :disabled="submitting || checking"
+              @change="toggleLegacyAcknowledgement(combination.key)" />
+            I acknowledge exploratory use: this older model has no fitted signal identity. I checked that the file's signal units and measurement mode match the training data; this does not verify them.
+          </label>
         </li>
       </ul>
       <div class="batch-actions">
@@ -79,7 +86,7 @@ interface Workflow { id: number; name: string; purpose?: string }
 interface DatasetChoice { id: number; name: string }
 interface VerificationResponse { batch_id: string; results: { run_id: number; status: string }[] }
 interface Definition { key: string; label: string; experimentId: number; viewId: number | null }
-interface Check { compatible: boolean; receipt?: string; reason?: string;
+interface Check { compatible: boolean; receipt?: string; reason?: string; code?: string;
   metadata?: { accuracy_available?: boolean; n_included_samples: number } }
 const props = withDefaults(defineProps<{ artifacts?: Artifact[] }>(), { artifacts: () => [] });
 const emit = defineEmits<{ completed: [run: ExecutionRunSummary] }>();
@@ -92,6 +99,7 @@ const selectedWorkflowIds = ref<number[]>([]);
 const selectedDefinitionKeys = ref<string[]>([]);
 const selectedArtifactUids = ref<string[]>([]);
 const excluded = ref<string[]>([]);
+const acknowledgedLegacyKeys = ref<string[]>([]);
 const checks = ref<Check[]>([]);
 const loading = ref(false);
 const checking = ref(false);
@@ -126,14 +134,19 @@ const combinations = computed(() => availableWorkflows.value.filter(w => selecte
   })));
 }));
 const checkedCombinationCount = computed(() => combinations.value.filter(pair => !excluded.value.includes(pair.key)).length);
+const pairWithAcknowledgement = (pair: (typeof combinations.value)[number]) => ({
+  ...pair.payload,
+  acknowledge_legacy_input_uncertainty: acknowledgedLegacyKeys.value.includes(pair.key),
+});
 const canCheck = computed(() => !loading.value && !checking.value && !submitting.value &&
   checkedCombinationCount.value > 0 && checkedCombinationCount.value <= 32);
 const selectedPairs = computed(() => combinations.value.flatMap((pair, index) =>
   checks.value[index]?.compatible && !excluded.value.includes(pair.key)
-    ? [{ ...pair.payload, receipt: checks.value[index]!.receipt }] : []));
+    ? [{ ...pairWithAcknowledgement(pair), receipt: checks.value[index]!.receipt }] : []));
 const canSubmit = computed(() => canCheck.value && selectedPairs.value.length > 0);
 watch([mode, combinations], () => {
-  ++generation; checks.value = []; excluded.value = []; checking.value = false; progress.value = "";
+  ++generation; checks.value = []; excluded.value = []; acknowledgedLegacyKeys.value = [];
+  checking.value = false; progress.value = "";
 }, { flush: "sync" });
 
 watch(() => projectStore.currentProjectId, async projectId => {
@@ -166,6 +179,14 @@ watch(() => projectStore.currentProjectId, async projectId => {
 function toggleCombination(key: string) {
   excluded.value = excluded.value.includes(key) ? excluded.value.filter(value => value !== key) : [...excluded.value, key];
 }
+function toggleLegacyAcknowledgement(key: string) {
+  acknowledgedLegacyKeys.value = acknowledgedLegacyKeys.value.includes(key)
+    ? acknowledgedLegacyKeys.value.filter(value => value !== key)
+    : [...acknowledgedLegacyKeys.value, key];
+  ++generation;
+  checks.value = [];
+  progress.value = "Check compatibility again after changing the legacy-model acknowledgement.";
+}
 async function checkCompatibility() {
   if (!canCheck.value) return;
   const request = ++generation;
@@ -173,7 +194,8 @@ async function checkCompatibility() {
   const selected = combinations.value.map((pair, index) => ({ pair, index })).filter(({ pair }) => !excluded.value.includes(pair.key));
   try {
     const { data } = await api.post<{ pairs: Check[] }>("/runs/verification/preflight", {
-      project_id: projectStore.currentProjectId, mode: mode.value, pairs: selected.map(({ pair }) => pair.payload),
+      project_id: projectStore.currentProjectId, mode: mode.value,
+      pairs: selected.map(({ pair }) => pairWithAcknowledgement(pair)),
     });
     if (request === generation) {
       const mapped: Check[] = [];

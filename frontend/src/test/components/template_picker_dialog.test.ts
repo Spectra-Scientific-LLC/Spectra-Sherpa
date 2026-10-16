@@ -93,6 +93,31 @@ describe("TemplatePickerDialog", () => {
     expect(mocks.openTemplateAsSheet).not.toHaveBeenCalled();
   });
 
+  it("offers a project-data route when opened from a sheet without an active dataset", async () => {
+    mocks.apiGet.mockImplementation((path: string) =>
+      Promise.resolve(path === "/workflow-templates"
+        ? { data: { total: 1, templates: [{
+          id: 1, slug: "pca", name: "PCA", category: "exploratory", status: "ready",
+          is_active: true, template_data: {
+            nodes: [{ node_id: "data_1", node_type: "data.file_load", parameters: {},
+              example_binding: { source: "sklearn", dataset_name: "iris" } }],
+          },
+        }] } }
+        : { data: { dataset: null } }),
+    );
+    const wrapper = mount(TemplatePickerDialog, { props: { visible: false } });
+    await wrapper.setProps({ visible: true });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("To use your project's data");
+    expect(wrapper.text()).toContain("Use Bundled Example");
+    await wrapper.findAll("button").find((button) => button.text() === "Choose project data")!.trigger("click");
+    expect(mocks.routerPush).toHaveBeenCalledWith({
+      path: "/data",
+      query: { tab: "my-dataset", project_id: "7" },
+    });
+  });
+
   it("auto-starts the Dashboard-selected compatible starter with current data", async () => {
     mocks.openTemplateAsSheet.mockResolvedValue({ name: "PCA" });
     mocks.apiGet.mockResolvedValue({
