@@ -651,6 +651,30 @@ def test_model_apply_replays_msc_with_persisted_reference_state():
     assert warnings == []
 
 
+def test_saved_pca_starter_sample_filter_is_training_provenance_not_application_filter():
+    from spectra_sherpa.app.services.model_application import _prepare_X_for_artifact
+
+    new_population = np.arange(20, dtype=np.float64).reshape(5, 4)
+    chain = [
+        {
+            "op_id": "data.filter_samples",
+            "parameters": {
+                "field": "source_inclusion",
+                "n_input": 30,
+                "n_selected": 27,
+                "selected_indices": list(range(27)),
+                "no_filter": False,
+            },
+        }
+    ]
+    prepared, _, indices, warnings = _prepare_X_for_artifact(
+        new_population, None, {"preprocessing_chain": chain}, scope="all"
+    )
+    np.testing.assert_array_equal(prepared, new_population)
+    np.testing.assert_array_equal(indices, np.arange(5))
+    assert warnings == []
+
+
 def test_model_apply_rejects_incomplete_or_inconsistent_normalize_records():
     import pytest
 

@@ -800,6 +800,10 @@ def _prepare_artifact_input(
         "data.file_load",
         "data.attach_target",
         "data.train_test_split",
+        # This chooses the *training* cohort. Applying its saved row indices
+        # to a new population would discard observations or select the wrong
+        # people/spectra; only feature transformations are replayed.
+        "data.filter_samples",
     }
     for step in chain:
         if not isinstance(step, Mapping) or set(step) != {"op_id", "parameters"}:
