@@ -50,6 +50,8 @@ _SYMBOL_ALLOWLIST = {
         "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/transfer/pds_node.py",
     },
     "SherpaPLSDAArtifact": {
+        # Legacy admission only deserializes retained state to validate its axis.
+        "packages/spectra-sherpa/src/spectra_sherpa/app/services/legacy_model_application.py",
         # Model-bound permutation reads and verifies the connected native state.
         "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_permutation_node.py",
         # Prediction applicability reads the same native state.
@@ -144,7 +146,7 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
         ("apply_fitted_state", 31, 0),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_state.py": (
-        ("apply_fitted_state", 489, 4),
+        ("apply_fitted_state", 501, 4),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/apply_fitted_pls_node.py": (
         ("apply_fitted_state", 193, 22),
@@ -228,6 +230,9 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
     ),
 }
 _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
+    "packages/spectra-sherpa/src/spectra_sherpa/app/services/legacy_model_application.py": (
+        ("SherpaPLSDAArtifact.from_artifact", 65, 19),
+    ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_permutation_node.py": (
         ("plsda_state.SherpaPLSDAArtifact.from_fitted_state", 72, 12),
         ("core['artifact'].to_fitted_state", 89, 20),
@@ -236,7 +241,7 @@ _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
         ("SherpaPLSDAArtifact.from_fitted_state", 81, 19),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/model_application.py": (
-        ("extract_cls.from_artifact", 358, 18),
+        ("extract_cls.from_artifact", 371, 18),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/saved_model_diagnostics.py": (
         ("SherpaPLSDAArtifact.from_fitted_state", 47, 15),
@@ -258,14 +263,14 @@ _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
         ("core['artifact'].to_fitted_state", 690, 32),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_state.py": (
-        ("SherpaPLSDAArtifact.from_fitted_state", 468, 15),
-        ("self.to_artifact", 433, 27),
-        ("cls.from_artifact", 457, 15),
-        ("SherpaPLSDAArtifact.from_fitted_state", 478, 11),
+        ("SherpaPLSDAArtifact.from_fitted_state", 480, 15),
+        ("self.to_artifact", 439, 27),
+        ("cls.from_artifact", 469, 15),
+        ("SherpaPLSDAArtifact.from_fitted_state", 490, 11),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/load_apply_node.py": (
-        ("extract_cls.from_artifact", 182, 14),
-        ("extract.to_fitted_state", 405, 8),
+        ("extract_cls.from_artifact", 189, 14),
+        ("extract.to_fitted_state", 432, 8),
     ),
 }
 

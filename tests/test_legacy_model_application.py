@@ -197,9 +197,64 @@ async def test_legacy_warning_survives_retained_application_response():
 
 
 def test_legacy_acknowledgement_does_not_admit_hosted_application(monkeypatch):
-    from spectra_sherpa.app.services import legacy_model_application
+    from spectra_sherpa.app.core import mode_policy
 
     dataset, manifest, arrays = _v060_plsda()
-    monkeypatch.setattr(legacy_model_application, "is_local", lambda: False)
+    monkeypatch.setattr(mode_policy, "is_local", lambda: False)
     with pytest.raises(ValueError, match="only in local OSS"):
         require_legacy_application_acknowledgement(manifest, arrays, dataset, acknowledged=True)
+
+
+def test_legacy_contract_registration_does_not_import_application_configuration():
+    import subprocess
+    import sys
+
+    script = """
+import importlib.abc
+import sys
+class BlockAppConfiguration(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname in {"spectra_sherpa.app.core.config", "spectra_sherpa.app.core.mode_policy", "dotenv"}:
+            raise ImportError("application configuration imported during core registration: " + fullname)
+sys.meta_path.insert(0, BlockAppConfiguration())
+import spectra_sherpa.app.services.dag.nodes
+from spectra_sherpa.app.services.dag.node_base import node_registry
+assert node_registry.get_metadata("model.load_apply").resolved_execution_contract() is not None
+"""
+    subprocess.run([sys.executable, "-c", script], check=True, capture_output=True, text=True)
+
+
+@pytest.mark.asyncio
+async def test_new_pca_artifact_retains_and_enforces_fitted_signal_identity():
+    from spectra_sherpa.app.services.dag.nodes.modeling.pca_nodes import PCANode
+
+    data = _dataset()
+    data.units = "absorbance"
+    outputs = (await PCANode("fit", {"n_components": "2"}).execute(data)).outputs
+    artifact = outputs["_model_artifact"]
+    manifest = {
+        **artifact["metadata"],
+        "artifact_uid": "current-pca",
+        "artifact_authority": ORDINARY_MODEL_ARTIFACT_AUTHORITY,
+    }
+    arrays = artifact["arrays"]
+    assert manifest["input_identity"] == outputs["fitted_state"]["metadata"]["input_identity"]
+    applied = _apply_model_artifact(
+        manifest, arrays, data, model_id="current-pca", replay=ApplicationModelArtifactReplay()
+    )
+    assert "legacy_exploratory_warning" not in applied["metadata"]
+    preflight_model_application(data, manifest, arrays)
+    changed = data.copy()
+    changed.units = "counts"
+    for acknowledged in (False, True):
+        with pytest.raises(ValueError, match="input authority"):
+            _apply_model_artifact(
+                manifest,
+                arrays,
+                changed,
+                model_id="current-pca",
+                replay=ApplicationModelArtifactReplay(),
+                acknowledge_legacy_input_uncertainty=acknowledged,
+            )
+        with pytest.raises(ValueError, match="input authority"):
+            preflight_model_application(changed, manifest, arrays, acknowledge_legacy_input_uncertainty=acknowledged)

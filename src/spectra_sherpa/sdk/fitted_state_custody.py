@@ -107,6 +107,18 @@ _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingP
         ),
         (
             "spectrasherpa.sherpa-plsda-state/5",
+            "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.sherpa-plsda-state/5",
+            contract_digest="a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale=(
+                "Legacy application admission changes the shared module identity; "
+                "the native closed fitted-state schema and absence of training rows are unchanged."
+            ),
+        ),
+        (
+            "spectrasherpa.sherpa-plsda-state/5",
             "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
         ): FittedStateCustodyCapability(
             serializer="spectrasherpa.sherpa-plsda-state/5",

@@ -11,7 +11,6 @@ from typing import Any
 
 import numpy as np
 
-from spectra_sherpa.app.core.mode_policy import is_local
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.core.axis_semantics import axis_semantics, canonical_axis_unit
 
@@ -49,6 +48,10 @@ def require_legacy_application_acknowledgement(
     )
     if not legacy:
         return None
+    # The registry also serves the lightweight core profile, which has no app configuration.
+    # Resolve product policy only when a legacy artifact is actually being admitted.
+    from spectra_sherpa.app.core.mode_policy import is_local
+
     if not is_local():
         raise ValueError("Legacy exploratory model recovery is available only in local OSS")
     if model_type == "plsda":

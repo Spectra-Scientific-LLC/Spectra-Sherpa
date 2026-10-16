@@ -935,24 +935,21 @@ class TestLoadApplyModelNode:
     """Verify the LoadApplyModelNode for all supported model types."""
 
     @pytest.fixture()
-    def pca_uid(self, tmp_path):
+    async def pca_uid(self, tmp_path):
         from spectra_sherpa.app.lib.pca import PCAExtract
+        from spectra_sherpa.app.services import model_store as model_store_module
+        from spectra_sherpa.app.services.dag.nodes.modeling.pca_nodes import PCANode
+        from spectra_sherpa.app.services.model_store import ModelStore
 
-        rng = np.random.default_rng(42)
-        n_features, n_components = 50, 3
-        mean = rng.standard_normal(n_features).astype(np.float64)
-        loadings = rng.standard_normal((n_components, n_features)).astype(np.float64)
-
-        extract = PCAExtract(
-            scores=np.zeros((1, n_components)),
-            loadings=loadings,
-            explained_variance_ratio=np.array([0.6, 0.25, 0.1]),
-            explained_variance=np.array([3.0, 1.25, 0.5]),
-            n_components=n_components,
-            mean=mean,
-        )
-        uid, _ = _init_store_and_save(tmp_path, "pca", extract)
-        return uid, extract
+        # Exercise the real producer, including its retained signal identity.
+        fitted = await PCANode("fit", {"n_components": "3"}).execute(_make_sherpa_dataset_2d(20, 50))
+        artifact = fitted.outputs["_model_artifact"]
+        metadata, arrays = artifact["metadata"], artifact["arrays"]
+        store = ModelStore(tmp_path)
+        model_store_module._store = store
+        uid = "test-pca-uid"
+        store.save(uid, metadata, arrays)
+        return uid, PCAExtract.from_artifact(metadata, arrays)
 
     @pytest.fixture()
     def pls_uid(self, tmp_path):

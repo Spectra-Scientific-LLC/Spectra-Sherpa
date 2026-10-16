@@ -166,8 +166,15 @@ async def test_batch_run_artifacts_persists_artifact_keyed_run(test_session, tes
         )
 
     async def fake_apply_model_to_dataset(
-        artifact_uid, _dataset, *, scope, execution_evidence=None, presentation_multiplier=1
+        artifact_uid,
+        _dataset,
+        *,
+        scope,
+        execution_evidence=None,
+        presentation_multiplier=1,
+        acknowledge_legacy_input_uncertainty=False,
     ):
+        assert acknowledge_legacy_input_uncertainty is False
         execution_evidence.update(
             definition={
                 "nodes": [{"node_id": node_id} for node_id in ("sink", "emitter", "unknown")],
@@ -305,7 +312,13 @@ async def test_batch_run_artifacts_reports_failing_artifact(test_session, test_u
         )
 
     async def fake_apply_model_to_dataset(
-        _artifact_uid, _dataset, *, scope, execution_evidence=None, presentation_multiplier=1
+        _artifact_uid,
+        _dataset,
+        *,
+        scope,
+        execution_evidence=None,
+        presentation_multiplier=1,
+        acknowledge_legacy_input_uncertainty=False,
     ):
         assert scope == "all"
         raise ValueError("feature-axis values differ from the artifact")
@@ -379,7 +392,13 @@ async def test_batch_run_artifacts_persists_successes_with_partial_207(test_sess
         )
 
     async def fake_apply_model_to_dataset(
-        artifact_uid, _dataset, *, scope, execution_evidence=None, presentation_multiplier=1
+        artifact_uid,
+        _dataset,
+        *,
+        scope,
+        execution_evidence=None,
+        presentation_multiplier=1,
+        acknowledge_legacy_input_uncertainty=False,
     ):
         assert scope == "all"
         if artifact_uid == second.artifact_uid:
@@ -469,7 +488,13 @@ async def test_batch_run_artifacts_allows_mixed_workflow_lineage(test_session, t
         )
 
     async def fake_apply_model_to_dataset(
-        artifact_uid, _dataset, *, scope, execution_evidence=None, presentation_multiplier=1
+        artifact_uid,
+        _dataset,
+        *,
+        scope,
+        execution_evidence=None,
+        presentation_multiplier=1,
+        acknowledge_legacy_input_uncertainty=False,
     ):
         return {"artifact_uid": artifact_uid, "n_samples": 3, "metrics": {"ok": True}, "scope": scope}
 

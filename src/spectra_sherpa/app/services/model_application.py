@@ -361,7 +361,7 @@ def preflight_model_application(
     if has_native_model_state(manifest, arrays):
         admit_saved_native_model(manifest, arrays, prepared, np.asarray(prepared.X))
     else:
-        if model_type in {"knn", "simca", "mcr", "fastica"} and legacy_warning is None:
+        if model_type in {"pca", "knn", "simca", "mcr", "fastica"} and legacy_warning is None:
             from spectra_sherpa.app.services.dag.fitted_input_identity import require_fitted_input_identity
 
             require_fitted_input_identity(prepared, manifest.get("input_identity"), features=prepared.shape[1])

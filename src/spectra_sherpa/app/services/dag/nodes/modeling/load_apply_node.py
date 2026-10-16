@@ -166,8 +166,7 @@ def _apply_model_artifact(
         return apply_saved_native_model(manifest, arrays, X_new, X_data)
     if X_data.ndim != 2:
         raise ValueError("This saved model requires two-dimensional application data")
-    legacy_pca = model_type == "pca" and manifest.get("input_identity") is None
-    if native_state or legacy_pca or model_type in {"knn", "simca", "mcr", "fastica", "plsda"}:
+    if native_state or model_type in {"pca", "knn", "simca", "mcr", "fastica", "plsda"}:
         X_new, replay_warnings = replay.prepare_dataset(X_data, X_new, manifest)
         X_data = np.asarray(X_new.X)
     else:
@@ -185,7 +184,7 @@ def _apply_model_artifact(
     legacy_warning = require_legacy_application_acknowledgement(
         manifest, arrays, X_new, acknowledged=acknowledge_legacy_input_uncertainty
     )
-    if model_type in {"knn", "simca", "mcr", "fastica"} and legacy_warning is None:
+    if model_type in {"pca", "knn", "simca", "mcr", "fastica"} and legacy_warning is None:
         require_fitted_input_identity(X_new, manifest.get("input_identity"), features=X_data.shape[1])
     extract = extract_cls.from_artifact(manifest, arrays)  # type: ignore[attr-defined]
     if model_type == "plsda":

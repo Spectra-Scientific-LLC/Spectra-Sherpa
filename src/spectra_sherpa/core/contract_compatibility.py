@@ -250,6 +250,43 @@ _V061_PCA_PRESENTATION_PREDECESSORS = tuple(
 )
 
 
+# Persisting the already-validated PCA signal identity changes producer bytes,
+# not the fitted state or projection math. These exact predecessors remain
+# application-only; never authorize historical graph execution.
+_PCA_SIGNAL_CUSTODY_PREDECESSORS = tuple(
+    SavedStateCompatibility(
+        "model.pca",
+        predecessor,
+        "2d4457cd7ca9ce699326aad70e1b4a77deb74d6cea88afd08066f106f45df161",
+        "spectrasherpa.model-artifact.pca/3",
+    )
+    for predecessor in (
+        "ad9ee0dc72e2a6e9984134d8cfd7da6176ae725641c240f488f31713b57fcf94",
+        "def76c765075b59a536e8c6bd72be0418c20d0ea4611f11ce5ec7f1a17ca891b",
+        "c8f6c57e2e5ffe3f7ff3a6f5528cfef28ceea6eabfdac4d2c4572481d391ca75",
+    )
+)
+
+
+# Legacy admission changes the shared PLS-DA module fingerprint without
+# changing native fitted-state serialization or prediction math. Keep each
+# reviewed producer explicit; no transitive or graph-execution permission.
+_PLSDA_LEGACY_ADMISSION_PREDECESSORS = tuple(
+    SavedStateCompatibility(
+        "classification.plsda",
+        predecessor,
+        "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+        "spectrasherpa.sherpa-plsda-state/5",
+    )
+    for predecessor in (
+        "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
+        "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
+        "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
+        "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+    )
+)
+
+
 @lru_cache(maxsize=1)
 def saved_state_compatibilities() -> tuple[SavedStateCompatibility, ...]:
     """Reviewed inference producers only; no application or cohort-only nodes."""
@@ -301,6 +338,8 @@ def saved_state_predecessor_is_compatible(
             *_REFERENCE_QUALITY_PREDECESSORS,
             *_V061_REGRESSION_DIAGNOSTIC_PREDECESSORS,
             *_V061_PCA_PRESENTATION_PREDECESSORS,
+            *_PCA_SIGNAL_CUSTODY_PREDECESSORS,
+            *_PLSDA_LEGACY_ADMISSION_PREDECESSORS,
         )
         if entry.predecessor_digest == predecessor
         and entry.consumer_digest == consumer

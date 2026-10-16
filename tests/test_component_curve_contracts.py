@@ -17,6 +17,24 @@ from spectra_sherpa.sdk.fitted_state_custody import (
     ("operation", "serializer", "previous", "current"),
     [
         (
+            "model.pca",
+            "spectrasherpa.model-artifact.pca/3",
+            "c8f6c57e2e5ffe3f7ff3a6f5528cfef28ceea6eabfdac4d2c4572481d391ca75",
+            "2d4457cd7ca9ce699326aad70e1b4a77deb74d6cea88afd08066f106f45df161",
+        ),
+        (
+            "classification.plsda",
+            "spectrasherpa.sherpa-plsda-state/5",
+            "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
+            "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+        ),
+        (
+            "classification.plsda",
+            "spectrasherpa.sherpa-plsda-state/5",
+            "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+            "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+        ),
+        (
             "model.fitted_pls",
             "spectra.sherpa-simpls-regression-json/9",
             "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
@@ -26,25 +44,25 @@ from spectra_sherpa.sdk.fitted_state_custody import (
             "classification.plsda",
             "spectrasherpa.sherpa-plsda-state/5",
             "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-            "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+            "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
         ),
         (
             "classification.plsda",
             "spectrasherpa.sherpa-plsda-state/5",
             "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
-            "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+            "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
         ),
         (
             "model.pca",
             "spectrasherpa.model-artifact.pca/3",
             "ad9ee0dc72e2a6e9984134d8cfd7da6176ae725641c240f488f31713b57fcf94",
-            "c8f6c57e2e5ffe3f7ff3a6f5528cfef28ceea6eabfdac4d2c4572481d391ca75",
+            "2d4457cd7ca9ce699326aad70e1b4a77deb74d6cea88afd08066f106f45df161",
         ),
         (
             "model.pca",
             "spectrasherpa.model-artifact.pca/3",
             "def76c765075b59a536e8c6bd72be0418c20d0ea4611f11ce5ec7f1a17ca891b",
-            "c8f6c57e2e5ffe3f7ff3a6f5528cfef28ceea6eabfdac4d2c4572481d391ca75",
+            "2d4457cd7ca9ce699326aad70e1b4a77deb74d6cea88afd08066f106f45df161",
         ),
         (
             "model.fitted_pcr",

@@ -1230,6 +1230,9 @@ class PCANode(Node):
                 "cumulative_variance": cumulative_variance_per_pc,
             },
         )
+        # Preserve the fitted signal authority in persisted PCA artifacts as well
+        # as the in-memory state; missing identity remains legacy/exploratory.
+        artifact["metadata"]["input_identity"] = dict(fitted_state["metadata"]["input_identity"])
 
         return NodeResult(
             outputs={
