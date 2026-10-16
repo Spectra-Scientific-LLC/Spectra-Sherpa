@@ -11,9 +11,15 @@ import numpy as np
 
 from spectra_sherpa.app.lib import fitted_state
 from spectra_sherpa.app.lib.fitted_state import SIMCAExtract
+from spectra_sherpa.app.services.dag import fitted_input_identity as input_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers
 from spectra_sherpa.app.services.dag.classification_application import CLASSIFICATION_REJECT_LABEL
+from spectra_sherpa.app.services.dag.fitted_input_identity import (
+    fitted_input_identity,
+    require_fitted_input_identity,
+    validate_fitted_input_identity,
+)
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
@@ -54,11 +60,12 @@ from .core_utils import (
 from .core_utils import (
     prepare_class_labels as _prepare_class_labels,
 )
+from .core_utils import require_active_calibration_cohort
 
 logger = logging.getLogger(__name__)
 
 SIMCA_REJECT_LABEL = CLASSIFICATION_REJECT_LABEL
-SIMCA_FITTED_STATE_SERIALIZER = "spectrasherpa.model-artifact.simca/1"
+SIMCA_FITTED_STATE_SERIALIZER = "spectrasherpa.model-artifact.simca/2"
 _SIMCA_MAX_COMPONENTS = 50
 
 
@@ -132,12 +139,13 @@ def _require_positive_limit(value: object, *, name: str, class_label: object) ->
     return limit
 
 
-def _simca_fitted_state_from_extract(extract: SIMCAExtract) -> dict[str, object]:
+def _simca_fitted_state_from_extract(extract: SIMCAExtract, dataset: Any) -> dict[str, object]:
     """Project one fitted SIMCA extract into its explicit artifact schema."""
 
     metadata, arrays = extract.to_artifact()
     return {
         "serializer": SIMCA_FITTED_STATE_SERIALIZER,
+        "input_identity": fitted_input_identity(dataset, features=next(iter(extract.class_loadings.values())).shape[1]),
         "metadata": metadata,
         "arrays": {name: np.asarray(value).tolist() for name, value in arrays.items()},
     }
@@ -146,7 +154,7 @@ def _simca_fitted_state_from_extract(extract: SIMCAExtract) -> dict[str, object]
 def _simca_extract_from_state(state: Any) -> SIMCAExtract:
     """Decode exact SIMCA identity, class limits, and per-class arrays."""
 
-    if not isinstance(state, dict) or set(state) != {"serializer", "metadata", "arrays"}:
+    if not isinstance(state, dict) or set(state) != {"serializer", "metadata", "arrays", "input_identity"}:
         raise ValueError("SIMCA fitted state must contain exact serializer, metadata, and arrays")
     if state["serializer"] != SIMCA_FITTED_STATE_SERIALIZER:
         raise ValueError("SIMCA fitted state has an unsupported serializer")
@@ -232,6 +240,9 @@ def _simca_extract_from_state(state: Any) -> SIMCAExtract:
                 f"{prefix}pca_mean": pca_mean,
             }
         )
+    identity = validate_fitted_input_identity(state["input_identity"])
+    if identity["features"] != feature_count:
+        raise ValueError("SIMCA fitted input identity has invalid feature count")
     return SIMCAExtract.from_artifact(metadata, numeric_arrays)
 
 
@@ -239,7 +250,9 @@ def apply_simca_fitted_state(input_data: Any, state: Any) -> tuple[np.ndarray, n
     """Apply a closed SIMCA state without guessing or defaulting class limits."""
 
     extract = _simca_extract_from_state(state)
-    matrix = to_numpy_2d(bind_X(input_data, allow_array=True), name="input_data", dtype=np.float64)
+    dataset = bind_X(input_data, allow_array=True)
+    matrix = to_numpy_2d(dataset, name="input_data", dtype=np.float64)
+    require_fitted_input_identity(dataset, state["input_identity"], features=matrix.shape[1])
     labels, affinity = extract.predict(matrix)
     return np.asarray(labels, dtype=object), np.asarray(affinity, dtype=np.float64)
 
@@ -248,29 +261,10 @@ def simca_acceptance_membership(input_data: Any, state: Any) -> tuple[tuple[str,
     """Return exact per-class acceptance decisions from one closed fitted state."""
 
     extract = _simca_extract_from_state(state)
-    matrix = to_numpy_2d(bind_X(input_data, allow_array=True), name="input_data", dtype=np.float64)
-    membership = np.zeros((matrix.shape[0], len(extract.classes)), dtype=bool)
-    for column, label in enumerate(extract.classes):
-        loadings = extract.class_loadings[label]
-        eigenvalues = np.maximum(extract.class_eigenvalues[label], 1e-12)
-        class_mean = extract.class_means[label]
-        class_scale = extract.class_scales.get(label) if extract.class_scales else None
-        pca_mean = extract.pca_means.get(label) if extract.pca_means else None
-        if class_scale is not None:
-            working = (matrix - class_mean) / np.maximum(class_scale, 1e-12)
-            pca_center = pca_mean if pca_mean is not None else np.zeros_like(class_mean)
-            centered = working - pca_center
-            reconstructed = centered @ loadings.T @ loadings + pca_center
-            residual = working - reconstructed
-        else:
-            centered = matrix - class_mean
-            reconstructed = centered @ loadings.T @ loadings
-            residual = centered - reconstructed
-        scores = centered @ loadings.T
-        t2 = np.sum((scores**2) / eigenvalues, axis=1)
-        q = np.sum(residual**2, axis=1)
-        membership[:, column] = (t2 <= float(extract.T2_limits[label])) & (q <= float(extract.Q_limits[label]))
-    return tuple(extract.classes), membership
+    dataset = bind_X(input_data, allow_array=True)
+    matrix = to_numpy_2d(dataset, name="input_data", dtype=np.float64)
+    require_fitted_input_identity(dataset, state["input_identity"], features=matrix.shape[1])
+    return tuple(extract.classes), extract.statistics(matrix)[3]
 
 
 def _simca_fitted_state_from_models(
@@ -280,6 +274,7 @@ def _simca_fitted_state_from_models(
     q_limits: dict[Any, float],
     *,
     n_components: int,
+    dataset: Any,
 ) -> dict[str, object]:
     """Build the common state from live or generated per-class fit results."""
 
@@ -313,7 +308,7 @@ def _simca_fitted_state_from_models(
         Q_limits={str(key): float(value) for key, value in q_limits.items()},
         n_components=int(n_components),
     )
-    return _simca_fitted_state_from_extract(extract)
+    return _simca_fitted_state_from_extract(extract, dataset)
 
 
 def _simca_q_limit_from_residuals(residual_q: np.ndarray, confidence_level: float) -> float:
@@ -440,51 +435,30 @@ def _predict_simca(
     Q_limits: dict[Any, float],
 ) -> tuple[np.ndarray, list[dict[str, float]], np.ndarray, list[list[str]], np.ndarray]:
     """Predict SIMCA membership using per-class T² and Q limits."""
-    predictions: list[Any] = []
-    distances: list[dict[str, float]] = []
-    accepted_classes: list[list[str]] = []
-    memberships: list[list[bool]] = []
+    extract = _live_simca_extract(classes, class_models, T2_limits, Q_limits)
+    labels, _ = extract.predict(X_data)
+    _, _, distances, membership = extract.statistics(X_data)
+    records = [dict(zip(extract.classes, row.tolist())) for row in distances]
+    accepted = [[label for label, keep in zip(extract.classes, row) if keep] for row in membership]
+    return labels, records, distances, accepted, membership
 
-    for i in range(len(X_data)):
-        sample = X_data[i].reshape(1, -1)
-        sample_distances: dict[str, float] = {}
-        sample_accepts: list[str] = []
-        sample_membership: list[bool] = []
 
-        for cls in classes:
-            model = class_models[cls]
-            pca = model["pca"]
-            scaler = model["scaler"]
-            loadings = model["loadings"]
-            eigenvalues = model["eigenvalues"]
-
-            sample_scaled = scaler.transform(sample)
-            t = pca.transform(sample_scaled).flatten().astype(np.float64)
-            T2 = np.sum((t**2) / eigenvalues)
-            reconstructed = t @ loadings + pca.mean_
-            Q = np.sum((sample_scaled.flatten() - reconstructed.flatten()) ** 2)
-            accepted = bool(T2 <= T2_limits[cls] and Q <= Q_limits[cls])
-            cls_label = str(cls)
-            sample_distances[cls_label] = float((T2 / T2_limits[cls]) + (Q / Q_limits[cls]))
-            sample_membership.append(accepted)
-            if accepted:
-                sample_accepts.append(cls_label)
-
-        if sample_accepts:
-            predictions.append(min(sample_accepts, key=lambda cls: sample_distances[str(cls)]))
-        else:
-            predictions.append(SIMCA_REJECT_LABEL)
-        distances.append(sample_distances)
-        accepted_classes.append(sample_accepts)
-        memberships.append(sample_membership)
-
-    prediction_array = np.asarray(predictions, dtype=object)
-    class_distance_matrix = np.asarray(
-        [[float(sample_distances[str(cls)]) for cls in classes] for sample_distances in distances],
-        dtype=np.float64,
+def _live_simca_extract(
+    classes: np.ndarray,
+    models: dict[Any, dict[str, Any]],
+    t2_limits: dict[Any, float],
+    q_limits: dict[Any, float],
+) -> SIMCAExtract:
+    return SIMCAExtract(
+        classes=[str(label) for label in classes],
+        class_loadings={str(label): models[label]["loadings"] for label in classes},
+        class_eigenvalues={str(label): models[label]["eigenvalues"] for label in classes},
+        class_means={str(label): models[label]["x_mean"] for label in classes},
+        class_scales={str(label): models[label]["x_scale"] for label in classes},
+        pca_means={str(label): models[label]["pca_mean"] for label in classes},
+        T2_limits={str(label): t2_limits[label] for label in classes},
+        Q_limits={str(label): q_limits[label] for label in classes},
     )
-    membership_matrix = np.asarray(memberships, dtype=bool)
-    return prediction_array, distances, class_distance_matrix, accepted_classes, membership_matrix
 
 
 def _simca_t2_q_diagnostics(
@@ -495,34 +469,9 @@ def _simca_t2_q_diagnostics(
     Q_limits: dict[Any, float],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Return per-sample, per-class T²/Q and the nearest accepted-distance class index."""
-    n_samples = X_data.shape[0]
-    n_classes = len(classes)
-    t2 = np.zeros((n_samples, n_classes), dtype=np.float64)
-    q = np.zeros((n_samples, n_classes), dtype=np.float64)
-
-    for j, cls in enumerate(classes):
-        model = class_models[cls]
-        pca = model["pca"]
-        scaler = model["scaler"]
-        loadings = model["loadings"]
-        eigenvalues = model["eigenvalues"]
-        scaled = scaler.transform(X_data)
-        scores = pca.transform(scaled).astype(np.float64)
-        reconstructed = scores @ loadings + pca.mean_
-        t2[:, j] = np.sum((scores**2) / eigenvalues, axis=1)
-        q[:, j] = np.sum((scaled - reconstructed) ** 2, axis=1)
-
-    t2_limits = np.asarray(
-        [_require_positive_limit(T2_limits[cls], name="T2", class_label=cls) for cls in classes],
-        dtype=np.float64,
-    )
-    q_limits = np.asarray(
-        [_require_positive_limit(Q_limits[cls], name="Q", class_label=cls) for cls in classes],
-        dtype=np.float64,
-    )
-    combined = (t2 / t2_limits.reshape(1, -1)) + (q / q_limits.reshape(1, -1))
-    nearest = np.argmin(combined, axis=1)
-    return t2, q, nearest, combined
+    extract = _live_simca_extract(classes, class_models, T2_limits, Q_limits)
+    t2, q, combined, _ = extract.statistics(X_data)
+    return t2, q, np.argmin(combined, axis=1), combined
 
 
 def _generate_simca_acceptance_plot(
@@ -645,6 +594,7 @@ def _simca_inputs(X: Any, y: Any) -> tuple[Any, np.ndarray, np.ndarray]:
         ),
         dataset_missing_message="Dataset passed to y has no embedded class labels",
     )
+    require_active_calibration_cohort(dataset, model_label="SIMCA")
     matrix = to_numpy_2d(dataset, name="X", dtype=np.float64)
     if matrix.shape[0] < 4 or matrix.shape[1] < 1 or not np.isfinite(matrix).all():
         raise ValueError("SIMCA X must contain at least four finite samples and one feature")
@@ -745,6 +695,7 @@ def _simca_scientific_core(X: Any, y: Any, *, parameters: dict[str, object]) -> 
             t2_limits,
             q_limits,
             n_components=int(params["n_components"]),
+            dataset=dataset,
         ),
     }
 
@@ -1293,7 +1244,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.FITTED_MODEL,
     implementation_id="spectrasherpa.classification.simca",
-    implementation_version="2.1.0",
+    implementation_version="3.0.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(
         ManagedOptimizationEligibility.LOCAL,
@@ -1322,6 +1273,7 @@ bind_stable_execution_contract(
         "Kucheryavskiy, mdatools SIMCA documentation and class-model distance conventions",
     ),
     implementation_modules=(
+        input_identity_authority,
         fitted_state,
         dag_io_contracts,
         meta_helpers,

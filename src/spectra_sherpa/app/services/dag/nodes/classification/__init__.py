@@ -14,6 +14,7 @@ from . import (  # noqa: F401
     application_nodes,
     knn_nodes,
     plsda_nodes,
+    plsda_permutation_node,
     simca_nodes,
 )
 from .application_nodes import ApplyKNNNode, ApplyPLSDANode, ApplySIMCANode

@@ -140,7 +140,8 @@ async def test_folder_batch_route_resolves_authorized_files_and_starts_durable_r
 
 
 @pytest.mark.asyncio
-async def test_batch_run_artifacts_persists_artifact_keyed_run(test_session, test_user, monkeypatch):
+@pytest.mark.parametrize("n_features", [4, 60_000])
+async def test_batch_run_artifacts_persists_artifact_keyed_run(test_session, test_user, monkeypatch, n_features):
     import numpy as np
 
     from spectra_sherpa.app.api.v1.routes import runs as runs_route
@@ -148,7 +149,9 @@ async def test_batch_run_artifacts_persists_artifact_keyed_run(test_session, tes
     from spectra_sherpa.app.services.run_output_retention import read_output
 
     project, _, artifact = await _seed_artifact(test_session, test_user)
-    original = SherpaDataset(X=np.ones((2, 4)), sample_axis=SampleAxis(labels=["A", "B"], include_mask=[True, False]))
+    original = SherpaDataset(
+        X=np.ones((2, n_features)), sample_axis=SampleAxis(labels=["A", "B"], include_mask=[True, False])
+    )
 
     async def fake_load_project_dataset(*_args, **_kwargs):
         return SimpleNamespace(
@@ -163,8 +166,15 @@ async def test_batch_run_artifacts_persists_artifact_keyed_run(test_session, tes
         )
 
     async def fake_apply_model_to_dataset(
-        artifact_uid, _dataset, *, scope, execution_evidence=None, presentation_multiplier=1
+        artifact_uid,
+        _dataset,
+        *,
+        scope,
+        execution_evidence=None,
+        presentation_multiplier=1,
+        acknowledge_legacy_input_uncertainty=False,
     ):
+        assert acknowledge_legacy_input_uncertainty is False
         execution_evidence.update(
             definition={
                 "nodes": [{"node_id": node_id} for node_id in ("sink", "emitter", "unknown")],
@@ -176,8 +186,20 @@ async def test_batch_run_artifacts_persists_artifact_keyed_run(test_session, tes
         return {
             "artifact_uid": artifact_uid,
             "model_type": "plsda",
-            "n_samples": 10,
+            "n_samples": 2,
+            "sample_indices": [0, 1],
             "predictions": ["A", "B"],
+            "applicability": {
+                "method": "fitted_t2_q",
+                "reference_samples": 12,
+                "t2_limit": 4.0,
+                "q_limit": 1.0,
+                "claim_scope": "provisional_calibration_screening",
+                "rows": [
+                    {"row_index": 0, "screening_status": "within_global_screen", "t2": 2.0, "q": 0.3},
+                    {"row_index": 1, "screening_status": "outside_global_screen", "t2": 5.0, "q": 0.4},
+                ],
+            },
             "metrics": {"accuracy": 0.9},
             "scope": scope,
         }
@@ -220,6 +242,10 @@ async def test_batch_run_artifacts_persists_artifact_keyed_run(test_session, tes
     inventory = response.run.evidence_completeness.outputs
     result = read_output(test_user.id, inventory[artifact.artifact_uid]["default"])
     assert result["predictions"] == ["A", "B"]
+    assert [row["screening_status"] for row in result["applicability"]["rows"]] == [
+        "within_global_screen",
+        "outside_global_screen",
+    ]
     original.X[0, 0] = 99
     saved = read_output(test_user.id, inventory["__application__"]["input"])
     assert saved["data"][0][0] == 1
@@ -286,7 +312,13 @@ async def test_batch_run_artifacts_reports_failing_artifact(test_session, test_u
         )
 
     async def fake_apply_model_to_dataset(
-        _artifact_uid, _dataset, *, scope, execution_evidence=None, presentation_multiplier=1
+        _artifact_uid,
+        _dataset,
+        *,
+        scope,
+        execution_evidence=None,
+        presentation_multiplier=1,
+        acknowledge_legacy_input_uncertainty=False,
     ):
         assert scope == "all"
         raise ValueError("feature-axis values differ from the artifact")
@@ -360,7 +392,13 @@ async def test_batch_run_artifacts_persists_successes_with_partial_207(test_sess
         )
 
     async def fake_apply_model_to_dataset(
-        artifact_uid, _dataset, *, scope, execution_evidence=None, presentation_multiplier=1
+        artifact_uid,
+        _dataset,
+        *,
+        scope,
+        execution_evidence=None,
+        presentation_multiplier=1,
+        acknowledge_legacy_input_uncertainty=False,
     ):
         assert scope == "all"
         if artifact_uid == second.artifact_uid:
@@ -450,7 +488,13 @@ async def test_batch_run_artifacts_allows_mixed_workflow_lineage(test_session, t
         )
 
     async def fake_apply_model_to_dataset(
-        artifact_uid, _dataset, *, scope, execution_evidence=None, presentation_multiplier=1
+        artifact_uid,
+        _dataset,
+        *,
+        scope,
+        execution_evidence=None,
+        presentation_multiplier=1,
+        acknowledge_legacy_input_uncertainty=False,
     ):
         return {"artifact_uid": artifact_uid, "n_samples": 3, "metrics": {"ok": True}, "scope": scope}
 

@@ -52,6 +52,16 @@ class ValidationContractError(ValidationGraphError):
 _SHA256_HEX = re.compile(r"[0-9a-f]{64}\Z")
 
 
+def validation_graph_identity_digest(payload: Mapping[str, object]) -> str:
+    """Hash the closed graph identity; admission validates its scientific shape."""
+
+    try:
+        encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValidationGraphError("candidate parameters must be finite JSON values") from exc
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
 @dataclass(frozen=True)
 class ValidationGraphNode:
     """One registered canonical execution identity at a persisted graph node."""
@@ -135,12 +145,7 @@ class ValidationGraph:
     def digest(self) -> str:
         """Return the portable identity of semantics, parameters, and topology."""
 
-        payload = self._identity_dict()
-        try:
-            encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
-        except (TypeError, ValueError) as exc:
-            raise ValidationGraphError("candidate parameters must be finite JSON values") from exc
-        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+        return validation_graph_identity_digest(self._identity_dict())
 
 
 def validation_graph_from_dict(
@@ -420,7 +425,9 @@ def assert_admitted_validation_graph(graph: ValidationGraph, *, require_live_run
     turn such an object into a second topology or node-admission path.
     """
 
-    if not isinstance(graph, ValidationGraph) or not isinstance(graph.nodes, tuple) or not graph.nodes:
+    if type(graph) is not ValidationGraph:
+        raise ValidationGraphError("historical or noncanonical graphs require a new current execution admission")
+    if not isinstance(graph.nodes, tuple) or not graph.nodes:
         raise ValidationGraphError("validation graph must contain at least one admitted node")
     if not isinstance(graph.edges, tuple) or any(not isinstance(node, ValidationGraphNode) for node in graph.nodes):
         raise ValidationGraphError("validation graph has malformed admitted records")

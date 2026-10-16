@@ -54,6 +54,11 @@ class AuditedModel:
 # entries (Workflow, WorkflowVersion, ExecutionRun, ModelArtifact).
 AUDITED_MODELS: tuple[AuditedModel, ...] = (
     AuditedModel(
+        model_dotted_path="spectra_sherpa.app.models.dataset_view.DatasetView",
+        target_type="DatasetView",
+        actions=frozenset({"dataset.curation.created"}),
+    ),
+    AuditedModel(
         model_dotted_path="spectra_sherpa.app.models.workflow.Workflow",
         target_type="Workflow",
         # workflow.run.started fires against target_type=Workflow
@@ -71,6 +76,7 @@ AUDITED_MODELS: tuple[AuditedModel, ...] = (
                 "project_unlinked",
                 "workflow.run.started",
                 "workflow.data_selection.applied",
+                "workflow.sample_review.applied",
                 # canonical_source_bound fires when a workflow's canonical
                 # application graph is bound to a local data source
                 # (canonical_project_binding.py) — a distinct state change
@@ -96,6 +102,7 @@ AUDITED_MODELS: tuple[AuditedModel, ...] = (
                 "workflow.run.partial",
                 "workflow.run.failed",
                 "workflow.run.named",
+                "workflow.run.renamed",
                 # Every batch attempt has a persisted ExecutionRun, including
                 # partial and all-failed applications.
                 "workflow.run.batch_completed",

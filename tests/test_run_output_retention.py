@@ -518,3 +518,120 @@ def test_typed_outlier_evaluation_is_retained_and_nonfinite_is_reduced(nonfinite
     if nonfinite:
         expected["hotelling_t2"][1] = None
     assert restored == expected
+
+
+def test_ascii_artifact_is_charged_by_encoded_size_not_six_times_its_length():
+    text = "sample,value\n" + "sample,1.23456789\n" * 200_000
+    assert len(text) * 6 > retention.OUTPUT_BYTES_LIMIT
+    evidence = retention.retain_output(1, {"csv": text})
+    assert evidence.state == "exact"
+    assert retention.read_output(1, evidence)["csv"] == text
+
+
+def test_string_budget_still_accounts_for_json_escape_expansion():
+    from spectra_sherpa.app.services.dag.serialize import admit_retained_value
+
+    admit_retained_value("a" * 90, max_bytes=100)
+    with pytest.raises(ValueError, match="materialization"):
+        admit_retained_value("\x00" * 20, max_bytes=100)
+    with pytest.raises(ValueError, match="materialization"):
+        admit_retained_value("a" * 101, max_bytes=100)
+
+
+def test_supplied_synthetic_pca_state_retains_complete_diagnostic_evidence():
+    from spectra_sherpa.app.lib.synthetic_references import load_synthetic_reference_as_sherpa
+    from spectra_sherpa.app.services.dag.nodes.modeling.pca_nodes import execute_pca_node
+
+    dataset = load_synthetic_reference_as_sherpa("Synthetic_atmospheric-6")
+    result = execute_pca_node(
+        dataset,
+        node_id="pca",
+        parameters={
+            "n_components": "6",
+            "standardized": True,
+            "scaled": False,
+        },
+    )
+    evidence = RunEvidence.model_validate(retention.retain_run_outputs(1, {"pca": result.outputs}, {}))
+    retained = evidence.outputs["pca"]["diagnostic_state"]
+    assert retained.state == "exact", retained.reason
+    assert retained.byte_count > 8 * 1024 * 1024
+    reopened = retention.read_output(1, retained)
+    assert reopened["T2"] == result.outputs["diagnostic_state"]["T2"]
+    assert reopened["Q"] == result.outputs["diagnostic_state"]["Q"]
+    assert np.array_equal(reopened["_internal"]["input_data"]["data"], dataset.X)
+
+
+def test_full_resolution_supplied_spectral_overlay_retains_all_coordinates():
+    axis = np.linspace(600, 3300, 5401).tolist()
+    intensity = np.sin(np.asarray(axis)).tolist()
+    plot = {"data": [{"type": "scatter", "x": axis, "y": intensity, "name": f"Spectrum {i + 1}"} for i in range(50)]}
+    retained = retention.retain_output(1, plot)
+    assert retained.state == "exact"
+    assert retention.read_output(1, retained) == plot
+
+
+def test_usage_snapshot_matches_enforcement_and_deduplicates(monkeypatch):
+    # Windows byte-range locking needs a one-byte lock file. The same
+    # physical overhead is counted by both usage reporting and enforcement.
+    empty_usage = retention.retained_results_usage(1)["usedBytes"]
+    first = retention.retain_output(1, {"value": [1, 2, 3]})
+    retention.retain_output(1, {"value": [1, 2, 3]})
+    usage = retention.retained_results_usage(1)
+    assert usage["usedBytes"] == empty_usage + first.byte_count
+    assert usage["remainingBytes"] == retention.USER_BYTES_LIMIT - usage["usedBytes"]
+    assert retention.retained_results_usage(2)["usedBytes"] == empty_usage
+    monkeypatch.setattr(retention, "USER_BYTES_LIMIT", usage["usedBytes"])
+    assert retention.retained_results_usage(1)["remainingBytes"] == 0
+    with pytest.raises(ValueError, match="My Profile → Usage"):
+        retention.retain_output(1, {"different": "result"})
+    assert retention.read_output(1, first) == {"value": [1, 2, 3]}
+
+
+def test_quota_warning_is_actionable_without_internal_output_list():
+    from spectra_sherpa.app.api.v1.routes.workflows._helpers import _retention_warning
+
+    reason = "Retained-results user quota cannot fit this output (512 MiB used). Open My Profile → Usage."
+    warning = _retention_warning(
+        {
+            "outputs": {
+                "model_1": {
+                    port: {"state": "missing", "reason": reason} for port in ("default", "X_scores", "X_loadings")
+                },
+                "private": {
+                    "x": {"state": "missing", "reason": "Not retained: private runtime output excluded by policy."}
+                },
+            }
+        }
+    )
+    assert "3 results could not be saved" in warning
+    assert warning.count(reason) == 1
+    assert "model_1" not in warning
+
+
+def test_account_capacity_can_increase_without_relaxing_output_budgets(monkeypatch):
+    from spectra_sherpa.app.core.config import _get_retention_limit
+
+    mib = 1024 * 1024
+    monkeypatch.delenv("RUN_OUTPUT_USER_MAX_BYTES", raising=False)
+    assert _get_retention_limit("RUN_OUTPUT_USER_MAX_BYTES", 1024 * mib, default=512 * mib) == 512 * mib
+    monkeypatch.setenv("RUN_OUTPUT_USER_MAX_BYTES", str(1024 * mib))
+    assert _get_retention_limit("RUN_OUTPUT_USER_MAX_BYTES", 1024 * mib, default=512 * mib) == 1024 * mib
+    monkeypatch.setenv("RUN_OUTPUT_USER_MAX_BYTES", str(1024 * mib + 1))
+    with pytest.raises(ValueError, match="qualified maximum"):
+        _get_retention_limit("RUN_OUTPUT_USER_MAX_BYTES", 1024 * mib, default=512 * mib)
+    monkeypatch.setattr(retention, "USER_BYTES_LIMIT", 1024 * mib)
+    for user, size in ((1, 600 * mib), (2, 1024 * mib)):
+        # Sparse fixtures exercise logical byte accounting without allocating
+        # a GiB of test data. Normal published files remain immutable.
+        with (retention._user_directory(user) / "existing.json").open("wb") as stream:
+            stream.truncate(size)
+    existing_usage = retention.retained_results_usage(1)["usedBytes"]
+    assert 600 * mib <= existing_usage <= 600 * mib + 1
+    saved = retention.retain_output(1, {"value": 42})
+    assert retention.read_output(1, saved) == {"value": 42}
+    assert retention.retained_results_usage(1)["usedBytes"] == existing_usage + saved.byte_count
+    with pytest.raises(ValueError, match="user quota"):
+        retention.retain_output(2, {"value": 42})
+    assert retention.OUTPUT_BYTES_LIMIT == 16 * mib
+    assert retention.RUN_BYTES_LIMIT == 64 * mib

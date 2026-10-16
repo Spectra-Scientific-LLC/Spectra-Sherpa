@@ -137,6 +137,7 @@ describe("SimplifiedDashboard analysis starters", () => {
             name: "public-corn-m5-moisture-v1",
             dataset_id: "registered:public-corn-m5-moisture-v1",
             label: "Eigenvector Corn M5",
+            availability: "exact_user_acquisition_required",
           },
         ],
         matrix: [],
@@ -211,9 +212,20 @@ describe("SimplifiedDashboard analysis starters", () => {
         .findAll("button")
         .find((button) => button.text() === "New Analysis")!
         .trigger("click");
-      expect(wrapper.text()).toContain("Synthetic atmospheric mixture · Spectra synthetic");
-      expect(wrapper.text()).toContain("Iris · scikit-learn");
-      expect(wrapper.text()).toContain("Eigenvector Corn M5 · user-acquired");
+      expect(wrapper.text()).toContain("Choose a dataset to enable Start.");
+      expect(wrapper.get('.starter-card button').attributes('disabled')).toBeDefined();
+      expect(wrapper.text()).toContain("Synthetic atmospheric mixture · Spectra Scientific synthetic benchmarks");
+      expect(wrapper.text()).toContain("Iris · scikit-learn datasets");
+      expect(wrapper.text()).toContain("Eigenvector Corn M5 · User-acquired Eigenvector datasets · Needs file import");
+      await wrapper.get('[data-test="dataset-dropdown"]').setValue("registered:public-corn-m5-moisture-v1");
+      expect(wrapper.get('.dataset-import-notice').text()).toContain("import the provider file before running");
+      await wrapper.get('.dataset-import-notice button').trigger('click');
+      await flushPromises();
+      expect(mocks.routerPush).toHaveBeenLastCalledWith({ path: '/data', query: { tab: 'import' } });
+      expect(projectStore.createProject).toHaveBeenLastCalledWith(expect.objectContaining({
+        name: 'Eigenvector Corn M5 analysis',
+      }));
+      await wrapper.findAll('button').find(button => button.text() === 'New Analysis')!.trigger('click');
       await wrapper
         .get('[data-test="dataset-dropdown"]')
         .setValue("builtin:lavender-essential-oil-v1");
@@ -240,7 +252,16 @@ describe("SimplifiedDashboard analysis starters", () => {
       await tabs[0].trigger("click");
       expect(mocks.routerReplace).toHaveBeenLastCalledWith({ hash: "" });
       projectStore.projects = [{ ...createdProject(), version_count: 0 }];
+      projectStore.currentProjectId = 99;
       await flushPromises();
+      expect(wrapper.find('.project-card[role="button"]').exists()).toBe(false);
+      await wrapper.get('[aria-label="Open project Lavender Essential Oil FTIR Corpus v1 PCA"]').trigger('click');
+      expect(mocks.routerPush).toHaveBeenLastCalledWith('/project');
+      const select = vi.spyOn(projectStore, 'selectProject').mockResolvedValue(undefined);
+      projectStore.currentProjectId = null;
+      await flushPromises();
+      await wrapper.get('.project-open').trigger('click');
+      expect(select).toHaveBeenCalledWith(99);
       await wrapper.get('[aria-label="Archive project"]').trigger("click");
       expect(wrapper.text()).toContain("You can restore it from Archive");
 

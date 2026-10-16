@@ -4,8 +4,10 @@ import { defineComponent, reactive, nextTick } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
+  isNarrow: { __v_isRef: true, value: false },
   routeMeta: { public: false as boolean, standalone: false as boolean },
   appMode: { __v_isRef: true, value: "local" },
+  siteProfile: { __v_isRef: true, value: null as string | null },
   appConfig: {
     __v_isRef: true,
     value: { features: { sherpaGuidance: false } },
@@ -72,6 +74,10 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
+vi.mock("@/composables/useViewport", () => ({
+  useViewport: () => ({ isNarrow: mocks.isNarrow }),
+}));
+
 vi.mock("vue-router", async () => {
   const actual = await vi.importActual<typeof import("vue-router")>("vue-router");
   return {
@@ -95,6 +101,7 @@ vi.mock("primevue/usetoast", () => ({
 vi.mock("@/composables/useAppConfig", () => ({
   useAppConfig: () => ({
     appMode: mocks.appMode,
+    siteProfile: mocks.siteProfile,
     appConfig: mocks.appConfig,
     hasLLMConfigured: mocks.hasLLMConfigured,
     reloadConfig: vi.fn().mockResolvedValue(true),
@@ -213,8 +220,17 @@ const SidebarStub = defineComponent({
   props: {
     collapsed: { type: Boolean, default: false },
   },
+  emits: ["expand", "navigate"],
   template: '<div data-test="sidebar-stub" />',
 });
+
+vi.mock("primevue/sidebar", () => ({
+  default: defineComponent({
+    name: "NavDrawer",
+    props: { visible: { type: Boolean, default: false } },
+    template: '<div v-if="visible" data-test="nav-drawer"><slot /></div>',
+  }),
+}));
 
 vi.mock("@/components/SherpaUpgradeModal.vue", () => ({
   default: defineComponent({ name: "SherpaUpgradeModal", template: "<div />" }),
@@ -317,10 +333,12 @@ const mountTopbar = (chatCollapsed = true) =>
 
 describe("MainLayout chat panel defaults", () => {
   beforeEach(() => {
+    mocks.isNarrow.value = false;
     localStorage.clear();
     mocks.routeMeta.public = false;
     mocks.routeMeta.standalone = false;
     mocks.appMode.value = "local";
+    mocks.siteProfile.value = null;
     mocks.appConfig.value = { features: { sherpaGuidance: false } };
     mocks.backendConnected.value = true;
     mocks.authStore.user = { id: 7, username: "alice", capabilities: { admin: false } };
@@ -331,6 +349,28 @@ describe("MainLayout chat panel defaults", () => {
     mocks.guidanceStop.mockClear();
     mocks.activityStart.mockClear();
     mocks.activityStop.mockClear();
+  });
+
+  it.each([
+    ['local', null, false], ['enterprise', 'demo', true], ['enterprise', 'pro', false],
+  ] as const)('shows the compact product map only for Demo (%s / %s)', (mode, profile, visible) => {
+    mocks.appMode.value = mode;
+    mocks.siteProfile.value = profile;
+    const wrapper = mount(MainLayout, mainLayoutMountOptions);
+    expect(wrapper.find('[aria-label="SpectraSherpa products"]').exists()).toBe(visible);
+  });
+
+  it("keeps the narrow drawer open for ordinary clicks and closes it on navigation", async () => {
+    mocks.isNarrow.value = true;
+    const wrapper = mount(MainLayout, mainLayoutMountOptions);
+    wrapper.findComponent(SidebarStub).vm.$emit("expand");
+    await nextTick();
+    const drawer = wrapper.get('[data-test="nav-drawer"]');
+    await drawer.getComponent(SidebarStub).trigger("click");
+    expect(wrapper.find('[data-test="nav-drawer"]').exists()).toBe(true);
+    drawer.getComponent(SidebarStub).vm.$emit("navigate");
+    await nextTick();
+    expect(wrapper.find('[data-test="nav-drawer"]').exists()).toBe(false);
   });
 
   it("starts with the chat panel collapsed on first load", () => {

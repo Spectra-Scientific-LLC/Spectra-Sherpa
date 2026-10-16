@@ -39,7 +39,7 @@ def _dataset(*, descending: bool = False) -> SherpaDataset:
         feature_axis=SpectralAxis(values=axis, units="cm-1", title="wavenumber"),
         sample_axis=SampleAxis(
             values=np.array([10.0, 20.0]),
-            include_mask=np.array([True, False]),
+            include_mask=np.array([True, True]),
             sample_table={"batch": ["A", "B"]},
         ),
         target=np.array([0.25, 0.75]),
@@ -184,7 +184,7 @@ async def test_node_preserves_typed_scientific_context() -> None:
     np.testing.assert_array_equal(output.feature_axis.values, source.feature_axis.values)
     assert output.feature_axis.units == "cm-1"
     assert output.feature_axis.title == "wavenumber"
-    np.testing.assert_array_equal(output.sample_axis.include_mask, [True, False])
+    np.testing.assert_array_equal(output.sample_axis.include_mask, [True, True])
     assert output.sample_axis.sample_table == {"batch": ["A", "B"]}
     assert output.domain == source.domain
     assert output.units == "absorbance"
@@ -286,3 +286,13 @@ assert "spectra_sherpa.app.lib.adapters.scp_adapter" not in sys.modules
     )
     assert completed.returncode == 0, completed.stderr
     assert "spectrochempy" not in (completed.stdout + completed.stderr).lower()
+
+
+@pytest.mark.asyncio
+async def test_rubberband_rejects_unmaterialized_excluded_samples() -> None:
+    source = _dataset()
+    axis = source.sample_axis
+    axis.include_mask = np.array([True, False])
+    source.sample_axis = axis
+    with pytest.raises(ValueError, match="excluded samples"):
+        await node_registry.create_node("baseline.rubberband", "rubberband", {}).run(source)

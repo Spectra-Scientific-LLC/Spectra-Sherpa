@@ -15,6 +15,10 @@ These formats are handled without SpectroChemPy:
 | `.mat` | MATLAB arrays and Eigenvector PLS_Toolbox DataSet Objects | MATLAB v4/v5 and v7.3/HDF5 numeric workspaces are supported. The qualified DSO contract preserves n-D data, per-mode scales, labels, titles, class sets, include masks, image layout, history, and descriptive metadata across both storage families. A two-dimensional pixels-by-features image DSO exposes both its ordinary unfolded table and an explicitly named, column-major image-cube view; the source inclusion mask is retained on both. Arbitrary MATLAB classes, executable objects, sparse/complex arrays, and ragged batch DSOs refuse. |
 | `.opus`, numeric suffixes such as `.0` | Bruker OPUS one-dimensional measurements | Every typed result is inventoried; select the exact scientific result for multi-result files. |
 | `.spc` | Galactic/Thermo GRAMS SPC spectra and multifiles | Common-axis multifiles become one sample matrix; independent XYXY records remain explicit assets. |
+| `.spa` | Thermo Nicolet OMNIC single spectrum | Qualified legacy SPA layouts only; retained axis, ordinate type, acquisition details, and processing history remain inspectable when present. |
+| `.spg` | Thermo Nicolet OMNIC compatible spectrum group | Qualified legacy SPG groups only; inspect the admitted spectra and their exact source identity. |
+| `.srs` | Thermo Nicolet OMNIC time series | Qualified legacy rapid-scan, high-speed, GC/TGA, and extended-directory Kinetics layouts only. |
+| `.wdf` | Renishaw WiRE Raman spectra, lines, depth series, and maps | Each spectrum remains a sample; map coordinates and topology are retained rather than guessed from a flattened image. |
 | `.txt` with `#Wave` / `#Intensity` tab header | Renishaw WiRE single-spectrum text export | The exact two-column export is supported; other `.txt` tables, series, and maps are not guessed. Prefer WDF when acquisition metadata or topology is required. |
 
 ## Native Bruker OPUS
@@ -152,8 +156,8 @@ exact Renishaw `#Wave`/`#Intensity` text export. For a pending native instrument
 format, export a representative source to an admitted format and verify its
 dimensions, axis, and units before converting a large calibration library.
 
-After import, check the **Files**, **Metadata**, and **Data Matrix** panels to confirm the file names, extensions, sample count, spectral axis, and target values.
-For an n-dimensional DSO, the Data Matrix panel instead shows the full native
+After import, review **Loaded files**, **Acquisition settings**, and **Sample details** in **My Dataset** to confirm source identities, sample count, spectral axis, and target values before saving a Data Portfolio. Availability of Upload and managed reference imports depends on the deployment profile; native reader support alone does not grant permission to upload.
+For an n-dimensional DSO, the data matrix instead shows the full native
 shape and dimension roles. Inspect every axis, class, and include set. Use
 **Dimension Projection** before a two-dimensional node. For a qualified image
 DSO, select its explicitly named **image-cube** result before manually adding

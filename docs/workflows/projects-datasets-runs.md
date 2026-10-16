@@ -4,11 +4,18 @@ SpectraSherpa organizes work around projects.
 
 ## Project
 
-A project groups datasets, workflows, runs, reports, and model artifacts. Use one project for one study, method-development effort, or demo evaluation.
+A Project is the user workspace grouping datasets, workflows, Runs, reports,
+and Models. **Dashboard > New Analysis** creates a project; **Analysis Starter**
+inside Workflow adds a workflow template to the current project. Use one project
+for one study, method-development effort, or demo evaluation. An Experiment is
+an internal import/source container for files, specimens, metadata, and versions.
+It can belong to a Project; it is not another name for the Project workspace.
 
 ## Dataset
 
-A dataset is the data object that workflows consume. For spectra, the core shape is usually samples by spectral variables. Metadata records the source, file list, units, and other context when available.
+A dataset is a named selection of data, views, target, and optional groups that
+workflows consume. For spectra, the core shape is usually samples by spectral
+variables. Metadata records the source, file list, units, and other context when available.
 
 ## Workflow
 
@@ -24,8 +31,12 @@ scientific calibration, preprocessing, and validation sheets remain usable.
 
 ## Run
 
-A run is one execution of a workflow. It captures the outputs and diagnostics produced by the nodes at that point in time.
+A run is one execution of a workflow. Open **Runs** to review saved executions.
+Results are the outputs and diagnostics produced by nodes within a run.
 
-## Model Artifact
+## Models and artifacts
+
+Use **Models** for the user-facing collection of retained fitted models.
+Artifact describes the underlying fitted-state record.
 
 Training nodes can persist fitted models. A model artifact keeps a readable compatibility record plus the numeric fitted state needed for later review and application. Before applying an artifact, confirm the spectral axis, preprocessing, feature count, target units, and validation context match the new data.

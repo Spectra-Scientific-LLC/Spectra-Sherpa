@@ -46,6 +46,7 @@ _LOCAL_PLS_PIPELINES = {
     "variable_selection_pls",
     "vip_assisted_pls",
 }
+_EMBEDDED_REFERENCE_TEMPLATES = _LOCAL_PLS_PIPELINES | {"classification_plsda", "variable_selection_comparison"}
 _CLASSIFICATION_PIPELINES = {
     "classification_plsda",
     "knn_classification",
@@ -129,7 +130,12 @@ def test_supervised_template_exposes_the_reference_target_edge(slug: str) -> Non
         node_id for node_id, node_type in nodes.items() if node_type in {"data.train_test_split", "model.fitted_pls"}
     )
 
-    assert (source_id, "target", target_id, "y") in edges
+    if slug in _EMBEDDED_REFERENCE_TEMPLATES:
+        # These models fit the target embedded in X, preserving its declared
+        # laboratory source through the exact sample partition.
+        assert (source_id, "target", target_id, "y") not in edges
+    else:
+        assert (source_id, "target", target_id, "y") in edges
 
 
 @pytest.mark.parametrize("slug", sorted(_CLASSIFICATION_PIPELINES))
@@ -151,7 +157,11 @@ def test_classification_template_exposes_training_and_test_labels(slug: str) -> 
         node_id for node_id, node_type in nodes.items() if node_type == "diagnostics.classification_evaluator"
     )
 
-    assert (split_id, "y_train", model_id, "y") in edges
+    if slug == "classification_plsda":
+        assert (split_id, "X_train", model_id, "X") in edges
+        assert (split_id, "y_train", model_id, "y") not in edges
+    else:
+        assert (split_id, "y_train", model_id, "y") in edges
     assert (split_id, "y_test", evaluator_id, "y_true") in edges
 
 
@@ -198,7 +208,14 @@ def test_local_pls_template_exposes_one_fit_apply_evaluate_path(slug: str) -> No
         if target_id == apply_id and from_output == "fitted_state" and to_input == "fitted_state"
     )
 
-    assert (split_id, "y_train", fit_id, "y") in edges
+    assert (split_id, "y_train", fit_id, "y") not in edges
+    assert any(
+        to_node_id == fit_id and to_input == "default" and from_output == "X_train"
+        for _, from_output, to_node_id, to_input in edges
+    ) or any(
+        to_node_id == fit_id and to_input == "default" and from_output == "X_selected"
+        for _, from_output, to_node_id, to_input in edges
+    )
     assert (fit_id, "fitted_state", apply_id, "fitted_state") in edges
     assert (apply_id, "default", evaluator_id, "default") in edges
     assert (split_id, "y_test", evaluator_id, "y_true") in edges
@@ -206,12 +223,12 @@ def test_local_pls_template_exposes_one_fit_apply_evaluate_path(slug: str) -> No
         assert (split_id, "X_test", evaluator_id, "sample_context") in edges
 
 
-def test_pls_calibration_autoscaling_is_fitted_inside_the_model() -> None:
+def test_pls_calibration_defaults_to_training_owned_mean_centring() -> None:
     template = _template("pls_calibration")
     nodes = {node["node_type"]: node for node in template["nodes"]}  # type: ignore[index]
 
     assert "preprocess.scale" not in nodes
-    assert nodes["model.fitted_pls"]["parameters"]["scale"] is True
+    assert nodes["model.fitted_pls"]["parameters"]["scale"] is False
 
 
 @pytest.mark.parametrize("slug", ["variable_selection_pls", "vip_assisted_pls"])

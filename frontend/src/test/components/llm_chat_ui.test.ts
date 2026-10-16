@@ -2,6 +2,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, reactive, ref } from "vue";
 import type { Component, PropType } from "vue";
+import type { DiagnosticScope } from "@/utils/diagnosticAdvisor";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,8 @@ const mocks = vi.hoisted(() => ({
   featureFlags: {
     chatAssistant: false,
     sherpaAdvisor: false,
-    sherpaAgenticTools: false,
+    sherpaWorkflowGenerationRun: false,
+    sherpaCampaignGeneration: false,
   } as Record<string, boolean>,
   apiGet: vi.fn(),
   apiPut: vi.fn(),
@@ -49,6 +51,8 @@ const mocks = vi.hoisted(() => ({
     startNewConversation: vi.fn(),
   },
   sherpaStore: {
+    diagnosticScope: null as DiagnosticScope | null,
+    setDiagnosticScope: vi.fn(),
     messages: [] as Array<Record<string, unknown>>,
     conversations: [] as Array<Record<string, unknown>>,
     currentConversationId: null as string | null,
@@ -291,6 +295,19 @@ const mountWithUiStubs = (component: Component) =>
   });
 
 describe("ChatPanel", () => {
+  it("offers a saved-evidence follow-up without asking to rerun the current workflow", async () => {
+    mocks.appMode.value = "enterprise";
+    mocks.featureFlags.sherpaAdvisor = true;
+    mocks.route.query = {tab:"sherpa"};
+    mocks.workflowStore.workflowId = 5;
+    mocks.workflowStore.lastExecutionResults = {};
+    mocks.sherpaStore.diagnosticScope = { project_id:42, model_kind:"pca", reference:{workflow_id:5,run_id:77,node_id:"pca",graph_digest:"a".repeat(64),source_digest:"b".repeat(64),review_revision:3,selected_ids:["a"],select_all:false,response_index:0,variable_ids:[],baseline_run_id:null} };
+    const wrapper=mountWithUiStubs(ChatPanel);await flushPromises();
+    expect(wrapper.find('input[placeholder="Ask a follow-up about this saved diagnostic evidence..."]').exists()).toBe(true);
+    expect(wrapper.get('[aria-label="Diagnostic discussion scope"]').text()).toContain("1 selected observation");
+    expect(wrapper.get('[aria-label="Diagnostic discussion scope"]').text()).not.toContain("Response");
+    wrapper.unmount();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     Object.assign(mocks, {
@@ -304,7 +321,7 @@ describe("ChatPanel", () => {
     mocks.isDemoMode.value = false;
     mocks.featureFlags.chatAssistant = false;
     mocks.featureFlags.sherpaAdvisor = false;
-    mocks.featureFlags.sherpaAgenticTools = false;
+    mocks.featureFlags.sherpaWorkflowGenerationRun = false;
     mocks.apiGet.mockImplementation((url: string) => {
       if (url === "/egress/defaults") {
         return Promise.resolve({ data: { allow_llm_chat: true } });
@@ -318,6 +335,7 @@ describe("ChatPanel", () => {
     mocks.llmStore.conversations = [];
     mocks.llmStore.loading = false;
     mocks.llmStore.streaming = false;
+    mocks.sherpaStore.diagnosticScope = null;
     mocks.sherpaStore.messages = [];
     mocks.sherpaStore.conversations = [];
     mocks.sherpaStore.currentConversationId = null;
@@ -730,7 +748,7 @@ describe("ChatPanel", () => {
     mocks.appConfig.value = { subscription: { plan: "demo" } };
     mocks.featureFlags.chatAssistant = true;
     mocks.featureFlags.sherpaAdvisor = true;
-    mocks.featureFlags.sherpaAgenticTools = true;
+    mocks.featureFlags.sherpaWorkflowGenerationRun = true;
     mocks.workflowStore.workflowId = 12;
 
     const wrapper = mountWithUiStubs(ChatPanel);
@@ -756,7 +774,7 @@ describe("ChatPanel", () => {
     mocks.appConfig.value = { subscription: { plan: "demo" } };
     mocks.featureFlags.chatAssistant = true;
     mocks.featureFlags.sherpaAdvisor = true;
-    mocks.featureFlags.sherpaAgenticTools = true;
+    mocks.featureFlags.sherpaWorkflowGenerationRun = true;
     mocks.workflowStore.workflowId = 12;
 
     const wrapper = mountWithUiStubs(ChatPanel);

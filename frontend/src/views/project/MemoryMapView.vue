@@ -98,7 +98,7 @@
                 class="node-badge node-badge-muted"
                 :title="`Last compaction: ${formatTimestamp(node.badges.last_compaction_at)}`"
               >
-                <i class="pi pi-clock"></i> {{ formatRelative(node.badges.last_compaction_at) }}
+                <i class="pi pi-clock"></i> <RelativeTime :value="node.badges.last_compaction_at" />
               </span>
               <span
                 v-if="node.badges.stale_descendant_count > 0"
@@ -127,6 +127,8 @@
 </template>
 
 <script setup lang="ts">
+import RelativeTime from "@/components/RelativeTime.vue";
+import { formatTimestamp } from "@/utils/format";
 import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import Button from "primevue/button";
@@ -229,28 +231,6 @@ function formatSubscope(key: string): string {
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
-function formatTimestamp(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
-}
-
-function formatRelative(iso: string): string {
-  try {
-    const then = new Date(iso).getTime();
-    const now = Date.now();
-    const ms = now - then;
-    if (ms < 60_000) return "just now";
-    if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-    if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
-    return `${Math.floor(ms / 86_400_000)}d ago`;
-  } catch {
-    return iso;
-  }
-}
-
 let requestSequence = 0;
 async function reload(projectIdOverride: number | null = null): Promise<void> {
   const id = projectIdOverride ?? projectId.value;
@@ -314,10 +294,10 @@ onMounted(() => {
 .loading-state {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  justify-content: flex-start;
   padding: 64px 16px;
-  text-align: center;
+  text-align: left;
   color: var(--text-color-secondary, #667085);
 }
 

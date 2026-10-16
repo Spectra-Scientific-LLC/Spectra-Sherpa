@@ -1,4 +1,4 @@
-import { matrixColorEncoding, encodingAnnotation, scoreGeometry, scoreOrientationNotice, componentOrientationNotice, componentPercent, scientificNumber } from "@/utils/scientificEncoding";
+import { matrixColorEncoding, scoreGeometry, componentPercent, scientificNumber } from "@/utils/scientificEncoding";
 import { projectActiveSpectralCohort } from "@/utils/scientificCohort";
 import { refusedScientificPlot } from "@/utils/scientificPlotState";
 import { numericTableColumns, numericTableColumnPlot } from "@/utils/numericTablePlot";
@@ -51,6 +51,7 @@ import {
 import {
   normalizeSampleLabel,
 } from "@/utils/sampleLabels";
+import { buildMetadataLineTraces, buildMetadataScoreTraces, datasetMetadataGroupingState } from "@/utils/sampleMetadataGrouping";
 
 // ============================================================================
 // Constants
@@ -165,11 +166,6 @@ const definedMetadata = definedScientificMetadata;
 const portMetadata = scientificPortMetadata;
 const exactFeatureLabels = exactScientificFeatureLabels;
 
-function formatHoldoutMetric(value: unknown, digits = 3): string {
-  const n = Number(value);
-  return Number.isFinite(n) ? scientificNumber(n, { decimalPlaces: digits }) : "n/a";
-}
-
 function scientificDimensionLabel(role: unknown, fallback: string): string {
   if (typeof role !== "string" || !role.trim()) return fallback;
   const labels: Record<string, string> = {
@@ -186,23 +182,6 @@ function scientificDimensionLabel(role: unknown, fallback: string): string {
     predicted_class: "prediction-class columns",
   };
   return labels[role] || role.replace(/_/g, " ");
-}
-
-function holdoutSplitSummary(viz: Record<string, unknown>): string {
-  const metadata = (viz.metadata as Record<string, any> | undefined) ?? {};
-  const train = metadata.train ?? {};
-  const test = metadata.test ?? {};
-  const r2Train = metadata.r2_train ?? train.R2;
-  const rmseTrain = metadata.rmse_train ?? train.RMSE;
-  const r2Test = metadata.r2_test ?? metadata.r2 ?? test.R2;
-  const rmseTest = metadata.rmse_test ?? metadata.rmse ?? test.RMSE;
-  if (r2Train === undefined && rmseTrain === undefined) {
-    return `Test R²=${formatHoldoutMetric(r2Test)} · RMSE=${formatHoldoutMetric(rmseTest)}`;
-  }
-  return [
-    `Train R²=${formatHoldoutMetric(r2Train)} · RMSE=${formatHoldoutMetric(rmseTrain)}`,
-    `Test R²=${formatHoldoutMetric(r2Test)} · RMSE=${formatHoldoutMetric(rmseTest)}`,
-  ].join("    ");
 }
 
 // ============================================================================
@@ -338,8 +317,6 @@ function scoresLayout(
   const layout: Record<string, any> = {
     ...BASE_PLOT_LAYOUT,
     showlegend: hasCat,
-    annotations: [encodingAnnotation(scoreOrientationNotice)],
-    margin: {...BASE_PLOT_LAYOUT.margin, t:85},
     xaxis: { ...BASE_PLOT_LAYOUT.xaxis, title: pcLabels[xAxis] || `${componentPrefix}${xAxis + 1}` },
     yaxis: { ...BASE_PLOT_LAYOUT.yaxis, title: pcLabels[yAxis] || `${componentPrefix}${yAxis + 1}`, ...scoreGeometry },
   };
@@ -394,8 +371,7 @@ function loadingsLayout(metadata: any, portPayload?: any): Record<string, any> {
     ...(namedFeatureAxis
       ? { margin: { ...(BASE_PLOT_LAYOUT.margin || {}), b: 150 } }
       : {}),
-    annotations: [encodingAnnotation(componentOrientationNotice)],
-    margin: { ...BASE_PLOT_LAYOUT.margin, t:95, ...(namedFeatureAxis ? {b:150} : {}) },
+    margin: { ...BASE_PLOT_LAYOUT.margin, ...(namedFeatureAxis ? {b:150} : {}) },
     showlegend: true,
     legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
     xaxis: {
@@ -578,11 +554,34 @@ function buildSpectraOverlayPlot(output: any) {
     return refuse("Sample labels do not match the retained result rows.");
   }
   const labels = getLabelArray(sourceLabels, matrix.length, "Spectrum");
+  const plottedSeries = (values: number[]) => {
+    const coordinates = wavenumbers.map(Number);
+    if (coordinates.length !== values.length || coordinates.some((value: number) => !Number.isFinite(value)))
+      return { x: wavenumbers, y: values };
+    const diagnostics = metadata.diagnostics ?? metadata.clip_range_diagnostics ?? {};
+    const lower = Number(diagnostics.minimum);
+    const upper = Number(diagnostics.maximum);
+    const explicitGap = diagnostics.exclude_range === true && Number.isFinite(lower) && Number.isFinite(upper);
+    const steps = coordinates.slice(1).map((value: number, index: number) => Math.abs(value - coordinates[index]));
+    const sortedSteps = [...steps].filter((value: number) => value > 0).sort((a: number, b: number) => a - b);
+    const typicalStep = sortedSteps.length >= 2 ? sortedSteps[Math.floor((sortedSteps.length - 1) / 2)] : null;
+    const x: Array<number | null> = [], y: Array<number | null> = [];
+    for (let index = 0; index < coordinates.length; index++) {
+      if (index > 0) {
+        const previous = coordinates[index - 1], current = coordinates[index];
+        const crossesRemovedRange = explicitGap &&
+          ((previous < lower && current > upper) || (current < lower && previous > upper));
+        const discontinuity = typicalStep != null && Math.abs(current - previous) > typicalStep * 5;
+        if (crossesRemovedRange || discontinuity) { x.push(null); y.push(null); }
+      }
+      x.push(coordinates[index]); y.push(values[index]);
+    }
+    return { x, y };
+  };
   const data = chosen.map((index: number) => ({
     type: "scatter",
     mode: "lines",
-    x: wavenumbers,
-    y: matrix[index],
+    ...plottedSeries(matrix[index]),
     name: labels[index],
     meta: { source_row_index: index, sample_label: sourceLabels?.[index] ?? null },
     line: { width: 1.5 }, opacity: 0.8,
@@ -602,7 +601,7 @@ function buildSpectraOverlayPlot(output: any) {
     };
     layout.meta = { display_population: population };
     layout.title = {
-      text: `Spectral overlay<br><sup>First ${data.length} of ${active.length} active result rows; ${excluded} excluded of ${matrix.length} retained</sup>`,
+      text: "Spectral overlay",
     };
   }
   return { data, layout };
@@ -912,9 +911,12 @@ function statsMeanStdLayout(): Record<string, any> {
 // Preprocessing comparison (independent axes and populations in stacked panels)
 // ============================================================================
 
-function preprocessingComparison(input: any, output: any, heatmap: boolean) {
+function preprocessingComparison(input: any, output: any, heatmap: boolean, colorField: string, styleField: string) {
   const panel = (source: any, sourceLabel: string): { data: any[]; layout: Record<string, any>; notice: string } => {
-    const value = source?.presentation_value ?? resolvePortPayload(source);
+    const primary = source?.primary_port;
+    const value = source?.presentation_value ??
+      (typeof primary === "string" ? resolvePortPayload(source?.ports?.[primary]) : null) ??
+      resolvePortPayload(source);
     const data = value?.data ?? source?.data;
     if (!Array.isArray(data?.[0])) return { data: [], layout: {}, notice: `Comparison unavailable: ${sourceLabel} was not retained or is not available.` };
     const projected = projectActiveSpectralCohort({
@@ -925,9 +927,20 @@ function preprocessingComparison(input: any, output: any, heatmap: boolean) {
     });
     if (projected.error) return { data: [], layout: {}, notice: projected.error };
     const result = projected.output;
-    const plot = heatmap
+    let plot = heatmap
       ? { data: buildHeatmapTraces(result), layout: heatmapLayout(result.metadata) }
       : buildSpectraOverlayPlot(result);
+    if (!heatmap && plot.data.length) {
+      const grouping = datasetMetadataGroupingState(result.presentation_value, result.data.length);
+      if (grouping.kind === "valid" && grouping.colorOptions.length) {
+        // Keep the plotted x/y arrays intact: they may contain null separators
+        // for an excluded spectral interval. Only transfer row-aligned style.
+        const styleTraces = buildMetadataLineTraces([], result.data, grouping, colorField, styleField);
+        plot = { ...plot, data: plot.data.map((trace: any, index: number) => ({
+          ...trace, line: { ...trace.line, ...(styleTraces[index]?.line as object || {}) },
+        })) };
+      }
+    }
     const color = heatmap ? matrixColorEncoding(result.data, result.metadata.value_semantics) : null;
     const refusal = color?.error ?? plot.layout.meta?.refusal_reason;
     if (refusal) return { data: [], layout: plot.layout, notice: refusal };
@@ -958,8 +971,8 @@ function preprocessingComparison(input: any, output: any, heatmap: boolean) {
   const scaleNotice = heatmap
     ? "Panels use independent axes and color scales; matching colors do not imply equal values."
     : "Panels use independent axes; matching heights do not imply equal values.";
-  const annotations = [original, processed].map((p, i) => ({
-    text: `<b>${i === 0 ? "Original (immediate node input)" : "Preprocessed"}</b><br><sup>${p.notice}${i === 0 ? `<br>${scaleNotice}` : ""}</sup>`,
+  const annotations = [original, processed].map((_, i) => ({
+    text: i === 0 ? "Original" : "Preprocessed",
     x: 0, y: i === 0 ? 1 : 0.44, xref: "paper", yref: "paper",
     xanchor: "left", yanchor: "bottom", showarrow: false,
   }));
@@ -1051,7 +1064,7 @@ export function useQuickPlotProjection(
 
   const isPCA = computed(() => {
     const identity = projectedPresentationIdentity(nodeOutput.value);
-    if (identity) return ["pca_scores", "pca_loadings", "pca_explained_variance", "t2_q_diagnostics"].includes(identity.kind);
+    if (identity) return ["pca_scores", "pca_loadings", "pca_variable_correlations", "pca_explained_variance", "t2_q_diagnostics"].includes(identity.kind);
     const metadata = nodeOutput.value?.metadata || {};
     return nodeType.value === "model.pca" || metadata.type === "PCA" || metadata.isPCA === true;
   });
@@ -1168,7 +1181,7 @@ export function useQuickPlotProjection(
     const componentLabels = metadata.pc_labels || metadata.component_labels || [];
     const projectedMatrix = numericMatrix(nodeOutput.value);
     const n = componentLabels.length || metadata.n_components || projectedMatrix?.[0]?.length || 1;
-    const variance = kind === "pca_scores"
+    const variance = kind === "pca_scores" || kind === "pca_variable_correlations"
       ? metadata.explained_variance_ratio || metadata.diagnostics?.explained_variance_ratio || []
       : metadata.x_explained_variance || metadata.diagnostics?.x_explained_variance || [];
     return Array.from({ length: n }, (_, i) => {
@@ -1243,7 +1256,9 @@ export function useQuickPlotProjection(
   const sharedOutput = computed(() => nodeOutput.value
     ? { ...nodeOutput.value, metadata: plotMetadata.value }
     : null);
-  const { projectPlot, metadataGroupingError: coreMetadataGroupingError } = useScientificPlotProjectionCore({
+  const sampleColorField = selection?.sampleColorField ?? ref("");
+  const sampleSymbolField = selection?.sampleSymbolField ?? ref("");
+  const { projectPlot, sampleColorFieldOptions, sampleSymbolFieldOptions, metadataGroupingError: coreMetadataGroupingError } = useScientificPlotProjectionCore({
     nodeOutput: sharedOutput,
     nodeType,
     nodeTypeKey: nodeType,
@@ -1252,8 +1267,8 @@ export function useQuickPlotProjection(
     pcaXAxis: xAxis,
     pcaYAxis: yAxis,
     scoreColorMode: selection?.scoreColorMode ?? ref("auto"),
-    sampleColorField: selection?.sampleColorField ?? ref(""),
-    sampleSymbolField: selection?.sampleSymbolField ?? ref(""),
+    sampleColorField,
+    sampleSymbolField,
     selectedFeatureScale: selection?.selectedFeatureScale ?? ref("__primary__"),
     selectedFeatureLabels: selection?.selectedFeatureLabels ?? ref("__primary__"),
     selectedFeatureTitle: selection?.selectedFeatureTitle ?? ref("__primary__"),
@@ -1489,7 +1504,7 @@ export function useQuickPlotProjection(
 
   const showAxisControls = computed(() => {
     const key = selectedPlotKey.value;
-    return key === "scientific_pca_scores" || key === "scientific_pls_scores" || key === "scientific_plsda_scores" ||
+    return key === "scientific_pca_summary" || key === "scientific_pca_scores" || key === "scientific_pca_variable_correlations" || key === "scientific_pls_scores" || key === "scientific_plsda_scores" ||
       key === "pca_scores" || key === "pca_biplot" || key === "pca_diagnostics" ||
       key === "pls_scores" || key === "classification_scores";
   });
@@ -1512,6 +1527,13 @@ export function useQuickPlotProjection(
     const key = selectedPlotKey.value;
     const sharedPlot = projectPlot(key);
     if (sharedPlot) return sharedPlot;
+
+    if (key === "scientific_spectral_overlay" &&
+        metadata.scientific_matrix_role !== "component_concentrations" &&
+        sampleColorFieldOptions.value.length > 0) {
+      const styled = projectPlot(isFeatureRole(metadata, output.presentation_value) ? "generic_boxplot" : "spectra_overlay");
+      if (styled?.data.length) return styled;
+    }
 
     if (key.startsWith("table_column:")) {
       const plotted = numericTableColumnPlot(output, Number(key.slice("table_column:".length)));
@@ -1545,9 +1567,22 @@ export function useQuickPlotProjection(
           ...metadata,
           pc_labels: axisOptions.value.map((option) => option.label),
         };
+        const scores = numericMatrix(output) || [];
+        const grouping = datasetMetadataGroupingState(resolvePortPayload(output.presentation_value), scores.length);
+        if (grouping.kind === "valid" && grouping.colorOptions.length > 0) {
+          return {
+            data: buildMetadataScoreTraces(
+              scores, grouping, sampleColorField.value, sampleSymbolField.value,
+              xAxis.value, yAxis.value,
+              axisOptions.value[xAxis.value]?.label || `LV${xAxis.value + 1}`,
+              axisOptions.value[yAxis.value]?.label || `LV${yAxis.value + 1}`,
+            ),
+            layout: scoresLayout(metadataWithLabels, xAxis.value, yAxis.value, "LV"),
+          };
+        }
         return {
           data: buildScoresTraces(
-            numericMatrix(output) || [],
+            scores,
             metadataWithLabels,
             xAxis.value,
             yAxis.value,
@@ -1900,7 +1935,8 @@ export function useQuickPlotProjection(
             data: traces,
             layout: {
               ...BASE_PLOT_LAYOUT,
-              title: { text: `${titleText}<br><sup>${holdoutSplitSummary(vizObj)}</sup>`, font: { color: "#e2e8f0", size: 14 } },
+              meta: { evaluation_metrics: vizObj.metadata ?? {} },
+              title: { text: titleText, font: { color: "#e2e8f0", size: 14 } },
               margin: { ...BASE_PLOT_LAYOUT.margin, t: 66 },
               xaxis: { title: "Actual", color: "#94a3b8" },
               yaxis: { title: yTitle, color: "#94a3b8" },
@@ -1942,7 +1978,8 @@ export function useQuickPlotProjection(
           data: traces,
           layout: {
             ...BASE_PLOT_LAYOUT,
-            title: { text: `${titleText}<br><sup>${holdoutSplitSummary(vizObj)}</sup>`, font: { color: "#e2e8f0", size: 14 } },
+            meta: { evaluation_metrics: vizObj.metadata ?? {} },
+            title: { text: titleText, font: { color: "#e2e8f0", size: 14 } },
             margin: { ...BASE_PLOT_LAYOUT.margin, t: 66 },
             xaxis: { title: "Actual", color: "#94a3b8" },
             yaxis: { title: yTitle, color: "#94a3b8" },
@@ -2311,14 +2348,15 @@ export function useQuickPlotProjection(
 
   const plotResult = computed<{data:any[];layout:Record<string,any>}>(() => {
     if (isPreprocessNode.value && ["spectra_overlay", "spectra_heatmap"].includes(selectedPlotKey.value)) {
-      return preprocessingComparison(primaryInput.value, retainedNodeOutput.value, selectedPlotKey.value === "spectra_heatmap");
+      return preprocessingComparison(primaryInput.value, retainedNodeOutput.value,
+        selectedPlotKey.value === "spectra_heatmap", sampleColorField.value, sampleSymbolField.value);
     }
     if (cohort.value.error) return refusedScientificPlot(cohort.value.error, BASE_PLOT_LAYOUT);
     let plot = rawPlotResult.value;
     if (selectedPlotKey.value === "scientific_spectral_heatmap" || selectedPlotKey.value === "spectra_heatmap") {
       const color = matrixColorEncoding(nodeOutput.value?.data, nodeOutput.value?.metadata?.value_semantics);
       if (color.error) return refusedScientificPlot(color.error, BASE_PLOT_LAYOUT);
-      plot = {...plot,layout:{...plot.layout,annotations:[...(plot.layout.annotations ?? []),encodingAnnotation(color.notice)],margin:{...plot.layout.margin,t:95}}};
+      plot = {...plot,layout:{...plot.layout,meta:{...plot.layout.meta,color_encoding_notice:color.notice}}};
     }
     const population = cohort.value.population;
     if (!population) return plot;
@@ -2326,9 +2364,7 @@ export function useQuickPlotProjection(
     const shown = overlay ? Math.min(50, population.total) : population.total;
     const declared = {...population, shown, source_row_indices: population.source_row_indices.slice(0, shown), sample_labels: nodeOutput.value?.metadata?.sample_labels?.slice(0, shown), method: overlay && shown < population.total ? "first_rows" : "all_active"};
     const data = overlay ? plot.data.map((trace:any) => ({...trace,meta:{...trace.meta,source_row_index: population.source_row_indices[trace.meta?.source_row_index]}})) : plot.data;
-    return {data,layout:{...plot.layout,meta:{...plot.layout.meta,display_population:declared},
-      title:{text:`Active cohort: ${shown} of ${population.total} rows; ${population.excluded} excluded of ${population.available} retained<br><sup>${population.shown_features} of ${population.available_features} features; ${population.excluded_features} excluded</sup>`},
-      margin:{...plot.layout.margin,t:85}}};
+    return {data,layout:{...plot.layout,meta:{...plot.layout.meta,display_population:declared}}};
   });
 
   const plotData = computed(() => plotResult.value.data);
@@ -2550,6 +2586,7 @@ export function useQuickPlotProjection(
     showFeatureControls,
     showRegressionTargetControl,
     metadataGroupingError: coreMetadataGroupingError,
+    sampleColorField, sampleSymbolField, sampleColorFieldOptions, sampleSymbolFieldOptions,
 
     // Plot output
     plotData,

@@ -32,6 +32,7 @@ def test_pls_and_evaluator_publish_closed_renderer_neutral_presentations() -> No
         "explained_variance",
         "coefficients",
         "model",
+        "component_selection",
     }
     assert {item.presentation_id: item.kind for item in pls.presentations} == {
         "calibration_fit": "regression_comparison",
@@ -41,6 +42,7 @@ def test_pls_and_evaluator_publish_closed_renderer_neutral_presentations() -> No
         "explained_variance": "pls_explained_variance",
         "coefficients": "regression_coefficients",
         "model": "model_summary",
+        "component_selection": "validation_result",
     }
     assert evaluator is not None
     assert evaluator.default_presentation == "held_out_comparison"
@@ -63,18 +65,21 @@ def test_plsda_leads_one_curated_classification_fit_contract() -> None:
         "class_responses": "classification_responses",
         "metrics": "statistics_summary",
         "model": "classification_model",
+        "component_selection": "validation_result",
     }
 
 
-def test_pca_publishes_scientist_facing_scores_loadings_scree_and_diagnostics() -> None:
+def test_pca_publishes_scores_loadings_correlations_scree_and_diagnostics() -> None:
     pca = node_registry.get_metadata("model.pca").resolved_presentation_contract()
 
     assert pca.default_presentation == "scores"
     assert {item.presentation_id for item in pca.presentations} == {
         "scores",
         "loadings",
+        "variable_correlations",
         "explained_variance",
         "diagnostics",
+        "component_selection",
     }
     assert next(item for item in pca.presentations if item.presentation_id == "explained_variance").label == (
         "Explained Variance (Scree)"
@@ -85,8 +90,10 @@ def test_pca_publishes_scientist_facing_scores_loadings_scree_and_diagnostics() 
     assert {item.presentation_id: item.kind for item in pca.presentations} == {
         "scores": "pca_scores",
         "loadings": "pca_loadings",
+        "variable_correlations": "pca_variable_correlations",
         "explained_variance": "pca_explained_variance",
         "diagnostics": "t2_q_diagnostics",
+        "component_selection": "validation_result",
     }
 
 
@@ -129,7 +136,7 @@ def test_presentation_digest_changes_with_scientist_facing_identity() -> None:
 
 def test_every_builtin_has_one_closed_presentation_authority() -> None:
     metadata_rows = node_registry.list_nodes()
-    assert len(metadata_rows) == 101
+    assert len(metadata_rows) == 103
     for metadata in metadata_rows:
         contract = metadata.resolved_presentation_contract()
         assert contract.presentations, metadata.node_type
@@ -186,8 +193,8 @@ def test_live_presentation_census_matches_checked_authority() -> None:
     checked = json.loads(_PRESENTATION_CENSUS_PATH.read_text(encoding="utf-8"))
 
     assert live == checked
-    assert checked["aggregates"]["registered_nodes"] == 101
-    assert checked["aggregates"]["explicit_contracts"] == 11
+    assert checked["aggregates"]["registered_nodes"] == 103
+    assert checked["aggregates"]["explicit_contracts"] == 13
     assert checked["aggregates"]["derived_contracts"] == 90
     assert all(row["contract"]["presentations"] for row in checked["nodes"])
 

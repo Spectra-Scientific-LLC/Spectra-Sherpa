@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Build and independently validate the Avatar essential-oil distribution.
 
-The raw corpus is a separately licensed data product.  It must never be added
-to the SpectraSherpa wheel or source distribution.  This tool joins the frozen
-scientific authorities to an explicit release authority, produces a
-deterministic ZIP, and then re-admits the resulting bytes before success.
+The corpus is licensed CC BY 4.0, separately from the software.  The exact
+qualified ZIP this tool produces ships inside SpectraSherpa as a default
+dataset (``src/spectra_sherpa/data/reference/``); the raw private inputs never
+do.  This tool joins the frozen scientific authorities to an explicit release
+authority, produces a deterministic ZIP, and then re-admits the resulting
+bytes before success.
 """
 
 from __future__ import annotations

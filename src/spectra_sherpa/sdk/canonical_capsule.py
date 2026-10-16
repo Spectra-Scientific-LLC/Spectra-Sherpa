@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from spectra_sherpa.app.services.dag.managed_optimization_profile import (
+    ManagedOptimizationProfile,
     ManagedOptimizationProfileError,
     managed_optimization_profile,
 )
@@ -105,6 +106,30 @@ class CanonicalWorkflowCapsule:
         full_refit_evidence: Mapping[str, Any] | object | None = None,
     ) -> "CanonicalWorkflowCapsule":
         """Build a capsule from the managed boundary's already-admitted data."""
+        return cls._from_request(
+            admitted_request, execution_evidence, full_refit_evidence=full_refit_evidence, require_live_runtime=True
+        )
+
+    @classmethod
+    def from_recorded_request(
+        cls, admitted_request, execution_evidence, *, historical_context, full_refit_evidence=None
+    ) -> "CanonicalWorkflowCapsule":
+        """Assemble retained evidence under the exact packaged predecessor."""
+        from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
+
+        if type(historical_context) is not HistoricalReconstructionContext:
+            raise CanonicalWorkflowCapsuleError("recorded capsule requires the packaged historical context")
+        historical_context.require_profile(admitted_request["profile"])
+        graph = _validate_admitted_request(admitted_request, require_live_runtime=False)
+        historical_context.require_historical_graph(graph)
+        return cls._from_request(
+            admitted_request, execution_evidence, full_refit_evidence=full_refit_evidence, require_live_runtime=False
+        )
+
+    @classmethod
+    def _from_request(
+        cls, admitted_request, execution_evidence, *, full_refit_evidence, require_live_runtime
+    ) -> "CanonicalWorkflowCapsule":
 
         if isinstance(execution_evidence, Mapping):
             evidence_payload = deepcopy(dict(execution_evidence))
@@ -133,7 +158,7 @@ class CanonicalWorkflowCapsule:
                 "execution_evidence": evidence_payload,
                 "application_refit": refit_payload,
             },
-            require_live_runtime=True,
+            require_live_runtime=require_live_runtime,
         )
 
     @classmethod
@@ -178,9 +203,20 @@ class CanonicalWorkflowCapsule:
         _require_closed_mapping(payload, _CAPSULE_FIELDS, "canonical workflow capsule")
         request = _mapping(payload["admitted_request"], "admitted_request")
         graph = _validate_admitted_request(request, require_live_runtime=require_live_runtime)
+        from spectra_sherpa.app.services.dag.historical_contracts import (
+            HistoricalReconstructionContext,
+            HistoricalValidationGraph,
+        )
+
+        historical_context = (
+            HistoricalReconstructionContext(request["profile"]["profile_digest"])
+            if isinstance(graph, HistoricalValidationGraph)
+            else None
+        )
         try:
             evidence = CanonicalExecutionEvidence.from_dict(
-                _mapping(payload["execution_evidence"], "execution_evidence")
+                _mapping(payload["execution_evidence"], "execution_evidence"),
+                historical_context=historical_context,
             )
         except CanonicalExecutionEvidenceError as exc:
             raise CanonicalWorkflowCapsuleError("canonical workflow capsule execution evidence is invalid") from exc
@@ -261,16 +297,30 @@ def _validate_admitted_request(
     _require_closed_mapping(
         profile, {"profile_id", "profile_version", "profile_digest"}, "managed optimization profile"
     )
+    admitted_profile = _MANAGED_OPTIMIZATION_PROFILE
+    historical_context = None
     if profile != {
         "profile_id": _MANAGED_OPTIMIZATION_PROFILE.profile_id,
         "profile_version": _MANAGED_OPTIMIZATION_PROFILE.profile_version,
         "profile_digest": _MANAGED_OPTIMIZATION_PROFILE.digest,
     }:
-        raise CanonicalWorkflowCapsuleError("admitted canonical request profile is not locally recognized")
+        if require_live_runtime:
+            raise CanonicalWorkflowCapsuleError("admitted canonical request profile is not locally recognized")
+        # Capsule reading is explicitly non-executing. Recognize only the
+        # packaged predecessor authority, never arbitrary embedded contracts.
+        from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
+
+        historical_context = HistoricalReconstructionContext(profile["profile_digest"])
+        try:
+            admitted_profile = historical_context.require_profile(profile)
+        except ValidationGraphError as exc:
+            raise CanonicalWorkflowCapsuleError("admitted canonical request profile is not locally recognized") from exc
     try:
-        graph = validation_graph_from_dict(
-            _mapping(request["graph"], "admitted_request.graph"),
-            require_live_runtime=require_live_runtime,
+        graph_payload = _mapping(request["graph"], "admitted_request.graph")
+        graph = (
+            historical_context.graph(graph_payload)
+            if historical_context is not None
+            else validation_graph_from_dict(graph_payload, require_live_runtime=require_live_runtime)
         )
     except ValidationGraphError as exc:
         raise CanonicalWorkflowCapsuleError("admitted canonical request graph failed local re-admission") from exc
@@ -285,7 +335,7 @@ def _validate_admitted_request(
         graph_digest=graph.digest,
     )
     _validate_resource_envelope(request["resources"])
-    _validate_runtime(request["runtime_attestation"], graph)
+    _validate_runtime(request["runtime_attestation"], graph, admitted_profile)
     return graph
 
 
@@ -486,7 +536,7 @@ def _validate_resource_envelope(value: Any) -> None:
         _bounded_int(resources[field], field, lower, upper)
 
 
-def _validate_runtime(value: Any, graph: ValidationGraph) -> None:
+def _validate_runtime(value: Any, graph: ValidationGraph, profile: ManagedOptimizationProfile) -> None:
     runtime = _mapping(value, "admitted_request.runtime_attestation")
     distributions = runtime.get("distributions")
     if not isinstance(distributions, list):
@@ -501,7 +551,7 @@ def _validate_runtime(value: Any, graph: ValidationGraph) -> None:
             raise CanonicalWorkflowCapsuleError("canonical runtime repeats a distribution")
         versions[requirement["distribution"]] = requirement["version"]
     try:
-        expected = _MANAGED_OPTIMIZATION_PROFILE.runtime_attestation(
+        expected = profile.runtime_attestation(
             tuple(node.operation_id for node in graph.nodes), version_resolver=versions.__getitem__
         ).as_dict()
     except (ManagedOptimizationProfileError, KeyError) as exc:

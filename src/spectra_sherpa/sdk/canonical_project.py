@@ -113,7 +113,8 @@ class CanonicalProjectPackage:
             )
         except LocalModelRecordError as exc:
             raise CanonicalProjectPackageError(
-                "canonical project package local model record does not match its identities"
+                "canonical project package local model record does not match its identities; "
+                "refit and export a new package"
             ) from exc
         if not isinstance(campaign_evidence, CanonicalCampaignEvidence):
             raise CanonicalProjectPackageError("canonical project package campaign evidence is invalid")
@@ -221,8 +222,22 @@ class CanonicalProjectPackage:
                         artifact=artifact,
                         application_plan=application_plan,
                     )
+                    from spectra_sherpa.app.services.dag.historical_contracts import (
+                        HistoricalReconstructionContext,
+                        HistoricalValidationGraph,
+                    )
+
+                    history = (
+                        {
+                            "historical_context": HistoricalReconstructionContext(
+                                capsule.as_dict()["admitted_request"]["profile"]["profile_digest"]
+                            )
+                        }
+                        if type(capsule.graph) is HistoricalValidationGraph
+                        else {}
+                    )
                     campaign_evidence = CanonicalCampaignEvidence.from_dict(
-                        _read_json_object(zf, _CAMPAIGN_EVIDENCE_MEMBER, "canonical campaign evidence")
+                        _read_json_object(zf, _CAMPAIGN_EVIDENCE_MEMBER, "canonical campaign evidence"), **history
                     )
                     campaign_evidence.require_matches(capsule, artifact, application_plan)
                     local_model_record.require_matches_campaign_evidence(campaign_evidence)
@@ -251,7 +266,10 @@ class CanonicalProjectPackage:
                     LocalModelRecordError,
                     KeyError,
                 ) as exc:
-                    raise CanonicalProjectPackageError("canonical project package identities are invalid") from exc
+                    message = "canonical project package identities are invalid"
+                    if isinstance(exc, CanonicalApplicationPlanError) and "refit" in str(exc):
+                        message += "; refit and export a new package"
+                    raise CanonicalProjectPackageError(message) from exc
                 _validate_project_payload(
                     project,
                     application_plan,

@@ -89,7 +89,7 @@ def test_clip_range_admission_preserves_exact_current_parameters() -> None:
         "range",
         {"minimum": 800, "maximum": 1600},
     )
-    assert node.parameters == {"minimum": 800.0, "maximum": 1600.0}
+    assert node.parameters == {"minimum": 800.0, "maximum": 1600.0, "exclude_range": False}
 
 
 @pytest.mark.parametrize(
@@ -100,6 +100,7 @@ def test_clip_range_admission_preserves_exact_current_parameters() -> None:
         {"minimum": 800, "maximum": 800},
         {"minimum": True, "maximum": 1600},
         {"minimum": 800, "maximum": float("inf")},
+        {"minimum": 800, "maximum": 1600, "exclude_range": "yes"},
         {"min_wavenumber": 800, "max_wavenumber": 1600},
     ],
 )
@@ -113,7 +114,7 @@ def test_clip_range_rejects_hidden_coerced_reversed_and_retired_parameters(
 def test_clip_range_resolves_declared_defaults_before_exact_admission() -> None:
     node = node_registry.create_node("preprocess.clip_range", "range", {})
 
-    assert node.parameters == {"minimum": 400.0, "maximum": 4000.0}
+    assert node.parameters == {"minimum": 400.0, "maximum": 4000.0, "exclude_range": False}
 
 
 @pytest.mark.parametrize("descending", [False, True])
@@ -130,6 +131,7 @@ def test_clip_range_selects_the_same_inclusive_coordinates_in_both_axis_directio
         "minimum": 800.0,
         "maximum": 1600.0,
         "inclusive_bounds": True,
+        "exclude_range": False,
         "axis_direction": "decreasing" if descending else "increasing",
         "input_features": 5,
         "output_features": 3,
@@ -160,6 +162,15 @@ def test_clip_range_rejects_an_interval_without_features() -> None:
         _clip_range_dispatch(np.array([1.0, 2.0, 3.0]), minimum=4.0, maximum=5.0)
 
 
+def test_clip_range_can_remove_the_selected_interval_without_joining_its_feature_axis() -> None:
+    source = _spectra()
+    node = ClipRangeNode("remove", {"minimum": 800, "maximum": 1600, "exclude_range": True})
+    output = asyncio.run(node.execute(input_data=source)).outputs["default"]
+    np.testing.assert_array_equal(output.feature_axis.values, [400.0, 2000.0])
+    np.testing.assert_array_equal(output.X, source.X[:, [0, 4]])
+    assert output.meta["clip_range_diagnostics"]["exclude_range"] is True
+
+
 def test_live_and_generated_execution_share_data_metadata_diagnostics_and_impact() -> None:
     source = _spectra()
     node = ClipRangeNode("range", {"minimum": 800, "maximum": 1600})
@@ -183,7 +194,7 @@ def test_live_and_generated_execution_share_data_metadata_diagnostics_and_impact
     assert output.units == "absorbance"
     assert output.data_role == "X_spectra"
     assert output.provenance[-1].node_id == "range"
-    assert dict(output.provenance[-1].parameters) == {"minimum": 800.0, "maximum": 1600.0}
+    assert dict(output.provenance[-1].parameters) == {"minimum": 800.0, "maximum": 1600.0, "exclude_range": False}
     assert output.meta["clip_range_diagnostics"] == live.diagnostics
     assert dict(output.provenance[-1].impact or {}) == {
         "schema_version": "spectrasherpa-preprocess-clip-range-impact/1",
@@ -284,6 +295,6 @@ def test_templates_and_runtime_have_no_retired_range_parameter_surface() -> None
     assert not cleaning_source.exists()
     assert not retired_builder_preprocessing.exists()
     defaults = {parameter.name: parameter.default for parameter in ClipRangeNode.metadata.parameters}
-    assert defaults == {"minimum": 400, "maximum": 4000}
+    assert defaults == {"minimum": 400, "maximum": 4000, "exclude_range": False}
     assert "workflowStore.getNodeMetadata(nodeType)?.parameters" in workflow_builder_source
     assert '"preprocess.clip_range": { min_wavenumber:' not in workflow_builder_source

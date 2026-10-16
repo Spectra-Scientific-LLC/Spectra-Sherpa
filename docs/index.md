@@ -10,9 +10,10 @@ SpectraSherpa is a free open-source spectroscopy workbench for building reproduc
 
 | Goal | Start Here |
 | --- | --- |
-| Install and run on your computer | [10 Minutes to Local Compute](onboarding/local-30-minutes.md) |
+| Install and run on your computer | [Local onboarding](onboarding/local-30-minutes.md) |
 | Bring in your first dataset | [Import Your First Dataset](onboarding/import-first-dataset.md) |
-| Compare cloud and local OSS | [Cloud vs Local OSS](introduction/cloud-vs-local.md) |
+| Walk through a full calibration | [Your First Calibration](onboarding/first-calibration.md) |
+| Compare cloud and local OSS | [Demo, Pro and local OSS](introduction/cloud-vs-local.md) |
 | Check supported formats | [Supported File Types](introduction/file-types.md) |
 | See what is built today | [Current Capabilities](introduction/capabilities.md) |
 | Contribute a canonical node | [Contributing](developers/contributing.md) and [Developer Setup](developers/setup.md) |
@@ -20,7 +21,8 @@ SpectraSherpa is a free open-source spectroscopy workbench for building reproduc
 ## Two Ways to Run
 
 - **Local OSS** runs on your own machine with no login. You can inspect and modify the source, load your own data without hosted demo limits, and add optional extras for specialized algorithms, reference data, or HITRAN/HAPI synthesis.
-- **SpectraSherpa Cloud** is the hosted enterprise/demo experience. It adds managed accounts, demo policy, Sherpa Advisor, and Ambient Guidance for users who want to evaluate the workflow in a browser.
+- **Demo and Pro** are hosted offerings with managed accounts, profile policy,
+  Sherpa Advisor, and Ambient Guidance. Enterprise is an internal runtime mode.
 
 ## What Is Built Today
 

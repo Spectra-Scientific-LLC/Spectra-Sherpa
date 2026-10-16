@@ -11,7 +11,12 @@ import yaml
 import spectra_sherpa.app.services.dag.nodes  # noqa: F401 - register built-ins
 from spectra_sherpa.app.lib.export_artifact import build_export_artifact
 from spectra_sherpa.app.lib.io import load_canonical_file_as_sherpa
-from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset, SpectralAxis
+from spectra_sherpa.app.lib.reference_value_evidence import (
+    ReferenceValueDeclaration,
+    bound_reference_value_evidence,
+    reference_value_evidence,
+)
+from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset, SpectralAxis, TargetContext
 from spectra_sherpa.app.services.dag.node_base import node_registry
 from spectra_sherpa.app.services.dag.nodes.data.sample_table import (
     SAMPLE_TABLE_SCHEMA_VERSION,
@@ -107,6 +112,171 @@ def test_dataset_analysis_binding_requires_exact_csv_source_identity(tmp_path: P
             load_source=lambda _: _spectra(file_id=41),
             experiment_root=tmp_path,
         )
+
+
+def test_reference_declaration_rejects_unit_conflict_and_flags_unverified_replicates(tmp_path: Path) -> None:
+    source_path = tmp_path / "source.npz"
+    source_path.write_bytes(b"source")
+    table_path = _write_table(tmp_path / "samples.csv")
+    source = type("SourceFile", (), {"id": 41, "experiment_id": 7, "file_path": source_path.name, "created_at": None})()
+    table = type("TableFile", (), {"id": 73, "experiment_id": 7, "file_path": table_path.name})()
+    declaration = ReferenceValueDeclaration.model_validate(
+        {
+            "target_name": "moisture",
+            "target_type": "continuous",
+            "units": "wt %",
+            "method": {
+                "method_id": "oven-dry",
+                "version": "2",
+                "response_identity": {"names": ["moisture"], "units": ["wt %"]},
+                "measurement_basis": "replicate_mean",
+                "measurements_per_label": 3,
+            },
+        }
+    )
+    summary = reference_value_evidence(
+        declaration,
+        source_file_id=41,
+        sample_table_file_id=73,
+        table_sha256="a" * 64,
+        target_name="moisture",
+        target_type="continuous",
+        source_included_count=2,
+        missing_excluded_count=1,
+    )
+    assert summary["missing_excluded_count"] == 1
+    assert any("Replicate-to-specimen mapping" in gap for gap in summary["qualification_gaps"])
+    with pytest.raises(ValueError, match="response name and units"):
+        ReferenceValueDeclaration.model_validate(
+            {
+                **declaration.model_dump(),
+                "method": {
+                    **declaration.method.model_dump(),
+                    "response_identity": {"names": ["moisture"], "units": ["mg/L"]},
+                },
+            }
+        )
+
+    def source_with_other_units(_: Path) -> SherpaDataset:
+        dataset = _spectra()
+        dataset.target_context = TargetContext(
+            target_type="continuous", target_name="moisture", target_names=["moisture"], target_units="mg/L"
+        )
+        return dataset
+
+    with pytest.raises(ValueError, match="units differ"):
+        validate_analysis_binding(
+            source_file=source,
+            sample_table_file=table,
+            selected_target="moisture",
+            target_type="continuous",
+            reference_declaration=declaration,
+            load_source=source_with_other_units,
+            experiment_root=tmp_path,
+        )
+
+
+def test_reference_precision_requires_separate_study_provenance_and_stays_unverified() -> None:
+    precision = {
+        "estimator": "pooled_within_specimen_sample_sd",
+        "sd": [0.12],
+        "degrees_of_freedom": 6,
+        "specimens": 3,
+        "replicates_per_specimen": 3,
+        "evidence_digest": "b" * 64,
+    }
+    declaration = {
+        "target_name": "moisture",
+        "target_type": "continuous",
+        "units": "wt %",
+        "method": {
+            "method_id": "oven-dry",
+            "version": "2",
+            "response_identity": {"names": ["moisture"], "units": ["wt %"]},
+            "measurement_basis": "single_measurement",
+            "measurements_per_label": 1,
+            "precision": precision,
+        },
+    }
+    with pytest.raises(ValueError, match="study provenance"):
+        ReferenceValueDeclaration.model_validate(declaration)
+    admitted = ReferenceValueDeclaration.model_validate(
+        {
+            **declaration,
+            "precision_study_provenance": "Independent lab repeatability study L-9",
+        }
+    )
+    evidence = reference_value_evidence(
+        admitted,
+        source_file_id=1,
+        sample_table_file_id=2,
+        table_sha256="a" * 64,
+        target_name="moisture",
+        target_type="continuous",
+        source_included_count=12,
+        missing_excluded_count=0,
+    )
+    assert evidence["source_included_count"] == 12
+    assert evidence["precision_study_provenance"] == "Independent lab repeatability study L-9"
+    assert any("not been independently verified" in gap for gap in evidence["qualification_gaps"])
+    assert evidence["instrument_repeatability"] is None
+
+
+def test_categorical_reference_cannot_claim_a_mean_of_labels() -> None:
+    with pytest.raises(ValueError, match="Categorical labels cannot be represented as a mean"):
+        ReferenceValueDeclaration.model_validate(
+            {
+                "target_name": "class",
+                "target_type": "categorical",
+                "method": {
+                    "method_id": "visual-grade",
+                    "version": "1",
+                    "response_identity": {"names": ["class"], "units": [None]},
+                    "measurement_basis": "replicate_mean",
+                    "measurements_per_label": 2,
+                },
+            }
+        )
+
+
+def test_reference_evidence_follows_only_matching_bound_response() -> None:
+    dataset = _spectra()
+    dataset.target = np.asarray([1.0, 2.0, 3.0], dtype=float)
+    dataset.target_context = TargetContext(
+        target_type="continuous",
+        target_name="moisture",
+        target_names=["moisture"],
+        selected_target="moisture",
+        target_units="wt %",
+        reference_value_evidence=reference_value_evidence(
+            ReferenceValueDeclaration.model_validate(
+                {
+                    "target_name": "moisture",
+                    "target_type": "continuous",
+                    "units": "wt %",
+                }
+            ),
+            source_file_id=1,
+            sample_table_file_id=2,
+            table_sha256="a" * 64,
+            target_name="moisture",
+            target_type="continuous",
+            source_included_count=3,
+            missing_excluded_count=0,
+        ),
+    )
+    assert (
+        bound_reference_value_evidence(
+            dataset, response_names=["moisture"], response_units=["wt %"], target_type="continuous"
+        )
+        is not None
+    )
+    assert (
+        bound_reference_value_evidence(
+            dataset, response_names=["protein"], response_units=["wt %"], target_type="continuous"
+        )
+        is None
+    )
 
 
 def test_sample_table_loader_emits_one_closed_json_safe_value(tmp_path: Path) -> None:

@@ -97,8 +97,8 @@
           >
             {{ getEdgeLabel(edge) }}
             <title>
-              {{ edge.fromPort || "default" }} → {{ edge.toPort || "default" }} · Click to delete
-              this connection
+              {{ edge.fromPort || "default" }} → {{ edge.toPort || "default" }} ·
+              {{ edge.dataType }} · Click to delete this connection
             </title>
           </text>
         </g>
@@ -888,8 +888,14 @@ const edgeEndpoint = (id: string, port: string | undefined, direction: "input" |
   };
   return { x: node.x + offset.x, y: node.y + offset.y };
 };
-const getEdgeLabel = (edge: WorkflowEdge) =>
-  `${edge.fromPort || "default"} · ${edge.dataType || ""}`;
+// Wires read as what flows (the producing port's label, e.g. "Training
+// Spectra"); the exchange type stays in the tooltip for workflow authors.
+const getEdgeLabel = (edge: WorkflowEdge) => {
+  const portName = edge.fromPort || "default";
+  const source = props.nodes.find((node) => node.id === edge.from);
+  const port = source ? getNodeOutputPorts(source.type).find((item) => item.name === portName) : undefined;
+  return port?.label || portName;
+};
 const edgeRoutes = computed(() =>
   routeEdges(
     props.edges.map((edge) => ({

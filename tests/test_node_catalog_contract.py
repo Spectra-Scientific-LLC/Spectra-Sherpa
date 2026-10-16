@@ -53,13 +53,13 @@ def test_builtin_catalog_uses_coherent_scientist_families() -> None:
         "deploy": 3,
         "exploratory": 10,
         "output": 4,
-        "preprocessing": 18,
+        "preprocessing": 19,
         "regression": 12,
         "selection": 11,
         "synthesis": 14,
         "time_series": 2,
         "transfer": 4,
-        "validation": 6,
+        "validation": 7,
     }
     assert set(counts) == CANONICAL_CATALOG_FAMILIES
     assert not ({"custom", "diagnostics", "modeling"} & counts.keys())
@@ -208,7 +208,7 @@ def test_census_classifies_the_entire_catalog_against_the_managed_optimization_p
     assert census["aggregates"]["managed_optimization_profile_eligible"] == len(eligible)
     assert census["aggregates"]["outside_managed_optimization_profile"] == len(rows) - len(eligible)
     assert census["aggregates"]["managed_optimization_profile_eligible"] == 18
-    assert census["aggregates"]["outside_managed_optimization_profile"] == 83
+    assert census["aggregates"]["outside_managed_optimization_profile"] == 85
     assert "diagnostics.labeled_regression_evaluator" in rows.keys() - eligible
     assert census["aggregates"]["managed_optimization_profile_contract_drift"] == 0
     assert census["aggregates"]["contracted_nodes"] == baseline["aggregates"]["contracted_nodes"]

@@ -40,10 +40,28 @@ async def test_stop_is_connection_and_actor_scoped_and_interrupts_provider():
 
 
 @pytest.mark.asyncio
-async def test_heartbeats_do_not_extend_deadline_or_retry_and_stop_after_completion():
+async def test_heartbeats_do_not_extend_deadline_or_retry_and_stop_after_completion(monkeypatch):
     registry = WebSocketActionRegistry()
     calls = 0
     cleaned = asyncio.Event()
+    three_beats = asyncio.Event()
+    deadline_handles = []
+    real_timeout = asyncio.timeout
+
+    def capture_timeout(seconds):
+        handle = real_timeout(seconds)
+        deadline_handles.append((handle, handle.when()))
+        return handle
+
+    monkeypatch.setattr(asyncio, "timeout", capture_timeout)
+    beat_count = 0
+
+    async def record_event(event):
+        nonlocal beat_count
+        if event.get("payload", {}).get("heartbeat"):
+            beat_count += 1
+            if beat_count == 3:
+                three_beats.set()
 
     async def work(ws, *_):
         nonlocal calls
@@ -54,11 +72,21 @@ async def test_heartbeats_do_not_extend_deadline_or_retry_and_stop_after_complet
         finally:
             cleaned.set()
 
-    registry.register("chat", work, request_policy=RequestPolicy(timeout_seconds=0.08, heartbeat_seconds=0.015))
-    socket = SimpleNamespace(send_json=AsyncMock())
+    registry.register("chat", work, request_policy=RequestPolicy(timeout_seconds=60, heartbeat_seconds=0.01))
+    socket = SimpleNamespace(send_json=AsyncMock(side_effect=record_event))
     await registry.dispatch("chat", socket, {"payload": {"request_id": "a"}}, None, None, background=True)
-    await asyncio.wait_for(cleaned.wait(), 1)
-    await asyncio.sleep(0.02)
+    # Synchronize on events instead of assuming a loaded CI runner schedules
+    # three heartbeats inside an 80 ms wall-clock window.
+    await asyncio.wait_for(three_beats.wait(), 5)
+    assert len(deadline_handles) == 1
+    deadline, original_when = deadline_handles[0]
+    assert deadline.when() == original_when
+    assert not cleaned.is_set()
+    task = next(iter(registry.requests.tasks.values()))[1]
+    # Expire the real asyncio deadline after observing the unchanged deadline.
+    deadline.reschedule(asyncio.get_running_loop().time())
+    await asyncio.wait_for(task, 5)
+    assert cleaned.is_set()
     events = [c.args[0] for c in socket.send_json.call_args_list]
     assert calls == 1
     beats = [e for e in events if e.get("payload", {}).get("heartbeat")]

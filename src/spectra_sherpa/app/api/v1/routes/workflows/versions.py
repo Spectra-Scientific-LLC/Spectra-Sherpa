@@ -217,6 +217,9 @@ async def restore_workflow_version(
 
     # Restore workflow from snapshot
     snapshot = version.snapshot or {}
+    from spectra_sherpa.app.services.sample_review_custody import require_review_filters_preserved
+
+    await require_review_filters_preserved(session, workflow.id, snapshot.get("nodes", []), snapshot.get("edges", []))
     _admit_snapshot_graph(snapshot)
     snapshot_purpose = _snapshot_purpose(snapshot)
     if snapshot_purpose != workflow.purpose:

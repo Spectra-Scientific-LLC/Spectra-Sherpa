@@ -121,6 +121,10 @@ class DatasetSummarizer:
             result["quality"] = {
                 "snr": q.snr,
                 "n_evaluations": len(q.evaluations),
+                "evaluation_scope": (
+                    "Evaluation records attached to this dataset object only; not a count of saved workflow runs. "
+                    "Zero does not imply no model was evaluated."
+                ),
             }
             if q.latest:
                 latest = q.latest.model_dump(exclude_none=True)

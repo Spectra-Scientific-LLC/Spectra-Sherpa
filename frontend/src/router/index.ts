@@ -106,6 +106,7 @@ const routes = [
   { path: "/operations/:rest(.*)", redirect: "/workflow" },
   { path: "/templates", redirect: "/dashboard" },
   { path: "/workflows/:pathMatch(.*)*", redirect: "/workflow" },
+  { path: "/:pathMatch(.*)*", name: "not-found", component: () => import("@/views/NotFoundView.vue") },
 ];
 
 const router = createRouter({

@@ -13,7 +13,10 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import TYPE_CHECKING, Any, Mapping, Sequence
+
+if TYPE_CHECKING:
+    from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
 
 from spectra_sherpa.app.services.dag.executor_types import WorkflowEdge, WorkflowNode
 from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
@@ -118,7 +121,12 @@ class CanonicalWorkbenchBaseline:
         return {**self._identity_dict(), "baseline_digest": self.digest}
 
     @classmethod
-    def from_dict(cls, payload: Mapping[str, object]) -> "CanonicalWorkbenchBaseline":
+    def from_dict(
+        cls,
+        payload: Mapping[str, object],
+        *,
+        historical_context: HistoricalReconstructionContext | None = None,
+    ) -> "CanonicalWorkbenchBaseline":
         """Re-admit a persisted, data-free baseline record.
 
         A managed campaign stores this closed record so a restart can verify
@@ -133,7 +141,7 @@ class CanonicalWorkbenchBaseline:
             SEED_EXECUTION_BASELINE_VERSION,
             GROUPED_SEED_EXECUTION_BASELINE_VERSION,
         }:
-            return CanonicalSeedExecutionBaseline.from_dict(payload)
+            return CanonicalSeedExecutionBaseline.from_dict(payload, historical_context=historical_context)
         if not isinstance(payload, Mapping) or set(payload) != {
             "schema_version",
             "workflow_id",
@@ -201,7 +209,11 @@ class CanonicalWorkbenchBaseline:
         try:
             from spectra_sherpa.app.services.dag.validation_graph import validation_graph_from_dict
 
-            graph = validation_graph_from_dict(payload["validation_graph"])
+            graph = (
+                historical_context.graph(payload["validation_graph"])
+                if historical_context is not None
+                else validation_graph_from_dict(payload["validation_graph"])
+            )
         except (TypeError, ValueError) as exc:
             raise CanonicalWorkbenchBaselineError("Persisted canonical baseline graph cannot be re-admitted") from exc
         baseline = cls(
@@ -275,8 +287,23 @@ class CanonicalSeedExecutionBaseline(CanonicalWorkbenchBaseline):
             raise CanonicalWorkbenchBaselineError("Derived seed grouping custody changed")
 
     def _identity_dict(self) -> dict[str, object]:
+        from spectra_sherpa.app.services.dag.historical_contracts import (
+            HistoricalValidationGraph,
+            historical_port_topology,
+        )
         from spectra_sherpa.app.services.dag.managed_port_topology import managed_port_topology
 
+        port_topology = (
+            historical_port_topology(self.graph)
+            if type(self.graph) is HistoricalValidationGraph
+            else managed_port_topology(
+                [WorkflowNode(node.node_id, node.operation_id, dict(node.parameters)) for node in self.graph.nodes],
+                [
+                    WorkflowEdge(edge.from_node, edge.to_node, edge.from_output, edge.to_input)
+                    for edge in self.graph.edges
+                ],
+            )
+        )
         identity = {
             "schema_version": self.schema_version,
             "source_baseline": self.source_baseline.as_dict(),
@@ -284,20 +311,19 @@ class CanonicalSeedExecutionBaseline(CanonicalWorkbenchBaseline):
             "seed_evidence_digest": self.seed_evidence_digest,
             "examination_digest": self.examination_digest,
             "validation_graph": self.graph.as_dict(),
-            "port_topology": managed_port_topology(
-                [WorkflowNode(node.node_id, node.operation_id, dict(node.parameters)) for node in self.graph.nodes],
-                [
-                    WorkflowEdge(edge.from_node, edge.to_node, edge.from_output, edge.to_input)
-                    for edge in self.graph.edges
-                ],
-            ),
+            "port_topology": port_topology,
         }
         if self.schema_version == GROUPED_SEED_EXECUTION_BASELINE_VERSION:
             identity["saved_grouping"] = read_saved_grouping(self.saved_grouping)
         return identity
 
     @classmethod
-    def from_dict(cls, payload: Mapping[str, object]) -> "CanonicalSeedExecutionBaseline":
+    def from_dict(
+        cls,
+        payload: Mapping[str, object],
+        *,
+        historical_context: HistoricalReconstructionContext | None = None,
+    ) -> "CanonicalSeedExecutionBaseline":
         from spectra_sherpa.app.services.dag.validation_graph import validation_graph_from_dict
 
         required = {
@@ -320,9 +346,13 @@ class CanonicalSeedExecutionBaseline(CanonicalWorkbenchBaseline):
             _LEGACY_BASELINE_VERSION,
         }:
             raise CanonicalWorkbenchBaselineError("Derived seed requires one retained workbench source")
-        source = CanonicalWorkbenchBaseline.from_dict(source_record)
+        source = CanonicalWorkbenchBaseline.from_dict(source_record, historical_context=historical_context)
         try:
-            graph = validation_graph_from_dict(payload["validation_graph"])
+            graph = (
+                historical_context.graph(payload["validation_graph"])
+                if historical_context is not None
+                else validation_graph_from_dict(payload["validation_graph"])
+            )
             baseline = cls(
                 workflow_id=source.workflow_id,
                 workflow_integrity_hash=source.workflow_integrity_hash,

@@ -66,7 +66,7 @@ async def test_knn_default_model_scales_features_before_distance_calculation():
     result = await node.execute(X=X)
 
     fitted_state = result.outputs["fitted_state"]
-    assert fitted_state["serializer"] == "spectrasherpa.model-artifact.knn/1"
+    assert fitted_state["serializer"] == "spectrasherpa.model-artifact.knn/2"
     assert fitted_state["scale"] is True
     assert not np.array_equal(np.asarray(fitted_state["x_mean"]), np.zeros(X.X.shape[1]))
     artifact = result.outputs["_model_artifact"]

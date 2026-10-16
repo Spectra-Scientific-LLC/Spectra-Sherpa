@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -18,12 +19,17 @@ from spectra_sherpa.app.api.deps import get_current_user
 from spectra_sherpa.app.api.v1.routes import builder as builder_routes
 from spectra_sherpa.app.api.v1.routes.workflow_templates import (
     DataBindingSpec,
-    _adapt_pca_scaling_to_bound_role,
+    _adapt_pls_starter_to_source_assignment,
+    _adapt_starter_scaling_to_bound_role,
     _enforce_bound_dataset_requirements,
     _normalize_binding_target_authority,
+    _require_independent_classification_group,
     _require_target_variation,
+    _source_assignment_profile,
     _template_runtime_readiness,
 )
+from spectra_sherpa.app.core.template_loader import TemplateLoader
+from spectra_sherpa.app.lib.io import load_csv_as_sherpa
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.project import Project
@@ -42,10 +48,193 @@ from spectra_sherpa.app.services.experiments import (
 )
 from spectra_sherpa.app.services.prepared_data import save_prepared_data_overrides
 from spectra_sherpa.app.types import ensure_type_registry_loaded, type_registry
+from spectra_sherpa.core.prepared_data import apply_dataset_prepared_data_overrides
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def test_replicated_specimens_require_independent_classification_group() -> None:
+    dataset = SimpleNamespace(
+        n_samples=6,
+        sample_axis=SimpleNamespace(
+            sample_table={
+                "specimen_id": ["A", "A", "B", "B", "C", "C"],
+                "block": ["1", "2", "1", "2", "1", "2"],
+            }
+        ),
+    )
+    profile = {"identity_fields": ["specimen_id"], "group_fields": ["block"]}
+    binding = SimpleNamespace(target_type="categorical", selected_target="species", group_column=None)
+    with pytest.raises(HTTPException, match="one specimen on both sides") as refused:
+        _require_independent_classification_group(dataset, binding, profile)
+    assert refused.value.status_code == 409
+    binding.group_column = "block"
+    with pytest.raises(HTTPException, match="divides repeated specimen_id"):
+        _require_independent_classification_group(dataset, binding, profile)
+    binding.group_column = "specimen_id"
+    _require_independent_classification_group(dataset, binding, profile)
+    binding.selected_target = "specimen_id"
+    with pytest.raises(HTTPException, match="cannot be both the response target"):
+        _require_independent_classification_group(dataset, binding, profile)
+    binding.selected_target = "species"
+    binding.group_column = None
+    binding.target_type = "continuous"
+    with pytest.raises(HTTPException, match="one specimen on both sides"):
+        _require_independent_classification_group(dataset, binding, profile)
+    binding.group_column = "specimen_id"
+    _require_independent_classification_group(dataset, binding, profile)
+
+
+@pytest.mark.parametrize("target_type", ["continuous", "categorical"])
+@pytest.mark.parametrize("group_column", [None, "specimen_id", "block"])
+def test_single_specimen_cannot_supply_a_supervised_holdout(target_type, group_column):
+    dataset = SimpleNamespace(
+        n_samples=6,
+        sample_axis=SimpleNamespace(sample_table={"specimen_id": ["A"] * 6, "block": ["1", "2"] * 3}),
+    )
+    binding = SimpleNamespace(target_type=target_type, selected_target="response", group_column=group_column)
+    with pytest.raises(HTTPException, match="Only one independent specimen_id") as refused:
+        _require_independent_classification_group(dataset, binding, {"identity_fields": ["specimen_id"]})
+    assert refused.value.status_code == 409
+    binding.target_type = None
+    _require_independent_classification_group(dataset, binding, {"identity_fields": ["specimen_id"]})
+
+
+def test_coarser_patient_group_can_preserve_nested_specimens() -> None:
+    dataset = SimpleNamespace(
+        n_samples=8,
+        sample_axis=SimpleNamespace(
+            sample_table={
+                "specimen_id": ["A", "A", "B", "B", "C", "C", "D", "D"],
+                "patient_id": ["P1"] * 4 + ["P2"] * 4,
+            }
+        ),
+    )
+    binding = SimpleNamespace(target_type="categorical", selected_target="disease", group_column="patient_id")
+    profile = {"identity_fields": ["specimen_id", "patient_id"]}
+    _require_independent_classification_group(dataset, binding, profile)
+    binding.group_column = "specimen_id"
+    with pytest.raises(HTTPException, match="divides repeated patient_id"):
+        _require_independent_classification_group(dataset, binding, profile)
+
+
+def test_pls_starter_uses_explicit_csv_training_validation_assignment(tmp_path: Path) -> None:
+    source = tmp_path / "training-validation.csv"
+    source.write_text(
+        "Response,Mass,Validation\n10,1,Training\n20,2,Training\n30,3,Validation\n",
+        encoding="utf-8",
+    )
+    dataset = apply_dataset_prepared_data_overrides(
+        load_csv_as_sherpa(source, _infer_implicit_target=False),
+        {"target_column": "Response", "assignment_column": "Validation"},
+    )
+    profile = _source_assignment_profile(dataset)
+    assert profile["source_assignment"]["validation_label"] == "Validation"
+    nodes = [{"node_type": "data.train_test_split", "parameters": {"split_method": "kennard_stone", "test_size": 0.25}}]
+    _adapt_pls_starter_to_source_assignment(
+        template=SimpleNamespace(slug="pls_calibration"), analysis_profile=profile, nodes=nodes
+    )
+    assert nodes[0]["parameters"] == {"split_method": "group_holdout", "held_out_groups": ["Validation"]}
+
+
+@pytest.mark.parametrize("selection_scope", ["file_id", "file_ids"])
+@pytest.mark.asyncio
+async def test_pls_starter_instantiates_with_csv_training_validation_assignment(
+    auth_client: AsyncClient,
+    test_session: AsyncSession,
+    test_user: User,
+    selection_scope: str,
+) -> None:
+    definition = next(item for item in TemplateLoader().load_all() if item["slug"] == "pls_calibration")
+    template = WorkflowTemplate(
+        slug=definition["slug"],
+        name=definition["name"],
+        description=definition["description"],
+        category=definition["category"],
+        template_data={**definition["template_data"], "status": "ready"},
+        is_active=True,
+    )
+    project = Project(user_id=test_user.id, name="CSV split starter", description="")
+    test_session.add_all([project, template])
+    await test_session.flush()
+    experiment = Experiment(
+        user_id=test_user.id,
+        project_id=project.id,
+        name="CSV split source",
+        description="",
+        metadata_path="{}",
+    )
+    test_session.add(experiment)
+    await test_session.flush()
+    source_file = ExperimentFile(
+        experiment_id=experiment.id,
+        file_path="raw/body-fat.csv",
+        file_type="csv",
+        stage="raw",
+        file_size_bytes=256,
+    )
+    test_session.add(source_file)
+    await test_session.commit()
+    source_path = experiment_dir(experiment.id) / source_file.file_path
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(
+        "Percent body fat,Age (years),Waist (cm),Validation\n"
+        "12,25,81,Training\n15,30,85,Training\n18,35,89,Training\n"
+        "20,40,92,Validation\n22,45,96,Validation\n",
+        encoding="utf-8",
+    )
+    save_prepared_data_overrides(
+        {"target_column": "Percent body fat", "target_type": "continuous", "assignment_column": "Validation"},
+        file_path=relative_to_data_dir(source_path),
+    )
+    ensure_type_registry_loaded()
+    if selection_scope == "file_ids":
+        from spectra_sherpa.app.lib.target_authority import issue_target_authority
+        from spectra_sherpa.app.services.model_application import load_project_dataset
+
+        loaded = await load_project_dataset(
+            test_session,
+            user_id=test_user.id,
+            experiment_id=experiment.id,
+            stage="raw",
+            file_ids=[source_file.id],
+        )
+        authority = issue_target_authority(
+            loaded.dataset,
+            column="Percent body fat",
+            target_type="continuous",
+        ).canonical_dict()
+        scope = {"file_ids": [source_file.id]}
+    else:
+        authority = _file_target_authority(
+            experiment.id,
+            source_file.file_path,
+            column="Percent body fat",
+            target_type="continuous",
+        )
+        scope = {"file_id": source_file.id}
+    response = await auth_client.post(
+        f"/api/v1/workflow-templates/{template.id}/instantiate",
+        json={
+            "workflow_name": "CSV PLS starter",
+            "project_id": project.id,
+            "launch_mode": "user",
+            "data_bindings": {
+                "data_1": {
+                    "source": "experiment",
+                    "experiment_id": experiment.id,
+                    **scope,
+                    "stage": "raw",
+                    "target_authority": authority,
+                }
+            },
+        },
+    )
+    assert response.status_code == 201, response.text
+    split = next(node for node in response.json()["nodes"] if node["node_type"] == "data.train_test_split")
+    assert split["parameters"] == {"split_method": "group_holdout", "held_out_groups": ["Validation"]}
 
 
 def _builder_client() -> TestClient:
@@ -694,7 +883,7 @@ class TestTemplateLoaderValidation:
             {"from_node_id": "scale", "to_node_id": "model"},
         ]
 
-        _adapt_pca_scaling_to_bound_role(
+        _adapt_starter_scaling_to_bound_role(
             template=template,
             source_node_id="data",
             analysis_profile={"primary_role": primary_role},
@@ -705,6 +894,45 @@ class TestTemplateLoaderValidation:
         scale = nodes[1]
         assert scale["parameters"] == {"method": expected_method, "center": True}
         assert scale["label"] == expected_label
+
+
+@pytest.mark.parametrize(
+    "slug,node_type",
+    [
+        ("classification_plsda", "classification.plsda"),
+        ("knn_classification", "classification.knn"),
+        ("pls_calibration", "model.fitted_pls"),
+        ("representative_calibration", "model.fitted_pls"),
+        ("hierarchical_clustering", "preprocess.scale"),
+        ("clustering_comparison", "preprocess.scale"),
+    ],
+)
+@pytest.mark.parametrize("role", ["X_spectra", "X_features", "unknown"])
+def test_starter_scaling_uses_bound_data_role_and_preserves_other_branches(slug, node_type, role):
+    from copy import deepcopy
+
+    template = WorkflowTemplate(slug=slug, name=slug, category="modeling", template_data={}, is_active=True)
+    parameters = {"method": "mean_center", "center": True} if node_type == "preprocess.scale" else {"scale": False}
+    nodes = [
+        {"node_id": "source", "node_type": "data.file_load", "parameters": {}},
+        {"node_id": "fit", "node_type": node_type, "parameters": dict(parameters)},
+        {"node_id": "unrelated", "node_type": node_type, "parameters": dict(parameters)},
+    ]
+    original = deepcopy(nodes)
+    _adapt_starter_scaling_to_bound_role(
+        template=template,
+        source_node_id="source",
+        analysis_profile={"primary_role": role},
+        nodes=nodes,
+        edges=[{"from_node_id": "source", "to_node_id": "fit"}],
+    )
+    assert nodes[2] == original[2]
+    if role == "unknown":
+        assert nodes == original
+    elif node_type == "preprocess.scale":
+        assert nodes[1]["parameters"]["method"] == ("autoscale" if role == "X_features" else "mean_center")
+    else:
+        assert nodes[1]["parameters"]["scale"] is (role == "X_features")
 
 
 # ---------------------------------------------------------------------------
@@ -1786,22 +2014,40 @@ async def test_instantiate_draft_mode_allows_unbound_project_starter(
     assert nodes_by_id["data_1"]["parameters"] == {}
 
 
+@pytest.mark.parametrize("primary_role", ["X_spectra", "X_features"])
 @pytest.mark.asyncio
 async def test_qualified_canonical_project_contract_persists_scientist_and_candidate_dags(
     auth_client: AsyncClient,
     test_session: AsyncSession,
     test_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+    primary_role: str,
 ):
     """The first starter project saves two exact DAGs; no translator invents either one."""
 
+    from spectra_sherpa.app.api.v1.routes import workflow_templates as routes
     from spectra_sherpa.app.core.template_loader import TemplateLoader
+
+    validate_binding = routes._validate_binding
+
+    async def bind_with_role(*args, **kwargs):
+        binding, profile = await validate_binding(*args, **kwargs)
+        # Keep real source/access/target admission; exercise both admitted X roles
+        # at the persistence boundary without depending on CSV role inference.
+        return binding, {
+            **profile,
+            "primary_role": primary_role,
+            "modality": "features" if primary_role == "X_features" else "spectra",
+        }
+
+    monkeypatch.setattr(routes, "_validate_binding", bind_with_role)
 
     production_record = next(
         template for template in TemplateLoader().load_all() if template["slug"] == "pls_calibration"
     )
     assert production_record["template_data"]["status"] == "ready"
     template_record = copy.deepcopy(production_record)
-    template_record["slug"] = "qualified_pls_contract_fixture"
+    template_record["slug"] = "pls_calibration"
     template = WorkflowTemplate(**template_record)
     project = Project(user_id=test_user.id, name="Canonical PLS Starter", description="")
     test_session.add_all([template, project])
@@ -1866,6 +2112,10 @@ async def test_qualified_canonical_project_contract_persists_scientist_and_candi
         "Moisture Calibration — Harness-only PLS Candidate Authority",
     ]
     scientist, candidate = workflows
+    scientist_model = next(node for node in scientist.nodes if node.node_type == "model.fitted_pls")
+    candidate_model = next(node for node in candidate.nodes if node.node_type == "model.fitted_pls")
+    assert candidate_model.parameters["scale"] == scientist_model.parameters["scale"]
+    assert scientist_model.parameters["scale"] is (primary_role == "X_features")
     assert scientist.purpose == "analysis"
     assert candidate.purpose == "managed_candidate_authority"
     assert response.json()["id"] == scientist.id
@@ -1947,7 +2197,14 @@ async def test_qualified_canonical_project_contract_persists_scientist_and_candi
         (
             "candidate_model",
             "model.fitted_pls",
-            {"n_components": 3, "scale": True, "target_names": []},
+            {
+                "n_components": 3,
+                "scale": primary_role == "X_features",
+                "target_names": [],
+                "component_curve_max": 10,
+                "component_cv_folds": 5,
+                "component_selection_rule": "manual_parameter",
+            },
         ),
         ("candidate_evaluator", "diagnostics.regression_evaluator", {"target_names": []}),
     ]

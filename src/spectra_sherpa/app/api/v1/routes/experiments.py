@@ -182,6 +182,8 @@ def _definition_receipt(
     loaded: LoadedProjectDataset | None = None,
     message: str,
 ) -> CollectionDefinitionReceipt:
+    from spectra_sherpa.app.lib.builtin_lavender import catalogued_reference_definition
+
     payload = definition.payload if definition is not None else None
     rows = payload.get("rows", []) if payload is not None else []
     columns = payload.get("columns", []) if payload is not None else []
@@ -194,6 +196,7 @@ def _definition_receipt(
         status=status,
         experiment_id=experiment_id,
         definition_sha256=definition.sha256 if definition is not None else None,
+        reference_governed=definition is not None and catalogued_reference_definition(definition.sha256),
         source_manifest_sha256=source.get("source_manifest_sha256"),
         scientific_collection_sha256=source.get("scientific_collection_sha256"),
         file_count=int(source.get("file_count", len(declared_files))),

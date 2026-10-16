@@ -34,10 +34,10 @@ from ._shared import (
 
 
 def _canonical_clip_range_parameters(parameters: dict[str, object]) -> dict[str, object]:
-    """Return one exact, inclusive coordinate interval."""
+    """Return one exact coordinate interval and its keep/remove decision."""
 
-    if set(parameters) != {"minimum", "maximum"}:
-        raise ValueError("clip-range parameters must contain exactly minimum and maximum")
+    if not {"minimum", "maximum"} <= set(parameters) or set(parameters) - {"minimum", "maximum", "exclude_range"}:
+        raise ValueError("clip-range parameters must contain minimum, maximum and optional exclude_range")
     minimum = parameters["minimum"]
     maximum = parameters["maximum"]
     if isinstance(minimum, bool) or not isinstance(minimum, (int, float)) or not math.isfinite(minimum):
@@ -48,7 +48,10 @@ def _canonical_clip_range_parameters(parameters: dict[str, object]) -> dict[str,
     upper = float(maximum)
     if lower >= upper:
         raise ValueError("clip-range minimum must be strictly less than maximum")
-    return {"minimum": lower, "maximum": upper}
+    exclude_range = parameters.get("exclude_range", False)
+    if not isinstance(exclude_range, bool):
+        raise ValueError("clip-range exclude_range must be a boolean")
+    return {"minimum": lower, "maximum": upper, "exclude_range": exclude_range}
 
 
 def _clip_range_dispatch(
@@ -56,10 +59,13 @@ def _clip_range_dispatch(
     *,
     minimum: float,
     maximum: float,
+    exclude_range: bool = False,
 ) -> tuple[np.ndarray, dict[str, object]]:
     """Select an inclusive interval from one explicit monotonic feature axis."""
 
-    parameters = _canonical_clip_range_parameters({"minimum": minimum, "maximum": maximum})
+    parameters = _canonical_clip_range_parameters(
+        {"minimum": minimum, "maximum": maximum, "exclude_range": exclude_range}
+    )
     lower = cast(float, parameters["minimum"])
     upper = cast(float, parameters["maximum"])
     coordinates = np.asarray(feature_coordinates, dtype=np.float64)
@@ -73,15 +79,17 @@ def _clip_range_dispatch(
     if coordinates.size > 1 and not (increasing or decreasing):
         raise ValueError("clip-range feature coordinates must be strictly monotonic")
 
-    mask = (coordinates >= lower) & (coordinates <= upper)
+    inside = (coordinates >= lower) & (coordinates <= upper)
+    mask = ~inside if exclude_range else inside
     retained = int(mask.sum())
     if retained == 0:
-        raise ValueError("clip-range interval excludes every feature coordinate")
+        raise ValueError("clip-range selection excludes every feature coordinate")
     selected = coordinates[mask]
     diagnostics: dict[str, object] = {
         "minimum": lower,
         "maximum": upper,
         "inclusive_bounds": True,
+        "exclude_range": exclude_range,
         "axis_direction": "decreasing" if decreasing else "increasing",
         "input_features": int(coordinates.size),
         "output_features": retained,
@@ -98,6 +106,7 @@ def _clip_range_dataset_dispatch(
     *,
     minimum: float,
     maximum: float,
+    exclude_range: bool = False,
 ) -> tuple[np.ndarray, dict[str, object]]:
     """Resolve the explicit scientific axis before selecting its interval."""
 
@@ -109,6 +118,7 @@ def _clip_range_dataset_dispatch(
         source.feature_axis.values,
         minimum=minimum,
         maximum=maximum,
+        exclude_range=exclude_range,
     )
 
 
@@ -145,14 +155,14 @@ def _build_clip_range_result(
 
 @register_node
 class ClipRangeNode(Node):
-    """Keep features whose explicit coordinate is inside a closed interval."""
+    """Keep or remove features inside a closed coordinate interval."""
 
     metadata = NodeMetadata(
         node_type="preprocess.clip_range",
         category="preprocessing",
         label="Clip Feature Range",
         description=(
-            "Keep the inclusive interval [minimum, maximum] in the input feature-axis units; "
+            "Keep or remove the inclusive interval [minimum, maximum] in the input feature-axis units; "
             "no integer-index fallback or bound swapping is performed."
         ),
         parameters=[
@@ -172,6 +182,13 @@ class ClipRangeNode(Node):
                 description="Inclusive upper bound expressed in the input feature-axis units.",
                 required=True,
             ),
+            NodeParameter(
+                name="exclude_range",
+                label="Remove selected range",
+                param_type="boolean",
+                default=False,
+                description="When checked, remove the inclusive range and keep features outside it.",
+            ),
         ],
         input_types=["SpectralDataset"],
         input_ports=[
@@ -190,7 +207,7 @@ class ClipRangeNode(Node):
                 type_ref="spectrasherpa://types/SpectralDataset/1.0",
                 required=True,
                 label="Range-selected Spectra",
-                description="Spectra retaining only features inside the requested coordinate interval.",
+                description="Spectra retaining the selected feature coordinates.",
                 accepted_data_roles=["X_spectra"],
             )
         ],
@@ -235,7 +252,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
     implementation_id="spectrasherpa.preprocess.clip_range",
-    implementation_version="1.0.1",
+    implementation_version="1.1.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="preserves_samples",

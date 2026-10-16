@@ -53,12 +53,13 @@ from spectra_sherpa.app.contracts.auth_resolver import (
 from spectra_sherpa.app.contracts.capabilities import (
     CHAT_ASSISTANT,
     SHERPA_ADVISOR,
-    SHERPA_AGENTIC_TOOLS,
+    SHERPA_CAMPAIGN_GENERATION,
     SHERPA_CODE_GEN,
     SHERPA_DATA_STORY,
     SHERPA_FULL_CONTEXT,
     SHERPA_GUIDANCE,
     SHERPA_PEAK_ID,
+    SHERPA_WORKFLOW_GENERATION_RUN,
     SHERPA_WRITE_REPORT,
 )
 from spectra_sherpa.app.contracts.config_overlay import (
@@ -129,7 +130,8 @@ __all__ = [
     "set_config_overlay_provider",
     "CHAT_ASSISTANT",
     "SHERPA_ADVISOR",
-    "SHERPA_AGENTIC_TOOLS",
+    "SHERPA_CAMPAIGN_GENERATION",
+    "SHERPA_WORKFLOW_GENERATION_RUN",
     "SHERPA_CODE_GEN",
     "SHERPA_DATA_STORY",
     "SHERPA_FULL_CONTEXT",

@@ -149,14 +149,12 @@ def test_uninstall_removes_runtime_cache_but_keeps_user_data_unless_asked():
     assert "MB_DEFBUTTON2" in source and "if not UninstallSilent() then" in source
 
 
-def test_operator_can_pause_tag_desktop_builds_without_blocking_manual_candidates():
+def test_operator_pause_blocks_tag_and_manual_desktop_candidates():
     from pathlib import Path
 
     import yaml
 
     root = Path(__file__).resolve().parents[1]
     workflow = yaml.safe_load((root / ".github/workflows/desktop-release.yml").read_text())
-    assert workflow["jobs"]["ubuntu"]["if"] == (
-        "${{ github.event_name == 'workflow_dispatch' || vars.DESKTOP_RELEASE_PAUSED != 'true' }}"
-    )
+    assert workflow["jobs"]["ubuntu"]["if"] == "${{ vars.DESKTOP_RELEASE_PAUSED != 'true' }}"
     assert workflow["jobs"]["build"]["needs"] == "ubuntu"

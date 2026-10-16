@@ -302,6 +302,12 @@ def test_one_shot_local_execute_can_use_embedded_continuous_target() -> None:
     assert result.outputs["x_loadings"].shape == (2, 3)
     assert result.outputs["explained_variance"].shape == (2, 2)
     assert result.outputs["regression_coefficients"].shape == (3, 1)
+    curve = result.outputs["component_curve"]
+    assert curve["selected_components"] == 2
+    assert curve["response_names"] == ["Carbon dioxide"]
+    assert curve["calibration"][1]["status"] == "available"
+    assert curve["cross_validation"]["status"] == "unavailable"
+    assert "Too few" in curve["cross_validation"]["reason"]
     comparison = result.outputs["calibration_comparison"]
     assert comparison["metadata"]["role"] == "calibration"
     assert comparison["metadata"]["target_names"] == ["Carbon dioxide"]
@@ -613,12 +619,15 @@ def test_fitted_pls_v2_has_a_complete_local_state_contract() -> None:
     assert contract.payload["required_worker_capabilities"] == (WorkerCapability.READ_DATASET.value,)
     assert contract.payload["target_access"] == "fit_only"
     assert contract.payload["fitted_state_serializer"] == "spectra.sherpa-simpls-regression-json/9"
-    assert contract.payload["runtime_requirements"] == ({"distribution": "numpy", "version": "1.26.4"},)
+    assert contract.payload["runtime_requirements"] == (
+        {"distribution": "numpy", "version": "1.26.4"},
+        {"distribution": "scipy", "version": "1.17.1"},
+    )
     assert {
         component["component_id"]
         for component in contract.payload["implementation_components"]
         if component["component_id"].startswith("distribution.")
-    } == {"distribution.numpy"}
+    } == {"distribution.numpy", "distribution.scipy"}
     assert contract.payload["feature_effect"] == "generates_features"
     assert [port["type_ref"] for port in contract.payload["semantic_inputs"]] == [
         "spectrasherpa://types/SpectralDataset/1.0",
@@ -633,6 +642,7 @@ def test_fitted_pls_v2_has_a_complete_local_state_contract() -> None:
         "spectrasherpa://types/LoadingMatrix/1.0",
         "spectrasherpa://types/ExplainedVarianceMatrix/1.0",
         "spectrasherpa://types/RegressionCoefficientMatrix/1.0",
+        "spectrasherpa://types/ValidationResult/1.0",
     ]
 
 

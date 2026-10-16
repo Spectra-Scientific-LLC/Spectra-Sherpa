@@ -138,10 +138,10 @@ def materialize_retained_holdout(dataset: object, holdout: Mapping, *, parameter
         source = dataset
     matrix = np.asarray(source.X, dtype=np.float64)
     target, target_context = bind_split_target(source, None)
-    groups = bind_split_groups(source)
     method = parameters.get("split_method", "random")
     if method not in SPLIT_METHODS:
         raise ValueError("Saved holdout split method is invalid")
+    groups = bind_split_groups(source, use_source_assignment=method == "group_holdout")
     train = np.asarray(record["train_indices"], dtype=np.intp)
     test = np.asarray(record["test_indices"], dtype=np.intp)
     held_out = None if groups is None or method in _SPACE_FILLING_METHODS else _ordered_groups(groups[test])

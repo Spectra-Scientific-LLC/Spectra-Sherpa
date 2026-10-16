@@ -7,6 +7,10 @@ from dataclasses import dataclass
 from typing import Protocol
 
 
+class ChatOutputLimitError(ValueError):
+    """The provider finished because its output token ceiling was reached."""
+
+
 @dataclass(frozen=True)
 class ChatEndpointConfig:
     """A user-controlled local-assistance endpoint, never a managed service."""

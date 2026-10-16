@@ -1183,7 +1183,7 @@ def test_single_member_budget_reuses_admitted_matrix_and_charges_receipt(
     input_elements, input_bytes = collection_assembly.dataset_retained_footprint(dataset)
     projected_elements, projected_bytes = collection_assembly.collection_retained_footprint([member])
     assert projected_elements == input_elements
-    assert projected_bytes == input_bytes + 4096
+    assert projected_bytes == input_bytes + 4096 + collection_assembly._source_observation_retained_bytes([member])
     collection_assembly.require_collection_budget([member])
     monkeypatch.setattr(
         collection_assembly.np,

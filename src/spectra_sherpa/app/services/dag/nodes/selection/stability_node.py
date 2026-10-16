@@ -128,7 +128,7 @@ def _stability_inputs(X: Any, y: Any) -> tuple[Any, np.ndarray, np.ndarray]:
 def _base_scores(model: pls_core.PLSFit, matrix: np.ndarray, method: str) -> np.ndarray:
     features = matrix.shape[1]
     if method == "vip":
-        scores = calculate_vip(model.x_scores, model.x_weights.T, model.y_loadings.T, features)
+        scores = calculate_vip(model.x_scores, model.x_weights, model.y_loadings, features)
     elif method == "coef_abs":
         scores = np.abs(np.asarray(model.coefficients, dtype=np.float64).reshape(-1)[:features])
     else:

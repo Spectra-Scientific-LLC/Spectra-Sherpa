@@ -8,6 +8,7 @@ import math
 from typing import Any
 
 from spectra_sherpa.app.schemas.run_evidence import RunEvidence
+from spectra_sherpa.app.services.dag.nodes.classification.plsda_permutation import validated_permutation_scores
 from spectra_sherpa.app.services.dag.out_of_fold_evidence import validate_out_of_fold_evidence
 from spectra_sherpa.app.services.run_output_retention import read_output
 from spectra_sherpa.sdk.validation_reporting import regression_reporting_notes
@@ -303,6 +304,116 @@ def _fold_count_rows(node, plan):
     ]
 
 
+def _validation_output_values(run, evidence):
+    """Skip unrelated large artifacts while bounding reads of validation evidence."""
+    budget = 16 * 1024 * 1024
+    for node, ports in evidence.outputs.items():
+        for port, item in ports.items():
+            # These ports contain no validation record handled below. In particular,
+            # PCA diagnostic state includes a complete input snapshot; reading it
+            # here wastes the report budget and can hide otherwise readable metrics.
+            if port.startswith("_") or port in {
+                "diagnostic_state",
+                "fitted_state",
+                "model",
+                "scores",
+                "loadings",
+                "visualization",
+            }:
+                continue
+            if item.state != "exact" or item.storage != "file" or not item.byte_count:
+                continue
+            budget -= item.byte_count
+            if budget < 0:
+                raise ValueError("validation report read budget exceeded")
+            value = read_output(run.user_id, item)
+            if not isinstance(value, dict):
+                continue
+            yield node, port, value
+
+
+def _component_curve_report_rows(node, value):
+    rows = [
+        (f"Selected components ({node})", value.get("selected_components", "Not recorded")),
+        (f"Requested components ({node})", value.get("requested_components", "Not recorded")),
+        (f"Component calibration population ({node})", value.get("n_calibration", "Not recorded")),
+    ]
+    cv = value.get("cross_validation")
+    if not isinstance(cv, dict) or cv.get("status") != "available":
+        reason = cv.get("reason", "Not recorded") if isinstance(cv, dict) else "Not recorded"
+        rows.append((f"Component CV unavailable ({node})", reason))
+        return rows
+    rows.append(
+        (
+            f"Component CV design ({node})",
+            json.dumps(
+                {
+                    "role": "development_tuning",
+                    "method": cv.get("method"),
+                    "folds": cv.get("n_folds"),
+                    "groups": cv.get("n_groups"),
+                    "split_digest": cv.get("split_digest"),
+                    "notice": "Component selection CV is not an independent test.",
+                },
+                sort_keys=True,
+            ),
+        )
+    )
+    suggestions = cv.get("suggestions") or []
+    for index, name in enumerate((value.get("response_names") or [])[:5]):
+        if index < len(suggestions):
+            rows.append(
+                (
+                    f"Component selection suggestion ({node}; {name})",
+                    json.dumps(
+                        suggestions[index],
+                        sort_keys=True,
+                    ),
+                )
+            )
+    if isinstance(cv.get("suggestion"), dict):
+        rows.append((f"Component selection suggestion ({node})", json.dumps(cv["suggestion"], sort_keys=True)))
+    return rows
+
+
+def _permutation_report_rows(node, value):
+    try:
+        validated_permutation_scores(value)
+    except ValueError:
+        return [(f"PLS-DA response permutation ({node})", "Incomplete or inconsistent retained evidence")]
+    design_keys = (
+        "seed",
+        "folds",
+        "n_calibration",
+        "n_units",
+        "n_blocks",
+        "exchangeability_block_column",
+        "grouping_sha256",
+        "blocks_sha256",
+        "permutations_successful",
+        "exceedances",
+        "model_state_sha256",
+        "saved_model_components",
+        "observed_reselected_components",
+        "component_search_maximum",
+        "selection_rule",
+        "upstream_preprocessing",
+    )
+    return [
+        (f"PLS-DA permutation observed balanced accuracy ({node})", value.get("observed")),
+        (f"PLS-DA permutation p-value ({node})", value["p_value"]),
+        (
+            f"PLS-DA permutation design ({node})",
+            json.dumps({key: value.get(key) for key in design_keys}, sort_keys=True),
+        ),
+        (
+            f"PLS-DA permutation scope ({node})",
+            "Calibration random-label evidence; independent test validity is not established. "
+            "CV-ANOVA is unavailable for this PLS-DA statistic.",
+        ),
+    ]
+
+
 def _retained_validation_details(run, definition, *, include_row_level_plots=False):
     """Read exact retained outputs under one bounded budget; never current UI state."""
     evidence = RunEvidence.model_validate(run.evidence_completeness)
@@ -315,185 +426,187 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
         item["node_id"] for item in (definition or {}).get("nodes", []) if item.get("node_type") in source_types
     }
     spectral_units = {}
-    budget = 16 * 1024 * 1024
-    for node, ports in evidence.outputs.items():
-        for port, item in ports.items():
-            if item.state != "exact" or item.storage != "file" or not item.byte_count:
-                continue
-            budget -= item.byte_count
-            if budget < 0:
-                raise ValueError("validation report read budget exceeded")
-            value = read_output(run.user_id, item)
-            if not isinstance(value, dict):
-                continue
-            signature = _source_unit_signature(value) if node in source_nodes and port == "default" else None
-            if signature:
-                spectral_units.setdefault(signature, []).append(node)
-            if value.get("schema_version") == "spectrasherpa-regression-comparison/1":
-                if not value.get("statistics"):
-                    rows.append(
-                        (
-                            f"Regression statistics ({node}; {port})",
-                            "Canonical statistics not retained. Rerun the workflow; "
-                            "the report does not recompute metrics.",
-                        )
-                    )
-                try:
-                    records = _stored_statistics(
-                        value.get("statistics"),
-                        role=value.get("metadata", {}).get("role"),
-                        node_id=node,
-                        source_port=port,
-                        units=_retained_target_units(run, definition, node),
-                    )
-                    for record in records:
-                        observations = [row for row in value.get("data", []) if row.get("target") == record["target"]]
-                        # Descriptive arithmetic on complete retained values is allowed;
-                        # fitting and validation metrics remain workflow-owned.
-                        if len(observations) == record["metrics"]["n_samples"] and all(
-                            isinstance(row.get("reference"), (int, float)) and math.isfinite(row["reference"])
-                            for row in observations
-                        ):
-                            record["reference_mean"] = math.fsum(
-                                row["reference"] / len(observations) for row in observations
-                            )
-                            if include_row_level_plots and len(observations) <= 5000:
-                                record["observations"] = [
-                                    {key: row[key] for key in ("sample", "reference", "predicted")}
-                                    for row in observations
-                                ]
-                            elif include_row_level_plots:
-                                rows.append(
-                                    (
-                                        f"Target list ({node}; {record['target']})",
-                                        "Exceeds 5000-row report limit; no partial list is presented.",
-                                    )
-                                )
-                    regression_results.extend(records)
-                except (ValueError, TypeError, KeyError):
-                    rows.append(
-                        (
-                            f"Regression statistics ({node}; {port})",
-                            "Canonical statistics not retained. Rerun the workflow; "
-                            "the report does not recompute metrics.",
-                        )
-                    )
-                continue
-            if value.get("schema_version") == "spectrasherpa.repeated-nested-validation/1" and "repeats" in value:
-                rows.append((f"Repeated validation ({node})", value["interpretation"]))
+    source_spectral_flags = []
+    for node, port, value in _validation_output_values(run, evidence):
+        if node in source_nodes and port == "default":
+            source_spectral_flags.append((value.get("metadata") or {}).get("is_spectra"))
+        signature = _source_unit_signature(value) if node in source_nodes and port == "default" else None
+        if signature:
+            spectral_units.setdefault(signature, []).append(node)
+        if port == "component_curve" and value.get("schema_version") in {
+            "spectrasherpa-pls-component-curve/1",
+            "spectrasherpa-pca-component-curve/1",
+            "spectrasherpa-plsda-component-curve/1",
+        }:
+            rows.extend(_component_curve_report_rows(node, value))
+            continue
+        if port == "default" and value.get("schema_version") == "spectrasherpa-plsda-response-permutation/1":
+            rows.extend(_permutation_report_rows(node, value))
+            continue
+        if value.get("schema_version") == "spectrasherpa-regression-comparison/1":
+            if not value.get("statistics"):
                 rows.append(
                     (
-                        f"Repeated population ({node})",
-                        f"{value['n_rows']} original rows; "
-                        f"{value['n_groups']} groups; {value['n_repeats']} repeats; not pooled",
+                        f"Regression statistics ({node}; {port})",
+                        "Canonical statistics not retained. Rerun the workflow; "
+                        "the report does not recompute metrics.",
                     )
                 )
-                for metric, spread in value["distributions"].items():
-                    rows.append((f"Repeat distribution ({node}; {metric})", json.dumps(spread, sort_keys=True)))
-                for repeat in value["repeats"]:
-                    bound, observed, predicted, _ = validate_out_of_fold_evidence(repeat["outputs"]["oof_evidence"])
-                    cv_populations.append((node, f"{port} / repeat {repeat['repeat_id']}", observed, predicted))
-                    if not repeat["outputs"]["cv_metrics"].get("statistics"):
-                        rows.append(
-                            (
-                                f"Regression statistics ({node}; repeat {repeat['repeat_id']})",
-                                "Canonical statistics not retained; rerun workflow.",
+            try:
+                records = _stored_statistics(
+                    value.get("statistics"),
+                    role=value.get("metadata", {}).get("role"),
+                    node_id=node,
+                    source_port=port,
+                    units=_retained_target_units(run, definition, node),
+                )
+                for record in records:
+                    observations = [row for row in value.get("data", []) if row.get("target") == record["target"]]
+                    # Descriptive arithmetic on complete retained values is allowed;
+                    # fitting and validation metrics remain workflow-owned.
+                    if len(observations) == record["metrics"]["n_samples"] and all(
+                        isinstance(row.get("reference"), (int, float)) and math.isfinite(row["reference"])
+                        for row in observations
+                    ):
+                        record["reference_mean"] = math.fsum(
+                            row["reference"] / len(observations) for row in observations
+                        )
+                        if include_row_level_plots and len(observations) <= 5000:
+                            record["observations"] = [
+                                {key: row[key] for key in ("sample", "reference", "predicted")} for row in observations
+                            ]
+                        elif include_row_level_plots:
+                            rows.append(
+                                (
+                                    f"Target list ({node}; {record['target']})",
+                                    "Exceeds 5000-row report limit; no partial list is presented.",
+                                )
                             )
-                        )
-                    regression_results.extend(
-                        _stored_statistics(
-                            repeat["outputs"]["cv_metrics"].get("statistics"),
-                            role="cross_validation",
-                            node_id=node,
-                            source_port=f"{port} / repeat {repeat['repeat_id']}",
-                            units=_retained_target_units(run, definition, node),
-                        )
+                regression_results.extend(records)
+            except (ValueError, TypeError, KeyError):
+                rows.append(
+                    (
+                        f"Regression statistics ({node}; {port})",
+                        "Canonical statistics not retained. Rerun the workflow; "
+                        "the report does not recompute metrics.",
                     )
+                )
+            continue
+        if value.get("schema_version") == "spectrasherpa.repeated-nested-validation/1" and "repeats" in value:
+            rows.append((f"Repeated validation ({node})", value["interpretation"]))
+            rows.append(
+                (
+                    f"Repeated population ({node})",
+                    f"{value['n_rows']} original rows; "
+                    f"{value['n_groups']} groups; {value['n_repeats']} repeats; not pooled",
+                )
+            )
+            for metric, spread in value["distributions"].items():
+                rows.append((f"Repeat distribution ({node}; {metric})", json.dumps(spread, sort_keys=True)))
+            for repeat in value["repeats"]:
+                bound, observed, predicted, _ = validate_out_of_fold_evidence(repeat["outputs"]["oof_evidence"])
+                cv_populations.append((node, f"{port} / repeat {repeat['repeat_id']}", observed, predicted))
+                if not repeat["outputs"]["cv_metrics"].get("statistics"):
                     rows.append(
                         (
-                            f"Repeat {repeat['repeat_id']} ({node})",
-                            f"seed {repeat['seed']}; split {bound['split_plan_digest']}; "
-                            f"{len(observed)} observations",
-                        )
-                    )
-                    metrics = repeat["outputs"]["cv_metrics"]
-                    rows.append(
-                        (
-                            f"Inner tuning ({node}; repeat {repeat['repeat_id']})",
-                            f"{metrics.get('inner_selection_scope', 'Not recorded')}; "
-                            f"components by fold {metrics['per_fold_n_components']}",
-                        )
-                    )
-                    # Plots remain per repeat, never pooled into an inflated population.
-                    if include_row_level_plots:
-                        figures.extend(
-                            _validation_figures(
-                                observed,
-                                predicted,
-                                node,
-                                port,
-                                repeat["repeat_id"],
-                                _retained_target_units(run, definition, node),
-                            )
-                        )
-            elif value.get("metadata", {}).get("type") == "RegressionCV" and "split_plan_digest" in value:
-                if not value.get("statistics"):
-                    rows.append(
-                        (
-                            f"Regression statistics ({node}; {port})",
+                            f"Regression statistics ({node}; repeat {repeat['repeat_id']})",
                             "Canonical statistics not retained; rerun workflow.",
                         )
                     )
                 regression_results.extend(
                     _stored_statistics(
-                        value.get("statistics"),
+                        repeat["outputs"]["cv_metrics"].get("statistics"),
                         role="cross_validation",
                         node_id=node,
-                        source_port=port,
+                        source_port=f"{port} / repeat {repeat['repeat_id']}",
                         units=_retained_target_units(run, definition, node),
                     )
                 )
-                for key in (
-                    "selector_profile",
-                    "inner_selection_scope",
-                    "per_fold_n_components",
-                    "per_fold_n_selected",
-                    "random_seed",
-                    "population_scope",
-                ):
-                    rows.append((f"Retained tuning ({node}; {key})", json.dumps(value.get(key, "Not recorded"))))
-                plan = value.get("split_plan", {})
                 rows.append(
                     (
-                        f"Cross-validation method ({node})",
-                        f"{value.get('n_folds', 'Not recorded')} folds; method {plan.get('method', 'Not recorded')}; "
-                        f"population {value.get('population_scope', 'Not recorded')}; "
-                        f"root seed {value.get('random_seed', 'Not recorded')}; "
-                        f"component selection {value.get('component_selection', 'Not recorded')} "
-                        f"within {value.get('inner_selection_scope', 'Not recorded')}.",
+                        f"Repeat {repeat['repeat_id']} ({node})",
+                        f"seed {repeat['seed']}; split {bound['split_plan_digest']}; " f"{len(observed)} observations",
                     )
                 )
-            elif value.get("schema_version") == "spectrasherpa-out-of-fold-evidence/1":
-                bound, observed, predicted, _ = validate_out_of_fold_evidence(value)
-                cv_populations.append((node, "cv_metrics", observed, predicted))
-                rows.append((f"Validation identity ({node})", bound["evidence_sha256"]))
-                rows.append((f"Verified metric denominator ({node})", len(observed)))
-                plan = bound["split_plan"]
-                rows.append((f"Evaluation scope ({node})", "Cross-validation; not an external held-out test"))
-                rows.extend(_fold_count_rows(node, plan))
+                metrics = repeat["outputs"]["cv_metrics"]
                 rows.append(
                     (
-                        f"Validation groups ({node})",
-                        len(set(plan["groups"])) if plan.get("grouped") else "No groups recorded; row-wise evaluation",
+                        f"Inner tuning ({node}; repeat {repeat['repeat_id']})",
+                        f"{metrics.get('inner_selection_scope', 'Not recorded')}; "
+                        f"components by fold {metrics['per_fold_n_components']}",
                     )
                 )
+                # Plots remain per repeat, never pooled into an inflated population.
                 if include_row_level_plots:
                     figures.extend(
                         _validation_figures(
-                            observed, predicted, node, port, None, _retained_target_units(run, definition, node)
+                            observed,
+                            predicted,
+                            node,
+                            port,
+                            repeat["repeat_id"],
+                            _retained_target_units(run, definition, node),
                         )
                     )
-    rows.extend(_source_unit_rows(spectral_units))
+        elif value.get("metadata", {}).get("type") == "RegressionCV" and "split_plan_digest" in value:
+            if not value.get("statistics"):
+                rows.append(
+                    (
+                        f"Regression statistics ({node}; {port})",
+                        "Canonical statistics not retained; rerun workflow.",
+                    )
+                )
+            regression_results.extend(
+                _stored_statistics(
+                    value.get("statistics"),
+                    role="cross_validation",
+                    node_id=node,
+                    source_port=port,
+                    units=_retained_target_units(run, definition, node),
+                )
+            )
+            for key in (
+                "selector_profile",
+                "inner_selection_scope",
+                "per_fold_n_components",
+                "per_fold_n_selected",
+                "random_seed",
+                "population_scope",
+            ):
+                rows.append((f"Retained tuning ({node}; {key})", json.dumps(value.get(key, "Not recorded"))))
+            plan = value.get("split_plan", {})
+            rows.append(
+                (
+                    f"Cross-validation method ({node})",
+                    f"{value.get('n_folds', 'Not recorded')} folds; method {plan.get('method', 'Not recorded')}; "
+                    f"population {value.get('population_scope', 'Not recorded')}; "
+                    f"root seed {value.get('random_seed', 'Not recorded')}; "
+                    f"component selection {value.get('component_selection', 'Not recorded')} "
+                    f"within {value.get('inner_selection_scope', 'Not recorded')}.",
+                )
+            )
+        elif value.get("schema_version") == "spectrasherpa-out-of-fold-evidence/1":
+            bound, observed, predicted, _ = validate_out_of_fold_evidence(value)
+            cv_populations.append((node, "cv_metrics", observed, predicted))
+            rows.append((f"Validation identity ({node})", bound["evidence_sha256"]))
+            rows.append((f"Verified metric denominator ({node})", len(observed)))
+            plan = bound["split_plan"]
+            rows.append((f"Evaluation scope ({node})", "Cross-validation; not an external held-out test"))
+            rows.extend(_fold_count_rows(node, plan))
+            rows.append(
+                (
+                    f"Validation groups ({node})",
+                    len(set(plan["groups"])) if plan.get("grouped") else "No groups recorded; row-wise evaluation",
+                )
+            )
+            if include_row_level_plots:
+                figures.extend(
+                    _validation_figures(
+                        observed, predicted, node, port, None, _retained_target_units(run, definition, node)
+                    )
+                )
+    if not source_spectral_flags or not all(flag is False for flag in source_spectral_flags):
+        rows.extend(_source_unit_rows(spectral_units))
     for node, port, observed, predicted in cv_populations:
         for record in regression_results:
             if record["node_id"] != node or record["source_port"] != port or record["role"] != "cross_validation":

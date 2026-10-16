@@ -307,6 +307,15 @@ const addMenuItems = computed(() => {
         emit("open-template-picker");
       },
     },
+    {
+      label: "Reset Color by Data Portfolio",
+      icon: "pi pi-refresh",
+      disabled: !props.sheets[props.activeIndex] || props.sheets[props.activeIndex]?.kind === "trial",
+      command: () => {
+        const active = props.sheets[props.activeIndex];
+        if (active && active.kind !== "trial") emit("color", active.workflowId, null);
+      },
+    },
   ];
 });
 

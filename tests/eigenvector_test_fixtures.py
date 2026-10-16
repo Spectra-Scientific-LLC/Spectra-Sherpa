@@ -56,6 +56,8 @@ def _base_spectra(n_samples: int, n_features: int, *, offset: float = 0.0) -> np
     baseline = 0.08 + offset + 0.03 * np.sin(2.0 * np.pi * axis)[None, :]
     sample_slope = (trend[:, None] - 0.5) * 0.04 * axis[None, :]
     spectra = baseline + weights @ components + sample_slope
+    # Resolved measurement variation keeps multi-component model fixtures full rank.
+    spectra += np.random.default_rng(904).normal(scale=0.001, size=spectra.shape)
     return spectra.astype(np.float64)
 
 

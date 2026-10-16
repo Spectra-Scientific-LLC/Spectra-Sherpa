@@ -1712,27 +1712,6 @@ class PlotNode(Node):
             "#f97316",
         ]
 
-        def _fmt(value: Any, digits: int = 3) -> str:
-            try:
-                fval = float(value)
-            except (TypeError, ValueError):
-                return "n/a"
-            return f"{fval:.{digits}f}" if np.isfinite(fval) else "n/a"
-
-        def _split_summary(metadata: dict[str, Any]) -> str:
-            train = metadata.get("train") if isinstance(metadata.get("train"), dict) else {}
-            test = metadata.get("test") if isinstance(metadata.get("test"), dict) else {}
-            r2_train = metadata.get("r2_train", train.get("R2"))
-            rmse_train = metadata.get("rmse_train", train.get("RMSE"))
-            r2_test = metadata.get("r2_test", test.get("R2"))
-            rmse_test = metadata.get("rmse_test", test.get("RMSE"))
-            if r2_train is None and rmse_train is None:
-                return f"Test R²={_fmt(r2_test)} · RMSE={_fmt(rmse_test)}"
-            return (
-                f"Train R²={_fmt(r2_train)} · RMSE={_fmt(rmse_train)}    "
-                f"Test R²={_fmt(r2_test)} · RMSE={_fmt(rmse_test)}"
-            )
-
         series_payload = data.get("series")
         if isinstance(series_payload, list) and series_payload:
             traces: list[dict] = []
@@ -1808,8 +1787,6 @@ class PlotNode(Node):
             else:
                 title_text = "Predicted vs Actual (per target)"
                 y_title = "Predicted"
-            title_text = f"{title_text}<br><sup>{_split_summary(metadata)}</sup>"
-
             return {
                 "visualization": {
                     "plot_type": "scatter",
@@ -1883,10 +1860,7 @@ class PlotNode(Node):
                 "plot_type": "scatter",
                 "data": traces,
                 "layout": {
-                    "title": (
-                        "Predicted vs Actual<br><sup>"
-                        f"{_split_summary(metadata if isinstance(metadata, dict) else {})}</sup>"
-                    ),
+                    "title": "Predicted vs Actual",
                     "xaxis": {"title": "Actual"},
                     "yaxis": {"title": "Predicted"},
                     "showlegend": bool(train_actual and train_predicted),

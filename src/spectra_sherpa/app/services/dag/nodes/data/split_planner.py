@@ -181,17 +181,105 @@ def _ordered_groups(groups: np.ndarray) -> tuple[object, ...]:
     return tuple(values)
 
 
-def bind_split_groups(X_source: object) -> np.ndarray | None:
-    """Re-admit an attached sample-table group authority for partitioning.
+def bind_split_groups(X_source: object, *, use_source_assignment: bool = False) -> np.ndarray | None:
+    """Re-admit an attached group or an explicitly selected CSV assignment.
 
-    Group identity is never inferred from a convenient metadata column.  It
-    is usable only when ``data.attach_target`` issued an exact supervision
-    binding and that binding still reproduces from the current dataset.
+    An ordinary metadata column is never silently used for a split. CSV
+    assignments are eligible only when the scientist retained that exact
+    column in the source's prepared-data sidecar.
     """
 
     dataset = coerce_to_sherpa(X_source, input_name="X", allow_array=True)
     supervision = admit_attached_sample_table_supervision(dataset)
-    return None if supervision is None else supervision.groups
+    if supervision is not None:
+        return supervision.groups
+    if not use_source_assignment:
+        return None
+    assignment_column = dataset.meta.get("csv.assignment_column")
+    if not isinstance(assignment_column, str) or not assignment_column:
+        return None
+    axis = dataset.sample_axis
+    table = axis.sample_table if axis is not None else None
+    if not isinstance(table, dict) or assignment_column not in table:
+        raise ValueError("Selected source assignment is absent from the current sample metadata")
+    values = np.asarray(table[assignment_column])
+    if values.ndim != 1 or values.size != dataset.n_samples:
+        raise ValueError("Selected source assignment no longer matches the current sample rows")
+    if any(value is None or not str(value).strip() for value in values):
+        raise ValueError("Selected source assignment contains empty values")
+    return values
+
+
+def require_independent_classification_groups(
+    X_source: object,
+    groups: np.ndarray | None,
+    target_context: TargetContext | None,
+    *,
+    split_method: str = "stratified",
+) -> None:
+    """Refuse a supervised holdout that divides repeated independent specimens.
+
+    Existing sheets retain their exact historical bindings when My Dataset is
+    edited. Checking at execution protects those sheets as well as new starters
+    and generated Python. This does not infer a grouping column: the scientist
+    must explicitly bind one and create a new workflow revision.
+    """
+
+    if target_context is None or target_context.target_type not in {"categorical", "continuous"}:
+        return
+    dataset = coerce_to_sherpa(X_source, input_name="X", allow_array=True)
+    table = dataset.sample_axis.sample_table if dataset.sample_axis is not None else None
+    if not isinstance(table, dict):
+        return
+    for field in ("specimen_id", "subject_id", "patient_id"):
+        raw = table.get(field)
+        if raw is None:
+            continue
+        identities = np.asarray(raw, dtype=object)
+        if identities.ndim != 1 or identities.size != dataset.n_samples:
+            continue
+        labels = [str(value).strip() if value is not None else "" for value in identities]
+        if any(not value for value in labels):
+            continue
+        count = len(set(labels))
+        if count == len(labels):
+            continue
+        if count < 2:
+            raise ValueError(
+                f"Only one independent {field} is available. A supervised holdout requires at least "
+                "two independent specimens; collect additional specimens or use an exploratory workflow "
+                "without a held-out performance claim."
+            )
+        if field in {target_context.selected_target, target_context.target_name}:
+            raise ValueError(
+                f"{field} identifies repeated specimens and cannot be both the response target "
+                "and an independent held-out specimen group. Choose a different scientific target instead."
+            )
+        if groups is None:
+            raise ValueError(
+                f"Repeated {field} values require an independent grouped supervised split. "
+                "Select a specimen or coarser patient/subject identity under Groups in My Dataset "
+                "and explicitly rebind the workflow source before running. "
+                "The previous run remains retained as historical evidence."
+            )
+        if split_method in _SPACE_FILLING_METHODS:
+            raise ValueError(
+                f"{split_method} selects individual rows and cannot hold repeated {field} identities "
+                "apart. Choose stratified, random, sequential, or group holdout splitting."
+            )
+        grouped = np.asarray(groups, dtype=object)
+        if grouped.ndim != 1 or grouped.size != len(labels):
+            raise ValueError("The bound grouping column does not align with the retained sample rows")
+        identity_to_group: dict[str, str] = {}
+        for identity, group in zip(labels, grouped, strict=True):
+            group_label = str(group).strip() if group is not None else ""
+            if not group_label or (identity in identity_to_group and identity_to_group[identity] != group_label):
+                raise ValueError(
+                    f"The bound Groups column divides repeated {field} identities. "
+                    f"Select {field} or a coarser patient/subject identity and explicitly rebind "
+                    "the workflow source before running."
+                )
+            identity_to_group[identity] = group_label
 
 
 def bind_split_target(
@@ -250,10 +338,10 @@ def bind_split_target(
                     )
             if exact_match or canonical_categorical_match:
                 # The explicit target edge carries the exact values embedded
-                # in X, or its canonical categorical projection, so its
-                # metadata authority is provably the same source. An unrelated
-                # same-shaped array never inherits X metadata.
-                context = source_context.model_copy(deep=True)
+                # in X, or its canonical categorical projection. This can
+                # recover response labels for existing workflows, but equal
+                # values do not establish laboratory measurement provenance.
+                context = source_context.model_copy(update={"reference_value_evidence": None}, deep=True)
     if context is not None and context.selected_target:
         names = list(context.target_names or [])
         if context.selected_target not in names:
@@ -683,7 +771,8 @@ def plan_train_test_split(
     )
     if method == "group_holdout" and group_values is None:
         raise ValueError(
-            "group_holdout requires an attached grouping column; bind a group authority on the input dataset"
+            "group_holdout requires a grouping column or a retained source assignment; "
+            "select one on the input dataset"
         )
     # A space-filling method selects individual samples by spectral distance and
     # has no whole-group definition, so it cannot hold a group out. Selecting a
@@ -979,5 +1068,6 @@ __all__ = [
     "bind_split_target",
     "materialize_split_outputs",
     "plan_train_test_split",
+    "require_independent_classification_groups",
     "space_filling_coverage",
 ]

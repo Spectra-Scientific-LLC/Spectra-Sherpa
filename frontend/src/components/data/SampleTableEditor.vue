@@ -131,6 +131,51 @@
       </div>
     </section>
 
+    <section class="control-section" aria-labelledby="reference-values-title">
+      <div class="section-heading"><h3 id="reference-values-title">Reference-value quality</h3></div>
+      <p>Record how the selected response was measured. Unknown method or precision stays an explicit qualification gap.</p>
+      <div class="editor-controls">
+        <div v-if="selectedTargetType === 'continuous'" class="field">
+          <label for="reference-units">Response units</label>
+          <InputText id="reference-units" v-model.trim="referenceUnits" placeholder="e.g. mg/L" />
+        </div>
+        <div class="field">
+          <label for="reference-method-id">Reference method</label>
+          <InputText id="reference-method-id" v-model.trim="referenceMethodId" placeholder="Procedure or assay ID" />
+        </div>
+        <div class="field">
+          <label for="reference-method-version">Method version</label>
+          <InputText id="reference-method-version" v-model.trim="referenceMethodVersion" />
+        </div>
+        <div class="field">
+          <label for="reference-basis">Value per sample</label>
+          <Dropdown id="reference-basis" v-model="referenceBasis" :options="referenceBasisOptions" optionLabel="label" optionValue="value" />
+        </div>
+        <div v-if="referenceBasis === 'replicate_mean'" class="field">
+          <label for="reference-replicates">Measurements per reported value</label>
+          <InputText id="reference-replicates" v-model="referenceReplicates" type="number" min="2" max="10000" />
+        </div>
+        <div v-if="referenceBasis === 'replicate_mean'" class="field">
+          <label for="reference-replicate-digest">Replicate source SHA-256, if available</label>
+          <InputText id="reference-replicate-digest" v-model.trim="referenceReplicateDigest" placeholder="64 hexadecimal characters" />
+        </div>
+        <div class="field">
+          <label for="reference-provenance">Reference provenance</label>
+          <InputText id="reference-provenance" v-model.trim="referenceProvenance" placeholder="Laboratory/source record" />
+        </div>
+        <div v-if="selectedTargetType === 'continuous'" class="field">
+          <label for="reference-precision">Reported laboratory precision (JSON, optional)</label>
+          <InputText id="reference-precision" v-model.trim="referencePrecisionJson" placeholder="Pooled within-specimen precision record" />
+        </div>
+        <div v-if="referencePrecisionJson" class="field">
+          <label for="reference-precision-study">Precision study provenance</label>
+          <InputText id="reference-precision-study" v-model.trim="referencePrecisionStudy" placeholder="Separate replicate study or laboratory record" />
+        </div>
+      </div>
+      <small v-if="referenceBasis === 'replicate_mean'">A count or digest is a declaration, not proof of the specimen-to-replicate mapping.</small>
+      <small v-if="referencePrecisionJson">Reported precision remains unverified until its source replicates and mapping are reviewed. It does not create a prediction interval.</small>
+    </section>
+
     <section class="control-section" aria-labelledby="group-annotations-title">
       <div class="section-heading">
         <button
@@ -284,6 +329,7 @@
             class="p-button-sm p-button-outlined"
             :disabled="!canApplyPlan"
             :title="planAssignmentHint"
+            :aria-describedby="planHintId"
             @click="confirmPlanAssignment = true"
           />
           <div v-else class="plan-confirm">
@@ -300,8 +346,8 @@
               @click="previewAcquisitionPlan"
             />
           </div>
-          <small v-if="!canApplyPlan">{{ planAssignmentHint }}</small>
-          <small v-else>Nothing is published until you review the proposed differences.</small>
+          <small v-if="!canApplyPlan" :id="planHintId">{{ planAssignmentHint }}</small>
+          <small v-else :id="planHintId">Nothing is published until you review the proposed differences.</small>
         </template>
         <small v-else>No intended wells are saved for this dataset.</small>
       </div>
@@ -503,7 +549,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, ref, useId, watch } from "vue";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
 import Column from "primevue/column";
@@ -537,13 +583,14 @@ import {
   type SampleTargetType,
 } from "@/utils/sampleTable";
 import { getErrorMessage } from "@/utils/errors";
-import type { AcquisitionPlan, MeasuredSampleTableEditor } from "@/types";
+import type { AcquisitionPlan, MeasuredSampleTableEditor, ReferenceValueDeclaration } from "@/types";
 
 export interface SampleTableSavePayload {
   file: File;
   expectedRevision: string | null;
   targetColumn: string;
   targetType: SampleTargetType;
+  referenceDeclaration: ReferenceValueDeclaration;
   summary: SampleTableSaveSummary;
 }
 
@@ -564,6 +611,13 @@ export interface SampleTableSaveSummary {
 const props = defineProps<{
   sampleCount: number;
   sampleLabels: string[];
+  sourceTarget?: unknown[] | null;
+  sourceTargetContext?: {
+    target_type?: string | null;
+    target_name?: string | null;
+    target_names?: string[] | null;
+    selected_target?: string | null;
+  };
   sourceFileId: number;
   sourceName: string;
   experimentId: number;
@@ -572,6 +626,7 @@ const props = defineProps<{
     sample_table_file_id: number;
     selected_target: string;
     target_type: SampleTargetType;
+    reference_declaration?: ReferenceValueDeclaration;
   };
   saving?: boolean;
   saveError?: string;
@@ -590,6 +645,16 @@ const targets = ref<SampleTargetDefinition[]>([{ name: "target", type: "continuo
 const selectedTarget = ref("target");
 const targetNameDraft = ref("target");
 const targetTypeDraft = ref<SampleTargetType>("continuous");
+const referenceUnits = ref("");
+const referenceMethodId = ref("");
+const referenceMethodVersion = ref("");
+const referenceBasis = ref<"single_measurement" | "replicate_mean">("single_measurement");
+const referenceReplicates = ref("1");
+const referenceProvenance = ref("");
+const referenceReplicateDigest = ref("");
+const referencePrecisionJson = ref("");
+const referencePrecisionStudy = ref("");
+const referenceForTarget = ref("");
 const annotationColumns = ref<string[]>([]);
 const annotationBulkValues = ref<Record<string, string>>({});
 const newColumn = ref("");
@@ -630,6 +695,13 @@ const targetTypeOptions = [
   { label: "Continuous", value: "continuous" },
   { label: "Categorical", value: "categorical" },
 ];
+const selectedTargetType = computed(() => targets.value.find((item) => item.name === selectedTarget.value)?.type);
+const referenceBasisOptions = computed(() => selectedTargetType.value === "categorical"
+  ? [{ label: "Single classification result", value: "single_measurement" }]
+  : [
+      { label: "Single measurement", value: "single_measurement" },
+      { label: "Mean of replicate measurements", value: "replicate_mean" },
+    ]);
 const plateDirectionOptions = [
   { label: "Across rows", value: "rows" },
   { label: "Down columns", value: "columns" },
@@ -657,7 +729,21 @@ watch(selectedTarget, (name) => {
   if (!target) return;
   targetNameDraft.value = target.name;
   targetTypeDraft.value = target.type;
+  if (referenceForTarget.value !== name) setReferenceDeclaration();
 });
+
+function setReferenceDeclaration(value?: ReferenceValueDeclaration): void {
+  referenceForTarget.value = value?.target_name ?? selectedTarget.value;
+  referenceUnits.value = value?.units ?? "";
+  referenceMethodId.value = value?.method?.method_id ?? "";
+  referenceMethodVersion.value = value?.method?.version ?? "";
+  referenceBasis.value = value?.method?.measurement_basis ?? "single_measurement";
+  referenceReplicates.value = String(value?.method?.measurements_per_label ?? 1);
+  referenceProvenance.value = value?.provenance ?? "";
+  referenceReplicateDigest.value = value?.replicate_evidence_digest ?? "";
+  referencePrecisionJson.value = value?.method?.precision ? JSON.stringify(value.method.precision) : "";
+  referencePrecisionStudy.value = value?.precision_study_provenance ?? "";
+}
 
 function openEditor(): void {
   emit("clearSaveError");
@@ -665,9 +751,28 @@ function openEditor(): void {
   selectedTarget.value = "target";
   targetNameDraft.value = "target";
   targetTypeDraft.value = "continuous";
+  setReferenceDeclaration(props.analysisBinding?.reference_declaration);
   rows.value = createSampleTableRows(props.sampleCount, props.sourceFileId, props.sampleLabels, [
     "target",
   ]);
+  // Bootstrap only a complete, row-aligned native target. An existing measured
+  // sample binding remains authoritative and is loaded below.
+  const targetContext = props.sourceTargetContext;
+  if (!props.analysisBinding && props.sourceTarget?.length === props.sampleCount
+    && (targetContext?.target_type === "categorical" || targetContext?.target_type === "continuous")) {
+    const names = targetContext.target_names ?? [];
+    const selected = targetContext.selected_target ?? targetContext.target_name ?? names[0] ?? "target";
+    const index = names.indexOf(selected);
+    const values = props.sourceTarget.map(value => Array.isArray(value)
+      ? value.length === 1 ? value[0] : index >= 0 ? value[index] : undefined : value);
+    if (values.every(value => value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean")) {
+      const name = normalizeAnnotationColumnName(selected) || "target";
+      targets.value = [{ name, type: targetContext.target_type }];
+      selectedTarget.value = targetNameDraft.value = name;
+      targetTypeDraft.value = targetContext.target_type;
+      rows.value = rows.value.map((row, index) => ({ ...row, targets: { [name]: values[index] == null ? "" : String(values[index]) } }));
+    }
+  }
   originalRows.value = rows.value.map(cloneRow);
   annotationColumns.value = [];
   annotationBulkValues.value = {};
@@ -714,6 +819,7 @@ async function loadMeasuredSamples(): Promise<void> {
       data.annotation_columns.map((column) => [column, ""]),
     );
     selectedTarget.value = data.selected_target;
+    setReferenceDeclaration(data.reference_declaration);
     plateFormatId.value = data.plate_format_id;
     manualPlateEditing.value = rows.value.some((row) => Boolean(row.plate_id || row.well));
   } catch (error: unknown) {
@@ -878,6 +984,7 @@ function enableManualPlateEditing(): void {
 }
 
 const canApplyPlan = computed(() => plannedWells.value.length > 0 && rows.value.length > 0);
+const planHintId = useId();
 const planAssignmentHint = computed(() =>
   canApplyPlan.value
     ? "Preview matching by retained acquisition records, then planned plate order"
@@ -1011,6 +1118,58 @@ function buildSavePayload(): SampleTableSavePayload | null {
   if (!result.valid) return null;
   const selected = targets.value.find((target) => target.name === selectedTarget.value);
   if (!selected) return null;
+  const units = selected.type === "continuous" ? referenceUnits.value.trim() || null : null;
+  const methodId = referenceMethodId.value.trim();
+  const methodVersion = referenceMethodVersion.value.trim();
+  const replicateDigest = referenceReplicateDigest.value.trim() || null;
+  let precision: Record<string, unknown> | null = null;
+  if (referencePrecisionJson.value.trim()) {
+    try {
+      const parsed: unknown = JSON.parse(referencePrecisionJson.value);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+      precision = parsed as Record<string, unknown>;
+    } catch {
+      validationErrors.value.push("Reference precision must be a JSON object from measured laboratory replicates.");
+    }
+  }
+  if (Boolean(methodId) !== Boolean(methodVersion))
+    validationErrors.value.push("Record both reference method ID and version, or leave both unknown.");
+  if ((precision || replicateDigest || referenceBasis.value === "replicate_mean") && !methodId)
+    validationErrors.value.push("Replicate or precision evidence requires a reference method.");
+  if (selected.type === "categorical" && precision)
+    validationErrors.value.push("Numeric reference precision does not apply to categorical labels.");
+  if (selected.type === "categorical" && referenceBasis.value === "replicate_mean")
+    validationErrors.value.push("Categorical labels cannot be represented as a mean of replicate measurements.");
+  if (precision && !referencePrecisionStudy.value.trim())
+    validationErrors.value.push("Reported precision needs separate study provenance.");
+  if (!precision && referencePrecisionStudy.value.trim())
+    validationErrors.value.push("Precision study provenance requires a reported precision record.");
+  const replicateCount = Number(referenceReplicates.value);
+  if (referenceBasis.value === "replicate_mean" &&
+    (!Number.isInteger(replicateCount) || replicateCount < 2 || replicateCount > 10000))
+    validationErrors.value.push("A replicate mean needs 2–10,000 measurements per reported value.");
+  if (replicateDigest && !/^[a-f0-9]{64}$/.test(replicateDigest))
+    validationErrors.value.push("Replicate source SHA-256 must have 64 lowercase hexadecimal characters.");
+  if (referenceProvenance.value.length > 500 || referencePrecisionStudy.value.length > 500 || (units?.length ?? 0) > 100)
+    validationErrors.value.push("Reference provenance or units exceed the allowed length.");
+  if (validationErrors.value.length) return null;
+  const referenceDeclaration: ReferenceValueDeclaration = {
+    schema_version: "spectrasherpa.reference-value-declaration/1",
+    target_name: selected.name,
+    target_type: selected.type,
+    units,
+    method: methodId ? {
+      method_id: methodId,
+      version: methodVersion,
+      response_identity: { names: [selected.name], units: [units] },
+      measurement_basis: referenceBasis.value,
+      measurements_per_label: referenceBasis.value === "single_measurement" ? 1 : replicateCount,
+      precision,
+    } : null,
+    provenance: referenceProvenance.value.trim() || null,
+    precision_study_provenance: referencePrecisionStudy.value.trim() || null,
+    replicate_evidence_digest: referenceBasis.value === "replicate_mean" ? replicateDigest : null,
+  };
   const csv = serializeSampleTableCsv(
     rows.value,
     targets.value,
@@ -1025,6 +1184,7 @@ function buildSavePayload(): SampleTableSavePayload | null {
     expectedRevision: bindingRevision.value,
     targetColumn: selected.name,
     targetType: selected.type,
+    referenceDeclaration,
     summary: {
       sourceFileId: props.sourceFileId,
       totalSamples: rows.value.length,

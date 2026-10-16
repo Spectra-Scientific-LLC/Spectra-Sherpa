@@ -188,6 +188,7 @@ def test_every_model_consuming_node_has_an_audited_disposition():
         ("selection.variable_select", "model"),
         ("model.pca_transform", "model"),
         ("diagnostics.outliers", "default"),
+        ("diagnostics.plsda_permutation", "fitted_state"),
         ("transfer.apply_fitted", "fitted_state"),
         ("model.predict_regression", "fitted_state"),
         *{(f"model.apply_fitted_{name}", "fitted_state") for name in ("pls", "pcr", "svr", "linear_regression")},

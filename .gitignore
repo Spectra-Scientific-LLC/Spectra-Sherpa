@@ -91,6 +91,8 @@ exports/
 # above; allow them explicitly so nothing is tracked-but-ignored by
 # accident (the release tooling treats such a mismatch as a fault).
 !tests/fixtures/**/*.zip
+# The Lavender Essential Oil FTIR Corpus v1 ships as a default dataset.
+!src/spectra_sherpa/data/reference/lavender-essential-oil-v1.zip
 *.pkl
 
 # uv lock (we use poetry)

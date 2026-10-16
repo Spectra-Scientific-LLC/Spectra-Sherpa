@@ -25,7 +25,5 @@ ignore = []
 # reason = "Dev build tooling only; vulnerable code path is not reachable at build time."
 # expires = "2026-12-31"
 
-[[npm-audit.ignore]]
-id = "GHSA-vfj7-8cjw-p6xm"
-reason = "braces stack-exhaustion DoS is reachable only through dev build tooling (tailwindcss watcher, eslint fast-glob) with glob patterns from our own sources; the shipped runtime bundle never includes it, and no patched braces release exists."
-expires = "2026-12-31"
+[npm-audit]
+ignore = []

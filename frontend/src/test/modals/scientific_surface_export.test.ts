@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { nextTick } from "vue";
 import DataTableModal from "@/views/workflow-builder/modals/DataTableModal.vue";
 import QuickPlotModal from "@/views/workflow-builder/modals/QuickPlotModal.vue";
+import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
 const stubs = {
   Dialog: { template: "<div><slot /></div>" },
   Dropdown: true,
@@ -40,6 +41,7 @@ async function csv(w: any) {
   return blob?.text();
 }
 afterEach(() => {
+  useDisplayPreferences().maxRows = 300;
   wrappers.splice(0).forEach((w) => w.unmount());
   vi.restoreAllMocks();
 });
@@ -91,26 +93,26 @@ describe("Scientific surface export authority", () => {
     expect(w.vm.displayedData).toEqual([]);
     expect(await csv(w)).toBeUndefined();
   });
-  it("GSC-02 states the 100/120 scope and allows a sample beyond the preview after selecting All", async () => {
+  it("GSC-02 states the 300/320 scope and allows a sample beyond the preview after raising the visual limit", async () => {
     const w = table(
-      Array.from({ length: 120 }, (_, i) => [i]),
-      { sample_labels: Array.from({ length: 120 }, (_, i) => `S${i}`) },
+      Array.from({ length: 320 }, (_, i) => [i]),
+      { sample_labels: Array.from({ length: 320 }, (_, i) => `S${i}`) },
     );
-    expect(w.text()).toContain("Showing first 100 of 120 rows");
-    w.vm.searchQuery = "S119";
+    expect(w.text()).toContain("Showing first 300 of 320 rows");
+    w.vm.searchQuery = "S319";
     await nextTick();
     expect(w.vm.tableData).toHaveLength(0);
-    w.vm.rowLimit = 0;
+    w.vm.rowLimit = 500;
     await nextTick();
     expect(w.vm.tableData).toHaveLength(1);
-    expect(w.vm.tableData[0]._label_full).toBe("S119");
+    expect(w.vm.tableData[0]._label_full).toBe("S319");
     expect(w.text()).toContain("regardless of preview limits or search filters");
   });
-  it("GSC-02 all means all, including beyond the former 100000 bound", async () => {
+  it("GSC-02 caps display but keeps full export beyond the former 100000 bound", async () => {
     const w = table(Array.from({ length: 100001 }, (_, i) => i));
-    w.vm.rowLimit = 0;
     await nextTick();
-    expect(w.vm.tableData).toHaveLength(100001);
+    expect(w.vm.tableData).toHaveLength(300);
+    expect((await csv(w))?.trimEnd().endsWith("100001,100000")).toBe(true);
   });
   it("GSC-03 exports exact distinct spectral coordinates and unsplit sample labels", async () => {
     const w = table([[1, 2]], { wavenumbers: [500.001, 500.004], sample_labels: ["A,B"] });

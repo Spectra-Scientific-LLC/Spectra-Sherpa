@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { activeProjectScope } from "@/stores/projectScopeRegistry";
-import { attentionSnapshot, focusPlot, setAttentionWindow } from "@/lib/sherpaAttention";
+import { attentionSnapshot, focusPlot, focusSavedRun, releaseSavedRun, setAttentionWindow } from "@/lib/sherpaAttention";
 
 describe("attention follows project authority", () => {
   beforeEach(() => { activeProjectScope.value = 1; setAttentionWindow("/workflow"); });
@@ -60,4 +60,24 @@ it("keeps resource context while focusing a plot or changing section, then clear
   expect(attentionSnapshot().section).toBe("new-round");
   setAttentionWindow("/project");
   expect(attentionSnapshot()).toEqual({ window: "project", surface: "window" });
+});
+
+it("keeps saved-run identity through plot focus and clears it on project change or exit", () => {
+  activeProjectScope.value = 1;
+  focusSavedRun(3, 11);
+  focusPlot("eval-plot", "eval");
+  expect(attentionSnapshot()).toMatchObject({ workflow_id: 3, run_id: 11, node_id: "eval" });
+  releaseSavedRun();
+  expect(attentionSnapshot().run_id).toBeUndefined();
+  focusSavedRun(3, 11);
+  activeProjectScope.value = 2;
+  expect(attentionSnapshot().run_id).toBeUndefined();
+});
+
+it("retains the inspected run through view queries but never across run navigation", () => {
+  focusSavedRun(3, 11);
+  setAttentionWindow("/runs/11?node=eval&view=results");
+  expect(attentionSnapshot()).toMatchObject({ workflow_id: 3, run_id: 11 });
+  setAttentionWindow("/runs/10");
+  expect(attentionSnapshot().run_id).toBeUndefined();
 });

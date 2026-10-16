@@ -1,6 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, h, nextTick, onUnmounted, reactive } from "vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   dataSelectionReceiptStorageKey,
   storeDataSelectionReceipt,
@@ -146,6 +146,9 @@ vi.mock("vue-router", () => ({
     routeLeaveGuards.push(guard);
   }),
 }));
+
+const confirmAction = vi.hoisted(() => vi.fn(async () => false));
+vi.mock("@/composables/useConfirmAction", () => ({ useConfirmAction: () => confirmAction }));
 
 vi.mock("primevue/usetoast", () => ({
   useToast: () => ({ add: vi.fn() }),
@@ -323,6 +326,12 @@ async function mountBuilder() {
 }
 
 describe("WorkflowBuilderContent trial/detail layout", () => {
+  // Compile the builder once up front: its cold transform takes seconds and
+  // otherwise counts against the first test's timeout under a loaded run.
+  beforeAll(async () => {
+    await import("@/views/workflow-builder/WorkflowBuilderContent.vue");
+  }, 60_000);
+
   beforeEach(() => {
     routeQuery.project_id = "1";
     delete routeQuery.fromDataSelection;
@@ -334,6 +343,8 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     lifecycleCounts.toolbarUnmounts = 0;
     lifecycleCounts.inspectorUnmounts = 0;
     routeLeaveGuards.length = 0;
+    confirmAction.mockReset();
+    confirmAction.mockResolvedValue(false);
     workflowStore.workflowId = 101;
     workflowStore.workflowHash = null;
     workflowStore.hasUnsavedChanges = false;
@@ -376,6 +387,8 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     expect(wrapper.text()).toContain("cross-validation plan");
     const menu = wrapper.find('[data-testid="export-menu"]');
     expect(wrapper.text()).toContain("not a deployable campaign winner");
+    expect(wrapper.get('[aria-label="Validated workflow export"]').text()).toContain("import an available signed Model package from Dashboard");
+    expect(wrapper.get('[aria-label="Validated workflow export"]').text()).not.toContain("Optimize");
     expect(menu.text()).toContain("Project archive (.sherpa) — not a winner package");
     expect(menu.text()).not.toContain("Download Bundle (.zip)");
     expect(menu.text()).not.toContain("Jupyter Notebook");
@@ -471,11 +484,11 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
 
     const handoff = wrapper.get('[aria-label="My Dataset selection"]');
     expect(handoff.text()).toContain("3 selected files selected");
-    expect(handoff.text()).toContain("waiting for Analysis Starter");
+    expect(handoff.text()).toContain("waiting for an analysis starter");
     expect(handoff.text()).toContain("block requested for grouping");
     expect(handoff.text()).not.toContain("will be offered");
     expect(wrapper.get('[aria-label="Workflow workspace context"]').text()).toContain(
-      "Active DataPending: Lavender Essential Oil FTIR Corpus v1",
+      "Data PortfolioPending: Lavender Essential Oil FTIR Corpus v1",
     );
     expect(
       wrapper.get('[data-testid="workflow-inspector"]').attributes("data-execution-disabled"),
@@ -515,7 +528,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
       "missing, expired, or belongs to another browser tab",
     );
     expect(wrapper.get('[aria-label="Workflow workspace context"]').text()).toContain(
-      "Active DataPending selection unavailable",
+      "Data PortfolioPending selection unavailable",
     );
     expect(
       wrapper.get('[data-testid="workflow-inspector"]').attributes("data-execution-disabled"),
@@ -632,9 +645,9 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
 
     const context = wrapper.get('[aria-label="Workflow workspace context"]');
     expect(context.text()).not.toContain("ProjectIris PCA");
-    expect(context.text()).toContain("Active DataSynthetic Atmospheric FTIR");
+    expect(context.text()).toContain("Data PortfolioSynthetic Atmospheric FTIR");
     expect(context.text()).not.toContain("1 dataset bound");
-    expect(context.findAll(".workspace-context-item")[1]?.get("strong").attributes("title")).toBe(
+    expect(context.findAll(".workspace-context-item")[2]?.get("strong").attributes("title")).toBe(
       "Synthetic Atmospheric FTIR",
     );
     wrapper.unmount();
@@ -882,8 +895,6 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
       workflowStore.hasUnsavedChanges = false;
       return 101;
     });
-    const confirm = vi.fn(() => false);
-    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
     const wrapper = await mountBuilder();
     await flushPromises();
 
@@ -897,15 +908,30 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
       createVersion: false,
       projectId: 1,
     });
-    expect(confirm).not.toHaveBeenCalled();
+    expect(confirmAction).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("warns on tab close and offers an explicit Save action for unsaved edits", async () => {
+    workbookStore.activeIndex = 0;
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    workflowStore.hasUnsavedChanges = true;
+    await flushPromises();
+    const closing = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(closing);
+    expect(closing.defaultPrevented).toBe(true);
+    expect(wrapper.text()).toContain("Unsaved changes");
+    const save = wrapper.findAll("button").find(button => button.text() === "Save")!;
+    await save.trigger("click");
+    await flushPromises();
+    expect(workflowStore.saveWorkflow).toHaveBeenCalled();
     wrapper.unmount();
   });
 
   it("prompts only after the route-time autosave genuinely fails", async () => {
     workbookStore.activeIndex = 0;
     workflowStore.saveWorkflow.mockRejectedValueOnce(new Error("network unavailable"));
-    const confirm = vi.fn(() => false);
-    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const wrapper = await mountBuilder();
     await flushPromises();
@@ -916,11 +942,46 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     const allowed = await guard?.();
 
     expect(allowed).toBe(false);
-    expect(confirm).toHaveBeenCalledWith(
-      "Autosave failed. Your edits are preserved in this browser but are not saved to the server. Leave this page?",
+    expect(confirmAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "Autosave failed. Your edits are preserved in this browser but are not saved to the server.",
+        acceptLabel: "Leave page",
+      }),
     );
     expect(wrapper.text()).toContain("Save failed");
     consoleError.mockRestore();
+    wrapper.unmount();
+  });
+
+  it("deletes a node only after confirmation, and only from the workflow it was asked in", async () => {
+    workbookStore.activeIndex = 0;
+    const node = { id: "pca_1", type: "model.pca", x: 0, y: 0, params: { n_components: 3 } };
+    workflowStore.nodes = [node];
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    const inspector = wrapper.getComponent({ name: "WorkflowInspector" });
+
+    inspector.vm.$emit("delete-node", "pca_1");
+    await flushPromises();
+    expect(confirmAction).toHaveBeenCalledWith(expect.objectContaining({ title: "Delete node", destructive: true }));
+    expect(workflowStore.nodes).toEqual([node]);
+
+    // Another workflow with a node of the same id opens while the dialog is up.
+    let accept!: (value: boolean) => void;
+    confirmAction.mockImplementationOnce(() => new Promise<boolean>((resolve) => { accept = resolve; }));
+    inspector.vm.$emit("delete-node", "pca_1");
+    await flushPromises();
+    workflowStore.workflowId = 202;
+    accept(true);
+    await flushPromises();
+    expect(workflowStore.nodes).toEqual([node]);
+
+    workflowStore.workflowId = 101;
+    confirmAction.mockResolvedValueOnce(true);
+    inspector.vm.$emit("delete-node", "pca_1");
+    await flushPromises();
+    expect(workflowStore.nodes).toEqual([]);
+    workflowStore.nodes = [node];
     wrapper.unmount();
   });
 
@@ -932,8 +993,6 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
         message: "Maximum Feature Coordinate must be greater than Minimum Feature Coordinate",
       },
     ]);
-    const confirm = vi.fn(() => false);
-    Object.defineProperty(window, "confirm", { configurable: true, value: confirm });
     const wrapper = await mountBuilder();
     await flushPromises();
 
@@ -943,7 +1002,26 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
 
     expect(allowed).toBe(true);
     expect(workflowStore.saveWorkflow).not.toHaveBeenCalled();
-    expect(confirm).not.toHaveBeenCalled();
+    expect(confirmAction).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("offers a stale browser draft without silently replacing the saved workflow", async () => {
+    workbookStore.activeIndex = 0;
+    const key = "spectra_sherpa_workflow_draft_v1:1:1:101";
+    localStorage.setItem(key, JSON.stringify({
+      projectId: 1, workflowId: 101, workflowName: "Old draft", workflowDescription: "",
+      nodes: [{ id: "deleted_node", type: "preprocess.derivative", params: {}, x: 0, y: 0 }], edges: [],
+    }));
+    const wrapper = await mountBuilder();
+    await flushPromises();
+    expect(wrapper.text()).toContain("The saved workflow is shown");
+    expect(workflowStore.setNodes).not.toHaveBeenCalled();
+    expect(workflowStore.saveWorkflow).not.toHaveBeenCalled();
+    const keep = wrapper.findAll("button").find((button) => button.text() === "Keep saved workflow")!;
+    await keep.trigger("click");
+    expect(localStorage.getItem(key)).toBeNull();
+    expect(workflowStore.setNodes).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 

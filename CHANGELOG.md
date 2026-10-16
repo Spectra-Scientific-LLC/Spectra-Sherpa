@@ -7,10 +7,93 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-15
+
+### Added
+
+- Linked PCA and PLS diagnostic workbenches for reviewing components, samples,
+  loadings, fitted-variable contributions, exclusions and restored results.
+- Executed validation-design and component-selection evidence. Regression and
+  classification use their own performance measures; unavailable cross-validation
+  is stated instead of being replaced by a calibration-only ranking.
+- Model-bound applicability evidence for single and batch predictions, reference-
+  value quality context, and reproducible PLS-DA response-permutation evidence.
+- A project-level saved-model comparison and a separate external-qualification
+  dossier. Unsupported or incomparable metrics remain unavailable rather than
+  being treated as zero or as independent confirmation.
+- Cited Sherpa Advisor explanations of retained diagnostic evidence on managed
+  deployments; local OSS retains the numerical workbench without a managed
+  Advisor entitlement.
+
+### Changed
+
+- The `sherpaAgenticTools` capability is now `sherpaWorkflowGenerationRun`,
+  joined by `sherpaCampaignGeneration`.
+
+### Fixed
+
+- Local Batch can apply eligible 0.6.0 PLS-DA, PCA and FastICA artifacts with
+  exact retained feature axes only after an explicit exploratory-use
+  acknowledgement. The warning is retained; missing signal identity is never
+  silently treated as verified.
+- Saved PLS-DA comparisons show their target and verified classification
+  validation, without borrowing a result from another model in the workflow.
+- Frontend unit tests reject unmocked Axios and fetch calls instead of
+  contacting a developer's local server.
+
 ### Security
 
 - Keep deployment and analysis-readiness exception details in server logs instead of API responses.
 - Require Mako 1.4.2 or newer to address Windows template URI traversal.
+
+## [0.6.1] - 2026-10-08
+
+### Fixed
+
+- Workflow editing has an explicit Save action and saves after a brief pause.
+  Browser recovery drafts require a restore choice instead of replacing the
+  saved graph silently. New nodes are placed clear of the existing graph.
+- Invalid workflow preflight preserves displayed results and precedes demo quota
+  consumption. Saved-model application admits source-bound response provenance
+  emitted by the collection loader, while rejecting foreign or malformed authority.
+- Batch hides internal candidate workflows and limits model application choices
+  to fitted models, with retained run, component-count and date context.
+- Reports disclose saved PLS scaling, deduplicate equivalent metric wrappers,
+  omit fixed example values, and avoid rounding near-complete variance to 100%.
+  Saved-run code-export limitations are visible. OSC starter text discloses its
+  supervised fit and the need for fitting within training folds.
+- Runs Inspect no longer requests an unsupported generic Advisor scope. Demo
+  navigation hides operator logs from ordinary users; unknown URLs show a not-found
+  page. Spectral ordinate labels no longer use the sample-axis title.
+
+
+- Analysis Starter re-admits the target and grouping saved on Data, including
+  source units, without changing existing workflow bindings. Response-table
+  titles are no longer offered as extra target columns.
+- Class readiness warns when fewer than three distinct validation groups
+  represent a class; repeated acquisitions do not inflate this count.
+- Saved-run optimization previews and admissions validate the actual training
+  folds before execution. Empty stopped campaigns no longer claim retained scores.
+- Scientific plots use light backgrounds and contrasting labels. Partial-run
+  retention reasons are visible on Results as well as Summary.
+- New PLS and PLS-DA calibration starters mean-centre spectra without
+  variance scaling; KNN preserves spectral distances without autoscaling,
+  and hierarchical clustering uses mean-centring. Feature-table bindings autoscale
+  instead, including the bundled Wine example. Supervised scaling is fitted only
+  on training rows. Saved workflows keep their recorded settings.
+- An empty Deploy application list no longer triggers a demo-blocked legacy
+  request. Loading failures preserve the server's explanation.
+- Numeric table outputs open as tables. Retained peak records display in
+  rows, Quick Plot exposes sample-metadata colour/style controls, and
+  outlier plots label flagged samples.
+- Reports distinguish RMSEC, RMSECV and RMSEP using retained population
+  roles. Run inspection omits internal bookkeeping warnings; range labels
+  use compact display precision without changing saved values.
+
+- Saved-run inspection preserves the selected workflow/run context for hosted
+  Advisor questions, including navigation and query changes.
+- Hosted workflow explanations can retrieve retained results and calculate
+  scoped statistics without rerunning the workflow.
 
 ## [0.6.0] - 2026-10-05
 

@@ -79,7 +79,6 @@
             >
               <span class="node-icon">{{ hit.config.icon }}</span>
               <span class="node-label">{{ hit.config.label }}</span>
-              <i class="pi pi-plus add-icon"></i>
             </div>
           </template>
           <div v-else class="search-empty" data-testid="toolbar-search-empty">
@@ -121,7 +120,6 @@
           >
             <span class="node-icon">{{ config.icon }}</span>
             <span class="node-label">{{ config.label }}</span>
-            <i class="pi pi-plus add-icon"></i>
           </div>
         </div>
       </div>
@@ -655,6 +653,9 @@ defineExpose({ summarizePurpose });
 
 /* Section headers - now interactive */
 .section-header {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 8px;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -690,7 +691,14 @@ defineExpose({ summarizePurpose });
   color: #94a3b8;
 }
 
+.section-header > span {
+  min-width: 0;
+  flex: 1;
+}
+
 .section-header i {
+  flex: 0 0 auto;
+  margin-left: auto;
   font-size: 0.65rem;
   transition: transform 0.2s ease;
 }
@@ -846,10 +854,6 @@ defineExpose({ summarizePurpose });
   flex: 1;
 }
 
-.add-icon {
-  font-size: 0.75rem;
-  opacity: 0.7;
-}
 
 /* Node type colors */
 .node-data {

@@ -1,7 +1,10 @@
 # Choose Your SpectraSherpa Path
 
-SpectraSherpa has one scientific language: a typed canonical DAG. Choose the
-way you want to work; do not choose a different scientific implementation.
+SpectraSherpa has one scientific language: a typed canonical DAG — every
+analysis step is a node with declared inputs, parameters, and outputs, and the
+same node definitions drive the visual Workbench and the Python SDK. Choose the
+way you want to work; you are never choosing a different scientific
+implementation.
 
 ## Desktop download
 
@@ -15,24 +18,22 @@ alone does not establish installer availability.
 Use this path for a laptop, workstation, notebook, or script. The default
 installation includes both the visual Workbench and the supported Python SDK:
 
-> **0.6.0 release lifecycle.** Install 0.6.0 from PyPI only after the public
-> index reports that exact version. Before the public tag exists, use only the
-> exact monorepo commit named by the qualification record. After the tag exists
-> but before PyPI reports 0.6.0, use the exact `spectra-sherpa-v0.6.0` source
-> tag. Source version text alone is not publication evidence.
+> **Release availability.** Check the public index for the version you intend
+> to install. A source version or tag alone does not establish PyPI or desktop
+> availability. For source qualification, use the exact reviewed revision;
+> after publication, use the corresponding public source tag.
 
-After the public index reports 0.6.0:
+To install the latest published package:
 
 ```bash
-python -m pip install "spectra-sherpa==0.6.0"
+python -m pip install spectra-sherpa
 spectra-sherpa
 ```
 
-For a pre-publication qualification candidate, the commands below begin inside
-the exact checkout named by the qualification record:
+For a source build, use the exact reviewed Spectra-Sherpa checkout and run
+these commands at its repository root:
 
 ```bash
-cd packages/spectra-sherpa
 python -m pip install poetry
 poetry env use python3.11
 poetry install
@@ -62,17 +63,23 @@ acquired, content-addressed reference data can be used without the network
 client that acquired it. Evidence verification is part of every installation;
 it is not an optional extra.
 
-## Hosted Team Optimization
+## Hosted Demo and Pro
 
-Use the hosted product when a team needs shared projects, governed
-optimization campaigns, durable audit records, or managed evidence export.
-The managed service executes the same canonical node contracts as the local
-product. A scientist does not assemble a hosted deployment from pip extras or
-choose an internal runtime profile.
+SpectraSherpa OSS runs locally. Demo and Pro are hosted offerings; enterprise
+is an internal runtime mode. Hosted Optimize campaigns are subject to service
+availability and account policy. For the local manual comparison route, see
+[Optimize a Saved Result](../workflows/optimize-saved-result.md#manual-comparison-in-local-oss).
+
+Use Demo and Pro for hosted optimization under their account policies. Governed
+audit verification and evidence-pack export require separate Team, Enterprise,
+or OEM entitlements; they are not Demo or Pro features. The managed service
+executes the same canonical node contracts as the local product. A scientist
+does not assemble a hosted deployment from pip extras or choose an internal
+runtime profile.
 
 The 0.6 hosted trial is available for evaluation with its server-issued
 starters. Use the published trial link for demo access; contact Spectra
-Scientific for Pro, Organization, or customer-data evaluation access.
+Scientific for Pro or customer-data evaluation access.
 Downloaded canonical projects remain inspectable and reproducible in the local
 Workbench when their declared capabilities are available.
 

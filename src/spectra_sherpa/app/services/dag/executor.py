@@ -103,7 +103,9 @@ class DAGExecutor:
         # Restore reference to global process pool
         self._process_pool = get_default_pool()
 
-    def _process_model_artifact(self, node_id: str) -> None:
+    def _process_model_artifact(
+        self, node_id: str, positional_inputs: List[Any] | None = None, named_inputs: Dict[str, Any] | None = None
+    ) -> None:
         """Save model artifact to disk if the node produced one.
 
         Training nodes include ``_model_artifact`` in their result dict.
@@ -123,6 +125,17 @@ class DAGExecutor:
             metadata = artifact.get("metadata", {})
             arrays = artifact.get("arrays", {})
             metadata.setdefault("node_id", artifact.get("node_id", node_id))
+            if metadata.get("native_node_type") == "model.fitted_pls":
+                from spectra_sherpa.sdk.saved_model_qualification import retain_pls_training_specimens
+
+                source = (named_inputs or {}).get("default")
+                if source is None:
+                    source = (named_inputs or {}).get("input_data")
+                if source is None:
+                    source = (named_inputs or {}).get("X")
+                if source is None and positional_inputs:
+                    source = positional_inputs[0]
+                retain_pls_training_specimens(artifact, source)
             integrity_hash = store.save(artifact_uid, metadata, arrays)
 
             # Only pop after successful save — avoid losing data on failure
@@ -136,7 +149,11 @@ class DAGExecutor:
                     "node_id": metadata.get("node_id", node_id),
                     "model_type": metadata.get("model_type", "unknown"),
                     "n_features": metadata.get("n_features", 0),
-                    "n_components": metadata.get("n_components"),
+                    "n_components": (
+                        metadata.get("effective_n_components")
+                        if metadata.get("model_type") == "plsda"
+                        else metadata.get("n_components")
+                    ),
                     "classes_json": json.dumps(metadata["classes"]) if "classes" in metadata else None,
                     "feature_axis_json": (json.dumps(metadata["feature_axis"]) if "feature_axis" in metadata else None),
                     "metrics_json": json.dumps(metadata["metrics"]) if "metrics" in metadata else None,
@@ -989,15 +1006,19 @@ class DAGExecutor:
                 # They own its cancellation policy; never retry locally.
                 future = asyncio.get_running_loop().run_in_executor(self._process_pool, _run_node_in_worker, *args)
                 result = await asyncio.wait_for(future, timeout=timeout)
-            return qualify_evaluation_result(result, receipt)
+            return qualify_evaluation_result(result, receipt, source_results=self.results)
 
         # In-process nodes use the same Node.run transport guard as workers.
         node.bind_execution_runtime(self.runtime)
         if named_inputs:
-            return qualify_evaluation_result(await asyncio.wait_for(node.run(**named_inputs), timeout=timeout), receipt)
+            return qualify_evaluation_result(
+                await asyncio.wait_for(node.run(**named_inputs), timeout=timeout), receipt, source_results=self.results
+            )
         else:
             return qualify_evaluation_result(
-                await asyncio.wait_for(node.run(*positional_inputs), timeout=timeout), receipt
+                await asyncio.wait_for(node.run(*positional_inputs), timeout=timeout),
+                receipt,
+                source_results=self.results,
             )
 
     def _validate_runtime_data_roles(
@@ -1298,7 +1319,7 @@ class DAGExecutor:
                     self.diagnostics[node_id] = {}
 
                 # Persist model artifact if present
-                self._process_model_artifact(node_id)
+                self._process_model_artifact(node_id, positional_inputs, named_inputs)
 
                 self._param_hashes[node_id] = self._compute_param_hash(node_id)
                 # Pool workers mutate their own copy's status; the main-process
@@ -1436,7 +1457,7 @@ class DAGExecutor:
                 self.diagnostics[dep_node_id] = {}
 
             # Persist model artifact if present
-            self._process_model_artifact(dep_node_id)
+            self._process_model_artifact(dep_node_id, positional_inputs, named_inputs)
 
             self._param_hashes[dep_node_id] = self._compute_param_hash(dep_node_id)
             # Main-process status update: pool worker's status never flows back,

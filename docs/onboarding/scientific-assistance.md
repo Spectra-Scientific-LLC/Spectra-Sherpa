@@ -86,5 +86,5 @@ validation design. AI can help translate a result; it cannot supply missing
 metadata, choose a defensible claim boundary, or certify a method.
 
 For local versus managed availability, see
-[Cloud vs Local OSS](../introduction/cloud-vs-local.md). For experimental design,
+[Demo, Pro and local OSS](../introduction/cloud-vs-local.md). For experimental design,
 see [Validation and Model Application](../chemometrics/validation-application.md).

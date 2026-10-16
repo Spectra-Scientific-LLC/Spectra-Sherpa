@@ -14,6 +14,7 @@ from spectra_sherpa.app.api.v1.routes.workflows.crud import router as _crud_rout
 from spectra_sherpa.app.api.v1.routes.workflows.data_selections import router as _data_selections_router
 from spectra_sherpa.app.api.v1.routes.workflows.execute import router as _execute_router
 from spectra_sherpa.app.api.v1.routes.workflows.export import router as _export_router
+from spectra_sherpa.app.api.v1.routes.workflows.sample_review import router as _sample_review_router
 from spectra_sherpa.app.api.v1.routes.workflows.versions import router as _versions_router
 
 router = APIRouter()
@@ -23,6 +24,7 @@ router = APIRouter()
 router.include_router(_catalog_router)
 router.include_router(_execute_router)
 router.include_router(_data_selections_router)
+router.include_router(_sample_review_router)
 router.include_router(_crud_router)
 router.include_router(_export_router)
 router.include_router(_versions_router)

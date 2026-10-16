@@ -1,11 +1,15 @@
 <template>
   <section class="contents-panel" aria-label="Dataset contents">
+    <Teleport defer :to="displaySettingsTarget || 'body'" :disabled="!displaySettingsTarget">
     <details
       v-if="dataStore.fileInfo || dataStore.catalogDatasetInfo"
       class="global-display-metadata"
+      :class="{ 'in-preview': Boolean(displaySettingsTarget) }"
     >
       <summary>Display Settings</summary>
       <div class="global-display-metadata-controls">
+        <DisplayPreferencesSection />
+        <h4>Dataset-specific labels and target</h4>
         <MetadataEditor
           v-model:x-title="editXTitle"
           v-model:x-units="editXUnits"
@@ -21,13 +25,14 @@
         />
       </div>
     </details>
+    </Teleport>
 
-    <div v-if="dataStore.fileInfoLoading" class="explore-loading">
+    <div v-if="dataStore.fileInfoLoading && !dataStore.fileInfo" class="explore-loading">
       <ProgressSpinner style="width: 36px; height: 36px" />
       <span>Loading contents...</span>
     </div>
 
-    <div v-else-if="dataStore.fileInfoError" class="explore-error">
+    <div v-else-if="dataStore.fileInfoError && !dataStore.fileInfo" class="explore-error">
       <i class="pi pi-exclamation-triangle"></i>
       <span>{{ dataStore.fileInfoError }}</span>
     </div>
@@ -136,7 +141,7 @@
         </div>
       </div>
 
-      <DataStorySection />
+      <DataStorySection v-if="showDataStory" />
     </div>
 
     <div v-else-if="!dataStore.fileInfo" class="explore-empty">
@@ -147,24 +152,6 @@
       </p>
     </div>
 
-    <DatasetAnalysisReadinessCard
-      v-if="displayedAnalysisReadiness && !dataStore.catalogDatasetInfo"
-      :readiness="displayedAnalysisReadiness"
-      :binding="dataStore.fileInfo?.analysis_binding ?? undefined"
-      :unbinding="sampleTableSaving"
-      :target-options="analysisTargetOptions"
-      :group-options="analysisGroupOptions"
-      :selected-target="analysisTarget"
-      :selected-group="analysisGroup"
-      :loading="analysisReadinessLoading"
-      :preview-error="analysisReadinessError"
-      :is-target-preview="Boolean(analysisTarget)"
-      :selection-status="analysisSelectionStatus"
-      @unbind="unbindSampleTable"
-      @update:selected-target="commitAnalysisTarget"
-      @update:selected-group="commitAnalysisGroup"
-    />
-
     <details
       v-if="dataStore.fileInfo && !dataStore.catalogDatasetInfo"
       class="focused-dataset-details"
@@ -172,28 +159,119 @@
       <summary>
         <span>
           <strong>Active dataset: {{ contentsTitle }}</strong>
-          <small>Files · acquisition · labels · metadata · quality</small>
+          <small>Source · acquisition · samples · quality · portfolio</small>
         </span>
       </summary>
       <div class="explore-content">
-        <div class="explore-header">
-          <div class="explore-title">
-            <span class="essential-card-number">1</span>
-            <div class="loaded-file-title">
-              <small>Loaded files</small>
-              <span>{{ contentsTitle }}</span>
+        <p v-if="dataStore.fileInfoLoading" class="plot-display-notice" role="status">
+          Refreshing the exact dataset selection…
+        </p>
+        <p v-else-if="dataStore.fileInfoError" class="sample-table-retrieval-error" role="alert">
+          {{ dataStore.fileInfoError }}
+        </p>
+        <section class="dataset-step" aria-label="Loaded files">
+          <div class="explore-header">
+            <div class="explore-title">
+              <span class="essential-card-number">1</span>
+              <div class="loaded-file-title">
+                <small>Loaded files</small>
+                <span>{{ contentsTitle }}</span>
+              </div>
+              <Tag
+                v-if="contentsFileCount"
+                :value="`${contentsFileCount} file${contentsFileCount === 1 ? '' : 's'}`"
+                severity="info"
+              />
             </div>
-            <Tag
-              v-if="contentsFileCount"
-              :value="`${contentsFileCount} file${contentsFileCount === 1 ? '' : 's'}`"
-              severity="info"
-            />
           </div>
+          <details v-if="selectedFileNames.length" class="selected-files-details">
+            <summary>
+              {{ selectedFileNames.length }} selected file{{
+                selectedFileNames.length === 1 ? "" : "s"
+              }}
+            </summary>
+            <ul>
+              <li v-for="fileName in selectedFileNames" :key="fileName">{{ fileName }}</li>
+            </ul>
+          </details>
+          <slot name="source-collection" />
+        </section>
+
+        <section class="dataset-step" aria-label="Acquisition settings">
+          <div class="essential-card-heading">
+            <span class="essential-card-number">2</span>
+            <div>
+              <h4>Acquisition settings</h4>
+            </div>
+          </div>
+          <dl v-if="acquisitionSettings.length" class="essential-fact-grid">
+            <template v-for="setting in acquisitionSettings" :key="setting.label">
+              <dt>{{ setting.label }}</dt>
+              <dd :title="setting.detail || setting.value">{{ setting.value }}</dd>
+            </template>
+          </dl>
+          <p v-else class="dataset-step-empty">
+            No acquisition settings were retained for these files.
+          </p>
+          <section
+            v-if="requiresDimensionProjection"
+            class="dimension-projection-notice"
+            role="status"
+          >
+            <i class="pi pi-clone" aria-hidden="true"></i>
+            <div>
+              <strong
+                >{{ dataStore.fileInfo.ndim || dataStore.fileInfo.shape?.length }}-D dataset
+                retained</strong
+              >
+              <p>
+                Choose the scientifically intended inner-mode index with
+                <code>selection.dimension_project</code> before a 2-D analysis. The Workbench does
+                not flatten it implicitly.
+              </p>
+            </div>
+          </section>
+        </section>
+
+        <section class="dataset-step" aria-label="Sample details">
+          <div class="essential-card-heading">
+            <span class="essential-card-number">3</span>
+            <div>
+              <h4>Sample details</h4>
+              <p>Check identities, targets and groups before saving a portfolio.</p>
+            </div>
+          </div>
+          <DatasetAnalysisReadinessCard
+            v-if="displayedAnalysisReadiness"
+            :readiness="displayedAnalysisReadiness"
+            :binding="dataStore.fileInfo?.analysis_binding ?? undefined"
+            :reference-evidence="dataStore.fileInfo?.target_context?.reference_value_evidence ?? undefined"
+            :unbinding="sampleTableSaving"
+            :target-options="analysisTargetOptions"
+            :group-options="analysisGroupOptions"
+            :selected-target="analysisTarget"
+            :selected-group="analysisGroup"
+            :loading="analysisReadinessLoading"
+            :preview-error="analysisReadinessError"
+            :is-target-preview="Boolean(analysisTarget)"
+            :selection-status="analysisSelectionStatus"
+            @unbind="unbindSampleTable"
+            @update:selected-target="commitAnalysisTarget"
+            @update:selected-group="commitAnalysisGroup"
+          />
+          <p v-if="classReplicationWarning" role="status" class="analysis-replication-warning">
+            {{ classReplicationWarning }}
+          </p>
+          <p v-if="independentGroupingWarning" role="alert" class="analysis-replication-warning">
+            {{ independentGroupingWarning }}
+          </p>
           <SampleTableEditor
             v-if="canPrepareSamples"
             ref="sampleTableEditorRef"
             :sampleCount="dataStore.fileInfo.n_samples"
             :sampleLabels="sampleLabels"
+            :sourceTarget="dataStore.fileInfo.target"
+            :sourceTargetContext="dataStore.fileInfo.target_context"
             :sourceFileId="dataStore.activeFileId!"
             :sourceName="contentsTitle"
             :experimentId="dataStore.activeExperimentId!"
@@ -204,159 +282,244 @@
             @save="saveSampleTable"
             @clearSaveError="clearSampleTableSaveError"
           />
-        </div>
-        <details v-if="selectedFileNames.length" class="selected-files-details">
-          <summary>
-            {{ selectedFileNames.length }} selected file{{
-              selectedFileNames.length === 1 ? "" : "s"
-            }}
-          </summary>
-          <ul>
-            <li v-for="fileName in selectedFileNames" :key="fileName">{{ fileName }}</li>
-          </ul>
-        </details>
-
-        <section
-          v-if="sampleTableMessage"
-          class="sample-table-message"
-          :class="sampleTableMessage.kind"
-          role="status"
-          aria-live="polite"
-        >
-          <template v-if="sampleTableMessage.kind === 'success'">
-            <div class="sample-table-receipt-heading">
-              <i class="pi pi-check-circle" aria-hidden="true"></i>
-              <div>
-                <strong>Measured samples saved</strong>
-                <p>
-                  {{ sampleTableMessage.filePath }} · file #{{ sampleTableMessage.fileId }} · from
-                  source file #{{ sampleTableMessage.summary.sourceFileId }}
-                </p>
+          <section
+            v-if="sampleTableMessage"
+            class="sample-table-message"
+            :class="sampleTableMessage.kind"
+            role="status"
+            aria-live="polite"
+          >
+            <template v-if="sampleTableMessage.kind === 'success'">
+              <div class="sample-table-receipt-heading">
+                <i class="pi pi-check-circle" aria-hidden="true"></i>
+                <div>
+                  <strong>Measured samples saved</strong>
+                  <p>
+                    {{ sampleTableMessage.filePath }} · file #{{ sampleTableMessage.fileId }} · from
+                    source file #{{ sampleTableMessage.summary.sourceFileId }}
+                  </p>
+                </div>
               </div>
-            </div>
-            <div class="sample-table-receipt-facts">
-              <Tag
-                :value="`${sampleTableMessage.summary.includedSamples}/${sampleTableMessage.summary.totalSamples} included`"
-                severity="success"
-              />
-              <Tag
-                :value="`${sampleTableMessage.summary.selectedTargetValues} ${sampleTableMessage.targetColumn} values`"
-                severity="info"
-              />
-              <Tag
-                :value="`${sampleTableMessage.summary.targetColumns.length} target column${sampleTableMessage.summary.targetColumns.length === 1 ? '' : 's'}`"
-                severity="secondary"
-              />
-              <Tag
-                v-if="sampleTableMessage.summary.assignedWells"
-                :value="`${sampleTableMessage.summary.assignedWells} wells on ${sampleTableMessage.summary.plateCount} ${sampleTableMessage.summary.plateFormatLabel}${sampleTableMessage.summary.plateCount === 1 ? '' : 's'}`"
-                severity="secondary"
-              />
-            </div>
-            <dl class="sample-table-receipt-details">
-              <dt>Targets</dt>
-              <dd>
-                {{
-                  formatSavedTargets(
-                    sampleTableMessage.summary.targetColumns,
-                    sampleTableMessage.summary.targetValueCounts,
-                  )
-                }}
-              </dd>
-              <dt>Groups</dt>
-              <dd>{{ sampleTableMessage.summary.groupColumns.join(", ") || "None" }}</dd>
-            </dl>
-            <p class="sample-table-next-step">
-              Existing workflows remain bound to their previous file IDs. Start or rebind a
-              canonical workflow to use saved file #{{ sampleTableMessage.fileId }}; no prior result
-              was changed.
-            </p>
-          </template>
-          <template v-else>
-            <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
-            <span>{{ sampleTableMessage.text }}</span>
-          </template>
-        </section>
-
-        <section
-          v-if="requiresDimensionProjection"
-          class="dimension-projection-notice"
-          role="status"
-        >
-          <i class="pi pi-clone" aria-hidden="true"></i>
-          <div>
-            <strong
-              >{{ dataStore.fileInfo.ndim || dataStore.fileInfo.shape?.length }}-D dataset
-              retained</strong
-            >
-            <p>
-              Choose the scientifically intended inner-mode index with
-              <code>selection.dimension_project</code> before using a 2-D-only analysis node. The
-              Workbench will not flatten these dimensions implicitly.
-            </p>
-          </div>
-        </section>
-
-        <div v-if="boxPlotData.length" class="explore-table">
-          <div class="table-summary">
-            <Tag value="Properties" severity="info" />
-            <span class="meta-val">
-              {{ dataStore.fileInfo.n_samples?.toLocaleString() }} samples &times;
-              {{ dataStore.fileInfo.n_features }} properties
-            </span>
-          </div>
-          <PlotlyChart
-            :data="boxPlotData"
-            :layout="boxPlotLayout"
-            :config="{ displayModeBar: true, displaylogo: false }"
-          />
-        </div>
-
-        <section
-          v-if="acquisitionSettings.length"
-          class="essential-card"
-          aria-label="Acquisition settings"
-        >
-          <div class="essential-card-heading">
-            <span class="essential-card-number">2</span>
-            <div>
-              <h4>Acquisition settings</h4>
-            </div>
-          </div>
-          <dl class="essential-fact-grid">
-            <template v-for="setting in acquisitionSettings" :key="setting.label">
-              <dt>{{ setting.label }}</dt>
-              <dd :title="setting.detail || setting.value">{{ setting.value }}</dd>
+              <div class="sample-table-receipt-facts">
+                <Tag
+                  :value="`${sampleTableMessage.summary.includedSamples}/${sampleTableMessage.summary.totalSamples} included`"
+                  severity="success"
+                />
+                <Tag
+                  :value="`${sampleTableMessage.summary.selectedTargetValues} ${sampleTableMessage.targetColumn} values`"
+                  severity="info"
+                />
+                <Tag
+                  :value="`${sampleTableMessage.summary.targetColumns.length} target column${sampleTableMessage.summary.targetColumns.length === 1 ? '' : 's'}`"
+                  severity="secondary"
+                />
+                <Tag
+                  v-if="sampleTableMessage.summary.assignedWells"
+                  :value="`${sampleTableMessage.summary.assignedWells} wells on ${sampleTableMessage.summary.plateCount} ${sampleTableMessage.summary.plateFormatLabel}${sampleTableMessage.summary.plateCount === 1 ? '' : 's'}`"
+                  severity="secondary"
+                />
+              </div>
+              <dl class="sample-table-receipt-details">
+                <dt>Targets</dt>
+                <dd>
+                  {{
+                    formatSavedTargets(
+                      sampleTableMessage.summary.targetColumns,
+                      sampleTableMessage.summary.targetValueCounts,
+                    )
+                  }}
+                </dd>
+                <dt>Groups</dt>
+                <dd>{{ sampleTableMessage.summary.groupColumns.join(", ") || "None" }}</dd>
+              </dl>
+              <p class="sample-table-next-step">
+                Existing workflows remain bound to their previous file IDs. Start or rebind a
+                canonical workflow to use saved file #{{ sampleTableMessage.fileId }}; no prior
+                result changed.
+              </p>
             </template>
-          </dl>
-        </section>
-
-        <section v-if="sampleLabels.length" class="essential-card" aria-label="Sample labels">
-          <div class="essential-card-heading">
-            <span class="essential-card-number">3</span>
-            <div>
-              <h4>Sample labels</h4>
-              <p>{{ sampleLabels.length }} identities</p>
+            <template v-else>
+              <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
+              <span>{{ sampleTableMessage.text }}</span>
+            </template>
+          </section>
+          <slot name="sample-curation" />
+          <section
+            v-if="sampleTableState.kind === 'valid'"
+            class="collection-sample-table"
+            aria-label="Collection sample table"
+          >
+            <div class="collection-sample-table-header">
+              <div>
+                <h5 class="panel-title">Sample metadata</h5>
+                <p>Exact identities and annotations retained with each spectrum.</p>
+              </div>
+              <Tag
+                :value="`${sampleTableState.complete ? 'Complete' : 'Preview'} · ${sampleTableState.rowCount} rows · ${sampleTableState.columnCount} columns`"
+                :severity="sampleTableState.complete ? 'success' : 'warning'"
+              />
             </div>
+            <p v-if="sampleInclusionEnabled && sampleInclusion.loading" role="status">
+              Loading exact sample inclusion…
+            </p>
+            <p v-else-if="sampleInclusionEnabled && sampleInclusionUnmatched" role="alert">
+              Sample identities do not match this portfolio. Refresh the selected data before editing.
+            </p>
+            <div class="collection-sample-table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th v-if="sampleInclusionEnabled">Include</th>
+                    <th v-for="column in sampleTableState.visibleColumns" :key="column">
+                      {{ formatSampleColumn(column) }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="row in sampleMetadataPageRows"
+                    :key="row.index"
+                    :class="{
+                      'sample-excluded': sampleInclusionEnabled && !sampleIsIncluded(row.sampleId),
+                    }"
+                  >
+                    <td v-if="sampleInclusionEnabled">
+                      <span
+                        v-if="sampleInclusion.loading || !row.sampleId || !sampleInclusionById.has(row.sampleId)"
+                        aria-label="Sample inclusion unavailable"
+                      >—</span>
+                      <input
+                        v-else
+                        type="checkbox"
+                        :aria-label="`Include sample ${row.sampleId ?? row.index + 1}`"
+                        :checked="sampleIsIncluded(row.sampleId)"
+                        :disabled="!sampleCanChange(row.sampleId)"
+                        @change="row.sampleId && emit('toggleSample', row.sampleId)"
+                      />
+                    </td>
+                    <td v-for="column in sampleTableState.visibleColumns" :key="column">
+                      {{ formatSampleValue(row.values[column]) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div
+              v-if="sampleTableState.rowCount > MAX_SAMPLE_TABLE_ROWS"
+              class="matrix-page-actions"
+            >
+              <Button
+                label="Previous samples"
+                class="p-button-sm p-button-text"
+                :disabled="sampleMetadataPage === 0"
+                @click="sampleMetadataPage--"
+              />
+              <span
+                >{{ sampleMetadataPage + 1 }} /
+                {{ Math.ceil(sampleTableState.rowCount / MAX_SAMPLE_TABLE_ROWS) }}</span
+              >
+              <Button
+                label="Next samples"
+                class="p-button-sm p-button-text"
+                :disabled="
+                  (sampleMetadataPage + 1) * MAX_SAMPLE_TABLE_ROWS >= sampleTableState.rowCount
+                "
+                @click="sampleMetadataPage++"
+              />
+            </div>
+            <p v-if="sampleTableState.omissionNote" class="sample-table-omission-note">
+              {{ sampleTableState.omissionNote }}
+            </p>
+            <p v-if="completeSampleTableLoading" class="sample-table-omission-note" role="status">
+              Loading the complete owner-scoped sample table…
+            </p>
+            <p v-if="completeSampleTableError" class="sample-table-retrieval-error" role="alert">
+              {{ completeSampleTableError }}
+            </p>
+          </section>
+          <p
+            v-else-if="sampleTableState.kind === 'invalid'"
+            class="sample-table-message error"
+            role="alert"
+          >
+            {{ sampleTableState.message }}
+          </p>
+          <div v-else-if="sampleLabels.length" class="sample-label-preview">
+            <strong>Sample identities ({{ sampleLabels.length }})</strong>
+            <p>{{ visibleSampleLabels.join(", ") }}</p>
             <Button
               v-if="sampleLabels.length > SAMPLE_LABEL_PREVIEW_COUNT"
-              :label="sampleLabelsExpanded ? 'Show less' : `Show all ${sampleLabels.length}`"
+              :label="sampleLabelsExpanded ? 'Show fewer' : `Show all ${sampleLabels.length}`"
               class="p-button-text p-button-sm"
               @click="sampleLabelsExpanded = !sampleLabelsExpanded"
             />
           </div>
-          <div class="sample-label-list">
-            <Tag
-              v-for="label in visibleSampleLabels"
-              :key="label"
-              :value="label"
-              severity="info"
-              :title="label"
+        </section>
+
+        <section class="dataset-step" aria-label="Dataset metadata and quality">
+          <div class="essential-card-heading">
+            <span class="essential-card-number">4</span>
+            <h4 class="panel-title">Dataset metadata and quality</h4>
+          </div>
+          <div v-if="boxPlotData.length" class="explore-table">
+            <div class="table-summary">
+              <Tag value="Properties" severity="info" />
+              <span class="meta-val"
+                >{{ dataStore.fileInfo.n_samples?.toLocaleString() }} samples ×
+                {{ dataStore.fileInfo.n_features }} properties</span
+              >
+            </div>
+            <PlotlyChart
+              :data="boxPlotData"
+              :layout="boxPlotLayout"
+              :config="{ displayModeBar: true, displaylogo: false }"
+            />
+          </div>
+          <div class="dataset-summary-grid">
+            <div class="metadata-table">
+              <div class="meta-row">
+                <span class="meta-key">Files in selection</span>
+                <span class="meta-val">{{ contentsFileCount || 1 }}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-key">Samples in selection</span>
+                <span class="meta-val">{{
+                  (
+                    reviewedSampleRowIndexes?.length ?? dataStore.fileInfo.n_samples
+                  )?.toLocaleString()
+                }}</span>
+              </div>
+              <div class="meta-row">
+                <span class="meta-key">Features</span>
+                <span class="meta-val">{{ dataStore.fileInfo.n_features?.toLocaleString() }}</span>
+              </div>
+              <details v-if="propertyStats.length" class="metadata-editor-details">
+                <summary>Reference properties</summary>
+                <PropertyStatsTable :stats="propertyStats" />
+              </details>
+            </div>
+            <DataQualityPanel
+              v-if="hasMatrixData"
+              :datasetDict="dataStore.fileInfo"
+              :selected-row-indexes="reviewedSampleRowIndexes"
+              :loading="dataStore.fileInfoLoading"
+              :show-header="false"
             />
           </div>
         </section>
 
-        <details class="technical-details" @toggle="onTechnicalDetailsToggle">
+        <section class="dataset-step" aria-label="Save data portfolio">
+          <div class="essential-card-heading">
+            <span class="essential-card-number">5</span>
+            <div>
+              <h4>Save data portfolio</h4>
+              <p>Name the reviewed files, samples, target and group for future analyses.</p>
+            </div>
+          </div>
+          <slot name="portfolio-definitions" />
+        </section>
+
+        <details class="technical-details">
           <summary>
             <i class="pi pi-shield" aria-hidden="true"></i> Technical details and provenance
           </summary>
@@ -459,125 +622,11 @@
             <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
             <span>{{ collectionState.message }}</span>
           </section>
-
-          <section
-            v-if="sampleTableState.kind === 'valid'"
-            class="collection-sample-table"
-            aria-label="Collection sample table"
-          >
-            <div class="collection-sample-table-header">
-              <div>
-                <h4 class="panel-title">Sample identity</h4>
-                <p>Exact typed metadata retained with each spectrum.</p>
-              </div>
-              <Tag
-                :value="`${sampleTableState.complete ? 'Complete' : 'Preview'} · ${sampleTableState.rowCount} rows · ${sampleTableState.columnCount} columns`"
-                :severity="sampleTableState.complete ? 'success' : 'warning'"
-              />
-            </div>
-            <div class="collection-sample-table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th v-for="column in sampleTableState.visibleColumns" :key="column">
-                      {{ formatSampleColumn(column) }}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in sampleTableState.visibleRows" :key="row.index">
-                    <td v-for="column in sampleTableState.visibleColumns" :key="column">
-                      {{ formatSampleValue(row.values[column]) }}
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <p v-if="sampleTableState.omissionNote" class="sample-table-omission-note">
-              {{ sampleTableState.omissionNote }}
-            </p>
-            <p v-if="completeSampleTableLoading" class="sample-table-omission-note" role="status">
-              Loading the complete owner-scoped sample table…
-            </p>
-            <p v-if="completeSampleTableError" class="sample-table-retrieval-error" role="alert">
-              {{ completeSampleTableError }}
-            </p>
-          </section>
-
-          <section
-            v-else-if="sampleTableState.kind === 'invalid'"
-            class="sample-table-message error"
-            role="alert"
-          >
-            <i class="pi pi-exclamation-triangle" aria-hidden="true"></i>
-            <span>{{ sampleTableState.message }}</span>
-          </section>
-
-          <section class="complete-matrix" aria-label="Source data matrix">
-            <div class="complete-matrix-header">
-              <div>
-                <h4 class="panel-title">Source data matrix</h4>
-                <p>Source values shown with their exact sample and feature labels.</p>
-              </div>
-              <Tag
-                v-if="completeMatrix"
-                :value="`${completeMatrix.total_rows.toLocaleString()} × ${completeMatrix.total_cols.toLocaleString()}`"
-                severity="info"
-              />
-            </div>
-            <p v-if="completeMatrixLoading" class="plot-display-notice" role="status">
-              Loading the source matrix…
-            </p>
-            <p v-if="completeMatrixError" class="sample-table-retrieval-error" role="alert">
-              {{ completeMatrixError }}
-            </p>
-            <DataMatrixGrid v-if="completeMatrix" :matrix="completeMatrix" />
-            <p v-if="completeMatrix?.truncated" class="sample-table-omission-note" role="status">
-              This source is larger than the browser-safe matrix view; the labels and values shown above are an exact bounded slice.
-            </p>
-          </section>
         </details>
-
-        <div class="explore-panels">
-          <div class="metadata-panel essential-card priority-card">
-            <div class="essential-card-heading">
-              <span class="essential-card-number">4</span>
-              <h4 class="panel-title">{{ metadataPanelTitle }}</h4>
-            </div>
-            <div class="metadata-table">
-              <div class="meta-row">
-                <span class="meta-key">Files</span>
-                <span class="meta-val">{{ contentsFileCount || 1 }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-key">Samples</span>
-                <span class="meta-val">{{
-                  (selectedRowIndexes?.length ?? dataStore.fileInfo.n_samples)?.toLocaleString()
-                }}</span>
-              </div>
-              <div class="meta-row">
-                <span class="meta-key">Features</span>
-                <span class="meta-val">{{ dataStore.fileInfo.n_features?.toLocaleString() }}</span>
-              </div>
-            </div>
-            <details v-if="propertyStats.length" class="metadata-editor-details">
-              <summary>Reference properties</summary>
-              <PropertyStatsTable :stats="propertyStats" />
-            </details>
-          </div>
-
-          <DataQualityPanel
-            v-if="hasMatrixData"
-            :datasetDict="dataStore.fileInfo"
-            :selected-row-indexes="selectedRowIndexes"
-            :loading="dataStore.fileInfoLoading"
-            priority-label="5"
-          />
-        </div>
       </div>
     </details>
     <details
-      v-if="dataStore.fileInfo && isFeatureEnabled('sherpaDataStory')"
+      v-if="showDataStory && dataStore.fileInfo && isFeatureEnabled('sherpaDataStory')"
       class="focused-dataset-details data-story-details"
     >
       <summary>
@@ -615,11 +664,13 @@ import api from "@/api/client";
 import MemoryAttribution from "@/components/MemoryAttribution.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
+import DisplayPreferencesSection from "@/views/settings/DisplayPreferencesSection.vue";
 import { useDataStore, type CatalogDatasetInfo, type DataStoryPropertyStat } from "@/stores/data";
 import { useSherpaStore } from "@/stores/sherpa";
 import DataQualityPanel from "./DataQualityPanel.vue";
 import DatasetAnalysisReadinessCard from "./DatasetAnalysisReadinessCard.vue";
-import DataMatrixGrid from "./DataMatrixGrid.vue";
+import type { SampleInclusionState } from "@/utils/datasetCuration";
 import type { DataMatrixResponse } from "@/stores/data";
 import SampleTableEditor, {
   type SampleTableSavePayload,
@@ -634,7 +685,7 @@ import { selectedDatasetRows } from "@/utils/multiDatasetOverlay";
 import { getErrorMessage } from "@/utils/errors";
 import { retainedInspection } from "@/utils/retainedInspection";
 import { shouldReverseFeatureAxis } from "@/utils/plotLabels";
-import type { DatasetAnalysisReadiness } from "@/types";
+import type { DatasetAnalysisReadiness, SherpaDatasetDict } from "@/types";
 
 const dataStore = useDataStore();
 const sherpaStore = useSherpaStore();
@@ -664,19 +715,29 @@ const props = withDefaults(
     activeDatasetName?: string | null;
     selectedFileCount?: number | null;
     selectedFileNames?: string[];
+    sampleInclusionEnabled?: boolean;
+    sampleInclusion?: SampleInclusionState;
+    matrixAssetId?: string | null;
     initialAnalysisTarget?: string;
     initialAnalysisGroup?: string;
     analysisSelectionHydrated?: boolean;
     analysisSelectionStatus?: "loading" | "idle" | "saving" | "saved" | "error";
+    showDataStory?: boolean;
+    displaySettingsTarget?: string | null;
   }>(),
   {
     activeDatasetName: null,
     selectedFileCount: null,
     selectedFileNames: () => [],
+    sampleInclusionEnabled: false,
+    sampleInclusion: () => ({ rows: [], loading: true }),
+    matrixAssetId: null,
     initialAnalysisTarget: "",
     initialAnalysisGroup: "",
     analysisSelectionHydrated: true,
     analysisSelectionStatus: "idle",
+    showDataStory: true,
+    displaySettingsTarget: null,
   },
 );
 
@@ -693,6 +754,8 @@ const emit = defineEmits<{
   analysisChoice: [choice: AnalysisChoice];
   analysisSelectionCommit: [choice: AnalysisChoice];
   measuredSamplesPublished: [];
+  toggleSample: [sampleId: string];
+  contentsReady: [dataset: SherpaDatasetDict];
 }>();
 const selectedFileNames = computed(() =>
   props.selectedFileNames.map((name) => extractFileName(name)),
@@ -729,7 +792,8 @@ const PLOT_COLORS = [
   "#f472b6",
   "#34d399",
 ];
-const MAX_SAMPLE_TABLE_ROWS = 100;
+const displayPreferences = useDisplayPreferences();
+const MAX_SAMPLE_TABLE_ROWS = computed(() => displayPreferences.maxRows);
 const MAX_SAMPLE_TABLE_COLUMNS = 24;
 const SAMPLE_LABEL_PREVIEW_COUNT = 12;
 
@@ -782,54 +846,29 @@ const axisInventoryError = ref<string | null>(null);
 let axisInventoryRequest = 0;
 
 const completeMatrix = ref<DataMatrixResponse | null>(null);
-const completeMatrixLoading = ref(false);
-const completeMatrixError = ref<string | null>(null);
 let completeMatrixRequest = 0;
-const technicalDetailsOpen = ref(false);
-
-async function loadCompleteMatrix(): Promise<void> {
-  if (completeMatrix.value || completeMatrixLoading.value) return;
-  const experimentId = dataStore.activeExperimentId;
-  const fileId = dataStore.activeFileId;
-  if (experimentId == null || fileId == null) {
-    completeMatrixError.value = "Select one source file to inspect its data matrix.";
-    return;
-  }
-  const request = ++completeMatrixRequest;
-  completeMatrixLoading.value = true;
-  completeMatrixError.value = null;
-  try {
-    const matrix = await dataStore.fetchDataMatrix({
-      kind: "experiment_file",
-      experiment_id: experimentId,
-      file_id: fileId,
-    });
-    if (request === completeMatrixRequest) completeMatrix.value = matrix;
-  } catch (error: unknown) {
-    if (request === completeMatrixRequest) {
-      completeMatrixError.value = getErrorMessage(error, "The source data matrix could not be loaded.");
-    }
-  } finally {
-    if (request === completeMatrixRequest) completeMatrixLoading.value = false;
-  }
-}
-
-async function onTechnicalDetailsToggle(event: Event): Promise<void> {
-  technicalDetailsOpen.value = (event.target as HTMLDetailsElement).open;
-  if (!technicalDetailsOpen.value) return;
-  await loadCompleteMatrix();
-}
-
 watch(
-  () => [dataStore.activeExperimentId, dataStore.activeFileId, dataStore.fileInfo] as const,
-  () => {
-    completeMatrixRequest += 1;
+  () =>
+    [
+      dataStore.activeExperimentId,
+      dataStore.activeFileId,
+      dataStore.fileInfo,
+      props.matrixAssetId,
+    ] as const,
+  async ([experimentId, fileId, info, assetId]) => {
+    const request = ++completeMatrixRequest;
     completeMatrix.value = null;
-    completeMatrixError.value = null;
-    completeMatrixLoading.value = false;
-    if (dataStore.fileInfo && dataStore.activeFileId != null &&
-        (technicalDetailsOpen.value || !dataStore.fileInfo.data?.length)) {
-      void loadCompleteMatrix();
+    if (experimentId == null || fileId == null || !info || info.data?.length) return;
+    try {
+      const matrix = await dataStore.fetchDataMatrix({
+        kind: "experiment_file",
+        experiment_id: experimentId,
+        file_id: fileId,
+        ...(assetId ? { asset_id: assetId } : {}),
+      });
+      if (request === completeMatrixRequest) completeMatrix.value = matrix;
+    } catch {
+      /* The metadata table remains available if the numeric preview cannot load. */
     }
   },
   { immediate: true },
@@ -860,8 +899,6 @@ const contentsTitle = computed(() => {
   if (dataStore.activeFilePath) return extractFileName(dataStore.activeFilePath);
   return dataStore.fileInfo?.title || "Dataset contents";
 });
-
-const metadataPanelTitle = computed(() => "Active Dataset Metadata");
 
 const sampleLabels = computed(() => {
   const axisLabels = dataStore.fileInfo?.y_axis?.labels;
@@ -1013,6 +1050,7 @@ type ValidSampleTable = {
   rowCount: number;
   columnCount: number;
   values: Record<string, unknown[]>;
+  sampleIds: Array<string | null>;
   visibleColumns: string[];
   visibleRows: Array<{ index: number; values: Record<string, unknown> }>;
   omissionNote: string | null;
@@ -1447,7 +1485,7 @@ function buildSampleTableState(
     }
   }
   const visibleColumns = columns.slice(0, MAX_SAMPLE_TABLE_COLUMNS);
-  const visibleRowCount = Math.min(rowCount, MAX_SAMPLE_TABLE_ROWS);
+  const visibleRowCount = Math.min(rowCount, MAX_SAMPLE_TABLE_ROWS.value);
   const visibleRows = Array.from({ length: visibleRowCount }, (_, index) => ({
     index,
     values: Object.fromEntries(visibleColumns.map((column) => [column, values[column][index]])),
@@ -1456,7 +1494,6 @@ function buildSampleTableState(
   if (columns.length > visibleColumns.length) {
     omitted.push(`${columns.length - visibleColumns.length} additional columns`);
   }
-  if (rowCount > visibleRowCount) omitted.push(`${rowCount - visibleRowCount} additional rows`);
   if (!complete)
     omitted.push(`${totalRowCount - rowCount} rows available through the complete table`);
   return {
@@ -1466,6 +1503,7 @@ function buildSampleTableState(
     rowCount,
     columnCount: columns.length,
     values,
+    sampleIds: Array.from({ length: rowCount }, (_, index) => labelValues[index] ?? null),
     visibleColumns,
     visibleRows,
     omissionNote: omitted.length ? `Preview omits ${omitted.join(" and ")}.` : null,
@@ -1518,6 +1556,24 @@ function selectedSampleTable(raw: unknown): unknown {
   );
 }
 
+// A singleton collection can retain exact source-observation IDs even when its
+// native sample axis has no display labels (for example a feature table).
+// Use only the captured, ordered source receipt; never invent IDs from row numbers.
+const sourceObservationLabels = computed<string[] | null>(() => {
+  const info = dataStore.fileInfo;
+  const observations = info?.metadata?.source_observations;
+  if (!info || !Array.isArray(observations) || observations.length !== info.n_samples) return null;
+  const ids = observations.map((row) => isRecord(row) ? row.sample_id : null);
+  if (ids.some((id) => typeof id !== "string" || !id) ||
+      new Set(ids).size !== ids.length) return null;
+  return selectedRows(ids as string[]);
+});
+
+function exactSampleLabels(labels: unknown): unknown {
+  if (Array.isArray(labels) && labels.length > 0) return selectedRows(labels);
+  return sourceObservationLabels.value;
+}
+
 const wireSampleTableState = computed<SampleTableState>(() => {
   const fileInfo = dataStore.fileInfo;
   if (!fileInfo) return { kind: "absent" };
@@ -1536,9 +1592,7 @@ const wireSampleTableState = computed<SampleTableState>(() => {
     }
     rowCount = Number(previewShape[0]);
   }
-  const labels = Array.isArray(fileInfo.y_axis?.labels)
-    ? selectedRows(fileInfo.y_axis.labels)
-    : fileInfo.y_axis?.labels;
+  const labels = exactSampleLabels(fileInfo.y_axis?.labels);
   const selectedCount = selectedRowIndexes.value?.length ?? rowCount;
   return buildSampleTableState(
     selectedSampleTable(fileInfo.y_axis?.sample_table),
@@ -1590,7 +1644,7 @@ const sampleTableState = computed<SampleTableState>(() => {
       message: "The retrieved complete sample table failed identity validation.",
     };
   }
-  const labels = selectedRows(payload.labels);
+  const labels = exactSampleLabels(payload.labels);
   const selectedCount = selectedRowIndexes.value?.length ?? payload.row_count;
   return buildSampleTableState(
     selectedSampleTable(payload.sample_table),
@@ -1598,6 +1652,65 @@ const sampleTableState = computed<SampleTableState>(() => {
     selectedCount,
     selectedCount,
     true,
+  );
+});
+
+const sampleMetadataPage = ref(0);
+watch(MAX_SAMPLE_TABLE_ROWS, () => { sampleMetadataPage.value = 0; });
+watch(
+  () => [dataStore.fileInfo, props.selectedFileNames] as const,
+  () => {
+    sampleMetadataPage.value = 0;
+  },
+);
+const sampleMetadataPageRows = computed(() => {
+  const table = sampleTableState.value;
+  if (table.kind !== "valid") return [];
+  const start = sampleMetadataPage.value * MAX_SAMPLE_TABLE_ROWS.value;
+  return Array.from(
+    { length: Math.max(0, Math.min(MAX_SAMPLE_TABLE_ROWS.value, table.rowCount - start)) },
+    (_, offset) => {
+      const index = start + offset;
+      return {
+        index,
+        sampleId: table.sampleIds[index],
+        values: Object.fromEntries(
+          table.visibleColumns.map((column) => [column, table.values[column][index]]),
+        ),
+      };
+    },
+  );
+});
+const sampleInclusionById = computed(
+  () => new Map(props.sampleInclusion.rows.map((row) => [row.sampleId, row])),
+);
+const sampleInclusionUnmatched = computed(() => {
+  const table = sampleTableState.value;
+  return table.kind === "valid" && !props.sampleInclusion.loading &&
+    table.sampleIds.some((sampleId) => sampleId == null || !sampleInclusionById.value.has(sampleId));
+});
+function sampleIsIncluded(sampleId: string | null): boolean {
+  return sampleId == null ? true : (sampleInclusionById.value.get(sampleId)?.included ?? true);
+}
+function sampleCanChange(sampleId: string | null): boolean {
+  return (
+    sampleId != null &&
+    !props.sampleInclusion.loading &&
+    !dataStore.fileInfoLoading &&
+    sampleInclusionById.value.get(sampleId)?.editable === true
+  );
+}
+const reviewedSampleRowIndexes = computed(() => {
+  const table = sampleTableState.value;
+  if (
+    !props.sampleInclusionEnabled ||
+    !props.sampleInclusion.rows.length ||
+    table.kind !== "valid" ||
+    !table.complete
+  )
+    return selectedRowIndexes.value;
+  return table.sampleIds.flatMap((sampleId, index) =>
+    sampleIsIncluded(sampleId) ? [selectedRowIndexes.value?.[index] ?? index] : [],
   );
 });
 
@@ -1628,7 +1741,7 @@ const TARGET_FIELD_EXCLUSIONS = new Set([
   "evidence_citation_id",
   "label_status",
 ]);
-const GROUP_FIELD_NAMES = new Set(["block", "batch", "group", "instrument", "replicate_group"]);
+const GROUP_FIELD_NAMES = new Set(["block", "batch", "group", "instrument", "replicate_group", "subject_id", "patient_id"]);
 
 const analysisTarget = ref("");
 const analysisGroup = ref("");
@@ -1794,7 +1907,10 @@ const analysisGroupOptions = computed<AnalysisGroupOption[]>(() => {
     return options;
   }
   const declaredGroupFields = new Set(
-    dataStore.fileInfo?.analysis_readiness?.profile?.group_fields ?? [],
+    [
+      ...(dataStore.fileInfo?.analysis_readiness?.profile?.group_fields ?? []),
+      ...(dataStore.fileInfo?.analysis_readiness?.profile?.identity_fields ?? []),
+    ],
   );
   for (const column of table.visibleColumns) {
     if (!GROUP_FIELD_NAMES.has(column) && !declaredGroupFields.has(column)) continue;
@@ -1818,7 +1934,65 @@ const analysisGroupOptions = computed<AnalysisGroupOption[]>(() => {
   return options;
 });
 
+const preferredIndependentGroup = computed(() => {
+  const profile = dataStore.fileInfo?.analysis_readiness?.profile;
+  // An acquisition block is not an independent specimen. Only a declared,
+  // repeated specimen identity can be suggested for held-out validation.
+  return (profile?.identity_fields ?? []).find(
+    (field) =>
+      field !== analysisTarget.value &&
+      /^(specimen_id|subject_id|patient_id)$/i.test(field) &&
+      analysisGroupOptions.value.some((option) => option.value === field && !option.disabled),
+  ) ?? null;
+});
+
+const independentGroupingWarning = computed(() => {
+  const target = analysisTargetOptions.value.find((option) => option.value === analysisTarget.value);
+  const profile = dataStore.fileInfo?.analysis_readiness?.profile;
+  if (
+    target?.type === "categorical" &&
+    /^(specimen_id|subject_id|patient_id)$/i.test(analysisTarget.value) &&
+    (profile?.identity_fields ?? []).includes(analysisTarget.value)
+  ) {
+    return `${analysisFieldLabel(analysisTarget.value)} identifies specimens and cannot serve as both the class target and an independent held-out group. Choose a scientific class label instead.`;
+  }
+  const independent = preferredIndependentGroup.value;
+  if (target?.type !== "categorical" || !independent || analysisGroup.value === independent)
+    return null;
+  return `Repeated ${analysisFieldLabel(independent)} values are present. A row-wise or block-wise split can put the same specimen on both sides and inflate classification accuracy. Select ${analysisFieldLabel(independent)} under Groups before running a held-out classification.`;
+});
+
 const effectiveAnalysisReadiness = ref<DatasetAnalysisReadiness | null>(null);
+const classReplicationWarning = computed(() => {
+  const table = sampleTableState.value;
+  const target = analysisTargetOptions.value.find(
+    (option) => option.value === analysisTarget.value,
+  );
+  if (
+    target?.type !== "categorical" ||
+    !analysisGroup.value ||
+    table.kind !== "valid" ||
+    !table.complete
+  )
+    return null;
+  const labels = table.values[analysisTarget.value];
+  const groups = table.values[analysisGroup.value];
+  if (!labels || !groups || labels.length !== groups.length) return null;
+  const counts = new Map<string, Set<unknown>>();
+  for (let i = 0; i < labels.length; i++) {
+    if (labels[i] == null || groups[i] == null || String(groups[i]).trim() === "") return null;
+    const label = String(labels[i]);
+    if (!counts.has(label)) counts.set(label, new Set());
+    counts.get(label)!.add(groups[i]);
+  }
+  const limited = [...counts].filter(([, units]) => units.size < 3);
+  if (!limited.length) return null;
+  return (
+    `Limited class replication (${analysisFieldLabel(analysisGroup.value)}): ` +
+    limited.map(([label, units]) => `${label}: ${units.size} groups`).join("; ") +
+    ". Fewer than 3 independent groups per class may not support a held-out test plus grouped cross-validation. Repeated acquisitions do not add independent specimens."
+  );
+});
 const analysisReadinessLoading = ref(false);
 const analysisReadinessError = ref<string | null>(null);
 const displayedAnalysisReadiness = computed(
@@ -1976,19 +2150,44 @@ watch(
   { immediate: true },
 );
 
+// Let the dataset details and their retained metadata finish loading and paint
+// before the optional LLM story starts another backend request.
+let contentsReadyGeneration = 0;
+watch(
+  () => [
+    dataStore.fileInfo,
+    dataStore.fileInfoLoading,
+    axisInventoryLoading.value,
+    completeSampleTableLoading.value,
+    analysisReadinessLoading.value,
+    props.sampleInclusionEnabled && props.sampleInclusion.loading,
+  ] as const,
+  async ([info, inspecting, axes, samples, readiness, inclusion]) => {
+    const generation = ++contentsReadyGeneration;
+    if (!info || inspecting || axes || samples || readiness || inclusion) return;
+    await nextTick();
+    window.requestAnimationFrame(() => {
+      if (generation === contentsReadyGeneration && dataStore.fileInfo === info) {
+        emit("contentsReady", info);
+      }
+    });
+  },
+  { immediate: true, flush: "post" },
+);
+onBeforeUnmount(() => { contentsReadyGeneration += 1; });
+
 function currentAnalysisChoice(): AnalysisChoice {
   const target = analysisTargetOptions.value.find(
     (option) => option.value === analysisTarget.value,
   );
   const nativeTarget = dataStore.fileInfo?.target_context;
-  const nativeNames = nativeTarget?.target_names ??
-    (nativeTarget?.target_name ? [nativeTarget.target_name] : []);
+  const nativeNames =
+    nativeTarget?.target_names ?? (nativeTarget?.target_name ? [nativeTarget.target_name] : []);
   return {
     target: analysisTarget.value,
     targetType: target?.type ?? null,
     targetUnits:
-      nativeNames.includes(analysisTarget.value) &&
-      typeof nativeTarget?.target_units === "string"
+      nativeNames.includes(analysisTarget.value) && typeof nativeTarget?.target_units === "string"
         ? nativeTarget.target_units
         : null,
     sourceDigest:
@@ -2006,7 +2205,8 @@ function currentAnalysisChoice(): AnalysisChoice {
 
 function commitAnalysisTarget(value: string): void {
   analysisTarget.value = value;
-  if (!value) analysisGroup.value = "";
+  const target = analysisTargetOptions.value.find((option) => option.value === value);
+  analysisGroup.value = target?.type === "categorical" ? (preferredIndependentGroup.value ?? "") : "";
   emit("analysisSelectionCommit", currentAnalysisChoice());
 }
 
@@ -2079,6 +2279,7 @@ async function saveSampleTable(payload: SampleTableSavePayload): Promise<void> {
         expectedRevision: payload.expectedRevision,
         selectedTarget: payload.targetColumn,
         targetType: payload.targetType,
+        referenceDeclaration: payload.referenceDeclaration,
       });
     } catch (error: unknown) {
       const detail = error instanceof Error ? error.message : "binding failed";
@@ -2727,6 +2928,22 @@ const DataStorySection = defineComponent({
   padding: 0.45rem 0 0.2rem;
 }
 
+.global-display-metadata.in-preview {
+  border: 0;
+  border-top: 1px solid var(--surface-border);
+  border-radius: 0;
+  margin: 0.65rem 0 0;
+  padding: 0.45rem 0 0;
+}
+
+.global-display-metadata.in-preview > summary {
+  color: var(--text-color-secondary);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 400;
+  padding: 0;
+}
+
 .contents-panel-header {
   display: flex;
   justify-content: space-between;
@@ -2751,11 +2968,11 @@ const DataStorySection = defineComponent({
 .explore-empty {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding: 60px 24px;
   color: #94a3b8;
-  text-align: center;
+  text-align: left;
 }
 
 .explore-empty i {
@@ -2768,7 +2985,6 @@ const DataStorySection = defineComponent({
 }
 
 .explore-empty p {
-  max-width: 400px;
   line-height: 1.5;
   color: #64748b;
 }
@@ -3010,6 +3226,28 @@ const DataStorySection = defineComponent({
   border: 1px solid #e2e8f0;
   border-radius: 0.6rem;
   padding: 1rem;
+}
+
+.dataset-step {
+  border-top: 1px solid var(--surface-border, #e2e8f0);
+  padding: 1.25rem 0;
+}
+
+.dataset-step-empty,
+.sample-label-preview p {
+  color: var(--text-color-secondary, #64748b);
+  margin: 0.75rem 0;
+}
+
+.sample-label-preview p {
+  overflow-wrap: anywhere;
+}
+
+.dataset-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: 1.25rem;
+  margin-top: 0.75rem;
 }
 
 .essential-card-heading {
@@ -3544,6 +3782,20 @@ const DataStorySection = defineComponent({
 .sample-table-next-step {
   color: #334155;
   font-size: 0.84rem;
+}
+
+.matrix-page-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  color: var(--text-color-secondary);
+  font-size: 0.84rem;
+}
+
+.collection-sample-table .sample-excluded {
+  color: var(--text-color-secondary);
+  background: var(--surface-ground);
 }
 
 @media (max-width: 800px) {

@@ -113,6 +113,7 @@ class CollectionDefinitionReceipt(BaseModel):
     title: str | None = None
     target_present: bool = False
     sample_classes_present: bool = False
+    reference_governed: bool = False
     message: str
 
     model_config = ConfigDict(extra="forbid")

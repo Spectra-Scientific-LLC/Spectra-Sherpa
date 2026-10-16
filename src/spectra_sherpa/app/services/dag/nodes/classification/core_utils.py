@@ -193,3 +193,10 @@ def flatten_classification_metrics_contract(contract: dict[str, Any]) -> dict[st
     if isinstance(n_classes, (int, float)) and np.isfinite(float(n_classes)):
         out["n_classes"] = float(n_classes)
     return out
+
+
+def require_active_calibration_cohort(dataset: Any, *, model_label: str) -> None:
+    """Refuse calibration on rows explicitly excluded by the scientist."""
+    axis = dataset.sample_axis
+    if axis is not None and axis.include_mask is not None and not np.all(axis.include_mask):
+        raise ValueError(f"{model_label} input has excluded samples; materialize the active cohort before fitting")

@@ -7,11 +7,13 @@ import logging
 import multiprocessing
 import os
 import pickle
+import sys
 import tempfile
 import threading
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
+from time import perf_counter
 from typing import Optional
 
 from spectra_sherpa.core.execution_runtime import ExecutionRuntime
@@ -48,15 +50,22 @@ class IsolatedWorkerPool:
 
     A ProcessPoolExecutor future cannot stop a running task. Here timeout and
     cancellation reap precisely that task before releasing its capacity slot.
-    Fresh spawn costs more than reusable workers, but cannot leave abandoned
-    computations consuming the shared application's worker capacity.
+    Each task gets a fresh process, so no user state survives into another task.
+    On Linux a clean forkserver preloads the scientific registry once; it never
+    executes a user task or inherits the API process's sessions/data.
     """
 
     def __init__(self, max_workers: int):
         if max_workers < 1:
             raise ValueError("max_workers must be positive")
         self._slots = asyncio.Semaphore(max_workers)
-        self._context = multiprocessing.get_context("spawn")
+        method = "spawn"
+        if sys.platform == "linux" and not getattr(sys, "frozen", False):
+            # Fork only the dedicated clean loader, never the threaded API.
+            # Keep native desktop's existing spawn bootstrap unchanged.
+            method = "forkserver"
+            multiprocessing.set_forkserver_preload(["spectra_sherpa.worker_preload"])
+        self._context = multiprocessing.get_context(method)
         self._active = set()
         self._closed = False
 
@@ -152,6 +161,7 @@ def _run_node_in_worker(
     a throwaway event loop (the node's execute() is async-declared but
     does only CPU-bound work — no real I/O awaits).
     """
+    registry_started = perf_counter()
     reject_spectrochempy_transport(args, boundary="worker input")
     reject_spectrochempy_transport(kwargs, boundary="worker input")
     # Import node modules to populate the registry in the worker process.
@@ -185,6 +195,7 @@ def _run_node_in_worker(
         node.bind_execution_runtime(ExecutionRuntime())
     else:
         node.bind_execution_runtime(worker_context.runtime)
+    execution_started = perf_counter()
     if kwargs:
         if list(kwargs.keys()) == ["default"]:
             result = asyncio.run(node.run(kwargs["default"]))
@@ -197,6 +208,9 @@ def _run_node_in_worker(
     # execution from the executor's deliberate in-process fallback.
     result.diagnostics["worker_execution"] = {
         "mode": "spawned_worker",
+        "start_method": multiprocessing.get_start_method(),
+        "registry_seconds": execution_started - registry_started,
+        "execution_seconds": perf_counter() - execution_started,
         "worker_pid": os.getpid(),
         "origin_pid": worker_context.origin_pid if worker_context is not None else 0,
         "execution_id": worker_context.execution_id if worker_context is not None else None,

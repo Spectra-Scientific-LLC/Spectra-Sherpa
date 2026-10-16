@@ -481,3 +481,24 @@ def test_managed_smoothing_workload_completes_within_shared_ceiling() -> None:
 
     assert smoothed.shape == matrix.shape
     assert np.isfinite(smoothed).all()
+
+
+def test_snv_replaces_physical_display_units_without_mutating_the_source():
+    import numpy as np
+
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.normalize_node import NormalizeNode
+
+    source = SherpaDataset(X=np.asarray([[1.0, 2.0, 4.0], [3.0, 5.0, 7.0]]), units="absorbance")
+    source.set_extra("spectrasherpa.value_units_label", "Absorbance")
+    result = NormalizeNode("snv", {"method": "snv"}).transform_dataset(source).outputs["default"]
+    assert str(result.units) == "dimensionless"
+    from spectra_sherpa.app.services.serialization import serialize_result
+
+    for retain_full in (False, True):
+        serialized = serialize_result(result, retain_full=retain_full)
+        assert serialized["metadata"]["value_units_label"] == "dimensionless"
+        assert serialized["metadata"]["value_units"] == "dimensionless"
+    assert source.get_extra("spectrasherpa.value_units_label") == "Absorbance"
+    np.testing.assert_allclose(result.X.mean(axis=1), 0, atol=1e-15)
+    np.testing.assert_allclose(result.X.std(axis=1), 1)
