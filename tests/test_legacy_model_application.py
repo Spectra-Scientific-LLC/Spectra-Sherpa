@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from spectra_sherpa.app.lib.fitted_state import FastICAExtract
+from spectra_sherpa.app.lib.fitted_state import FastICAExtract, KNNExtract, SIMCAExtract
 from spectra_sherpa.app.lib.pca import PCAExtract
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, SpectralAxis
 from spectra_sherpa.app.services.dag.nodes.classification.plsda_nodes import PLSDANode
@@ -84,6 +84,8 @@ def test_v060_plsda_requires_acknowledgement_and_exact_typed_axis():
     [
         ("pca", "spectrasherpa.model-artifact.pca/3"),
         ("fastica", "spectrasherpa.model-artifact.fastica/1"),
+        ("knn", "spectrasherpa.model-artifact.knn/1"),
+        ("simca", None),
     ],
 )
 def test_v060_numeric_axis_requires_exact_values_even_after_ack(model_type, serializer):
@@ -180,6 +182,79 @@ def test_v060_transform_replays_with_warning_only_after_acknowledgement(model_ty
         preflight_model_application(dataset, manifest, arrays)
     _, warnings, _ = preflight_model_application(dataset, manifest, arrays, acknowledge_legacy_input_uncertainty=True)
     assert LEGACY_WARNING in warnings
+
+
+def _v060_classifier(model_type):
+    """A 0.6.0 KNN or SIMCA artifact: current closed state, no fitted signal identity."""
+
+    if model_type == "knn":
+        extract = KNNExtract(
+            X_train=_dataset().X,
+            y_train_encoded=np.array([0, 0, 1, 1, 0, 1], dtype=np.int64),
+            classes=["a", "b"],
+            k=3,
+            scale=False,
+            x_mean=np.zeros(3),
+            x_scale=np.ones(3),
+        )
+    else:
+        extract = SIMCAExtract(
+            class_loadings={"a": np.array([[1.0, 0.0, 0.0]]), "b": np.array([[0.0, 1.0, 0.0]])},
+            class_eigenvalues={"a": np.array([1.0]), "b": np.array([1.0])},
+            class_means={"a": np.array([0.2, 0.2, 0.3]), "b": np.array([0.8, 0.8, 0.7])},
+            classes=["a", "b"],
+            T2_limits={"a": 6.0, "b": 6.0},
+            Q_limits={"a": 2.0, "b": 2.0},
+            n_components=1,
+        )
+    manifest, arrays = extract.to_artifact()
+    quantity = axis_semantics(axis_class="SpectralAxis", title=None, units="cm-1").quantity
+    manifest.update(
+        artifact_uid=f"v060-{model_type}",
+        artifact_authority=ORDINARY_MODEL_ARTIFACT_AUTHORITY,
+        n_features=3,
+        feature_axis_class="SpectralAxis",
+        feature_axis=[900.0, 1200.0, 1600.0],
+        feature_axis_units="cm-1",
+        feature_axis_quantity=quantity.value if quantity else None,
+    )
+    assert "input_identity" not in manifest
+    return extract, manifest, arrays
+
+
+@pytest.mark.parametrize("model_type", ["knn", "simca"])
+def test_v060_classifier_predicts_unchanged_only_after_acknowledgement(model_type):
+    dataset = _dataset()
+    extract, manifest, arrays = _v060_classifier(model_type)
+    model_id = f"v060-{model_type}"
+    with pytest.raises(LegacyAcknowledgementRequired):
+        _apply_model_artifact(manifest, arrays, dataset, model_id=model_id, replay=ApplicationModelArtifactReplay())
+    with pytest.raises(LegacyAcknowledgementRequired):
+        preflight_model_application(dataset, manifest, arrays)
+    applied = _apply_model_artifact(
+        manifest,
+        arrays,
+        dataset,
+        model_id=model_id,
+        replay=ApplicationModelArtifactReplay(),
+        acknowledge_legacy_input_uncertainty=True,
+    )
+    expected_labels, _ = extract.predict(dataset.X)
+    np.testing.assert_array_equal(np.asarray(applied["labels"]), expected_labels)
+    assert applied["metadata"]["legacy_exploratory_warning"] == LEGACY_WARNING
+    _, warnings, _ = preflight_model_application(dataset, manifest, arrays, acknowledge_legacy_input_uncertainty=True)
+    assert LEGACY_WARNING in warnings
+
+
+def test_simca_with_a_declared_serializer_is_not_a_v060_artifact():
+    """SIMCA never declared a serializer; one that does is not the 0.6.0 shape."""
+
+    dataset = _dataset()
+    _, manifest, arrays = _v060_classifier("simca")
+    manifest["serializer"] = "spectrasherpa.model-artifact.simca/2"
+    assert require_legacy_application_acknowledgement(manifest, arrays, dataset, acknowledged=True) is None
+    with pytest.raises(ValueError, match="fitted input identity"):
+        preflight_model_application(dataset, manifest, arrays, acknowledge_legacy_input_uncertainty=True)
 
 
 def test_current_plsda_with_missing_identity_cannot_use_legacy_acknowledgement():
