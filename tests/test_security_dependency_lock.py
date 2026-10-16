@@ -89,6 +89,7 @@ def test_npm_audit_suppressions_are_reviewed_and_unexpired() -> None:
 
     ignore_file = PACKAGE_ROOT / "scripts/audit-ignore.toml"
     entries = tomllib.loads(ignore_file.read_text(encoding="utf-8")).get("npm-audit", {}).get("ignore", [])
+    # An empty list is valid when all previously suppressed dependencies are removed.
     assert isinstance(entries, list), "npm suppressions must be an explicit list, even when empty"
     today = date.today()
     for entry in entries:
@@ -112,3 +113,10 @@ def test_sqlalchemy_install_paths_exclude_malformed_210_metadata() -> None:
 def test_monorepo_sqlalchemy_install_excludes_malformed_210_metadata(monorepo_root: Path) -> None:
     ci = (monorepo_root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     assert '"sqlalchemy>=2.0.31,<3,!=2.1.0"' in ci
+
+
+def test_frontend_lock_excludes_braces_and_its_retired_suppression() -> None:
+    lock = json.loads(FRONTEND_LOCK.read_text(encoding="utf-8"))
+    assert not any(path.split("/")[-1] == "braces" for path in lock["packages"])
+    ignore = (PACKAGE_ROOT / "scripts/audit-ignore.toml").read_text(encoding="utf-8")
+    assert "GHSA-vfj7-8cjw-p6xm" not in ignore
