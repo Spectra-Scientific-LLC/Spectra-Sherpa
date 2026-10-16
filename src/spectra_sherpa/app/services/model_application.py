@@ -569,10 +569,11 @@ async def apply_model_to_dataset(
             "training_reference_value_evidence": manifest.get("reference_value_evidence"),
             "training_reference_fit_context": manifest.get("reference_fit_context"),
             "evaluation_reference_value_evidence": evaluation_reference,
-            "legacy_exploratory_acknowledged": legacy_warning is not None,
             **target_metadata,
         },
     }
+    if legacy_warning is not None:
+        response["metadata"]["legacy_exploratory_acknowledged"] = True
 
     if node_metadata.get("output_type") == "clustering":
         labels = [lossless_sample_table_scalar(label) for label in applied["labels"]]
