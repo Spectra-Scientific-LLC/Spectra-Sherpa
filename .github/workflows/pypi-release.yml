@@ -34,6 +34,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      actions: read
     outputs:
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
       source_commit: ${{ steps.release.outputs.source_commit }}
@@ -78,6 +79,7 @@ jobs:
       - name: Preserve protected-main qualification helper
         run: |
           set -euo pipefail
+          cp scripts/verify_release_ci.py "$RUNNER_TEMP/verify_release_ci.py"
           cp scripts/qualify_release_artifacts.py "$RUNNER_TEMP/qualify_release_artifacts.py"
           echo "Qualification workflow commit: $GITHUB_SHA"
           sha256sum "$RUNNER_TEMP/qualify_release_artifacts.py"
@@ -112,6 +114,13 @@ jobs:
           echo "source_commit=$source_commit" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      - name: Require exact-tag public-main qualification
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_COMMIT: ${{ steps.release.outputs.source_commit }}
+        run: python "$RUNNER_TEMP/verify_release_ci.py" --repository "$REPOSITORY" --sha "$SOURCE_COMMIT"
+
       - name: Set up Node.js 22 from the exact public tag
         uses: actions/setup-node@v7
         with:
@@ -145,6 +154,7 @@ jobs:
             --release-tag "${{ inputs.tag }}" \
             --source-commit "${{ steps.release.outputs.source_commit }}"
           cp "$RUNNER_TEMP/qualify_release_artifacts.py" release/
+          cp "$RUNNER_TEMP/verify_release_ci.py" release/
 
       - name: Upload the only artifact eligible for qualification and publication
         id: upload
@@ -227,6 +237,7 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      actions: read
     steps:
       - name: Refuse if the public tag moved after qualification
         env:
@@ -252,6 +263,13 @@ jobs:
           artifact-ids: ${{ needs.build.outputs.artifact_id }}
           path: release
           merge-multiple: true
+
+      - name: Recheck exact-commit CI after approval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          SOURCE_COMMIT: ${{ needs.build.outputs.source_commit }}
+        run: python3 release/verify_release_ci.py --repository "$REPOSITORY" --sha "$SOURCE_COMMIT"
 
       - name: Publish to PyPI with attestations (fail loudly on duplicates)
         uses: pypa/gh-action-pypi-publish@release/v1

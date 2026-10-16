@@ -22,6 +22,28 @@ _TEST_APP_DATA_ROOT: Path | None = None
 
 
 @pytest.fixture
+def workflow_bash() -> str:
+    if os.name == "nt":
+        # PATH may find Windows' WSL launcher first. Actions shell:bash uses
+        # Git for Windows; select that same shell without requiring WSL.
+        git = shutil.which("git")
+        if git:
+            git_path = Path(git).resolve()
+            candidates = (
+                git_path.parent / "bash.exe",
+                git_path.parent.parent / "bin" / "bash.exe",
+                git_path.parent.parent.parent / "bin" / "bash.exe",
+            )
+            for candidate in candidates:
+                if candidate.is_file():
+                    return str(candidate)
+        pytest.fail("These workflow tests require Git for Windows with Git Bash installed")
+    bash = shutil.which("bash")
+    assert bash is not None, "These workflow tests require Bash"
+    return bash
+
+
+@pytest.fixture
 def monorepo_root() -> Path:
     """Scope private repository contracts without hiding missing evidence there."""
     package_root = Path(__file__).resolve().parents[1]
