@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-16
+
+### Added
+
+- Public CI runs the backend tests (default and PostgreSQL profiles) and the
+  desktop shell tests on Linux, macOS and Windows for every pull request, every
+  push to `main` and once a week.
+- A saved-model compatibility check fits models with each reviewed earlier
+  release, then applies them with the new code, and also fits and applies
+  models with the new code alone. A model that stops applying fails the check
+  unless the break is a recorded decision.
+
+### Changed
+
+- 0.6.1 and 0.6.2 were not tagged or uploaded to PyPI. 0.6.3 is the first
+  tagged release since 0.6.0 and contains the 0.6.1 and 0.6.2 changes. It adds
+  no application features beyond them.
+
+### Dependencies
+
+- Runtime ranges widen for FastAPI (`<0.144`), Starlette (`<1.8`), Uvicorn
+  (`<0.55`) and asyncpg (`<0.33`); the lock moves to SQLAlchemy 2.1, Alembic
+  1.20 and Pydantic 2.14 among other patch and minor updates (public #109).
+- Frontend patch and minor updates, including KaTeX 0.19, Vue 3.5.43 and
+  TanStack Vue Query 5.104 (public #100).
+- The desktop build requires PyInstaller 6.22.3 or later (public #102).
+- CI uses the v7 checkout, setup-python and setup-node actions (public #108).
+
 ## [0.6.2] - 2026-10-15
 
 ### Added

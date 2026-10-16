@@ -14,7 +14,7 @@ workflows. Import supported scientific files, inspect their axes and metadata,
 then use PCA, PLS, MCR-ALS, SIMCA, PLS-DA, variable selection, calibration
 transfer, and validation without hiding the data path behind a notebook.
 
-The source tree is **0.6.2**; see the [0.6.2 notes](docs/releases/0.6.2.md).
+The source tree is **0.6.3**; see the [0.6.3 notes](docs/releases/0.6.3.md).
 Source version alone does not establish PyPI or desktop-installer availability;
 check the [published package](https://pypi.org/project/spectra-sherpa/) before
 installing.
@@ -83,7 +83,7 @@ Requires Git, Python 3.11 or 3.12, and Node.js 22. Use this path if the tag is
 available before the PyPI upload completes:
 
 ```bash
-git clone --branch spectra-sherpa-v0.6.2 https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
+git clone --branch spectra-sherpa-v0.6.3 https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
 cd Spectra-Sherpa
 python -m pip install poetry
 poetry env use python3.11

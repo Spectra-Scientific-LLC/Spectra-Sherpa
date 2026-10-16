@@ -37,8 +37,8 @@ archive needs the frontend build; release wheels and prepared Python source
 distributions include the built Workbench. A GitHub source archive is not the
 same artifact as a Python source distribution (`sdist`).
 
-Use the same helper with `--wheel /absolute/path/to/spectra_sherpa-0.6.2-py3-none-any.whl`
-for an exact built wheel, or `--version 0.6.2` only after that version is published on
+Use the same helper with `--wheel /absolute/path/to/spectra_sherpa-0.6.3-py3-none-any.whl`
+for an exact built wheel, or `--version 0.6.3` only after that version is published on
 your pip index. These targets are mutually exclusive. The helper is a source
 checkout script, not a command installed by the wheel. Add `--extras scp,hitran,nist`
 or `--base` for automation without prompts, and `--dry-run` to inspect the command.

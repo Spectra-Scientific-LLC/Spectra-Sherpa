@@ -21,6 +21,7 @@ nav:
       - Canonical Workflows from Python: onboarding/python-canonical-workflows.md
       - Migrate to 0.6: onboarding/migrate-to-0.6.md
   - Releases:
+      - SpectraSherpa 0.6.3: releases/0.6.3.md
       - SpectraSherpa 0.6.2: releases/0.6.2.md
       - SpectraSherpa 0.6.1: releases/0.6.1.md
       - SpectraSherpa 0.6.0: releases/0.6.0.md
