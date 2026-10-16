@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Weekly run catches dependency and runner-image drift between releases.
+  # Public-repo minutes are free on every platform; see the dual-repo CI
+  # policy in the monorepo (docs/dev/dual-repo-ci-policy.md).
+  schedule:
+    - cron: "17 6 * * 1"
   workflow_dispatch:
 
 # Default token permissions: read-only.  Jobs only run linters, tests,
@@ -83,14 +88,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - ubuntu-latest
+        # Desktop applications ship for Linux, macOS and Windows from this
+        # repository, so every platform qualifies on every change. Public
+        # minutes are free; the monorepo stays Ubuntu-only.
+        os: [ubuntu-latest, windows-latest, macos-latest]
         install_profile:
           - base
           - postgres
     defaults:
       run:
-        # Routine qualification stays on Ubuntu under the current CI budget policy.
+        # Force bash on every runner so the existing POSIX-style ``if [...]``
+        # and ``grep`` snippets keep working on windows-latest (Git Bash
+        # ships preinstalled).
         shell: bash
     steps:
       - uses: actions/checkout@v7
@@ -128,6 +137,36 @@ jobs:
       - name: Run tests
         run: |
           poetry run python scripts/run_public_tests.py
+
+  desktop-shell:
+    name: Desktop shell tests (${{ matrix.os }})
+    needs: references
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    env:
+      # Unit tests exercise the shell modules with Node only; packaging and
+      # the Electron binary belong to desktop-release.yml.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/electron/package-lock.json
+
+      - name: Install shell dependencies
+        run: npm ci
+        working-directory: desktop/electron
+
+      - name: Run shell unit tests
+        run: npm test
+        working-directory: desktop/electron
 
   scp-compat:
     name: SCP Compat (3.11 / ${{ matrix.scp_version }})
