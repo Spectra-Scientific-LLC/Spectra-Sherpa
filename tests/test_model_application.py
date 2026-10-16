@@ -652,9 +652,17 @@ def test_model_apply_replays_msc_with_persisted_reference_state():
 
 
 def test_saved_pca_starter_sample_filter_is_training_provenance_not_application_filter():
+    from spectra_sherpa.app.lib.pca import PCAExtract, fit_pca
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.scale_node import _fit_scale_state
     from spectra_sherpa.app.services.model_application import _prepare_X_for_artifact
 
-    new_population = np.arange(20, dtype=np.float64).reshape(5, 4)
+    rng = np.random.default_rng(612)
+    training = rng.normal(size=(30, 4))
+    new_population = rng.normal(size=(5, 4))
+    scale_state = _fit_scale_state(training[:27], method="mean_center", center=True)
+    training_centered = training[:27] - np.asarray(scale_state["mean"])
+    fitted = fit_pca(training_centered, n_components=2, standardized=False, scaled=False)
+    metadata, arrays = fitted.to_artifact()
     chain = [
         {
             "op_id": "data.filter_samples",
@@ -665,14 +673,21 @@ def test_saved_pca_starter_sample_filter_is_training_provenance_not_application_
                 "selected_indices": list(range(27)),
                 "no_filter": False,
             },
-        }
+        },
+        {
+            "op_id": "preprocess.scale",
+            "parameters": {"method": "mean_center", "transform_state": scale_state},
+        },
     ]
     prepared, _, indices, warnings = _prepare_X_for_artifact(
         new_population, None, {"preprocessing_chain": chain}, scope="all"
     )
-    np.testing.assert_array_equal(prepared, new_population)
+    expected = new_population - np.asarray(scale_state["mean"])
+    np.testing.assert_allclose(prepared, expected)
     np.testing.assert_array_equal(indices, np.arange(5))
     assert warnings == []
+    restored = PCAExtract.from_artifact(metadata, arrays)
+    np.testing.assert_allclose(restored.transform(prepared), fitted.transform(expected))
 
 
 def test_model_apply_rejects_incomplete_or_inconsistent_normalize_records():
