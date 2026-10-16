@@ -78,7 +78,7 @@ def test_0_6_docs_are_self_contained_and_lifecycle_stable() -> None:
     assert "docs/onboarding/choose-your-path.md" in readme
     assert "available before the PyPI upload completes" in " ".join(readme.split())
     assert (
-        "git clone --branch spectra-sherpa-v0.6.2 " "https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git"
+        "git clone --branch spectra-sherpa-v0.6.3 " "https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git"
     ) in readme
     assert "check the [published package]" in readme
     assert "Unreleased release candidate" not in release

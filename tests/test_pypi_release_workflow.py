@@ -113,9 +113,7 @@ def test_public_ci_install_profiles_exist_in_package_metadata() -> None:
 
     root = Path(__file__).resolve().parents[1]
     workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
-    assert workflow["jobs"]["backend"]["strategy"]["matrix"]["os"] == [
-        "ubuntu-latest",
-    ]
+    assert set(workflow["jobs"]["backend"]["strategy"]["matrix"]["os"]) == NATIVE_DESKTOP_PLATFORMS
     metadata = tomllib.loads((root / "pyproject.toml").read_text())
     extras = metadata["tool"]["poetry"]["extras"]
     profiles = [
@@ -239,3 +237,78 @@ def test_protected_helper_survives_product_tag_checkout(tmp_path: Path, workflow
     build = next(step["run"] for step in steps if step.get("name") == "Build one wheel and one source distribution")
     assert 'python "$RUNNER_TEMP/qualify_release_artifacts.py" create-manifest' in build
     assert 'cp "$RUNNER_TEMP/qualify_release_artifacts.py" release/' in build
+
+
+# Desktop applications ship for these platforms from the public repository,
+# so public CI qualifies all three (docs/dev/dual-repo-ci-policy.md).
+NATIVE_DESKTOP_PLATFORMS = {"ubuntu-latest", "windows-latest", "macos-latest"}
+
+
+def _public_ci() -> dict:
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    return yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
+
+
+def test_public_ci_qualifies_every_desktop_platform_on_each_change_and_weekly() -> None:
+    workflow = _public_ci()
+    triggers = workflow[True]  # YAML 1.1 reads the bare key ``on`` as True.
+    assert {"push", "pull_request", "schedule", "workflow_dispatch"} <= set(triggers)
+    assert triggers["schedule"]
+    shell = workflow["jobs"]["desktop-shell"]
+    assert set(shell["strategy"]["matrix"]["os"]) == NATIVE_DESKTOP_PLATFORMS
+    assert shell["env"]["ELECTRON_SKIP_BINARY_DOWNLOAD"] == "1"
+    assert any(step.get("run") == "npm test" for step in shell["steps"])
+
+
+def test_saved_model_compat_runs_on_sensitive_prs_main_and_weekly() -> None:
+    import yaml
+
+    root = Path(__file__).resolve().parents[1]
+    workflow = yaml.safe_load((root / ".github/workflows/saved-model-compat.yml").read_text())
+    triggers = workflow[True]
+    paths = triggers["pull_request"]["paths"]
+    for sensitive in (
+        "src/spectra_sherpa/app/lib/fitted_state.py",
+        "src/spectra_sherpa/app/services/model_application.py",
+        "src/spectra_sherpa/app/services/dag/fitted_input_identity.py",
+        "src/spectra_sherpa/alembic/**",
+        "scripts/saved_model_upgrade_baseline.json",
+    ):
+        assert sensitive in paths
+    assert "paths" not in (triggers["push"] or {})
+    assert {"schedule", "workflow_dispatch"} <= set(triggers)
+    steps = workflow["jobs"]["compat"]["steps"]
+    assert any("scripts/run_saved_model_compat.sh" in step.get("run", "") for step in steps)
+    assert "upgrade-check" not in _public_ci()["jobs"]
+
+    import re
+
+    def triggers(candidate: str) -> bool:
+        for pattern in paths:
+            regex = "".join(
+                ".*" if token == "**" else "[^/]*" if token == "*" else re.escape(token)
+                for token in re.findall(r"\*\*|\*|[^*]+", pattern)
+            )
+            if re.fullmatch(regex, candidate):
+                return True
+        return False
+
+    # Changes to these alter contract digests, serialization or persisted
+    # artifacts, so they must start the PR-time check.
+    for sensitive in (
+        "src/spectra_sherpa/app/services/dag/stable_execution_contract.py",
+        "src/spectra_sherpa/execution_contract_vocabulary.py",
+        "src/spectra_sherpa/app/services/dag/serialize.py",
+        "src/spectra_sherpa/sdk/canonical_fitted_artifact.py",
+        "src/spectra_sherpa/app/models/model_artifact.py",
+        "src/spectra_sherpa/app/services/dag/nodes/classification/plsda_state.py",
+    ):
+        assert (root / sensitive).exists(), sensitive
+        assert triggers(sensitive), sensitive
+    assert not triggers("frontend/src/main.ts")
+
+    runner = (root / "scripts/run_saved_model_compat.sh").read_text()
+    assert "saved_model_upgrade_baseline.json" in runner
+    assert "--mode round-trip" in runner
