@@ -19,6 +19,7 @@ from spectra_sherpa.app.lib import fitted_state, model_extract_registry
 from spectra_sherpa.app.lib import pca as pca_authority
 from spectra_sherpa.app.lib.model_extract_registry import EXTRACT_REGISTRY
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.app.services import legacy_model_application
 from spectra_sherpa.app.services.dag import classification_application
 from spectra_sherpa.app.services.dag.classification_application import (
     CLASS_RESPONSE_SEMANTICS,
@@ -455,6 +456,7 @@ bind_stable_execution_contract(
     help_reference="docs/nodes/regression.md",
     implementation_modules=(
         model_extract_registry,
+        legacy_model_application,
         saved_native_model,
         pca_authority,
         fitted_state,

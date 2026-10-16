@@ -64,6 +64,7 @@ def test_saved_model_application_has_one_exact_local_contract() -> None:
         "distribution.numpy",
         "distribution.scipy",
         "distribution.scikit-learn",
+        "spectra_sherpa.app.services.legacy_model_application",
         "spectra_sherpa.app.lib.fitted_state",
         "spectra_sherpa.app.lib.model_extract_registry",
         "spectra_sherpa.app.lib.pca",
@@ -355,3 +356,18 @@ def test_model_select_parameter_is_closed_text_identity() -> None:
             assert "must be text" in str(exc)
         else:  # pragma: no cover - explicit fail message is clearer than a parametrized bare assertion.
             raise AssertionError(f"invalid model identity was admitted: {invalid!r}")
+
+
+def test_application_contract_binds_exact_legacy_admission_source():
+    import hashlib
+    import inspect
+
+    from spectra_sherpa.app.services import legacy_model_application
+
+    contract = node_registry.get_metadata("model.load_apply").resolved_execution_contract()
+    expected = {
+        "component_id": legacy_model_application.__name__,
+        "digest": hashlib.sha256(inspect.getsource(legacy_model_application).encode("utf-8")).hexdigest(),
+    }
+    components = {component["component_id"]: component for component in contract.payload["implementation_components"]}
+    assert components[expected["component_id"]] == expected

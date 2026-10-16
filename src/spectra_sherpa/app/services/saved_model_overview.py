@@ -195,6 +195,9 @@ def heldout_regression_evaluator_nodes(snapshot: object, model_node_id: str | No
         split
         for split, kind in node_types.items()
         if kind == "data.train_test_split" and inputs.get((model_node_id, "default")) == {(split, "X_train")}
+        # With no explicit y port, fitted PLS uses the target embedded in X_train.
+        # An explicit response must belong to this same training partition.
+        and inputs.get((model_node_id, "y"), set()) in (set(), {(split, "y_train")})
     }
     return sorted(
         evaluator

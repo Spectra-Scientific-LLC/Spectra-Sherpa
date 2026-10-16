@@ -111,6 +111,18 @@ def test_graph_verified_starter_heldout_rmse_is_not_independent_rmsep():
     }
     assert heldout_regression_evaluator_nodes(snapshot, "fit") == ["evaluate"]
     assert heldout_regression_evaluator_nodes(snapshot, "other_fit") == []
+    response_edge = {"from_node_id": "split", "to_node_id": "fit", "from_output": "y_train", "to_input": "y"}
+    snapshot["edges"].append(response_edge)
+    assert heldout_regression_evaluator_nodes(snapshot, "fit") == ["evaluate"]
+    response_edge["from_output"] = "y_test"
+    assert heldout_regression_evaluator_nodes(snapshot, "fit") == []
+    response_edge["from_output"] = "y_train"
+    response_edge["from_node_id"] = "unrelated"
+    assert heldout_regression_evaluator_nodes(snapshot, "fit") == []
+    snapshot["edges"].append({**response_edge, "from_node_id": "split"})
+    assert heldout_regression_evaluator_nodes(snapshot, "fit") == []
+    snapshot["edges"] = snapshot["edges"][:-2]
+
     snapshot["edges"][-1]["from_output"] = "X_train"
     assert heldout_regression_evaluator_nodes(snapshot, "fit") == []
     evidence = {"task_type": "regression", "registry_version": "1", "n_samples": 9, "rmse": 0.42}

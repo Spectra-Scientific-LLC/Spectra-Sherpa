@@ -1453,10 +1453,19 @@ def _require_independent_classification_group(
         values = table.get(field)
         if not isinstance(values, (list, tuple, np.ndarray)) or len(values) != dataset.n_samples:
             continue
-        identities = [str(value).strip() for value in values]
+        identities = [str(value).strip() if value is not None else "" for value in values]
         if any(not value for value in identities):
             continue
         independent_count = len(set(identities))
+        if independent_count < 2 and len(identities) > 1:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Only one independent {field} is available. A supervised holdout requires at least "
+                    "two independent specimens; collect additional specimens or use an exploratory workflow "
+                    "without a held-out performance claim."
+                ),
+            )
         if 1 < independent_count < len(identities) and binding.selected_target == field:
             raise HTTPException(
                 status_code=409,

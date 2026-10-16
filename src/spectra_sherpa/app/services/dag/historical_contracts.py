@@ -43,7 +43,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
-        "84661f74acefbafe2ecabaedb53dd5ced5fee24d03d030c20dcde31e003cb689",
+        "8bc0f8cb16605e6daced04057d5b10e74db2cace9165b6fafda18662afc6054b",
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",

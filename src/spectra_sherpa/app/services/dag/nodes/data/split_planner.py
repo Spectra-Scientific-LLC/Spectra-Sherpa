@@ -242,8 +242,14 @@ def require_independent_classification_groups(
         if any(not value for value in labels):
             continue
         count = len(set(labels))
-        if count <= 1 or count == len(labels):
+        if count == len(labels):
             continue
+        if count < 2:
+            raise ValueError(
+                f"Only one independent {field} is available. A supervised holdout requires at least "
+                "two independent specimens; collect additional specimens or use an exploratory workflow "
+                "without a held-out performance claim."
+            )
         if field in {target_context.selected_target, target_context.target_name}:
             raise ValueError(
                 f"{field} identifies repeated specimens and cannot be both the response target "

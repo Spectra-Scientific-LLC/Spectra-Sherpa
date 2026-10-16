@@ -87,6 +87,21 @@ def test_replicated_specimens_require_independent_classification_group() -> None
     _require_independent_classification_group(dataset, binding, profile)
 
 
+@pytest.mark.parametrize("target_type", ["continuous", "categorical"])
+@pytest.mark.parametrize("group_column", [None, "specimen_id", "block"])
+def test_single_specimen_cannot_supply_a_supervised_holdout(target_type, group_column):
+    dataset = SimpleNamespace(
+        n_samples=6,
+        sample_axis=SimpleNamespace(sample_table={"specimen_id": ["A"] * 6, "block": ["1", "2"] * 3}),
+    )
+    binding = SimpleNamespace(target_type=target_type, selected_target="response", group_column=group_column)
+    with pytest.raises(HTTPException, match="Only one independent specimen_id") as refused:
+        _require_independent_classification_group(dataset, binding, {"identity_fields": ["specimen_id"]})
+    assert refused.value.status_code == 409
+    binding.target_type = None
+    _require_independent_classification_group(dataset, binding, {"identity_fields": ["specimen_id"]})
+
+
 def test_coarser_patient_group_can_preserve_nested_specimens() -> None:
     dataset = SimpleNamespace(
         n_samples=8,

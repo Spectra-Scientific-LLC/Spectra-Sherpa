@@ -81,7 +81,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
     context = HistoricalReconstructionContext()
     component_phase_digests = {
         "classification.plsda": "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
-        "model.load_apply": "84661f74acefbafe2ecabaedb53dd5ced5fee24d03d030c20dcde31e003cb689",
+        "model.load_apply": "8bc0f8cb16605e6daced04057d5b10e74db2cace9165b6fafda18662afc6054b",
         "model.apply_fitted_linear_regression": "7867e5992747564b3fe46215d0f7d2d199b3a5c2af40531b38d480d82465530b",
         "model.apply_fitted_pcr": "14d71c0447ba121bdd0b53911bb4f804d8b39ec1c0cdeb0a28228b8022aec5a8",
         "model.apply_fitted_pls": "6e4dad65e323401e8fa1e0dee0714892e3f2a9316489113db478e75cee42d9de",
@@ -155,6 +155,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
             "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
             "spectra_sherpa.app.services.dag.nodes.preprocessing.scale_node",
             "spectra_sherpa.app.services.dag.nodes.selection.variable_select_node",
+            "spectra_sherpa.app.services.legacy_model_application",
         ],
         "model.parafac": [
             "spectra_sherpa.app.services.dag.io_contracts",

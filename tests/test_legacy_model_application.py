@@ -194,3 +194,12 @@ async def test_legacy_warning_survives_retained_application_response():
     assert response["predictions"]
     assert LEGACY_WARNING in response["warnings"]
     assert response["metadata"]["legacy_exploratory_acknowledged"] is True
+
+
+def test_legacy_acknowledgement_does_not_admit_hosted_application(monkeypatch):
+    from spectra_sherpa.app.services import legacy_model_application
+
+    dataset, manifest, arrays = _v060_plsda()
+    monkeypatch.setattr(legacy_model_application, "is_local", lambda: False)
+    with pytest.raises(ValueError, match="only in local OSS"):
+        require_legacy_application_acknowledgement(manifest, arrays, dataset, acknowledged=True)

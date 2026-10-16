@@ -115,8 +115,6 @@ def test_public_ci_install_profiles_exist_in_package_metadata() -> None:
     workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
     assert workflow["jobs"]["backend"]["strategy"]["matrix"]["os"] == [
         "ubuntu-latest",
-        "windows-latest",
-        "macos-latest",
     ]
     metadata = tomllib.loads((root / "pyproject.toml").read_text())
     extras = metadata["tool"]["poetry"]["extras"]

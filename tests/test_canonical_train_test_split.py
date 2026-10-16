@@ -232,6 +232,22 @@ async def test_repeated_specimens_require_grouped_regression_split() -> None:
         await node.execute(X=regression)
 
 
+@pytest.mark.parametrize("target_type", ["continuous", "categorical"])
+@pytest.mark.parametrize("groups", [None, ["A"] * 6, ["1", "2"] * 3])
+@pytest.mark.asyncio
+async def test_single_specimen_rejected_before_supervised_split(target_type, groups):
+    source = SherpaDataset(
+        X=np.arange(24, dtype=float).reshape(6, 4),
+        sample_axis=SampleAxis(sample_table={"specimen_id": ["A"] * 6}),
+        backend="numpy",
+    )
+    context = TargetContext(target_type=target_type, target_name="response")
+    with pytest.raises(ValueError, match="Only one independent specimen_id"):
+        require_independent_classification_groups(source, None if groups is None else np.asarray(groups), context)
+    # An unsupervised exploration makes no held-out response claim.
+    require_independent_classification_groups(source, None, None)
+
+
 def _two_instrument_continuous_dataset() -> SherpaDataset:
     """The staging case: two instrument views and one continuous response.
 
