@@ -400,7 +400,8 @@ async def test_isolated_scientific_node_matches_local_result():
         pool.shutdown()
 
 
-def test_isolated_worker_cannot_outlive_abrupt_backend_exit(tmp_path):
+@pytest.mark.parametrize("method", ["spawn", "forkserver"] if __import__("sys").platform == "linux" else ["spawn"])
+def test_isolated_worker_cannot_outlive_abrupt_backend_exit(tmp_path, method):
     """stdout stays inherited by the worker: communicate reaches EOF only when
     both backend and worker have exited, including on Windows without kill(0).
     """
@@ -422,14 +423,15 @@ def slow_analysis(ready):
     time.sleep(45)
 
 if __name__ == '__main__':
-    context = multiprocessing.get_context('spawn')
+    multiprocessing.set_forkserver_preload(['spectra_sherpa.worker_preload'])
+    context = multiprocessing.get_context('METHOD')
     receiver, sender = context.Pipe(duplex=False)
     worker = context.Process(target=_isolated_call, args=('unused-result', slow_analysis, (sender,)))
     worker.start()
     assert receiver.recv()
     print('worker-started', flush=True)
     os._exit(7)
-""",
+""".replace("METHOD", method),
         encoding="utf-8",
     )
     env = os.environ.copy()
@@ -447,3 +449,28 @@ if __name__ == '__main__':
     assert result.returncode == 7
     assert result.stdout.strip() == "worker-started"
     assert not (tmp_path / "unused-result").exists()
+
+
+def _worker_local_state():
+    import os
+
+    import spectra_sherpa.app.services.dag.executor_pool as module
+
+    previous = getattr(module, "_test_user_state", None)
+    module._test_user_state = "private result from this task"
+    return os.getpid(), previous, float(np.random.random())
+
+
+@pytest.mark.asyncio
+async def test_consecutive_tasks_do_not_reuse_user_state():
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(1)
+    try:
+        first = await pool.run(_worker_local_state, timeout=30)
+        second = await pool.run(_worker_local_state, timeout=30)
+        assert first[0] != second[0]
+        assert first[1] is second[1] is None
+        assert first[2] != second[2]
+    finally:
+        pool.shutdown()

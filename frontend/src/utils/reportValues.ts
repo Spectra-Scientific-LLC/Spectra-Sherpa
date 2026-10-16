@@ -1,4 +1,5 @@
 /** Presentation only: retain scientific context without serializing execution artifacts. */
+import { scientificErrorMetricLabel, scientificProtocolLabel, scientificMetricContext, scientificTargetMetricContext } from "./scientificDisplay";
 const internalField = /^(?:_.*|artifacts?|.*_artifact|.*artifact_manifest|artifact_refs?|model_state|serialized_model|fitted_parameters|arrays|estimator|pickle|joblib|storage_path|file_path|download_url|raw_data|plot_data|plotly_json|visualization|plots|x_axis|y_axis|preview)$/i;
 
 /** Results and diagnostics are node maps, with reserved execution metadata at the root. */
@@ -6,7 +7,29 @@ export function reportGroups(value: unknown): [string, [string, string][]][] {
   if (!value || typeof value !== "object" || Array.isArray(value)) return [];
   return Object.entries(value).flatMap(([nodeId, payload]) => {
     if (internalField.test(nodeId)) return [];
-    const rows = reportRows(payload);
+    const rows = reportRows(payload).map(([path, text]): [string, string] => {
+      const parts = path.split(" / ");
+      const key = parts.pop() || "";
+      let context = payload;
+      let inherited = scientificMetricContext(context);
+      for (const part of parts) {
+        const match = part.match(/^([^[]+)(?:\[(\d+)\])?$/);
+        if (!match || !context || typeof context !== "object") { context = undefined; break; }
+        context = (context as Record<string, unknown>)[match[1]];
+        if (match[2] && Array.isArray(context)) {
+          context = context[Number(match[2]) - 1];
+          if (["targets", "per_target", "per_response"].includes(match[1])) {
+            const target = context && typeof context === "object" ? (context as Record<string, unknown>).target ?? (context as Record<string, unknown>).target_name : undefined;
+            inherited = scientificTargetMetricContext(inherited, Number(match[2]) - 1, target);
+          }
+        }
+        inherited = scientificMetricContext(context, inherited);
+      }
+      const indexedMetric = key.match(/_per_(?:target|response)\[(\d+)\]$/);
+      if (indexedMetric) inherited = scientificTargetMetricContext(inherited, Number(indexedMetric[1]) - 1);
+      const qualified = scientificErrorMetricLabel(key, inherited, key);
+      return [path, qualified === key ? text : `${text} ${qualified.slice(key.length).trim()} · ${scientificProtocolLabel(inherited)}`];
+    });
     return rows.length ? [[nodeId, rows] as [string, [string, string][]]] : [];
   });
 }

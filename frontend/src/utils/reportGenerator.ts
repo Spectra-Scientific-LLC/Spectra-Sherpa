@@ -169,14 +169,14 @@ function escapeHtml(text: string): string {
 
 function projectEvidenceHtml(snapshot: ReportProjectEvidenceSnapshot | null | undefined): string {
   if (!snapshot) return "";
-  const note = "Project evidence captured at report generation. These are current project records, not proof that every record belongs to the selected report runs.";
+  const note = "Project records linked to this report, captured at generation; not proof of independent model validation.";
   let html = `<h2>Project evidence</h2><p>${escapeHtml(note)}</p>`;
   html += `<p>Captured ${escapeHtml(snapshot.capturedAt)} · Project ${escapeHtml(String(snapshot.projectId ?? "unavailable"))}</p>`;
-  if (snapshot.state !== "available") return html + `<p>${escapeHtml(snapshot.reason ?? "Evidence unavailable.")}</p>`;
-  html += `<table class="connection-table"><tr><th>Record</th><th>State</th><th>Active name</th><th>Digest</th></tr>`;
+  if (snapshot.state !== "available" || !snapshot.records.length) return html + `<p>${escapeHtml(snapshot.reason ?? "Evidence unavailable.")}</p>`;
+  html += `<table class="connection-table"><tr><th>Record</th><th>State</th><th>Name</th><th>Explanation</th><th>Digest</th></tr>`;
   for (const record of snapshot.records) {
     html += `<tr><td>${escapeHtml(record.label)}</td><td>${escapeHtml(record.state)}</td>`;
-    html += `<td>${escapeHtml(record.name ?? "Not recorded")}</td><td class="hash">${escapeHtml(record.digest ?? "—")}</td></tr>`;
+    html += `<td>${escapeHtml(record.name ?? "Not recorded")}</td><td>${escapeHtml(record.detail)}</td><td class="hash">${escapeHtml(record.digest ?? "—")}</td></tr>`;
   }
   return html + "</table>";
 }

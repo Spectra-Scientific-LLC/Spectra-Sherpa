@@ -1,5 +1,6 @@
 import type { ReportData, RunReportEntry } from "./reportGenerator";
 import { reportGroups, reportRows, reportMarkdownText } from "./reportValues";
+import { scientificErrorMetricLabel, scientificMetricKey } from "./scientificDisplay";
 
 type Row = [string, string];
 interface SummaryGroup { title: string; rows: Row[]; notices: string[]; table?: { headers: string[]; rows: string[][] } }
@@ -51,27 +52,77 @@ const metricNames = new Set(Object.keys(labels).filter((key) => ![
 ].includes(key)));
 
 function shortValue(value: string): string {
+  const qualified = value.match(/^([^ ]+) (\(.+\) · Protocol: .+)$/);
+  if (qualified) return `${shortValue(qualified[1])} ${qualified[2]}`;
   const number = Number(value);
   return value.trim() && Number.isFinite(number) && !Number.isInteger(number)
     ? String(Number(number.toPrecision(4))) : value;
 }
 
+function variancePercent(fraction: number): string {
+  const rounded = shortValue(String(fraction * 100));
+  return fraction < 1 && Number(rounded) >= 100 ? "<100%" : `${rounded}%`;
+}
+
 export function keyResultRows(value: unknown): Row[] {
-  return reportRows(value).flatMap(([path, value]) => {
+  return (reportGroups({ result: value })[0]?.[1] ?? []).flatMap(([path, value]) => {
     const parts = path.split(" / ");
     // Lineage, source annotations and authority records belong to detailed
     // evidence, not paper-style endpoints (even when their leaves say "units").
     if (parts.some(part => /^(?:provenance|processing_history|target_context|selected_authority|target_authority|dataset_package|annotation_table|parameters)(?:\[\d+\])?$/i.test(part))) return [];
     // Retain per-target/class context, but not repetitive per-fold or row-level results.
-    if (parts.some((part) => /^(?:per_fold|folds|residuals|predictions|scores|loadings|coefficients|comparison|calibration_comparison|target\[|data(?:\[|$))/i.test(part))) return [];
+    if (parts.some((part) => /^(?:per_fold|folds|residuals|predictions|(?:x_|y_)?scores|loadings|coefficients|comparison|calibration_comparison|target\[|data(?:\[|$))/i.test(part))) return [];
     const last = parts[parts.length - 1];
-    const leaf = last.replace(/\[\d+\]/g, "").toLowerCase();
+    const leaf = scientificMetricKey(last).toLowerCase();
     const label = labels[leaf];
     if (!label) return [];
     const index = last.match(/\[\d+\]/g)?.join("") ?? "";
-    const context = parts.slice(0, -1).join(" / ");
-    return [[`${context ? `${context} / ` : ""}${label}${index}`, metricNames.has(leaf) && leaf !== "best_match" ? shortValue(value) : value] as Row];
+    const contexts = parts.slice(0, -1).filter(part => !["default", "metrics", "classification_metrics", "metadata", "extra", "quality_summary"].includes(part));
+    // Canonical split metrics and their flattened aliases describe the same
+    // population. Normalize names, never merge different populations/values.
+    const splitIndex = contexts.lastIndexOf("splits");
+    const split = contexts[splitIndex + 1];
+    const splitLabel = splitIndex >= 0 && splitIndex === contexts.length - 2 ? labels[`${split}_${leaf}`] : undefined;
+    if (splitLabel) contexts.splice(splitIndex, 2);
+    const context = contexts.join(" / ");
+    return [[`${context ? `${context} / ` : ""}${splitLabel ?? label}${index}`, metricNames.has(leaf) && leaf !== "best_match" ? shortValue(value) : value] as Row];
   });
+}
+
+function classificationTables(value: unknown, title: string, depth = 0): SummaryGroup[] {
+  if (!value || typeof value !== "object" || Array.isArray(value) || depth > 3) return [];
+  const record = value as Record<string, unknown>;
+  if (record.schema_version !== "spectrasherpa.classification-evaluation/1") {
+    return Object.entries(record).flatMap(([key, item]) => classificationTables(item, `${title} / ${key}`, depth + 1));
+  }
+  const names = record.labels;
+  const matrix = record.confusion_matrix;
+  if (!Array.isArray(names) || names.length === 0 || names.length > 100
+    || !names.every(name => typeof name === "string") || !Array.isArray(matrix)
+    || matrix.length !== names.length || !matrix.every(row => Array.isArray(row) && row.length === names.length
+      && row.every(count => typeof count === "number" && Number.isInteger(count) && count >= 0))) return [];
+  const groups: SummaryGroup[] = [{ title: `${title} — confusion matrix`, rows: [],
+    table: { headers: ["Reference / predicted", ...names], rows: matrix.map((row, index) => [names[index], ...row.map(String)]) },
+    notices: ["Rows are reference classes; columns are predicted classes. Counts describe this evaluation only."] }];
+  if (Array.isArray(record.per_class) && record.per_class.every(row => row && typeof row === "object" && typeof row.label === "string")) {
+    groups.push({ title: `${title} — per-class performance`, rows: [],
+      table: { headers: ["Class", "Support", "Precision", "Recall", "Specificity", "F1"],
+        rows: record.per_class.map(row => [row.label, ...["support", "precision", "recall", "specificity", "f1"].map(key =>
+          typeof row[key] === "number" && Number.isFinite(row[key]) ? shortValue(String(row[key])) : "—")]) },
+      notices: [] });
+  }
+  return groups;
+}
+
+/** Omit scalar copies only when the same retained per-class table is renderable. */
+function withoutRenderedClassRows(value: unknown, depth = 0): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value) || depth > 3) return value;
+  const record = value as Record<string, unknown>;
+  const hasTable = record.schema_version === "spectrasherpa.classification-evaluation/1"
+    && classificationTables(record, "").some(group => group.title.endsWith("— per-class performance"));
+  return Object.fromEntries(Object.entries(record)
+    .filter(([key]) => !(hasTable && key === "per_class"))
+    .map(([key, child]) => [key, withoutRenderedClassRows(child, depth + 1)]));
 }
 
 // These are already evidence-qualified, human-readable backend facts. Never
@@ -106,6 +157,9 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
   const number = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? shortValue(String(value)) : "—";
   for (const target of [...new Set(regression.map(result => result.target))]) {
     const results = regression.filter(result => result.target === target);
+    const errorNames: Record<string, string> = { calibration: "RMSEC", cross_validation: "RMSECV", held_out_test: "RMSEP" };
+    const errorLabels = [...new Set(results.map(result => errorNames[result.role] || "RMSE"))];
+    const errorHeading = errorLabels.length === 1 ? errorLabels[0] : "Error by population";
     const units = [...new Set(results.map(result => result.units))];
     const sharedUnits = units.length === 1 && !!units[0]?.trim()
       && !/unavailable|not recorded|unknown/i.test(units[0]);
@@ -118,12 +172,16 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
       title: `${run.name} — ${displayTarget}`,
       rows: [],
       table: {
-        headers: ["Population / source", ...(!sharedUnits ? ["Units"] : []), "n", "Reference range", "Reference mean", "Reference SD", "R²", "RMSE", "Bias", "SEP", "Slope", "Intercept"],
+        headers: ["Population / source", ...(!sharedUnits ? ["Units"] : []), "n", "Reference range", "Reference mean", "Reference SD", "R²", errorHeading, "Bias", "SEP", "Slope", "Intercept"],
         rows: results.map(result => [
           `${roles[result.role] ?? "Unqualified population"} · ${result.node_id} / ${result.source_port}`,
           ...(!sharedUnits ? [result.units] : []), number(result.metrics.n_samples),
           `${number(result.reference_min)}–${number(result.reference_max)}`, number(result.reference_mean), number(result.reference_sd),
-          ...["r2", "rmse", "bias", "sep", "slope", "intercept"].map(key => number(result.metrics[key])),
+          number(result.metrics.r2),
+          `${scientificErrorMetricLabel("rmse", { target_units: result.units }, errorNames[result.role] || "RMSE")}: ${number(result.metrics.rmse)}`,
+          ...["bias", "sep", "slope", "intercept"].map(key => ["bias", "sep"].includes(key)
+            ? `${scientificErrorMetricLabel(key, { target_units: result.units })}: ${number(result.metrics[key])}`
+            : number(result.metrics[key])),
         ]),
       },
       notices: [
@@ -148,16 +206,24 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
   for (const node of nodes) {
     const settings = run.params_snapshot?.[node.node_id] ?? {};
     const diagnostics = run.diagnostics?.[node.node_id] ?? {};
+    if (node.node_type === "preprocess.osc") {
+      notices.push("OSC uses reference values. Its correction must be fitted within each training fold before assessing held-out predictions; full-dataset OSC before validation leaks reference information.");
+    }
+    if (["model.fitted_pls", "classification.plsda", "classification.knn"].includes(node.node_type) && typeof settings.scale === "boolean") {
+      context.push([`Scaling (${node.label || node.node_id})`, settings.scale
+        ? "Autoscaled (mean-centred, divided by variable standard deviation)"
+        : "Mean-centred; no variable scaling"]);
+    }
     if (typeof diagnostics.effective_n_components === "number") {
       context.push([`PLS latent components (${node.label || node.node_id})`,
         `${diagnostics.effective_n_components} fitted; requested ${diagnostics.requested_n_components ?? settings.n_components ?? "not recorded"}. Components model X–Y covariance; they are not CV folds. The fit uses the requested count subject to numerical rank/covariance limits; this count alone is not evidence of CV-based selection.`]);
-      context.push(["Explained-variance interpretation", "Entry [k] is the incremental fraction explained by latent component k, not fold k (0.8745 = 87.45%). X refers to predictors; Y refers to responses, with the fitted centering/scaling."]);
+      context.push(["Explained-variance interpretation", "Entry [k] is the incremental fraction explained by latent component k, not fold k. X refers to predictors; Y refers to responses, with the fitted centering/scaling."]);
       for (const axis of ["x", "y"]) {
         const fractions = diagnostics[`${axis}_explained_variance`];
         if (Array.isArray(fractions) && fractions.length === diagnostics.effective_n_components
           && fractions.every(value => typeof value === "number" && Number.isFinite(value))) {
           context.push([`Cumulative explained ${axis.toUpperCase()} variance (${node.label || node.node_id})`,
-            `${shortValue(String(100 * fractions.reduce((total, value) => total + value, 0)))}% across ${fractions.length} fitted components`]);
+            `${variancePercent(fractions.reduce((total, value) => total + value, 0))} across ${fractions.length} fitted components`]);
         }
       }
     }
@@ -181,13 +247,15 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     if (id.startsWith("_")) continue;
     const node = nodes.find(n => n.node_id === id);
     const payloads = [run.results_summary?.[id], run.diagnostics?.[id]];
+    groups.push(...classificationTables(run.results_summary?.[id], `${run.name} — ${node?.label || id}`));
     const hasRegressionTable = regression.some(result => result.node_id === id);
-    const rows = payloads.flatMap(keyResultRows).filter(([label]) => !hasRegressionTable ||
+    const rows = payloads.flatMap((payload, index) => keyResultRows(index === 0 ? withoutRenderedClassRows(payload) : payload)).filter(([label]) => !(node?.node_type.startsWith("data.") && /components|latent variables/i.test(label))).filter(([label]) => !hasRegressionTable ||
       /latent variables|Variables \(p\)|Explained [XY] variance/.test(label));
     if (!rows.length && !node?.node_type.match(modelTypes)) continue;
     if (node) rows.unshift(["Analysis", node.node_type]);
     // Only retained settings, never defaults/current graph, supply method context.
     for (const [key, value] of reportRows(run.params_snapshot?.[id])) {
+      if (key === "n_components" && !node?.node_type.match(modelTypes)) continue;
       if (["n_components", "n_clusters", "method", "cv_folds", "n_splits"].includes(key)) rows.unshift([labels[key] ?? key, value]);
     }
     const unique = rows.filter((row, i) => rows.findIndex(other => other[0] === row[0] && other[1] === row[1]) === i);

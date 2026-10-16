@@ -164,6 +164,111 @@ def assess_validation(
 
     if not isinstance(plan, CanonicalApplicationPlan):
         raise ValueError("qualification requires a verified frozen application plan")
+    model_node = next(n for n in plan.payload["nodes"] if n["node_id"] == plan.payload["model_node_id"])
+    binding = model_node["artifact_binding"]
+    return _assess_validation_core(
+        observed=observed,
+        predictions=predictions,
+        prediction_identity=prediction_identity,
+        screening=screening,
+        effective_components=effective_components,
+        policy=policy,
+        context=context,
+        cohort_digest=cohort_digest,
+        specimen_ids=specimen_ids,
+        source_rows=source_rows,
+        excluded_rows=excluded_rows,
+        original_cohort_digest=original_cohort_digest,
+        exclusions=exclusions,
+        intervals=intervals,
+        evidence_links=evidence_links,
+        independence_evidence=independence_evidence,
+        artifact_digest=plan.payload["artifact_digest"],
+        application_plan_digest=plan.application_plan_digest,
+        terminal_state_digest=binding["state_digest"],
+        expected_custody={"artifact_digest": plan.payload["artifact_digest"], "state_digest": binding["state_digest"]},
+        native_plan=None,
+    )
+
+
+def assess_native_validation(
+    *,
+    plan: Any,
+    observed: Any,
+    predictions: Any,
+    prediction_identity: dict[str, Any],
+    screening: dict[str, Any],
+    effective_components: int,
+    policy: QualificationPolicy,
+    context: QualificationContext,
+    cohort_digest: str,
+    specimen_ids: list[str],
+    source_rows: int,
+    excluded_rows: int,
+    original_cohort_digest: str,
+    exclusions: list[dict[str, Any]],
+    intervals: dict[str, Any] | None = None,
+    evidence_links: list[str] | None = None,
+    independence_evidence: dict[str, Any] | None = None,
+) -> QualificationDossier:
+    """Apply E1655 criteria to a distinct, verified saved-model authority."""
+    from .saved_model_qualification import SavedModelApplicationPlan
+
+    if not isinstance(plan, SavedModelApplicationPlan):
+        raise ValueError("native qualification requires a frozen saved-model plan")
+    if effective_components != plan.effective_components:
+        raise ValueError("native qualification fitted rank differs from its plan")
+    if prediction_identity.get("response_identity") != plan.response_identity:
+        raise ValueError("native qualification response identity differs from its plan")
+    return _assess_validation_core(
+        observed=observed,
+        predictions=predictions,
+        prediction_identity=prediction_identity,
+        screening=screening,
+        effective_components=effective_components,
+        policy=policy,
+        context=context,
+        cohort_digest=cohort_digest,
+        specimen_ids=specimen_ids,
+        source_rows=source_rows,
+        excluded_rows=excluded_rows,
+        original_cohort_digest=original_cohort_digest,
+        exclusions=exclusions,
+        intervals=intervals,
+        evidence_links=evidence_links,
+        independence_evidence=independence_evidence,
+        artifact_digest=plan.artifact_digest,
+        application_plan_digest=plan.application_plan_digest,
+        terminal_state_digest=plan.state_content_digest,
+        expected_custody={"mode": "local_fitted_state", "state_content_digest": plan.state_content_digest},
+        native_plan=plan,
+    )
+
+
+def _assess_validation_core(
+    *,
+    observed: Any,
+    predictions: Any,
+    prediction_identity: dict[str, Any],
+    screening: dict[str, Any],
+    effective_components: int,
+    policy: QualificationPolicy,
+    context: QualificationContext,
+    cohort_digest: str,
+    specimen_ids: list[str],
+    source_rows: int,
+    excluded_rows: int,
+    original_cohort_digest: str,
+    exclusions: list[dict[str, Any]],
+    intervals: dict[str, Any] | None,
+    evidence_links: list[str] | None,
+    independence_evidence: dict[str, Any] | None,
+    artifact_digest: str,
+    application_plan_digest: str,
+    terminal_state_digest: str,
+    expected_custody: dict[str, str],
+    native_plan: Any,
+) -> QualificationDossier:
     y = np.asarray(observed, dtype=float)
     pred = np.asarray(predictions, dtype=float)
     if y.ndim == 1:
@@ -208,14 +313,18 @@ def assess_validation(
         or expected_response != prediction_identity["response_identity"]
     ):
         raise ValueError("qualification policy/reference response authority differs from the model")
-    model_node = next(n for n in plan.payload["nodes"] if n["node_id"] == plan.payload["model_node_id"])
-    binding = model_node["artifact_binding"]
     custody = prediction_identity["fitted_state_custody"]
-    if (
-        custody.get("artifact_digest") != plan.payload["artifact_digest"]
-        or custody.get("state_digest") != binding["state_digest"]
-    ):
+    if any(custody.get(key) != value for key, value in expected_custody.items()):
         raise ValueError("qualification model custody differs from the frozen pipeline")
+    if native_plan is not None:
+        binding = prediction_identity.get("saved_model_binding")
+        if binding != {
+            "artifact_uid": native_plan.artifact_uid,
+            "artifact_digest": native_plan.artifact_digest,
+            "manifest_digest": native_plan.manifest_digest,
+            "application_plan_digest": native_plan.application_plan_digest,
+        }:
+            raise ValueError("qualification prediction is not bound to the saved-model snapshot")
     criteria = []
 
     def criterion(name, passed, detail):
@@ -252,6 +361,18 @@ def assess_validation(
             name,
             True if getattr(context, name) else None,
             "operator declaration; chronology and laboratory independence not proven",
+        )
+    chronology = independence["chronology"]
+    if chronology["status"] == "operator_declared":
+        criterion(
+            "recorded_model_chronology",
+            chronology["model_frozen_before_acquisition"],
+            "recorded model freeze must precede validation acquisition",
+        )
+        criterion(
+            "recorded_policy_chronology",
+            chronology["policy_frozen_before_acquisition"],
+            "recorded policy freeze must precede validation acquisition",
         )
     criterion(
         "response_units",
@@ -373,9 +494,9 @@ def assess_validation(
     states = [item["state"] for item in criteria]
     payload = dict(
         schema_version=SCHEMA,
-        artifact_digest=plan.payload["artifact_digest"],
-        application_plan_digest=plan.application_plan_digest,
-        terminal_state_digest=binding["state_digest"],
+        artifact_digest=artifact_digest,
+        application_plan_digest=application_plan_digest,
+        terminal_state_digest=terminal_state_digest,
         policy=policy.model_dump(),
         context=context.model_dump(),
         cohort_digest=cohort_digest,

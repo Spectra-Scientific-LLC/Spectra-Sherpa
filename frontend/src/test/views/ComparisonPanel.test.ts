@@ -1,5 +1,7 @@
-import { mount } from '@vue/test-utils';
-import { describe, it, expect } from 'vitest';
+import { mount, flushPromises } from '@vue/test-utils';
+import { describe, it, expect, vi } from 'vitest';
+const { get } = vi.hoisted(() => ({ get: vi.fn() }));
+vi.mock('@/api/client', () => ({ default: { get } }));
 import ComparisonPanel from '@/views/experiments/ComparisonPanel.vue';
 import PrimeVue from 'primevue/config';
 import type { ExecutionRunDetail } from '@/types';
@@ -10,6 +12,32 @@ const run = (id: number) => ({ id, name: `Run ${id}`, params_snapshot: {}, resul
 }) as ExecutionRunDetail;
 
 describe('Comparison evaluation qualification', () => {
+  it('shows retained workflow nodes in DAG order and colors only the changed run', async () => {
+    const first = run(1), second = run(2);
+    const evidence = { outputs: { __workflow__: { definition: { state: 'exact' } } } };
+    Object.assign(first, { project_id: 4, evidence_completeness: evidence });
+    Object.assign(second, { project_id: 4, evidence_completeness: evidence });
+    get.mockImplementation(async (url: string) => ({ data: { value: {
+      nodes: [
+        { node_id: 'model', node_type: 'model.fitted_pls', label: 'PLS' },
+        { node_id: 'prep', node_type: 'preprocess.normalize', label: url.includes('/runs/1/') ? 'Normalize' : 'Mean Center Spectra' },
+        { node_id: 'source', node_type: 'data.collection_load', label: 'Load Data' },
+      ],
+      edges: [
+        { from_node_id: 'source', to_node_id: 'prep' },
+        { from_node_id: 'prep', to_node_id: 'model' },
+      ],
+    } } }));
+    const wrapper = mount(ComparisonPanel, { props: {
+      runs: [first, second], metricKeys: [], diff: {},
+    }, global: { plugins: [PrimeVue] } });
+    await flushPromises();
+    const rows = wrapper.findAll('tbody').find((body) => body.find('.matrix-section-row').text() === 'Workflow')!.findAll('tr').slice(1);
+    expect(rows.map((row) => row.findAll('td')[0]?.text())).toEqual(['Load Data', 'Normalize', 'PLS']);
+    expect(rows[1].findAll('td')[0].classes()).not.toContain('workflow-difference');
+    expect(rows[1].findAll('td')[1].classes()).toContain('workflow-difference');
+    wrapper.unmount();
+  });
   it('shows neutral arithmetic deltas without asserting an unqualified winner', () => {
     const wrapper = mount(ComparisonPanel, { props: {
       runs: [run(1), run(2)], metricKeys: ['accuracy'], diff: { accuracy: { '1': 0.9, '2': 0.8588 } },

@@ -78,12 +78,12 @@ def test_target_authority_refuses_source_or_unit_drift() -> None:
     authority = issue_target_authority(dataset, column="moisture", target_type="continuous")
 
     dataset.meta["source_collection"]["scientific_collection_sha256"] = "c" * 64
-    with pytest.raises(ValueError, match="does not match"):
+    with pytest.raises(ValueError, match="Refresh the dataset, review the selected files and target"):
         verify_target_authority(dataset, authority)
 
     dataset.meta["source_collection"]["scientific_collection_sha256"] = "a" * 64
     dataset.target_context = dataset.target_context.model_copy(update={"target_units": "fraction"})
-    with pytest.raises(ValueError, match="does not match"):
+    with pytest.raises(ValueError, match="Refresh the dataset, review the selected files and target"):
         verify_target_authority(dataset, authority)
 
 

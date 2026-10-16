@@ -96,7 +96,7 @@ describe("standard scientific plot builders", () => {
     });
 
     expect(plot.layout.title).toMatchObject({
-      text: "Predicted vs Reference — Carbon dioxide · held out test",
+      text: "Predicted vs Reference — Carbon dioxide · test set",
       x: 0.02,
       xanchor: "left",
     });
@@ -286,7 +286,7 @@ describe("standard scientific plot builders", () => {
       ],
     });
     expect(responses.layout.yaxis.title).toBe("Calibration sample index");
-    expect(responses.layout.title.text).toContain("not probabilities");
+    expect(responses.layout.title.text).toBe("Calibration Class Responses");
   });
 });
 

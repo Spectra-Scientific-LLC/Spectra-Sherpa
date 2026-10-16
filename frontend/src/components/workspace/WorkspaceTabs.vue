@@ -1,19 +1,69 @@
-<template>
-  <TabView class="workspace-tabs" :active-index="activeIndex" @update:active-index="select"
-    ><slot
-  /></TabView>
-</template>
-<script setup lang="ts">
-import { computed } from "vue";
+<script lang="ts">
+import { cloneVNode, defineComponent, Fragment, h, onBeforeUnmount, onMounted, onUpdated, useId, watch, type PropType, type VNode } from "vue";
+import { useRoute } from "vue-router";
 import TabView from "primevue/tabview";
-const props = defineProps<{ modelValue: string; tabIds: readonly string[] }>();
-const emit = defineEmits<{ "update:modelValue": [id: string] }>();
-// Labels may change without changing saved links or attention identity.
-const activeIndex = computed(() => Math.max(0, props.tabIds.indexOf(props.modelValue)));
-function select(index: number): void {
-  const id = props.tabIds[index];
-  if (id !== undefined) emit("update:modelValue", id);
+import { useWorkspaceNavigation, type WorkspaceNavigationItem } from "@/composables/useWorkspaceNavigation";
+
+function panels(nodes: VNode[]): VNode[] {
+  return nodes.flatMap((node) => {
+    if (node.type === Fragment && Array.isArray(node.children)) return panels(node.children as VNode[]);
+    return typeof node.type === "object" && (node.type as { name?: string }).name === "TabPanel" ? [node] : [];
+  });
 }
+
+export default defineComponent({
+  props: {
+    modelValue: { type: String, required: true },
+    tabIds: { type: Array as PropType<readonly string[]>, required: true },
+    // Custom visual headers can supply a plain-text navigation label.
+    labels: { type: Object as PropType<Record<string, string>>, default: () => ({}) },
+  },
+  emits: { "update:modelValue": (_id: string) => true },
+  setup(props, { slots, emit }) {
+    const navigation = useWorkspaceNavigation();
+    const route = navigation ? useRoute() : undefined;
+    const owner = Symbol("workspace-tabs");
+    const panelPrefix = useId();
+    let items: WorkspaceNavigationItem[] = [];
+    const select = (id: string) => {
+      if (items.some((item) => item.id === id && !item.disabled)) emit("update:modelValue", id);
+    };
+    const publish = () => {
+      if (navigation && route) navigation.publish(owner, {
+        path: route.path, selected: props.modelValue, items, select,
+      });
+    };
+    onMounted(publish);
+    onUpdated(publish);
+    // Router reuse can change the path without redrawing compiled stable slots.
+    if (route) watch(() => route.path, publish, { flush: "post" });
+    onBeforeUnmount(() => navigation?.release(owner));
+    return () => {
+      const content = slots.default?.() ?? [];
+      const tabPanels = panels(content);
+      items = tabPanels.map((panel, index) => ({
+        id: props.tabIds[index],
+        panelId: panelPrefix + "-" + props.tabIds[index],
+        label: props.labels[props.tabIds[index]] ?? String(panel.props?.header ?? props.tabIds[index]),
+        disabled: panel.props?.disabled === true || panel.props?.disabled === "",
+      })).filter((item) => !!item.id);
+      return h(TabView, {
+        class: ["workspace-tabs", { "workspace-tabs--sidebar": !!navigation }],
+        pt: navigation ? { root: { role: null }, navContainer: { hidden: true } } : undefined,
+        activeIndex: Math.max(0, props.tabIds.indexOf(props.modelValue)),
+        "onUpdate:activeIndex": (index: number) => select(props.tabIds[index]),
+      }, { default: () => navigation ? tabPanels.map((panel, index) => cloneVNode(panel, {
+        contentProps: {
+          ...panel.props?.contentProps,
+          id: items[index]?.panelId,
+          role: "region",
+          "aria-label": items[index]?.label,
+          "aria-labelledby": undefined,
+        },
+      })) : content });
+    };
+  },
+});
 </script>
 <style scoped>
 .workspace-tabs,
@@ -57,5 +107,11 @@ function select(index: number): void {
 }
 .workspace-tabs :deep(.p-tabview-panels) {
   padding: 1.5rem 0 0;
+}
+.workspace-tabs--sidebar :deep(.p-tabview-nav-container) {
+  display: none;
+}
+.workspace-tabs--sidebar :deep(.p-tabview-panels) {
+  padding-top: 0;
 }
 </style>

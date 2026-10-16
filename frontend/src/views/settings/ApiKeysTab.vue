@@ -262,7 +262,7 @@
           label="Delete HITRAN Key"
           icon="pi pi-trash"
           class="p-button-outlined p-button-danger"
-          :disabled="savingHitran || validatingHitran"
+          :disabled="savingHitran || validatingHitran || deletingKey === 'hitran'"
           @click="deleteKey('hitran')"
         />
       </div>
@@ -439,9 +439,15 @@
             v-if="!isDemoMode"
             icon="pi pi-trash"
             class="p-button-text p-button-sm p-button-danger"
+            :aria-label="`Delete ${formatServiceName(keyInfo.service_name)} API key`"
+            :disabled="deletingKey === keyInfo.service_name"
             @click="deleteKey(keyInfo.service_name)"
           />
         </div>
+      </div>
+      <div v-if="deleteKeyError" class="message error" role="alert">
+        <i class="pi pi-times-circle" />
+        {{ deleteKeyError }}
       </div>
     </div>
   </div>
@@ -450,6 +456,8 @@
 <script setup lang="ts">
 /* eslint-disable @typescript-eslint/no-explicit-any -- LLM config responses and errors remain loosely typed across providers. */
 import { ref, computed, onMounted, watch } from "vue";
+import { useConfirmAction } from "@/composables/useConfirmAction";
+import { formatTimestamp } from "@/utils/format";
 import Button from "primevue/button";
 import InputText from "primevue/inputtext";
 import InputSwitch from "primevue/inputswitch";
@@ -737,11 +745,7 @@ const formatServiceName = (service: string): string => {
   return names[service] || service;
 };
 
-const formatDate = (dateStr: string | null): string => {
-  if (!dateStr) return "Never";
-  const date = new Date(dateStr);
-  return date.toLocaleString();
-};
+const formatDate = (dateStr: string | null): string => (dateStr ? formatTimestamp(dateStr) : "Never");
 
 const loadSavedKeys = async () => {
   loading.value = true;
@@ -919,11 +923,22 @@ const testLlmConnection = async () => {
   }
 };
 
-const deleteKey = async (serviceName: string) => {
-  if (!confirm(`Delete API key for ${formatServiceName(serviceName)}?`)) {
-    return;
-  }
+const confirmAction = useConfirmAction();
+const deletingKey = ref<string | null>(null);
+const deleteKeyError = ref("");
 
+const deleteKey = async (serviceName: string) => {
+  if (deletingKey.value) return;
+  const accepted = await confirmAction({
+    title: "Delete API key",
+    message: `Delete the API key for ${formatServiceName(serviceName)}? Features that use it stop working until a new key is saved.`,
+    acceptLabel: "Delete key",
+    destructive: true,
+  });
+  if (!accepted) return;
+
+  deletingKey.value = serviceName;
+  deleteKeyError.value = "";
   try {
     await api.delete(`/api-keys/${serviceName}`);
     await loadSavedKeys();
@@ -936,7 +951,12 @@ const deleteKey = async (serviceName: string) => {
       hitranError.value = "";
     }
   } catch {
-    alert("Failed to delete API key.");
+    const failure = `Could not delete the ${formatServiceName(serviceName)} API key. Try again.`;
+    // Report where the button was: the HITRAN section can show without the saved-keys list.
+    if (serviceName === "hitran") hitranError.value = failure;
+    else deleteKeyError.value = failure;
+  } finally {
+    deletingKey.value = null;
   }
 };
 

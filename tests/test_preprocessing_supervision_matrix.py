@@ -9,6 +9,7 @@ import pytest
 import spectra_sherpa.app.services.dag.nodes  # noqa: F401
 from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset, SpectralAxis
 from spectra_sherpa.app.services.dag.node_base import NodeResult, node_registry
+from spectra_sherpa.app.services.dag.nodes.data.sample_preparation import _slice_dataset_rows
 from spectra_sherpa.app.services.dag.supervision_binding import (
     admit_attached_sample_table_supervision,
     attach_sample_table_supervision,
@@ -86,6 +87,18 @@ def _dataset(continuous=False, grouped=True, seed=21):
         group_column="batch" if grouped else None,
         node_id="attach",
     )
+
+
+@pytest.mark.parametrize("selected,retains_binding", [([0, 1, 2, 3], True), ([0, 2, 4, 6], False)])
+def test_categorical_filter_rebinds_exact_subset_without_numeric_nan_comparison(selected, retains_binding):
+    source = _dataset(continuous=False)
+    result = _slice_dataset_rows(source, np.asarray(source.X), np.asarray(selected, dtype=int))
+    np.testing.assert_array_equal(result.target, np.asarray(source.target)[selected])
+    assert result.sample_axis.labels == [source.sample_axis.labels[index] for index in selected]
+    rebound = admit_attached_sample_table_supervision(result)
+    assert (rebound is not None) is retains_binding
+    if rebound is not None:
+        assert len(rebound.target) == len(selected)
 
 
 def _assert_binding(source, result):
@@ -185,6 +198,7 @@ def test_held_out_fitted_application_preserves_its_own_supervision(kind):
 def test_matrix_covers_every_preprocessing_implementation():
     covered = {kind for kind, _ in CASES} | {
         "preprocess.apply_fitted_scale",
+        "preprocess.shared_reference_scale",
         "preprocess.apply_fitted_msc",
         "preprocess.apply_fitted_emsc",
         "preprocess.apply_fitted_osc",

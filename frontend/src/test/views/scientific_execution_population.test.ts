@@ -80,7 +80,7 @@ import api from "@/api/client";
 import { useWorkflowStore } from "@/stores/workflow";
 vi.mock("@/api/client", () => ({ default: { post: vi.fn(), get: vi.fn(), put: vi.fn() } }));
 vi.mock("@/stores/workbook", () => ({
-  useWorkbookStore: () => ({ activeSheet: null, sheets: [] }),
+  useWorkbookStore: () => ({ activeSheet: null, sheets: [], syncSavedSheetMetadata: vi.fn() }),
 }));
 vi.mock("@/stores/job", () => ({ useJobStore: () => ({ wsRef: null }) }));
 describe("execution-binding regressions using the real workflow store", () => {
@@ -107,7 +107,7 @@ describe("execution-binding regressions using the real workflow store", () => {
   };
   it("XGSC-01 preserves completed prior evidence after a semantic edit", async () => {
     const store = setup();
-    vi.mocked(api.post).mockResolvedValueOnce({ data: response });
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: true, semantic_edges: [], issues: [] } }).mockResolvedValueOnce({ data: response });
     await store.executeWorkflow();
     store.updateNode("pca", { params: { n_components: 5 } });
     expect(store.isWorkflowStale).toBe(true);
@@ -117,14 +117,14 @@ describe("execution-binding regressions using the real workflow store", () => {
   });
   it("XGSC-02 retains the returned run identity", async () => {
     const store = setup();
-    vi.mocked(api.post).mockResolvedValueOnce({ data: response });
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: true, semantic_edges: [], issues: [] } }).mockResolvedValueOnce({ data: response });
     const execution = await store.executeWorkflow();
     expect((execution as any).run_id).toBe(10);
     expect(store.restoredRunId).toBe(10);
   });
   it("XGSC-03 replaces output A with the coherent partial snapshot B", async () => {
     const store = setup();
-    vi.mocked(api.post).mockResolvedValueOnce({ data: response });
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: true, semantic_edges: [], issues: [] } }).mockResolvedValueOnce({ data: response });
     await store.executeWorkflow();
     store.updateNode("preprocess", { params: { method: "autoscale" } });
     store.hasUnsavedChanges = false; // Equivalent to saving the edited graph before Run Node.
@@ -142,14 +142,14 @@ describe("execution-binding regressions using the real workflow store", () => {
   it("keeps a graph edited during an in-flight run stale", async () => {
     const store = setup();
     let resolve!: (response: any) => void;
-    vi.mocked(api.post).mockImplementationOnce(
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: true, semantic_edges: [], issues: [] } }).mockImplementationOnce(
       () =>
         new Promise((done) => {
           resolve = done;
         }),
     );
     const pending = store.executeWorkflow();
-    await vi.waitFor(() => expect(api.post).toHaveBeenCalled());
+    await vi.waitFor(() => expect(resolve).toBeTypeOf("function"));
     store.updateNode("pca", { params: { n_components: 5 } });
     resolve({ data: { ...response, params_snapshot: { pca: { n_components: 2 } } } });
     await pending;
@@ -160,14 +160,14 @@ describe("execution-binding regressions using the real workflow store", () => {
   it("refuses overlapping execution and unbound workflow status events", async () => {
     const store = setup();
     let resolve!: (response: any) => void;
-    vi.mocked(api.post).mockImplementationOnce(
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: true, semantic_edges: [], issues: [] } }).mockImplementationOnce(
       () =>
         new Promise((done) => {
           resolve = done;
         }),
     );
     const pending = store.executeWorkflow();
-    await vi.waitFor(() => expect(api.post).toHaveBeenCalled());
+    await vi.waitFor(() => expect(resolve).toBeTypeOf("function"));
     await expect(store.executeNode("source")).rejects.toThrow("already in progress");
     window.dispatchEvent(
       new CustomEvent("workflow-node-status", { detail: { node_id: "pca", status: "completed" } }),
@@ -200,7 +200,7 @@ describe("execution-binding regressions using the real workflow store", () => {
   });
   it("refuses prior-result authority during a new attempt and after its failure", async () => {
     const store = setup();
-    vi.mocked(api.post).mockResolvedValueOnce({ data: response });
+    vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: true, semantic_edges: [], issues: [] } }).mockResolvedValueOnce({ data: response });
     await store.executeWorkflow();
     let reject!: (error: Error) => void;
     vi.mocked(api.post).mockImplementationOnce(
@@ -225,6 +225,7 @@ describe("execution-binding regressions using the real workflow store", () => {
     async (mode) => {
       const store = setup();
       let resolve!: (value: any) => void;
+      if (mode === "full") vi.mocked(api.post).mockResolvedValueOnce({ data: { is_valid: true, semantic_edges: [], issues: [] } });
       vi.mocked(api.post).mockImplementationOnce(
         () =>
           new Promise((done) => {
@@ -232,7 +233,7 @@ describe("execution-binding regressions using the real workflow store", () => {
           }),
       );
       const pending = mode === "full" ? store.executeWorkflow() : store.executeNode("pca");
-      await vi.waitFor(() => expect(api.post).toHaveBeenCalled());
+      await vi.waitFor(() => expect(resolve).toBeTypeOf("function"));
       store.clearWorkflow();
       store.workflowId = 902;
       store.restoredEvidenceNotice = "Workflow B";

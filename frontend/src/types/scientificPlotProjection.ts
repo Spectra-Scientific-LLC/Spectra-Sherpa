@@ -40,6 +40,8 @@ export interface PcaPlotSlice {
   pcaLoadingsData: any[];
   pcaLoadingsLayout: Record<string, any>;
   pcaLoadingsConfig: Record<string, any>;
+  pcaVariableCorrelationsData: any[];
+  pcaVariableCorrelationsLayout: Record<string, any>;
   pcaScreeData: any[];
   pcaScreeLayout: Record<string, any>;
   pcaDiagnosticsData: any[];

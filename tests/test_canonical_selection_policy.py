@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from copy import deepcopy
 
 import pytest
@@ -9,10 +10,13 @@ import pytest
 from spectra_sherpa.app.services.dag.canonical_selection_policy import (
     CanonicalSelectionPolicy,
     CanonicalSelectionPolicyError,
+    _historical_adjacent_float,
     build_canonical_development_decision,
     selection_candidate,
     verify_canonical_development_decision,
 )
+from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
+from spectra_sherpa.app.types import ensure_type_registry_loaded
 
 
 def _candidate(candidate_id: str, ordinal: int, values: list[float]) -> dict:
@@ -142,6 +146,39 @@ def test_verifier_rejects_rehashed_summary_instead_of_echoing_it() -> None:
 
     with pytest.raises(CanonicalSelectionPolicyError, match="does not reproduce from fold evidence"):
         verify_canonical_development_decision(forged, candidates)
+
+
+def test_historical_rounding_allows_one_ulp_only_without_changing_scientific_decision() -> None:
+    ensure_type_registry_loaded()
+    candidates = [
+        _candidate("baseline-001", 1, [1.0, 1.0, 1.0]),
+        _candidate("candidate-002", 2, [0.8, 0.81, 0.79]),
+    ]
+    decision = build_canonical_development_decision(candidates, policy=CanonicalSelectionPolicy.build(0.0))
+    margin = decision["paired_fold_margin"]
+    changed = deepcopy(decision)
+    for field in ("paired_standard_error", "required_dispersion_delta"):
+        changed["paired_fold_margin"][field] = math.nextafter(margin[field], 0.0)
+    with pytest.raises(CanonicalSelectionPolicyError, match="does not reproduce"):
+        verify_canonical_development_decision(changed, candidates)
+    context = HistoricalReconstructionContext()
+    assert verify_canonical_development_decision(changed, candidates, historical_context=context) == changed
+    changed["paired_fold_margin"]["required_dispersion_delta"] = math.nextafter(
+        changed["paired_fold_margin"]["required_dispersion_delta"], 0.0
+    )
+    with pytest.raises(CanonicalSelectionPolicyError, match="does not reproduce"):
+        verify_canonical_development_decision(changed, candidates, historical_context=context)
+    changed = deepcopy(decision)
+    changed["conclusion"] = "no_defensible_improvement"
+    with pytest.raises(CanonicalSelectionPolicyError, match="does not reproduce"):
+        verify_canonical_development_decision(changed, candidates, historical_context=context)
+
+
+def test_historical_rounding_rejects_two_steps_across_power_of_two_boundary() -> None:
+    lower = math.nextafter(1.0, -math.inf)
+    two_lower = math.nextafter(lower, -math.inf)
+    assert _historical_adjacent_float(lower, 1.0)
+    assert not _historical_adjacent_float(two_lower, 1.0)
 
 
 def test_policy_and_partition_changes_fail_closed() -> None:

@@ -25,11 +25,11 @@ from spectra_sherpa.app.schemas.run_evidence import OutputEvidence, RunEvidence
 logger = logging.getLogger(__name__)
 
 FORMAT_VERSION = 1
-FORMAT_OUTPUT_BYTES_LIMIT = 8 * 1024 * 1024
+FORMAT_OUTPUT_BYTES_LIMIT = 16 * 1024 * 1024
 OUTPUT_BYTES_LIMIT = settings.run_output_max_bytes
 RUN_BYTES_LIMIT = settings.run_output_run_max_bytes
 USER_BYTES_LIMIT = settings.run_output_user_max_bytes
-MAX_OUTPUT_VALUES = 500_000
+MAX_OUTPUT_VALUES = 1_000_000
 INLINE_BUDGET_BYTES = 2 * 1024 * 1024
 DETAIL_METADATA_BUDGET_BYTES = 512 * 1024
 TRUNCATION_FLAGS = {
@@ -175,6 +175,29 @@ def _save_storage_usage(directory: Path, used: int, count: int) -> None:
             temporary.unlink(missing_ok=True)
 
 
+def retained_results_usage(user_id: int) -> dict[str, Any]:
+    """Report the same physical, deduplicated storage budget enforced by writes.
+
+    Shared by the Usage UI and retention. Includes files awaiting reclamation;
+    summing run inventories would double-count outputs shared between runs.
+    """
+    directory = _user_directory(user_id)
+    with _storage_lock(directory):
+        used, count = _storage_usage(directory)
+        _save_storage_usage(directory, used, count)
+    return {
+        "enabled": settings.run_output_retention_enabled,
+        "usedBytes": used,
+        "limitBytes": USER_BYTES_LIMIT,
+        "remainingBytes": max(0, USER_BYTES_LIMIT - used),
+        "percentUsed": round(100 * used / USER_BYTES_LIMIT, 2),
+        "outputLimitBytes": OUTPUT_BYTES_LIMIT,
+        "runLimitBytes": RUN_BYTES_LIMIT,
+        "fileCount": count,
+        "fileLimit": 20000,
+    }
+
+
 def retain_output(
     user_id: int, value: Any, *, role: str | None = None, byte_limit: int = OUTPUT_BYTES_LIMIT
 ) -> OutputEvidence:
@@ -202,7 +225,11 @@ def retain_output(
             existing = destination.stat().st_size if exists else 0
             if used - existing + len(payload) > USER_BYTES_LIMIT:
                 raise ValueError(
-                    "Configured retained-output user quota reached; remove unneeded runs and reclaim storage"
+                    "Retained-results user quota cannot fit this output "
+                    f"({used / 1048576:.2f} MiB used of {USER_BYTES_LIMIT / 1048576:g} MiB; "
+                    f"{len(payload) / 1048576:.2f} MiB needed). "
+                    "Open My Profile → Usage to review storage. Contact the administrator for more capacity; "
+                    "rerun after capacity is available to save the missing results."
                 )
             with tempfile.NamedTemporaryFile(dir=directory, prefix=".pending-", delete=False) as stream:
                 temporary = Path(stream.name)

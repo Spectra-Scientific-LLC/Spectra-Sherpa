@@ -1040,7 +1040,13 @@ def _experiment_file_payload(file_record: ExperimentFile) -> dict:
             payload["target_names"] = [str(name) for name in target_names]
         if target_name and target_type and "target_types" not in payload:
             payload["target_types"] = {str(target_name): str(target_type)}
-        payload.update({key: value for key, value in target_summary(dataset).items() if value is not None})
+        # A portable table declares all of its typed targets, even when the
+        # admitted dataset projects only one. For other formats, the admitted
+        # dataset's target summary is authoritative: its target_names can be
+        # more specific than the generic target_name in target_context.
+        for key, value in target_summary(dataset).items():
+            if value is not None and (target_definitions is None or key not in {"target_names", "target_types"}):
+                payload[key] = value
     except Exception:
         pass
 

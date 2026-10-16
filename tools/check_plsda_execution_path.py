@@ -18,6 +18,8 @@ _ROOT = Path(__file__).resolve().parents[3]
 _SELF = Path(__file__).resolve()
 _SYMBOL_ALLOWLIST = {
     "_native_plsda_fit": {
+        # Response permutation refits through the registered native classifier core.
+        "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_permutation_node.py",
         "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_nodes.py",
     },
     "PLSDANode": {
@@ -48,6 +50,18 @@ _SYMBOL_ALLOWLIST = {
         "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/transfer/pds_node.py",
     },
     "SherpaPLSDAArtifact": {
+        # Legacy admission only deserializes retained state to validate its axis.
+        "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/legacy_model_application.py",
+        # Model-bound permutation reads and verifies the connected native state.
+        "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_permutation_node.py",
+        # Prediction applicability reads the same native state.
+        "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/application_nodes.py",
+        # Batch preflight deserializes and validates features only. Its one
+        # conversion is inventoried below; no fitted lifecycle call is allowed.
+        "packages/spectra-sherpa/src/spectra_sherpa/app/services/model_application.py",
+        # Saved diagnostic readback verifies the retained state against the
+        # independently verified artifact; both conversions are read-only.
+        "packages/spectra-sherpa/src/spectra_sherpa/app/services/saved_model_diagnostics.py",
         "packages/spectra-sherpa/src/spectra_sherpa/app/services/canonical_model_bridge.py",
         "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_nodes.py",
         "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_state.py",
@@ -61,13 +75,31 @@ _DIRECT_LIFECYCLE_METHODS = {
     "predict_fitted_classification",
 }
 _LIFECYCLE_CALLSITE_ALLOWLIST = {
+    # The shared-reference node fits one calibration state, then applies that
+    # exact state to the application and retained calibration branches.
+    "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/shared_reference_scale_node.py": (
+        ("fit_fitted_state", 63, 16),
+        ("apply_fitted_state", 66, 27),
+        ("apply_fitted_state", 67, 36),
+    ),
+    # PCA review applies only the just-executed ScaleNode state to exclusions.
+    # No fit or classifier call is admitted; sample-local replay uses the SDK DAG.
+    "packages/spectra-sherpa/src/spectra_sherpa/app/services/pca_review_evidence.py": (
+        ("apply_fitted_state", 169, 33),
+    ),
+    # PLS review checks both executed branches against the exact ScaleNode
+    # state and applies it to exclusions; no refit or classifier path is added.
+    "packages/spectra-sherpa/src/spectra_sherpa/app/services/pls_review_evidence.py": (
+        ("apply_fitted_state", 407, 17),
+        ("apply_fitted_state", 699, 25),
+    ),
     # Model-aware prediction dispatches only admitted regression producers and never fits.
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/predict_regression_node.py": (
         ("apply_fitted_state", 73, 26),
     ),
     # Saved artifacts delegate application to the same canonical node, never refit.
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/saved_native_model.py": (
-        ("apply_fitted_state", 152, 30),
+        ("apply_fitted_state", 161, 30),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/fitted_regression_nodes.py": (
         ("fit_fitted_state", 98, 16),
@@ -94,33 +126,33 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
         ("apply_fitted_state", 935, 43),
         ("apply_fitted_state", 952, 28),
         ("apply_fitted_state", 953, 27),
-        ("fit_fitted_state", 965, 42),
-        ("predict_fitted_labels", 967, 20),
-        ("apply_fitted_state", 969, 25),
         ("fit_fitted_state", 1104, 42),
         ("apply_fitted_state", 1105, 43),
         ("apply_fitted_state", 1119, 28),
         ("apply_fitted_state", 1120, 27),
-        ("fit_fitted_state", 1150, 42),
-        ("predict_fitted_classification", 1153, 39),
-        ("predict_fitted_classification", 1158, 20),
-        ("predict_fitted_labels", 1160, 26),
-        ("apply_fitted_state", 1160, 78),
         ("fit_fitted_state", 1737, 36),
         ("apply_fitted_state", 1738, 38),
+        ("fit_fitted_state", 965, 42),
+        ("predict_fitted_labels", 967, 20),
+        ("apply_fitted_state", 969, 25),
+        ("fit_fitted_state", 1150, 42),
+        ("predict_fitted_classification", 1158, 20),
         ("fit_fitted_state", 1757, 36),
+        ("predict_fitted_labels", 1160, 26),
+        ("apply_fitted_state", 1160, 78),
+        ("predict_fitted_classification", 1153, 39),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/application_nodes.py": (
         ("apply_fitted_state", 31, 0),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_state.py": (
-        ("apply_fitted_state", 435, 4),
+        ("apply_fitted_state", 501, 4),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/apply_fitted_pls_node.py": (
         ("apply_fitted_state", 193, 22),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/fitted_pls_node.py": (
-        ("apply_fitted_state", 639, 22),
+        ("apply_fitted_state", 715, 22),
     ),
     (
         "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/"
@@ -144,8 +176,8 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
         ("apply_fitted_state", 589, 17),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/scale_node.py": (
-        ("fit_fitted_state", 283, 16),
-        ("apply_fitted_state", 284, 17),
+        ("fit_fitted_state", 288, 16),
+        ("apply_fitted_state", 289, 17),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/selection/cars_node.py": (
         ("fit_fitted_state", 617, 12),
@@ -198,29 +230,47 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
     ),
 }
 _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
+    "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/legacy_model_application.py": (
+        ("SherpaPLSDAArtifact.from_artifact", 73, 19),
+    ),
+    "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_permutation_node.py": (
+        ("plsda_state.SherpaPLSDAArtifact.from_fitted_state", 72, 12),
+        ("core['artifact'].to_fitted_state", 89, 20),
+    ),
+    "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/application_nodes.py": (
+        ("SherpaPLSDAArtifact.from_fitted_state", 81, 19),
+    ),
+    "packages/spectra-sherpa/src/spectra_sherpa/app/services/model_application.py": (
+        ("extract_cls.from_artifact", 371, 18),
+    ),
+    "packages/spectra-sherpa/src/spectra_sherpa/app/services/saved_model_diagnostics.py": (
+        ("SherpaPLSDAArtifact.from_fitted_state", 47, 15),
+        ("SherpaPLSDAArtifact.from_artifact", 49, 13),
+        ("stored.to_fitted_state", 50, 7),
+    ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/canonical_model_bridge.py": (
-        ("SherpaPLSDAArtifact.from_fitted_state", 278, 17),
-        ("native.to_fitted_state", 281, 36),
-        ("native.to_artifact", 284, 37),
-        ("SherpaPLSDAArtifact.from_artifact", 506, 17),
-        ("native.to_fitted_state", 507, 38),
+        ("native.to_artifact", 286, 37),
+        ("SherpaPLSDAArtifact.from_fitted_state", 280, 17),
+        ("native.to_fitted_state", 283, 36),
+        ("SherpaPLSDAArtifact.from_artifact", 508, 17),
+        ("native.to_fitted_state", 509, 38),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_nodes.py": (
-        ("core['artifact'].to_fitted_state", 199, 24),
-        ("SherpaPLSDAArtifact.from_fitted_state", 221, 15),
-        ("core['artifact'].to_fitted_state", 611, 32),
-        ("core['artifact'].to_fitted_state", 642, 15),
-        ("SherpaPLSDAArtifact.from_fitted_state", 661, 19),
+        ("SherpaPLSDAArtifact.from_fitted_state", 261, 15),
+        ("core['artifact'].to_fitted_state", 237, 24),
+        ("core['artifact'].to_fitted_state", 724, 15),
+        ("SherpaPLSDAArtifact.from_fitted_state", 743, 19),
+        ("core['artifact'].to_fitted_state", 690, 32),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_state.py": (
-        ("self.to_artifact", 379, 27),
-        ("cls.from_artifact", 403, 15),
-        ("SherpaPLSDAArtifact.from_fitted_state", 414, 15),
-        ("SherpaPLSDAArtifact.from_fitted_state", 424, 11),
+        ("SherpaPLSDAArtifact.from_fitted_state", 480, 15),
+        ("self.to_artifact", 439, 27),
+        ("cls.from_artifact", 469, 15),
+        ("SherpaPLSDAArtifact.from_fitted_state", 490, 11),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/load_apply_node.py": (
-        ("extract_cls.from_artifact", 179, 14),
-        ("extract.to_fitted_state", 400, 8),
+        ("extract_cls.from_artifact", 193, 14),
+        ("extract.to_fitted_state", 436, 8),
     ),
 }
 

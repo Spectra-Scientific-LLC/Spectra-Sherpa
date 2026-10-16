@@ -1,8 +1,6 @@
 <template>
   <section class="settings-content">
-    <header class="tab-header">
-      <h1>Settings</h1>
-    </header>
+    <WorkspaceHeader title="Settings" />
 
     <!-- Hosted Pro exposes personal disclosure and acquisition preferences. -->
     <div v-if="isHostedPro" class="demo-region">
@@ -14,6 +12,7 @@
       <ApiKeysTab hitran-only />
       <IntegrationsTab privacy-only />
       <PlateFormatSettingsSection />
+      <DisplayPreferencesSection />
       <div v-if="showGuidanceSettings" class="my-preferences">
         <span class="eyebrow">Your Account</span>
         <h3 class="my-preferences-title">My preferences</h3>
@@ -44,6 +43,7 @@
       <ApiKeysTab />
       <IntegrationsTab privacy-only />
       <PlateFormatSettingsSection />
+      <DisplayPreferencesSection />
 
       <div v-if="showGuidanceSettings" class="my-preferences">
         <span class="eyebrow">Your Account</span>
@@ -56,7 +56,7 @@
       </div>
     </div>
 
-    <TabView v-else v-model:activeIndex="activeTab" class="settings-tabs">
+    <WorkspaceTabs v-else v-model="activeTab" :tab-ids="settingsTabIds" class="settings-tabs">
       <TabPanel header="API Keys">
         <ApiKeysTab />
       </TabPanel>
@@ -65,26 +65,32 @@
       </TabPanel>
       <TabPanel header="Data">
         <PlateFormatSettingsSection />
+        <DisplayPreferencesSection />
       </TabPanel>
       <TabPanel v-if="showGuidanceSettings" header="Guidance">
         <GuidanceSettingsSection />
       </TabPanel>
-    </TabView>
+    </WorkspaceTabs>
   </section>
 </template>
 
 <script setup lang="ts">
+import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import { computed, ref } from "vue";
-import TabView from "primevue/tabview";
+import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import TabPanel from "primevue/tabpanel";
 import ApiKeysTab from "./ApiKeysTab.vue";
 import GuidanceSettingsSection from "./GuidanceSettingsSection.vue";
 import IntegrationsTab from "./IntegrationsTab.vue";
 import PlateFormatSettingsSection from "./PlateFormatSettingsSection.vue";
+import DisplayPreferencesSection from "./DisplayPreferencesSection.vue";
 import { useAppConfig } from "@/composables/useAppConfig";
 import { useDemoMode } from "@/composables/useDemoMode";
 
-const activeTab = ref(0);
+const activeTab = ref("api-keys");
+const settingsTabIds = computed(() => [
+  "api-keys", "integrations", "data", ...(showGuidanceSettings.value ? ["guidance"] : []),
+]);
 const { isDemoMode } = useDemoMode();
 const { appMode, siteProfile, isFeatureEnabled } = useAppConfig();
 const isHostedPro = computed(() => appMode.value === "enterprise" && siteProfile?.value === "pro");
@@ -105,7 +111,7 @@ const showGuidanceSettings = computed(
 }
 
 :global(.content:has(.settings-content)) {
-  background: #e4e0fa;
+  background: var(--workspace-background);
 }
 
 .eyebrow {

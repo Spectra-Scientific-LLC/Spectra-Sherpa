@@ -37,6 +37,17 @@ describe("diagnostics formatting", () => {
     expect(entries.map((entry) => entry.key)).toEqual(["n_classes", "probability_method"]);
   });
 
+  it("explains when selection retains every variable and omits worker internals", () => {
+    const entries = buildDiagnosticEntries({
+      n_selected: 5401, n_total: 5401, n_resamples: 100,
+      worker_execution: { worker_pid: 123, execution_id: "private-runtime-id" },
+    });
+    expect(entries.map((entry) => entry.key)).toEqual(["n_selected", "n_resamples"]);
+    expect(entries[0].displayValue).toBe("All 5,401 variables retained; none excluded");
+    expect(buildDiagnosticEntries({ n_selected: 20, n_total: 100 })[0].displayValue)
+      .toBe("20 of 100 variables retained");
+  });
+
   it("summarizes short objects and arrays without rendering blank strings", () => {
     expect(formatDiagnosticValue({ selected: 12, total: 40 })).toBe("Selected: 12; Total: 40");
     expect(formatDiagnosticValue([[1, 0], [0, 1]])).toBe("2 x 2 matrix");

@@ -47,7 +47,7 @@ from spectra_sherpa.app.services.execution_runtime import (
     ApplicationModelArtifactReplay,
     ApplicationModelArtifactSemanticValidator,
 )
-from spectra_sherpa.app.services.model_application import apply_model_to_dataset
+from spectra_sherpa.app.services.model_application import _present_plsda_applicability, apply_model_to_dataset
 from spectra_sherpa.app.services.model_store import (
     ModelArtifactCollisionError,
     ModelStore,
@@ -66,6 +66,19 @@ from spectra_sherpa.sdk.canonical_fitted_artifact import CanonicalFittedArtifact
 from spectra_sherpa.sdk.validate import make_leave_one_group_out_classification_plan
 
 _STATE_DIGEST = "a" * 64
+
+
+def test_saved_plsda_application_presents_legacy_and_missing_screening() -> None:
+    from spectra_sherpa.app.services.dag.nodes.modeling.pls_applicability import LEGACY_SCHEMA
+
+    legacy = {"schema_version": LEGACY_SCHEMA, "warning": "Outside fitted domain", "rows": []}
+    presented = _present_plsda_applicability(legacy)
+    assert presented is not legacy
+    assert presented["warning"].startswith("Outside fitted domain; Legacy empirical screening limits")
+    assert legacy["warning"] == "Outside fitted domain"
+    assert _present_plsda_applicability(None)["status"] == "unavailable"
+    modern = {"schema_version": "current", "warning": None, "rows": []}
+    assert _present_plsda_applicability(modern) == modern
 
 
 @pytest.fixture(autouse=True)
@@ -678,6 +691,12 @@ async def test_saved_canonical_plsda_application_exposes_one_response_authority(
     assert np.asarray(response["class_responses"]).shape == (6, 2)
     assert np.asarray(response["decision_margins"]).shape == (6,)
     assert len(response["classification_application_digest"]) == 64
+    assert response["applicability"]["reference_samples"] == 6
+    assert len(response["applicability"]["rows"]) == response["n_samples"] == 6
+    assert all(
+        row["screening_status"] in {"outside_global_screen", "within_global_screen", "unavailable"}
+        for row in response["applicability"]["rows"]
+    )
     assert response["predictions"] == [
         bridge.manifest["classes"][int(index)] for index in np.argmax(np.asarray(response["class_responses"]), axis=1)
     ]

@@ -1,6 +1,9 @@
-# Cloud vs Local OSS
+# Demo, Pro and local OSS
 
-SpectraSherpa is one scientific workbench with two practical entry points. The workflow concepts are shared; account policy, demo limits, and centrally managed AI behavior belong to hosted deployments.
+SpectraSherpa OSS is the local product. Demo and Pro are hosted offerings using
+the same scientific workbench. Enterprise is an internal runtime mode, not a
+separate public offering. Account policy, demo limits, and centrally managed AI
+behavior belong to hosted deployments.
 
 > **0.6.0 release lifecycle.** Install 0.6.0 from PyPI only after the public
 > index reports that exact version. Before the public tag exists, use only the
@@ -8,17 +11,18 @@ SpectraSherpa is one scientific workbench with two practical entry points. The w
 > but before PyPI reports 0.6.0, use the exact `spectra-sherpa-v0.6.0` source
 > tag. Source version text alone is not publication evidence.
 
-| Question | SpectraSherpa Cloud | Local OSS |
+| Question | hosted Demo and Pro | Local OSS |
 | --- | --- | --- |
 | Best first use | Fast browser evaluation, managed users, hosted demo workflows | Local data evaluation, source inspection, and offline work |
 | Install | None for the user | After 0.6 publication: `pip install "spectra-sherpa==0.6.0"` |
-| Data limits | Demo and enterprise policy may limit uploads, runs, or AI use | No hosted demo limits; constrained by your machine and local policy |
+| Data limits | Demo and Pro policy may limit uploads, runs, or AI use | No hosted demo limits; constrained by your machine and local policy |
 | AI setup | Centrally configured by the deployment; demo users do not bring keys | Optional BYO OpenAI-compatible, Anthropic, or Ollama chat provider |
 | Extension | User-facing cloud docs only | Full source, exports, configured providers, and tests |
 
-## SpectraSherpa Cloud
+## Hosted Demo and Pro
 
-Use Cloud when you want a browser-first managed environment with accounts, demo access, centrally configured AI features, and no local Python setup. It is the right first path for an enterprise evaluator who wants to try FTIR, NIR, Raman, or UV-VIS workflows quickly.
+Use hosted Demo for evaluation or hosted Pro for the managed product, with
+accounts, centrally configured AI features, and no local Python setup.
 
 The 0.6 hosted trial is available for evaluation with its supplied starter
 projects and qualified registered-reference path. The active policy is
@@ -28,7 +32,9 @@ documented on the hosted site at
 Cloud documentation is written for users. It explains how to run workflows, understand demo limits, use Advisor and Guidance, and review outputs. It does not teach service development or deployment internals.
 
 !!! note "Hosted feature policy"
-    Cloud profiles can differ. The public demo, enterprise trial, and paid enterprise deployment may have different upload limits, AI configuration, retention policy, HITRAN key handling, and sharing behavior.
+    Demo and Pro may have different upload limits, AI configuration, retention
+    policy, HITRAN key handling, and sharing behavior. Optimize campaigns are
+    available only when the hosted campaign service and account policy allow them.
 
 ## Local OSS
 
@@ -44,7 +50,7 @@ Local OSS provides:
 - optional `spectra-sherpa[scp]` support only for EFA, MCR-ALS, and SIMPLISMA through a private matrix adapter
 - optional `spectra-sherpa[hitran]` support for HITRAN/HAPI synthesis
 
-Start with [10 Minutes to Local Compute](../onboarding/local-30-minutes.md), then check [Supported File Types](file-types.md) before importing instrument files.
+Start with [Local onboarding](../onboarding/local-30-minutes.md), then check [Supported File Types](file-types.md) before importing instrument files.
 
 ## AI Use and BYOK
 
@@ -54,7 +60,9 @@ Local OSS can use a bring-your-own-provider chat endpoint configured by environm
 
 Private and loopback model endpoints are blocked by default. An operator who intentionally runs a trusted local model server can enable them for the configured provider with `CHAT_ENDPOINT_ALLOW_PRIVATE=true`; review the endpoint carefully because this relaxes the SSRF protection for that chat destination. `SPECTRA_SHERPA_ALLOW_PRIVATE_LLM_ENDPOINTS=1` remains a process-wide compatibility override and is broader than the per-provider setting.
 
-Cloud profiles use deployment-managed LLM access. Hosted Pro does not accept user-supplied LLM keys. Other enterprise deployments may expose a separately qualified BYOK capability only when their profile and operator policy say so. BYOK means your organization also depends on the LLM supplier for model availability, usage limits, pricing, data-handling terms, and service reliability.
+Demo and Pro use deployment-managed LLM access. Hosted Pro does not accept
+user-supplied LLM keys. Local BYOK also depends on the LLM supplier for model
+availability, usage limits, pricing, data-handling terms, and service reliability.
 
 ## Scientific Caution for AI Output
 

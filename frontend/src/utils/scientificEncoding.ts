@@ -1,4 +1,5 @@
 /** Shared quantitative display rules; these never change scientific values. */
+import { displayNumber } from "@/composables/useDisplayPreferences";
 export const SCIENTIFIC_HOVER_FORMAT = ".15g";
 export type ScientificDisplayPrecision =
   | { significantDigits: number; decimalPlaces?: never }
@@ -13,7 +14,7 @@ export type ScientificDisplayPrecision =
  */
 export function scientificNumber(value: number, precision?: ScientificDisplayPrecision): string {
   if (!Number.isFinite(value)) return "Unavailable";
-  if (!precision) return String(value);
+  if (!precision) return displayNumber(value);
   if (precision.significantDigits !== undefined) {
     const digits = precision.significantDigits;
     if (!Number.isInteger(digits) || digits < 1 || digits > 100)
@@ -31,9 +32,6 @@ export function scientificNumber(value: number, precision?: ScientificDisplayPre
 export const componentPercent = (value: number): string =>
   scientificNumber(value * 100, { decimalPlaces: 1 });
 export const scoreGeometry = { scaleanchor: "x", scaleratio: 1, constrain: "range" };
-export const componentOrientationNotice =
-  "Component signs are fit-specific; compare paired scores/loadings from the same fit.";
-export const scoreOrientationNotice = `Equal axis units. ${componentOrientationNotice}`;
 
 /** Unknown physical semantics are disclosed; numerical zero is never called a physical baseline. */
 export function matrixColorEncoding(matrix: unknown, semantics?: unknown) {
@@ -65,18 +63,5 @@ export function matrixColorEncoding(matrix: unknown, semantics?: unknown) {
         : semantics === "nonnegative" && low < 0
           ? "Matrix contains negative values contrary to its declared nonnegative semantics."
           : null,
-  };
-}
-export function encodingAnnotation(text: string) {
-  return {
-    text,
-    x: 0,
-    y: 1.14,
-    xref: "paper",
-    yref: "paper",
-    xanchor: "left",
-    yanchor: "bottom",
-    showarrow: false,
-    font: { size: 11, color: "#94a3b8" },
   };
 }

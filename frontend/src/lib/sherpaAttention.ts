@@ -11,6 +11,8 @@ export interface ActiveAttention {
   section?: string;
   campaign_id?: string;
   candidate_id?: string;
+  workflow_id?: number;
+  run_id?: number;
 }
 const active = ref<ActiveAttention>({ window: "unknown", surface: "window" });
 // Navigation does not necessarily change when the scientist switches projects.
@@ -26,6 +28,12 @@ export function setAttentionWindow(path = ""): void {
   const window: SherpaWindow = ["runs", "report", "models"].includes(section) ? "results" : section === "harness" || section === "campaigns" ? "optimization"
     : ["dashboard", "data", "workflow", "results", "optimization", "project", "deploy", "settings"].includes(section)
       ? section as SherpaWindow : "unknown";
+  // Node/view query changes keep the inspected run; leaving it clears selection.
+  const run = active.value;
+  if (window === "results" && run.run_id && path.split(/[?#]/)[0] === `/runs/${run.run_id}`) {
+    active.value = { window, surface: "window", workflow_id: run.workflow_id, run_id: run.run_id };
+    return;
+  }
   active.value = { window, surface: "window" };
 }
 export function focusPlot(plot_id: string, node_id?: string, plot_key?: string): void {
@@ -53,4 +61,13 @@ export function focusSection(section: string): void {
 }
 export function releasePlot(plotId: string): void {
   if (active.value.plot_id === plotId) active.value = windowContext();
+}
+
+/** Saved-run selection only; all evidence is resolved by the server. */
+export function focusSavedRun(workflowId: number, runId: number): void {
+  if (![workflowId, runId].every(id => Number.isSafeInteger(id) && id > 0)) return;
+  active.value = { window: "results", surface: "inspector", workflow_id: workflowId, run_id: runId };
+}
+export function releaseSavedRun(): void {
+  if (active.value.run_id != null) active.value = { window: active.value.window, surface: "window" };
 }

@@ -27,7 +27,7 @@ Use the same order, vocabulary and interaction rules everywhere.
 | Runs | **History, Inspect, Compare, Artifacts, Batch** | Open a run name in Inspect, compare saved executions, inspect their artifacts and apply fitted models. |
 | Optimize | **Campaigns, New round, Results** | Browse project campaigns, prepare a round and evaluate/inspect results. |
 | Deploy | **Application, Folder Watches, Prediction History** | Select a fitted application, operate watches and inspect predictions. |
-| Report | **Setup, Preview, ISO Validation** | Configure a report, inspect/export it and follow the validation-evidence walkthrough. |
+| Report | **Setup, Preview** | Configure and inspect/export a scientific report. The ISO rehearsal lives in the server operator documentation, outside the scientist's Report page. |
 
 Use `Workflow` as the main-page label. `Workflows →` on Project describes its
 collection. Existing `/workflow` URLs and internal component names need not be
@@ -350,7 +350,6 @@ paths; don't render active controls that call refused endpoints.
 | --- | --- | --- |
 | Setup | Workflow and selected run names; report length and data-disclosure choices | Workflow/run filters, selected-run chips, short/detailed option, section choices and explicit row-level plot/data opt-in. Full IDs remain available in Details/copy controls. **Generate Report** belongs to this view's header. |
 | Preview | Generated report's source identities, scope and generation/staleness status | The actual report, AI narrative attribution where available and Export. Preserve supported PDF/HTML/Markdown/JSON formats and scoped current-workflow Python/notebook export. |
-| ISO Validation | Selected workflow/run, audit availability and walkthrough scope | Existing ISO 17025 walkthrough, assumptions, limitations, Audit link and evidence-pack route. The title is not a compliance or accreditation claim. |
 
 Setup describes the next generation request. Preview describes the last generated
 result. Changing Setup keeps the previous preview with a visible “settings
@@ -361,12 +360,11 @@ explicit action with existing privacy/usage behavior, not a side effect of tab
 navigation. A generated report need not become a new backend model for this
 layout; a retained generation snapshot is the minimum authority.
 
-Use the shared Data-style page background in all three tabs and a readable
+Use the shared Data-style page background in both tabs and a readable
 document surface in Preview. Preserve the explicit notice that exporting a
-current workflow's Python/notebook is not historical-run replay. ISO Validation
-organizes the existing walkthrough and Audit → evidence-pack journey; it must
-not silently replace analytical qualification or imply that a walkthrough
-validates the scientist's method.
+current workflow's Python/notebook is not historical-run replay. The operator
+rehearsal remains in the server audit runbook; Report must not imply that a
+walkthrough validates the scientist's method.
 
 ## 5. Campaigns as canonical project objects
 
@@ -492,8 +490,7 @@ the separately distributed managed server source.
 | `Server/models/advisor_memory.py`, `Server/memory_map.py`, `FE/lib/sherpaAttention.ts` | Existing project/tab/subscope memories; partial focus IDs | Evolve scopes with aliases; add campaign relationships and precise stage/resource focus without orphaning existing topics. |
 | `FE/views/deploy/DeployContent.vue` | Application catalog above Folder Watches/Prediction History | Put catalog/qualification under first Application tab; keep compact context and per-watch binding elsewhere. |
 | `FE/views/deploy/QualificationPanel.vue`, `InstrumentQCPanel.vue`, Data acquisition panel | Nested Refresh/Reload actions | Synchronize after changes/on entry; retain explicit error Retry and all evidence/export/edit functions. |
-| `FE/views/report/ReportContent.vue`, `FE/utils/reportGenerator.ts` | Setup/preview/walkthrough on one page; dark iframe and generated HTML styling | Split Setup/Preview/ISO Validation; retain report-length/section/data options; align page and generated preview theme. |
-| `FE/views/report/ValidationWalkthroughPanel.vue` | Walkthrough beneath report | Move to ISO Validation; preserve Audit/pack path and limitations, no certification claim. |
+| `FE/views/report/ReportContent.vue`, `FE/utils/reportGenerator.ts` | Setup/preview/walkthrough on one page; dark iframe and generated HTML styling | Split Setup/Preview; retain report-length/section/data options; align page and generated preview theme. Keep operator rehearsal in server audit documentation. |
 | Router, stores and managed navigation callbacks | Index/alias-based tabs and different object query conventions | Stable tab IDs; retain legacy links and object context; prevent late-response/project leakage. |
 | Historical `docs/plan/runs-navigation.md` | Earlier two-tab plan | Keep as historical evidence and point to this four-tab authority. |
 

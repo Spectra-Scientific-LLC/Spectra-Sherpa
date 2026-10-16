@@ -64,16 +64,30 @@ def coerce_to_sherpa(
     raise ValueError(err)
 
 
+def require_active_input(value: Any, *, name: str = "input") -> None:
+    """Numerical consumers must never silently include explicitly excluded data."""
+    for axis_name, kind in (("sample_axis", "samples"), ("feature_axis", "variables")):
+        axis = getattr(value, axis_name, None)
+        mask = getattr(axis, "include_mask", None)
+        if mask is not None and not np.all(mask):
+            raise ValueError(
+                f"{name} has excluded {kind}; materialize the active cohort and variables before numerical analysis"
+            )
+
+
 def bind_X(
     X: Any,
     *,
     missing_message: str = "Missing required input: X",
     dataset_error_message: str = "X must be a SherpaDataset object",
     allow_array: bool = False,
+    allow_excluded: bool = False,
 ) -> SherpaDataset:
     """Bind and normalize the X input."""
     if X is None:
         raise ValueError(missing_message)
+    if not allow_excluded:
+        require_active_input(X, name="X")
     return coerce_to_sherpa(
         X,
         input_name="X",
@@ -335,6 +349,7 @@ def to_numpy_2d(
     name: str = "input",
     dtype: Any = np.float64,
     flatten_nd: bool = False,
+    allow_excluded: bool = False,
 ) -> np.ndarray:
     """Convert input to a 2D numpy array.
 
@@ -342,6 +357,8 @@ def to_numpy_2d(
     arrays with ndim > 2 are flattened by merging inner dimensions into the
     feature dimension: ``(n_samples, *inner, n_features) -> (n_samples, prod(inner)*n_features)``.
     """
+    if not allow_excluded:
+        require_active_input(value, name=name)
     raw = value.data if isinstance(value, SherpaDataset) else value
     arr = np.asarray(raw, dtype=dtype)
 

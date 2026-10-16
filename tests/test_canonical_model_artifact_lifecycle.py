@@ -57,6 +57,7 @@ PIPELINE_STATE = {
     "preprocess.msc",
     "preprocess.osc",
     "preprocess.scale",
+    "preprocess.shared_reference_scale",
     "transfer.ds",
     "transfer.pds",
     "transfer.sws",
@@ -349,10 +350,17 @@ async def test_http_execution_automatically_registers_pls_for_runs_and_deploy(
 
 
 @pytest.mark.asyncio
-async def test_saved_native_model_replays_fitted_scaling_without_refitting(tmp_path, monkeypatch):
+@pytest.mark.parametrize("shared_reference", [False, True])
+async def test_saved_native_model_replays_fitted_scaling_without_refitting(tmp_path, monkeypatch, shared_reference):
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.scale_node import ScaleNode
+
     data = sample("model.fitted_pls")
-    scale = node_registry.create_node("preprocess.scale", "scale", {"method": "autoscale"})
-    scaled = (await scale.execute(data)).outputs["default"]
+    node_type = "preprocess.shared_reference_scale" if shared_reference else "preprocess.scale"
+    scale = node_registry.create_node(node_type, "scale", {"method": "autoscale"})
+    scale_outputs = (await scale.execute(data, reference=data)).outputs
+    scaled = scale_outputs["reference_scaled"] if shared_reference else scale_outputs["default"]
+    if shared_reference:
+        np.testing.assert_allclose(scale_outputs["default"].X, scaled.X)
     node = node_registry.create_node("model.fitted_pls", "fit", {"n_components": 2})
     outputs = (await node.execute(scaled)).outputs
     artifact = outputs["_model_artifact"]
@@ -363,7 +371,7 @@ async def test_saved_native_model_replays_fitted_scaling_without_refitting(tmp_p
     def no_refit(*args, **kwargs):
         raise AssertionError("Saved pipeline application cannot refit scaling or regression")
 
-    monkeypatch.setattr(type(scale), "fit_fitted_state", no_refit)
+    monkeypatch.setattr(ScaleNode, "fit_fitted_state", no_refit)
     monkeypatch.setattr(type(node), "fit_fitted_state", no_refit)
     incoming = data.copy()
     incoming.target = None

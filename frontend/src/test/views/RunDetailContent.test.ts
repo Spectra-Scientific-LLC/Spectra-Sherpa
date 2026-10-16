@@ -3,22 +3,24 @@ import { mount, flushPromises } from '@vue/test-utils';
 import { createRouter, createMemoryHistory } from 'vue-router';
 import RunDetailContent from '@/views/models/RunDetailContent.vue';
 
-const { get, switchScope, downloadJson } = vi.hoisted(() => ({ get: vi.fn(), switchScope: vi.fn().mockResolvedValue(null), downloadJson: vi.fn() }));
-vi.mock("@/utils/download", () => ({ downloadJson }));
-vi.mock('@/api/client', () => ({ default: { get } }));
+const { get, patch, switchScope, downloadJson, downloadCsv } = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn(), switchScope: vi.fn().mockResolvedValue(null), downloadJson: vi.fn(), downloadCsv: vi.fn() }));
+vi.mock("@/utils/download", () => ({ downloadJson, downloadCsv }));
+vi.mock('@/api/client', () => ({ default: { get, patch } }));
 vi.mock('@/stores/advisor', () => ({ useAdvisorStore: () => ({ switchScope }) }));
 vi.mock('@/stores/project', () => ({ useProjectStore: () => ({ currentProjectId: 1, ensureProjectForBrowserTab: async () => {} }) }));
 const fixture = {
   run: { name: 'Saved PCA', status: 'completed', executed_at: '2026-09-11', run_kind: 'data' },
   evidence: { qualification: 'qualified', outputs: {
     __workflow__: { definition: { state: 'exact', storage: 'file' } },
-    pca: { scores: { state: 'exact', storage: 'file' } },
+    pca: { scores: { state: 'exact', storage: 'file' }, _internal: { state: 'missing', reason: 'Internal execution bookkeeping' } },
     other: { default: { state: 'missing', reason: 'Output exceeded the configured limit.' } },
   } }, node_statuses: { pca: 'completed', other: 'error' },
 };
 beforeEach(() => {
   get.mockReset();
+  patch.mockReset().mockImplementation(async (_url: string, payload: { name: string }) => ({ data: { name: payload.name } }));
   switchScope.mockClear();
+  downloadCsv.mockClear();
   get.mockImplementation(async (url: string) => {
     if (url.endsWith('/evidence')) return { data: structuredClone(fixture) };
     if (url.endsWith('/__workflow__/definition')) return { data: { value: { schema_version: 1, nodes: [{ node_id: 'pca', node_type: 'model.pca', label: 'Recorded PCA', parameters: { n_components: 2 } }], edges: [] } } };
@@ -27,7 +29,7 @@ beforeEach(() => {
   });
 });
 async function open(query = '?project=1&view=Results&node=pca&offset=50') {
-  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/runs/:runId', component: RunDetailContent }, { path: '/runs', component: { template: '<div />' } }] });
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/runs/:runId', component: RunDetailContent }, { path: '/runs', component: { template: '<div />' } }, { path: '/report', component: { template: '<div />' } }] });
   await router.push(`/runs/42${query}`);
   await router.isReady();
   const wrapper = mount(RunDetailContent, { global: { plugins: [router], stubs: {
@@ -39,6 +41,251 @@ async function open(query = '?project=1&view=Results&node=pca&offset=50') {
   return { wrapper, router };
 }
 describe("Persistent run inspection", () => {
+  it('shows the exact per-file operational screen when Deploy opens its retained model node', async () => {
+    const original = get.getMockImplementation()!;
+    let reduced = false;
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture), run: { ...fixture.run, run_kind: 'batch_inference' }, evidence: { qualification: 'qualified', outputs: {
+        __workflow__: { definition: { state: 'exact', storage: 'file' } },
+        'file_0::model': {
+          result: { state: 'exact', storage: 'file' },
+          labels: { state: 'exact', storage: 'file' },
+          model_id: { state: 'exact', storage: 'file' },
+          applicability: { state: reduced ? 'reduced' : 'exact', storage: 'file', sha256: 'd'.repeat(64) },
+        },
+      } }, node_statuses: { 'file_0::model': 'completed' } } };
+      if (url.endsWith('/__workflow__/definition')) return { data: { value: {
+        schema_version: 1, nodes: [
+          { node_id: 'file_0::model', node_type: 'model.load_apply', label: 'Saved model', parameters: {} },
+          { node_id: 'file_0::exit', node_type: 'output.table', label: 'Output', parameters: {} },
+        ], edges: [],
+      } } };
+      if (url.endsWith('/file_0%3A%3Amodel/result')) return { data: { value: [[1.1], [1.3]] } };
+      if (url.endsWith('/file_0%3A%3Amodel/labels')) return { data: { value: ['Class A', 'Class B'] } };
+      if (url.endsWith('/file_0%3A%3Amodel/model_id')) return { data: { value: 'saved-plsda' } };
+      if (url.endsWith('/file_0%3A%3Amodel/applicability')) return { data: { value: {
+        claim_scope: 'provisional_calibration_screening', method: 'prediction_f_and_residual_spectrum_0.95_strict_greater',
+        reference_samples: 12, t2_limit: 4, q_limit: 1,
+        rows: [{ row_index: 0, screening_status: 'within_global_screen', t2: 2, q: .3 },
+          { row_index: 1, screening_status: 'outside_global_screen', t2: 5, q: .4 }],
+      } } };
+      return original(url);
+    });
+    const { wrapper } = await open('?project=1&view=Results&node=file_0%3A%3Amodel');
+    expect(wrapper.get('[aria-label="Retained prediction trust"]').text()).toContain('Outside global screen');
+    expect(wrapper.get('[aria-label="Retained prediction trust"]').text()).toContain('File dataset position');
+    expect(wrapper.get('[aria-label="Retained prediction trust"]').text()).toContain('Class B');
+    expect(wrapper.get('[aria-label="Retained prediction trust"]').text()).toContain('saved-plsda');
+    wrapper.unmount();
+    const inspected = await open('?project=1&view=Results&node=file_0%3A%3Aexit&trust=1');
+    expect(inspected.router.currentRoute.value.query.node).toBe('file_0::model');
+    expect(inspected.wrapper.get('[aria-label="Retained prediction trust"]').text()).toContain('Class B');
+    inspected.wrapper.unmount();
+    reduced = true;
+    const unavailable = await open('?project=1&view=Results&node=file_0%3A%3Amodel');
+    expect(unavailable.wrapper.find('[aria-label="Retained prediction trust"]').exists()).toBe(false);
+    expect(unavailable.wrapper.text()).toContain('Applicability unavailable: no matching, exact fitted row-level screen');
+    unavailable.wrapper.unmount();
+  });
+  it('shows retained PLS-DA trust rows in batch history and exports safe assembled positions', async () => {
+    const original = get.getMockImplementation()!;
+    let reducedSelection = false;
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture), evidence: { qualification: 'qualified', outputs: {
+        __workflow__: { definition: { state: 'exact', storage: 'file' } },
+        __application__: { selection: { state: reducedSelection ? 'reduced' : 'exact', storage: 'file' } },
+        'model-1': { default: { state: 'exact', storage: 'file' } },
+      } } } };
+      if (url.endsWith('/__application__/selection')) return { data: { value: {
+        dataset: { name: 'Batch cohort' }, scope: 'all', successful_artifact_uids: ['model-1'],
+        results: [{ artifact_uid: 'model-1', status: 'completed' }],
+      } } };
+      if (url.endsWith('/model-1/default')) return { data: { value: {
+        artifact_uid: 'model-1', model_type: 'plsda', sample_indices: [2, 5, 8], predictions: ['\u0001=HYPERLINK("bad")', 'B', '\u00a0=HYPERLINK("bad")'],
+        applicability: { method: 'prediction_f_and_residual_spectrum_0.95_strict_greater', claim_scope: 'provisional_calibration_screening',
+          reference_samples: 12, t2_limit: 4, q_limit: 1,
+          rows: [{ row_index: 0, screening_status: 'within_global_screen', t2: 2, q: .3 },
+            { row_index: 1, screening_status: 'outside_global_screen', t2: 5, q: .4 },
+            { row_index: 2, screening_status: 'within_global_screen', t2: 2, q: .2 }] },
+      } } };
+      return original(url);
+    });
+    const { wrapper } = await open('?project=1&view=Summary');
+    expect(wrapper.get('[aria-label="Prediction trust for model-1"]').text()).toContain('Outside global screen');
+    expect(wrapper.get('[aria-label="Prediction trust for model-1"]').text()).toContain('Within global screen; unqualified');
+    await wrapper.get('[aria-label="Prediction trust for model-1"] button').trigger('click');
+    expect(downloadCsv).toHaveBeenCalled();
+    const rows = downloadCsv.mock.calls.at(-1)?.[0];
+    expect(rows[1]).toContain(3);
+    expect(rows[2]).toContain(6);
+    expect(rows[1]).toContain("'\u0001=HYPERLINK(\"bad\")");
+    expect(rows[3]).toContain(9);
+    expect(rows[3]).toContain("'\u00a0=HYPERLINK(\"bad\")");
+    expect(rows[0]).toContain('dataset_position');
+    wrapper.unmount();
+    reducedSelection = true;
+    const unavailable = await open('?project=1&view=Summary');
+    expect(unavailable.wrapper.find('[aria-label="Prediction trust for model-1"]').exists()).toBe(false);
+    expect(unavailable.wrapper.text()).toContain('Application context unavailable: exact selection evidence was not retained.');
+    unavailable.wrapper.unmount();
+  });
+  it('saves the editable run name on blur and keeps retained results unchanged', async () => {
+    const original = get.getMockImplementation()!;
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: {
+        ...structuredClone(fixture), run: { ...fixture.run, id: 42, project_id: 1 },
+      } };
+      return original(url);
+    });
+    const { wrapper } = await open('?project=1&view=Summary');
+    const input = wrapper.get('[aria-label="Run name"]');
+    await input.setValue('  Reviewed PCA  ');
+    await input.trigger('blur');
+    await flushPromises();
+    expect(patch).toHaveBeenCalledWith('/runs/42/name', { name: 'Reviewed PCA' }, { params: { project_id: 1 } });
+    expect((input.element as HTMLInputElement).value).toBe('Reviewed PCA');
+    expect(wrapper.get('.summary').text()).toContain('Reviewed PCA');
+    expect(wrapper.emitted('renamed')).toHaveLength(1);
+    wrapper.unmount();
+  });
+  it('waits for an in-flight rename before opening the report', async () => {
+    const original = get.getMockImplementation()!;
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture),
+        run: { ...fixture.run, id: 42, workflow_id: 7, project_id: 1 },
+      } };
+      return original(url);
+    });
+    let finishRename!: (value: { data: { name: string } }) => void;
+    patch.mockImplementationOnce(() => new Promise((resolve) => { finishRename = resolve; }));
+    const { wrapper, router } = await open('?project=1&view=Summary');
+    const input = wrapper.get('[aria-label="Run name"]');
+    await input.setValue('Reviewed Iris run');
+    await input.trigger('blur');
+    await wrapper.findAll('button').find((button) => button.text() === 'Report')!.trigger('click');
+    expect(router.currentRoute.value.path).toBe('/runs/42');
+    finishRename({ data: { name: 'Reviewed Iris run' } });
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/report');
+  });
+  it('shows one complete prediction ledger instead of duplicating its raw comparison', async () => {
+    const fallback = get.getMockImplementation()!;
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture), evidence: { qualification: 'qualified', outputs: {
+        __workflow__: { definition: { state: 'exact', storage: 'file' } },
+        pca: { comparison: { state: 'exact', storage: 'file' } },
+        __diagnostics__: { _scientific_presentations: { state: 'exact', storage: 'file' } },
+      } } } };
+      if (url.endsWith('/pca/comparison')) return { data: { value: {
+        schema_version: 'spectrasherpa-classification-comparison/1', shape: [1, 5],
+        data: [{ sample: 'Specimen A', reference: 'class A', predicted: 'class A', correct: true, role: 'held_out_test' }],
+      } } };
+      if (url.endsWith('/_scientific_presentations')) return { data: { value: { pca: {
+        contract_digest: 'a'.repeat(64), contract: {
+          schema_version: 'spectrasherpa-node-presentation/1', default_presentation: 'comparison',
+          presentations: [{ presentation_id: 'comparison', label: 'Predictions', kind: 'classification_comparison', source_ports: ['comparison'], modes: ['table'] }],
+        },
+      } } } };
+      return fallback(url);
+    });
+    const { wrapper } = await open();
+    expect(wrapper.findAll('[aria-label="Validation ledger"]')).toHaveLength(1);
+    expect(wrapper.find('.saved-value').exists()).toBe(false);
+    expect(wrapper.findComponent({ name: 'QuickPlotModal' }).exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("opens with a model summary built only from retained calibration and test statistics", async () => {
+    const comparison = (role: string, target: string, metrics: Record<string, number>) => ({
+      schema_version: 'spectrasherpa-regression-comparison/1', data: [], metadata: { role },
+      statistics: { targets: [{ target, metrics }] },
+    });
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture),
+        params_snapshot: { model_1: { n_components: 3, scale: false } },
+        evidence: { qualification: 'qualified', outputs: {
+          __workflow__: { definition: { state: 'exact', storage: 'file' } },
+          __diagnostics__: { _scientific_presentations: { state: 'exact', storage: 'file' } },
+          model_1: { calibration_comparison: { state: 'exact', storage: 'file' } },
+          eval_1: { comparison: { state: 'exact', storage: 'file' } },
+        } } } };
+      if (url.endsWith('/__workflow__/definition')) return { data: { value: { schema_version: 1, nodes: [
+        { node_id: 'snv_1', node_type: 'preprocess.normalize', label: 'SNV', parameters: {} },
+        { node_id: 'model_1', node_type: 'model.fitted_pls', label: 'Train PLS', parameters: { n_components: 7 } },
+        { node_id: 'eval_1', node_type: 'diagnostics.labeled_regression_evaluator', label: 'Test Evaluation', parameters: {} },
+      ], edges: [{ from_node_id: 'snv_1', from_output: 'default', to_node_id: 'model_1', to_input: 'default' }] } } };
+      if (url.endsWith('/_scientific_presentations')) return { data: { value: {
+        model_1: { contract: { presentations: [{ presentation_id: 'calibration_fit', kind: 'regression_comparison', source_ports: ['calibration_comparison'] }] } },
+        eval_1: { contract: { presentations: [{ presentation_id: 'held_out_comparison', kind: 'regression_comparison', source_ports: ['comparison'] }] } },
+      } } };
+      if (url.endsWith('/model_1/calibration_comparison')) return { data: { value: comparison('calibration', 'Target 1', { n_samples: 30, rmse: 0.2894, r2: 0.9999 }) } };
+      if (url.endsWith('/eval_1/comparison')) return { data: { value: comparison('held_out_test', 'Moisture', { n_samples: 10, rmse: 0.3975, r2: 0.9992 }) } };
+      return { data: { value: null } };
+    });
+    const { wrapper } = await open('?project=1&view=Summary');
+    const card = wrapper.get('[aria-label="Model summary"]');
+    expect(card.text()).toContain('PLS regression');
+    // Effective parameters, never the authored value or a current default.
+    expect(card.text()).toContain('3 latent variables');
+    expect(card.text()).not.toContain('7 latent');
+    expect(card.text()).toContain('SNV');
+    expect(card.text()).toContain('RMSEC (units not declared) 0.2894');
+    expect(card.text()).toContain('RMSEP (units not declared) 0.3975');
+    expect(card.text()).toContain('Protocol: Calibration fit');
+    expect(card.text()).toContain('Protocol: Held-out test');
+    wrapper.unmount();
+  });
+  it('explains partial retention on the default Results view', async () => {
+    const original = get.getMockImplementation()!;
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: {
+        ...structuredClone(fixture), run: { ...fixture.run, status: 'partial' },
+        error: 'Execution succeeded; export exceeds the retained materialization budget.',
+      } };
+      return original(url);
+    });
+    const { wrapper } = await open();
+    expect(wrapper.get('[role="status"]').text()).toContain('Incomplete saved run:');
+    expect(wrapper.get('[role="status"]').text()).toContain('Execution succeeded; export exceeds');
+    wrapper.unmount();
+  });
+  it('omits internal bookkeeping from scientific evidence warnings', async () => {
+    const { wrapper } = await open();
+    expect(wrapper.text()).not.toContain('_internal');
+    expect(wrapper.text()).not.toContain('Internal execution bookkeeping');
+    wrapper.unmount();
+  });
+  it.each(['', '&view=Validation', '&node=source&view=Results'])(
+    'opens retained evaluation evidence by default, preserving explicit node links: %s', async (selection) => {
+      get.mockImplementation(async (url: string) => {
+        if (url.endsWith('/evidence')) return { data: {
+          ...structuredClone(fixture), node_statuses: { source: 'completed', model: 'completed', evaluation: 'completed' },
+          evidence: { qualification: 'qualified', outputs: {
+            __workflow__: { definition: { state: 'exact', storage: 'file' } },
+            source: { default: { state: 'exact', storage: 'file' } },
+            __diagnostics__: { evaluation: { state: 'exact', storage: 'file' } },
+          } },
+        } };
+        if (url.endsWith('/__workflow__/definition')) return { data: { value: { schema_version: 1, nodes: [
+          { node_id: 'source', node_type: 'data.file_load', label: 'Load Data', parameters: {} },
+          { node_id: 'model', node_type: 'model.fitted_pls', label: 'PLS', parameters: {} },
+          { node_id: 'evaluation', node_type: 'diagnostics.labeled_regression_evaluator', label: 'Test Evaluation', parameters: {} },
+        ], edges: [] } } };
+        if (url.endsWith('/__diagnostics__/evaluation')) return { data: { value: { rmse: 4.5, n_samples: 57 } } };
+        if (url.endsWith('/source/default')) return { data: { value: [] } };
+        throw new Error(`Unexpected evidence request: ${url}`);
+      });
+      const { wrapper, router } = await open('?project=1' + selection);
+      expect(router.currentRoute.value.query.node).toBe(selection.includes('node=source') ? 'source' : 'evaluation');
+      expect(wrapper.find('.inspection').exists()).toBe(true);
+      if (!selection || selection.includes('Validation')) {
+        expect(wrapper.text()).toContain('4.5');
+        expect(wrapper.text()).not.toContain('No scientific output was retained');
+      }
+      expect(get.mock.calls.some(([url]) => String(url).includes('/workflows/'))).toBe(false);
+      wrapper.unmount();
+    },
+  );
   it("shows the current sheet label while retaining the recorded run name", async () => {
     const original = get.getMockImplementation()!;
     get.mockImplementation(async (url: string) => {
@@ -50,7 +297,7 @@ describe("Persistent run inspection", () => {
       return original(url);
     });
     const { wrapper } = await open('?project=1&view=Summary');
-    expect(wrapper.get('.run-detail__identity strong').text()).toBe('Peak Find + PLS');
+    expect((wrapper.get('[aria-label="Run name"]').element as HTMLInputElement).value).toBe('PLS — abc12345');
     expect(wrapper.get('.run-detail__identity').text()).toContain('Run #42');
     expect(wrapper.get('.summary').text()).toContain('PLS — abc12345');
     expect(wrapper.get('[aria-label="Run actions"]').text()).toContain('Workflow: Peak Find + PLS');
@@ -67,7 +314,7 @@ describe("Persistent run inspection", () => {
     });
     const { wrapper } = await open('?project=1&view=Summary');
     expect(wrapper.get('.run-detail__heading h2').text()).toBe('Inspect');
-    expect(wrapper.get('.run-detail__identity').text()).toContain('Saved PCA');
+    expect((wrapper.get('[aria-label="Run name"]').element as HTMLInputElement).value).toBe('Saved PCA');
     expect(wrapper.get('[aria-label="Run actions"]').find('[aria-label="Back to Runs"]').exists()).toBe(true);
     expect(wrapper.get('.summary').element.lastElementChild?.getAttribute('aria-label')).toBe('Incomplete durable evidence');
     wrapper.unmount();
@@ -99,7 +346,7 @@ describe("Persistent run inspection", () => {
         return original(url);
       });
       const { wrapper, router } = await open("?project=1&view=Validation&node=pca");
-      expect(wrapper.text()).toContain("Effective executed parameters");
+      expect(wrapper.text()).toContain("Parameters used in this run");
       if (retained) {
         expect(wrapper.text()).toContain("n components");
         expect(wrapper.text()).toContain("scale");
@@ -213,7 +460,10 @@ describe("Persistent run inspection", () => {
     });
     const { wrapper, router } = await open();
     expect(wrapper.text()).toContain('Showing retained Evaluation Metrics');
-    expect(wrapper.text()).toContain('1.2949488617445029');
+    // Rounded for reading; the exact saved value stays in the tooltip.
+    expect(wrapper.text()).toContain('1.2949');
+    expect(wrapper.text()).not.toContain('1.2949488617445029');
+    expect(wrapper.find('[title="1.2949488617445029"]').exists()).toBe(true);
     expect(wrapper.text()).toContain('231');
     expect(wrapper.findComponent({ name: 'QuickPlotModal' }).exists()).toBe(false);
     expect(wrapper.text()).not.toContain('missing declared source port');

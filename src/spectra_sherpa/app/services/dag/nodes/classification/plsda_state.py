@@ -7,6 +7,12 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.services.dag.fitted_input_identity import (
+    fitted_input_identity,
+    require_fitted_input_identity,
+    validate_fitted_input_identity,
+)
+from spectra_sherpa.app.services.dag.nodes.modeling import pls_applicability
 from spectra_sherpa.app.services.dag.nodes.modeling.pls_core import apply_pls_affine_state
 from spectra_sherpa.core.axis_semantics import axis_semantics
 from spectra_sherpa.core.model_artifact import (
@@ -16,8 +22,10 @@ from spectra_sherpa.core.model_artifact import (
 
 from ..modeling.pls_core import ALGORITHM_ID, ALGORITHM_VERSION, PLSFit
 
-FITTED_STATE_SERIALIZER = "spectrasherpa.sherpa-plsda-state/4"
-ARTIFACT_SERIALIZER = "spectrasherpa.model-artifact.sherpa-plsda/3"
+FITTED_STATE_SERIALIZER = "spectrasherpa.sherpa-plsda-state/5"
+ARTIFACT_SERIALIZER = "spectrasherpa.model-artifact.sherpa-plsda/4"
+V060_FITTED_STATE_SERIALIZER = "spectrasherpa.sherpa-plsda-state/4"
+V060_ARTIFACT_SERIALIZER = "spectrasherpa.model-artifact.sherpa-plsda/3"
 LEGACY_FITTED_STATE_SERIALIZER = "spectrasherpa.sherpa-plsda-state/3"
 LEGACY_ARTIFACT_SERIALIZER = "spectrasherpa.model-artifact.sherpa-plsda/2"
 DECISION_RULE = "maximum_predicted_dummy_response"
@@ -145,6 +153,8 @@ class SherpaPLSDAArtifact:
     y_loadings: np.ndarray
     x_explained_variance: np.ndarray
     y_explained_variance: np.ndarray
+    input_identity: dict[str, object] | None = None
+    screening: dict[str, Any] | None = None
     feature_identity: dict[str, object] | None = None
     algorithm_id: str = ALGORITHM_ID
     algorithm_version: str = ALGORITHM_VERSION
@@ -164,6 +174,12 @@ class SherpaPLSDAArtifact:
             y_loadings=np.array(fit.y_loadings.T, copy=True),
             x_explained_variance=np.array(fit.x_explained_variance, copy=True),
             y_explained_variance=np.array(fit.y_explained_variance, copy=True),
+            input_identity=fitted_input_identity(feature_source, features=fit.coefficients.shape[0]),
+            screening=(
+                pls_applicability.fit_screening(np.asarray(feature_source.X), fit)
+                if hasattr(feature_source, "X")
+                else None
+            ),
             feature_identity=_feature_identity(feature_source, fit.coefficients.shape[0]),
         ).validated()
 
@@ -191,6 +207,17 @@ class SherpaPLSDAArtifact:
             raise ValueError("Sherpa PLS-DA coefficients do not match the class contract")
         features = int(coefficients.shape[0])
         _validate_feature_identity(self.feature_identity or {"mode": "positional", "count": features}, features)
+        if self.input_identity is not None:
+            identity = validate_fitted_input_identity(self.input_identity)
+            if identity["features"] != features:
+                raise ValueError("PLS-DA input identity contradicts its fitted feature count")
+        if self.screening is not None:
+            pls_applicability.validate_screening(
+                self.screening,
+                features=features,
+                components=self.effective_n_components,
+                samples=self.screening["reference_samples"],
+            )
         components = self.effective_n_components
         _finite_array(coefficients, name="coefficients", shape=(features, len(self.classes)))
         _finite_array(self.x_offset, name="X offset", shape=(features,))
@@ -262,6 +289,9 @@ class SherpaPLSDAArtifact:
     ) -> None:
         """Reject same-width feature reordering before numerical extraction."""
 
+        identity_source = source
+        if feature_mask is not None and hasattr(source, "X") and source.X.shape[1] != self.features:
+            identity_source = source[:, np.asarray(feature_mask, dtype=bool)]
         expected = _validate_feature_identity(
             self.feature_identity or {"mode": "positional", "count": self.features}, self.features
         )
@@ -271,6 +301,8 @@ class SherpaPLSDAArtifact:
                     "Sherpa PLS-DA application has unverified positional feature identity; "
                     "explicit legacy recovery opt-in is required"
                 )
+            if self.input_identity is not None:
+                require_fitted_input_identity(identity_source, self.input_identity, features=self.features)
             return
         actual = _feature_identity(source, self.features, feature_mask=feature_mask)
         if actual["mode"] != "typed_axis":
@@ -280,6 +312,26 @@ class SherpaPLSDAArtifact:
             raise ValueError(
                 "Sherpa PLS-DA application feature identity differs from the fitted model: " + ", ".join(changed)
             )
+
+        if self.input_identity is None:
+            if not allow_unverified_positional:
+                raise ValueError("PLS-DA state has no signal input identity; refit the model")
+        else:
+            require_fitted_input_identity(identity_source, self.input_identity, features=self.features)
+
+    def applicability(self, matrix: object) -> dict[str, Any]:
+        """Report extrapolation separately from the closed argmax class decision."""
+        if self.screening is None:
+            return {"status": "unavailable", "warning": "Refit PLS-DA to retain T²/Q applicability diagnostics"}
+        result = pls_applicability.apply_screening(np.asarray(matrix, dtype=float), self.x_offset, self.screening)
+        count = sum(row["outside_t2"] is True or row["outside_q"] is True for row in result["rows"])
+        result["n_out_of_domain"] = count
+        result["warning"] = (
+            f"{count} predictions are outside the fitted spectral domain; class responses do not establish membership"
+            if count
+            else None
+        )
+        return result
 
     def to_artifact(self) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
         self.validated()
@@ -295,6 +347,8 @@ class SherpaPLSDAArtifact:
             "decision_rule": DECISION_RULE,
             "output_semantics": OUTPUT_SEMANTICS,
             "features": self.features,
+            "input_identity": self.input_identity,
+            "screening": self.screening,
             "feature_identity": _validate_feature_identity(
                 self.feature_identity or {"mode": "positional", "count": self.features}, self.features
             ),
@@ -329,8 +383,12 @@ class SherpaPLSDAArtifact:
             raise ValueError("Sherpa PLS-DA artifact metadata does not match its closed schema")
         serializer = metadata.get("serializer")
         if serializer == ARTIFACT_SERIALIZER:
-            if "feature_identity" not in metadata:
+            if not {"feature_identity", "input_identity", "screening"} <= set(metadata):
                 raise ValueError("Sherpa PLS-DA artifact metadata does not match its closed schema")
+            feature_identity = _validate_feature_identity(metadata["feature_identity"], metadata["features"])
+        elif serializer == V060_ARTIFACT_SERIALIZER:
+            if "feature_identity" not in metadata or "input_identity" in metadata:
+                raise ValueError("v0.6.0 Sherpa PLS-DA artifact has invalid feature authority")
             feature_identity = _validate_feature_identity(metadata["feature_identity"], metadata["features"])
         elif serializer == LEGACY_ARTIFACT_SERIALIZER:
             feature_identity = {"mode": "positional", "count": metadata["features"]}
@@ -369,6 +427,8 @@ class SherpaPLSDAArtifact:
             y_loadings=np.asarray(arrays["y_loadings"], dtype=np.float64),
             x_explained_variance=np.asarray(arrays["x_explained_variance"], dtype=np.float64),
             y_explained_variance=np.asarray(arrays["y_explained_variance"], dtype=np.float64),
+            input_identity=metadata.get("input_identity") if serializer == ARTIFACT_SERIALIZER else None,
+            screening=metadata.get("screening") if serializer == ARTIFACT_SERIALIZER else None,
             feature_identity=feature_identity,
         ).validated()
         if restored.features != metadata["features"]:
@@ -387,14 +447,20 @@ class SherpaPLSDAArtifact:
     def from_fitted_state(cls, state: object) -> SherpaPLSDAArtifact:
         if not isinstance(state, dict) or set(state) != {"serializer", "metadata", "arrays"}:
             raise ValueError("Sherpa PLS-DA fitted state must contain exact serializer, metadata, and arrays")
-        if state["serializer"] not in {FITTED_STATE_SERIALIZER, LEGACY_FITTED_STATE_SERIALIZER}:
+        if state["serializer"] not in {
+            FITTED_STATE_SERIALIZER,
+            V060_FITTED_STATE_SERIALIZER,
+            LEGACY_FITTED_STATE_SERIALIZER,
+        }:
             raise ValueError("Sherpa PLS-DA fitted state has an unsupported serializer")
         metadata = state["metadata"]
         if not isinstance(metadata, dict):
             raise ValueError("Sherpa PLS-DA fitted-state metadata must be a mapping")
-        expected_artifact_serializer = (
-            ARTIFACT_SERIALIZER if state["serializer"] == FITTED_STATE_SERIALIZER else LEGACY_ARTIFACT_SERIALIZER
-        )
+        expected_artifact_serializer = {
+            FITTED_STATE_SERIALIZER: ARTIFACT_SERIALIZER,
+            V060_FITTED_STATE_SERIALIZER: V060_ARTIFACT_SERIALIZER,
+            LEGACY_FITTED_STATE_SERIALIZER: LEGACY_ARTIFACT_SERIALIZER,
+        }[state["serializer"]]
         if metadata.get("serializer") != expected_artifact_serializer:
             raise ValueError("Sherpa PLS-DA fitted-state and artifact serializers contradict each other")
         arrays = state["arrays"]

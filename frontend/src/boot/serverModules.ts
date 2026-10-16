@@ -2,12 +2,15 @@ import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
 import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
+import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import api from "@/api/client";
+import { useProjectStore } from "@/stores/project";
 import { installProjectCollections, type ProjectCollectionsLoader } from "@/lib/projectCollections";
 import { installAdvisorTransport, type AdvisorTransport } from "@/lib/advisorTransport";
 import { useAdvisorStore } from "@/stores/advisor";
 import type { ScopeArgs } from "@/lib/advisorMemoryAdapter";
 import { focusOptimization, focusSection } from "@/lib/sherpaAttention";
+import { confirmAction, type ConfirmActionOptions } from "@/composables/useConfirmAction";
 /**
  * Boot-time loader for server-provided frontend modules.
  *
@@ -115,10 +118,16 @@ interface HostAuthStoreBridge {
 }
 
 interface HostContext {
-  workspaceComponents: Record<"Header" | "Context" | "ContextItem" | "Tabs", Component>;
+  workspaceComponents: Record<"Header" | "Context" | "ContextItem" | "Tabs", Component> & { State?: Component };
   api: typeof api;
   reloadConfig(): Promise<unknown>;
   installAdvisorTransport(transport: AdvisorTransport): void;
+  /**
+   * Confirm an action in the shell's dialog; resolves true only on accept.
+   * Aborting `signal` (the caller's view went away) or ending this
+   * registration closes the dialog as declined.
+   */
+  confirmAction(options: ConfirmActionOptions, signal?: AbortSignal): Promise<boolean>;
   /** Tell the side-chat Advisor which campaign/candidate the scientist is looking at. */
   focusOptimization(campaignId: string | null, candidateId?: string | null): void;
   focusSection(section: string): void;
@@ -173,7 +182,7 @@ function buildContext(
   const authStore = useAuthStore();
   const { user, token } = storeToRefs(authStore);
   return {
-    workspaceComponents: { Header: markRaw(WorkspaceHeader), Context: markRaw(WorkspaceContext), ContextItem: markRaw(WorkspaceContextItem), Tabs: markRaw(WorkspaceTabs) },
+    workspaceComponents: { Header: markRaw(WorkspaceHeader), Context: markRaw(WorkspaceContext), ContextItem: markRaw(WorkspaceContextItem), Tabs: markRaw(WorkspaceTabs), State: markRaw(WorkspaceState) },
     api,
     reloadConfig: () => useAppConfig().loadConfig(true),
     installAdvisorTransport: (transport) => {
@@ -184,6 +193,22 @@ function buildContext(
     setAdvisorScope: async (args) => {
       if (!scope?.current() || args.projectId !== activeProjectScope.value) return;
       await useAdvisorStore().switchScope(args);
+    },
+    confirmAction: async (options, signal) => {
+      if (scope && !scope.current()) return false;
+      // Ending this registration (logout, project switch, reload) or the
+      // caller's own signal closes the dialog as declined.
+      const request = new AbortController();
+      const cancel = () => request.abort();
+      const sources = [signal, scope?.controller.signal].filter((item): item is AbortSignal => !!item);
+      if (sources.some((source) => source.aborted)) return false;
+      for (const source of sources) source.addEventListener("abort", cancel, { once: true });
+      try {
+        const accepted = await confirmAction(options, { signal: request.signal });
+        return accepted && (!scope || scope.current());
+      } finally {
+        for (const source of sources) source.removeEventListener("abort", cancel);
+      }
     },
     focusOptimization: (campaignId, candidateId) => {
       if (scope && !scope.current()) return;
@@ -466,6 +491,24 @@ export async function bootServerModules(
   if (config.value?.implicitIdentity === true && !identity.user) await identity.initializeActor();
   stopExtensions?.();
   stopExtensions = undefined;
+  // Restore host-owned project context before extensions capture their scope.
+  // Otherwise a bookmarked extension starts with a null project, and restoring
+  // it later disposes the active route and sends the scientist to Dashboard.
+  if (identity.user && config.value?.mode !== "local" && config.value?.uiExtensions?.length) {
+    const project = useProjectStore();
+    const location = router.options.history.location;
+    const query = new URL(location || "/", window.location.origin).searchParams;
+    const linked = query.get("project_id") ?? query.get("project");
+    if (linked !== null) {
+      const id = Number(linked);
+      if (!/^[1-9][0-9]*$/.test(linked) || !Number.isSafeInteger(id) || !await project.fetchProject(id)) {
+        serverModuleLoadFailed.value = { module: "project", error: "The linked project is unavailable." };
+        return;
+      }
+    } else {
+      await project.ensureProjectForBrowserTab();
+    }
+  }
   const extensionRegistrationKey = (): string => JSON.stringify([
     identity.user?.id,
     identity.user?.capabilities,

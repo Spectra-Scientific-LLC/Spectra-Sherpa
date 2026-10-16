@@ -604,6 +604,7 @@ async def describe_nodes(
     user: Any = None,
 ) -> dict[str, Any]:
     from spectra_sherpa.app.services.dag.node_base import node_registry
+    from spectra_sherpa.app.services.dag.node_knowledge import scientific_method_description
 
     requested_node_types = list(node_types)
     requested_count = len(requested_node_types)
@@ -621,6 +622,7 @@ async def describe_nodes(
                 "label": md.label,
                 "category": md.category,
                 "summary": _compact_text(md.description),
+                "scientific_method": scientific_method_description(md),
                 "parameters": [
                     {
                         "name": p.name,

@@ -59,7 +59,7 @@ The wheel includes a small curated set of public-domain or permissively licensed
 
 ### Eigenvector Research example data
 
-SpectraSherpa catalogs the following Eigenvector Research, Inc. example datasets, but does **not** redistribute their raw data files in the wheel or source distribution. Users can download them from Eigenvector Research at runtime or place the files in the local SpectraSherpa reference cache:
+SpectraSherpa catalogs the following Eigenvector Research, Inc. example datasets, but does **not** redistribute their raw data files in the wheel, source distribution, or desktop installers, and never downloads them on the user's behalf. Users obtain the files directly from Eigenvector Research and place them locally; each file is verified against its recorded size and SHA-256 before it is admitted:
 
 - `corn_mat/` — Cargill NIR Corn dataset
 - `cgl_nir_mat/` — CGL NIR dataset
@@ -71,6 +71,7 @@ Original data is courtesy of the respective contributors (including Cargill, Sou
 
 ### Bundled samples
 
+- `reference/lavender-essential-oil-v1.zip` — Lavender Essential Oil FTIR Corpus v1: 33 Thermo Nicolet Avatar 370 OMNIC SPA spectra of 11 lavender essential-oil specimens in three blocks, with its manifest, license and attribution files. Ye Feng. (2026). Lavender Essential Oil FTIR Corpus v1 [Data set]. Spectra Scientific LLC. Licensed under CC BY 4.0 (<https://creativecommons.org/licenses/by/4.0/>). The dataset licence applies to the data, not to the SpectraSherpa software. It is not evidence of botanical authenticity or supplier identity.
 - `oes/UVSpectra10.csv` — Optical emission spectra; example data prepared by Spectra Scientific LLC.
 - `synthetic/Synthetic_atmospheric-6.npz` and `synthetic/Library_atmospheric-9.npz` — SpectraSherpa synthetic FTIR benchmark files derived from HITRAN spectra. Cite HITRAN/HAPI and follow HITRAN terms when using these datasets in reports, publications, validation records, or customer-facing work.
 - `templates/` — Workflow templates authored by Spectra Scientific LLC.

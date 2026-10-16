@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from spectra_sherpa.core.contract_compatibility import saved_state_predecessor_is_compatible
 from spectra_sherpa.sdk.canonical_fitted_artifact import (
     CanonicalFittedArtifact,
     CanonicalFittedArtifactError,
@@ -89,8 +90,12 @@ class ReadOnlyCanonicalArtifactReader:
             require_digest(binding[field], f"canonical artifact {field}")
         if (
             binding["source_contract_digest"] != expected_source_contract_digest
-            or binding["serializer"] != expected_serializer
-        ):
+            and not saved_state_predecessor_is_compatible(
+                binding["source_contract_digest"],
+                expected_source_contract_digest,
+                serializer=expected_serializer,
+            )
+        ) or binding["serializer"] != expected_serializer:
             raise CanonicalArtifactStoreError("canonical artifact binding differs from this application operation")
         artifact = self.load(artifact_digest)
         member = next(

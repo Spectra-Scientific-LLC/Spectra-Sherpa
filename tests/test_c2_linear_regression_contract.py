@@ -60,6 +60,7 @@ def test_linear_regression_has_one_exact_local_fitted_model_contract() -> None:
         "model": "spectrasherpa://types/RegressionModel/1.0",
         "predictions": "spectrasherpa://types/TargetMatrix/1.0",
         "residuals": "spectrasherpa://types/TargetMatrix/1.0",
+        "effect_summary": "spectrasherpa://types/Visualization/1.0",
     }
     assert any("rchemo/html/lmr.html" in item for item in contract.payload["citations"])
     component_ids = {item["component_id"] for item in contract.payload["implementation_components"]}
@@ -90,6 +91,47 @@ def test_linear_regression_matches_independent_lstsq_oracle() -> None:
     np.testing.assert_allclose(outputs["intercept"], oracle[0], rtol=1e-12, atol=1e-12)
     np.testing.assert_allclose(outputs["coef"], oracle[1:].T, rtol=1e-12, atol=1e-12)
     assert outputs["metadata"]["evidence_scope"] == "training_fit_only_not_predictive_validation"
+
+
+def test_linear_regression_effect_summary_matches_partial_f_tests() -> None:
+    from scipy.stats import f as f_distribution
+
+    rng = np.random.default_rng(1901)
+    matrix = rng.normal(size=(72, 4))
+    response = 3 + matrix @ np.array([2.0, 0.0, -0.6, 0.0]) + rng.normal(scale=0.8, size=72)
+    dataset = SherpaDataset(
+        X=matrix,
+        feature_axis=SpectralAxis(values=[1, 2, 3, 4], labels=["A", "B", "C", "D"], units="index"),
+        sample_axis=SampleAxis(labels=[f"sample-{index}" for index in range(72)]),
+        target=response,
+        target_context=TargetContext(target_type="continuous", target_names=["response"]),
+    )
+    outputs = _linear_regression_execute(dataset, response, node_id="linear", parameters={"fit_intercept": True})
+    summary = outputs["effect_summary"]
+    assert summary["layout"]["xaxis"]["title"] == "Logworth −log10(p)"
+    assert summary["metadata"]["evidence_scope"] == "training_fit_only_not_predictive_validation"
+    assert summary["metadata"]["residual_degrees_of_freedom"] == 67
+    effects = summary["metadata"]["effects"]
+    assert [effect["name"] for effect in effects] == ["A", "B", "C", "D"]
+
+    full_design = np.column_stack((np.ones(72), matrix))
+    full_fit = full_design @ np.linalg.lstsq(full_design, response, rcond=None)[0]
+    full_sse = np.sum((response - full_fit) ** 2)
+    for index, effect in enumerate(effects):
+        reduced_design = np.delete(full_design, index + 1, axis=1)
+        reduced_fit = reduced_design @ np.linalg.lstsq(reduced_design, response, rcond=None)[0]
+        reduced_sse = np.sum((response - reduced_fit) ** 2)
+        expected_p = f_distribution.sf((reduced_sse - full_sse) / (full_sse / 67), 1, 67)
+        assert effect["p_value"] == pytest.approx(expected_p, rel=1e-10)
+        assert effect["logworth"] == pytest.approx(-np.log10(expected_p), rel=1e-10)
+
+
+def test_linear_regression_omits_classical_effect_tests_without_residual_df() -> None:
+    rng = np.random.default_rng(1902)
+    matrix = rng.normal(size=(6, 6))
+    response = rng.normal(size=6)
+    outputs = _linear_regression_execute(matrix, response, node_id="linear", parameters={"fit_intercept": True})
+    assert "effect_summary" not in outputs
 
 
 def test_linear_regression_has_a_representative_absolute_performance_ceiling() -> None:

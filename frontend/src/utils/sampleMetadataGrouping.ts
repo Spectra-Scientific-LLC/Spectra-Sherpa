@@ -51,6 +51,21 @@ function scalarLabel(value: unknown): string {
   return value === null ? "Missing" : String(value);
 }
 
+/** Add a recorded categorical response as a display group; never infer classes from numbers. */
+export function datasetMetadataGroupingState(payload: any, rows: number): MetadataGroupingState {
+  const axis = payload?.y_axis;
+  const context = payload?.target_context;
+  const target = payload?.target;
+  if (context?.target_type !== "categorical" || !Array.isArray(target) || target.length !== rows)
+    return metadataGroupingState(axis, rows);
+  const values = target.map(value => Array.isArray(value) && value.length === 1 ? value[0] : value);
+  if (values.some(value => scalarIdentity(value) === null)) return metadataGroupingState(axis, rows);
+  const name = `Response: ${context.target_name || context.selected_target || "class"}`;
+  if (!axis || typeof axis !== "object" || name in (axis.sample_table ?? {}))
+    return metadataGroupingState(axis, rows);
+  return metadataGroupingState({ ...axis, sample_table: { ...axis.sample_table, [name]: values } }, rows);
+}
+
 export function metadataGroupingState(yAxis: unknown, rows: number): MetadataGroupingState {
   if (!yAxis || typeof yAxis !== "object") return { kind: "absent" };
   const axis = yAxis as Record<string, unknown>;
@@ -223,6 +238,7 @@ export function metadataGroupingState(yAxis: unknown, rows: number): MetadataGro
     colorOptions.push({ label, value: name });
     if (categories.size <= BLOCK_SYMBOLS.length) symbolOptions.push({ label, value: name });
   }
+  colorOptions.push({ label: "None", value: "__none__" });
   return {
     kind: "valid",
     sampleIds,
@@ -238,10 +254,16 @@ export function projectMetadataStyle(
   colorField: string,
   styleField: string,
 ): MetadataStyleProjection | null {
-  const colorKey = grouping.columns[colorField] ? colorField : grouping.colorOptions[0]?.value;
-  if (!colorKey || !grouping.columns[colorKey]) return null;
-  const colorValues = grouping.columns[colorKey];
-  const colorLabels = grouping.columnLabels[colorKey];
+  const colorKey = colorField === "__none__"
+    ? "__none__"
+    : grouping.columns[colorField] ? colorField : grouping.colorOptions[0]?.value;
+  if (!colorKey || (colorKey !== "__none__" && !grouping.columns[colorKey])) return null;
+  const colorValues = colorKey === "__none__"
+    ? Array(grouping.sampleIds.length).fill("color:none")
+    : grouping.columns[colorKey];
+  const colorLabels = colorKey === "__none__"
+    ? Array(grouping.sampleIds.length).fill("All samples")
+    : grouping.columnLabels[colorKey];
   const colorCategories = Array.from(new Set(colorValues));
   const useStyles = styleField !== "__none__" && Boolean(grouping.columns[styleField]);
   const styleValues = useStyles
@@ -256,7 +278,9 @@ export function projectMetadataStyle(
     colorValues,
     colorLabels,
     colorCategories,
-    colorMap: createCategoryColorMap(colorValues, colorCategories),
+    colorMap: colorKey === "__none__"
+      ? new Map([["color:none", "#3b82f6"]])
+      : createCategoryColorMap(colorValues, colorCategories),
     useStyles,
     styleKey: styleField,
     styleValues,

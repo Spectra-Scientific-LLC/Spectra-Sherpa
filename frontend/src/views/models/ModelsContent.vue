@@ -5,8 +5,7 @@
         :disabled="!canExportActiveTab" @click="exportActiveTab" />
     </WorkspaceHeader>
 
-    <div v-if="!projectStore.currentProjectId" class="empty-state">
-      <p class="empty-state__title">No project selected.</p>
+    <WorkspaceState v-if="!projectStore.currentProjectId" kind="empty" variant="page" message="No project selected.">
       <Button
         label="Go to Dashboard"
         icon="pi pi-arrow-right"
@@ -14,7 +13,7 @@
         class="p-button-text p-button-sm"
         @click="router.push('/dashboard')"
       />
-    </div>
+    </WorkspaceState>
 
     <template v-else>
       <WorkspaceContext label="Runs context">
@@ -22,18 +21,23 @@
       </WorkspaceContext>
       <WorkspaceTabs v-model="activeTabId" :tab-ids="MODEL_SUBSCOPES">
         <TabPanel header="History">
-          <div v-if="runsStore.loadError" role="alert">{{ runsStore.loadError }}
+          <WorkspaceState v-if="runsStore.loadError" kind="error" :message="runsStore.loadError">
             <Button label="Retry" @click="refreshRuns" />
-          </div>
-          <div v-if="runsStore.runsLoading && runsStore.runs.length === 0" class="loading-state">
-            <ProgressSpinner style="width: 32px; height: 32px" />
-            <span>Loading runs...</span>
-          </div>
+          </WorkspaceState>
+          <WorkspaceState
+            v-if="runsStore.runsLoading && runsStore.runs.length === 0"
+            kind="loading"
+            variant="page"
+            message="Loading runs…"
+          />
 
-          <div v-else-if="runsStore.runs.length === 0 && runKindFilter === 'all' && runOffset === 0" class="empty-state">
-            <i class="pi pi-bookmark"></i>
-            <p class="empty-state__title">No saved runs yet.</p>
-          </div>
+          <WorkspaceState
+            v-else-if="runsStore.runs.length === 0 && runKindFilter === 'all' && runOffset === 0"
+            kind="empty"
+            variant="page"
+            icon="pi pi-bookmark"
+            message="No saved runs yet."
+          />
 
           <div v-else class="run-history-panel">
             <div class="run-history-toolbar">
@@ -117,7 +121,7 @@
                 <template #body="{ data }">
                   <Tag
                     v-if="data.run_kind === 'training' && (data.produced_artifact_uids?.length || 0) > 0"
-                    :value="`${data.produced_artifact_uids.length} models`"
+                    :value="`${data.produced_artifact_uids.length} ${data.produced_artifact_uids.length === 1 ? 'model' : 'models'}`"
                     severity="success"
                     class="artifact-produced-tag"
                   />
@@ -128,7 +132,7 @@
               <Column field="executed_at" header="Executed" sortable style="width: 150px">
                 <template #body="{ data }">
                   <span class="timestamp" :title="data.executed_at">
-                    {{ formatRelative(data.executed_at) }}
+                    <RelativeTime :value="data.executed_at" />
                   </span>
                 </template>
               </Column>
@@ -144,7 +148,8 @@
 
               <Column header="Uses" style="min-width: 100px">
                 <template #body="{ data }">
-                  <span>{{ data.attempted_artifact_uids?.length || 0 }} models</span>
+                  <span v-if="data.attempted_artifact_uids?.length">{{ data.attempted_artifact_uids.length }} {{ data.attempted_artifact_uids.length === 1 ? 'model' : 'models' }}</span>
+                  <span v-else class="muted-dash">—</span>
                 </template>
               </Column>
 
@@ -163,7 +168,7 @@
         </TabPanel>
 
         <TabPanel header="Inspect">
-          <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" />
+          <RunDetailContent v-if="activeTab === TAB_INSPECT && route.params?.runId" @renamed="refreshRuns" />
           <div v-else class="empty-state">
             <h2>Inspect</h2>
             <p class="empty-state__title">Select a run name in History to inspect its saved results.</p>
@@ -179,16 +184,21 @@
             :rankable-metrics="runsStore.comparison.rankable_metric_keys"
             @back="activeTab = TAB_RUN_HISTORY"
           />
-          <div v-else class="empty-state">
-            <p class="empty-state__title">Select 2–10 runs in History to compare.</p>
+          <WorkspaceState v-else kind="empty" variant="page" message="Select 2–10 runs in History to compare.">
             <Button label="Open History" icon="pi pi-arrow-left" class="p-button-text" @click="activeTab = TAB_RUN_HISTORY" />
-          </div>
+          </WorkspaceState>
         </TabPanel>
 
-        <TabPanel header="Artifacts">
-          <p v-if="loading" role="status">Loading artifacts…</p>
-          <div v-if="error" role="alert">{{ error }} <Button label="Retry" @click="loadModels" /></div>
+        <TabPanel header="Models">
+          <WorkspaceState v-if="loading" kind="loading" message="Loading models…" />
+          <WorkspaceState v-if="error" kind="error" :message="error"><Button label="Retry" @click="loadModels" /></WorkspaceState>
           <QualificationApplications v-if="projectStore.currentProjectId" :project-id="projectStore.currentProjectId" />
+          <SavedModelProjectTable
+            v-if="projectStore.currentProjectId"
+            :project-id="projectStore.currentProjectId"
+            :refresh-key="modelOverviewRevision"
+            @select="selectOverviewModel"
+          />
           <div class="artifact-toolbar">
             <InputText
               v-model="artifactSearch"
@@ -202,7 +212,7 @@
             <Button icon="pi pi-chevron-right" aria-label="Next models" :disabled="!moreModels || loading" @click="changeModelPage(50)" />
             <Button
               v-if="!isDemoMode || privatePredictionAllowed"
-              label="Mark Deploy-ready"
+              label="Mark deploy-ready"
               icon="pi pi-check"
               class="p-button-text p-button-sm"
               :disabled="selectedArtifactUidList.length === 0"
@@ -236,7 +246,7 @@
                 <small>{{ modelSubtitle(model) }}</small>
               </div>
               <span class="object-row__time" :title="absoluteTimestamp(model.updated_at)">
-                {{ formatRelative(model.updated_at) }}
+                <RelativeTime :value="model.updated_at" />
               </span>
             </div>
           </div>
@@ -246,36 +256,40 @@
           <!-- Selected model detail panel — appears inline under the
                list once a row is clicked. Same vocabulary as Data's
                inspect view: small dl of stats. -->
-          <section v-if="selectedModel" class="detail-section">
-            <p>Deploy-ready is operational readiness, not analytical qualification.</p>
-            <QualificationPanel v-if="selectedModel.workflow_id" :workflow-id="selectedModel.workflow_id" :project-id="projectStore.currentProjectId" />
-            <span class="eyebrow">Selected</span>
-            <div class="artifact-name-edit">
-              <InputText v-model="selectedModelNameDraft" class="artifact-name-input" :disabled="isDemoMode" />
-              <Button
-                v-if="!isDemoMode"
-                label="Rename"
-                class="p-button-sm p-button-text"
-                :disabled="!selectedModelNameDraft.trim()"
-                @click="renameSelectedModel"
-              />
-              <Button
-                v-if="!isDemoMode || privatePredictionAllowed"
-                :label="selectedModel.is_deploy_ready ? 'Deploy-ready' : 'Mark deploy-ready'"
-                :icon="selectedModel.is_deploy_ready ? 'pi pi-check' : 'pi pi-circle'"
-                class="p-button-sm p-button-text"
-                @click="toggleSelectedDeployReady"
-              />
-              <Button
-                v-if="selectedModel.is_deploy_ready && selectedModel.workflow_version_id"
-                label="Open Deploy"
-                icon="pi pi-external-link"
-                class="p-button-sm p-button-text"
-                @click="openSelectedModelDeploy"
-              />
-            </div>
+          <section v-if="selectedModel" id="selected-model-detail" class="detail-section" aria-label="Selected model" tabindex="-1">
+            <header class="detail-head">
+              <div class="detail-title">
+                <span class="eyebrow">Selected model</span>
+                <div class="artifact-name-edit">
+                  <InputText v-model="selectedModelNameDraft" class="artifact-name-input" aria-label="Model name" :disabled="isDemoMode" />
+                  <Button
+                    v-if="!isDemoMode"
+                    label="Rename"
+                    class="p-button-sm p-button-text"
+                    :disabled="!selectedModelNameDraft.trim()"
+                    @click="renameSelectedModel"
+                  />
+                </div>
+              </div>
+              <div class="detail-actions">
+                <Button
+                  v-if="!isDemoMode || privatePredictionAllowed"
+                  :label="selectedModel.is_deploy_ready ? 'Deploy-ready' : 'Mark deploy-ready'"
+                  :icon="selectedModel.is_deploy_ready ? 'pi pi-check' : 'pi pi-circle'"
+                  class="p-button-sm p-button-text"
+                  @click="toggleSelectedDeployReady"
+                />
+                <Button
+                  v-if="selectedModel.is_deploy_ready && selectedModel.workflow_version_id"
+                  label="Open Deploy"
+                  icon="pi pi-external-link"
+                  class="p-button-sm p-button-text"
+                  @click="openSelectedModelDeploy"
+                />
+              </div>
+            </header>
 
-            <dl class="detail-grid">
+            <dl class="detail-grid" aria-label="Summary">
               <div>
                 <dt>Type</dt>
                 <dd>{{ selectedModel.model_type }}</dd>
@@ -306,30 +320,73 @@
               </div>
               <div>
                 <dt>Used by</dt>
-                <dd><Button label="Application runs" class="p-button-link p-button-sm" @click="showModelApplications(selectedModel.artifact_uid)" /></dd>
-              </div>
-              <div v-if="selectedModelMetricRows.length" class="detail-metrics">
-                <dt>Metrics</dt>
                 <dd>
-                  <span
-                    v-for="row in selectedModelMetricRows"
-                    :key="row.key"
-                    class="metric-chip"
-                  >
-                    <span class="metric-chip__label">{{ row.label }}</span>
-                    <span class="metric-chip__value">{{ row.value }}</span>
-                  </span>
+                  <button type="button" class="detail-link" @click="showModelApplications(selectedModel.artifact_uid)">Application runs</button>
                 </dd>
               </div>
               <div>
                 <dt>Created</dt>
-                <dd>{{ formatRelative(selectedModel.created_at) }}</dd>
+                <dd><RelativeTime :value="selectedModel.created_at" /></dd>
               </div>
               <div>
                 <dt>Updated</dt>
-                <dd>{{ formatRelative(selectedModel.updated_at) }}</dd>
+                <dd><RelativeTime :value="selectedModel.updated_at" /></dd>
               </div>
             </dl>
+
+            <div v-if="selectedModelMetricRows.length" class="detail-metrics" role="group" aria-label="Performance">
+              <span class="detail-subhead">Performance</span>
+              <div class="detail-metrics__chips">
+                <span
+                  v-for="row in selectedModelMetricRows"
+                  :key="row.key"
+                  class="metric-chip"
+                >
+                  <span class="metric-chip__label">{{ row.label }}</span>
+                  <span class="metric-chip__value" :title="row.exact === undefined ? undefined : String(row.exact)">{{ row.value }}</span>
+                </span>
+              </div>
+            </div>
+            <ReferenceQualityCard
+              v-if="['pls', 'plsda'].includes(selectedModel.model_type)"
+              :evidence="selectedReferenceEvidence"
+              :calibration-rows="selectedReferenceFitRows"
+              :unavailable-reason="selectedReferenceError"
+            />
+            <section v-if="artifactComponentSummary" aria-label="Saved model component evidence">
+              <ModelSummaryCard :summary="artifactComponentSummary" :can-edit-selection="Boolean(selectedModel.workflow_id)" evidence-subset
+                @edit-selection="openSelectedModelWorkflow" />
+              <p class="detail-note">Exact component evidence retained by source run #{{ selectedModel.source_run_id }}.</p>
+            </section>
+            <p v-else-if="artifactComponentMessage" class="detail-note" role="note">{{ artifactComponentMessage }}</p>
+
+            <SavedModelDiagnostics
+              v-if="projectStore.currentProjectId && selectedModel.node_id && ['pca', 'pls'].includes(selectedModel.model_type)"
+              :artifact-uid="selectedModel.artifact_uid"
+              :project-id="projectStore.currentProjectId"
+              :workflow-id="selectedModel.workflow_id"
+              :node-id="selectedModel.node_id"
+              @open-workflow="openSelectedModelWorkflow"
+            />
+            <SavedPlsdaDiagnostics
+              v-if="projectStore.currentProjectId && selectedModel.node_id && selectedModel.model_type === 'plsda'"
+              :artifact-uid="selectedModel.artifact_uid"
+              :project-id="projectStore.currentProjectId"
+              :workflow-id="selectedModel.workflow_id"
+              :node-id="selectedModel.node_id"
+              @open-workflow="openSelectedModelWorkflow"
+            />
+
+            <SavedModelQualification
+              v-if="projectStore.currentProjectId && selectedModel.model_type === 'pls'"
+              :key="selectedModel.artifact_uid"
+              :artifact-uid="selectedModel.artifact_uid"
+              :project-id="projectStore.currentProjectId"
+              :workflow-id="selectedModel.workflow_id"
+              :run-id="selectedModel.source_run_id"
+              @changed="modelOverviewRevision++"
+            />
+            <p v-else class="detail-note" role="note">Deploy-ready records operational readiness. A saved model requires its own external validation assessment and human review; workflow qualification belongs to a separate canonical application.</p>
           </section>
         </TabPanel>
 
@@ -414,11 +471,14 @@
 </template>
 
 <script setup lang="ts">
+import RelativeTime from "@/components/RelativeTime.vue";
+import { formatMetricValue } from "@/utils/format";
+import { readRememberedTab, writeRememberedTab } from "@/utils/rememberedTab";
+import { metricDisplayName } from "@/utils/metricNames";
 import QualificationApplications from "../deploy/QualificationApplications.vue";
-import QualificationPanel from "../deploy/QualificationPanel.vue";
 import { regressionMetricPresentation, regressionMetricQualification } from "@/utils/regressionMetricPresentation";
 /* eslint-disable @typescript-eslint/no-explicit-any -- run history payloads contain flexible backend metric snapshots. */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
 import Column from "primevue/column";
@@ -426,7 +486,6 @@ import DataTable from "primevue/datatable";
 import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
 import InputText from "primevue/inputtext";
-import ProgressSpinner from "primevue/progressspinner";
 import TabPanel from "primevue/tabpanel";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
@@ -436,6 +495,7 @@ import Textarea from "primevue/textarea";
 import { useToast } from "primevue/usetoast";
 import api from "@/api/client";
 import LabelChips from "@/components/LabelChips.vue";
+import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import { focusSection } from "@/lib/sherpaAttention";
 import { useAdvisorStore } from "@/stores/advisor";
@@ -447,8 +507,16 @@ import { getErrorMessage } from "@/utils/errors";
 import { downloadJson } from "@/utils/download";
 import BatchRunTab from "@/views/experiments/BatchRunTab.vue";
 import RunDetailContent from "./RunDetailContent.vue";
+import ModelSummaryCard from "@/components/ModelSummaryCard.vue";
+import SavedModelDiagnostics from "@/components/SavedModelDiagnostics.vue";
+import SavedPlsdaDiagnostics from "@/components/SavedPlsdaDiagnostics.vue";
+import SavedModelProjectTable from "@/components/SavedModelProjectTable.vue";
+import SavedModelQualification from "@/components/SavedModelQualification.vue";
+import ReferenceQualityCard from "@/components/ReferenceQualityCard.vue";
+import { buildModelSummary, type ModelSummary as ScientificModelSummary } from "@/utils/modelSummary";
+import { readReferenceEvidence } from "@/utils/referenceQuality";
 import ComparisonPanel from "@/views/experiments/ComparisonPanel.vue";
-import type { ExecutionRunSummary, RunListItem } from "@/types";
+import type { ExecutionRunSummary, ReferenceValueEvidence, RunListItem } from "@/types";
 import { useAuthStore } from "@/stores/auth";
 import { useDemoMode } from "@/composables/useDemoMode";
 import { useAppConfig } from "@/composables/useAppConfig";
@@ -507,7 +575,94 @@ const headerActionItems = computed(() => [
 ]);
 
 const models = ref<ModelSummary[]>([]);
+const modelOverviewRevision = ref(0);
 const selectedModel = ref<ModelSummary | null>(null);
+const selectedReferenceEvidence = ref<ReferenceValueEvidence | null>(null);
+const selectedReferenceFitRows = ref<number | null>(null);
+const selectedReferenceError = ref<string | null>(null);
+let referenceEvidenceRequest = 0;
+watch(
+  () => [selectedModel.value?.artifact_uid, projectStore.currentProjectId] as const,
+  async () => {
+    const request = ++referenceEvidenceRequest;
+    selectedReferenceEvidence.value = null;
+    selectedReferenceFitRows.value = null;
+    selectedReferenceError.value = null;
+    const uid = selectedModel.value?.artifact_uid;
+    const projectId = projectStore.currentProjectId;
+    if (!uid || !projectId || !['pls', 'plsda'].includes(selectedModel.value?.model_type ?? '')) return;
+    try {
+      const { data } = await api.get<{ manifest: Record<string, unknown> }>(
+        `/models/${encodeURIComponent(uid)}/inspect`,
+      );
+      if (request !== referenceEvidenceRequest || projectId !== projectStore.currentProjectId) return;
+      selectedReferenceEvidence.value = readReferenceEvidence(data.manifest.reference_value_evidence);
+      const context = data.manifest.reference_fit_context;
+      const rows = context && typeof context === 'object' && !Array.isArray(context)
+        ? (context as Record<string, unknown>).calibration_rows : null;
+      selectedReferenceFitRows.value = typeof rows === 'number' && Number.isSafeInteger(rows) && rows >= 0 ? rows : null;
+    } catch {
+      if (request === referenceEvidenceRequest) selectedReferenceError.value = 'Saved model reference evidence could not be verified.';
+    }
+  },
+  { immediate: true },
+);
+const artifactComponentSummary = ref<ScientificModelSummary | null>(null);
+const artifactComponentMessage = ref("");
+let artifactEvidenceRequest = 0;
+watch(
+  () => [selectedModel.value?.artifact_uid, selectedModel.value?.source_run_id, selectedModel.value?.node_id,
+    projectStore.currentProjectId] as const,
+  async () => {
+    const request = ++artifactEvidenceRequest;
+    artifactComponentSummary.value = null;
+    artifactComponentMessage.value = "";
+    const model = selectedModel.value;
+    const projectId = projectStore.currentProjectId;
+    if (!model || !projectId || !model.source_run_id || !model.node_id) return;
+    try {
+      const run = await api.get<{ evidence: { outputs: Record<string, Record<string, { state?: string; storage?: string }>> } }>(
+        `/runs/${model.source_run_id}/evidence`, { params: { project_id: projectId } },
+      );
+      if (request !== artifactEvidenceRequest) return;
+      const entry = run.data.evidence.outputs[model.node_id]?.component_curve;
+      if (entry?.state !== "exact" || !entry.storage) {
+        artifactComponentMessage.value = "This model predates retained component-selection evidence; inspect or rerun its source workflow.";
+        return;
+      }
+      const curvePort = "component_curve";
+      const response = await api.get<{ value: unknown }>(
+        `/runs/${model.source_run_id}/outputs/${encodeURIComponent(model.node_id)}/${curvePort}`,
+        { params: { project_id: projectId } },
+      );
+      if (request !== artifactEvidenceRequest) return;
+      const value = response.data.value;
+      const schema = typeof value === "object" && value != null && "schema_version" in value
+        ? (value as { schema_version: unknown }).schema_version : null;
+      const nodeType = schema === "spectrasherpa-pls-component-curve/1" ? "model.fitted_pls"
+        : schema === "spectrasherpa-pca-component-curve/1" ? "model.pca"
+        : schema === "spectrasherpa-plsda-component-curve/1" ? "classification.plsda" : null;
+      if (!nodeType) throw new Error("Unsupported component evidence schema");
+      const built = buildModelSummary(
+        { nodes: [{ node_id: model.node_id, node_type: nodeType, parameters: {} }], edges: [] }, null,
+        [{ source: { nodeId: model.node_id, port: "component_curve", kind: "component_selection" }, value }],
+      );
+      if (!built.componentSelection && !built.pcaComponentSelection && !built.plsdaComponentSelection) {
+        throw new Error("Retained component evidence is malformed");
+      }
+      artifactComponentSummary.value = built;
+    } catch {
+      if (request === artifactEvidenceRequest) artifactComponentMessage.value = "Component evidence could not be read from the source run.";
+    }
+  },
+  { immediate: true },
+);
+function openSelectedModelWorkflow() {
+  if (!selectedModel.value?.workflow_id || !projectStore.currentProjectId) return;
+  void router.push({ path: "/workflow", query: {
+    project_id: projectStore.currentProjectId, workflow_id: selectedModel.value.workflow_id,
+  } });
+}
 async function openSelectedModelDeploy(): Promise<void> {
   if (!selectedModel.value) return;
   let applicationHandle: string | undefined;
@@ -560,7 +715,7 @@ const MODEL_SUBSCOPE_TITLES: Record<(typeof MODEL_SUBSCOPES)[number], string> = 
   run_history: "History",
   inspect: "Inspect",
   compare: "Compare",
-  models: "Artifacts",
+  models: "Models",
   batch: "Batch",
 };
 const activeTab = ref(TAB_RUN_HISTORY);
@@ -587,6 +742,7 @@ const usedModelFilter = ref<string | undefined>();
 const modelOffset = ref(0);
 const moreModels = ref(false);
 let modelsRequest = 0;
+let overviewSelectionRequest = 0;
 
 function runsActiveTabStorageKey(): string {
   return `${RUNS_ACTIVE_TAB_PREFIX}_${authStore.user?.id ?? "local"}_${
@@ -594,25 +750,16 @@ function runsActiveTabStorageKey(): string {
   }`;
 }
 
+// A link's ?tab= or run is applied afterwards (applyRunDeepLink) and wins.
+// Inspect needs a chosen run, so it is never reopened from memory.
 function restoreActiveRunsTab(): void {
-  activeTab.value = TAB_RUN_HISTORY;
-  try {
-    const raw = localStorage.getItem(runsActiveTabStorageKey());
-    const parsed = raw === null ? NaN : Number(raw);
-    if (Number.isInteger(parsed) && parsed >= 0 && parsed < MODEL_SUBSCOPES.length) {
-      activeTab.value = parsed;
-    }
-  } catch {
-    /* localStorage may be unavailable. */
-  }
+  const remembered = readRememberedTab(runsActiveTabStorageKey(), MODEL_SUBSCOPES, (id) => id !== "inspect");
+  activeTab.value = remembered ? MODEL_SUBSCOPES.indexOf(remembered) : TAB_RUN_HISTORY;
 }
 
 function persistActiveRunsTab(): void {
-  try {
-    localStorage.setItem(runsActiveTabStorageKey(), String(activeTab.value));
-  } catch {
-    /* localStorage may be unavailable. */
-  }
+  const id = MODEL_SUBSCOPES[activeTab.value];
+  if (id) writeRememberedTab(runsActiveTabStorageKey(), id);
 }
 
 const activeProjectName = computed(() => projectStore.currentProject?.name ?? "—");
@@ -658,7 +805,7 @@ const activeSubtabLabel = computed(() => {
     case TAB_RUN_HISTORY: return "History";
     case TAB_INSPECT: return "Inspect";
     case TAB_COMPARE: return "Compare";
-    case TAB_MODELS: return "Artifacts";
+    case TAB_MODELS: return "Models";
     case TAB_BATCH: return "Batch";
     default: return "—";
   }
@@ -677,9 +824,9 @@ const activeSubtabValue = computed(() => {
 const activeSubtabDetail = computed(() => {
   switch (activeTab.value) {
     case TAB_RUN_HISTORY:
-      return workflowStore.workflowId
+      return runsStore.runs.length
         ? "Inspect saved workflow results"
-        : "Load or run a workflow to build history";
+        : "Run a workflow to build history";
     case TAB_COMPARE:
       return "Inspect differences across saved runs";
     case TAB_INSPECT:
@@ -700,21 +847,21 @@ const activeSubtabDetail = computed(() => {
 // user goes when they want to actually compare two artifacts.
 const selectedModelMetricRows = computed(() => {
   const metrics = selectedModel.value?.metrics ?? null;
-  if (!metrics) return [] as { key: string; label: string; value: string }[];
-  const rows: { key: string; label: string; value: string }[] = [];
+  if (!metrics) return [] as { key: string; label: string; value: string; exact?: number }[];
+  const rows: { key: string; label: string; value: string; exact?: number }[] = [];
   // Stable order: priority list first, then any other numeric keys.
   const seen = new Set<string>();
-  for (const { key, label } of METRIC_PRIORITY) {
+  for (const { key } of METRIC_PRIORITY) {
     const value = metrics[key];
     if (typeof value === "number" && Number.isFinite(value)) {
-      rows.push({ key, label, value: formatMetric(value) });
+      rows.push({ key, label: metricDisplayName(key), value: formatMetric(value), exact: value });
       seen.add(key);
     }
   }
   for (const [key, value] of Object.entries(metrics)) {
     if (seen.has(key)) continue;
     if (typeof value === "number" && Number.isFinite(value)) {
-      rows.push({ key, label: key, value: formatMetric(value) });
+      rows.push({ key, label: metricDisplayName(key), value: formatMetric(value), exact: value });
     }
   }
   return rows;
@@ -812,6 +959,7 @@ watch(
 watch(
   () => projectStore.currentProjectId,
   async () => {
+    ++overviewSelectionRequest;
     inspectedRunId.value = null;
     selectedModel.value = null;
     models.value = [];
@@ -910,6 +1058,7 @@ async function loadModels(): Promise<void> {
     // Sort by most-recently-updated so the list reads like an activity log.
     moreModels.value = response.data.length > 50;
     models.value = response.data.slice(0, 50);
+    modelOverviewRevision.value += 1;
     const isSearching = artifactSearch.value.trim().length > 0;
     if (
       !isSearching &&
@@ -935,7 +1084,7 @@ async function loadModels(): Promise<void> {
 
 async function syncAdvisorForModelsTab(): Promise<void> {
   // The inspector supplies the retained execution-run resource, not a generic tab scope.
-  if (activeTab.value === TAB_INSPECT && route.params?.runId) return;
+  if (activeTab.value === TAB_INSPECT) return;
   const projectId = projectStore.currentProjectId;
   if (projectId == null) return;
   const subscopeKey = MODEL_SUBSCOPES[activeTab.value] ?? "run_history";
@@ -1181,6 +1330,7 @@ function exportActiveTab(): void {
 }
 
 function toggleSelect(model: ModelSummary): void {
+  ++overviewSelectionRequest;
   if (selectedModel.value?.artifact_uid === model.artifact_uid) {
     selectedModel.value = null;
     selectedModelNameDraft.value = "";
@@ -1188,6 +1338,37 @@ function toggleSelect(model: ModelSummary): void {
     selectedModel.value = model;
     selectedModelNameDraft.value = model.display_name || model.name;
   }
+}
+
+async function selectOverviewModel(uid: string): Promise<void> {
+  const request = ++overviewSelectionRequest;
+  const projectId = projectStore.currentProjectId;
+  const model = models.value.find(item => item.artifact_uid === uid);
+  if (model) {
+    selectedModel.value = model;
+    selectedModelNameDraft.value = model.display_name || model.name;
+    await nextTick();
+    if (request === overviewSelectionRequest && projectId === projectStore.currentProjectId) focusSelectedModelDetail();
+    return;
+  }
+  try {
+    const response = await api.get<ModelSummary>(`/models/${encodeURIComponent(uid)}`);
+    if (request !== overviewSelectionRequest || projectId !== projectStore.currentProjectId) return;
+    if (response.data.project_id !== projectId) throw new Error('Model project changed');
+    selectedModel.value = response.data;
+    selectedModelNameDraft.value = response.data.display_name || response.data.name;
+    await nextTick();
+    if (request === overviewSelectionRequest && projectId === projectStore.currentProjectId) focusSelectedModelDetail();
+  } catch {
+    if (request !== overviewSelectionRequest || projectId !== projectStore.currentProjectId) return;
+    toast.add({severity: 'error', summary: 'Model unavailable', detail: 'The selected model could not be verified.', life: 5000});
+  }
+}
+
+function focusSelectedModelDetail(): void {
+  const detail = document.getElementById('selected-model-detail');
+  detail?.scrollIntoView?.({block: 'start'});
+  detail?.focus();
 }
 
 function toggleArtifactSelection(uid: string): void {
@@ -1306,33 +1487,7 @@ function modelMetricSummary(
   return null;
 }
 
-function formatMetric(value: number): string {
-  if (Math.abs(value) >= 100) return value.toFixed(0);
-  if (Math.abs(value) >= 10) return value.toFixed(1);
-  return value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-}
-
-function formatRelative(dateStr: string): string {
-  if (!dateStr) return "—";
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  if (diff < 0) return "just now";
-  const minutes = Math.floor(diff / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return "yesterday";
-  if (days < 7) return `${days} days ago`;
-  if (days < 30) return `${Math.floor(days / 7)}w ago`;
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
+const formatMetric = formatMetricValue;
 
 function absoluteTimestamp(dateStr: string): string {
   if (!dateStr) return "";
@@ -1847,13 +2002,8 @@ function formatRunHistoryMetricValue(key: string, value: number | number[]): str
     }
     return value.length ? formatMetric(value[0]) : "—";
   }
-  if (
-    /accuracy|f1|precision|recall|r2|q2|silhouette|stability/.test(key) &&
-    Math.abs(value) <= 1
-  ) {
-    return value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-  }
-  return Number.isInteger(value) ? String(value) : value.toFixed(4);
+  // Same rounding as the artifact detail panel; counts stay whole.
+  return Number.isInteger(value) ? String(value) : formatMetricValue(value);
 }
 
 function safeFilename(value: string): string {
@@ -1884,7 +2034,7 @@ function safeFilename(value: string): string {
 }
 
 :global(.content:has(.models-content)) {
-  background: #e4e0fa;
+  background: var(--workspace-background);
 }
 
 /* Header ----------------------------------------------------------- */
@@ -1902,10 +2052,10 @@ function safeFilename(value: string): string {
 .empty-state {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.5rem;
   padding: 3rem 1rem;
-  text-align: center;
+  text-align: left;
 }
 
 .empty-state__title {
@@ -1918,16 +2068,6 @@ function safeFilename(value: string): string {
   margin: 0;
   color: var(--text-color-secondary);
   font-size: 0.875rem;
-}
-
-.loading-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 3rem 1rem;
-  color: var(--text-color-secondary);
-  text-align: center;
 }
 
 /* Context strip ---------------------------------------------------- */
@@ -2444,7 +2584,72 @@ function safeFilename(value: string): string {
 .detail-section {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1.25rem;
+  margin-top: 1rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--surface-border);
+}
+
+.detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+}
+
+.detail-title {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  flex: 1 1 22rem;
+  min-width: 0;
+}
+
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.detail-subhead {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-color-secondary);
+}
+
+.detail-note {
+  margin: 0;
+  color: var(--text-color-secondary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.detail-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.detail-metrics__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.detail-qualification {
+  border-top: 1px solid var(--surface-border);
+  padding-top: 1rem;
+}
+
+.detail-qualification > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+  cursor: pointer;
 }
 
 .detail-name {
@@ -2482,16 +2687,6 @@ function safeFilename(value: string): string {
   font-weight: 500;
 }
 
-.detail-grid .detail-metrics {
-  grid-column: 1 / -1;
-}
-
-.detail-grid .detail-metrics dd {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-}
-
 .metric-chip {
   display: inline-flex;
   align-items: baseline;
@@ -2504,9 +2699,7 @@ function safeFilename(value: string): string {
 
 .metric-chip__label {
   color: var(--text-color-secondary);
-  font-size: 0.6875rem;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-size: 0.75rem;
   font-weight: 500;
 }
 

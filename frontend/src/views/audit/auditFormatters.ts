@@ -1,3 +1,4 @@
+import { formatTimestamp } from "@/utils/format";
 import axios from "axios";
 
 import type { AuditEventRecord } from "./types";
@@ -7,13 +8,9 @@ export function shortId(value: string | null | undefined, length = 8): string {
   return value.length > length ? value.slice(0, length) : value;
 }
 
+// Audit times keep seconds and the zone: they are evidence, not a summary.
 export function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "medium",
-  }).format(date);
+  return formatTimestamp(value, { seconds: true });
 }
 
 export function hasEventState(event: AuditEventRecord): boolean {

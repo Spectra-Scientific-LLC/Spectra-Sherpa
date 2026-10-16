@@ -16,7 +16,17 @@ SpectraSherpa uses the extra only for those three specialized algorithms.
 
 ## Supported Version
 
-The current SpectraSherpa package qualifies and pins exactly [SpectroChemPy 0.8.1](https://www.spectrochempy.fr/0.8.1/), also available on [PyPI](https://pypi.org/project/spectrochempy/). SpectraSherpa itself currently supports Python `>=3.11,<3.13`.
+The current SpectraSherpa release pins exactly
+[SpectroChemPy 0.8.1](https://pypi.org/project/spectrochempy/0.8.1/).
+A **SpectroChemPy 0.12.x** compatibility update, qualified against **0.12.8**
+for EFA, MCR-ALS, and SIMPLISMA, is pending release. Its
+[qualification record](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/pull/101)
+includes numerical, saved-model replay, and runtime checks. Cite the version
+installed in the environment that produced your results. SpectraSherpa supports
+Python `>=3.11,<3.13`.
+
+See the [upstream project](https://www.spectrochempy.fr/) and the
+[0.12.8 package](https://pypi.org/project/spectrochempy/0.12.8/) for the pending update.
 
 ## How to Cite SpectroChemPy
 

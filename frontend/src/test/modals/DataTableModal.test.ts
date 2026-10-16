@@ -74,6 +74,16 @@ function factory(overrides: Record<string, any> = {}) {
 }
 
 describe("DataTableModal", () => {
+  it("uses source identities instead of HCA cluster assignments as sample names", () => {
+    const wrapper = factory({ nodeType: "model.hca", nodeOutput: {
+      data: [0, 0, 1], metadata: { type: "HCA", sample_labels: ["0", "0", "1"],
+        source_labels: ["Specimen A", "Specimen B", "Specimen C"] },
+    } });
+    const vm = wrapper.vm as any;
+    expect(vm.tableData.map((row: any) => row._label_full)).toEqual(["Specimen A", "Specimen B", "Specimen C"]);
+    expect(vm.tableData.map((row: any) => row.value)).toEqual([0, 0, 1]);
+    wrapper.unmount();
+  });
   it("pages through appended feature columns without changing row identity or nulls", async () => {
     const values = Array.from({ length: 554 }, (_, i) => i === 553 ? null : i);
     const names = values.map((_, i) => i === 553 ? "added::peak_magnitude" : `feature_${i + 1}`);
@@ -416,7 +426,7 @@ describe("DataTableModal", () => {
     const wrapper = factory({ nodeOutput: { data: Array.from({ length: 155 }, (_, i) => ({
       median_pos: i, members: [{ label: "A long label that can wrap over several lines" }],
     })), metadata: {} } });
-    (wrapper.vm as any).rowLimit = 0;
+    (wrapper.vm as any).rowLimit = 300;
     await wrapper.vm.$nextTick();
     const table = wrapper.find(".data-table-stub");
     expect(table.attributes("data-paginator")).toBe("true");
@@ -511,4 +521,24 @@ describe("DataTableModal", () => {
     expect(wrapper.find(".data-table-stub").attributes("data-row-count")).toBe("6");
     expect(wrapper.text()).toContain("6 matched");
   });
+});
+
+
+it("labels both axes of a retained confusion matrix", () => {
+  const wrapper = factory({ nodeType: "diagnostics.classification_evaluator", nodeOutput: {
+    type: "confusion_matrix", data: [[9, 1], [2, 8]], metadata: { type: "ClassificationTest", labels: ["benign", "malignant"] },
+  } });
+  expect((wrapper.vm as any).matrixColumnLabels).toEqual(["benign", "malignant"]);
+});
+
+it("keeps execution internals out of the scientific metadata and counts integral", () => {
+  const wrapper = factory({ nodeOutput: { data: [1, 2], metadata: { worker_pid: 123, execution_id: "private", n_samples: 2 } } });
+  expect((wrapper.vm as any).displayMetadata).toEqual({ n_samples: 2 });
+  expect((wrapper.vm as any).formatValue(2, true)).toBe("2");
+});
+
+it("shows chemometric peak headings with the recorded coordinate unit", () => {
+  const wrapper = factory({ nodeOutput: { data: [{ median_pos: 1400, detection_count: 3 }], metadata: { type: "PeakFinding", x_units: "cm-1" } } });
+  expect((wrapper.vm as any).tableColumns.map((column: any) => column.header)).toContain("Median position (cm-1)");
+  expect((wrapper.vm as any).tableColumns.map((column: any) => column.header)).toContain("Detections");
 });

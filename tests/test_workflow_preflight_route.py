@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from httpx import AsyncClient
@@ -11,7 +11,7 @@ import spectra_sherpa.app.services.dag.nodes.modeling  # noqa: F401
 
 
 @pytest.mark.anyio
-async def test_invalid_saved_workflow_is_rejected_by_preflight_and_run(auth_client: AsyncClient) -> None:
+async def test_invalid_saved_workflow_is_rejected_by_preflight_and_run(auth_client: AsyncClient, monkeypatch) -> None:
     """Run must not pass a graph that the visible preflight rejects.
 
     A PLS training node needs inputs, but this deliberately saved graph has
@@ -42,10 +42,13 @@ async def test_invalid_saved_workflow_is_rejected_by_preflight_and_run(auth_clie
     assert body["is_valid"] is False
     assert any(issue["code"] == "structural_validation" for issue in body["issues"])
 
+    quota = Mock()
+    monkeypatch.setattr("spectra_sherpa.app.api.deps.enforce_demo_execution_quota", quota)
     execution = await auth_client.post(f"/api/v1/workflows/{workflow_id}/execute", json={})
     assert execution.status_code == 422, execution.text
     assert execution.json()["detail"]["code"] == "workflow_preflight_failed"
     assert execution.json()["detail"]["issues"]
+    quota.assert_not_called()
 
 
 @pytest.mark.anyio

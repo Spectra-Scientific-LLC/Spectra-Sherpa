@@ -281,6 +281,7 @@ async def _project_sheet_summaries(
             selectinload(Workflow.tags),
             selectinload(Workflow.folder),
             selectinload(Workflow.primary_data_source),
+            selectinload(Workflow.nodes),
             selectinload(Workflow.data_source_links),
             selectinload(Workflow.advisor_channels),
         )
@@ -342,6 +343,7 @@ async def _load_workflow_for_sheet_metadata(
         .where(Workflow.id == workflow_id, Workflow.user_id == user_id)
         .options(
             selectinload(Workflow.primary_data_source),
+            selectinload(Workflow.nodes),
             selectinload(Workflow.data_source_links),
             selectinload(Workflow.advisor_channels),
         )
@@ -509,6 +511,7 @@ async def list_workflows(
             selectinload(Workflow.tags),
             selectinload(Workflow.folder),
             selectinload(Workflow.primary_data_source),
+            selectinload(Workflow.nodes),
             selectinload(Workflow.data_source_links),
             selectinload(Workflow.advisor_channels),
         )
@@ -1028,7 +1031,7 @@ async def update_workflow(
             selectinload(Workflow.advisor_channels),
         )
     )
-    result = await session.execute(query)
+    result = await session.execute(query.with_for_update())
     workflow = result.scalar_one_or_none()
 
     if workflow is None:
@@ -1038,6 +1041,9 @@ async def update_workflow(
 
     prospective_nodes: list[object] = list(payload.nodes) if payload.nodes is not None else list(workflow.nodes)
     prospective_edges: list[object] = list(payload.edges) if payload.edges is not None else list(workflow.edges)
+    from spectra_sherpa.app.services.sample_review_custody import require_review_filters_preserved
+
+    await require_review_filters_preserved(session, workflow.id, prospective_nodes, prospective_edges)
     admission = _admit_current_workflow_graph(prospective_nodes, prospective_edges)
 
     # Capture before-state for audit. Pre-mutation snapshot of fields
@@ -1366,8 +1372,8 @@ async def persist_ai_fork(
     payload = payload.model_copy(deep=True)
     user_id = current_user.id
     provider = get_sherpa_advisor()
-    has_agentic_tools = getattr(provider, "has_feature", lambda _feature: False)("agentic_tools")
-    if not provider.is_available or not has_agentic_tools:
+    has_workflow_generation = getattr(provider, "has_feature", lambda _feature: False)("workflow_generation_run")
+    if not provider.is_available or not has_workflow_generation:
         raise HTTPException(status_code=403, detail="SherpaAdvisor is not available.")
 
     # 1. Fetch parent workflow

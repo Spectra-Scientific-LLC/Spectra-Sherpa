@@ -27,7 +27,8 @@ Rubberband baseline correction follows the spectroscopy treatment discussed by B
 | Wavenumber Align (`preprocess.wavenumber_align`) | Align absolute-wavenumber spectra onto a common spectral grid before stacking, transfer, or comparison. | `spectra: SpectralDataset`; `reference: SpectralDataset` | aligned spectral dataset | `method` (`pchip`, `linear`, or `sinc`); fixed `extrapolation=reject`. Both inputs must declare absolute wavenumber in canonical `cm-1`; Raman shift is a different quantity and is refused. The connected reference supplies the exact output grid. A finer output grid is interpolation and does not add measured spectral resolution. |
 | Normalize (`preprocess.normalize`) | Apply sample-local SNV or row scaling; no cohort statistics are learned. | `default: SpectralDataset` | normalized spectral dataset | `method` (`snv`, `scale`); `std_ddof`; `scale_method`. |
 | MSC (`preprocess.msc`) | Fit a reference spectrum from a declared cohort, then correct additive and multiplicative scatter with that frozen reference. | `default: SpectralDataset`; `reference: SpectralDataset?` | corrected spectral dataset | `reference_method` (`mean`, `median`, `first`). Connect training/reference rows to `reference` when correcting held-out or future samples. `first` is row-order sensitive. |
-| Scale / Center (`preprocess.scale`) | Fit mean-centering, autoscaling, or Pareto statistics before PCA, PLS, SVR, or KNN. | `default: SpectralDataset`; `reference: SpectralDataset?` | scaled spectral dataset | `method` (`mean_center`, `autoscale`, `pareto`); `center`. Connect training rows to `reference` when transforming held-out or future samples. Sample-wise maximum scaling is `preprocess.normalize` with `method=scale` and `scale_method=max`. |
+| Scale / Center (`preprocess.scale`) | Fit mean-centering, autoscaling, or Pareto statistics before PCA, PLS, SVR, or KNN. | `default: SpectralDataset`; `reference: SpectralDataset?` | `default`: scaled application rows | `method` (`mean_center`, `autoscale`, `pareto`); `center`. Sample-wise maximum scaling is `preprocess.normalize` with `method=scale` and `scale_method=max`. |
+| Shared Reference Scale (`preprocess.shared_reference_scale`) | Fit one scale state on retained calibration rows and apply it to both branches of a fixed held-out PLS split. | `default: SpectralDataset` (all original held-out rows); `reference: SpectralDataset` (retained calibration rows) | `default`: scaled application rows; `reference_scaled`: scaled calibration rows | `method` (`mean_center`, `autoscale`, `pareto`); `center`. Connect `reference_scaled` to PLS training and `default` to its prediction node. This separate operation preserves the historical Scale / Center contract. |
 | EMSC (`preprocess.emsc`) | Fit a reference spectrum and polynomial nuisance basis, then correct spectra with that frozen state. | `default: SpectralDataset`; `reference: SpectralDataset?`; `constituents: SpectralDataset?` | corrected spectral dataset | `reference_method` (`mean`, `median`, `first`); `poly_order` (0–5). `first` means the first ordered reference row and is therefore row-order sensitive; prefer an explicit one-row reference input when that spectrum is intentional. Connect training rows to `reference` when correcting held-out or future samples; connect known interferent spectra to `constituents`. |
 | OSC Filter (`preprocess.osc`) | Remove spectral variation orthogonal to the target before calibration. | `X: SpectralDataset`; `y: TargetMatrix?` | filtered spectral dataset | `n_components`; `tol`; `max_iter`. Use only inside validation folds to avoid leakage. |
 
@@ -116,3 +117,19 @@ remain unknown. Live execution, generated Python and saved-model replay use
 the same state. Serializer 1 lacks this evidence and requires refitting;
 historical records are not silently upgraded. A `first` reference retains an
 actual training spectrum, so it must not be treated as data-free state.
+
+### Numerical inclusion and boundary safeguards
+
+Reference fitting (including centering, autoscale, and MSC) refuses datasets
+with unmaterialized sample or variable exclusions. Apply the explicit sample
+and variable filters first. Autoscale and internal PCA scaling treat variation
+within a column-relative floating-point resolution bound as constant, avoiding
+unit-weight amplification of roundoff. Internal PLS autoscaling refuses such
+columns, as it does exact constants. Meaningful low-amplitude signals near zero
+remain eligible for scaling.
+
+Norris–Williams derivatives retain zero-filled unsupported edge positions.
+The second derivative has twice the first derivative's unsupported margin:
+`2 * (gap + segment - 1)` points on each side. Its averaging stencils never use
+artificial zeros from the first pass. Settings leaving no valid interior are
+rejected.

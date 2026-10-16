@@ -72,7 +72,7 @@ describe("scientific encoding and population regimes", () => {
             constrain: "range",
           });
           expect(plot.plotData.value[0].x).toEqual(data.map((row) => row[0]));
-          expect(plot.plotLayout.value.annotations[0].text).toContain("fit-specific");
+          expect(plot.plotLayout.value.annotations).toBeUndefined();
         }
       });
       scope.stop();
@@ -239,7 +239,7 @@ describe("scientific encoding and population regimes", () => {
     scope.stop();
   });
   it.each(["pca_loadings", "pls_loadings", "plsda_loadings"])(
-    "%s discloses fit-specific orientation",
+    "%s keeps the loading values without a plot footnote",
     (kind) => {
       const scope = effectScope();
       scope.run(() => {
@@ -252,7 +252,8 @@ describe("scientific encoding and population regimes", () => {
           ),
           ref(""),
         );
-        expect(JSON.stringify(p.plotLayout.value.annotations)).toContain("fit-specific");
+        expect(p.plotLayout.value.annotations).toBeUndefined();
+        expect(p.plotData.value.length).toBeGreaterThan(0);
       });
       scope.stop();
     },
@@ -272,8 +273,8 @@ describe("scientific encoding and population regimes", () => {
     ]);
     expect(comparison.data).toEqual([]);
     expect(comparison.layout.meta.refusal_reason).toContain("1 of 2");
-    expect(buildVipPlot({ scores: [0.2, 1.1] }).layout.annotations[0].text).toContain(
-      "stability is not displayed",
-    );
+    const vip = buildVipPlot({ scores: [0.2, 1.1] });
+    expect(vip.layout.annotations).toBeUndefined();
+    expect(vip.layout.meta.stability_scope).toBe("point_estimates_only");
   });
 });

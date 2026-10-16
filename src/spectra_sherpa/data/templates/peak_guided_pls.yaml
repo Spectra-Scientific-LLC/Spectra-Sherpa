@@ -94,10 +94,6 @@ template_data:
   - from_node_id: preprocess_1
     to_node_id: partition_1
     to_input: X
-  - from_node_id: data_1
-    to_node_id: partition_1
-    from_output: target
-    to_input: y
   - from_node_id: partition_1
     from_output: X_train
     to_node_id: peak_select_train
@@ -114,10 +110,6 @@ template_data:
     to_node_id: model_1
     from_output: X_selected
     to_input: default
-  - from_node_id: partition_1
-    to_node_id: model_1
-    from_output: y_train
-    to_input: y
   - from_node_id: peak_select_test
     to_node_id: predict_1
     from_output: X_selected

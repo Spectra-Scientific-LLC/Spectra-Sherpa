@@ -9,6 +9,7 @@ from typing import Any, Mapping, cast
 import numpy as np
 
 import spectra_sherpa.app.services.dag.regression_comparison as regression_comparison
+from spectra_sherpa.app.lib import numerical_scaling, pca_numerics
 from spectra_sherpa.app.services.dag.feature_axis_identity import (
     feature_axis_identity as _canonical_feature_axis_identity,
 )
@@ -41,6 +42,7 @@ from spectra_sherpa.app.services.dag.presentation_contract import (
     ScientificPresentation,
 )
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.app.services.dag.supervision_binding import admit_attached_sample_table_supervision
 from spectra_sherpa.core.node_identity import node_contract_digest_is_compatible
 from spectra_sherpa.execution_contract_vocabulary import (
     LifecycleKind,
@@ -49,7 +51,7 @@ from spectra_sherpa.execution_contract_vocabulary import (
     WorkerCapability,
 )
 
-from . import pls_applicability, pls_core, saved_native_model
+from . import component_validation, pls_applicability, pls_component_curve, pls_core, saved_native_model
 from .pls_core import ALGORITHM_ID, ALGORITHM_VERSION, PLSFit, apply_pls_affine_state, fit_simpls
 
 FITTED_PLS_STATE_SERIALIZER = "spectra.sherpa-simpls-regression-json/9"
@@ -151,6 +153,12 @@ def _canonical_pls_parameters(parameters: dict[str, object]) -> dict[str, object
     assert isinstance(components, (int, float))
     if int(components) != components:
         raise ValueError("parameter n_components must be an integer")
+    if parameters.get("component_selection_rule", "manual_parameter") not in {
+        "manual_parameter",
+        "minimum_mean_fold_rmse",
+        "one_standard_error",
+    }:
+        raise ValueError("PLS component selection rule is unsupported")
     return parameters
 
 
@@ -236,7 +244,9 @@ class FittedPLSV2Node(Node):
                 required=True,
                 hint=(
                     "Requested maximum; the fit reports the effective predictive rank and stops before "
-                    "an unidentifiable direction. Must not exceed min(training samples - 1, input features)."
+                    "an unidentifiable direction. Must not exceed min(training samples - 1, input features). "
+                    "This choice is saved; the component CV curve is tuning evidence and must not use "
+                    "the locked test cohort."
                 ),
             ),
             NodeParameter(
@@ -245,6 +255,53 @@ class FittedPLSV2Node(Node):
                 param_type="boolean",
                 default=False,
                 required=False,
+            ),
+            NodeParameter(
+                name="component_selection_rule",
+                label="Component choice basis",
+                param_type="select",
+                default="manual_parameter",
+                options=["manual_parameter", "minimum_mean_fold_rmse", "one_standard_error"],
+                required=False,
+                category="advanced",
+                hint=(
+                    "Choose and save the basis after inspecting the curve, then set Latent Variables "
+                    "to the desired count and refit. For a multiresponse model, use manual because "
+                    "each response has its own suggestion."
+                ),
+            ),
+            NodeParameter(
+                name="component_curve_max",
+                label="Maximum LV in component curve",
+                param_type="number",
+                default=10,
+                min_value=1,
+                max_value=20,
+                max_value_reason="Bounds the additional calibration/CV fits and retained per-component evidence.",
+                step=1,
+                required=False,
+                category="advanced",
+                hint=(
+                    "Automatically includes the selected LV up to 20; a larger selected model is "
+                    "marked outside the bounded curve."
+                ),
+            ),
+            NodeParameter(
+                name="component_cv_folds",
+                label="Component curve CV folds",
+                param_type="number",
+                default=5,
+                min_value=2,
+                max_value=10,
+                max_value_reason="Bounds repeated fold fitting and retained fold evidence.",
+                step=1,
+                required=False,
+                category="advanced",
+                hint=(
+                    "Uses group K-fold when sample groups are bound, otherwise row K-fold. "
+                    "Scaling is fitted within each training fold. Population-fitted upstream "
+                    "preprocessing makes this curve unavailable."
+                ),
             ),
             NodeParameter(
                 name="target_names",
@@ -328,6 +385,16 @@ class FittedPLSV2Node(Node):
                 label="Regression Coefficients",
                 description="One final fitted coefficient per spectral variable and response target.",
             ),
+            PortMetadata(
+                name="component_curve",
+                type_ref="spectrasherpa://types/ValidationResult/1.0",
+                required=True,
+                label="PLS Component Selection",
+                description=(
+                    "Calibration and fold-held-out error by LV, with the executed validation design. "
+                    "The selected LV is included when it is within the 20-LV bound."
+                ),
+            ),
         ],
         input_types=["SherpaDataset"],
         output_type="array",
@@ -368,6 +435,14 @@ class FittedPLSV2Node(Node):
                     "model_summary",
                     ("fitted_state",),
                     ("model_summary",),
+                ),
+                ScientificPresentation(
+                    "component_selection",
+                    "Choose Latent Variables",
+                    "validation_result",
+                    ("component_curve",),
+                    ("record",),
+                    "CV is development/tuning evidence; an independent test is a separate result.",
                 ),
             ),
         ),
@@ -450,11 +525,10 @@ class FittedPLSV2Node(Node):
         # The fold ABI supplies a positional response. Named response datasets
         # can additionally carry their own checked identity. Predictor metadata
         # is authoritative only when the response was actually inferred from it.
-        source = dataset if target is None else target
         values = bind_y(target, X=dataset, required=True, dataset_as_data=True, target_type="continuous")
-        return self._fit_model_and_state(dataset, values, response_source=source, response_is_embedded=target is None)[
-            4
-        ]
+        embedded = target is None
+        source = dataset if embedded else target
+        return self._fit_model_and_state(dataset, values, response_source=source, response_is_embedded=embedded)[4]
 
     def validate_fitted_state(self, state: object) -> dict[str, object]:
         """Validate and normalize the sole closed numerical state ABI."""
@@ -629,8 +703,10 @@ class FittedPLSV2Node(Node):
             target_type="continuous",
             missing_message="fitted PLS requires training targets",
         )
+        embedded = y is None
+        response_source = dataset if embedded else y
         dataset, _X, target_matrix, model, state = self._fit_model_and_state(
-            dataset, target, response_source=dataset if y is None else y, response_is_embedded=y is None
+            dataset, target, response_source=response_source, response_is_embedded=embedded
         )
         from .saved_native_model import build_native_model_artifact
 
@@ -639,7 +715,50 @@ class FittedPLSV2Node(Node):
         predictions = self.apply_fitted_state(dataset, state)
         response_identity = cast(dict[str, object], state["response_identity"])
         target_names = cast(list[str] | None, response_identity["names"])
+        from spectra_sherpa.app.lib.reference_value_evidence import bound_reference_value_evidence
+
+        reference_evidence = bound_reference_value_evidence(
+            response_source,
+            response_names=target_names,
+            response_units=cast(list[str | None], response_identity["units"]),
+            target_type="continuous",
+        )
+        if reference_evidence is not None:
+            artifact["metadata"]["reference_value_evidence"] = reference_evidence
+            artifact["metadata"]["reference_fit_context"] = {"calibration_rows": int(_X.shape[0])}
         explained_variance = np.column_stack((model.x_explained_variance, model.y_explained_variance))
+        params = self._resolve_params()
+        curve_max = params["component_curve_max"]
+        folds = params["component_cv_folds"]
+        if (
+            isinstance(curve_max, bool)
+            or not isinstance(curve_max, (int, float))
+            or not float(curve_max).is_integer()
+            or not 1 <= curve_max <= 20
+            or isinstance(folds, bool)
+            or not isinstance(folds, (int, float))
+            or not float(folds).is_integer()
+            or not 2 <= folds <= 10
+        ):
+            raise ValueError("PLS component curve limits require whole numbers within the declared bounds")
+        attached = admit_attached_sample_table_supervision(dataset)
+        maximum = min(max(int(curve_max), min(model.n_components, 20)), min(_X.shape[0] - 1, _X.shape[1]))
+        curve_reason = component_validation.cv_unavailable_reason(dataset)
+        component_curve = pls_component_curve.build_pls_component_curve(
+            _X,
+            target_matrix,
+            selected_components=model.n_components,
+            requested_components=int(state["n_components"]),
+            maximum_components=maximum,
+            scale=bool(state["scale"]),
+            fit_model=fit_simpls,
+            response_names=target_names,
+            response_units=cast(list[str | None], response_identity["units"]),
+            groups=None if attached is None else attached.groups,
+            cv_folds=int(folds),
+            cv_unavailable_reason=curve_reason,
+            selection_rule=str(params["component_selection_rule"]),
+        )
         return NodeResult(
             outputs={
                 "default": predictions,
@@ -656,10 +775,12 @@ class FittedPLSV2Node(Node):
                 "x_loadings": np.asarray(model.x_loadings.T, dtype=np.float64),
                 "explained_variance": explained_variance,
                 "regression_coefficients": np.asarray(model.coefficients, dtype=np.float64),
+                "component_curve": component_curve,
             },
             diagnostics={
                 "fitted_state_serializer": FITTED_PLS_STATE_SERIALIZER,
                 "response_identity": response_identity,
+                "reference_value_evidence": reference_evidence,
                 "algorithm_id": ALGORITHM_ID,
                 "algorithm_version": ALGORITHM_VERSION,
                 "requested_n_components": state["n_components"],
@@ -725,9 +846,17 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
     license_id="BSD-3-Clause",
     help_reference="docs/nodes/regression.md",
-    implementation_modules=(pls_core, _vip, regression_comparison, pls_applicability, saved_native_model),
-    implementation_distributions=("numpy",),
-    runtime_requirements=(("numpy", "1.26.4"),),
+    implementation_modules=(
+        pca_numerics,
+        numerical_scaling,
+        pls_core,
+        _vip,
+        regression_comparison,
+        pls_applicability,
+        saved_native_model,
+    ),
+    implementation_distributions=("numpy", "scipy"),
+    runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1")),
     managed_optimization_profiles=("first_party_pls",),
     fitted_state_serializer=FITTED_PLS_STATE_SERIALIZER,
     citations=(

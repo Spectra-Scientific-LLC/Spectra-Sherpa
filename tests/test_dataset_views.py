@@ -8,9 +8,15 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from spectra_sherpa.app.api.v1.routes.runs import ArtifactBatchRunRequest, RunDatasetRef, _load_batch_dataset
+from spectra_sherpa.app.api.v1.routes.runs import (
+    ArtifactBatchRunRequest,
+    RunDatasetRef,
+    _load_batch_dataset,
+)
+from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
 from spectra_sherpa.app.models.dataset_view import DatasetView
 from spectra_sherpa.app.models.experiment import Experiment
+from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.project import Project
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_data_selection_revision import WorkflowDataSelectionRevision
@@ -23,6 +29,77 @@ from spectra_sherpa.app.services.workflow_data_selections import (
     source_parameters,
     validate_selection,
 )
+
+
+@pytest.mark.asyncio
+async def test_batch_view_cannot_promote_equal_values_from_an_unproven_response_table(
+    test_session, test_user, monkeypatch
+):
+    project = Project(user_id=test_user.id, name="Reference view")
+    test_session.add(project)
+    await test_session.flush()
+    experiment = Experiment(
+        user_id=test_user.id, project_id=project.id, name="Bound source", metadata_path="metadata.json"
+    )
+    test_session.add(experiment)
+    await test_session.flush()
+    source_file = ExperimentFile(experiment_id=experiment.id, file_path="source.csv", stage="raw")
+    test_session.add(source_file)
+    await test_session.flush()
+
+    def dataset(mask):
+        return SimpleNamespace(
+            n_samples=3,
+            sample_axis=SimpleNamespace(include_mask=np.asarray(mask, dtype=bool)),
+            meta={"source_collection": {"files": [{"file_name": "source.csv", "sha256": "a" * 64}]}},
+            target=np.asarray([10.0, 11.0, 12.0]),
+            target_context=TargetContext(target_type="continuous", target_name="moisture"),
+        )
+
+    async def load(*args, **kwargs):
+        return LoadedProjectDataset(
+            dataset=dataset([True, False, True]),
+            experiment_id=experiment.id,
+            experiment_name=experiment.name,
+            project_id=project.id,
+            file_ids=[source_file.id],
+            stage="raw",
+            asset_id=None,
+            source_manifest_sha256="a" * 64,
+        )
+
+    monkeypatch.setattr("spectra_sherpa.app.api.v1.routes.runs.load_project_dataset", load)
+    receipt = selection_receipt(await load(), selected_file_ids=[source_file.id])
+    view = DatasetView(
+        project_id=project.id,
+        experiment_id=experiment.id,
+        created_by_user_id=test_user.id,
+        name="Saved cohort",
+        name_key="saved cohort",
+        selection=receipt,
+        selection_sha256=receipt_sha256(receipt),
+    )
+    test_session.add(view)
+    await test_session.commit()
+
+    async def changed_binding(source, **kwargs):
+        raise AssertionError("A saved view cannot inherit an independently bound response table")
+
+    monkeypatch.setattr(
+        "spectra_sherpa.app.services.dataset_analysis_readiness.apply_saved_analysis_binding", changed_binding
+    )
+    loaded, admitted_view = await _load_batch_dataset(
+        test_session,
+        test_user.id,
+        ArtifactBatchRunRequest(
+            artifact_uids=["model-under-test"],
+            dataset=RunDatasetRef(experiment_id=experiment.id),
+            dataset_view_id=view.id,
+        ),
+    )
+    assert admitted_view.id == view.id
+    assert loaded.dataset.sample_axis.include_mask.tolist() == [True, False, True]
+    assert loaded.dataset.target_context.reference_value_evidence is None
 
 
 @pytest.mark.asyncio
@@ -114,6 +191,91 @@ async def test_dataset_view_refuses_default_name(auth_client, test_session, test
     await test_session.commit()
     response = await auth_client.post(f"/api/v1/experiments/{experiment.id}/dataset-views", json={"name": " default "})
     assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_data_story_file_info_materializes_exact_curated_portfolio(
+    auth_client,
+    test_session,
+    test_user,
+    monkeypatch,
+):
+    project = Project(user_id=test_user.id, name="Lavender")
+    test_session.add(project)
+    await test_session.flush()
+    experiment = Experiment(
+        user_id=test_user.id,
+        project_id=project.id,
+        name="Essential oil",
+        metadata_path="metadata.json",
+    )
+    test_session.add(experiment)
+    await test_session.flush()
+    receipt = {"stage": "raw", "selected_file_ids": [17], "asset_id": None, "included_count": 2}
+    view = DatasetView(
+        project_id=project.id,
+        experiment_id=experiment.id,
+        created_by_user_id=test_user.id,
+        name="Reviewed cohort",
+        name_key="reviewed cohort",
+        selection=receipt,
+        selection_sha256=receipt_sha256(receipt),
+    )
+    test_session.add(view)
+    await test_session.commit()
+    loaded = LoadedProjectDataset(
+        dataset=SimpleNamespace(meta={}),
+        experiment_id=experiment.id,
+        experiment_name=experiment.name,
+        project_id=project.id,
+        file_ids=[17],
+        stage="raw",
+        asset_id=None,
+        source_manifest_sha256="a" * 64,
+    )
+    seen: list[dict] = []
+
+    async def load(_session, **kwargs):
+        assert kwargs["experiment_id"] == experiment.id
+        assert kwargs["file_ids"] == [17]
+        return loaded
+
+    def materialize(received, saved):
+        assert received is loaded
+        seen.append(saved)
+        return received
+
+    async def finalize(result, **_kwargs):
+        return result
+
+    monkeypatch.setattr("spectra_sherpa.app.services.model_application.load_project_dataset", load)
+    monkeypatch.setattr("spectra_sherpa.app.services.dataset_views.materialize_selection_receipt", materialize)
+    monkeypatch.setattr(
+        "spectra_sherpa.app.services.serialization.serialize_result",
+        lambda *_args, **_kwargs: {"metadata": {}},
+    )
+    monkeypatch.setattr("spectra_sherpa.app.api.v1.routes.builder._finalize_file_info", finalize)
+    request = {
+        "experiment_id": experiment.id,
+        "dataset_view_id": view.id,
+        "dataset_view_sha256": view.selection_sha256,
+    }
+    response = await auth_client.post("/api/v1/builder/file-info", json=request)
+    assert response.status_code == 200, response.text
+    assert seen == [receipt]
+    assert response.json()["metadata"]["data_portfolio_name"] == "Reviewed cohort"
+    assert (
+        await auth_client.post(
+            "/api/v1/builder/file-info",
+            json={**request, "dataset_view_sha256": "0" * 64},
+        )
+    ).status_code == 409
+    assert (
+        await auth_client.post(
+            "/api/v1/builder/file-info",
+            json={**request, "file_ids": [17]},
+        )
+    ).status_code == 400
 
 
 @pytest.mark.asyncio

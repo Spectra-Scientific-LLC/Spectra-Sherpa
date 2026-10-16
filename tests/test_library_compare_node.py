@@ -642,6 +642,13 @@ async def test_atmospheric_benchmark_mixture_identifies_present_hitran_component
             "diagnostic_band_threshold": 0.2,
         },
     )
+    with pytest.raises(ValueError, match="matching signal_units"):
+        await node.execute(sample=sample, library=library)
+    # Beer-Lambert reference: A = epsilon * c * l at 1 mol/L and 1 cm.
+    # This explicit conversion leaves the numeric reference spectrum unchanged.
+    library = library.copy()
+    library.units = "absorbance"
+    library.domain = library.domain.model_copy(update={"data_quantity": "Absorbance"})
     result = await node.execute(sample=sample, library=library)
 
     metadata = result.outputs["metadata"]

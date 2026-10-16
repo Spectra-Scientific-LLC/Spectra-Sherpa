@@ -104,9 +104,10 @@ def has_native_model_state(manifest: dict[str, Any], arrays: dict[str, np.ndarra
     return STATE_ARRAY in arrays or "native_model_schema" in manifest or "native_node_type" in manifest
 
 
-def apply_saved_native_model(
+def admit_saved_native_model(
     manifest: dict[str, Any], arrays: dict[str, np.ndarray], source: Any, prepared: np.ndarray
-) -> dict[str, Any]:
+) -> tuple[Any, dict[str, Any], SherpaDataset]:
+    """Validate saved custody and prepared input authority without prediction."""
     from spectra_sherpa.app.services.dag.node_base import node_registry
 
     encoded = arrays.get(STATE_ARRAY)
@@ -139,6 +140,14 @@ def apply_saved_native_model(
     # Keep incoming axis/signal authority; never invent it from the saved state.
     dataset = dataset.with_data(prepared)
     require_fitted_input_identity(dataset, payload["input_identity"], features=prepared.shape[-1])
+    return node, payload, dataset
+
+
+def apply_saved_native_model(
+    manifest: dict[str, Any], arrays: dict[str, np.ndarray], source: Any, prepared: np.ndarray
+) -> dict[str, Any]:
+    node, payload, dataset = admit_saved_native_model(manifest, arrays, source, prepared)
+    node_type = payload["node_type"]
     if node_type == "model.fitted_pls":
         from .apply_fitted_pls_node import ApplyFittedPLSV2Node
         from .fitted_pls_node import make_fitted_pls_state_envelope

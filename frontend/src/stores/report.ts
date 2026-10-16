@@ -180,7 +180,7 @@ export interface ReportProjectEvidenceSnapshot {
   state: "available" | "unavailable";
   projectId: number | null;
   capturedAt: string;
-  records: ProjectProvenanceRecord[];
+  records: (Omit<ProjectProvenanceRecord, "state"> & { state: ProjectProvenanceRecord["state"] | "retained" })[];
   reason: string | null;
 }
 
@@ -467,12 +467,49 @@ export const useReportStore = defineStore("report", () => {
         state: "unavailable", projectId, capturedAt: new Date().toISOString(),
         records: [], reason: "Current-project evidence was not available when this report was generated.",
       };
-      if (projectId != null && data.workflow_identity?.project_id === projectId) {
+      if (projectId != null && data.workflow_identity?.project_id === projectId
+        && data.workflow_identity.workflow_id === workflowId) {
         try {
           const current = await api.get<ProjectProvenanceResponse>(`/projects/${projectId}/provenance`);
+          const reportRunIds = new Set((data.runs ?? []).map((run) => run.id));
+          // The project's active choices may belong to a different analysis.
+          // Attach only records with an explicit identity in this report.
+          const records: ReportProjectEvidenceSnapshot["records"] = current.data.records.filter((record) => {
+            if (record.kind === "run") {
+              return record.workflow_id === workflowId &&
+                typeof record.record_id === "number" && reportRunIds.has(record.record_id);
+            }
+            if (record.kind === "model") {
+              return record.source_run_id != null && reportRunIds.has(record.source_run_id);
+            }
+            return record.kind === "workflow" && record.record_id === workflowId &&
+              record.digest != null && record.digest === data.integrity_hash;
+          }).map((record) => record.kind === "model" && record.artifact_integrity
+            ? { ...record, state: record.artifact_integrity.state, detail: record.artifact_integrity.detail }
+            : record);
+          // Current-project beacons describe active choices, not every saved
+          // analysis. The report response itself supplies explicitly bound
+          // historical records; label them retained, not integrity-verified.
+          if (data.workflow_id === workflowId && !records.some(record => record.kind === "workflow")) {
+            records.push({
+              kind: "workflow", label: "Report workflow", state: "retained",
+              name: data.name, record_id: workflowId, workflow_id: workflowId,
+              digest: data.integrity_hash, destination: "/workflow",
+              detail: "Workflow definition retrieved for this report in the selected project. Digest is recorded; no new integrity verification is implied.",
+            });
+          }
+          for (const run of data.runs ?? []) {
+            if (run.workflow_identity?.project_id !== projectId || run.workflow_identity.workflow_id !== workflowId
+              || records.some(record => record.kind === "run" && record.record_id === run.id)) continue;
+            records.push({
+              kind: "run", label: "Saved run", state: "retained", name: run.name,
+              record_id: run.id, workflow_id: workflowId, digest: run.integrity_hash, destination: "/runs",
+              detail: `Run #${run.id} retrieved for this report; recorded outcome: ${run.status}. Saved results do not imply independent model validation or current artifact verification.`,
+            });
+          }
           evidence = {
-            state: "available", projectId, capturedAt: new Date().toISOString(),
-            records: current.data.records, reason: null,
+            state: "available", projectId, capturedAt: new Date().toISOString(), records,
+            reason: records.length ? null : "No current project records match this report's workflow and saved runs.",
           };
         } catch {
           // Report-specific workflow and run evidence remains usable. Do not

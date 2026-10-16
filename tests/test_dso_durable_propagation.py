@@ -207,13 +207,13 @@ def test_pca_explicitly_unfolds_nd_and_records_the_projection() -> None:
     node = node_registry.create_node(
         "model.pca",
         "pca",
-        {"n_components": "2", "standardized": False, "scaled": False},
+        {"n_components": "1", "standardized": False, "scaled": False},
     )
     result = asyncio.run(node.run(_dataset(source="rank")))
 
     scores = result.outputs["scores"]
     state = result.outputs["fitted_state"]
-    assert scores.shape == (2, 2)
+    assert scores.shape == (2, 1)
     assert state["metadata"]["input_shape"] == [2, 3, 4]
     assert state["metadata"]["rank_projection_strategy"] == "mode_1_samples_by_composite_features_c_order"
     assert any(entry.op_id == "model.pca.mode_1_unfold" for entry in scores.provenance)

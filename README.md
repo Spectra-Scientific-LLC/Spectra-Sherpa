@@ -14,16 +14,21 @@ workflows. Import supported scientific files, inspect their axes and metadata,
 then use PCA, PLS, MCR-ALS, SIMCA, PLS-DA, variable selection, calibration
 transfer, and validation without hiding the data path behind a notebook.
 
-Install the v0.6.0 Workbench and Python SDK (Python 3.11 or 3.12):
+The source tree is **0.6.2**; see the [0.6.2 notes](docs/releases/0.6.2.md).
+Source version alone does not establish PyPI or desktop-installer availability;
+check the [published package](https://pypi.org/project/spectra-sherpa/) before
+installing.
+
+Install the latest published Workbench and Python SDK (Python 3.11 or 3.12):
 
 ```bash
-python -m pip install "spectra-sherpa==0.6.0"
+python -m pip install spectra-sherpa
 spectra-sherpa
 ```
 
 Try the **[hosted Demo](https://demo.spectrascientific.ai)** by registering
 with your email. Demo uses supplied or registered reference datasets; use local
-OSS or Pro Cloud for your own data. Local OSS includes BYOK chat; managed
+OSS or hosted Pro for your own data. Local OSS includes BYOK chat; managed
 Advisor and optimization campaigns are hosted features.
 
 📖 [Documentation](https://docs.spectrascientific.ai) · 🧭 [Choose your path](docs/onboarding/choose-your-path.md) · 🧩 [Node Library](docs/nodes/index.md)
@@ -58,7 +63,7 @@ The Python SDK is included in the same installation.
 Choose optional capabilities when installing:
 
 ```bash
-python -m pip install "spectra-sherpa[scp,hitran,nist]==0.6.0"
+python -m pip install "spectra-sherpa[scp,hitran,nist]"
 ```
 
 | Extra | Adds |
@@ -78,7 +83,7 @@ Requires Git, Python 3.11 or 3.12, and Node.js 22. Use this path if the tag is
 available before the PyPI upload completes:
 
 ```bash
-git clone --branch spectra-sherpa-v0.6.0 https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
+git clone --branch spectra-sherpa-v0.6.2 https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa.git
 cd Spectra-Sherpa
 python -m pip install poetry
 poetry env use python3.11
@@ -148,7 +153,7 @@ These databases are not owned by Spectra Scientific. Cite NIST, HITRAN, and HAPI
 
 Full docs at **[docs.spectrascientific.ai](https://docs.spectrascientific.ai)**.
 
-- **Get started:** [Cloud vs Local OSS](docs/introduction/cloud-vs-local.md) · [10 Minutes to Local Compute](docs/onboarding/local-30-minutes.md) · [Import Your First Dataset](docs/onboarding/import-first-dataset.md)
+- **Get started:** [Demo, Pro and local OSS](docs/introduction/cloud-vs-local.md) · [Local onboarding](docs/onboarding/local-30-minutes.md) · [Import Your First Dataset](docs/onboarding/import-first-dataset.md)
 - **Workflows:** [Data Import](docs/workflows/data-import.md) · [Projects, Datasets, and Runs](docs/workflows/projects-datasets-runs.md) · [Reports and Exports](docs/workflows/reports-exports.md)
 - **Reference:** [Supported File Types](docs/introduction/file-types.md) · [Node Library](docs/nodes/index.md) · [Templates](docs/workflow-templates/index.md)
 - **Develop:** [Architecture](docs/architecture/index.md) · [Contributing](docs/developers/contributing.md) · [Developer Setup](docs/developers/setup.md)

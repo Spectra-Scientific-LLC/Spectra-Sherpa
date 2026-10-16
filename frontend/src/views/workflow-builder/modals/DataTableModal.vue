@@ -171,6 +171,7 @@
 
 <script setup lang="ts">
 import { scientificNumber } from "@/utils/scientificEncoding";
+import { useDisplayPreferences, displayNumber } from "@/composables/useDisplayPreferences";
 import { projectActiveSpectralCohort } from "@/utils/scientificCohort";
 /* eslint-disable @typescript-eslint/no-explicit-any -- table modal accepts generic node outputs and loose Plotly-shaped metadata. */
 import { ref, computed, watch } from "vue";
@@ -180,6 +181,7 @@ import InputText from "primevue/inputtext";
 import Button from "primevue/button";
 import DataTable from "primevue/datatable";
 import Column from "primevue/column";
+import { isAuditField, scientificMetadata } from "@/utils/scientificDisplay";
 import { isProjectedScientificKind } from "@/utils/scientificPresentation";
 import {
   compactSampleLabel,
@@ -210,27 +212,34 @@ const visible = computed({
 const title = computed(() => `${props.nodeLabel} - Data View`);
 
 // Display options
-const rowLimit = ref(100);
+const displayPreferences = useDisplayPreferences();
+const rowLimit = computed({
+  get: () => displayPreferences.maxRows,
+  set: (value: number) => {
+    if ([100, 300, 500, 1000, 3000].includes(value)) displayPreferences.maxRows = value;
+  },
+});
 const columnPage = ref(0);
 const columnPageOptions = computed(() => !Array.isArray(displayedData.value?.[0]) ? [] : Array.from(
   { length: Math.ceil(dataShape.value.cols / 50) },
   (_, page) => ({ label: `${page * 50 + 1}–${Math.min((page + 1) * 50, dataShape.value.cols)}`, value: page }),
 ));
 const columnStart = computed(() => Math.min(Number(columnPage.value), Math.max(0, columnPageOptions.value.length - 1)) * 50);
-const precision = ref(6);
+const precision = ref<"global" | 2 | 4 | 6 | 8>("global");
 const searchQuery = ref("");
 const searchScope = ref<"all" | "label">("all");
 const selectedSampleFilter = ref("__all__");
 
 const rowLimitOptions = [
-  { label: "50 rows", value: 50 },
   { label: "100 rows", value: 100 },
+  { label: "300 rows", value: 300 },
   { label: "500 rows", value: 500 },
   { label: "1000 rows", value: 1000 },
-  { label: "All rows", value: 0 },
+  { label: "3000 rows", value: 3000 },
 ];
 
 const precisionOptions = [
+  { label: "Display default", value: "global" },
   { label: "2 decimals", value: 2 },
   { label: "4 decimals", value: 4 },
   { label: "6 decimals", value: 6 },
@@ -495,7 +504,9 @@ function semanticLabelInfo(output: any, data: any[]) {
   const dimensions = output?.descriptor?.dimensions ?? [];
   const rowRole = String(dimensions[0]?.role ?? "").toLowerCase();
   const variableRows = ["feature", "spectral_variable", "variable"].includes(rowRole);
-  const labels = variableRows ? relatedFeatureLabels(output, data.length) : [];
+  const labels = variableRows
+    ? relatedFeatureLabels(output, data.length)
+    : exactStringLabels(metadata.source_labels, data.length);
   if (labels.length === 0) return getLabelInfo(metadata);
   return getLabelInfo({ sample_labels: labels });
 }
@@ -509,12 +520,13 @@ const matrixColumnLabels = computed(() => {
   const dimensions = output?.descriptor?.dimensions ?? [];
   const column = dimensions[dimensions.length - 1] ?? {};
   const response =
-    isTargetMatrix.value ||
+    isTargetMatrix.value || metadata.type === "ClassificationTest" || output?.type === "confusion_matrix" ||
     ["target", "class", "response_class", "actual_predicted_value"].includes(column.role);
   const axis = output?.presentation_value?.feature_axis ?? output?.presentation_value?.x_axis;
   const responseNames = [
     column.labels,
     metadata.target_names,
+    metadata.type === "ClassificationTest" || output?.type === "confusion_matrix" ? metadata.labels : undefined,
     metadata.classes,
     metadata.label_categories,
     metadata.diagnostics?.target_names,
@@ -541,6 +553,17 @@ const matrixColumnLabels = computed(() => {
     );
   return Array.from({ length: width }, (_, i) => (width === 1 ? "Value" : `Col_${i + 1}`));
 });
+
+function peakColumnLabel(key: string, metadata: Record<string, any>): string {
+  const unit = typeof metadata.x_units === "string" ? ` (${metadata.x_units})` : "";
+  const names: Record<string, string> = {
+    consensus_peak_id: "Peak", median_pos: `Median position${unit}`, min_pos: `Minimum position${unit}`,
+    max_pos: `Maximum position${unit}`, median_half_prominence_width: `Half-prominence width${unit}`,
+    detection_count: "Detections", sample_count: "Samples", detection_fraction: "Detection fraction",
+    median_height: "Median height", median_absolute_window_integral: "Absolute window integral",
+  };
+  return names[key] ?? key.replace(/_/g, " ");
+}
 
 // Build table columns
 const tableColumns = computed(() => {
@@ -604,7 +627,7 @@ const tableColumns = computed(() => {
       }
       columns.push({
         field: key,
-        header: key,
+        header: metadata.type === "PeakFinding" ? peakColumnLabel(key, metadata) : key,
         width: isNumeric ? "120px" : "160px",
         isNumeric,
       });
@@ -891,9 +914,9 @@ const displayMetadata = computed(() => {
   ];
 
   for (const [key, value] of Object.entries(metadata)) {
-    if (skipKeys.includes(key)) continue;
+    if (skipKeys.includes(key) || key.startsWith("_") || isAuditField(key)) continue;
     if (Array.isArray(value) && value.length > 10) continue;
-    filtered[key] = value;
+    filtered[key] = scientificMetadata(value);
   }
 
   return filtered;
@@ -911,6 +934,8 @@ function formatValue(value: any, isNumeric: boolean): string {
   if (isNumeric && typeof value === "number") {
     if (Number.isNaN(value)) return "NaN";
     if (!Number.isFinite(value)) return value > 0 ? "∞" : "-∞";
+    if (Number.isInteger(value)) return String(value);
+    if (precision.value === "global") return displayNumber(value);
     const fixed = value.toFixed(precision.value);
     return value !== 0 && Number(fixed) === 0 ? scientificNumber(value) : fixed;
   }

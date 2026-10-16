@@ -24,22 +24,52 @@ def validate_experiment_source_provenance(params: Mapping[str, Any]) -> None:
         "collection_definition_sha256",
         "scientific_collection_sha256",
     }
-    if set(params) != expected:
+    # The collection loader records response selection as provenance. It is
+    # not an X transformation, but its authority must remain source-bound.
+    selection_fields = set(params) - expected
+    if not expected.issubset(params) or selection_fields not in (
+        set(),
+        {"target_mode"},
+        {"target_mode", "target_authority"},
+    ):
         raise ValueError("experiment collection provenance does not match its closed schema")
+    if selection_fields == {"target_mode"} and params["target_mode"] != "multi":
+        raise ValueError("experiment collection target mode is malformed")
+    if "target_authority" in selection_fields:
+        from spectra_sherpa.core.target_authority import admit_target_authority
+
+        authority = admit_target_authority(params["target_authority"], optional=False)
+        if (
+            params["target_mode"] != "single"
+            or authority.source_digest != params["scientific_collection_sha256"]
+            or authority.canonical_dict() != params["target_authority"]
+        ):
+            raise ValueError("experiment collection target authority differs from its source")
     if (
         type(params["dataset_id"]) is not int
         or params["dataset_id"] < 1
         or type(params["file_count"]) is not int
         or not 1 <= params["file_count"] <= MAX_COLLECTION_MEMBERS
         or params["stage"] not in {"raw", "preprocessed", "synthetic"}
-        or not isinstance(params["asset_id"], str)
-        or not params["asset_id"]
-        or params["asset_id"] != params["asset_id"].strip()
+        # None means the reader selected each file's default asset. The
+        # source manifest still binds the actual selected assets and bytes.
+        or (
+            params["asset_id"] is not None
+            and (
+                not isinstance(params["asset_id"], str)
+                or not params["asset_id"]
+                or params["asset_id"] != params["asset_id"].strip()
+            )
+        )
+        # A collection without an authored definition has a null definition
+        # digest, but still requires its source and scientific identity hashes.
+        or (
+            params["collection_definition_sha256"] is not None and not is_sha256(params["collection_definition_sha256"])
+        )
         or not all(
             is_sha256(params[name])
             for name in (
                 "source_manifest_sha256",
-                "collection_definition_sha256",
                 "scientific_collection_sha256",
             )
         )

@@ -27,6 +27,7 @@ from . import (  # noqa: F401
     osc_node,
     penalized_baseline_node,
     scale_node,
+    shared_reference_scale_node,
     smooth_node,
     wavenumber_align_node,
 )

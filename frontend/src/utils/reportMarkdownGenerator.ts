@@ -47,16 +47,16 @@ function projectEvidenceMarkdown(data: ReportData): string {
   if (!snapshot) return "";
   const lines = [
     "\n## Project evidence at generation\n",
-    "These are the current project records captured for context, not proof that each belongs to the selected report runs.",
+    "Project records linked to this report, captured at generation; not proof of independent model validation.",
     `- **Captured**: ${reportMarkdownText(snapshot.capturedAt)}`,
     `- **Project**: ${snapshot.projectId ?? "unavailable"}`,
   ];
-  if (snapshot.state !== "available") {
+  if (snapshot.state !== "available" || !snapshot.records.length) {
     lines.push(`- **Evidence**: ${reportMarkdownText(snapshot.reason ?? "Unavailable")}`);
   } else {
-    lines.push("| Record | State | Active name | Digest |", "|---|---|---|---|");
+    lines.push("| Record | State | Name | Explanation | Digest |", "|---|---|---|---|---|");
     for (const record of snapshot.records) {
-      lines.push(`| ${reportMarkdownText(record.label)} | ${record.state} | ${reportMarkdownText(record.name ?? "Not recorded")} | ${reportMarkdownText(record.digest ?? "—")} |`);
+      lines.push(`| ${reportMarkdownText(record.label)} | ${record.state} | ${reportMarkdownText(record.name ?? "Not recorded")} | ${reportMarkdownText(record.detail)} | ${reportMarkdownText(record.digest ?? "—")} |`);
     }
   }
   return lines.join("\n");

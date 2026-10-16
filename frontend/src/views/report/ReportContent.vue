@@ -10,7 +10,7 @@
         @click="openLinkedRun"
       />
       <Button
-        v-if="auditWorkflowId"
+        v-if="canQueryAudit && auditWorkflowId"
         label="Audit"
         icon="pi pi-shield"
         class="p-button-sm p-button-outlined"
@@ -131,7 +131,7 @@
             </p>
             <label class="row-level-option">
               <input type="checkbox" v-model="reportStore.includeRowLevelPlots" />
-              <span>Include complete target lists and node plots</span>
+              <span>Include figures and individual reference/prediction values</span>
             </label>
           </div>
         </div>
@@ -150,14 +150,10 @@
             Generated {{ reportStore.generatedSelection.generatedAt }}
           </p>
         </details>
-        <details v-if="historicalExecutableExport" class="execution-export-scope">
-          <summary>Export scope</summary>
-          <p>
-            Python and notebook export of saved executions is unavailable. Export this report as
-            HTML, Markdown or JSON to retain its saved evidence. Use the workflow editor to export
-            the current authored graph; it is not a replay of this saved run.
-          </p>
-        </details>
+        <p v-if="historicalExecutableExport" class="execution-export-scope" role="status">
+          Code export is available from the Workflow editor for the current graph.
+          This saved-run report exports as HTML, Markdown or JSON; its original executable code is unavailable.
+        </p>
         <!-- Section toggles -->
         <div v-if="reportStore.isReady" class="section-toggles">
           <template v-if="(reportStore.generatedSelection?.reportMode || reportStore.reportMode) === 'detailed'">
@@ -228,10 +224,7 @@
         />
 
         <!-- Loading state -->
-        <div v-if="reportStore.loading" class="loading-state">
-          <ProgressSpinner style="width: 40px; height: 40px" />
-          <span>Generating report...</span>
-        </div>
+        <WorkspaceState v-if="reportStore.loading" kind="loading" variant="page" message="Generating report…" />
 
         <!-- Live preview -->
         <div v-else-if="reportStore.isReady" class="report-preview-container">
@@ -245,22 +238,15 @@
         </div>
 
         <!-- Empty state -->
-        <div v-else class="empty-state">
-          <i class="pi pi-file-pdf empty-icon"></i>
-          <h3>Select a workflow to generate a report</h3>
+        <WorkspaceState
+          v-else
+          kind="empty"
+          variant="page"
+          icon="pi pi-file-pdf"
+          message="Select a workflow to generate a report"
+        >
           <p>Select inputs in Setup, then generate the report.</p>
-        </div>
-      </TabPanel>
-      <TabPanel header="ISO Validation">
-        <p>
-          Review retained validation evidence against your declared method; this is not
-          certification.
-        </p>
-        <ValidationWalkthroughPanel
-          :workflow-id="reportStore.selectedWorkflowId"
-          :audit-config="auditConfig"
-          @open-audit="openWorkflowAudit"
-        />
+        </WorkspaceState>
       </TabPanel>
     </WorkspaceTabs>
   </section>
@@ -278,16 +264,17 @@ import { useToast } from "primevue/usetoast";
 import { useRoute, useRouter } from "vue-router";
 
 import MemoryAttribution from "@/components/MemoryAttribution.vue";
+import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
 import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
 import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import TabPanel from "primevue/tabpanel";
 import { focusSection } from "@/lib/sherpaAttention";
-import ValidationWalkthroughPanel from "@/views/report/ValidationWalkthroughPanel.vue";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useProjectStore } from "@/stores/project";
 import { useReportStore } from "@/stores/report";
+import { useWorkbookStore } from "@/stores/workbook";
 import { useAppConfig } from "@/composables/useAppConfig";
 import {
   generateProvenanceReport,
@@ -306,26 +293,36 @@ const reportModeOptions = [
   { label: "Detailed report", value: "detailed" },
 ];
 const projectStore = useProjectStore();
+const workbookStore = useWorkbookStore();
 const advisorStore = useAdvisorStore();
 const toast = useToast();
 const router = useRouter();
 const route = useRoute();
 const { isFeatureEnabled, appConfig } = useAppConfig();
 const auditConfig = computed(() => appConfig.value?.audit);
+const canQueryAudit = computed(() => !["demo", "pro"].includes(appConfig.value?.siteProfile || "")
+  && Boolean(auditConfig.value?.localQuery || auditConfig.value?.fullPipeline));
 
-const tabIds = ["setup", "preview", "validation"] as const;
+const tabIds = ["setup", "preview"];
 const activeTab = ref<string>("setup");
+watch(activeTab, () => {
+  if (!tabIds.includes(activeTab.value)) activeTab.value = "setup";
+});
 const sectionTitle = computed(
   () =>
-    ({ setup: "Setup", preview: "Preview", validation: "ISO Validation" })[activeTab.value] ||
+    ({ setup: "Setup", preview: "Preview" })[activeTab.value] ||
     "Setup",
 );
 const contextTitle = computed(() =>
   activeTab.value === "preview" && reportStore.reportData
-    ? reportStore.reportData.name
+    ? reportTitle.value
     : reportStore.workflows.find((item) => item.id === reportStore.selectedWorkflowId)?.name ||
       "No workflow selected",
 );
+const reportTitle = computed(() => {
+  const data = reportStore.reportData;
+  return data?.runs?.length === 1 ? data.runs[0].name : data?.name || "Report";
+});
 watch(activeTab, (section) => focusSection(section), { immediate: true });
 async function generateReport(): Promise<void> {
   await reportStore.fetchReportData();
@@ -413,7 +410,7 @@ const auditWorkflowId = computed(() =>
     : reportStore.selectedWorkflowId,
 );
 function openWorkflowAudit(): void {
-  if (!auditWorkflowId.value) return;
+  if (!canQueryAudit.value || !auditWorkflowId.value) return;
   void router.push({
     path: "/audit",
     query: {
@@ -461,7 +458,7 @@ function buildReportData(): ReportData | null {
 
   return {
     reportMode: reportStore.generatedSelection?.reportMode || reportStore.reportMode,
-    workflowName: rd.name,
+    workflowName: reportTitle.value,
     workflowDescription: rd.description,
     integrityHash: rd.integrity_hash,
     generatedAt: reportStore.generatedSelection?.generatedAt || "Generation time unavailable",
@@ -528,7 +525,7 @@ function toggleExportMenu(event: Event): void {
 }
 
 function getExportFilename(ext: string): string {
-  const name = reportStore.reportData?.name || "report";
+  const name = reportTitle.value;
   const safe = name.replace(/\s+/g, "_").toLowerCase();
   return `${safe}_report.${ext}`;
 }
@@ -539,7 +536,10 @@ const exportMenuItems = computed(() => [
     icon: "pi pi-file-pdf",
     command: () => {
       const html = previewHtml.value;
-      if (!html) return;
+      if (!html) {
+        toast.add({ severity: "warn", summary: "Generate a report first", detail: "Select the saved runs and generate the report before exporting PDF.", life: 5000 });
+        return;
+      }
       const opened = openReportPdfExport(html, getExportFilename("pdf"));
       if (opened) {
         toast.add({
@@ -682,7 +682,7 @@ const reportHeaderActionItems = computed(() => [
         },
       ]
     : []),
-  ...(auditWorkflowId.value
+  ...(canQueryAudit.value && auditWorkflowId.value
     ? [
         {
           label: "Audit",
@@ -727,14 +727,30 @@ onMounted(async () => {
   await reportStore.fetchWorkflows();
   if (!isCurrent()) return;
   const section = String(route.query.tab || "setup");
-  if (tabIds.includes(section as (typeof tabIds)[number])) activeTab.value = section;
+  activeTab.value = tabIds.includes(section) ? section : "setup";
   if (
     !Number.isSafeInteger(workflowId) ||
     workflowId < 1 ||
     !Number.isSafeInteger(runId) ||
     runId < 1
-  )
+  ) {
+    // Report opens on the active non-empty sheet, or the newest saved sheet.
+    // This is only a selection: the scientist still chooses Generate Report.
+    const activeId = workbookStore.projectId === projectStore.currentProjectId
+      ? workbookStore.activeSheet?.workflowId : null;
+    const selected = reportStore.workflows.find((workflow) => workflow.id === activeId)
+      ?? [...reportStore.workflows].sort((a, b) => b.id - a.id)[0];
+    if (selected && !reportStore.selectedWorkflowId) {
+      reportStore.selectedWorkflowId = selected.id;
+      await reportStore.fetchRunsForWorkflow(selected.id);
+      if (!isCurrent()) return;
+      const latest = [...reportStore.availableRuns]
+        .filter((run) => run.status === "completed")
+        .sort((a, b) => b.executed_at.localeCompare(a.executed_at))[0];
+      if (latest) reportStore.selectedRunIds = [latest.id];
+    }
     return;
+  }
   if (linkedProjectId !== projectStore.currentProjectId) {
     toast.add({
       severity: "error",
@@ -761,7 +777,7 @@ onMounted(async () => {
 }
 
 :global(.content:has(.report-content)) {
-  background: #e4e0fa;
+  background: var(--workspace-background);
 }
 
 .header-actions {
@@ -925,15 +941,6 @@ onMounted(async () => {
   font-size: 0.85rem;
 }
 
-.loading-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 48px;
-  color: var(--text-color-secondary);
-}
-
 .report-preview-container {
   border: 1px solid var(--surface-border);
   border-radius: 8px;
@@ -948,34 +955,6 @@ onMounted(async () => {
   min-height: 500px;
   border: none;
   background: var(--surface-card);
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 64px 24px;
-  text-align: center;
-}
-
-.empty-icon {
-  font-size: 3rem;
-  color: #94a3b8;
-}
-
-.empty-state h3 {
-  margin: 0;
-  color: var(--text-color);
-  font-size: 1.1rem;
-}
-
-.empty-state p {
-  margin: 0;
-  max-width: 480px;
-  color: var(--text-color-secondary);
-  font-size: 0.9rem;
-  line-height: 1.6;
 }
 
 .w-full {

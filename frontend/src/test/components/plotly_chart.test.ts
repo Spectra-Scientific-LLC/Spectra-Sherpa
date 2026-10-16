@@ -8,6 +8,7 @@ const reactMock = vi.fn(async (element: HTMLDivElement) => {
 });
 const downloadMock = vi.fn().mockResolvedValue("synthetic.png");
 const relayoutMock = vi.fn();
+const restyleMock = vi.fn().mockResolvedValue(undefined);
 const purgeMock = vi.fn();
 const resizeMock = vi.fn();
 const observeMock = vi.fn();
@@ -19,6 +20,7 @@ vi.mock("plotly.js-cartesian-dist-min", () => ({
     downloadImage: downloadMock,
     react: reactMock,
     relayout: relayoutMock,
+    restyle: restyleMock,
     purge: purgeMock,
     Plots: {
       resize: resizeMock,
@@ -34,6 +36,38 @@ async function settle(): Promise<void> {
 }
 
 describe("PlotlyChart", () => {
+  it("restyles linked spectral lines without react and ignores redraw selection feedback", async () => {
+    const wrapper = mount(PlotlyChart, {
+      props: {
+        data: [
+          { x: [1, 2], y: [3, 4], customdata: ["a", "a"], mode: "lines+markers" },
+          { x: [1, 2], y: [4, 5], customdata: ["b", "b"], mode: "lines+markers" },
+        ],
+        selectedPointIds: [],
+        linkLineSelection: true,
+      },
+    });
+    await settle();
+    reactMock.mockClear();
+    await wrapper.setProps({ selectedPointIds: ["b"] });
+    await settle();
+    expect(reactMock).not.toHaveBeenCalled();
+    expect(restyleMock.mock.calls.at(-1)?.[1]).toMatchObject({
+      "line.width": [1, 3],
+      opacity: [0.18, 1],
+      selectedpoints: [[], [0, 1]],
+    });
+    const onSelected = onMock.mock.calls.find(([name]) => name === "plotly_selected")![1];
+    reactMock.mockImplementationOnce(async () => {
+      onSelected({ points: [] });
+    });
+    await wrapper.setProps({ data: [{ x: [2], y: [3], customdata: ["b"] }] });
+    await settle();
+    expect(wrapper.emitted("selected")).toBeUndefined();
+    expect(restyleMock.mock.calls.at(-1)?.[1]).toMatchObject({ selectedpoints: [[0]] });
+    wrapper.unmount();
+  });
+
   it("F2 preserves refusal over generic messages, hides stale data and blocks export", async () => {
     const wrapper = mount(PlotlyChart, {
       props: { data: [{ x: [1], y: [2] }], emptyMessage: "No data yet." },
@@ -76,6 +110,21 @@ describe("PlotlyChart", () => {
     expect(reactMock.mock.invocationCallOrder.at(-1)).toBeLessThan(
       downloadMock.mock.invocationCallOrder.at(-1)!,
     );
+    wrapper.unmount();
+  });
+  it("keeps the sample-limit disclosure beside the chart without adding a plot subtitle", async () => {
+    const wrapper = mount(PlotlyChart, { props: { data: [{
+      type: "scatter", mode: "markers",
+      x: Array.from({ length: 400 }, (_, index) => index),
+      y: Array.from({ length: 400 }, (_, index) => index),
+    }] } });
+    await settle();
+    await wrapper.vm.downloadImage({ format: "png" });
+    const [, data, layout] = reactMock.mock.calls.at(-1)!;
+    expect(data[0].x).toHaveLength(300);
+    expect(layout.annotations).toBeUndefined();
+    expect(wrapper.text()).toContain("Display limit: 100 sample rows omitted from this plot");
+    expect(downloadMock).toHaveBeenCalledOnce();
     wrapper.unmount();
   });
   it("GSC-09 propagates export failures for the owning view to disclose", async () => {
@@ -136,6 +185,7 @@ describe("PlotlyChart", () => {
     onMock.mockReset();
     reactMock.mockClear();
     relayoutMock.mockClear();
+    restyleMock.mockClear();
     purgeMock.mockClear();
     resizeMock.mockClear();
     observeMock.mockClear();
@@ -183,7 +233,7 @@ describe("PlotlyChart", () => {
     expect((data[0] as Record<string, unknown>).marker).toBeUndefined();
     expect((layout.xaxis as Record<string, unknown>).extra).toBeUndefined();
 
-    expect(onMock).toHaveBeenCalledTimes(2);
+    expect(onMock).toHaveBeenCalledTimes(4);
 
     await wrapper.setProps({
       layout: { ...layout, title: "Updated" },
@@ -191,7 +241,81 @@ describe("PlotlyChart", () => {
     await settle();
 
     expect(relayoutMock).toHaveBeenCalled();
-    expect(onMock).toHaveBeenCalledTimes(2);
+    expect(onMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("links exact selections without a full render and forwards lasso events", async () => {
+    const wrapper = mount(PlotlyChart, {
+      props: {
+        data: [
+          { x: [1, 2], y: [3, 4], customdata: ["b", "a"] },
+          { x: [3], y: [5], customdata: ["c"] },
+        ],
+        selectedPointIds: [],
+      },
+    });
+    await settle();
+    const renders = reactMock.mock.calls.length;
+    await wrapper.setProps({ selectedPointIds: ["a", "c"] });
+    await settle();
+    expect(restyleMock.mock.calls.at(-1)?.[1]).toEqual({ selectedpoints: [[1], [0]] });
+    expect(reactMock.mock.calls.length).toBe(renders);
+    const event = { points: [{ customdata: "b", pointIndex: 0 }] };
+    onMock.mock.calls.find((c) => c[0] === "plotly_selected")![1](event);
+    expect(wrapper.emitted("selected")?.[0]).toEqual([event]);
+    onMock.mock.calls.find((c) => c[0] === "plotly_deselect")![1]();
+    expect(wrapper.emitted("deselect")).toHaveLength(1);
+    await wrapper.setProps({ selectedPointIds: [] });
+    await settle();
+    expect(restyleMock.mock.calls.at(-1)?.[1]).toEqual({ selectedpoints: [null, null] });
+    wrapper.unmount();
+  });
+
+  it("redraws a bounded preview when a linked selected sample was previously omitted", async () => {
+    const data = [{
+      type: "scatter", mode: "markers",
+      x: Array.from({ length: 400 }, (_, index) => index),
+      y: Array.from({ length: 400 }, (_, index) => index),
+      customdata: Array.from({ length: 400 }, (_, index) => `sample-${index}`),
+    }];
+    const wrapper = mount(PlotlyChart, { props: { data, selectedPointIds: [] } });
+    await settle();
+    const element = wrapper.find(".plotly-canvas").element as HTMLElement & { data: typeof data };
+    element.data = reactMock.mock.calls.at(-1)![1];
+    expect(element.data[0].customdata).not.toContain("sample-3");
+    const renders = reactMock.mock.calls.length;
+    await wrapper.setProps({ selectedPointIds: ["sample-3"] });
+    await settle();
+    expect(reactMock.mock.calls.length).toBeGreaterThan(renders);
+    expect(reactMock.mock.calls.at(-1)![1][0].customdata).toContain("sample-3");
+    element.data = reactMock.mock.calls.at(-1)![1];
+    const firstSelectionRenders = reactMock.mock.calls.length;
+    await wrapper.setProps({ selectedPointIds: ["sample-4"] });
+    await settle();
+    expect(reactMock.mock.calls.length).toBeGreaterThan(firstSelectionRenders);
+    expect(reactMock.mock.calls.at(-1)![1][0].customdata).not.toContain("sample-3");
+    expect(reactMock.mock.calls.at(-1)![1][0].customdata).toContain("sample-4");
+    wrapper.unmount();
+  });
+
+  it("clears native lasso geometry without feeding programmatic deselection back to the owner", async () => {
+    const wrapper = mount(PlotlyChart, {
+      props: { data: [{ x: [1, 2], y: [3, 4], customdata: ["a", "b"] }], selectedPointIds: [] },
+    });
+    await settle();
+    const element = wrapper.find(".plotly-canvas").element as HTMLElement & { layout: object };
+    element.layout = { selections: [{ type: "path", path: "lasso" }] };
+    relayoutMock.mockImplementationOnce(async () => {
+      onMock.mock.calls.find((c) => c[0] === "plotly_deselect")![1]();
+    });
+    await wrapper.setProps({ selectedPointIds: ["b"] });
+    await settle();
+    expect(relayoutMock).toHaveBeenLastCalledWith(element, { selections: [] });
+    expect(restyleMock.mock.calls.at(-1)?.[1]).toEqual({ selectedpoints: [[1]] });
+    expect(wrapper.emitted("deselect")).toBeUndefined();
+    onMock.mock.calls.find((c) => c[0] === "plotly_deselect")![1]();
+    expect(wrapper.emitted("deselect")).toHaveLength(1);
+    wrapper.unmount();
   });
 
   it("resizes when its container changes size", async () => {
@@ -247,8 +371,8 @@ describe("PlotlyChart", () => {
     const element = wrapper.find(".plotly-canvas").element;
     let visible = true;
     Object.defineProperty(element, "isConnected", { value: true, configurable: true });
-    vi.spyOn(element, "getClientRects").mockImplementation(
-      () => (visible ? ([{} as DOMRect] as DOMRectList) : ([] as unknown as DOMRectList)),
+    vi.spyOn(element, "getClientRects").mockImplementation(() =>
+      visible ? ([{} as DOMRect] as DOMRectList) : ([] as unknown as DOMRectList),
     );
     await settle();
 

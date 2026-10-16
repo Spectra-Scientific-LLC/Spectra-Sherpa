@@ -20,6 +20,7 @@ from spectra_sherpa.app.contracts.capabilities import CHAT_ASSISTANT
 from spectra_sherpa.app.core.app_paths import get_app_data_paths
 from spectra_sherpa.app.core.config import settings
 from spectra_sherpa.app.services import basic_chat
+from spectra_sherpa.app.services.chat_providers.base import ChatOutputLimitError
 from spectra_sherpa.app.services.rate_limiter import RateLimiter
 
 logger = logging.getLogger(__name__)
@@ -86,18 +87,31 @@ async def chat_stream(
         max_paragraphs = max(1, min(6, int(body.get("max_paragraphs", 2))))
     except (TypeError, ValueError):
         max_paragraphs = 2
+    max_tokens = body.get("max_tokens")
+    if max_tokens is not None and (
+        isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or not 1 <= max_tokens <= 4096
+    ):
+        raise HTTPException(status_code=422, detail="max_tokens must be an integer from 1 to 4096.")
     metadata = body.get("metadata", None)
 
     async def _generate():
         try:
             async with aclosing(
                 basic_chat.stream_chat(
-                    message, verbose=verbose, max_paragraphs=max_paragraphs, metadata=metadata, exchange_owner=user.id
+                    message,
+                    verbose=verbose,
+                    max_paragraphs=max_paragraphs,
+                    metadata=metadata,
+                    exchange_owner=user.id,
+                    max_tokens=max_tokens,
                 )
             ) as stream:
                 async for chunk in stream:
                     yield f"data: {json.dumps({'type': 'chunk', 'text': chunk})}\n\n"
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
+        except ChatOutputLimitError:
+            detail = "The model stopped at its output limit. Regenerate or ask a narrower question."
+            yield f"data: {json.dumps({'type': 'error', 'detail': detail})}\n\n"
         except ValueError as exc:
             # ``ValueError`` from ``basic_chat`` carries operator-facing config
             # errors. Keep exception content out of both logs and the response:

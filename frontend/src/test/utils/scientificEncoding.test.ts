@@ -32,9 +32,9 @@ describe("scientific precision declaration and magnitude handling", () => {
     expect(() => scientificNumber(1, { significantDigits: 0 })).toThrow(RangeError);
     expect(() => scientificNumber(1, { decimalPlaces: -1 })).toThrow(RangeError);
   });
-  it("retains metric zeros and exposes a nonzero micro RMSE together", () => {
+  it("retains metric precision in plot metadata without a subtitle", () => {
     const plot = buildPredictedVsActualPlot({actual: [1,2], predicted: [1.000001,2.000001], r2: 0.94, rmse: 1e-6 });
-    expect(JSON.stringify(plot.layout)).toContain("0.9400");
-    expect(JSON.stringify(plot.layout)).toContain("1.0000e-6");
+    expect(plot.layout.title.text).toBe("Predicted vs Actual");
+    expect(plot.layout.meta.regression_metrics).toEqual({ r2: 0.94, rmse: 1e-6 });
   });
 });

@@ -39,6 +39,8 @@ from tests.test_canonical_project_import import _PACKAGE, _REVIEW_ANCHORS, _REVI
 
 
 def _save_pca_artifact(base_dir: Path) -> str:
+    from spectra_sherpa.app.services.dag.fitted_input_identity import fitted_input_identity
+
     uid = "m3c1-pca-artifact"
     ModelStore(base_dir).save(
         uid,
@@ -46,6 +48,7 @@ def _save_pca_artifact(base_dir: Path) -> str:
             "model_type": "pca",
             "serializer": PCAExtract.SERIALIZER,
             "n_features": 3,
+            "input_identity": fitted_input_identity(SherpaDataset(X=np.ones((2, 3))), features=3),
             "n_components": 2,
             "standardized": False,
             "scaled": False,

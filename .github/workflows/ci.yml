@@ -85,16 +85,12 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - windows-latest
-          - macos-latest
         install_profile:
           - base
           - postgres
     defaults:
       run:
-        # Force bash on every runner so the existing POSIX-style ``if [...]``
-        # and ``grep`` snippets keep working on windows-latest (Git Bash
-        # ships preinstalled).
+        # Routine qualification stays on Ubuntu under the current CI budget policy.
         shell: bash
     steps:
       - uses: actions/checkout@v6

@@ -11,8 +11,14 @@ import numpy as np
 
 from spectra_sherpa.app.lib import fitted_state
 from spectra_sherpa.app.lib.fitted_state import KNNExtract
+from spectra_sherpa.app.services.dag import fitted_input_identity as input_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers
+from spectra_sherpa.app.services.dag.fitted_input_identity import (
+    fitted_input_identity,
+    require_fitted_input_identity,
+    validate_fitted_input_identity,
+)
 from spectra_sherpa.app.services.dag.meta_helpers import (
     add_processing_step,
     copy_processing_history,
@@ -52,12 +58,13 @@ from .core_utils import (
 from .core_utils import (
     prepare_class_labels as _prepare_class_labels,
 )
+from .core_utils import require_active_calibration_cohort
 
 logger = logging.getLogger(__name__)
 
 _KNN_RANDOM_SEED = 42
 _KNN_MAX_NEIGHBORS = 50
-KNN_FITTED_STATE_SERIALIZER = "spectrasherpa.model-artifact.knn/1"
+KNN_FITTED_STATE_SERIALIZER = "spectrasherpa.model-artifact.knn/2"
 _KNN_CLASS_COLORS = ("#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#0891b2")
 
 
@@ -202,6 +209,7 @@ def _knn_inputs(X: Any, y: Any) -> tuple[Any, np.ndarray, np.ndarray]:
         missing_message=("Train KNN Classifier requires one class label per sample through y or the dataset target"),
         dataset_missing_message="The KNN y dataset does not contain one class label per sample",
     )
+    require_active_calibration_cohort(dataset, model_label="KNN")
     matrix = to_numpy_2d(dataset, name="X", dtype=np.float64)
     if matrix.shape[0] < 4 or matrix.shape[1] < 1 or not np.isfinite(matrix).all():
         raise ValueError("KNN X must contain at least four finite samples and one feature")
@@ -356,6 +364,7 @@ def _knn_extract_from_state(state: Any) -> KNNExtract:
     from collections.abc import Mapping
 
     required = {
+        "input_identity",
         "serializer",
         "n_neighbors",
         "weights",
@@ -383,6 +392,9 @@ def _knn_extract_from_state(state: Any) -> KNNExtract:
     feature_count = state["feature_count"]
     if type(feature_count) is not int or feature_count < 1:
         raise ValueError("KNN fitted state has an invalid feature count")
+    identity = validate_fitted_input_identity(state["input_identity"])
+    if identity["features"] != feature_count:
+        raise ValueError("KNN fitted input identity disagrees with training matrix feature count")
     classes = state["classes"]
     if (
         not isinstance(classes, list)
@@ -438,6 +450,7 @@ def _knn_fitted_state_from_core(core: dict[str, Any]) -> dict[str, object]:
     feature_count = int(core["matrix"].shape[1])
     return {
         "serializer": KNN_FITTED_STATE_SERIALIZER,
+        "input_identity": fitted_input_identity(core["dataset"], features=feature_count),
         "n_neighbors": int(core["parameters"]["n_neighbors"]),
         "weights": str(core["parameters"]["weights"]),
         "metric": str(core["parameters"]["metric"]),
@@ -463,7 +476,9 @@ def apply_knn_fitted_state(input_data: Any, state: Any) -> tuple[np.ndarray, np.
     """Apply the closed KNN state through sklearn's exact voting semantics."""
 
     extract = _knn_extract_from_state(state)
-    matrix = to_numpy_2d(bind_X(input_data, allow_array=True), name="input_data", dtype=np.float64)
+    dataset = bind_X(input_data, allow_array=True)
+    matrix = to_numpy_2d(dataset, name="input_data", dtype=np.float64)
+    require_fitted_input_identity(dataset, state["input_identity"], features=matrix.shape[1])
     if matrix.shape[1] != int(state["feature_count"]) or not np.isfinite(matrix).all():
         raise ValueError("KNN apply input does not match the fitted feature contract")
     labels, probabilities = extract.predict(matrix)
@@ -919,7 +934,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.FITTED_MODEL,
     implementation_id="spectrasherpa.classification.knn",
-    implementation_version="2.0.0",
+    implementation_version="3.0.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(
         ManagedOptimizationEligibility.LOCAL,
@@ -941,6 +956,7 @@ bind_stable_execution_contract(
         "13 (1967) 21-27, DOI 10.1109/TIT.1967.1053964",
     ),
     implementation_modules=(
+        input_identity_authority,
         core_utils,
         fitted_state,
         knn_core,

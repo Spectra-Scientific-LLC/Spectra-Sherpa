@@ -84,15 +84,12 @@ template_data:
   edges:
   - {from_node_id: data_1, to_node_id: preprocess_1}
   - {from_node_id: preprocess_1, to_node_id: partition_1, to_input: X}
-  - {from_node_id: data_1, from_output: target, to_node_id: partition_1, to_input: y}
   - {from_node_id: partition_1, from_output: X_train, to_node_id: pls_full, to_input: default}
-  - {from_node_id: partition_1, from_output: y_train, to_node_id: pls_full, to_input: y}
   - {from_node_id: partition_1, from_output: X_train, to_node_id: select_train, to_input: X}
   - {from_node_id: pls_full, from_output: vip_scores, to_node_id: select_train, to_input: importance_scores}
   - {from_node_id: partition_1, from_output: X_test, to_node_id: select_test, to_input: X}
   - {from_node_id: select_train, from_output: mask, to_node_id: select_test, to_input: mask}
   - {from_node_id: select_train, from_output: X_selected, to_node_id: pls_reduced, to_input: default}
-  - {from_node_id: partition_1, from_output: y_train, to_node_id: pls_reduced, to_input: y}
   - {from_node_id: select_test, from_output: X_selected, to_node_id: predict_1, to_input: default}
   - {from_node_id: pls_reduced, from_output: fitted_state, to_node_id: predict_1, to_input: fitted_state}
   - {from_node_id: predict_1, from_output: default, to_node_id: eval_1, to_input: default}

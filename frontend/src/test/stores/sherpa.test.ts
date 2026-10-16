@@ -1024,7 +1024,7 @@ describe("Sherpa Store communication state", () => {
     });
   });
 
-  it("completes a Sherpa agentic round trip without leaving the chat in a timeout state", async () => {
+  it("completes a Sherpa workflow-generation round trip without leaving the chat in a timeout state", async () => {
     const sherpa = useSherpaStore();
     const notifications = useNotificationStore();
     sherpa.init();
@@ -1480,7 +1480,7 @@ describe("Sherpa Store communication state", () => {
         stage: "secondary_llm",
         detail:
           "Primary AI is busy — Sherpa is using a backup model (deepseek-chat). " +
-          "Responses may be briefer; agentic tools are unavailable for this reply.",
+          "Responses may be briefer; workflow generation is unavailable for this reply.",
         secondary_model: "deepseek-chat",
         tool_support: false,
       },
@@ -1962,4 +1962,40 @@ describe("Sherpa Store communication state", () => {
     expect(modelNode?.result_shape).toEqual([150, 2]);
     expect(modelNode?.output_type).toBe("PLS_DA");
   });
+  function diagnosticScopeFixture() {
+    return { project_id: 42, reference: {workflow_id:5,run_id:77,node_id:"pls",graph_digest:"a".repeat(64),source_digest:"b".repeat(64),review_revision:3,selected_ids:["sample-a"],select_all:false,response_index:1,variable_ids:["axis:2"],baseline_run_id:null},digest:"c".repeat(64),facts:{"S1.predicted":{value:12.5,units:"g/L"}} };
+  }
+  it("freezes diagnostic selection and canonical saved-run attention across asynchronous connection", async () => {
+    const { useProjectStore } = await import("@/stores/project");
+    useProjectStore().currentProjectId = 42;
+    const store=useSherpaStore(); const scope=diagnosticScopeFixture(); store.setDiagnosticScope(scope);
+    let release!:()=>void; mockLlmStore.connect.mockImplementationOnce(()=>new Promise<void>(resolve=>{release=resolve;}));
+    const sending=store.sendMessage("Explain the terms"); scope.reference.selected_ids.push("sample-b"); scope.reference.response_index=0;
+    store.setDiagnosticScope(null); // a running turn cannot silently change scope
+    release(); await sending;
+    const sent=JSON.parse(mockWs.send.mock.calls[0][0]);
+    expect(sent.payload.workflow_context.diagnostic_review).toMatchObject({selected_ids:["sample-a"],response_index:1,run_id:77});
+    expect(sent.payload.active_attention).toMatchObject({window:"results",surface:"inspector",workflow_id:5,run_id:77});
+    expect(store.diagnosticScope?.reference.selected_ids).toEqual(["sample-a"]);
+  });
+  it("aborts diagnostic transport when workflow navigation occurs while connecting", async () => {
+    const { useProjectStore } = await import("@/stores/project"); useProjectStore().currentProjectId=42;
+    const store=useSherpaStore(); store.setDiagnosticScope(diagnosticScopeFixture());
+    let release!:()=>void;mockLlmStore.connect.mockImplementationOnce(()=>new Promise<void>(resolve=>{release=resolve;}));
+    const sending=store.sendMessage("Explain"); mockWorkflowStore.workflowId=99;release();await sending;
+    expect(mockWs.send.mock.calls.some(([raw])=>JSON.parse(raw).action==="sherpa_chat_with_tools")).toBe(false);
+    expect(store.chatState).toBe("idle");expect(store.messages.at(-1)?.content).toContain("changed before sending");
+  });
+  it("restores saved diagnostic citations and stops attaching them after an ordinary turn", async () => {
+    const { useProjectStore } = await import("@/stores/project");useProjectStore().currentProjectId=42;
+    const store=useSherpaStore(); const scope=diagnosticScopeFixture();
+    mockApi.get.mockResolvedValueOnce({data:{conversation_id:"diagnostic",messages:[{role:"user",content:"Explain",diagnostic_scope:scope},{role:"assistant",content:"Evidence",diagnostic_scope:scope}]}});
+    await store.loadConversation("diagnostic");expect(store.diagnosticScope?.digest).toBe(scope.digest);
+    expect(store.messages.at(-1)?.diagnostic_scope?.facts?.["S1.predicted"].value).toBe(12.5);
+    store.startNewConversation();mockApi.get.mockRejectedValueOnce({response:{status:404}});await store.loadConversation("diagnostic");
+    expect(store.diagnosticScope?.reference.run_id).toBe(77);
+    mockApi.get.mockResolvedValueOnce({data:{conversation_id:"ordinary",messages:[{role:"assistant",content:"Old",diagnostic_scope:scope},{role:"user",content:"Ordinary"},{role:"assistant",content:"Ordinary reply"}]}});
+    await store.loadConversation("ordinary");expect(store.diagnosticScope).toBeNull();
+  });
+
 });
