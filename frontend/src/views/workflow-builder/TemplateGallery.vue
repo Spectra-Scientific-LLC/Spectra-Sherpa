@@ -180,8 +180,8 @@ onMounted(async () => {
     </div>
 
     <small v-if="props.selectedDatasetId" class="compatibility-scope-note">
-      Availability confirms structural inputs. Scientific sufficiency is checked when the workflow
-      runs.
+      Catalog matches use the declared reference values, not an imported file. After import, readiness is recalculated
+      from the imported data and selected response. Scientific sufficiency is checked when the workflow runs.
     </small>
 
     <div v-if="workflowStore.templatesLoading" class="gallery-state">

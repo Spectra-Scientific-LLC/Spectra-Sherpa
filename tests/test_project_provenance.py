@@ -236,11 +236,13 @@ async def test_current_project_provenance_keeps_newest_failed_run_and_checks_nam
     )
     altered_model = {item["kind"]: item for item in (await auth_client.get(url)).json()["records"]}
     assert altered_model["model"]["state"] == "faulty"
+    assert altered_model["model"]["artifact_integrity"]["state"] == "faulty"
     monkeypatch.setattr(
         "spectra_sherpa.app.api.v1.routes.project_provenance.verify_model_artifact_storage_record", lambda _model: None
     )
     verified_model = {item["kind"]: item for item in (await auth_client.get(url)).json()["records"]}
     assert verified_model["model"]["state"] == "healthy"
+    assert verified_model["model"]["artifact_integrity"]["state"] == "healthy"
     assert verified_model["run"]["state"] == "healthy"
 
     batch = ExecutionRun(

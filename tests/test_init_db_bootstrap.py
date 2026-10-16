@@ -96,6 +96,29 @@ class TestBootstrapFreshDB:
         # Step 1: create_all (same as init_db for untracked)
         sync_engine = sa.create_engine(sync_url)
         Base.metadata.create_all(sync_engine)
+        qualification = Base.metadata.tables["saved_model_qualification_record"]
+        with sync_engine.begin() as connection:
+            connection.execute(
+                Base.metadata.tables["user"].insert().values(id=1, username="qualification-bootstrap", is_active=True)
+            )
+            connection.execute(
+                Base.metadata.tables["project"].insert().values(id=1, user_id=1, name="Synthetic qualification")
+            )
+            connection.execute(
+                qualification.insert().values(
+                    user_id=1,
+                    project_id=1,
+                    artifact_uid="bootstrap-synthetic-model",
+                    record_digest="a" * 64,
+                    kind="assessment",
+                    model_integrity_hash="b" * 64,
+                    manifest_digest="c" * 64,
+                    application_plan_digest="d" * 64,
+                    validation_view_id=1,
+                    validation_view_digest="e" * 64,
+                    payload={"synthetic": True},
+                )
+            )
 
         # Verify tables exist
         inspector = sa_inspect(sync_engine)
@@ -111,6 +134,8 @@ class TestBootstrapFreshDB:
         assert "alembic_version" in inspector.get_table_names()
         assert "dataset_analysis_binding" in inspector.get_table_names()
         assert "workflow_data_selection_revision" in inspector.get_table_names()
+        with sync_engine.connect() as connection:
+            assert connection.scalar(sa.select(sa.func.count()).select_from(qualification)) == 1
 
         # custom_algo is dropped by migration a76d82a816bf
         assert "custom_algo" not in inspector.get_table_names()

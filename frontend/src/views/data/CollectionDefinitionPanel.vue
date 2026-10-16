@@ -1,11 +1,18 @@
 <template>
-  <details class="collection-definition-panel" @toggle="onToggle">
-    <summary class="collection-definition-heading">
+  <component
+    :is="embedded ? 'section' : 'details'"
+    class="collection-definition-panel"
+    :class="{ embedded }"
+    :aria-label="embedded ? 'Source collection metadata' : undefined"
+    @toggle="!embedded && onToggle($event)"
+  >
+    <summary v-if="!embedded" class="collection-definition-heading">
       <span>
         <strong>Source collection metadata</strong>
         <small>Original files and aligned sample annotations</small>
       </span>
     </summary>
+    <h5 v-else class="collection-definition-embedded-heading">Source collection</h5>
     <div class="collection-definition-body">
       <div class="collection-definition-actions">
         <input
@@ -18,7 +25,7 @@
           @change="previewSelectedFile"
         />
         <Button
-          v-if="canImportCollectionDefinition"
+          v-if="receipt && canImportCollectionDefinition"
           :label="receipt?.status === 'attached' ? 'Replace JSON' : 'Choose JSON'"
           icon="pi pi-file-import"
           class="p-button-sm p-button-outlined"
@@ -63,8 +70,8 @@
               <Tag value="Catalog governed" severity="success" />
             </div>
             <p>
-              Source membership and scientific identity are governed by this catalog reference.
-              No separate collection-definition upload is needed.
+              Source membership and scientific identity are governed by this catalog reference. No
+              separate collection-definition upload is needed.
             </p>
           </div>
         </div>
@@ -174,7 +181,7 @@
         </div>
       </template>
     </div>
-  </details>
+  </component>
 </template>
 
 <script setup lang="ts">
@@ -201,18 +208,27 @@ export interface CollectionDefinitionReceipt {
   title: string | null;
   target_present: boolean;
   sample_classes_present: boolean;
+  reference_governed?: boolean;
   message: string;
 }
 
-const props = withDefaults(defineProps<{
-  experimentId: number;
-  refreshKey: string;
-  fileTypes?: string[];
-  allowDefinitionImport?: boolean;
-  governedSource?: boolean;
-}>(), { allowDefinitionImport: true, governedSource: false });
-const canImportCollectionDefinition = computed(() => props.allowDefinitionImport !== false);
-
+const props = withDefaults(
+  defineProps<{
+    experimentId: number;
+    refreshKey: string;
+    fileTypes?: string[];
+    allowDefinitionImport?: boolean;
+    governedSource?: boolean;
+    embedded?: boolean;
+  }>(),
+  { allowDefinitionImport: true, governedSource: false, embedded: false },
+);
+const canImportCollectionDefinition = computed(
+  () =>
+    props.allowDefinitionImport !== false &&
+    !props.governedSource &&
+    receipt.value?.reference_governed !== true,
+);
 
 const emit = defineEmits<{
   changed: [receipt: CollectionDefinitionReceipt];
@@ -472,7 +488,7 @@ function onToggle(event: Event): void {
 }
 
 watch(
-  () => [props.experimentId, props.refreshKey] as const,
+  () => [props.experimentId, props.refreshKey, props.embedded] as const,
   () => {
     ++requestGeneration;
     receipt.value = null;
@@ -480,7 +496,7 @@ watch(
     pendingPreview.value = null;
     loading.value = false;
     saving.value = false;
-    if (expanded.value) void refresh();
+    if (props.embedded || expanded.value) void refresh();
   },
   { immediate: true },
 );
@@ -492,6 +508,23 @@ watch(
   border: 1px solid var(--surface-border);
   border-radius: 8px;
   background: var(--surface-card);
+}
+
+.collection-definition-panel.embedded {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.embedded .collection-definition-body {
+  padding: 0;
+}
+
+.collection-definition-embedded-heading {
+  color: var(--text-color-secondary, #64748b);
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin: 0.75rem 0 0;
 }
 
 .collection-definition-panel > summary {

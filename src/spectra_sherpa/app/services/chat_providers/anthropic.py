@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator
 
 import httpx
 
-from .base import ChatEndpointConfig, ChatRequest
+from .base import ChatEndpointConfig, ChatOutputLimitError, ChatRequest
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +20,11 @@ MAX_TOKENS = 1_500
 class AnthropicMessagesProvider:
     id = "anthropic"
     requires_key = True
+
+    @staticmethod
+    def _check_finish_reason(event: dict) -> None:
+        if event.get("type") == "message_delta" and event.get("delta", {}).get("stop_reason") == "max_tokens":
+            raise ChatOutputLimitError("Chat output limit reached")
 
     def request_url(self, endpoint_url: str) -> str:
         base_url = endpoint_url.strip().rstrip("/")
@@ -105,14 +110,14 @@ class AnthropicMessagesProvider:
                     observe_usage(event.get("usage"))
                     if isinstance(event.get("message"), dict):
                         observe_usage(event["message"].get("usage"))
+                    self._check_finish_reason(event)
                     text = self._text_delta(event)
                     if not text:
                         continue
                     output_chars += len(text)
                     if output_chars > MAX_OUTPUT_CHARS:
                         logger.warning("Anthropic endpoint response exceeded %d characters", MAX_OUTPUT_CHARS)
-                        yield "\n\n[Response truncated by SpectraSherpa output limit.]"
-                        return
+                        raise ChatOutputLimitError("Chat output character limit reached")
                     yield text
 
     async def test_connection(self, config: ChatEndpointConfig, request_url: str) -> tuple[bool, str]:

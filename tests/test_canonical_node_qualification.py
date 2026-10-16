@@ -35,9 +35,9 @@ def test_checked_qualification_manifest_is_current_and_total(monorepo_root: Path
     assert result.returncode == 0, result.stdout + result.stderr
 
     manifest = json.loads(_MANIFEST_PATH.read_text(encoding="utf-8"))
-    assert manifest["node_count"] == 101
-    assert len(manifest["nodes"]) == 101
-    assert len({row["node_type"] for row in manifest["nodes"]}) == 101
+    assert manifest["node_count"] == 103
+    assert len(manifest["nodes"]) == 103
+    assert len({row["node_type"] for row in manifest["nodes"]}) == 103
     assert all(row["consumer_test_id"] for row in manifest["nodes"])
     assert all(row["evidence_files"] for row in manifest["nodes"])
     assert "test_paths" not in manifest

@@ -5,8 +5,9 @@ SpectraSherpa builds on open-source scientific software and public scientific da
 ## Software
 
 - SpectraSherpa OSS: AGPLv3.0
-- SpectroChemPy: `spectra-sherpa[scp]` support for EFA, MCR-ALS, and SIMPLISMA through a private matrix-only adapter
-- NumPy, SciPy, pandas, scikit-learn, FastAPI, Vue, Plotly, and related infrastructure packages
+- [SpectroChemPy](spectrochempy.md): `spectra-sherpa[scp]` support for EFA, MCR-ALS, and SIMPLISMA through a private matrix-only adapter
+- [scikit-learn, NumPy, SciPy, and pandas](scientific-python.md): scientific modeling, numerical computing, and data handling, with upstream citation guidance
+- FastAPI, Vue, Plotly, and related application infrastructure packages
 - Native Thermo OMNIC reader: independently implemented bounded parser, cross-checked against `spectrochempy-omnic` 0.2.1
 - Native Renishaw WiRE WDF reader: bounded parser adapted from `renishawWiRE` 0.1.16 under its bundled MIT notice; its conformance files are redistributed in-tree under that same MIT notice
 - Open Specy: two CC-BY-4.0 vendor instrument files bundled as OMNIC and OPUS conformance fixtures (see `open-specy.md`)
@@ -14,9 +15,9 @@ SpectraSherpa builds on open-source scientific software and public scientific da
 
 ## Scientific Data
 
-- NIST Chemistry WebBook and NIST Quantitative Infrared data for reference and synthetic infrared workflows
-- HITRAN and HAPI for line-by-line gas-phase synthesis when the optional extra and API key are configured
-- Eigenvector Research example datasets for recommended NIR/OES chemometrics onboarding and validation examples when users download or cache the upstream files locally
+- [NIST Chemistry WebBook and NIST Quantitative Infrared data](nist.md) for reference and synthetic infrared workflows
+- [HITRAN and HAPI](hitran.md) for line-by-line gas-phase synthesis when the optional extra and API key are configured
+- [Eigenvector Research example datasets](eigenvector.md) for recommended NIR/OES chemometrics onboarding and validation examples when users download or cache the upstream files locally
 
 ## Practical Rule
 

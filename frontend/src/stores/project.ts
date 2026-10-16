@@ -1,3 +1,4 @@
+import { formatRelativeTime } from "@/utils/format";
 import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import api from "@/api/client";
@@ -127,23 +128,6 @@ import type {
 } from "@/types";
 
 // Format date for display
-const formatDate = (iso: string): string => {
-  const date = new Date(iso);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-
-  if (days === 0) return "Today";
-  if (days === 1) return "Yesterday";
-  if (days < 7) return `${days} days ago`;
-
-  return date.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: date.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
-  });
-};
-
 export const useProjectStore = defineStore("project", () => {
   // State
   const projects = ref<ProjectSummary[]>([]);
@@ -164,12 +148,30 @@ export const useProjectStore = defineStore("project", () => {
   const lastImportedApplication = ref<ImportedApplicationIdentity | null>(null);
   const referenceRebindRequirements = ref<ProjectReferenceArtifactRequirement[]>([]);
 
+  // Identity changes invalidate the entire in-memory scientific workspace.
+  // Keep per-user saved preferences, but never carry one user's active project
+  // into another session or allow its pending reads to restore that context.
+  let identityEpoch = 0;
+  watch(() => useAuthStore().user?.id ?? null, () => {
+    identityEpoch += 1;
+    currentProjectId.value = null;
+    currentProject.value = null;
+    projects.value = [];
+    archivedProjects.value = [];
+    versions.value = [];
+    error.value = null;
+    isLoading.value = false;
+    lastImportedApplication.value = null;
+    referenceRebindRequirements.value = [];
+    runProjectScopeResets();
+  }, { flush: "sync" });
+
   // Getters
   const projectList = computed(() =>
     projects.value.map((p) => ({
       id: p.id,
       name: p.name,
-      modified: formatDate(p.updated_at),
+      modified: formatRelativeTime(p.updated_at),
       description: p.description,
       technique: p.technique,
       sample_type: p.sample_type,
@@ -192,42 +194,48 @@ export const useProjectStore = defineStore("project", () => {
   // ── CRUD ───────────────────────────────────────────────────────
 
   async function fetchProjects(): Promise<void> {
+    const epoch = identityEpoch;
     isLoading.value = true;
     error.value = null;
     try {
       const { data } = await api.get<ProjectSummary[]>("/projects");
+      if (epoch !== identityEpoch) return;
       projects.value = data;
     } catch (e) {
-      error.value = getErrorMessage(e);
+      if (epoch === identityEpoch) error.value = getErrorMessage(e);
     } finally {
-      isLoading.value = false;
+      if (epoch === identityEpoch) isLoading.value = false;
     }
   }
 
   async function fetchArchivedProjects(): Promise<void> {
+    const epoch = identityEpoch;
     error.value = null;
     try {
       const { data } = await api.get<ProjectSummary[]>("/projects", { params: { archived: true } });
+      if (epoch !== identityEpoch) return;
       archivedProjects.value = data;
     } catch (e) {
-      error.value = getErrorMessage(e);
+      if (epoch === identityEpoch) error.value = getErrorMessage(e);
     }
   }
 
   async function fetchProject(id: number): Promise<ProjectDetail | null> {
+    const epoch = identityEpoch;
     isLoading.value = true;
     error.value = null;
     try {
       const { data } = await api.get<ProjectDetail>(`/projects/${id}`);
+      if (epoch !== identityEpoch) return null;
       currentProject.value = data;
       currentProjectId.value = id;
       writeLastActiveProjectId(useAuthStore().user?.id ?? null, id);
       return data;
     } catch (e) {
-      error.value = getErrorMessage(e);
+      if (epoch === identityEpoch) error.value = getErrorMessage(e);
       return null;
     } finally {
-      isLoading.value = false;
+      if (epoch === identityEpoch) isLoading.value = false;
     }
   }
 

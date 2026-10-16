@@ -9,7 +9,9 @@ import logging
 import math
 import re
 from asyncio import to_thread
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
@@ -117,6 +119,7 @@ def _retention_warning(evidence: dict[str, Any]) -> str | None:
     if not isinstance(outputs, dict):
         return None
     omissions: list[str] = []
+    reasons: list[str] = []
     for node_id, ports in outputs.items():
         if not isinstance(ports, dict):
             continue
@@ -127,10 +130,27 @@ def _retention_warning(evidence: dict[str, Any]) -> str | None:
             if reason == "Not retained: private runtime output excluded by policy.":
                 continue
             omissions.append(f"{node_id}/{port}: {reason}")
+            if reason not in reasons:
+                reasons.append(reason)
     if not omissions:
         return None
-    return "Retained output incomplete; the execution succeeded but some results are unavailable: " + "; ".join(
-        omissions[:8]
+    quota_reasons = [reason for reason in reasons if "user quota" in reason]
+    if quota_reasons:
+        # Per-port details remain in the run evidence; the toast needs one
+        # actionable explanation, not a repeated list of internal node IDs.
+        return (
+            f"Calculation succeeded, but {len(omissions)} results could not be saved. "
+            + quota_reasons[0]
+            + (
+                " Other outputs also exceeded retention limits; see the run details."
+                if len(quota_reasons) < len(reasons)
+                else ""
+            )
+        )
+    return (
+        f"Calculation succeeded, but {len(omissions)} results could not be saved. "
+        + " ".join(reasons[:3])
+        + " See the run details for affected outputs."
     )
 
 
@@ -561,6 +581,9 @@ async def _reserve_run(
     idempotency_key: str,
     params_snapshot: dict[str, Any] | None,
     workflow_name: str | None = None,
+    source_metadata: dict[str, Any] | None = None,
+    source_type: str = "auto",
+    commit: bool = True,
 ) -> ExecutionRun | None:
     """Claim an Idempotency-Key by inserting a placeholder ExecutionRun.
 
@@ -579,6 +602,10 @@ async def _reserve_run(
     key is already claimed (the partial-unique index fires). The caller is
     responsible for catching that and dispatching via
     :func:`find_idempotent_run`.
+
+    Batch callers may set ``commit=False`` to flush all reservations into one
+    transaction, collect their IDs, then commit the complete set atomically.
+    Those callers own rollback and terminal cleanup for that whole transaction.
     """
     from sqlalchemy.exc import IntegrityError  # local import — only this path needs it
 
@@ -599,7 +626,8 @@ async def _reserve_run(
         # case that needs the versions recorded.
         environment_snapshot=build_run_environment_snapshot(),
         executed_at=datetime.now(timezone.utc),
-        source_type="auto",
+        source_type=source_type,
+        source_metadata=source_metadata,
         integrity_hash=integrity_hash,
         idempotency_key=idempotency_key,
         # Run kind is provisional until finalize knows whether the
@@ -609,11 +637,15 @@ async def _reserve_run(
     )
     session.add(row)
     try:
-        await session.commit()
+        if commit:
+            await session.commit()
+        else:
+            await session.flush()
     except IntegrityError:
         await session.rollback()
         raise
-    await session.refresh(row)
+    if commit:
+        await session.refresh(row)
     return row
 
 
@@ -660,11 +692,14 @@ async def finalize_orphan_reservation_if_running(
             "status": "error",
             "error": error_msg,
             "executed_at": datetime.now(timezone.utc),
-            "source_metadata": _build_source_metadata(
-                executor_status="error",
-                had_serialization_errors=False,
-                exception_class=exception_class,
-            ),
+            "source_metadata": {
+                **(row.source_metadata or {}),
+                **_build_source_metadata(
+                    executor_status="error",
+                    had_serialization_errors=False,
+                    exception_class=exception_class,
+                ),
+            },
         }.items():
             setattr(row, k, v)
         await session.commit()
@@ -709,6 +744,9 @@ async def _auto_persist_run(
     raw_outputs_for_retention: dict[str, Any] | None = None,
     diagnostics_for_retention: dict[str, Any] | None = None,
     definition_for_retention: dict[str, Any] | None = None,
+    review_unavailable_reason: str | None = None,
+    review_provenance_snapshot: dict[str, Any] | None = None,
+    source_type: str = "auto",
 ) -> int | None:
     """Persist an auto-saved ``ExecutionRun`` so results survive page refresh.
 
@@ -758,7 +796,7 @@ async def _auto_persist_run(
             error=error_msg,
             integrity_hash=integrity_hash,
             executed_at=datetime.now(timezone.utc),
-            source_type="auto",
+            source_type=source_type,
             source_metadata=source_metadata or None,
             produced_artifact_uids=produced_uids,
             attempted_artifact_uids=artifact_attempts["attempted_artifact_uids"],
@@ -772,14 +810,40 @@ async def _auto_persist_run(
             from spectra_sherpa.app.services.canonical_metric_retention import project_canonical_metric_evidence
             from spectra_sherpa.app.services.run_output_retention import retain_run_outputs
 
+            retention_started = perf_counter()
             retained_outputs = await to_thread(
                 project_canonical_metric_evidence,
                 raw_outputs_for_retention,
                 definition_for_retention,
             )
             if definition_for_retention is not None:
-                retained_outputs["__workflow__"] = {"definition": definition_for_retention}
+                from spectra_sherpa.app.services.pca_review_evidence import review_receipts
+
+                # Completion must never observe review decisions made after admission.
+                review_provenance = deepcopy(review_provenance_snapshot or {})
+                run_data["source_metadata"] = {
+                    **(run_data.get("source_metadata") or {}),
+                    "sample_review_snapshot_version": 2,
+                }
+                if review_provenance:
+                    run_data["source_metadata"] = {
+                        **(run_data.get("source_metadata") or {}),
+                        "sample_review": review_provenance,
+                    }
+
+                retained_outputs["__workflow__"] = {
+                    "definition": definition_for_retention,
+                    "sample_review_provenance": review_provenance,
+                    "pca_review": await review_receipts(
+                        definition_for_retention,
+                        raw_outputs_for_retention,
+                        unavailable_reason=review_unavailable_reason,
+                    ),
+                }
             evidence = await to_thread(retain_run_outputs, user_id, retained_outputs, diagnostics_for_retention or {})
+            logger.info(
+                "workflow_retention_timing workflow=%s seconds=%.3f", workflow_id, perf_counter() - retention_started
+            )
             run_data["evidence_completeness"] = evidence
             retention_warning = _retention_warning(evidence)
             if retention_warning:

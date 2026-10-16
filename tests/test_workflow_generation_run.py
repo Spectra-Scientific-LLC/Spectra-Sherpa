@@ -1,4 +1,4 @@
-"""E2E tests for OSS Sherpa Advisor agentic workflow generation.
+"""E2E tests for OSS Sherpa Advisor workflow generation.
 
 Covers POST /workflows/{parent}/ai-fork creating a PCA workflow from a
 prompt and the OSS-side validation rules.
@@ -9,7 +9,7 @@ WS-handler internals; keeping it in OSS would couple these tests to the
 server implementation.
 
 Run:
-    direnv exec . python -m pytest tests/test_agentic_workflow_generation.py -v --no-cov
+    direnv exec . python -m pytest tests/test_workflow_generation_run.py -v --no-cov
 """
 
 from __future__ import annotations
@@ -184,7 +184,7 @@ def _mock_available_provider():
     return provider
 
 
-def _mock_provider_without_agentic_tools():
+def _mock_provider_without_workflow_generation():
     provider = _mock_available_provider()
     provider.has_feature.return_value = False
     return provider
@@ -354,9 +354,9 @@ async def test_ai_fork_creates_pca_workflow(
     """POST /workflows/{id}/ai-fork with a PCA dag_spec creates the forked sheet.
 
     Verifies:
-    - HTTP 201 with new_workflow_id + new_channel_id
+    - HTTP 200 with new_workflow_id + new_channel_id
     - The forked workflow has a PCA node in the database
-    - tab_color = AI_PURPLE and color_source = "ai"
+    - The fork uses its parent's Data Portfolio color; the Advisor channel remains purple
     - An AdvisorChannel row is created with the supplied conversation_id
     - created_from_workflow_id points to the parent
     """
@@ -386,8 +386,10 @@ async def test_ai_fork_creates_pca_workflow(
     wf = await test_session.get(Workflow, new_workflow_id)
     assert wf is not None
     assert wf.name == "Sherpa: PCA on Wine"
-    assert wf.tab_color == AI_PURPLE
-    assert wf.color_source == "ai"
+    assert wf.primary_data_source_id == parent["primary_data_source_id"]
+    assert wf.tab_color == parent["tab_color"]
+    assert wf.tab_color_override is None
+    assert wf.color_source == "data"
     assert wf.created_from_workflow_id == parent_id
 
     # Verify PCA node exists
@@ -513,12 +515,12 @@ async def test_ai_fork_requires_advisor(auth_client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
-async def test_ai_fork_requires_agentic_tools_feature(auth_client: AsyncClient) -> None:
-    """ai-fork returns 403 when the provider lacks agentic workflow generation."""
+async def test_ai_fork_requires_workflow_generation_run_feature(auth_client: AsyncClient) -> None:
+    """ai-fork returns 403 when the provider lacks workflow generation."""
     project_id = await _create_project(auth_client)
     parent = await _create_parent_workflow(auth_client, project_id)
 
-    with patch(_ADVISOR_REGISTRY_PATH, return_value=_mock_provider_without_agentic_tools()):
+    with patch(_ADVISOR_REGISTRY_PATH, return_value=_mock_provider_without_workflow_generation()):
         resp = await auth_client.post(
             f"/api/v1/workflows/{parent['id']}/ai-fork",
             json={"dag_spec": _PCA_DAG_SPEC, "new_conversation_id": str(uuid.uuid4())},

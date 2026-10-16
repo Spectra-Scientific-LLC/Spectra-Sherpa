@@ -439,6 +439,7 @@ class TestExplicitOutputTypes:
             "spectrasherpa://types/LoadingMatrix/1.0",
             "spectrasherpa://types/ExplainedVarianceMatrix/1.0",
             "spectrasherpa://types/RegressionCoefficientMatrix/1.0",
+            "spectrasherpa://types/ValidationResult/1.0",
         ]
         assert result["fitted_state"]["schema_version"] == "spectrasherpa.fitted-pls-state/9"
 

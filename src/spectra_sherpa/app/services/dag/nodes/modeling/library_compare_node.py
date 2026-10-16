@@ -9,7 +9,9 @@ from typing import Any
 import numpy as np
 from scipy.interpolate import PchipInterpolator
 
+from spectra_sherpa.app.services.dag import fitted_input_identity as input_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
+from spectra_sherpa.app.services.dag.fitted_input_identity import fitted_input_identity
 from spectra_sherpa.app.services.dag.io_contracts import bind_X, to_numpy_2d
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.core.axis_semantics import axis_semantics, require_compatible_axis_semantics
@@ -701,6 +703,13 @@ class CompareVsLibraryNode(Node):
         parameters = self.metadata.canonicalize_parameters(self.parameters)
         sample_ds = bind_X(sample, missing_message="Compare vs. Library requires sample spectra")
         library_ds = bind_X(library, missing_message="Compare vs. Library requires library spectra")
+        sample_identity = fitted_input_identity(sample_ds, features=sample_ds.shape[1])
+        library_identity = fitted_input_identity(library_ds, features=library_ds.shape[1])
+        for field in ("signal_units", "signal_quantity", "measurement_mode"):
+            if sample_identity[field] != library_identity[field]:
+                raise ValueError(
+                    f"Compare vs. Library requires matching {field}; explicitly convert signals before comparison"
+                )
         sample_feature_axis = sample_ds.feature_axis
         library_feature_axis = library_ds.feature_axis
         if sample_feature_axis is None or library_feature_axis is None:
@@ -1340,7 +1349,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.EVALUATOR,
     implementation_id="spectrasherpa.analysis.compare_library",
-    implementation_version="1.0.0",
+    implementation_version="1.1.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="aggregates_samples",
@@ -1350,7 +1359,7 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 60, "cpu_seconds": 60, "memory_bytes": 1_073_741_824},
     license_id="Apache-2.0",
     help_reference="docs/nodes/exploratory.md",
-    implementation_modules=(dag_io_contracts,),
+    implementation_modules=(dag_io_contracts, input_identity_authority),
     implementation_distributions=("numpy", "scipy"),
     runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1")),
     citations=(

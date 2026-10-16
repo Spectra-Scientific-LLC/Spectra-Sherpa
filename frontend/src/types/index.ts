@@ -112,6 +112,7 @@ export interface SherpaDatasetDict {
     class_names?: string[] | null;
     n_classes?: number | null;
     selected_target?: string | null;
+    reference_value_evidence?: ReferenceValueEvidence | null;
   };
   domain?: {
     technique?: string | null;
@@ -133,7 +134,45 @@ export interface SherpaDatasetDict {
     sample_table_file_id: number;
     selected_target: string;
     target_type: "continuous" | "categorical";
+    reference_declaration?: ReferenceValueDeclaration;
   };
+}
+
+export interface ReferenceValueDeclaration {
+  schema_version: "spectrasherpa.reference-value-declaration/1";
+  target_name: string;
+  target_type: "continuous" | "categorical";
+  units: string | null;
+  method: {
+    method_id: string;
+    version: string;
+    response_identity: { names: string[]; units: Array<string | null> };
+    measurement_basis: "single_measurement" | "replicate_mean";
+    measurements_per_label: number;
+    precision: Record<string, unknown> | null;
+  } | null;
+  provenance: string | null;
+  precision_study_provenance: string | null;
+  replicate_evidence_digest: string | null;
+}
+
+export interface ReferenceValueEvidence {
+  schema_version: "spectrasherpa.reference-value-evidence/1";
+  source_file_id: number;
+  sample_table_file_id: number;
+  sample_table_sha256: string;
+  target_name: string;
+  target_type: "continuous" | "categorical";
+  units: string | null;
+  method: ReferenceValueDeclaration["method"];
+  provenance: string | null;
+  precision_study_provenance: string | null;
+  replicate_evidence_digest: string | null;
+  source_included_count: number;
+  missing_included_count: number;
+  missing_excluded_count: number;
+  instrument_repeatability: null;
+  qualification_gaps: string[];
 }
 
 export interface AcquisitionPlan {
@@ -223,6 +262,7 @@ export interface MeasuredSampleTableEditor {
   revision: string;
   sample_table_file_id: number;
   selected_target: string;
+  reference_declaration?: ReferenceValueDeclaration;
   target_definitions: Array<{
     name: string;
     type: "continuous" | "categorical";
@@ -392,6 +432,7 @@ export interface ConversationSummary {
 // ── Sherpa Advisor Types ──────────────────────────────────────
 
 export interface SherpaMessage {
+  diagnostic_scope?: import("@/utils/diagnosticAdvisor").DiagnosticScope;
   id: string;
   role: "user" | "assistant" | "system";
   content: string;

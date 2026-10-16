@@ -1,3 +1,4 @@
+import { copyDiagnosticScope, restoredDiagnosticScope, type DiagnosticScope } from "@/utils/diagnosticAdvisor";
 import { sherpaResponseTimeoutMs } from "@/lib/sherpaTimeouts";
 import { requireAdvisorTransport } from "@/lib/advisorTransport";
 import { SCIENTIFIC_QUERY_REFUSAL, recordScientificQueryOutcome } from "@/lib/scientificQueryGuidance";
@@ -166,7 +167,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   const pendingWorkflowId = ref<number | null>(null);
   const conversationSnapshots = new Map<
     string,
-    { messages: SherpaMessage[]; summary: ConversationSummary }
+    { messages: SherpaMessage[]; summary: ConversationSummary; diagnosticScope: DiagnosticScope | null }
   >();
   const analysisStatus = ref("");
   let chatCommunicationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -312,7 +313,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   }
 
   function cloneMessages(items = messages.value): SherpaMessage[] {
-    return items.map((message) => ({ ...message }));
+    return items.map((message) => ({ ...message, ...(message.diagnostic_scope ? { diagnostic_scope: copyDiagnosticScope(message.diagnostic_scope)! } : {}) }));
   }
 
   function isWelcomeOnly(items = messages.value): boolean {
@@ -345,6 +346,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     conversationSnapshots.set(conversationId, {
       messages: cloneMessages(),
       summary,
+      diagnosticScope: copyDiagnosticScope(diagnosticScope.value),
     });
   }
 
@@ -370,6 +372,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     conversationSnapshots.set(conversationId, {
       messages: cloneMessages(),
       summary,
+      diagnosticScope: copyDiagnosticScope(diagnosticScope.value),
     });
   }
 
@@ -380,6 +383,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     }
     currentConversationId.value = conversationId;
     messages.value = cloneMessages(snapshot.messages);
+    diagnosticScope.value = copyDiagnosticScope(snapshot.diagnosticScope);
     conversations.value = [snapshot.summary];
     return true;
   }
@@ -491,6 +495,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     messages.value = normalizeSherpaMessages(
       response.data.messages as Array<{ role: SherpaMessage["role"]; content: string }>,
     );
+    diagnosticScope.value = restoredDiagnosticScope(messages.value, projectId);
     if (isServerBacked.value) {
       setActiveChannelTopics(
         loadedConversationId,
@@ -719,9 +724,15 @@ export const useSherpaStore = defineStore("sherpa", () => {
     subscriptionUpgradeUrl.value = null;
   }
 
+  const diagnosticScope = ref<DiagnosticScope | null>(null);
+  function setDiagnosticScope(scope: DiagnosticScope | null): void {
+    if (chatState.value === "chatting") return;
+    diagnosticScope.value = copyDiagnosticScope(scope);
+  }
   function startNewConversation(): void {
     ++conversationLoadRequest;
     snapshotCurrentConversation();
+    diagnosticScope.value = null;
     finalizeChatCommunication();
     finalizeSyncCommunication();
     unsubscribeChatEvents?.();
@@ -737,6 +748,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   }
 
   registerProjectScopeReset(() => {
+    diagnosticScope.value = null;
     if (!qualified.value) return;
     ++conversationIndexRequest;
     startNewConversation();
@@ -1695,9 +1707,17 @@ export const useSherpaStore = defineStore("sherpa", () => {
   async function sendMessage(message: string, _legacyUseTools?: boolean): Promise<void> {
     if (!message.trim() || chatState.value === "chatting") return;
 
+    const diagnostic = copyDiagnosticScope(diagnosticScope.value);
+    const frozenProject = projectStore.currentProjectId;
+    const frozenConversation = currentConversationId.value;
+    const frozenWorkflow = useWorkflowStore().workflowId;
+    const frozenAdvisorNode = useAdvisorStore().activeNodeId;
+    if (diagnostic && (diagnostic.project_id !== frozenProject || !isServerBacked.value || boundedContext.value)) {
+      _appendSystemMessage("Diagnostic scope is unavailable in this project or deployment. Reopen the workbench."); return;
+    }
     const llm = useLlmStore();
 
-    messages.value.push(createSherpaMessage("user", message));
+    messages.value.push(createSherpaMessage("user", message, diagnostic ? { diagnostic_scope: diagnostic } : undefined));
     const requestId = createSherpaRequestId();
     finalizeChatCommunication();
     unsubscribeChatEvents?.();
@@ -1730,9 +1750,14 @@ export const useSherpaStore = defineStore("sherpa", () => {
     pendingWorkflowId.value = workflow.workflowId;
     let workflowContext: Record<string, unknown> | null;
     try {
-      workflowContext = boundedContext.value
-        ? await prepareProductWorkflowContext(workflow.workflowId)
-        : buildSyncPayload();
+      workflowContext = diagnostic
+        ? { workflow_id: diagnostic.reference.workflow_id, retained_run_id: diagnostic.reference.run_id,
+            diagnostic_review: diagnostic.reference,
+            ...("node_id" in diagnostic.reference ? { active_attention: {
+              window: "results", surface: "inspector", workflow_id: diagnostic.reference.workflow_id,
+              run_id: diagnostic.reference.run_id, node_id: diagnostic.reference.node_id,
+            } } : {}) }
+        : boundedContext.value ? await prepareProductWorkflowContext(workflow.workflowId) : buildSyncPayload();
     } catch (error: any) {
       if (currentChatRequestId.value !== requestId) return;
       finalizeChatCommunication();
@@ -1810,20 +1835,23 @@ export const useSherpaStore = defineStore("sherpa", () => {
       ],
     });
 
+    if (diagnostic && (projectStore.currentProjectId !== frozenProject || currentConversationId.value !== frozenConversation || workflow.workflowId !== frozenWorkflow || useAdvisorStore().activeNodeId !== frozenAdvisorNode)) {
+      stopAnalysis(); _appendSystemMessage("The project or workflow changed before sending. Reopen the diagnostic discussion."); return;
+    }
     ws.send(
       JSON.stringify({
         action: getSherpaChatAction(true),
         payload: {
           request_id: requestId,
-          active_attention: attentionSnapshot(),
+          active_attention: diagnostic ? workflowContext?.active_attention : attentionSnapshot(),
           message,
           // R1 canonical routing key.  Server resolves to topic →
           // conversation_id internally.  Legacy conversation_id field
           // retained in parallel for one release; retired in R2.
           advisor_node_id: pendingAdvisorNodeId.value,
-          conversation_id: currentConversationId.value,
-          project_id: projectStore.currentProjectId,
-          workflow_id: workflow.workflowId,
+          conversation_id: diagnostic ? frozenConversation : currentConversationId.value,
+          project_id: diagnostic ? frozenProject : projectStore.currentProjectId,
+          workflow_id: diagnostic ? diagnostic.reference.workflow_id : workflow.workflowId,
           workflow_context: workflowContext,
         },
       })
@@ -2062,6 +2090,11 @@ export const useSherpaStore = defineStore("sherpa", () => {
       }
 
       if (payload.type === SHERPA_WS_EVENT.chatDone) {
+        const scope = (payload as any).diagnostic_scope as DiagnosticScope | undefined;
+        if (scope && scope.project_id === projectStore.currentProjectId && streamingIndex.value !== null) {
+          messages.value[streamingIndex.value].diagnostic_scope = copyDiagnosticScope(scope)!;
+          diagnosticScope.value = copyDiagnosticScope(scope);
+        }
         chatServerAcknowledged.value = true;
         currentChatRequestId.value =
           typeof payload.request_id === "string" ? payload.request_id : currentChatRequestId.value;
@@ -2154,8 +2187,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
             "Sherpa finished the workflow context privacy check.",
           model_dispatch: "Sherpa is preparing the model request.",
           secondary_llm: secondaryModel
-            ? `Primary AI is busy — Sherpa is using a backup model (${secondaryModel}). Responses may be briefer; agentic tools are unavailable for this reply.`
-            : "Primary AI is busy — Sherpa is using a backup model. Responses may be briefer and some agentic tools are unavailable.",
+            ? `Primary AI is busy — Sherpa is using a backup model (${secondaryModel}). Responses may be briefer; workflow generation is unavailable for this reply.`
+            : "Primary AI is busy — Sherpa is using a backup model. Responses may be briefer and workflow generation is unavailable.",
           tool_round_limit:
             "Sherpa reached the tool round limit and is finishing without more tool calls.",
         };
@@ -2530,6 +2563,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
   }
 
   return {
+    diagnosticScope,
+    setDiagnosticScope,
     messages,
     conversations,
     currentConversationId,

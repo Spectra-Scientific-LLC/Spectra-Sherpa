@@ -7,6 +7,8 @@ from spectra_sherpa.app.lib.collection_assembly import CollectionMember, assembl
 from spectra_sherpa.app.lib.io import inspect_csv_import_plan, load_csv_as_sherpa
 from spectra_sherpa.app.lib.sherpa_dataset import DatasetLayoutContext, SampleAxis, SherpaDataset
 from spectra_sherpa.app.services import prepared_data as prepared_data_service
+from spectra_sherpa.app.services.dag.node_base import node_registry
+from spectra_sherpa.app.services.dag.nodes.data.split_planner import bind_split_groups, plan_train_test_split
 from spectra_sherpa.app.services.dag.nodes.data.transforms import FilterSamplesNode
 from spectra_sherpa.app.services.prepared_data import apply_dataset_prepared_data_overrides
 from spectra_sherpa.core.prepared_data import PreparedDataOverrides, parser_options_for_prepared_data
@@ -123,7 +125,12 @@ def test_csv_inspector_reports_the_final_spectral_property_and_metadata_mapping(
 
     assert plan["layout"] == "sample_rows_spectral_matrix"
     assert plan["shape"] == {"rows": 2, "columns": 6, "samples": 2, "features": 2}
-    assert plan["target"] == {"column": None, "type": None, "candidates": []}
+    assert plan["target"] == {
+        "column": None,
+        "type": None,
+        "candidates": [],
+        "selectable": [],
+    }
     assert {column["name"]: column["role"] for column in plan["columns"]} == {
         "sample": "I",
         "400": "F",
@@ -132,6 +139,114 @@ def test_csv_inspector_reports_the_final_spectral_property_and_metadata_mapping(
         "reference_b": "P",
         "sample_meta.fault_name": "M",
     }
+
+
+@pytest.mark.asyncio
+async def test_numeric_first_target_and_declared_validation_partition_are_separate(tmp_path):
+    csv_path = tmp_path / "body-fat.csv"
+    csv_path.write_text(
+        "Percent body fat,Age (years),Waist (cm),Validation\n"
+        "12.0,25,81,Training\n"
+        "15.0,30,85,Training\n"
+        "18.0,35,89,Training\n"
+        "20.0,40,92,Validation\n"
+        "22.0,45,96,Validation\n",
+        encoding="utf-8",
+    )
+
+    plan = inspect_csv_import_plan(csv_path)
+    assert "Percent body fat" in plan["target"]["selectable"]
+    assert plan["assignment"] == {
+        "column": "Validation",
+        "training_label": "Training",
+        "validation_label": "Validation",
+    }
+
+    raw = load_csv_as_sherpa(csv_path, _infer_implicit_target=False)
+    assert raw.X.shape == (5, 3)
+    assert raw.target is None
+    prepared = apply_dataset_prepared_data_overrides(
+        raw,
+        {"target_column": "Percent body fat", "target_type": "continuous", "assignment_column": "Validation"},
+    )
+    assert prepared.X.shape == (5, 2)
+    assert prepared.feature_axis.labels == ["Age (years)", "Waist (cm)"]
+    np.testing.assert_array_equal(prepared.target, [12.0, 15.0, 18.0, 20.0, 22.0])
+    admitted = assemble_collection(
+        [
+            CollectionMember(
+                dataset=prepared, file_name="body-fat.csv", size_bytes=csv_path.stat().st_size, sha256="a" * 64
+            )
+        ],
+        title="Body fat study",
+    )
+    assert admitted.meta["csv.assignment_column"] == "Validation"
+    assert admitted.target_context.target_name == "Percent body fat"
+    assert bind_split_groups(prepared) is None
+    groups = bind_split_groups(prepared, use_source_assignment=True)
+    assert groups.tolist() == ["Training"] * 3 + ["Validation"] * 2
+    split = plan_train_test_split(
+        prepared.X,
+        prepared.target,
+        method="group_holdout",
+        groups=groups,
+        held_out_groups=["Validation"],
+    )
+    assert split.train_indices.tolist() == [0, 1, 2]
+    assert split.test_indices.tolist() == [3, 4]
+    node = node_registry.create_node(
+        "data.train_test_split",
+        "partition",
+        {"split_method": "group_holdout", "held_out_groups": ["Validation"]},
+    )
+    live = await node.execute(X=prepared)
+    assert live["train_indices"].tolist() == [0, 1, 2]
+    assert live["test_indices"].tolist() == [3, 4]
+
+
+def test_csv_assignment_inspection_includes_rows_beyond_preview(tmp_path):
+    csv_path = tmp_path / "ordered-validation.csv"
+    rows = ["Target,Feature,Validation"]
+    rows.extend(f"{index},{index + 1},Training" for index in range(120))
+    rows.extend(f"{index},{index + 1},Validation" for index in range(120, 140))
+    csv_path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+    plan = inspect_csv_import_plan(csv_path)
+    assert plan["assignment"] == {
+        "column": "Validation",
+        "training_label": "Training",
+        "validation_label": "Validation",
+    }
+    assert plan["target"]["column"] == "Target"
+
+
+def test_numeric_target_selection_does_not_guess_other_predictor_exclusions(tmp_path):
+    csv_path = tmp_path / "features.csv"
+    csv_path.write_text(
+        "Response,Pred Response,Age\n10,9,20\n20,19,30\n",
+        encoding="utf-8",
+    )
+    dataset = apply_dataset_prepared_data_overrides(
+        load_csv_as_sherpa(csv_path, _infer_implicit_target=False),
+        {"target_column": "Response", "target_type": "continuous"},
+    )
+    assert dataset.feature_axis.labels == ["Pred Response", "Age"]
+
+
+@pytest.mark.parametrize("target_name", ["Response", "Age", "Mass"])
+def test_any_numeric_feature_table_column_can_be_the_continuous_target(tmp_path, target_name):
+    csv_path = tmp_path / "measurements.csv"
+    csv_path.write_text(
+        "Response,Age,Mass,Validation\n10,20,70,Training\n20,30,80,Validation\n",
+        encoding="utf-8",
+    )
+    dataset = apply_dataset_prepared_data_overrides(
+        load_csv_as_sherpa(csv_path, _infer_implicit_target=False),
+        {"target_column": target_name, "target_type": "continuous", "assignment_column": "Validation"},
+    )
+    assert dataset.target_context.target_name == target_name
+    assert dataset.feature_axis.labels == [name for name in ("Response", "Age", "Mass") if name != target_name]
+    assert dataset.X.shape == (2, 2)
 
 
 def test_load_csv_as_sherpa_axis_column_conditions_as_shared_x_spectra(tmp_path):

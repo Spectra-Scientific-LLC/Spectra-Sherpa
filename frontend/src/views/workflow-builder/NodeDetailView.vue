@@ -18,11 +18,8 @@
           :loading="isExecuting"
           :disabled="hasValidationErrors"
           @click="handleRunTrial"
-          :title="
-            hasValidationErrors
-              ? 'Fix validation errors before running'
-              : 'Run trial execution with current parameters'
-          "
+          :title="runTrialDisabledReason || 'Run trial execution with current parameters'"
+          :aria-describedby="runTrialDisabledReason ? runTrialReasonId : undefined"
         />
         <Button
           label="Cancel"
@@ -36,6 +33,7 @@
           class="p-button-primary"
           @click="handleSaveAndExit"
         />
+        <DisabledReason :id="runTrialReasonId" :reason="runTrialDisabledReason" class="header-disabled-reason" />
       </div>
     </header>
 
@@ -141,7 +139,8 @@
 <script setup lang="ts">
 import PeakExecutionDetails from "@/components/common/PeakExecutionDetails.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- node outputs and plot payloads vary widely across node families in this inspection view. */
-import { ref, computed, watch, onMounted, provide, nextTick } from "vue";
+import { ref, computed, watch, onMounted, provide, nextTick, useId } from "vue";
+import DisabledReason from "@/components/DisabledReason.vue";
 import {
   NODE_DETAIL_STATE_KEY,
   type NodeDetailState,
@@ -346,6 +345,10 @@ const modelId = computed<string | null>(() => {
 // ── Parameter handling ──────────────────────────────────────────────────
 const { displayedValidationErrors, hasValidationErrors, validateParams, getParamError } =
   useNodeValidation(workflowStore, nodeType, localParams);
+const runTrialReasonId = useId();
+const runTrialDisabledReason = computed(() =>
+  hasValidationErrors.value ? "Fix the validation errors before running." : "",
+);
 
 watch(localParams, () => validateParams(), { deep: true });
 watch(
@@ -439,11 +442,13 @@ watch(
   ([pcaOutput, outputAvailable, presentationId]) => {
     if (!pcaOutput || !outputAvailable) return;
     sections.value.plots = true;
-    for (const key of ["pcaScores", "pcaBiplot", "pcaLoadings", "pcaScree", "pcaDiagnostics"]) {
+    for (const key of ["pcaScores", "pcaBiplot", "pcaLoadings", "pcaVariableCorrelations", "pcaScree", "pcaDiagnostics"]) {
       plotSections.value[key] = false;
     }
     if (presentationId === "loadings") {
       plotSections.value.pcaLoadings = true;
+    } else if (presentationId === "variable_correlations") {
+      plotSections.value.pcaVariableCorrelations = true;
     } else if (presentationId === "explained_variance") {
       plotSections.value.pcaScree = true;
     } else if (presentationId === "diagnostics") {
@@ -806,7 +811,16 @@ provide(NODE_DETAIL_STATE_KEY, detailState);
 
 .header-actions {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 12px;
+}
+
+.header-disabled-reason {
+  flex-basis: 100%;
+  justify-content: flex-end;
+  margin: 0;
+  color: #94a3b8;
 }
 
 .detail-content {

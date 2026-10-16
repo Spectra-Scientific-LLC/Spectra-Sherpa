@@ -100,7 +100,7 @@ async def test_plsda_runs_stratified_outer_validation_and_full_data_refit() -> N
     assert refit.model_node_id == "plsda"
     assert refit.node_ids == ("plsda",)
     assert len(refit.fitted_states) == 1
-    assert refit.fitted_states[0].serializer == "spectrasherpa.sherpa-plsda-state/4"
+    assert refit.fitted_states[0].serializer == "spectrasherpa.sherpa-plsda-state/5"
 
 
 @pytest.mark.asyncio

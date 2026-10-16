@@ -268,6 +268,7 @@ def verify_canonical_development_decision(
     candidates: Sequence[Mapping[str, Any]],
     *,
     expected_policy: CanonicalSelectionPolicy | None = None,
+    historical_context: object | None = None,
 ) -> dict[str, Any]:
     reviewed = value.get("schema_version") == SCIENTIST_DEVELOPMENT_DECISION_VERSION
     fields = _DECISION_FIELDS | {"ranked_first_candidate_id", "scientist_selection"} if reviewed else _DECISION_FIELDS
@@ -286,9 +287,43 @@ def verify_canonical_development_decision(
         scientist_selection=decision.get("scientist_selection"),
         require_scientist_selection=reviewed,
     )
-    if decision != expected:
-        raise CanonicalSelectionPolicyError("canonical development decision does not reproduce from fold evidence")
-    return deepcopy(expected)
+    if decision == expected:
+        return deepcopy(expected)
+    if historical_context is not None:
+        from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
+
+        if type(historical_context) is not HistoricalReconstructionContext:
+            raise CanonicalSelectionPolicyError("historical decision requires the packaged reconstruction context")
+        historical_context.profile()
+        old_margin = decision.get("paired_fold_margin")
+        new_margin = expected.get("paired_fold_margin")
+        if isinstance(old_margin, dict) and isinstance(new_margin, dict):
+            old_remainder = {**decision, "paired_fold_margin": {**old_margin}}
+            new_remainder = {**expected, "paired_fold_margin": {**new_margin}}
+            for field in ("paired_standard_error", "required_dispersion_delta"):
+                old = old_margin.get(field)
+                new = new_margin.get(field)
+                if not _historical_adjacent_float(old, new):
+                    break
+                old_remainder["paired_fold_margin"].pop(field)
+                new_remainder["paired_fold_margin"].pop(field)
+            else:
+                if old_remainder == new_remainder:
+                    return deepcopy(decision)
+    raise CanonicalSelectionPolicyError("canonical development decision does not reproduce from fold evidence")
+
+
+def _historical_adjacent_float(old: Any, new: Any) -> bool:
+    """Bound archived dispersion roundoff to one representable step."""
+
+    return (
+        type(old) is float
+        and type(new) is float
+        and math.isfinite(old)
+        and math.isfinite(new)
+        and old >= 0
+        and old in (new, math.nextafter(new, math.inf), math.nextafter(new, -math.inf))
+    )
 
 
 def selection_candidate(

@@ -240,6 +240,37 @@ def _target_hint_from_header(name: str) -> bool:
     return lower in tokens or any(token in lower for token in ("target", "class", "label", "species", "concentration"))
 
 
+def _assignment_labels(values: pd.Series) -> tuple[str, str] | None:
+    """Suggest, never silently impose, a source-declared train/validation split."""
+
+    labels = {str(value).strip().casefold(): str(value).strip() for value in values.dropna().unique()}
+    if len(labels) != 2:
+        return None
+    training = next((labels[key] for key in ("training", "train", "calibration") if key in labels), None)
+    validation = next((labels[key] for key in ("validation", "test", "holdout") if key in labels), None)
+    return (training, validation) if training and validation else None
+
+
+def _complete_assignment_labels(
+    path: Path, *, column: Any, preview: pd.Series, delimiter: str, decimal: str
+) -> tuple[str, str] | None:
+    """Read only a plausible final assignment column, including rows beyond preview."""
+
+    known = {"training", "train", "calibration", "validation", "test", "holdout"}
+    preview_labels = {str(value).strip().casefold() for value in preview.dropna().unique()}
+    if not preview_labels or not preview_labels <= known:
+        return None
+    labels: set[str] = set()
+    for chunk in pd.read_csv(path, sep=delimiter, decimal=decimal, usecols=[column], chunksize=4096):
+        values = chunk[column]
+        if values.isna().any():
+            return None
+        labels.update(str(value).strip() for value in values.unique())
+        if len({value.casefold() for value in labels}) > 2:
+            return None
+    return _assignment_labels(pd.Series(sorted(labels)))
+
+
 def _index_hint_from_header(name: str) -> bool:
     lower = name.lower().replace(" ", "_").replace("-", "_")
     return lower in {"i", "id", "idx", "index", "sample", "sample_id", "sample_name", "name", "file", "filename"}
@@ -453,6 +484,8 @@ def inspect_csv_import_plan(filepath: Union[str, Path]) -> dict[str, Any]:
 
     columns: list[dict[str, Any]] = []
     target_candidates: list[str] = []
+    numeric_candidates: list[str] = []
+    assignment: dict[str, str] | None = None
     clean_to_raw: dict[str, Any] = {}
     axis: dict[str, Any] | None = None
 
@@ -461,6 +494,8 @@ def inspect_csv_import_plan(filepath: Union[str, Path]) -> dict[str, Any]:
         clean_to_raw[name] = raw_name
         values = df[raw_name]
         numeric_ratio = _numeric_ratio(values)
+        if numeric_ratio == 1.0:
+            numeric_candidates.append(name)
         axis_info = _spectral_axis_info_from_header(name)
         reason = "numeric feature values"
         role = "F"
@@ -489,7 +524,20 @@ def inspect_csv_import_plan(filepath: Union[str, Path]) -> dict[str, Any]:
             target_candidates.append(name)
         elif numeric_ratio < 0.8:
             unique_count = int(values.dropna().astype(str).nunique())
-            if idx == 0 or _index_hint_from_header(name):
+            declared_split = (
+                _complete_assignment_labels(path, column=raw_name, preview=values, delimiter=delimiter, decimal=decimal)
+                if idx == len(df.columns) - 1
+                else None
+            )
+            if declared_split is not None:
+                role = "M"
+                reason = "source-declared training/validation assignment"
+                assignment = {
+                    "column": name,
+                    "training_label": declared_split[0],
+                    "validation_label": declared_split[1],
+                }
+            elif idx == 0 or _index_hint_from_header(name):
                 role = "I"
                 reason = "text identifier column"
             else:
@@ -573,6 +621,12 @@ def inspect_csv_import_plan(filepath: Union[str, Path]) -> dict[str, Any]:
             "continuous" if _numeric_ratio(series) >= 0.9 and series.nunique(dropna=True) > 8 else "categorical"
         )
 
+    if assignment is not None:
+        warnings.append(
+            f"{assignment['column']} declares training and validation rows. "
+            "Confirm its labels before using the source split."
+        )
+
     return {
         "layout": layout,
         "layout_label": layout_label,
@@ -594,8 +648,10 @@ def inspect_csv_import_plan(filepath: Union[str, Path]) -> dict[str, Any]:
             "column": target_column,
             "type": target_type,
             "candidates": target_candidates[:5],
+            "selectable": numeric_candidates if layout in {"feature_table", "feature_table_with_target"} else [],
         },
-        "columns": columns[:24],
+        "assignment": assignment,
+        "columns": columns[:200],
         "warnings": warnings,
     }
 
@@ -1265,6 +1321,13 @@ def parse_csv_snapshot_as_sherpa(
     )
 
 
+def _append_nonnumeric_sample_metadata(
+    frame: pd.DataFrame, columns: list[str], sample_metadata: dict[str, list[Any]]
+) -> None:
+    for column in columns:
+        sample_metadata[str(column)] = frame[column].where(pd.notna(frame[column]), None).tolist()
+
+
 def _parse_legacy_csv_snapshot_as_sherpa(
     filepath: Union[str, Path],
     *,
@@ -1530,6 +1593,7 @@ def _parse_legacy_csv_snapshot_as_sherpa(
         for column in df.columns
         if not pd.api.types.is_numeric_dtype(df[column]) and column != target_col and column != sample_label_column
     ]
+    _append_nonnumeric_sample_metadata(df, non_numeric_cols, sample_metadata)
 
     target = None
     target_context = None

@@ -199,6 +199,12 @@
       "parent": null,
       "description": "Deterministic descriptive summary of a canonical dataset or typed scientific result"
     },
+    "PLSDASampleDiagnostics": {
+      "uri": "spectrasherpa://types/PLSDASampleDiagnostics/1.0",
+      "category": "config",
+      "parent": null,
+      "description": "Fitted-state-bound calibration observation IDs, class labels, T²/Q screens, and per-variable terms"
+    },
     "PeakTable": {
       "uri": "spectrasherpa://types/PeakTable/1.0",
       "category": "config",
@@ -516,6 +522,14 @@
       "dimension_roles": [],
       "view_modes": ["record", "table"],
       "content_categories": ["aggregate_metrics"]
+    },
+    "PLSDASampleDiagnostics": {
+      "scientific_kind": "statistics_summary",
+      "view_kind": "metric_record",
+      "rank": [],
+      "dimension_roles": [],
+      "view_modes": ["record", "table"],
+      "content_categories": ["sample_membership", "reference_targets", "sample_level_results", "variable_diagnostics", "provenance_and_evidence"]
     },
     "PeakTable": {
       "scientific_kind": "peak_table",

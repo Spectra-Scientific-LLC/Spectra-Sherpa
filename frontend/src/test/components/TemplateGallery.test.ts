@@ -46,6 +46,7 @@ describe("TemplateGallery explicit qualification states", () => {
       ),
     ];
     vi.spyOn(store, "fetchTemplates").mockResolvedValue(store.templates);
+    vi.spyOn(store, "fetchCompatibilityMatrix").mockResolvedValue(store.compatibilityMatrix);
 
     const wrapper = mount(TemplateGallery, {
       global: {
@@ -171,6 +172,7 @@ describe("TemplateGallery explicit qualification states", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("Available");
+    expect(wrapper.text()).toContain("readiness is recalculated");
     expect(wrapper.text()).toContain("Needs target or class labels");
     expect(wrapper.text()).toContain("Scientific sufficiency is checked when the workflow runs.");
     expect(wrapper.text()).toContain("Pending qualification");

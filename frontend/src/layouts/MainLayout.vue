@@ -9,6 +9,7 @@
   -->
   <div v-if="isShelllessRoute" class="public-shell">
     <Toast position="top-right" />
+    <ConfirmActionDialog />
     <SherpaUpgradeModal />
     <DemoUpgradeModal />
     <GuidanceToast />
@@ -18,6 +19,7 @@
 
   <div v-else class="app-shell" :class="{ 'chat-open': !chatCollapsed }" :style="layoutStyle">
     <Toast position="top-right" />
+    <ConfirmActionDialog />
     <SherpaUpgradeModal />
     <DemoUpgradeModal />
     <GuidanceToast />
@@ -45,7 +47,7 @@
       </button>
     </div>
 
-    <Sidebar :collapsed="effectiveNavCollapsed" />
+    <Sidebar :collapsed="effectiveNavCollapsed" @expand="toggleNav" />
     <div class="workspace">
       <div class="main">
         <Topbar
@@ -55,6 +57,7 @@
           @toggle-nav="toggleNav"
           @toggle-chat="toggleChat"
         />
+        <ProductMap v-if="appMode === 'enterprise' && siteProfile === 'demo'" compact />
         <main class="content">
           <router-view />
         </main>
@@ -74,7 +77,7 @@
       />
     </div>
 
-    <!-- Narrow-mode expanded nav drawer. Tapping a link or scrim closes it. -->
+    <!-- Only valid navigation choices (or the scrim) dismiss the drawer. -->
     <PrimeSidebar
       v-if="isNarrow"
       v-model:visible="navDrawerOpen"
@@ -82,7 +85,7 @@
       :style="{ width: '224px' }"
       class="nav-drawer"
     >
-      <Sidebar :collapsed="false" @click="navDrawerOpen = false" />
+      <Sidebar :collapsed="false" @navigate="navDrawerOpen = false" />
     </PrimeSidebar>
   </div>
 </template>
@@ -96,6 +99,7 @@ import GuidanceGlowOverlay from "@/components/guidance/GuidanceGlowOverlay.vue";
 import GuidanceToast from "@/components/guidance/GuidanceToast.vue";
 import SherpaUpgradeModal from "@/components/SherpaUpgradeModal.vue";
 import DemoUpgradeModal from "@/components/DemoUpgradeModal.vue";
+import ProductMap from "@/components/ProductMap.vue";
 
 import Sidebar from "@/components/Sidebar.vue";
 import Topbar from "@/components/Topbar.vue";
@@ -111,6 +115,10 @@ import { useAuthStore } from "@/stores/auth";
 import { useJobStore } from "@/stores/job";
 import { useSessionRenewal } from "@/composables/useSessionRenewal";
 import { sessionExpiryMinutesRemaining } from "@/utils/sessionExpiry";
+import { provideWorkspaceNavigation } from "@/composables/useWorkspaceNavigation";
+import ConfirmActionDialog from "@/components/ConfirmActionDialog.vue";
+
+provideWorkspaceNavigation();
 
 const { appMode, appConfig, siteProfile } = useAppConfig();
 const guidance = useGuidance();

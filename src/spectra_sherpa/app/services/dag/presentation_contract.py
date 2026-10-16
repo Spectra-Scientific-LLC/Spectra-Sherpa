@@ -46,6 +46,7 @@ PRESENTATION_KINDS = frozenset(
         "pca_explained_variance",
         "pca_loadings",
         "pca_scores",
+        "pca_variable_correlations",
         "pls_explained_variance",
         "pls_loadings",
         "pls_scores",

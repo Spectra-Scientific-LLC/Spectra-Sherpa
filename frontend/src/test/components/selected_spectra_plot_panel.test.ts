@@ -393,7 +393,7 @@ describe("SelectedSpectraPlotPanel", () => {
     const chart = wrapper.getComponent({ name: "PlotlyChart" });
     const revision = chart.props("layout").uirevision;
 
-    expect(chart.props("layout").xaxis).not.toHaveProperty("autorange");
+    expect(chart.props("layout").xaxis.autorange).toBe("reversed");
     expect(chart.props("layout").yaxis).not.toHaveProperty("autorange");
 
     await wrapper.setProps({
@@ -402,7 +402,7 @@ describe("SelectedSpectraPlotPanel", () => {
     });
 
     expect(chart.props("layout").uirevision).toBe(revision);
-    expect(chart.props("layout").xaxis).not.toHaveProperty("autorange");
+    expect(chart.props("layout").xaxis.autorange).toBe("reversed");
     expect(chart.props("layout").yaxis).not.toHaveProperty("autorange");
   });
 

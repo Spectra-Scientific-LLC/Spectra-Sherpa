@@ -4,12 +4,17 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import event
 
-from spectra_sherpa.app.api.v1.routes.runs import get_project_run, list_project_runs
+from spectra_sherpa.app.api.v1.routes.runs import (
+    RunNameUpdate,
+    get_project_run,
+    list_project_runs,
+    update_project_run_name,
+)
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 
 
 @pytest.mark.asyncio
-async def test_sheet_rename_updates_navigation_without_rewriting_history(test_session, test_user):
+async def test_sheet_rename_does_not_relabel_saved_runs(test_session, test_user):
     from spectra_sherpa.app.api.v1.routes.runs import inspect_run_evidence
     from spectra_sherpa.app.models.workflow import Workflow
 
@@ -53,9 +58,9 @@ async def test_sheet_rename_updates_navigation_without_rewriting_history(test_se
         session=test_session,
         current_user=test_user,
     )
-    assert [run.display_name for run in page.runs] == ["Chosen run name", "Peak Find + PLS"]
+    assert [run.display_name for run in page.runs] == ["Chosen run name", "PLS — abc12345"]
     detail = await inspect_run_evidence(auto.id, project_id=None, session=test_session, current_user=test_user)
-    assert detail["run"]["display_name"] == "Peak Find + PLS"
+    assert detail["run"]["display_name"] == "PLS — abc12345"
     assert detail["run"]["workflow_name"] == "Peak Find + PLS"
     assert detail["run"]["name"] == "PLS — abc12345"
     await test_session.refresh(auto)
@@ -69,6 +74,32 @@ def test_new_training_run_records_sheet_name():
         _derive_run_display_name("Peak Find + PLS", "digest", [{"model_type": "pls", "artifact_uid": "abc12345"}])
         == "Peak Find + PLS"
     )
+
+
+@pytest.mark.asyncio
+async def test_renaming_run_changes_only_its_label(test_session, test_user):
+    run = ExecutionRun(
+        user_id=test_user.id,
+        name="Original run",
+        status="completed",
+        run_kind="data",
+        params_snapshot={"folds": 3},
+        results_summary={"score": 0.5},
+        executed_at=datetime.now(timezone.utc),
+    )
+    test_session.add(run)
+    await test_session.commit()
+    result = await update_project_run_name(
+        run.id,
+        RunNameUpdate(name="  Reviewed run  "),
+        project_id=None,
+        session=test_session,
+        current_user=test_user,
+    )
+    assert result.name == "Reviewed run"
+    await test_session.refresh(run)
+    assert run.params_snapshot == {"folds": 3}
+    assert run.results_summary == {"score": 0.5}
 
 
 @pytest.mark.asyncio

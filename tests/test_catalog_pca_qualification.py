@@ -47,18 +47,28 @@ async def test_every_local_catalog_reference_has_an_explicit_pca_outcome(source:
     # An explicit scatter-reference cohort may have no between-sample variance.
     # Its correct PCA outcome is refusal, not fabricated explained variance.
     if not np.any(np.ptp(scaled.X, axis=0)):
-        with pytest.raises(ValueError, match="fitted PCA outputs do not share one consistent finite shape"):
+        with pytest.raises(
+            ValueError, match="numerical-null|fitted PCA outputs do not share one consistent finite shape"
+        ):
             await PCANode("pca", {"n_components": "1"}).execute(scaled)
         return
 
+    if name == "msc_application_spectra":
+        with pytest.raises(ValueError, match="numerical-null"):
+            await PCANode("pca", {"n_components": "3"}).execute(scaled)
+        resolved = (await PCANode("pca", {"n_components": "1"}).execute(scaled)).outputs
+        assert resolved["scores"].shape == (dataset.n_samples, 1)
+        assert np.sum(resolved["explained_variance"]) == pytest.approx(1.0)
+        return
+    components = 3
     pca = (await PCANode("pca", {"n_components": "3"}).execute(scaled)).outputs
     scores = pca["scores"]
     loadings = pca["loadings"]
     explained = np.asarray(pca["explained_variance"], dtype=np.float64)
 
-    assert scores.shape == (dataset.n_samples, 3)
+    assert scores.shape == (dataset.n_samples, components)
     assert scores.title == "PCA Scores"
-    assert loadings.shape == (3, dataset.n_features)
+    assert loadings.shape == (components, dataset.n_features)
     assert np.isfinite(scores.X).all()
     assert np.isfinite(loadings.X).all()
     assert np.isfinite(explained).all()
@@ -81,7 +91,7 @@ async def test_every_local_catalog_reference_has_an_explicit_pca_outcome(source:
     assert scores_plot["layout"]["title"] == "PCA Scores"
     assert sum(len(trace["x"]) for trace in scores_plot["data"]) == dataset.n_samples
     assert loadings_plot["layout"]["xaxis"]["title"]
-    assert scree_plot["data"][0]["x"] == ["PC1", "PC2", "PC3"]
+    assert scree_plot["data"][0]["x"] == [f"PC{i+1}" for i in range(components)]
     assert scree_plot["layout"]["yaxis"]["title"] == "Explained Variance (%)"
 
     if dataset.target_context.target_type == "categorical":

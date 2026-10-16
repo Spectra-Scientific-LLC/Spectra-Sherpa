@@ -50,10 +50,12 @@ from spectra_sherpa.app.lib.collection_definition import (
 from spectra_sherpa.app.lib.data_formats import ensure_reader_available
 from spectra_sherpa.app.lib.dataset_compatibility import unavailable_dataset_analysis_readiness
 from spectra_sherpa.app.lib.domain_flags import infer_is_spectra
+from spectra_sherpa.app.lib.reference_value_evidence import ReferenceValueDeclaration
 from spectra_sherpa.app.lib.sample_labels import clean_sample_labels
 from spectra_sherpa.app.lib.sherpa_dataset import FeatureAxis, SampleAxis, SherpaDataset, SpectralAxis, TargetContext
 from spectra_sherpa.app.models.calibration import Calibration
 from spectra_sherpa.app.models.dataset_analysis_binding import DatasetAnalysisBinding
+from spectra_sherpa.app.models.dataset_view import DatasetView
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
 from spectra_sherpa.app.models.user import User
@@ -169,6 +171,8 @@ class FileInfoRequest(BaseModel):
     experiment_id: int | None = None
     file_ids: list[int] | None = Field(default=None, min_length=1, max_length=MAX_COLLECTION_MEMBERS)
     asset_id: str | None = Field(default=None, min_length=1, max_length=255)
+    dataset_view_id: int | None = Field(default=None, ge=1)
+    dataset_view_sha256: str | None = Field(default=None, min_length=64, max_length=64)
 
 
 def _validate_file_info_selection(payload: FileInfoRequest) -> None:
@@ -180,6 +184,18 @@ def _validate_file_info_selection(payload: FileInfoRequest) -> None:
         raise HTTPException(status_code=400, detail="Selected files require experiment_id")
     if payload.file_ids is not None and len(set(payload.file_ids)) != len(payload.file_ids):
         raise HTTPException(status_code=400, detail="Selected files contain duplicate identities")
+    if (payload.dataset_view_id is None) != (payload.dataset_view_sha256 is None):
+        raise HTTPException(status_code=400, detail="Saved dataset view identity and digest are required together")
+    if payload.dataset_view_id is not None and (
+        payload.experiment_id is None
+        or payload.file_path is not None
+        or payload.file_ids is not None
+        or payload.asset_id is not None
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Saved dataset view inspection accepts only its experiment and exact view identity",
+        )
 
 
 class DatasetAnalysisBindingRequest(BaseModel):
@@ -188,6 +204,13 @@ class DatasetAnalysisBindingRequest(BaseModel):
     expected_revision: str | None
     selected_target: str = Field(min_length=1, max_length=255)
     target_type: Literal["continuous", "categorical"]
+    reference_declaration: ReferenceValueDeclaration | None = None
+
+
+def _canonical_reference_declaration(declaration: ReferenceValueDeclaration | None) -> str | None:
+    if declaration is None:
+        return None
+    return json.dumps(declaration.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
 
 
 def _analysis_binding_revision(binding: DatasetAnalysisBinding | None) -> str | None:
@@ -200,6 +223,7 @@ def _analysis_binding_revision(binding: DatasetAnalysisBinding | None) -> str | 
         "sample_table_file_id": binding.sample_table_file_id,
         "selected_target": binding.selected_target,
         "target_type": binding.target_type,
+        "reference_declaration": binding.reference_declaration,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
@@ -214,6 +238,7 @@ def _analysis_binding_matches(binding: DatasetAnalysisBinding) -> tuple[Any, ...
         DatasetAnalysisBinding.sample_table_file_id == binding.sample_table_file_id,
         DatasetAnalysisBinding.selected_target == binding.selected_target,
         DatasetAnalysisBinding.target_type == binding.target_type,
+        DatasetAnalysisBinding.reference_declaration == binding.reference_declaration,
     )
 
 
@@ -316,6 +341,9 @@ async def _staged_upload_response(
         recommendation = csv_import_plan.get("recommended_layout")
         if isinstance(recommendation, str) and recommendation:
             suggested_overrides["csv_layout"] = recommendation
+        assignment = csv_import_plan.get("assignment")
+        if isinstance(assignment, dict) and isinstance(assignment.get("column"), str):
+            suggested_overrides["assignment_column"] = assignment["column"]
 
     from spectra_sherpa.io import ingest
 
@@ -1507,6 +1535,11 @@ async def _finalize_file_info(
             "sample_table_file_id": binding.sample_table_file_id,
             "selected_target": binding.selected_target,
             "target_type": binding.target_type,
+            **(
+                {"reference_declaration": json.loads(binding.reference_declaration)}
+                if binding.reference_declaration is not None
+                else {}
+            ),
         }
     from spectra_sherpa.app.services.dag.serialize import finalize_api_dataset_response
 
@@ -1587,6 +1620,11 @@ async def get_dataset_analysis_binding(
         **payload,
         "revision": _analysis_binding_revision(binding),
         "sample_table_file_id": binding.sample_table_file_id,
+        **(
+            {"reference_declaration": json.loads(binding.reference_declaration)}
+            if binding.reference_declaration is not None
+            else {}
+        ),
     }
 
 
@@ -1634,6 +1672,7 @@ async def save_dataset_analysis_binding(
             sample_table_file=sample_table_file,
             selected_target=payload.selected_target.strip(),
             target_type=payload.target_type,
+            reference_declaration=payload.reference_declaration,
             load_source=_file_as_sherpa,
         )
     except ValueError as exc:
@@ -1645,6 +1684,7 @@ async def save_dataset_analysis_binding(
             sample_table_file_id=sample_table_file.id,
             selected_target=payload.selected_target.strip(),
             target_type=payload.target_type,
+            reference_declaration=_canonical_reference_declaration(payload.reference_declaration),
         )
         session.add(binding)
         try:
@@ -1663,6 +1703,7 @@ async def save_dataset_analysis_binding(
                 sample_table_file_id=sample_table_file.id,
                 selected_target=payload.selected_target.strip(),
                 target_type=payload.target_type,
+                reference_declaration=_canonical_reference_declaration(payload.reference_declaration),
             )
             .execution_options(synchronize_session=False)
         )
@@ -1681,6 +1722,11 @@ async def save_dataset_analysis_binding(
         "sample_table_file_id": binding.sample_table_file_id,
         "selected_target": binding.selected_target,
         "target_type": binding.target_type,
+        **(
+            {"reference_declaration": json.loads(binding.reference_declaration)}
+            if binding.reference_declaration is not None
+            else {}
+        ),
     }
 
 
@@ -1767,6 +1813,72 @@ async def _qualified_file_info(payload, session, current_user):
     return finalized
 
 
+async def _saved_view_file_info(payload: FileInfoRequest, session: AsyncSession, current_user: User) -> dict:
+    """Inspect the exact named portfolio, including its retained sample curation."""
+    from spectra_sherpa.app.services.dataset_views import materialize_selection_receipt, receipt_sha256
+    from spectra_sherpa.app.services.model_application import load_project_dataset
+    from spectra_sherpa.app.services.serialization import serialize_result
+
+    experiment = await session.get(Experiment, payload.experiment_id)
+    if experiment is None:
+        raise HTTPException(404, "Project experiment required")
+    if uses_managed_project_access():
+        await require_scientific_access(session, current_user.id, experiment.project_id, "read")
+    elif experiment.user_id != current_user.id:
+        raise HTTPException(404, "Project experiment required")
+    view = await session.scalar(
+        select(DatasetView).where(
+            DatasetView.id == payload.dataset_view_id,
+            DatasetView.experiment_id == experiment.id,
+            DatasetView.project_id == experiment.project_id,
+            DatasetView.deleted_at.is_(None),
+        )
+    )
+    if view is None:
+        raise HTTPException(404, "Saved data portfolio not found")
+    if view.selection_sha256 != payload.dataset_view_sha256 or receipt_sha256(view.selection) != view.selection_sha256:
+        raise HTTPException(409, "Saved data portfolio changed; show it again before generating its story")
+    receipt = view.selection
+    try:
+        if app_config.site_profile == "demo":
+            from spectra_sherpa.app.contracts.demo_policy import require_trial_dataset_access
+
+            admission = await require_trial_dataset_access(
+                session=session,
+                user_id=current_user.id,
+                workflow_project_id=experiment.project_id,
+                experiment_id=experiment.id,
+                stage=receipt["stage"],
+                file_id=None,
+                file_ids=receipt["selected_file_ids"],
+                asset_id=receipt["asset_id"],
+            )
+            loaded = admission.loaded_dataset
+        else:
+            loaded = await load_project_dataset(
+                session,
+                user_id=current_user.id,
+                experiment_id=experiment.id,
+                stage=receipt["stage"],
+                file_ids=receipt["selected_file_ids"],
+                asset_id=receipt["asset_id"],
+            )
+        loaded = materialize_selection_receipt(loaded, receipt)
+    except ValueError as exc:
+        raise HTTPException(409, "Saved data portfolio is no longer exact; review its source and samples") from exc
+    result = serialize_result(loaded.dataset, owner_user_id=current_user.id, project_id=loaded.project_id)
+    result.setdefault("metadata", {}).update(
+        {
+            "contents_file_count": len(loaded.file_ids),
+            "contents_stage": loaded.stage,
+            "contents_title": experiment.name,
+            "data_portfolio_name": view.name,
+            "data_portfolio_sha256": view.selection_sha256,
+        }
+    )
+    return await _finalize_file_info(result, dataset=loaded.dataset, session=session)
+
+
 @router.post("/file-info")
 async def get_file_info(
     payload: FileInfoRequest,
@@ -1777,6 +1889,8 @@ async def get_file_info(
     from spectra_sherpa.app.services.serialization import serialize_result
 
     _validate_file_info_selection(payload)
+    if payload.dataset_view_id is not None:
+        return await _saved_view_file_info(payload, session, current_user)
     if uses_managed_project_access():
         return await _qualified_file_info(payload, session, current_user)
     file_path = payload.file_path

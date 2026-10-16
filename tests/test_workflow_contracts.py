@@ -351,15 +351,18 @@ class TestApplyPathContract:
     """
 
     @pytest.fixture
-    def pca_artifact(self, model_store):
+    def pca_artifact(self, model_store, spectral_dataset):
         """Save a synthetic PCA artifact and return (model_store, uid)."""
         rng = np.random.default_rng(42)
+        from spectra_sherpa.app.services.dag.fitted_input_identity import fitted_input_identity
+
         uid = "contract-test-pca-001"
         manifest = {
             "model_type": "pca",
             "serializer": PCAExtract.SERIALIZER,
             "format_version": "1.0",
             "n_features": 50,
+            "input_identity": fitted_input_identity(spectral_dataset, features=50),
             "n_components": 3,
             "standardized": False,
             "scaled": False,

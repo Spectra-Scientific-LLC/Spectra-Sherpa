@@ -317,8 +317,11 @@ def test_exact_asset_identity_is_typed_across_retained_source_consumers() -> Non
     assert "fetchFileAssets" in data_content
     assert "onInspectionAssetChange" in data_content
     assert 'source.asset_id ?? "auto"' in source_preview
-    assert "selectedAssetId" in batch_run
-    assert "scientific-assets" in batch_run
+    # Batch now consumes immutable saved definitions, whose exact asset is
+    # verified by _load_batch_dataset (see test_dataset_views). It must not
+    # replace that authority with a second ad-hoc file/asset selector.
+    assert "dataset_view_id: definition.viewId" in batch_run
+    assert "/dataset-views" in batch_run
 
 
 def test_opus_declared_elements_fail_before_data_block_decode(monkeypatch) -> None:

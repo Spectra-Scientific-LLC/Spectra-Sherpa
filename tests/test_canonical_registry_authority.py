@@ -83,6 +83,25 @@ def test_production_source_has_no_second_operation_to_contract_map() -> None:
                     for item in [*value.keys, *value.values]
                 )
                 continue
+            # Exact, directional saved-state read compatibility is a
+            # separate non-executing authority. It cannot supply a live
+            # operation-to-contract mapping for workflow execution.
+            if (
+                path.relative_to(_REPOSITORY).as_posix()
+                == "packages/spectra-sherpa/src/spectra_sherpa/core/contract_compatibility.py"
+                and isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == "_COMPONENT_EVIDENCE_PREDECESSORS"
+            ):
+                assert isinstance(value, ast.Tuple)
+                assert all(
+                    isinstance(entry, ast.Call)
+                    and isinstance(entry.func, ast.Name)
+                    and entry.func.id == "SavedStateCompatibility"
+                    for entry in value.elts
+                )
+                continue
             source = ast.get_source_segment(source_text, node) or ""
             if len(keys) >= 2 and any(term in source.lower() for term in ("contract", "managed", "profile")):
                 offenders.append(f"{path.relative_to(_REPOSITORY)}:{node.lineno}:{sorted(keys)}")

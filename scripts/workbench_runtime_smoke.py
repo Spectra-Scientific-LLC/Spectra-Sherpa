@@ -19,7 +19,7 @@ import numpy as np
 
 # Current-release runtime qualification authority. Historical R1 evidence
 # remains frozen at the node count recorded by its originating commit.
-EXPECTED_NODE_COUNT = 101
+EXPECTED_NODE_COUNT = 103
 EXPECTED_OPTIONAL_OPERATION_COUNT = 3
 EXPECTED_BASE_OPERATION_COUNT = EXPECTED_NODE_COUNT - EXPECTED_OPTIONAL_OPERATION_COUNT
 _NETWORK_ATTEMPTS: list[str] = []

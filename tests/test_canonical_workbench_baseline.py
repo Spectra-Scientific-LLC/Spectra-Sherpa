@@ -50,35 +50,34 @@ def _load_registry() -> None:
         type_registry.load(Path(__file__).resolve().parents[1] / "src" / "spectra_sherpa" / "app" / "types")
 
 
-def test_legacy_baseline_digest_fixtures_and_grouping_version_dispatch() -> None:
-    from dataclasses import replace
+def test_legacy_baseline_digest_fixtures_admit_only_exact_historical_readout() -> None:
+    import hashlib
+    import json
 
-    from spectra_sherpa.app.services.dag.canonical_workbench_baseline import CanonicalSeedExecutionBaseline
+    from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
+    from spectra_sherpa.app.services.dag.validation_graph import ValidationGraphError, assert_admitted_validation_graph
 
-    nodes, edges, integrity = _records()
-    source = canonical_workbench_baseline_from_records(
-        workflow_id=10, stored_integrity_hash=integrity, nodes=nodes, edges=edges
-    )
-    # These fixtures project the current admitted graph, including its current
-    # source-bound Scale contract, through three serialization versions. They
-    # are not a claim that previously persisted baseline bytes changed.
-    assert source.digest == "3619fe3595f81d5144116b7f5393df8d78d5dad192d1929133c4ab725413e133"
-    legacy_source = replace(source, schema_version="spectra-canonical-workbench-baseline/5")
-    assert legacy_source.digest == "39301c7bf2c2dabc65ee1142d70943e8d3b1a5d39a8d46c99fbb73acddac539a"
-    derived = CanonicalSeedExecutionBaseline(
-        workflow_id=source.workflow_id,
-        workflow_integrity_hash=source.workflow_integrity_hash,
-        dataset=source.dataset,
-        graph=source.graph,
-        source_baseline=source,
-        seed_public_id="seed-legacy",
-        seed_evidence_digest="a" * 64,
-        examination_digest="b" * 64,
-    )
-    assert derived.digest == "021bf44babad696345830cb3ed7bb9de1b56f49f0b9b312b26f559ff420b2fbc"
-    for baseline in (source, legacy_source, derived):
-        assert CanonicalWorkbenchBaseline.from_dict(baseline.as_dict()).as_dict() == baseline.as_dict()
-    assert "saved_grouping" not in derived.as_dict()
+    # Preserve the original pins. These are actual records captured from the
+    # pre-change checkout, not new compilations labeled as old evidence.
+    raw = (Path(__file__).parent / "fixtures/batch_predecessor_baselines.json").read_bytes()
+    assert hashlib.sha256(raw).hexdigest() == "40d53897a207f3f4378584280a455c33483ee57811ef548db415cab1b08d91ed"
+    records = json.loads(raw)["baselines"]
+    context = HistoricalReconstructionContext()
+    assert [record["baseline_digest"] for record in records] == [
+        "3619fe3595f81d5144116b7f5393df8d78d5dad192d1929133c4ab725413e133",
+        "39301c7bf2c2dabc65ee1142d70943e8d3b1a5d39a8d46c99fbb73acddac539a",
+        "021bf44babad696345830cb3ed7bb9de1b56f49f0b9b312b26f559ff420b2fbc",
+        "fee01f5ec1e05827f0ab08185852e2d961a7123e9ec938fa963251fb5f647913",
+    ]
+    for record in records:
+        baseline = CanonicalWorkbenchBaseline.from_dict(record, historical_context=context)
+        assert baseline.as_dict() == record
+        with pytest.raises(ValidationGraphError, match="historical or noncanonical"):
+            assert_admitted_validation_graph(baseline.graph, require_live_runtime=False)
+        with pytest.raises(CanonicalWorkbenchBaselineError):
+            CanonicalWorkbenchBaseline.from_dict(record)
+    assert "saved_grouping" not in records[2]
+    assert records[3]["saved_grouping"]["grouping"]["grouped"] is True
 
 
 def test_saved_grouping_closed_utf8_custody_and_derived_dispatch() -> None:

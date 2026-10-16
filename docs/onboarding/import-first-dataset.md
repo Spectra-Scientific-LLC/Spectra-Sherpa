@@ -42,4 +42,4 @@ Before training, confirm:
 
 Run a PCA template first. PCA quickly shows whether spectra cluster, whether preprocessing is needed, and whether any sample looks obviously misaligned or outlying.
 
-After PCA looks reasonable, move to the workflow that matches your scientific question: [PLS Calibration](../chemometrics/pls.md), [Classification](../chemometrics/classification.md), [SIMCA QC](../chemometrics/simca.md), or [Peak Finding and Library Comparison](../chemometrics/peaks-library.md).
+After PCA looks reasonable, move to the workflow that matches your scientific question: [PLS Calibration](../chemometrics/pls.md), [Classification](../chemometrics/classification.md), [SIMCA QC](../chemometrics/simca.md), or [Peak Finding and Library Comparison](../chemometrics/peaks-library.md). For a guided end-to-end pass — dataset, PCA, validated PLS, report — follow [Your First Calibration](first-calibration.md).

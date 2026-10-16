@@ -494,8 +494,9 @@ def _selection_audit_execute(
     parameters: Mapping[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     canonical = _canonical_audit_parameters(parameters)
-    dataset = bind_X(X, missing_message="Selection audit requires X", allow_array=True)
-    matrix = to_numpy_2d(dataset, name="X", dtype=np.float64)
+    # This is a provenance report, including recorded exclusions, not a numerical fit.
+    dataset = bind_X(X, missing_message="Selection audit requires X", allow_array=True, allow_excluded=True)
+    matrix = to_numpy_2d(dataset, name="X", dtype=np.float64, allow_excluded=True)
     if not np.all(np.isfinite(matrix)):
         raise ValueError("Selection audit requires finite X values")
 

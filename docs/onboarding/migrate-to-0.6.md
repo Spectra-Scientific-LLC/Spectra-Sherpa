@@ -1,10 +1,10 @@
 # Migrate to SpectraSherpa 0.6
 
-> **0.6.0 release lifecycle.** Install 0.6.0 from PyPI only after the public
-> index reports that exact version. Before the public tag exists, use only the
-> exact monorepo commit named by the qualification record. After the tag exists
-> but before PyPI reports 0.6.0, use the exact `spectra-sherpa-v0.6.0` source
-> tag. Source version text alone is not publication evidence.
+> **Release availability.** Install 0.6.0 from PyPI only after the public index
+> reports that exact version. Before the public tag exists, use only the
+> exact monorepo commit named by the qualification record. After the tag exists but
+> before PyPI reports 0.6.0, use the exact `spectra-sherpa-v0.6.0` source tag.
+> A source version or tag alone does not establish PyPI or desktop availability.
 
 Version 0.6 makes the product boundary simpler: the default package contains
 the native Workbench and Python SDK together, scientific execution is
@@ -32,12 +32,10 @@ environment.
 ## Recommended: install into a fresh environment
 
 A fresh environment makes removed compatibility packages and undeclared
-dependencies impossible to hide. Before public publication, evaluators must
-begin from the exact monorepo commit named by the qualification record, then
-let Poetry create and populate the fresh environment:
+dependencies impossible to hide. From the exact public Spectra-Sherpa source
+checkout, run the following at the repository root:
 
 ```bash
-cd packages/spectra-sherpa
 python -m pip install poetry
 poetry env use python3.11
 poetry install

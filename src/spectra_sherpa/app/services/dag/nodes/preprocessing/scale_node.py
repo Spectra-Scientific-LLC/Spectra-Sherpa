@@ -12,6 +12,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
+from spectra_sherpa.app.lib import numerical_scaling
 from spectra_sherpa.app.lib.sherpa_dataset import EFFECT_MEAN_CENTERED
 from spectra_sherpa.app.services.dag import supervision_binding
 from spectra_sherpa.app.services.dag.fitted_input_identity import (
@@ -102,9 +103,13 @@ def _fit_scale_state(data: np.ndarray, *, method: str, center: bool, source_data
             "scale": None,
         }
     scale = np.std(matrix, axis=0, dtype=np.float64)
+    # Roundoff resolution scales with each column's magnitude and sample count.
+    # This preserves meaningful low-amplitude variation around zero, while a
+    # large constant offset plus numerical jitter must not become unit noise.
+    unresolved = numerical_scaling.unresolved_variation(matrix, scale)
     if projected["method"] == "pareto":
         scale = np.sqrt(np.maximum(scale, 0.0))
-    scale[(scale == 0.0) | ~np.isfinite(scale)] = 1.0
+    scale[unresolved | ~np.isfinite(scale)] = 1.0
     return {
         "serializer": _STATE_SERIALIZER,
         "input_identity": identity,
@@ -328,7 +333,7 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
     license_id="Apache-2.0",
     help_reference="docs/nodes/preprocessing.md",
-    implementation_modules=(_shared, supervision_binding),
+    implementation_modules=(numerical_scaling, _shared, supervision_binding),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
     managed_optimization_profiles=("first_party_pls",),

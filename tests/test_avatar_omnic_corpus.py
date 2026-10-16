@@ -43,6 +43,10 @@ QUALIFICATION_PATH = (
 )
 PUBLICATION_DECISION_PATH = REPO_ROOT / "docs" / "evidence" / "avatar-essential-oils-v1-publication-decision.json"
 PUBLIC_MANIFEST_SHA256 = "171b74c2abca681d47d65b286629492b9435832ca3aac200504cc4ee125ca85a"
+SHIPPED_QUALIFIED_ARCHIVE = (
+    "packages/spectra-sherpa/src/spectra_sherpa/data/reference/lavender-essential-oil-v1.zip",
+    "42565d51e2969c26ee24171f848ff9c3ab5cb429cd6250568993dffa738cd05c",
+)
 LICENSE_AUTHORIZATION_SHA256 = "7cef134d44482792eeec4dc2787eb4a0ba134eb5df7a197a5d496d48e9d999d5"
 PRIVATE_REVIEW_RELEASE_AUTHORITY_SHA256 = "57c65ad2a284af3c92e15eba4c9251898edaa7c8376957e5954d1267befcbe9a"
 RELEASE_AUTHORITY_SHA256 = "ac5356f3fbbf52221f4ad20a79dce7c14533b1321a5d0b3662603f5a4d93aa77"
@@ -1283,10 +1287,13 @@ def _publication_decision_failures(
     corpus_names = {row["distribution_filename"] for row in manifest["files"]}
     corpus_digests = {row["curated_sha256"] for row in manifest["files"]}
     direct_matches = [row for row in records if row["sha256"] in corpus_digests]
+    # The owner ships the exact qualified distribution as SpectraSherpa's default
+    # dataset; it is the only archive that may carry corpus sources.
     archive_matches = [
         row
         for row in records
-        if any(
+        if (row["path"], row["sha256"]) != SHIPPED_QUALIFIED_ARCHIVE
+        and any(
             Path(member["name"]).name in corpus_names or member["sha256"] in corpus_digests
             for member in row["archive_members"]
         )

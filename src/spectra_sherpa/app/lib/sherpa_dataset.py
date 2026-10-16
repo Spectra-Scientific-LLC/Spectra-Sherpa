@@ -184,6 +184,7 @@ class TargetContext(BaseModel):
     class_names: list[str] | None = None
     selected_target: str | None = None  # explicit Y column selection for multi-target
     selected_authority: TargetAuthority | None = None
+    reference_value_evidence: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def _selected_authority_is_consistent(self) -> "TargetContext":

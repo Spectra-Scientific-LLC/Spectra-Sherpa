@@ -27,7 +27,8 @@ export interface AppFeatures {
   sherpaPeakId: boolean;
   sherpaCodeGen: boolean;
   sherpaWriteReport: boolean;
-  sherpaAgenticTools: boolean;
+  sherpaWorkflowGenerationRun: boolean;
+  sherpaCampaignGeneration: boolean;
   sherpaDataStory: boolean;
   sherpaFullContext: boolean;
   sherpaGuidance: boolean;

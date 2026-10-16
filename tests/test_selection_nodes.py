@@ -213,7 +213,7 @@ class TestVIPUtility:
         w = rng.randn(n_components, n_features)  # weights (component x feature)
         q = rng.randn(1, n_components)  # y loadings
 
-        vip = calculate_vip(t, w, q, n_features)
+        vip = calculate_vip(t, w.T, q, n_features)
 
         assert vip.shape == (n_features,)
         assert np.all(np.isfinite(vip))
@@ -227,7 +227,7 @@ class TestVIPUtility:
         with pytest.raises(ValueError, match="explained response variance"):
             calculate_vip(
                 np.zeros((10, 3)),
-                np.zeros((3, 20)),
+                np.zeros((20, 3)),
                 np.zeros((1, 3)),
                 20,
             )

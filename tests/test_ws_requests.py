@@ -40,18 +40,28 @@ async def test_stop_is_connection_and_actor_scoped_and_interrupts_provider():
 
 
 @pytest.mark.asyncio
-async def test_heartbeats_do_not_extend_deadline_or_retry_and_stop_after_completion():
+async def test_heartbeats_do_not_extend_deadline_or_retry_and_stop_after_completion(monkeypatch):
     registry = WebSocketActionRegistry()
     calls = 0
     cleaned = asyncio.Event()
-    heartbeat_sent = asyncio.Event()
-    timeout_sent = asyncio.Event()
+    three_beats = asyncio.Event()
+    deadline_handles = []
+    real_timeout = asyncio.timeout
 
-    async def capture_event(event):
+    def capture_timeout(seconds):
+        handle = real_timeout(seconds)
+        deadline_handles.append((handle, handle.when()))
+        return handle
+
+    monkeypatch.setattr(asyncio, "timeout", capture_timeout)
+    beat_count = 0
+
+    async def record_event(event):
+        nonlocal beat_count
         if event.get("payload", {}).get("heartbeat"):
-            heartbeat_sent.set()
-        if event.get("code") == "timeout":
-            timeout_sent.set()
+            beat_count += 1
+            if beat_count == 3:
+                three_beats.set()
 
     async def work(ws, *_):
         nonlocal calls
@@ -62,20 +72,25 @@ async def test_heartbeats_do_not_extend_deadline_or_retry_and_stop_after_complet
         finally:
             cleaned.set()
 
-    # Keep a wide gap between heartbeat and deadline: Windows CI can pause the
-    # event loop long enough to skip several ticks of an 80 ms deadline.
-    registry.register("chat", work, request_policy=RequestPolicy(timeout_seconds=1.0, heartbeat_seconds=0.02))
-    socket = SimpleNamespace(send_json=AsyncMock(side_effect=capture_event))
+    registry.register("chat", work, request_policy=RequestPolicy(timeout_seconds=60, heartbeat_seconds=0.01))
+    socket = SimpleNamespace(send_json=AsyncMock(side_effect=record_event))
     await registry.dispatch("chat", socket, {"payload": {"request_id": "a"}}, None, None, background=True)
+    # Synchronize on events instead of assuming a loaded CI runner schedules
+    # three heartbeats inside an 80 ms wall-clock window.
+    await asyncio.wait_for(three_beats.wait(), 5)
+    assert len(deadline_handles) == 1
+    deadline, original_when = deadline_handles[0]
+    assert deadline.when() == original_when
+    assert not cleaned.is_set()
     task = next(iter(registry.requests.tasks.values()))[1]
-    await asyncio.wait_for(heartbeat_sent.wait(), 5)
-    await asyncio.wait_for(cleaned.wait(), 5)
-    await asyncio.wait_for(timeout_sent.wait(), 5)
+    # Expire the real asyncio deadline after observing the unchanged deadline.
+    deadline.reschedule(asyncio.get_running_loop().time())
     await asyncio.wait_for(task, 5)
+    assert cleaned.is_set()
     events = [c.args[0] for c in socket.send_json.call_args_list]
     assert calls == 1
     beats = [e for e in events if e.get("payload", {}).get("heartbeat")]
-    assert beats
+    assert len(beats) >= 3
     assert all("validate_workflow" in e["payload"]["detail"] for e in beats)
     assert events[-1]["code"] == "timeout"
     count = len(events)

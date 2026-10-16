@@ -148,6 +148,17 @@ def _preprocess_inputs(*, supervised: bool = False) -> LifecycleInputs:
     return LifecycleInputs(execute_kwargs={"default": dataset}, fit_args=(dataset,), apply_input=dataset)
 
 
+def _shared_scale_inputs() -> LifecycleInputs:
+    dataset = _preprocess_inputs().apply_input
+    reference = _dataset(dataset.X[:18], prefix="calibration")
+    application = _dataset(dataset.X[18:], prefix="application")
+    return LifecycleInputs(
+        execute_kwargs={"default": application, "reference": reference},
+        fit_args=(reference,),
+        apply_input=application,
+    )
+
+
 def _transfer_inputs(kind: str) -> LifecycleInputs:
     rng = np.random.default_rng(2026081707)
     if kind == "ds":
@@ -251,6 +262,9 @@ _CASES: dict[str, LifecycleCase] = {
     "preprocess.msc": LifecycleCase({"reference_method": "mean"}, _preprocess_inputs, "default"),
     "preprocess.osc": LifecycleCase({"n_components": 1}, lambda: _preprocess_inputs(supervised=True), "default"),
     "preprocess.scale": LifecycleCase({"method": "autoscale", "center": True}, _preprocess_inputs, "default"),
+    "preprocess.shared_reference_scale": LifecycleCase(
+        {"method": "autoscale", "center": True}, _shared_scale_inputs, "default"
+    ),
     "selection.cars": LifecycleCase(
         {"n_iterations": 10, "max_components": 2, "cv_folds": 3, "calibration_fraction": 0.75, "random_seed": 619},
         _regression_inputs,

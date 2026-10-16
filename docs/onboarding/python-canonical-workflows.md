@@ -134,6 +134,34 @@ node through Sherpa's native exact full-SVD authority and returns scores,
 loadings, explained variance, diagnostics, the DAG digest, and the emitted
 model artifact identity.
 
+## PLS calibration path
+
+Run the shipped PLS calibration example from the default installation:
+
+```bash
+python -m spectra_sherpa.examples.pls_calibration
+```
+
+It builds a deterministic synthetic NIR-like mixture with a known
+concentration axis, fits two-component PLS through the canonical
+`model.fitted_pls` node via `ss.regression.pls`, and prints the model summary,
+calibration RMSE and R², and the fitted-state content digest. The calibration
+metrics describe fit to the training data; predictive performance requires the
+validation designs in [Designing Validation](../chemometrics/validation-design.md).
+
+The essential call is:
+
+```python
+import spectra_sherpa.sdk as ss
+
+result = ss.regression.pls(dataset, y=concentration, n_components=2)
+print(result.summary())
+```
+
+`dataset` is any admitted `SherpaDataset` (or array coerced through
+`ss.data.from_array`); `y` supplies one reference value per sample. Choose
+`n_components` from grouped cross-validation, not from calibration fit.
+
 ## Campaign Review Package: inspect, reproduce, compare
 
 A completed managed optimization campaign produces one signed, data-free

@@ -17,6 +17,7 @@ import type { NodeOutput } from "@/utils/nodeOutput";
 
 export interface WorkbookSheet {
   workflowId: number;
+  createdAt?: string;
   name: string;
   purpose: WorkflowPurpose;
   tabColor: string | null;
@@ -81,6 +82,7 @@ const readActiveSheetWorkflowId = (targetProjectId: number): number | null => {
 
 const toSheet = (item: WorkflowListItem): WorkbookSheet => ({
   workflowId: item.id,
+  createdAt: item.created_at,
   name: item.name,
   purpose: item.purpose,
   tabColor: item.tab_color ?? null,
@@ -439,6 +441,19 @@ export const useWorkbookStore = defineStore("workbook", () => {
     }
   }
 
+  // Update only server-owned display metadata; preserve selection and local edits.
+  function syncSavedSheetMetadata(item: WorkflowListItem): void {
+    if (item.project_id !== projectId.value) return;
+    const sheet = sheets.value.find((entry) => entry.workflowId === item.id && entry.kind !== "trial");
+    if (!sheet) return;
+    sheet.tabColor = item.tab_color ?? null;
+    sheet.tabColorOverride = item.tab_color_override ?? null;
+    sheet.colorSource = item.color_source ?? "blank";
+    sheet.primaryDataSourceId = item.primary_data_source_id ?? null;
+    sheet.primaryDataSourceName = item.primary_data_source_name ?? null;
+    sheet.createdAt = item.created_at;
+  }
+
   async function setSheetColor(workflowId: number, color: string | null): Promise<void> {
     const response = await api.put<WorkflowListItem>(`/workflows/${workflowId}`, {
       tab_color: color,
@@ -666,6 +681,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
     openTemplateAsSheet,
     renameSheet,
     setSheetColor,
+    syncSavedSheetMetadata,
     reorderSheets,
     deleteSheet,
     openTrialTab,

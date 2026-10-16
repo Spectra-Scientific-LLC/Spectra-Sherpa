@@ -71,6 +71,12 @@ class ApplicationModelArtifactReplay:
             replay_source = replay_source[:, np.asarray(mask, dtype=bool)]
         return replay_source.with_data(prepared), tuple(replay_warnings + feature_warnings)
 
+    def allows_legacy_model_recovery(self) -> bool:
+        """Supply product permission; scientific admission stays in the core."""
+        from spectra_sherpa.app.core.mode_policy import is_local
+
+        return is_local()
+
     def applicability(self, extract: Any, X: Any) -> dict[str, Any] | None:
         from spectra_sherpa.app.services.model_application import _applicability_diagnostics
 
@@ -96,6 +102,7 @@ def build_application_execution_runtime(
     model_artifact_reader: Any = None,
     preloaded_datasets: dict[str, Any] | None = None,
     allowed_model_artifact_uids: tuple[str, ...] | None = None,
+    pin_preloaded_members: bool = False,
 ) -> ExecutionRuntime:
     """Project app configuration and durable custody into one closed runtime."""
 
@@ -121,7 +128,10 @@ def build_application_execution_runtime(
         model_artifact_replay=ApplicationModelArtifactReplay(),
         model_artifact_semantic_validator=ApplicationModelArtifactSemanticValidator(),
         canonical_artifact_reader=canonical_reader,
-        dataset_source_resolver=ApplicationDatasetSourceResolver(preloaded_datasets=preloaded_datasets),
+        dataset_source_resolver=ApplicationDatasetSourceResolver(
+            preloaded_datasets=preloaded_datasets,
+            pin_preloaded_members=pin_preloaded_members,
+        ),
     )
 
 

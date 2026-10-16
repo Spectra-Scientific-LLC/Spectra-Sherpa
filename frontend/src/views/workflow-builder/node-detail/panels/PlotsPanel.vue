@@ -52,7 +52,7 @@
           </div>
           <!-- PCA Plots -->
           <template v-if="state.isPCAOutput">
-            <div class="plot-subsection">
+            <div v-if="!projectedPresentationIdentity(state.nodeOutput) || isProjectedScientificKind(state.nodeOutput, 'pca_scores')" class="plot-subsection">
               <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaScores')">
                 <i :class="plotSections.pcaScores ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
                 <span>Scores Plot</span>
@@ -120,7 +120,7 @@
               </Transition>
             </div>
 
-            <div class="plot-subsection">
+            <div v-if="!projectedPresentationIdentity(state.nodeOutput)" class="plot-subsection">
               <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaBiplot')">
                 <i :class="plotSections.pcaBiplot ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
                 <span>Biplot (Scores + Loadings)</span>
@@ -160,7 +160,7 @@
               </Transition>
             </div>
 
-            <div class="plot-subsection">
+            <div v-if="!projectedPresentationIdentity(state.nodeOutput) || isProjectedScientificKind(state.nodeOutput, 'pca_loadings')" class="plot-subsection">
               <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaLoadings')">
                 <i
                   :class="plotSections.pcaLoadings ? 'pi pi-chevron-down' : 'pi pi-chevron-right'"
@@ -180,7 +180,34 @@
               </Transition>
             </div>
 
-            <div class="plot-subsection">
+            <div v-if="isProjectedScientificKind(state.nodeOutput, 'pca_variable_correlations')" class="plot-subsection">
+              <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaVariableCorrelations')">
+                <i :class="plotSections.pcaVariableCorrelations ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
+                <span>Variable Correlations</span>
+              </div>
+              <Transition name="collapse">
+                <div v-if="plotSections.pcaVariableCorrelations" class="plot-container">
+                  <div class="plot-controls">
+                    <div class="control-group">
+                      <label>Horizontal Component</label>
+                      <Dropdown v-model="pcaXAxis" :options="pcaXAxisOptions" optionLabel="label" optionValue="value" optionDisabled="disabled" />
+                    </div>
+                    <div class="control-group">
+                      <label>Vertical Component</label>
+                      <Dropdown v-model="pcaYAxis" :options="pcaYAxisOptions" optionLabel="label" optionValue="value" optionDisabled="disabled" />
+                    </div>
+                  </div>
+                  <PlotlyChart
+                    :attention-node-id="attentionNodeId"
+                    attention-plot-key="pcaVariableCorrelationsData"
+                    :data="state.pcaVariableCorrelationsData"
+                    :layout="state.pcaVariableCorrelationsLayout"
+                  />
+                </div>
+              </Transition>
+            </div>
+
+            <div v-if="!projectedPresentationIdentity(state.nodeOutput) || isProjectedScientificKind(state.nodeOutput, 'pca_scores') || isProjectedScientificKind(state.nodeOutput, 'pca_explained_variance')" class="plot-subsection">
               <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaScree')">
                 <i :class="plotSections.pcaScree ? 'pi pi-chevron-down' : 'pi pi-chevron-right'" />
                 <span>Scree Plot (Explained Variance)</span>
@@ -192,7 +219,7 @@
               </Transition>
             </div>
 
-            <div class="plot-subsection">
+            <div v-if="!projectedPresentationIdentity(state.nodeOutput) || isProjectedScientificKind(state.nodeOutput, 't2_q_diagnostics')" class="plot-subsection">
               <div class="plot-subsection-header" @click="$emit('togglePlot', 'pcaDiagnostics')">
                 <i
                   :class="
@@ -1411,6 +1438,7 @@ import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
 import AxisSetControls from "@/components/data/AxisSetControls.vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
+import { isProjectedScientificKind, projectedPresentationIdentity } from "@/utils/scientificPresentation";
 import SampleMetadataStyleControls from "./SampleMetadataStyleControls.vue";
 import { scaleLibraryTraceToSamplePeaks } from "@/utils/libraryTraceScaling";
 import { NODE_DETAIL_STATE_KEY } from "../state/useNodeDetailState";
@@ -2257,7 +2285,7 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   padding: 20px;
   color: #64748b;
   font-size: 0.9rem;
-  text-align: center;
+  text-align: left;
 }
 .empty-plot-message {
   display: flex;

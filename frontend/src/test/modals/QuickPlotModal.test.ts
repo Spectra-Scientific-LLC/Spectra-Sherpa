@@ -5,10 +5,34 @@ import { nextTick } from "vue";
 import QuickPlotModal from "@/views/workflow-builder/modals/QuickPlotModal.vue";
 import { buildNodeOutput } from "@/utils/nodeOutput";
 import { scientificPlotRefusal } from "@/utils/scientificPlotState";
+import { projectActiveSpectralCohort } from "@/utils/scientificCohort";
+import { datasetMetadataGroupingState } from "@/utils/sampleMetadataGrouping";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 describe("QuickPlotModal", () => {
+  it("formats plot-table coordinates without changing retained data", () => {
+    const wrapper = mount(QuickPlotModal, {
+      props: { modelValue: true, nodeType: "model.pca", nodeLabel: "PCA", nodeOutput: { data: [], metadata: {} } },
+      global: { stubs: globalStubs },
+    });
+    const vm = wrapper.vm as any;
+    expect(vm.previewCell(-0.052291812927938476)).toBe("-0.0522918");
+    expect(vm.previewCell(0.00000000001234567)).toBe("1.23457e-11");
+    expect(vm.previewCell(12)).toBe("12");
+    wrapper.unmount();
+  });
+  it("rounds retained matrix previews before strings reach the cell renderer", () => {
+    const wrapper = mount(QuickPlotModal, {
+      props: { modelValue: true, tableOnly: true, nodeType: "model.pca", nodeLabel: "PCA",
+        nodeOutput: { data: [[3.316750812214775]], metadata: {} } },
+      global: { stubs: globalStubs },
+    });
+    const vm = wrapper.vm as any;
+    expect(vm.previewCell(vm.dataPreview[0].col_0)).toBe("3.31675");
+    expect(vm.nodeOutput.data[0][0]).toBe(3.316750812214775);
+    wrapper.unmount();
+  });
   const scientificPresentation = (kind: string) => ({
     schema_version: "spectrasherpa-node-presentation/1",
     contract_digest: "a".repeat(64),
@@ -29,6 +53,55 @@ describe("QuickPlotModal", () => {
     Paginator: true,
   };
 
+  it("lets saved PCA scores switch from specimen to botanical group without changing coordinates", async () => {
+    const labels = ['A__B1', 'B__B1', 'A__B2', 'B__B2'];
+    const scores = [[0, 0], [1, 1], [0.1, 0.2], [1.1, 1.2]];
+    const wire = { data: scores, y_axis: { labels, sample_table: {
+      sample_id: labels, specimen_id: ['A', 'B', 'A', 'B'], block: ['1', '1', '2', '2'],
+      claimed_botanical_group: ['group A', 'group B', 'group A', 'group B'],
+    } } };
+    const wrapper = mount(QuickPlotModal, { props: {
+      embedded: true, modelValue: true, nodeType: 'model.pca', nodeLabel: 'PCA',
+      nodeOutput: { data: scores, primary_port: 'scores', ports: { scores: { value: wire } },
+        metadata: { n_components: 2, explained_variance_ratio: [0.8, 0.15] } },
+    }, global: { stubs: globalStubs } });
+    const vm = wrapper.vm as any;
+    expect(wrapper.text()).toContain('Color by metadata');
+    expect(vm.sampleColorFieldOptions.map((option: any) => option.value)).toContain('claimed_botanical_group');
+    vm.sampleColorField = 'claimed_botanical_group';
+    await nextTick();
+    expect(vm.displayPlotData.slice(0, 2).map((trace: any) => trace.name)).toEqual(['group A', 'group B']);
+    expect(scores).toEqual([[0, 0], [1, 1], [0.1, 0.2], [1.1, 1.2]]);
+    wrapper.unmount();
+  });
+
+  it("offers color and line-style choices on a sample-resolved preprocessing overlay", async () => {
+    const rows = [[1, 2], [3, 4], [5, 6]];
+    const wire = { data: rows, x_axis: { data: [1000, 1100] }, y_axis: {
+      labels: ["A", "B", "C"], sample_table: { Batch: ["first", "second", "first"] },
+    } };
+    const wrapper = mount(QuickPlotModal, { props: {
+      embedded: true, modelValue: true, nodeType: "preprocess.normalize", nodeLabel: "Normalize",
+      nodeOutput: { data: rows, primary_port: "default", ports: { default: { value: wire } },
+        metadata: { is_spectra: true, wavenumbers: [1000, 1100] } },
+    }, global: { stubs: globalStubs } });
+    const vm = wrapper.vm as any;
+    expect(vm.selectedPlotKey).toBe("spectra_overlay");
+    const projected = projectActiveSpectralCohort({ data: rows, presentation_value: wire,
+      metadata: { scientific_presentation: { kind: "spectral_dataset" } } });
+    expect(datasetMetadataGroupingState(projected.output.presentation_value, rows.length).kind).toBe("valid");
+    expect(vm.showSampleStyleControls).toBe(true);
+    expect(vm.sampleColorFieldOptions).toContainEqual({ label: "None", value: "__none__" });
+    vm.sampleColorField = "__none__";
+    vm.sampleSymbolField = "Batch";
+    await nextTick();
+    expect(vm.sampleSymbolField).toBe("Batch");
+    expect(vm.sampleSymbolFieldOptions).toContainEqual({ label: "Batch", value: "Batch" });
+    expect(vm.displayPlotData.filter((trace: any) => trace.xaxis === "x2").map((trace: any) => trace.line.dash))
+      .toEqual(["solid", "dash", "solid"]);
+    wrapper.unmount();
+  });
+
   it("selects table columns without reporting a mixed-unit overall range", async () => {
     const wrapper = mount(QuickPlotModal, { props: {
       modelValue: true, nodeType: "output.data_table", nodeLabel: "Peaks",
@@ -38,6 +111,8 @@ describe("QuickPlotModal", () => {
       } },
     }, global: { stubs: globalStubs } });
     const vm = wrapper.vm as any;
+    expect(vm.viewMode).toBe("data");
+    expect(wrapper.find(".data-table-container").exists()).toBe(true);
     expect(vm.availablePlots).toHaveLength(2);
     expect(wrapper.text()).toContain("Column");
     expect(wrapper.text()).not.toContain("Range:");
@@ -75,6 +150,21 @@ describe("QuickPlotModal", () => {
       ["heatmap", [1100, 1000], ["input B"], [[20, 30]]],
     ]);
     expect(vm.displayPlotLayout.yaxis.domain[0]).toBeGreaterThan(vm.displayPlotLayout.yaxis2.domain[1]);
+    wrapper.unmount();
+  });
+
+  it("breaks the spectral line when Clip Feature Range removes a middle interval", () => {
+    const wrapper = mount(QuickPlotModal, {
+      props: { modelValue: true, nodeType: "preprocess.clip_range", nodeLabel: "Clip Feature Range",
+        nodeInputs: { X: { value: { data: [[1, 2, 3, 4]], x_axis: { data: [400, 800, 1600, 2000] } } } },
+        nodeOutput: { data: [[1, 4]], presentation_value: { data: [[1, 4]], x_axis: { data: [400, 2000] } },
+          metadata: { scientific_presentation: scientificPresentation("spectral_dataset"),
+            diagnostics: { minimum: 800, maximum: 1600, exclude_range: true } } } },
+      global: { stubs: globalStubs },
+    });
+    const processed = (wrapper.vm as any).displayPlotData.find((trace: any) => trace.xaxis === "x2");
+    expect(processed.x).toEqual([400, null, 2000]);
+    expect(processed.y).toEqual([1, null, 4]);
     wrapper.unmount();
   });
 
@@ -521,7 +611,7 @@ describe("QuickPlotModal", () => {
 
 it("does not round micro-scale range or tabular values to zero",()=>{
   const wrapper=mount(QuickPlotModal,{props:{embedded:true,modelValue:true,nodeType:"",nodeLabel:"micro",nodeOutput:{data:[[1e-8,2e-8]],metadata:{}}},global:{stubs:globalStubs}});
-  expect(wrapper.text()).toContain("1e-8");
+  expect(wrapper.text()).toContain("1.0000e-8");
   expect((wrapper.vm as any).dataPreview[0].col_0).toBe("1e-8");
   wrapper.unmount();
 });

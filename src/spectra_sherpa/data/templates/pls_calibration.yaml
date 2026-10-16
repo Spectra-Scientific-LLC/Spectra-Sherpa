@@ -1,8 +1,11 @@
 schema_version: 1
 name: PLS Regression Calibration
 slug: pls_calibration
-description: PLS regression for quantitative calibration. Reports RMSEP and R² on
-  a held-out test set.
+description: PLS with 3 fixed latent variables. Reports held-out RMSEP
+  and R²; the latent-variable count is not selected by cross-validation. Compare
+  saved runs with the same data and evaluation protocol; select latent-variable counts
+  within the training population before evaluating the held-out test set.
+  Spectra are mean-centred; feature tables are autoscaled using training samples.
 category: calibration
 is_active: true
 status: ready
@@ -36,7 +39,7 @@ template_data:
     label: Train PLS Regression
     parameters:
       n_components: 3
-      scale: true
+      scale: false
     position_x: 175
     position_y: 650
   - node_id: predict_1
@@ -68,18 +71,10 @@ template_data:
   - from_node_id: data_1
     to_node_id: partition_1
     to_input: X
-  - from_node_id: data_1
-    to_node_id: partition_1
-    from_output: target
-    to_input: y
   - from_node_id: partition_1
     to_node_id: model_1
     from_output: X_train
     to_input: default
-  - from_node_id: partition_1
-    to_node_id: model_1
-    from_output: y_train
-    to_input: y
   - from_node_id: partition_1
     to_node_id: predict_1
     from_output: X_test
@@ -183,7 +178,7 @@ template_data:
         label: Ordinary PLS Starting Point
         parameters:
           n_components: 3
-          scale: true
+          scale: false
         position_x: 475
         position_y: 225
       - node_id: candidate_evaluator

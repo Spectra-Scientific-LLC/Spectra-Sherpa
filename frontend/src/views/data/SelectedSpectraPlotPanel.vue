@@ -24,6 +24,7 @@
       Workflow binding follows the active dataset and its Workflow view set above.
     </p>
 
+    <div class="preview-controls">
     <details v-if="singleDataset && !featureTablePreview" class="display-options">
       <summary>Curve styling</summary>
       <div>
@@ -55,6 +56,7 @@
         />
       </div>
     </details>
+    </div>
 
     <div v-if="plotDatasetsLoading" class="plot-state" role="status">
       <ProgressSpinner style="width: 28px; height: 28px" />
@@ -142,6 +144,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useDisplayPreferences, displayNumber } from "@/composables/useDisplayPreferences";
 import ProgressSpinner from "primevue/progressspinner";
 import Tag from "primevue/tag";
 import Button from "primevue/button";
@@ -160,6 +163,7 @@ import {
 } from "@/utils/datasetAxisSets";
 import { buildMetadataLineTraces, metadataGroupingState } from "@/utils/sampleMetadataGrouping";
 import SampleMetadataStyleControls from "@/views/workflow-builder/node-detail/panels/SampleMetadataStyleControls.vue";
+import { shouldReverseFeatureAxis } from "@/utils/plotLabels";
 
 const props = withDefaults(
   defineProps<{
@@ -188,7 +192,8 @@ const activeCurve = computed(() =>
     ? { experimentId: props.activeExperimentId, fileName: props.activeFileName }
     : null,
 );
-const overlay = computed(() => buildMultiDatasetOverlay(props.plotDatasets, 50, activeCurve.value));
+const displayPreferences = useDisplayPreferences();
+const overlay = computed(() => buildMultiDatasetOverlay(props.plotDatasets, displayPreferences.maxRows, activeCurve.value));
 const singleSource = computed(() =>
   props.plotDatasets.length === 1 ? props.plotDatasets[0] : null,
 );
@@ -213,7 +218,7 @@ const selectedFeatureTitle = ref(PRIMARY_AXIS_SET);
 const selectedSampleLabels = ref(PRIMARY_AXIS_SET);
 const sampleColorField = ref("__none__");
 const sampleLineField = ref("__none__");
-const FEATURE_TABLE_ROW_LIMIT = 10;
+const FEATURE_TABLE_ROW_LIMIT = computed(() => displayPreferences.maxRows);
 const FEATURE_TABLE_COLUMN_LIMIT = 32;
 
 const featureTablePreview = computed(() => {
@@ -232,7 +237,7 @@ const featureTablePreview = computed(() => {
   ) {
     return null;
   }
-  const admittedIndexes = selectedRowIndexes.value.slice(0, FEATURE_TABLE_ROW_LIMIT);
+  const admittedIndexes = selectedRowIndexes.value.slice(0, FEATURE_TABLE_ROW_LIMIT.value);
   const admittedRows = admittedIndexes.map((index) => dataset.data[index]);
   if (
     !admittedRows.every(
@@ -284,7 +289,7 @@ const featureTablePreview = computed(() => {
   };
 });
 const FEATURE_PLOT_LIMIT = 4;
-const FEATURE_SCATTER_ROW_LIMIT = 600;
+const FEATURE_SCATTER_ROW_LIMIT = computed(() => displayPreferences.maxRows);
 const FEATURE_COLORS = [
   "#2563eb", "#dc2626", "#059669", "#9333ea", "#d97706", "#0891b2",
 ];
@@ -321,7 +326,7 @@ const featureDistributionPlot = computed(() => {
   const traces: Record<string, unknown>[] = [];
   const axes: Record<string, unknown> = {};
   const groupCount = Math.max(groups.size, 1);
-  const perGroupLimit = Math.max(1, Math.floor(FEATURE_SCATTER_ROW_LIMIT / groupCount));
+  const perGroupLimit = Math.max(1, Math.floor(FEATURE_SCATTER_ROW_LIMIT.value / groupCount));
   let scatterRows = 0;
   const scatterIndexes = new Map<string, number[]>();
   for (const [group, indexes] of groups) {
@@ -522,9 +527,9 @@ const singlePlotData = computed(() => {
       },
       sampleColorField.value,
       sampleLineField.value,
-      50,
+      displayPreferences.maxRows,
     );
-    const spectralTraceCount = Math.min(rows.length, 50);
+    const spectralTraceCount = Math.min(rows.length, displayPreferences.maxRows);
     return traces.map((trace, index) => {
       if (index >= spectralTraceCount) return trace;
       const customdata = (trace.customdata as unknown[][]).map((values) => [
@@ -545,7 +550,7 @@ const singlePlotData = computed(() => {
       };
     });
   }
-  return rows.slice(0, 50).map((row, index) => ({
+  return rows.slice(0, displayPreferences.maxRows).map((row, index) => ({
     type: "scatter",
     mode: "lines",
     x,
@@ -587,6 +592,15 @@ const plotLayout = computed(() => ({
     title: singleDataset.value
       ? displayAxisTitle(featureAxisDisplay.value?.title, featureAxisDisplay.value?.units)
       : overlay.value.xAxisTitle,
+    autorange: shouldReverseFeatureAxis(
+      singleDataset.value
+        ? {
+            title: featureAxisDisplay.value?.title,
+            units: featureAxisDisplay.value?.units,
+            quantity: singleDataset.value.x_axis?.quantity ?? undefined,
+          }
+        : { title: overlay.value.xAxisTitle },
+    ) ? ("reversed" as const) : (true as const),
   },
   yaxis: { title: overlay.value.yAxisTitle, uirevision: viewportRevision.value },
   autosize: true,
@@ -604,7 +618,7 @@ function displayAxisTitle(title?: string | null, units?: string | null): string 
 
 function formatCell(value: number | null): string {
   if (value === null) return "Missing";
-  return Number.isInteger(value) ? String(value) : Number(value.toPrecision(6)).toString();
+  return Number.isInteger(value) ? String(value) : displayNumber(value, 6);
 }
 </script>
 
@@ -643,6 +657,13 @@ function formatCell(value: number | null): string {
   color: var(--text-color-secondary);
   font-size: 0.78rem;
   margin: 0.45rem 0 0;
+}
+
+.preview-controls {
+  align-items: flex-start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
 }
 
 .display-options {

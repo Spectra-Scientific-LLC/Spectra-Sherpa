@@ -188,6 +188,21 @@ export const scientificPlotOptions = (
   }
   if (renderer.strategy !== "declared_visualization") {
     if (
+      identity.kind === "pca_scores" &&
+      output?.ports?.variable_correlations &&
+      output.ports.explained_variance
+    ) {
+      return [
+        ...(Number(output.metadata?.n_components) > 1 ||
+          (Array.isArray(output.data?.[0]) && output.data[0].length > 1) ||
+          (Array.isArray(output.metadata?.pc_labels) && output.metadata.pc_labels.length > 1)
+          ? [{ key: "scientific_pca_summary", label: "PCA Summary" }]
+          : []),
+        ...renderer.plots.map((item) => ({ ...item })),
+        { key: "scientific_pca_variable_correlations", label: "Variable Correlations" },
+      ];
+    }
+    if (
       identity.kind === "spectral_dataset" &&
       output?.metadata?.scientific_matrix_role === "component_concentrations"
     ) {
@@ -296,6 +311,19 @@ export const projectScientificPresentation = (
     ...output.metadata,
     ...populatedMetadata(portOutput.metadata),
   };
+  if (sourcePort === "train_indices" || sourcePort === "test_indices") {
+    // Parent metadata describes the primary (usually training) dataset, not
+    // this index vector. Never borrow its row identities for another split.
+    for (const key of ["sample_labels", "source_labels", "labels", "diagnostics"]) delete projectedMetadata[key];
+    const indices = portOutput.data;
+    const subset = output.ports?.[sourcePort === "train_indices" ? "X_train" : "X_test"];
+    const value = subset?.value as Record<string, any> | undefined;
+    const labels = value?.y_axis?.labels ?? value?.sample_axis?.labels;
+    if (Array.isArray(indices) && indices.every((index): index is number => typeof index === "number" && Number.isSafeInteger(index) && index >= 0)) {
+      projectedMetadata.sample_labels = Array.isArray(labels) && labels.length === indices.length
+        ? labels : indices.map(index => `Source row ${index + 1}`);
+    }
+  }
   if (presentation.kind === "target_matrix") {
     for (const key of [
       "wavenumbers",

@@ -24,7 +24,7 @@ concurrency:
 jobs:
   ubuntu:
     # Operator may publish source/pip before scheduling signed installers.
-    if: ${{ github.event_name == 'workflow_dispatch' || vars.DESKTOP_RELEASE_PAUSED != 'true' }}
+    if: ${{ vars.DESKTOP_RELEASE_PAUSED != 'true' }}
     name: Ubuntu AppImage qualification
     runs-on: ubuntu-24.04
     timeout-minutes: 60

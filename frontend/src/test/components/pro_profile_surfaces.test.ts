@@ -8,15 +8,19 @@ import NotificationCenterDrawer from "@/components/NotificationCenterDrawer.vue"
 import MemoryMapView from "@/views/project/MemoryMapView.vue";
 import BatchRunTab from "@/views/experiments/BatchRunTab.vue";
 import LogsView from "@/views/LogsView.vue";
+import DocumentationView from "@/views/DocumentationView.vue";
 const mocks = vi.hoisted(() => ({
   mode: { value: "enterprise" }, profile: { value: "pro" },
+  config: { value: {} as Record<string, unknown> },
   demo: { value: false }, get: vi.fn(), fetchWatches: vi.fn(),
   fetchDeployRuns: vi.fn(), fetchPredictions: vi.fn(), push: vi.fn(),
+  deployErrors: { watchesError: null as string | null, runsError: null as string | null },
 }));
 vi.mock("@/composables/useAppConfig", () => ({ useAppConfig: () => ({
-  appMode: mocks.mode, siteProfile: mocks.profile, appConfig: { value: {} }, isFeatureEnabled: () => true,
+  appMode: mocks.mode, siteProfile: mocks.profile, appConfig: mocks.config, isFeatureEnabled: () => true,
 }) }));
 vi.mock("@/composables/useDemoMode", () => ({ useDemoMode: () => ({ isDemoMode: mocks.demo }) }));
+vi.mock("@/stores/auth", () => ({ useAuthStore: () => ({ user: null, token: null }) }));
 vi.mock("@/composables/usePrimaryNavigation", () => ({ usePrimaryNavigation: () => ({ items: { value: [] } }) }));
 vi.mock("@/stores/notification", () => ({ useNotificationStore: () => ({ notifications: [], actionRequired: [], unreadCount: 0 }) }));
 vi.mock("@/stores/guidance", () => ({ useGuidanceStore: () => ({ notifications: [], loadNotifications: mocks.get }) }));
@@ -26,7 +30,7 @@ vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: vi.fn() }) }));
 vi.mock("@/stores/advisor", () => ({ useAdvisorStore: () => ({ switchScope: vi.fn() }) }));
 vi.mock("@/stores/runs", () => ({ useRunsStore: () => ({ fetchPredictions: mocks.fetchPredictions }) }));
 vi.mock("@/stores/deploy", () => ({ useDeployStore: () => ({
-  watches: [], deployRuns: [], loading: false, runsLoading: false,
+  watches: [], deployRuns: [], loading: false, runsLoading: false, ...mocks.deployErrors,
   fetchWatches: mocks.fetchWatches, fetchDeployRuns: mocks.fetchDeployRuns,
 }) }));
 vi.mock("@/api/client", () => ({ default: { get: mocks.get } }));
@@ -38,11 +42,13 @@ const settingsOptions = { global: { stubs: {
 describe("Pro routes with operator-owned configuration", () => {
   beforeEach(() => {
     mocks.mode.value = "enterprise"; mocks.profile.value = "pro"; mocks.demo.value = false;
+    mocks.config.value = {};
     mocks.get.mockReset();
     mocks.fetchWatches.mockReset();
     mocks.fetchDeployRuns.mockReset();
     mocks.fetchPredictions.mockReset();
     mocks.push.mockReset();
+    mocks.deployErrors.watchesError = null; mocks.deployErrors.runsError = null;
   });
   it("offers durable and private project batch prediction", async () => {
     mocks.get.mockImplementation((url: string) => Promise.resolve({
@@ -55,8 +61,10 @@ describe("Pro routes with operator-owned configuration", () => {
     // The batch tab renders the uploader once a single model is selected;
     // the empty initial selection keeps the control out of the DOM here.
     expect(wrapper.findComponent({ name: "PrivateBatchUpload" }).exists()).toBe(false);
-    expect(wrapper.find(".batch-form").exists()).toBe(true);
-    expect(wrapper.text()).toContain("100,000 values");
+    expect(wrapper.find(".batch-combinations").exists()).toBe(true);
+    expect(wrapper.text()).toContain("Apply trained model — no refit");
+    expect(wrapper.text()).toContain("Run workflow — train/evaluate");
+    expect(wrapper.find("table").exists()).toBe(false);
     expect(mocks.get).toHaveBeenCalledWith("/experiments", { params: { project_id: 3 } });
   });
   it("keeps hosted Pro deployment on a Workbench without blocked requests", async () => {
@@ -103,6 +111,18 @@ describe("Pro routes with operator-owned configuration", () => {
     expect(destination.searchParams.get("subject")).toBe("Spectra Sherpa audit upgrade");
     audit.unmount();
   });
+  it("locks Demo audit controls even if a deployment advertises audit capabilities", async () => {
+    mocks.profile.value = "demo";
+    mocks.demo.value = true;
+    mocks.config.value = { audit: { localQuery: true, fullPipeline: true, reportPack: true, exportAudited: true } };
+    const audit = mount(AuditContent, { global: { stubs: { AuditCapabilityStrip: true } } });
+    await flushPromises();
+    expect(audit.text()).toContain("Audit evidence packs are unavailable in Demo.");
+    expect(audit.find(".workbench-layout").exists()).toBe(false);
+    expect(audit.findComponent({ name: "AuditTimeline" }).exists()).toBe(false);
+    expect(mocks.get).not.toHaveBeenCalled();
+    audit.unmount();
+  });
   it("synchronizes project deployment history on mount and window focus", async () => {
     mocks.profile.value = "local"; mocks.mode.value = "local";
     mocks.get.mockResolvedValue({ data: [] });
@@ -121,6 +141,53 @@ describe("Pro routes with operator-owned configuration", () => {
     window.dispatchEvent(new Event("focus")); await flushPromises();
     expect(mocks.fetchWatches).toHaveBeenCalledTimes(2);
     expect(mocks.fetchDeployRuns).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+  });
+  it("frames Settings, Audit, Logs and Documentation with the shared page header", async () => {
+    mocks.get.mockResolvedValue({ data: [] });
+    const titleOf = (view: ReturnType<typeof mount>) => view.get(".workspace-header h1").text();
+    const settings = mount(SettingsContent, settingsOptions);
+    expect(titleOf(settings)).toBe("Settings");
+    settings.unmount();
+    const audit = mount(AuditContent, { global: { stubs: {
+      AuditCapabilityStrip: true, AuditFilterChips: true, AuditEventsTable: true,
+      AuditChainStatus: true, AuditReportPackResult: true,
+    } } });
+    await flushPromises();
+    expect(titleOf(audit)).toBe("Audit");
+    expect(audit.get(".workspace-header").findComponent({ name: "AuditCapabilityStrip" }).exists()).toBe(true);
+    audit.unmount();
+    const logs = mount(LogsView, { global: { stubs: { ChatExchangeHistory: true } } });
+    await flushPromises();
+    expect(titleOf(logs)).toBe("Logs");
+    expect(logs.get(".workspace-header").text()).toContain("Refresh");
+    logs.unmount();
+    const docs = mount(DocumentationView);
+    expect(titleOf(docs)).toBe("Documentation");
+    docs.unmount();
+  });
+  it("shows deployment load failures as alerts whose Retry re-synchronizes", async () => {
+    mocks.profile.value = "local"; mocks.mode.value = "local";
+    mocks.get.mockResolvedValue({ data: [] });
+    mocks.deployErrors.watchesError = "Could not load folder watches.";
+    mocks.deployErrors.runsError = "Could not load prediction history.";
+    const wrapper = mount(DeployContent, { global: { stubs: {
+      ResponsiveHeaderActions: { template: "<div><slot/></div>" },
+      ContextualActions: true,
+      Button: { props: ["label", "disabled"], template: '<button :disabled="disabled">{{label}}</button>' },
+      TabView: { template: "<div><slot/></div>" }, TabPanel: { template: "<div><slot/></div>" },
+      Dialog: true, DataTable: true, Column: true,
+    } } });
+    await flushPromises();
+    const alerts = wrapper.findAll('[role="alert"]').map((alert) => alert.text());
+    expect(alerts.some((text) => text.includes("Could not load folder watches."))).toBe(true);
+    expect(alerts.some((text) => text.includes("Could not load prediction history."))).toBe(true);
+    expect(wrapper.text()).not.toContain("No folder watches");
+    const before = mocks.fetchWatches.mock.calls.length;
+    await wrapper.findAll('[role="alert"] button').find((button) => button.text() === "Retry")!.trigger("click");
+    await flushPromises();
+    expect(mocks.fetchWatches.mock.calls.length).toBe(before + 1);
+    expect(mocks.fetchDeployRuns.mock.calls.length).toBe(before + 1);
     wrapper.unmount();
   });
   it("shows Pro guidance and loads the project memory map", async () => {
@@ -170,7 +237,7 @@ describe("Pro routes with operator-owned configuration", () => {
       Button: { props: ["label", "disabled"], template: '<button :disabled="disabled">{{label}}</button>' },
     } } });
     await logs.get("button").trigger("click");
-    expect(mocks.get).toHaveBeenCalledWith("/logs");
+    expect(mocks.get).toHaveBeenCalledWith("/logs", { signal: expect.any(AbortSignal) });
   });
   it("explains a direct Logs deep link without calling the blocked endpoint", async () => {
     const wrapper = mount(LogsView, { global: { stubs: {

@@ -447,7 +447,7 @@ def _pca_state_and_outputs() -> tuple[dict, np.ndarray, np.ndarray, np.ndarray, 
     axis = np.arange(TOOL.EXPECTED_SELECTED_SHAPE[1], dtype=np.float64)
     axis_wire = {"units": "cm-1", "title": "Wavenumber", "quantity": "wavenumber"}
     state = {
-        "schema_version": "spectrasherpa.model.pca-state/4",
+        "schema_version": "spectrasherpa.model.pca-state/5",
         "serializer": "spectrasherpa.model-artifact.pca/3",
         "source_contract_digest": "c" * 64,
         "state_content_digest": "d" * 64,
@@ -461,6 +461,14 @@ def _pca_state_and_outputs() -> tuple[dict, np.ndarray, np.ndarray, np.ndarray, 
             "scale": None,
         },
         "metadata": {
+            "input_identity": {
+                "schema_version": "spectrasherpa.fitted-input-identity/1",
+                "features": TOOL.EXPECTED_SELECTED_SHAPE[1],
+                "axis": [TOOL._array_digest(axis), None, "cm-1", "wavenumber"],
+                "signal_units": None,
+                "signal_quantity": None,
+                "measurement_mode": None,
+            },
             "feature_axis_labels_sha256": None,
             "feature_axis_units": "cm-1",
             "feature_axis_quantity": "wavenumber",
@@ -490,6 +498,7 @@ def test_pca_state_refuses_divergent_node_outputs() -> None:
         "selected_axis_wire": axis_wire,
         "expected_contract_digest": "c" * 64,
         "expected_input_axis_identity_sha256": "a" * 64,
+        "expected_input_identity": state["metadata"]["input_identity"],
     }
     TOOL._require_pca_state_output_binding(state, **kwargs)
     changed = loadings.copy()

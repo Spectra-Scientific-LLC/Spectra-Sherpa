@@ -2202,6 +2202,7 @@ async def _project_to_detail(project: Project, session: AsyncSession) -> Project
         )
         .options(
             selectinload(Workflow.primary_data_source),
+            selectinload(Workflow.nodes),
             selectinload(Workflow.data_source_links),
             selectinload(Workflow.advisor_channels),
         )

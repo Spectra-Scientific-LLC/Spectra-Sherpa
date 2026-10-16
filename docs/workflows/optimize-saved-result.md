@@ -26,7 +26,7 @@ scores. The 20 test samples are reserved for inspection.
 ## Before you start
 
 - A project with the **Corn M5** reference dataset imported, with **Moisture** as
-  the target. In **My Dataset**, find Corn M5 in the reference catalog, open its
+  the target. In **Data > Import > Reference Datasets**, find Corn M5, open its
   **Provider page** to download the archive, then choose **Import downloaded file**.
   SpectraSherpa checks the file against its registered fingerprint and binds the
   spectra (1100–2498 nm, 80 samples) and the Moisture values.
@@ -64,14 +64,15 @@ each actual dataset/profile journey separately.
 Rev0 is the result you want to improve. Here it is the stock calibration starter,
 unchanged.
 
-1. Open **Workflow**, then **Choose Analysis Starter**.
+1. Open **Workflow**, then **Analysis Starter**.
 2. Pick **PLS Regression Calibration** and start it on the current data.
    The sheet contains: load data → Kennard–Stone train/test split (25 % test) →
    PLS with 3 latent variables and scaling → predict test set → held-out regression
    evaluation → metrics table and predicted-vs-actual plot.
-3. Click **Execute Workflow**. The run is saved in **Results**.
+3. Click **Execute Workflow**. The run is saved in **Runs**.
 
-The historical all-data development CV baseline was **RMSE 0.2340 (n=80)**.
+The historical all-data development CV baseline was **RMSECV 0.2340 (n=80;
+target units not declared)**.
 Current Optimize evaluates this Rev0 by five-fold CV on its **60 training samples**;
 the historical score is not an expected result for this training-only run.
 
@@ -79,7 +80,7 @@ the historical score is not an expected result for this training-only run.
 
 You can start from the run or from Optimize itself; both open the same planner.
 
-- From the run: open it in **Results** and choose **Optimize**.
+- From the run: open it in **Runs** and choose **Optimize**.
 - From Optimize: click **New campaign** → **A saved run** → choose the project and
   the saved run → **Continue with Sherpa**.
 
@@ -92,9 +93,10 @@ Under **Frame the development question**:
 
 1. **Spectral domain**: NIR.
 2. **Common outer folds**: 5.
-3. **Meaningful improvement**: 0.01 (RMSE units of moisture).
+3. **Meaningful improvement**: 0.01 (RMSECV; target units not declared in this historical example).
 4. **Validation grouping**: **No grouping declared** (Corn M5 has one spectrum per
-   sample; choose **Use retained group column** when you have replicates).
+   sample; choose **Use retained group column** only for a true shared specimen,
+   batch, or other group identity, including replicate measurements).
 5. Tick **Confirm this objective, validation, and grouping as the common development
    examination**.
 6. Click **Start planning from Rev0**.
@@ -108,8 +110,9 @@ These settings are fixed for the whole campaign so every round is comparable.
 3. In the instruction box, say what to compare, for example:
    *"Compare SNV with a Savitzky–Golay first derivative before PLS."*
 4. Click **Generate validated preview**. Sherpa proposes one hypothesis per change and
-   shows, for each: **Why Sherpa thinks this is worth testing**, **Expected
-   development evidence**, **Trade-offs to inspect** and the **Exact workflow change**.
+   shows a compact title list. Use **☑** to select a hypothesis for execution; use
+   **▸** to inspect **Rationale**, **Expected CV response**, **Trade-offs**, and
+   **Preprocessing and model changes**. Opening a row does not select it.
    Use **Revise validated preview** to adjust.
    You can also turn individual hypotheses off: excluded cards turn grey, and the
    reviewed execution covers only the selected hypotheses plus the unchanged baseline. For
@@ -122,24 +125,28 @@ These settings are fixed for the whole campaign so every round is comparable.
 6. Click **Execute reviewed iteration**. The page opens the campaign's progress in
    **Optimize** (or click **View progress**).
 
-**Historical round 1 result** (5-fold all-data development CV, n=80, RMSE):
+**Historical round 1 result** (5-fold all-data development CV, n=80, RMSECV):
 
-| Trial | RMSE | Outcome |
+| Trial | RMSECV (target units not declared; historical n=80) | Outcome |
 |---|---|---|
 | Rev0, unchanged | 0.2340 | reference |
 | SNV before PLS | 0.2292 | not supported |
 | **SG first derivative (window 15, order 2) before PLS** | **0.1369** | supported |
 
-The monitor shows the evaluations, best RMSE against the starting point, the trend,
-and successfully evaluated candidates with **Open in Workflow** to inspect them as
-normal sheets. Failed or cancelled evaluations do not constitute usable solutions.
+The results table shows rank, RMSECV, improvement, paired-fold agreement, outcome,
+and retained revision. Check rows and choose **Compare selected** to compare a subset.
+Expand **▸** for CV metrics, paired folds, model changes, and **Workflow →**. The
+**Paired CV improvement plot** shows pooled and per-fold improvement against the reference. Failed or cancelled evaluations do not constitute usable solutions.
 Ranking draws attention to performance; it does not select a solution for you.
+
+Checkboxes in results select rows for comparison; they do not retain models.
+Expanded rows and comparison settings survive refresh within the same browser tab.
+Sherpa Advisor can retrieve the campaign's CV evidence even while rows are collapsed.
 
 ## Step 5 — Keep the best direction
 
-1. In Optimize, choose **New campaign** → **A solution from a campaign** → select the
-   round-1 campaign → **Open campaign plan**. (Or return to the planner.)
-2. Under **Iterative development**, find iteration 1 and the first-derivative trial.
+1. Open round 1 in the campaign directory.
+2. Expand **▸** beside the first-derivative trial in the ranked results table.
 3. Choose a reason (here **Primary metric**), write a short rationale, and click
    **Retain as refined seed**. The trial becomes **Rev1**, recorded with its evidence.
 
@@ -153,7 +160,7 @@ Ranking draws attention to performance; it does not select a solution for you.
 
 **Historical round 2 result** (all-data development CV, n=80), starting from Rev1:
 
-| Trial | RMSE | Outcome |
+| Trial | RMSECV (target units not declared; historical n=80) | Outcome |
 |---|---|---|
 | Rev1, unchanged | 0.1369 | reference |
 | PLS 4 latent variables | 0.0899 | supported |
@@ -164,9 +171,12 @@ Ranking draws attention to performance; it does not select a solution for you.
 
 Select the round-2 campaign in Optimize. The historical all-data CV **Lineage** showed:
 
-- Baseline · RMSE 0.2340
-- Seed 0 · saved run → Round 1 · explore · best RMSE 0.1369 · improved 0.0971 on parent
-  - Seed 1 · promoted → Round 2 · refine · best RMSE 0.0549 · improved 0.0820 on parent
+All lineage errors and improvements below are RMSECV, n=80; target units are
+not declared in the historical evidence.
+
+- Baseline · RMSECV 0.2340
+- Seed 0 · saved run → Round 1 · explore · best RMSECV 0.1369 · improved 0.0971 on parent
+  - Seed 1 · promoted → Round 2 · refine · best RMSECV 0.0549 · improved 0.0820 on parent
 
 Click any round to open it. Below the tree, the stop advice for this run read
 **Worth continuing**: no two-round plateau and no uniform instability yet.
@@ -186,3 +196,15 @@ Click any round to open it. Below the tree, the stop advice for this run read
 
 - **Stop & keep results** ends a running round; finished evaluations are kept.
 - **Cancel** in the campaign header stops the displayed campaign only.
+
+## Manual comparison in local OSS
+
+Hosted Optimize campaigns require Demo or Pro. In local OSS, duplicate the
+calibration workflow sheet, change one preprocessing or component setting at a
+time, and execute each variant. Keep the same source selection, target, training
+population, split seed, folds, and validation design across variants. Review
+their saved evidence in **Runs** and record the comparison in **Report**.
+Learn preprocessing inside training folds and preserve the test holdout for
+final evaluation. The historical 0.2340 → 0.0549 figures above describe all-data
+development CV on 80 samples; they are neither expected scores for current
+training-only CV on 60 samples nor independent performance evidence.

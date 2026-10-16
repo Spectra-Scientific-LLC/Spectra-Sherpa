@@ -1,12 +1,12 @@
 <template>
-  <div class="workspace-context-item">
+  <div class="workspace-context-item" :class="{ 'workspace-context-item--wrap': wrap }">
     <span>{{ label }}</span
     ><strong :title="detail || value">{{ value }}</strong
     ><small v-if="$slots.default"><slot /></small>
   </div>
 </template>
 <script setup lang="ts">
-defineProps<{ label: string; value: string; detail?: string }>();
+defineProps<{ label: string; value: string; detail?: string; wrap?: boolean }>();
 </script>
 <style scoped>
 .workspace-context-item {
@@ -29,6 +29,10 @@ strong {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.workspace-context-item--wrap strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 small {
   color: var(--text-color-secondary);

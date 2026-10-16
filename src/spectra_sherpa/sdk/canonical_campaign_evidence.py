@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from spectra_sherpa.app.services.dag import canonical_selection_policy as _canonical_selection_policy
+from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
 from spectra_sherpa.app.services.dag.validation_graph import (
     ValidationGraphError,
     validation_graph_from_dict,
@@ -140,7 +141,7 @@ def _digest_value(value: Any, field: str) -> str:
     return value
 
 
-def _declared_candidate_identity(candidate: dict[str, Any]) -> dict[str, Any]:
+def _declared_candidate_identity(candidate: dict[str, Any], *, historical_context=None) -> dict[str, Any]:
     candidate["candidate_id"] = _identifier(candidate["candidate_id"], "candidate_id")
     if (
         isinstance(candidate["declared_ordinal"], bool)
@@ -155,11 +156,12 @@ def _declared_candidate_identity(candidate: dict[str, Any]) -> dict[str, Any]:
     candidate["candidate_graph"] = _candidate_graph(
         candidate["candidate_graph"],
         expected_digest=candidate["graph_digest"],
+        historical_context=historical_context,
     )
     return candidate
 
 
-def _candidate_graph(value: Any, *, expected_digest: str) -> dict[str, Any]:
+def _candidate_graph(value: Any, *, expected_digest: str, historical_context=None) -> dict[str, Any]:
     """Re-admit one complete graph through the canonical graph authority.
 
     The package path deliberately disables only the installed-runtime probe.
@@ -180,7 +182,11 @@ def _candidate_graph(value: Any, *, expected_digest: str) -> dict[str, Any]:
     ):
         raise CanonicalCampaignEvidenceError("candidate graph topology is outside the supported bound")
     try:
-        graph = validation_graph_from_dict(dict(value), require_live_runtime=False)
+        graph = (
+            validation_graph_from_dict(dict(value), require_live_runtime=False)
+            if historical_context is None
+            else historical_context.graph(value)
+        )
     except ValidationGraphError as exc:
         raise CanonicalCampaignEvidenceError("candidate graph is not canonically admissible") from exc
     if graph.digest != expected_digest:
@@ -188,12 +194,14 @@ def _candidate_graph(value: Any, *, expected_digest: str) -> dict[str, Any]:
     return graph.as_dict()
 
 
-def _candidate(value: Any) -> dict[str, Any]:
+def _candidate(value: Any, *, historical_context=None) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise CanonicalCampaignEvidenceError("campaign candidate fields are closed")
     status = value.get("status")
     fields = _SUCCESS_CANDIDATE_FIELDS if status == "succeeded" else _FAILED_CANDIDATE_FIELDS
-    candidate = _declared_candidate_identity(_closed(value, fields, "campaign candidate"))
+    candidate = _declared_candidate_identity(
+        _closed(value, fields, "campaign candidate"), historical_context=historical_context
+    )
     if status == "failed":
         if candidate["failure_status"] not in _FAILURE_STATUSES:
             raise CanonicalCampaignEvidenceError("candidate failure status is invalid")
@@ -247,7 +255,7 @@ def _reviewed_decision(value: Any, candidates: tuple[dict[str, Any], ...]) -> di
     return decision
 
 
-def _decision(value: Any, candidates: tuple[dict[str, Any], ...]) -> dict[str, Any]:
+def _decision(value: Any, candidates: tuple[dict[str, Any], ...], *, historical_context=None) -> dict[str, Any]:
     if isinstance(value, Mapping) and value.get("schema_version") == REVIEWED_SELECTION_VERSION:
         return _reviewed_decision(value, candidates)
     try:
@@ -273,7 +281,9 @@ def _decision(value: Any, candidates: tuple[dict[str, Any], ...]) -> dict[str, A
                     ],
                 )
             )
-        verified = _canonical_selection_policy.verify_canonical_development_decision(value, projected)
+        verified = _canonical_selection_policy.verify_canonical_development_decision(
+            value, projected, historical_context=historical_context
+        )
         if (
             verified.get("schema_version") == _canonical_selection_policy.SCIENTIST_DEVELOPMENT_DECISION_VERSION
             and verified.get("scientist_selection") is None
@@ -292,7 +302,11 @@ class CanonicalCampaignEvidence:
     content_digest: str
 
     @classmethod
-    def from_dict(cls, value: Mapping[str, Any]) -> "CanonicalCampaignEvidence":
+    def from_dict(
+        cls, value: Mapping[str, Any], *, historical_context: HistoricalReconstructionContext | None = None
+    ) -> "CanonicalCampaignEvidence":
+        if historical_context is not None and type(historical_context) is not HistoricalReconstructionContext:
+            raise CanonicalCampaignEvidenceError("historical evidence requires the packaged reconstruction context")
         root = _closed(value, _ROOT_FIELDS, "canonical campaign evidence")
         if root["schema_version"] not in {CANONICAL_CAMPAIGN_EVIDENCE_VERSION, REVIEWED_CAMPAIGN_EVIDENCE_VERSION}:
             raise CanonicalCampaignEvidenceError("canonical campaign evidence version is unsupported")
@@ -307,7 +321,7 @@ class CanonicalCampaignEvidence:
         raw_candidates = root["candidates"]
         if not isinstance(raw_candidates, list) or not 2 <= len(raw_candidates) <= 6:
             raise CanonicalCampaignEvidenceError("campaign needs a bounded baseline and candidate ledger")
-        candidates = tuple(_candidate(item) for item in raw_candidates)
+        candidates = tuple(_candidate(item, historical_context=historical_context) for item in raw_candidates)
         if tuple(item["declared_ordinal"] for item in candidates) != tuple(range(1, len(candidates) + 1)):
             raise CanonicalCampaignEvidenceError("campaign declared candidate ordinals are not closed")
         successful = tuple(item for item in candidates if item["status"] == "succeeded")
@@ -332,7 +346,7 @@ class CanonicalCampaignEvidence:
                     validation["model_operation_id"] == "classification.simca"
                 ):
                     raise CanonicalCampaignEvidenceError("reviewed optimization lane differs from model interpretation")
-        decision = _decision(root["decision"], candidates)
+        decision = _decision(root["decision"], candidates, historical_context=historical_context)
         if _digest(decision) != campaign["decision_digest"]:
             raise CanonicalCampaignEvidenceError("campaign decision digest mismatch")
         winner_refit = _closed(root["winner_refit"], _WINNER_REFIT_FIELDS, "winner refit")
@@ -364,6 +378,7 @@ class CanonicalCampaignEvidence:
         candidates: list[Mapping[str, Any]],
         decision: Mapping[str, Any],
         winner_refit: Mapping[str, Any],
+        historical_context: HistoricalReconstructionContext | None = None,
     ) -> "CanonicalCampaignEvidence":
         """Create then re-admit one closed, data-free campaign evidence record."""
 
@@ -378,13 +393,17 @@ class CanonicalCampaignEvidence:
             "decision": deepcopy(dict(decision)),
             "winner_refit": deepcopy(dict(winner_refit)),
         }
-        candidate_payload = tuple(_candidate(item) for item in unsigned["candidates"])
-        decision_payload = _decision(unsigned["decision"], candidate_payload)
+        if historical_context is not None and type(historical_context) is not HistoricalReconstructionContext:
+            raise CanonicalCampaignEvidenceError("historical evidence requires the packaged reconstruction context")
+        candidate_payload = tuple(
+            _candidate(item, historical_context=historical_context) for item in unsigned["candidates"]
+        )
+        decision_payload = _decision(unsigned["decision"], candidate_payload, historical_context=historical_context)
         normalized_campaign = _closed(unsigned["campaign"], _CAMPAIGN_FIELDS, "campaign identity")
         normalized_campaign["decision_digest"] = _digest(decision_payload)
         unsigned["campaign"] = normalized_campaign
         unsigned["decision"] = decision_payload
-        return cls.from_dict({**unsigned, "content_digest": _digest(unsigned)})
+        return cls.from_dict({**unsigned, "content_digest": _digest(unsigned)}, historical_context=historical_context)
 
     def as_dict(self) -> dict[str, Any]:
         return deepcopy(self.payload)

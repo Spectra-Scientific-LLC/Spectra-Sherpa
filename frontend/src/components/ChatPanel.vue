@@ -1,6 +1,27 @@
 <template>
-  <section class="chat-panel" :class="{ compact, collapsed }">
+  <section class="chat-panel" :class="{ compact, collapsed }" @click="inspectDiagnosticCitation">
     <div class="chat-panel__inner">
+      <section
+        v-if="sherpaStore.diagnosticScope && activeTab === 'sherpa'"
+        aria-label="Diagnostic discussion scope"
+        class="diagnostic-context"
+      >
+        <p>{{ diagnosticScopeLabel }}. Follow-ups stay with this saved evidence.</p>
+        <button type="button" :disabled="sherpaBusy" @click="sherpaStore.setDiagnosticScope(null)">
+          Leave diagnostic discussion
+        </button>
+      </section>
+      <section
+        v-if="diagnosticCitation"
+        aria-label="Cited diagnostic evidence"
+        role="status"
+        class="diagnostic-context"
+      >
+        <strong>{{ diagnosticCitation.title }}</strong>
+        <p>{{ diagnosticCitation.detail }}</p>
+        <p>This value belongs to the cited saved run. Reopen that run's diagnostic workbench to inspect its plot.</p>
+        <button type="button" @click="diagnosticCitation = null">Close evidence</button>
+      </section>
       <p v-if="qualified" role="status">{{ advisorStatusMessage }}</p>
       <Button v-if="qualified && availability?.write && !availability.chat_privacy_configured"
         label="Allow metadata and workflow disclosure" :loading="enablingDisclosure" @click="enableQualificationDisclosure" />
@@ -401,6 +422,7 @@
 </template>
 
 <script setup lang="ts">
+import { diagnosticCitation as resolveDiagnosticCitation } from "@/utils/diagnosticAdvisor";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import Button from "primevue/button";
@@ -603,6 +625,36 @@ const switchToSherpa = () => {
   setActiveTab("sherpa");
 };
 
+watch(() => sherpaStore.currentConversationId, () => { diagnosticCitation.value = null; });
+const diagnosticScopeLabel = computed(() => {
+  const scope = sherpaStore.diagnosticScope;
+  if (!scope) return "";
+  if ("kind" in scope.reference && scope.reference.kind === "saved_application")
+    return `Diagnostic discussion · Saved application artifact ${scope.reference.artifact_uid} · Run ${scope.reference.run_id} · Applied dataset position ${scope.reference.sample_index + 1}`;
+  if ("kind" in scope.reference && scope.reference.kind === "saved_run_application")
+    return `Diagnostic discussion · Saved prediction run ${scope.reference.run_id} · Node ${scope.reference.node_id} · File dataset position ${scope.reference.sample_index + 1}`;
+  if ("kind" in scope.reference && scope.reference.kind === "saved_model_qualification")
+    return `Diagnostic discussion · Saved model ${scope.reference.artifact_uid} · External qualification dossier ${scope.reference.dossier_digest.slice(0, 12)}`;
+  const count = scope.reference.selected_ids.length;
+  const selection = scope.reference.select_all
+    ? "All retained observations"
+    : `${count} selected observation${count === 1 ? "" : "s"}`;
+  if ("kind" in scope.reference)
+    return `Diagnostic discussion · Saved PLS-DA artifact ${scope.reference.artifact_uid} · Run ${scope.reference.run_id} · ${selection} · calibration only`;
+  const response = scope.model_kind === "pls"
+    ? ` · ${scope.response_label || `Response ${scope.reference.response_index + 1}`}`
+    : "";
+  return `Diagnostic discussion · Run ${scope.reference.run_id} · Review ${scope.reference.review_revision} · ${selection}${response}`;
+});
+const diagnosticCitation = ref<{ title: string; detail: string } | null>(null);
+function inspectDiagnosticCitation(event: MouseEvent) {
+  const link = (event.target as Element | null)?.closest("a");
+  const href = link?.getAttribute("href") || "";
+  if (!href.startsWith("#diagnostic-")) return;
+  event.preventDefault();
+  diagnosticCitation.value = resolveDiagnosticCitation(href, sherpaStore.messages.map(message => message.diagnostic_scope));
+}
+
 const handleAdvisorPromptRequest = async (event: Event) => {
   const detail = (event as CustomEvent<AdvisorPromptRequestDetail>).detail;
   const prompt = typeof detail?.prompt === "string" ? detail.prompt.trim() : "";
@@ -610,18 +662,26 @@ const handleAdvisorPromptRequest = async (event: Event) => {
     return;
   }
 
+  if (sherpaBusy.value) return;
+  sherpaStore.setDiagnosticScope(detail.diagnosticScope ?? null);
+  diagnosticCitation.value = null;
   switchToSherpa();
   if (props.collapsed) {
     emit("toggle");
   }
-  await nextTick();
-  userMessage.value = prompt;
   if (detail.autoSend !== false) {
-    await sendMessage();
+    // Freeze the selected evidence in the store before yielding to navigation
+    // or another contextual action. Opening the panel needs no network wait.
+    userMessage.value = "";
+    await sherpaStore.sendMessage(prompt);
+  } else {
+    await nextTick();
+    userMessage.value = prompt;
   }
 };
 
 const inputPlaceholder = computed(() => {
+  if (activeTab.value === "sherpa" && sherpaStore.diagnosticScope) return "Ask a follow-up about this saved diagnostic evidence...";
   if (qualified.value) return "Ask about this project and workflow setup...";
   if (activeTab.value === "sherpa") {
     if (workflowStore.workflowId && !hasExecutionResults.value) {
@@ -1460,6 +1520,24 @@ const collapsed = computed(() => props.collapsed);
 </script>
 
 <style scoped>
+.diagnostic-context {
+  border: 1px solid var(--surface-border, #dbe2ea);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  margin-bottom: 0.5rem;
+  background: var(--surface-ground, #f8fafc);
+  font-size: 0.875rem;
+}
+.diagnostic-context p { margin: 0 0 0.5rem; }
+.diagnostic-context button {
+  border: 1px solid var(--surface-border, #dbe2ea);
+  border-radius: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  background: var(--surface-card, white);
+  color: inherit;
+  cursor: pointer;
+}
+
 .chat-panel {
   height: 100%;
   display: flex;

@@ -268,7 +268,8 @@ const llmStatus = computed(() => {
   if (llmStore.configStatus === "unknown") {
     return { class: "status-yellow", tooltip: "LLM: Checking..." };
   }
-  return { class: "status-red", tooltip: "LLM: Not Configured" };
+  // A local LLM is optional. Reserve red for failures in required services.
+  return { class: "status-gray", tooltip: "AI provider: Not configured (optional)" };
 });
 
 // Refresh status immediately when the BYO-chat config is saved, instead of

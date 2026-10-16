@@ -193,3 +193,48 @@ def test_filter_samples_has_a_representative_absolute_performance_ceiling() -> N
             node_id="filter",
         )
     assert filtered.shape[1] == 1600
+
+
+@pytest.mark.parametrize("column", [False, True])
+def test_class_filter_uses_the_categorical_response_shown_in_preview(column):
+    from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+    from spectra_sherpa.app.services.dag.nodes.data.sample_preparation import _sample_filter_values
+
+    target = np.asarray(["setosa", "versicolor", "virginica"])
+    source = SherpaDataset(
+        X=np.arange(9.0).reshape(3, 3),
+        target=target[:, None] if column else target,
+        target_context=TargetContext(target_type="categorical"),
+    )
+    assert _sample_filter_values(source, field="sample_class", sample_table_column="", n_samples=3) == target.tolist()
+    source.target_context = TargetContext(target_type="continuous")
+    with pytest.raises(ValueError, match="no sample classes"):
+        _sample_filter_values(source, field="sample_class", sample_table_column="", n_samples=3)
+    source.sample_axis = SampleAxis(classes=["A", "A", "B"])
+    assert _sample_filter_values(source, field="sample_class", sample_table_column="", n_samples=3) == ["A", "A", "B"]
+
+
+@pytest.mark.asyncio
+async def test_target_derived_class_filter_executes_and_exports_the_previewed_subset():
+    from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+
+    source = SherpaDataset(
+        X=np.arange(12.0).reshape(4, 3),
+        target=np.asarray(["setosa", "versicolor", "virginica", "setosa"]),
+        target_context=TargetContext(target_type="categorical"),
+        sample_axis=SampleAxis(labels=["A", "B", "C", "D"]),
+    )
+    node = node_registry.create_node(
+        "data.filter_samples",
+        "filter",
+        {
+            "field": "sample_class",
+            "filter_values": ["versicolor", "virginica"],
+        },
+    )
+    live = (await node.execute(X=source))["default"]
+    generated = _generated(node, {"X": "source"}, {"source": source})
+    for filtered in (live, generated):
+        np.testing.assert_array_equal(filtered.X, source.X[[1, 2]])
+        np.testing.assert_array_equal(filtered.target, ["versicolor", "virginica"])
+        assert filtered.sample_axis.labels == ["B", "C"]
