@@ -12,6 +12,9 @@ const STRUCTURED_CONTAINER_KEYS = new Set([
   "plots",
   "raw",
   "table",
+  "worker_execution",
+  "worker_pid",
+  "execution_id",
 ]);
 
 const EMPTY_STRINGS = new Set(["", "nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity", "none", "null"]);
@@ -119,7 +122,18 @@ export const buildDiagnosticEntries = (diagnostics: Record<string, unknown> | nu
     return [];
   }
 
-  return Object.entries(diagnostics)
+  const selected = diagnostics.n_selected;
+  const total = diagnostics.n_total;
+  const hasSelectionCount = typeof selected === "number" && typeof total === "number" &&
+    Number.isSafeInteger(selected) && Number.isSafeInteger(total) &&
+    total > 0 && selected >= 0 && selected <= total;
+  const displayDiagnostics = hasSelectionCount
+    ? { ...diagnostics, n_selected: selected === total
+      ? `All ${total.toLocaleString("en-US")} variables retained; none excluded`
+      : `${selected.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} variables retained` }
+    : diagnostics;
+  return Object.entries(displayDiagnostics)
+    .filter(([key]) => !(hasSelectionCount && key === "n_total"))
     .filter(([key, value]) => !STRUCTURED_CONTAINER_KEYS.has(key) && !isEmptyDiagnosticValue(value))
     .map(([key, value]) => ({
       key,

@@ -11,6 +11,7 @@ export interface ProjectProvenanceRecord {
   kind: ProvenanceKind;
   label: string;
   state: ProvenanceState;
+  artifact_integrity?: { state: ProvenanceState; detail: string };
   availability?: { state: ProvenanceState; detail: string };
   name: string | null;
   digest: string | null;

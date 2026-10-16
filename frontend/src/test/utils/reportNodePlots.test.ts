@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { captureReportPlots } from "@/utils/captureReportPlots";
+import { captureReportPlots, reportGroupKey } from "@/utils/captureReportPlots";
 import { reportNodePlotsHtml, reportNodePlotsMarkdown } from "@/utils/reportNodePlots";
 import { generateProvenanceReport, type ReportData } from "@/utils/reportGenerator";
 import { generateMarkdownReport } from "@/utils/reportMarkdownGenerator";
@@ -15,6 +15,15 @@ function run(): RunReportData {
 beforeEach(() => vi.resetAllMocks());
 
 describe("retained node report plots", () => {
+  it("keeps a compact class-to-color key in static report captions without wide plot legends", () => {
+    const groups = ["Oil", "Water"].map((name, index) => ({
+      type: "scatter", mode: "markers", name, marker: { color: index ? "#0072B2" : "#D55E00" },
+    }));
+    expect(reportGroupKey(groups, { showlegend: true })).toBe(
+      "Group color key: Oil (#D55E00); Water (#0072B2).",
+    );
+    expect(reportGroupKey(groups, { showlegend: false })).toBe("");
+  });
   it("enumerates saved canonical presentations and names missing presentations", async () => {
     const saved = run();
     saved.saved_definition!.nodes[0].node_type = "model.fitted_pls";
@@ -33,6 +42,8 @@ describe("retained node report plots", () => {
     const render = vi.fn().mockResolvedValue("data:image/png;base64,AA==");
     const sections = await captureReportPlots(saved, 1, () => true, render);
     expect(render).toHaveBeenCalledTimes(1);
+    expect(render.mock.calls[0][1]).toMatchObject({ showlegend: false });
+    expect(render.mock.calls[0][1].legend).toBeUndefined();
     expect(sections[0].plots[0].title).toContain("Explained variance");
     expect(sections[0].notices).toContain("Scores: required retained output is unavailable.");
   });

@@ -21,6 +21,7 @@ from typing import Mapping
 from spectra_sherpa.app.services.dag import canonical_selection_policy as _canonical_selection_policy
 from spectra_sherpa.app.services.dag.canonical_workbench_baseline import CanonicalWorkbenchBaseline
 from spectra_sherpa.app.services.dag.executor_types import WorkflowEdge, WorkflowNode
+from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
 from spectra_sherpa.app.services.dag.validation_graph import (
     ValidationGraph,
     ValidationGraphError,
@@ -160,6 +161,8 @@ class CanonicalSearchSpace:
 def canonical_search_space_from_request(
     baseline: CanonicalWorkbenchBaseline,
     request: Mapping[str, object],
+    *,
+    historical_context: HistoricalReconstructionContext | None = None,
 ) -> CanonicalSearchSpace:
     """Project an untrusted closed request into exact admitted candidates.
 
@@ -172,6 +175,12 @@ def canonical_search_space_from_request(
 
     if not isinstance(baseline, CanonicalWorkbenchBaseline):
         raise CanonicalSearchSpaceError("search space requires a saved canonical baseline")
+    from spectra_sherpa.app.services.dag.validation_graph import assert_admitted_validation_graph
+
+    if historical_context is None:
+        assert_admitted_validation_graph(baseline.graph, require_live_runtime=False)
+    else:
+        historical_context.require_historical_graph(baseline.graph)
     if not isinstance(request, Mapping) or set(request) != {"slots", "validation_budget", "minimum_improvement"}:
         raise CanonicalSearchSpaceError("search request fields are not closed")
     raw_slots = request["slots"]
@@ -231,7 +240,7 @@ def canonical_search_space_from_request(
         for slot, value in zip(slots, values):
             variant_parameters[slot.node_id][slot.parameter] = value
             mutations.append({"node_id": slot.node_id, "parameter": slot.parameter, "value": value})
-        graph = _re_admit_variant(baseline_graph, variant_parameters)
+        graph = _re_admit_variant(baseline_graph, variant_parameters, historical_context=historical_context)
         candidates.append(
             CanonicalSearchCandidate(
                 ordinal=ordinal,
@@ -256,6 +265,8 @@ def canonical_search_space_from_request(
 def canonical_search_space_from_record(
     baseline: CanonicalWorkbenchBaseline,
     record: Mapping[str, object],
+    *,
+    historical_context: HistoricalReconstructionContext | None = None,
 ) -> CanonicalSearchSpace:
     """Rebuild a stored v2 search record without trusting its candidate list.
 
@@ -306,6 +317,7 @@ def canonical_search_space_from_record(
             "validation_budget": record["validation_budget"],
             "minimum_improvement": selection_policy.payload["minimum_improvement"],
         },
+        historical_context=historical_context,
     )
     if record["candidate_count"] != len(rebuilt.candidates) or record["candidates"] != [
         candidate.as_dict() for candidate in rebuilt.candidates
@@ -339,6 +351,8 @@ def _graph_supervised_task(graph: ValidationGraph) -> str:
 def _re_admit_variant(
     baseline_graph: ValidationGraph,
     parameters: Mapping[str, Mapping[str, object]],
+    *,
+    historical_context: HistoricalReconstructionContext | None = None,
 ) -> ValidationGraph:
     payload = baseline_graph.as_dict()
     nodes = payload["nodes"]
@@ -354,7 +368,8 @@ def _re_admit_variant(
         raw_nodes = payload["nodes"]
         raw_edges = payload["edges"]
         assert isinstance(raw_nodes, list) and isinstance(raw_edges, list)
-        candidate = admit_validation_graph(
+        admission = historical_context.reconstruct if historical_context is not None else admit_validation_graph
+        candidate = admission(
             [WorkflowNode(node["node_id"], node["operation_id"], node["parameters"]) for node in raw_nodes],
             [
                 WorkflowEdge(edge["from_node"], edge["to_node"], edge["from_output"], edge["to_input"])

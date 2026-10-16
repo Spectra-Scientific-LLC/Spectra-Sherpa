@@ -1,7 +1,10 @@
 schema_version: 1
 name: Target-Orthogonal Signal Correction
 slug: osc_target_orthogonal_correction
-description: Fit Fearn's direct OSC projection from quantitative reference values and remove dominant spectral variation orthogonal to those targets.
+description: Fit Fearn's direct OSC projection using reference values for every selected
+  sample. This is supervised preprocessing, not a validated calibration. For predictive
+  assessment, fit OSC inside each training fold and apply that fitted correction to
+  held-out samples; fitting OSC first on the full dataset leaks reference information.
 category: preprocessing
 is_active: true
 status: ready

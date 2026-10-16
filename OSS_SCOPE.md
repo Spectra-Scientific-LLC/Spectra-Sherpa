@@ -16,6 +16,7 @@ the stability surface it commits to for external packages.
 - **Python/Jupyter export** — Generate standalone scripts from any workflow
 - **Plugin system** — Custom nodes via drop-in Python files or packages
 - **BYO chat proxy** — Single-turn HTTP transports for OpenAI-compatible endpoints, Anthropic's native Messages API, and Ollama (`CHAT_ENDPOINT_PROVIDER`, `CHAT_ENDPOINT_URL`, `CHAT_ENDPOINT_KEY`). No vendor SDK imports, no tools, no persistence.
+- **Local BYO Data Story** — A single-turn use of that same chat proxy. The frontend sends bounded parsed scientific facts and the user's question, never the raw spectra matrix; it has no tools or conversation memory. The managed Sherpa Data Story remains server-owned and entitlement-gated.
 - **AI Provider Protocol** — `AIServiceProvider` type surface and registry seam (`set/get/reset_sherpa_advisor`) for extension injection
 - **WebSocket dispatch** — Routing `sherpa.*` topics to the registered provider (or the `DisabledAIProvider` default when none is registered)
 - **WS event contract** — Published `sherpa-ws-v1.json` schema (package data)
@@ -67,7 +68,7 @@ The boundary is enforced by:
 ## What OSS does NOT include
 
 - No `import anthropic` or `import openai` anywhere in `src/`
-- No LLM orchestration, prompt templates, or conversation store
+- No managed LLM orchestration, agentic prompt templates, or persistent conversation store. The local BYO Data Story uses one bounded scientific narration request through the existing chat proxy.
 - No agentic tool execution
 - No vendor LLM SDK dependencies
 - No `/api/v1/llm/*` route handlers (these return 404 in OSS-only builds)

@@ -5,6 +5,7 @@ import json
 
 import numpy as np
 import pytest
+from scipy.stats import f, norm
 
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag.nodes.modeling.apply_fitted_pls_node import ApplyFittedPLSV2Node
@@ -28,7 +29,7 @@ def fit(scale=False):
     return X, y, model, fit_screening(X, model)
 
 
-def test_independent_projection_covariance_residual_and_quantiles():
+def test_independent_projection_covariance_residual_and_theoretical_limits():
     X, _, model, state = fit()
     Z = (X - X.mean(axis=0)) / model.x_scale
     T = Z @ model.x_weights
@@ -39,8 +40,16 @@ def test_independent_projection_covariance_residual_and_quantiles():
     result = apply_screening(X, model.x_offset, state)
     np.testing.assert_allclose([row["t2"] for row in result["rows"]], T2)
     np.testing.assert_allclose([row["q"] for row in result["rows"]], Q)
-    assert state["t2_limit"] == pytest.approx(np.quantile(T2, 0.95, method="linear"))
-    assert state["q_limit"] == pytest.approx(np.quantile(Q, 0.95, method="linear"))
+    n, k = T.shape
+    expected_t2 = k * (n - 1) * (n + 1) / (n * (n - k)) * f.ppf(0.95, k, n - k)
+    eigenvalues = np.linalg.svd(E, compute_uv=False) ** 2 / (n - 1)
+    theta1, theta2, theta3 = (np.sum(eigenvalues**power) for power in (1, 2, 3))
+    h0 = 1 - 2 * theta1 * theta3 / (3 * theta2**2)
+    expected_q = theta1 * (
+        1 + norm.ppf(0.95) * np.sqrt(2 * theta2) * h0 / theta1 + theta2 * h0 * (h0 - 1) / theta1**2
+    ) ** (1 / h0)
+    assert state["t2_limit"] == pytest.approx(expected_t2)
+    assert state["q_limit"] == pytest.approx(expected_q)
     assert all(row["applicability_status"] == "unqualified" for row in result["rows"])
 
 

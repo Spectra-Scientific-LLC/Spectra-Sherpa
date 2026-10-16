@@ -77,7 +77,13 @@ export function buildAxisLabel(
 export function getYAxisLabel(metadata?: PlotMetadata | null): string {
   if (!metadata) return "Response";
   const fallbackUnits = metadata.value_units_label || metadata.value_units;
-  return buildAxisLabel(metadata.y_title, metadata.y_units || fallbackUnits, "Response");
+  const units = metadata.y_units || fallbackUnits;
+  // A sample dimension names the rows, not the measured spectral ordinate.
+  if (/^(samples?|acquisitions?)$/i.test(metadata.y_title || "") && units) {
+    if (/^(absorbance|transmittance)$/i.test(units)) return units[0].toUpperCase() + units.slice(1);
+    return buildAxisLabel("Intensity", units, "Intensity");
+  }
+  return buildAxisLabel(metadata.y_title, units, "Response");
 }
 
 /**

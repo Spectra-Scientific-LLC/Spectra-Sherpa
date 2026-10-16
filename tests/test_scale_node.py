@@ -209,6 +209,51 @@ def test_python_export_uses_the_canonical_dispatcher_and_optional_reference() ->
     assert "np.std" not in source
 
 
+@pytest.mark.asyncio
+async def test_canonical_sdk_scale_applies_one_training_state_to_both_ports() -> None:
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.shared_reference_scale_node import SharedReferenceScaleNode
+    from spectra_sherpa.sdk.runtime import execute_workflow_async, operation_workflow
+
+    reference = SherpaDataset(X=np.array([[1.0, 3.0], [3.0, 7.0], [5.0, 11.0]]))
+    heldout = SherpaDataset(X=np.array([[7.0, 15.0], [9.0, 19.0]]))
+    workflow, inputs, expected = operation_workflow(
+        "preprocess.shared_reference_scale",
+        parameters={"method": "autoscale", "center": True},
+        inputs={"reference": reference, "default": heldout},
+    )
+    run = await execute_workflow_async(workflow, deployment_inputs=inputs)
+    assert dict(run.dataset_content_digests) == dict(expected)
+    fitted = run.output(port="reference_scaled")
+    applied = run.output()
+    np.testing.assert_allclose(fitted.X.mean(axis=0), [0.0, 0.0], atol=1e-12)
+    state = [
+        step["parameters"]["transform_state"]
+        for step in fitted.provenance.to_list()
+        if step.get("op_id") == "preprocess.scale"
+    ][-1]
+    replay = ScaleNode("sdk.operation", {"method": "autoscale", "center": True}).apply_fitted_state(heldout, state)
+    np.testing.assert_allclose(applied.X, replay.X, atol=1e-12)
+    node = SharedReferenceScaleNode("shared", {"method": "autoscale", "center": True})
+    source = "\n".join(node.generate_python({"default": "heldout", "reference": "reference"}, indent=""))
+    assert "'reference_scaled': _transform.apply_fitted_state(reference, _state)" in source
+    namespace = {"heldout": heldout, "reference": reference, "results": {}}
+    exec(source, namespace)  # noqa: S102 - generated Python is the subject of this test.
+    exported = namespace["results"]["shared"]
+    np.testing.assert_allclose(exported["default"].X, applied.X, atol=1e-12)
+    np.testing.assert_allclose(exported["reference_scaled"].X, fitted.X, atol=1e-12)
+    assert node.exported_output_ports() == {"default", "reference_scaled"}
+
+
+def test_shared_reference_scale_export_requires_both_declared_inputs() -> None:
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.shared_reference_scale_node import SharedReferenceScaleNode
+
+    node = SharedReferenceScaleNode("shared", {"method": "autoscale", "center": True})
+    with pytest.raises(ValueError, match="application rows"):
+        node.generate_python({"reference": "reference"})
+    with pytest.raises(ValueError, match="calibration reference rows"):
+        node.generate_python({"default": "heldout"})
+
+
 def test_removed_duplicate_scale_operation_and_old_parameter_grammar_fail_closed() -> None:
     with pytest.raises(KeyError):
         node_registry.get_metadata("preprocess.fitted_scale")

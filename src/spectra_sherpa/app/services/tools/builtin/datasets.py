@@ -589,7 +589,7 @@ def compute_dataset_statistics(
 
 @register_tool(
     "get_dataset_quality",
-    "Get quality metrics and evaluation results for a dataset.",
+    "Get quality metrics and evaluation records attached to this dataset object, not saved workflow run history.",
     category=ToolCategory.data,
     requires_user=True,
     parameters={
@@ -612,6 +612,10 @@ def get_dataset_quality(dataset_id: str, user: Any = None) -> dict[str, Any]:
         "dataset_id": ds.dataset_id,
         "snr": q.snr,
         "n_evaluations": len(q.evaluations),
+        "evaluation_scope": (
+            "Evaluation records attached to this dataset object only; not a count of saved workflow runs. "
+            "Zero does not imply no model was evaluated."
+        ),
     }
     if q.latest:
         result["latest"] = q.latest.model_dump(exclude_none=True)

@@ -259,8 +259,9 @@ def _variable_select_execute(
     parameters: Mapping[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     canonical = _canonical_variable_select_parameters(parameters)
-    dataset = bind_X(X, missing_message="Variable selection requires X", allow_array=True)
-    matrix = to_numpy_2d(dataset, name="X", dtype=np.float64)
+    explicit_rule = canonical["method"] in {"apply_mask", "interval"}
+    dataset = bind_X(X, missing_message="Variable selection requires X", allow_array=True, allow_excluded=explicit_rule)
+    matrix = to_numpy_2d(dataset, name="X", dtype=np.float64, allow_excluded=explicit_rule)
     if isinstance(model, Mapping) and "schema_version" in model:
         from ...fitted_input_identity import require_fitted_input_identity
         from ..modeling.fitted_pls_node import verify_fitted_pls_state_envelope
@@ -278,6 +279,11 @@ def _variable_select_execute(
         importance_scores=importance_scores,
         parameters=canonical,
     )
+    included = getattr(dataset.feature_axis, "include_mask", None)
+    if included is not None:
+        selected = selected & np.asarray(included, dtype=bool)
+    if not np.any(selected):
+        raise ValueError("Variable selection retained no included variables")
     reduced = build_dataset_like(matrix[:, selected], dataset)
     selected_count = int(selected.sum())
     if axis is not None and axis_values is not None:

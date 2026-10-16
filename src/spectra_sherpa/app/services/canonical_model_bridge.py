@@ -62,6 +62,8 @@ _CANONICAL_MODEL_BASE_FIELDS = {
     "output_semantics",
     "features",
     "feature_identity",
+    "input_identity",
+    "screening",
     "node_id",
     "n_features",
     "n_components",

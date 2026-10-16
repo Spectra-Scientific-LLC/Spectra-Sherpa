@@ -24,6 +24,8 @@ describe("XGSC-01 advisor execution gate", () => {
       restoredRunId: stale ? 10 : null,
     });
     expect(value.result_interpretation_allowed).toBe(false);
+    expect(value.execution_run_id).toBeNull();
+    expect(value.retained_run_id).toBe(stale ? 10 : null);
     expect(value.results_summary).toBeNull();
     expect(value.diagnostics).toBeNull();
     expect(value.n_samples).toBeNull();
@@ -62,6 +64,7 @@ describe("XGSC-01 advisor execution gate", () => {
         lastExecutionResults: { source: [[1]] },
       });
       expect(result.result_interpretation_allowed).toBe(false);
+      expect(result.retained_run_id).toBe(10);
       expect(result.execution_evidence_scope).toBe(scope);
       expect(result.execution_returned_nodes).toEqual(["source"]);
       expect(result.execution_notice).toBe("Retained outputs incomplete");

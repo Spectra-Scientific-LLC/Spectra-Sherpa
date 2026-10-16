@@ -226,6 +226,11 @@ def test_saved_plsda_artifact_accepts_full_or_selected_masked_axis_and_rejects_r
     )
 
     class _Replay:
+        def prepare_dataset(self, X, dataset, manifest):
+            from spectra_sherpa.app.services.execution_runtime import ApplicationModelArtifactReplay
+
+            return ApplicationModelArtifactReplay().prepare_dataset(X, dataset, manifest)
+
         def prepare(self, X, source, saved_manifest):
             matrix = np.asarray(X)
             saved_mask = np.asarray(saved_manifest["feature_mask"], dtype=bool)
@@ -365,6 +370,8 @@ def test_native_plsda_generated_projection_is_complete_and_replayable() -> None:
         "vip_scores",
         "confusion_matrix_train",
         "metrics",
+        "component_curve",
+        "sample_diagnostics",
         "plots",
         "metadata",
     }
@@ -498,6 +505,7 @@ def test_plsda_contract_names_one_reference_faithful_operation() -> None:
     assert contract.payload["fitted_state_serializer"] == FITTED_STATE_SERIALIZER
     assert {entry["distribution"] for entry in contract.payload["runtime_requirements"]} == {
         "numpy",
+        "scipy",
         "scikit-learn",
     }
     assert contract.payload["target_access"] == "fit_only"
@@ -688,11 +696,11 @@ async def test_plsda_live_and_generated_application_reject_the_same_invalid_resp
         )
 
 
-def test_plsda_starter_fits_scaling_inside_the_model_and_not_upstream() -> None:
+def test_plsda_starter_defaults_to_training_owned_mean_centring() -> None:
     path = Path(__file__).resolve().parents[1] / "src/spectra_sherpa/data/templates/classification_plsda.yaml"
     template = yaml.safe_load(path.read_text(encoding="utf-8"))["template_data"]
     nodes = {node["node_id"]: node for node in template["nodes"]}
-    assert nodes["model_1"]["parameters"] == {"n_components": 2, "scale": True}
+    assert nodes["model_1"]["parameters"] == {"n_components": 2, "scale": False}
     assert not any(node["node_type"] == "preprocess.scale" for node in nodes.values())
     edge_set = {
         (edge["from_node_id"], edge["to_node_id"], edge.get("from_output"), edge.get("to_input"))

@@ -299,7 +299,7 @@ def test_ica_fitted_state_fails_closed_on_identity_shape_and_numeric_corruption(
     for corrupted in corruptions:
         with pytest.raises(ValueError):
             apply_ica_fitted_state(dataset, corrupted)
-    with pytest.raises(ValueError, match="feature count"):
+    with pytest.raises(ValueError, match="feature count|fitted input authority"):
         apply_ica_fitted_state(np.ones((4, dataset.shape[1] + 1)), state)
 
 
@@ -311,7 +311,7 @@ def test_ica_artifact_round_trip_preserves_the_exact_unmixing_state() -> None:
     replay = FastICAExtract.from_artifact(metadata, arrays)
 
     np.testing.assert_allclose(replay.transform(dataset.X), core["sources"], rtol=1e-12, atol=1e-12)
-    assert metadata["serializer"] == ICA_FITTED_STATE_SERIALIZER
+    assert metadata["serializer"] == FastICAExtract.SERIALIZER
     assert metadata["random_seed"] == 42
     assert set(arrays) == {"components", "mean", "mixing"}
 

@@ -28,6 +28,14 @@ function fixture(): ReportData {
 }
 
 describe("deterministic short scientific report", () => {
+  it("collapses metric metadata copies while excluding score payload copies", () => {
+    const data = fixture();
+    data.runs![0].results_summary = { pls: { train_accuracy: 0.95,
+      metadata: { train_accuracy: 0.95 }, extra: { train_accuracy: 0.95 },
+      X_scores: { metadata: { train_accuracy: 0.95 } } } };
+    const rows = scientificSummaryGroups(data).flatMap(group => group.rows);
+    expect(rows.filter(row => row[0].includes("Training Accuracy"))).toHaveLength(1);
+  });
   it("excludes authority and provenance unit leaves without losing endpoint metrics", () => {
     const parameters = { target_authority: { units: "wt %" }, dataset_package: {
       annotation_table: { fields: Array.from({ length: 4 }, () => ({ units: "wt %" })) },
@@ -37,7 +45,7 @@ describe("deterministic short scientific report", () => {
       provenance: [{ parameters }, { parameters }],
       metadata: { processing_history: [{ parameters }] },
     } };
-    expect(keyResultRows(payload)).toEqual([["default / R²", "0.98"]]);
+    expect(keyResultRows(payload)).toEqual([["R²", "0.98"]]);
     const data = fixture();
     data.runs![0].results_summary = { source: payload };
     expect(generateProvenanceReport(data)).not.toContain("annotation_table");
@@ -54,6 +62,18 @@ describe("deterministic short scientific report", () => {
     const groups = scientificSummaryGroups(data);
     expect(groups.find(group => group.table)?.table?.headers).toContain("Units");
     expect(groups[0].rows).toContainEqual(["Response (Y): Protein", expect.stringContaining("Units differ or are not recorded")]);
+  });
+  it("shows saved PLS scaling and avoids a rounded claim of complete explained variance", () => {
+    const data = fixture();
+    data.runs![0].params_snapshot = { pls: { scale: false } };
+    data.runs![0].diagnostics = { pls: { effective_n_components: 1, y_explained_variance: [0.999999] } };
+    data.runs![0].results_summary = { pls: { default: { r2: 0.98 }, r2: 0.98 } };
+    const groups = scientificSummaryGroups(data);
+    const text = JSON.stringify(groups);
+    expect(text).toContain("Mean-centred; no variable scaling");
+    expect(text).toContain("<100%");
+    expect(text).not.toContain("0.8745");
+    expect(groups.flatMap(group => group.rows).filter(row => row[0] === "R²")).toHaveLength(1);
   });
   it("explains latent components separately from saved CV settings upfront", () => {
     const data = fixture();
@@ -103,6 +123,10 @@ describe("deterministic short scientific report", () => {
     expect(groups.find(group => group.table)?.table?.headers).not.toContain("Units");
     expect(output).toContain("Calibration / training");
     expect(output).toContain("Held-out test (recorded role)");
+    expect(output).toContain("RMSEC (wt %): 0.4321");
+    expect(output).toContain("RMSEP (wt %): 0.4321");
+    expect(output).toContain("Bias (wt %): 0");
+    expect(output).toContain("SEP (wt %): 0.2");
     for (const text of ["Reference range", "Reference SD", "0.4321", "not degrees-of-freedom-adjusted SEC", "not an ASTM E1655 compliance assessment"]) expect(output).toContain(text);
     expect(output).not.toContain("train / R²");
   });
@@ -149,4 +173,55 @@ describe("deterministic short scientific report", () => {
     data.runs = [];
     expect(generateMarkdownReport(data)).toContain("workflow definition alone is not a result");
   });
+});
+
+
+it.each([generateProvenanceReport, generateMarkdownReport])("retains classification labels, confusion counts and scaling", generate => {
+  const data = fixture();
+  data.runs![0].saved_definition = { nodes: [{ node_id: "model", node_type: "classification.plsda", label: "PLS-DA" }] };
+  data.runs![0].params_snapshot = { model: { scale: true } };
+  data.runs![0].diagnostics = null;
+  data.runs![0].results_summary = { evaluation: { default: {
+    schema_version: "spectrasherpa.classification-evaluation/1", labels: ["benign", "malignant"],
+    confusion_matrix: [[9, 1], [2, 8]], per_class: [{ label: "benign", support: 10, recall: 0.9, precision: 9/11 }],
+  } } };
+  const output = generate(data);
+  expect(output).toContain("Autoscaled");
+  expect(output).toContain("benign");
+  expect(output).toContain("malignant");
+  expect(output).toContain("Reference / predicted");
+  expect(output).toContain("per-class performance");
+});
+
+
+it("deduplicates classification aliases without collapsing training, test or contradictory values", () => {
+  const data = fixture();
+  data.runs![0].saved_definition = { nodes: [{ node_id: "model", node_type: "classification.plsda", label: "PLS-DA" }] };
+  data.runs![0].diagnostics = { model: { train_accuracy: 0.97, test_accuracy: 0.97 } };
+  data.runs![0].results_summary = { model: { metrics: { task_type: "classification",
+    splits: { train: { accuracy: 0.97 }, test: { accuracy: 0.97 } },
+  } } };
+  let rows = scientificSummaryGroups(data).flatMap(group => group.rows);
+  expect(rows.filter(row => row[0] === "Training Accuracy")).toEqual([["Training Accuracy", "0.97"]]);
+  expect(rows.filter(row => row[0] === "Test Accuracy")).toEqual([["Test Accuracy", "0.97"]]);
+  data.runs![0].diagnostics.model.train_accuracy = 0.75;
+  rows = scientificSummaryGroups(data).flatMap(group => group.rows);
+  expect(rows.filter(row => row[0] === "Training Accuracy")).toHaveLength(2);
+});
+
+it.each([generateProvenanceReport, generateMarkdownReport])("renders per-class metrics once while retaining their complete table", generate => {
+  const data = fixture();
+  data.runs![0].diagnostics = null;
+  data.runs![0].results_summary = { evaluation: { default: {
+    schema_version: "spectrasherpa.classification-evaluation/1", labels: ["A", "B"],
+    confusion_matrix: [[9, 1], [2, 8]],
+    per_class: [{ label: "A", support: 10, precision: 9/11, recall: 0.9, specificity: 0.8, f1: 0.86 }],
+  } } };
+  const groups = scientificSummaryGroups(data);
+  expect(groups.flatMap(group => group.rows).some(row => row[0].includes("per_class"))).toBe(false);
+  expect(groups.find(group => group.title.endsWith("per-class performance"))?.table?.rows[0]).toEqual(["A", "10", "0.8182", "0.9", "0.8", "0.86"]);
+  expect(generate(data)).toContain("per-class performance");
+  // Malformed confusion evidence must not silently hide its surviving class values.
+  (data.runs![0].results_summary.evaluation.default as any).confusion_matrix = [];
+  expect(scientificSummaryGroups(data).flatMap(group => group.rows).some(row => row[0].includes("per_class"))).toBe(true);
 });

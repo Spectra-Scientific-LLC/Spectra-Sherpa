@@ -29,7 +29,8 @@ def norris_williams(
     The two segment means are separated by ``gap`` feature points.  Their
     difference is divided by the physical distance between segment centers.
     Edge positions without two complete segments remain zero, as defined by
-    the operation's explicit boundary policy.
+    the operation's explicit boundary policy. The second derivative doubles
+    the invalid margin so its stencil never consumes artificial edge zeros.
     """
 
     matrix = np.asarray(data)
@@ -53,21 +54,27 @@ def norris_williams(
 
     n_features = matrix.shape[1]
     center_spacing = (2 * gap + segment - 1) * float(delta)
-    if abs(center_spacing) <= 1e-12:
+    if center_spacing == 0.0:
         raise ValueError("Norris-Williams derivative requires a non-zero feature-axis spacing")
 
-    def first_derivative(row: np.ndarray) -> np.ndarray:
+    def first_derivative(row: np.ndarray, *, valid_start: int = 0, valid_end: int = n_features) -> np.ndarray:
         result = np.zeros(n_features, dtype=np.result_type(row.dtype, np.float64))
-        for index in range(gap + segment - 1, n_features - gap - segment + 1):
+        for index in range(valid_start + gap + segment - 1, valid_end - gap - segment + 1):
             left = row[index - gap - segment + 1 : index - gap + 1]
             right = row[index + gap : index + gap + segment]
             result[index] = (np.mean(right) - np.mean(left)) / center_spacing
         return result
 
+    if n_features <= 2 * deriv * (gap + segment - 1):
+        raise ValueError("Norris-Williams settings leave no valid derivative interior")
     output = np.empty(matrix.shape, dtype=np.result_type(matrix.dtype, np.float64))
     for row_index, row in enumerate(matrix):
         first = first_derivative(row)
-        output[row_index] = first if deriv == 1 else first_derivative(first)
+        output[row_index] = (
+            first
+            if deriv == 1
+            else first_derivative(first, valid_start=gap + segment - 1, valid_end=n_features - gap - segment + 1)
+        )
     return output[0] if was_1d else output
 
 

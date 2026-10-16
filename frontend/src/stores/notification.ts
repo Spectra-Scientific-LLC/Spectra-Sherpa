@@ -16,7 +16,7 @@ export interface AppNotification {
   };
 }
 
-type NewNotification = Omit<AppNotification, "id" | "timestamp" | "readAt">;
+export type NewNotification = Omit<AppNotification, "id" | "timestamp" | "readAt">;
 
 const MAX_NOTIFICATIONS = 200;
 const DEDUPE_WINDOW_MS = 5000;

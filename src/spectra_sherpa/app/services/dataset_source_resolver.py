@@ -80,10 +80,40 @@ def _resolved_experiment_file(record: ExperimentFile) -> ResolvedExperimentFile:
 class ApplicationDatasetSourceResolver:
     """Resolve exact local source records through application persistence."""
 
-    def __init__(self, *, preloaded_datasets: Mapping[str, Any] | None = None) -> None:
+    def __init__(
+        self, *, preloaded_datasets: Mapping[str, Any] | None = None, pin_preloaded_members: bool = False
+    ) -> None:
+        self._pin_preloaded_members = pin_preloaded_members
         self._preloaded_datasets = tuple(
             getattr(value, "loaded_dataset", value) for value in (preloaded_datasets or {}).values()
         )
+
+    async def resolve_dataset_view(self, *, experiment_id: int, view_id: int, selection_sha256: str) -> dict:
+        """Return one immutable definition; execution admission owns access control.
+
+        Soft deletion hides a definition from new choices, but preserves existing
+        explicitly pinned workflows and descendants.
+        """
+        from spectra_sherpa.app.models.dataset_view import DatasetView
+        from spectra_sherpa.app.services.dataset_views import receipt_sha256
+
+        async with async_session() as session:
+            view = await session.scalar(
+                select(DatasetView).where(
+                    DatasetView.id == view_id,
+                    DatasetView.experiment_id == experiment_id,
+                )
+            )
+            experiment = await session.get(Experiment, experiment_id)
+            if (
+                view is None
+                or experiment is None
+                or view.project_id != experiment.project_id
+                or view.selection_sha256 != selection_sha256
+                or receipt_sha256(view.selection) != selection_sha256
+            ):
+                raise ValueError("Saved dataset definition is unavailable or changed")
+            return {"selection": view.selection, "project_id": experiment.project_id}
 
     def _preloaded(
         self,
@@ -167,6 +197,11 @@ class ApplicationDatasetSourceResolver:
         if len(records) > _MAX_COLLECTION_FILES:
             raise ValueError(f"experiment collection exceeds the {_MAX_COLLECTION_FILES}-file limit")
         if preloaded is not None:
+            if self._pin_preloaded_members:
+                selected_ids = set(preloaded.file_ids)
+                if not selected_ids.issubset({record.id for record in records}):
+                    raise ValueError("An admitted Batch source member is no longer available")
+                records = [record for record in records if record.id in selected_ids]
             definition = await asyncio.to_thread(read_collection_definition, experiment_id)
             resolved_files = await asyncio.gather(
                 *(asyncio.to_thread(_resolved_experiment_file, record) for record in records)

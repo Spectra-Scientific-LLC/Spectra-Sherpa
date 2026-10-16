@@ -24,7 +24,7 @@ You generally should not:
 - redistribute modified SpectraSherpa code under a closed-source license
 - run a modified network service for users while hiding the corresponding source
 - treat NIST, HITRAN, SpectroChemPy, or other third-party resources as owned by SpectraSherpa
-- assume SpectraSherpa Cloud service terms are the same thing as the OSS license
+- assume hosted Demo and Pro service terms are the same thing as the OSS license
 
 ## Optional Dependencies
 
@@ -68,4 +68,7 @@ Do not commit API keys to Git, paste them into shared screenshots, or place them
 
 ## Hosted Service
 
-SpectraSherpa Cloud is a hosted enterprise/demo service built around the SpectraSherpa platform. Cloud documentation describes user-facing service behavior. It is not a substitute for the OSS license, service terms, or any legal agreement with Spectra Scientific.
+Demo and Pro are hosted services built around SpectraSherpa. Enterprise is an
+internal runtime mode. Hosted documentation describes user-facing service
+behavior and does not replace the OSS license, service terms, or a legal agreement
+with Spectra Scientific.

@@ -33,6 +33,10 @@
       "strategy": "pca_scores",
       "plots": [{ "key": "scientific_pca_scores", "label": "PCA Score Map" }]
     },
+    "pca_variable_correlations": {
+      "strategy": "pca_variable_correlations",
+      "plots": [{ "key": "scientific_pca_variable_correlations", "label": "Variable Correlations" }]
+    },
     "pls_explained_variance": {
       "strategy": "pls_explained_variance",
       "plots": [{ "key": "scientific_pls_explained_variance", "label": "X/Y Explained Variance" }]

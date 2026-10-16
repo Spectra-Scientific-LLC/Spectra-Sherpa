@@ -16,7 +16,10 @@ import math
 import re
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping
+
+if TYPE_CHECKING:
+    from spectra_sherpa.app.services.dag.historical_contracts import HistoricalReconstructionContext
 
 from spectra_sherpa.app.services.dag.managed_optimization_profile import (
     MANAGED_OPTIMIZATION_RUNTIME_ATTESTATION_VERSION,
@@ -156,7 +159,9 @@ class CanonicalExecutionEvidence:
         )
 
     @classmethod
-    def from_dict(cls, manifest: Mapping[str, Any]) -> "CanonicalExecutionEvidence":
+    def from_dict(
+        cls, manifest: Mapping[str, Any], *, historical_context: HistoricalReconstructionContext | None = None
+    ) -> "CanonicalExecutionEvidence":
         """Validate a detached canonical evidence manifest and content digest."""
 
         if not isinstance(manifest, Mapping):
@@ -164,13 +169,15 @@ class CanonicalExecutionEvidence:
         expected = manifest.get("content_digest")
         _require_digest(expected, "content_digest")
         payload = {key: deepcopy(value) for key, value in manifest.items() if key != "content_digest"}
-        evidence = cls._validated(payload)
+        evidence = cls._validated(payload, historical_context=historical_context)
         if evidence.content_digest != expected:
             raise CanonicalExecutionEvidenceError("canonical execution evidence content digest mismatch")
         return evidence
 
     @classmethod
-    def from_bytes(cls, value: bytes) -> "CanonicalExecutionEvidence":
+    def from_bytes(
+        cls, value: bytes, *, historical_context: HistoricalReconstructionContext | None = None
+    ) -> "CanonicalExecutionEvidence":
         """Load only canonical, bounded JSON with no duplicate keys."""
 
         if not 1 <= len(value) <= MAX_CANONICAL_EXECUTION_EVIDENCE_BYTES:
@@ -179,21 +186,27 @@ class CanonicalExecutionEvidence:
             manifest = json.loads(value, object_pairs_hook=_reject_duplicate_fields)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise CanonicalExecutionEvidenceError("canonical execution evidence must be UTF-8 JSON") from exc
-        evidence = cls.from_dict(manifest)
+        evidence = cls.from_dict(manifest, historical_context=historical_context)
         if evidence.canonical_bytes() != value:
             raise CanonicalExecutionEvidenceError("canonical execution evidence must use canonical JSON")
         return evidence
 
     @classmethod
-    def _validated(cls, payload: Mapping[str, Any]) -> "CanonicalExecutionEvidence":
+    def _validated(
+        cls, payload: Mapping[str, Any], *, historical_context: HistoricalReconstructionContext | None = None
+    ) -> "CanonicalExecutionEvidence":
         if payload.get("schema_version") != CANONICAL_EXECUTION_EVIDENCE_VERSION:
             raise CanonicalExecutionEvidenceError("canonical execution evidence schema is unsupported")
         _require_closed_mapping(payload, _EVIDENCE_FIELDS, "canonical execution evidence")
         validation, actual_validation_digest = validate_canonical_validation_execution(payload["validation_execution"])
         if payload["validation_execution_digest"] != actual_validation_digest:
             raise CanonicalExecutionEvidenceError("canonical execution evidence does not reproduce validation digest")
-        _validate_node_execution_traces(payload["node_execution_traces"], validation)
-        _validate_runtime_attestation(payload["runtime_attestation"], payload["node_execution_traces"])
+        _validate_node_execution_traces(
+            payload["node_execution_traces"], validation, historical_context=historical_context
+        )
+        _validate_runtime_attestation(
+            payload["runtime_attestation"], payload["node_execution_traces"], historical_context=historical_context
+        )
         canonical_payload = deepcopy(dict(payload))
         return cls(
             payload=canonical_payload,
@@ -342,7 +355,9 @@ def _validate_pooled_metrics(pooled_value: Any, folds: list[Mapping[str, Any]]) 
             raise CanonicalExecutionEvidenceError(f"validation execution pooled {field} does not match its folds")
 
 
-def _validate_node_execution_traces(value: Any, validation: Mapping[str, Any]) -> None:
+def _validate_node_execution_traces(
+    value: Any, validation: Mapping[str, Any], *, historical_context: HistoricalReconstructionContext | None = None
+) -> None:
     """Verify actual fold traces bind precisely to the legacy fold identity."""
 
     if not isinstance(value, list) or not value:
@@ -367,6 +382,7 @@ def _validate_node_execution_traces(value: Any, validation: Mapping[str, Any]) -
             _validate_node_execution_trace(
                 _mapping(node_value, f"node_execution_traces[{index}].nodes[{node_index}]"),
                 partition_digest=fold["partition_digest"],
+                historical_context=historical_context,
             )
         model_trace = next((node for node in nodes if node["node_id"] == fold["model_node_id"]), None)
         if model_trace is None or model_trace["operation_id"] != validation["model_operation_id"]:
@@ -387,7 +403,12 @@ def _validate_node_execution_traces(value: Any, validation: Mapping[str, Any]) -
             raise CanonicalExecutionEvidenceError("node execution traces disagree across validation folds")
 
 
-def _validate_node_execution_trace(value: Mapping[str, Any], *, partition_digest: Any) -> None:
+def _validate_node_execution_trace(
+    value: Mapping[str, Any],
+    *,
+    partition_digest: Any,
+    historical_context: HistoricalReconstructionContext | None = None,
+) -> None:
     _require_closed_mapping(value, _TRACE_NODE_FIELDS, "node execution trace")
     for field in ("node_id", "operation_id"):
         if not isinstance(value[field], str) or not _NODE_ID.fullmatch(value[field]):
@@ -404,8 +425,17 @@ def _validate_node_execution_trace(value: Mapping[str, Any], *, partition_digest
         raise CanonicalExecutionEvidenceError("node execution trace contract is invalid") from exc
     if contract.digest != value["contract_digest"] or contract.payload["operation_id"] != value["operation_id"]:
         raise CanonicalExecutionEvidenceError("node execution trace contract identity differs from node identity")
+    if historical_context is not None:
+        try:
+            historical = historical_context.contract(value["operation_id"], value["contract_digest"])
+        except ValueError as exc:
+            raise CanonicalExecutionEvidenceError("unknown historical node execution trace") from exc
+        if contract != historical:
+            raise CanonicalExecutionEvidenceError("historical trace differs from trusted predecessor authority")
     parameters = _mapping(value["parameters"], "node execution trace parameters")
-    _validate_first_profile_parameters(parameters, operation_id=value["operation_id"])
+    _validate_first_profile_parameters(
+        parameters, operation_id=value["operation_id"], historical_context=historical_context
+    )
     if _parameter_digest(parameters) != value["parameter_digest"]:
         raise CanonicalExecutionEvidenceError("node execution trace parameter digest mismatch")
     role_envelopes = value["role_envelopes"]
@@ -444,12 +474,28 @@ def _validate_node_execution_trace(value: Mapping[str, Any], *, partition_digest
             raise CanonicalExecutionEvidenceError("fitted node execution trace serializer mismatch")
 
 
-def _validate_first_profile_parameters(parameters: Mapping[str, Any], *, operation_id: str) -> None:
+def _validate_first_profile_parameters(
+    parameters: Mapping[str, Any],
+    *,
+    operation_id: str,
+    historical_context: HistoricalReconstructionContext | None = None,
+) -> None:
     """Require the exact projection used at managed graph admission."""
 
     try:
         metadata = node_registry.get_metadata(operation_id)
-        if metadata.canonicalize_parameters(parameters) != dict(parameters):
+        if historical_context is not None and operation_id == "model.fitted_pls":
+            additions = {"component_selection_rule", "component_curve_max", "component_cv_folds"}
+            if additions.intersection(parameters):
+                raise CanonicalExecutionEvidenceError("historical PLS trace contains post-profile controls")
+            defaults = {p.name: p.default for p in metadata.parameters if p.name in additions}
+            projected = metadata.canonicalize_parameters({**parameters, **defaults})
+            for key in additions:
+                if projected.pop(key, None) != defaults[key]:
+                    raise CanonicalExecutionEvidenceError("historical PLS trace controls changed during admission")
+        else:
+            projected = metadata.canonicalize_parameters(parameters)
+        if projected != dict(parameters):
             raise CanonicalExecutionEvidenceError(
                 "node execution trace parameters are not the canonical first-profile projection"
             )
@@ -457,12 +503,14 @@ def _validate_first_profile_parameters(parameters: Mapping[str, Any], *, operati
         raise CanonicalExecutionEvidenceError(f"node execution trace parameters are invalid: {exc}") from exc
 
 
-def _validate_runtime_attestation(value: Any, traces: Any) -> None:
+def _validate_runtime_attestation(
+    value: Any, traces: Any, *, historical_context: HistoricalReconstructionContext | None = None
+) -> None:
     # Build from the live, fully registered node census.  This module can be
     # imported by API route setup before every node package has registered;
     # freezing the profile at module import made its identity depend on import
     # order.
-    managed_profile = managed_optimization_profile()
+    managed_profile = historical_context.profile() if historical_context is not None else managed_optimization_profile()
     runtime = _mapping(value, "runtime_attestation")
     expected_fields = {
         "schema_version",

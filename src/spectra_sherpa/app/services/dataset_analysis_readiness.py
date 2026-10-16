@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.lib.dataset_compatibility import build_dataset_analysis_readiness
+from spectra_sherpa.app.lib.reference_value_evidence import ReferenceValueDeclaration, reference_value_evidence
 from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
 from spectra_sherpa.app.lib.template_runtime import template_runtime_readiness
 from spectra_sherpa.app.models.dataset_analysis_binding import DatasetAnalysisBinding
@@ -69,13 +71,33 @@ async def apply_saved_analysis_binding(
         raise ValueError("Saved dataset analysis binding no longer resolves inside its source dataset")
     result = dataset.snapshot()
     _set_source_file_authority(result, source_file)
+    table_path = experiment_dir(source_file.experiment_id) / table_file.file_path
     table = load_portable_sample_table(
-        experiment_dir(source_file.experiment_id) / table_file.file_path,
+        table_path,
         selected_target=binding.selected_target,
         target_type=binding.target_type,
     )
     if table is None:
         raise ValueError("Saved dataset analysis binding does not point to a portable sample-table CSV")
+    declaration = (
+        ReferenceValueDeclaration.model_validate_json(binding.reference_declaration)
+        if binding.reference_declaration is not None
+        else None
+    )
+    if declaration is not None and (declaration.target_name, declaration.target_type) != (
+        binding.selected_target,
+        binding.target_type,
+    ):
+        raise ValueError("Saved reference-value declaration differs from the selected target")
+    source_context = result.target_context
+    native_names = source_context.target_names or ([source_context.target_name] if source_context.target_name else [])
+    if (
+        declaration is not None
+        and binding.selected_target in native_names
+        and source_context.target_units is not None
+        and declaration.units != source_context.target_units
+    ):
+        raise ValueError("Declared reference units differ from the source response authority")
     apply_sample_table_to_dataset(result, table)
     result.target = np.asarray(table["target_values"])
     class_names = None
@@ -88,6 +110,25 @@ async def apply_saved_analysis_binding(
         selected_target=binding.selected_target,
         n_classes=len(class_names) if class_names is not None else None,
         class_names=class_names,
+        target_units=(
+            declaration.units
+            if declaration is not None
+            else (source_context.target_units if binding.selected_target in native_names else None)
+        ),
+        reference_value_evidence=reference_value_evidence(
+            declaration,
+            source_file_id=source_file.id,
+            sample_table_file_id=table_file.id,
+            table_sha256=_file_sha256(table_path),
+            target_name=binding.selected_target,
+            target_type=binding.target_type,
+            known_units=source_context.target_units if binding.selected_target in native_names else None,
+            source_included_count=sum(table["include"]),
+            missing_excluded_count=sum(
+                not included and value is None
+                for included, value in zip(table["include"], table["target_values"], strict=True)
+            ),
+        ),
     )
     return result, binding
 
@@ -98,6 +139,7 @@ def validate_analysis_binding(
     sample_table_file: ExperimentFile,
     selected_target: str,
     target_type: str,
+    reference_declaration: ReferenceValueDeclaration | None = None,
     load_source: Any,
     experiment_root: Path | None = None,
 ) -> None:
@@ -121,7 +163,29 @@ def validate_analysis_binding(
     )
     if table is None:
         raise ValueError("Selected CSV is not a portable sample table")
+    if reference_declaration is not None:
+        if (reference_declaration.target_name, reference_declaration.target_type) != (
+            selected_target,
+            target_type,
+        ):
+            raise ValueError("Reference declaration differs from the selected target")
+        context = dataset.target_context
+        native_names = context.target_names or ([context.target_name] if context.target_name else [])
+        if (
+            selected_target in native_names
+            and context.target_units is not None
+            and reference_declaration.units != context.target_units
+        ):
+            raise ValueError("Declared reference units differ from the source response authority")
     apply_sample_table_to_dataset(dataset, table)
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _set_source_file_authority(dataset: Any, source_file: ExperimentFile) -> None:

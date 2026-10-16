@@ -1,12 +1,15 @@
 /* eslint-disable vue/one-component-per-file */
 import { flushPromises, mount } from "@vue/test-utils";
 import { defineComponent } from "vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   apiGet: vi.fn(),
   apiPost: vi.fn(),
   apiDelete: vi.fn(),
+  confirmAction: vi.fn(async () => true),
+  advisorEnabled: false,
+  realConfirm: false,
   appMode: { __v_isRef: true, value: "local" as string },
   appConfig: { __v_isRef: true, value: { demo: false } as Record<string, unknown> },
 }));
@@ -19,9 +22,21 @@ vi.mock("@/composables/useAppConfig", () => ({
   useAppConfig: () => ({
     appMode: mocks.appMode,
     appConfig: mocks.appConfig,
-    isFeatureEnabled: () => false,
+    isFeatureEnabled: () => mocks.advisorEnabled,
   }),
 }));
+
+// Tests choose the stub or, with mocks.realConfirm, the real owner-scoped dialog state.
+vi.mock("@/composables/useConfirmAction", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/composables/useConfirmAction")>();
+  return {
+    ...actual,
+    useConfirmAction: () => {
+      const real = actual.useConfirmAction();
+      return (options: Parameters<typeof real>[0]) => (mocks.realConfirm ? real(options) : mocks.confirmAction(options));
+    },
+  };
+});
 
 vi.mock("@/utils/authStorage", () => ({
   readStoredApiKey: () => "",
@@ -173,7 +188,6 @@ describe("personal HITRAN credentials", () => {
     mocks.appConfig.value = { demo: profile === "demo" };
     mocks.apiPost.mockReset();
     mocks.apiPost.mockResolvedValue({ data: { valid: true } });
-    vi.stubGlobal("confirm", vi.fn(() => true));
     mocks.apiDelete.mockReset();
     mocks.apiDelete.mockResolvedValue({});
     let saved = false;
@@ -196,6 +210,68 @@ describe("personal HITRAN credentials", () => {
     await flushPromises();
     expect(mocks.apiDelete).toHaveBeenCalledWith("/api-keys/hitran");
     expect(wrapper.text()).not.toContain("personal-test-key");
+    wrapper.unmount();
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("deleting a saved key", () => {
+  afterEach(() => { mocks.advisorEnabled = false; });
+
+  beforeEach(() => {
+    mocks.appMode.value = "local";
+    mocks.appConfig.value = { demo: false };
+    mocks.apiDelete.mockReset();
+    mocks.confirmAction.mockReset();
+    mocks.advisorEnabled = true;
+    mocks.apiGet.mockImplementation((url: string) => Promise.resolve({
+      data: url === "/api-keys" ? [{ service_name: "openai", last_used_at: null }] : {},
+    }));
+  });
+
+  it("deletes nothing when the confirmation is declined", async () => {
+    mocks.confirmAction.mockResolvedValueOnce(false);
+    const wrapper = mountTab();
+    await flushPromises();
+    await wrapper.find('button[aria-label$="API key"]').trigger("click");
+    await flushPromises();
+    expect(mocks.confirmAction).toHaveBeenCalledWith(expect.objectContaining({ acceptLabel: "Delete key", destructive: true }));
+    expect(mocks.apiDelete).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("never deletes once Settings has gone, even if the dialog is then accepted", async () => {
+    const { pendingConfirmation, settleConfirmation } = await import("@/composables/useConfirmAction");
+    mocks.realConfirm = true;
+    try {
+      const wrapper = mountTab();
+      await flushPromises();
+      await wrapper.find('button[aria-label$="API key"]').trigger("click");
+      expect(pendingConfirmation.value?.options.acceptLabel).toBe("Delete key");
+
+      // Browser Back: the page unmounts while its dialog is open.
+      wrapper.unmount();
+      expect(pendingConfirmation.value).toBeNull();
+      settleConfirmation(true);
+      await flushPromises();
+      expect(mocks.apiDelete).not.toHaveBeenCalled();
+    } finally {
+      mocks.realConfirm = false;
+    }
+  });
+
+  it("reports a failed delete beside the saved keys, not in a browser alert", async () => {
+    const alert = vi.fn();
+    vi.stubGlobal("alert", alert);
+    mocks.confirmAction.mockResolvedValueOnce(true);
+    mocks.apiDelete.mockRejectedValueOnce(new Error("offline"));
+    const wrapper = mountTab();
+    await flushPromises();
+    await wrapper.find('button[aria-label$="API key"]').trigger("click");
+    await flushPromises();
+    expect(mocks.apiDelete).toHaveBeenCalledOnce();
+    expect(wrapper.find('[role="alert"]').text()).toContain("Could not delete the");
+    expect(alert).not.toHaveBeenCalled();
     wrapper.unmount();
     vi.unstubAllGlobals();
   });

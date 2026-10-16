@@ -1,9 +1,10 @@
 /* eslint-disable vue/one-component-per-file */
 import { flushPromises, mount } from "@vue/test-utils";
-import { defineComponent, reactive } from "vue";
+import { defineComponent, h, nextTick, reactive } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import DataContentsPanel from "@/views/data/DataContentsPanel.vue";
+import DatasetCurationPanel from "@/components/DatasetCurationPanel.vue";
 import api from "@/api/client";
 
 const mocks = vi.hoisted(() => ({
@@ -178,36 +179,305 @@ describe("DataContentsPanel", () => {
     resetDataStore();
   });
 
-  it.each([["iris", 150, 4], ["wine", 178, 13], ["breast_cancer", 569, 30]] as const)(
-    "does not interpret %s specimen labels as an empty file selection", async (name, rows, columns) => {
+  it("keeps source, sample correction, quality and portfolio actions in the active dataset sequence", () => {
+    mocks.dataStore.fileInfo = {
+      n_samples: 3,
+      n_features: 2,
+      data: [
+        [1, 2],
+        [3, 4],
+        [5, 6],
+      ],
+      y_axis: { labels: ["A", "B", "C"] },
+      metadata: { contents_file_count: 1 },
+    };
+    const wrapper = mount(DataContentsPanel, {
+      slots: {
+        "source-collection": "<span data-testid='source-slot'>Source receipt</span>",
+        "sample-curation": "<span data-testid='sample-slot'>Sample correction</span>",
+        "portfolio-definitions": "<span data-testid='portfolio-slot'>Saved portfolio</span>",
+      },
+    });
+    const active = wrapper.get(".focused-dataset-details");
+    const steps = active.findAll(".dataset-step");
+    expect(steps).toHaveLength(5);
+    expect(steps.map((step) => step.attributes("aria-label"))).toEqual([
+      "Loaded files",
+      "Acquisition settings",
+      "Sample details",
+      "Dataset metadata and quality",
+      "Save data portfolio",
+    ]);
+    expect(steps[0].find("[data-testid='source-slot']").exists()).toBe(true);
+    expect(steps[2].find("[data-testid='sample-slot']").exists()).toBe(true);
+    expect(steps[4].find("[data-testid='portfolio-slot']").exists()).toBe(true);
+    expect(active.text()).not.toContain("Data Quality Summary");
+  });
+
+  it("shows retained reference-value quality in the Sample details readiness card", () => {
+    const referenceEvidence = {
+      schema_version: "spectrasherpa.reference-value-evidence/1",
+      source_file_id: 1,
+      sample_table_file_id: 2,
+      sample_table_sha256: "a".repeat(64),
+      target_name: "moisture",
+      target_type: "continuous",
+      units: "wt %",
+      method: null,
+      provenance: "Laboratory worksheet",
+      precision_study_provenance: null,
+      replicate_evidence_digest: null,
+      source_included_count: 3,
+      missing_included_count: 0,
+      missing_excluded_count: 0,
+      instrument_repeatability: null,
+      qualification_gaps: [],
+    };
+    mocks.dataStore.fileInfo = {
+      n_samples: 3,
+      n_features: 2,
+      y_axis: { labels: ["A", "B", "C"] },
+      target_context: { reference_value_evidence: referenceEvidence },
+      analysis_readiness: {
+        profile: null,
+        template_count: 0,
+        counts: { compatible: 0, needs_target: 0, needs_source: 0, incompatible: 0, pending: 0, unavailable: 0 },
+        decisions: [],
+        diagnostics: [],
+      },
+    };
+    const wrapper = mount(DataContentsPanel);
+    const sampleDetails = wrapper.get('[aria-label="Sample details"]');
+    expect(sampleDetails.get('[aria-label="Reference-value quality"]').text()).toContain("moisture (wt %)");
+    expect(sampleDetails.text()).toContain("Laboratory worksheet");
+    wrapper.unmount();
+  });
+
+  it.each([
+    ["iris", 150, 4],
+    ["wine", 178, 13],
+    ["breast_cancer", 569, 30],
+  ] as const)(
+    "does not interpret %s specimen labels as an empty file selection",
+    async (name, rows, columns) => {
       mocks.dataStore.fileInfo = {
-        n_samples: rows, n_features: columns,
+        n_samples: rows,
+        n_features: columns,
         data: Array.from({ length: rows }, () => Array(columns).fill(1)),
         y_axis: { labels: Array.from({ length: rows }, (_, i) => `Specimen ${i + 1}`) },
         metadata: { contents_file_count: 1 },
       };
       const wrapper = mount(DataContentsPanel, { props: { selectedFileNames: [`${name}.npz`] } });
       await flushPromises();
-      const sampleRow = wrapper.findAll(".meta-row").find(row => row.find(".meta-key").text() === "Samples");
+      const sampleRow = wrapper
+        .findAll(".meta-row")
+        .find((row) => row.find(".meta-key").text() === "Samples in selection");
       expect(sampleRow?.find(".meta-val").text()).toBe(String(rows));
       wrapper.unmount();
     },
   );
 
-  it("retrieves the persisted source matrix when technical details open", async () => {
-    mocks.dataStore.activeExperimentId = 44;
-    mocks.dataStore.activeFileId = 103;
-    mocks.dataStore.fileInfo = { n_samples: 1, n_features: 1, data: [[1]], metadata: {} };
-    mocks.dataStore.fetchDataMatrix.mockRejectedValue(new Error("test retrieval"));
-    const wrapper = mount(DataContentsPanel);
-    const details = wrapper.find("details.technical-details");
-    expect(details).toBeDefined();
-    (details!.element as HTMLDetailsElement).open = true;
-    await details!.trigger("toggle");
+  it("counts independent specimens rather than repeated acquisitions in class readiness", async () => {
+    const ids = Array.from({ length: 18 }, (_, i) => `sample-${i}`);
+    mocks.dataStore.fileInfo = {
+      n_samples: 18,
+      n_features: 2,
+      data: ids.map(() => [1, 2]),
+      y_axis: {
+        labels: ids,
+        sample_table: {
+          sample_id: ids,
+          species: ids.map((_, i) => ["alpha", "beta", "gamma"][Math.floor(i / 6)]),
+          specimen_id: ids.map((_, i) => `specimen-${Math.floor(i / 3)}`),
+        },
+      },
+      metadata: { source_collection: sourceCollection(6) },
+      analysis_readiness: {
+        profile: {
+          primary_role: "X_spectra",
+          modality: "spectra",
+          technique: "IR",
+          target_type: "categorical",
+          target_fields: ["species"],
+          identity_fields: ["sample_id", "specimen_id"],
+          group_fields: ["specimen_id"],
+          ordered_samples: false,
+        },
+        decisions: [],
+        counts: {},
+        diagnostics: [],
+      },
+    };
+    const wrapper = mount(DataContentsPanel, {
+      props: {
+        initialAnalysisTarget: "species",
+        initialAnalysisGroup: "specimen_id",
+      },
+    });
     await flushPromises();
-    expect(mocks.dataStore.fetchDataMatrix).toHaveBeenCalledWith({ kind: "experiment_file", experiment_id: 44, file_id: 103 });
-    expect(wrapper.text()).not.toContain("Select one source file to inspect its data matrix.");
+    expect(wrapper.text()).toContain("alpha: 2 groups; beta: 2 groups; gamma: 2 groups");
+    expect(wrapper.text()).toContain("Repeated acquisitions do not add independent specimens");
     wrapper.unmount();
+  });
+
+  it("suggests repeated specimen identity, not acquisition block, for a new class target", async () => {
+    const ids = Array.from({ length: 9 }, (_, i) => `sample-${i}`);
+    mocks.dataStore.fileInfo = {
+      n_samples: 9,
+      n_features: 2,
+      data: ids.map(() => [1, 2]),
+      y_axis: {
+        labels: ids,
+        sample_table: {
+          sample_id: ids,
+          species: ids.map((_, i) => ["alpha", "beta", "gamma"][Math.floor(i / 3)]),
+          specimen_id: ids.map((_, i) => `specimen-${Math.floor(i / 3)}`),
+          block: ids.map((_, i) => `B${i % 3}`),
+        },
+      },
+      metadata: { source_collection: sourceCollection(9) },
+      analysis_readiness: {
+        profile: {
+          primary_role: "X_spectra", modality: "spectra", technique: "IR",
+          target_type: "categorical", target_fields: ["species"],
+          identity_fields: ["sample_id", "specimen_id"], group_fields: ["block"],
+          ordered_samples: false,
+        },
+        decisions: [], counts: {}, diagnostics: [],
+      },
+    };
+    const wrapper = mount(DataContentsPanel);
+    const dropdowns = wrapper.get("[aria-label='Analysis readiness']").findAllComponents({ name: "Dropdown" });
+    expect(dropdowns[1].props("options")).toEqual(expect.arrayContaining([
+      expect.objectContaining({ value: "specimen_id" }),
+    ]));
+    dropdowns[0].vm.$emit("update:modelValue", "species");
+    await flushPromises();
+    expect(wrapper.emitted("analysisSelectionCommit")?.at(-1)?.[0]).toEqual(
+      expect.objectContaining({ target: "species", group: "specimen_id" }),
+    );
+    dropdowns[1].vm.$emit("update:modelValue", "block");
+    await flushPromises();
+    expect(wrapper.get("[role='alert'].analysis-replication-warning").text()).toContain(
+      "same specimen on both sides",
+    );
+    wrapper.unmount();
+  });
+
+  it("includes all 33 sample metadata rows by default and emits the exact unchecked identity", async () => {
+    const labels = Array.from({ length: 33 }, (_, i) => `acquisition-${i + 1}`);
+    mocks.dataStore.fileInfo = {
+      n_samples: 33,
+      n_features: 1868,
+      y_axis: { labels, sample_table: { sample_id: labels, block: labels.map(() => "B1") } },
+      metadata: { source_collection: sourceCollection(33) },
+    };
+    const wrapper = mount(DataContentsPanel, {
+      props: {
+        sampleInclusionEnabled: true,
+        sampleInclusion: {
+          loading: false,
+          rows: labels.map((sampleId) => ({ sampleId, included: true, editable: true })),
+        },
+      },
+    });
+    const table = wrapper.get("[aria-label='Collection sample table']");
+    expect(table.findAll('input[type="checkbox"]')).toHaveLength(33);
+    expect(
+      table
+        .findAll('input[type="checkbox"]')
+        .every((input) => (input.element as HTMLInputElement).checked),
+    ).toBe(true);
+    expect(wrapper.find(".sample-matrix-details").exists()).toBe(false);
+    await table.get('input[aria-label="Include sample acquisition-33"]').setValue(false);
+    expect(wrapper.emitted("toggleSample")?.at(-1)).toEqual(["acquisition-33"]);
+    await wrapper.setProps({
+      sampleInclusion: {
+        loading: false,
+        rows: labels.map((sampleId) => ({
+          sampleId,
+          included: sampleId !== "acquisition-33",
+          editable: true,
+        })),
+      },
+    });
+    expect(table.findAll("tr.sample-excluded")).toHaveLength(1);
+  });
+
+  it("never paints unknown portfolio inclusion as checked while the exact mask is loading", async () => {
+    const labels = ["a", "b"];
+    mocks.dataStore.fileInfo = {
+      n_samples: 2,
+      n_features: 1,
+      y_axis: { labels, sample_table: { sample_id: labels } },
+      metadata: { source_collection: sourceCollection(2) },
+    };
+    const wrapper = mount(DataContentsPanel, {
+      props: { sampleInclusionEnabled: true, sampleInclusion: { rows: [], loading: true } },
+    });
+    const table = wrapper.get("[aria-label='Collection sample table']");
+    expect(table.findAll('input[type="checkbox"]')).toHaveLength(0);
+    expect(wrapper.text()).toContain("Loading exact sample inclusion");
+    await wrapper.setProps({
+      sampleInclusion: {
+        loading: false,
+        rows: [
+          { sampleId: "a", included: true, editable: true },
+          { sampleId: "b", included: false, editable: true },
+        ],
+      },
+    });
+    expect(table.findAll('input[type="checkbox"]')).toHaveLength(2);
+    expect((table.get('input[aria-label="Include sample b"]').element as HTMLInputElement).checked).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("matches an unlabeled feature table to captured source observations for sample curation", async () => {
+    const ids = Array.from({ length: 150 }, (_, index) => `iris-row-${index + 1}`);
+    mocks.dataStore.fileInfo = {
+      n_samples: 150,
+      n_features: 4,
+      y_axis: { sample_table: { Target: ids.map((_, index) => index % 3) } },
+      metadata: {
+        source_collection: sourceCollection(1),
+        source_observations: ids.map((sample_id, source_row) => ({ sample_id, source_row })),
+      },
+    };
+    const wrapper = mount(DataContentsPanel, { props: {
+      sampleInclusionEnabled: true,
+      sampleInclusion: { loading: false, rows: ids.map((sampleId) => ({
+        sampleId, included: sampleId !== "iris-row-2", editable: true,
+      })) },
+    } });
+    const table = wrapper.get("[aria-label='Collection sample table']");
+    expect(wrapper.text()).not.toContain("Sample identities do not match this portfolio");
+    expect(table.findAll('input[type="checkbox"]')).toHaveLength(150);
+    expect((table.get('input[aria-label="Include sample iris-row-2"]').element as HTMLInputElement).checked)
+      .toBe(false);
+    await table.get('input[aria-label="Include sample iris-row-3"]').setValue(false);
+    expect(wrapper.emitted("toggleSample")?.at(-1)).toEqual(["iris-row-3"]);
+    wrapper.unmount();
+  });
+
+  it("keeps later sample metadata rows available on the next page", async () => {
+    const labels = Array.from({ length: 301 }, (_, i) => `sample-${i + 1}`);
+    mocks.dataStore.fileInfo = {
+      n_samples: 301,
+      n_features: 1,
+      y_axis: { labels, sample_table: { sample_id: labels } },
+    };
+    const wrapper = mount(DataContentsPanel, {
+      props: {
+        sampleInclusionEnabled: true,
+        sampleInclusion: {
+          loading: false,
+          rows: labels.map((sampleId) => ({ sampleId, included: true, editable: true })),
+        },
+      },
+    });
+    await wrapper.get('button[label="Next samples"]').trigger("click");
+    await wrapper.get('input[aria-label="Include sample sample-301"]').setValue(false);
+    expect(wrapper.emitted("toggleSample")?.at(-1)).toEqual(["sample-301"]);
   });
 
   it("refreshes GUI-01 authority when only the selected source digest changes", async () => {
@@ -496,12 +766,100 @@ describe("DataContentsPanel", () => {
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(activeDataset.find(".global-display-metadata").exists()).toBe(false);
-    expect(wrapper.text()).toContain("Dataset Metadata");
+    expect(wrapper.text()).toContain("Dataset metadata and quality");
     expect(wrapper.text()).toContain("Files");
     expect(wrapper.text()).toContain("3");
     expect(wrapper.text()).toContain("178");
     expect(wrapper.text()).toContain("13");
     expect(wrapper.find("[data-testid='data-quality']").exists()).toBe(true);
+  });
+
+  it("keeps sample review mounted while its exact dataset selection refreshes", async () => {
+    mocks.dataStore.fileInfo = {
+      title: "Lavender",
+      n_samples: 30,
+      n_features: 1868,
+      metadata: { contents_file_count: 30 },
+    };
+    const wrapper = mount(DataContentsPanel, {
+      slots: { "sample-curation": '<div data-testid="sample-review">Review state</div>' },
+    });
+    const review = wrapper.get("[data-testid='sample-review']").element;
+    mocks.dataStore.fileInfoLoading = true;
+    wrapper.vm.$forceUpdate();
+    await flushPromises();
+    expect(wrapper.get("[data-testid='sample-review']").element).toBe(review);
+    expect(wrapper.text()).toContain("Refreshing the exact dataset selection");
+    mocks.dataStore.fileInfoLoading = false;
+    wrapper.vm.$forceUpdate();
+    await flushPromises();
+    expect(wrapper.get("[data-testid='sample-review']").element).toBe(review);
+    wrapper.unmount();
+  });
+
+  it("completes sample review after the exact source refresh toggles loading", async () => {
+    mocks.dataStore.fileInfo = {
+      title: "Lavender",
+      n_samples: 30,
+      n_features: 1868,
+      metadata: { contents_file_count: 30 },
+    };
+    let finishRefresh: (() => void) | undefined;
+    const source = {
+      experiment_id: 11,
+      stage: "raw" as const,
+      selected_file_ids: null,
+      asset_id: null,
+      target_authority: null,
+      group_column: null,
+    };
+    mocks.apiPost.mockResolvedValue({
+      data: {
+        selection_sha256: "source-sha",
+        observations_sha256: "rows-sha",
+        selection: { included_count: 1 },
+        rows: [
+          {
+            sample_id: "lavender-1",
+            file_name: "LAV__1.spa",
+            source_row: 0,
+            included: true,
+            source_included: true,
+            status: "included",
+          },
+        ],
+      },
+    });
+    const prepareSource = async () => {
+      mocks.dataStore.fileInfoLoading = true;
+      wrapper.vm.$forceUpdate();
+      await nextTick();
+      await new Promise<void>((resolve) => {
+        finishRefresh = resolve;
+      });
+      mocks.dataStore.fileInfoLoading = false;
+      wrapper.vm.$forceUpdate();
+      await nextTick();
+    };
+    const wrapper = mount(DataContentsPanel, {
+      slots: {
+        "sample-curation": () => h(DatasetCurationPanel, { source, embedded: true, prepareSource }),
+      },
+    });
+    const review = wrapper.getComponent(DatasetCurationPanel);
+    await review
+      .findAll("button")
+      .find((button) => button.text() === "Select samples")!
+      .trigger("click");
+    await nextTick();
+    expect(wrapper.getComponent(DatasetCurationPanel).element).toBe(review.element);
+    finishRefresh?.();
+    await flushPromises();
+    expect(mocks.apiPost).toHaveBeenCalledWith(
+      "/experiments/11/dataset-views/curation-context",
+      expect.objectContaining({ stage: "raw" }),
+    );
+    wrapper.unmount();
   });
 
   it("shows runtime readiness and can remove a saved target binding", async () => {
@@ -702,7 +1060,9 @@ describe("DataContentsPanel", () => {
       ],
       metadata: {
         source_collection: sourceCollection(4),
-        source_member_metadata: Array.from({ length: 4 }, (_, index) => ({ file_name: `source-${index + 1}.spa` })),
+        source_member_metadata: Array.from({ length: 4 }, (_, index) => ({
+          file_name: `source-${index + 1}.spa`,
+        })),
       },
       analysis_readiness: {
         schema_version: "spectra-sherpa-dataset-analysis-readiness/1",
@@ -916,7 +1276,7 @@ describe("DataContentsPanel", () => {
     expect(moisture?.detail).toContain("2 distinct");
   });
 
-  it("still offers a repeated identity column when the profile declares it a target", () => {
+  it("offers a declared repeated identity target but warns it cannot support independent holdout", async () => {
     // Shaped after builtin:lavender-essential-oil-v1, where specimen_id is both
     // an identity and a declared target: 2 specimens across 2 acquisition
     // blocks, so the class has replicates and the question is answerable.
@@ -985,6 +1345,13 @@ describe("DataContentsPanel", () => {
     expect(targetOptions.map((option) => option.value)).toContain("specimen_id");
     // Not declared, so still withheld.
     expect(targetOptions.map((option) => option.value)).not.toContain("sample_id");
+    wrapper
+      .get("[aria-label='Analysis readiness']")
+      .findAllComponents({ name: "Dropdown" })[0]
+      .vm.$emit("update:modelValue", "specimen_id");
+    await flushPromises();
+    expect(wrapper.text()).toContain("cannot serve as both the class target");
+    wrapper.unmount();
   });
 
   it("withholds a declared identity target that does not actually repeat", () => {
@@ -1658,7 +2025,7 @@ describe("DataContentsPanel", () => {
   });
 
   it("bounds the visible sample-table projection", () => {
-    const rowCount = 101;
+    const rowCount = 301;
     const columns = Object.fromEntries(
       Array.from({ length: 25 }, (_, column) => [
         `column_${column + 1}`,
@@ -1678,11 +2045,11 @@ describe("DataContentsPanel", () => {
     const wrapper = mount(DataContentsPanel);
     const table = wrapper.get("[aria-label='Collection sample table']");
 
-    expect(table.text()).toContain("101 rows · 25 columns");
-    expect(table.text()).toContain("Preview omits 1 additional columns and 1 additional rows.");
+    expect(table.text()).toContain("301 rows · 25 columns");
+    expect(table.text()).toContain("Preview omits 1 additional columns.");
     expect(table.findAll("thead th")).toHaveLength(24);
-    expect(table.findAll("tbody tr")).toHaveLength(100);
-  });
+    expect(table.findAll("tbody tr")).toHaveLength(300);
+  }, 15000);
 
   it("shows a bounded preview truthfully and retrieves the complete owner-scoped table", async () => {
     const previewLabels = ["S001", "S052"];

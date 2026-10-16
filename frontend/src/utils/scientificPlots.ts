@@ -1,4 +1,4 @@
-import { encodingAnnotation, scientificNumber } from "@/utils/scientificEncoding";
+import { scientificNumber } from "@/utils/scientificEncoding";
 /**
  * Renderer-neutral scientific plot projections shared by every workbench
  * surface. Node adapters supply typed scientific values; these builders own
@@ -8,6 +8,7 @@ import { encodingAnnotation, scientificNumber } from "@/utils/scientificEncoding
 
 import { refusedScientificPlot, scientificPlotRefusal } from "@/utils/scientificPlotState";
 import { normalizeSampleLabel } from "@/utils/sampleLabels";
+import { evaluationRoleLabel } from "@/utils/scientificDisplay";
 
 // Plotly accepts a broad, renderer-defined payload. Keep scientific inputs
 // validated above this boundary while allowing the renderer record itself to
@@ -89,12 +90,12 @@ export function scientificFeatureCoordinates(metadata: PlotRecord, count: number
 
 export const SCIENTIFIC_PLOT_LAYOUT: PlotRecord = {
   autosize: true,
-  paper_bgcolor: "#1e293b",
-  plot_bgcolor: "#0f172a",
-  font: { color: "#f8fafc", size: 12 },
+  paper_bgcolor: "#ffffff",
+  plot_bgcolor: "#ffffff",
+  font: { color: "#334155", size: 12 },
   margin: { t: 40, r: 20, b: 50, l: 60 },
-  xaxis: { gridcolor: "#334155", zerolinecolor: "#475569" },
-  yaxis: { gridcolor: "#334155", zerolinecolor: "#475569" },
+  xaxis: { gridcolor: "#e2e8f0", zerolinecolor: "#94a3b8" },
+  yaxis: { gridcolor: "#e2e8f0", zerolinecolor: "#94a3b8" },
 };
 
 function presentationReadyLayout(layout: PlotRecord, normalizeXAxisTitle = true): PlotRecord {
@@ -254,16 +255,6 @@ export function buildPredictedVsActualPlot(options: {
 
   let title = "Predicted vs Actual";
   if (options.targetName) title += ` — ${options.targetName}`;
-  const metrics: string[] = [];
-  if (typeof options.r2 === "number" && Number.isFinite(options.r2)) {
-    metrics.push(`R² = ${scientificNumber(options.r2, { decimalPlaces: 4 })}`);
-  }
-  if (typeof options.rmse === "number" && Number.isFinite(options.rmse)) {
-    metrics.push(`RMSE = ${scientificNumber(options.rmse, { decimalPlaces: 4 })}`);
-  }
-  if (metrics.length > 0) {
-    title += `<br><span style="font-size:11px;color:#94a3b8">${metrics.join("  |  ")}</span>`;
-  }
 
   return {
     data: [
@@ -289,10 +280,9 @@ export function buildPredictedVsActualPlot(options: {
     ],
     layout: presentationReadyLayout({
       ...SCIENTIFIC_PLOT_LAYOUT,
-      annotations: [encodingAnnotation("Point estimates shown; prediction intervals are not displayed.")],
-      margin: {...SCIENTIFIC_PLOT_LAYOUT.margin, t:95},
+      meta: { regression_metrics: { r2: options.r2 ?? null, rmse: options.rmse ?? null } },
       height: options.height,
-      title: { text: title, font: { size: 14, color: "#f8fafc" } },
+      title: { text: title, font: { size: 14, color: "#334155" } },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Actual" },
       yaxis: {
         ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord),
@@ -339,6 +329,14 @@ const regressionComparisonRows = (value: unknown): RegressionComparisonRow[] => 
   });
 };
 
+// Calibration fits recede; validation predictions carry the eye.
+const ROLE_COLORS: Record<string, string> = {
+  calibration: "#94a3b8",
+  cross_validation: "#d97706",
+  held_out_test: "#2563eb",
+  unqualified_evaluation: "#7c3aed",
+};
+
 export function buildRegressionComparisonPlot(value: unknown): ScientificPlot {
   const rows = regressionComparisonRows(value);
   const retained = value && typeof value === "object" && !Array.isArray(value) ? (value as {data?:unknown}).data : value;
@@ -360,8 +358,8 @@ export function buildRegressionComparisonPlot(value: unknown): ScientificPlot {
       y: selected.map((row) => row.predicted),
       text: selected.map((row) => row.sample),
       customdata: selected.map((row) => [row.residual, row.role]),
-      marker: { size: 8, opacity: 0.75 },
-      name: roles.length > 1 ? `${target} · ${role.replace(/_/g, " ")}` : target,
+      marker: { size: 8, opacity: 0.8, color: ROLE_COLORS[role] ?? "#2563eb" },
+      name: roles.length > 1 ? `${target} · ${evaluationRoleLabel(role).toLowerCase()}` : target,
       hovertemplate:
         "Sample %{text}<br>Reference: %{x:.15g}<br>Predicted: %{y:.15g}<br>Residual: %{customdata[0]:.15g}<br>Role: %{customdata[1]}<extra>%{fullData.name}</extra>",
       legendgroup: String(index),
@@ -381,7 +379,7 @@ export function buildRegressionComparisonPlot(value: unknown): ScientificPlot {
     showlegend: false,
     hoverinfo: "skip",
   });
-  const role = roles.length === 1 ? roles[0].replace(/_/g, " ") : "multiple populations";
+  const role = roles.length === 1 ? evaluationRoleLabel(roles[0]).toLowerCase() : "multiple populations";
   const targetContext = targets.length === 1 ? `${targets[0]} · ${role}` : role;
   const axisRange = [min - pad, max + pad];
   const responseLabel = targets.length === 1 ? targets[0] : "Response";
@@ -389,11 +387,12 @@ export function buildRegressionComparisonPlot(value: unknown): ScientificPlot {
     data: traces,
     layout: presentationReadyLayout({
       ...SCIENTIFIC_PLOT_LAYOUT,
-      annotations: [encodingAnnotation("Point estimates shown; prediction intervals are not displayed.")],
-      margin: {...SCIENTIFIC_PLOT_LAYOUT.margin, t:95},
+      meta: value && typeof value === "object" && !Array.isArray(value)
+        ? { producer_statistics: (value as { statistics?: unknown }).statistics ?? null }
+        : undefined,
       title: {
         text: `Predicted vs Reference — ${targetContext}`,
-        font: { size: 14, color: "#f8fafc" },
+        font: { size: 14, color: "#334155" },
       },
       xaxis: {
         ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord),
@@ -521,13 +520,12 @@ export function buildVipPlot(options: {
     ],
     layout: presentationReadyLayout({
       ...SCIENTIFIC_PLOT_LAYOUT,
-      annotations: [encodingAnnotation("VIP point estimates; fold-to-fold stability is not displayed.")],
-      margin: {...SCIENTIFIC_PLOT_LAYOUT.margin, t:95},
+      meta: { stability_scope: "point_estimates_only" },
       height: options.height ?? 360,
       ...(categoricalFeatureAxis
-        ? { margin: { ...(SCIENTIFIC_PLOT_LAYOUT.margin as PlotRecord), t:95, b: 150 } }
+        ? { margin: { ...(SCIENTIFIC_PLOT_LAYOUT.margin as PlotRecord), b: 150 } }
         : {}),
-      title: { text: "Variable Importance in Projection", font: { size: 14, color: "#f8fafc" } },
+      title: { text: "Variable Importance in Projection", font: { size: 14, color: "#334155" } },
       xaxis: {
         ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord),
         title: categoricalFeatureAxis
@@ -595,8 +593,8 @@ export function buildClassificationResponsesPlot(
       ...SCIENTIFIC_PLOT_LAYOUT,
       margin: { t: 72, r: 70, b: 72, l: 76 },
       title: {
-        text: "Calibration Class Responses<br><span style=\"font-size:11px;color:#94a3b8\">PLS dummy-response scores, not probabilities</span>",
-        font: { size: 14, color: "#f8fafc" },
+        text: "Calibration Class Responses",
+        font: { size: 14, color: "#334155" },
       },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Response class" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Calibration sample index" },
@@ -657,8 +655,7 @@ export function buildRankedVipPlot(options: {
     ],
     layout: presentationReadyLayout({
       ...SCIENTIFIC_PLOT_LAYOUT,
-      annotations: [encodingAnnotation("VIP point estimates; fold-to-fold stability is not displayed.")],
-      margin: {...SCIENTIFIC_PLOT_LAYOUT.margin, t:95},
+      meta: { stability_scope: "point_estimates_only" },
       height: options.height ?? 350,
       xaxis: {
         ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord),
@@ -712,7 +709,7 @@ export function buildExplainedVariancePlot(options: {
       barmode: "group",
       title: {
         text: "Explained Variance by Latent Variable",
-        font: { size: 14, color: "#f8fafc" },
+        font: { size: 14, color: "#334155" },
       },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Latent variable" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Explained variance (%)" },
@@ -764,7 +761,7 @@ export function buildComponentExplainedVariancePlot(value: unknown): ScientificP
       margin: { l: 70 },
       title: {
         text: "PCA Explained Variance",
-        font: { size: 14, color: "#f8fafc" },
+        font: { size: 14, color: "#334155" },
       },
       xaxis: {
         ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord),
@@ -872,7 +869,8 @@ export function buildT2QDiagnosticsPlot(
   const outliers = rows.filter((row) => row.outlier);
   const trace = (selected: T2QDiagnosticRow[], outlier: boolean): PlotRecord => ({
     type: "scatter",
-    mode: "markers",
+    mode: outlier ? "markers+text" : "markers",
+    textposition: "top center",
     x: selected.map((row) => row.t2),
     y: selected.map((row) => row.q),
     text: selected.map((row) => row.sample),
@@ -911,18 +909,13 @@ export function buildT2QDiagnosticsPlot(
       line: { color: "#f59e0b", dash: "dash", width: 2 },
     });
   }
-  const confidence = Number(diagnostics.confidence_level ?? metadata.confidence_level);
-  const subtitle =
-    hasT2Limit && hasQLimit
-      ? `${Number.isFinite(confidence) ? `${(confidence * 100).toFixed(1)}% ` : ""}screening limits; ${outliers.length} of ${rows.length} flagged`
-      : `${rows.length} fitted observations; limits are applied by the outlier-screening node`;
   return {
     data,
     layout: presentationReadyLayout({
       ...SCIENTIFIC_PLOT_LAYOUT,
       title: {
-        text: `Hotelling T² vs Q Residuals<br><span style="font-size:11px;color:#94a3b8">${subtitle}</span>`,
-        font: { size: 14, color: "#f8fafc" },
+        text: "Hotelling T² vs Q Residuals",
+        font: { size: 14, color: "#334155" },
       },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Hotelling T²" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Q residual (SPE)" },
@@ -964,7 +957,7 @@ export function buildCategoryCountsPlot(value: unknown): ScientificPlot {
     ],
     layout: presentationReadyLayout({
       ...SCIENTIFIC_PLOT_LAYOUT,
-      title: { text: "Class Assignment Counts", font: { size: 14, color: "#f8fafc" } },
+      title: { text: "Class Assignment Counts", font: { size: 14, color: "#334155" } },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Class" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Samples" },
       showlegend: false,
@@ -1048,7 +1041,7 @@ export function buildConfusionMatrixPlot(
         b: Math.min(132, 64 + maxDisplayLines * 14),
         l: Math.min(190, Math.max(90, 38 + maxDisplayLineLength * 6)),
       },
-      title: { text: "Confusion Matrix", font: { size: 14, color: "#f8fafc" } },
+      title: { text: "Confusion Matrix", font: { size: 14, color: "#334155" } },
       xaxis: {
         ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord),
         title: "Predicted class",
@@ -1116,7 +1109,7 @@ export function buildPeakTablePlot(value: unknown): ScientificPlot {
     ],
     layout: presentationReadyLayout({
       ...SCIENTIFIC_PLOT_LAYOUT,
-      title: { text: "Detected Peaks", font: { size: 14, color: "#f8fafc" } },
+      title: { text: "Detected Peaks", font: { size: 14, color: "#334155" } },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Spectral position" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Peak height" },
       showlegend: false,
@@ -1157,7 +1150,7 @@ export function buildSalientFeaturesPlot(value: unknown): ScientificPlot {
     ],
     layout: presentationReadyLayout({
       ...SCIENTIFIC_PLOT_LAYOUT,
-      title: { text: "Salient Features", font: { size: 14, color: "#f8fafc" } },
+      title: { text: "Salient Features", font: { size: 14, color: "#334155" } },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Feature" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Selection score" },
       showlegend: false,
@@ -1253,16 +1246,15 @@ export function buildOutOfFoldEvidencePlot(value: unknown): ScientificPlot {
     hovertemplate:
       "Retained row (0-based): %{customdata[0]}<br>Validation fold (0-based): %{customdata[1]}<br>Actual: %{x:.15g}<br>OOF prediction: %{y:.15g}<extra></extra>",
   };
-  const producerLabel = producer.node_id.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
   plot.layout = {
     ...plot.layout,
-    title: { text: `Out-of-fold Predicted vs Actual (${count} held-out predictions)<br><sup>${plan.folds.length} validation folds · selection.nested_cv / ${producerLabel}</sup>` },
-    margin: { ...(plot.layout.margin as PlotRecord), t: 85 },
+    title: { text: "Out-of-fold Predicted vs Actual" },
     meta: {
       claim_scope: "out_of_fold",
       producer: record.producer,
       evidence_sha256: record.evidence_sha256,
       split_plan_digest: record.split_plan_digest,
+      validation_folds: plan.folds.length,
       fold_assignments: folds,
       integrity_verification: "retained_receipt_not_reverified_in_renderer",
     },

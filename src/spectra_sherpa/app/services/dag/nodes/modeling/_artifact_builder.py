@@ -41,6 +41,11 @@ def build_model_artifact(
     """
     metadata, arrays = extract.to_artifact()
 
+    if metadata.get("model_type") in {"knn", "simca", "mcr", "fastica"}:
+        from spectra_sherpa.app.services.dag.fitted_input_identity import fitted_input_identity
+
+        metadata["input_identity"] = fitted_input_identity(input_dataset, features=input_dataset.shape[-1])
+
     # --- Feature axis and selection mask ---
     _enrich_with_feature_info(metadata, input_dataset)
 

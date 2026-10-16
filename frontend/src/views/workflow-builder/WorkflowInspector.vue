@@ -51,27 +51,12 @@
       <!-- Action buttons -->
       <div v-if="selectedNode" class="inspector-actions">
         <Button
-          v-if="selectedNodeType === 'data.collection_load'"
-          label="Configure data"
-          icon="pi pi-database"
-          class="p-button-sm p-button-outlined"
-          :loading="configuringSheetData"
-          :disabled="projectStore.currentProjectId === null || configuringSheetData"
-          title="Choose files, target, and groups for this workflow sheet"
-          data-testid="configure-sheet-data"
-          @click="configureSheetData"
-        />
-        <Button
           label="Run Node"
           icon="pi pi-play"
           class="p-button-sm inspector-action-btn"
           :disabled="executionDisabled || hasValidationErrors"
-          :title="
-            executionDisabledReason ||
-            (hasValidationErrors
-              ? 'Resolve the parameter validation error before running'
-              : 'Run this node and its dependencies')
-          "
+          :title="runNodeDisabledReason || 'Run this node and its dependencies'"
+          :aria-describedby="runNodeDisabledReason ? runNodeReasonId : undefined"
           @click="executeNode"
         />
         <Button
@@ -79,15 +64,6 @@
           icon="pi pi-trash"
           class="p-button-sm inspector-action-btn"
           @click="deleteNode"
-        />
-        <Button
-          v-if="isPreprocessingNode && inputConnections.length > 0"
-          label="Preview"
-          icon="pi pi-eye"
-          class="p-button-sm p-button-outlined p-button-secondary"
-          @click="runPreview"
-          :disabled="hasValidationErrors"
-          title="Preview before/after effect of this preprocessing"
         />
         <a
           v-if="selectedNodeHelpUrl"
@@ -102,6 +78,26 @@
           <span aria-hidden="true">?</span>
         </a>
       </div>
+      <DisabledReason v-if="selectedNode" :id="runNodeReasonId" :reason="runNodeDisabledReason" class="inspector-disabled-reason" />
+      <section v-if="componentDesignPreview" class="diagnostics-card" aria-label="Planned component validation">
+        <span class="diagnostics-title">Before fitting: component validation</span>
+        <p>{{ componentDesignPreview.selected }} {{ componentDesignPreview.unit }} requested by the saved model parameter.
+          The curve will compare up to {{ componentDesignPreview.maximum }} components using
+          {{ componentDesignPreview.folds }}-fold {{ componentDesignPreview.method }} when eligible.</p>
+        <p v-if="componentDesignPreview.group">Independent unit: {{ componentDesignPreview.group }}.</p>
+        <p v-else>Independent specimen/group identity is not verified in this preview. Execution will use group folds if bound, otherwise row folds.</p>
+        <p v-if="componentDesignPreview.calibrationCount != null">Connected calibration rows: {{ componentDesignPreview.calibrationCount }}.</p>
+        <p v-if="componentDesignPreview.splitRole === 'train'">The training port of a train/test split feeds this model. The test partition stays outside component selection and needs a separate evaluation.</p>
+        <p v-else-if="componentDesignPreview.splitRole === 'other'">A train/test split feeds this model without a verified training port. Automatic component CV will be unavailable; check the partition wiring.</p>
+        <p v-else>No independent test partition is established by this model node.</p>
+        <p>Exact fold membership, preprocessing eligibility and any unavailability are recorded only when the model runs.</p>
+      </section>
+      <WorkflowDataPortfolioPicker
+        v-if="selectedNodeType === 'data.collection_load' && selectedNode"
+        :project-id="projectStore.currentProjectId"
+        :workflow-id="workflowStore.workflowId"
+        :node-id="selectedNode.id"
+      />
 
       <!-- Node Execution Error Display -->
       <div v-if="selectedNode?.executionState?.status === 'error'" class="execution-error-banner">
@@ -214,15 +210,13 @@
 
                 <div v-if="localParams.field === 'sample_index'" class="filter-rule-card">
                   <div class="field">
-                    <label>Rows to keep</label>
+                    <ParameterHelpLabel input-id="filter-rows" label="Rows to keep" description="Use row numbers and ranges, such as 1-10, 15, 20-25.">Rows to keep</ParameterHelpLabel>
                     <InputText
+                      id="filter-rows"
                       v-model="localParams.pattern"
                       :placeholder="filterSampleCount > 0 ? `1-${filterSampleCount}` : '1-10, 15'"
                       @update:model-value="onIndexPatternChange"
                     />
-                    <small class="param-hint">
-                      Use row numbers and ranges, such as 1-10, 15, 20-25.
-                    </small>
                   </div>
                   <div class="filter-quick-actions">
                     <Button
@@ -301,9 +295,10 @@
                   </div>
 
                   <div class="field">
-                    <label>{{ categoricalFilterLabel }}</label>
+                    <ParameterHelpLabel input-id="filter-values" :label="categoricalFilterLabel" description="Choices are populated from the connected dataset.">{{ categoricalFilterLabel }}</ParameterHelpLabel>
                     <div class="filter-value-toolbar">
                       <InputText
+                        id="filter-values"
                         v-model="filterValueSearch"
                         class="filter-value-search"
                         placeholder="Search available values"
@@ -333,9 +328,7 @@
                         <span>{{ option.label }}</span>
                       </label>
                     </div>
-                    <small class="param-hint">
-                      Choices are populated from the connected dataset.
-                    </small>
+
                     <small
                       v-if="filterValueOptions.length > visibleFilterValueOptions.length"
                       class="param-hint"
@@ -448,20 +441,9 @@
           <!-- SMOOTH node -->
           <template v-else-if="selectedNodeType === 'preprocess.smooth'">
             <div class="field" :class="{ 'field-error': getParamError('size') }">
-              <label class="param-label-with-info">
-                Window Size: {{ localParams.size }}
-                <i
-                  class="pi pi-info-circle param-info-icon"
-                  v-tooltip.right="{
-                    value:
-                      'Savitzky-Golay filter window size. Larger values produce smoother spectra but may remove fine features. Must be odd number. Typical range: 5-21.',
-                    showDelay: 300,
-                    hideDelay: 100,
-                    class: 'scientific-tooltip',
-                  }"
-                ></i>
-              </label>
+              <ParameterHelpLabel input-id="smooth-size" label="Window Size" description="Savitzky-Golay filter window size. Larger values produce smoother spectra but may remove fine features. Must be odd number. Typical range: 5-21.">Window Size: {{ localParams.size }}</ParameterHelpLabel>
               <Slider
+                id="smooth-size"
                 v-model="localParams.size"
                 :min="3"
                 :max="21"
@@ -473,20 +455,9 @@
               </small>
             </div>
             <div class="field" :class="{ 'field-error': getParamError('order') }">
-              <label class="param-label-with-info">
-                Polynomial Order: {{ localParams.order }}
-                <i
-                  class="pi pi-info-circle param-info-icon"
-                  v-tooltip.right="{
-                    value:
-                      'Polynomial degree used to fit data within window. Higher order fits data more closely but may amplify noise. Typically 2-4 for spectral data.',
-                    showDelay: 300,
-                    hideDelay: 100,
-                    class: 'scientific-tooltip',
-                  }"
-                ></i>
-              </label>
+              <ParameterHelpLabel input-id="smooth-order" label="Polynomial Order" description="Polynomial degree used to fit data within window. Higher order fits data more closely but may amplify noise. Typically 2-4 for spectral data.">Polynomial Order: {{ localParams.order }}</ParameterHelpLabel>
               <Slider
+                id="smooth-order"
                 v-model="localParams.order"
                 :min="1"
                 :max="6"
@@ -540,15 +511,15 @@
           <!-- STATS node -->
           <template v-else-if="selectedNodeType === 'stats.summary'">
             <div class="field">
-              <label>Max Samples: {{ localParams.max_samples || 50 }}</label>
+              <ParameterHelpLabel input-id="stats-max-samples" label="Max Samples" description="Number of sample rows to return in statistics">Max Samples: {{ localParams.max_samples || 50 }}</ParameterHelpLabel>
               <Slider
+                id="stats-max-samples"
                 v-model="localParams.max_samples"
                 :min="10"
                 :max="500"
                 :step="10"
                 @change="emitParams"
               />
-              <small class="param-hint"> Number of sample rows to return in statistics </small>
             </div>
           </template>
 
@@ -604,10 +575,10 @@
                 class="field"
                 :class="{ 'field-error': getParamError(param.name) }"
               >
-                <label :for="`parameter-${param.name}`">
+                <ParameterHelpLabel :input-id="`parameter-${param.name}`" :label="param.label" :description="param.description">
                   {{ param.label }}
                   <span v-if="param.required" class="required-indicator">*</span>
-                </label>
+                </ParameterHelpLabel>
 
                 <!-- Number input -->
                 <template v-if="param.param_type === 'number'">
@@ -677,15 +648,7 @@
                   />
                 </template>
 
-                <!-- Parameter description -->
-                <small
-                  v-if="param.description && !getParamError(param.name)"
-                  class="param-hint"
-                  :class="{
-                    'param-warning':
-                      param.name === 'held_out_groups' && isGroupHoldoutMissingSelection,
-                  }"
-                >
+                <small v-if="param.name === 'held_out_groups' && isGroupHoldoutMissingSelection && !getParamError(param.name)" class="param-hint param-warning">
                   {{ param.description }}
                 </small>
 
@@ -714,10 +677,10 @@
                     class="field"
                     :class="{ 'field-error': getParamError(param.name) }"
                   >
-                    <label :for="`parameter-${param.name}`">
+                    <ParameterHelpLabel :input-id="`parameter-${param.name}`" :label="param.label" :description="param.description">
                       {{ param.label }}
                       <span v-if="param.required" class="required-indicator">*</span>
-                    </label>
+                    </ParameterHelpLabel>
 
                     <!-- Number input -->
                     <template v-if="param.param_type === 'number'">
@@ -791,19 +754,11 @@
                       />
                     </template>
 
-                    <!-- Parameter description -->
-                    <small
-                      v-if="param.description && !getParamError(param.name)"
-                      class="param-hint"
-                      :class="{
-                        'param-warning':
-                          param.name === 'held_out_groups' && isGroupHoldoutMissingSelection,
-                      }"
-                    >
-                      {{ param.description }}
-                    </small>
+                    <small v-if="param.name === 'held_out_groups' && isGroupHoldoutMissingSelection && !getParamError(param.name)" class="param-hint param-warning">
+                  {{ param.description }}
+                </small>
 
-                    <!-- Validation error -->
+                <!-- Validation error -->
                     <small v-if="getParamError(param.name)" class="param-error">
                       {{ getParamError(param.name) }}
                     </small>
@@ -919,6 +874,7 @@
             </div>
           </div>
           <RepeatedValidationSummary :record="asObject(selectedPortOutput?.value)" />
+          <PLSDAPermutationSummary :record="asObject(selectedPortOutput?.value)" />
           <!-- Data shape summary - always show for any output -->
           <div v-if="selectedNodeType !== 'output.export'" class="data-shape-summary">
             <template v-if="selectedResultDimensions.length">
@@ -957,6 +913,7 @@
 
           <div v-if="diagnosticEntries.length > 0" class="diagnostics-card">
             <span class="diagnostics-title">Scientific Diagnostics</span>
+            <p v-for="note in diagnosticMetricNotes" :key="note" class="diagnostics-note" role="note">{{ note }}</p>
             <div class="diagnostics-grid">
               <div v-for="entry in diagnosticEntries" :key="entry.key" class="diagnostics-item">
                 <span class="diagnostics-key">{{ entry.label }}</span>
@@ -986,7 +943,8 @@
               icon="pi pi-chart-line"
               label="Quick Plot"
               class="p-button-sm p-button-outlined"
-              @click="showQuickPlotModal = true"
+              :loading="quickPlotLoading"
+              @click="openQuickPlot"
             />
             <Button
               v-if="
@@ -1414,11 +1372,12 @@
   <!-- Quick Plot Modal (Universal Plotly-based) -->
   <QuickPlotModal
     v-model="showQuickPlotModal"
-    :node-output="selectedNodeOutput"
+    :node-output="quickPlotNodeOutput"
     :node-type="selectedNode?.type || ''"
     :node-label="selectedNode ? getNodeLabel(selectedNode.type) : 'Node'"
-    :node-input="inputConnections.length > 0 ? inputConnections[0].data : undefined"
-    :node-inputs="quickPlotInputs"
+    :node-input="quickPlotPrimaryInput"
+    :node-inputs="quickPlotResolvedInputs"
+    :evidence-error="quickPlotEvidenceError"
   />
 
   <!-- Data Table Modal (Raw data viewer) -->
@@ -1428,79 +1387,6 @@
     :node-type="selectedNode?.type || ''"
     :node-label="selectedNode ? getNodeLabel(selectedNode.type) : 'Node'"
   />
-
-  <!-- Preview Modal (Before/After Comparison) -->
-  <Dialog
-    v-model:visible="showPreviewModal"
-    header="Preview: Before vs After"
-    :style="{ width: '900px' }"
-    :modal="true"
-    class="preview-dialog"
-  >
-    <div v-if="previewData" class="preview-container">
-      <div class="preview-pane">
-        <h4>Original Data</h4>
-        <div class="preview-content">
-          <div v-if="previewData.original?.data?.length > 0" class="data-summary">
-            <div class="summary-item">
-              <span class="summary-label">Spectra:</span>
-              <span class="summary-value">{{
-                previewPayloadSampleCount(previewData.original)
-              }}</span>
-            </div>
-            <div v-if="previewData.original.data[0]?.wavenumber" class="summary-item">
-              <span class="summary-label">Points:</span>
-              <span class="summary-value">{{
-                previewPayloadFeatureCount(previewData.original)
-              }}</span>
-            </div>
-            <div v-if="previewData.original.data[0]?.wavenumber" class="summary-item">
-              <span class="summary-label">Range:</span>
-              <span class="summary-value">
-                {{ previewPayloadRange(previewData.original) }}
-              </span>
-            </div>
-          </div>
-          <pre v-if="previewData.original"
-            >{{ JSON.stringify(previewData.original, null, 2).substring(0, 800) }}...</pre
-          >
-        </div>
-      </div>
-      <div class="preview-divider"></div>
-      <div class="preview-pane">
-        <h4>Processed Data</h4>
-        <div class="preview-content">
-          <div v-if="!previewData.processed" class="loading-preview">
-            <i class="pi pi-spin pi-spinner"></i>
-            <span>Processing...</span>
-          </div>
-          <template v-else>
-            <div v-if="previewData.processed?.data?.length > 0" class="data-summary">
-              <div class="summary-item">
-                <span class="summary-label">Spectra:</span>
-                <span class="summary-value">{{
-                  previewPayloadSampleCount(previewData.processed)
-                }}</span>
-              </div>
-              <div v-if="previewData.processed.data[0]?.wavenumber" class="summary-item">
-                <span class="summary-label">Points:</span>
-                <span class="summary-value">{{
-                  previewPayloadFeatureCount(previewData.processed)
-                }}</span>
-              </div>
-              <div v-if="previewData.processed.data[0]?.wavenumber" class="summary-item">
-                <span class="summary-label">Range:</span>
-                <span class="summary-value">
-                  {{ previewPayloadRange(previewData.processed) }}
-                </span>
-              </div>
-            </div>
-            <pre>{{ JSON.stringify(previewData.processed, null, 2).substring(0, 800) }}...</pre>
-          </template>
-        </div>
-      </div>
-    </div>
-  </Dialog>
 
   <!-- Full Metadata Modal -->
   <Dialog
@@ -1650,8 +1536,11 @@
 
 <script setup lang="ts">
 import RepeatedValidationSummary from "@/components/results/RepeatedValidationSummary.vue";
+import PLSDAPermutationSummary from "@/components/results/PLSDAPermutationSummary.vue";
+import DisabledReason from "@/components/DisabledReason.vue";
+import ParameterHelpLabel from "@/components/ParameterHelpLabel.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- inspector renders heterogeneous node params and outputs across the full DAG surface. */
-import { toRaw, ref, computed, watch, onMounted, onUnmounted } from "vue";
+import { toRaw, ref, computed, watch, onMounted, onUnmounted, useId } from "vue";
 import Accordion from "primevue/accordion";
 import AccordionTab from "primevue/accordiontab";
 import Button from "primevue/button";
@@ -1665,17 +1554,18 @@ import MultiSelect from "primevue/multiselect";
 import { featureColumnOptions } from "@/utils/featureColumnOptions";
 import Slider from "primevue/slider";
 import { useToast } from "primevue/usetoast";
-import { useRouter } from "vue-router";
+import api from "@/api/client";
 import { useWorkflowStore, type WorkflowNode } from "@/stores/workflow";
 import { useProjectStore } from "@/stores/project";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
+import WorkflowDataPortfolioPicker from "./WorkflowDataPortfolioPicker.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
-import type { NodeOutput, PortOutput } from "@/utils/nodeOutput";
+import { buildNodeOutput, type NodeOutput, type PortOutput } from "@/utils/nodeOutput";
 import type { ScientificValueDescriptor } from "@/stores/workflow-types";
 import type { NodeParameterMetadata } from "@/types";
-import { getErrorMessage } from "@/utils/errors";
 import { resolveNodeHelpUrl } from "@/utils/nodeHelp";
 import { buildDiagnosticEntries } from "@/utils/diagnostics";
+import { scientificMetricNotes } from "@/utils/scientificDisplay";
 import { primaryClassificationMetricSummary } from "@/utils/classificationMetrics";
 import { t2QDiagnosticRows } from "@/utils/scientificPlots";
 import { downloadExportArtifact, extractExportArtifact } from "@/utils/exportArtifact";
@@ -1796,50 +1686,40 @@ const emit = defineEmits<{
 }>();
 
 const toast = useToast();
-const router = useRouter();
 const workflowStore = useWorkflowStore();
 const projectStore = useProjectStore();
 const selectedNodeType = computed(() => props.selectedNode?.type || "");
-const configuringSheetData = ref(false);
-
-async function configureSheetData(): Promise<void> {
-  const node = props.selectedNode;
-  if (!node || projectStore.currentProjectId === null) return;
-  configuringSheetData.value = true;
-  try {
-    // Blank sheets are intentionally unsaved until their first meaningful
-    // edit.  Data selection is that edit, so persist the graph first and then
-    // let the server issue the initial append-only source revision.
-    const workflowId =
-      workflowStore.workflowId ??
-      (await workflowStore.saveWorkflow({
-        createVersion: false,
-        projectId: projectStore.currentProjectId,
-      }));
-    const experimentId = Number(node.params?.experiment_id);
-    await router.push({
-      path: "/data",
-      query: {
-        tab: "my-dataset",
-        workflow: String(workflowId),
-        source_node: node.id,
-        project_id: String(projectStore.currentProjectId),
-        ...(Number.isSafeInteger(experimentId) && experimentId > 0
-          ? { experiment: String(experimentId) }
-          : {}),
-      },
-    });
-  } catch (error: unknown) {
-    toast.add({
-      severity: "error",
-      summary: "Data configuration could not open",
-      detail: getErrorMessage(error, "Save this sheet and try configuring its data again."),
-      life: 5000,
-    });
-  } finally {
-    configuringSheetData.value = false;
-  }
-}
+const componentDesignPreview = computed(() => {
+  const type = selectedNodeType.value;
+  if (!["model.fitted_pls", "model.pca", "classification.plsda"].includes(type)) return null;
+  const selected = Number(localParams.value.n_components ?? 2);
+  const maximum = type === "model.fitted_pls"
+    ? Math.max(Number(localParams.value.component_curve_max ?? 10), Math.min(20, Number.isFinite(selected) ? selected : 10))
+    : Math.min(20, Math.max(10, Number.isFinite(selected) ? selected : 10));
+  const folds = type === "model.fitted_pls" ? Number(localParams.value.component_cv_folds ?? 5) : 5;
+  const group = groupColumnFromInputs(props.inputConnections);
+  const input = props.inputConnections.find((item) => item.toPort === "X" || item.toPort === "default")?.data;
+  const summary = input?.metadata.summary as { n_samples?: unknown; n_observations?: unknown } | undefined;
+  const count = summary?.n_samples ?? summary?.n_observations;
+  return {
+    selected: Number.isFinite(selected) ? selected : 2,
+    maximum: Number.isFinite(maximum) ? maximum : 10,
+    folds: Number.isFinite(folds) ? folds : 5,
+    unit: type === "model.pca" ? "PC" : "LV",
+    method: type === "classification.plsda"
+      ? group ? "stratified group CV" : "stratified group or row CV"
+      : group ? "group CV" : "group or row CV",
+    group,
+    calibrationCount: typeof count === "number" && Number.isFinite(count) ? count : null,
+    splitRole: props.inputConnections.some((item) => item.nodeType === "data.train_test_split")
+      ? props.inputConnections.every((item) => item.nodeType !== "data.train_test_split" ||
+          ((item.toPort === "X" || item.toPort === "default") && item.port === "X_train") ||
+          (item.toPort === "y" && item.port === "y_train")) &&
+        props.inputConnections.some((item) => item.nodeType === "data.train_test_split" && item.port === "X_train")
+        ? "train" : "other"
+      : "none",
+  };
+});
 const nodeMetadata = computed(() => {
   if (!props.selectedNode) return null;
   return workflowStore.getNodeMetadata(props.selectedNode.type);
@@ -1902,7 +1782,7 @@ const selectedOutputPreviewNotice = computed(() => {
   ) {
     return null;
   }
-  return "Showing a bounded persisted preview. Re-run the workflow to inspect the complete numerical result.";
+  return "Showing a bounded history preview. Quick Plot loads exact retained results when available.";
 });
 const selectedOutputSupportsTable = computed(() =>
   selectedPresentation.value
@@ -2012,6 +1892,12 @@ const isPeakFindingStats = computed(() => {
   const meta = outputMetadata.value;
   return meta.type === "PeakFinding" || meta.input_type === "PeakFinding";
 });
+
+const diagnosticMetricNotes = computed(() => [...new Set([
+  ...scientificMetricNotes(outputMetadata.value),
+  ...scientificMetricNotes(selectedPortOutput.value?.metadata),
+  ...scientificMetricNotes(selectedPortOutput.value?.value),
+])]);
 
 const diagnosticEntries = computed(() => {
   const diagnostics = asObject(outputMetadata.value.diagnostics);
@@ -2348,6 +2234,11 @@ const getParamError = (paramName: string): string | null => {
 
 // Check if parameters are valid
 const hasValidationErrors = computed(() => validationErrors.value.length > 0);
+const runNodeReasonId = useId();
+const runNodeDisabledReason = computed(() => {
+  if (props.executionDisabled) return props.executionDisabledReason || "This node cannot run here.";
+  return hasValidationErrors.value ? "Resolve the parameter validation error before running." : "";
+});
 
 const stableParamSignature = (value: unknown): string => {
   const normalize = (item: unknown): unknown => {
@@ -2463,6 +2354,93 @@ const quickPlotInputs = computed<Record<string, PortOutput | NodeOutput | null>>
     ]),
   ),
 );
+const exactQuickPlotOutput = ref<NodeOutput | null>(null);
+const exactQuickPlotInputs = ref<Record<string, PortOutput | NodeOutput | null> | null>(null);
+const quickPlotLoading = ref(false);
+const quickPlotEvidenceError = ref("");
+let quickPlotRequest = 0;
+const quickPlotNodeOutput = computed(() =>
+  quickPlotEvidenceError.value ? null : exactQuickPlotOutput.value
+    ? projectScientificPresentation(
+        exactQuickPlotOutput.value,
+        resolveScientificPresentation(nodeMetadata.value, exactQuickPlotOutput.value, selectedPresentationId.value),
+      )
+    : selectedNodeOutput.value,
+);
+const quickPlotResolvedInputs = computed(() => exactQuickPlotInputs.value ?? quickPlotInputs.value);
+const quickPlotPrimaryInput = computed(() =>
+  exactQuickPlotInputs.value
+    ? Object.values(exactQuickPlotInputs.value)[0]
+    : props.inputConnections[0]?.data,
+);
+
+watch(
+  () => [props.selectedNode?.id, selectedPresentationId.value, workflowStore.restoredRunId, workflowStore.executionEvidenceScope, projectStore.currentProjectId],
+  () => {
+    ++quickPlotRequest;
+    exactQuickPlotOutput.value = null;
+    exactQuickPlotInputs.value = null;
+    quickPlotEvidenceError.value = "";
+    quickPlotLoading.value = false;
+  },
+);
+
+async function openQuickPlot(): Promise<void> {
+  const runId = workflowStore.restoredRunId;
+  const projectId = projectStore.currentProjectId;
+  const nodeId = props.selectedNode?.id;
+  if (workflowStore.executionEvidenceScope !== "restored_summary" || runId == null || projectId == null || !nodeId) {
+    showQuickPlotModal.value = true;
+    return;
+  }
+  const ticket = ++quickPlotRequest;
+  quickPlotLoading.value = true;
+  quickPlotEvidenceError.value = "";
+  exactQuickPlotOutput.value = null;
+  exactQuickPlotInputs.value = null;
+  const read = async (sourceNodeId: string, port: string): Promise<any> => {
+    const response = await api.get(
+      `/runs/${runId}/outputs/${encodeURIComponent(sourceNodeId)}/${encodeURIComponent(port)}`,
+      { params: { project_id: projectId } },
+    );
+    return response.data.value;
+  };
+  try {
+    const sourcePorts = selectedPresentation.value?.sourcePorts ?? [props.nodeOutput?.primary_port ?? "default"];
+    const [outputs, inputs] = await Promise.all([
+      Promise.all(sourcePorts.map(async (port) => [port, await read(nodeId, port)] as const)),
+      Promise.all(props.inputConnections.map(async (connection) => [
+        connection.toPort || "default",
+        await read(connection.nodeId, connection.port),
+      ] as const)),
+    ]);
+    if (ticket !== quickPlotRequest || workflowStore.restoredRunId !== runId ||
+      projectStore.currentProjectId !== projectId || props.selectedNode?.id !== nodeId) return;
+    exactQuickPlotOutput.value = buildNodeOutput(
+      Object.fromEntries(outputs),
+      nodeMetadata.value?.output_ports,
+      null,
+      workflowStore.lastExecutionResultDescriptors[nodeId] ?? null,
+      props.nodeOutput?.presentation_contract,
+    );
+    exactQuickPlotInputs.value = Object.fromEntries(inputs.map(([port, value]) => [
+      port,
+      value && typeof value === "object" ? {
+        data: Array.isArray(value.data) ? value.data : [],
+        metadata: value.metadata ?? {},
+        value,
+      } : { data: Array.isArray(value) ? value : [], metadata: {}, value },
+    ]));
+  } catch {
+    if (ticket !== quickPlotRequest) return;
+    quickPlotEvidenceError.value = "The exact retained plot output is unavailable. Inspect the saved run or re-run this sheet; the compact history summary cannot be plotted as full evidence.";
+  } finally {
+    if (ticket === quickPlotRequest) {
+      quickPlotLoading.value = false;
+      showQuickPlotModal.value = true;
+    }
+  }
+}
 
 const filterOutputValue = (output: PortOutput | NodeOutput | null): unknown => {
   return output && "value" in output ? output.value : null;
@@ -3053,21 +3031,6 @@ const filterPreview = computed(() => {
   };
 });
 
-// Check if node is a preprocessing node (eligible for preview)
-const isPreprocessingNode = computed(() => {
-  if (!props.selectedNode) return false;
-  const preprocessingTypes = [
-    "preprocess.smooth",
-    "baseline.penalized_ls",
-    "baseline.rubberband",
-    "preprocess.normalize",
-    "preprocess.scale",
-    "preprocess.emsc",
-    "preprocess.derivative",
-  ];
-  return preprocessingTypes.includes(selectedNodeType.value);
-});
-
 const normalizeOptions = (options: any[] | undefined): any[] | undefined => {
   if (!options) return options;
   return options.map((opt: any) => (typeof opt === "string" ? { label: opt, value: opt } : opt));
@@ -3326,60 +3289,6 @@ const showQuickPlotModal = ref(false);
 const showDataTableModal = ref(false);
 const showMetadataModal = ref(false);
 const showErrorDetails = ref(false);
-const showPreviewModal = ref(false);
-const previewData = ref<{ original: any; processed: any } | null>(null);
-
-const numericPreviewValue = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-};
-
-const previewPayloadMetadata = (payload: any): Record<string, unknown> =>
-  asObject(payload?.metadata) ?? {};
-
-const previewPayloadSampleCount = (payload: any): number => {
-  const metadata = previewPayloadMetadata(payload);
-  return (
-    numericPreviewValue(metadata.n_samples ?? payload?.n_samples) ??
-    (Array.isArray(payload?.data) ? payload.data.length : 0)
-  );
-};
-
-const previewPayloadFeatureCount = (payload: any): number => {
-  const metadata = previewPayloadMetadata(payload);
-  const firstWavenumbers = payload?.data?.[0]?.wavenumber;
-  return (
-    numericPreviewValue(metadata.n_features ?? payload?.n_features) ??
-    (Array.isArray(firstWavenumbers) ? firstWavenumbers.length : 0)
-  );
-};
-
-const previewPayloadRange = (payload: any): string => {
-  const metadata = previewPayloadMetadata(payload);
-  const explicitRange = metadata.x_range;
-  if (Array.isArray(explicitRange) && explicitRange.length >= 2) {
-    const left = numericPreviewValue(explicitRange[0]);
-    const right = numericPreviewValue(explicitRange[1]);
-    if (left !== null && right !== null)
-      return `${Math.min(left, right).toFixed(1)} - ${Math.max(left, right).toFixed(1)} cm⁻¹`;
-  }
-  const min = numericPreviewValue(metadata.wavenumber_min ?? metadata.x_min);
-  const max = numericPreviewValue(metadata.wavenumber_max ?? metadata.x_max);
-  if (min !== null && max !== null)
-    return `${Math.min(min, max).toFixed(1)} - ${Math.max(min, max).toFixed(1)} cm⁻¹`;
-  const wavenumbers = payload?.data?.[0]?.wavenumber;
-  if (!Array.isArray(wavenumbers)) return "Unknown";
-  const values = wavenumbers
-    .map((value: unknown) => numericPreviewValue(value))
-    .filter((value: number | null): value is number => value !== null);
-  if (!values.length) return "Unknown";
-  return `${Math.min(...values).toFixed(1)} - ${Math.max(...values).toFixed(1)} cm⁻¹`;
-};
-
 // Debug: watch nodeOutput changes
 watch(
   () => props.nodeOutput,
@@ -3623,34 +3532,6 @@ const getDefaultsForNodeType = (nodeType: string): ParamsMap => {
   }
   return defaults;
 };
-
-// Watch for selected node changes - only reset params when node ID changes
-watch(
-  () => props.selectedNode?.id,
-  (newId, oldId) => {
-    const node = props.selectedNode;
-    if (node && newId !== oldId) {
-      // Node selection changed - reset local params with defaults first, then stored values
-      syncLocalParamsFromNode(node, { force: true });
-    } else if (!node) {
-      // Node deselected
-      currentNodeId.value = null;
-      localParams.value = {};
-      lastSyncedParamsSignature.value = "";
-    }
-  },
-  { immediate: true },
-);
-
-watch(
-  () => props.selectedNode?.params,
-  () => {
-    const node = props.selectedNode;
-    if (!node || node.id !== currentNodeId.value) return;
-    syncLocalParamsFromNode(node);
-  },
-  { deep: true },
-);
 
 watch(
   () => [
@@ -3906,73 +3787,6 @@ const executeNode = () => {
 const deleteNode = () => {
   if (props.selectedNode) {
     emit("delete-node", props.selectedNode.id);
-  }
-};
-
-// Run preview (before/after comparison)
-const runPreview = async () => {
-  if (!props.selectedNode || !isPreprocessingNode.value) return;
-
-  // Validate params first
-  validateParams();
-  if (validationErrors.value.length > 0) {
-    toast.add({
-      severity: "error",
-      summary: "Validation Error",
-      detail: "Please fix parameter errors before previewing",
-      life: 3000,
-    });
-    return;
-  }
-
-  try {
-    // Get the input data from the first input connection
-    const inputConn = props.inputConnections[0];
-    if (!inputConn || !inputConn.data) {
-      toast.add({
-        severity: "warn",
-        summary: "No Input Data",
-        detail: "This node needs input data to preview. Run the previous node first.",
-        life: 4000,
-      });
-      return;
-    }
-
-    // Store original data
-    previewData.value = {
-      original: inputConn.data,
-      processed: null,
-    };
-
-    // Show modal with loading state
-    showPreviewModal.value = true;
-
-    // Execute trial run with current params
-    const nodeIdStr = String(props.selectedNode.id);
-    const result = await workflowStore.executeTrial(nodeIdStr, localParams.value);
-
-    if (result.status === "error") {
-      toast.add({
-        severity: "error",
-        summary: "Preview Failed",
-        detail: result.error || "Could not generate preview",
-        life: 5000,
-      });
-      showPreviewModal.value = false;
-      return;
-    }
-
-    // Store processed data
-    previewData.value.processed = result.result;
-  } catch (error: unknown) {
-    console.error("[WorkflowInspector] Preview error:", error);
-    toast.add({
-      severity: "error",
-      summary: "Preview Error",
-      detail: getErrorMessage(error, "Failed to generate preview"),
-      life: 5000,
-    });
-    showPreviewModal.value = false;
   }
 };
 
@@ -4328,6 +4142,47 @@ const getParamDefinitions = (nodeType: string): NodeParameterDefinition[] => {
   return definitions[nodeType] || [];
 };
 
+// Watch for selected node changes - only reset params when node ID changes
+watch(
+  () => props.selectedNode?.id,
+  (newId, oldId) => {
+    const node = props.selectedNode;
+    if (node && newId !== oldId) {
+      // Node selection changed - reset local params with defaults first, then stored values
+      syncLocalParamsFromNode(node, { force: true });
+    } else if (!node) {
+      // Node deselected
+      currentNodeId.value = null;
+      localParams.value = {};
+      lastSyncedParamsSignature.value = "";
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.selectedNode?.params,
+  () => {
+    const node = props.selectedNode;
+    if (!node || node.id !== currentNodeId.value) return;
+    syncLocalParamsFromNode(node);
+  },
+  { deep: true },
+);
+
+// The catalog can arrive after a restored node is selected. Fill missing
+// defaults without overwriting edits already made in this inspector.
+watch(
+  () => nodeMetadata.value?.parameters,
+  () => {
+    const node = props.selectedNode;
+    if (!node) return;
+    if (syncLocalParamsFromNode(node)) return;
+    localParams.value = { ...getDefaultsForNodeType(node.type), ...localParams.value };
+  },
+  { deep: true },
+);
+
 // Listen for storage changes from the detail view (when user saves)
 const handleStorageChange = (event: StorageEvent) => {
   if (event.key === STORAGE_KEY && event.newValue) {
@@ -4401,6 +4256,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+
 /* Vertical Sidebar Layout */
 .workflow-inspector {
   background: #1e293b;
@@ -4547,6 +4403,13 @@ onUnmounted(() => {
 
 .inspector-actions .p-button {
   flex: 1;
+}
+
+.inspector-disabled-reason {
+  margin: 0;
+  padding: 8px 16px;
+  border-bottom: 1px solid #334155;
+  color: #94a3b8;
 }
 
 .inspector-help-link {
@@ -5178,6 +5041,13 @@ onUnmounted(() => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.diagnostics-note {
+  margin: 0;
+  color: #cbd5e1;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 .diagnostics-grid {
@@ -5853,120 +5723,6 @@ onUnmounted(() => {
 
 :deep(.scientific-tooltip .p-tooltip-text) {
   color: #e2e8f0 !important;
-}
-
-/* ============================================================================
-   PREVIEW MODAL
-   ============================================================================ */
-
-.preview-container {
-  display: flex;
-  gap: 16px;
-  min-height: 450px;
-}
-
-.preview-pane {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.preview-pane h4 {
-  margin: 0 0 12px 0;
-  color: #3b82f6;
-  font-size: 0.95rem;
-  font-weight: 600;
-}
-
-.preview-content {
-  flex: 1;
-  background: #1e293b;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
-  padding: 12px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.preview-content pre {
-  margin: 0;
-  font-family: "SF Mono", Monaco, "Courier New", monospace;
-  font-size: 0.7rem;
-  color: #e2e8f0;
-  line-height: 1.4;
-  overflow-x: auto;
-}
-
-.preview-divider {
-  width: 1px;
-  background: rgba(255, 255, 255, 0.15);
-  flex-shrink: 0;
-}
-
-.loading-preview {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  gap: 12px;
-  color: #64748b;
-}
-
-.loading-preview i {
-  font-size: 2rem;
-}
-
-.loading-preview span {
-  font-size: 0.9rem;
-  font-weight: 500;
-}
-
-.data-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 8px;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  border-radius: 4px;
-  margin-bottom: 8px;
-}
-
-.summary-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.8rem;
-}
-
-.summary-label {
-  color: #94a3b8;
-  font-weight: 500;
-}
-
-.summary-value {
-  color: #e2e8f0;
-  font-weight: 600;
-  font-family: "SF Mono", Monaco, monospace;
-}
-
-/* Preview dialog custom styling */
-:deep(.preview-dialog .p-dialog-content) {
-  padding: 1rem;
-}
-
-:deep(.preview-dialog .p-dialog-header) {
-  background: #1e293b;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-:deep(.preview-dialog .p-dialog-title) {
-  color: #3b82f6;
-  font-weight: 600;
 }
 
 /* ============================================================================

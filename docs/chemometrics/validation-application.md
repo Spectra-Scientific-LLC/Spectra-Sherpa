@@ -1,5 +1,10 @@
 # Validation and Model Application
 
+Designing the validation comes first — see
+[Designing Validation](validation-design.md) for grouped splits, fold-local
+preprocessing, and metric definitions. This page covers reading and applying
+the saved result.
+
 ## Read the saved validation summary
 
 Select a saved execution in **Report**. Its validation summary identifies the
@@ -92,6 +97,37 @@ boundaries refuse rather than silently reverting to row-level splitting.
 ## Applying Saved Models
 
 When applying a saved model, confirm that the new spectra match the training contract: preprocessing, spectral axis, feature count, units, and target context. A model can produce numbers for incompatible spectra if the data shape matches but the scientific contract does not.
+
+### Compare saved models in a project
+
+The Models project view lists active saved models without an optimization
+campaign. Each row identifies its target and units, source dataset,
+preprocessing, component count, calibration size, and any exact retained
+component-curve statistics. RMSEC and R² describe calibration. RMSECV and Q²
+describe the executed development cross-validation for the selected component
+count. A blank RMSEP or independent-test count means that this saved-model
+receipt does not establish an external result. It does not mean zero error.
+
+The view groups models for numerical comparison only when their target, units,
+exact fitted scientific cohort and exclusions, source view, and executed CV split
+match. Rows without those receipts remain
+inspectable but cannot be ranked. Open a row to inspect its exact saved
+diagnostics and ask Sherpa about supported diagnostic evidence. Export the
+current table page, or export one model's compact evidence dossier, to retain
+model, run, source-view, curve, and split identities alongside the stated gaps.
+
+Deploy-ready records operational readiness. Analytical qualification requires
+a separate current, model-bound intended-use assessment and human decision.
+Workflow qualification history for a canonical application does not qualify an
+ordinary saved model. Changes to the data view, response mapping, fitted
+preprocessing, exclusions, or model identity require renewed assessment.
+Native PLS artifacts retain fitted specimen IDs to detect validation overlap;
+the qualification record retains the external specimen register and intended-use
+context. Project exports include model artifacts and source data, so treat them
+as data-bearing archives and share them only under the project's data policy.
+The qualification screen verifies the currently materialized validation cohort
+again before showing or accepting a decision. Observed interval coverage uses
+only screened rows with available intervals and is not a population claim.
 
 
 ## Local folder watches

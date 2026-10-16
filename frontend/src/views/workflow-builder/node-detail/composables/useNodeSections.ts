@@ -14,6 +14,7 @@ const DEFAULT_PLOT_SECTIONS: Record<string, boolean> = {
   pcaScores: false,
   pcaBiplot: false,
   pcaLoadings: false,
+  pcaVariableCorrelations: false,
   pcaScree: false,
   pcaDiagnostics: false,
   mcrConcentrations: false,

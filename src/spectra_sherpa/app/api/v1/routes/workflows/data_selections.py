@@ -145,6 +145,9 @@ async def apply_workflow_data_selection(
         user_id=current_user.id,
         workflow_project_id=workflow.project_id,
     )
+    from spectra_sherpa.app.services.sample_review_custody import require_review_source_preserved
+
+    await require_review_source_preserved(session, workflow, node.node_id, source_parameters(payload.selection))
     before = dict(node.parameters or {})
     node.parameters = source_parameters(payload.selection)
     await sync_workflow_data_sources(workflow, session, workflow.nodes)

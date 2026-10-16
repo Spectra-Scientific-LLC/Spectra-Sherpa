@@ -5,12 +5,18 @@
       {{ emptyMessage }}
     </div>
     <div v-show="!isEmpty" ref="chartEl" class="plotly-canvas"></div>
+    <div v-if="displayed.omitted" class="plotly-preview-notice" role="status">
+      Display limit: {{ displayed.omitted }} sample rows omitted from this plot. Adjust Display Settings to show more; calculations are unchanged.
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import { selectionIndices } from "@/utils/sampleReview";
 import { focusPlot, releasePlot, nextPlotAttentionId } from "@/lib/sherpaAttention";
 import { scientificPlotRefusal } from "@/utils/scientificPlotState";
+import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
+import { displayPlot } from "@/utils/displayPlot";
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 type PlotlyData = Record<string, unknown>;
@@ -41,6 +47,8 @@ interface PlotlyHoverEvent {
 
 const props = defineProps<{
   data: PlotlyData[];
+  selectedPointIds?: string[];
+  linkLineSelection?: boolean;
   layout?: PlotlyLayout;
   config?: PlotlyConfig;
   loading?: boolean;
@@ -52,12 +60,19 @@ const props = defineProps<{
 const emit = defineEmits<{
   click: [event: PlotlyClickEvent];
   hover: [event: PlotlyHoverEvent];
+  selected: [event: unknown];
+  deselect: [];
 }>();
 
 const attentionId = nextPlotAttentionId();
 const notePlotFocus = () => focusPlot(attentionId, props.attentionNodeId, props.attentionPlotKey);
 onBeforeUnmount(() => releasePlot(attentionId));
 const chartEl = ref<HTMLDivElement | null>(null);
+const displayPreferences = useDisplayPreferences();
+const displayed = computed(() => displayPlot(
+  props.data || [], props.layout || {}, displayPreferences,
+  new Set(props.selectedPointIds || []),
+));
 const refusal = computed(() => scientificPlotRefusal(props.layout));
 const emptyMessage = computed(
   () => refusal.value || props.emptyMessage || "No renderable plot data available.",
@@ -72,6 +87,7 @@ type PlotlyClient = {
     layout: PlotlyLayout,
     config: PlotlyConfig,
   ) => unknown | Promise<unknown>;
+  restyle: (element: HTMLDivElement, update: Record<string, unknown>) => unknown | Promise<unknown>;
   relayout: (element: HTMLDivElement, update: PlotlyLayout) => unknown | Promise<unknown>;
   purge: (element: HTMLDivElement) => void;
   Plots: {
@@ -116,6 +132,8 @@ const getPlotlyClient = async (): Promise<PlotlyClient> => {
   return plotlyClientPromise;
 };
 
+let applyingLinkedSelection = false;
+
 const setupEventListeners = (element: HTMLDivElement) => {
   if (disposed || chartEl.value !== element || listenersBound) return;
 
@@ -130,8 +148,69 @@ const setupEventListeners = (element: HTMLDivElement) => {
     emit("hover", data as PlotlyHoverEvent);
   });
 
+  plotlyElement.on("plotly_selected", (data) => {
+    if (!applyingLinkedSelection) emit("selected", data);
+  });
+  plotlyElement.on("plotly_deselect", () => {
+    if (!applyingLinkedSelection) emit("deselect");
+  });
   listenersBound = true;
 };
+
+const applySelection = () => {
+  chartWork = chartWork
+    .catch(() => undefined)
+    .then(async () => {
+      const element = chartEl.value;
+      if (
+        disposed ||
+        !element ||
+        isEmpty.value ||
+        needsFullRender ||
+        props.selectedPointIds === undefined
+      )
+        return;
+      const Plotly = await getPlotlyClient();
+      if (disposed || chartEl.value !== element) return;
+      const selected = [...props.selectedPointIds];
+      applyingLinkedSelection = true;
+      try {
+        // Native lasso geometry otherwise re-applies its old selection on restyle.
+        // Its programmatic deselect event must not erase the linked ID selection.
+        const plotted = element as HTMLDivElement & { layout?: { selections?: unknown[] } };
+        if (plotted.layout?.selections?.length) await Plotly.relayout(element, { selections: [] });
+        const indices = selectionIndices(displayed.value.data, new Set(selected));
+        await Plotly.restyle(element, {
+          selectedpoints: selected.length ? indices : displayed.value.data.map(() => null),
+          ...(props.linkLineSelection
+            ? {
+                "line.width": indices.map((points) => (points.length ? 3 : 1) * displayPreferences.lineScale),
+                opacity: indices.map((points) => (selected.length && !points.length ? 0.18 : 1)),
+              }
+            : {}),
+        });
+      } finally {
+        applyingLinkedSelection = false;
+      }
+    });
+};
+watch(() => props.selectedPointIds, () => {
+  const plot = chartEl.value as (HTMLDivElement & { data?: PlotlyData[] }) | null;
+  if (plot?.data) {
+    const desired = displayed.value.data;
+    const previewChanged = plot.data.length !== desired.length || desired.some((trace, index) => {
+      const before = plot.data?.[index].customdata;
+      const after = trace.customdata;
+      if (!Array.isArray(before) || !Array.isArray(after)) return false;
+      return before.length !== after.length || after.some((id, row) => id !== before[row]);
+    });
+    if (previewChanged) {
+      void render();
+      return;
+    }
+  }
+  applySelection();
+}, { deep: true });
 
 const isDisplayed = (element: HTMLDivElement): boolean =>
   element.isConnected !== false && element.getClientRects().length > 0;
@@ -170,22 +249,28 @@ const render = (layoutOnly = false): Promise<boolean> => {
         needsFullRender = true;
         return false;
       }
-      if (layoutOnly && !needsFullRender) {
-        const flat: Record<string, unknown> = {};
-        for (const [key, val] of Object.entries(cloneForPlotly(props.layout || {}))) {
-          if (val && typeof val === "object" && !Array.isArray(val)) {
-            for (const [subKey, subVal] of Object.entries(val as Record<string, unknown>))
-              flat[`${key}.${subKey}`] = subVal;
-          } else flat[key] = val;
+      // Programmatic redraws of a linked chart must not erase the shared IDs.
+      applyingLinkedSelection = props.selectedPointIds !== undefined;
+      try {
+        if (layoutOnly && !needsFullRender) {
+          const flat: Record<string, unknown> = {};
+          for (const [key, val] of Object.entries(cloneForPlotly(props.layout || {}))) {
+            if (val && typeof val === "object" && !Array.isArray(val)) {
+              for (const [subKey, subVal] of Object.entries(val as Record<string, unknown>))
+                flat[`${key}.${subKey}`] = subVal;
+            } else flat[key] = val;
+          }
+          await Plotly.relayout(element, flat);
+        } else {
+          await Plotly.react(
+            element,
+            cloneForPlotly(displayed.value.data),
+            cloneForPlotly(displayed.value.layout),
+            { responsive: true, displaylogo: false, ...cloneForPlotly(props.config || {}) },
+          );
         }
-        await Plotly.relayout(element, flat);
-      } else {
-        await Plotly.react(
-          element,
-          cloneForPlotly(props.data || []),
-          cloneForPlotly(props.layout || {}),
-          { responsive: true, displaylogo: false, ...cloneForPlotly(props.config || {}) },
-        );
+      } finally {
+        applyingLinkedSelection = false;
       }
       if (disposed || chartEl.value !== element) {
         Plotly.purge(element);
@@ -195,6 +280,7 @@ const render = (layoutOnly = false): Promise<boolean> => {
       if (revision !== renderRevision) return false;
       needsFullRender = false;
       setupEventListeners(element);
+      applySelection();
       return true;
     });
   chartWork = task;
@@ -241,6 +327,7 @@ watch(
   },
   { deep: true },
 );
+watch(displayPreferences, () => { void render(); }, { deep: true });
 
 // Layout and data updates share the same chart work queue as image export.
 watch(
@@ -277,6 +364,7 @@ onBeforeUnmount(() => {
   height: 100%;
   min-height: 320px;
 }
+.plotly-preview-notice { padding: .25rem .5rem; font-size: .8rem; color: var(--text-color-secondary, #64748b); }
 
 .plotly-canvas {
   width: 100%;

@@ -217,6 +217,9 @@ async def test_apply_knn_artifact_replays_partition_and_scale_state(monkeypatch)
     metadata.update(
         {
             "n_features": 2,
+            "input_identity": fitted_input_identity(
+                SherpaDataset(X=X_train_scaled, feature_axis=FeatureAxis(labels=["f1", "f2"])), features=2
+            ),
             "preprocessing_chain": [
                 {
                     "op_id": "data.train_test_split",
@@ -293,6 +296,7 @@ async def test_compare_models_reports_pairwise_disagreements():
         k=1,
     ).to_artifact()
     left_meta["n_features"] = 1
+    left_meta["input_identity"] = fitted_input_identity(SherpaDataset(X=X), features=1)
     store.save("knn-left", left_meta, left_arrays)
 
     right_meta, right_arrays = KNNExtract(
@@ -302,6 +306,7 @@ async def test_compare_models_reports_pairwise_disagreements():
         k=1,
     ).to_artifact()
     right_meta["n_features"] = 1
+    right_meta["input_identity"] = fitted_input_identity(SherpaDataset(X=X), features=1)
     store.save("knn-right", right_meta, right_arrays)
 
     ds = SherpaDataset(X=X, target=y, target_context=TargetContext(target_type="categorical"))
@@ -359,6 +364,29 @@ async def test_apply_regression_artifact_reports_labeled_set_metrics(included, e
     assert result["metrics"]["n_samples"] == len(expected)
     assert result["sample_indices"] == ([0, 2] if included is not None else [0, 1, 2])
     assert result["feature_indices"] == [0, 1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("included_count", [20, 80])
+async def test_wide_corn_shaped_application_bounds_predictions_not_input(included_count):
+    from spectra_sherpa.app.lib.fitted_state import LinearRegressionExtract
+    from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset
+    from spectra_sherpa.app.services.model_application import compare_models_on_dataset
+    from spectra_sherpa.app.services.model_store import get_model_store
+
+    metadata, arrays = LinearRegressionExtract(coef=np.ones(700), intercept=np.array([0.5])).to_artifact()
+    metadata["n_features"] = 700
+    for uid in ("corn-shape-a", "corn-shape-b"):
+        get_model_store().save(uid, metadata, arrays)
+    dataset = SherpaDataset(
+        X=np.ones((80, 700)),
+        sample_axis=SampleAxis(include_mask=[i < included_count for i in range(80)]),
+    )
+    compared = await compare_models_on_dataset(["corn-shape-a", "corn-shape-b"], dataset, scope="all")
+    for result in compared["models"]:
+        assert result["n_samples"] == included_count
+        assert result["sample_indices"] == list(range(included_count))
+        np.testing.assert_allclose(result["predictions"], np.full((included_count, 1), 700.5))
 
 
 @pytest.mark.parametrize("names", [None, ["density"]])
@@ -621,6 +649,45 @@ def test_model_apply_replays_msc_with_persisted_reference_state():
     expected = ((X_new[0] - c) / m).reshape(1, -1)
     np.testing.assert_allclose(X_ready, expected)
     assert warnings == []
+
+
+def test_saved_pca_starter_sample_filter_is_training_provenance_not_application_filter():
+    from spectra_sherpa.app.lib.pca import PCAExtract, fit_pca
+    from spectra_sherpa.app.services.dag.nodes.preprocessing.scale_node import _fit_scale_state
+    from spectra_sherpa.app.services.model_application import _prepare_X_for_artifact
+
+    rng = np.random.default_rng(612)
+    training = rng.normal(size=(30, 4))
+    new_population = rng.normal(size=(5, 4))
+    scale_state = _fit_scale_state(training[:27], method="mean_center", center=True)
+    training_centered = training[:27] - np.asarray(scale_state["mean"])
+    fitted = fit_pca(training_centered, n_components=2, standardized=False, scaled=False)
+    metadata, arrays = fitted.to_artifact()
+    chain = [
+        {
+            "op_id": "data.filter_samples",
+            "parameters": {
+                "field": "source_inclusion",
+                "n_input": 30,
+                "n_selected": 27,
+                "selected_indices": list(range(27)),
+                "no_filter": False,
+            },
+        },
+        {
+            "op_id": "preprocess.scale",
+            "parameters": {"method": "mean_center", "transform_state": scale_state},
+        },
+    ]
+    prepared, _, indices, warnings = _prepare_X_for_artifact(
+        new_population, None, {"preprocessing_chain": chain}, scope="all"
+    )
+    expected = new_population - np.asarray(scale_state["mean"])
+    np.testing.assert_allclose(prepared, expected)
+    np.testing.assert_array_equal(indices, np.arange(5))
+    assert warnings == []
+    restored = PCAExtract.from_artifact(metadata, arrays)
+    np.testing.assert_allclose(restored.transform(prepared), fitted.transform(expected))
 
 
 def test_model_apply_rejects_incomplete_or_inconsistent_normalize_records():

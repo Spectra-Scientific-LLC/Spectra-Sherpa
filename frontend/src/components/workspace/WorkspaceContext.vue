@@ -23,10 +23,10 @@ withDefaults(defineProps<{ label: string; layout?: "default" | "workflow" }>(), 
   border-bottom: 1px solid var(--surface-border);
 }
 .workspace-context--workflow {
-  grid-template-columns: minmax(0, 2fr) minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 .workspace-context--workflow :deep(.workspace-context-item:last-child) {
-  text-align: right;
+  text-align: left;
 }
 .workspace-context--workflow :deep(.workspace-context-item:last-child strong) {
   white-space: normal;

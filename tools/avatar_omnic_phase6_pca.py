@@ -610,6 +610,7 @@ def _require_pca_state_output_binding(
     selected_axis_wire: Mapping[str, Any],
     expected_contract_digest: str,
     expected_input_axis_identity_sha256: str,
+    expected_input_identity: Mapping[str, Any],
 ) -> None:
     if set(state) != {
         "arrays",
@@ -621,7 +622,7 @@ def _require_pca_state_output_binding(
     }:
         raise ValueError("PCA fitted state does not use its closed schema")
     if (
-        state.get("schema_version") != "spectrasherpa.model.pca-state/4"
+        state.get("schema_version") != "spectrasherpa.model.pca-state/5"
         or state.get("serializer") != "spectrasherpa.model-artifact.pca/3"
         or state.get("source_contract_digest") != expected_contract_digest
     ):
@@ -639,6 +640,7 @@ def _require_pca_state_output_binding(
     }:
         raise ValueError("PCA fitted-state array inventory differs")
     if not isinstance(metadata, Mapping) or set(metadata) != {
+        "input_identity",
         "feature_axis_labels_sha256",
         "feature_axis_quantity",
         "feature_axis_units",
@@ -662,6 +664,7 @@ def _require_pca_state_output_binding(
     ):
         raise ValueError("PCA fitted-state arrays differ from the node outputs")
     expected_metadata = {
+        "input_identity": dict(expected_input_identity),
         "feature_axis_labels_sha256": None,
         "feature_axis_quantity": selected_axis_wire.get("quantity"),
         "feature_axis_units": selected_axis_wire.get("units"),
@@ -839,6 +842,8 @@ def _summarize_execution(
     state = pca.get("model")
     if not isinstance(state, Mapping) or state.get("serializer") != "spectrasherpa.model-artifact.pca/3":
         raise ValueError("PCA fitted state is not the current canonical serializer")
+    from spectra_sherpa.app.lib.sherpa_dataset import DomainContext
+
     selected_x_axis = selected_wire.get("x_axis") or {}
     replay_input = SherpaDataset(
         X=selected,
@@ -850,7 +855,9 @@ def _summarize_execution(
         ),
         units=selected_wire.get("units"),
         data_role=selected_wire.get("data_role"),
+        domain=DomainContext(**(selected_wire.get("domain") or {})),
     )
+    from spectra_sherpa.app.services.dag.fitted_input_identity import fitted_input_identity
     from spectra_sherpa.app.services.dag.rank_projection import input_axis_identity
 
     _require_pca_state_output_binding(
@@ -862,6 +869,7 @@ def _summarize_execution(
         selected_axis_wire=selected_x_axis,
         expected_contract_digest=workflow_authority["execution_contract_digests"]["model.pca"],
         expected_input_axis_identity_sha256=input_axis_identity(replay_input),
+        expected_input_identity=fitted_input_identity(replay_input, features=selected.shape[1]),
     )
     replay = apply_pca_fitted_state(replay_input, dict(state))
     replay_max_abs = float(np.max(np.abs(replay - scores)))

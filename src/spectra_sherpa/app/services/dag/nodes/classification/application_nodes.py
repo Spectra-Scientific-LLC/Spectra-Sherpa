@@ -75,6 +75,11 @@ def _application_result(
         "n_classes": int(matrix.shape[1]),
         "numeric_output_semantics": numeric_semantics,
     }
+    if method == "plsda":
+        from .plsda_state import SherpaPLSDAArtifact
+
+        artifact = SherpaPLSDAArtifact.from_fitted_state(fitted_state)
+        diagnostics["applicability"] = artifact.applicability(input_data.X if hasattr(input_data, "X") else input_data)
     if method == "simca":
         diagnostics["n_rejected"] = int(np.sum(labels == "unassigned"))
     return NodeResult(outputs=outputs, diagnostics=diagnostics)
@@ -496,8 +501,8 @@ _bind_application(
     source_module=plsda_state,
     serializer=ApplyPLSDANode.SERIALIZER,
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
-    distributions=("numpy",),
-    requirements=(("numpy", "1.26.4"),),
+    distributions=("numpy", "scipy"),
+    requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1")),
     implementation_version="4.0.0",
     citations=(
         "Barker & Rayens, Partial least squares for discrimination, Journal of Chemometrics 17 (2003) "

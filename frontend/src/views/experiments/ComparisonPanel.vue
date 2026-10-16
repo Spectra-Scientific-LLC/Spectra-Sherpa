@@ -65,9 +65,11 @@
 </template>
 
 <script setup lang="ts">
+import { formatTimestamp } from "@/utils/format";
 import { scientificNumber } from "@/utils/scientificEncoding";
-import { computed } from "vue";
+import { computed, ref, watch } from "vue";
 import Button from "primevue/button";
+import api from "@/api/client";
 import type { ExecutionRunDetail } from "@/types";
 
 const props = defineProps<{
@@ -326,15 +328,79 @@ interface DataShape {
   features: number | null;
 }
 
-interface NodeSummary {
-  id: string;
-  label: string;
+interface SavedNode {
+  node_id: string;
+  node_type: string;
+  label?: string;
+  parameters?: Record<string, unknown>;
+}
+interface SavedGraph {
+  nodes: SavedNode[];
+  edges: Array<{ from_node_id: string; to_node_id: string }>;
+}
+
+const savedGraphs = ref<Record<string, SavedGraph | null>>({});
+let graphRequest = 0;
+watch(
+  () => props.runs.map((run) => `${run.id}:${run.project_id}`).join(","),
+  async () => {
+    const request = ++graphRequest;
+    savedGraphs.value = {};
+    await Promise.all(props.runs.map(async (run) => {
+      const evidence = (run as ExecutionRunDetail & { evidence_completeness?: { outputs?: Record<string, Record<string, { state?: string }>> } }).evidence_completeness;
+      if (evidence?.outputs?.__workflow__?.definition?.state !== "exact" || run.project_id == null) return;
+      try {
+        const retainedWorkflowNode = "__workflow__";
+        const retainedWorkflowPort = "definition";
+        const response = await api.get(`/runs/${run.id}/outputs/${retainedWorkflowNode}/${retainedWorkflowPort}`, {
+          params: { project_id: run.project_id },
+        });
+        const graph = response.data?.value;
+        if (request === graphRequest && Array.isArray(graph?.nodes) && Array.isArray(graph?.edges)) {
+          savedGraphs.value = { ...savedGraphs.value, [String(run.id)]: graph as SavedGraph };
+        }
+      } catch {
+        if (request === graphRequest)
+          savedGraphs.value = { ...savedGraphs.value, [String(run.id)]: null };
+      }
+    }));
+  },
+  { immediate: true },
+);
+
+function orderedNodes(graph: SavedGraph): SavedNode[] {
+  const byId = new Map(graph.nodes.map((node) => [node.node_id, node]));
+  const indegree = new Map(graph.nodes.map((node) => [node.node_id, 0]));
+  const outgoing = new Map(graph.nodes.map((node) => [node.node_id, [] as string[]]));
+  for (const edge of graph.edges) {
+    if (!byId.has(edge.from_node_id) || !byId.has(edge.to_node_id)) continue;
+    indegree.set(edge.to_node_id, (indegree.get(edge.to_node_id) || 0) + 1);
+    outgoing.get(edge.from_node_id)!.push(edge.to_node_id);
+  }
+  const queue = graph.nodes.filter((node) => indegree.get(node.node_id) === 0).map((node) => node.node_id);
+  const ordered: SavedNode[] = [];
+  for (const id of queue) {
+    ordered.push(byId.get(id)!);
+    for (const next of outgoing.get(id) || []) {
+      indegree.set(next, indegree.get(next)! - 1);
+      if (indegree.get(next) === 0) queue.push(next);
+    }
+  }
+  return ordered.length === graph.nodes.length ? ordered : graph.nodes;
+}
+
+function scientificNodeLabel(node: SavedNode): string {
+  const authored = node.label?.trim();
+  const generic = !authored || /^(?:viz|node|source|output)[_-]?\d+$/i.test(authored);
+  const type = node.node_type.split(".").slice(-1)[0]?.replace(/_/g, " ") || "Step";
+  return generic ? type.replace(/\b\w/g, (letter: string) => letter.toUpperCase()) : authored;
 }
 
 interface MatrixRow extends ComparisonRow {
   changed: boolean;
   code?: boolean;
   metric?: MetricRow;
+  workflow?: boolean;
 }
 
 interface MatrixSection {
@@ -348,6 +414,8 @@ const runContextRows = computed<ComparisonRow[]>(() => [
   makeRow("Model version", (run) => formatModelVersion(run)),
   makeRow("Workflow version", (run) => formatWorkflowVersion(run)),
   makeRow("Run kind", (run) => formatRunKind(run.run_kind)),
+  makeRow("Batch execution scope", (run) => String(run.source_metadata?.scope_label || "—")),
+  makeRow("Batch identifier", (run) => String(run.source_metadata?.batch_id || "—")),
   makeRow("Status", (run) => run.status || "—"),
   makeRow("Produced models", (run) => formatArtifactList(run.produced_artifact_uids)),
 ]);
@@ -358,21 +426,6 @@ const dataPartitionRows = computed<ComparisonRow[]>(() => [
   makeRow("Partition", (run) => inferPartition(run)),
   makeRow("Split settings", (run) => inferSplitSettings(run)),
 ]);
-
-const nodeSummaries = computed<Record<string, NodeSummary[]>>(() => {
-  const byRun: Record<string, NodeSummary[]> = {};
-  for (const run of props.runs) {
-    const nodeIds = new Set<string>();
-    for (const source of [run.params_snapshot, run.results_summary, run.node_statuses ?? {}]) {
-      for (const key of Object.keys(source || {})) nodeIds.add(key);
-    }
-    byRun[String(run.id)] = [...nodeIds].map((id) => ({
-      id,
-      label: formatNodeLabel(id, run.results_summary?.[id]),
-    }));
-  }
-  return byRun;
-});
 
 const metricRows = computed<MetricRow[]>(() => {
   const baseRows = props.metricKeys
@@ -422,17 +475,31 @@ const paramDiffRows = computed<ComparisonRow[]>(() => {
   return rows;
 });
 
-const workflowRows = computed<ComparisonRow[]>(() => [
-  makeRow("Captured nodes (unordered; topology unavailable)", (run) => {
-    const nodes = nodeSummaries.value[String(run.id)] || [];
-    return nodes.length ? nodes.map((node) => node.label).join("; ") : "—";
-  }),
-]);
+const workflowRows = computed<ComparisonRow[]>(() => {
+  const order: string[] = [];
+  const byRun: Record<string, Map<string, string>> = {};
+  for (const run of props.runs) {
+    const graph = savedGraphs.value[String(run.id)];
+    const nodes = graph ? orderedNodes(graph) : [];
+    byRun[String(run.id)] = new Map(nodes.map((node) => [node.node_id, scientificNodeLabel(node)]));
+    for (const node of nodes) if (!order.includes(node.node_id)) order.push(node.node_id);
+  }
+  if (!order.length) return [makeRow("Saved workflow", () => "Definition unavailable")];
+  return order.map((id, index) => ({
+    label: `Step ${index + 1}`,
+    values: Object.fromEntries(props.runs.map((run) => [String(run.id), byRun[String(run.id)]?.get(id) || "—"])),
+  }));
+});
+
+const workflowSection = computed<MatrixSection>(() => {
+  const section = matrixSection("Workflow", workflowRows.value, "No workflow nodes captured.");
+  return { ...section, rows: section.rows.map((row) => ({ ...row, workflow: true })) };
+});
 
 const comparisonSections = computed<MatrixSection[]>(() => [
   matrixSection("Run context", runContextRows.value, "No run context captured."),
   matrixSection("Data & partition", dataPartitionRows.value, "No partition evidence captured."),
-  matrixSection("Workflow", workflowRows.value, "No workflow nodes captured."),
+  workflowSection.value,
   {
     title: "Results",
     rows: metricRows.value.map((metric) => ({
@@ -476,6 +543,10 @@ function rowValuesDiffer(values: Record<string, unknown>): boolean {
 function matrixCellClass(row: MatrixRow, runId: number): string {
   const value = row.values[String(runId)];
   if (value === "—") return "muted";
+  if (row.workflow) {
+    const baseline = row.values[String(props.runs[0]?.id)];
+    return runId !== props.runs[0]?.id && value !== baseline ? "workflow-difference" : "";
+  }
   if (row.metric) {
     const ranked = cellClass(row.metric, runId);
     if (ranked) return ranked;
@@ -598,18 +669,6 @@ function formatParamValue(val: unknown): string {
   return JSON.stringify(val);
 }
 
-function formatTimestamp(value: string): string {
-  if (!value) return "—";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
 function formatRunKind(kind: string | null | undefined): string {
   switch (kind) {
     case "training": return "Training";
@@ -716,15 +775,6 @@ function formatDataShape(shape: DataShape): string {
   if (shape.samples != null && shape.features != null) return `${shape.samples} samples × ${shape.features} features`;
   if (shape.samples != null) return `${shape.samples} samples`;
   return `${shape.features} features`;
-}
-
-function formatNodeLabel(nodeId: string, result: unknown): string {
-  const type = findFirstStringByKey(result, ["model_type", "task_type", "type", "output_type"]);
-  const cleanId = nodeId
-    .replace(/^node[_-]?/i, "")
-    .replace(/[_-]+/g, " ")
-    .trim();
-  return type ? `${cleanId || nodeId} · ${type}` : cleanId || nodeId;
 }
 
 function formatSettingPath(path: string): string {
@@ -852,11 +902,11 @@ function shapeFromValue(value: unknown): DataShape {
 .comparison-empty {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 48px;
   color: #64748b;
-  text-align: center;
+  text-align: left;
 }
 
 .comparison-empty i {
@@ -876,7 +926,7 @@ function shapeFromValue(value: unknown): DataShape {
 .comparison-empty-inline {
   padding: 1rem;
   color: #64748b;
-  text-align: center;
+  text-align: left;
 }
 
 .metric-name {
@@ -889,6 +939,12 @@ function shapeFromValue(value: unknown): DataShape {
 }
 
 .difference-neutral {
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-weight: 550;
+}
+
+.workflow-difference {
   background: #eff6ff;
   color: #1d4ed8;
   font-weight: 550;

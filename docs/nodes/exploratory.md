@@ -15,6 +15,27 @@ Exploratory nodes reveal structure before supervised modeling.
 | EFA (`model.efa`) | Estimate evolving rank/component count in ordered mixture or process data. | `default: SpectralDataset` | `forward_eigenvalues`; `backward_eigenvalues`; `model` | `n_components`. Requires SpectroChemPy. |
 | SIMPLISMA (`model.simplisma`) | Estimate pure variables/components by purity maximization. | `default: SpectralDataset` | `concentrations`; `spectra`; `purity_values`; `model` | `n_components`; `tol`; `noise`. Requires SpectroChemPy. |
 
+MCR and FastICA application also require the recorded feature axis and signal
+identity; refit older states that lack this information.
+
+PCA rejects requested components whose eigenvalues are at or below `1e-12`
+times the largest retained eigenvalue. Reduce `n_components` to the resolved
+numerical rank. PCA and outlier screening use this same relative tolerance and
+the same T² calculation, without an absolute eigenvalue floor. Calibration T²
+uses the Jackson F limit without the new-sample mean-uncertainty factor. Q uses
+the Jackson–Mudholkar residual-spectrum limit, with an explicitly reported
+chi-squared moment fallback if the JM shape parameter is nonpositive. When all feature
+directions are retained, Q is zero because no orthogonal residual space remains;
+floating-point reconstruction error alone does not create Q outliers.
+
+PCA Transform requires the fitted signal units, quantity, and measurement mode
+as well as the fitted feature axis. Explicitly convert incompatible inputs and
+refit PCA states created before this input identity was recorded.
+
+Library comparison also requires matching signal units, quantity, and measurement
+mode before similarity scoring. Convert percent transmittance to absorbance
+explicitly when comparing against an absorbance library.
+
 SpectroChemPy's MCR-ALS and baseline documentation are useful background for constrained curve-resolution thinking: <https://www.spectrochempy.fr/0.7.0/userguide/analysis/mcr_als.html> and <https://www.spectrochempy.fr/0.8.3/userguide/processing/baseline.html>.
 
 PARAFAC is deliberately an expert-only canvas node in 0.6.0: no analysis
@@ -94,3 +115,7 @@ Quick Plot offers each numeric column separately, with null detections left as g
 Use exploratory nodes to understand variation, outliers, clusters, pure-component estimates, and candidate spectral features before locking in a calibration or classification model. Prefer scores plots for sample structure, loadings or coefficients for variable interpretation, and residual/limit plots for model adequacy.
 
 LLM-assisted peak interpretation is available through the privacy-gated Sherpa Advisor conversation after deterministic Peak Finding. Advisor responses are human-reviewed interpretation, not canonical DAG execution or independently reproducible scientific evidence.
+
+The Q limit follows [Eigenvector's residual-limit convention](https://www.eigenvectordocs.com/index.php?title=Residuallimit),
+and the calibration T² limit follows [its documented F formula](https://www.eigenvectordocs.com/index.php?title=Tsqlim).
+These are model-based screening limits, not robust-fit guarantees or independent validation.

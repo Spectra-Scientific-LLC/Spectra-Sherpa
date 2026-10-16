@@ -90,6 +90,7 @@ def test_npm_audit_suppressions_are_reviewed_and_unexpired() -> None:
     ignore_file = PACKAGE_ROOT / "scripts/audit-ignore.toml"
     entries = tomllib.loads(ignore_file.read_text(encoding="utf-8")).get("npm-audit", {}).get("ignore", [])
     # An empty list is valid when all previously suppressed dependencies are removed.
+    assert isinstance(entries, list), "npm suppressions must be an explicit list, even when empty"
     today = date.today()
     for entry in entries:
         assert entry.get("id", "").strip(), "npm suppression requires an advisory id"
