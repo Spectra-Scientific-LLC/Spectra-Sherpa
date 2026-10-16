@@ -19,8 +19,7 @@ from spectra_sherpa.app.lib import fitted_state, model_extract_registry
 from spectra_sherpa.app.lib import pca as pca_authority
 from spectra_sherpa.app.lib.model_extract_registry import EXTRACT_REGISTRY
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services import legacy_model_application
-from spectra_sherpa.app.services.dag import classification_application
+from spectra_sherpa.app.services.dag import classification_application, legacy_model_application
 from spectra_sherpa.app.services.dag.classification_application import (
     CLASS_RESPONSE_SEMANTICS,
     validate_classification_application,
@@ -179,10 +178,15 @@ def _apply_model_artifact(
 
         return apply_saved_native_model(manifest, arrays, X_new, X_data)
 
-    from spectra_sherpa.app.services.legacy_model_application import require_legacy_application_acknowledgement
-
-    legacy_warning = require_legacy_application_acknowledgement(
-        manifest, arrays, X_new, acknowledged=acknowledge_legacy_input_uncertainty
+    # The adapter supplies only product permission. Serializer, axis and consent
+    # checks remain in the fingerprinted scientific implementation closure.
+    legacy_permission = getattr(replay, "allows_legacy_model_recovery", None)
+    legacy_warning = legacy_model_application.require_legacy_application_acknowledgement(
+        manifest,
+        arrays,
+        X_new,
+        acknowledged=acknowledge_legacy_input_uncertainty,
+        local_allowed=bool(legacy_permission()) if callable(legacy_permission) else False,
     )
     if model_type in {"pca", "knn", "simca", "mcr", "fastica"} and legacy_warning is None:
         require_fitted_input_identity(X_new, manifest.get("input_identity"), features=X_data.shape[1])
@@ -455,11 +459,11 @@ bind_stable_execution_contract(
     help_reference="docs/nodes/regression.md",
     implementation_modules=(
         model_extract_registry,
-        legacy_model_application,
         saved_native_model,
         pca_authority,
         fitted_state,
         classification_application,
+        legacy_model_application,
         plsda_state_authority,
         execution_runtime_contract,
         model_artifact_contract,

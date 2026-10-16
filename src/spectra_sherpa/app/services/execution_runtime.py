@@ -71,6 +71,12 @@ class ApplicationModelArtifactReplay:
             replay_source = replay_source[:, np.asarray(mask, dtype=bool)]
         return replay_source.with_data(prepared), tuple(replay_warnings + feature_warnings)
 
+    def allows_legacy_model_recovery(self) -> bool:
+        """Supply product permission; scientific admission stays in the core."""
+        from spectra_sherpa.app.core.mode_policy import is_local
+
+        return is_local()
+
     def applicability(self, extract: Any, X: Any) -> dict[str, Any] | None:
         from spectra_sherpa.app.services.model_application import _applicability_diagnostics
 

@@ -1142,8 +1142,8 @@ def test_legacy_admission_has_only_one_read_only_conversion(tmp_path, old, new, 
     assert spec is not None and spec.loader is not None
     gate = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(gate)
-    relative = Path("packages/spectra-sherpa/src/spectra_sherpa/app/services/legacy_model_application.py")
-    source = (package_root / "src/spectra_sherpa/app/services/legacy_model_application.py").read_text()
+    relative = Path("packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/legacy_model_application.py")
+    source = (package_root / "src/spectra_sherpa/app/services/dag/legacy_model_application.py").read_text()
     path = tmp_path / relative
     path.parent.mkdir(parents=True)
     path.write_text(source)

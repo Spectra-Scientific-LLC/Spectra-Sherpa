@@ -51,7 +51,7 @@ _SYMBOL_ALLOWLIST = {
     },
     "SherpaPLSDAArtifact": {
         # Legacy admission only deserializes retained state to validate its axis.
-        "packages/spectra-sherpa/src/spectra_sherpa/app/services/legacy_model_application.py",
+        "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/legacy_model_application.py",
         # Model-bound permutation reads and verifies the connected native state.
         "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_permutation_node.py",
         # Prediction applicability reads the same native state.
@@ -230,8 +230,8 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
     ),
 }
 _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
-    "packages/spectra-sherpa/src/spectra_sherpa/app/services/legacy_model_application.py": (
-        ("SherpaPLSDAArtifact.from_artifact", 65, 19),
+    "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/legacy_model_application.py": (
+        ("SherpaPLSDAArtifact.from_artifact", 62, 19),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_permutation_node.py": (
         ("plsda_state.SherpaPLSDAArtifact.from_fitted_state", 72, 12),
@@ -269,8 +269,8 @@ _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
         ("SherpaPLSDAArtifact.from_fitted_state", 490, 11),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/load_apply_node.py": (
-        ("extract_cls.from_artifact", 189, 14),
-        ("extract.to_fitted_state", 432, 8),
+        ("extract_cls.from_artifact", 193, 14),
+        ("extract.to_fitted_state", 436, 8),
     ),
 }
 

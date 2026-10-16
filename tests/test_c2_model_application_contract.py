@@ -64,7 +64,7 @@ def test_saved_model_application_has_one_exact_local_contract() -> None:
         "distribution.numpy",
         "distribution.scipy",
         "distribution.scikit-learn",
-        "spectra_sherpa.app.services.legacy_model_application",
+        "spectra_sherpa.app.services.dag.legacy_model_application",
         "spectra_sherpa.app.lib.fitted_state",
         "spectra_sherpa.app.lib.model_extract_registry",
         "spectra_sherpa.app.lib.pca",
@@ -362,7 +362,7 @@ def test_application_contract_binds_exact_legacy_admission_source():
     import hashlib
     import inspect
 
-    from spectra_sherpa.app.services import legacy_model_application
+    from spectra_sherpa.app.services.dag import legacy_model_application
 
     contract = node_registry.get_metadata("model.load_apply").resolved_execution_contract()
     expected = {

@@ -157,6 +157,23 @@ def test_v060_transform_replays_with_warning_only_after_acknowledgement(model_ty
         replay=ApplicationModelArtifactReplay(),
         acknowledge_legacy_input_uncertainty=True,
     )
+    application = ApplicationModelArtifactReplay()
+
+    class CoreReplay:
+        prepare = application.prepare
+        prepare_dataset = application.prepare_dataset
+        applicability = application.applicability
+
+    for acknowledged in (False, True):
+        with pytest.raises(ValueError, match="application permission"):
+            _apply_model_artifact(
+                manifest,
+                arrays,
+                dataset,
+                model_id=f"v060-{model_type}",
+                replay=CoreReplay(),
+                acknowledge_legacy_input_uncertainty=acknowledged,
+            )
     np.testing.assert_allclose(applied["transformed"], extract.transform(dataset.X))
     assert applied["metadata"]["legacy_exploratory_warning"] == LEGACY_WARNING
     with pytest.raises(LegacyAcknowledgementRequired):
@@ -258,3 +275,24 @@ async def test_new_pca_artifact_retains_and_enforces_fitted_signal_identity():
             )
         with pytest.raises(ValueError, match="input authority"):
             preflight_model_application(changed, manifest, arrays, acknowledge_legacy_input_uncertainty=acknowledged)
+
+
+def test_core_replay_without_legacy_capability_refuses_recovery():
+    dataset, manifest, arrays = _v060_plsda()
+    application = ApplicationModelArtifactReplay()
+
+    class CoreReplay:
+        prepare = application.prepare
+        prepare_dataset = application.prepare_dataset
+        applicability = application.applicability
+
+    for acknowledged in (False, True):
+        with pytest.raises(ValueError, match="application permission"):
+            _apply_model_artifact(
+                manifest,
+                arrays,
+                dataset,
+                model_id="v060-plsda",
+                replay=CoreReplay(),
+                acknowledge_legacy_input_uncertainty=acknowledged,
+            )
