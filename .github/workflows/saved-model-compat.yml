@@ -1,0 +1,99 @@
+name: Saved-model compatibility
+
+# Models users saved with a published release must keep applying after an
+# upgrade, and models the candidate fits must apply. The check fits and
+# applies real models (about ten minutes), so pull requests run it only when
+# they touch serialization, identity, persistence or replay code.
+# Policy: rule 6 of the monorepo's docs/dev/dual-repo-ci-policy.md.
+#
+# Keep the pull_request paths in sync with the monorepo workflow of the same
+# name; a monorepo contract test compares the two lists.
+#
+# The list is curated, not derived. When you add a module that serializes,
+# identifies, persists or replays a fitted model, or that feeds an execution
+# contract digest, add it here and in the monorepo copy. The weekly and
+# public-push runs are only the backstop for a missed path.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/spectra_sherpa/app/lib/fitted_state.py"
+      - "src/spectra_sherpa/app/lib/pca.py"
+      - "src/spectra_sherpa/app/lib/model_extract_registry.py"
+      - "src/spectra_sherpa/app/lib/sherpa_dataset.py"
+      - "src/spectra_sherpa/app/services/model_store.py"
+      - "src/spectra_sherpa/app/services/model_application.py"
+      - "src/spectra_sherpa/app/services/legacy_model_application.py"
+      - "src/spectra_sherpa/app/services/execution_runtime.py"
+      - "src/spectra_sherpa/app/services/artifact_preprocessing_authority.py"
+      - "src/spectra_sherpa/app/services/canonical_artifact_store.py"
+      - "src/spectra_sherpa/app/services/canonical_model_bridge.py"
+      - "src/spectra_sherpa/app/services/saved_model_*.py"
+      - "src/spectra_sherpa/app/services/dag/fitted_input_identity.py"
+      - "src/spectra_sherpa/app/services/dag/historical_contracts.py"
+      - "src/spectra_sherpa/app/services/dag/legacy_model_application.py"
+      - "src/spectra_sherpa/app/services/dag/nodes/classification/**"
+      - "src/spectra_sherpa/app/services/dag/nodes/modeling/**"
+      - "src/spectra_sherpa/app/services/dag/nodes/preprocessing/**"
+      - "src/spectra_sherpa/app/services/dag/nodes/selection/**"
+      - "src/spectra_sherpa/app/api/v1/routes/runs.py"
+      - "src/spectra_sherpa/app/api/v1/routes/workflow_templates.py"
+      - "src/spectra_sherpa/app/db/**"
+      - "src/spectra_sherpa/alembic/**"
+      - "src/spectra_sherpa/core/model_artifact.py"
+      - "src/spectra_sherpa/core/contract_compatibility.py"
+      - "src/spectra_sherpa/core/contract_predecessors_*.json"
+      - "src/spectra_sherpa/core/target_authority.py"
+      - "src/spectra_sherpa/execution_contract_vocabulary.py"
+      - "src/spectra_sherpa/app/models/model_artifact.py"
+      - "src/spectra_sherpa/app/services/dag/stable_execution_contract.py"
+      - "src/spectra_sherpa/app/services/dag/serialize.py"
+      - "src/spectra_sherpa/app/services/dag/feature_axis_identity.py"
+      - "src/spectra_sherpa/sdk/canonical_fitted_artifact.py"
+      - "src/spectra_sherpa/sdk/canonical_applicability.py"
+      - "src/spectra_sherpa/sdk/execution_contract.py"
+      - "src/spectra_sherpa/sdk/fitted_state_custody.py"
+      - "pyproject.toml"
+      - "poetry.lock"
+      - "scripts/saved_model_upgrade_check.py"
+      - "scripts/saved_model_upgrade_baseline.json"
+      - "scripts/run_saved_model_compat.sh"
+      - ".github/workflows/saved-model-compat.yml"
+  # Public main moves only when a curated release is published; check every one.
+  push:
+    branches: [main]
+  # Weekly as well: a dependency release can break compatibility with no PR.
+  schedule:
+    - cron: "29 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: saved-model-compat-${{ github.event_name }}-${{ github.ref }}
+  # Only a superseded PR run may be cancelled; every published commit and
+  # weekly run must report.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  compat:
+    name: Saved-model upgrade and round trip
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install candidate
+        run: |
+          pip install poetry
+          poetry install
+
+      - name: Check reviewed reference releases and the candidate round trip
+        run: scripts/run_saved_model_compat.sh "$RUNNER_TEMP/compat" "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "reference_versions": [
+    "0.6.0"
+  ],
+  "known_incompatibilities": [
+    {
+      "reference_version": "0.6.0",
+      "scenario": "iris-classification",
+      "template": "knn_classification",
+      "reason_contains": "no complete retained numeric feature axis",
+      "tracking": "https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/pull/111",
+      "decision": "accepted-retrain",
+      "note": "Decision record: the v0.6.2 CHANGELOG entry added by Spectra-Sherpa#111 (monorepo #1318). 0.6.0 tabular models recorded no column identity, so the column order cannot be verified; refit them. Spectral models apply after the exploratory acknowledgement."
+    },
+    {
+      "reference_version": "0.6.0",
+      "scenario": "iris-classification",
+      "template": "simca_classification",
+      "reason_contains": "no complete retained numeric feature axis",
+      "tracking": "https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/pull/111",
+      "decision": "accepted-retrain"
+    },
+    {
+      "reference_version": "0.6.0",
+      "scenario": "iris-classification",
+      "template": "pca",
+      "reason_contains": "no complete retained numeric feature axis",
+      "tracking": "https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/pull/111",
+      "decision": "accepted-retrain"
+    },
+    {
+      "reference_version": "0.6.0",
+      "scenario": "iris-classification",
+      "template": "ica_decomposition",
+      "reason_contains": "no complete retained numeric feature axis",
+      "tracking": "https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/pull/111",
+      "decision": "accepted-retrain"
+    }
+  ]
+}
