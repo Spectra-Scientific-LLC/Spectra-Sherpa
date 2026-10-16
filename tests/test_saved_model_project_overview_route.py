@@ -13,6 +13,129 @@ from spectra_sherpa.app.models.workflow_version import WorkflowVersion
 
 
 @pytest.mark.asyncio
+async def test_project_overview_shows_only_graph_bound_starter_heldout_regression(
+    auth_client, test_session, test_user, monkeypatch
+):
+    from spectra_sherpa.app.services import model_store, run_output_retention
+    from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
+
+    project = Project(user_id=test_user.id, name="regression-comparison")
+    test_session.add(project)
+    await test_session.flush()
+    workflow = Workflow(user_id=test_user.id, project_id=project.id, name="regression-workflow")
+    test_session.add(workflow)
+    await test_session.flush()
+    nodes = [
+        {"node_id": node, "node_type": kind}
+        for node, kind in (
+            ("split", "data.train_test_split"),
+            ("fit", "model.fitted_pls"),
+            ("predict", "model.predict_regression"),
+            ("evaluate", "diagnostics.labeled_regression_evaluator"),
+            ("unrelated", "diagnostics.labeled_regression_evaluator"),
+        )
+    ]
+    edges = [
+        {"from_node_id": source, "to_node_id": target, "from_output": output, "to_input": port}
+        for source, target, output, port in (
+            ("split", "fit", "X_train", "default"),
+            ("split", "predict", "X_test", "default"),
+            ("fit", "predict", "fitted_state", "fitted_state"),
+            ("predict", "evaluate", "default", "default"),
+            ("split", "evaluate", "y_test", "y_true"),
+            ("split", "evaluate", "X_test", "sample_context"),
+        )
+    ]
+    snapshot = {"nodes": nodes, "edges": edges}
+    version = WorkflowVersion(workflow_id=workflow.id, version_number=1, created_by=test_user.id, snapshot=snapshot)
+    test_session.add(version)
+    await test_session.flush()
+    run = ExecutionRun(
+        user_id=test_user.id,
+        project_id=project.id,
+        workflow_id=workflow.id,
+        workflow_version_id=version.id,
+        name="held-out regression",
+        status="completed",
+        params_snapshot={},
+        results_summary={},
+        executed_at=datetime.now(timezone.utc),
+        integrity_hash=compute_workflow_hash(nodes, edges),
+        produced_artifact_uids=["pls-model"],
+        evidence_completeness={
+            "schema_version": 1,
+            "qualification": "qualified",
+            "outputs": {
+                "evaluate": {
+                    "default": {
+                        "state": "exact",
+                        "storage": "file",
+                        "sha256": "a" * 64,
+                        "byte_count": 100,
+                        "format_version": 1,
+                    }
+                },
+                "unrelated": {
+                    "default": {
+                        "state": "exact",
+                        "storage": "file",
+                        "sha256": "b" * 64,
+                        "byte_count": 100,
+                        "format_version": 1,
+                    }
+                },
+            },
+        },
+    )
+    test_session.add(run)
+    await test_session.flush()
+    model = ModelArtifact(
+        artifact_uid="pls-model",
+        user_id=test_user.id,
+        project_id=project.id,
+        workflow_id=workflow.id,
+        workflow_version_id=version.id,
+        source_run_id=run.id,
+        node_id="fit",
+        model_type="pls",
+        name="PLS",
+        artifact_dir="/unused/in/route/test",
+        integrity_hash="c" * 64,
+        n_features=3,
+        n_components=2,
+        is_active=True,
+    )
+    test_session.add(model)
+    await test_session.commit()
+    manifest = {
+        "integrity_hash": model.integrity_hash,
+        "artifact_uid": model.artifact_uid,
+        "node_id": "fit",
+        "model_type": "pls",
+        "n_components": 2,
+        "response_identity": {"names": ["Protein"], "units": ["wt %"]},
+    }
+    monkeypatch.setattr(model_store, "verify_model_artifact_storage_record", lambda _model: None)
+    monkeypatch.setattr(
+        model_store, "get_model_store", lambda: SimpleNamespace(load=lambda _uid, verify: (manifest, {}))
+    )
+    reads = []
+
+    def retained(_user_id, item):
+        reads.append(item.sha256)
+        return {"task_type": "regression", "registry_version": "1", "n_samples": 9, "rmse": 0.42}
+
+    monkeypatch.setattr(run_output_retention, "read_output", retained)
+    response = await auth_client.get("/api/v1/models/project-overview", params={"project_id": project.id})
+    assert response.status_code == 200, response.text
+    row = response.json()["rows"][0]
+    assert row["held_out_validation"] == {"role": "within_dataset_held_out_test", "count": 9, "rmse": 0.42}
+    assert row["metrics"]["rmsep"] is None
+    assert row["independent_test_count"] is None
+    assert reads == ["a" * 64]
+
+
+@pytest.mark.asyncio
 async def test_project_overview_keeps_unbound_run_evidence_out_of_model_row(
     auth_client, test_session, test_user, monkeypatch
 ):

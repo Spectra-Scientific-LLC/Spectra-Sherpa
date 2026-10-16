@@ -4,9 +4,11 @@ from types import SimpleNamespace
 
 from spectra_sherpa.app.services.saved_model_overview import (
     heldout_evaluator_nodes,
+    heldout_regression_evaluator_nodes,
     model_component_count,
     project_model_row,
     verified_heldout_classification,
+    verified_heldout_regression,
     verified_run_definition,
 )
 
@@ -87,6 +89,45 @@ def test_exact_cv_projection_keeps_development_and_independent_results_separate(
     assert row["qualification"]["state"] == "unavailable"
     assert row["exclusions"] == ["s3"]
     assert row["comparison_key"] is not None
+
+
+def test_graph_verified_starter_heldout_rmse_is_not_independent_rmsep():
+    snapshot = {
+        "nodes": [
+            {"node_id": "split", "node_type": "data.train_test_split"},
+            {"node_id": "fit", "node_type": "model.fitted_pls"},
+            {"node_id": "predict", "node_type": "model.predict_regression"},
+            {"node_id": "evaluate", "node_type": "diagnostics.labeled_regression_evaluator"},
+            {"node_id": "unrelated", "node_type": "diagnostics.labeled_regression_evaluator"},
+        ],
+        "edges": [
+            {"from_node_id": "split", "to_node_id": "fit", "from_output": "X_train", "to_input": "default"},
+            {"from_node_id": "split", "to_node_id": "predict", "from_output": "X_test", "to_input": "default"},
+            {"from_node_id": "fit", "to_node_id": "predict", "from_output": "fitted_state", "to_input": "fitted_state"},
+            {"from_node_id": "predict", "to_node_id": "evaluate", "from_output": "default", "to_input": "default"},
+            {"from_node_id": "split", "to_node_id": "evaluate", "from_output": "y_test", "to_input": "y_true"},
+            {"from_node_id": "split", "to_node_id": "evaluate", "from_output": "X_test", "to_input": "sample_context"},
+        ],
+    }
+    assert heldout_regression_evaluator_nodes(snapshot, "fit") == ["evaluate"]
+    assert heldout_regression_evaluator_nodes(snapshot, "other_fit") == []
+    snapshot["edges"][-1]["from_output"] = "X_train"
+    assert heldout_regression_evaluator_nodes(snapshot, "fit") == []
+    evidence = {"task_type": "regression", "registry_version": "1", "n_samples": 9, "rmse": 0.42}
+    assert verified_heldout_regression(evidence)
+    assert not verified_heldout_regression({**evidence, "rmse": float("nan")})
+    assert not verified_heldout_regression({**evidence, "n_samples": 0})
+    row = project_model_row(
+        _model(),
+        _manifest(),
+        curve=_curve(),
+        run_source=_source(),
+        heldout={**evidence, "graph_verified": True},
+    )
+    assert row["held_out_validation"] == {"role": "within_dataset_held_out_test", "count": 9, "rmse": 0.42}
+    assert row["metrics"]["rmsep"] is None
+    assert row["independent_test_count"] is None
+    assert project_model_row(_model(), _manifest(), heldout=evidence)["held_out_validation"] is None
 
 
 def test_comparison_requires_same_target_units_source_view_and_cv_split():

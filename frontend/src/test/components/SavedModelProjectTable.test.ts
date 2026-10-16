@@ -41,6 +41,18 @@ describe('saved-model project comparison', () => {
     expect(wrapper.findAll('tbody tr')).toHaveLength(0);
   });
 
+  it('labels starter held-out regression separately from independent RMSEP', async () => {
+    vi.mocked(api.get).mockResolvedValue({data: {rows: [{
+      artifact_uid: 'pls', name: 'PLS', model_type: 'pls',
+      held_out_validation: {role: 'within_dataset_held_out_test', count: 9, rmse: 0.42},
+      metrics: {rmsep: null},
+    }], comparable_groups: []}});
+    const wrapper = mount(Table, {props: {projectId: 4}});
+    await flushPromises();
+    expect(wrapper.text()).toContain('Within-dataset held-out RMSE 0.42 (n=9)');
+    expect(wrapper.findAll('tbody td').find(cell => cell.attributes('title')?.includes('No exact external validation evaluation') && cell.text() === '—')?.exists()).toBe(true);
+  });
+
   it('presents PLS-DA target and held-out class evidence without regression claims or internal step IDs', async () => {
     vi.mocked(api.get).mockResolvedValue({data: {rows: [{
       artifact_uid: 'da', name: 'Lavender', model_type: 'plsda', target_names: ['claimed_botanical_group'],

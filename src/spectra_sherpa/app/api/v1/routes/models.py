@@ -465,9 +465,11 @@ async def project_model_overview(
     from spectra_sherpa.app.services.run_output_retention import read_output
     from spectra_sherpa.app.services.saved_model_overview import (
         heldout_evaluator_nodes,
+        heldout_regression_evaluator_nodes,
         model_component_count,
         project_model_row,
         verified_heldout_classification,
+        verified_heldout_regression,
         verified_run_definition,
     )
     from spectra_sherpa.app.services.saved_model_qualification import qualification_status
@@ -608,9 +610,14 @@ async def project_model_overview(
                 if model.model_type in {"pca", "pls"} and model.node_id:
                     from spectra_sherpa.app.services.saved_model_diagnostics import saved_model_diagnostics
 
-                    reviewed = await saved_model_diagnostics(run, model.node_id)
-                    exclusions = reviewed.get("decision")
-                if model.model_type == "plsda" and model.node_id:
+                    try:
+                        reviewed = await saved_model_diagnostics(run, model.node_id)
+                        exclusions = reviewed.get("decision")
+                    except (ValueError, TypeError, KeyError, FileNotFoundError, OSError):
+                        # Missing diagnostic custody must not hide the run's
+                        # separately retained, graph-bound evaluation.
+                        pass
+                if model.model_type in {"plsda", "pls"} and model.node_id:
                     definition_receipt = evidence.outputs.get("__workflow__", {}).get("definition")
                     definition = None
                     if definition_receipt is not None:
@@ -629,7 +636,12 @@ async def project_model_overview(
                             definition = version.snapshot
                     if definition is not None:
                         candidates = []
-                        for node_id in heldout_evaluator_nodes(definition, model.node_id):
+                        evaluator_nodes = (
+                            heldout_evaluator_nodes(definition, model.node_id)
+                            if model.model_type == "plsda"
+                            else heldout_regression_evaluator_nodes(definition, model.node_id)
+                        )
+                        for node_id in evaluator_nodes:
                             retained = evidence.outputs.get(node_id, {}).get("default")
                             if (
                                 retained is None
@@ -640,8 +652,10 @@ async def project_model_overview(
                             ):
                                 continue
                             value = await to_thread(read_output, run.user_id, retained)
-                            if verified_heldout_classification(value):
+                            if model.model_type == "plsda" and verified_heldout_classification(value):
                                 candidates.append(value)
+                            elif model.model_type == "pls" and verified_heldout_regression(value):
+                                candidates.append({**value, "graph_verified": True})
                         if len(candidates) == 1:
                             heldout = candidates[0]
             except (ValueError, TypeError, KeyError, FileNotFoundError, OSError):
