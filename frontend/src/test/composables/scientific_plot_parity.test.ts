@@ -3,6 +3,7 @@ import { computed, nextTick, ref } from "vue";
 import { useQuickPlotProjection, type QuickPlotSelection } from "@/composables/useScientificPlotProjection";
 import { useNodePlotData } from "@/views/workflow-builder/node-detail/composables/useNodePlotData";
 import type { NodeOutput } from "@/utils/nodeOutput";
+import { buildPlsComponentCurvePlot } from "@/utils/scientificPlots";
 
 function views(output: NodeOutput, type: string) {
   const nodeOutput = ref(output);
@@ -39,6 +40,19 @@ const pca = (): NodeOutput => ({
 } as unknown as NodeOutput);
 
 describe("Quick Plot and detailed plot parity", () => {
+  it("leaves a gap instead of crashing when a calibration row is missing", () => {
+    const plot = buildPlsComponentCurvePlot({
+      schema_version: "spectrasherpa-pls-component-curve/1", selected_components: 2,
+      response_names: ["Moisture"], response_units: ["%"],
+      calibration: [null, { components: 2, rmsec: [0.2] }],
+      cross_validation: { status: "available", rows: [
+        { components: 1, rmsecv: [0.4] }, { components: 2, rmsecv: [0.3] },
+      ] },
+    });
+    expect(plot.data[0].y).toEqual([null, 0.2]);
+    expect(plot.data[1].y).toEqual([null, 0.3]);
+    expect(plot.data.every((trace) => trace.connectgaps === false)).toBe(true);
+  });
   it("plots the retained PLS component curve without inventing unavailable CV", () => {
     const record = {
       schema_version: "spectrasherpa-pls-component-curve/1", selected_components: 2,

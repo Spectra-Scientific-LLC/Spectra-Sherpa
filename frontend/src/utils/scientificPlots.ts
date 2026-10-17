@@ -1320,6 +1320,7 @@ export function buildPlsComponentCurvePlot(value: unknown, responseIndex = 0): S
   const cv = record.cross_validation as Record<string, unknown>;
   const cvRows = cv.status === "available" && Array.isArray(cv.rows) ? cv.rows as unknown[] : [];
   const cvPoints = calibration.map((raw, index) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
     const row = raw as Record<string, unknown>;
     const candidate = cvRows[index];
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;

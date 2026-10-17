@@ -17,6 +17,7 @@ from spectra_sherpa.app.services.dag.nodes.data.split_planner import (
     materialize_split_outputs,
     plan_train_test_split,
     require_independent_classification_groups,
+    require_known_specimen_cross_block_plan,
     space_filling_coverage,
 )
 from tests.performance_contract import PerformanceCeiling
@@ -71,6 +72,27 @@ def _grouped_dataset() -> SherpaDataset:
         group_column="block",
         node_id="attach",
     )
+
+
+@pytest.mark.parametrize("missing", [None, float("nan"), float("inf")])
+def test_cross_block_cannot_treat_missing_identities_as_known_specimens(missing):
+    dataset = SherpaDataset(
+        X=np.arange(24, dtype=float).reshape(4, 6),
+        sample_axis=SampleAxis(
+            labels=["a", "b", "c", "d"],
+            sample_table={"sample_id": ["a", "b", "c", "d"], "specimen_id": [missing, "B", missing, "B"]},
+        ),
+    )
+    plan = plan_train_test_split(
+        dataset.X,
+        None,
+        method="group_holdout",
+        test_size=0.5,
+        groups=np.array(["1", "1", "2", "2"]),
+        held_out_groups=["2"],
+    )
+    with pytest.raises(ValueError, match="complete specimen_id"):
+        require_known_specimen_cross_block_plan(dataset, plan, None, None)
 
 
 @pytest.mark.asyncio

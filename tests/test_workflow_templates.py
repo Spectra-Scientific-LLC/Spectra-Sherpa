@@ -118,6 +118,12 @@ def test_known_specimen_cross_block_starter_requires_explicit_holdout() -> None:
         "held_out_groups": ["2"],
         "validation_goal": "known_specimen_cross_block",
     }
+    for missing in (None, float("nan"), float("inf")):
+        dataset.sample_axis.sample_table["specimen_id"] = [missing, "B", "C", missing, "B", "C"]
+        with pytest.raises(HTTPException, match="complete specimen_id"):
+            _require_independent_classification_group(
+                dataset, binding, profile, validation_goal="known_specimen_cross_block", held_out_groups=["2"]
+            )
 
 
 @pytest.mark.parametrize("target_type", ["continuous", "categorical"])

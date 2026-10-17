@@ -1495,6 +1495,13 @@ def _require_independent_classification_group(
             identities = table.get(field)
             if not isinstance(identities, (list, tuple, np.ndarray)) or len(identities) != len(values):
                 continue
+            if any(
+                identity is None or (isinstance(identity, (float, np.floating)) and not np.isfinite(identity))
+                for identity in identities
+            ):
+                raise HTTPException(
+                    status_code=409, detail=f"Cross-block repeatability requires complete {field} identities"
+                )
             train_ids = {str(identities[index]).strip() for index in train_rows}
             test_ids = {str(identities[index]).strip() for index in test_rows}
             if "" in train_ids | test_ids or not test_ids <= train_ids:

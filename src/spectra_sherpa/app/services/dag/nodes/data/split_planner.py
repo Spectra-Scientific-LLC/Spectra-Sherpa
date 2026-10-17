@@ -315,6 +315,10 @@ def require_known_specimen_cross_block_plan(
         values = np.asarray(table[field], dtype=object)
         if values.ndim != 1 or values.size != dataset.n_samples:
             raise ValueError(f"Retained {field} identities do not match the split rows")
+        if any(
+            value is None or (isinstance(value, (float, np.floating)) and not np.isfinite(value)) for value in values
+        ):
+            raise ValueError(f"Cross-block repeatability requires complete {field} identities")
         train = {str(values[index]).strip() for index in plan.train_indices}
         test = {str(values[index]).strip() for index in plan.test_indices}
         if not test or "" in train | test or not test <= train:
