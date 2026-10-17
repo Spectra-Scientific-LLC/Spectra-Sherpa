@@ -45,7 +45,6 @@ def test_pls_and_evaluator_publish_closed_renderer_neutral_presentations() -> No
         "component_selection": "validation_result",
     }
     assert next(item for item in pls.presentations if item.presentation_id == "component_selection").modes == (
-        "plot",
         "record",
     )
     assert evaluator is not None
@@ -165,7 +164,11 @@ def test_frontend_plot_renderer_authority_exactly_covers_live_plot_kinds() -> No
     # Removed from the live Peak Finding ports, but retained run records still
     # need their original SalientFeatures renderer. No unreviewed extra kinds.
     assert set(declared) == live | {"salient_features"}
-    for kind, renderer in declared.items():
+    assert set(authority["record_views"]) == {"validation_result:component_selection:component_curve"}
+    assert authority["record_views"]["validation_result:component_selection:component_curve"]["strategy"] == (
+        "pls_component_curve"
+    )
+    for kind, renderer in {**declared, **authority["record_views"]}.items():
         assert isinstance(renderer["strategy"], str) and renderer["strategy"]
         assert renderer["plots"], f"{kind} has no renderer option"
         assert all(set(item) == {"key", "label"} and item["key"] and item["label"] for item in renderer["plots"])

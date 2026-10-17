@@ -46,6 +46,10 @@ type RendererAuthority = {
     string,
     { strategy: string; plots: Array<{ key: string; label: string }> }
   >;
+  record_views: Record<
+    string,
+    { strategy: string; plots: Array<{ key: string; label: string }> }
+  >;
 };
 
 const renderers = rendererAuthority as RendererAuthority;
@@ -193,7 +197,11 @@ export const scientificPlotOptions = (
       && identity.presentation_id === "component_selection"
       && identity.source_port === "component_curve"
       && identity.modes.includes("record")))) return [];
-  const renderer = renderers.plot_kinds[identity.kind];
+  // A retained PLS component record has a narrowly scoped client-side chart;
+  // it is not a live plot kind in the execution/presentation contract.
+  const renderer = identity.modes.includes("plot")
+    ? renderers.plot_kinds[identity.kind]
+    : renderers.record_views[`${identity.kind}:${identity.presentation_id}:${identity.source_port}`];
   if (!renderer) {
     throw new ScientificPresentationError(
       `No renderer is declared for scientific presentation kind ${identity.kind}.`,

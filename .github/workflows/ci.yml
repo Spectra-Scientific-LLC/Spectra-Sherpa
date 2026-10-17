@@ -5,9 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # Weekly run catches dependency and runner-image drift between releases.
-  # This source workflow is Ubuntu-only. Native platform qualification is
-  # a separate release decision, not part of routine PR CI.
+  # Pull requests run on Ubuntu. Pushes to main (curated publishes and merged
+  # public PRs), the weekly run and manual dispatch add Windows and macOS, so
+  # every released commit is qualified on all three platforms. The weekly run
+  # also catches dependency and runner-image drift between releases. See the
+  # dual-repo CI policy in the monorepo (docs/dev/dual-repo-ci-policy.md).
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:
@@ -88,15 +90,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # PR/source qualification is Ubuntu-only. Native platform acceptance
-        # remains a separate release decision; do not schedule it on every PR.
-        os: [ubuntu-latest]
+        # Ubuntu on pull requests; Linux, macOS and Windows on push to main,
+        # weekly and manual dispatch. Keep in sync with desktop-shell.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
         install_profile:
           - base
           - postgres
     defaults:
       run:
-        # Keep POSIX-style shell checks consistent on the Ubuntu runner.
+        # Force bash on every runner so the existing POSIX-style ``if [...]``
+        # and ``grep`` snippets keep working on windows-latest (Git Bash
+        # ships preinstalled).
         shell: bash
     steps:
       - uses: actions/checkout@v7
@@ -142,7 +146,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        # Same platform rule as the backend matrix.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
     env:
       # Unit tests exercise the shell modules with Node only; packaging and
       # the Electron binary belong to desktop-release.yml.
