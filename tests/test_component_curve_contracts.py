@@ -26,13 +26,19 @@ from spectra_sherpa.sdk.fitted_state_custody import (
             "classification.plsda",
             "spectrasherpa.sherpa-plsda-state/5",
             "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
+            "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+        ),
+        (
+            "classification.plsda",
+            "spectrasherpa.sherpa-plsda-state/5",
             "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+            "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
         ),
         (
             "classification.plsda",
             "spectrasherpa.sherpa-plsda-state/5",
             "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
-            "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+            "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
         ),
         (
             "model.fitted_pls",
@@ -44,13 +50,13 @@ from spectra_sherpa.sdk.fitted_state_custody import (
             "classification.plsda",
             "spectrasherpa.sherpa-plsda-state/5",
             "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-            "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+            "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
         ),
         (
             "classification.plsda",
             "spectrasherpa.sherpa-plsda-state/5",
             "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
-            "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+            "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
         ),
         (
             "model.pca",

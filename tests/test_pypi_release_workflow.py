@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 import subprocess
 from pathlib import Path
 
@@ -90,7 +92,7 @@ def test_public_ci_install_profiles_exist_in_package_metadata() -> None:
 
     root = Path(__file__).resolve().parents[1]
     workflow = yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
-    assert set(workflow["jobs"]["backend"]["strategy"]["matrix"]["os"]) == NATIVE_DESKTOP_PLATFORMS
+    assert _platforms(workflow["jobs"]["backend"], "push") == NATIVE_DESKTOP_PLATFORMS
     metadata = tomllib.loads((root / "pyproject.toml").read_text())
     extras = metadata["tool"]["poetry"]["extras"]
     profiles = [
@@ -221,8 +223,20 @@ def test_protected_helper_survives_product_tag_checkout(tmp_path: Path, workflow
 
 
 # Desktop applications ship for these platforms from the public repository,
-# so public CI qualifies all three (docs/dev/dual-repo-ci-policy.md).
+# so public CI qualifies all three on push to main, weekly and on manual
+# dispatch; pull requests run on Ubuntu (docs/dev/dual-repo-ci-policy.md).
 NATIVE_DESKTOP_PLATFORMS = {"ubuntu-latest", "windows-latest", "macos-latest"}
+PR_PLATFORMS = {"ubuntu-latest"}
+_PLATFORM_EXPRESSION = re.compile(
+    r"^\$\{\{ fromJSON\(github\.event_name == 'pull_request' && '(?P<pr>\[[^']*\])' \|\| '(?P<other>\[[^']*\])'\) \}\}$"
+)
+
+
+def _platforms(job: dict, event: str) -> set[str]:
+    """Resolve a job's OS matrix for one trigger, as GitHub evaluates it."""
+    match = _PLATFORM_EXPRESSION.match(job["strategy"]["matrix"]["os"])
+    assert match, "OS matrix must choose its platforms from the trigger"
+    return set(json.loads(match["pr" if event == "pull_request" else "other"]))
 
 
 def _public_ci() -> dict:
@@ -232,13 +246,18 @@ def _public_ci() -> dict:
     return yaml.safe_load((root / ".github/workflows/ci.yml").read_text())
 
 
-def test_public_ci_qualifies_every_desktop_platform_on_each_change_and_weekly() -> None:
+def test_public_ci_runs_prs_on_ubuntu_and_qualifies_every_platform_on_main_and_weekly() -> None:
     workflow = _public_ci()
     triggers = workflow[True]  # YAML 1.1 reads the bare key ``on`` as True.
     assert {"push", "pull_request", "schedule", "workflow_dispatch"} <= set(triggers)
+    assert triggers["push"]["branches"] == ["main"]
     assert triggers["schedule"]
+    for name in ("backend", "desktop-shell"):
+        job = workflow["jobs"][name]
+        assert _platforms(job, "pull_request") == PR_PLATFORMS
+        for event in ("push", "schedule", "workflow_dispatch"):
+            assert _platforms(job, event) == NATIVE_DESKTOP_PLATFORMS
     shell = workflow["jobs"]["desktop-shell"]
-    assert set(shell["strategy"]["matrix"]["os"]) == NATIVE_DESKTOP_PLATFORMS
     assert shell["env"]["ELECTRON_SKIP_BINARY_DOWNLOAD"] == "1"
     assert any(step.get("run") == "npm test" for step in shell["steps"])
 

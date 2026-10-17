@@ -56,7 +56,10 @@ def cv_unavailable_reason(dataset: Any) -> str | None:
             return "Input preprocessing provenance cannot be verified for fold-local fitting."
         if operation in RAW_SOURCE_OPERATIONS:
             parameters = getattr(entry, "parameters", None)
-            if not hasattr(parameters, "get") or parameters.get("stage") != "raw":
+            # A generated source is the original, unprocessed acquisition for
+            # its synthetic cohort. It is as fold-local as a raw file; a
+            # preprocessed source is not.
+            if not hasattr(parameters, "get") or parameters.get("stage") not in {"raw", "synthetic"}:
                 return f"Input source {operation} is not a verified raw stage."
             continue
         if operation == "data.train_test_split":

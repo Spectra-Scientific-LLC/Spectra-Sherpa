@@ -109,6 +109,19 @@ describe("model summary from retained records", () => {
     expect(mount(ModelSummaryCard, { props: { summary: unavailable } }).text()).toContain("Cross-validation unavailable: Upstream scaling");
   });
 
+  it("uses a matching retained PLS response unit when a comparison omitted its unit", () => {
+    const comparisonWithoutUnit = { ...test, metadata: { role: "held_out_test", target_units: [null] } };
+    const curve = { schema_version: "spectrasherpa-pls-component-curve/1", selected_components: 1,
+      n_calibration: 12, response_names: ["Moisture"], response_units: ["%"],
+      calibration: [{ components: 1, rmsec: [0.2] }],
+      cross_validation: { status: "unavailable", reason: "Not retained" } };
+    const summary = buildModelSummary(plsDefinition, null, [
+      { source: { nodeId: "model_1", port: "component_curve", kind: "component_selection" }, value: curve },
+      { source: { nodeId: "eval_1", port: "comparison", kind: "regression_comparison" }, value: comparisonWithoutUnit },
+    ]);
+    expect(summary.regression[0].target_units).toBe("%");
+  });
+
   it("keeps PCA reconstruction distinct from regression validation", () => {
     const definition: SavedDefinition = { nodes: [{ node_id: "pca", node_type: "model.pca", parameters: { n_components: "2" } }], edges: [] };
     expect(summarySources(definition, null, "pca")).toEqual([{ nodeId: "pca", port: "component_curve", kind: "component_selection" }]);

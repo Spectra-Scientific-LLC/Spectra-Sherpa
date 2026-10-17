@@ -2272,7 +2272,7 @@ const onAutoExecuteChange = () => {
     summary: autoExecute.value ? "Auto-Execute Enabled" : "Auto-Execute Disabled",
     detail: autoExecute.value
       ? "Workflow will automatically execute when nodes connect or parameters change"
-      : "Manual execution mode - click Execute Workflow to run",
+      : "Manual execution mode - click Run to start",
     life: 3000,
   });
 

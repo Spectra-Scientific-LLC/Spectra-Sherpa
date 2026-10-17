@@ -80,7 +80,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
     catalog = predecessor_catalog()
     context = HistoricalReconstructionContext()
     component_phase_digests = {
-        "classification.plsda": "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+        "classification.plsda": "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
         "model.load_apply": "1a06693cf04d44d155137a022e8104ecd2fcec7a9a88d8ec27938248205b2ba6",
         "model.apply_fitted_linear_regression": "7867e5992747564b3fe46215d0f7d2d199b3a5c2af40531b38d480d82465530b",
         "model.apply_fitted_pcr": "14d71c0447ba121bdd0b53911bb4f804d8b39ec1c0cdeb0a28228b8022aec5a8",

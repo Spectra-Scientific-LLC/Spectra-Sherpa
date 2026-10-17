@@ -978,8 +978,21 @@ def verified_source_observations(dataset: SherpaDataset) -> list[dict[str, Any]]
     rows = dataset.meta.get("source_observations")
     axis = dataset.sample_axis
     labels = list(axis.labels) if axis is not None and axis.labels is not None else []
-    if dataset.ndim != 2 or not labels or len(labels) > 5000 or len(set(labels)) != len(labels):
+    if not labels and isinstance(rows, list):
+        # A singleton feature table (for example sklearn Iris) can have no
+        # native sample labels. Its ordered source receipt was minted from the
+        # one exact file at collection assembly; recompute that same identity
+        # from the source inventory rather than deriving it from row position
+        # alone or mutating the scientific dataset.
+        source_files = dataset.meta.get("source_collection", {}).get("files", [])
+        if isinstance(source_files, list) and len(source_files) == 1 and isinstance(source_files[0], dict):
+            name = source_files[0].get("file_name")
+            if isinstance(name, str):
+                labels = clean_sample_labels(None, dataset.n_samples, fallback_prefix=Path(name).stem, source_name=name)
+    if dataset.ndim != 2 or len(labels) > 5000:
         raise ValueError("Dataset curation requires at most 5,000 uniquely identified observations.")
+    if not labels or len(labels) != dataset.n_samples or len(set(labels)) != len(labels):
+        raise ValueError("Exact unique sample identities are unavailable; re-import or review the source labels.")
     if not isinstance(rows, list) or len(rows) > 5000:
         raise ValueError("Exact source row identity is unavailable; reload or rerun to enable dataset curation.")
     files = {f["file_name"]: f for f in dataset.meta.get("source_collection", {}).get("files", [])}

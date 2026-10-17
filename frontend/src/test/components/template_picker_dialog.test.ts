@@ -460,6 +460,51 @@ describe("TemplatePickerDialog", () => {
     expect(regression?.text()).not.toContain("Use Current Data");
   });
 
+  it("requires an explicit held-out block before launching known-specimen repeatability", async () => {
+    mocks.openTemplateAsSheet.mockResolvedValue({ name: "PLS-DA" });
+    mocks.apiGet.mockResolvedValue({ data: { templates: [{
+      id: 12, slug: "classification-plsda", name: "PLS-DA", category: "classification",
+      status: "ready", is_active: true, template_data: {
+        ...role("categorical"), nodes: [
+          { node_id: "data_1", node_type: "data.file_load", parameters: {} },
+          { node_id: "split", node_type: "data.train_test_split", parameters: {} },
+          { node_id: "fit", node_type: "classification.plsda", parameters: {} },
+        ],
+      },
+    }], total: 1 } });
+    const receipt = {
+      schema_version: "spectra-my-dataset-workflow-selection/3", receipt_id: "cross-block", project_id: 7,
+      datasets: [{ experiment_id: 12, dataset_name: "Lavender", selection: "subset",
+        selected_file_count: 1, file_ids: [3], stage: "raw" }],
+      target_authority: { schema_version: "spectrasherpa-target-authority/1", column: "species",
+        target_type: "categorical", units: null, source_digest: "a".repeat(64) },
+      group: "block", analysis_readiness_experiment_id: 12,
+      analysis_readiness: { schema_version: "spectra-sherpa-dataset-analysis-readiness/1", scope: "structural",
+        status: "ready", profile: { primary_role: "X_spectra", modality: "spectra", technique: "FTIR",
+          target_type: "categorical", target_fields: ["species"], identity_fields: ["specimen_id"],
+          group_fields: ["block"], ordered_samples: false },
+        template_count: 1, counts: { compatible: 1, needs_target: 0, needs_source: 0,
+          incompatible: 0, pending: 0, unavailable: 0 },
+        decisions: [{ template_slug: "classification-plsda", template_name: "PLS-DA",
+          category: "classification", display_status: "compatible", status: "compatible",
+          reason_codes: [], reasons: [] }], diagnostics: [] },
+    } as DataSelectionReceipt;
+    const wrapper = mount(TemplatePickerDialog, { props: { visible: false, dataSelection: receipt,
+      preferredTemplateSlug: "classification-plsda" } });
+    await wrapper.setProps({ visible: true });
+    await flushPromises();
+    expect(mocks.openTemplateAsSheet).not.toHaveBeenCalled();
+    await wrapper.get('input[type="checkbox"]').setValue(true);
+    const button = wrapper.findAll("button").find((candidate) => candidate.text() === "Use Current Data")!;
+    expect(button.attributes("disabled")).toBeDefined();
+    await wrapper.get('.tp-block-label input').setValue("3");
+    await button.trigger("click");
+    await flushPromises();
+    expect(mocks.openTemplateAsSheet).toHaveBeenCalledWith(12, "PLS-DA", expect.objectContaining({
+      validationGoal: "known_specimen_cross_block", heldOutGroups: ["3"],
+    }));
+  });
+
   it("preflights an active sheet source before offering Use Current Data", async () => {
     mocks.workflowNodes = [
       {
