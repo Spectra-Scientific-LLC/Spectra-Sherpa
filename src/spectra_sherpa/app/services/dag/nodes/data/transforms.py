@@ -129,6 +129,7 @@ _SPLIT_METHOD_SCOPED_PARAMETERS: tuple[tuple[str, frozenset[str], object], ...] 
     ("distance_metric", frozenset({"kennard_stone", "duplex"}), "euclidean"),
     ("n_components", frozenset({"kennard_stone", "duplex"}), 0),
     ("held_out_groups", frozenset({"group_holdout"}), []),
+    ("validation_goal", frozenset({"group_holdout"}), "unseen_specimens"),
 )
 
 
@@ -153,8 +154,6 @@ def _canonical_split_parameters(values: dict[str, object]) -> dict[str, object]:
     method = values["split_method"]
     if values["validation_goal"] not in {"unseen_specimens", "known_specimen_cross_block"}:
         raise ValueError("Unknown supervised validation goal")
-    if values["validation_goal"] == "known_specimen_cross_block" and method != "group_holdout":
-        raise ValueError("Cross-block repeatability requires group holdout")
     for name, applicable_methods, declared_default in _SPLIT_METHOD_SCOPED_PARAMETERS:
         if method not in applicable_methods:
             values[name] = declared_default
