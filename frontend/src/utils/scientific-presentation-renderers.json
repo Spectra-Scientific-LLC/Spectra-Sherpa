@@ -96,6 +96,10 @@
       "strategy": "variable_profile",
       "plots": [{ "key": "scientific_variable_profile", "label": "Variable Profile" }]
     },
+    "validation_result": {
+      "strategy": "pls_component_curve",
+      "plots": [{ "key": "scientific_pls_component_curve", "label": "Latent Variable Error" }]
+    },
     "visualization": {
       "strategy": "declared_visualization",
       "plots": [{ "key": "scientific_visualization", "label": "Visualization" }]

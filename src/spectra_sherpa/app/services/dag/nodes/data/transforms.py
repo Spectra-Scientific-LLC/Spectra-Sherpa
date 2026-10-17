@@ -34,6 +34,7 @@ from .split_planner import (
     materialize_split_outputs,
     plan_train_test_split,
     require_independent_classification_groups,
+    require_known_specimen_cross_block_plan,
 )
 
 logger = logging.getLogger(__name__)
@@ -148,7 +149,12 @@ def _canonical_split_parameters(values: dict[str, object]) -> dict[str, object]:
     values["n_components"] = int(n_components)
     # Graphs saved before this parameter existed carry no key for it.
     values.setdefault("held_out_groups", [])
+    values.setdefault("validation_goal", "unseen_specimens")
     method = values["split_method"]
+    if values["validation_goal"] not in {"unseen_specimens", "known_specimen_cross_block"}:
+        raise ValueError("Unknown supervised validation goal")
+    if values["validation_goal"] == "known_specimen_cross_block" and method != "group_holdout":
+        raise ValueError("Cross-block repeatability requires group holdout")
     for name, applicable_methods, declared_default in _SPLIT_METHOD_SCOPED_PARAMETERS:
         if method not in applicable_methods:
             values[name] = declared_default
@@ -457,6 +463,19 @@ class TrainTestSplitNode(Node):
                 visible_when={"split_method": ["group_holdout"]},
             ),
             NodeParameter(
+                name="validation_goal",
+                label="Validation Goal",
+                param_type="select",
+                options=[
+                    {"label": "Unseen specimens", "value": "unseen_specimens"},
+                    {"label": "Known specimens across blocks", "value": "known_specimen_cross_block"},
+                ],
+                default="unseen_specimens",
+                description="Name whether the holdout tests new specimens or repeat measurements of known specimens.",
+                required=True,
+                visible_when={"split_method": ["group_holdout"]},
+            ),
+            NodeParameter(
                 name="random_seed",
                 label="Random Seed",
                 param_type="number",
@@ -574,6 +593,7 @@ class TrainTestSplitNode(Node):
         distance_metric = params.get("distance_metric", "euclidean")
         n_components = params.get("n_components", 0)
         held_out_groups = params.get("held_out_groups", [])
+        validation_goal = params.get("validation_goal", "unseen_specimens")
 
         X_expr = inputs.get("X", inputs.get("default", "input_data"))
         y_expr = inputs.get("y")
@@ -594,6 +614,7 @@ class TrainTestSplitNode(Node):
         lines.append(f"{indent}from spectra_sherpa.app.services.dag.nodes.data.split_planner import (")
         lines.append(f"{indent}    bind_split_groups, bind_split_target, materialize_split_outputs,")
         lines.append(f"{indent}    plan_train_test_split, require_independent_classification_groups,")
+        lines.append(f"{indent}    require_known_specimen_cross_block_plan,")
         lines.append(f"{indent})")
         lines.append(f"{indent}_y_data, _target_context = bind_split_target(_X_input, _y_input)")
         lines.append(
@@ -602,7 +623,7 @@ class TrainTestSplitNode(Node):
         )
         lines.append(
             f"{indent}require_independent_classification_groups(_X_input, _split_groups, _target_context, "
-            f"split_method={split_method!r})"
+            f"split_method={split_method!r}, validation_goal={validation_goal!r})"
         )
         lines.append(f"{indent}_split_plan = plan_train_test_split(")
         lines.append(f"{indent}    _X_data, _y_data,")
@@ -611,6 +632,10 @@ class TrainTestSplitNode(Node):
         lines.append(f"{indent}    n_components={int(n_components)},")
         lines.append(f"{indent}    groups=_split_groups, held_out_groups={list(held_out_groups)!r},")
         lines.append(f"{indent})")
+        if validation_goal == "known_specimen_cross_block":
+            lines.append(
+                f"{indent}require_known_specimen_cross_block_plan(_X_input, _split_plan, _y_data, _target_context)"
+            )
         lines.append(f"{indent}results['{self.node_id}'] = materialize_split_outputs(")
         lines.append(
             f"{indent}    _X_input, _X_data, _y_data, _split_plan, "
@@ -642,6 +667,7 @@ class TrainTestSplitNode(Node):
         distance_metric = self.parameters.get("distance_metric", "euclidean")
         n_components = self.parameters.get("n_components", 0)
         held_out_groups = self.parameters.get("held_out_groups", [])
+        validation_goal = self.parameters.get("validation_goal", "unseen_specimens")
 
         X_ds = bind_X(
             X,
@@ -652,7 +678,9 @@ class TrainTestSplitNode(Node):
         X_array = to_numpy_2d(X_ds, name="X", dtype=np.float64)
         y_array, target_context = bind_split_target(X_ds, y)
         groups = bind_split_groups(X_ds, use_source_assignment=str(split_method) == "group_holdout")
-        require_independent_classification_groups(X_ds, groups, target_context, split_method=str(split_method))
+        require_independent_classification_groups(
+            X_ds, groups, target_context, split_method=str(split_method), validation_goal=str(validation_goal)
+        )
 
         plan = plan_train_test_split(
             X_array,
@@ -665,6 +693,8 @@ class TrainTestSplitNode(Node):
             groups=groups,
             held_out_groups=held_out_groups if isinstance(held_out_groups, list) else [],
         )
+        if validation_goal == "known_specimen_cross_block":
+            require_known_specimen_cross_block_plan(X_ds, plan, y_array, target_context)
         result = materialize_split_outputs(
             X_ds,
             X_array,

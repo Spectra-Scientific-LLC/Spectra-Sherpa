@@ -1290,3 +1290,66 @@ export function buildDeclaredVisualizationPlot(value: unknown, plotKey?: string)
     }),
   };
 }
+
+/** Plot only the retained PLS component record; never infer missing CV from calibration. */
+export function buildPlsComponentCurvePlot(value: unknown, responseIndex = 0): ScientificPlot {
+  const unavailable = (reason: string) => refusedScientificPlot(reason, SCIENTIFIC_PLOT_LAYOUT);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return unavailable("PLS component evidence is unavailable.");
+  const record = value as Record<string, unknown>;
+  if (record.schema_version !== "spectrasherpa-pls-component-curve/1"
+    || !Array.isArray(record.response_names) || !Array.isArray(record.response_units)
+    || !Array.isArray(record.calibration) || !record.calibration.length
+    || !record.cross_validation || typeof record.cross_validation !== "object") {
+    return unavailable("The retained PLS component curve has an unrecognized scientific contract.");
+  }
+  const names = record.response_names as unknown[];
+  const units = record.response_units as unknown[];
+  if (!Number.isSafeInteger(responseIndex) || responseIndex < 0 || responseIndex >= names.length
+    || names.length !== units.length || typeof names[responseIndex] !== "string") {
+    return unavailable("The selected PLS response is not retained in the component curve.");
+  }
+  const calibration = record.calibration as unknown[];
+  const points = calibration.map((raw, index) => {
+    const row = raw && typeof raw === "object" && !Array.isArray(raw) ? raw as Record<string, unknown> : {};
+    const errors = row.rmsec;
+    const error = Array.isArray(errors) ? errors[responseIndex] : null;
+    return row.components === index + 1 && typeof error === "number" && Number.isFinite(error) && error >= 0
+      ? error : null;
+  });
+  if (points.every((point) => point === null)) return unavailable("No exact calibration errors were retained for this response.");
+  const cv = record.cross_validation as Record<string, unknown>;
+  const cvRows = cv.status === "available" && Array.isArray(cv.rows) ? cv.rows as unknown[] : [];
+  const cvPoints = calibration.map((raw, index) => {
+    const row = raw as Record<string, unknown>;
+    const candidate = cvRows[index];
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
+    const held = candidate as Record<string, unknown>;
+    const errors = held.rmsecv;
+    const error = Array.isArray(errors) ? errors[responseIndex] : null;
+    return held.components === row.components && typeof error === "number" && Number.isFinite(error) && error >= 0
+      ? error : null;
+  });
+  const components = calibration.map((_, index) => index + 1);
+  const traces: PlotRecord[] = [{ x: components, y: points, type: "scatter", mode: "lines+markers", name: "RMSEC", connectgaps: false }];
+  if (cvPoints.some((point) => point !== null)) {
+    traces.push({ x: components, y: cvPoints, type: "scatter", mode: "lines+markers", name: "RMSECV", connectgaps: false });
+  }
+  const selected = record.selected_components;
+  const unit = typeof units[responseIndex] === "string" && units[responseIndex] ? ` (${units[responseIndex]})` : "";
+  const cvUnavailable = cv.status !== "available" || !cvPoints.some((point) => point !== null);
+  return {
+    data: traces,
+    layout: {
+      ...SCIENTIFIC_PLOT_LAYOUT,
+      title: { text: `Latent-variable error · ${names[responseIndex]}` },
+      xaxis: { ...SCIENTIFIC_PLOT_LAYOUT.xaxis, title: "Latent variables", dtick: 1 },
+      yaxis: { ...SCIENTIFIC_PLOT_LAYOUT.yaxis, title: `RMSE${unit}` },
+      shapes: Number.isSafeInteger(selected) && (selected as number) >= 1
+        ? [{ type: "line", x0: selected, x1: selected, y0: 0, y1: 1, yref: "paper", line: { dash: "dash", color: "#ef4444" } }]
+        : [],
+      annotations: cvUnavailable ? [{ text: "Cross-validation unavailable", x: 1, y: 1, xref: "paper", yref: "paper", xanchor: "right", yanchor: "bottom", showarrow: false, font: { color: "#b45309" } }] : [],
+      meta: { cv_status: cvUnavailable ? "unavailable" : "available", cv_reason: cvUnavailable ? cv.reason ?? "Not retained" : null,
+        selected_components: selected, response_name: names[responseIndex] },
+    },
+  };
+}

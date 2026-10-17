@@ -6,8 +6,8 @@ on:
   pull_request:
     branches: [main]
   # Weekly run catches dependency and runner-image drift between releases.
-  # Public-repo minutes are free on every platform; see the dual-repo CI
-  # policy in the monorepo (docs/dev/dual-repo-ci-policy.md).
+  # This source workflow is Ubuntu-only. Native platform qualification is
+  # a separate release decision, not part of routine PR CI.
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:
@@ -88,18 +88,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Desktop applications ship for Linux, macOS and Windows from this
-        # repository, so every platform qualifies on every change. Public
-        # minutes are free; the monorepo stays Ubuntu-only.
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # PR/source qualification is Ubuntu-only. Native platform acceptance
+        # remains a separate release decision; do not schedule it on every PR.
+        os: [ubuntu-latest]
         install_profile:
           - base
           - postgres
     defaults:
       run:
-        # Force bash on every runner so the existing POSIX-style ``if [...]``
-        # and ``grep`` snippets keep working on windows-latest (Git Bash
-        # ships preinstalled).
+        # Keep POSIX-style shell checks consistent on the Ubuntu runner.
         shell: bash
     steps:
       - uses: actions/checkout@v7
@@ -145,7 +142,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest]
     env:
       # Unit tests exercise the shell modules with Node only; packaging and
       # the Electron binary belong to desktop-release.yml.

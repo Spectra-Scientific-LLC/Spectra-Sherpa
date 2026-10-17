@@ -87,6 +87,25 @@ describe("deterministic short scientific report", () => {
     expect(context).toContain("seed 42");
     expect(context).toContain("not fold k");
   });
+  it("shows an executed component CV design retained in the run without claiming it is absent", () => {
+    const data = fixture();
+    data.runs![0].validation_summary!.rows.push({
+      label: "Component CV design (pls)",
+      value: "5 folds; grouped by specimen identity; 3 candidate component counts",
+    });
+    const context = scientificSummaryGroups(data)[0].rows.map(row => row.join(": ")).join("\n");
+    expect(context).toContain("5 folds; grouped by specimen identity");
+    expect(context).not.toContain("No executed CV fold design is retained");
+  });
+  it("reports held-out classification CV from the retained design rather than claiming no fold count", () => {
+    const data = fixture();
+    data.runs![0].validation_summary!.rows.push({
+      label: "Cross-validation design (plsda)", value: "5 executed folds; grouped validation",
+    });
+    const context = scientificSummaryGroups(data)[0].rows.map(row => row.join(": ")).join("\n");
+    expect(context).toContain("5 executed folds; grouped validation");
+    expect(context).not.toContain("No executed CV fold design is retained");
+  });
   it.each([generateProvenanceReport, generateMarkdownReport])("shows complete opted-in lists and reference means without a 20-row limit", generate => {
     const data = fixture();
     data.runs![0].validation_summary!.regression_results = [{

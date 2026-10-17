@@ -156,6 +156,18 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
         add("Partition details", "Retained split evidence could not be verified; no partition claim is made.")
     for split in splits:
         node, plan = split["node"], split["plan"]
+        split_node = next((item for item in definition.get("nodes", []) if item.get("node_id") == node), {})
+        settings = split_node.get("parameters") if isinstance(split_node.get("parameters"), dict) else {}
+        if settings.get("validation_goal") == "known_specimen_cross_block":
+            add(
+                f"Validation question ({node})",
+                "Cross-block repeatability of known specimens; this is not performance on unseen specimens.",
+            )
+        else:
+            add(
+                f"Validation question ({node})",
+                "Unseen-specimen intent; confirm the bound identity and executed partition.",
+            )
         add(f"Split method ({node})", plan["method"])
         add(f"Split seed ({node})", plan["random_seed"])
         for role, key in (("Development", "train_indices"), ("Test", "test_indices")):
@@ -592,6 +604,13 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
             rows.append((f"Verified metric denominator ({node})", len(observed)))
             plan = bound["split_plan"]
             rows.append((f"Evaluation scope ({node})", "Cross-validation; not an external held-out test"))
+            rows.append(
+                (
+                    f"Cross-validation design ({node})",
+                    f"{len(plan['folds'])} executed folds; "
+                    + ("grouped validation" if plan.get("grouped") else "row-wise validation"),
+                )
+            )
             rows.extend(_fold_count_rows(node, plan))
             rows.append(
                 (
@@ -690,4 +709,28 @@ def _retained_target_value(run, definition, node, field):
             units.append(authority.get(field))
     if units and all(isinstance(unit, str) and unit.strip() for unit in units) and len(set(units)) == 1:
         return units[0]
+    if field == "units":
+        # Bundled examples have no My Dataset selection revision. A fitted PLS
+        # curve is an exact, retained response identity for the same ancestor
+        # model; never borrow units from a different branch or current editor.
+        try:
+            evidence = RunEvidence.model_validate(run.evidence_completeness)
+            curve_units = []
+            for source_node in definition.get("nodes", []):
+                source_id = source_node.get("node_id")
+                if source_id not in ancestors or source_node.get("node_type") != "model.fitted_pls":
+                    continue
+                item = evidence.outputs.get(source_id, {}).get("component_curve")
+                if item is None or item.state != "exact" or item.storage != "file" or not item.byte_count:
+                    continue
+                if item.byte_count > 1024 * 1024:
+                    continue
+                curve = read_output(run.user_id, item)
+                if curve.get("schema_version") == "spectrasherpa-pls-component-curve/1":
+                    curve_units.extend(curve.get("response_units", []))
+            if curve_units and all(isinstance(unit, str) and unit.strip() for unit in curve_units):
+                if len(set(curve_units)) == 1:
+                    return curve_units[0]
+        except (ValueError, TypeError, KeyError, AttributeError, OSError):
+            pass
     return f"Target {field} unavailable or ambiguous in retained upstream selections"

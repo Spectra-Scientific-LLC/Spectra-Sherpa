@@ -140,7 +140,7 @@
         <li>Click "Connect" on a node</li>
         <li>Click destination node</li>
         <li>Adjust parameters on right</li>
-        <li>Click "Execute Workflow"</li>
+        <li>Click "Run"</li>
       </ol>
     </div>
 

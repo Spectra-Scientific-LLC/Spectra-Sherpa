@@ -441,7 +441,7 @@ class FittedPLSV2Node(Node):
                     "Choose Latent Variables",
                     "validation_result",
                     ("component_curve",),
-                    ("record",),
+                    ("plot", "record"),
                     "CV is development/tuning evidence; an independent test is a separate result.",
                 ),
             ),

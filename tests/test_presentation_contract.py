@@ -44,6 +44,10 @@ def test_pls_and_evaluator_publish_closed_renderer_neutral_presentations() -> No
         "model": "model_summary",
         "component_selection": "validation_result",
     }
+    assert next(item for item in pls.presentations if item.presentation_id == "component_selection").modes == (
+        "plot",
+        "record",
+    )
     assert evaluator is not None
     assert evaluator.default_presentation == "held_out_comparison"
     assert {item.presentation_id for item in evaluator.presentations} == {"held_out_comparison", "metrics"}

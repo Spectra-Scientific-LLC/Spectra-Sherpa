@@ -126,6 +126,10 @@ def test_normal_raw_load_attach_and_split_allow_cv_but_preprocessed_source_does_
     other = SherpaDataset(X=np.arange(36, dtype=float).reshape(12, 3))
     other.provenance.append(op_id="spectrasherpa.experiment_dataset_read/2", parameters={"stage": "preprocessed"})
     assert "not a verified raw stage" in cv_unavailable_reason(other)
+    synthetic = SherpaDataset(X=np.arange(36, dtype=float).reshape(12, 3))
+    synthetic.provenance.append(op_id="spectrasherpa.experiment_dataset_read/2", parameters={"stage": "synthetic"})
+    synthetic.provenance.append(op_id="data.train_test_split", parameters={"split": "train"})
+    assert cv_unavailable_reason(synthetic) is None
     unknown = SherpaDataset(X=np.arange(36, dtype=float).reshape(12, 3))
     unknown.provenance.append(op_id="import.future_scaled_source", parameters={})
     assert "import.future_scaled_source" in cv_unavailable_reason(unknown)

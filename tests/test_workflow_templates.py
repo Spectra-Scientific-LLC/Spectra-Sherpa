@@ -20,6 +20,7 @@ from spectra_sherpa.app.api.v1.routes import builder as builder_routes
 from spectra_sherpa.app.api.v1.routes.workflow_templates import (
     DataBindingSpec,
     _adapt_pls_starter_to_source_assignment,
+    _adapt_starter_cross_block_holdout,
     _adapt_starter_scaling_to_bound_role,
     _enforce_bound_dataset_requirements,
     _normalize_binding_target_authority,
@@ -85,6 +86,38 @@ def test_replicated_specimens_require_independent_classification_group() -> None
         _require_independent_classification_group(dataset, binding, profile)
     binding.group_column = "specimen_id"
     _require_independent_classification_group(dataset, binding, profile)
+
+
+def test_known_specimen_cross_block_starter_requires_explicit_holdout() -> None:
+    dataset = SimpleNamespace(
+        n_samples=6,
+        sample_axis=SimpleNamespace(
+            sample_table={
+                "specimen_id": ["A", "B", "C", "A", "B", "C"],
+                "block": ["1"] * 3 + ["2"] * 3,
+            }
+        ),
+    )
+    profile = {"identity_fields": ["specimen_id"]}
+    binding = SimpleNamespace(target_type="categorical", selected_target="species", group_column="block")
+    with pytest.raises(HTTPException, match="held-out block"):
+        _require_independent_classification_group(
+            dataset, binding, profile, validation_goal="known_specimen_cross_block"
+        )
+    _require_independent_classification_group(
+        dataset,
+        binding,
+        profile,
+        validation_goal="known_specimen_cross_block",
+        held_out_groups=["2"],
+    )
+    nodes = [{"node_type": "data.train_test_split", "parameters": {"split_method": "stratified"}}]
+    _adapt_starter_cross_block_holdout(nodes, ["2"])
+    assert nodes[0]["parameters"] == {
+        "split_method": "group_holdout",
+        "held_out_groups": ["2"],
+        "validation_goal": "known_specimen_cross_block",
+    }
 
 
 @pytest.mark.parametrize("target_type", ["continuous", "categorical"])

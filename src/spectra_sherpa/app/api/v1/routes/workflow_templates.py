@@ -1113,6 +1113,8 @@ async def _validate_binding(
     require_target_variation: bool = True,
     use_saved_analysis_selection: bool = False,
     require_independent_classification: bool = False,
+    validation_goal: str = "unseen_specimens",
+    held_out_groups: list[str] | None = None,
 ) -> tuple["DataBindingSpec", dict[str, Any]]:
     await require_experiment_access(session, binding.experiment_id, user_id, project_id)
     saved_selection = None
@@ -1158,7 +1160,13 @@ async def _validate_binding(
                     _require_target_variation(dataset, binding.selected_target)
             analysis_profile = {**analysis_profile_from_dataset(dataset), **_source_assignment_profile(dataset)}
             if require_independent_classification:
-                _require_independent_classification_group(dataset, binding, analysis_profile)
+                _require_independent_classification_group(
+                    dataset,
+                    binding,
+                    analysis_profile,
+                    validation_goal=validation_goal,
+                    held_out_groups=held_out_groups,
+                )
         except ValueError as exc:
             logger.warning(
                 "Scientific collection binding admission failed for experiment_id=%s file_ids=%s",
@@ -1257,7 +1265,13 @@ async def _validate_binding(
             )
         analysis_profile = {**analysis_profile_from_dataset(dataset), **_source_assignment_profile(dataset)}
         if require_independent_classification:
-            _require_independent_classification_group(dataset, binding, analysis_profile)
+            _require_independent_classification_group(
+                dataset,
+                binding,
+                analysis_profile,
+                validation_goal=validation_goal,
+                held_out_groups=held_out_groups,
+            )
     except (OSError, ValueError) as exc:
         # The parser exception is retained in the application log for operator
         # diagnosis, but it may contain the deployment's absolute data path.
@@ -1431,7 +1445,12 @@ def _source_assignment_profile(dataset: Any) -> dict[str, Any]:
 
 
 def _require_independent_classification_group(
-    dataset: Any, binding: "DataBindingSpec", analysis_profile: dict[str, Any]
+    dataset: Any,
+    binding: "DataBindingSpec",
+    analysis_profile: dict[str, Any],
+    *,
+    validation_goal: str = "unseen_specimens",
+    held_out_groups: list[str] | None = None,
 ) -> None:
     """Do not admit a held-out supervised score that leaks replicated specimens.
 
@@ -1443,10 +1462,59 @@ def _require_independent_classification_group(
 
     if binding.target_type not in {"categorical", "continuous"}:
         return
+    if validation_goal not in {"unseen_specimens", "known_specimen_cross_block"}:
+        raise HTTPException(status_code=400, detail="Unknown supervised validation goal")
+    if validation_goal == "known_specimen_cross_block" and not binding.group_column:
+        raise HTTPException(status_code=409, detail="Select a block column under Groups in My Dataset first")
+    if validation_goal == "known_specimen_cross_block" and (
+        binding.group_column in {"specimen_id", "subject_id", "patient_id"} or not held_out_groups
+    ):
+        raise HTTPException(status_code=409, detail="Choose an acquisition group and name a held-out block")
     table = dataset.sample_axis.sample_table if dataset.sample_axis is not None else None
     if not isinstance(table, dict):
         return
     group_values = table.get(binding.group_column) if binding.group_column else None
+    if validation_goal == "known_specimen_cross_block":
+        if not isinstance(group_values, (list, tuple, np.ndarray)) or len(group_values) != dataset.n_samples:
+            raise HTTPException(
+                status_code=409, detail="The selected block column does not match the current sample rows"
+            )
+        values = [str(value).strip() for value in group_values]
+        requested = set(held_out_groups or [])
+        if not requested <= set(values) or len(set(values) - requested) < 1:
+            raise HTTPException(
+                status_code=409, detail="Hold out an exact block value and leave another block to train"
+            )
+        train_rows = [index for index, value in enumerate(values) if value not in requested]
+        test_rows = [index for index, value in enumerate(values) if value in requested]
+        if not train_rows or not test_rows:
+            raise HTTPException(status_code=409, detail="The selected block holdout has an empty partition")
+        for field in analysis_profile.get("identity_fields", []):
+            if field not in {"specimen_id", "subject_id", "patient_id"}:
+                continue
+            identities = table.get(field)
+            if not isinstance(identities, (list, tuple, np.ndarray)) or len(identities) != len(values):
+                continue
+            train_ids = {str(identities[index]).strip() for index in train_rows}
+            test_ids = {str(identities[index]).strip() for index in test_rows}
+            if "" in train_ids | test_ids or not test_ids <= train_ids:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"The held-out block contains new {field} identities. "
+                        "Choose a block of known specimens or unseen-specimen validation."
+                    ),
+                )
+        if binding.target_type == "categorical" and getattr(dataset, "target", None) is not None:
+            labels = np.asarray(dataset.target).reshape(-1)
+            if len(labels) == len(values):
+                all_classes = set(labels.tolist())
+                if {labels[index] for index in train_rows} != all_classes or {
+                    labels[index] for index in test_rows
+                } != all_classes:
+                    raise HTTPException(
+                        status_code=409, detail="Every class must occur in both training and held-out blocks"
+                    )
     for field in analysis_profile.get("identity_fields", []):
         if field not in {"specimen_id", "subject_id", "patient_id"}:
             continue
@@ -1486,6 +1554,10 @@ def _require_independent_classification_group(
                     "and is not available through this starter. Save the selection, then start a new analysis."
                 ),
             )
+        if validation_goal == "known_specimen_cross_block":
+            # The split node validates the exact held-out block and confirms
+            # that every test specimen was also measured in calibration.
+            continue
         identity_to_group: dict[str, str] = {}
         for identity, group in zip(identities, group_values, strict=True):
             group_label = str(group).strip() if group is not None else ""
@@ -1517,6 +1589,31 @@ def _adapt_pls_starter_to_source_assignment(
                 "held_out_groups": [assignment["validation_label"]],
             }
             node["label"] = "Source Training/Validation Split"
+
+
+def _adapt_starter_cross_block_holdout(nodes: list[dict[str, Any]], held_out_groups: list[str]) -> None:
+    for node in nodes:
+        if node.get("node_type") == "data.train_test_split":
+            node["parameters"] = {
+                "split_method": "group_holdout",
+                "held_out_groups": held_out_groups,
+                "validation_goal": "known_specimen_cross_block",
+            }
+            node["label"] = "Known-Specimen Cross-Block Holdout"
+
+
+def _require_cross_block_starter(payload: "InstantiateTemplateRequest", nodes: list[dict[str, Any]]) -> None:
+    if payload.validation_goal != "known_specimen_cross_block":
+        return
+    if (
+        payload.launch_mode != "user"
+        or not any(node.get("node_type") == "data.train_test_split" for node in nodes)
+        or not any(str(node.get("node_type", "")).startswith("classification.") for node in nodes)
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Cross-block repeatability needs a supervised classification starter with your data",
+        )
 
 
 async def _is_portable_sample_table_binding(
@@ -1908,6 +2005,8 @@ class InstantiateTemplateRequest(BaseModel):
         default_factory=dict,
         description="Optional example dataset selections keyed by source node_id",
     )
+    validation_goal: Literal["unseen_specimens", "known_specimen_cross_block"] = "unseen_specimens"
+    held_out_groups: list[str] = Field(default_factory=list, max_length=20)
 
 
 def _draft_bindings_for_request(payload: InstantiateTemplateRequest) -> dict[str, DataBindingSpec]:
@@ -2355,6 +2454,8 @@ async def instantiate_template(
         bound_profiles: dict[str, dict[str, Any]] = {}
         injected_targets: set[str] = set()
 
+        _require_cross_block_starter(payload, nodes_data)
+
         for binding_key, binding_spec in bindings_to_apply.items():
             node_id = _resolve_binding_node_id(template, binding_key)
             binding_spec = _normalize_binding_target_authority(template, binding_spec, node_id)
@@ -2369,6 +2470,8 @@ async def instantiate_template(
                     and any(node.get("node_type") == "data.train_test_split" for node in nodes_data)
                     and any(str(node.get("node_type", "")).startswith("classification.") for node in nodes_data)
                 ),
+                validation_goal=payload.validation_goal,
+                held_out_groups=payload.held_out_groups,
             )
             node = nodes_by_id.get(node_id)
             if node is None:
@@ -2419,6 +2522,8 @@ async def instantiate_template(
                 analysis_profile=analysis_profile,
                 nodes=nodes_data,
             )
+            if payload.validation_goal == "known_specimen_cross_block":
+                _adapt_starter_cross_block_holdout(nodes_data, payload.held_out_groups)
 
             if normalized_binding.target_binding is not None:
                 if node_id in injected_targets:

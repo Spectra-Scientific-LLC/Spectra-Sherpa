@@ -224,6 +224,27 @@ def test_plot_units_follow_only_saved_upstream_target_selection():
     assert "unavailable" in _retained_target_units(run, {"edges": []}, "cv")
 
 
+def test_bundled_pls_units_follow_exact_retained_model_response_identity():
+    from spectra_sherpa.app.services.run_validation_summary import _retained_target_units
+
+    curve = {
+        "schema_version": "spectrasherpa-pls-component-curve/1",
+        "response_names": ["Carbon dioxide"],
+        "response_units": ["ppm"],
+    }
+    run = SimpleNamespace(
+        user_id=1,
+        source_metadata={},
+        evidence_completeness=retention.retain_run_outputs(1, {"pls": {"component_curve": curve}}, {}),
+    )
+    definition = {
+        "nodes": [{"node_id": "pls", "node_type": "model.fitted_pls"}],
+        "edges": [{"from_node": "pls", "to_node": "evaluation"}],
+    }
+    assert _retained_target_units(run, definition, "evaluation") == "ppm"
+    assert "unavailable" in _retained_target_units(run, {"nodes": [], "edges": []}, "evaluation")
+
+
 def test_calibration_statistics_use_complete_retained_comparison_not_preview(monkeypatch):
     observed = np.column_stack((np.arange(120), np.arange(120) * 10.0))
     predicted = observed + [0.5, -2.0]

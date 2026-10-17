@@ -352,6 +352,8 @@ export const useWorkbookStore = defineStore("workbook", () => {
       launchMode?: TemplateLaunchMode;
       dataBindings?: Record<string, TemplateDataBinding>;
       exampleBindings?: Record<string, TemplateExampleBinding>;
+      validationGoal?: "unseen_specimens" | "known_specimen_cross_block";
+      heldOutGroups?: string[];
     } = {},
   ): Promise<WorkbookSheet> {
     if (projectId.value === null) {
@@ -364,6 +366,8 @@ export const useWorkbookStore = defineStore("workbook", () => {
         workflow_name: workflowName,
         project_id: projectId.value,
         launch_mode: launchMode,
+        ...(options.validationGoal ? { validation_goal: options.validationGoal } : {}),
+        ...(options.heldOutGroups ? { held_out_groups: options.heldOutGroups } : {}),
         data_bindings: Object.fromEntries(
           Object.entries(options.dataBindings || {}).map(([key, binding]) => [
             key,
