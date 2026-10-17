@@ -124,6 +124,25 @@ _COMPONENT_EVIDENCE_PREDECESSORS = (
     ),
 )
 
+# Cross-block repeatability changes split planning imported by the classifier,
+# but not its fitted-state serializer or application math. The previous exact
+# producer identities remain readable by this reviewed consumer only.
+_CROSS_BLOCK_PLSDA_PREDECESSORS = tuple(
+    SavedStateCompatibility(
+        "classification.plsda",
+        predecessor,
+        "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+        "spectrasherpa.sherpa-plsda-state/5",
+    )
+    for predecessor in (
+        "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
+        "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
+        "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
+        "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+        "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+    )
+)
+
 # Reference-quality outputs change producer execution identities without
 # changing the saved-state serializers. Each previously qualified producer is
 # admitted directly to this exact consumer for application only. The pinned
@@ -340,6 +359,7 @@ def saved_state_predecessor_is_compatible(
             *_V061_PCA_PRESENTATION_PREDECESSORS,
             *_PCA_SIGNAL_CUSTODY_PREDECESSORS,
             *_PLSDA_LEGACY_ADMISSION_PREDECESSORS,
+            *_CROSS_BLOCK_PLSDA_PREDECESSORS,
         )
         if entry.predecessor_digest == predecessor
         and entry.consumer_digest == consumer

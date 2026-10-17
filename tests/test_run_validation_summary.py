@@ -7,10 +7,11 @@ import numpy as np
 import pytest
 
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.app.schemas.run_evidence import RunEvidence
 from spectra_sherpa.app.services import run_output_retention as retention
 from spectra_sherpa.app.services.dag.nodes.data.split_planner import materialize_split_outputs, plan_train_test_split
 from spectra_sherpa.app.services.dag.regression_comparison import build_regression_comparison
-from spectra_sherpa.app.services.run_validation_summary import validation_summary
+from spectra_sherpa.app.services.run_validation_summary import _validation_output_values, validation_summary
 
 
 @pytest.fixture(autouse=True)
@@ -20,6 +21,20 @@ def store(tmp_path, monkeypatch):
 
 def text(summary):
     return "\n".join(row["label"] + ": " + row["value"] for row in summary["rows"])
+
+
+def test_large_split_matrix_does_not_consume_validation_evidence_budget():
+    evidence = retention.retain_run_outputs(
+        1,
+        {
+            "split": {"X_train": {"type": "SherpaDataset", "data": [1]}},
+            "model": {"component_curve": {"schema_version": "spectrasherpa-pls-component-curve/1"}},
+        },
+        {},
+    )
+    evidence["outputs"]["split"]["X_train"]["byte_count"] = 20 * 1024 * 1024
+    values = list(_validation_output_values(SimpleNamespace(user_id=1), RunEvidence.model_validate(evidence)))
+    assert [(node, port) for node, port, _ in values] == [("model", "component_curve")]
 
 
 def split_run(*, supervised=True, grouped=False, columns=5, row_order=None):

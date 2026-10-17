@@ -119,6 +119,18 @@ _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingP
         ),
         (
             "spectrasherpa.sherpa-plsda-state/5",
+            "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.sherpa-plsda-state/5",
+            contract_digest="5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale=(
+                "Explicit cross-block split planning changes the shared dependency fingerprint, "
+                "not PLS-DA fitted state."
+            ),
+        ),
+        (
+            "spectrasherpa.sherpa-plsda-state/5",
             "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
         ): FittedStateCustodyCapability(
             serializer="spectrasherpa.sherpa-plsda-state/5",

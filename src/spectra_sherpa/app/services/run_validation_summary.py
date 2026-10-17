@@ -321,16 +321,17 @@ def _validation_output_values(run, evidence):
     budget = 16 * 1024 * 1024
     for node, ports in evidence.outputs.items():
         for port, item in ports.items():
-            # These ports contain no validation record handled below. In particular,
-            # PCA diagnostic state includes a complete input snapshot; reading it
-            # here wastes the report budget and can hide otherwise readable metrics.
-            if port.startswith("_") or port in {
-                "diagnostic_state",
-                "fitted_state",
-                "model",
-                "scores",
-                "loadings",
-                "visualization",
+            # Only these ports can contain a validation record or source-unit
+            # signature handled below. Train/test matrices can each be many MB;
+            # charging them to the report budget hides small exact CV records.
+            if port not in {
+                "default",
+                "component_curve",
+                "calibration_comparison",
+                "comparison",
+                "cv_metrics",
+                "oof_evidence",
+                "repeated_evidence",
             }:
                 continue
             if item.state != "exact" or item.storage != "file" or not item.byte_count:

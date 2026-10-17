@@ -51,7 +51,7 @@ describe("Quick Plot and detailed plot parity", () => {
       metadata: { scientific_presentation: {
         schema_version: "spectrasherpa-node-presentation/1", contract_digest: "a".repeat(64),
         presentation_id: "component_selection", label: "Choose Latent Variables", kind: "validation_result",
-        source_port: "component_curve", source_ports: ["component_curve"], modes: ["plot", "record"], description: "",
+        source_port: "component_curve", source_ports: ["component_curve"], modes: ["record"], description: "",
       } },
     } as unknown as NodeOutput;
     const quick = useQuickPlotProjection(ref(output), ref("model.fitted_pls"));

@@ -122,7 +122,16 @@ export const resolveScientificPresentation = (
 export const presentationSupports = (
   resolved: ResolvedScientificPresentation | null | undefined,
   mode: ScientificPresentationMode,
-): boolean => resolved?.presentation.modes.includes(mode) ?? false;
+): boolean => !!resolved && (
+  resolved.presentation.modes.includes(mode) ||
+  // The retained PLS curve was originally declared as a record. Plotting
+  // that same exact record is a client-side view, not a fitted-state or
+  // execution-contract change (which would invalidate saved models).
+  (mode === "plot" && resolved.presentation.kind === "validation_result"
+    && resolved.presentation.presentation_id === "component_selection"
+    && resolved.sourcePort === "component_curve"
+    && resolved.presentation.modes.includes("record"))
+);
 
 export const presentationResolutionError = (
   metadata: NodeTypeMetadata | null | undefined,
@@ -179,7 +188,11 @@ export const scientificPlotOptions = (
   output: NodeOutput | null | undefined,
 ): ScientificPlotOption[] => {
   const identity = projectedPresentationIdentity(output);
-  if (!identity || !identity.modes.includes("plot")) return [];
+  if (!identity || (!identity.modes.includes("plot")
+    && !(identity.kind === "validation_result"
+      && identity.presentation_id === "component_selection"
+      && identity.source_port === "component_curve"
+      && identity.modes.includes("record")))) return [];
   const renderer = renderers.plot_kinds[identity.kind];
   if (!renderer) {
     throw new ScientificPresentationError(
@@ -260,6 +273,14 @@ export const scientificEvidenceShape = (
   output: NodeOutput | null | undefined,
 ): ScientificEvidenceShape | null => {
   const identity = projectedPresentationIdentity(output);
+  if (identity?.kind === "validation_result" && identity.presentation_id === "component_selection"
+    && identity.source_port === "component_curve") {
+    const curve = output?.presentation_value as Record<string, unknown> | undefined;
+    if (Array.isArray(curve?.calibration) && Array.isArray(curve?.response_names)) {
+      return { rows: curve.calibration.length, cols: curve.response_names.length,
+        rowLabel: "component choices", colLabel: "responses" };
+    }
+  }
   if (identity?.kind === "out_of_fold_evidence") {
     const value = output?.presentation_value as Record<string, unknown> | undefined;
     if (Array.isArray(value?.observations) && Array.isArray(value?.predictions)
