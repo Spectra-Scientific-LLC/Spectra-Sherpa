@@ -963,7 +963,14 @@ async def get_retained_run_output(
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail="Retained output failed integrity validation.") from exc
-    return {"evidence": item.model_dump(), "value": value}
+    response = {"evidence": item.model_dump(), "value": value}
+    if node_id == "__workflow__" and port == "definition" and isinstance(value, dict):
+        from spectra_sherpa.core.node_identity import canonicalize_serialized_workflow
+
+        # This is a derived UI projection, not a replacement for the exact
+        # checksummed value. Saved recipe/execution evidence stays immutable.
+        response["canonical_workflow"] = canonicalize_serialized_workflow(value)
+    return response
 
 
 @router.post("/storage/reclaim")

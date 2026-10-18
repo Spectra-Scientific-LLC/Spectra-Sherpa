@@ -360,9 +360,9 @@ interface SavedGraph {
 
 const savedGraphs = ref<Record<string, SavedGraph | null>>({});
 const selectedModels = ref<Record<number, string>>({});
-// Match the backend's exact persisted-node compatibility boundary.
+// Serialized compatibility is resolved by the backend's derived projection.
 const modelNodes = (id: number) => (savedGraphs.value[String(id)]?.nodes || []).filter(node =>
-  ['model.fitted_pls', 'model.fitted_pls_v2'].includes(node.node_type));
+  node.node_type === 'model.fitted_pls');
 const pairedRecipes = computed(() => props.runs.flatMap(run => selectedModels.value[run.id]
   ? [{ run_id: run.id, model_node_id: selectedModels.value[run.id], label: run.name }] : []));
 let graphRequest = 0;
@@ -381,7 +381,7 @@ watch(
         const response = await api.get(`/runs/${run.id}/outputs/${retainedWorkflowNode}/${retainedWorkflowPort}`, {
           params: { project_id: run.project_id },
         });
-        const graph = response.data?.value;
+        const graph = response.data?.canonical_workflow ?? response.data?.value;
         if (request === graphRequest && Array.isArray(graph?.nodes) && Array.isArray(graph?.edges)) {
           savedGraphs.value = { ...savedGraphs.value, [String(run.id)]: graph as SavedGraph };
           const models = modelNodes(run.id);
