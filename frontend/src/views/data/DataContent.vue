@@ -4713,7 +4713,9 @@ function clearImportedAnalysisStarterMarker(intent: AnalysisStarterDatasetIntent
 
 function applyAnalysisStarterIntent(): boolean {
   const intent = pendingAnalysisStarterIntent();
-  if (!intent) return false;
+  // A goal started with the user's own files names no catalog source; it
+  // only carries the planned starter template to the Workflow builder.
+  if (!intent || intent.source === "upload") return false;
 
   const intentKey = `${intent.source}::${intent.name}`;
   const registeredSource = (dataStore.referenceCatalog?.registered ?? []).find(

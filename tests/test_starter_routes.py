@@ -17,6 +17,7 @@ from spectra_sherpa.app.core.template_loader import TemplateLoader
 from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.experiment import Experiment
 from spectra_sherpa.app.models.experiment_file import ExperimentFile
+from spectra_sherpa.app.models.model_artifact import ModelArtifact
 from spectra_sherpa.app.models.project import Project
 from spectra_sherpa.app.models.project_data_source import ProjectDataSource
 from spectra_sherpa.app.models.user import User
@@ -423,3 +424,123 @@ async def test_goal_is_not_sent_to_a_model_without_ai_disclosure_consent(auth_cl
     plan = (await auth_client.post("/api/v1/starter/plan", json={"goal": "How wet is my grain?"})).json()
     assert plan["source"] == "rules"
     assert calls == []
+
+
+async def _journey_to_run(client: AsyncClient, session: AsyncSession, user: User, goal: str) -> tuple[int, Workflow]:
+    plan = await _plan(client, goal)
+    project_id = (await client.post("/api/v1/projects", json={"name": goal, "goal": goal, "goal_plan": plan})).json()[
+        "id"
+    ]
+    session.add(ProjectDataSource(project_id=project_id, display_name="Spectra", source_type="experiment"))
+    workflow = Workflow(user_id=user.id, project_id=project_id, name="Sheet")
+    session.add(workflow)
+    await session.flush()
+    session.add(WorkflowNode(workflow_id=workflow.id, node_id="smooth", node_type="preprocess.smooth"))
+    await session.commit()
+    return project_id, workflow
+
+
+def _run(project_id: int, workflow: Workflow, user: User, status: str, name: str) -> ExecutionRun:
+    return ExecutionRun(
+        project_id=project_id,
+        workflow_id=workflow.id,
+        user_id=user.id,
+        name=name,
+        status=status,
+        params_snapshot={},
+        results_summary={},
+        executed_at=datetime.now(timezone.utc),
+    )
+
+
+@pytest.mark.parametrize("status", ["running", "pending", "partial", "error", "failed", "cancelled"])
+async def test_an_unsuccessful_run_does_not_count_as_running_the_workflow(
+    auth_client: AsyncClient, test_session: AsyncSession, test_user: User, status
+):
+    project_id, workflow = await _journey_to_run(auth_client, test_session, test_user, "Smooth my spectra")
+    test_session.add(_run(project_id, workflow, test_user, status, "Attempt"))
+    await test_session.commit()
+
+    progress = (await auth_client.get(f"/api/v1/starter/projects/{project_id}/progress")).json()
+    assert progress["has_executed"] is False
+    assert progress["last_run_status"] == status
+    assert progress["next_step"] == "run"
+
+
+async def test_a_completed_run_after_a_failure_counts(
+    auth_client: AsyncClient, test_session: AsyncSession, test_user: User
+):
+    project_id, workflow = await _journey_to_run(auth_client, test_session, test_user, "Smooth my spectra")
+    test_session.add(_run(project_id, workflow, test_user, "failed", "First"))
+    await test_session.commit()
+    test_session.add(_run(project_id, workflow, test_user, "completed", "Second"))
+    await test_session.commit()
+
+    progress = (await auth_client.get(f"/api/v1/starter/projects/{project_id}/progress")).json()
+    assert progress["has_executed"] is True
+    assert progress["last_run_status"] == "completed"
+    assert progress["next_step"] == "review"
+
+
+async def test_review_is_done_only_when_the_user_marks_it(
+    auth_client: AsyncClient, test_session: AsyncSession, test_user: User
+):
+    project_id, workflow = await _journey_to_run(
+        auth_client, test_session, test_user, "Build a PLS model that predicts moisture"
+    )
+    test_session.add(_run(project_id, workflow, test_user, "completed", "Fit"))
+    test_session.add(
+        ModelArtifact(
+            user_id=test_user.id,
+            project_id=project_id,
+            name="Moisture PLS",
+            artifact_uid="00000000-0000-0000-0000-000000000001",
+            node_id="pls",
+            model_type="pls",
+            artifact_dir="models/moisture",
+            integrity_hash="0" * 64,
+            n_features=10,
+        )
+    )
+    await test_session.commit()
+    base = f"/api/v1/starter/projects/{project_id}"
+
+    progress = (await auth_client.get(f"{base}/progress")).json()
+    assert progress["has_model"] is True
+    assert progress["next_step"] == "review"
+
+    done = await auth_client.post(f"{base}/steps/review/complete")
+    assert done.status_code == 200
+    assert done.json()["next_step"] is None
+    project = (await auth_client.get(f"/api/v1/projects/{project_id}")).json()
+    assert project["goal_plan"]["completed_steps"] == ["review"]
+
+    again = await auth_client.post(f"{base}/steps/review/complete")
+    assert again.json()["next_step"] is None
+    reopened = await auth_client.delete(f"{base}/steps/review/complete")
+    assert reopened.json()["next_step"] == "review"
+    project = (await auth_client.get(f"/api/v1/projects/{project_id}")).json()
+    assert project["goal_plan"]["completed_steps"] == []
+
+
+async def test_observed_steps_and_unknown_steps_cannot_be_marked(
+    auth_client: AsyncClient, test_session: AsyncSession, test_user: User
+):
+    project_id, _workflow = await _journey_to_run(auth_client, test_session, test_user, "Smooth my spectra")
+    base = f"/api/v1/starter/projects/{project_id}/steps"
+    assert (await auth_client.post(f"{base}/run/complete")).status_code == 409
+    assert (await auth_client.post(f"{base}/celebrate/complete")).status_code == 404
+
+    plain = (await auth_client.post("/api/v1/projects", json={"name": "No plan"})).json()["id"]
+    assert (await auth_client.post(f"/api/v1/starter/projects/{plain}/steps/review/complete")).status_code == 409
+
+
+async def test_marking_a_step_requires_project_access(auth_client: AsyncClient, test_session: AsyncSession):
+    other = User(username="not-the-owner")
+    test_session.add(other)
+    await test_session.flush()
+    project = Project(user_id=other.id, name="Private", goal="x")
+    test_session.add(project)
+    await test_session.commit()
+    response = await auth_client.post(f"/api/v1/starter/projects/{project.id}/steps/review/complete")
+    assert response.status_code == 404

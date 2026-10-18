@@ -198,7 +198,7 @@ describe("SimplifiedDashboard Starter tab", () => {
     expect(mocks.routerPush).toHaveBeenLastCalledWith({ path: "/data", query: { tab: "import" } });
   });
 
-  it("links the user's own dataset and continues to the workflow", async () => {
+  it("links the user's own dataset and hands it and the planned starter to the Data page", async () => {
     const { projectStore } = await mountDashboard();
     mocks.starter!.emit("start", {
       plan: PLAN,
@@ -218,10 +218,21 @@ describe("SimplifiedDashboard Starter tab", () => {
       expect.objectContaining({ name: "Own data", goal_plan: PLAN, metadata: undefined }),
     );
     expect(projectStore.linkExperiment).toHaveBeenCalledWith(41, 12);
-    expect(mocks.routerPush).toHaveBeenLastCalledWith("/workflow");
+    expect(mocks.routerPush).toHaveBeenLastCalledWith({ path: "/data", query: { tab: "my-dataset" } });
+    expect(window.sessionStorage.getItem("sherpa:data-entry-mode")).toBe("analysis-starter");
+    expect(JSON.parse(window.sessionStorage.getItem("sherpa:data-entry-dataset-intent") || "null")).toEqual({
+      schema_version: "spectra-analysis-starter-dataset-intent/1",
+      project_id: 41,
+      dataset_id: "experiment:12",
+      source: "experiment",
+      name: "Batch",
+      label: "Batch",
+      imported_experiment_id: 12,
+      template_slug: "pca",
+    });
   });
 
-  it("starts a goal without data in local mode on the import page", async () => {
+  it("starts a goal without data in local mode on Upload, keeping the planned starter", async () => {
     appMode.value = "local";
     const { projectStore } = await mountDashboard();
     mocks.starter!.emit("start", { plan: PLAN, name: "Files later", dataset: null });
@@ -229,7 +240,13 @@ describe("SimplifiedDashboard Starter tab", () => {
     expect(projectStore.createProject).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Files later", goal: PLAN.goal }),
     );
-    expect(mocks.routerPush).toHaveBeenLastCalledWith({ path: "/data", query: { tab: "import" } });
+    expect(mocks.routerPush).toHaveBeenLastCalledWith({ path: "/data", query: { tab: "upload" } });
+    expect(JSON.parse(window.sessionStorage.getItem("sherpa:data-entry-dataset-intent") || "null")).toMatchObject({
+      project_id: 41,
+      source: "upload",
+      template_slug: "pca",
+      imported_experiment_id: null,
+    });
   });
 
   it("refuses a goal without data outside local mode", async () => {

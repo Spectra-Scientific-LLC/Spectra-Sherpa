@@ -2960,6 +2960,35 @@ describe("DataContent file inspection", () => {
     expect(preview.props("acquisitionRequired")).toBe(true);
   });
 
+  it("keeps a Starter goal begun with the user's own files out of the reference import", async () => {
+    window.sessionStorage.setItem("sherpa:data-entry-mode", "analysis-starter");
+    window.sessionStorage.setItem("sherpa:data-entry-project-id", "3");
+    const intent = {
+      schema_version: "spectra-analysis-starter-dataset-intent/1",
+      project_id: 3,
+      dataset_id: "upload:own-files",
+      source: "upload",
+      name: "own-files",
+      label: "Your own files",
+      imported_experiment_id: null,
+      template_slug: "preprocessing",
+    };
+    window.sessionStorage.setItem("sherpa:data-entry-dataset-intent", JSON.stringify(intent));
+    // The user was last on Upload; a catalog intent would pull them to Import.
+    window.localStorage.setItem("spectra_sherpa_data_active_tab_v3_7_3", "upload");
+
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+
+    // It names no catalog source, so Data does not force the Import tab.
+    expect((wrapper.vm as unknown as { activeTab: number }).activeTab).toBe(2);
+    expect(vm.selectedRefDatasets.size).toBe(0);
+    expect(mocks.dataStore.importReferenceDatasets).not.toHaveBeenCalled();
+    // The intent stays so the selection sent to Workflow opens the planned starter.
+    expect(JSON.parse(window.sessionStorage.getItem("sherpa:data-entry-dataset-intent") || "null")).toEqual(intent);
+  });
+
   it("adds the built-in Lavender corpus through the reference selection flow", async () => {
     const lavender: ReferenceDatasetOption = {
       source: "builtin",

@@ -4,6 +4,7 @@ import PrimeVue from "primevue/config";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useGuidanceStore } from "@/stores/guidance";
+import { useProjectStore } from "@/stores/project";
 import type { ProjectSummary, StarterPlan } from "@/types";
 import StarterPanel from "@/views/dashboard/StarterPanel.vue";
 
@@ -11,6 +12,7 @@ const adapter = vi.hoisted(() => ({
   fetchStarterOverview: vi.fn(),
   planStarterGoal: vi.fn(),
   fetchStarterProgress: vi.fn(),
+  setStarterStepDone: vi.fn(),
 }));
 
 vi.mock("@/lib/starterAdapter", async (importOriginal) => ({
@@ -237,28 +239,88 @@ describe("StarterPanel", () => {
     expect(active.text()).not.toContain("Corn moisture");
   });
 
-  it("finishes a step without a progress signal once the user opens it", async () => {
-    adapter.fetchStarterProgress.mockResolvedValue({
-      project_id: 5,
-      has_project: true,
-      has_data: true,
-      has_workflow: true,
-      has_preprocessing: false,
-      has_executed: true,
-      has_model: false,
-      next_step: "review",
-    });
+  const executedProgress = (patch = {}) => ({
+    project_id: 5,
+    has_project: true,
+    has_data: true,
+    has_workflow: true,
+    has_preprocessing: false,
+    has_executed: true,
+    has_model: true,
+    last_run_status: "completed",
+    next_step: "review",
+    ...patch,
+  });
+
+  it("keeps review open after a model is saved until the user marks it done", async () => {
+    adapter.fetchStarterProgress.mockResolvedValue(executedProgress());
+    adapter.setStarterStepDone.mockResolvedValue(executedProgress({ next_step: null }));
     const runAction = vi.spyOn(useGuidanceStore(), "runAction").mockResolvedValue(true);
-    const wrapper = mountPanel({ activeProject: { ...project(PLAN), name: "Corn moisture" } });
+    const fetchProject = vi.spyOn(useProjectStore(), "fetchProject").mockResolvedValue(null);
+    const goalProject = { ...project(PLAN), name: "Corn moisture" };
+    const wrapper = mountPanel({ activeProject: goalProject });
     await flushPromises();
 
-    expect(wrapper.get('[data-test="starter-active-goal"]').text()).toContain("Predict a value from spectra · Corn moisture");
+    expect(wrapper.get('[data-test="starter-active-goal"]').text()).toContain(
+      "Predict a value from spectra · Corn moisture",
+    );
     const review = wrapper.get('[data-test="starter-step-review"]');
     expect(review.classes()).toContain("goal-step--current");
-    await review.get("button").trigger("click");
+    expect(wrapper.text()).not.toContain("Every step is done.");
+
+    // Going to the results does not complete the step.
+    await review.findAll("button").find((button) => button.text() === "Go")!.trigger("click");
     expect(runAction).toHaveBeenLastCalledWith("view_results");
+    expect(wrapper.get('[data-test="starter-step-review"]').classes()).toContain("goal-step--current");
+
+    await wrapper.get('[data-test="starter-mark-review"]').trigger("click");
+    await flushPromises();
+    expect(adapter.setStarterStepDone).toHaveBeenCalledWith(5, "review", true);
+    expect(fetchProject).toHaveBeenCalledWith(5);
+
+    // The Dashboard passes the reloaded project, whose plan records the step.
+    await wrapper.setProps({ activeProject: { ...goalProject, goal_plan: { ...PLAN, completed_steps: ["review"] } } });
+    await flushPromises();
     expect(wrapper.get('[data-test="starter-step-review"]').classes()).toContain("goal-step--done");
-    expect(JSON.parse(window.localStorage.getItem("sherpa:starter-visited:5") || "[]")).toEqual(["review"]);
     expect(wrapper.text()).toContain("Every step is done.");
+
+    adapter.setStarterStepDone.mockResolvedValue(executedProgress());
+    await wrapper.get('[data-test="starter-undo-review"]').trigger("click");
+    await flushPromises();
+    expect(adapter.setStarterStepDone).toHaveBeenLastCalledWith(5, "review", false);
+  });
+
+  it("offers recovery when the last run did not finish", async () => {
+    const withRun: StarterPlan = {
+      ...PLAN,
+      steps: [
+        ...PLAN.steps.slice(0, 3),
+        { key: "run", title: "Run the workflow", detail: "Run detail", action_id: "run_workflow", completion: "has_executed" },
+        PLAN.steps[3],
+      ],
+    };
+    adapter.fetchStarterProgress.mockResolvedValue(
+      executedProgress({ has_executed: false, has_model: false, last_run_status: "failed", next_step: "run" }),
+    );
+    const runAction = vi.spyOn(useGuidanceStore(), "runAction").mockResolvedValue(true);
+    const wrapper = mountPanel({ activeProject: project(withRun) });
+    await flushPromises();
+
+    const run = wrapper.get('[data-test="starter-step-run"]');
+    expect(run.classes()).toContain("goal-step--current");
+    expect(wrapper.get('[data-test="starter-run-recovery"]').text()).toContain("did not finish (failed)");
+    await run.findAll("button").find((button) => button.text() === "See what went wrong")!.trigger("click");
+    expect(runAction).toHaveBeenCalledWith("view_results");
+  });
+
+  it("reports a failed Mark done without changing the step", async () => {
+    adapter.fetchStarterProgress.mockResolvedValue(executedProgress());
+    adapter.setStarterStepDone.mockRejectedValue(new Error("Project is read-only"));
+    const wrapper = mountPanel({ activeProject: project(PLAN) });
+    await flushPromises();
+    await wrapper.get('[data-test="starter-mark-review"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain("Project is read-only");
+    expect(wrapper.get('[data-test="starter-step-review"]').classes()).toContain("goal-step--current");
   });
 });

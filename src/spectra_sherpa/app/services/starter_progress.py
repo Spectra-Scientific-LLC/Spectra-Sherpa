@@ -17,9 +17,29 @@ from spectra_sherpa.app.models.project_data_source import ProjectDataSource
 from spectra_sherpa.app.models.workflow import Workflow
 from spectra_sherpa.app.models.workflow_node import WorkflowNode
 
+# Only a completed run is evidence that the workflow ran. Partial, failed and
+# cancelled runs leave the Run step current so the user can recover.
+SUCCESSFUL_RUN_STATUSES = frozenset({"completed"})
+UNSUCCESSFUL_RUN_STATUSES = frozenset({"partial", "error", "failed", "cancelled"})
+
 
 async def _count(session: AsyncSession, statement) -> int:  # noqa: ANN001
     return int((await session.scalar(statement)) or 0)
+
+
+def _project_runs(project_id: int):  # noqa: ANN202
+    workflow_ids = select(Workflow.id).where(Workflow.project_id == project_id).scalar_subquery()
+    return or_(ExecutionRun.project_id == project_id, ExecutionRun.workflow_id.in_(workflow_ids))
+
+
+async def latest_run_status(session: AsyncSession, project_id: int) -> str | None:
+    """Status of the project's newest run, or ``None`` before the first run."""
+    return await session.scalar(
+        select(ExecutionRun.status)
+        .where(_project_runs(project_id))
+        .order_by(ExecutionRun.created_at.desc(), ExecutionRun.id.desc())
+        .limit(1)
+    )
 
 
 async def project_progress(session: AsyncSession, project_id: int) -> dict[str, bool]:
@@ -47,10 +67,10 @@ async def project_progress(session: AsyncSession, project_id: int) -> dict[str, 
             or_(WorkflowNode.node_type.like("preprocess.%"), WorkflowNode.node_type.like("baseline.%")),
         ),
     )
-    runs = await _count(
+    successful_runs = await _count(
         session,
         select(func.count(ExecutionRun.id)).where(
-            or_(ExecutionRun.project_id == project_id, ExecutionRun.workflow_id.in_(workflow_ids))
+            _project_runs(project_id), ExecutionRun.status.in_(SUCCESSFUL_RUN_STATUSES)
         ),
     )
     models = await _count(
@@ -65,6 +85,6 @@ async def project_progress(session: AsyncSession, project_id: int) -> dict[str, 
         "has_data": has_data,
         "has_workflow": workflow_nodes > 0,
         "has_preprocessing": preprocessing_nodes > 0,
-        "has_executed": runs > 0,
+        "has_executed": successful_runs > 0,
         "has_model": models > 0,
     }

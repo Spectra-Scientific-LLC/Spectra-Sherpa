@@ -477,6 +477,7 @@ async function startFromGoal(request: StarterStartRequest): Promise<void> {
   await createAnalysisStarter(template, {
     dataset: reference,
     experimentId: dataset?.kind === "experiment" ? dataset.experiment_id : null,
+    experimentLabel: dataset?.kind === "experiment" ? dataset.label : null,
     goalPlan: plan,
     name: request.name,
   });
@@ -505,10 +506,31 @@ function starterProjectName(
   return `${dataset?.label ?? "Blank project"} ${template.name}`;
 }
 
+interface StarterIntentSource {
+  dataset_id: string;
+  source: string;
+  name: string;
+  label: string;
+  /** Already in My Dataset, so the Data page opens it instead of importing. */
+  imported_experiment_id?: number | null;
+}
+
+function referenceIntentSource(dataset: ReferenceDatasetOption): StarterIntentSource {
+  return {
+    dataset_id: dataset.dataset_id || `${dataset.source}:${dataset.name}`,
+    source: dataset.source,
+    name: dataset.name,
+    label: dataset.label,
+  };
+}
+
+// The Data page and Workflow builder read this intent: the Data page opens or
+// imports the dataset, and the selection it sends to Workflow opens the
+// template picker on the starter named here.
 function persistAnalysisStarterIntent(
   projectId: number,
-  dataset: ReferenceDatasetOption,
-  template?: WorkflowTemplate,
+  dataset: StarterIntentSource,
+  templateSlug: string | null,
 ): void {
   try {
     window.sessionStorage.setItem(DATA_ENTRY_MODE_KEY, "analysis-starter");
@@ -518,11 +540,9 @@ function persistAnalysisStarterIntent(
       JSON.stringify({
         schema_version: "spectra-analysis-starter-dataset-intent/1",
         project_id: projectId,
-        dataset_id: dataset.dataset_id || `${dataset.source}:${dataset.name}`,
-        source: dataset.source,
-        name: dataset.name,
-        label: dataset.label,
-        template_slug: template?.slug ?? null,
+        ...dataset,
+        imported_experiment_id: dataset.imported_experiment_id ?? null,
+        template_slug: templateSlug,
       }),
     );
   } catch {
@@ -534,6 +554,7 @@ function persistAnalysisStarterIntent(
 interface AnalysisStarterOptions {
   dataset: ReferenceDatasetOption | null;
   experimentId: number | null;
+  experimentLabel: string | null;
   goalPlan: StarterPlan;
   name: string;
 }
@@ -585,8 +606,31 @@ async function createAnalysisStarter(template?: WorkflowTemplate, goalStart?: An
       return;
     }
 
-    if (dataset) persistAnalysisStarterIntent(project.id, dataset, template);
-    if (experimentId != null) await projectStore.linkExperiment(project.id, experimentId);
+    // A goal's plan names its starter even when no template record was
+    // resolved here, so prefer the plan's slug for goal starts.
+    const templateSlug = goalStart ? goalStart.goalPlan.template_slug : (template?.slug ?? null);
+    if (dataset) {
+      persistAnalysisStarterIntent(project.id, referenceIntentSource(dataset), templateSlug);
+    } else if (experimentId != null) {
+      await projectStore.linkExperiment(project.id, experimentId);
+      persistAnalysisStarterIntent(
+        project.id,
+        {
+          dataset_id: `experiment:${experimentId}`,
+          source: "experiment",
+          name: goalStart?.experimentLabel ?? `Dataset ${experimentId}`,
+          label: goalStart?.experimentLabel ?? `Dataset ${experimentId}`,
+          imported_experiment_id: experimentId,
+        },
+        templateSlug,
+      );
+    } else if (goalStart) {
+      persistAnalysisStarterIntent(
+        project.id,
+        { dataset_id: "upload:own-files", source: "upload", name: "own-files", label: "Your own files" },
+        templateSlug,
+      );
+    }
 
     await projectStore.fetchProject(project.id);
 
@@ -601,13 +645,16 @@ async function createAnalysisStarter(template?: WorkflowTemplate, goalStart?: An
     });
     // A selected reference is part of the starter contract, so land on the
     // import surface where it can be admitted into this project immediately.
-    // A goal with the user's own dataset moves on to the workflow; a goal
-    // without data opens the import surface; other blank projects open the
-    // project overview.
+    // The user's own dataset opens in My Dataset, ready to send to Workflow;
+    // a goal without data opens Upload. Other blank projects open the
+    // project overview. In every goal path the recorded intent carries the
+    // plan's starter template to the Workflow builder.
     if (experimentId != null) {
-      await router.push("/workflow");
-    } else if (dataset || goalStart) {
+      await router.push({ path: "/data", query: { tab: "my-dataset" } });
+    } else if (dataset) {
       await router.push({ path: "/data", query: { tab: "import" } });
+    } else if (goalStart) {
+      await router.push({ path: "/data", query: { tab: "upload" } });
     } else {
       await router.push("/project");
     }

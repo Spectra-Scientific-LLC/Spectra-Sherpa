@@ -56,7 +56,6 @@ class StarterIntent:
     configure_title: str
     configure_detail: str
     review_detail: str
-    produces_model: bool = False
 
 
 STARTER_INTENTS: tuple[StarterIntent, ...] = (
@@ -170,7 +169,6 @@ STARTER_INTENTS: tuple[StarterIntent, ...] = (
             "Look at the prediction error on held-out samples (RMSEP) and the predicted-versus-measured "
             "plot. Points close to the diagonal mean good predictions."
         ),
-        produces_model=True,
     ),
     StarterIntent(
         key="classify",
@@ -196,7 +194,6 @@ STARTER_INTENTS: tuple[StarterIntent, ...] = (
             "each sample's class before running."
         ),
         review_detail="Check the confusion matrix: the diagonal shows correct predictions for each class.",
-        produces_model=True,
     ),
     StarterIntent(
         key="cluster",
@@ -250,14 +247,39 @@ class IntentMatch:
     matched_terms: tuple[str, ...]
 
 
-def classify_goal(goal: str) -> IntentMatch:
-    """Pick the intent whose keywords best match the goal text.
+# An explicitly named method decides the intent before any keyword counting.
+# Order matters: specific names come before the names they contain, so
+# "PLS-DA" is classification even though it contains "PLS".
+_METHOD_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bpls[\s-]?da\b"), "classify"),
+    (re.compile(r"\bsimca\b"), "classify"),
+    (re.compile(r"\bk[\s-]?nn\b|\bk[\s-]nearest\b"), "classify"),
+    (re.compile(r"\bmcr(?:[\s-]?als)?\b"), "resolve"),
+    (re.compile(r"\bnmf\b"), "resolve"),
+    (re.compile(r"\bk[\s-]?means\b"), "cluster"),
+    (re.compile(r"\bpca\b|\bprincipal components?(?: analysis)?\b"), "explore"),
+    (re.compile(r"\bpls(?:[\s-]?r)?\b|\bpartial least squares\b"), "calibrate"),
+    (re.compile(r"\bsavitzky[\s-]?golay\b|\bsnv\b|\bmsc\b"), "preprocess"),
+)
+METHOD_CONFIDENCE = 0.95
 
-    Ties go to the earlier intent, so beginner-friendly preprocessing wins
-    over specialist methods. With no keyword hit the plan falls back to
-    exploration, which works for any dataset, at low confidence.
+
+def classify_goal(goal: str) -> IntentMatch:
+    """Pick the intent for the goal text.
+
+    A named method ("PLS-DA", "PCA", "MCR-ALS") decides the intent at high
+    confidence. Otherwise the intent with the most keyword hits wins; ties go
+    to the earlier intent, so beginner-friendly preprocessing wins over
+    specialist methods. With no hit the plan falls back to exploration,
+    which works for any dataset, at low confidence.
     """
     text = normalize_goal(goal).lower()
+    for pattern, intent_key in _METHOD_PATTERNS:
+        method = pattern.search(text)
+        if method:
+            return IntentMatch(
+                intent=_INTENTS_BY_KEY[intent_key], confidence=METHOD_CONFIDENCE, matched_terms=(method.group(0),)
+            )
     best: IntentMatch | None = None
     for intent in STARTER_INTENTS:
         terms = tuple(keyword for keyword in intent.keywords if keyword in text)
@@ -365,7 +387,9 @@ def build_steps(
             "Review the results",
             intent.review_detail,
             action_id="view_results",
-            completion="has_model" if intent.produces_model else None,
+            # Saving a model is not evidence that anyone looked at its
+            # validation; the user marks this step done themselves.
+            completion=None,
         ),
     ]
     return steps
@@ -403,13 +427,17 @@ def step_states(plan: dict[str, Any] | None, progress: dict[str, bool]) -> list[
     """Return ``(step_key, "done" | "current" | "todo")`` for each plan step.
 
     A step with a signal is done once the signal is observed. A step without
-    one cannot be confirmed directly, so it counts as done once any later
-    step is. The first step that is not done is current.
+    one is done once the user marks it done (``completed_steps``) or once any
+    later step is. The first step that is not done is current.
     """
     if not isinstance(plan, dict):
         return []
     steps = [step for step in plan.get("steps") or [] if isinstance(step, dict) and step.get("key")]
-    observed = [bool(step.get("completion") and progress.get(step["completion"], False)) for step in steps]
+    marked = set(plan.get("completed_steps") or ())
+    observed = [
+        bool(progress.get(step["completion"], False)) if step.get("completion") else step["key"] in marked
+        for step in steps
+    ]
     states: list[tuple[str, str]] = []
     current_assigned = False
     for index, step in enumerate(steps):

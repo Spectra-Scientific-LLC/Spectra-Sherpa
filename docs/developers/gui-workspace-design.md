@@ -191,17 +191,21 @@ An explicit hash always wins over that first-run choice.
 planned project. Selected object: the active project when it carries a goal
 plan; otherwise none. Context: the active goal's project and kind of analysis,
 or "Describe a goal". Contents: the active goal as a checklist whose steps tick
-from observed project progress, the current step with **Go** to its destination;
-then a goal box prefilled with the user's last goal (the suggested beginner goal
+from observed project progress (only completed runs count), the current step
+with **Go** to its destination and, for a step the app cannot observe, **Mark
+done**; then a goal box prefilled with the user's last goal (the suggested beginner goal
 on first run), example goals, **Plan my steps**, and the resulting plan: kind of
 analysis, starter workflow, suggested dataset with its reason, expandable steps
-and the project name. Action: **Ready to Start** creates the project with its
-goal and plan; it is the only mutation. Planning stores nothing. Empty state:
+and the project name. Actions: **Ready to Start** creates the project with its
+goal and plan; **Mark done** and **Undo** record a manual step in that plan.
+These are the only mutations; planning stores nothing. Empty state:
 no active goal shows only the goal box. Error state: a planning failure is shown
 inline under the box; the checklist keeps its last progress when a refresh
-fails. Persistence: the goal and plan are project fields; opened steps without
-a progress signal are a per-viewer browser convenience. Advisor focus: the
-active project, as on Your Project.
+fails; a failed or cancelled last run keeps the Run step current and offers
+**See what went wrong**. Persistence: the goal and plan are project fields; a
+step without a progress signal (such as reviewing results) is done only when the
+user selects **Mark done**, which is recorded in the plan and can be undone; Go
+never completes a step. Advisor focus: the active project, as on Your Project.
 
 Place **Project →** immediately to the right of **New Analysis**, leaving the
 project's relative update time right-aligned in its context row. Preserve project selection, archive,

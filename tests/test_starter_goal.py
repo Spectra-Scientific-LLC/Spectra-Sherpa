@@ -119,13 +119,56 @@ def test_unobservable_step_counts_as_done_once_a_later_step_is():
     assert next_step_key(plan, progress) == "review"
 
 
-def test_model_producing_goals_finish_when_a_model_is_saved():
+def test_saving_a_model_does_not_complete_the_review_step():
     plan = _plan("calibrate")
     progress = dict.fromkeys(
         ("has_project", "has_data", "has_workflow", "has_preprocessing", "has_executed", "has_model"), True
     )
+    assert next_step_key(plan, progress) == "review"
+    review = next(step for step in plan["steps"] if step["key"] == "review")
+    assert review["completion"] is None
+    plan["completed_steps"] = ["review"]
     assert next_step_key(plan, progress) is None
     assert next_step_key(None, progress) is None
+
+
+def test_only_manual_steps_can_be_marked_done():
+    plan = _plan("calibrate")
+    plan["completed_steps"] = ["review", "configure"]
+    assert StarterPlan.model_validate(plan).completed_steps == ["review", "configure"]
+    plan["completed_steps"] = ["run"]
+    with pytest.raises(ValidationError):
+        StarterPlan.model_validate(plan)
+    plan["completed_steps"] = ["review", "review"]
+    with pytest.raises(ValidationError):
+        StarterPlan.model_validate(plan)
+
+
+@pytest.mark.parametrize(
+    ("goal", "intent", "method"),
+    [
+        ("Run PLS-DA on my spectra", "classify", "pls-da"),
+        ("plsda model for the two olive grades", "classify", "plsda"),
+        ("PLS DA classification", "classify", "pls da"),
+        ("Build a PLS model for moisture", "calibrate", "pls"),
+        ("PLS regression of fat content", "calibrate", "pls"),
+        ("Do a PCA and then cluster", "explore", "pca"),
+        ("MCR-ALS on my reaction spectra", "resolve", "mcr-als"),
+        ("k-means on NIR spectra", "cluster", "k-means"),
+        ("SNV then smooth", "preprocess", "snv"),
+    ],
+)
+def test_named_methods_take_precedence_over_keyword_counts(goal, intent, method):
+    match = classify_goal(goal)
+    assert match.intent.key == intent
+    assert match.matched_terms == (method,)
+    assert match.confidence == 0.95
+
+
+def test_method_names_do_not_match_inside_other_words():
+    # "pca" inside "pcap" and "pls" inside "plsx" are not method names.
+    assert classify_goal("smooth the pcap traces").intent.key == "preprocess"
+    assert classify_goal("smooth the plsx exports").matched_terms == ("smooth",)
 
 
 def test_plan_schema_rejects_unknown_actions_and_signals():

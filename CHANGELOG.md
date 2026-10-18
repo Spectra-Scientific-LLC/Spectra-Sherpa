@@ -14,7 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   analysis, an available starter workflow, a compatible dataset to begin with
   (with the reason it was chosen) and the steps to follow. **Ready to Start**
   creates the project; the tab then tracks the plan as a checklist whose steps
-  tick themselves off. See [Start from a goal](docs/onboarding/starter.md).
+  tick themselves off from observed progress (only completed runs count; a
+  failed run offers recovery). Steps the app cannot observe, such as reviewing
+  results, are marked done by the user. The planned starter template follows
+  the user's data to the Workflow template picker. See
+  [Start from a goal](docs/onboarding/starter.md).
 - Projects record the goal and its Starter plan (`goal`, `goal_plan`). Both are
   part of the project API, project versions and project export and import.
 - Deployments can register a model-backed goal classifier

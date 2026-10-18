@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from spectra_sherpa.app.api.deps import get_current_user, get_session, require_project
-from spectra_sherpa.app.contracts.scientific_access import scientific_project_ids
+from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
+from spectra_sherpa.app.contracts.scientific_access import require_scientific_access, scientific_project_ids
 from spectra_sherpa.app.contracts.starter_planning import classify_goal_with_model, goal_classifier_available
 from spectra_sherpa.app.core.security import check_egress_permission
 from spectra_sherpa.app.lib.dataset_compatibility import build_compatibility_matrix
@@ -40,7 +41,7 @@ from spectra_sherpa.app.schemas.starter import (
     StarterProgress,
     stored_goal_plan,
 )
-from spectra_sherpa.app.services.starter_progress import project_progress
+from spectra_sherpa.app.services.starter_progress import latest_run_status, project_progress
 from spectra_sherpa.app.services.template_availability import template_admitted_in_profile
 
 router = APIRouter(prefix="/starter")
@@ -276,6 +277,17 @@ async def plan_goal(
     )
 
 
+async def _progress_response(session: AsyncSession, project: Project) -> StarterProgress:
+    progress = await project_progress(session, project.id)
+    plan = stored_goal_plan(project.goal_plan)
+    return StarterProgress(
+        project_id=project.id,
+        **progress,
+        last_run_status=await latest_run_status(session, project.id),
+        next_step=next_step_key(plan.model_dump() if plan else None, progress),
+    )
+
+
 @router.get("/projects/{project_id}/progress", response_model=StarterProgress)
 async def get_project_progress(
     project_id: int,
@@ -284,10 +296,68 @@ async def get_project_progress(
 ) -> StarterProgress:
     """Report which Starter steps a project has already completed."""
     project = await require_project(project_id, current_user.id, session, operation="read")
-    progress = await project_progress(session, project.id)
+    return await _progress_response(session, project)
+
+
+async def _set_step_completed(
+    project_id: int, step_key: str, completed: bool, session: AsyncSession, user: User
+) -> StarterProgress:
+    """Record that the user did, or undid, a step the app cannot observe."""
+    if uses_managed_project_access():
+        await require_scientific_access(session, user.id, project_id, "write")
+        project = await session.get(Project, project_id)
+        if project is None:
+            raise HTTPException(404, "Project not found")
+    else:
+        project = await require_project(project_id, user.id, session)
     plan = stored_goal_plan(project.goal_plan)
-    return StarterProgress(
-        project_id=project.id,
-        **progress,
-        next_step=next_step_key(plan.model_dump() if plan else None, progress),
-    )
+    if plan is None:
+        raise HTTPException(409, "This project has no Starter plan")
+    step = next((candidate for candidate in plan.steps if candidate.key == step_key), None)
+    if step is None:
+        raise HTTPException(404, "Unknown Starter step")
+    if step.completion is not None:
+        raise HTTPException(409, "This step completes from project progress and cannot be marked by hand")
+
+    marked = [key for key in plan.completed_steps if key != step_key]
+    if completed:
+        marked.append(step_key)
+    if marked != plan.completed_steps:
+        before = project.goal_plan
+        updated = plan.model_copy(update={"completed_steps": marked})
+        project.goal_plan = StarterPlan.model_validate(updated.model_dump()).model_dump()
+        from spectra_sherpa.app.services.audit import audit_emitter
+
+        audit_emitter.emit(
+            session=session,
+            action="project.updated",
+            target_type="Project",
+            target_id=project.id,
+            before={"goal_plan": before},
+            after={"goal_plan": project.goal_plan},
+        )
+        await session.commit()
+        await session.refresh(project)
+    return await _progress_response(session, project)
+
+
+@router.post("/projects/{project_id}/steps/{step_key}/complete", response_model=StarterProgress)
+async def complete_step(
+    project_id: int,
+    step_key: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> StarterProgress:
+    """Mark a step without a progress signal, such as reviewing results, as done."""
+    return await _set_step_completed(project_id, step_key, True, session, current_user)
+
+
+@router.delete("/projects/{project_id}/steps/{step_key}/complete", response_model=StarterProgress)
+async def reopen_step(
+    project_id: int,
+    step_key: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> StarterProgress:
+    """Undo marking a step done."""
+    return await _set_step_completed(project_id, step_key, False, session, current_user)

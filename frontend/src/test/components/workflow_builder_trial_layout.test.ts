@@ -769,6 +769,71 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     wrapper.unmount();
   });
 
+  it("uses the project's goal plan as the starter when no session handoff exists", async () => {
+    const receipt = (id: string) =>
+      JSON.stringify({
+        schema_version: "spectra-my-dataset-workflow-selection/3",
+        receipt_id: id,
+        project_id: 1,
+        datasets: [
+          {
+            experiment_id: 44,
+            dataset_name: "Olive oil",
+            selection: "all",
+            selected_file_count: 3,
+            file_ids: null,
+            file_paths: null,
+            stage: "raw",
+          },
+        ],
+        target_authority: null,
+        group: null,
+      });
+    const original = projectStore.currentProject;
+    projectStore.currentProject = {
+      ...original,
+      goal_plan: { template_slug: "classification_plsda" },
+    } as typeof original;
+    try {
+      routeQuery.fromDataSelection = "1";
+      routeQuery.selection = "selection-goal-1";
+      window.sessionStorage.setItem("spectra-my-dataset-workflow-selection-v3", receipt("selection-goal-1"));
+      let wrapper = await mountBuilder();
+      await flushPromises();
+      let picker = wrapper.get('[data-testid="template-picker"]');
+      expect(picker.attributes("data-visible")).toBe("true");
+      expect(picker.attributes("data-preferred-template-slug")).toBe("classification_plsda");
+      wrapper.unmount();
+
+      // Opening the picker by hand never auto-starts the planned template.
+      delete routeQuery.fromDataSelection;
+      delete routeQuery.selection;
+      wrapper = await mountBuilder();
+      await flushPromises();
+      await wrapper.get('[data-testid="tab-analysis-starter"]').trigger("click");
+      await nextTick();
+      picker = wrapper.get('[data-testid="template-picker"]');
+      expect(picker.attributes("data-preferred-template-slug")).toBe("");
+      wrapper.unmount();
+
+      // Once a sheet came from a template, the plan stops standing in.
+      projectStore.currentProject = {
+        ...original,
+        goal_plan: { template_slug: "classification_plsda" },
+        workflows: [{ ...original.workflows[0], created_from_template_name: "Classification (PLS-DA)" }],
+      } as typeof original;
+      routeQuery.fromDataSelection = "1";
+      routeQuery.selection = "selection-goal-2";
+      window.sessionStorage.setItem("spectra-my-dataset-workflow-selection-v3", receipt("selection-goal-2"));
+      wrapper = await mountBuilder();
+      await flushPromises();
+      expect(wrapper.get('[data-testid="template-picker"]').attributes("data-preferred-template-slug")).toBe("");
+      wrapper.unmount();
+    } finally {
+      projectStore.currentProject = original;
+    }
+  });
+
   it("keeps Blank Analysis from reopening the starter picker after data selection", async () => {
     routeQuery.fromDataSelection = "1";
     routeQuery.selection = "selection-test-4";

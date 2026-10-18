@@ -18,6 +18,7 @@ const GUIDANCE_RULE_LABELS: Record<string, string> = {
   goal_add_data: "Your goal",
   goal_open_workflow: "Your goal",
   goal_configure: "Your goal",
+  goal_recover_run: "Your goal",
   goal_run_workflow: "Your goal",
   goal_review_results: "Your goal",
 };

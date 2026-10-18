@@ -32,16 +32,59 @@
               <span class="sr-only">({{ STATE_LABELS[activeStates[step.key] ?? "todo"] }})</span>
             </span>
             <p v-if="activeStates[step.key] === 'current'" class="goal-step__detail">{{ step.detail }}</p>
+            <p
+              v-if="step.key === 'run' && activeStates[step.key] === 'current' && runNeedsRecovery"
+              class="goal-step__warning"
+              role="status"
+              data-test="starter-run-recovery"
+            >
+              Your last run did not finish ({{ progress?.last_run_status }}). Open it to see what went wrong, fix
+              the step it names, then run again.
+            </p>
+            <p
+              v-else-if="step.key === 'run' && activeStates[step.key] === 'current' && runInProgress"
+              class="goal-step__detail"
+              role="status"
+            >
+              A run is in progress. This step ticks once it completes.
+            </p>
           </div>
-          <Button
-            v-if="step.action_id && activeStates[step.key] === 'current'"
-            label="Go"
-            class="p-button-sm"
-            :aria-label="`Go to: ${step.title}`"
-            @click="goToStep(step)"
-          />
+          <div class="goal-step__actions">
+            <Button
+              v-if="step.key === 'run' && activeStates[step.key] === 'current' && runNeedsRecovery"
+              label="See what went wrong"
+              class="p-button-sm p-button-outlined"
+              @click="guidanceStore.runAction('view_results')"
+            />
+            <Button
+              v-if="step.action_id && activeStates[step.key] === 'current'"
+              label="Go"
+              class="p-button-sm"
+              :aria-label="`Go to: ${step.title}`"
+              @click="goToStep(step)"
+            />
+            <Button
+              v-if="!step.completion && activeStates[step.key] === 'current'"
+              label="Mark done"
+              class="p-button-sm p-button-outlined"
+              :loading="markingStep === step.key"
+              :aria-label="`Mark done: ${step.title}`"
+              :data-test="`starter-mark-${step.key}`"
+              @click="setStepDone(step, true)"
+            />
+            <Button
+              v-if="!step.completion && activeStates[step.key] === 'done' && markedSteps.has(step.key)"
+              label="Undo"
+              class="p-button-sm p-button-text"
+              :loading="markingStep === step.key"
+              :aria-label="`Mark not done: ${step.title}`"
+              :data-test="`starter-undo-${step.key}`"
+              @click="setStepDone(step, false)"
+            />
+          </div>
         </li>
       </ol>
+      <p v-if="stepError" class="goal-starter__error" role="alert">{{ stepError }}</p>
       <p v-if="activeFinished" class="goal-starter__done" role="status">
         Every step is done. Describe a new goal below when you are ready for the next one.
       </p>
@@ -172,14 +215,16 @@ import Dropdown from "primevue/dropdown";
 import InputText from "primevue/inputtext";
 import Textarea from "primevue/textarea";
 import { useGuidanceStore } from "@/stores/guidance";
+import { useProjectStore } from "@/stores/project";
 import {
   fetchStarterOverview,
   fetchStarterProgress,
   initialGoalText,
+  IN_PROGRESS_RUN_STATUSES,
   planStarterGoal,
-  readVisitedSteps,
+  setStarterStepDone,
   starterStepStates,
-  writeVisitedSteps,
+  UNSUCCESSFUL_RUN_STATUSES,
   type StarterOverview,
   type StarterProgress,
   type StarterStartRequest,
@@ -204,6 +249,7 @@ const OWN_FILES = "__own_files__";
 const STATE_LABELS: Record<StarterStepState, string> = { done: "done", current: "next step", todo: "to do" };
 
 const guidanceStore = useGuidanceStore();
+const projectStore = useProjectStore();
 const overview = ref<StarterOverview | null>(null);
 const goalText = ref("");
 const plan = ref<StarterPlan | null>(null);
@@ -213,10 +259,14 @@ const expandedStep = ref<string | null>(null);
 const selectedDatasetKey = ref<string | null>(null);
 const projectName = ref("");
 const progress = ref<StarterProgress | null>(null);
-const visited = ref<Set<string>>(new Set());
+const markingStep = ref<string | null>(null);
+const stepError = ref<string | null>(null);
 
 const activePlan = computed(() => props.activeProject?.goal_plan ?? null);
-const activeStates = computed(() => starterStepStates(activePlan.value, progress.value, visited.value));
+const activeStates = computed(() => starterStepStates(activePlan.value, progress.value));
+const markedSteps = computed(() => new Set(activePlan.value?.completed_steps ?? []));
+const runNeedsRecovery = computed(() => UNSUCCESSFUL_RUN_STATUSES.has(progress.value?.last_run_status ?? ""));
+const runInProgress = computed(() => IN_PROGRESS_RUN_STATUSES.has(progress.value?.last_run_status ?? ""));
 const activeFinished = computed(
   () => !!activePlan.value?.steps.length && Object.values(activeStates.value).every((state) => state === "done"),
 );
@@ -282,12 +332,25 @@ function start(): void {
 }
 
 async function goToStep(step: StarterStep): Promise<void> {
-  const projectId = props.activeProject?.id;
-  if (projectId != null && !step.completion) {
-    visited.value = new Set([...visited.value, step.key]);
-    writeVisitedSteps(projectId, visited.value);
-  }
+  // Going to a step never completes it: a step without a progress signal is
+  // finished only by Mark done.
   if (step.action_id) await guidanceStore.runAction(step.action_id);
+}
+
+async function setStepDone(step: StarterStep, done: boolean): Promise<void> {
+  const projectId = props.activeProject?.id;
+  if (projectId == null) return;
+  markingStep.value = step.key;
+  stepError.value = null;
+  try {
+    progress.value = await setStarterStepDone(projectId, step.key, done);
+    // The plan records manual completion, so reload the project that holds it.
+    await projectStore.fetchProject(projectId);
+  } catch (error: unknown) {
+    stepError.value = getErrorMessage(error) || "Could not update this step.";
+  } finally {
+    markingStep.value = null;
+  }
 }
 
 async function refreshProgress(): Promise<void> {
@@ -310,8 +373,7 @@ function onVisibilityChange(): void {
 
 watch(
   () => [props.activeProject?.id, activePlan.value?.goal] as const,
-  ([projectId]) => {
-    visited.value = projectId != null ? readVisitedSteps(projectId) : new Set();
+  () => {
     progress.value = null;
     void refreshProgress();
   },
@@ -527,6 +589,19 @@ onBeforeUnmount(() => document.removeEventListener("visibilitychange", onVisibil
 .goal-step__body {
   flex: 1;
   min-width: 0;
+}
+
+.goal-step__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.goal-step__warning {
+  margin: 0.4rem 0 0;
+  color: var(--orange-700, #b54708);
+  font-size: 0.875rem;
 }
 
 .goal-step--current .goal-step__title {

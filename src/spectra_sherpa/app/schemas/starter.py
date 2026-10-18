@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal, get_args
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from spectra_sherpa.app.lib.starter_goal import (
     DATASET_OPTION_LIMIT,
@@ -76,6 +76,18 @@ class StarterPlan(BaseModel):
     steps: list[StarterStep] = Field(..., min_length=1, max_length=12)
     dataset: StarterDatasetChoice | None = None
     dataset_options: list[StarterDatasetOption] = Field(default_factory=list, max_length=DATASET_OPTION_LIMIT)
+    # Steps without a progress signal that the user marked done themselves.
+    completed_steps: list[str] = Field(default_factory=list, max_length=12)
+
+    @model_validator(mode="after")
+    def _completed_steps_are_manual_steps(self) -> StarterPlan:
+        manual = {step.key for step in self.steps if step.completion is None}
+        unknown = [key for key in self.completed_steps if key not in manual]
+        if unknown:
+            raise ValueError(f"Only steps without a progress signal can be marked done: {unknown}")
+        if len(set(self.completed_steps)) != len(self.completed_steps):
+            raise ValueError("completed_steps must not repeat a step")
+        return self
 
 
 class StarterPlanRequest(BaseModel):
@@ -112,6 +124,9 @@ class StarterProgress(BaseModel):
     has_preprocessing: bool = False
     has_executed: bool = False
     has_model: bool = False
+    # Status of the newest run, so a failed or cancelled run can offer recovery
+    # instead of counting as progress.
+    last_run_status: str | None = None
     next_step: str | None = None
 
 

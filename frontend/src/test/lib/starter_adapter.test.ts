@@ -48,13 +48,11 @@ describe("starterStepStates", () => {
     expect(states).toEqual({ s0: "done", s1: "done", s2: "done", s3: "current" });
   });
 
-  it("lets the user finish a step without a signal by opening it", () => {
-    const states = starterStepStates(
-      plan(["has_project", null]),
-      { has_project: true },
-      new Set(["s1"]),
-    );
-    expect(states).toEqual({ s0: "done", s1: "done" });
+  it("finishes a step without a signal only when the plan records it as done", () => {
+    const unmarked = plan(["has_project", null]);
+    expect(starterStepStates(unmarked, { has_project: true })).toEqual({ s0: "done", s1: "current" });
+    const marked = { ...unmarked, completed_steps: ["s1"] };
+    expect(starterStepStates(marked, { has_project: true })).toEqual({ s0: "done", s1: "done" });
   });
 
   it("returns nothing without a plan", () => {

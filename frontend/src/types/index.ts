@@ -784,6 +784,8 @@ export interface StarterPlan {
   steps: StarterStep[];
   dataset: StarterDatasetChoice | null;
   dataset_options: StarterDatasetOption[];
+  /** Steps without a progress signal that the user marked done. */
+  completed_steps?: string[];
 }
 
 export interface ProjectSummary {

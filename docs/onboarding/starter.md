@@ -39,10 +39,20 @@ with your goal and plan and takes you to the first step.
 ## Follow the checklist
 
 When the active project has a goal, the Starter tab shows it as a checklist.
-Steps tick themselves off as you add data, build and run the workflow, and
-save a model. **Go** opens the screen for the next step. A step that the app
-cannot observe, such as reviewing results, is ticked once you open it or once
-a later step is done.
+Steps tick themselves off as you add data, build the workflow and complete a
+run. **Go** opens the screen for the next step.
+
+- **Only a completed run counts.** If the last run failed, stopped partway or
+  was cancelled, the Run step stays open and offers **See what went wrong**,
+  which opens the run so you can fix the step it names before running again.
+- **Steps the app cannot observe**, such as reviewing the results, stay open
+  until you select **Mark done**. Saving a model does not tick the review step:
+  check the predictions or validation first. **Undo** reopens a step you
+  marked by mistake. Marking a step done is saved with the project.
+
+The starter workflow follows you through the steps. Whether you start from a
+reference dataset, one of your own datasets or files you upload, the template
+picker opens on the planned starter once you send your data to Workflow.
 
 The goal is part of the project. It is saved with project versions and
 included when you export and import the project.
