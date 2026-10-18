@@ -276,6 +276,14 @@ export const useGuidanceStore = defineStore("guidance", () => {
     }
   }
 
+  /** Run a Guidance action by id, e.g. from a Starter step's Go button. */
+  async function runAction(actionId: string): Promise<boolean> {
+    const action = resolveGuidanceAction(actionId);
+    if (!action) return false;
+    await runGuidanceAction(action);
+    return true;
+  }
+
   function _waitForAdvisorScope(
     target: NonNullable<GuidanceActionMeta["expectedScope"]>,
     timeoutMs: number,
@@ -348,5 +356,6 @@ export const useGuidanceStore = defineStore("guidance", () => {
     acknowledgeActionClick,
     clickNotification,
     dismissNotification,
+    runAction,
   };
 });

@@ -17,6 +17,12 @@
 
     <WorkspaceContext label="Dashboard context">
       <WorkspaceContextItem
+        v-if="activeDashboardTab === 'starter'"
+        label="Starter"
+        :value="activeGoalProject ? `${activeGoalProject.name}: ${activeGoalProject.goal_plan?.intent_label}` : 'Describe a goal'"
+      />
+      <WorkspaceContextItem
+        v-else
         :label="activeDashboardTab === 'storage' ? 'Storage' : activeDashboardTab === 'archive' ? 'Archive' : 'Your Project'"
         :value="
           activeDashboardTab === 'storage'
@@ -45,9 +51,18 @@
 
     <WorkspaceTabs
       :model-value="activeDashboardTab"
-      :tab-ids="['projects', 'archive', 'storage']"
+      :tab-ids="['starter', 'projects', 'archive', 'storage']"
       @update:model-value="selectDashboardTab"
     >
+      <TabPanel header="Starter">
+        <StarterPanel
+          :active-project="activeGoalProject"
+          :is-local-mode="isLocalMode"
+          :starting="isStartingAnalysis"
+          @start="startFromGoal"
+          @overview="onStarterOverview"
+        />
+      </TabPanel>
       <TabPanel header="Your Project">
         <!-- Primary surface: pick the right project from the user's set.
          Clicking the already-active card jumps into /project; clicking
@@ -297,8 +312,10 @@ import Tag from "primevue/tag";
 import { useToast } from "primevue/usetoast";
 import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore, type WorkflowTemplate } from "@/stores/workflow";
-import type { ProjectSummary } from "@/types";
+import type { ProjectSummary, StarterPlan } from "@/types";
 import TemplateGallery from "@/views/workflow-builder/TemplateGallery.vue";
+import StarterPanel from "@/views/dashboard/StarterPanel.vue";
+import type { StarterOverview, StarterStartRequest } from "@/lib/starterAdapter";
 import type { ReferenceDatasetOption } from "@/stores/workflow-types";
 import { useAppConfig } from "@/composables/useAppConfig";
 
@@ -309,7 +326,8 @@ const DATA_ENTRY_DATASET_KEY = "sherpa:data-entry-dataset-intent";
 const router = useRouter();
 const route = useRoute();
 const storageSection = ref<HTMLElement | null>(null);
-const dashboardTabFromHash = () => route.hash === "#storage" ? "storage" : route.hash === "#archive" ? "archive" : "projects";
+const DASHBOARD_HASH_TABS: Record<string, string> = { "#starter": "starter", "#archive": "archive", "#storage": "storage" };
+const dashboardTabFromHash = () => DASHBOARD_HASH_TABS[route.hash] ?? "projects";
 const activeDashboardTab = ref(dashboardTabFromHash());
 function selectDashboardTab(tab: string): void {
   activeDashboardTab.value = tab;
@@ -425,6 +443,45 @@ onMounted(async () => {
   await revealStorage();
 });
 
+// The Starter checklist follows the active project once it carries a plan.
+const activeGoalProject = computed<ProjectSummary | null>(() => {
+  const project = projectStore.currentProject;
+  return project?.goal_plan ? project : null;
+});
+
+function onStarterOverview(overview: StarterOverview): void {
+  // First-time users land on Starter; an explicit hash always wins.
+  if (overview.is_first_run && !route.hash) selectDashboardTab("starter");
+}
+
+async function startFromGoal(request: StarterStartRequest): Promise<void> {
+  const { plan, dataset } = request;
+  const template = plan.template_slug
+    ? workflowStore.templates.find((candidate) => candidate.slug === plan.template_slug)
+    : undefined;
+  const reference =
+    dataset?.kind === "reference"
+      ? (workflowStore.compatibilityMatrix?.datasets || []).find(
+          (candidate) => (candidate.dataset_id || `${candidate.source}:${candidate.name}`) === dataset.key,
+        ) ?? null
+      : null;
+  if (dataset?.kind === "reference" && !reference) {
+    toast.add({
+      severity: "warn",
+      summary: "Dataset Unavailable",
+      detail: "That dataset is no longer listed. Plan the goal again or choose another dataset.",
+      life: 5000,
+    });
+    return;
+  }
+  await createAnalysisStarter(template, {
+    dataset: reference,
+    experimentId: dataset?.kind === "experiment" ? dataset.experiment_id : null,
+    goalPlan: plan,
+    name: request.name,
+  });
+}
+
 async function selectProject(project: ProjectSummary): Promise<void> {
   if (project.id === projectStore.currentProjectId) {
     await router.push("/project");
@@ -474,10 +531,19 @@ function persistAnalysisStarterIntent(
   }
 }
 
-async function createAnalysisStarter(template?: WorkflowTemplate): Promise<void> {
-  const dataset = selectedDataset.value;
-  const blankLocalProject = !template && !dataset && isLocalMode.value;
-  if (!dataset && !blankLocalProject) {
+interface AnalysisStarterOptions {
+  dataset: ReferenceDatasetOption | null;
+  experimentId: number | null;
+  goalPlan: StarterPlan;
+  name: string;
+}
+
+async function createAnalysisStarter(template?: WorkflowTemplate, goalStart?: AnalysisStarterOptions): Promise<void> {
+  const dataset = goalStart ? goalStart.dataset : selectedDataset.value;
+  const experimentId = goalStart?.experimentId ?? null;
+  // A goal without a chosen dataset starts blank; its plan names the starter.
+  const blankLocalProject = (!template || !!goalStart) && !dataset && isLocalMode.value;
+  if (!dataset && !blankLocalProject && experimentId == null) {
     toast.add({
       severity: "warn",
       summary: "Choose a Dataset",
@@ -491,7 +557,8 @@ async function createAnalysisStarter(template?: WorkflowTemplate): Promise<void>
   isStartingAnalysis.value = true;
   try {
     const project = await projectStore.createProject({
-      name: starterProjectName(dataset, template),
+      name: goalStart?.name || starterProjectName(dataset, template),
+      ...(goalStart ? { goal: goalStart.goalPlan.goal, goal_plan: goalStart.goalPlan } : {}),
       description: template ? template.description || null : null,
       technique: dataset?.analysis_profile?.technique ?? dataset?.technique ?? null,
       sample_type: null,
@@ -519,6 +586,7 @@ async function createAnalysisStarter(template?: WorkflowTemplate): Promise<void>
     }
 
     if (dataset) persistAnalysisStarterIntent(project.id, dataset, template);
+    if (experimentId != null) await projectStore.linkExperiment(project.id, experimentId);
 
     await projectStore.fetchProject(project.id);
 
@@ -533,8 +601,16 @@ async function createAnalysisStarter(template?: WorkflowTemplate): Promise<void>
     });
     // A selected reference is part of the starter contract, so land on the
     // import surface where it can be admitted into this project immediately.
-    // Blank local projects still open the project overview.
-    await router.push(dataset ? { path: "/data", query: { tab: "import" } } : "/project");
+    // A goal with the user's own dataset moves on to the workflow; a goal
+    // without data opens the import surface; other blank projects open the
+    // project overview.
+    if (experimentId != null) {
+      await router.push("/workflow");
+    } else if (dataset || goalStart) {
+      await router.push({ path: "/data", query: { tab: "import" } });
+    } else {
+      await router.push("/project");
+    }
   } catch (error: unknown) {
     toast.add({
       severity: "error",

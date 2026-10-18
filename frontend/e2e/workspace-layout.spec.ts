@@ -26,6 +26,10 @@ test("Dashboard, Data and Runs preserve workspace flow", async ({ page }) => {
       result_pairs: [{ left_run_id: 42, right_run_id: 43, kind: "out_of_fold_evaluation",
         state: "ambiguous", requires_pairing: true, left: [], right: [], reason: "Multiple results" }],
     };
+    else if (path === "/starter") data = {
+      is_first_run: false, suggested_goal: "Smooth my spectra", last_goal: null, examples: [],
+      model_planning_available: false,
+    };
     else if (path === "/models") data = [];
     else if (path === "/experiments") data = [];
     else if (path === "/runs/42/evidence") data = {
@@ -42,7 +46,7 @@ test("Dashboard, Data and Runs preserve workspace flow", async ({ page }) => {
 
   await page.goto("/dashboard");
   const dashboard = page.locator(".simplified-dashboard");
-  await expect(dashboard.getByRole("tab")).toHaveText(["Your Project", "Archive", "Storage"]);
+  await expect(dashboard.getByRole("tab")).toHaveText(["Starter", "Your Project", "Archive", "Storage"]);
   const actions = dashboard.locator(".workspace-header .responsive-header-actions__full");
   const newAnalysis = await actions.getByRole("button", { name: "New Analysis", exact: true }).boundingBox();
   const projectButton = await actions.getByRole("button", { name: "Project", exact: true }).boundingBox();

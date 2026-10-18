@@ -99,6 +99,7 @@ from spectra_sherpa.app.schemas.projects import (
     ScriptBrief,
     WorkflowBrief,
 )
+from spectra_sherpa.app.schemas.starter import imported_goal_fields, stored_goal_plan
 from spectra_sherpa.app.services.collection_definitions import (
     read_collection_definition,
     write_collection_definition,
@@ -2134,6 +2135,8 @@ async def _project_to_summary(project: Project, session: AsyncSession) -> Projec
         parent_id=project.parent_id,
         technique=project.technique,
         sample_type=project.sample_type,
+        goal=project.goal,
+        goal_plan=stored_goal_plan(project.goal_plan),
         experiment_count=exp_count or 0,
         workflow_count=wf_count or 0,
         script_count=script_count or 0,
@@ -2338,6 +2341,8 @@ async def create_project(
             metadata_=payload.metadata,
             technique=payload.technique,
             sample_type=payload.sample_type,
+            goal=payload.goal,
+            goal_plan=payload.goal_plan.model_dump() if payload.goal_plan is not None else None,
         )
         session.add(project)
     await session.flush()
@@ -2356,6 +2361,7 @@ async def create_project(
             "parent_id": project.parent_id,
             "technique": project.technique,
             "sample_type": project.sample_type,
+            "goal": project.goal,
         },
     )
 
@@ -2719,6 +2725,8 @@ async def update_project(
         "parent_id": project.parent_id,
         "technique": project.technique,
         "sample_type": project.sample_type,
+        "goal": project.goal,
+        "goal_plan": project.goal_plan,
         "metadata_": project.metadata_,
     }
 
@@ -2734,6 +2742,8 @@ async def update_project(
         "parent_id": project.parent_id,
         "technique": project.technique,
         "sample_type": project.sample_type,
+        "goal": project.goal,
+        "goal_plan": project.goal_plan,
         "metadata_": project.metadata_,
     }
 
@@ -3562,6 +3572,8 @@ async def _build_snapshot(
         "metadata": metadata,
         "technique": project.technique,
         "sample_type": project.sample_type,
+        "goal": project.goal,
+        "goal_plan": project.goal_plan,
         "data_sources": data_sources_snap,
         "experiments": experiments_snap,
         "workflows": workflows_snap,
@@ -4621,6 +4633,7 @@ async def _restore_project_tree_from_snapshot(
         metadata=project_json.get("metadata", {}),
         technique=project_json.get("technique"),
         sample_type=project_json.get("sample_type"),
+        **imported_goal_fields(project_json),
     )
     project = admitted_project or await create_managed_project(session, user_id, ProjectCreate(**fields))
     if project is None:
@@ -5024,6 +5037,7 @@ async def import_project(
                     metadata=project_json.get("metadata", {}),
                     technique=project_json.get("technique"),
                     sample_type=project_json.get("sample_type"),
+                    **imported_goal_fields(project_json),
                 ),
             )
             reference_requirements = _project_external_reference_requirements(project_json)

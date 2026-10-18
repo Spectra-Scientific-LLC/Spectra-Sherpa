@@ -43,6 +43,10 @@ class Project(Base):
     )  # renamed to avoid clash with SA .metadata
     technique: Mapped[str | None] = mapped_column(String(50), nullable=True)
     sample_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # What the user set out to do, in their own words, plus the Starter plan
+    # derived from it. Ambient Guidance reads both to steer its suggestions.
+    goal: Mapped[str | None] = mapped_column(Text, nullable=True)
+    goal_plan: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -93,6 +97,8 @@ class ProjectVersion(Base):
       "metadata": dict,
       "technique": str | null,
       "sample_type": str | null,
+      "goal": str | null,
+      "goal_plan": dict | null,
       "experiments": [
         {"id": int, "name": str, "file_count": int,
          "files": [{"id": int, "file_path": str, "stage": str}]}

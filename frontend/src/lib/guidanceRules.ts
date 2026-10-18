@@ -14,6 +14,12 @@ const GUIDANCE_RULE_LABELS: Record<string, string> = {
   // PR5 — deploy + report rules.
   deploy_runs_no_automation: "Automation",
   report_idle_with_runs: "Reporting",
+  // Goal-aware rules follow the project's Starter plan.
+  goal_add_data: "Your goal",
+  goal_open_workflow: "Your goal",
+  goal_configure: "Your goal",
+  goal_run_workflow: "Your goal",
+  goal_review_results: "Your goal",
 };
 
 export function guidanceRuleLabel(ruleId?: string | null): string {

@@ -14,6 +14,7 @@ nav:
       - Glossary: concepts/glossary.md
   - Onboarding:
       - Choose Your Path: onboarding/choose-your-path.md
+      - Start from a Goal: onboarding/starter.md
       - Local onboarding: onboarding/local-30-minutes.md
       - Import Your First Dataset: onboarding/import-first-dataset.md
       - Your First Calibration: onboarding/first-calibration.md
