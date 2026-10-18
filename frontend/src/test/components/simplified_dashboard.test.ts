@@ -182,7 +182,7 @@ describe("SimplifiedDashboard analysis starters", () => {
       });
       await flushPromises();
       const tabs = wrapper.findAll('[role="tab"]');
-      expect(tabs.map((tab) => tab.text())).toEqual(["Your Project", "Archive", "Storage"]);
+      expect(tabs.map((tab) => tab.text())).toEqual(["Starter", "Your Project", "Archive", "Storage"]);
       expect(wrapper.findAll('.workspace-header .responsive-header-actions__full button').map(button => button.text())).toEqual(["New Analysis", "Import Project", "Project"]);
       const archiveChooser = wrapper.get('input[accept=".sherpa,.spectrapy,.zip"]');
       const openArchiveChooser = vi.spyOn(archiveChooser.element as HTMLInputElement, "click").mockImplementation(() => {});
@@ -192,13 +192,13 @@ describe("SimplifiedDashboard analysis starters", () => {
       if (hash === "#storage") {
         expect(scroll).toHaveBeenCalledWith({ block: "start" });
         expect(scroll.mock.instances).toContain(wrapper.get("#storage").element);
-        expect(tabs[2].attributes("aria-selected")).toBe("true");
+        expect(tabs[3].attributes("aria-selected")).toBe("true");
       } else if (hash === "#archive") {
-        expect(tabs[1].attributes("aria-selected")).toBe("true");
+        expect(tabs[2].attributes("aria-selected")).toBe("true");
       } else {
-        expect(tabs[0].attributes("aria-selected")).toBe("true");
-        expect(wrapper.findAll('[role="tabpanel"]')[1].attributes("style")).toContain("display: none");
-        await tabs[2].trigger("click");
+        expect(tabs[1].attributes("aria-selected")).toBe("true");
+        expect(wrapper.findAll('[role="tabpanel"]')[2].attributes("style")).toContain("display: none");
+        await tabs[3].trigger("click");
         await flushPromises();
         expect(mocks.routerReplace).toHaveBeenCalledWith({ hash: "#storage" });
       }
@@ -249,7 +249,7 @@ describe("SimplifiedDashboard analysis starters", () => {
       expect(window.sessionStorage.getItem("sherpa:data-entry-mode")).toBe("analysis-starter");
       expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/data", query: { tab: "import" } });
 
-      await tabs[0].trigger("click");
+      await tabs[1].trigger("click");
       expect(mocks.routerReplace).toHaveBeenLastCalledWith({ hash: "" });
       projectStore.projects = [{ ...createdProject(), version_count: 0 }];
       projectStore.currentProjectId = 99;
@@ -267,7 +267,7 @@ describe("SimplifiedDashboard analysis starters", () => {
 
       projectStore.archivedProjects = [{ ...createdProject(), version_count: 0 }];
       await flushPromises();
-      await tabs[1].trigger("click");
+      await tabs[2].trigger("click");
       expect(mocks.routerReplace).toHaveBeenLastCalledWith({ hash: "#archive" });
       await wrapper
         .findAll("button")

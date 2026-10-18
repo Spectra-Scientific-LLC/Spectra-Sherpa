@@ -66,11 +66,12 @@ describe("qualification evidence and decisions", () => {
   });
   it("discovers hosted candidates without watch calls and clears selection on project change", async () => {
     vi.mocked(api.get).mockResolvedValue({data: [{canonical_artifact_id: 9, workflow_id: 3, name: "Imported PLS", artifact_digest: "exact-model"}]});
-    const wrapper = mount(Applications, {props: {projectId: 7}, global: {stubs: {QualificationPanel: true}}}); await flushPromises();
+    const wrapper = mount(Applications, {props: {projectId: 7}, global: {stubs: {ModelPromotionReview: true}}}); await flushPromises();
     expect(api.get).toHaveBeenCalledExactlyOnceWith("/deploy/projects/7/qualification-applications");
     await wrapper.findAll("option")[1].setSelected();
-    expect(wrapper.find("qualification-panel-stub").attributes("canonicalartifactid")).toBe("9");
+    await wrapper.findAll("button").find(item => item.text() === "Review for promotion")!.trigger("click");
+    expect(wrapper.find("model-promotion-review-stub").attributes("canonicalartifactid")).toBe("9");
     await wrapper.setProps({projectId: 8}); await flushPromises();
-    expect(wrapper.find("qualification-panel-stub").exists()).toBe(false);
+    expect(wrapper.find("model-promotion-review-stub").exists()).toBe(false);
   });
 });

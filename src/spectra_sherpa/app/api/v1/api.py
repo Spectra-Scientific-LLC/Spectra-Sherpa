@@ -29,6 +29,7 @@ from spectra_sherpa.app.api.v1.routes import (
     project_scripts,
     projects,
     runs,
+    starter,
     synthesis,
     workflow_export,
     workflow_organization,
@@ -89,6 +90,9 @@ def build_api_router(
     router.include_router(workflow_organization.router, prefix="/workflows", tags=["workflow-organization"])
     router.include_router(workflows.router, tags=["workflows"])
     router.include_router(execution_runs.router, tags=["execution-runs"])
+    from spectra_sherpa.app.api.v1.routes import paired_evaluations
+
+    router.include_router(paired_evaluations.router, tags=["paired-evaluations"])
     router.include_router(runs.router, tags=["runs"])
     router.include_router(workflow_templates.router, tags=["workflow-templates"])
     router.include_router(workflow_export.router, tags=["workflow-export"])
@@ -102,6 +106,7 @@ def build_api_router(
     router.include_router(project_choices.router, tags=["project-choices"])
     router.include_router(project_provenance.router, tags=["project-provenance"])
     router.include_router(project_scripts.router, tags=["project-scripts"])
+    router.include_router(starter.router, tags=["starter"])
     router.include_router(models.router, tags=["models"])
     # Phase 4 C2 — audit query API (gated on app_config.audit_enabled).
     router.include_router(audit_events.router, tags=["audit"])

@@ -227,7 +227,11 @@ def qualification_status(
 
     if receipt_sha256(view.selection) != view.selection_sha256:
         return {"state": "stale", "reason": "Validation dataset view receipt no longer verifies."}
+    from spectra_sherpa.app.services.dataset_use import dossier_dataset_use
+
     binding = {
+        "dataset_use": dossier_dataset_use(dossier),
+        "independence": dossier.calculation.get("independence"),
         "dossier_digest": dossier.record_digest,
         "assessment": dossier.assessment,
         "intended_population": dossier.context.intended_population,

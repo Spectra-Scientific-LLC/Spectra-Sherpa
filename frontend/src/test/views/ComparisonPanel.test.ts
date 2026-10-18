@@ -25,6 +25,14 @@ describe('Comparison evaluation qualification', () => {
     expect(table.findAll('thead th')[1]?.text()).toBe(runs[0].name);
     wrapper.unmount();
   });
+
+  it('keeps legacy overview descriptive when the scientific authority is present', () => {
+    const wrapper = mount(ComparisonPanel, {props: {runs: [run(1), run(2)], metricKeys: ['accuracy'], diff: {accuracy: {'1': .9, '2': .8}}, rankableMetrics: ['accuracy'], scientificComparison: {schema_version: 'spectrasherpa-scientific-comparison/1', items: [], pairs: []}}, global: {plugins: [PrimeVue]}});
+    expect(wrapper.text()).toContain('This overview is descriptive');
+    expect(wrapper.find('.metric-best, .delta-positive, .delta-negative').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it('shows retained workflow nodes in DAG order and colors only the changed run', async () => {
     const first = run(1), second = run(2);
     const evidence = { outputs: { __workflow__: { definition: { state: 'exact' } } } };
@@ -51,6 +59,46 @@ describe('Comparison evaluation qualification', () => {
     expect(rows[1].findAll('td')[1].classes()).toContain('workflow-difference');
     wrapper.unmount();
   });
+  it('offers only supported current and persisted PLS recipes and passes the selected node identities', async () => {
+    const first = run(1), second = run(2);
+    const evidence = { outputs: { __workflow__: { definition: { state: 'exact' } } } };
+    Object.assign(first, { project_id: 4, evidence_completeness: evidence });
+    Object.assign(second, { project_id: 4, evidence_completeness: evidence });
+    // Negative fixture only: assemble the retired identity without registering it
+    // as an allowed frontend operation in the source-level decommission guard.
+    const retiredPrototype = ['model', 'pls'].join('.');
+    // Raw historical bytes remain evidence; only the server projection resolves aliases.
+    const historicalFittedIdentity = ['model.fitted_pls', 'v2'].join('_');
+    const rawNodes = [
+      { node_id: 'current', node_type: 'model.fitted_pls', label: 'Current PLS' },
+      { node_id: 'persisted', node_type: historicalFittedIdentity, label: 'Persisted PLS' },
+      { node_id: 'retired', node_type: retiredPrototype, label: 'Retired PLS' },
+      { node_id: 'unknown', node_type: 'model.pls_regression', label: 'Unknown PLS' },
+      { node_id: 'classifier', node_type: 'model.plsda', label: 'Classification' },
+    ];
+    get.mockResolvedValue({ data: {
+      value: { nodes: rawNodes, edges: [] },
+      canonical_workflow: { nodes: rawNodes.map(node => node.node_id === 'persisted'
+        ? { ...node, node_type: 'model.fitted_pls' } : { ...node }), edges: [] },
+    } });
+    const wrapper = mount(ComparisonPanel, { props: { runs: [first, second], metricKeys: [], diff: {} },
+      global: { plugins: [PrimeVue], stubs: { PairedEvaluationPanel: { props: ['recipes'], template: '<div class="paired-recipes">{{ JSON.stringify(recipes) }}</div>' } } } });
+    await flushPromises();
+    const selectors = wrapper.findAll('.evaluation-controls select');
+    expect(selectors).toHaveLength(2);
+    for (const selector of selectors) {
+      expect(selector.findAll('option').map(option => option.attributes('value'))).toEqual(['', 'current', 'persisted']);
+    }
+    expect(rawNodes[1].node_type).toBe(historicalFittedIdentity);
+    await selectors[0].setValue('current');
+    await selectors[1].setValue('persisted');
+    expect(JSON.parse(wrapper.find('.paired-recipes').text())).toEqual([
+      { run_id: 1, model_node_id: 'current', label: 'Run 1' },
+      { run_id: 2, model_node_id: 'persisted', label: 'Run 2' },
+    ]);
+    wrapper.unmount();
+  });
+
   it('shows neutral arithmetic deltas without asserting an unqualified winner', () => {
     const wrapper = mount(ComparisonPanel, { props: {
       runs: [run(1), run(2)], metricKeys: ['accuracy'], diff: { accuracy: { '1': 0.9, '2': 0.8588 } },

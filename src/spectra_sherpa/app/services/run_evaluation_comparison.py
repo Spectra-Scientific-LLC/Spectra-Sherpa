@@ -28,6 +28,7 @@ class Evaluation:
     presentation_id: str
     source_port: str
     split_plan: dict[str, Any]
+    predictions: tuple[float, ...]
 
 
 def _evaluation(run: Any, selection: EvaluationSelection | None = None) -> Evaluation:
@@ -139,6 +140,7 @@ def _evaluation(run: Any, selection: EvaluationSelection | None = None) -> Evalu
         inputs=tuple(sorted(inputs.items())),
         split=normalized["split_plan_digest"],
         split_plan=normalized["split_plan"],
+        predictions=tuple(float(value) for value in predicted),
         observations=tuple(normalized["observations"]),
         metrics={
             f"qualified_cv.{key}": float(metrics[key])

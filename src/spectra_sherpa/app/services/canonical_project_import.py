@@ -171,6 +171,13 @@ async def import_canonical_project(
                         "remediation": list(dependency_readiness.remediation),
                     },
                 )
+                # Preserve the already admitted, sample-free use history on
+                # the existing durable release identity. Project/workflow
+                # display edits cannot erase it; it grants no readiness.
+                release.provenance = {
+                    **(release.provenance or {}),
+                    "confirmation_history": package.confirmation_history.as_dict(),
+                }
                 audit_emitter.emit(
                     session=session,
                     action="project.canonical_imported",

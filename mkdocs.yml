@@ -14,6 +14,7 @@ nav:
       - Glossary: concepts/glossary.md
   - Onboarding:
       - Choose Your Path: onboarding/choose-your-path.md
+      - Start from a Goal: onboarding/starter.md
       - Local onboarding: onboarding/local-30-minutes.md
       - Import Your First Dataset: onboarding/import-first-dataset.md
       - Your First Calibration: onboarding/first-calibration.md
@@ -47,6 +48,7 @@ nav:
       - Peak Finding and Library Comparison: chemometrics/peaks-library.md
       - Designing Validation: chemometrics/validation-design.md
       - Validation and Model Application: chemometrics/validation-application.md
+      - Compare Results and Review a Model: chemometrics/comparison-and-promotion.md
   - Node Library:
       - Overview: nodes/index.md
       - Data Nodes: nodes/data.md

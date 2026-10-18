@@ -260,7 +260,13 @@ async def delete_run(
     return Response(status_code=204)
 
 
-@router.post("/compare", response_model=ComparisonResponse)
+@router.post(
+    "/compare",
+    response_model=ComparisonResponse,
+    deprecated=True,
+    description="Legacy matrix adapter. Use /runs/compare-evidence for scientific compatibility. "
+    "The scientific_comparison field is the shared authority; older scalar fields remain for existing clients.",
+)
 async def compare_runs(
     workflow_id: int,
     payload: CompareRunsRequest,

@@ -34,6 +34,7 @@ async function open(query = '?project=1&view=Results&node=pca&offset=50') {
   await router.isReady();
   const wrapper = mount(RunDetailContent, { global: { plugins: [router], stubs: {
     Button: { props: ['label'], template: '<button @click="$emit(\'click\')">{{label}}<slot /></button>' },
+    ModelPromotionReview: { props: ['artifactUid'], template: '<div class="promotion-dialog">{{artifactUid}}</div>' },
     SelectButton: true, ProgressSpinner: true, Dropdown: true, ContextualActions: true,
     QuickPlotModal: { name: 'QuickPlotModal', props: ['nodeOutput', 'nodeType', 'nodeLabel'], template: '<div class="saved-plot">{{ nodeLabel }}</div>' },
   } } });
@@ -41,6 +42,34 @@ async function open(query = '?project=1&view=Results&node=pca&offset=50') {
   return { wrapper, router };
 }
 describe("Persistent run inspection", () => {
+  it('shows retained paired evaluation after reopening Inspect without requiring a workflow snapshot', async () => {
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return {data: {run: {...fixture.run, id: 42, project_id: 1, source_type: 'paired_evaluation', run_kind: 'other'}, evidence: {qualification: 'qualified', outputs: {__evaluation__: {record: {state: 'exact', storage: 'file'}}}}, node_statuses: {}}};
+      if (url === '/runs/paired-evaluations/42') return {data: {status: 'completed', record: {
+        schema_version: 'spectrasherpa-paired-evaluation/1', protocol: {recipes: [{run_id: 1, model_node_id: 'pls'}, {run_id: 2, model_node_id: 'pls'}]}, protocol_digest: 'receipt', population: {development_count: 174, held_out_count: 57}, splits: [], paired_rmsecv_differences: [-.2], results: [{execution: {metrics: {rmse: 1.2}}}, {execution: {metrics: {rmse: 1}}}], summary: {right_meaningfully_better: 1, left_meaningfully_better: 0, within_margin: 0}, interpretation: 'Not independent validation',
+      }}};
+      throw new Error(`Unexpected request ${url}`);
+    });
+    const {wrapper} = await open('?project=1');
+    expect(wrapper.get('[aria-label="Paired training CV results"]').text()).toContain('Held-out excluded: 57');
+    expect(wrapper.text()).not.toContain('Open Deploy');
+    expect(get.mock.calls.some(([url]) => String(url).includes('__workflow__'))).toBe(false);
+    wrapper.unmount();
+  });
+
+  it('requires selection of the exact produced artifact before opening shared promotion review', async () => {
+    const original = get.getMockImplementation()!;
+    get.mockImplementation(async (url: string) => {
+      if (url.endsWith('/evidence')) return { data: { ...structuredClone(fixture), run: { ...fixture.run, produced_artifact_uids: ['first', 'second'] } } };
+      return original(url);
+    });
+    const { wrapper } = await open('?project=1&view=Summary');
+    await wrapper.get('[aria-label="Fitted model for review"]').setValue('second');
+    await wrapper.findAll('button').find(b => b.text() === 'Review for promotion')!.trigger('click');
+    expect(wrapper.get('.promotion-dialog').text()).toBe('second');
+    wrapper.unmount();
+  });
+
   it('shows the exact per-file operational screen when Deploy opens its retained model node', async () => {
     const original = get.getMockImplementation()!;
     let reduced = false;

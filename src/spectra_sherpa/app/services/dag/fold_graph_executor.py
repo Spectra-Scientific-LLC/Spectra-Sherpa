@@ -1034,6 +1034,7 @@ async def execute_scored_supervised_validation_fold(
     *,
     _metric_accumulator: MetricAccumulator | None = None,
     _private_classification_trace: list[PrivateClassificationFoldTrace] | None = None,
+    _local_regression_rows: list[dict[str, Any]] | None = None,
 ) -> ScoredSupervisedFoldGraphExecution:
     """Execute one transform → fitted-model → evaluator validation graph.
 
@@ -1260,6 +1261,21 @@ async def execute_scored_supervised_validation_fold(
                 raise FoldGraphExecutionError(f"{graph_node.node_id} evaluator execution failed") from None
             executed_ids.append(graph_node.node_id)
             assert fitted_state_digest is not None
+            if _local_regression_rows is not None:
+                if not isinstance(metric_record, RegressionMetrics):
+                    raise FoldGraphExecutionError("local regression rows require a regression evaluator")
+                truth = np.asarray(held_out_target, dtype=float).reshape(-1)
+                predicted = np.asarray(test_predictions, dtype=float).reshape(-1)
+                if truth.shape != predicted.shape or len(truth) != len(partition.test_indices):
+                    raise FoldGraphExecutionError("local regression rows require one aligned quantitative response")
+                _local_regression_rows.append(
+                    {
+                        "partition_digest": partition.digest,
+                        "test_indices": [int(value) for value in partition.test_indices],
+                        "observations": truth.tolist(),
+                        "predictions": predicted.tolist(),
+                    }
+                )
             if _private_classification_trace is not None:
                 if not isinstance(metric_record, ClassificationMetricSet) or any(
                     value is None
@@ -1325,6 +1341,7 @@ async def _execute_candidate_validation(
     split_plan: SplitPlan,
     *,
     private_classification_trace: list[PrivateClassificationFoldTrace] | None,
+    local_regression_rows: list[dict[str, Any]] | None = None,
 ) -> CandidateValidationExecution:
     """Run one graph freshly across each locked outer fold and pool its score.
 
@@ -1394,6 +1411,7 @@ async def _execute_candidate_validation(
                 partition,
                 _metric_accumulator=accumulator,
                 _private_classification_trace=private_classification_trace,
+                _local_regression_rows=local_regression_rows,
             )
         )
     try:
@@ -1433,6 +1451,67 @@ async def execute_candidate_validation(
         split_plan,
         private_classification_trace=None,
     )
+
+
+async def execute_candidate_validation_with_local_regression_rows(
+    graph: ValidationGraph,
+    capability: SpectralDatasetCapability,
+    split_plan: SplitPlan,
+) -> tuple[CandidateValidationExecution, dict[str, Any]]:
+    """Retain local OOF rows from the exact applications used for pooled scoring.
+
+    Ordinary candidate validation remains sample-free. Only this explicit
+    local evidence collector exposes rows to its authorized caller; it does
+    not refit/reapply a second model or put rows in provider-facing metrics.
+    """
+    target = capability.arrays.get("target")
+    if graph.nodes[-1].operation_id != "diagnostics.regression_evaluator" or target is None:
+        raise FoldGraphExecutionError("local regression rows require an admitted regression target")
+    if np.asarray(target).shape not in {(split_plan.n_samples,), (split_plan.n_samples, 1)}:
+        raise FoldGraphExecutionError("local regression rows require one quantitative response")
+    if split_plan.n_samples > 100_000:
+        raise FoldGraphExecutionError("local regression row retention exceeds 100,000 samples")
+    traces: list[dict[str, Any]] = []
+    execution = await _execute_candidate_validation(
+        graph,
+        capability,
+        split_plan,
+        private_classification_trace=None,
+        local_regression_rows=traces,
+    )
+    observed = np.full(split_plan.n_samples, np.nan)
+    predicted = np.full(split_plan.n_samples, np.nan)
+    seen: set[int] = set()
+    if len(traces) != len(execution.folds):
+        raise FoldGraphExecutionError("local regression fold trace is incomplete")
+    for trace, fold, partition in zip(traces, execution.folds, split_plan.folds):
+        indices = trace["test_indices"]
+        if (
+            trace["partition_digest"] != fold.partition_digest
+            or indices != partition.test.tolist()
+            or seen.intersection(indices)
+        ):
+            raise FoldGraphExecutionError("local regression fold trace does not match the scored partition")
+        seen.update(indices)
+        observed[indices] = trace["observations"]
+        predicted[indices] = trace["predictions"]
+    if len(seen) != split_plan.n_samples or not np.isfinite(observed).all() or not np.isfinite(predicted).all():
+        raise FoldGraphExecutionError("local regression fold trace must cover every sample exactly once")
+    plan = {
+        "schema_version": "spectra-grouped-split-plan/1" if split_plan.grouped else "spectra-split-plan/1",
+        "method": split_plan.method,
+        "n_samples": split_plan.n_samples,
+        "grouped": split_plan.grouped,
+        "folds": [{"train": f.train.tolist(), "test": f.test.tolist()} for f in split_plan.folds],
+    }
+    if split_plan.grouped:
+        plan["groups"] = capability.arrays["groups"].tolist()
+    return execution, {
+        "observations": observed.tolist(),
+        "predictions": predicted.tolist(),
+        "split_plan": plan,
+        "validation_execution_digest": execution.digest,
+    }
 
 
 async def execute_candidate_validation_with_private_classification_trace(
@@ -1798,18 +1877,60 @@ async def execute_authorized_full_data_refit(
     )
 
 
+async def apply_local_full_refit_regression(
+    graph: ValidationGraph, refit: FullDataRefitExecution, dataset: SherpaDataset
+) -> list[float]:
+    """Apply executor-issued fitted state locally, without access to application targets.
+
+    This is a local evidence reader, not a second fit/evaluation authority. It
+    uses the same admitted operation lifecycle and state apply methods as folds.
+    No state or rows are added to managed candidate serialization.
+    """
+    from spectra_sherpa.app.services.dag.node_base import node_registry
+
+    assert_admitted_validation_graph(graph)
+    _serialize_executor_issued_full_refit(refit)
+    if refit.graph_digest != graph.digest:
+        raise FoldGraphExecutionError("Frozen application graph differs from its fit")
+    records = {record.node_id: record for record in refit.fitted_states}
+    current = SherpaDataset(X=np.array(dataset.X, copy=True), feature_axis=dataset.get_feature_axis())
+    for graph_node in graph.nodes[:-1]:
+        lifecycle = LifecycleKind(graph_node.contract.payload["lifecycle_kind"])
+        node = node_registry.create_node(graph_node.operation_id, graph_node.node_id, dict(graph_node.parameters))
+        if lifecycle is LifecycleKind.STATELESS_TRANSFORM:
+            raw = await node.execute(input_data=current)
+        else:
+            record = records.get(graph_node.node_id)
+            if record is None or record.contract_digest != graph_node.contract.digest:
+                raise FoldGraphExecutionError("Frozen fitted state does not match the application contract")
+            raw = node.apply_fitted_state(current, record.state)
+        if lifecycle is LifecycleKind.FITTED_MODEL:
+            if graph_node.operation_id != "model.fitted_pls" or graph_node.node_id != refit.model_node_id:
+                raise FoldGraphExecutionError("Local regression application requires the selected PLS model")
+            predictions = np.asarray(raw, dtype=float).reshape(-1)
+            if len(predictions) != len(dataset.X) or not np.isfinite(predictions).all():
+                raise FoldGraphExecutionError(
+                    "Frozen regression application did not return one finite prediction per row"
+                )
+            return predictions.tolist()
+        current = _validate_output(graph_node_id=graph_node.node_id, output=raw, input_data=current)
+    raise FoldGraphExecutionError("Frozen regression application has no selected model")
+
+
 __all__ = [
     "FoldGraphExecution",
     "FoldGraphExecutionError",
     "FoldPairGraphExecution",
     "CandidateValidationExecution",
     "FullDataRefitExecution",
+    "apply_local_full_refit_regression",
     "PrivateClassificationFoldTrace",
     "PrivateClassificationValidationTrace",
     "ScoredSupervisedFoldGraphExecution",
     "SupervisedFoldGraphExecution",
     "execute_fold_graph",
     "execute_candidate_validation",
+    "execute_candidate_validation_with_local_regression_rows",
     "execute_candidate_validation_with_private_classification_trace",
     "execute_authorized_full_data_refit",
     "execute_selected_candidate_full_refit",

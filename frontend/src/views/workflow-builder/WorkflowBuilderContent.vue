@@ -53,6 +53,9 @@
             :disabled="isTrialTabActive || isManagedCandidateAuthority || !hasChanges || workflowParameterErrors.length > 0"
             @click="triggerAutosave()"
           />
+          <Button label="Compare runs" icon="pi pi-chart-bar" class="p-button-outlined p-button-sm"
+            :disabled="!projectStore.currentProjectId" @click="router.push({ path: '/runs', query: { project: projectStore.currentProjectId, tab: 'run_history' } })"
+            title="Choose saved runs in History; comparison never executes the workflow" />
           <Button
             label="Export"
             icon="pi pi-download"
@@ -142,6 +145,7 @@
           </OverlayPanel>
         </template>
     </WorkspaceHeader>
+    <PromotionFitContext v-if="route.query.promotion_artifact && workflowStore.workflowId" :artifact-uid="String(route.query.promotion_artifact)" :workflow-id="workflowStore.workflowId" :source-run-id="Number(route.query.promotion_source_run) || null" />
 
     <p v-if="workflowContextLoading" role="status" aria-label="Loading workflow">Loading workflow…</p>
     <p v-if="!workflowContextLoading && workflowStore.hasFoldValidationPlan" role="status" aria-label="Validated workflow export">
@@ -381,6 +385,7 @@ import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import PromotionFitContext from "@/components/PromotionFitContext.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
 import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
 import { portfolioDetail } from "@/utils/dataPortfolio";
@@ -512,6 +517,17 @@ const dataSelectionFileCount = computed(() =>
   ),
 );
 const pendingDataSelection = computed(() => route.query.fromDataSelection === "1");
+
+// A project started from a Starter goal names its planned starter template.
+// The picker auto-starts a preferred template, so the plan stands in for the
+// session handoff only on a data handoff and only until a sheet has been
+// created from a template. Opening the picker by hand never auto-starts it.
+const goalPlanTemplateSlug = computed(() => {
+  const project = projectStore.currentProject;
+  const slug = project?.goal_plan?.template_slug ?? null;
+  if (!slug) return null;
+  return (project?.workflows ?? []).some((workflow) => workflow.created_from_template_name) ? null : slug;
+});
 
 const openTemplatePicker = () => {
   preferredAnalysisStarterSlug.value = null;
@@ -1189,7 +1205,7 @@ onMounted(async () => {
 
   if (dataSelectionReceipt.value && route.query.fromDataSelection === "1") {
     const starterIntent = readAnalysisStarterIntent();
-    preferredAnalysisStarterSlug.value = starterIntent?.template_slug ?? null;
+    preferredAnalysisStarterSlug.value = starterIntent?.template_slug ?? goalPlanTemplateSlug.value;
     templatePickerVisible.value = starterIntent?.template_slug !== null;
     if (starterIntent?.template_slug === null) {
       clearAnalysisStarterIntent();

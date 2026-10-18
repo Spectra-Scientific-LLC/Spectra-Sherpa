@@ -25,11 +25,18 @@
         icon="pi pi-sitemap" :label="detail.run.workflow_name ? `Workflow: ${detail.run.workflow_name}` : 'Workflow'" class="p-button-text" @click="openWorkflow" />
       <Button v-if="detail?.run.workflow_id && !loading && !error" icon="pi pi-file" label="Report"
         @click="openReport" />
-      <Button v-if="detail?.run.status === 'completed' && !loading && !error" icon="pi pi-send" label="Open Deploy"
+      <Button v-if="detail?.run.status === 'completed' && detail.run.source_type !== 'paired_evaluation' && !loading && !error" icon="pi pi-send" label="Open Deploy"
         @click="router.push({ path: '/deploy', query: { run: detail.run.id, project: detail.run.project_id, application: `run:${detail.run.id}` } })" />
+      <template v-if="detail?.run.produced_artifact_uids?.length && !loading && !error">
+        <select v-if="detail.run.produced_artifact_uids.length > 1" v-model="promotionArtifactUid" aria-label="Fitted model for review">
+          <option value="">Choose a fitted model</option><option v-for="uid in detail.run.produced_artifact_uids" :key="uid" :value="uid">{{ uid }}</option>
+        </select>
+        <Button label="Review for promotion" :disabled="detail.run.produced_artifact_uids.length > 1 && !promotionArtifactUid" @click="promotionArtifactUid = promotionArtifactUid || detail.run.produced_artifact_uids[0]; promotionOpen = true" />
+      </template>
       <ContextualActions :context="!loading && !error && detail && detail.run.project_id === project.currentProjectId && project.currentProjectId != null
         ? { surface: 'run', projectId: project.currentProjectId, runId: detail.run.id } : null" />
     </div>
+    <ModelPromotionReview v-if="promotionOpen && promotionArtifactUid && detail" :artifact-uid="promotionArtifactUid" :project-id="detail.run.project_id" :workflow-id="detail.run.workflow_id" :run-id="detail.run.id" @close="promotionOpen = false" @confirmed="promotionOpen = false" />
     <div v-if="error"><p role="alert">{{ error }}</p><Button icon="pi pi-refresh" label="Retry" @click="loadRun" /></div>
     <ProgressSpinner v-else-if="loading" />
     <template v-else-if="detail">
@@ -37,6 +44,8 @@
         <strong>{{ detail.run.status === 'partial' ? 'Incomplete saved run:' : 'Run issue:' }}</strong>
         {{ detail.error }}
       </p>
+      <SavedPairedEvaluation v-if="detail.run.source_type === 'paired_evaluation'" :run-id="detail.run.id" />
+      <template v-else>
       <ModelSummaryCard :summary="modelSummary" :can-edit-selection="Boolean(detail.run.workflow_id && detail.run.project_id)"
         @edit-selection="openWorkflow" />
       <p v-if="summaryError" role="status" class="summary-error">{{ summaryError }}</p>
@@ -221,11 +230,14 @@
           </template>
         </div>
       </section>
+      </template>
     </template>
   </section>
 </template>
 
 <script setup lang="ts">
+import SavedPairedEvaluation from "@/components/SavedPairedEvaluation.vue";
+import ModelPromotionReview from "@/components/ModelPromotionReview.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- saved node payloads use the shared scientific renderer contract. */
 import { computed, ref, shallowRef, watch, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
@@ -287,7 +299,9 @@ interface Detail {
     workflow_name?: string | null;
     status: string;
     executed_at: string;
+    produced_artifact_uids?: string[] | null;
     run_kind: string;
+    source_type?: string | null;
   };
   evidence: {
     qualification: string;
@@ -310,6 +324,9 @@ const applicationAdvisorAvailable = computed(() => appMode.value !== 'local' &&
   (isFeatureEnabled('sherpaAdvisor') || appConfig.value?.siteProfile === 'pro'));
 const emit = defineEmits<{ (event: 'renamed'): void }>();
 const detail = ref<Detail | null>(null);
+const promotionOpen = ref(false);
+const promotionArtifactUid = ref('');
+watch(() => detail.value?.run.id, () => { promotionOpen.value = false; promotionArtifactUid.value = ''; });
 const runNameDraft = ref('');
 const runNameSaving = ref(false);
 const runNameError = ref('');
@@ -555,6 +572,7 @@ async function loadRun() {
     void advisor.switchScope({ projectId: project.currentProjectId, tabKey: 'models',
       subscopeKey: `run:${route.params.runId}`, resourceType: 'execution_run', resourceId: Number(route.params.runId),
       title: response.data.run.name });
+    if (response.data.run.source_type === 'paired_evaluation') return;
     try {
       const saved = await read('__workflow__', 'definition');
       if (request !== generation) return;

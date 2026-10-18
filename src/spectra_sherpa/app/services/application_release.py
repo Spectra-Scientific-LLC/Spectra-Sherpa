@@ -38,14 +38,29 @@ async def ensure_model_release(
     *,
     model: ModelArtifact,
     user_id: int,
+    promotion_review: dict | None = None,
 ) -> ApplicationRelease:
-    """Return the stable release row for a deploy-ready model artifact."""
+    """Return a release identity without treating local executability as approval."""
 
     existing = await session.scalar(
         select(ApplicationRelease).where(ApplicationRelease.model_artifact_uid == model.artifact_uid)
     )
     readiness = _model_readiness(model)
+    reviewed = promotion_review or ((existing.provenance or {}).get("promotion_review") if existing else None)
+    legacy_release = existing is not None and existing.state == "released" and not reviewed
+    readiness["review_state"] = "reviewed" if reviewed else "legacy_unreviewed" if legacy_release else "review_required"
+    if reviewed and not model.is_deploy_ready:
+        readiness["ready"] = False
+        if "model is not marked deploy-ready" not in readiness["blockers"]:
+            readiness["blockers"] = [*readiness["blockers"], "model is not marked deploy-ready"]
+    if not reviewed and not legacy_release:
+        readiness["ready"] = False
+        readiness["blockers"] = [
+            *readiness["blockers"],
+            "Review for promotion is required before a new readiness decision",
+        ]
     if existing is not None:
+        existing.provenance = {**(existing.provenance or {}), "promotion_review": reviewed}
         existing.state = "released" if readiness["ready"] else "revoked"
         existing.readiness = readiness
         existing.label = model.display_name or model.name
@@ -71,6 +86,7 @@ async def ensure_model_release(
         label=model.display_name or model.name,
         readiness=readiness,
         provenance={
+            "promotion_review": reviewed,
             "artifact_uid": model.artifact_uid,
             "model_type": model.model_type,
             "training_dataset_id": model.training_dataset_id,
@@ -90,18 +106,32 @@ async def ensure_canonical_release(
     user_id: int,
     label: str,
     readiness: dict[str, object],
+    promotion_review: dict | None = None,
 ) -> ApplicationRelease:
     """Return the stable release row for an imported campaign application."""
 
     existing = await session.scalar(
         select(ApplicationRelease).where(ApplicationRelease.canonical_artifact_id == artifact.id)
     )
-    ready = bool(readiness.get("ready"))
+    reviewed = promotion_review or ((existing.provenance or {}).get("promotion_review") if existing else None)
+    legacy_release = existing is not None and existing.state == "released" and not reviewed
+    ready = bool(readiness.get("ready")) and bool(reviewed or legacy_release)
+    readiness = {
+        **readiness,
+        "ready": ready,
+        "review_state": "reviewed" if reviewed else "legacy_unreviewed" if legacy_release else "review_required",
+    }
+    if not ready and not readiness.get("blockers"):
+        readiness["blockers"] = ["Review for promotion is required before a new readiness decision"]
     validation_digest = (artifact.application_plan_payload or {}).get("validation_execution_digest")
     if existing is not None:
         existing.state = "released" if ready else "revoked"
         existing.readiness = readiness
-        existing.provenance = {**(existing.provenance or {}), "validation_execution_digest": validation_digest}
+        existing.provenance = {
+            **(existing.provenance or {}),
+            "validation_execution_digest": validation_digest,
+            "promotion_review": reviewed,
+        }
         existing.label = label
         if ready:
             existing.revoked_at = None
@@ -122,6 +152,7 @@ async def ensure_canonical_release(
         readiness=readiness,
         provenance={
             "validation_execution_digest": validation_digest,
+            "promotion_review": reviewed,
             "artifact_digest": artifact.artifact_digest,
             "capsule_digest": artifact.capsule_digest,
             "application_plan_digest": artifact.application_plan_digest,
@@ -176,7 +207,7 @@ async def revoke_stale_releases(
                 blocker = "model artifact was deleted"
             elif not model.is_active:
                 blocker = "model artifact is inactive"
-            elif not is_local() and not model.is_deploy_ready:
+            elif not model.is_deploy_ready and (not is_local() or (release.provenance or {}).get("promotion_review")):
                 blocker = "model is no longer marked deploy-ready"
         elif release.canonical_artifact_id is not None:
             from spectra_sherpa.app.services.deployment_binding import resolve_deployment_binding

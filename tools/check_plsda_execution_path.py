@@ -126,21 +126,24 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
         ("apply_fitted_state", 935, 43),
         ("apply_fitted_state", 952, 28),
         ("apply_fitted_state", 953, 27),
-        ("fit_fitted_state", 1104, 42),
-        ("apply_fitted_state", 1105, 43),
-        ("apply_fitted_state", 1119, 28),
-        ("apply_fitted_state", 1120, 27),
-        ("fit_fitted_state", 1737, 36),
-        ("apply_fitted_state", 1738, 38),
+        ("fit_fitted_state", 1105, 42),
+        ("apply_fitted_state", 1106, 43),
+        ("apply_fitted_state", 1120, 28),
+        ("apply_fitted_state", 1121, 27),
+        ("fit_fitted_state", 1816, 36),
+        ("apply_fitted_state", 1817, 38),
         ("fit_fitted_state", 965, 42),
         ("predict_fitted_labels", 967, 20),
         ("apply_fitted_state", 969, 25),
-        ("fit_fitted_state", 1150, 42),
-        ("predict_fitted_classification", 1158, 20),
-        ("fit_fitted_state", 1757, 36),
-        ("predict_fitted_labels", 1160, 26),
-        ("apply_fitted_state", 1160, 78),
-        ("predict_fitted_classification", 1153, 39),
+        ("fit_fitted_state", 1151, 42),
+        ("predict_fitted_classification", 1159, 20),
+        ("fit_fitted_state", 1836, 36),
+        ("predict_fitted_labels", 1161, 26),
+        ("apply_fitted_state", 1161, 78),
+        ("predict_fitted_classification", 1154, 39),
+        # Local calibration/held-out evidence applies executor-issued frozen
+        # states to target-free data; this exact call never fits a new state.
+        ("apply_fitted_state", 1906, 18),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/application_nodes.py": (
         ("apply_fitted_state", 31, 0),
@@ -157,9 +160,7 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
     (
         "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/"
         "apply_fitted_preprocessing_nodes.py"
-    ): (
-        ("apply_fitted_state", 109, 17),
-    ),
+    ): (("apply_fitted_state", 109, 17),),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/apply_fitted_scale_node.py": (
         ("apply_fitted_state", 114, 17),
     ),

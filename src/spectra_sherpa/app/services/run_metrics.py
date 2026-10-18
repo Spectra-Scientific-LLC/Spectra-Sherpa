@@ -308,6 +308,8 @@ def _metric_values_equal(left: Any, right: Any) -> bool:
 
 
 def comparison_response(runs: list[ExecutionRun], evaluation_selections=None) -> ComparisonResponse:
+    from spectra_sherpa.app.services.scientific_comparison import compare_saved_run_evidence
+
     comparable_by_run = {run.id: comparable_results_for_run(run.results_summary) for run in runs}
     metric_keys = sorted(
         {key for metrics in comparable_by_run.values() for key in metrics},
@@ -350,6 +352,7 @@ def comparison_response(runs: list[ExecutionRun], evaluation_selections=None) ->
     diff.update(qualified_diff)
     return ComparisonResponse(
         runs=[ExecutionRunOut.model_validate(run) for run in runs],
+        scientific_comparison=compare_saved_run_evidence(runs, evaluation_selections),
         result_pairs=result_pairs,
         rankable_metric_keys=list(qualified_diff),
         metric_keys=metric_keys + list(qualified_diff),

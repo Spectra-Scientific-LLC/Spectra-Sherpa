@@ -20,7 +20,7 @@ def test_peak_and_config_branches_upgrade_to_one_head(tmp_path, starting_revisio
     _run_upgrade(url, "head")
     scripts = ScriptDirectory.from_config(_alembic_cfg())
     current_heads = scripts.get_heads()
-    assert current_heads == ["m2n4o6p8q660"]
+    assert current_heads == ["n3o5p7q9r661"]
     engine = sa.create_engine(f"sqlite:///{database}")
     with engine.connect() as connection:
         assert connection.execute(sa.text("SELECT version_num FROM alembic_version")).scalars().all() == [
