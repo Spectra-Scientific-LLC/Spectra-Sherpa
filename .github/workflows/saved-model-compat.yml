@@ -25,6 +25,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 concurrency:
   group: saved-model-compat-${{ github.event_name }}-${{ github.ref }}
@@ -50,6 +51,9 @@ jobs:
       - id: scope
         env:
           EVENT_NAME: ${{ github.event_name }}
+          # Read the PR's current draft state so rerunning a verdict that
+          # failed while the PR was a draft passes once it is ready.
+          GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/ci_compat_scope.py --prefix ""
 
   compat:
