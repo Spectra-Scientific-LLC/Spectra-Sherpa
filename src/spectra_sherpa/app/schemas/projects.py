@@ -8,7 +8,9 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from spectra_sherpa.app.lib.starter_goal import GOAL_MAX_LENGTH, normalize_goal
 from spectra_sherpa.app.lib.workflow_purpose import WorkflowPurpose
+from spectra_sherpa.app.schemas.starter import StarterPlan
 from spectra_sherpa.core.node_identity import canonicalize_serialized_workflow
 
 
@@ -21,6 +23,13 @@ class ProjectCreate(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     technique: str | None = Field(None, max_length=50)
     sample_type: str | None = Field(None, max_length=100)
+    goal: str | None = Field(None, max_length=GOAL_MAX_LENGTH * 2)
+    goal_plan: StarterPlan | None = None
+
+    @field_validator("goal")
+    @classmethod
+    def _normalize_goal(cls, value: str | None) -> str | None:
+        return normalize_goal(value) or None if value is not None else None
 
 
 class ProjectUpdate(BaseModel):
@@ -30,6 +39,13 @@ class ProjectUpdate(BaseModel):
     metadata: dict[str, Any] | None = None
     technique: str | None = Field(None, max_length=50)
     sample_type: str | None = Field(None, max_length=100)
+    goal: str | None = Field(None, max_length=GOAL_MAX_LENGTH * 2)
+    goal_plan: StarterPlan | None = None
+
+    @field_validator("goal")
+    @classmethod
+    def _normalize_goal(cls, value: str | None) -> str | None:
+        return normalize_goal(value) or None if value is not None else None
 
 
 class ProjectSummary(BaseModel):
@@ -41,6 +57,8 @@ class ProjectSummary(BaseModel):
     parent_id: int | None = None
     technique: str | None = None
     sample_type: str | None = None
+    goal: str | None = None
+    goal_plan: StarterPlan | None = None
     experiment_count: int = 0
     workflow_count: int = 0
     script_count: int = 0

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A **Starter** tab, first on the Dashboard and opened automatically on first
+  sign-in, turns a goal written in your own words into a plan: the kind of
+  analysis, an available starter workflow, a compatible dataset to begin with
+  (with the reason it was chosen) and the steps to follow. **Ready to Start**
+  creates the project; the tab then tracks the plan as a checklist whose steps
+  tick themselves off from observed progress (only completed runs count; a
+  failed run offers recovery). Steps the app cannot observe, such as reviewing
+  results, are marked done by the user. The planned starter template follows
+  the user's data to the Workflow template picker. See
+  [Start from a goal](docs/onboarding/starter.md).
+- Projects record the goal and its Starter plan (`goal`, `goal_plan`). Both are
+  part of the project API, project versions and project export and import.
+- Deployments can register a model-backed goal classifier
+  (`spectra_sherpa.app.contracts.starter_planning`). It may only choose among
+  the offered analyses and datasets, and it reads the goal only with the
+  user's `allow_llm_chat` consent.
+
+### Upgrade notes
+
+- The database migration `n3o5p7q9r661` adds the nullable `project.goal` and
+  `project.goal_plan` columns. Existing projects are unchanged.
+
 ## [0.6.3] - 2026-10-16
 
 ### Added

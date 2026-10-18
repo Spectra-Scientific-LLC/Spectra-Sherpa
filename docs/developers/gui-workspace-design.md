@@ -20,7 +20,7 @@ Use the same order, vocabulary and interaction rules everywhere.
 
 | Main page | Page subtabs, in order | Purpose |
 | --- | --- | --- |
-| Dashboard | **Your Project, Archive, Storage** | Choose/manage projects by default; restore archived projects; inspect and reclaim storage across projects. |
+| Dashboard | **Starter, Your Project, Archive, Storage** | Turn a goal into a planned project and follow it; choose/manage projects by default; restore archived projects; inspect and reclaim storage across projects. |
 | Project | None | Understand and manage the active project and its objects. |
 | Data | Import, Synthesis, Upload, Library, Multi-well, My Dataset | Acquire, prepare and inspect project data. Preserve existing capability restrictions. |
 | Workflow | **None** | Build and execute workflows. Keep the existing sheet tabs **inside the canvas**. |
@@ -182,7 +182,31 @@ must share the same authoritative state.
 
 ### Dashboard and Project
 
-Dashboard opens on **Your Project**, followed by **Archive** and **Storage**.
+Dashboard opens on **Your Project**. **Starter** comes first in the strip,
+followed by Your Project, **Archive** and **Storage**; a first-time user with no
+projects or workflows lands on Starter, and `/dashboard#starter` selects it.
+An explicit hash always wins over that first-run choice.
+
+**Starter** contract. Purpose: turn a goal written in the user's words into a
+planned project. Selected object: the active project when it carries a goal
+plan; otherwise none. Context: the active goal's project and kind of analysis,
+or "Describe a goal". Contents: the active goal as a checklist whose steps tick
+from observed project progress (only completed runs count), the current step
+with **Go** to its destination and, for a step the app cannot observe, **Mark
+done**; then a goal box prefilled with the user's last goal (the suggested beginner goal
+on first run), example goals, **Plan my steps**, and the resulting plan: kind of
+analysis, starter workflow, suggested dataset with its reason, expandable steps
+and the project name. Actions: **Ready to Start** creates the project with its
+goal and plan; **Mark done** and **Undo** record a manual step in that plan.
+These are the only mutations; planning stores nothing. Empty state:
+no active goal shows only the goal box. Error state: a planning failure is shown
+inline under the box; the checklist keeps its last progress when a refresh
+fails; a failed or cancelled last run keeps the Run step current and offers
+**See what went wrong**. Persistence: the goal and plan are project fields; a
+step without a progress signal (such as reviewing results) is done only when the
+user selects **Mark done**, which is recorded in the plan and can be undone; Go
+never completes a step. Advisor focus: the active project, as on Your Project.
+
 Place **Project →** immediately to the right of **New Analysis**, leaving the
 project's relative update time right-aligned in its context row. Preserve project selection, archive,
 restore, permanent deletion and any profile-specific removal semantics.

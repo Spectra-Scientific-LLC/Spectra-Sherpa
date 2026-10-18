@@ -518,6 +518,17 @@ const dataSelectionFileCount = computed(() =>
 );
 const pendingDataSelection = computed(() => route.query.fromDataSelection === "1");
 
+// A project started from a Starter goal names its planned starter template.
+// The picker auto-starts a preferred template, so the plan stands in for the
+// session handoff only on a data handoff and only until a sheet has been
+// created from a template. Opening the picker by hand never auto-starts it.
+const goalPlanTemplateSlug = computed(() => {
+  const project = projectStore.currentProject;
+  const slug = project?.goal_plan?.template_slug ?? null;
+  if (!slug) return null;
+  return (project?.workflows ?? []).some((workflow) => workflow.created_from_template_name) ? null : slug;
+});
+
 const openTemplatePicker = () => {
   preferredAnalysisStarterSlug.value = null;
   dataSelectionReceipt.value = readDataSelectionReceipt({
@@ -1194,7 +1205,7 @@ onMounted(async () => {
 
   if (dataSelectionReceipt.value && route.query.fromDataSelection === "1") {
     const starterIntent = readAnalysisStarterIntent();
-    preferredAnalysisStarterSlug.value = starterIntent?.template_slug ?? null;
+    preferredAnalysisStarterSlug.value = starterIntent?.template_slug ?? goalPlanTemplateSlug.value;
     templatePickerVisible.value = starterIntent?.template_slug !== null;
     if (starterIntent?.template_slug === null) {
       clearAnalysisStarterIntent();

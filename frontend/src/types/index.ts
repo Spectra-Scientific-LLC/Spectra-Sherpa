@@ -738,6 +738,56 @@ export interface ImportedApplicationIdentity {
 
 // ── Projects ────────────────────────────────────────────────────────
 
+export type StarterProgressSignal =
+  | "has_project"
+  | "has_data"
+  | "has_workflow"
+  | "has_preprocessing"
+  | "has_executed"
+  | "has_model";
+
+export interface StarterStep {
+  key: string;
+  title: string;
+  detail: string;
+  action_id: string | null;
+  completion: StarterProgressSignal | null;
+}
+
+/** A dataset a Starter plan can begin with: a reference or the user's own. */
+export interface StarterDatasetOption {
+  key: string;
+  label: string;
+  kind: "reference" | "experiment";
+  source: string | null;
+  technique: string | null;
+  availability: string | null;
+  experiment_id: number | null;
+}
+
+export interface StarterDatasetChoice extends StarterDatasetOption {
+  reason: string;
+  chosen_by: "rules" | "model" | "default";
+}
+
+/** A goal turned into ordered steps; stored on the project as ``goal_plan``. */
+export interface StarterPlan {
+  schema_version: "spectra-starter-plan/1";
+  goal: string;
+  intent: string;
+  intent_label: string;
+  summary: string;
+  confidence: number;
+  source: "rules" | "model";
+  template_slug: string | null;
+  template_name: string | null;
+  steps: StarterStep[];
+  dataset: StarterDatasetChoice | null;
+  dataset_options: StarterDatasetOption[];
+  /** Steps without a progress signal that the user marked done. */
+  completed_steps?: string[];
+}
+
 export interface ProjectSummary {
   id: number;
   name: string;
@@ -745,6 +795,8 @@ export interface ProjectSummary {
   parent_id: number | null;
   technique: string | null;
   sample_type: string | null;
+  goal?: string | null;
+  goal_plan?: StarterPlan | null;
   experiment_count: number;
   workflow_count: number;
   script_count: number;
@@ -875,6 +927,8 @@ export interface ProjectCreate {
   metadata?: Record<string, unknown>;
   technique?: string | null;
   sample_type?: string | null;
+  goal?: string | null;
+  goal_plan?: StarterPlan | null;
 }
 
 export interface ProjectUpdate {
@@ -884,6 +938,8 @@ export interface ProjectUpdate {
   metadata?: Record<string, unknown>;
   technique?: string | null;
   sample_type?: string | null;
+  goal?: string | null;
+  goal_plan?: StarterPlan | null;
 }
 
 export interface ProjectVersionSummary {
