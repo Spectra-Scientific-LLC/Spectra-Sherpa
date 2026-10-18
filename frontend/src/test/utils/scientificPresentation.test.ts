@@ -145,6 +145,37 @@ describe("scientific presentation resolver", () => {
     expect(presentationSupports(resolved, "table")).toBe(false);
   });
 
+  it("offers the exact retained PLS component record as a client-side plot without changing its contract", () => {
+    const curvePresentation = {
+      ...metadata.presentation_contract.payload.presentations[1],
+      presentation_id: "component_selection",
+      kind: "validation_result",
+      source_ports: ["component_curve"],
+    };
+    const curveMetadata = {
+      presentation_contract: { digest: "b".repeat(64), payload: {
+        schema_version: "spectrasherpa-node-presentation/1",
+        default_presentation: "component_selection", presentations: [curvePresentation],
+      } },
+    } as NodeTypeMetadata;
+    const curveOutput = {
+      ...output,
+      ports: { component_curve: { data: [], value: {
+        selected_components: 2, response_names: ["Moisture"],
+        calibration: [{ components: 1 }, { components: 2 }],
+      }, metadata: {} } },
+    } as NodeOutput;
+    const resolved = resolveScientificPresentation(curveMetadata, curveOutput);
+    expect(resolved?.presentation.modes).toEqual(["record"]);
+    expect(presentationSupports(resolved, "plot")).toBe(true);
+    expect(presentationSupports(resolved, "table")).toBe(false);
+    const projected = projectScientificPresentation(curveOutput, resolved);
+    expect(scientificPlotOptions(projected).map((item) => item.key)).toContain("scientific_pls_component_curve");
+    expect(scientificEvidenceShape(projected)).toEqual({
+      rows: 2, cols: 1, rowLabel: "component choices", colLabel: "responses",
+    });
+  });
+
   it("does not let empty port metadata erase fitted-model annotations", () => {
     const annotatedOutput = {
       ...output,

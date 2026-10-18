@@ -7,6 +7,7 @@ import json
 import os
 import re
 import subprocess
+import urllib.request
 from pathlib import Path
 
 
@@ -26,6 +27,27 @@ def required(paths: list[str], patterns: list[str], prefix: str) -> bool:
     )
 
 
+def current_draft(pr: dict) -> bool:
+    """Return the PR's draft state now, not when the triggering event fired.
+
+    A rerun replays the original payload. Without this, a verdict that failed
+    while the PR was a draft stays failed on the same commit after the PR is
+    marked ready, and blocks the merge although the ready run passed. Any API
+    error fails the scope job, so the verdict still fails closed.
+    """
+    token, url = os.environ.get("GITHUB_TOKEN"), pr.get("url")
+    if not token or not isinstance(url, str) or not url.startswith("https://api.github.com/repos/"):
+        return bool(pr.get("draft", False))
+    request = urllib.request.Request(
+        url, headers={"Accept": "application/vnd.github+json", "Authorization": f"Bearer {token}"}
+    )
+    with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310 - fixed https API origin
+        draft = json.load(response)["draft"]
+    if not isinstance(draft, bool):
+        raise ValueError("Pull request draft state is unavailable")
+    return draft
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--prefix", default="")
@@ -35,7 +57,7 @@ def main() -> None:
     needed = True
     if os.environ["EVENT_NAME"] == "pull_request":
         pr = event["pull_request"]
-        deferred = pr.get("draft", False)
+        deferred = current_draft(pr)
         base, head = pr["base"]["sha"], pr["head"]["sha"]
         if any(re.fullmatch(r"[0-9a-f]{40}", sha) is None for sha in (base, head)):
             raise ValueError("Invalid PR commit identities")

@@ -100,5 +100,11 @@
       "strategy": "declared_visualization",
       "plots": [{ "key": "scientific_visualization", "label": "Visualization" }]
     }
+  },
+  "record_views": {
+    "validation_result:component_selection:component_curve": {
+      "strategy": "pls_component_curve",
+      "plots": [{ "key": "scientific_pls_component_curve", "label": "Latent Variable Error" }]
+    }
   }
 }

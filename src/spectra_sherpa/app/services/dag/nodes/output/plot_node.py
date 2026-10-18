@@ -1877,10 +1877,15 @@ class PlotNode(Node):
         x_labels = list(range(matrix.shape[1]))
         y_labels = list(range(matrix.shape[0]))
         metadata = data.get("metadata") or {}
-        classes = metadata.get("classes")
-        if isinstance(classes, list) and len(classes) == matrix.shape[0] == matrix.shape[1]:
-            x_labels = classes
-            y_labels = classes
+        if isinstance(metadata, dict) and matrix.shape[0] == matrix.shape[1]:
+            # The canonical evaluator names this field ``labels``. Older plot
+            # producers use ``classes``; retain that spelling as a fallback.
+            for key in ("labels", "classes"):
+                classes = metadata.get(key)
+                if isinstance(classes, list) and len(classes) == matrix.shape[0]:
+                    x_labels = classes
+                    y_labels = classes
+                    break
 
         return {
             "visualization": {

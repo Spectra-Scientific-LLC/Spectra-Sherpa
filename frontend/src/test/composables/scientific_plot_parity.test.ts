@@ -3,6 +3,7 @@ import { computed, nextTick, ref } from "vue";
 import { useQuickPlotProjection, type QuickPlotSelection } from "@/composables/useScientificPlotProjection";
 import { useNodePlotData } from "@/views/workflow-builder/node-detail/composables/useNodePlotData";
 import type { NodeOutput } from "@/utils/nodeOutput";
+import { buildPlsComponentCurvePlot } from "@/utils/scientificPlots";
 
 function views(output: NodeOutput, type: string) {
   const nodeOutput = ref(output);
@@ -39,6 +40,43 @@ const pca = (): NodeOutput => ({
 } as unknown as NodeOutput);
 
 describe("Quick Plot and detailed plot parity", () => {
+  it("leaves a gap instead of crashing when a calibration row is missing", () => {
+    const plot = buildPlsComponentCurvePlot({
+      schema_version: "spectrasherpa-pls-component-curve/1", selected_components: 2,
+      response_names: ["Moisture"], response_units: ["%"],
+      calibration: [null, { components: 2, rmsec: [0.2] }],
+      cross_validation: { status: "available", rows: [
+        { components: 1, rmsecv: [0.4] }, { components: 2, rmsecv: [0.3] },
+      ] },
+    });
+    expect(plot.data[0].y).toEqual([null, 0.2]);
+    expect(plot.data[1].y).toEqual([null, 0.3]);
+    expect(plot.data.every((trace) => trace.connectgaps === false)).toBe(true);
+  });
+  it("plots the retained PLS component curve without inventing unavailable CV", () => {
+    const record = {
+      schema_version: "spectrasherpa-pls-component-curve/1", selected_components: 2,
+      response_names: ["Moisture"], response_units: ["%"],
+      calibration: [{ components: 1, rmsec: [0.3] }, { components: 2, rmsec: [0.2] }],
+      cross_validation: { status: "unavailable", reason: "Insufficient independent groups" },
+    };
+    const output = {
+      data: [], presentation_value: record,
+      metadata: { scientific_presentation: {
+        schema_version: "spectrasherpa-node-presentation/1", contract_digest: "a".repeat(64),
+        presentation_id: "component_selection", label: "Choose Latent Variables", kind: "validation_result",
+        source_port: "component_curve", source_ports: ["component_curve"], modes: ["record"], description: "",
+      } },
+    } as unknown as NodeOutput;
+    const quick = useQuickPlotProjection(ref(output), ref("model.fitted_pls"));
+    expect(quick.availablePlots.value.map((plot) => plot.key)).toContain("scientific_pls_component_curve");
+    quick.selectedPlotKey.value = "scientific_pls_component_curve";
+    expect(quick.plotData.value).toHaveLength(1);
+    expect(quick.plotData.value[0].y).toEqual([0.3, 0.2]);
+    expect(quick.plotLayout.value.meta.cv_status).toBe("unavailable");
+    expect(quick.plotLayout.value.meta.cv_reason).toBe("Insufficient independent groups");
+  });
+
   it.each([
     ["pca_scores", "pcaScores"], ["pca_loadings", "pcaLoadings"],
     ["pca_variable_correlations", "pcaVariableCorrelations"],

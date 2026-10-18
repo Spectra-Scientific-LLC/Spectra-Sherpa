@@ -216,6 +216,7 @@ def require_independent_classification_groups(
     target_context: TargetContext | None,
     *,
     split_method: str = "stratified",
+    validation_goal: str = "unseen_specimens",
 ) -> None:
     """Refuse a supervised holdout that divides repeated independent specimens.
 
@@ -225,6 +226,10 @@ def require_independent_classification_groups(
     must explicitly bind one and create a new workflow revision.
     """
 
+    if validation_goal not in {"unseen_specimens", "known_specimen_cross_block"}:
+        raise ValueError("Unknown supervised validation goal")
+    if validation_goal == "known_specimen_cross_block" and split_method != "group_holdout":
+        raise ValueError("Cross-block repeatability requires an explicitly named group holdout")
     if target_context is None or target_context.target_type not in {"categorical", "continuous"}:
         return
     dataset = coerce_to_sherpa(X_source, input_name="X", allow_array=True)
@@ -257,9 +262,11 @@ def require_independent_classification_groups(
             )
         if groups is None:
             raise ValueError(
-                f"Repeated {field} values require an independent grouped supervised split. "
+                f"This split reports performance on unseen {field} identities. Repeated {field} values "
+                "therefore require an independent grouped supervised split. "
                 "Select a specimen or coarser patient/subject identity under Groups in My Dataset "
                 "and explicitly rebind the workflow source before running. "
+                "Cross-block repeatability of known specimens is a different validation question. "
                 "The previous run remains retained as historical evidence."
             )
         if split_method in _SPACE_FILLING_METHODS:
@@ -270,16 +277,67 @@ def require_independent_classification_groups(
         grouped = np.asarray(groups, dtype=object)
         if grouped.ndim != 1 or grouped.size != len(labels):
             raise ValueError("The bound grouping column does not align with the retained sample rows")
+        if validation_goal == "known_specimen_cross_block":
+            if len({str(group).strip() for group in grouped}) < 2:
+                raise ValueError("Cross-block repeatability needs at least two acquisition groups")
+            # The exact held-out membership is checked after the split plan is
+            # constructed. A block may legitimately divide a known specimen.
+            continue
         identity_to_group: dict[str, str] = {}
         for identity, group in zip(labels, grouped, strict=True):
             group_label = str(group).strip() if group is not None else ""
             if not group_label or (identity in identity_to_group and identity_to_group[identity] != group_label):
                 raise ValueError(
                     f"The bound Groups column divides repeated {field} identities. "
+                    f"This split tests unseen {field} identities, not cross-block repeatability "
+                    "of known specimens. "
                     f"Select {field} or a coarser patient/subject identity and explicitly rebind "
                     "the workflow source before running."
                 )
             identity_to_group[identity] = group_label
+
+
+def require_known_specimen_cross_block_plan(
+    X_source: object, plan: SplitPlan, y: np.ndarray | None, target_context: TargetContext | None
+) -> None:
+    """Admit only a real block holdout of specimens seen during calibration."""
+
+    if plan.method != "group_holdout" or not plan.held_out_groups:
+        raise ValueError("Cross-block repeatability requires a named, held-out acquisition group")
+    dataset = coerce_to_sherpa(X_source, input_name="X", allow_array=True)
+    table = dataset.sample_axis.sample_table if dataset.sample_axis is not None else None
+    if not isinstance(table, dict):
+        raise ValueError("Cross-block repeatability requires retained specimen identities")
+    identity_fields = [field for field in ("specimen_id", "subject_id", "patient_id") if field in table]
+    if not identity_fields:
+        raise ValueError("Cross-block repeatability requires a specimen, subject, or patient identity column")
+    for field in identity_fields:
+        values = np.asarray(table[field], dtype=object)
+        if values.ndim != 1 or values.size != dataset.n_samples:
+            raise ValueError(f"Retained {field} identities do not match the split rows")
+        if any(
+            value is None or (isinstance(value, (float, np.floating)) and not np.isfinite(value)) for value in values
+        ):
+            raise ValueError(f"Cross-block repeatability requires complete {field} identities")
+        train = {str(values[index]).strip() for index in plan.train_indices}
+        test = {str(values[index]).strip() for index in plan.test_indices}
+        if not test or "" in train | test or not test <= train:
+            raise ValueError(
+                f"Held-out block contains a new {field}; this design tests only repeatability of known specimens. "
+                "Choose a different block or use unseen-specimen validation."
+            )
+    if y is not None:
+        labels = np.asarray(y)
+        if labels.ndim == 1 or (labels.ndim == 2 and labels.shape[1] == 1):
+            labels = labels.reshape(-1)
+            if labels.size != dataset.n_samples:
+                raise ValueError("Retained targets do not match the split rows")
+            # For categorical targets, a missing class makes the comparison
+            # uninterpretable. Continuous responses do not have class labels.
+            if target_context is not None and target_context.target_type == "categorical":
+                full = set(labels.tolist())
+                if set(labels[plan.train_indices].tolist()) != full or set(labels[plan.test_indices].tolist()) != full:
+                    raise ValueError("Every class must occur in both training and held-out blocks")
 
 
 def bind_split_target(
@@ -984,8 +1042,9 @@ def materialize_split_outputs(
         group_column = source_binding.get("group_column")
         if group_column is None or isinstance(group_column, str):
             for output in (X_train, X_test):
-                # A whole-group test partition is independent validation
-                # evidence, not a new training-supervision authority. Keep
+                # A whole-group test partition is separate by the selected
+                # group, not necessarily by specimen. It is not a new
+                # training-supervision authority. Keep
                 # its source receipt removed even though a one-group column
                 # is now valid metadata on the original input dataset.
                 if output is X_test and plan.held_out_groups is not None:

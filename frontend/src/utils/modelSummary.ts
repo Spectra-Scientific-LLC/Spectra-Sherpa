@@ -401,10 +401,21 @@ export function buildModelSummary(
   }
   const unique = <T extends { role: SummaryRole; source: string }>(items: T[], key: (item: T) => string) =>
     [...new Map(items.map((item) => [key(item), item])).values()];
+  const responseUnits = new Map(
+    (componentSelection?.responses ?? [])
+      .filter((response) => response.unit)
+      .map((response) => [response.name, response.unit]),
+  );
+  const qualifiedRegression = regression.map((item) => {
+    const recorded = item.target_units;
+    const matched = responseUnits.get(item.target);
+    return (recorded == null || recorded === "") && matched
+      ? { ...item, target_units: matched } : item;
+  });
   return {
     model,
     preprocessing: node ? preprocessingChain(definition, node.node_id) : [],
-    regression: unique(regression, (item) => `${item.role}|${item.target}|${item.source}`),
+    regression: unique(qualifiedRegression, (item) => `${item.role}|${item.target}|${item.source}`),
     classification: unique(classification, (item) => `${item.role}|${item.source}`),
     componentSelection,
     pcaComponentSelection,

@@ -104,11 +104,17 @@ def test_split_admission_resets_settings_the_chosen_method_does_not_govern() -> 
     node = node_registry.create_node(
         "data.train_test_split",
         "split",
-        {"split_method": "stratified", "n_components": 5, "distance_metric": "mahalanobis"},
+        {
+            "split_method": "stratified",
+            "n_components": 5,
+            "distance_metric": "mahalanobis",
+            "validation_goal": "known_specimen_cross_block",
+        },
     )
 
     assert node.parameters["n_components"] == 0
     assert node.parameters["distance_metric"] == "euclidean"
+    assert node.parameters["validation_goal"] == "unseen_specimens"
     # The seed still governs stratified sampling, so an explicit one survives.
     seeded = node_registry.create_node(
         "data.train_test_split",

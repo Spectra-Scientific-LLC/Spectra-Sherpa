@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from sqlalchemy import select
 
-from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
+from spectra_sherpa.app.lib.axes import FeatureAxis, SampleAxis, SpectralAxis
 from spectra_sherpa.app.lib.collection_assembly import (
     CollectionMember,
     assemble_collection,
@@ -31,6 +31,21 @@ from spectra_sherpa.app.services.dataset_views import (
 from spectra_sherpa.app.services.model_application import LoadedProjectDataset
 from spectra_sherpa.app.services.workflow_data_selections import source_parameters
 from spectra_sherpa.core.execution_runtime import ResolvedExperimentCollection
+
+
+def test_unlabeled_singleton_feature_table_uses_exact_source_observation_identity() -> None:
+    source = SherpaDataset(
+        X=np.arange(600, dtype=float).reshape(150, 4),
+        feature_axis=FeatureAxis(labels=["a", "b", "c", "d"]),
+        sample_axis=SampleAxis(sample_table={"Target": ["setosa"] * 50 + ["versicolor"] * 50 + ["virginica"] * 50}),
+        data_role="X_features",
+    )
+    member = CollectionMember(source, "raw/sklearn_iris.csv", 100, "a" * 64)
+    dataset = assemble_collection([member], title="Iris")
+    rows = verified_source_observations(dataset)
+    assert len(rows) == 150
+    assert len({row["sample_id"] for row in rows}) == 150
+    assert rows[0]["sample_id"] == "sklearn_iris 001"
 
 
 def loaded_dataset(experiment_id=1, project_id=1):

@@ -87,6 +87,16 @@
                 <i class="pi pi-exclamation-triangle" aria-hidden="true" />
                 {{ managedCandidateSelectionWarning(tpl) }}
               </p>
+              <div v-if="crossBlockCandidate(tpl)" class="tp-row-requirement">
+                <label>
+                  <input v-model="crossBlockRequested" type="checkbox" />
+                  Test known specimens across acquisition blocks
+                </label>
+                <label v-if="crossBlockRequested" class="tp-block-label">
+                  Held-out block
+                  <input v-model.trim="heldOutBlock" type="text" placeholder="Exact block value" />
+                </label>
+              </div>
             </div>
             <div class="tp-row-actions">
               <Button
@@ -95,7 +105,7 @@
                 :icon="currentDataButtonIcon(tpl)"
                 icon-pos="right"
                 class="p-button-sm"
-                :disabled="instantiating !== null || !projectAvailable || !!projectDatasetChoiceError || !canUseCurrentData(tpl)"
+                :disabled="instantiating !== null || !projectAvailable || !!projectDatasetChoiceError || !canUseCurrentData(tpl) || (crossBlockCandidate(tpl) && crossBlockRequested && !heldOutBlock)"
                 :title="currentDataButtonTitle(tpl)"
                 @click="onUse(tpl, 'current')"
               />
@@ -246,6 +256,8 @@ const effectiveDataSelection = ref<DataSelectionReceipt | null>(props.dataSelect
 const activeBindingReadiness = ref<DatasetAnalysisReadiness | null>(null);
 const activeProjectDataset = ref<ActiveProjectDataset | null>(null);
 const projectDatasetChoiceError = ref<string | null>(null);
+const crossBlockRequested = ref(false);
+const heldOutBlock = ref("");
 
 const projectAvailable = computed(() => workbookStore.projectId !== null);
 
@@ -642,6 +654,14 @@ const templateRuntimeMessage = (tpl: TemplateOut): string | null => {
 const canUseCurrentData = (tpl: TemplateOut): boolean =>
   !projectDatasetChoiceError.value && templateRuntimeReady(tpl) && !!inheritedDataBindingsForTemplate(tpl);
 
+const crossBlockCandidate = (tpl: TemplateOut): boolean => {
+  const binding = selectedReceiptBinding() ?? currentPrimaryDataBinding();
+  return !!binding?.groupColumn
+    && !["specimen_id", "subject_id", "patient_id"].includes(binding.groupColumn)
+    && (tpl.template_data.nodes ?? []).some((node) => node.node_type === "data.train_test_split")
+    && (tpl.template_data.nodes ?? []).some((node) => node.node_type?.startsWith("classification."));
+};
+
 const canUseTemplate = (tpl: TemplateOut): boolean =>
   canUseCurrentData(tpl) || (templateRuntimeReady(tpl) && supportsExample(tpl));
 
@@ -797,6 +817,7 @@ const maybeAutoStartPreferredTemplate = () => {
   if (!visible.value || !slug || autoStartedSlug.value === slug || loading.value || projectDatasetChoiceError.value) return;
   const tpl = templates.value.find((candidate) => candidate.slug === slug);
   if (!tpl) return;
+  if (crossBlockCandidate(tpl)) return;
   const launchMode = canUseCurrentData(tpl)
     ? "current"
     : !hasCurrentData.value && templateRuntimeReady(tpl) && supportsExample(tpl)
@@ -809,6 +830,8 @@ const maybeAutoStartPreferredTemplate = () => {
 
 watch(visible, (next) => {
   if (next) {
+    crossBlockRequested.value = false;
+    heldOutBlock.value = "";
     selectedExperimentId.value = props.dataSelection?.datasets[0]?.experiment_id ?? null;
     autoStartedSlug.value = null;
     void loadTemplates();
@@ -877,6 +900,9 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
         ? {
             launchMode: "user",
             dataBindings: inheritedBindings,
+            ...(crossBlockCandidate(tpl) && crossBlockRequested.value
+              ? { validationGoal: "known_specimen_cross_block" as const, heldOutGroups: [heldOutBlock.value] }
+              : {}),
           }
         : { launchMode: "example" },
     );
@@ -911,6 +937,8 @@ const onUse = async (tpl: TemplateOut, launchMode: "current" | "example") => {
 </script>
 
 <style scoped>
+.tp-block-label { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.tp-block-label input { min-width: 8rem; padding: 4px 6px; border: 1px solid #94a3b8; border-radius: 4px; }
 .tp-row-unavailable { padding: 8px 0; }
 .tp-unavailable-summary { position: relative; display: flex; align-items: center; gap: 12px; width: 100%; min-width: 0; color: #94a3b8; cursor: help; }
 .tp-unavailable-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

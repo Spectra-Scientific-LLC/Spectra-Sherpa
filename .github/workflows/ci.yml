@@ -5,9 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  # Weekly run catches dependency and runner-image drift between releases.
-  # Public-repo minutes are free on every platform; see the dual-repo CI
-  # policy in the monorepo (docs/dev/dual-repo-ci-policy.md).
+  # Pull requests run on Ubuntu. Pushes to main (curated publishes and merged
+  # public PRs), the weekly run and manual dispatch add Windows and macOS, so
+  # every released commit is qualified on all three platforms. The weekly run
+  # also catches dependency and runner-image drift between releases. See the
+  # dual-repo CI policy in the monorepo (docs/dev/dual-repo-ci-policy.md).
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:
@@ -88,10 +90,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Desktop applications ship for Linux, macOS and Windows from this
-        # repository, so every platform qualifies on every change. Public
-        # minutes are free; the monorepo stays Ubuntu-only.
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Ubuntu on pull requests; Linux, macOS and Windows on push to main,
+        # weekly and manual dispatch. Keep in sync with desktop-shell.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
         install_profile:
           - base
           - postgres
@@ -145,7 +146,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        # Same platform rule as the backend matrix.
+        os: ${{ fromJSON(github.event_name == 'pull_request' && '["ubuntu-latest"]' || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
     env:
       # Unit tests exercise the shell modules with Node only; packaging and
       # the Electron binary belong to desktop-release.yml.

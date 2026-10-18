@@ -127,7 +127,7 @@ function withoutRenderedClassRows(value: unknown, depth = 0): unknown {
 
 // These are already evidence-qualified, human-readable backend facts. Never
 // infer a held-out population from a metric name alone.
-const validationContext = /^(?:Dataset|Target|Group field|Split method|Development population|Test population|Groups \(|Evaluation population|Evaluation source|Metric denominator|Cross-validation method|Cross-validation (?:r2|rmse|mae|bias|q2)|Verified metric denominator|Verified CV metric|Validation groups|Repeated validation|Repeated population|Preprocessing within folds|Partition details|Detailed validation evidence)/i;
+const validationContext = /^(?:Dataset|Target|Group field|Split method|Validation question|Development population|Test population|Groups \(|Evaluation population|Evaluation source|Metric denominator|Component CV design|Cross-validation design|Cross-validation method|Cross-validation (?:r2|rmse|mae|bias|q2)|Verified metric denominator|Verified CV metric|Validation groups|Repeated validation|Repeated population|Preprocessing within folds|Partition details|Detailed validation evidence)/i;
 
 function runGroups(run: RunReportEntry): SummaryGroup[] {
   const notices = [run.evidence_notice, ...(run.evidence_gaps ?? []).map((gap) =>
@@ -202,7 +202,7 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     }
   }
   const nodes = run.saved_definition?.nodes ?? [];
-  let recordedCv = false;
+  let recordedCv = (validation?.rows ?? []).some((row) => /^(?:Component CV design|Cross-validation design|Cross-validation method) \(/.test(row.label));
   for (const node of nodes) {
     const settings = run.params_snapshot?.[node.node_id] ?? {};
     const diagnostics = run.diagnostics?.[node.node_id] ?? {};
@@ -234,7 +234,7 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
         `${folds} folds requested in saved settings; method ${settings.cv_method ?? settings.method ?? "not recorded"}; seed ${settings.random_seed ?? "not recorded"}. Each fold holds out a subset while fitting on the remaining subsets; see retained validation evidence for actual partitions. These are not latent components.`]);
     }
   }
-  if (!recordedCv) context.push(["CV configuration", "No fold count recorded in saved node settings; component variance entries do not establish cross-validation."]);
+  if (!recordedCv) context.push(["CV configuration", "No executed CV fold design is retained; component variance entries do not establish cross-validation."]);
   const preprocessing = nodes.filter(node => /^(?:preprocess|baseline|normalize|smooth|transfer)\./.test(node.node_type));
   if (preprocessing.length) context.push(["Preprocessing (saved operations)", preprocessing.map(node => {
     const settings = reportRows(run.params_snapshot?.[node.node_id]).filter(([key]) =>

@@ -17,6 +17,7 @@ from spectra_sherpa.app.services.dag.nodes.data.split_planner import (
     materialize_split_outputs,
     plan_train_test_split,
     require_independent_classification_groups,
+    require_known_specimen_cross_block_plan,
     space_filling_coverage,
 )
 from tests.performance_contract import PerformanceCeiling
@@ -71,6 +72,83 @@ def _grouped_dataset() -> SherpaDataset:
         group_column="block",
         node_id="attach",
     )
+
+
+@pytest.mark.parametrize("missing", [None, float("nan"), float("inf")])
+def test_cross_block_cannot_treat_missing_identities_as_known_specimens(missing):
+    dataset = SherpaDataset(
+        X=np.arange(24, dtype=float).reshape(4, 6),
+        sample_axis=SampleAxis(
+            labels=["a", "b", "c", "d"],
+            sample_table={"sample_id": ["a", "b", "c", "d"], "specimen_id": [missing, "B", missing, "B"]},
+        ),
+    )
+    plan = plan_train_test_split(
+        dataset.X,
+        None,
+        method="group_holdout",
+        test_size=0.5,
+        groups=np.array(["1", "1", "2", "2"]),
+        held_out_groups=["2"],
+    )
+    with pytest.raises(ValueError, match="complete specimen_id"):
+        require_known_specimen_cross_block_plan(dataset, plan, None, None)
+
+
+@pytest.mark.asyncio
+async def test_named_cross_block_goal_holds_out_known_specimens_without_unseen_specimen_claim() -> None:
+    ids = ["A", "B", "C"] * 3
+    source = SherpaDataset(
+        X=np.random.RandomState(46).normal(size=(9, 5)),
+        feature_axis=SpectralAxis(values=np.arange(5), units="cm-1"),
+        sample_axis=SampleAxis(
+            labels=[f"acq-{i}" for i in range(9)],
+            sample_table={
+                "sample_id": [f"acq-{i}" for i in range(9)],
+                "specimen_id": ids,
+                "block": ["1"] * 3 + ["2"] * 3 + ["3"] * 3,
+                "species": ["one", "two", "three"] * 3,
+            },
+        ),
+        extra={
+            "source_collection": {
+                "source_manifest_sha256": "1" * 64,
+                "manifest_digest": "1" * 64,
+                "collection_definition_sha256": "2" * 64,
+                "scientific_collection_sha256": "3" * 64,
+            }
+        },
+        backend="numpy",
+    )
+    dataset = attach_target_dataset(
+        source,
+        None,
+        target_type="categorical",
+        target_source="sample_table_column",
+        target_column="species",
+        group_column="block",
+        node_id="attach",
+    )
+    with pytest.raises(ValueError, match="divides repeated specimen_id"):
+        await node_registry.create_node(
+            "data.train_test_split", "ordinary", {"split_method": "group_holdout", "held_out_groups": ["3"]}
+        ).execute(X=dataset)
+    node = node_registry.create_node(
+        "data.train_test_split",
+        "cross_block",
+        {
+            "split_method": "group_holdout",
+            "held_out_groups": ["3"],
+            "validation_goal": "known_specimen_cross_block",
+        },
+    )
+    result = await node.execute(X=dataset)
+    assert result["test_indices"].tolist() == [6, 7, 8]
+    assert get_processing_history(result["X_test"])[-1]["parameters"]["held_out_groups"] == ["3"]
+    assert node.parameters["validation_goal"] == "known_specimen_cross_block"
+    generated: dict[str, object] = {"dataset": dataset, "np": np, "results": {}}
+    exec("\n".join(node.generate_python({"X": "dataset"}, indent="", use_scp=False)), generated)  # noqa: S102
+    assert np.array_equal(generated["results"]["cross_block"]["test_indices"], result["test_indices"])
 
 
 @pytest.mark.asyncio

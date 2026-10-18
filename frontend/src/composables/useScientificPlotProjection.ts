@@ -29,6 +29,7 @@ import {
   buildExplainedVariancePlot,
   buildOutOfFoldEvidencePlot,
   buildPeakTablePlot,
+  buildPlsComponentCurvePlot,
   buildPredictedVsActualPlot,
   buildRankedVipPlot,
   buildSalientFeaturesPlot,
@@ -1229,6 +1230,11 @@ export function useQuickPlotProjection(
   });
 
   const regressionTargetOptions = computed(() => {
+    if (isProjectedScientificKind(nodeOutput.value, "validation_result")
+      && nodeOutput.value?.presentation_value?.schema_version === "spectrasherpa-pls-component-curve/1") {
+      const names = nodeOutput.value.presentation_value.response_names;
+      return Array.isArray(names) ? names.map((name: string, index: number) => ({ label: name, value: index })) : [];
+    }
     const metadata = nodeOutput.value?.metadata || {};
     const targetPayload = resolvePortPayload(nodeInputs?.value?.y);
     const yTrue = metadata.y_true ?? targetPayload?.data ?? nodeInputs?.value?.y?.data;
@@ -1514,7 +1520,8 @@ export function useQuickPlotProjection(
   });
 
   const showRegressionTargetControl = computed(() => {
-    return selectedPlotKey.value === "regression" && regressionTargetOptions.value.length > 1;
+    return (selectedPlotKey.value === "regression" || selectedPlotKey.value === "scientific_pls_component_curve")
+      && regressionTargetOptions.value.length > 1;
   });
 
   // ---- Plot data and layout ----
@@ -1549,6 +1556,8 @@ export function useQuickPlotProjection(
     }
 
     switch (key) {
+      case "scientific_pls_component_curve":
+        return buildPlsComponentCurvePlot(output.presentation_value, regressionTargetIdx.value);
       case "scientific_category_counts":
         return buildCategoryCountsPlot(output);
       case "scientific_confusion_matrix":

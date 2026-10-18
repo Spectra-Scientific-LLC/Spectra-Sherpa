@@ -69,7 +69,7 @@ unchanged.
    The sheet contains: load data → Kennard–Stone train/test split (25 % test) →
    PLS with 3 latent variables and scaling → predict test set → held-out regression
    evaluation → metrics table and predicted-vs-actual plot.
-3. Click **Execute Workflow**. The run is saved in **Runs**.
+3. Click **Run**. The run is saved in **Runs**.
 
 The historical all-data development CV baseline was **RMSECV 0.2340 (n=80;
 target units not declared)**.

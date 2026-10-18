@@ -76,6 +76,48 @@ def test_compat_paths_cover_deletion_rename_and_unrelated_files():
         assert not scope.required([prefix + "frontend/src/main.ts"], patterns, prefix)
 
 
+def test_scope_reads_current_draft_state_so_a_rerun_clears_a_draft_verdict(monkeypatch):
+    scope = load("ci_compat_scope")
+    url = "https://api.github.com/repos/owner/project/pulls/1"
+    seen = []
+
+    class Response:
+        def __init__(self, draft):
+            self.body = json.dumps({"draft": draft}).encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self, *args):
+            return self.body
+
+    def respond(draft):
+        def urlopen(request, timeout):
+            seen.append((request.full_url, request.get_header("Authorization"), timeout))
+            return Response(draft)
+
+        return urlopen
+
+    # The replayed payload still says draft; the PR is ready now.
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    monkeypatch.setattr(scope.urllib.request, "urlopen", respond(False))
+    assert scope.current_draft({"url": url, "draft": True}) is False
+    assert seen == [(url, "Bearer token", 30)]
+    monkeypatch.setattr(scope.urllib.request, "urlopen", respond(True))
+    assert scope.current_draft({"url": url, "draft": False}) is True
+    monkeypatch.setattr(scope.urllib.request, "urlopen", respond(None))
+    with pytest.raises(ValueError):
+        scope.current_draft({"url": url, "draft": False})
+    # Without a token or an API URL, fall back to the payload.
+    monkeypatch.delenv("GITHUB_TOKEN")
+    assert scope.current_draft({"url": url, "draft": True}) is True
+    monkeypatch.setenv("GITHUB_TOKEN", "token")
+    assert scope.current_draft({"url": "https://example.invalid/pulls/1", "draft": True}) is True
+
+
 SHA = "a" * 40
 REPO = "owner/project"
 

@@ -46,6 +46,10 @@ type RendererAuthority = {
     string,
     { strategy: string; plots: Array<{ key: string; label: string }> }
   >;
+  record_views: Record<
+    string,
+    { strategy: string; plots: Array<{ key: string; label: string }> }
+  >;
 };
 
 const renderers = rendererAuthority as RendererAuthority;
@@ -122,7 +126,16 @@ export const resolveScientificPresentation = (
 export const presentationSupports = (
   resolved: ResolvedScientificPresentation | null | undefined,
   mode: ScientificPresentationMode,
-): boolean => resolved?.presentation.modes.includes(mode) ?? false;
+): boolean => !!resolved && (
+  resolved.presentation.modes.includes(mode) ||
+  // The retained PLS curve was originally declared as a record. Plotting
+  // that same exact record is a client-side view, not a fitted-state or
+  // execution-contract change (which would invalidate saved models).
+  (mode === "plot" && resolved.presentation.kind === "validation_result"
+    && resolved.presentation.presentation_id === "component_selection"
+    && resolved.sourcePort === "component_curve"
+    && resolved.presentation.modes.includes("record"))
+);
 
 export const presentationResolutionError = (
   metadata: NodeTypeMetadata | null | undefined,
@@ -179,8 +192,16 @@ export const scientificPlotOptions = (
   output: NodeOutput | null | undefined,
 ): ScientificPlotOption[] => {
   const identity = projectedPresentationIdentity(output);
-  if (!identity || !identity.modes.includes("plot")) return [];
-  const renderer = renderers.plot_kinds[identity.kind];
+  if (!identity || (!identity.modes.includes("plot")
+    && !(identity.kind === "validation_result"
+      && identity.presentation_id === "component_selection"
+      && identity.source_port === "component_curve"
+      && identity.modes.includes("record")))) return [];
+  // A retained PLS component record has a narrowly scoped client-side chart;
+  // it is not a live plot kind in the execution/presentation contract.
+  const renderer = identity.modes.includes("plot")
+    ? renderers.plot_kinds[identity.kind]
+    : renderers.record_views[`${identity.kind}:${identity.presentation_id}:${identity.source_port}`];
   if (!renderer) {
     throw new ScientificPresentationError(
       `No renderer is declared for scientific presentation kind ${identity.kind}.`,
@@ -260,6 +281,14 @@ export const scientificEvidenceShape = (
   output: NodeOutput | null | undefined,
 ): ScientificEvidenceShape | null => {
   const identity = projectedPresentationIdentity(output);
+  if (identity?.kind === "validation_result" && identity.presentation_id === "component_selection"
+    && identity.source_port === "component_curve") {
+    const curve = output?.presentation_value as Record<string, unknown> | undefined;
+    if (Array.isArray(curve?.calibration) && Array.isArray(curve?.response_names)) {
+      return { rows: curve.calibration.length, cols: curve.response_names.length,
+        rowLabel: "component choices", colLabel: "responses" };
+    }
+  }
   if (identity?.kind === "out_of_fold_evidence") {
     const value = output?.presentation_value as Record<string, unknown> | undefined;
     if (Array.isArray(value?.observations) && Array.isArray(value?.predictions)

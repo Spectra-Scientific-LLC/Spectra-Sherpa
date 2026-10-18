@@ -12,6 +12,20 @@ const run = (id: number) => ({ id, name: `Run ${id}`, params_snapshot: {}, resul
 }) as ExecutionRunDetail;
 
 describe('Comparison evaluation qualification', () => {
+  it('shares the available width equally across candidates and wraps long values', () => {
+    const runs = [run(1), run(2), run(3)];
+    runs[0].name = 'A very long run name that must remain readable at narrow widths';
+    const wrapper = mount(ComparisonPanel, { props: {
+      runs, metricKeys: [], diff: {},
+    }, global: { plugins: [PrimeVue] } });
+    const table = wrapper.find('.comparison-matrix');
+    expect(table.attributes('style')).toContain('min-width: 41rem');
+    expect(table.findAll('col.comparison-run-column')).toHaveLength(3);
+    expect(table.find('col.comparison-delta-column').exists()).toBe(false);
+    expect(table.findAll('thead th')[1]?.text()).toBe(runs[0].name);
+    wrapper.unmount();
+  });
+
   it('keeps legacy overview descriptive when the scientific authority is present', () => {
     const wrapper = mount(ComparisonPanel, {props: {runs: [run(1), run(2)], metricKeys: ['accuracy'], diff: {accuracy: {'1': .9, '2': .8}}, rankableMetrics: ['accuracy'], scientificComparison: {schema_version: 'spectrasherpa-scientific-comparison/1', items: [], pairs: []}}, global: {plugins: [PrimeVue]}});
     expect(wrapper.text()).toContain('This overview is descriptive');
