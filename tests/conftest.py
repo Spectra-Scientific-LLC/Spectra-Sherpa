@@ -378,6 +378,47 @@ def deployment_artifact_factory(test_session, monkeypatch):
 
 
 @pytest.fixture
+def review_deployment_artifact(test_session, test_user):
+    """Explicit real promotion of a persisted test artifact; never auto-approve fits."""
+    from spectra_sherpa.app.api.v1.routes.models import (
+        ModelUpdateRequest,
+        get_model_promotion_review,
+        update_model,
+    )
+    from spectra_sherpa.app.models.project import Project
+    from spectra_sherpa.app.models.workflow import Workflow
+
+    async def review(artifact):
+        workflow = await test_session.get(Workflow, artifact.workflow_id)
+        if workflow.project_id is None:
+            project = Project(user_id=test_user.id, name="Reviewed synthetic application")
+            test_session.add(project)
+            await test_session.flush()
+            workflow.project_id = project.id
+        artifact.project_id = workflow.project_id
+        artifact.is_deploy_ready = False
+        await test_session.commit()
+        current = await get_model_promotion_review(artifact.artifact_uid, test_session, test_user)
+        assert current["blockers"] == []
+        await update_model(
+            artifact.artifact_uid,
+            ModelUpdateRequest(
+                is_deploy_ready=True,
+                promotion_review={
+                    "review_digest": current["review_digest"],
+                    "intended_use": "Synthetic exploratory folder monitoring",
+                    "protocol": "exploratory",
+                    "rationale": "Inspected exact persisted test artifact; no independent-validation claim.",
+                },
+            ),
+            test_session,
+            test_user,
+        )
+
+    return review
+
+
+@pytest.fixture
 def deny_inference_network(monkeypatch):
     """Deny inference connections while allowing the stdlib's Windows socketpair.
 

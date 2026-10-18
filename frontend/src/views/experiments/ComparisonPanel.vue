@@ -360,7 +360,9 @@ interface SavedGraph {
 
 const savedGraphs = ref<Record<string, SavedGraph | null>>({});
 const selectedModels = ref<Record<number, string>>({});
-const modelNodes = (id: number) => (savedGraphs.value[String(id)]?.nodes || []).filter(node => ['model.fitted_pls', 'model.pls', 'model.pls_regression'].includes(node.node_type));
+// Match the backend's exact persisted-node compatibility boundary.
+const modelNodes = (id: number) => (savedGraphs.value[String(id)]?.nodes || []).filter(node =>
+  ['model.fitted_pls', 'model.fitted_pls_v2'].includes(node.node_type));
 const pairedRecipes = computed(() => props.runs.flatMap(run => selectedModels.value[run.id]
   ? [{ run_id: run.id, model_node_id: selectedModels.value[run.id], label: run.name }] : []));
 let graphRequest = 0;

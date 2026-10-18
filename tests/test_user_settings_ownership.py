@@ -220,6 +220,7 @@ async def test_folder_watches_cannot_cross_user_boundaries(
     test_user: User,
     swap_user,
     deployment_artifact_factory,
+    review_deployment_artifact,
     tmp_path,
 ) -> None:
     from spectra_sherpa.app.models.folder_watch import FolderWatch
@@ -240,6 +241,7 @@ async def test_folder_watches_cannot_cross_user_boundaries(
     store = get_model_store()
     artifact.integrity_hash = store.save_new(artifact.artifact_uid, manifest, arrays)
     artifact.artifact_dir = store.artifact_directory(artifact.artifact_uid)
+    await review_deployment_artifact(artifact)
     representative = tmp_path / "representative.csv"
     representative.write_text("1000,1100\n1,0\n2,0.5\n3,1\n")
     selected_asset = ingest(representative).assets[0].asset_id

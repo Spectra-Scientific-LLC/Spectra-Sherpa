@@ -180,7 +180,40 @@ async def test_fit_persist_reopen_list_and_apply(node_type, tmp_path, test_sessi
                 test_session, user_id=test_user.id, workflow_id=workflow.id, artifact_uid=uid
             )
         return
+    # Training registers a fitted artifact, not a scientific readiness decision.
+    # Local exploratory application remains available before any promotion.
+    assert apps == []
+    assert records[0].is_deploy_ready is False
+    binding = await resolve_deployment_binding(
+        test_session, user_id=test_user.id, workflow_id=workflow.id, artifact_uid=uid
+    )
+    assert binding.artifact.artifact_uid == uid
+    from spectra_sherpa.app.api.v1.routes.models import (
+        ModelUpdateRequest,
+        get_model_promotion_review,
+        update_model,
+    )
+
+    review = await get_model_promotion_review(uid, test_session, test_user)
+    assert review["artifact_uid"] == uid
+    assert review["blockers"] == []
+    await update_model(
+        uid,
+        ModelUpdateRequest(
+            is_deploy_ready=True,
+            promotion_review={
+                "review_digest": review["review_digest"],
+                "intended_use": "Synthetic exploratory model application",
+                "protocol": "exploratory",
+                "rationale": "Inspected the persisted fitted artifact; no independent-validation claim.",
+            },
+        ),
+        test_session,
+        test_user,
+    )
+    apps = await list_applications(project.id, test_session, test_user)
     assert len(apps) == 1 and apps[0]["model_artifact_uid"] == uid
+    assert apps[0]["readiness"]["review_state"] == "reviewed"
     assert apps[0]["source_run_id"] == run.id
     assert (await list_applications(project.id, test_session, test_user))[0]["handle"] == apps[0]["handle"]
     binding = await resolve_deployment_binding(
@@ -338,10 +371,34 @@ async def test_http_execution_automatically_registers_pls_for_runs_and_deploy(
     assert [model["artifact_uid"] for model in response.json()] == [uid]
     response = await auth_client.get("/api/v1/deploy/applications", params={"project_id": project["id"]})
     assert response.status_code == 200, response.text
+    assert response.json() == []
+    from spectra_sherpa.app.services.deployment_binding import resolve_deployment_binding
+
+    binding = await resolve_deployment_binding(
+        test_session, user_id=test_user.id, workflow_id=workflow["id"], artifact_uid=uid
+    )
+    assert binding.artifact.source_run_id == run["id"]
+    response = await auth_client.get(f"/api/v1/models/{uid}/promotion-review")
+    assert response.status_code == 200, response.text
+    review = response.json()
+    response = await auth_client.patch(
+        f"/api/v1/models/{uid}",
+        json={
+            "is_deploy_ready": True,
+            "promotion_review": {
+                "review_digest": review["review_digest"],
+                "intended_use": "Synthetic exploratory regression",
+                "protocol": "exploratory",
+                "rationale": "Inspected the exact saved artifact; no independent-validation claim.",
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+    response = await auth_client.get("/api/v1/deploy/applications", params={"project_id": project["id"]})
+    assert response.status_code == 200, response.text
+    assert response.json()[0]["readiness"]["review_state"] == "reviewed"
     assert response.json()[0]["model_artifact_uid"] == uid
     assert response.json()[0]["source_run_id"] == run["id"]
-
-    from spectra_sherpa.app.services.deployment_binding import resolve_deployment_binding
 
     binding = await resolve_deployment_binding(
         test_session, user_id=test_user.id, workflow_id=workflow["id"], artifact_uid=uid
