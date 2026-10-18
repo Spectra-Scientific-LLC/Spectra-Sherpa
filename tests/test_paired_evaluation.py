@@ -178,56 +178,106 @@ async def test_route_preflight_checks_access_and_does_not_mutate_runs(monkeypatc
     assert denied.value.status_code in (403, 404)
 
 
-async def test_actual_job_retains_new_evidence_and_original_runs(monkeypatch, test_session, test_user, test_engine):
+async def test_actual_job_retains_new_evidence_and_original_runs(monkeypatch, tmp_path):
     import asyncio
+    from dataclasses import replace
     from datetime import datetime, timezone
 
-    from sqlalchemy.ext.asyncio import async_sessionmaker
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+    import spectra_sherpa.app.models  # noqa: F401
     from spectra_sherpa.app.api.v1.routes import paired_evaluations as routes
+    from spectra_sherpa.app.db.base import Base
     from spectra_sherpa.app.models.background_job import BackgroundJob
     from spectra_sherpa.app.models.execution_run import ExecutionRun
+    from spectra_sherpa.app.models.user import User
     from spectra_sherpa.app.services import job_manager as jobs
 
-    request, _, _ = fixtures(monkeypatch)
-    request.repetitions = 1
-    for identifier in (1, 2):
-        test_session.add(
-            ExecutionRun(
-                id=identifier,
-                user_id=test_user.id,
-                name=f"Source {identifier}",
-                status="completed",
-                params_snapshot={"original": identifier},
-                results_summary={"original": identifier},
-                executed_at=datetime.now(timezone.utc),
-                run_kind="training",
-            )
-        )
-    await test_session.commit()
-    factory = async_sessionmaker(test_engine, expire_on_commit=False)
+    # This is a concurrent worker/heartbeat integration test. The common
+    # in-memory StaticPool fixture shares one connection across all sessions:
+    # a polling session's close can roll back an uncommitted worker update.
+    # File-backed SQLite gives each concurrent session its own transaction.
+    database_url = f"sqlite+aiosqlite:///{tmp_path / 'paired-job.db'}"
+    engine = create_async_engine(database_url)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
     monkeypatch.setattr(routes, "async_session", factory)
     monkeypatch.setattr(jobs, "async_session", factory)
+    monkeypatch.setattr(jobs, "settings", replace(jobs.settings, database_url=database_url))
+    tasks = []
+
+    def track_task(coroutine):
+        task = asyncio.create_task(coroutine)
+        tasks.append(task)
+        return task
+
+    # Observe actual scheduling only in these modules, including the real
+    # heartbeat; do not replace the worker, evaluator or global asyncio module.
+    tracked_asyncio = SimpleNamespace(**{**vars(asyncio), "create_task": track_task})
+    monkeypatch.setattr(routes, "asyncio", tracked_asyncio)
+    monkeypatch.setattr(jobs, "asyncio", tracked_asyncio)
 
     async def silent(*args, **kwargs):
         pass
 
     monkeypatch.setattr(jobs.job_manager, "_broadcast_job", silent)
-    started = await routes.start(request, test_session, test_user)
-    for _ in range(100):
-        await asyncio.sleep(0.05)
+    try:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+        async with factory() as session:
+            user = User(username="paired-job-scientist", is_active=True)
+            session.add(user)
+            await session.flush()
+            request, _, _ = fixtures(monkeypatch)
+            request.repetitions = 1
+            for identifier in (1, 2):
+                session.add(
+                    ExecutionRun(
+                        id=identifier,
+                        user_id=user.id,
+                        name=f"Source {identifier}",
+                        status="completed",
+                        params_snapshot={"original": identifier},
+                        results_summary={"original": identifier},
+                        executed_at=datetime.now(timezone.utc),
+                        run_kind="training",
+                    )
+                )
+            await session.commit()
+            started = await routes.start(request, session, user)
+            assert len(tasks) == 1
+            worker = tasks[0]
+        # Await actual completion, with a failure bound rather than a five-
+        # second polling race. Fresh DB reads below remain the success proof.
+        await asyncio.wait_for(asyncio.shield(worker), timeout=60)
         async with factory() as check:
             state = await check.get(BackgroundJob, started["job_id"])
-            if state.status in {"completed", "failed"}:
-                assert state.status == "completed", state.error_message
-                saved = await routes.result(started["run_id"], check, test_user)
-                assert saved["record"]["paired_rmsecv_differences"] == [0]
-                assert saved["record"]["population"]["held_out_count"] == 8
-                source = await check.get(ExecutionRun, 1)
-                assert source.params_snapshot == {"original": 1}
-                assert source.results_summary == {"original": 1}
-                return
-    pytest.fail("Local paired evaluation job did not complete")
+            assert state.status == "completed", state.error_message
+            saved = await routes.result(started["run_id"], check, user)
+            assert saved["status"] == "completed", saved["error"]
+            assert saved["record"]["paired_rmsecv_differences"] == [0]
+            assert saved["record"]["population"]["held_out_count"] == 8
+            assert started["run_id"] not in (1, 2)
+            evaluation = await check.get(ExecutionRun, started["run_id"])
+            assert evaluation.status == "completed"
+            assert evaluation.source_metadata["source_run_ids"] == [1, 2]
+            assert evaluation.source_metadata["protocol"] == request.model_dump()
+            for identifier in (1, 2):
+                source = await check.get(ExecutionRun, identifier)
+                assert source.status == "completed"
+                assert source.params_snapshot == {"original": identifier}
+                assert source.results_summary == {"original": identifier}
+        assert started["job_id"] not in jobs.job_manager._local_jobs
+        assert started["job_id"] not in jobs.job_manager._heartbeat_tasks
+    finally:
+        # Drain even on assertion/timeout so no task outlives monkeypatches or
+        # accesses a disposed test database. Production heartbeat stays real.
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        try:
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=10)
+        finally:
+            await engine.dispose()
 
 
 def test_independent_loader_event_times_keep_the_same_population(monkeypatch):
