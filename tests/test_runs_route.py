@@ -588,6 +588,10 @@ async def test_project_runs_list_and_compare_across_project(test_session, test_u
         current_user=test_user,
     )
 
+    from spectra_sherpa.app.services.scientific_comparison import compare_saved_run_evidence
+
+    assert comparison.scientific_comparison == compare_saved_run_evidence([first, second])
+    assert all(s.state == "unavailable" for s in comparison.scientific_comparison.pairs[0].sections)
     assert comparison.metric_keys == ["accuracy"]
     assert comparison.diff["accuracy"][str(first.id)] == 0.8
     assert comparison.diff["accuracy"][str(second.id)] == 0.9
@@ -722,6 +726,10 @@ async def test_workflow_compare_uses_curated_scalar_metrics(test_session, test_u
         current_user=test_user,
     )
 
+    from spectra_sherpa.app.services.scientific_comparison import compare_saved_run_evidence
+
+    assert comparison.scientific_comparison == compare_saved_run_evidence([first, second])
+    assert all(s.state == "unavailable" for s in comparison.scientific_comparison.pairs[0].sections)
     assert comparison.metric_keys == ["cv_accuracy", "train_accuracy"]
     assert set(comparison.diff) == {"cv_accuracy", "train_accuracy"}
     assert comparison.diff["cv_accuracy"][str(first.id)] == 0.9
@@ -1061,14 +1069,43 @@ async def test_model_select_and_search_are_project_scoped(test_session, test_use
 
 
 @pytest.mark.asyncio
-async def test_model_metadata_patch_updates_editable_lifecycle_fields(test_session, test_user):
+async def test_model_metadata_patch_updates_editable_lifecycle_fields(test_session, test_user, monkeypatch):
+    from fastapi import HTTPException
+
     from spectra_sherpa.app.api.v1.routes import models as models_route
 
     _, _, artifact = await _seed_artifact(test_session, test_user)
 
+    from unittest.mock import AsyncMock
+
+    snapshot = {
+        "review_digest": "a" * 64,
+        "artifact_uid": artifact.artifact_uid,
+        "artifact_digest": artifact.integrity_hash,
+        "manifest_digest": "b" * 64,
+        "blockers": [],
+        "population": {"fitted_count": None, "held_out_count": None},
+        "qualification": {"state": "unavailable"},
+        "limitations": ["Exploratory only"],
+    }
+    monkeypatch.setattr(models_route, "_current_promotion_review", AsyncMock(return_value=snapshot))
+    with pytest.raises(HTTPException) as missing_review:
+        await models_route.update_model(
+            artifact.artifact_uid,
+            models_route.ModelUpdateRequest(is_deploy_ready=True),
+            session=test_session,
+            current_user=test_user,
+        )
+    assert missing_review.value.status_code == 422
+    assert not artifact.is_deploy_ready
     updated = await models_route.update_model(
         artifact.artifact_uid,
         models_route.ModelUpdateRequest(
+            promotion_review={
+                "review_digest": "a" * 64,
+                "intended_use": "Exploration",
+                "rationale": "Review completed",
+            },
             display_name="Wine PLSDA production candidate",
             tags=["wine", "candidate"],
             is_deploy_ready=True,

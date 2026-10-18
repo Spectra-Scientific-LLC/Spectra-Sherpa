@@ -19,7 +19,21 @@
     </div>
 
     <template v-else>
-      <p v-if="!rankableMetrics?.length" class="qualification-note" role="status">
+      <ScientificComparison v-if="scientificComparison" :evidence="scientificComparison" />
+      <ScientificBasisHelp v-else />
+      <details v-if="runs.length === 2" class="evaluation-controls">
+        <summary>Optional common evaluation and robustness</summary>
+        <p>Select the saved PLS output from each workflow. This creates a new development evaluation and keeps the original runs unchanged.</p>
+        <label v-for="run in runs" :key="run.id">{{ run.name }}
+          <select v-model="selectedModels[run.id]">
+            <option value="">Choose a PLS output</option>
+            <option v-for="node in modelNodes(run.id)" :key="node.node_id" :value="node.node_id">{{ scientificNodeLabel(node) }}</option>
+          </select>
+        </label>
+        <PairedEvaluationPanel :recipes="pairedRecipes" />
+      </details>
+      <p v-if="scientificComparison" class="qualification-note" role="status">This overview is descriptive. Use the qualified scientific sections above for paired conclusions.</p>
+      <p v-else-if="!rankableMetrics?.length" class="qualification-note" role="status">
         Differences are arithmetic only; ranking requires matching evaluation evidence.
       </p>
 
@@ -70,6 +84,10 @@ import { scientificNumber } from "@/utils/scientificEncoding";
 import { computed, ref, watch } from "vue";
 import Button from "primevue/button";
 import api from "@/api/client";
+import PairedEvaluationPanel from "@/components/PairedEvaluationPanel.vue";
+import ScientificComparison from "@/components/ScientificComparison.vue";
+import ScientificBasisHelp from "@/components/ScientificBasisHelp.vue";
+import type { EvidenceComparison } from "@/types/scientificComparison";
 import type { ExecutionRunDetail } from "@/types";
 
 const props = defineProps<{
@@ -77,6 +95,7 @@ const props = defineProps<{
   metricKeys: string[];
   diff: Record<string, Record<string, unknown>>;
   rankableMetrics?: string[];
+  scientificComparison?: EvidenceComparison | null;
 }>();
 
 defineEmits<{ back: [] }>();
@@ -340,12 +359,17 @@ interface SavedGraph {
 }
 
 const savedGraphs = ref<Record<string, SavedGraph | null>>({});
+const selectedModels = ref<Record<number, string>>({});
+const modelNodes = (id: number) => (savedGraphs.value[String(id)]?.nodes || []).filter(node => ['model.fitted_pls', 'model.pls', 'model.pls_regression'].includes(node.node_type));
+const pairedRecipes = computed(() => props.runs.flatMap(run => selectedModels.value[run.id]
+  ? [{ run_id: run.id, model_node_id: selectedModels.value[run.id], label: run.name }] : []));
 let graphRequest = 0;
 watch(
   () => props.runs.map((run) => `${run.id}:${run.project_id}`).join(","),
   async () => {
     const request = ++graphRequest;
     savedGraphs.value = {};
+    selectedModels.value = {};
     await Promise.all(props.runs.map(async (run) => {
       const evidence = (run as ExecutionRunDetail & { evidence_completeness?: { outputs?: Record<string, Record<string, { state?: string }>> } }).evidence_completeness;
       if (evidence?.outputs?.__workflow__?.definition?.state !== "exact" || run.project_id == null) return;
@@ -358,6 +382,8 @@ watch(
         const graph = response.data?.value;
         if (request === graphRequest && Array.isArray(graph?.nodes) && Array.isArray(graph?.edges)) {
           savedGraphs.value = { ...savedGraphs.value, [String(run.id)]: graph as SavedGraph };
+          const models = modelNodes(run.id);
+          if (models.length === 1) selectedModels.value[run.id] = models[0].node_id;
         }
       } catch {
         if (request === graphRequest)
@@ -646,13 +672,13 @@ function formatDelta(delta: number | null): string {
 }
 
 function cellClass(row: MetricRow, runId: number): string {
-  if (!props.rankableMetrics?.includes(row.metric)) return "";
+  if (props.scientificComparison || !props.rankableMetrics?.includes(row.metric)) return "";
   if (row.bestRunId === String(runId)) return "metric-best";
   return "";
 }
 
 function deltaClass(row: MetricRow): string {
-  if (!props.rankableMetrics?.includes(row.metric)) return "";
+  if (props.scientificComparison || !props.rankableMetrics?.includes(row.metric)) return "";
   if (row.delta === null) return "";
   if (row.delta === 0) return "delta-zero";
   const higherBetter = HIGHER_IS_BETTER.has(metricNameFromKey(row.metric));

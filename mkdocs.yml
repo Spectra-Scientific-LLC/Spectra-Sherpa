@@ -47,6 +47,7 @@ nav:
       - Peak Finding and Library Comparison: chemometrics/peaks-library.md
       - Designing Validation: chemometrics/validation-design.md
       - Validation and Model Application: chemometrics/validation-application.md
+      - Compare Results and Review a Model: chemometrics/comparison-and-promotion.md
   - Node Library:
       - Overview: nodes/index.md
       - Data Nodes: nodes/data.md

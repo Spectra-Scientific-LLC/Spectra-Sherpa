@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 from asyncio import to_thread
+from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal
 
@@ -36,6 +37,7 @@ from spectra_sherpa.app.schemas.execution_runs import (
     RunPage,
 )
 from spectra_sherpa.app.schemas.run_evidence import OutputEvidence, RunEvidence
+from spectra_sherpa.app.schemas.scientific_comparison import CompareEvidenceRequest, EvidenceComparisonResponse
 from spectra_sherpa.app.services.dataset_views import materialize_selection_receipt, receipt_sha256
 from spectra_sherpa.app.services.deployment_binding import resolve_deployment_binding
 from spectra_sherpa.app.services.job_manager import job_manager
@@ -676,6 +678,14 @@ async def list_project_runs(
     )
 
 
+@router.get("/scientific-guidance")
+async def get_scientific_guidance(current_user: User = Depends(get_current_user)):
+    """Reviewed general guidance; no account with an LLM provider is needed."""
+    from spectra_sherpa.app.services.scientific_guidance import scientific_basis
+
+    return scientific_basis()
+
+
 @router.get("/{run_id}", response_model=ExecutionRunOut)
 async def get_project_run(
     run_id: int,
@@ -734,7 +744,68 @@ async def update_project_run_name(
     return ExecutionRunOut.model_validate(run)
 
 
-@router.post("/compare", response_model=ComparisonResponse)
+@router.post("/compare-evidence", response_model=EvidenceComparisonResponse)
+async def compare_project_evidence(
+    payload: CompareEvidenceRequest,
+    project_id: int = Query(..., gt=0),
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> EvidenceComparisonResponse:
+    """Read authorized immutable evidence; never fit or apply a model."""
+    from spectra_sherpa.app.contracts.comparison_evidence import get_comparison_evidence_provider
+    from spectra_sherpa.app.schemas.execution_runs import EvaluationSelection
+    from spectra_sherpa.app.services.scientific_comparison import compare_evidence, resolve_run_evidence
+
+    identities = [reference.model_dump_json() for reference in payload.references]
+    if len(set(identities)) != len(identities):
+        raise HTTPException(400, "Select distinct evidence records or scientific outputs.")
+    resolved = []
+    for reference in payload.references:
+        if reference.provider == "runs":
+            if reference.kind not in {"run", "evaluation"} or not reference.id.isdecimal():
+                raise HTTPException(400, "A native run reference must identify a saved run.")
+            result = await session.execute(
+                select(ExecutionRun).where(
+                    *_run_belongs_to_project_clause(current_user.id, project_id),
+                    ExecutionRun.id == int(reference.id),
+                )
+            )
+            run = result.scalar_one_or_none()
+            if run is None:
+                raise HTTPException(404, "Selected evidence is unavailable in this project.")
+            selection = (
+                EvaluationSelection(**reference.selected_output.model_dump()) if reference.selected_output else None
+            )
+            item = await to_thread(resolve_run_evidence, run, selection)
+            # evaluation is an alias for a real retained execution; never
+            # manufacture a run to represent a proprietary candidate.
+            expected = item.reference.model_copy(update={"kind": reference.kind})
+            if expected != reference:
+                raise HTTPException(409, "Evidence changed; inspect and select its current immutable revision.")
+            item = replace(item, reference=reference)
+        else:
+            try:
+                provider = get_comparison_evidence_provider(reference.provider)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            # A registered provider must enforce ownership/project scope.
+            try:
+                item = await provider(reference, session, current_user.id, project_id)
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            if item.reference != reference:
+                raise HTTPException(409, "The provider returned a different evidence revision or selection.")
+        resolved.append(item)
+    return await to_thread(compare_evidence, resolved)
+
+
+@router.post(
+    "/compare",
+    response_model=ComparisonResponse,
+    deprecated=True,
+    description="Legacy matrix adapter. Use /runs/compare-evidence for scientific compatibility. "
+    "The scientific_comparison field is the shared authority; older scalar fields remain for existing clients.",
+)
 async def compare_project_runs(
     payload: CompareRunsRequest,
     project_id: int = Query(..., description="Project whose runs should be compared"),

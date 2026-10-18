@@ -120,7 +120,13 @@ async def test_legacy_watch_requires_explicit_rebind_before_enabling(
     from spectra_sherpa.app.core.config import app_config
 
     monkeypatch.setattr(app_config, "mode", "enterprise")
-    workflow = Workflow(user_id=test_user.id, name="Watch source")
+    from spectra_sherpa.app.models.application_release import ApplicationRelease
+    from spectra_sherpa.app.models.project import Project
+
+    project = Project(user_id=test_user.id, name="Legacy reviewed application")
+    test_session.add(project)
+    await test_session.flush()
+    workflow = Workflow(user_id=test_user.id, project_id=project.id, name="Watch source")
     test_session.add(workflow)
     await test_session.flush()
     artifact = await deployment_artifact_factory(workflow)
@@ -137,6 +143,28 @@ async def test_legacy_watch_requires_explicit_rebind_before_enabling(
     with pytest.raises(HTTPException) as exc:
         await deploy.enable_watch(watch.id, session=test_session, current_user=test_user)
     assert exc.value.status_code == 422
+    # A direct artifact ID cannot turn an executable model into a new release.
+    with pytest.raises(HTTPException) as pending:
+        await deploy.update_watch(
+            watch.id,
+            FolderWatchUpdate(artifact_uid=artifact.artifact_uid),
+            session=test_session,
+            current_user=test_user,
+        )
+    assert pending.value.status_code == 422
+    test_session.add(
+        ApplicationRelease(
+            handle="app_existing_reviewed",
+            user_id=test_user.id,
+            project_id=project.id,
+            workflow_id=workflow.id,
+            model_artifact_uid=artifact.artifact_uid,
+            origin="saved_run",
+            state="released",
+            label="Existing reviewed model",
+        )
+    )
+    await test_session.commit()
     rebound = await deploy.update_watch(
         watch.id, FolderWatchUpdate(artifact_uid=artifact.artifact_uid), session=test_session, current_user=test_user
     )

@@ -30,6 +30,8 @@ from spectra_sherpa.app.models.execution_run import ExecutionRun
 from spectra_sherpa.app.models.folder_watch import FolderWatch
 from spectra_sherpa.app.models.model_artifact import ModelArtifact
 from spectra_sherpa.app.models.user import User
+from spectra_sherpa.app.services.model_outlier_challenge import OutlierChallengeRequest
+from spectra_sherpa.app.services.model_promotion_review import PromotionReviewDecision
 from spectra_sherpa.core.target_authority import TargetAuthority
 
 logger = logging.getLogger(__name__)
@@ -123,6 +125,7 @@ class ModelUpdateRequest(BaseModel):
     display_name: str | None = Field(None, min_length=1, max_length=255)
     tags: Annotated[list[TagValue], Field(max_length=24)] | None = None
     is_deploy_ready: bool | None = None
+    promotion_review: PromotionReviewDecision | None = None
 
 
 class ModelCompareResponse(BaseModel):
@@ -867,7 +870,13 @@ async def import_canonical_full_refit(
     return CanonicalFullRefitImportResponse(model=_model_to_detail(row), receipt=receipt)
 
 
-@router.post("/compare", response_model=ModelCompareResponse)
+@router.post(
+    "/compare",
+    response_model=ModelCompareResponse,
+    description="Explicit frozen-model application to one dataset, with prediction disagreements. "
+    "This operation does not establish CV comparability, independent validation or deploy-readiness. "
+    "Use saved run evidence in /runs/compare-evidence for scientific compatibility decisions.",
+)
 async def compare_models(
     payload: ModelCompareRequest,
     _dg: None = Depends(demo_guard(MODEL_USE)),
@@ -930,7 +939,10 @@ async def update_model(
     try:
         check_demo_capability(MODEL_MANAGE)
     except HTTPException as exc:
-        if exc.status_code != 403 or payload.model_fields_set != {"is_deploy_ready"}:
+        if exc.status_code != 403 or payload.model_fields_set not in (
+            {"is_deploy_ready"},
+            {"is_deploy_ready", "promotion_review"},
+        ):
             raise
         from spectra_sherpa.app.contracts.prediction_access import require_private_prediction
 
@@ -947,6 +959,18 @@ async def update_model(
     model = result.scalar_one_or_none()
     if model is None:
         raise HTTPException(status_code=404, detail="Model artifact not found")
+
+    review_decision = None
+    if payload.is_deploy_ready is True:
+        if payload.promotion_review is None:
+            raise HTTPException(422, "Review for promotion is required before confirming deploy-ready.")
+        from spectra_sherpa.app.services.model_promotion_review import confirm_promotion_review
+
+        review = await _current_promotion_review(session, current_user, model)
+        try:
+            review_decision = confirm_promotion_review(review, payload.promotion_review)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     before_state = {
         "display_name": model.display_name,
@@ -968,7 +992,12 @@ async def update_model(
 
         if payload.is_deploy_ready:
             try:
-                await ensure_model_release(session, model=model, user_id=current_user.id)
+                await ensure_model_release(
+                    session,
+                    model=model,
+                    user_id=current_user.id,
+                    promotion_review={**review_decision, "actor_id": current_user.id},
+                )
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
         else:
@@ -990,6 +1019,7 @@ async def update_model(
             "display_name": model.display_name,
             "tags": list(model.tags or []),
             "is_deploy_ready": model.is_deploy_ready,
+            "promotion_review": review_decision,
         },
     )
     await session.commit()
@@ -1168,6 +1198,7 @@ async def saved_model_qualification_history(
                 SavedModelQualificationRecord.project_id == model.project_id,
                 SavedModelQualificationRecord.artifact_uid == artifact_uid,
                 SavedModelQualificationRecord.user_id == current_user.id,
+                SavedModelQualificationRecord.kind.in_(["assessment", "decision"]),
             )
             .order_by(SavedModelQualificationRecord.id)
         )
@@ -1505,3 +1536,119 @@ async def delete_model(
         logger.info("Soft-deleted model artifact %s", artifact_uid)
 
     return Response(status_code=204)
+
+
+async def _current_promotion_review(session: AsyncSession, user: User, model: ModelArtifact) -> dict[str, Any]:
+    from asyncio import to_thread
+
+    from spectra_sherpa.app.services.model_promotion_review import build_promotion_review, retained_model_population
+    from spectra_sherpa.app.services.model_store import get_model_store, verify_model_artifact_storage_record
+
+    history = await saved_model_qualification_history(model.artifact_uid, session, user)
+    try:
+        await to_thread(verify_model_artifact_storage_record, model)
+        manifest, arrays = await to_thread(get_model_store().load, model.artifact_uid, verify=True)
+        run = await session.get(ExecutionRun, model.source_run_id) if model.source_run_id else None
+        try:
+            population = await to_thread(retained_model_population, model, manifest, run)
+        except (ValueError, KeyError, TypeError, AttributeError, OSError):
+            population = {}
+        return build_promotion_review(model, manifest, arrays, history["status"], retained_population=population)
+    except (ValueError, KeyError, TypeError, RuntimeError, OSError) as exc:
+        raise HTTPException(409, "Stored fitted model cannot be verified; readiness cannot be confirmed.") from exc
+
+
+@router.get("/{artifact_uid}/promotion-review")
+async def get_model_promotion_review(
+    artifact_uid: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    model = await _qualification_model(session, current_user, artifact_uid, "read")
+    return await _current_promotion_review(session, current_user, model)
+
+
+@router.post("/{artifact_uid}/outlier-challenges", status_code=201)
+async def run_model_outlier_challenge(
+    artifact_uid: str,
+    payload: OutlierChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    from spectra_sherpa.app.models.saved_model_qualification import SavedModelQualificationRecord
+    from spectra_sherpa.app.services.model_outlier_challenge import assess_outlier_challenge
+    from spectra_sherpa.sdk.prediction_uncertainty import _digest
+
+    model = await _qualification_model(session, current_user, artifact_uid, "execute")
+    view, loaded = await _qualification_view(session, current_user, model, payload.dataset_view_id)
+    enforce_demo_execution_quota(current_user.id)
+    if not payload.outlier_type.strip() or not payload.label_basis.strip():
+        raise HTTPException(422, "Declare the outlier type and label basis before execution")
+    try:
+        evidence, plan = await assess_outlier_challenge(
+            model, loaded.dataset, outlier_type=payload.outlier_type.strip(), label_basis=payload.label_basis.strip()
+        )
+    except (ValueError, TypeError, KeyError, OSError) as exc:
+        raise HTTPException(422, f"Outlier challenge unavailable: {exc}") from exc
+    evidence.update(validation_view_id=view.id, validation_view_digest=view.selection_sha256)
+    digest = _digest(evidence)
+    record = await session.scalar(
+        select(SavedModelQualificationRecord).where(
+            SavedModelQualificationRecord.user_id == current_user.id,
+            SavedModelQualificationRecord.artifact_uid == artifact_uid,
+            SavedModelQualificationRecord.record_digest == digest,
+        )
+    )
+    if record is None:
+        record = SavedModelQualificationRecord(
+            user_id=current_user.id,
+            project_id=model.project_id,
+            artifact_uid=artifact_uid,
+            record_digest=digest,
+            kind="outlier_challenge",
+            model_integrity_hash=plan.artifact_digest,
+            manifest_digest=plan.manifest_digest,
+            application_plan_digest=plan.application_plan_digest,
+            validation_view_id=view.id,
+            validation_view_digest=view.selection_sha256,
+            payload=evidence,
+        )
+        session.add(record)
+        await session.commit()
+    return {"record_digest": digest, "evidence": evidence, "operational_readiness_changed": False}
+
+
+@router.get("/{artifact_uid}/outlier-challenges")
+async def model_outlier_challenge_history(
+    artifact_uid: str,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    from spectra_sherpa.app.models.saved_model_qualification import SavedModelQualificationRecord
+    from spectra_sherpa.sdk.prediction_uncertainty import _digest
+
+    model = await _qualification_model(session, current_user, artifact_uid, "read")
+    rows = (
+        await session.scalars(
+            select(SavedModelQualificationRecord)
+            .where(
+                SavedModelQualificationRecord.user_id == current_user.id,
+                SavedModelQualificationRecord.artifact_uid == artifact_uid,
+                SavedModelQualificationRecord.kind == "outlier_challenge",
+            )
+            .order_by(SavedModelQualificationRecord.id)
+        )
+    ).all()
+    return {
+        "records": [
+            {
+                "record_digest": row.record_digest,
+                "evidence": row.payload,
+                "digest_verified": _digest(row.payload) == row.record_digest,
+                "matches_artifact_digest": row.model_integrity_hash == model.integrity_hash,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ],
+        "claim_scope": "Historical exploratory evidence; no independent validation or readiness decision.",
+    }

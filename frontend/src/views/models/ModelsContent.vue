@@ -176,12 +176,14 @@
           </div>
         </TabPanel>
         <TabPanel header="Compare">
+          <EvidenceComparisonView v-if="typeof route.query.evidence === 'string' && projectStore.currentProjectId" :project-id="projectStore.currentProjectId" :encoded-references="route.query.evidence" />
           <ComparisonPanel
-            v-if="runsStore.comparison"
+            v-else-if="runsStore.comparison"
             :runs="runsStore.comparison.runs"
             :metric-keys="runsStore.comparison.metric_keys"
             :diff="runsStore.comparison.diff"
             :rankable-metrics="runsStore.comparison.rankable_metric_keys"
+            :scientific-comparison="runsStore.comparison.scientific_comparison"
             @back="activeTab = TAB_RUN_HISTORY"
           />
           <WorkspaceState v-else kind="empty" variant="page" message="Select 2–10 runs in History to compare.">
@@ -192,7 +194,7 @@
         <TabPanel header="Models">
           <WorkspaceState v-if="loading" kind="loading" message="Loading models…" />
           <WorkspaceState v-if="error" kind="error" :message="error"><Button label="Retry" @click="loadModels" /></WorkspaceState>
-          <QualificationApplications v-if="projectStore.currentProjectId" :project-id="projectStore.currentProjectId" />
+          <QualificationApplications v-if="projectStore.currentProjectId" :project-id="projectStore.currentProjectId" :review-workflow-id="Number(route.query.review_workflow) || undefined" />
           <SavedModelProjectTable
             v-if="projectStore.currentProjectId"
             :project-id="projectStore.currentProjectId"
@@ -212,7 +214,7 @@
             <Button icon="pi pi-chevron-right" aria-label="Next models" :disabled="!moreModels || loading" @click="changeModelPage(50)" />
             <Button
               v-if="!isDemoMode || privatePredictionAllowed"
-              label="Mark deploy-ready"
+              label="Review for promotion"
               icon="pi pi-check"
               class="p-button-text p-button-sm"
               :disabled="selectedArtifactUidList.length === 0"
@@ -274,7 +276,7 @@
               <div class="detail-actions">
                 <Button
                   v-if="!isDemoMode || privatePredictionAllowed"
-                  :label="selectedModel.is_deploy_ready ? 'Deploy-ready' : 'Mark deploy-ready'"
+                  :label="selectedModel.is_deploy_ready ? 'Withdraw deploy-ready' : 'Review for promotion'"
                   :icon="selectedModel.is_deploy_ready ? 'pi pi-check' : 'pi pi-circle'"
                   class="p-button-sm p-button-text"
                   @click="toggleSelectedDeployReady"
@@ -399,6 +401,14 @@
       </WorkspaceTabs>
     </template>
 
+    <ModelPromotionReview
+      v-if="promotionQueue.length"
+      :key="promotionQueue[0]"
+      :artifact-uid="promotionQueue[0]"
+      :project-id="projectStore.currentProjectId"
+      @close="promotionQueue = []"
+      @confirmed="promotionConfirmed"
+    />
     <Dialog
       v-model:visible="showSaveDialog"
       header="Save Execution Run"
@@ -510,11 +520,13 @@ import RunDetailContent from "./RunDetailContent.vue";
 import ModelSummaryCard from "@/components/ModelSummaryCard.vue";
 import SavedModelDiagnostics from "@/components/SavedModelDiagnostics.vue";
 import SavedPlsdaDiagnostics from "@/components/SavedPlsdaDiagnostics.vue";
+import ModelPromotionReview from "@/components/ModelPromotionReview.vue";
 import SavedModelProjectTable from "@/components/SavedModelProjectTable.vue";
 import SavedModelQualification from "@/components/SavedModelQualification.vue";
 import ReferenceQualityCard from "@/components/ReferenceQualityCard.vue";
 import { buildModelSummary, type ModelSummary as ScientificModelSummary } from "@/utils/modelSummary";
 import { readReferenceEvidence } from "@/utils/referenceQuality";
+import EvidenceComparisonView from "@/components/EvidenceComparisonView.vue";
 import ComparisonPanel from "@/views/experiments/ComparisonPanel.vue";
 import type { ExecutionRunSummary, ReferenceValueEvidence, RunListItem } from "@/types";
 import { useAuthStore } from "@/stores/auth";
@@ -1266,7 +1278,13 @@ async function handleCompareRuns(): Promise<void> {
   if (projectId == null || runsStore.selectedCount < 2) return;
   try {
     await runsStore.compareProjectRuns(projectId, [...runsStore.selectedRunIds]);
-    if (projectStore.currentProjectId === projectId && runsStore.comparison) activeTab.value = TAB_COMPARE;
+    if (projectStore.currentProjectId === projectId && runsStore.comparison) {
+      const query = { ...route.query };
+      query.tab = 'compare';
+      delete query.evidence;
+      await router.replace({ query });
+      activeTab.value = TAB_COMPARE;
+    }
   } catch (err: any) {
     toast.add({
       severity: "error",
@@ -1416,17 +1434,22 @@ async function renameSelectedModel(): Promise<void> {
   });
 }
 
+const promotionQueue = ref<string[]>([]);
 async function toggleSelectedDeployReady(): Promise<void> {
   if (!selectedModel.value) return;
-  await patchModel(selectedModel.value.artifact_uid, {
-    is_deploy_ready: !selectedModel.value.is_deploy_ready,
-  });
+  if (selectedModel.value.is_deploy_ready) {
+    await patchModel(selectedModel.value.artifact_uid, { is_deploy_ready: false });
+  } else {
+    promotionQueue.value = [selectedModel.value.artifact_uid];
+  }
 }
-
-async function markSelectedDeployReady(): Promise<void> {
-  await Promise.all(
-    selectedArtifactUidList.value.map((uid) => patchModel(uid, { is_deploy_ready: true })),
-  );
+function markSelectedDeployReady(): void {
+  promotionQueue.value = [...selectedArtifactUidList.value];
+}
+async function promotionConfirmed(): Promise<void> {
+  promotionQueue.value = promotionQueue.value.slice(1);
+  await loadModels();
+  modelOverviewRevision.value++;
 }
 
 function modelSubtitle(model: ModelSummary): string {

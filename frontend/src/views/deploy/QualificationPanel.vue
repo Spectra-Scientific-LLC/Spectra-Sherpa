@@ -34,14 +34,17 @@
     </fieldset>
     <details v-if="canonicalArtifactId">
       <summary>Assess an independent validation cohort</summary>
-      <p>Load a previously frozen, versioned laboratory policy and its declared context as JSON. Thresholds chosen after inspecting results are exploratory. Use one row per independent specimen, explicit sample IDs and retained response units. The SDK contract documents every field.</p>
+      <p>Prepare a versioned laboratory policy and its declared context below, or load an existing policy under Advanced. Thresholds chosen after inspecting results are exploratory. Use one row per independent specimen, explicit sample IDs and retained response units. The SDK contract documents every field.</p>
       <label>Dataset <select v-model="experimentId" @change="loadFiles"><option :value="null">Select dataset</option><option v-for="experiment in experiments" :key="experiment.id" :value="experiment.id">{{ experiment.name }}</option></select></label>
       <label>Reference file <select v-model="fileId"><option :value="null">Select file</option><option v-for="file in files" :key="file.id" :value="file.id">{{ file.file_path }} ({{ file.stage }})</option></select></label>
       <label>Asset identity, if needed <input v-model="assetId" /></label>
+      <QualificationPolicyForm :key="canonicalArtifactId" @prepared="policyText = $event.policy; contextText = $event.context" @changed="policyText = ''; contextText = ''" />
+      <details><summary>Advanced: policy JSON and additional evidence</summary>
       <label>Frozen acceptance policy JSON <textarea v-model="policyText" rows="8" /></label>
       <label>Intended-use context and declarations JSON <textarea v-model="contextText" rows="8" /></label>
       <label>Optional recorded independence evidence JSON <textarea v-model="independenceText" rows="5" placeholder="Specimen/batch IDs and their namespaces; blank retains declared or unknown status" /></label>
       <label>Optional interval calibration record JSON <textarea v-model="intervalText" rows="3" placeholder="Blank means interval evidence unavailable" /></label>
+      </details>
       <label><input v-model="allowExclusions" type="checkbox" /> Explicitly exclude missing reference rows and retain their identities and reasons. Infinite references and nonfinite predictors still refuse.</label>
       <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy || !fileId || !policyText.trim() || !contextText.trim()" @click="assess">Execute frozen application and assess</button>
     </details>
@@ -51,6 +54,7 @@
 <script setup lang="ts">
 import { ref, watch, onMounted, onBeforeUnmount } from "vue";
 import api from "@/api/client";
+import QualificationPolicyForm from "@/components/QualificationPolicyForm.vue";
 import type { ExperimentSummary, ExperimentFile } from "@/types";
 type RecordEntry = { kind: string; record_digest: string; context_digest: string | null; payload: Record<string, any> };
 // `headingless` when a parent disclosure already names the section.

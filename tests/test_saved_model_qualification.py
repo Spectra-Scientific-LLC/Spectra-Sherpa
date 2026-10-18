@@ -53,6 +53,26 @@ async def test_native_saved_model_assessment_requires_exact_external_identity(tm
     )
     plan = SavedModelApplicationPlan.from_verified_snapshot(model, manifest, arrays)
     assert plan.training_specimen_count == 36
+    from spectra_sherpa.app.services import model_outlier_challenge as challenge_service
+
+    monkeypatch.setattr(challenge_service, "get_model_store", lambda: store)
+    challenge = SherpaDataset(
+        X=np.asarray(train.X) + 20,
+        target=train.target,
+        feature_axis=train.feature_axis,
+        target_context=train.target_context,
+    )
+    challenge.sample_axis = SampleAxis(labels=[f"challenge-{i}" for i in range(len(X))])
+    challenge_result, challenge_plan = await challenge_service.assess_outlier_challenge(
+        model, challenge, outlier_type="known matrix change", label_basis="independent preparation record"
+    )
+    assert challenge_plan == plan
+    assert challenge_result["evaluated_count"] == 36
+    assert challenge_result["detected"] > 0
+    assert challenge_result["ordinary_validation_rmsep"] is None
+    assert store.load(uid, verify=True)[0] == manifest
+    with pytest.raises(ValueError, match="overlap"):
+        await challenge_service.assess_outlier_challenge(model, train, outlier_type="test", label_basis="lab")
     declared_policy = policy(response_identity=manifest["response_identity"])
     declared_context = context(reference_method={**METHOD, "response_identity": manifest["response_identity"]})
     external = SherpaDataset(
@@ -112,6 +132,18 @@ async def test_native_saved_model_assessment_requires_exact_external_identity(tm
     assert observed_plan == plan
     assert dossier.application_plan_digest == plan.application_plan_digest
     assert dossier.calculation["effective_fitted_components"] == 2
+    from spectra_sherpa.app.services.dataset_use import dossier_dataset_use
+    from spectra_sherpa.sdk.analytical_qualification import QualificationDossier
+
+    usage = dossier_dataset_use(dossier)
+    # The existing dossier transport, not a new history store, carries these
+    # exact identities across export/import and presentation-name changes.
+    imported_dossier = QualificationDossier.load(dossier.canonical_bytes())
+    assert dossier_dataset_use(imported_dossier) == usage
+    assert usage["populations"][0]["identity"] == dossier.original_cohort_digest
+    assert usage["populations"][0]["results_revealed"] is True
+    assert usage["populations"][0]["known_fit_overlap_count"] == 0
+    assert usage["independence"] == "not_established_by_usage_history"
     contradictory, _ = await assess_saved_model(
         model,
         external,

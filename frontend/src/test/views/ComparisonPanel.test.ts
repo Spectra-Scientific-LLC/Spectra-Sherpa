@@ -12,6 +12,13 @@ const run = (id: number) => ({ id, name: `Run ${id}`, params_snapshot: {}, resul
 }) as ExecutionRunDetail;
 
 describe('Comparison evaluation qualification', () => {
+  it('keeps legacy overview descriptive when the scientific authority is present', () => {
+    const wrapper = mount(ComparisonPanel, {props: {runs: [run(1), run(2)], metricKeys: ['accuracy'], diff: {accuracy: {'1': .9, '2': .8}}, rankableMetrics: ['accuracy'], scientificComparison: {schema_version: 'spectrasherpa-scientific-comparison/1', items: [], pairs: []}}, global: {plugins: [PrimeVue]}});
+    expect(wrapper.text()).toContain('This overview is descriptive');
+    expect(wrapper.find('.metric-best, .delta-positive, .delta-negative').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
   it('shows retained workflow nodes in DAG order and colors only the changed run', async () => {
     const first = run(1), second = run(2);
     const evidence = { outputs: { __workflow__: { definition: { state: 'exact' } } } };
