@@ -1,4 +1,4 @@
-"""Optional checks retain real predictions without gating local monitoring."""
+"""Optional file checks stay separate from reviewed monitoring readiness."""
 
 import numpy as np
 import pytest
@@ -15,7 +15,9 @@ from spectra_sherpa.app.services.watch_dry_run import latest_receipt, run_dry_ru
 
 
 @pytest.fixture
-async def ordinary_watch(test_session, test_user, deployment_artifact_factory, tmp_path, monkeypatch):
+async def ordinary_watch(
+    test_session, test_user, deployment_artifact_factory, review_deployment_artifact, tmp_path, monkeypatch
+):
     monkeypatch.setattr(app_config, "mode", "local")
     workflow = Workflow(user_id=test_user.id, name="Dry run fixture")
     test_session.add(workflow)
@@ -26,6 +28,7 @@ async def ordinary_watch(test_session, test_user, deployment_artifact_factory, t
     store = get_model_store()
     artifact.integrity_hash = store.save_new(artifact.artifact_uid, manifest, arrays)
     artifact.artifact_dir = store.artifact_directory(artifact.artifact_uid)
+    await review_deployment_artifact(artifact)
     folder = tmp_path / "incoming"
     folder.mkdir()
     (folder / "sample.csv").write_text("1000,1100\n1,0\n2,0.5\n3,1\n")
@@ -120,17 +123,20 @@ async def test_live_source_edit_changes_generation(test_session, test_user, ordi
 
 
 @pytest.mark.asyncio
-async def test_local_unmarked_fitted_model_can_run(test_session, test_user, ordinary_watch):
-    from sqlalchemy import select
+async def test_withdrawn_readiness_keeps_local_exploration_but_blocks_monitoring(
+    test_session, test_user, ordinary_watch
+):
+    from spectra_sherpa.app.api.v1.routes.models import ModelUpdateRequest, update_model
 
-    from spectra_sherpa.app.models.model_artifact import ModelArtifact
-
-    model = await test_session.scalar(
-        select(ModelArtifact).where(ModelArtifact.artifact_uid == ordinary_watch.artifact_uid)
-    )
-    model.is_deploy_ready = False
-    await test_session.commit()
-    assert (await deploy.enable_watch(ordinary_watch.id, session=test_session, current_user=test_user)).is_enabled
+    await update_model(ordinary_watch.artifact_uid, ModelUpdateRequest(is_deploy_ready=False), test_session, test_user)
+    # Exploratory file application is still available; it does not grant readiness.
+    receipt = await run_dry_run(test_session, ordinary_watch, "sample.csv")
+    assert receipt["status"] == "completed", receipt
+    np.testing.assert_allclose(receipt["result_preview"]["deployment_model"]["y_pred"], [[2.5], [4.0], [5.5]])
+    with pytest.raises(HTTPException) as exc:
+        await deploy.enable_watch(ordinary_watch.id, session=test_session, current_user=test_user)
+    assert exc.value.status_code == 422
+    assert not ordinary_watch.is_enabled
 
 
 @pytest.mark.asyncio
@@ -157,10 +163,16 @@ async def test_interruption_retained_without_gating(test_session, test_user, ord
 
 @pytest.mark.asyncio
 async def test_live_model_replacement_invalidates_old_poll(
-    test_session, test_user, ordinary_watch, deployment_artifact_factory
+    test_session, test_user, ordinary_watch, deployment_artifact_factory, review_deployment_artifact
 ):
     workflow = await test_session.get(Workflow, ordinary_watch.workflow_id)
     model = await deployment_artifact_factory(workflow)
+    manifest, arrays = LinearRegressionExtract(coef=np.array([1.0, -1.0]), intercept=np.array([0.5])).to_artifact()
+    manifest["n_features"] = 2
+    store = get_model_store()
+    model.integrity_hash = store.save_new(model.artifact_uid, manifest, arrays)
+    model.artifact_dir = store.artifact_directory(model.artifact_uid)
+    await review_deployment_artifact(model)
     ordinary_watch.is_enabled = True
     ordinary_watch.active_poll_token = "old-model"
     ordinary_watch.processed_files = {"sample.csv": "old-result"}
@@ -234,29 +246,21 @@ def test_campaign_star_requires_recorded_validation():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode,expected", [("local", True), ("enterprise", False)])
-async def test_unmarked_model_release_matches_profile(
-    test_session, test_user, ordinary_watch, monkeypatch, mode, expected
+@pytest.mark.parametrize("mode", ["local", "enterprise"])
+async def test_new_unreviewed_model_never_gets_released_identity(
+    test_session, test_user, ordinary_watch, deployment_artifact_factory, monkeypatch, mode
 ):
-    from sqlalchemy import select
-
-    from spectra_sherpa.app.models.model_artifact import ModelArtifact
     from spectra_sherpa.app.services.application_release import ensure_model_release
 
-    model = await test_session.scalar(
-        select(ModelArtifact).where(ModelArtifact.artifact_uid == ordinary_watch.artifact_uid)
-    )
-    from spectra_sherpa.app.models.project import Project
-
-    project = Project(user_id=test_user.id, name="Local application")
-    test_session.add(project)
-    await test_session.flush()
-    model.project_id = project.id
+    workflow = await test_session.get(Workflow, ordinary_watch.workflow_id)
+    model = await deployment_artifact_factory(workflow)
     model.is_deploy_ready = False
     monkeypatch.setattr(app_config, "mode", mode)
-    if expected:
+    if mode == "local":
         release = await ensure_model_release(test_session, model=model, user_id=test_user.id)
-        assert release.state == "released"
+        assert release.state == "revoked"
+        assert release.readiness["review_state"] == "review_required"
+        assert not release.readiness["ready"]
     else:
         with pytest.raises(ValueError, match="not released"):
             await ensure_model_release(test_session, model=model, user_id=test_user.id)

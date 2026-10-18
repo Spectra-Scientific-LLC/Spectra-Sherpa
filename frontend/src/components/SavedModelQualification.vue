@@ -56,10 +56,13 @@
         <select v-model="viewId"><option :value="null">Choose a named view</option><option v-for="view in views" :key="view.id" :value="view.id">{{ view.name }} · {{ view.selection_sha256.slice(0, 12) }}</option></select>
       </label>
       <p>Use the saved model response identity: {{ JSON.stringify(responseIdentity) }}. Enter laboratory thresholds and intended range before execution; the template leaves these blank and every chronology declaration false.</p>
+      <QualificationPolicyForm :key="artifactUid" :response-identity="responseIdentity" @prepared="policyText = $event.policy; contextText = $event.context" @changed="policyText = ''; contextText = ''" />
+      <details><summary>Advanced: policy JSON and additional evidence</summary>
       <button type="button" @click="fillTemplate">Load policy and context field template</button>
       <label>Frozen acceptance policy JSON <textarea v-model="policyText" rows="7" /></label>
       <label>Intended-use context and declarations JSON <textarea v-model="contextText" rows="7" /></label>
       <label>Optional recorded independence evidence JSON <textarea v-model="independenceText" rows="4" /></label>
+      </details>
       <button type="button" :disabled="busy || !viewId || !policyText.trim() || !contextText.trim()" @click="assess">Execute saved model and assess</button>
     </details>
   </details>
@@ -67,6 +70,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import QualificationPolicyForm from './QualificationPolicyForm.vue';
 import api from '@/api/client';
 import { useAppConfig } from '@/composables/useAppConfig';
 import { requestAdvisorPrompt } from '@/lib/advisorPromptActions';

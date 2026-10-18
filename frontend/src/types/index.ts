@@ -654,6 +654,7 @@ export interface ComparisonResultPair {
 }
 
 export interface ComparisonResult {
+  scientific_comparison?: import("./scientificComparison").EvidenceComparison | null;
   result_pairs?: ComparisonResultPair[];
   runs: ExecutionRunDetail[];
   rankable_metric_keys?: string[];

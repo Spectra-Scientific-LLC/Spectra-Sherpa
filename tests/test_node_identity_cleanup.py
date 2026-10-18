@@ -119,3 +119,101 @@ def test_old_operation_ids_are_confined_to_the_serialization_boundary() -> None:
                     offenders.append(str(path.relative_to(package_root)))
                     break
     assert offenders == []
+
+
+@pytest.mark.asyncio
+async def test_retained_workflow_output_projects_canonical_ids_without_rewriting_evidence(
+    test_session, test_user, tmp_path, monkeypatch
+):
+    from copy import deepcopy
+    from dataclasses import replace
+    from datetime import datetime, timezone
+
+    from fastapi import HTTPException
+
+    from spectra_sherpa.app.api.v1.routes.runs import get_retained_run_output
+    from spectra_sherpa.app.models.execution_run import ExecutionRun
+    from spectra_sherpa.app.models.project import Project
+    from spectra_sherpa.app.services import run_output_retention as retention
+
+    monkeypatch.setattr(retention, "settings", replace(retention.settings, data_dir=tmp_path))
+    raw = {
+        "nodes": [
+            {
+                "node_id": "same-model-id",
+                "node_type": "model.fitted_pls_v2",
+                "label": "model.fitted_pls_v2",
+                "parameters": {"node_type": "model.fitted_pls_v2", "n_components": 3},
+            }
+        ],
+        "edges": [],
+        "sample_ids": ["model.fitted_pls_v2", "sample-2"],
+    }
+    before = deepcopy(raw)
+    evidence = retention.retain_run_outputs(
+        test_user.id,
+        {
+            "__workflow__": {"definition": raw, "other": raw},
+            "measurements": {"definition": raw, "rows": [[1.25, 2.5], [3.75, 4.0]]},
+        },
+        {},
+    )
+    evidence_before = deepcopy(evidence)
+    item = evidence["outputs"]["__workflow__"]["definition"]
+    storage = retention._user_directory(test_user.id) / f"{item['sha256']}.json"
+    stored_before = storage.read_bytes()
+    project = Project(user_id=test_user.id, name="Historical workflow")
+    test_session.add(project)
+    await test_session.flush()
+    run = ExecutionRun(
+        user_id=test_user.id,
+        project_id=project.id,
+        name="Historical run",
+        status="completed",
+        params_snapshot={},
+        results_summary={},
+        evidence_completeness=evidence,
+        executed_at=datetime.now(timezone.utc),
+    )
+    test_session.add(run)
+    await test_session.commit()
+
+    async def read(node, port, project_id=None):
+        return await get_retained_run_output(
+            run.id,
+            node,
+            port,
+            project_id=project.id if project_id is None else project_id,
+            session=test_session,
+            current_user=test_user,
+        )
+
+    response = await read("__workflow__", "definition")
+    assert response["value"] == before == raw
+    assert response["evidence"]["sha256"] == item["sha256"]
+    assert response["evidence"]["storage"] == item["storage"]
+    projected = response["canonical_workflow"]
+    assert projected["nodes"][0]["node_type"] == "model.fitted_pls"
+    assert projected["nodes"][0]["node_id"] == "same-model-id"
+    assert projected["nodes"][0]["parameters"] == before["nodes"][0]["parameters"]
+    assert projected["nodes"][0]["label"] == before["nodes"][0]["label"]
+    assert projected["sample_ids"] == before["sample_ids"]
+    projected["nodes"][0]["parameters"]["n_components"] = 7
+    assert response["value"] == before
+    for node, port in (("__workflow__", "other"), ("measurements", "definition")):
+        ordinary = await read(node, port)
+        assert "canonical_workflow" not in ordinary
+        assert ordinary["value"] == before
+    rows = await read("measurements", "rows")
+    assert rows["value"] == [[1.25, 2.5], [3.75, 4.0]]
+    assert "canonical_workflow" not in rows
+    assert storage.read_bytes() == stored_before
+    assert run.evidence_completeness == evidence_before
+    assert (await read("__workflow__", "definition"))["value"] == before
+    with pytest.raises(HTTPException) as denied:
+        await read("__workflow__", "definition", project.id + 1)
+    assert denied.value.status_code == 404
+    storage.write_bytes(b"corrupt")
+    with pytest.raises(HTTPException) as corrupted:
+        await read("__workflow__", "definition")
+    assert corrupted.value.status_code == 409

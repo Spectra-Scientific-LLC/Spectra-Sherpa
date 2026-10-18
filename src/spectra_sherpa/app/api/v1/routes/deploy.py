@@ -16,7 +16,13 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from spectra_sherpa.app.api.deps import demo_guard, get_current_user, get_session, require_project
+from spectra_sherpa.app.api.deps import (
+    demo_guard,
+    enforce_demo_execution_quota,
+    get_current_user,
+    get_session,
+    require_project,
+)
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
 from spectra_sherpa.app.models.application_release import ApplicationRelease
 from spectra_sherpa.app.models.batch_prediction import BatchPrediction
@@ -38,6 +44,8 @@ from spectra_sherpa.app.schemas.deploy import (
 from spectra_sherpa.app.schemas.execution_runs import ExecutionRunList, ExecutionRunOut
 from spectra_sherpa.app.services.deployment_binding import resolve_deployment_binding
 from spectra_sherpa.app.services.instrument_qc import QCRequest
+from spectra_sherpa.app.services.model_outlier_challenge import OutlierChallengeRequest
+from spectra_sherpa.app.services.model_promotion_review import PromotionReviewDecision
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +272,36 @@ async def get_prediction(
 # ---------------------------------------------------------------------------
 
 
+async def _require_deployment_release(
+    session,
+    *,
+    user_id: int,
+    workflow_id: int,
+    canonical_artifact_id: int | None,
+    artifact_uid: str | None = None,
+):
+    """Watches require a release; qualification and exploratory execution do not."""
+    from spectra_sherpa.app.models.application_release import ApplicationRelease
+
+    if (canonical_artifact_id is None) == (artifact_uid is None):
+        raise ValueError("Select exactly one released model or imported application")
+    source = (
+        ApplicationRelease.canonical_artifact_id == canonical_artifact_id
+        if canonical_artifact_id is not None
+        else ApplicationRelease.model_artifact_uid == artifact_uid
+    )
+    release = await session.scalar(
+        select(ApplicationRelease).where(
+            ApplicationRelease.user_id == user_id,
+            ApplicationRelease.workflow_id == workflow_id,
+            source,
+            ApplicationRelease.state == "released",
+        )
+    )
+    if release is None:
+        raise ValueError("Review for promotion is required before deploying this application")
+
+
 @router.post("/watches", response_model=FolderWatchOut, status_code=201)
 async def create_watch(
     payload: FolderWatchCreate,
@@ -293,6 +331,13 @@ async def create_watch(
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     try:
+        await _require_deployment_release(
+            session,
+            user_id=current_user.id,
+            workflow_id=payload.workflow_id,
+            canonical_artifact_id=canonical_artifact_id,
+            artifact_uid=artifact_uid,
+        )
         binding = await resolve_deployment_binding(
             session,
             user_id=current_user.id,
@@ -415,6 +460,13 @@ async def update_watch(
         raise HTTPException(status_code=409, detail="Disable the watch before changing its model or interval evidence")
     if artifact_changed or uncertainty_changed or update_data.get("is_enabled") is True:
         try:
+            await _require_deployment_release(
+                session,
+                user_id=current_user.id,
+                workflow_id=watch.workflow_id,
+                canonical_artifact_id=update_data.get("canonical_artifact_id", watch.canonical_artifact_id),
+                artifact_uid=update_data.get("artifact_uid", watch.artifact_uid),
+            )
             binding = await resolve_deployment_binding(
                 session,
                 user_id=current_user.id,
@@ -512,6 +564,13 @@ async def enable_watch(
 
     original_watch = mutation_snapshot(watch)
     try:
+        await _require_deployment_release(
+            session,
+            user_id=current_user.id,
+            workflow_id=watch.workflow_id,
+            canonical_artifact_id=watch.canonical_artifact_id,
+            artifact_uid=watch.artifact_uid,
+        )
         await resolve_deployment_binding(
             session,
             user_id=current_user.id,
@@ -710,7 +769,9 @@ async def list_canonical_targets(
                 label=name,
                 readiness={"ready": True, "blockers": []},
             )
-            application_handle = release.handle
+            application_handle = release.handle if release.state == "released" else None
+            if release.state != "released":
+                refusal = "Review for promotion is required in Runs → Models."
             release_state_changed = True
         targets.append(
             {
@@ -979,6 +1040,7 @@ async def qualification_history(
             .where(
                 AnalyticalQualificationRecord.user_id == current_user.id,
                 AnalyticalQualificationRecord.workflow_id == workflow_id,
+                AnalyticalQualificationRecord.kind.in_(["assessment", "decision"]),
             )
             .order_by(AnalyticalQualificationRecord.id)
         )
@@ -1153,3 +1215,289 @@ async def record_watch_qc(
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, str(exc)) from exc
     return {"event": event.model_dump(), "action": "report_only", "watch_execution_changed": False}
+
+
+async def _canonical_promotion_review(session, user, artifact_id):
+    from spectra_sherpa.app.models.analytical_qualification import AnalyticalQualificationRecord
+    from spectra_sherpa.app.models.canonical_project_artifact import CanonicalProjectArtifact
+    from spectra_sherpa.sdk.analytical_qualification import QualificationDecision, QualificationDossier
+    from spectra_sherpa.sdk.prediction_uncertainty import _digest
+
+    artifact = await session.scalar(
+        select(CanonicalProjectArtifact).where(
+            CanonicalProjectArtifact.id == artifact_id,
+            CanonicalProjectArtifact.user_id == user.id,
+        )
+    )
+    if artifact is None:
+        raise HTTPException(404, "Imported fitted application is unavailable")
+    await _qualification_workflow(session, user.id, artifact.workflow_id, "read")
+    try:
+        binding = await resolve_deployment_binding(
+            session,
+            user_id=user.id,
+            workflow_id=artifact.workflow_id,
+            artifact_uid=None,
+            canonical_artifact_id=artifact.id,
+        )
+    except (ValueError, PermissionError, OSError) as exc:
+        raise HTTPException(409, "Imported fitted application no longer verifies") from exc
+    rows = (
+        await session.scalars(
+            select(AnalyticalQualificationRecord)
+            .where(
+                AnalyticalQualificationRecord.user_id == user.id,
+                AnalyticalQualificationRecord.canonical_artifact_id == artifact.id,
+            )
+            .order_by(AnalyticalQualificationRecord.id)
+        )
+    ).all()
+    qualification = {"state": "unavailable", "reason": "No accepted assessment is bound to this exact application."}
+    from spectra_sherpa.app.models.application_release import ApplicationRelease
+    from spectra_sherpa.app.services.dataset_use import imported_confirmation_dataset_use
+
+    release = await session.scalar(
+        select(ApplicationRelease).where(
+            ApplicationRelease.canonical_artifact_id == artifact.id,
+            ApplicationRelease.user_id == user.id,
+        )
+    )
+    imported_use = imported_confirmation_dataset_use(
+        (release.provenance or {}).get("confirmation_history") if release is not None else None
+    )
+    latest = next((row for row in reversed(rows) if row.kind == "assessment"), None)
+    if latest is not None:
+        try:
+            dossier = QualificationDossier.load(latest.payload)
+            dossier.assert_application(
+                artifact_digest=binding.canonical_application_plan["artifact_digest"],
+                application_plan_digest=binding.canonical_plan_digest,
+                context=dossier.context,
+            )
+            if latest.record_digest != dossier.record_digest:
+                raise ValueError("Dossier digest changed")
+            from spectra_sherpa.app.services.dataset_use import dossier_dataset_use
+
+            qualification = {
+                "dataset_use": dossier_dataset_use(dossier),
+                "independence": dossier.calculation.get("independence"),
+                "state": dossier.assessment,
+                "dossier_digest": dossier.record_digest,
+                "intended_use": dossier.context.intended_use,
+            }
+            last_decision = next(
+                (
+                    row
+                    for row in reversed(rows)
+                    if row.kind == "decision" and row.parent_digest == dossier.record_digest
+                ),
+                None,
+            )
+            if last_decision is not None:
+                decision = QualificationDecision.model_validate(last_decision.payload)
+                if (
+                    last_decision.record_digest != decision.decision_digest
+                    or decision.dossier_digest != dossier.record_digest
+                ):
+                    raise ValueError("Decision digest changed")
+                qualification["state"] = (
+                    decision.decision
+                    if decision.decision != "accepted_under_declared_policy" or dossier.assessment == "criteria_met"
+                    else "criteria_not_met"
+                )
+                qualification["decision_digest"] = decision.decision_digest
+        except (ValueError, TypeError, KeyError):
+            qualification = {
+                "state": "stale",
+                "reason": "Qualification no longer verifies against this exact application.",
+            }
+    from asyncio import to_thread
+
+    from spectra_sherpa.app.services.model_promotion_review import canonical_fitted_state
+
+    population = {"fitted_count": None, "held_out_count": None, "held_out_count_status": "not_recorded"}
+    try:
+        fitted_state = await to_thread(canonical_fitted_state, binding)
+        population["fitted_count"] = fitted_state["reference_samples"]
+        population["fitted_count_status"] = "verified_frozen_state"
+    except (ValueError, KeyError, TypeError, OSError):
+        pass
+    # Display imported protected-result history beside any later local dossier;
+    # a later assessment cannot erase an earlier revealed population.
+    from spectra_sherpa.app.services.dataset_use import DatasetUseRecord, summarize_dataset_use
+
+    qualification["dataset_use"] = summarize_dataset_use(
+        [
+            DatasetUseRecord.model_validate(record)
+            for summary in (imported_use, qualification.get("dataset_use", {}))
+            for population in summary.get("populations", [])
+            for record in population["records"]
+        ]
+    )
+    data = {
+        "schema_version": "spectrasherpa.model-promotion-review/1",
+        "artifact_uid": f"canonical:{artifact.id}",
+        "canonical_artifact_id": artifact.id,
+        "artifact_digest": artifact.artifact_digest,
+        "manifest_digest": artifact.package_sha256,
+        "application_plan_digest": binding.canonical_plan_digest,
+        "workflow_id": artifact.workflow_id,
+        "source_run_id": None,
+        "workflow_version_id": None,
+        "population": population,
+        "qualification": qualification,
+        "reuse_existing_fitted_model": True,
+        "blockers": [],
+        "limitations": [
+            "Operational readiness is not independent validation or ASTM conformity.",
+            "Campaign conclusion is not a readiness decision. This review reuses its exact fitted application.",
+            "Held-out membership is unavailable in this data-free application projection; no independence is inferred.",
+        ],
+        "guidance": {
+            "next_action": "Review the imported frozen application.",
+            "reason": (
+                "The application already contains fitted state. "
+                "Changing its fitting population requires a new fit and review."
+            ),
+            "scientific_basis": (
+                "Separate model development and independent validation (ASTM E1655 §§15.3.6, 18.1–18.3)."
+            ),
+        },
+    }
+    return artifact, {**data, "review_digest": _digest(data)}
+
+
+@router.get("/canonical-artifacts/{artifact_id}/promotion-review")
+async def canonical_promotion_review(
+    artifact_id: int, session: AsyncSession = Depends(get_session), current_user: User = Depends(get_current_user)
+) -> dict:
+    _, review = await _canonical_promotion_review(session, current_user, artifact_id)
+    return review
+
+
+@router.post("/canonical-artifacts/{artifact_id}/promotion-review")
+async def confirm_canonical_promotion(
+    artifact_id: int,
+    payload: PromotionReviewDecision,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    from spectra_sherpa.app.services.application_release import ensure_canonical_release, release_payload
+    from spectra_sherpa.app.services.audit import audit_emitter
+    from spectra_sherpa.app.services.model_promotion_review import confirm_promotion_review
+
+    artifact, review = await _canonical_promotion_review(session, current_user, artifact_id)
+    await _qualification_workflow(session, current_user.id, artifact.workflow_id, "write")
+    try:
+        decision = confirm_promotion_review(review, payload)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    release = await ensure_canonical_release(
+        session,
+        artifact=artifact,
+        user_id=current_user.id,
+        label=f"Fitted application {artifact.id}",
+        readiness={"ready": True, "blockers": []},
+        promotion_review={**decision, "actor_id": current_user.id},
+    )
+    audit_emitter.emit(
+        session=session,
+        action="application_release.reviewed",
+        target_type="ApplicationRelease",
+        target_id=release.handle,
+        after={"promotion_review": decision},
+    )
+    await session.commit()
+    return release_payload(release)
+
+
+@router.post("/canonical-artifacts/{artifact_id}/outlier-challenges", status_code=201)
+async def run_canonical_outlier_challenge(
+    artifact_id: int,
+    payload: OutlierChallengeRequest,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    from spectra_sherpa.app.api.v1.routes.models import _qualification_view
+    from spectra_sherpa.app.models.analytical_qualification import AnalyticalQualificationRecord
+    from spectra_sherpa.app.services.model_outlier_challenge import assess_canonical_outlier_challenge
+    from spectra_sherpa.sdk.prediction_uncertainty import _digest
+
+    artifact, _review = await _canonical_promotion_review(session, current_user, artifact_id)
+    await _qualification_workflow(session, current_user.id, artifact.workflow_id, "execute")
+    view, loaded = await _qualification_view(session, current_user, artifact, payload.dataset_view_id)
+    enforce_demo_execution_quota(current_user.id)
+    if not payload.outlier_type.strip() or not payload.label_basis.strip():
+        raise HTTPException(422, "Declare the outlier type and label basis before execution")
+    try:
+        binding = await resolve_deployment_binding(
+            session,
+            user_id=current_user.id,
+            workflow_id=artifact.workflow_id,
+            artifact_uid=None,
+            canonical_artifact_id=artifact.id,
+        )
+        evidence = await assess_canonical_outlier_challenge(
+            binding, loaded.dataset, outlier_type=payload.outlier_type.strip(), label_basis=payload.label_basis.strip()
+        )
+    except (ValueError, TypeError, KeyError, OSError) as exc:
+        raise HTTPException(422, f"Outlier challenge unavailable: {exc}") from exc
+    evidence.update(validation_view_id=view.id, validation_view_digest=view.selection_sha256)
+    digest = _digest(evidence)
+    existing = await session.scalar(
+        select(AnalyticalQualificationRecord).where(
+            AnalyticalQualificationRecord.user_id == current_user.id,
+            AnalyticalQualificationRecord.workflow_id == artifact.workflow_id,
+            AnalyticalQualificationRecord.record_digest == digest,
+        )
+    )
+    if existing is None:
+        session.add(
+            AnalyticalQualificationRecord(
+                user_id=current_user.id,
+                workflow_id=artifact.workflow_id,
+                canonical_artifact_id=artifact.id,
+                record_digest=digest,
+                kind="outlier_challenge",
+                payload=evidence,
+            )
+        )
+        await session.commit()
+    return {"record_digest": digest, "evidence": evidence, "operational_readiness_changed": False}
+
+
+@router.get("/canonical-artifacts/{artifact_id}/outlier-challenges")
+async def canonical_outlier_challenge_history(
+    artifact_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    from spectra_sherpa.app.models.analytical_qualification import AnalyticalQualificationRecord
+    from spectra_sherpa.sdk.prediction_uncertainty import _digest
+
+    artifact, _review = await _canonical_promotion_review(session, current_user, artifact_id)
+    rows = (
+        await session.scalars(
+            select(AnalyticalQualificationRecord)
+            .where(
+                AnalyticalQualificationRecord.user_id == current_user.id,
+                AnalyticalQualificationRecord.canonical_artifact_id == artifact.id,
+                AnalyticalQualificationRecord.kind == "outlier_challenge",
+            )
+            .order_by(AnalyticalQualificationRecord.id)
+        )
+    ).all()
+    return {
+        "records": [
+            {
+                "record_digest": row.record_digest,
+                "evidence": row.payload,
+                "digest_verified": _digest(row.payload) == row.record_digest,
+                "matches_artifact_digest": row.payload.get("artifact_digest") == artifact.artifact_digest
+                and row.payload.get("application_plan_digest") == artifact.application_plan_digest,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ],
+        "claim_scope": "Historical exploratory evidence; no independent validation or readiness decision.",
+    }

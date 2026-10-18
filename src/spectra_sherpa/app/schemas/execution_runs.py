@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 from spectra_sherpa.app.schemas.run_evidence import EvidenceGap, RunEvidence
+from spectra_sherpa.app.schemas.scientific_comparison import EvidenceComparisonResponse
 from spectra_sherpa.app.schemas.timestamps import UtcTimestamp
 
 RunKind = Literal["training", "batch_inference", "data", "other"]
@@ -109,6 +110,7 @@ class RunListItem(BaseModel):
     workflow_name: str | None = None
     status: str
     run_kind: RunKind
+    source_type: str | None = None
     executed_at: UtcTimestamp
     created_at: UtcTimestamp
     labels: list[str] | None
@@ -162,6 +164,7 @@ class ComparisonResponse(BaseModel):
     """Schema for run comparison response."""
 
     runs: list[ExecutionRunOut]
+    scientific_comparison: EvidenceComparisonResponse | None = None
     result_pairs: list[ComparisonResultPair] = Field(default_factory=list)
     rankable_metric_keys: list[str] = Field(
         default_factory=list, description="Metrics qualified against common evaluation evidence"

@@ -53,6 +53,9 @@
             :disabled="isTrialTabActive || isManagedCandidateAuthority || !hasChanges || workflowParameterErrors.length > 0"
             @click="triggerAutosave()"
           />
+          <Button label="Compare runs" icon="pi pi-chart-bar" class="p-button-outlined p-button-sm"
+            :disabled="!projectStore.currentProjectId" @click="router.push({ path: '/runs', query: { project: projectStore.currentProjectId, tab: 'run_history' } })"
+            title="Choose saved runs in History; comparison never executes the workflow" />
           <Button
             label="Export"
             icon="pi pi-download"
@@ -142,6 +145,7 @@
           </OverlayPanel>
         </template>
     </WorkspaceHeader>
+    <PromotionFitContext v-if="route.query.promotion_artifact && workflowStore.workflowId" :artifact-uid="String(route.query.promotion_artifact)" :workflow-id="workflowStore.workflowId" :source-run-id="Number(route.query.promotion_source_run) || null" />
 
     <p v-if="workflowContextLoading" role="status" aria-label="Loading workflow">Loading workflow…</p>
     <p v-if="!workflowContextLoading && workflowStore.hasFoldValidationPlan" role="status" aria-label="Validated workflow export">
@@ -381,6 +385,7 @@ import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
+import PromotionFitContext from "@/components/PromotionFitContext.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
 import WorkspaceContextItem from "@/components/workspace/WorkspaceContextItem.vue";
 import { portfolioDetail } from "@/utils/dataPortfolio";

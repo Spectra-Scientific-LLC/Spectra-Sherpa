@@ -2,9 +2,9 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ref } from "vue";
 import PrimeVue from "primevue/config";
-const m = vi.hoisted(() => ({ get: vi.fn(), push: vi.fn(), params: {} as Record<string, string>, query: {} as Record<string, string>, runs: null as any, project: null as any }));
+const m = vi.hoisted(() => ({ get: vi.fn(), push: vi.fn(), replace: vi.fn(), params: {} as Record<string, string>, query: {} as Record<string, string>, runs: null as any, project: null as any }));
 vi.mock("@/api/client", () => ({ default: { get: m.get } }));
-vi.mock("vue-router", () => ({ useRouter: () => ({ push: m.push, replace: vi.fn() }), useRoute: () => ({ query: m.query, params: m.params }), RouterLink: { template: "<a><slot /></a>" } }));
+vi.mock("vue-router", () => ({ useRouter: () => ({ push: m.push, replace: m.replace }), useRoute: () => ({ query: m.query, params: m.params }), RouterLink: { template: "<a><slot /></a>" } }));
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: vi.fn() }) }));
 vi.mock("@/stores/project", () => ({ useProjectStore: () => m.project }));
 vi.mock("@/stores/runs", () => ({ useRunsStore: () => m.runs }));
@@ -17,7 +17,7 @@ import ModelsContent from "@/views/models/ModelsContent.vue";
 function mountView() {
   return mount(ModelsContent, { global: { plugins: [PrimeVue], renderStubDefaultSlot: true,
     stubs: { WorkspaceHeader: true, WorkspaceContext: true, WorkspaceContextItem: true, RunDetailContent: true,
-      BatchRunTab: true, ComparisonPanel: true, QualificationApplications: true, QualificationPanel: true,
+      BatchRunTab: true, EvidenceComparisonView: true, ComparisonPanel: true, QualificationApplications: true, QualificationPanel: true,
       SavedModelProjectTable: true, SavedModelQualification: true,
       Dialog: true, DataTable: true, Dropdown: true, Button: true,
       InputText: true, ProgressSpinner: true, Tag: true, Textarea: true, LabelChips: true },
@@ -30,6 +30,18 @@ describe("Runs workspace", () => {
     m.runs = { runs: [], total: 0, selectedRunIds: new Set(), selectedCount: 0, runsLoading: false, comparison: null, loadError: null,
       fetchProjectRuns: vi.fn(), clearSelection: vi.fn() };
     m.get.mockImplementation(async (path: string) => ({ data: path === "/deploy/capabilities" ? { privateBatchUpload: true } : [] }));
+  });
+  it("clears campaign evidence references when comparing newly selected saved runs", async () => {
+    m.query = {tab: "run_history", evidence: "old-campaign-references", project: "1"};
+    m.runs.selectedCount = 2; m.runs.selectedRunIds = new Set([41, 42]);
+    m.runs.compareProjectRuns = vi.fn().mockImplementation(async () => {
+      m.runs.comparison = {runs: [], metric_keys: [], diff: {}};
+    });
+    const view = mountView(); await flushPromises();
+    await (view.vm as unknown as {handleCompareRuns: () => Promise<void>}).handleCompareRuns(); await flushPromises();
+    expect(m.runs.compareProjectRuns).toHaveBeenCalledWith(1, [41, 42]);
+    expect(m.replace).toHaveBeenCalledWith({query: {tab: "compare", project: "1"}});
+    view.unmount();
   });
   it.each(["artifacts", "models"])("preserves the %s deep link with Inspect between History and Compare", async (tab) => {
     m.query.tab = tab;

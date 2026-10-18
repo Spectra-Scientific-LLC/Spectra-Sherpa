@@ -69,11 +69,11 @@ describe('saved model qualification', () => {
     const wrapper = mount(Qualification, {props: {artifactUid: 'model-1', projectId: 2}});
     await flushPromises();
     await wrapper.findAll('button').find(button => button.text() === 'Review current assessment')!.trigger('click');
-    expect(wrapper.find('fieldset').exists()).toBe(true);
+    expect(wrapper.text()).toContain('Human decision for');
     await wrapper.findAll('button').find(button => button.text() === 'Refresh evidence')!.trigger('click');
     await flushPromises();
     expect(wrapper.find('[role="alert"]').text()).toContain('source changed');
-    expect(wrapper.find('fieldset').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain('Human decision for');
     expect(wrapper.text()).not.toContain('Current status: awaiting_review');
   });
 });

@@ -59,6 +59,31 @@ async def campaign(auth_client, test_session, test_user, tmp_path, monkeypatch, 
     imported.workflow_id = record.workflow_id
     imported.canonical_package = _PACKAGE if request.param == "normal" else _EARLY_CANONICAL_PACKAGE
     imported.canonical_archive = imported.canonical_package.archive
+    # Import establishes executable custody, not a scientific readiness decision.
+    pending = await auth_client.get("/api/v1/deploy/canonical-targets", params={"project_id": imported.project_id})
+    assert pending.status_code == 200 and not pending.json()[0]["deploy_ready"]
+    refused = await auth_client.post(
+        "/api/v1/deploy/watches",
+        json={
+            "workflow_id": imported.workflow_id,
+            "canonical_artifact_id": record.id,
+            "name": "Unreviewed direct ID",
+            "folder_path": str(tmp_path),
+        },
+    )
+    assert refused.status_code == 422 and "Review for promotion" in refused.text
+    review = await auth_client.get(f"/api/v1/deploy/canonical-artifacts/{record.id}/promotion-review")
+    assert review.status_code == 200, review.text
+    confirmed = await auth_client.post(
+        f"/api/v1/deploy/canonical-artifacts/{record.id}/promotion-review",
+        json={
+            "review_digest": review.json()["review_digest"],
+            "intended_use": "Offline exploratory inference",
+            "protocol": "exploratory",
+            "rationale": "Reviewed exact imported application and limitations",
+        },
+    )
+    assert confirmed.status_code == 200, confirmed.text
     return imported, record, factory
 
 
@@ -402,3 +427,79 @@ def test_canonical_watch_migration_preserves_existing_bindings_and_refuses_destr
         migrate(True)
         assert "canonical_artifact_id" not in {c["name"] for c in sa.inspect(connection).get_columns("folder_watch")}
     engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_canonical_challenge_uses_frozen_screen_and_reports_unknown_separation(campaign, test_session, test_user):
+    from spectra_sherpa.app.lib.sherpa_dataset import DomainContext, SampleAxis, SherpaDataset, SpectralAxis
+    from spectra_sherpa.app.services.deployment_binding import resolve_deployment_binding
+    from spectra_sherpa.app.services.model_outlier_challenge import assess_canonical_outlier_challenge
+
+    imported, record, _factory = campaign
+    binding = await resolve_deployment_binding(
+        test_session,
+        user_id=test_user.id,
+        workflow_id=imported.workflow_id,
+        artifact_uid=None,
+        canonical_artifact_id=record.id,
+    )
+    data = SherpaDataset(
+        X=np.arange(160, 184, dtype=float).reshape(3, 8),
+        sample_axis=SampleAxis(labels=["challenge-a", "challenge-b", "challenge-c"]),
+        feature_axis=SpectralAxis(values=np.arange(8, dtype=float), units="cm-1"),
+        domain=DomainContext(measurement_mode="reflectance"),
+    )
+    result = await assess_canonical_outlier_challenge(
+        binding,
+        data,
+        outlier_type="Known matrix contamination",
+        label_basis="Independent laboratory challenge preparation",
+    )
+    assert result["evaluated_count"] == 3
+    assert sum(result[k] for k in ("detected", "missed", "unavailable")) == 3
+    assert result["artifact_digest"] == record.artifact_digest
+    assert result["application_plan_digest"] == record.application_plan_digest
+    assert result["fit_overlap_status"].startswith("unknown")
+    assert result["ordinary_validation_rmsep"] is None and result["fitted_count"] > 0
+    assert [row["specimen_id"] for row in result["rows"]] == list(data.sample_axis.labels)
+
+
+@pytest.mark.asyncio
+async def test_canonical_challenge_routes_preserve_qualification_history(campaign, auth_client, monkeypatch):
+    from spectra_sherpa.app.api.v1.routes import models as models_route
+    from spectra_sherpa.app.lib.sherpa_dataset import DomainContext, SampleAxis, SherpaDataset, SpectralAxis
+
+    imported, record, _factory = campaign
+    data = SherpaDataset(
+        X=np.arange(160, 184, dtype=float).reshape(3, 8),
+        sample_axis=SampleAxis(labels=["challenge-a", "challenge-b", "challenge-c"]),
+        feature_axis=SpectralAxis(values=np.arange(8, dtype=float), units="cm-1"),
+        domain=DomainContext(measurement_mode="reflectance"),
+    )
+
+    async def named_view(_session, _user, artifact, view_id):
+        assert artifact.id == record.id and view_id == 123
+        return SimpleNamespace(id=view_id, selection_sha256="a" * 64), SimpleNamespace(dataset=data)
+
+    monkeypatch.setattr(models_route, "_qualification_view", named_view)
+    endpoint = f"/api/v1/deploy/canonical-artifacts/{record.id}/outlier-challenges"
+    payload = {
+        "dataset_view_id": 123,
+        "outlier_type": "Matrix",
+        "label_basis": "Laboratory labels",
+        "labels_independent_of_detector": True,
+    }
+    created = await auth_client.post(endpoint, json=payload)
+    assert created.status_code == 201, created.text
+    assert not created.json()["operational_readiness_changed"]
+    repeated = await auth_client.post(endpoint, json=payload)
+    assert repeated.status_code == 201 and repeated.json()["record_digest"] == created.json()["record_digest"]
+    history = await auth_client.get(endpoint)
+    assert history.status_code == 200 and len(history.json()["records"]) == 1
+    assert history.json()["records"][0]["digest_verified"]
+    assert history.json()["records"][0]["matches_artifact_digest"]
+    qualification = await auth_client.get(f"/api/v1/deploy/workflows/{imported.workflow_id}/qualification")
+    assert qualification.status_code == 200 and qualification.json()["records"] == []
+    promotion = await auth_client.get(f"/api/v1/deploy/canonical-artifacts/{record.id}/promotion-review")
+    assert promotion.status_code == 200 and promotion.json()["population"]["fitted_count"] > 0
+    assert promotion.json()["population"]["held_out_count"] is None

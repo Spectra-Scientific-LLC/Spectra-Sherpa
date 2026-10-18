@@ -89,6 +89,9 @@ def build_api_router(
     router.include_router(workflow_organization.router, prefix="/workflows", tags=["workflow-organization"])
     router.include_router(workflows.router, tags=["workflows"])
     router.include_router(execution_runs.router, tags=["execution-runs"])
+    from spectra_sherpa.app.api.v1.routes import paired_evaluations
+
+    router.include_router(paired_evaluations.router, tags=["paired-evaluations"])
     router.include_router(runs.router, tags=["runs"])
     router.include_router(workflow_templates.router, tags=["workflow-templates"])
     router.include_router(workflow_export.router, tags=["workflow-export"])

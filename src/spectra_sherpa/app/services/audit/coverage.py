@@ -54,6 +54,11 @@ class AuditedModel:
 # entries (Workflow, WorkflowVersion, ExecutionRun, ModelArtifact).
 AUDITED_MODELS: tuple[AuditedModel, ...] = (
     AuditedModel(
+        model_dotted_path="spectra_sherpa.app.models.application_release.ApplicationRelease",
+        target_type="ApplicationRelease",
+        actions=frozenset({"application_release.reviewed"}),
+    ),
+    AuditedModel(
         model_dotted_path="spectra_sherpa.app.models.dataset_view.DatasetView",
         target_type="DatasetView",
         actions=frozenset({"dataset.curation.created"}),
