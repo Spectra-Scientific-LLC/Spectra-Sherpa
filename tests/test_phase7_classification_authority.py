@@ -989,6 +989,16 @@ def test_phase8_bridge_gate_rejects_a_second_bridge_in_an_allowlisted_consumer(
             'fit = getattr(node, "unrelated_fit", None)',
             "inventory entry is stale or missing",
         ),
+        (
+            "raw = node.apply_fitted_state(current, record.state)",
+            "raw = node.apply_fitted_state(current, record.state); rogue = node.apply_fitted_state",
+            "outside the closed inventory",
+        ),
+        (
+            "raw = node.apply_fitted_state(current, record.state)",
+            "raw = None",
+            "inventory entry is stale or missing",
+        ),
     ],
 )
 def test_phase7_ast_gate_enforces_bidirectional_occurrence_inventory(
