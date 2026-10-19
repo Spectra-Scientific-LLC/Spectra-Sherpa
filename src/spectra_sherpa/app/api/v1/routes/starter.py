@@ -41,6 +41,7 @@ from spectra_sherpa.app.schemas.starter import (
     StarterProgress,
     stored_goal_plan,
 )
+from spectra_sherpa.app.services.starter_disclosure import private_starter_context_allowed
 from spectra_sherpa.app.services.starter_progress import latest_run_status, project_progress
 from spectra_sherpa.app.services.template_availability import template_admitted_in_profile
 
@@ -228,13 +229,19 @@ async def plan_goal(
 
     model_dataset: tuple[str, str | None] | None = None
     if await _model_planning_allowed(session, current_user):
+        # Keep owned datasets available to local rules without automatically
+        # disclosing their names/descriptions to an optional model provider.
+        private_context = await private_starter_context_allowed(session, current_user.id)
+        model_candidates = [
+            candidate for candidate in candidates if candidate["kind"] == "reference" or private_context
+        ]
         classification = await classify_goal_with_model(
             payload.goal,
             intents=[
                 {"key": candidate.key, "label": candidate.label, "summary": candidate.summary}
                 for candidate in STARTER_INTENTS
             ],
-            datasets=[_model_facing(candidate) for candidate in candidates],
+            datasets=[_model_facing(candidate) for candidate in model_candidates],
             user_id=int(current_user.id),
         )
         model_intent = intent_by_key(classification.intent) if classification else None
