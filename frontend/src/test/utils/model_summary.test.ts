@@ -101,7 +101,7 @@ describe("model summary from retained records", () => {
     expect(available.componentSelection?.responses[0].rows[1]).toMatchObject({ rmsec: 0.5, rmsecv: 0.7, r2x: 0.6, q2: 0.8 });
     const card = mount(ModelSummaryCard, { props: { summary: available } });
     expect(card.get('[aria-label="PLS component selection"]').text()).toMatch(/3-fold group kfold\s+across 4 independent groups/);
-    expect(card.text()).toContain("one-standard-error choice: 1 LV");
+    expect(card.text()).toContain("one-standard-error suggestion: 1 LV");
     expect(card.findAll(".model-summary__selected-row")).toHaveLength(1);
     const unavailable = buildModelSummary(plsDefinition, null, [{ source, value: { ...base, cross_validation: {
       status: "unavailable", reason: "Upstream scaling was not replayed inside each fold."
@@ -134,9 +134,9 @@ describe("model summary from retained records", () => {
     } }]);
     expect(summary.regression).toEqual([]);
     const text = mount(ModelSummaryCard, { props: { summary } }).text();
-    expect(text).toContain("Choose principal components");
+    expect(text).toContain("Principal components");
     expect(text).toContain("CV reconstruction RMSE");
-    expect(text).toContain("not response prediction accuracy");
+    expect(mount(ModelSummaryCard, { props: { summary } }).find('a[href$="#component-selection"]').exists()).toBe(true);
   });
 
   it("shows PLS-DA class performance by LV without calling it RMSECV", () => {
@@ -219,7 +219,7 @@ describe("model summary card", () => {
     const summary = buildModelSummary(plsDefinition, null, [
       { source: { nodeId: "model_1", port: "calibration_comparison", kind: "regression_comparison" }, value: calibration },
     ]);
-    expect(mount(ModelSummaryCard, { props: { summary } }).get('[role="note"]').text()).toContain("no cross-validation or test-set predictions");
+    expect(mount(ModelSummaryCard, { props: { summary } }).get('[role="note"]').text()).toContain("no retained CV or test predictions");
   });
 
   it("shows the most independent confusion matrix and marks misclassifications", () => {

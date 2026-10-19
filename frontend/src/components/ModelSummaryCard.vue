@@ -18,23 +18,22 @@
     </p>
 
     <p v-if="calibrationOnly" class="model-summary__caution" role="note">
-      Only calibration-fit statistics were retained. They describe how well the model reproduces its training
-      samples; this run has no cross-validation or test-set predictions.
+      Calibration fit only; no retained CV or test predictions.
     </p>
     <p v-if="summary.componentSelection || summary.pcaComponentSelection || summary.plsdaComponentSelection"
       class="model-summary__design" role="note">
       Independent test evaluation:
       <template v-if="heldOutCount != null">{{ heldOutCount }} held-out samples with retained evaluation.</template>
       <template v-else-if="evidenceSubset">Open the source run for any retained independent test evaluation.</template>
-      <template v-else>Not retained for this model run. A planned split or CV curve does not establish test performance.</template>
+      <template v-else>Not retained for this model run.</template>
     </p>
 
     <section v-if="summary.componentSelection" class="model-summary__components" aria-label="PLS component selection">
-      <h4>Choose latent variables</h4>
+      <h4>Latent variables <MethodHelp topic="componentSelection" label="Component selection" /></h4>
       <p>Selected: <strong>{{ summary.componentSelection.selectedComponents }} LV</strong> ·
         {{ summary.componentSelection.nCalibration }} calibration samples · {{ summary.componentSelection.scaling.replace(/_/g, ' ') }}.</p>
       <p class="model-summary__design">Saved choice basis: {{ summary.componentSelection.selectionRule.replace(/_/g, ' ') }}
-        ({{ summary.componentSelection.selectionRuleStatus.replace(/_/g, ' ') }}). The chosen count is a workflow parameter; curve suggestions never refit the model automatically.</p>
+        ({{ summary.componentSelection.selectionRuleStatus.replace(/_/g, ' ') }}).</p>
       <p v-if="summary.componentSelection.requestedComponents !== summary.componentSelection.selectedComponents" class="model-summary__caution" role="note">
         {{ summary.componentSelection.requestedComponents }} LV were requested; the fitted model reached
         {{ summary.componentSelection.selectedComponents }} identifiable LV. The marker shows the effective fit.
@@ -42,7 +41,7 @@
       <p v-if="summary.componentSelection.cvStatus === 'available'" class="model-summary__design">
         {{ summary.componentSelection.cvFolds }}-fold {{ summary.componentSelection.cvMethod?.replace(/_/g, ' ') }}
         <template v-if="summary.componentSelection.cvGroups != null"> across {{ summary.componentSelection.cvGroups }} independent groups</template>.
-        Each PLS scaling fit uses only its training fold. Split {{ summary.componentSelection.splitDigest?.slice(0, 12) }}.
+        Split {{ summary.componentSelection.splitDigest?.slice(0, 12) }}.
       </p>
       <p v-else class="model-summary__caution" role="note">Cross-validation unavailable: {{ summary.componentSelection.cvReason }}</p>
       <p v-if="!summary.componentSelection.selectedInCurve" class="model-summary__caution" role="note">The effective LV is not plotted in this bounded curve.</p>
@@ -69,13 +68,12 @@
           </table>
         </div>
         <p v-if="response.minimumMeanFoldRmse != null" class="model-summary__design">Minimum mean fold error: {{ response.minimumMeanFoldRmse }} LV;
-          one-standard-error choice: {{ response.oneStandardError }} LV. These are suggestions; the selected model remains {{ summary.componentSelection.selectedComponents }} LV.</p>
+          one-standard-error suggestion: {{ response.oneStandardError }} LV.</p>
       </div>
-      <p class="model-summary__caution" role="note">The CV curve is development and component-tuning evidence. An independent test cohort, if present, must be assessed separately.</p>
     </section>
 
     <section v-if="summary.pcaComponentSelection" class="model-summary__components" aria-label="PCA component selection">
-      <h4>Choose principal components</h4>
+      <h4>Principal components <MethodHelp topic="componentSelection" label="Component selection" /></h4>
       <p>Selected: <strong>{{ summary.pcaComponentSelection.selectedComponents }} PC</strong> ·
         {{ summary.pcaComponentSelection.nCalibration }} calibration samples.</p>
       <p v-if="!summary.pcaComponentSelection.selectedInCurve" class="model-summary__caution" role="note">
@@ -96,11 +94,10 @@
           </tr></tbody>
         </table>
       </div>
-      <p class="model-summary__caution" role="note">PCA reconstruction measures predictor-space compression. It is not response prediction accuracy or an independent test.</p>
     </section>
 
     <section v-if="summary.plsdaComponentSelection" class="model-summary__components" aria-label="PLS-DA component selection">
-      <h4>Choose classification latent variables</h4>
+      <h4>Classification latent variables <MethodHelp topic="componentSelection" label="Component selection" /></h4>
       <p>Selected: <strong>{{ summary.plsdaComponentSelection.selectedComponents }} LV</strong> ·
         {{ summary.plsdaComponentSelection.nCalibration }} calibration samples ·
         {{ summary.plsdaComponentSelection.classes.length }} classes.</p>
@@ -110,7 +107,6 @@
       </p>
       <p v-if="summary.plsdaComponentSelection.cvMethod" class="model-summary__design">
         {{ summary.plsdaComponentSelection.cvFolds }}-fold {{ summary.plsdaComponentSelection.cvMethod.replace(/_/g, ' ') }}.
-        Dummy-response model and scaling are fitted inside each training fold.
       </p>
       <p v-else class="model-summary__caution" role="note">{{ classificationCvMessage(summary.plsdaComponentSelection.cvReason) }} Calibration fit cannot rank component choices. Reduce folds or add independent specimens before comparing latent variables.</p>
       <div v-if="summary.plsdaComponentSelection.cvMethod" class="model-summary__table">
@@ -127,7 +123,6 @@
         Maximum out-of-fold balanced accuracy suggests {{ summary.plsdaComponentSelection.suggestedComponents }} LV;
         the fitted model retains the intentional {{ summary.plsdaComponentSelection.selectedComponents }} LV selection.
       </p>
-      <p class="model-summary__caution" role="note">Out-of-fold decisions help tune component count. They do not replace an independent test or prove external classification performance.</p>
     </section>
     <button v-if="canEditSelection && (summary.componentSelection || summary.pcaComponentSelection || summary.plsdaComponentSelection)"
       type="button" class="model-summary__edit" @click="emit('edit-selection')">
@@ -192,6 +187,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { computed } from "vue";
 import { evaluationRoleLabel, scientificScalar, scientificErrorMetricLabel, scientificProtocolLabel } from "@/utils/scientificDisplay";
 import { r2Name, rmseName, SUMMARY_ROLES, type ClassificationStatistics, type ComponentSelectionResponse, type ModelSummary, type RegressionStatistics, type SummaryRole } from "@/utils/modelSummary";

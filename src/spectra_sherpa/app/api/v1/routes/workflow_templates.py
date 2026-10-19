@@ -80,7 +80,7 @@ from spectra_sherpa.app.services.prepared_data import (
 from spectra_sherpa.app.services.template_availability import template_admitted_in_profile
 from spectra_sherpa.app.services.template_workflow_persistence import persist_template_workflow
 from spectra_sherpa.app.services.workflow_access import require_experiment_access, require_file_access
-from spectra_sherpa.app.services.workflow_data_selections import selection_from_parameters
+from spectra_sherpa.app.services.workflow_data_selections import selection_from_parameters, validate_selection
 from spectra_sherpa.core.target_authority import TargetAuthority
 
 router = APIRouter(prefix="/workflow-templates")
@@ -309,6 +309,8 @@ def _binding_identity(
         binding.asset_id,
         binding.target_authority,
         binding.group_column,
+        binding.dataset_view_id,
+        binding.dataset_view_sha256,
     )
 
 
@@ -326,6 +328,8 @@ def _binding_to_file_load_params(binding: "DataBindingSpec") -> dict[str, object
                 binding.target_authority.canonical_dict() if binding.target_authority is not None else None
             ),
             "group_column": binding.group_column or "",
+            "dataset_view_id": binding.dataset_view_id,
+            "dataset_view_sha256": binding.dataset_view_sha256 or "",
         }
         if binding.display_name is not None:
             parameters["group_title"] = binding.display_name
@@ -1118,7 +1122,7 @@ async def _validate_binding(
 ) -> tuple["DataBindingSpec", dict[str, Any]]:
     await require_experiment_access(session, binding.experiment_id, user_id, project_id)
     saved_selection = None
-    if use_saved_analysis_selection:
+    if use_saved_analysis_selection and binding.dataset_view_id is None:
         from spectra_sherpa.app.schemas.experiments import ExperimentAnalysisSelection
 
         # Access was checked above. This is new-starter intent, never a mutation
@@ -1145,17 +1149,42 @@ async def _validate_binding(
                 asset_id=binding.asset_id,
             )
             dataset = loaded.dataset
+            if binding.dataset_view_id is not None:
+                # Resolve the saved definition through the same admission path
+                # as workflow Data selections, before profiling the cohort.
+                pinned = binding.model_copy(
+                    update={
+                        "source_manifest_sha256": binding.source_manifest_sha256 or loaded.source_manifest_sha256,
+                        "collection_definition_sha256": (
+                            binding.collection_definition_sha256 or loaded.collection_definition_sha256
+                        ),
+                        "scientific_collection_sha256": (
+                            binding.scientific_collection_sha256 or loaded.scientific_collection_sha256
+                        ),
+                    }
+                )
+                selected = await validate_selection(
+                    session,
+                    selection=selection_from_parameters(
+                        _binding_to_file_load_params(pinned),
+                        dataset_name=binding.display_name or loaded.experiment_name,
+                    ),
+                    user_id=user_id,
+                    workflow_project_id=project_id,
+                )
+                dataset = selected.dataset
             binding = _binding_with_saved_selection(binding, dataset, saved_selection)
             if binding.target_authority is not None:
-                verify_target_authority(dataset, binding.target_authority)
-                dataset = attach_selected_target_dataset(
-                    dataset,
-                    target_type=binding.target_type,
-                    target_column=binding.selected_target,
-                    group_column=binding.group_column or "",
-                    node_id="template_binding_validation",
-                    target_authority=binding.target_authority,
-                )
+                if binding.dataset_view_id is None:
+                    verify_target_authority(dataset, binding.target_authority)
+                    dataset = attach_selected_target_dataset(
+                        dataset,
+                        target_type=binding.target_type,
+                        target_column=binding.selected_target,
+                        group_column=binding.group_column or "",
+                        node_id="template_binding_validation",
+                        target_authority=binding.target_authority,
+                    )
                 if require_target_variation:
                     _require_target_variation(dataset, binding.selected_target)
             analysis_profile = {**analysis_profile_from_dataset(dataset), **_source_assignment_profile(dataset)}
@@ -1838,6 +1867,8 @@ class DataBindingSpec(BaseModel):
     source_manifest_sha256: str | None = None
     collection_definition_sha256: str | None = None
     scientific_collection_sha256: str | None = None
+    dataset_view_id: int | None = Field(None, ge=1)
+    dataset_view_sha256: str | None = Field(None, pattern=r"^[0-9a-f]{64}$")
     target_binding: "DataBindingSpec | None" = Field(
         None,
         description="Optional separate target binding to inject via data.attach_target",
@@ -1853,6 +1884,10 @@ class DataBindingSpec(BaseModel):
 
     @model_validator(mode="after")
     def _one_source_scope(self) -> "DataBindingSpec":
+        if (self.dataset_view_id is None) != (self.dataset_view_sha256 is None):
+            raise ValueError("Saved dataset definition id and digest must be supplied together")
+        if self.dataset_view_id is not None and self.file_id is not None:
+            raise ValueError("Saved dataset definitions require a collection scope (file_ids or all_files)")
         scopes = int(self.file_id is not None) + int(self.file_ids is not None) + int(self.all_files)
         if scopes != 1:
             raise ValueError("Data binding requires exactly one file_id, file_ids selection, or all_files scope")

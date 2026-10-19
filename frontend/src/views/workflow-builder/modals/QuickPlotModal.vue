@@ -4,6 +4,7 @@
     v-model:visible="visible"
     :header="title"
     :style="embedded ? { width: '100%', minWidth: '0' } : { width: '85vw', maxWidth: '1200px', maxHeight: 'calc(100vh - 24px)' }"
+    :contentStyle="embedded ? undefined : { overflow: 'auto', maxHeight: 'calc(100vh - 110px)' }"
     modal
     :draggable="false"
     class="quick-plot-modal"
@@ -14,7 +15,7 @@
       <!-- Plot controls bar -->
       <div class="plot-controls">
         <!-- Plot type selector -->
-        <div v-if="!tableOnly" class="control-group">
+        <div v-if="!tableOnly && availablePlots.length > 0" class="control-group">
           <label>{{ selectedPlotKey.startsWith('table_column:') ? 'Column' : 'Plot Type' }}</label>
           <Dropdown
             v-model="selectedPlotKey"
@@ -158,7 +159,7 @@
         <!-- View toggle: Plot vs Data Table -->
         <div class="control-group view-toggle">
           <Button
-            v-if="!tableOnly"
+            v-if="!tableOnly && availablePlots.length > 0"
             :icon="viewMode === 'plot' ? 'pi pi-table' : 'pi pi-chart-line'"
             :label="
               viewMode === 'plot'
@@ -190,17 +191,10 @@
 
       <div v-if="plotSampling" class="plot-sampling-disclosure" role="status">
         <strong>Sampled plot:</strong> {{ plotSampling.shown }} of {{ plotSampling.total }}
-        {{ plotSampling.sourceNoun }} ({{ plotSampling.percent }}%) are shown;
-        {{ plotSampling.omitted }} are unplotted.
-        {{ plotSampling.selectionDescription }}
-        <template v-if="plotSampling.plottedTableOnly"
-          >This result's Data view contains only these traces. Open the upstream source dataset or a
-          complete-matrix export to inspect all samples.</template
-        >
-        <template v-else
-          >The Data view retains the complete available result; its table paging is
-          separate.</template
-        >
+        {{ plotSampling.sourceNoun }} ({{ plotSampling.percent }}%).
+        <span v-if="plotSampling.excluded">Excluded: {{ plotSampling.excluded }} source rows.</span>
+        <span v-if="plotSampling.plottedTableOnly">Data view: plotted traces only.</span>
+        <MethodHelp topic="displayExports" label="Preview sampling" />
       </div>
 
       <div v-if="metadataGroupingError || explicitGroupingError" class="plot-grouping-notice" role="status">
@@ -236,11 +230,15 @@
 
       <!-- Data Table -->
       <div v-else class="data-table-container">
+        <span v-if="usePlottedTable && isProjectedScientificKind(nodeOutput, 'visualization')" class="data-summary">Plot coordinates <MethodHelp topic="displayExports" label="Plot coordinates and sample rows" /></span>
+        <span v-if="!tableOnly && availablePlots.length === 0" class="data-summary" title="No shared quantitative axis">Table-only result</span>
         <span v-if="dataPreviewSummary" class="data-summary">{{ dataPreviewSummary }}</span>
-        <div v-if="embedded && totalFeatureColumns > 10" class="feature-paging">
+        <div v-if="totalFeatureColumns > 10" class="feature-paging">
+          <Button icon="pi pi-angle-double-left" aria-label="First feature columns" :disabled="featureOffset === 0" @click="featureOffset = 0" />
           <Button icon="pi pi-angle-left" aria-label="Previous feature columns" :disabled="featureOffset === 0" @click="featureOffset = Math.max(0, featureOffset - 10)" />
           <span>Columns {{ featureOffset + 1 }}–{{ Math.min(featureOffset + 10, totalFeatureColumns) }} of {{ totalFeatureColumns }}</span>
           <Button icon="pi pi-angle-right" aria-label="Next feature columns" :disabled="featureOffset + 10 >= totalFeatureColumns" @click="featureOffset += 10" />
+          <Button icon="pi pi-angle-double-right" aria-label="Last feature columns" :disabled="featureOffset + 10 >= totalFeatureColumns" @click="featureOffset = Math.floor((totalFeatureColumns - 1) / 10) * 10" />
         </div>
         <DataTable
           v-if="dataPreview.length > 0"
@@ -261,7 +259,7 @@
             <template #body="{ data }">{{ previewCell(data[col.field]) }}</template>
           </Column>
         </DataTable>
-        <Paginator v-if="embedded && previewTotalRows > previewRowLimit" :first="previewFirst" :rows="previewRowLimit" :total-records="previewTotalRows" @page="previewFirst = $event.first" />
+        <Paginator v-if="previewTotalRows > previewRowLimit" :first="previewFirst" :rows="previewRowLimit" :total-records="previewTotalRows" @page="previewFirst = $event.first" />
         <div v-if="dataPreview.length === 0" class="empty-plot">
           <i class="pi pi-table" />
           <p :role="plotRefusal ? 'alert' : undefined">{{ plotRefusal || "No data to display" }}</p>
@@ -277,6 +275,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import SampleMetadataStyleControls from "../node-detail/panels/SampleMetadataStyleControls.vue";
 import { scientificNumber } from "@/utils/scientificEncoding";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
@@ -351,6 +350,7 @@ const plotSampling = computed(() => {
   ) {
     return {
       shown: population.shown,
+      excluded: population.excluded ?? 0,
       total: population.total,
       omitted: population.total - population.shown,
       percent: ((100 * population.shown) / population.total).toFixed(1),
@@ -368,6 +368,7 @@ const plotSampling = computed(() => {
   if (!Number.isInteger(shown) || !Number.isInteger(total) || shown < 1 || total <= shown) return null;
   return {
     plottedTableOnly: true,
+    excluded: 0,
     selectionDescription: "Traces were selected at evenly spaced source rows.",
     shown,
     total,
@@ -414,6 +415,7 @@ const sampleStylePlotKeys = new Set([
 ]);
 const showSampleStyleControls = computed(() =>
   !props.tableOnly && sampleStylePlotKeys.has(selectedPlotKey.value) &&
+  !["component_concentrations", "component_spectra"].includes(props.nodeOutput?.metadata?.scientific_matrix_role ?? "") &&
   (sampleColorFieldOptions.value.length > 0 || sampleSymbolFieldOptions.value.length > 0),
 );
 
@@ -422,7 +424,9 @@ const correlationTrace = computed(() => correlationCircleSelected.value
   ? plotData.value.find((trace: any) => Array.isArray(trace.customdata))
   : null);
 const oneComponentCorrelations = computed(() => correlationTrace.value?.type === "bar");
-const displayDataShape = computed(() => correlationCircleSelected.value
+const displayDataShape = computed(() => selectedPlotKey.value === "scientific_selection_stability"
+  ? { rows: props.nodeOutput?.presentation_value?.per_variable_frequency?.length ?? 0, rowLabel: "variables", cols: 1, colLabel: "selection frequency", range: null }
+  : correlationCircleSelected.value
   ? { rows: Array.isArray(correlationTrace.value?.x) ? correlationTrace.value.x.length : 0,
       rowLabel: "variables plotted", cols: oneComponentCorrelations.value ? 1 : 2,
       colLabel: oneComponentCorrelations.value ? "component" : "components", range: null }
@@ -686,8 +690,9 @@ const displayPreferences = useDisplayPreferences();
 const previewRowLimit = computed(() => displayPreferences.maxRows);
 const previewFirst = ref(0);
 const featureOffset = ref(0);
-const usePlottedTable = computed(() => !props.tableOnly && (correlationCircleSelected.value || selectedPlotKey.value !== availablePlots.value[0]?.key
-  || isProjectedScientificKind(props.nodeOutput, "variable_profile")));
+const usePlottedTable = computed(() => !props.tableOnly && availablePlots.value.length > 0 && (selectedPlotKey.value === "scientific_selection_stability" || isProjectedScientificKind(props.nodeOutput, "visualization") || correlationCircleSelected.value || selectedPlotKey.value !== availablePlots.value[0]?.key
+  || isProjectedScientificKind(props.nodeOutput, "variable_profile")
+  || !Array.isArray(props.nodeOutput?.data) || props.nodeOutput.data.length === 0));
 const totalFeatureColumns = computed(() => !usePlottedTable.value && Array.isArray(props.nodeOutput?.data?.[0]) ? props.nodeOutput.data[0].length : 0);
 const previewTotalRows = computed(() => {
   if (usePlottedTable.value) return plottedPointPreview.value.total;
@@ -769,12 +774,13 @@ const plottedPointPreview = computed(() => {
   }
   const rows: Record<string, unknown>[] = [];
   let total = 0;
-  for (const trace of plotData.value ?? []) {
+  for (const [traceIndex, trace] of (plotData.value ?? []).entries()) {
+    const series = trace.name || `Trace ${traceIndex + 1}`;
     if (!Array.isArray(trace.x) || !Array.isArray(trace.y)) continue;
     if (Array.isArray(trace.z)) {
       for (let y = 0; y < trace.y.length; y += 1) {
         for (let x = 0; x < trace.x.length; x += 1) {
-          if (total >= previewFirst.value && rows.length < previewRowLimit.value) rows.push({ _index: total + 1, series: trace.name ?? "", x: trace.x[x], y: trace.y[y], value: trace.z[y]?.[x] });
+          if (total >= previewFirst.value && rows.length < previewRowLimit.value) rows.push({ _index: total + 1, series, x: trace.x[x], y: trace.y[y], value: trace.z[y]?.[x] });
           total += 1;
         }
       }
@@ -783,7 +789,18 @@ const plottedPointPreview = computed(() => {
     const count = Math.min(trace.x.length, trace.y.length);
     const start = Math.max(0, previewFirst.value - total);
     for (let index = start; index < count && rows.length < previewRowLimit.value; index += 1) {
-      rows.push({ _index: total + index + 1, series: trace.name ?? "", x: trace.x[index], y: trace.y[index] });
+      const id = trace.ids?.[index];
+      const pointLabel = Array.isArray(trace.text) ? trace.text[index] : undefined;
+      const axisLabel = (axisRef: string, dimension: string) => {
+        const axis = plotLayout.value?.[axisRef.replace(dimension, `${dimension}axis`)];
+        return typeof axis?.title === "string" ? axis.title : axis?.title?.text || axisRef;
+      };
+      const multiAxis = (plotData.value ?? []).some(t => (t.xaxis && t.xaxis !== "x") || (t.yaxis && t.yaxis !== "y"));
+      rows.push({ _index: total + index + 1, series,
+        ...(typeof id === "string" || typeof id === "number" ? { point_id: id } : {}),
+        ...(typeof pointLabel === "string" && pointLabel && !/[<>]/.test(pointLabel) ? { point_label: pointLabel } : {}),
+        ...(multiAxis ? { x_quantity: axisLabel(trace.xaxis || "x", "x"), y_quantity: axisLabel(trace.yaxis || "y", "y") } : {}),
+        x: trace.x[index], y: trace.y[index] });
     }
     total += count;
   }
@@ -802,7 +819,7 @@ const dataPreview = computed(() => {
         sample: row.sample,
         t2: row.t2,
         q: row.q,
-        outlier: row.outlier ? "Yes" : "No",
+        outlier: row.outlier === null ? "Not screened" : row.outlier ? "Yes" : "No",
       }));
   }
   if (!Array.isArray(data) || data.length === 0) return plottedPointPreview.value.rows;
@@ -889,7 +906,7 @@ const dataPreviewSummary = computed(() => {
       ? Object.keys(firstRow).length + 1
       : 1;
   const shownRows = Math.min(totalRows, previewRowLimit.value);
-  const shownCols = Math.min(totalCols, 10);
+  const shownCols = Math.min(Math.max(0, totalCols - featureOffset.value), 10);
   let summary = `${shownRows} of ${totalRows} rows`;
   if (totalCols > 10) summary += `, ${shownCols} of ${totalCols} columns`;
   return summary;
@@ -898,9 +915,14 @@ const dataPreviewSummary = computed(() => {
 const dataPreviewColumns = computed(() => {
   if (!dataPreview.value.length) return [];
   if (usePlottedTable.value) {
-    const title = (axis: any, fallback: string) => typeof axis?.title === "string" ? axis.title : axis?.title?.text || fallback;
-    const labels: Record<string, string> = { _index: "#", series: "Series", x: title(plotLayout.value?.xaxis, "X"), y: title(plotLayout.value?.yaxis, "Y"), value: "Value" };
-    return Object.keys(dataPreview.value[0]).map(field => ({ field, header: labels[field] || field }));
+    const title = (axis: any, fallback: string) => {
+      const label = typeof axis?.title === "string" ? axis.title : axis?.title?.text || fallback;
+      return Array.isArray(axis?.ticktext) && Array.isArray(axis?.tickvals)
+        ? `${label} (plot coordinate)` : label;
+    };
+    const multiAxis = dataPreview.value.some(row => "x_quantity" in row);
+    const labels: Record<string, string> = { _index: "#", series: "Series", point_id: "Retained point ID", point_label: "Retained point label", x_quantity: "X quantity", y_quantity: "Y quantity", x: multiAxis ? "X coordinate" : title(plotLayout.value?.xaxis, "X"), y: multiAxis ? "Y coordinate" : title(plotLayout.value?.yaxis, "Y"), value: "Value" };
+    return [...new Set(dataPreview.value.flatMap(row => Object.keys(row)))].map(field => ({ field, header: labels[field] || field }));
   }
   if (isProjectedScientificKind(props.nodeOutput, "t2_q_diagnostics")) {
     return [
@@ -960,7 +982,8 @@ const dataPreviewColumns = computed(() => {
         } else if (isMCR && mcrLabels[colIdx]) {
           header = mcrLabels[colIdx];
         } else if (featureNames.length > colIdx) {
-          header = normalizeSampleLabel(featureNames[colIdx]);
+          header = typeof featureNames[colIdx] === "number"
+            ? previewCell(featureNames[colIdx]) : normalizeSampleLabel(featureNames[colIdx]);
         } else if (xTitle && xTitle !== "Feature") {
           header = `${xTitle} ${colIdx + 1}`;
         } else {
@@ -994,7 +1017,8 @@ async function downloadPlot() {
 </script>
 
 <style scoped>
-.feature-paging { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; }
+.feature-paging { display: flex; align-items: center; gap: .5rem; margin: .5rem 0; color: #cbd5e1; }
+.embedded-plot .feature-paging { color: var(--text-color); }
 .embedded-plot .plot-controls, .embedded-plot .data-table-container { background: var(--surface-card); color: var(--text-color); }
 .embedded-plot .control-group label, .embedded-plot .stat-item, .embedded-plot .stat-item strong { color: var(--text-color); }
 .embedded-plot :deep(.p-dropdown) { background: var(--surface-card); border-color: var(--surface-border); color: var(--text-color); }
@@ -1015,6 +1039,7 @@ async function downloadPlot() {
 }
 
 .plot-controls {
+  color: #cbd5e1;
   display: flex;
   align-items: center;
   gap: 10px 14px;
@@ -1055,6 +1080,14 @@ async function downloadPlot() {
   font-size: 0.85rem;
   color: #94a3b8;
   white-space: nowrap;
+}
+
+.plot-controls :deep(.control-group > label) {
+  color: #cbd5e1;
+}
+
+.embedded-plot .plot-controls :deep(.control-group > label) {
+  color: var(--text-color);
 }
 
 .plot-type-dropdown {

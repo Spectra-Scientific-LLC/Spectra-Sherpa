@@ -53,6 +53,75 @@ describe("QuickPlotModal", () => {
     Paginator: true,
   };
 
+  it("expands declared trace records into numeric plot-table points", () => {
+    const traces = [{ type: "scatter", name: "PC1", x: [1100, 1102], y: [0.2, null], marker: { color: "blue" } }];
+    const wrapper = mount(QuickPlotModal, {
+      props: { modelValue: true, nodeType: "output.plot", nodeLabel: "Plot",
+        nodeOutput: { data: traces, presentation_value: { data: traces, layout: {} },
+          metadata: { scientific_presentation: scientificPresentation("visualization") } } },
+      global: { stubs: globalStubs },
+    });
+    const vm = wrapper.vm as any;
+    expect(vm.dataPreview).toEqual([
+      { _index: 1, series: "PC1", x: 1100, y: 0.2 },
+      { _index: 2, series: "PC1", x: 1102, y: null },
+    ]);
+    expect(vm.dataPreview[0]).not.toHaveProperty("marker");
+    wrapper.unmount();
+  });
+
+  it.each(["component_concentrations", "component_spectra"])("does not offer sample encodings for %s", (role) => {
+    const wrapper = mount(QuickPlotModal, {
+      props: { modelValue: true, nodeType: "model.nmf", nodeLabel: "NMF",
+        nodeOutput: { data: [[1, 2], [3, 4]], metadata: { scientific_matrix_role: role } } },
+      global: { stubs: globalStubs },
+    });
+    const vm = wrapper.vm as any;
+    vm.selectedPlotKey = "spectra_overlay";
+    expect(vm.showSampleStyleControls).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("presents retained selection frequency as variables, not zero samples", () => {
+    const wrapper = mount(QuickPlotModal, {
+      props: { modelValue: true, nodeType: "selection.nested_cv", nodeLabel: "Stability",
+        nodeOutput: { data: [], presentation_value: { mean_jaccard: .8, per_variable_frequency: [1, .4, 0] }, metadata: {
+          wavenumbers: [1100, 1102, 1104], x_title: "Wavelength", x_units: "nm",
+          scientific_presentation: { ...scientificPresentation("metric_record"), presentation_id: "stability", source_port: "stability", source_ports: ["stability"], modes: ["record"] },
+        } } }, global: { stubs: globalStubs },
+    });
+    const vm = wrapper.vm as any;
+    expect(vm.displayDataShape.rows).toBe(3);
+    expect(vm.displayDataShape.rowLabel).toBe("variables");
+    expect(vm.dataPreview.map((row: any) => [row.x, row.y])).toEqual([[1100, 1], [1102, .4], [1104, 0]]);
+    wrapper.unmount();
+  });
+
+  it("retains metric rows when no meaningful quantitative plot is available", () => {
+    const wrapper = mount(QuickPlotModal, { props: { modelValue: true, nodeType: "output.data_table", nodeLabel: "Metrics",
+      nodeOutput: { data: [{ key: "RMSE", value: .1 }, { key: "n", value: 20 }], metadata: {} } }, global: { stubs: globalStubs } });
+    const vm = wrapper.vm as any;
+    expect(vm.availablePlots).toEqual([]);
+    expect(vm.dataPreview).toHaveLength(2);
+    expect(wrapper.text()).toContain("Table-only result");
+    wrapper.unmount();
+  });
+
+  it("offers column paging outside embedded views", async () => {
+    const wrapper = mount(QuickPlotModal, {
+      props: { modelValue: true, tableOnly: true, nodeType: "data.file_load", nodeLabel: "Matrix",
+        nodeOutput: { data: [Array.from({length: 12}, (_, i) => i)], metadata: {} } },
+      global: { stubs: globalStubs },
+    });
+    expect(wrapper.find('[aria-label="Next feature columns"]').exists()).toBe(true);
+    expect(wrapper.find('[aria-label="Last feature columns"]').exists()).toBe(true);
+    (wrapper.vm as any).featureOffset = 10;
+    await nextTick();
+    expect((wrapper.vm as any).dataPreview[0].col_11).toBe("11");
+    expect((wrapper.vm as any).dataPreviewSummary).toContain("2 of 12 columns");
+    wrapper.unmount();
+  });
+
   it("lets saved PCA scores switch from specimen to botanical group without changing coordinates", async () => {
     const labels = ['A__B1', 'B__B1', 'A__B2', 'B__B2'];
     const scores = [[0, 0], [1, 1], [0.1, 0.2], [1.1, 1.2]];
@@ -97,8 +166,11 @@ describe("QuickPlotModal", () => {
     await nextTick();
     expect(vm.sampleSymbolField).toBe("Batch");
     expect(vm.sampleSymbolFieldOptions).toContainEqual({ label: "Batch", value: "Batch" });
-    expect(vm.displayPlotData.filter((trace: any) => trace.xaxis === "x2").map((trace: any) => trace.line.dash))
+    expect(vm.displayPlotData.filter((trace: any) => trace.xaxis === "x2" && trace.hoverinfo !== "skip").map((trace: any) => trace.line.dash))
       .toEqual(["solid", "dash", "solid"]);
+    expect(vm.displayPlotData.filter((trace: any) => trace.showlegend).map((trace: any) => trace.name))
+      .toEqual(expect.arrayContaining(["Batch: first", "Batch: second"]));
+    expect(vm.plotLayout.meta.display_population.shown).toBe(3);
     wrapper.unmount();
   });
 
@@ -229,8 +301,8 @@ describe("QuickPlotModal", () => {
 
     const disclosure = wrapper.find(".plot-sampling-disclosure");
     expect(disclosure.text()).toContain("50 of 460 source spectra (10.9%)");
-    expect(disclosure.text()).toContain("410 are unplotted");
-    expect(disclosure.text()).toContain("evenly spaced source rows");
+    expect(disclosure.text()).toContain("Data view: plotted traces only");
+    expect(disclosure.find('a[href$="#display-and-table-exports"]').exists()).toBe(true);
     expect(wrapper.html()).toContain("View Plotted Data");
     expect((wrapper.vm as any).dataPreview).toHaveLength(50);
 
@@ -366,7 +438,26 @@ describe("QuickPlotModal", () => {
       { _index: 1, series: "Sample A", x: 1200, y: 0.2 },
       { _index: 2, series: "Sample A", x: 1100, y: 0.4 },
     ]);
-    expect((wrapper.vm as any).dataPreviewSummary).toBe("2 of 2 plotted points");
+    expect((wrapper.vm as any).dataPreviewSummary).toBe("1–2 of 2 plotted points");
+  });
+
+  it("keeps multi-axis quantities, retained point IDs and null breaks in numeric plot rows", () => {
+    const wrapper = mount(QuickPlotModal, {
+      props: { modelValue: true, nodeType: "analysis.peak_finding", nodeLabel: "Plot",
+        nodeOutput: { data: [], plots: { peak_finding: {
+          data: [
+            { name: "RMSE", x: [1, 2], y: [0.2, null], ids: ["fold-A", "fold-B"] },
+            { name: "R²", x: [1], y: [0.9], yaxis: "y2" },
+          ], layout: { xaxis: { title: "Fold" }, yaxis: { title: "RMSE" }, yaxis2: { title: "R²" } },
+        } } },
+      }, global: { stubs: globalStubs },
+    });
+    const rows = (wrapper.vm as any).dataPreview;
+    expect(rows[0]).toMatchObject({ point_id: "fold-A", x_quantity: "Fold", y_quantity: "RMSE", y: 0.2 });
+    expect(rows[1].y).toBeNull();
+    expect(rows[2]).toMatchObject({ y_quantity: "R²", y: 0.9 });
+    expect((wrapper.vm as any).dataPreviewColumns.map((col: any) => col.header)).toContain("Y quantity");
+    wrapper.unmount();
   });
 
   it("preserves an inspection-height dendrogram inside the scrollable plot viewport", () => {

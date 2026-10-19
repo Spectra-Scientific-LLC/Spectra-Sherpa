@@ -1,7 +1,6 @@
 <template>
   <fieldset class="uncertainty-editor">
-    <legend>Prediction intervals (optional)</legend>
-    <p>Point predictions only unless you explicitly select a calibration record for this exact pipeline.</p>
+<legend>Prediction intervals (optional) <MethodHelp topic="qualification" label="Prediction interval calibration" /></legend>
     <label>Import interval record <input type="file" accept=".json,application/json" :disabled="busy" @change="importRecord" /></label>
     <p v-if="error" role="alert">{{ error }}</p>
     <button v-if="error" type="button" @click="clearRecord">Clear failed selection; use point predictions only</button>
@@ -13,13 +12,12 @@
         I declare that incoming specimens belong to this population and reference measurement basis.
         Compatibility is declared, not verified.
       </label>
-      <p>Per-response marginal level: {{ 100 * (1 - Number(modelValue.alpha)) }}%. Independence and exchangeability are declared; this is not laboratory qualification.</p>
+      <p>Per-response marginal level: {{ 100 * (1 - Number(modelValue.alpha)) }}%.</p>
       <button type="button" @click="downloadRecord">Export selected record</button>
       <button type="button" @click="clearRecord">Use point predictions only</button>
     </div>
     <details v-if="canonicalArtifactId && workflowId">
       <summary>Calibrate from a separate reference dataset</summary>
-      <p>Use one row per distinct specimen with explicit sample labels and retained target values/units. Average repeat measurements first. This dataset must not have been used to fit or select the model.</p>
       <label>Dataset
         <select v-model="experimentId" @change="loadFiles">
           <option :value="null">Select dataset</option>
@@ -49,6 +47,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { ref, watch, onBeforeUnmount } from "vue";
 import api from "@/api/client";
 import type { ExperimentSummary, ExperimentFile } from "@/types";

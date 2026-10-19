@@ -4,8 +4,21 @@ import numpy as np
 import pytest
 
 from spectra_sherpa.app.lib.axes import SampleAxis, SpectralAxis
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
-from spectra_sherpa.app.services.dag.nodes.modeling.mcr_nodes import _compare_mcr_spectra_to_truth
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
+from spectra_sherpa.app.services.dag.nodes.modeling.mcr_nodes import (
+    _compare_mcr_spectra_to_truth,
+    _compare_mcr_to_target,
+)
+
+
+@pytest.mark.parametrize("target", [["Lavandula angustifolia", "Lavandula intermedia"], [0, 1]])
+def test_mcr_does_not_treat_categorical_annotations_as_concentrations(target):
+    dataset = SherpaDataset(
+        X=np.ones((2, 3)),
+        target=np.asarray(target),
+        target_context=TargetContext(target_type="categorical", target_names=["Botanical group"]),
+    )
+    assert _compare_mcr_to_target(np.ones((2, 1)), dataset) is None
 
 
 def test_mcr_spectra_recovery_scores_recovered_st_against_ground_truth_s() -> None:

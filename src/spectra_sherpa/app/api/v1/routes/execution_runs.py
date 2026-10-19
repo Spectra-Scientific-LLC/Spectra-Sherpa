@@ -41,7 +41,7 @@ async def _get_workflow_for_user(
     workflow = await session.scalar(
         select(Workflow)
         .where(Workflow.id == workflow_id)
-        .options(selectinload(Workflow.nodes), selectinload(Workflow.versions))
+        .options(selectinload(Workflow.nodes), selectinload(Workflow.edges), selectinload(Workflow.versions))
     )
     if workflow is None:
         raise HTTPException(404, "Workflow not found")
@@ -49,6 +49,40 @@ async def _get_workflow_for_user(
         session, user_id, workflow.project_id, operation, resource_owner_id=workflow.user_id
     )
     return workflow
+
+
+async def _run_with_definition_match(run: ExecutionRun, workflow: Workflow) -> ExecutionRunOut:
+    """Display-only semantic comparison; never rewrite historical hashes."""
+    from spectra_sherpa.app.services.dag.integrity import workflow_definitions_match
+    from spectra_sherpa.app.services.run_output_retention import read_output
+
+    response = ExecutionRunOut.model_validate(run)
+    evidence = response.evidence_completeness
+    item = evidence.outputs.get("__workflow__", {}).get("definition") if evidence else None
+    if item is None or item.state != "exact":
+        return response
+    try:
+        retained = await to_thread(read_output, run.user_id, item)
+        current = {
+            "nodes": [
+                {"node_id": n.node_id, "node_type": n.node_type, "parameters": n.parameters or {}}
+                for n in workflow.nodes
+            ],
+            "edges": [
+                {
+                    "from_node_id": e.from_node_id,
+                    "to_node_id": e.to_node_id,
+                    "from_output": e.from_output,
+                    "to_input": e.to_input,
+                }
+                for e in workflow.edges
+            ],
+        }
+        response.matches_current_definition = workflow_definitions_match(retained, current)
+    except (OSError, ValueError, KeyError, TypeError):
+        # Missing or invalid retained evidence must not suppress a stale warning.
+        pass
+    return response
 
 
 @router.get("", response_model=ExecutionRunList)
@@ -102,7 +136,7 @@ async def get_latest_run(
     run = result.scalar_one_or_none()
     if run is None:
         return None
-    return ExecutionRunOut.model_validate(run)
+    return await _run_with_definition_match(run, workflow)
 
 
 @router.get("/{run_id}", response_model=ExecutionRunOut)
@@ -126,7 +160,7 @@ async def get_run(
     if run is None:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    return ExecutionRunOut.model_validate(run)
+    return await _run_with_definition_match(run, workflow)
 
 
 @router.post("", response_model=ExecutionRunOut, status_code=201)

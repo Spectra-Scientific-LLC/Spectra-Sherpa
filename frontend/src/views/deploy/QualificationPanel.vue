@@ -1,7 +1,7 @@
 <template>
   <section class="qualification-panel" :class="{ 'qualification-panel--embedded': headingless }">
     <h3 v-if="!headingless">Analytical qualification</h3>
-    <p>Deploy-ready means operational readiness. Intended-use acceptance requires separate validation and human review. No ASTM or regulatory compliance is implied.</p>
+    <MethodHelp topic="qualification" label="Analytical qualification" />
     <p v-if="error" role="alert">{{ error }}</p>
     <button v-if="error" type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy" @click="loadHistory">Retry</button>
     <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="!records.length || busy" @click="download">Export complete evidence history</button>
@@ -34,7 +34,7 @@
     </fieldset>
     <details v-if="canonicalArtifactId">
       <summary>Assess an independent validation cohort</summary>
-      <p>Prepare a versioned laboratory policy and its declared context below, or load an existing policy under Advanced. Thresholds chosen after inspecting results are exploratory. Use one row per independent specimen, explicit sample IDs and retained response units. The SDK contract documents every field.</p>
+      <p>Prepare a laboratory policy below, or load an existing policy under Advanced.</p>
       <label>Dataset <select v-model="experimentId" @change="loadFiles"><option :value="null">Select dataset</option><option v-for="experiment in experiments" :key="experiment.id" :value="experiment.id">{{ experiment.name }}</option></select></label>
       <label>Reference file <select v-model="fileId"><option :value="null">Select file</option><option v-for="file in files" :key="file.id" :value="file.id">{{ file.file_path }} ({{ file.stage }})</option></select></label>
       <label>Asset identity, if needed <input v-model="assetId" /></label>
@@ -48,10 +48,11 @@
       <label><input v-model="allowExclusions" type="checkbox" /> Explicitly exclude missing reference rows and retain their identities and reasons. Infinite references and nonfinite predictors still refuse.</label>
       <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy || !fileId || !policyText.trim() || !contextText.trim()" @click="assess">Execute frozen application and assess</button>
     </details>
-    <p v-else>Assessment execution currently requires an imported canonical PLS application. Saved-model readiness alone does not establish qualification.</p>
+    <p v-else>Import a canonical PLS application to run an assessment.</p>
   </section>
 </template>
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { ref, watch, onMounted, onBeforeUnmount } from "vue";
 import api from "@/api/client";
 import QualificationPolicyForm from "@/components/QualificationPolicyForm.vue";

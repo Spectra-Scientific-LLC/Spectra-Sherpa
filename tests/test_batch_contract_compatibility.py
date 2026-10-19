@@ -76,12 +76,50 @@ def test_exact_directional_application_compatibility(entry):
         )
 
 
+def test_gui_sample_authority_compatibility_is_exact_and_classifies_current_custody():
+    from spectra_sherpa.core.contract_compatibility import _GUI_SAMPLE_AUTHORITY_PREDECESSORS
+
+    for entry in _GUI_SAMPLE_AUTHORITY_PREDECESSORS:
+        current = node_registry.get_metadata(entry.operation_id).resolved_execution_contract()
+        assert current.digest == entry.consumer_digest
+        assert current.payload["fitted_state_serializer"] == entry.serializer
+        assert saved_state_predecessor_is_compatible(
+            entry.predecessor_digest,
+            entry.consumer_digest,
+            operation_id=entry.operation_id,
+            serializer=entry.serializer,
+        )
+        assert not saved_state_predecessor_is_compatible(
+            entry.consumer_digest,
+            entry.predecessor_digest,
+            operation_id=entry.operation_id,
+            serializer=entry.serializer,
+        )
+        assert not saved_state_predecessor_is_compatible(
+            entry.predecessor_digest,
+            "0" * 64,
+            operation_id=entry.operation_id,
+            serializer=entry.serializer,
+        )
+        new = fitted_state_custody_capability(entry.serializer, entry.consumer_digest)
+        # Application compatibility does not grant historical packages a new
+        # export capability. Classify the reviewed current producer only.
+        expected = (
+            "retains_training_rows" if entry.operation_id == "classification.knn" else "data_free_application_state"
+        )
+        assert new.custody_class == expected
+
+
 def test_only_reviewed_source_component_changed_and_all_current_identities_remain_truthful():
     catalog = predecessor_catalog()
     context = HistoricalReconstructionContext()
     component_phase_digests = {
-        "classification.plsda": "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
-        "model.load_apply": "1a06693cf04d44d155137a022e8104ecd2fcec7a9a88d8ec27938248205b2ba6",
+        "model.dbscan": "5fae2be3e60e35b85b13cb9b80eb09b171743f319bed7dd48b13a8265f31690a",
+        "model.hca": "0adc84cec3ce752df725518210701d744af62e2cbfd6cd3396eab0d3bce8495b",
+        "model.kmeans": "c65f7f11e6d2089abdec190e2c7aee80088eed4f2545ce55c0b92db1b2ebef30",
+        "model.parafac": "3c1525353cb993b328366260f5b751a2275048e2c39322ca424a91692ad24f68",
+        "classification.plsda": "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+        "model.load_apply": "2c0aac4b7572370e631c839a79b3980b5edb37d879bb43fc789edab337e76a64",
         "model.apply_fitted_linear_regression": "7867e5992747564b3fe46215d0f7d2d199b3a5c2af40531b38d480d82465530b",
         "model.apply_fitted_pcr": "14d71c0447ba121bdd0b53911bb4f804d8b39ec1c0cdeb0a28228b8022aec5a8",
         "model.apply_fitted_pls": "6e4dad65e323401e8fa1e0dee0714892e3f2a9316489113db478e75cee42d9de",
@@ -113,7 +151,10 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
             "spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes",
             "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
         ],
-        "model.dbscan": ["spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model"],
+        "model.dbscan": [
+            "spectra_sherpa.app.services.dag.nodes.modeling.clustering_nodes",
+            "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
+        ],
         "model.fitted_linear_regression": [
             "spectra_sherpa.app.lib.fitted_state",
             "spectra_sherpa.app.services.dag.nodes.modeling._artifact_builder",
@@ -145,8 +186,14 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
             "spectra_sherpa.app.services.dag.nodes.modeling.regression_nodes",
             "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
         ],
-        "model.hca": ["spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model"],
-        "model.kmeans": ["spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model"],
+        "model.hca": [
+            "spectra_sherpa.app.services.dag.nodes.modeling.clustering_nodes",
+            "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
+        ],
+        "model.kmeans": [
+            "spectra_sherpa.app.services.dag.nodes.modeling.clustering_nodes",
+            "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
+        ],
         "model.load_apply": [
             "spectra_sherpa.app.lib.fitted_state",
             "spectra_sherpa.app.lib.pca",
@@ -159,6 +206,7 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         ],
         "model.parafac": [
             "spectra_sherpa.app.services.dag.io_contracts",
+            "spectra_sherpa.app.services.dag.meta_helpers",
             "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
         ],
     }

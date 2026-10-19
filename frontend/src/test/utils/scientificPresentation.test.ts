@@ -74,6 +74,16 @@ const output = {
 } as NodeOutput;
 
 describe("scientific presentation resolver", () => {
+  it("does not borrow primary sample identities or spectral axes for another output", () => {
+    const resolved = resolveScientificPresentation(metadata, output)!;
+    const projected = projectScientificPresentation({ ...output, metadata: {
+      sample_labels: ["training-row"], wavenumbers: [1000], x_units: "nm", diagnostics: { algorithm: "test" },
+    } }, resolved);
+    expect(projected?.metadata).not.toHaveProperty("sample_labels");
+    expect(projected?.metadata).not.toHaveProperty("wavenumbers");
+    expect(projected?.metadata).not.toHaveProperty("x_units");
+    expect(projected?.metadata.diagnostics).toEqual({ algorithm: "test" });
+  });
   it.each([["A", "B", "C"], ["A"]])("uses exact response class labels, never inherited LV labels: %j", (...classes) => {
     const resolved = resolveScientificPresentation(metadata, output)!;
     const projected = projectScientificPresentation({
@@ -176,7 +186,7 @@ describe("scientific presentation resolver", () => {
     });
   });
 
-  it("does not let empty port metadata erase fitted-model annotations", () => {
+  it("retains model class annotations but does not borrow feature axes for comparison rows", () => {
     const annotatedOutput = {
       ...output,
       metadata: {
@@ -203,7 +213,7 @@ describe("scientific presentation resolver", () => {
     );
 
     expect(projected?.metadata.classes).toEqual(["class_0", "class_1", "class_2"]);
-    expect(projected?.metadata.feature_names).toEqual(["alcohol", "malic_acid"]);
+    expect(projected?.metadata).not.toHaveProperty("feature_names");
   });
 
   it("does not advertise a presentation whose typed source port is absent", () => {
@@ -388,6 +398,11 @@ describe("scientific presentation resolver", () => {
         x_title: "Wavenumber",
         x_units: "cm-1",
         spectral_technique: "FTIR",
+        value_units: "absorbance",
+        data_role: "X_spectra",
+        data_modality: "spectra",
+        "sherpa.data_role": "X_spectra",
+        "sherpa.data_modality": "spectra",
       },
       ports: {
         target: {
@@ -414,6 +429,11 @@ describe("scientific presentation resolver", () => {
       "x_title",
       "x_units",
       "spectral_technique",
+      "value_units",
+      "data_role",
+      "data_modality",
+      "sherpa.data_role",
+      "sherpa.data_modality",
     ]) {
       expect(projected?.metadata).not.toHaveProperty(spectralKey);
     }

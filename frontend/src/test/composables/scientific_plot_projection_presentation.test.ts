@@ -224,7 +224,7 @@ describe("canonical scientific presentation projection", () => {
     expect(plot.plotLayout.value.xaxis.range).toEqual([-1, 1]);
   });
 
-  it("keeps one PCA summary title and uses hover for the unlabeled variance axis", () => {
+  it("keeps one PCA summary title with independently anchored, separated panels", () => {
     const output = projectedOutput("pca_scores", [[1, 2], [3, 4]]) as any;
     output.presentation_contract.payload.presentations = [{
       presentation_id: "variable_correlations", kind: "pca_variable_correlations",
@@ -238,8 +238,15 @@ describe("canonical scientific presentation projection", () => {
       explained_variance: { data: [0.7, 0.3], metadata: {} },
     };
     const plot = useQuickPlotProjection(ref(output), ref("model.pca"));
-    expect(plot.plotLayout.value.title).toBe("PCA Summary");
-    expect(plot.plotLayout.value.yaxis.visible).toBe(false);
+    expect(plot.plotLayout.value.title).toMatchObject({
+      text: "PCA Summary", y: 0.99, yref: "container", yanchor: "top",
+    });
+    expect(plot.plotLayout.value.legend).toMatchObject({ y: 1.02, yanchor: "bottom" });
+    expect(plot.plotLayout.value.yaxis.title).toBe("Explained variance (%)");
+    expect(plot.plotLayout.value.xaxis2.anchor).toBe("y2");
+    expect(plot.plotLayout.value.xaxis3.anchor).toBe("y3");
+    expect(plot.plotLayout.value.yaxis2.domain[1]).toBeLessThan(plot.plotLayout.value.yaxis.domain[0]);
+    expect(plot.plotLayout.value.yaxis3.domain[1]).toBeLessThan(plot.plotLayout.value.yaxis2.domain[0]);
     expect(plot.plotData.value[0].hovertemplate).toContain("%{x}");
   });
 
@@ -1017,6 +1024,20 @@ describe("canonical scientific presentation projection", () => {
     expect(plot.plotData.value).toEqual([]);
   });
 
+  it("separates mixed-unit peak measurements and preserves missing detections", () => {
+    const output = projectedOutput("spectral_dataset", [[1200, 0.5], [null, null]]) as any;
+    output.metadata = { ...output.metadata, data_role: "X_features",
+      column_names: ["peak_position_1", "magnitude_at_peak_1"],
+      column_units: { peak_position_1: "cm-1", magnitude_at_peak_1: "absorbance" } };
+    const plot = useQuickPlotProjection(ref(output), ref("analysis.peak_find"));
+    expect(plot.availablePlots.value.map(option => option.key)).toEqual(["table_column:0", "table_column:1"]);
+    expect(plot.plotLayout.value.yaxis.title).toBe("peak_position_1 (cm-1)");
+    expect(plot.plotData.value[0].y).toEqual([1200, null]);
+    plot.selectedPlotKey.value = "table_column:1";
+    expect(plot.plotLayout.value.yaxis.title).toBe("magnitude_at_peak_1 (absorbance)");
+    expect(plot.plotData.value[0].y).toEqual([0.5, null]);
+  });
+
   it("presents a feature-table dataset as labeled class distributions", () => {
     const output = projectedOutput("spectral_dataset", [
       [5.1, 3.5],
@@ -1139,6 +1160,7 @@ describe("canonical scientific presentation projection", () => {
         data: [0, 1, 2],
         labels: ["Basis Spectrum 1", "Basis Spectrum 2", "Basis Spectrum 3"],
         title: "Component",
+        sample_table: { component_id: ["one", "two", "three"] },
       },
     };
     spectra.metadata = {
@@ -1165,8 +1187,8 @@ describe("canonical scientific presentation projection", () => {
     await nextTick();
 
     expect(plot.availablePlots.value).toEqual([
-      { key: "scientific_spectral_overlay", label: "Pure Spectra" },
-      { key: "scientific_spectral_heatmap", label: "Pure Spectra Heatmap" },
+      { key: "scientific_spectral_overlay", label: "Component Spectra" },
+      { key: "scientific_spectral_heatmap", label: "Component Spectra Heatmap" },
     ]);
     expect(plot.selectedPlotKey.value).toBe("scientific_spectral_overlay");
     expect(plot.plotData.value).toHaveLength(3);

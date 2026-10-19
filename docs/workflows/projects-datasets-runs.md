@@ -40,3 +40,20 @@ Use **Models** for the user-facing collection of retained fitted models.
 Artifact describes the underlying fitted-state record.
 
 Training nodes can persist fitted models. A model artifact keeps a readable compatibility record plus the numeric fitted state needed for later review and application. Before applying an artifact, confirm the spectral axis, preprocessing, feature count, target units, and validation context match the new data.
+## Batch execution
+
+**Apply trained model** uses the fitted model and preprocessing without refitting
+on the included dataset. Accuracy statistics require reference targets.
+**Run workflow** executes the saved graph with the selected dataset; its split,
+training, and evaluation nodes determine the statistics. The original canvas
+and fitted models are unchanged. Review the selected combinations before starting.
+
+Each batch combination is saved separately in Run History with a shared batch
+identifier. Compare dataset-level statistics there; execution mode and cohort
+labels describe the evidence, rather than restricting which runs can be compared.
+## Availability lights
+
+Green means the item is present, grey means absent or not checked, and red
+indicates an operational problem. These lights describe basic availability,
+not model quality, deployment qualification or completeness of scientific
+provenance. Open the evidence record for its current detail and timestamp.

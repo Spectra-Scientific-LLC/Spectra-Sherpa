@@ -19,12 +19,27 @@ from spectra_sherpa.app.services.dag.nodes.classification.application_nodes impo
 from spectra_sherpa.app.services.dag.nodes.classification.knn_nodes import (
     KNNNode,
     _canonical_knn_parameters,
+    _knn_calibration_map,
     _knn_display_projection,
     _knn_scientific_core,
     apply_knn_fitted_state,
 )
 from spectra_sherpa.execution_contract_vocabulary import LifecycleKind, ManagedOptimizationEligibility, RuntimeFamily
 from tests.performance_contract import PerformanceCeiling
+
+
+@pytest.mark.parametrize("scale", [True, False])
+@pytest.mark.parametrize("labels", [["PC1", "PC2"], ["Feature 1", "Feature 2"]])
+def test_knn_map_distance_space_uses_fitted_scaling_not_display_projection(scale, labels):
+    result = _knn_calibration_map(
+        np.array([[1.0, 2.0], [3.0, 4.0]]),
+        labels,
+        np.array(["A", "B"]),
+        np.array(["A", "B"]),
+        ["one", "two"],
+        scale=scale,
+    )
+    assert result["metadata"]["distance_space"] == ("autoscaled" if scale else "unscaled")
 
 
 def _dataset() -> tuple[SherpaDataset, np.ndarray]:

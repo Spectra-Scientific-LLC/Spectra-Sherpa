@@ -40,6 +40,60 @@ const pca = (): NodeOutput => ({
 } as unknown as NodeOutput);
 
 describe("Quick Plot and detailed plot parity", () => {
+  it("keeps selected PCA loadings unconnected in both views", () => {
+    const output = pca();
+    output.metadata.processing_history = [{ op_id: "selection.variable_select" }];
+    const { quick, detail } = views(output, "model.pca");
+    quick.selectedPlotKey.value = "pca_loadings";
+    expect(quick.plotData.value.length).toBe(3);
+    expect(quick.plotData.value.every(trace => trace.mode === "markers")).toBe(true);
+    expect(quick.plotData.value).toEqual(detail.plotBag.value.pcaLoadingsData);
+  });
+  it("keeps selected spectral overlays unconnected", () => {
+    const output = { data: [[1, 2, 3]], metadata: { is_spectra: true,
+      wavenumbers: [600, 1000, 1400], processing_history: [{ op_id: "selection.variable_select" }] } } as NodeOutput;
+    const { quick } = views(output, "data.file_load");
+    quick.selectedPlotKey.value = "spectra_overlay";
+    expect(quick.plotData.value.length).toBe(1);
+    expect(quick.plotData.value[0].mode).toBe("markers");
+  });
+  it("does not interpolate loading curves across selected variables", () => {
+    const output = pca();
+    output.metadata.processing_history = [{ op_id: "selection.variable_select" }];
+    output.data = output.ports!.loadings.data;
+    output.presentation_value = output.ports!.loadings.value;
+    output.metadata.scientific_presentation = {
+      schema_version: "spectrasherpa-node-presentation/1", contract_digest: "a".repeat(64),
+      presentation_id: "loadings", label: "Loadings", kind: "pls_loadings",
+      source_port: "loadings", source_ports: ["loadings"], modes: ["plot"], description: "",
+    };
+    const { quick } = views(output, "model.fitted_pls");
+    quick.selectedPlotKey.value = "scientific_pls_loadings";
+    expect(quick.plotData.value.length).toBeGreaterThan(0);
+    expect(quick.plotData.value.every(trace => trace.mode === "markers")).toBe(true);
+  });
+  it.each(["pca", "plsda"])("dispatches retained %s component evidence without inventing CV", (family) => {
+    const classification = family === "plsda";
+    const metric = classification ? "balanced_accuracy" : "reconstruction_rmse";
+    const record = {
+      schema_version: `spectrasherpa-${family}-component-curve/1`, selected_components: 2,
+      reconstruction_space: "mean_centered_X",
+      calibration: [{ components: 1, [metric]: .8 }, { components: 2, [metric]: .5 }],
+      cross_validation: { status: "unavailable", reason: "No admitted fold plan" },
+    };
+    const plot = buildPlsComponentCurvePlot(record);
+    expect(plot.data).toHaveLength(1);
+    expect(plot.data[0].y).toEqual([.8, .5]);
+    expect(plot.layout.meta.cv_status).toBe("unavailable");
+    expect(plot.layout.meta.cv_reason).toBe("No admitted fold plan");
+    expect(plot.layout.yaxis.title).toContain(classification ? "Balanced accuracy" : "Reconstruction RMSE");
+    const cv = buildPlsComponentCurvePlot({ ...record, cross_validation: { status: "available", rows: [
+      { components: 1, [classification ? metric : "pooled_reconstruction_rmse"]: .9 },
+      { components: 2, status: "unavailable_rank" },
+    ] } });
+    expect(cv.data[1].y).toEqual([.9, null]);
+    expect(cv.data[1].connectgaps).toBe(false);
+  });
   it("leaves a gap instead of crashing when a calibration row is missing", () => {
     const plot = buildPlsComponentCurvePlot({
       schema_version: "spectrasherpa-pls-component-curve/1", selected_components: 2,
@@ -144,6 +198,8 @@ describe("Quick Plot and detailed plot parity", () => {
     const quickTraces = quick.plotData.value as Array<{ name?: string; text?: string[] }>;
 
     expect(quickTraces.map((trace) => trace.name)).toEqual(["A", "B"]);
+    expect(quick.plotLayout.value.legend.font.color).toBe("#334155");
+    expect(quick.plotLayout.value.legend.bgcolor).toBe("rgba(255, 255, 255, 0.95)");
     expect(detail.plotBag.value.classificationScoresData).toEqual(quick.plotData.value);
     expect(quickTraces.flatMap((trace) => trace.text ?? [])).toEqual([
       "sample-1", "sample-3", "sample-2", "sample-4",

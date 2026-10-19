@@ -834,6 +834,10 @@ describe("Workflow Store execution state restoration on loadWorkflow", () => {
     expect(store.workflowWarnings).toContain(
       "Current graph and retained run identity are different or unverified — results may be stale.",
     );
+    store.workflowWarnings.push("Server says this edge is incompatible.");
+    store.clearWorkflowStale();
+    expect(store.isWorkflowStale).toBe(false);
+    expect(store.workflowWarnings).toEqual(["Server says this edge is incompatible."]);
   });
 
   it("does not restore state when there is no latest run", async () => {

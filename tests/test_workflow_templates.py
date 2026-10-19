@@ -1404,10 +1404,12 @@ async def test_instantiate_rejects_cross_project_source_binding(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("saved_all_files", [False, True])
 async def test_instantiate_binds_exact_selected_collection_members(
     auth_client: AsyncClient,
     test_session: AsyncSession,
     test_user: User,
+    saved_all_files: bool,
 ):
     project = Project(user_id=test_user.id, name="Selected collection", description="")
     template_data = _make_template_data(
@@ -1458,6 +1460,38 @@ async def test_instantiate_binds_exact_selected_collection_members(
         _materialize_bound_jdx(experiment.id, file.file_path)
     ensure_type_registry_loaded()
 
+    view = None
+    binding_scope = {"file_ids": [files[0].id, files[2].id]}
+    if saved_all_files:
+        from spectra_sherpa.app.lib.collection_assembly import verified_source_observations
+        from spectra_sherpa.app.models.dataset_view import DatasetView
+        from spectra_sherpa.app.services.dataset_views import curation_receipt, receipt_sha256, selection_receipt
+        from spectra_sherpa.app.services.model_application import load_project_dataset
+
+        loaded = await load_project_dataset(
+            test_session, user_id=test_user.id, experiment_id=experiment.id, stage="raw"
+        )
+        receipt = curation_receipt(
+            loaded,
+            selection_receipt(loaded, selected_file_ids=None),
+            parent_view_id=None,
+            action="exclude",
+            sample_ids=[verified_source_observations(loaded.dataset)[1]["sample_id"]],
+            reason="Bad acquisition",
+        )
+        view = DatasetView(
+            project_id=project.id,
+            experiment_id=experiment.id,
+            created_by_user_id=test_user.id,
+            name="Two included rows",
+            name_key="two included rows",
+            selection=receipt,
+            selection_sha256=receipt_sha256(receipt),
+        )
+        test_session.add(view)
+        await test_session.commit()
+        binding_scope = {"all_files": True, "dataset_view_id": view.id, "dataset_view_sha256": view.selection_sha256}
+
     response = await auth_client.post(
         f"/api/v1/workflow-templates/{template.id}/instantiate",
         json={
@@ -1468,7 +1502,7 @@ async def test_instantiate_binds_exact_selected_collection_members(
                     "source": "experiment",
                     "experiment_id": experiment.id,
                     "stage": "raw",
-                    "file_ids": [files[0].id, files[2].id],
+                    **binding_scope,
                 }
             },
         },
@@ -1477,9 +1511,11 @@ async def test_instantiate_binds_exact_selected_collection_members(
     assert response.status_code == 201, response.text
     source = next(node for node in response.json()["nodes"] if node["node_id"] == "data_1")
     assert source["node_type"] == "data.collection_load"
-    assert source["parameters"]["selected_file_ids"] == [str(files[0].id), str(files[2].id)]
+    expected_ids = [file.id for file in files] if saved_all_files else [files[0].id, files[2].id]
+    assert source["parameters"]["selected_file_ids"] == [str(value) for value in expected_ids]
     assert len(source["parameters"]["source_manifest_sha256"]) == 64
-    assert files[1].id not in [int(value) for value in source["parameters"]["selected_file_ids"]]
+    if view is not None:
+        assert source["parameters"]["dataset_view_id"] == view.id
     initial_revision = await test_session.scalar(
         select(WorkflowDataSelectionRevision).where(
             WorkflowDataSelectionRevision.workflow_id == response.json()["id"],
@@ -1488,7 +1524,7 @@ async def test_instantiate_binds_exact_selected_collection_members(
     )
     assert initial_revision is not None
     assert initial_revision.revision_number == 1
-    assert initial_revision.selection["selected_file_ids"] == [files[0].id, files[2].id]
+    assert initial_revision.selection["selected_file_ids"] == expected_ids
 
     from spectra_sherpa.app.services.dag.nodes.data.loaders import CollectionLoadNode
     from spectra_sherpa.core.execution_runtime import (
@@ -1498,6 +1534,11 @@ async def test_instantiate_binds_exact_selected_collection_members(
     )
 
     class Resolver:
+        async def resolve_dataset_view(self, **kwargs):
+            assert view is not None
+            assert kwargs["selection_sha256"] == view.selection_sha256
+            return {"selection": view.selection, "project_id": project.id}
+
         async def resolve_experiment_collection(self, *, experiment_id: int, stage: str = "raw"):
             assert experiment_id == experiment.id
             selected = []

@@ -14,6 +14,8 @@ export type DataSelectionReceipt = {
     file_ids: number[] | null;
     file_paths?: string[] | null;
     asset_id?: string | null;
+    dataset_view_id?: number | null;
+    dataset_view_sha256?: string | null;
     stage: ExperimentStage;
   }>;
   target_authority: TargetAuthority | null;
@@ -137,6 +139,10 @@ export function bindingFromSelectionReceipt(
     fileIds: selected.file_ids,
     allFiles: selected.selection === "all",
     assetId: selected.asset_id ?? null,
+    ...(selected.dataset_view_id != null ? {
+      datasetViewId: selected.dataset_view_id,
+      datasetViewSha256: selected.dataset_view_sha256 ?? null,
+    } : {}),
     targetAuthority,
     groupColumn: targetAuthority ? receipt.group : null,
     stage: selected.stage,

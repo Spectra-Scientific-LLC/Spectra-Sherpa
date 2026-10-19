@@ -273,6 +273,7 @@ class KMeansNode(Node):
     metadata = NodeMetadata(
         policy=NodePolicy(),
         node_type="model.kmeans",
+        presentation_inputs={"centroids": ("default", "cluster_feature_axes")},
         category="clustering",
         label="Fit K-Means Clustering",
         description="Fit K-Means clustering for unsupervised grouping",
@@ -552,7 +553,11 @@ class DBSCANNode(Node):
                 max_value=100000,
                 max_value_reason="Bounds neighborhood support bookkeeping to a finite cohort-scale request.",
                 step=1,
-                description="Minimum samples per cluster",
+                description=(
+                    "Minimum samples within the neighborhood radius, including the point itself, "
+                    "for a core point. This is not a minimum cluster-size filter. "
+                    "Points not density-connected to a core point are labeled noise."
+                ),
                 required=True,
                 category="basic",
             ),

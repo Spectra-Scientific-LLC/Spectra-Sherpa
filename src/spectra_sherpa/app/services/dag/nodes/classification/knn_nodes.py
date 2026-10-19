@@ -100,6 +100,8 @@ def _knn_calibration_map(
     target: np.ndarray,
     classes: np.ndarray,
     sample_labels: list[str],
+    *,
+    scale: bool,
 ) -> dict[str, Any]:
     """Render class identity in a display-only projection of KNN model space."""
 
@@ -146,7 +148,7 @@ def _knn_calibration_map(
         },
         "metadata": {
             "projection_scope": "display_only",
-            "distance_space": "autoscaled" if labels[0].startswith("PC") else "model_space",
+            "distance_space": "autoscaled" if scale else "unscaled",
             "n_samples": int(matrix.shape[0]),
             "n_classes": int(classes.size),
         },
@@ -332,6 +334,7 @@ def _knn_export_outputs(X: Any, y: Any, *, parameters: dict[str, object]) -> dic
         core["target"],
         core["classes"],
         sample_labels,
+        scale=bool(parameters["scale"]),
     )
     plots = {"confusion_matrix_train": confusion_visualization, "calibration_map": calibration_map}
     return {
@@ -663,7 +666,8 @@ class KNNNode(Node):
                     "visualization",
                     ("visualization",),
                     ("plot", "table"),
-                    "Known classes in a display-only projection of the scaled distance space.",
+                    "Known classes in a display-only projection of the fitted distance space; "
+                    "scaling follows Autoscale Features.",
                 ),
                 ScientificPresentation(
                     "coordinates",
@@ -770,7 +774,9 @@ class KNNNode(Node):
             if raw_sample_labels is not None
             else [f"Sample {index + 1}" for index in range(X_data.shape[0])]
         )
-        calibration_map = _knn_calibration_map(viz_data, viz_labels, y_array, classes, sample_labels)
+        calibration_map = _knn_calibration_map(
+            viz_data, viz_labels, y_array, classes, sample_labels, scale=bool(self._resolve_params()["scale"])
+        )
         confusion_visualization = plots["confusion_matrix_train"]
         plots["calibration_map"] = calibration_map
 

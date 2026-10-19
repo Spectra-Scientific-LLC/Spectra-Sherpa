@@ -218,6 +218,8 @@ class NodeMetadata:
     # Kept separate from execution identity so presentation can be verified
     # and persisted independently without becoming numerical authority.
     presentation_contract: Any = None
+    # Exact input-axis relationships for default per-output presentations.
+    presentation_inputs: dict[str, tuple[str, str]] = field(default_factory=dict)
     # A node-owned refinement of the generic parameter grammar. The callable
     # is part of the registered implementation closure, not a second
     # operation-name dispatch table.

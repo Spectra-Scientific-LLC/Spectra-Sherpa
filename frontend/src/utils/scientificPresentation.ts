@@ -131,9 +131,7 @@ export const presentationSupports = (
   // The retained PLS curve was originally declared as a record. Plotting
   // that same exact record is a client-side view, not a fitted-state or
   // execution-contract change (which would invalidate saved models).
-  (mode === "plot" && resolved.presentation.kind === "validation_result"
-    && resolved.presentation.presentation_id === "component_selection"
-    && resolved.sourcePort === "component_curve"
+  (mode === "plot" && !!renderers.record_views[`${resolved.presentation.kind}:${resolved.presentation.presentation_id}:${resolved.sourcePort}`]
     && resolved.presentation.modes.includes("record"))
 );
 
@@ -193,9 +191,7 @@ export const scientificPlotOptions = (
 ): ScientificPlotOption[] => {
   const identity = projectedPresentationIdentity(output);
   if (!identity || (!identity.modes.includes("plot")
-    && !(identity.kind === "validation_result"
-      && identity.presentation_id === "component_selection"
-      && identity.source_port === "component_curve"
+    && !(renderers.record_views[`${identity.kind}:${identity.presentation_id}:${identity.source_port}`]
       && identity.modes.includes("record")))) return [];
   // A retained PLS component record has a narrowly scoped client-side chart;
   // it is not a live plot kind in the execution/presentation contract.
@@ -243,8 +239,8 @@ export const scientificPlotOptions = (
         ...item,
         label:
           item.key === "scientific_spectral_overlay"
-            ? "Pure Spectra"
-            : "Pure Spectra Heatmap",
+            ? "Component Spectra"
+            : "Component Spectra Heatmap",
       }));
     }
     if (identity.kind === "spectral_dataset" && output?.metadata?.data_role === "X_features") {
@@ -287,6 +283,12 @@ export const scientificEvidenceShape = (
     if (Array.isArray(curve?.calibration) && Array.isArray(curve?.response_names)) {
       return { rows: curve.calibration.length, cols: curve.response_names.length,
         rowLabel: "component choices", colLabel: "responses" };
+    }
+    if (Array.isArray(curve?.calibration) && [
+      "spectrasherpa-pca-component-curve/1", "spectrasherpa-plsda-component-curve/1",
+    ].includes(String(curve.schema_version))) {
+      return { rows: curve.calibration.length, cols: 1,
+        rowLabel: "component choices", colLabel: "metric" };
     }
   }
   if (identity?.kind === "out_of_fold_evidence") {
@@ -336,8 +338,17 @@ export const projectScientificPresentation = (
     sourcePorts.length === 1
       ? portOutput.value
       : Object.fromEntries(sourcePorts.map((port) => [port, portOutputs[port].value]));
+  const parentMetadata = { ...output.metadata };
+  if (sourcePort !== output.primary_port) {
+    // The primary output's axes do not describe another result merely because
+    // it shares a node (e.g. held-out targets, centroids, or pure spectra).
+    for (const key of ["sample_labels", "source_labels", "labels", "sample_table", "include_mask",
+      "wavenumbers", "x_axis", "y_axis", "feature_names", "x_title", "x_units", "y_title", "y_units"]) {
+      delete parentMetadata[key];
+    }
+  }
   const projectedMetadata: Record<string, unknown> = {
-    ...output.metadata,
+    ...parentMetadata,
     ...populatedMetadata(portOutput.metadata),
   };
   if (sourcePort === "train_indices" || sourcePort === "test_indices") {
@@ -362,8 +373,18 @@ export const projectScientificPresentation = (
       "x_units",
       "spectral_technique",
       "data_quantity",
+      "value_units",
+      "data_role",
+      "data_modality",
+      "sherpa.data_role",
+      "sherpa.data_modality",
     ]) {
       delete projectedMetadata[key];
+    }
+    // X's measurement units do not describe Y. Only response authority may
+    // supply response units (categorical references often have none).
+    if (projectedMetadata.target_units != null) {
+      projectedMetadata.value_units = projectedMetadata.target_units;
     }
     projectedMetadata.data_type = "targets";
     projectedMetadata.is_spectra = false;

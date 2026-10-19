@@ -388,6 +388,10 @@ const bindingFromNode = (node: WorkflowNode | undefined): TemplateDataBinding | 
         typeof params.group_title === "string" && params.group_title ? params.group_title : null,
       fileIds,
       allFiles: false,
+      assetId: typeof params.asset_id === "string" && params.asset_id ? params.asset_id : null,
+      datasetViewId: parseNumberParam(params.dataset_view_id),
+      datasetViewSha256: typeof params.dataset_view_sha256 === "string"
+        ? params.dataset_view_sha256 : null,
       targetAuthority: targetAuthorityFromParams(params.target_authority),
       groupColumn:
         typeof params.group_column === "string" && params.group_column ? params.group_column : null,
@@ -416,6 +420,8 @@ const currentPrimaryDataBinding = (): TemplateDataBinding | null => {
       source: "experiment",
       experimentId: definition.experiment_id,
       displayName: selected.name,
+      datasetViewId: selected.id,
+      datasetViewSha256: selected.digest,
       fileIds: definition.selected_file_ids,
       allFiles: definition.selected_file_ids === null,
       assetId: definition.asset_id,
@@ -767,6 +773,8 @@ const loadTemplates = async () => {
                 file_id: activeBinding.fileId ?? null,
                 file_ids: activeBinding.fileIds ?? null,
                 asset_id: activeBinding.assetId ?? null,
+                dataset_view_id: activeBinding.datasetViewId ?? null,
+                dataset_view_sha256: activeBinding.datasetViewSha256 ?? null,
                 all_files: activeBinding.allFiles ?? false,
                 stage: activeBinding.stage ?? "raw",
                 target_authority: activeBinding.targetAuthority ?? null,

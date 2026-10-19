@@ -50,10 +50,10 @@ describe("Scientific plotted populations", () => {
       expect(vm.plotData[0].x).toEqual(saved.observations);
       expect(vm.plotData[0].y).toEqual(saved.predictions);
       expect(vm.plotData[0].customdata).toEqual([
-        [0, 0],
-        [1, 0],
-        [2, 1],
-        [3, 1],
+        [0, 0, "Unavailable"],
+        [1, 0, "Unavailable"],
+        [2, 1, "Unavailable"],
+        [3, 1, "Unavailable"],
       ]);
       expect(vm.plotData[0].hovertemplate).toContain("Validation fold (0-based)");
       expect(vm.plotLayout.title.text).toContain("Out-of-fold");
@@ -136,7 +136,7 @@ describe("Scientific plotted populations", () => {
       sample_labels: Array.from({ length: 50 }, (_, i) => `Exact ${i + 1}`),
     });
     expect(w.get(".plot-sampling-disclosure").text()).toContain(
-      "2 of 80 retained rows are excluded",
+      "Excluded: 2 source rows",
     );
     w.unmount();
   });

@@ -79,19 +79,10 @@
         </a>
       </div>
       <DisabledReason v-if="selectedNode" :id="runNodeReasonId" :reason="runNodeDisabledReason" class="inspector-disabled-reason" />
-      <section v-if="componentDesignPreview" class="diagnostics-card" aria-label="Planned component validation">
-        <span class="diagnostics-title">Before fitting: component validation</span>
-        <p>{{ componentDesignPreview.selected }} {{ componentDesignPreview.unit }} requested by the saved model parameter.
-          The curve will compare up to {{ componentDesignPreview.maximum }} components using
-          {{ componentDesignPreview.folds }}-fold {{ componentDesignPreview.method }} when eligible.</p>
-        <p v-if="componentDesignPreview.group">Independent unit: {{ componentDesignPreview.group }}.</p>
-        <p v-else>Independent specimen/group identity is not verified in this preview. Execution will use group folds if bound, otherwise row folds.</p>
-        <p v-if="componentDesignPreview.calibrationCount != null">Connected calibration rows: {{ componentDesignPreview.calibrationCount }}.</p>
-        <p v-if="componentDesignPreview.splitRole === 'train'">The training port of a train/test split feeds this model. The test partition stays outside component selection and needs a separate evaluation.</p>
-        <p v-else-if="componentDesignPreview.splitRole === 'other'">A train/test split feeds this model without a verified training port. Automatic component CV will be unavailable; check the partition wiring.</p>
-        <p v-else>No independent test partition is established by this model node.</p>
-        <p>Exact fold membership, preprocessing eligibility and any unavailability are recorded only when the model runs.</p>
-      </section>
+      <p v-if="componentDesignPreview?.splitRole === 'other'" role="alert" class="diagnostics-card">
+        Component CV unavailable: connect the split’s training ports to this model.
+        <MethodHelp topic="componentSelection" label="Component validation" />
+      </p>
       <WorkflowDataPortfolioPicker
         v-if="selectedNodeType === 'data.collection_load' && selectedNode"
         :project-id="projectStore.currentProjectId"
@@ -208,7 +199,11 @@
                   </button>
                 </div>
 
-                <div v-if="localParams.field === 'sample_index'" class="filter-rule-card">
+                <div v-if="localParams.field === 'source_inclusion'" class="filter-rule-card">
+                  Uses the source dataset's saved sample inclusion. Opening this panel does not
+                  replace that rule. Choose another method only to deliberately change it.
+                </div>
+                <div v-else-if="localParams.field === 'sample_index'" class="filter-rule-card">
                   <div class="field">
                     <ParameterHelpLabel input-id="filter-rows" label="Rows to keep" description="Use row numbers and ranges, such as 1-10, 15, 20-25.">Rows to keep</ParameterHelpLabel>
                     <InputText
@@ -955,7 +950,7 @@
               icon="pi pi-table"
               label="View Data"
               class="p-button-sm p-button-outlined"
-              @click="showDataTableModal = true"
+              @click="openDataTable"
             />
             <span
               v-if="
@@ -1383,7 +1378,7 @@
   <!-- Data Table Modal (Raw data viewer) -->
   <DataTableModal
     v-model="showDataTableModal"
-    :node-output="selectedNodeOutput"
+    :node-output="quickPlotNodeOutput"
     :node-type="selectedNode?.type || ''"
     :node-label="selectedNode ? getNodeLabel(selectedNode.type) : 'Node'"
   />
@@ -1527,6 +1522,7 @@
               (primary)</span
             >
           </h5>
+          <p v-if="modelSerializerDisclosure(port)" class="serializer-disclosure">{{ modelSerializerDisclosure(port) }}</p>
           <pre class="metadata-json">{{ JSON.stringify(port.metadata ?? {}, null, 2) }}</pre>
         </div>
       </div>
@@ -1535,6 +1531,7 @@
 </template>
 
 <script setup lang="ts">
+import { modelSerializerDisclosure } from "@/utils/modelSerializerDisclosure";
 import RepeatedValidationSummary from "@/components/results/RepeatedValidationSummary.vue";
 import PLSDAPermutationSummary from "@/components/results/PLSDAPermutationSummary.vue";
 import DisabledReason from "@/components/DisabledReason.vue";
@@ -1561,9 +1558,12 @@ import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import WorkflowDataPortfolioPicker from "./WorkflowDataPortfolioPicker.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
 import { buildNodeOutput, type NodeOutput, type PortOutput } from "@/utils/nodeOutput";
+import { bindPresentationInput } from "@/utils/featureRulePresentation";
 import type { ScientificValueDescriptor } from "@/stores/workflow-types";
 import type { NodeParameterMetadata } from "@/types";
 import { resolveNodeHelpUrl } from "@/utils/nodeHelp";
+import { componentInputHint } from "@/utils/componentInputHint";
+import MethodHelp from "@/components/MethodHelp.vue";
 import { buildDiagnosticEntries } from "@/utils/diagnostics";
 import { scientificMetricNotes } from "@/utils/scientificDisplay";
 import { primaryClassificationMetricSummary } from "@/utils/classificationMetrics";
@@ -1689,44 +1689,16 @@ const toast = useToast();
 const workflowStore = useWorkflowStore();
 const projectStore = useProjectStore();
 const selectedNodeType = computed(() => props.selectedNode?.type || "");
-const componentDesignPreview = computed(() => {
-  const type = selectedNodeType.value;
-  if (!["model.fitted_pls", "model.pca", "classification.plsda"].includes(type)) return null;
-  const selected = Number(localParams.value.n_components ?? 2);
-  const maximum = type === "model.fitted_pls"
-    ? Math.max(Number(localParams.value.component_curve_max ?? 10), Math.min(20, Number.isFinite(selected) ? selected : 10))
-    : Math.min(20, Math.max(10, Number.isFinite(selected) ? selected : 10));
-  const folds = type === "model.fitted_pls" ? Number(localParams.value.component_cv_folds ?? 5) : 5;
-  const group = groupColumnFromInputs(props.inputConnections);
-  const input = props.inputConnections.find((item) => item.toPort === "X" || item.toPort === "default")?.data;
-  const summary = input?.metadata.summary as { n_samples?: unknown; n_observations?: unknown } | undefined;
-  const count = summary?.n_samples ?? summary?.n_observations;
-  return {
-    selected: Number.isFinite(selected) ? selected : 2,
-    maximum: Number.isFinite(maximum) ? maximum : 10,
-    folds: Number.isFinite(folds) ? folds : 5,
-    unit: type === "model.pca" ? "PC" : "LV",
-    method: type === "classification.plsda"
-      ? group ? "stratified group CV" : "stratified group or row CV"
-      : group ? "group CV" : "group or row CV",
-    group,
-    calibrationCount: typeof count === "number" && Number.isFinite(count) ? count : null,
-    splitRole: props.inputConnections.some((item) => item.nodeType === "data.train_test_split")
-      ? props.inputConnections.every((item) => item.nodeType !== "data.train_test_split" ||
-          ((item.toPort === "X" || item.toPort === "default") && item.port === "X_train") ||
-          (item.toPort === "y" && item.port === "y_train")) &&
-        props.inputConnections.some((item) => item.nodeType === "data.train_test_split" && item.port === "X_train")
-        ? "train" : "other"
-      : "none",
-  };
-});
+const componentDesignPreview = computed(() => componentInputHint(nodeMetadata.value?.presentation_contract, props.inputConnections));
 const nodeMetadata = computed(() => {
   if (!props.selectedNode) return null;
   return workflowStore.getNodeMetadata(props.selectedNode.type);
 });
-const selectedNodeHelpUrl = computed(() =>
-  resolveNodeHelpUrl(nodeMetadata.value?.execution_contract?.payload.help_reference),
-);
+const selectedNodeHelpUrl = computed(() => {
+  const nodeHelp = resolveNodeHelpUrl(nodeMetadata.value?.execution_contract?.payload.help_reference);
+  if (!nodeHelp) return null;
+  return nodeHelp;
+});
 const selectedPresentationId = ref<string | null>(null);
 
 const presentationOptions = computed(() =>
@@ -1912,7 +1884,12 @@ const selectedResultEntries = computed(() => {
   const metadata = asObject(value?.metadata) ?? asObject(port.metadata) ?? {};
   const summary: Record<string, unknown> = {};
 
-  if (resolved.presentation.kind === "regression_comparison") {
+  if (resolved.presentation.kind === "metric_record" && resolved.sourcePort === "stability") {
+    summary.mean_jaccard_mask_agreement = value?.mean_jaccard;
+    summary.mean_selected_variables = value?.mean_n_selected;
+    summary.standard_deviation_selected_variables = value?.std_n_selected;
+    summary.frequency_basis = "Outer-fold selections";
+  } else if (resolved.presentation.kind === "regression_comparison") {
     summary.role = metadata.role;
     summary.samples = metadata.n_samples;
     summary.targets = metadata.n_targets;
@@ -1987,8 +1964,10 @@ const selectedResultEntries = computed(() => {
       selectedNodeOutput.value?.presentation_value,
       outputMetadata.value,
     );
-    summary.samples_screened = rows.length;
-    summary.flagged_samples = rows.filter((row) => row.outlier).length;
+    summary.samples_with_diagnostics = rows.length;
+    summary.samples_screened = rows.filter(row => row.outlier !== null).length;
+    summary.flagged_samples = rows.some(row => row.outlier !== null)
+      ? rows.filter(row => row.outlier === true).length : "Not screened";
     summary.maximum_t2 = rows.length > 0 ? Math.max(...rows.map((row) => row.t2)) : null;
     summary.maximum_q = rows.length > 0 ? Math.max(...rows.map((row) => row.q)) : null;
   } else if (resolved.presentation.kind === "model_summary") {
@@ -2005,7 +1984,8 @@ const selectedResultEntries = computed(() => {
     ]) {
       summary[key] = state[key];
     }
-    summary.serializer = value?.serializer;
+    summary.fitted_state_envelope_serializer = value?.serializer;
+    summary.component_payload_serializer = asObject(value?.metadata)?.serializer;
     summary.state_content_digest = value?.state_content_digest;
   } else if (resolved.presentation.kind === "scalar") {
     const scalar =
@@ -2106,7 +2086,9 @@ const selectedResultFormLabel = computed(() => {
 const selectedResultNoninteractiveNote = computed(() =>
   selectedPresentation.value?.presentation.kind === "scalar"
     ? "This scalar result is reported in the selected result summary above."
-    : "This fitted model record is summarized by its scientific diagnostics above.",
+    : selectedPresentation.value?.presentation.kind?.includes("model")
+      ? "This fitted model record is summarized by its scientific diagnostics above."
+      : "This structured result is available in its summary and full metadata; it is not a fitted model.",
 );
 
 const selectedResultShowsMetadata = computed(() => {
@@ -2292,6 +2274,7 @@ const syncLocalParamsFromExternal = (
 };
 
 type SampleFilterField =
+  | "source_inclusion"
   | "sample_index"
   | "sample_label"
   | "sample_class"
@@ -2359,14 +2342,16 @@ const exactQuickPlotInputs = ref<Record<string, PortOutput | NodeOutput | null> 
 const quickPlotLoading = ref(false);
 const quickPlotEvidenceError = ref("");
 let quickPlotRequest = 0;
-const quickPlotNodeOutput = computed(() =>
-  quickPlotEvidenceError.value ? null : exactQuickPlotOutput.value
+const quickPlotNodeOutput = computed(() => {
+  const output = quickPlotEvidenceError.value ? null : exactQuickPlotOutput.value
     ? projectScientificPresentation(
         exactQuickPlotOutput.value,
         resolveScientificPresentation(nodeMetadata.value, exactQuickPlotOutput.value, selectedPresentationId.value),
       )
-    : selectedNodeOutput.value,
-);
+    : selectedNodeOutput.value;
+  const resolved = resolveScientificPresentation(nodeMetadata.value, exactQuickPlotOutput.value ?? props.nodeOutput, selectedPresentationId.value);
+  return bindPresentationInput(output, resolved?.presentation.input_binding, exactQuickPlotInputs.value ?? quickPlotInputs.value);
+});
 const quickPlotResolvedInputs = computed(() => exactQuickPlotInputs.value ?? quickPlotInputs.value);
 const quickPlotPrimaryInput = computed(() =>
   exactQuickPlotInputs.value
@@ -2386,11 +2371,23 @@ watch(
 );
 
 async function openQuickPlot(): Promise<void> {
+  await openRetainedEvidence("plot");
+}
+
+async function openDataTable(): Promise<void> {
+  await openRetainedEvidence("table");
+}
+
+async function openRetainedEvidence(view: "plot" | "table"): Promise<void> {
+  const show = () => {
+    if (view === "plot") showQuickPlotModal.value = true;
+    else showDataTableModal.value = true;
+  };
   const runId = workflowStore.restoredRunId;
   const projectId = projectStore.currentProjectId;
   const nodeId = props.selectedNode?.id;
   if (workflowStore.executionEvidenceScope !== "restored_summary" || runId == null || projectId == null || !nodeId) {
-    showQuickPlotModal.value = true;
+    show();
     return;
   }
   const ticket = ++quickPlotRequest;
@@ -2407,9 +2404,37 @@ async function openQuickPlot(): Promise<void> {
   };
   try {
     const sourcePorts = selectedPresentation.value?.sourcePorts ?? [props.nodeOutput?.primary_port ?? "default"];
+    // The numeric response array has no row labels of its own. Fetch its
+    // explicitly paired split cohort as identity authority, never whichever
+    // dataset happens to be the node's primary output.
+    const pairedPorts = sourcePorts.flatMap(port => {
+      if (!port.startsWith("y_")) return [];
+      const paired = `X_${port.slice(2)}`;
+      return props.nodeOutput?.ports?.[paired] ? [paired] : [];
+    });
+    const variableRows = sourcePorts.some(port => ["feature", "spectral_variable", "variable"].includes(
+      props.nodeOutput?.ports?.[port]?.descriptor?.dimensions?.[0]?.role ?? "",
+    ));
+    // Coefficients/VIP share their fitted model's feature coordinate, not its
+    // sample coordinate. Hydrate that same-run authority rather than borrowing
+    // labels from a compact primary score matrix.
+    const featureAuthority = variableRows
+      ? ["loadings", "X_loadings", "x_loadings"].find(port => props.nodeOutput?.ports?.[port])
+      : undefined;
+    // PCA's combined view needs its same-run companion results, not compact
+    // history arrays. Preserve this view when restoring a saved run.
+    const summaryPorts = view === "plot" && selectedPresentation.value?.presentation.kind === "pca_scores"
+      ? ["variable_correlations", "explained_variance", "loadings"].filter(port => props.nodeOutput?.ports?.[port]) : [];
+    const retainedPorts = [...new Set([...sourcePorts, ...pairedPorts, ...summaryPorts, ...(featureAuthority ? [featureAuthority] : [])])];
     const [outputs, inputs] = await Promise.all([
-      Promise.all(sourcePorts.map(async (port) => [port, await read(nodeId, port)] as const)),
-      Promise.all(props.inputConnections.map(async (connection) => [
+      Promise.all(retainedPorts.map(async (port) => [port, await read(nodeId, port)] as const)),
+      Promise.all((view === "plot" ? props.inputConnections
+        : selectedNodeType.value === "selection.variable_select" && sourcePorts.some(port => ["mask", "scores"].includes(port))
+          ? props.inputConnections.filter(connection => connection.toPort === "X")
+          : selectedNodeType.value === "selection.nested_cv" && sourcePorts.includes("oof_evidence")
+            ? props.inputConnections.filter(connection => connection.toPort === "X")
+          : selectedNodeType.value === "model.kmeans" && sourcePorts.includes("centroids")
+            ? props.inputConnections.filter(connection => !connection.toPort || connection.toPort === "default") : []).map(async (connection) => [
         connection.toPort || "default",
         await read(connection.nodeId, connection.port),
       ] as const)),
@@ -2419,7 +2444,7 @@ async function openQuickPlot(): Promise<void> {
     exactQuickPlotOutput.value = buildNodeOutput(
       Object.fromEntries(outputs),
       nodeMetadata.value?.output_ports,
-      null,
+      asObject(props.nodeOutput?.metadata?.diagnostics),
       workflowStore.lastExecutionResultDescriptors[nodeId] ?? null,
       props.nodeOutput?.presentation_contract,
     );
@@ -2433,11 +2458,12 @@ async function openQuickPlot(): Promise<void> {
     ]));
   } catch {
     if (ticket !== quickPlotRequest) return;
-    quickPlotEvidenceError.value = "The exact retained plot output is unavailable. Inspect the saved run or re-run this sheet; the compact history summary cannot be plotted as full evidence.";
+    quickPlotEvidenceError.value = "The exact retained output is unavailable. The compact history summary cannot be used as full evidence.";
+    if (view === "table") toast.add({ severity: "error", summary: "Data unavailable", detail: quickPlotEvidenceError.value, life: 8000 });
   } finally {
     if (ticket === quickPlotRequest) {
       quickPlotLoading.value = false;
-      showQuickPlotModal.value = true;
+      if (view === "plot" || !quickPlotEvidenceError.value) show();
     }
   }
 }
@@ -2729,6 +2755,13 @@ const intensitySummaryText = computed(() => {
 
 const sampleFilterModeOptions = computed<FilterModeOption[]>(() => [
   {
+    value: "source_inclusion",
+    label: "Source inclusion",
+    hint: "Saved dataset inclusion",
+    icon: "pi pi-check-square",
+    enabled: true,
+  },
+  {
     value: "sample_index",
     label: "By index",
     hint: filterSampleCount.value ? `Rows 1-${filterSampleCount.value}` : "Rows",
@@ -2776,15 +2809,18 @@ const sampleFilterModeOptions = computed<FilterModeOption[]>(() => [
 const isFilterFieldEnabled = (field: string): field is SampleFilterField =>
   sampleFilterModeOptions.value.some((option) => option.value === field && option.enabled);
 
-const firstEnabledFilterField = (): SampleFilterField =>
-  sampleFilterModeOptions.value.find((option) => option.enabled)?.value ?? "sample_index";
-
 const initializeFilterFieldDefaults = (field: SampleFilterField) => {
   delete localParams.value.filter_values;
   filterValueSearch.value = "";
   localParams.value.field = field;
   localParams.value.allow_empty = Boolean(localParams.value.allow_empty ?? false);
   localParams.value.invert = Boolean(localParams.value.invert ?? false);
+
+  if (field === "source_inclusion") {
+    localParams.value.pattern = "";
+    localParams.value.match_mode = "contains";
+    return;
+  }
 
   if (field === "sample_index") {
     localParams.value.pattern = filterSampleCount.value > 0 ? `1-${filterSampleCount.value}` : "";
@@ -2820,26 +2856,6 @@ const setSampleFilterField = (field: SampleFilterField) => {
   if (!isFilterFieldEnabled(field)) return;
   initializeFilterFieldDefaults(field);
   emitParams();
-};
-
-const ensureSampleFilterDefaults = (emit = false) => {
-  if (selectedNodeType.value !== "data.filter_samples" || !filterHasInput.value) return;
-  const currentField = String(localParams.value.field || "");
-  if (!isFilterFieldEnabled(currentField)) {
-    initializeFilterFieldDefaults(firstEnabledFilterField());
-    if (emit) emitParams();
-    return;
-  }
-  const sampleTableColumns = sampleTableColumnOptions.value.map((option) => option.value);
-  if (
-    currentField === "sample_table" &&
-    sampleTableColumns.length &&
-    (!localParams.value.sample_table_column ||
-      !sampleTableColumns.includes(String(localParams.value.sample_table_column)))
-  ) {
-    localParams.value.sample_table_column = sampleTableColumns[0];
-    if (emit) emitParams();
-  }
 };
 
 const setIndexRange = (kind: "all" | "first10" | "last10") => {
@@ -2989,6 +3005,14 @@ const filterPreview = computed(() => {
 
   let mask: boolean[];
   const field = String(localParams.value.field || "sample_index");
+  if (field === "source_inclusion") {
+    return {
+      empty: false,
+      summary: "Source inclusion is applied by the workflow. This preview does not recompute its mask.",
+      keptLabels: [],
+      excludedLabels: [],
+    };
+  }
   if (field === "sample_index") {
     const pattern = String(localParams.value.pattern || "");
     if (!pattern.trim()) {
@@ -3533,16 +3557,8 @@ const getDefaultsForNodeType = (nodeType: string): ParamsMap => {
   return defaults;
 };
 
-watch(
-  () => [
-    selectedNodeType.value,
-    filterSampleCount.value,
-    filterHasRealSampleLabels.value,
-    filterSampleClasses.value.some((value) => value !== ""),
-    sampleTableColumnOptions.value.map((option) => option.value).join("\u0001"),
-  ],
-  () => ensureSampleFilterDefaults(true),
-);
+// Input availability is presentation state, not authorization to edit a saved
+// rule. Defaults are applied only by explicit filter-method interactions.
 
 
 // Contour plot options
@@ -4348,7 +4364,7 @@ onUnmounted(() => {
 .node-type,
 .node-id {
   font-size: 0.7rem;
-  color: #64748b;
+  color: #cbd5e1;
 }
 
 .node-type {
@@ -4452,7 +4468,7 @@ onUnmounted(() => {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #64748b;
+  color: #cbd5e1;
   margin-bottom: 4px;
 }
 

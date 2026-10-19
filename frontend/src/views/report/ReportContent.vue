@@ -151,8 +151,7 @@
           </p>
         </details>
         <p v-if="historicalExecutableExport" class="execution-export-scope" role="status">
-          Code export is available from the Workflow editor for the current graph.
-          This saved-run report exports as HTML, Markdown or JSON; its original executable code is unavailable.
+          This run’s original executable code is unavailable. Export current code from Workflow.
         </p>
         <!-- Section toggles -->
         <div v-if="reportStore.isReady" class="section-toggles">
@@ -228,11 +227,8 @@
 
         <!-- Live preview -->
         <div v-else-if="reportStore.isReady" class="report-preview-container">
-          <iframe
-            ref="previewFrame"
-            title="Report preview"
-            :srcdoc="previewHtml"
-            sandbox="allow-same-origin"
+          <ReportPreviewFrame
+            :html="previewHtml"
             class="preview-iframe"
           />
         </div>
@@ -264,6 +260,7 @@ import { useToast } from "primevue/usetoast";
 import { useRoute, useRouter } from "vue-router";
 
 import MemoryAttribution from "@/components/MemoryAttribution.vue";
+import ReportPreviewFrame from "@/components/ReportPreviewFrame.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import WorkspaceContext from "@/components/workspace/WorkspaceContext.vue";
@@ -373,7 +370,6 @@ onMounted(() => {
 });
 
 const exportMenuRef = ref();
-const previewFrame = ref<HTMLIFrameElement>();
 
 const llmAvailable = computed(() => isFeatureEnabled("sherpaWriteReport"));
 

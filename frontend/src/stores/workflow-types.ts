@@ -80,6 +80,8 @@ export interface TemplateDataBinding {
   fileIds?: number[] | null;
   allFiles?: boolean;
   assetId?: string | null;
+  datasetViewId?: number | null;
+  datasetViewSha256?: string | null;
   targetAuthority?: TargetAuthority | null;
   groupColumn?: string | null;
   stage?: ExperimentStage;

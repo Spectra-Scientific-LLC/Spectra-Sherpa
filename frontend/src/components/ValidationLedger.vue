@@ -8,8 +8,7 @@
       <Button label="Download CSV" icon="pi pi-download" class="p-button-sm p-button-text" @click="download" />
     </header>
     <p v-if="calibrationOnly" class="validation-ledger__note validation-ledger__note--caution" role="note">
-      These are fitted values for the calibration samples. They show how well the model reproduces its own
-      training data, not how it predicts new samples.
+      Calibration fitted values.
     </p>
     <div class="validation-ledger__table-wrap">
       <table>

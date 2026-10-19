@@ -2,7 +2,7 @@
   <section class="selected-spectra-panel" aria-label="Comparison preview">
     <header>
       <div>
-        <h3>Comparison preview</h3>
+        <h3>Comparison preview <MethodHelp topic="previewSelection" label="Preview and workflow selection" /></h3>
         <span v-if="plotFileCount">
           {{ plotFileCount }} file{{ plotFileCount === 1 ? "" : "s" }} ·
           {{ plotDatasetCount }} dataset{{ plotDatasetCount === 1 ? "" : "s" }}
@@ -19,10 +19,6 @@
         :severity="bounded ? 'warning' : 'info'"
       />
     </header>
-    <p v-if="plotDatasetCount" class="preview-scope-note">
-      This preview compares the checked data only and does not change the active workflow source.
-      Workflow binding follows the active dataset and its Workflow view set above.
-    </p>
 
     <div class="preview-controls">
     <details v-if="singleDataset && !featureTablePreview" class="display-options">
@@ -83,8 +79,6 @@
     <div v-else-if="featureTablePreview" class="feature-table-preview">
       <template v-if="featureDistributionPlot">
         <p class="feature-plot-summary">
-          Pairwise feature relationships; diagonal panels show distributions.
-          Hover a point for its sample and target.
           <span v-if="featureDistributionPlot.featureCount < featureTablePreview.totalFeatures">
             Showing the first {{ featureDistributionPlot.featureCount }} features.
           </span>
@@ -143,6 +137,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, ref, watch } from "vue";
 import { useDisplayPreferences, displayNumber } from "@/composables/useDisplayPreferences";
 import ProgressSpinner from "primevue/progressspinner";

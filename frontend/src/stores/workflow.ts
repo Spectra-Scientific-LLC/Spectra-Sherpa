@@ -75,6 +75,9 @@ import type {
 
 import type { NodeExecutionState } from "@/types";
 
+const RETAINED_RUN_STALE_WARNING =
+  "Current graph and retained run identity are different or unverified — results may be stale.";
+
 export const useWorkflowStore = defineStore("workflow", () => {
   let workflowLoadGeneration = 0;
   // State
@@ -780,9 +783,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
           }
 
           const staleSinceLastExecution = Boolean(
-            !data.integrity_hash ||
+            runResp.data.matches_current_definition === false ||
+            (runResp.data.matches_current_definition !== true && (!data.integrity_hash ||
             !runResp.data.integrity_hash ||
-            data.integrity_hash !== runResp.data.integrity_hash,
+            data.integrity_hash !== runResp.data.integrity_hash)),
           );
           isWorkflowStale.value = staleSinceLastExecution;
 
@@ -790,7 +794,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
           if (staleSinceLastExecution) {
             workflowWarnings.value = [
               ...workflowWarnings.value,
-              "Current graph and retained run identity are different or unverified — results may be stale.",
+              RETAINED_RUN_STALE_WARNING,
             ];
           }
         }
@@ -1832,6 +1836,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
    */
   function clearWorkflowStale() {
     isWorkflowStale.value = false;
+    workflowWarnings.value = workflowWarnings.value.filter(
+      (message) => message !== RETAINED_RUN_STALE_WARNING,
+    );
   }
 
   function addNode(node: WorkflowNode) {

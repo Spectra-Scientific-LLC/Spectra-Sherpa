@@ -512,6 +512,7 @@ class FastICANode(Node):
             units=getattr(input_ds, "units", None),
             title="FastICA Mixing Spectral Profiles",
         )
+        profiles.meta["scientific_matrix_role"] = "component_spectra"
         residuals = create_spectral_dataset(
             data=core["residuals"],
             x_coord=feature_axis,

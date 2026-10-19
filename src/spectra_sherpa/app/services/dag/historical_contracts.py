@@ -37,13 +37,47 @@ class HistoricalValidationGraph(ValidationGraph):
 # shared module digests. The catalog pins the preceding consumer. A later code
 # change must be reviewed again rather than inheriting historical authority.
 _INSPECTION_CONSUMERS = {
+    "preprocess.osc": (
+        "02a4281542fe5fe2a349dbc5e61a42e82fa4a9f346ddb21fd5bf2d64b96c7b1b",
+        "981a731145f8f7a01c0067ee3dcdc317b579698ae440687d4777d14bb5dbeeed",
+    ),
+    "selection.variable_select": (
+        "3209ca10ae4dfa04fe81b944d866182bb88bf5f3f9677c2618c5c100542b4f52",
+        "d59bb4d8dac5d77830c633a15d9da90aab42cd9f2377344269a4d80d14841f16",
+    ),
+    "classification.knn": (
+        "b75296b1e07af53623dfaf5e859b759d089eb1b4145a415bc555ff59cf4fec8a",
+        "7f188a7485c4774ccaa67d7efcf0cd95e35c07682633e9b5265d48f5e568be92",
+    ),
+    "classification.simca": (
+        "58ae844cdcd14833a6da09a7f658e979ed08d812fc5bed7ef9d230be6e79d72e",
+        "fb0f84fec93cc374fbdd00797ea361f8c9a83d22b6021f242815b4e83cecc0f0",
+    ),
+    # PR119: display descriptions/input-coordinate bindings and canonical
+    # sample helpers changed source identities, not archived declarations.
+    "model.dbscan": (
+        "451a9425e58ba219a12584c037edce136cd263ab9e161e3e8ecf72b03c063a97",
+        "5fae2be3e60e35b85b13cb9b80eb09b171743f319bed7dd48b13a8265f31690a",
+    ),
+    "model.hca": (
+        "83d5a8ef60c050f623911740cd60ae1f31ca9abe38fd93ac969e2608b3fe4ed3",
+        "0adc84cec3ce752df725518210701d744af62e2cbfd6cd3396eab0d3bce8495b",
+    ),
+    "model.kmeans": (
+        "466e832a2bdf8e856d875cfee2abfdbeff46bea55c77d6d5c005fcc2aeb01879",
+        "c65f7f11e6d2089abdec190e2c7aee80088eed4f2545ce55c0b92db1b2ebef30",
+    ),
+    "model.parafac": (
+        "869e7edb4ca328e560bc543bfa4e6ed676314f6a8be49e2364985c3fe47a640d",
+        "3c1525353cb993b328366260f5b751a2275048e2c39322ca424a91692ad24f68",
+    ),
     "classification.plsda": (
         "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-        "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+        "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
-        "1a06693cf04d44d155137a022e8104ecd2fcec7a9a88d8ec27938248205b2ba6",
+        "2c0aac4b7572370e631c839a79b3980b5edb37d879bb43fc789edab337e76a64",
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",

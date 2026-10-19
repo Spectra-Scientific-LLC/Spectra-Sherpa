@@ -378,6 +378,9 @@ export const useWorkbookStore = defineStore("workbook", () => {
               file_id: binding.fileId ?? null,
               file_ids: binding.fileIds ?? null,
               all_files: binding.allFiles ?? false,
+              asset_id: binding.assetId ?? null,
+              dataset_view_id: binding.datasetViewId ?? null,
+              dataset_view_sha256: binding.datasetViewSha256 ?? null,
               stage: binding.stage ?? "raw",
               target_binding: binding.targetBinding
                 ? {

@@ -26,14 +26,14 @@ Practically, this means:
 
 | I am… | Go here |
 |-------|---------|
-| A chemometrician, analytical scientist, or data analyst who writes Python — and I want to add or improve an algorithm | **[Scientist Contributor Guide](docs/contributing/scientist-guide.md)** |
-| A data scientist or AI/ML researcher who wants to add methods, test integrations, or explore the API | **[Scientist Contributor Guide](docs/contributing/scientist-guide.md)** |
-| A software developer focused on infrastructure, performance, UI, or tooling | **[Developer Contributor Guide](docs/contributing/developer-guide.md)** |
+| A chemometrician, analytical scientist, or data analyst who writes Python — and I want to add or improve an algorithm | **[Adding a Scientific Node](docs/developers/adding-a-node.md)** |
+| A data scientist or AI/ML researcher who wants to add methods, test integrations, or explore the API | **[SDK Workflows](docs/developers/sdk-workflow.md)** |
+| A software developer focused on infrastructure, performance, UI, or tooling | **[Developer Setup](docs/developers/setup.md)** |
 | I found a bug, have a suggestion, or want to ask a question | **[Open an issue](https://github.com/Spectra-Scientific-LLC/Spectra-Sherpa/issues)** |
 
 Not sure which applies to you? Start with the
-[Scientist Contributor Guide](docs/contributing/scientist-guide.md) — it is
-shorter and does not require any background in web development.
+[Contributing Guide](docs/developers/contributing.md) and the
+[authority map](docs/AUTHORITIES.md).
 
 For contributions that touch extension contracts, plugin interfaces, or
 API specs, see `OSS_SCOPE.md` at the repo root for what the OSS package

@@ -102,3 +102,20 @@ the right ones — that judgment is still yours.
 - ASTM E1655, *Standard Practices for Infrared Multivariate Quantitative
   Analysis* — terminology and practice for RMSEP, bias, and validation in
   regulated environments.
+## Component selection
+
+The model's component parameter selects the fitted PC or LV count. A component
+curve, when eligible, compares candidate counts by cross-validation; it is not
+an independent test-set assessment. Keep held-out samples outside model and
+component selection.
+
+Execution uses bound group identities when available and otherwise eligible row
+folds. Repeated measurements from the same specimen belong in the same group.
+The preview cannot establish independent specimen identity. Check the retained
+run for exact fold membership, preprocessing eligibility, and any reason that
+validation was unavailable. A PCA model alone does not create a test partition.
+
+The saved component count remains a workflow parameter: curve suggestions do not
+refit the model automatically. Scaling and model fitting occur within each training
+fold for the canonical component-validation paths. Inspect retained diagnostics
+for the actual eligible design and any exclusions.

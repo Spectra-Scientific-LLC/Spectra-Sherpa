@@ -1,7 +1,6 @@
 <template>
   <section>
-    <h3>Instrument QC and maintenance</h3>
-    <p>Predictions continue while QC records inform review.</p><details><summary>Details</summary>Declared absolute tolerances are not statistical process control or laboratory certification.</details>
+    <h3>Instrument QC and maintenance <MethodHelp topic="instrumentQC" label="Instrument QC policy" /></h3>
     <p v-if="error" role="alert">{{ error }}</p>
     <button v-if="error" type="button" :disabled="busy" @click="refresh">Retry</button>
     <button type="button" :disabled="!history || busy" @click="download">Export complete QC history</button>
@@ -20,8 +19,7 @@
       </article>
       <details>
         <summary>Append a control, maintenance or review record</summary>
-        <p>Records are immutable. Policy changes do not clear failures. Recovery requires a new passing control and an explicit acknowledgement. Revalidation requires new post-maintenance validation and the current accepted qualification decision.</p>
-        <p>Enter the versioned laboratory record as JSON. Values are sent exactly as entered. Response units, reference method, material lot and limits belong to the declared policy; no hidden limits or averaging are applied.</p>
+        <p>Records are immutable. Check the ID, time and values before appending.</p>
         <label>Record type <select v-model="kind"><option value="policy">Declare policy</option><option value="control">Control observation</option><option value="maintenance">Maintenance</option><option value="recovery">Failure recovery acknowledgement</option><option value="revalidation">Post-maintenance revalidation</option></select></label>
         <label>Unique record ID <input v-model="eventId" /></label>
         <label>Observation/event time (ISO 8601 with timezone; future dates refused) <input v-model="occurredAt" placeholder="2026-09-28T12:00:00Z" /></label>
@@ -32,6 +30,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { onMounted, onBeforeUnmount, ref, watch } from "vue";
 import api from "@/api/client";
 const props = defineProps<{ watchId: number }>();

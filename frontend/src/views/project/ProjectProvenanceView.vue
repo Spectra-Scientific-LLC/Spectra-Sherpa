@@ -13,7 +13,7 @@
     <p v-else-if="store.loading && !summary" class="empty-note">Checking project evidence…</p>
 
     <template v-if="summary">
-      <p class="scope-note">Checked {{ new Date(summary.verified_at).toLocaleString() }}. Lights show basic availability: green means present, grey means absent or not checked, red means an operational problem. Provenance details below are separate: green does not certify model quality, deployment readiness, or a complete evidence chain.</p>
+      <p class="scope-note">Checked {{ new Date(summary.verified_at).toLocaleString() }} · Basic availability <MethodHelp topic="availability" label="Availability lights" /></p>
       <ol class="record-list" aria-label="Current project evidence records">
         <li v-for="record in summary.records" :key="record.kind" class="record-row">
           <span class="record-light" :class="`status-${availabilityState(record)}`" :aria-label="availabilityDetail(record)"></span>
@@ -36,7 +36,6 @@
 
       <section class="choice-section" aria-labelledby="dataset-choices">
         <h2 id="dataset-choices">Dataset choices</h2>
-        <p>Show, alter, save a new name, or delete on My Dataset. The selected definition becomes active.</p>
         <p v-if="choicesLoading">Loading definitions…</p>
         <ul v-else class="choice-list">
           <li v-for="experiment in projectStore.currentProject?.experiments ?? []" :key="experiment.id">
@@ -54,7 +53,6 @@
 
       <section class="choice-section" aria-labelledby="workflow-choices">
         <h2 id="workflow-choices">Workflow choices</h2>
-        <p>Open a sheet to make it active. Its saved versions and edits remain on Workflow.</p>
         <ul class="choice-list">
           <li v-for="workflow in analysisWorkflows" :key="workflow.id">
             <RouterLink :to="workflowLink(workflow.id)">{{ workflow.name }}</RouterLink>
@@ -66,6 +64,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, ref, watch } from "vue";
 import api from "@/api/client";
 import { useProjectStore } from "@/stores/project";

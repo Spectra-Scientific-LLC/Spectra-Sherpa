@@ -102,9 +102,19 @@
     }
   },
   "record_views": {
+    "metric_record:stability:stability": {
+      "strategy": "selection_stability",
+      "plots": [{ "key": "scientific_selection_stability", "label": "Variable Selection Frequency" }]
+    },
     "validation_result:component_selection:component_curve": {
       "strategy": "pls_component_curve",
-      "plots": [{ "key": "scientific_pls_component_curve", "label": "Latent Variable Error" }]
+      "method_topic": "componentSelection",
+      "training_input_rule": {
+        "source_operation": "data.train_test_split",
+        "feature_output": "X_train",
+        "allowed_pairs": [["X_train", "X"], ["X_train", "default"], ["y_train", "y"]]
+      },
+      "plots": [{ "key": "scientific_pls_component_curve", "label": "Component Evidence" }]
     }
   }
 }

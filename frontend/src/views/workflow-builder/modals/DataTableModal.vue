@@ -93,13 +93,8 @@
         />
       </div>
 
-      <p class="export-scope" role="status">
-        CSV carries cells and labels only; units, roles and run/model context remain in this view.
-        CSV is a visual data extract of all {{ dataShape.rows }} rows and columns in this result,
-        regardless of preview limits or search filters. It is not a dataset or model replay package;
-        use Prepare Export for supported dataset roundtrips.
-      </p>
-      <p v-if="cohort.population" role="status">Active cohort: {{ cohort.population.total }} of {{ cohort.population.available }} retained rows; {{ cohort.population.excluded }} excluded. {{ cohort.population.shown_features }} of {{ cohort.population.available_features }} features; {{ cohort.population.excluded_features }} excluded. Table and CSV contain active rows/features; row numbers refer to retained source positions.</p>
+      <span class="export-scope">CSV: {{ dataShape.rows }} active rows <MethodHelp topic="displayExports" label="CSV export scope" /></span>
+      <p v-if="cohort.population" role="status">Active cohort: {{ cohort.population.total }} of {{ cohort.population.available }} retained rows; {{ cohort.population.excluded }} excluded. {{ cohort.population.shown_features }} of {{ cohort.population.available_features }} features; {{ cohort.population.excluded_features }} excluded.</p>
       <p v-if="exportError" role="alert">{{ exportError }}</p>
       <p v-if="tableProjectionError" role="alert">{{ tableProjectionError }}</p>
       <!-- Data Table -->
@@ -170,6 +165,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { scientificNumber } from "@/utils/scientificEncoding";
 import { useDisplayPreferences, displayNumber } from "@/composables/useDisplayPreferences";
 import { projectActiveSpectralCohort } from "@/utils/scientificCohort";
@@ -183,6 +179,8 @@ import DataTable from "primevue/datatable";
 import Column from "primevue/column";
 import { isAuditField, scientificMetadata } from "@/utils/scientificDisplay";
 import { isProjectedScientificKind } from "@/utils/scientificPresentation";
+import { t2QDiagnosticRows } from "@/utils/scientificPlots";
+import { classificationMetricRows } from "@/utils/scientificMetricRows";
 import {
   compactSampleLabel,
   detectLabelDelimiter,
@@ -220,11 +218,13 @@ const rowLimit = computed({
   },
 });
 const columnPage = ref(0);
+// Keep engineered peak groups readable without a hidden horizontal tail.
+const columnsPerPage = computed(() => matrixColumnLabels.value.some((label: string) => label.length > 20) ? 4 : 8);
 const columnPageOptions = computed(() => !Array.isArray(displayedData.value?.[0]) ? [] : Array.from(
-  { length: Math.ceil(dataShape.value.cols / 50) },
-  (_, page) => ({ label: `${page * 50 + 1}–${Math.min((page + 1) * 50, dataShape.value.cols)}`, value: page }),
+  { length: Math.ceil(dataShape.value.cols / columnsPerPage.value) },
+  (_, page) => ({ label: `${page * columnsPerPage.value + 1}–${Math.min((page + 1) * columnsPerPage.value, dataShape.value.cols)}`, value: page }),
 ));
-const columnStart = computed(() => Math.min(Number(columnPage.value), Math.max(0, columnPageOptions.value.length - 1)) * 50);
+const columnStart = computed(() => Math.min(Number(columnPage.value), Math.max(0, columnPageOptions.value.length - 1)) * columnsPerPage.value);
 const precision = ref<"global" | 2 | 4 | 6 | 8>("global");
 const searchQuery = ref("");
 const searchScope = ref<"all" | "label">("all");
@@ -370,6 +370,8 @@ const structuredRecordRows = computed(() => {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
 
   const record = value as Record<string, unknown>;
+  const metricRows = classificationMetricRows(record);
+  if (metricRows) return metricRows;
   if (
     Array.isArray(record.data) &&
     record.data.length > 0 &&
@@ -395,6 +397,18 @@ const structuredRecordRows = computed(() => {
 
 const displayedData = computed(() => {
   if (cohort.value.error) return [];
+  if (isProjectedScientificKind(inspectedOutput.value, "t2_q_diagnostics")) {
+    const output = inspectedOutput.value;
+    const metadata = output?.metadata ?? {};
+    const limits = metadata.diagnostics ?? metadata;
+    return t2QDiagnosticRows(output?.presentation_value, metadata).map(row => ({
+      Sample: row.sample, T2: row.t2, Q: row.q,
+      "Screened outlier": row.outlier === null ? "Not screened" : row.outlier ? "Yes" : "No",
+      "T2 limit": limits.T2_limit ?? limits.t2_limit ?? null,
+      "Q limit": limits.Q_limit ?? limits.q_limit ?? null,
+    }));
+  }
+  if (classificationMetricRows(inspectedOutput.value?.presentation_value)) return structuredRecordRows.value;
   if (plotlyRegressionComparisonRows.value) return plotlyRegressionComparisonRows.value;
   if (isPlotlyFormat.value) return extractedData.value?.data ?? [];
   const direct = inspectedOutput.value?.data;
@@ -481,7 +495,7 @@ function exactStringLabels(value: unknown, expectedLength: number): string[] {
 }
 
 function relatedFeatureLabels(output: any, expectedLength: number): string[] {
-  const loadings = output?.ports?.loadings ?? output?.ports?.x_loadings;
+  const loadings = output?.ports?.loadings ?? output?.ports?.X_loadings ?? output?.ports?.x_loadings;
   const payload = loadings?.value ?? loadings ?? {};
   const axis = payload.x_axis ?? payload.feature_axis ?? {};
   const candidates = [
@@ -503,11 +517,26 @@ function semanticLabelInfo(output: any, data: any[]) {
   const metadata = output?.metadata ?? {};
   const dimensions = output?.descriptor?.dimensions ?? [];
   const rowRole = String(dimensions[0]?.role ?? "").toLowerCase();
+  const classRows = ["class", "response_class", "actual_class", "predicted_class"].includes(rowRole);
   const variableRows = ["feature", "spectral_variable", "variable"].includes(rowRole);
   const labels = variableRows
     ? relatedFeatureLabels(output, data.length)
-    : exactStringLabels(metadata.source_labels, data.length);
-  if (labels.length === 0) return getLabelInfo(metadata);
+    : classRows || ["component", "cluster"].includes(rowRole)
+      ? [] : exactStringLabels(metadata.source_labels, data.length);
+  if (labels.length === 0 && variableRows) return getLabelInfo({});
+  if (labels.length === 0) {
+    const declared = exactStringLabels(dimensions[0]?.labels, data.length);
+    if (declared.length) return getLabelInfo({ sample_labels: declared });
+    if (classRows) {
+      return getLabelInfo({ sample_labels: exactStringLabels(
+        metadata.classes ?? metadata.diagnostics?.classes, data.length,
+      ) });
+    }
+    if (rowRole === "cluster") return getLabelInfo({ sample_labels: exactStringLabels(metadata.cluster_labels, data.length) });
+    if (rowRole === "component") return getLabelInfo({});
+    const ownLabels = exactStringLabels(metadata.sample_labels ?? metadata.labels ?? metadata.diagnostics?.sample_labels, data.length);
+    return getLabelInfo({ sample_labels: ownLabels });
+  }
   return getLabelInfo({ sample_labels: labels });
 }
 
@@ -521,7 +550,11 @@ const matrixColumnLabels = computed(() => {
   const column = dimensions[dimensions.length - 1] ?? {};
   const response =
     isTargetMatrix.value || metadata.type === "ClassificationTest" || output?.type === "confusion_matrix" ||
-    ["target", "class", "response_class", "actual_predicted_value"].includes(column.role);
+    ["class_probabilities", "class_response_scores_not_probabilities", "class_distances",
+      "normalized_inverse_distance_affinity_not_probability"].includes(
+      metadata.numeric_output_semantics ?? metadata.diagnostics?.numeric_output_semantics,
+    ) ||
+    ["target", "class", "response_class", "actual_class", "predicted_class", "actual_predicted_value"].includes(column.role);
   const axis = output?.presentation_value?.feature_axis ?? output?.presentation_value?.x_axis;
   const responseNames = [
     column.labels,
@@ -662,6 +695,11 @@ const tableColumns = computed(() => {
       } else {
         const labelHeader = isPlsExplainedVariance.value
           ? "Latent Variable"
+          : metadata.scientific_matrix_role === "component_spectra"
+            ? "Component"
+          : descriptorRowRole === "cluster" ? "Cluster"
+          : ["actual_class", "predicted_class", "class", "response_class"].includes(descriptorRowRole)
+            ? descriptorRowRole === "actual_class" ? "Actual class" : "Class"
           : variableRows
             ? "Variable"
           : metadata.sample_labels?.length > 0
@@ -679,7 +717,7 @@ const tableColumns = computed(() => {
     }
 
     // Page columns without discarding appended engineered features.
-    const maxCols = Math.min(cols, columnStart.value + 50);
+    const maxCols = Math.min(cols, columnStart.value + columnsPerPage.value);
     for (let i = columnStart.value; i < maxCols; i++) {
       let header: string;
       if (isPlsExplainedVariance.value) {
@@ -696,7 +734,7 @@ const tableColumns = computed(() => {
       columns.push({
         field: `col_${i}`,
         header,
-        width: isPCA || isMCR ? "140px" : "100px",
+        width: header.length > 16 ? "190px" : "140px",
         isNumeric: true,
       });
     }
@@ -718,7 +756,7 @@ const tableColumns = computed(() => {
       } else {
         columns.push({
           field: "_label",
-          header: "Label",
+          header: variableRows ? "Variable" : "Label",
           width: "280px",
           isNumeric: false,
         });
@@ -792,7 +830,7 @@ const previewTableData = computed(() => {
         }
       }
 
-      const maxCols = Math.min(data[i].length, columnStart.value + 50);
+      const maxCols = Math.min(data[i].length, columnStart.value + columnsPerPage.value);
       for (let j = columnStart.value; j < maxCols; j++) {
         row[`col_${j}`] = data[i][j];
       }
@@ -944,7 +982,7 @@ function formatValue(value: any, isNumeric: boolean): string {
 
 function formatMetadataValue(value: any): string {
   if (Array.isArray(value)) {
-    return `[${value.slice(0, 5).join(", ")}${value.length > 5 ? ", ..." : ""}]`;
+    return `[${value.slice(0, 5).map(item => typeof item === "object" ? JSON.stringify(item) : String(item)).join(", ")}${value.length > 5 ? ", ..." : ""}]`;
   }
   if (typeof value === "object" && value !== null) {
     return JSON.stringify(value);
@@ -1269,6 +1307,11 @@ function exportCSV() {
 
 :deep(.p-dropdown:hover) {
   border-color: #475569;
+}
+
+.table-controls :deep(.p-dropdown-label),
+.table-controls :deep(.p-dropdown-trigger) {
+  color: #f1f5f9;
 }
 
 :deep(.p-dialog) {

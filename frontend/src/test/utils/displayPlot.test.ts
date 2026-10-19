@@ -3,6 +3,14 @@ import { DEFAULT_DISPLAY_PREFERENCES } from "@/composables/useDisplayPreferences
 import { displayPlot } from "@/utils/displayPlot";
 
 describe("display plot preferences", () => {
+  it("does not describe repeated feature observations as unique samples", () => {
+    const traces = Array.from({ length: 4 }, () => ({ type: "scatter", mode: "markers",
+      x: Array.from({ length: 150 }, (_, i) => i), y: Array(150).fill(1),
+      ids: Array.from({ length: 150 }, (_, i) => `sample-${i}`) }));
+    const result = displayPlot(traces, {}, DEFAULT_DISPLAY_PREFERENCES);
+    expect(result.omissionDescription).toBe("300 plotted observations");
+    expect(traces.every(trace => trace.x.length === 150)).toBe(true);
+  });
   it("renders saved plot layouts with one title while preserving data annotations", () => {
     const savedLayout = {
       title: { text: "PCA Scores<br><sup>Equal axis units</sup>" },

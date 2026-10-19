@@ -181,6 +181,9 @@ describe("useWorkbookStore", () => {
           data_1: {
             experimentId: 143,
             displayName: "Synthetic Atmospheric FTIR",
+            datasetViewId: 91,
+            datasetViewSha256: "c".repeat(64),
+            assetId: "spectra",
             allFiles: true,
           },
         },
@@ -193,6 +196,9 @@ describe("useWorkbookStore", () => {
             data_1: expect.objectContaining({
               experiment_id: 143,
               display_name: "Synthetic Atmospheric FTIR",
+              dataset_view_id: 91,
+              dataset_view_sha256: "c".repeat(64),
+              asset_id: "spectra",
             }),
           }),
         }),

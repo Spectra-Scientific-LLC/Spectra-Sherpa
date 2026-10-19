@@ -6,12 +6,14 @@
     </div>
     <div v-show="!isEmpty" ref="chartEl" class="plotly-canvas"></div>
     <div v-if="displayed.omitted" class="plotly-preview-notice" role="status">
-      Display limit: {{ displayed.omitted }} sample rows omitted from this plot. Adjust Display Settings to show more; calculations are unchanged.
+      Display limit: {{ displayed.omissionDescription }} omitted.
+      <MethodHelp topic="displayExports" label="Plot display limits" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { selectionIndices } from "@/utils/sampleReview";
 import { focusPlot, releasePlot, nextPlotAttentionId } from "@/lib/sherpaAttention";
 import { scientificPlotRefusal } from "@/utils/scientificPlotState";

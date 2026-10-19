@@ -30,6 +30,12 @@ from spectra_sherpa.execution_contract_vocabulary import LifecycleKind, ManagedO
 from tests.performance_contract import PerformanceCeiling
 
 
+def test_dbscan_help_distinguishes_core_neighborhood_from_cluster_size():
+    parameter = next(item for item in DBSCANNode.metadata.parameters if item.name == "min_samples")
+    assert "including the point itself" in parameter.description
+    assert "not a minimum cluster-size filter" in parameter.description
+
+
 def _dataset(*, samples_per_cluster: int = 14, features: int = 10) -> SherpaDataset:
     rng = np.random.default_rng(20260813)
     matrix = np.vstack(

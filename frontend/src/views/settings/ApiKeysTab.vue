@@ -50,15 +50,10 @@
     <!-- BYO Chat Config — local/OSS mode only. -->
     <div v-if="appMode === 'local'" class="key-section">
       <div class="section-header">
-        <h3>BYO Chat Configuration</h3>
+        <h3>BYO Chat Configuration <MethodHelp topic="localChat" label="Configure local chat" /></h3>
         <Tag v-if="byoChatConfigured" severity="success" value="Configured" />
         <span v-else class="badge optional">Optional</span>
       </div>
-      <p class="description">
-        Configure your local BYO Chat provider for OSS mode.
-        Choose an OpenAI-compatible provider, Anthropic's native Messages API, or a local Ollama server.
-        Settings are saved to your local <code>.env</code> file.
-      </p>
 
       <div class="field">
         <label for="byo-provider">LLM Provider</label>
@@ -82,7 +77,6 @@
           class="key-input"
           :disabled="byoProvider !== 'custom'"
         />
-        <small class="hint">Base URL for the LLM API endpoint. Auto-configured for known providers.</small>
       </div>
 
       <div class="field">
@@ -94,7 +88,6 @@
           class="key-input"
           :disabled="byoProvider !== 'custom'"
         />
-        <small class="hint">Model identifier. Auto-configured for known providers.</small>
       </div>
 
       <div class="field">
@@ -141,7 +134,6 @@
           <InputSwitch v-model="byoVerbose" inputId="byo-verbose" />
           <label for="byo-verbose">Verbose Responses</label>
         </div>
-        <small class="hint">When disabled, AI responses are capped at the paragraph limit below.</small>
       </div>
 
       <div v-if="!byoVerbose" class="field">
@@ -162,7 +154,6 @@
           />
           <span class="slider-bound">10</span>
         </div>
-        <small class="hint">AI will respond in at most {{ byoMaxParagraphs }} paragraph{{ byoMaxParagraphs === 1 ? '' : 's' }}.</small>
       </div>
 
       <div class="actions">
@@ -195,15 +186,12 @@
     <!-- HITRAN key for FTIR synthesis live downloads. -->
     <div class="key-section">
       <div class="section-header">
-        <h3>HITRAN API Key</h3>
+        <h3>HITRAN API Key <MethodHelp topic="hitran" label="HITRAN synthesis setup" /></h3>
         <Tag v-if="isHitranKeySaved" severity="success" value="Saved" />
         <span v-else class="badge optional">Optional</span>
       </div>
       <p class="description">
-        Required for live HITRAN/HAPI line downloads used by Data > Synthesis.
-        Use your own HITRAN account key; demo and staging deployments do not
-        provide a shared HITRAN key. Your key is stored encrypted in the backend
-        database and is sent only to HITRAN.
+        Used for live synthesis downloads. Stored encrypted; sent only to HITRAN.
       </p>
       <div class="field">
         <label for="hitran-key">
@@ -454,6 +442,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- LLM config responses and errors remain loosely typed across providers. */
 import { ref, computed, onMounted, watch } from "vue";
 import { useConfirmAction } from "@/composables/useConfirmAction";

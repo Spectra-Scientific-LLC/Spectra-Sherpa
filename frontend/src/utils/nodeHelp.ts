@@ -1,4 +1,4 @@
-const DOCS_BASE_URL = "https://docs.spectrascientific.ai/";
+import { DOCS_BASE_URL } from "./documentation";
 const NODE_HELP_REFERENCE = /^docs\/nodes\/(?:[a-z0-9][a-z0-9-]*\/)*[a-z0-9][a-z0-9-]*\.md$/;
 
 /**
@@ -10,5 +10,5 @@ const NODE_HELP_REFERENCE = /^docs\/nodes\/(?:[a-z0-9][a-z0-9-]*\/)*[a-z0-9][a-z
 export const resolveNodeHelpUrl = (reference: unknown): string | null => {
   if (typeof reference !== "string" || !NODE_HELP_REFERENCE.test(reference)) return null;
   const docsPath = reference.slice("docs/".length, -".md".length);
-  return `${DOCS_BASE_URL}${docsPath}/`;
+  return `${DOCS_BASE_URL}/${docsPath}/`;
 };

@@ -395,6 +395,7 @@ class SIMPLISMANode(Node):
         C_dataset.meta.update(
             {
                 "type": "SIMPLISMA",
+                "scientific_matrix_role": "component_concentrations",
                 "n_components": n_components,
                 "label_categories": label_categories,
                 "species_names": species_names,
@@ -405,6 +406,7 @@ class SIMPLISMANode(Node):
         )
 
         # Purity values extracted by SIMPLISMAExtract
+        St_dataset.meta["scientific_matrix_role"] = "component_spectra"
         purity_list = purity_values.tolist()
 
         diagnostics: dict[str, Any] = {

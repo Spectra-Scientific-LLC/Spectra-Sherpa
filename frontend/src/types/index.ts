@@ -502,6 +502,7 @@ export interface NodeExecutionContract {
 export type ScientificPresentationMode = "model_summary" | "plot" | "record" | "table";
 
 export interface ScientificPresentation {
+  input_binding?: [string, "feature_axis" | "cluster_feature_axes" | "sample_axis"];
   presentation_id: string;
   label: string;
   kind: string;

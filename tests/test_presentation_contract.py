@@ -137,6 +137,36 @@ def test_presentation_digest_changes_with_scientist_facing_identity() -> None:
     assert first.digest != second.digest
 
 
+def test_input_coordinate_bindings_are_declared_by_nodes_and_fail_closed() -> None:
+    from dataclasses import replace
+
+    expected = {
+        "selection.variable_select": {"mask": ("X", "feature_axis"), "scores": ("X", "feature_axis")},
+        "model.kmeans": {"centroids": ("default", "cluster_feature_axes")},
+        "selection.nested_cv": {"oof_evidence": ("X", "sample_axis")},
+    }
+    for operation, bindings in expected.items():
+        metadata = node_registry.get_metadata(operation)
+        contract = metadata.resolved_presentation_contract()
+        observed = {p.source_ports[0]: p.input_binding for p in contract.presentations if p.input_binding is not None}
+        assert observed == bindings
+        assert all(
+            p.as_dict()["input_binding"] == list(p.input_binding) for p in contract.presentations if p.input_binding
+        )
+
+    metadata = replace(node_registry.get_metadata("selection.variable_select"))
+    metadata.presentation_inputs = {"mask": ("nonexistent", "feature_axis")}
+    with pytest.raises(ValueError, match="unknown input"):
+        metadata.resolved_presentation_contract()
+    metadata.presentation_inputs = {"nonexistent": ("X", "feature_axis")}
+    with pytest.raises(ValueError, match="unknown output"):
+        metadata.resolved_presentation_contract()
+    with pytest.raises(ValueError, match="input binding"):
+        ScientificPresentation(
+            "bad", "Bad", "metric_record", ("default",), ("record",), input_binding=("X", "invented_axis")
+        )
+
+
 def test_every_builtin_has_one_closed_presentation_authority() -> None:
     metadata_rows = node_registry.list_nodes()
     assert len(metadata_rows) == 103
@@ -164,7 +194,16 @@ def test_frontend_plot_renderer_authority_exactly_covers_live_plot_kinds() -> No
     # Removed from the live Peak Finding ports, but retained run records still
     # need their original SalientFeatures renderer. No unreviewed extra kinds.
     assert set(declared) == live | {"salient_features"}
-    assert set(authority["record_views"]) == {"validation_result:component_selection:component_curve"}
+    assert set(authority["record_views"]) == {
+        "validation_result:component_selection:component_curve",
+        "metric_record:stability:stability",
+    }
+    stability = authority["record_views"]["metric_record:stability:stability"]
+    assert stability["strategy"] == "selection_stability"
+    assert any(
+        p.presentation_id == "stability" and p.source_ports == ("stability",)
+        for p in node_registry.get_metadata("selection.nested_cv").resolved_presentation_contract().presentations
+    )
     assert authority["record_views"]["validation_result:component_selection:component_curve"]["strategy"] == (
         "pls_component_curve"
     )

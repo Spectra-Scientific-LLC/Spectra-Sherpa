@@ -210,6 +210,8 @@ function buildStyleSheet(): string {
     .badge-model { background: rgba(34,197,94,0.2); color: #15803d; }
     .badge-output { background: rgba(251,146,60,0.2); color: #c2410c; }
     .badge-other { background: rgba(148,163,184,0.2); color: #475569; }
+    .method-help { display: inline-flex; align-items: center; justify-content: center; width: 1.25rem; height: 1.25rem; border: 1px solid currentColor; border-radius: 50%; color: inherit; font-size: .8rem; text-decoration: none; vertical-align: middle; }
+    .method-help:focus-visible { outline: 2px solid #818cf8; outline-offset: 3px; }
     .params-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
     .params-table th, .params-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #f8fafc; font-size: 0.85rem; }
     .params-table th { color: #64748b; font-weight: 500; }

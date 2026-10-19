@@ -323,8 +323,9 @@ function scoresLayout(
   };
   if (hasCat) {
     layout.legend = {
-      bgcolor: "rgba(30, 41, 59, 0.8)",
-      bordercolor: "#334155",
+      bgcolor: "rgba(255, 255, 255, 0.95)",
+      font: { color: "#334155" },
+      bordercolor: "#cbd5e1",
       borderwidth: 1,
       x: 1, y: 1, xanchor: "right", yanchor: "top",
     };
@@ -335,6 +336,8 @@ function scoresLayout(
 // ============================================================================
 // Loadings plot builder
 // ============================================================================
+
+import { hasVariableSelectionHistory } from "@/utils/selectedSpectralCoordinates";
 
 function buildLoadingsTraces(
   loadings: number[][],
@@ -350,7 +353,9 @@ function buildLoadingsTraces(
 
   return loadings.map((loading, i) => ({
     type: "scatter",
-    mode: "lines",
+    // Retained selected coordinates do not establish measured values between
+    // bands. Points avoid implying interpolation through removed variables.
+    mode: hasVariableSelectionHistory(metadata, portPayload) ? "markers" : "lines",
     x: xValues,
     y: loading,
     name: pcLabels[i] || `${componentPrefix}${i + 1}`,
@@ -372,9 +377,9 @@ function loadingsLayout(metadata: any, portPayload?: any): Record<string, any> {
     ...(namedFeatureAxis
       ? { margin: { ...(BASE_PLOT_LAYOUT.margin || {}), b: 150 } }
       : {}),
-    margin: { ...BASE_PLOT_LAYOUT.margin, ...(namedFeatureAxis ? {b:150} : {}) },
+    margin: { ...BASE_PLOT_LAYOUT.margin, t: 90, ...(namedFeatureAxis ? {b:150} : {}) },
     showlegend: true,
-    legend: { x: 1, xanchor: "right", y: 1, bgcolor: "rgba(0,0,0,0)" },
+    legend: { orientation: "h", x: 0, xanchor: "left", y: 1.08, yanchor: "bottom", bgcolor: "rgba(0,0,0,0)" },
     xaxis: {
       ...BASE_PLOT_LAYOUT.xaxis,
       title: namedFeatureAxis ? { text: title, standoff: 24 } : title,
@@ -581,7 +586,7 @@ function buildSpectraOverlayPlot(output: any) {
   };
   const data = chosen.map((index: number) => ({
     type: "scatter",
-    mode: "lines",
+    mode: hasVariableSelectionHistory(metadata) ? "markers" : "lines",
     ...plottedSeries(matrix[index]),
     name: labels[index],
     meta: { source_row_index: index, sample_label: sourceLabels?.[index] ?? null },
@@ -937,16 +942,19 @@ function preprocessingComparison(input: any, output: any, heatmap: boolean, colo
         // Keep the plotted x/y arrays intact: they may contain null separators
         // for an excluded spectral interval. Only transfer row-aligned style.
         const styleTraces = buildMetadataLineTraces([], result.data, grouping, colorField, styleField);
-        plot = { ...plot, data: plot.data.map((trace: any, index: number) => ({
+        const legendTraces = !["none", "__none__"].includes(colorField) || !["none", "__none__"].includes(styleField)
+          ? styleTraces.filter(trace => trace.hoverinfo === "skip") : [];
+        plot = { ...plot, data: [...plot.data.map((trace: any, index: number) => ({
           ...trace, line: { ...trace.line, ...(styleTraces[index]?.line as object || {}) },
-        })) };
+          showlegend: false,
+        })), ...legendTraces.map(trace => ({ ...trace, showlegend: true }))] };
       }
     }
     const color = heatmap ? matrixColorEncoding(result.data, result.metadata.value_semantics) : null;
     const refusal = color?.error ?? plot.layout.meta?.refusal_reason;
     if (refusal) return { data: [], layout: plot.layout, notice: refusal };
     const population = projected.population;
-    const shown = heatmap ? result.data.length : plot.data.length;
+    const shown = heatmap ? result.data.length : plot.data.filter((trace: any) => trace.meta?.source_row_index != null).length;
     const total = result.data.length;
     const displayPopulation = {
       ...population,
@@ -980,11 +988,12 @@ function preprocessingComparison(input: any, output: any, heatmap: boolean, colo
   return {
     data: [original, processed].flatMap((p, i) => p.data.map((trace: any) => ({
       ...trace, name: heatmap ? (i === 0 ? "Original" : "Preprocessed") : trace.name,
-      xaxis: i === 0 ? "x" : "x2", yaxis: i === 0 ? "y" : "y2", showlegend: false,
+      xaxis: i === 0 ? "x" : "x2", yaxis: i === 0 ? "y" : "y2", showlegend: !heatmap && (i === 0 || !original.data.length) && trace.showlegend === true,
       ...(heatmap ? { colorbar: { ...trace.colorbar, len: 0.38, y: i === 0 ? 0.8 : 0.2 } } : {}),
     }))),
     layout: {
-      ...BASE_PLOT_LAYOUT, height: 850, showlegend: false,
+      ...BASE_PLOT_LAYOUT, height: 850, showlegend: !heatmap,
+      legend: { orientation: "h", traceorder: "normal", x: 0, y: 1.08, xanchor: "left", yanchor: "bottom" },
       margin: { ...BASE_PLOT_LAYOUT.margin, t: 95, l: heatmap ? 160 : 80 }, annotations,
       xaxis: { ...original.layout.xaxis, anchor: "y", domain: [0, 1] },
       yaxis: { ...original.layout.yaxis, anchor: "x", domain: [0.6, 1] },
@@ -1288,11 +1297,27 @@ export function useQuickPlotProjection(
 
   // ---- Available plots ----
 
+  // A position and a magnitude cannot share a quantitative/color scale.
+  // Preserve their exact values and units through per-column views instead.
+  const mixedUnitTable = computed(() => {
+    const output = nodeOutput.value;
+    const metadata = output?.metadata ?? {};
+    if (metadata.data_role !== "X_features" || !metadata.column_units) return null;
+    const units = Object.values(metadata.column_units).map(String);
+    if (new Set(units).size < 2) return null;
+    const payload = output?.presentation_value as any;
+    return { ...output, metadata: { ...metadata,
+      column_names: metadata.column_names ?? payload?.x_axis?.labels ?? metadata.feature_names } };
+  });
+
   const availablePlots = computed<PlotOption[]>(() => {
     if (!hasOutput.value) return [];
     const plots: PlotOption[] = [];
     const nt = nodeType.value;
     const identity = projectedPresentationIdentity(nodeOutput.value);
+    if (mixedUnitTable.value) {
+      return numericTableColumns(mixedUnitTable.value).map((label, index) => ({ key: `table_column:${index}`, label }));
+    }
     if (nt === "output.data_table" && (!nodeOutput.value?.presentation_contract || identity?.kind === "visualization")) {
       return numericTableColumns(nodeOutput.value).map((label, index) => ({ key: `table_column:${index}`, label }));
     }
@@ -1536,14 +1561,14 @@ export function useQuickPlotProjection(
     if (sharedPlot) return sharedPlot;
 
     if (key === "scientific_spectral_overlay" &&
-        metadata.scientific_matrix_role !== "component_concentrations" &&
+        !["component_concentrations", "component_spectra"].includes(metadata.scientific_matrix_role) &&
         sampleColorFieldOptions.value.length > 0) {
       const styled = projectPlot(isFeatureRole(metadata, output.presentation_value) ? "generic_boxplot" : "spectra_overlay");
       if (styled?.data.length) return styled;
     }
 
     if (key.startsWith("table_column:")) {
-      const plotted = numericTableColumnPlot(output, Number(key.slice("table_column:".length)));
+      const plotted = numericTableColumnPlot(mixedUnitTable.value ?? output, Number(key.slice("table_column:".length)));
       return plotted ? { data: plotted.data, layout: { ...BASE_PLOT_LAYOUT, ...plotted.layout } }
         : refusedScientificPlot("The selected numeric table column is unavailable.", BASE_PLOT_LAYOUT);
     }
@@ -1556,6 +1581,19 @@ export function useQuickPlotProjection(
     }
 
     switch (key) {
+      case "scientific_selection_stability": {
+        const record = output.presentation_value as any;
+        const frequency = record?.per_variable_frequency;
+        if (!Array.isArray(frequency) || !frequency.length || frequency.some(v => typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1)) {
+          return refusedScientificPlot("Exact per-variable selection frequencies are unavailable.", BASE_PLOT_LAYOUT);
+        }
+        const coordinates = scientificFeatureCoordinates(metadata, frequency.length);
+        const x = coordinates ?? frequency.map((_: number, i: number) => i + 1);
+        const title = coordinates ? `${metadata.x_title || "Feature coordinate"}${metadata.x_units ? ` (${metadata.x_units})` : ""}` : "Variable index (source coordinates not retained)";
+        return { data: [{ type: "scatter", mode: "lines+markers", name: "Selection frequency", x, y: frequency }],
+          layout: { ...BASE_PLOT_LAYOUT, showlegend: false, xaxis: { title }, yaxis: { title: "Selection frequency across outer folds", range: [0, 1.05] },
+            title: { text: `Selection stability${typeof record.mean_jaccard === "number" ? ` · mean Jaccard ${record.mean_jaccard.toPrecision(4)}` : ""}` } } };
+      }
       case "scientific_pls_component_curve":
         return buildPlsComponentCurvePlot(output.presentation_value, regressionTargetIdx.value);
       case "scientific_category_counts":

@@ -1363,8 +1363,8 @@ describe("DataContent file inspection", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("This sheet's saved definition was deleted");
-    expect(mocks.dataStore.inspectFile).toHaveBeenCalledWith(22, "raw/wine.csv", 11);
-    expect(mocks.dataStore.inspectExperimentRawFiles).not.toHaveBeenCalledWith(11);
+    expect(mocks.dataStore.inspectExperimentRawFiles).toHaveBeenCalledWith(11, null, [22]);
+    expect(mocks.dataStore.inspectFile).not.toHaveBeenCalled();
     wrapper.unmount();
   });
 
@@ -1420,6 +1420,7 @@ describe("DataContent file inspection", () => {
       name: "Wine without acquisition B",
       selection: {
         ...savedDatasetView(91).selection,
+        selected_file_ids: [22],
         schema_version: "spectrasherpa-dataset-view/2",
         n_samples: 3,
         included_count: 2,
@@ -1450,6 +1451,15 @@ describe("DataContent file inspection", () => {
     await flushPromises();
     expect(vm.currentPortfolioView).toMatchObject({ id: 91 });
     expect(vm.datasetCurationSource).toMatchObject({ parent_view_id: 91 });
+    // Saved row identities come from collection assembly, even for one file.
+    expect(mocks.dataStore.inspectExperimentRawFiles).toHaveBeenCalledWith(11, null, [22]);
+    await vm.goToWorkflow();
+    expect(latestWorkflowReceipt()?.datasets).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        dataset_view_id: 91,
+        dataset_view_sha256: view.selection_sha256,
+      }),
+    ]));
     expect(vm.displaySampleInclusion.rows.map((row: { sampleId: string; included: boolean }) => [row.sampleId, row.included]))
       .toEqual([["A", true], ["B", false], ["C", true]]);
     vm.analysisChoice = { ...vm.analysisChoice, target: "new_target", targetType: "continuous" };
@@ -2892,9 +2902,9 @@ describe("DataContent file inspection", () => {
       const wrapper = mountDataContent();
       await flushPromises();
       expect(wrapper.get(".reference-acquisition-help").text()).toContain(
-        "not bundled or downloaded automatically",
+        "Download the provider’s ZIP",
       );
-      expect(wrapper.get(".reference-acquisition-help").text()).toContain("works offline");
+      expect(wrapper.get(".reference-acquisition-help").text()).toContain("Import downloaded file");
       const providerLinks = wrapper.findAll('a[aria-label$="provider page (opens in a new tab)"]');
       expect(providerLinks).toHaveLength(2);
       for (const link of providerLinks) {

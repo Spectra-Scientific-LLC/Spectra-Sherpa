@@ -253,6 +253,7 @@ async def test_ica_live_generated_and_fitted_state_share_one_scientific_core() -
     assert generated["fitted_state"] == live.outputs["fitted_state"]
     assert generated["model"] == live.outputs["model"] == live.outputs["fitted_state"]
     assert live.outputs["components"].shape == (3, dataset.shape[1])
+    assert live.outputs["components"].meta["scientific_matrix_role"] == "component_spectra"
     assert live.outputs["mixing_matrix"].shape == (dataset.shape[1], 3)
     assert live.outputs["unmixing_matrix"].shape == (3, dataset.shape[1])
     assert live.outputs["components"].feature_axis.units == "cm-1"

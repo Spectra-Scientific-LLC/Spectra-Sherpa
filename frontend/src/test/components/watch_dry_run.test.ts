@@ -25,7 +25,7 @@ describe('ordinary saved-model dry run', () => {
     const view = create(); await flushPromises();
     expect(view.find('[role="alert"]').text()).toContain('earlier watch settings');
     expect(view.text()).not.toContain('then close this panel and enable');
-    expect(view.text()).toContain('optional check does not determine whether the watch can run');
+    expect(view.text()).toContain('Monitoring stays off');
   });
   it('blocks a new check until loading completes, preventing stale load overwrite', async () => {
     let finish!: (value: unknown) => void;

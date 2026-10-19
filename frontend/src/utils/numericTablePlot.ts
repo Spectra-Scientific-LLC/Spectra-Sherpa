@@ -5,12 +5,17 @@ export function numericTableColumns(value: unknown): string[] {
   if (!Array.isArray(rows) || !rows.length) return [];
   if (rows.every(row => row !== null && typeof row === "object" && !Array.isArray(row))) {
     const keys = [...new Set(rows.flatMap(row => Object.keys(row)))];
+    // A vertical metric record is not one quantitative variable. RMSE, R²,
+    // counts and provenance must not share a categorical or numeric ordinate.
+    if (keys.some(key => key.toLowerCase() === "key") && keys.some(key => key.toLowerCase() === "value")) return [];
     return keys;
   }
   if (!Array.isArray(rows[0]) || !rows[0].length) return [];
   const width = rows[0].length;
   if (rows.some(row => !Array.isArray(row) || row.length !== width)) return [];
   const names = record?.metadata?.column_names;
+  if (Array.isArray(names) && names.some(name => String(name).toLowerCase() === "key")
+    && names.some(name => String(name).toLowerCase() === "value")) return [];
   return Array.isArray(names) && names.length === width
     ? names.map(String) : Array.from({ length: width }, (_, i) => `Column ${i + 1}`);
 }

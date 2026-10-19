@@ -1,7 +1,7 @@
 <template>
   <details :open="!!reviewWorkflowId">
     <summary>Review imported fitted applications</summary>
-    <p>Operational readiness does not establish intended-use acceptance. Choose an exact imported application to assess and review.</p>
+    <MethodHelp topic="qualification" label="Analytical qualification" />
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-else-if="loading">Loading qualification candidates…</p>
     <p v-else-if="!applications.length">No imported canonical application is available in this project.</p>
@@ -16,6 +16,7 @@
   </details>
 </template>
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import api from "@/api/client";
 import ModelPromotionReview from "@/components/ModelPromotionReview.vue";

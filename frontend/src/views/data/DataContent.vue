@@ -287,9 +287,7 @@
                   </span>
                 </template>
                 <p class="reference-acquisition-help" role="status">
-                  These datasets are not bundled or downloaded automatically by this catalog. Get
-                  the original ZIP file from the provider page, then choose “Import downloaded
-                  file”. Importing a file you already have works offline.
+                  Download the provider’s ZIP, then choose “Import downloaded file”.
                 </p>
                 <article
                   v-for="ds in userAcquiredReferenceDatasets"
@@ -5340,6 +5338,17 @@ async function goToWorkflow(addNode?: string) {
     });
     return;
   }
+  // A changed response/group must not silently turn a curated cohort back
+  // into its complete source population. Save a new canonical portfolio first.
+  if (sourcePortfolioView.value && !currentPortfolioView.value) {
+    toast.add({
+      severity: "warn",
+      summary: "Save the updated portfolio",
+      detail: "Save the current target and grouping choices before creating a workflow from this portfolio.",
+      life: 6000,
+    });
+    return;
+  }
   const datasets: DataSelectionReceipt["datasets"] = workflowIds.map((experimentId) => {
     const experiment = dataStore.experiments.find((item) => item.id === experimentId);
     const selection = workflowSelectionForExperiment(experimentId);
@@ -5354,6 +5363,12 @@ async function goToWorkflow(addNode?: string) {
       file_ids: selection === null ? null : selection.map((file) => file.id),
       file_paths: selection === null ? null : selection.map((file) => file.file_path),
       asset_id: experimentId === dataStore.activeExperimentId ? inspectionAssetId.value : null,
+      ...(experimentId === dataStore.activeExperimentId && currentPortfolioView.value
+        ? {
+            dataset_view_id: currentPortfolioView.value.id,
+            dataset_view_sha256: currentPortfolioView.value.selection_sha256,
+          }
+        : {}),
       stage: selection === null ? "raw" : selection[0].stage,
     };
   });
@@ -6097,6 +6112,7 @@ async function showExperimentContents(
     let inspectedDataset: SherpaDatasetDict;
     if (
       !loadWholeCollection &&
+      !exactSelection &&
       !registeredPackageSelection &&
       (selectedViewId != null || inspectionFiles.length === 1)
     ) {

@@ -610,3 +610,17 @@ report format. Include saved parameters, population, exclusions, metric formulas
 and units, tuning design, selection history and claim limits. Derive figures from
 retained observations and predictions. Disclose unavailable or oversized plots;
 never silently subsample. No arbitrary RPD thresholds or certification badge.
+
+## Input coordinates and contextual help
+
+When an output needs coordinates from a connected input, the node presentation
+declares `input_binding: [input_port, binding_kind]`. The closed binding kinds
+are `feature_axis`, `cluster_feature_axes`, and `sample_axis`. The renderer uses
+the corresponding retained input; it must not invent wavelengths or sample
+identity when that input is unavailable. Invalid ports fail contract validation.
+
+Node help continues to use the execution contract's `help_reference`.
+Methodology help uses a named topic from `frontend/src/utils/documentation.ts`;
+free-form component URLs and frontend rewrites of backend sentences are not
+authorities. Keep actionable warnings inline and report claim scope readable
+without an internet connection.

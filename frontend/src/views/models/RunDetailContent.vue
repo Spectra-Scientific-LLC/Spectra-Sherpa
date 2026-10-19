@@ -17,7 +17,6 @@
         <span :title="detail.run.executed_at">{{ detail.run.run_kind }} · {{ formatTimestamp(detail.run.executed_at) }}</span>
       </div>
       <p v-if="runNameError" role="alert">{{ runNameError }}</p>
-      <p>Review the saved computation and its retained scientific evidence.</p>
     </header>
     <div class="run-detail__actions" role="group" aria-label="Run actions">
       <Button icon="pi pi-arrow-left" label="History" class="p-button-text" aria-label="Back to Runs" @click="backToRuns" />
@@ -79,7 +78,6 @@
         <section aria-label="Execution environment">
           <h2>Execution environment</h2>
           <template v-if="detail.environment_snapshot">
-            <p>Recorded environment evidence. This does not guarantee deterministic replay.</p>
             <dl>
               <dt>Python</dt><dd>{{ detail.environment_snapshot.python || 'Not recorded' }}</dd>
               <dt>Backend build</dt><dd>{{ detail.environment_snapshot.backend_build_commit || 'Not recorded' }}</dd>
@@ -119,7 +117,6 @@
             <p>Method: {{ view.method || 'Unavailable' }} · Fitted reference: {{ view.referenceCount ?? 'Unavailable' }} samples · T² limit: {{ view.t2Limit ?? 'Unavailable' }} · Q limit: {{ view.qLimit ?? 'Unavailable' }}</p>
             <p v-if="view.rows.length > 200">Showing the first 200 of {{ view.rows.length }} rows. Download the complete table.</p>
             <Button label="Download prediction trust CSV" @click="exportApplicationTrust(view)" />
-            <p>Ask Sherpa can interpret the retained global screen; it cannot verify the predicted response from these facts.</p>
             <div class="application-trust__scroll">
               <table>
                 <thead><tr><th>Applied dataset position</th><th>Prediction</th><th>Global T²/Q screen</th><th>T²</th><th>Q</th><th>Evidence note</th><th>Advisor</th></tr></thead>

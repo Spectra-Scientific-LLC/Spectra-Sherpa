@@ -12,7 +12,7 @@ beforeEach(() => {vi.resetAllMocks(); vi.mocked(api.get).mockResolvedValue({data
 describe("QC report-only authority", () => {
   it("discloses every concurrent reason and both event times", async () => {
     const w = mount(Panel, {props:{watchId:1}}); await flushPromises();
-    expect(w.text()).toContain("Predictions continue");
+    expect(w.find('a[href$="#instrument-qc"]').exists()).toBe(true);
     expect(w.text()).toContain("control_overdue"); expect(w.text()).toContain("unacknowledged_control_failure");
     expect(w.text()).toContain("Observed: 2026-09-28T10:00:00Z"); expect(w.text()).toContain("Recorded: 2026-09-28T10:01:00Z");
   });

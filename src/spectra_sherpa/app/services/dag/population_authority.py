@@ -67,6 +67,22 @@ def _variable_selection_lineage(
     return Lineage(None, fits, False, exposures)
 
 
+def _output_lineage(metadata: Any, output: str, lineage: Lineage) -> Lineage:
+    """Separate feature evidence from row populations without erasing fit ancestry."""
+    if metadata.node_type == "model.fitted_pls" and output == "vip_scores":
+        return Lineage(None, lineage.fits, lineage.qualified, lineage.exposures)
+    if not metadata.output_ports or output not in {
+        metadata.output_ports[0].name,
+        "predictions",
+        "X_selected",
+        "scores",
+        "fitted_state",
+        "model",
+    }:
+        return Lineage(None, lineage.fits, False, lineage.exposures)
+    return lineage
+
+
 def analyze_populations(
     nodes: dict[str, Node], edges: list[WorkflowEdge]
 ) -> tuple[list[ValidationIssue], dict[str, dict[str, Any]]]:
@@ -212,17 +228,7 @@ def analyze_populations(
                 # Auxiliary outputs such as loadings are not sample rows.
                 # State edges still carry fitted-population evidence, but must
                 # not impersonate row-preserving predictor data.
-                if not metadata.output_ports or output not in {
-                    metadata.output_ports[0].name,
-                    "predictions",
-                    "X_selected",
-                    "scores",
-                    "fitted_state",
-                    "model",
-                }:
-                    population = None
-                    qualified = False
-                result = Lineage(population, fits, qualified, exposures)
+                result = _output_lineage(metadata, output, Lineage(population, fits, qualified, exposures))
         visiting.remove(key)
         cache[key] = result
         return result

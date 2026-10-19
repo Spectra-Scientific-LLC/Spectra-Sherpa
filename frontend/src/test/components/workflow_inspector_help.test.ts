@@ -6,6 +6,10 @@ import DisabledReason from "@/components/DisabledReason.vue";
 import WorkflowInspector from "@/views/workflow-builder/WorkflowInspector.vue";
 
 const nodeMetadata = reactive({
+  presentation_contract: { digest: "b".repeat(64), payload: {
+    schema_version: "spectrasherpa-node-presentation/1", default_presentation: "component_selection",
+    presentations: [{ kind: "validation_result", presentation_id: "component_selection", source_ports: ["component_curve"], modes: ["record"], label: "Component selection", description: "" }],
+  } },
   label: "Principal Component Analysis",
   parameters: [],
   execution_contract: {
@@ -55,6 +59,7 @@ describe("WorkflowInspector node help", () => {
       global: {
         directives: { tooltip: () => undefined },
         stubs: {
+          MethodHelp: false,
           QuickPlotModal: defineComponent({ template: "<div />" }),
           DataTableModal: defineComponent({ template: "<div />" }),
         },
@@ -75,7 +80,7 @@ describe("WorkflowInspector node help", () => {
     expect(link.attributes("aria-label")).toContain("opens in a new tab");
   });
 
-  it("previews component validation before fitting without claiming executed folds", async () => {
+  it("links component methodology without pre-fitting prose and keeps wiring warnings", async () => {
     const wrapper = mountInspector();
     await wrapper.setProps({
       selectedNode: { ...selectedNode, type: "model.fitted_pls", params: {
@@ -84,15 +89,13 @@ describe("WorkflowInspector node help", () => {
       inputConnections: [{ nodeId: "split_1", nodeType: "data.train_test_split", nodeLabel: "Split",
         port: "X_train", toPort: "X", data: { data: [], metadata: { summary: { n_samples: 60 } } } }],
     });
-    const preview = wrapper.get('[aria-label="Planned component validation"]').text();
-    expect(preview).toContain("4 LV requested");
-    expect(preview).toContain("3-fold group or row CV");
-    expect(preview).toContain("Connected calibration rows: 60");
-    expect(preview).toContain("test partition stays outside component selection");
-    expect(preview).toContain("Exact fold membership");
+    expect(wrapper.find('[aria-label="Planned component validation"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Exact fold membership");
+    expect(wrapper.find('a[href$="#component-selection"]').exists()).toBe(false);
     await wrapper.setProps({ inputConnections: [{ nodeId: "split_1", nodeType: "data.train_test_split", nodeLabel: "Split",
       port: "X_test", toPort: "X", data: { data: [], metadata: { summary: { n_samples: 20 } } } }] });
-    expect(wrapper.get('[aria-label="Planned component validation"]').text()).toContain("without a verified training port");
+    expect(wrapper.get('[role="alert"]').text()).toContain("connect the split’s training ports");
+    expect(wrapper.find('a[href$="#component-selection"]').exists()).toBe(true);
   });
 
   it("fails closed when the selected node contract has no safe help authority", async () => {
@@ -125,7 +128,8 @@ describe("WorkflowInspector node help", () => {
     workflowStore.workflowId = 1;
   });
 
-  it("loads exact retained output and its immediate input before plotting a restored run", async () => {
+  it.each(["plot", "table"])("loads exact retained output before opening a restored %s", async (view) => {
+    apiGet.mockClear();
     workflowStore.restoredRunId = 3;
     workflowStore.executionEvidenceScope = "restored_summary";
     const exact = { type: "SherpaDataset", data: [[1, 2], [3, 4]], metadata: {},
@@ -138,7 +142,7 @@ describe("WorkflowInspector node help", () => {
       inputConnections: [{ nodeId: "source_1", nodeType: "data.file_load", nodeLabel: "Load",
         port: "default", toPort: "default", data: null }],
       nodeOutput: {
-        data: [[1]], metadata: {}, primary_port: "default",
+        data: [[1]], metadata: { diagnostics: { sample_labels: ["A", "B"], T2_limit: 9.35 } }, primary_port: "default",
         ports: { default: { data: [[1]], metadata: {}, value: exact } },
         presentation_contract: { digest: "a".repeat(64), payload: {
           schema_version: "spectrasherpa-node-presentation/1", default_presentation: "spectra",
@@ -148,11 +152,88 @@ describe("WorkflowInspector node help", () => {
       },
     });
     await flushPromises();
-    await (wrapper.vm as any).openQuickPlot();
+    await (wrapper.vm as any)[view === "plot" ? "openQuickPlot" : "openDataTable"]();
     await flushPromises();
     expect(apiGet).toHaveBeenCalledWith("/runs/3/outputs/clip_1/default", { params: { project_id: 1 } });
-    expect(apiGet).toHaveBeenCalledWith("/runs/3/outputs/source_1/default", { params: { project_id: 1 } });
+    if (view === "plot") {
+      expect(apiGet).toHaveBeenCalledWith("/runs/3/outputs/source_1/default", { params: { project_id: 1 } });
+    } else {
+      expect(apiGet).toHaveBeenCalledTimes(1);
+      expect((wrapper.vm as any).showDataTableModal).toBe(true);
+    }
     expect((wrapper.vm as any).quickPlotNodeOutput.data).toEqual([[1, 2], [3, 4]]);
+    expect((wrapper.vm as any).quickPlotNodeOutput.metadata.diagnostics).toEqual({ sample_labels: ["A", "B"], T2_limit: 9.35 });
+    if (view === "table") {
+      (wrapper.vm as any).showDataTableModal = false;
+      apiGet.mockRejectedValueOnce(new Error("Exact evidence missing"));
+      await (wrapper.vm as any).openDataTable();
+      expect((wrapper.vm as any).showDataTableModal).toBe(false);
+      expect((wrapper.vm as any).quickPlotNodeOutput).toBeNull();
+      expect((wrapper.vm as any).quickPlotEvidenceError).toContain("unavailable");
+    }
+    wrapper.unmount();
+    workflowStore.restoredRunId = null;
+    workflowStore.executionEvidenceScope = "unavailable";
+  });
+
+  it("hydrates only the explicitly paired cohort for retained test targets", async () => {
+    apiGet.mockClear();
+    apiGet.mockImplementation(async (url: string) => ({ data: { value: url.endsWith("/X_test")
+      ? { type: "SherpaDataset", data: [[1]], y_axis: { labels: ["held-B"] } } : [2] } }));
+    workflowStore.restoredRunId = 3;
+    workflowStore.executionEvidenceScope = "restored_summary";
+    const wrapper = mountInspector();
+    await wrapper.setProps({ selectedNode: { ...selectedNode, id: "split_1" }, nodeOutput: {
+      data: [2], metadata: {}, primary_port: "y_test",
+      ports: { y_test: { data: [2], metadata: {}, value: [2] },
+        X_train: { data: [[9]], metadata: {} }, X_test: { data: [[1]], metadata: {} } },
+    } });
+    await (wrapper.vm as any).openDataTable();
+    expect(apiGet.mock.calls.map(call => call[0])).toEqual([
+      "/runs/3/outputs/split_1/y_test", "/runs/3/outputs/split_1/X_test",
+    ]);
+    wrapper.unmount();
+    workflowStore.restoredRunId = null;
+    workflowStore.executionEvidenceScope = "unavailable";
+  });
+
+  it("hydrates same-model feature authority for coefficient rows, not unrelated sample ports", async () => {
+    apiGet.mockClear();
+    apiGet.mockResolvedValue({ data: { value: [[1]] } });
+    workflowStore.restoredRunId = 3;
+    workflowStore.executionEvidenceScope = "restored_summary";
+    const wrapper = mountInspector();
+    await wrapper.setProps({ selectedNode: { ...selectedNode, id: "model_1" }, nodeOutput: {
+      data: [[1]], metadata: {}, primary_port: "class_coefficients",
+      ports: { class_coefficients: { data: [[1]], metadata: {},
+        descriptor: { dimensions: [{ role: "spectral_variable", size: 1 }] } },
+        loadings: { data: [[1]], metadata: {} }, scores: { data: [[2]], metadata: {} } },
+    } as any });
+    await (wrapper.vm as any).openDataTable();
+    expect(apiGet.mock.calls.map(call => call[0])).toEqual([
+      "/runs/3/outputs/model_1/class_coefficients", "/runs/3/outputs/model_1/loadings",
+    ]);
+    wrapper.unmount();
+    workflowStore.restoredRunId = null;
+    workflowStore.executionEvidenceScope = "unavailable";
+  });
+
+  it("hydrates PCA summary companions from the same retained run", async () => {
+    apiGet.mockClear();
+    apiGet.mockResolvedValue({ data: { value: [[1, 2]] } });
+    workflowStore.restoredRunId = 3;
+    workflowStore.executionEvidenceScope = "restored_summary";
+    const wrapper = mountInspector();
+    await wrapper.setProps({ selectedNode, nodeOutput: {
+      data: [[1, 2]], metadata: {}, primary_port: "scores",
+      ports: Object.fromEntries(["scores", "variable_correlations", "explained_variance", "loadings", "model"].map(name => [name, { data: [[1, 2]], metadata: {} }])),
+      presentation_contract: { digest: "b".repeat(64), payload: {
+        schema_version: "spectrasherpa-node-presentation/1", default_presentation: "scores",
+        presentations: [{ presentation_id: "scores", label: "Scores", kind: "pca_scores", source_ports: ["scores"], modes: ["plot", "table"] }],
+      } },
+    } as any });
+    await (wrapper.vm as any).openQuickPlot();
+    expect(apiGet.mock.calls.map(call => call[0])).toEqual(["scores", "variable_correlations", "explained_variance", "loadings"].map(port => `/runs/3/outputs/pca_1/${port}`));
     wrapper.unmount();
     workflowStore.restoredRunId = null;
     workflowStore.executionEvidenceScope = "unavailable";

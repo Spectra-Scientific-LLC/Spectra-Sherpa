@@ -75,6 +75,16 @@ def _application_result(
         "n_classes": int(matrix.shape[1]),
         "numeric_output_semantics": numeric_semantics,
     }
+    # Keep row and class identity with the executed evidence. Numeric ports
+    # remain arrays; downstream consumers must not guess identity from shape.
+    sample_axis = getattr(input_data, "sample_axis", None)
+    sample_labels = getattr(sample_axis, "labels", None)
+    if sample_labels is not None and len(sample_labels) == labels.size:
+        diagnostics["sample_labels"] = [str(value) for value in sample_labels]
+    state_metadata = fitted_state if method == "knn" else fitted_state.get("metadata", {})
+    classes = state_metadata.get("classes")
+    if isinstance(classes, list) and len(classes) == matrix.shape[1]:
+        diagnostics["classes"] = list(classes)
     if method == "plsda":
         from .plsda_state import SherpaPLSDAArtifact
 

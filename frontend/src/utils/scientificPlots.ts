@@ -820,7 +820,7 @@ export interface T2QDiagnosticRow {
   sample: string;
   t2: number;
   q: number;
-  outlier: boolean;
+  outlier: boolean | null;
 }
 
 export function t2QDiagnosticRows(
@@ -835,10 +835,10 @@ export function t2QDiagnosticRows(
   const rawFlags = diagnosticField(record, "flags", "outliers");
   const flags =
     Array.isArray(rawFlags) && rawFlags.length === t2.length
-      ? rawFlags.map(Boolean)
-      : Array.from({ length: t2.length }, () => false);
+      ? rawFlags.map(flag => typeof flag === "boolean" ? flag : null)
+      : Array.from({ length: t2.length }, () => null);
   const diagnostics = recordValue(metadata.diagnostics) ?? {};
-  const rawLabels = diagnosticField(record, "sample_labels") ?? diagnostics.sample_labels;
+  const rawLabels = diagnosticField(record, "sample_labels") ?? metadata.sample_labels ?? diagnostics.sample_labels;
   const labels = diagnosticLabels(rawLabels, t2.length);
   return t2.map((t2Value, index) => ({
     sample: labels[index],
@@ -1240,11 +1240,13 @@ export function buildOutOfFoldEvidencePlot(value: unknown): ScientificPlot {
   }
   if (assigned.size !== count)
     return refuse("split plan does not hold out every plotted observation exactly once");
+  const labels = (value as { metadata?: { sample_labels?: unknown } })?.metadata?.sample_labels;
+  const hasLabels = Array.isArray(labels) && labels.length === count;
   plot.data[0] = {
     ...plot.data[0],
-    customdata: folds.map((fold, index) => [index, fold]),
+    customdata: folds.map((fold, index) => [index, fold, hasLabels ? String(labels[index]) : "Unavailable"]),
     hovertemplate:
-      "Retained row (0-based): %{customdata[0]}<br>Validation fold (0-based): %{customdata[1]}<br>Actual: %{x:.15g}<br>OOF prediction: %{y:.15g}<extra></extra>",
+      "Sample: %{customdata[2]}<br>Retained row (0-based): %{customdata[0]}<br>Validation fold (0-based): %{customdata[1]}<br>Actual: %{x:.15g}<br>OOF prediction: %{y:.15g}<extra></extra>",
   };
   plot.layout = {
     ...plot.layout,
@@ -1296,6 +1298,41 @@ export function buildPlsComponentCurvePlot(value: unknown, responseIndex = 0): S
   const unavailable = (reason: string) => refusedScientificPlot(reason, SCIENTIFIC_PLOT_LAYOUT);
   if (!value || typeof value !== "object" || Array.isArray(value)) return unavailable("PLS component evidence is unavailable.");
   const record = value as Record<string, unknown>;
+  if (["spectrasherpa-pca-component-curve/1", "spectrasherpa-plsda-component-curve/1"].includes(String(record.schema_version))) {
+    const classification = record.schema_version === "spectrasherpa-plsda-component-curve/1";
+    const rows = Array.isArray(record.calibration) ? record.calibration as Record<string, unknown>[] : [];
+    const cv = record.cross_validation && typeof record.cross_validation === "object"
+      ? record.cross_validation as Record<string, unknown> : {};
+    if (!rows.length) return unavailable(String(cv.reason ?? "Component evidence was not retained."));
+    const metric = classification ? "balanced_accuracy" : "reconstruction_rmse";
+    const cvMetric = classification ? metric : "pooled_reconstruction_rmse";
+    const valid = (row: Record<string, unknown> | undefined, key: string) => {
+      const v = row?.[key];
+      return row?.status !== "unavailable_rank" && typeof v === "number" && Number.isFinite(v) && v >= 0 && (!classification || v <= 1) ? v : null;
+    };
+    if (rows.some((row, i) => !row || row.components !== i + 1)) return unavailable("Component counts do not align with the retained evidence.");
+    const x = rows.map(row => row.components);
+    const cvRows = cv.status === "available" && Array.isArray(cv.rows) ? cv.rows as Record<string, unknown>[] : [];
+    const held = rows.map(row => valid(cvRows.find(item => item.components === row.components), cvMetric));
+    const available = held.some(v => v !== null);
+    const selected = record.selected_components;
+    const metricLabel = classification ? "Balanced accuracy (fraction)" : `Reconstruction RMSE (${record.reconstruction_space ?? "fitted X space"})`;
+    return {
+      data: [
+        { x, y: rows.map(row => valid(row, metric)), type: "scatter", mode: "lines+markers", name: "Calibration", connectgaps: false },
+        ...(available ? [{ x, y: held, type: "scatter", mode: "lines+markers", name: "Cross-validation (development)", connectgaps: false }] : []),
+      ],
+      layout: {
+        ...SCIENTIFIC_PLOT_LAYOUT,
+        title: { text: classification ? "PLS-DA component evidence" : "PCA reconstruction evidence" },
+        xaxis: { ...SCIENTIFIC_PLOT_LAYOUT.xaxis, title: "Components", dtick: 1 },
+        yaxis: { ...SCIENTIFIC_PLOT_LAYOUT.yaxis, title: metricLabel },
+        shapes: Number.isSafeInteger(selected) && Number(selected) >= 1 ? [{ type: "line", x0: selected, x1: selected, y0: 0, y1: 1, yref: "paper", line: { dash: "dash", color: "#ef4444" } }] : [],
+        annotations: [{ text: available ? "Development diagnostic — not independent test performance" : "Calibration only — cross-validation unavailable", x: 1, y: 1, xref: "paper", yref: "paper", xanchor: "right", yanchor: "bottom", showarrow: false }],
+        meta: { cv_status: available ? "available" : "unavailable", cv_reason: available ? null : cv.reason ?? "Not retained", selected_components: selected, selection_rule: record.selection_rule },
+      },
+    };
+  }
   if (record.schema_version !== "spectrasherpa-pls-component-curve/1"
     || !Array.isArray(record.response_names) || !Array.isArray(record.response_units)
     || !Array.isArray(record.calibration) || !record.calibration.length

@@ -98,6 +98,21 @@ describe("workflow data selection binding", () => {
     });
   });
 
+  it("carries exact saved portfolio authority, not merely its display name", () => {
+    const curated: DataSelectionReceipt = {
+      ...receipt,
+      datasets: receipt.datasets.map((dataset) => dataset.experiment_id === 12
+        ? { ...dataset, dataset_view_id: 91, dataset_view_sha256: "c".repeat(64) }
+        : dataset),
+    };
+    expect(bindingFromSelectionReceipt(curated, 12)).toMatchObject({
+      datasetViewId: 91,
+      datasetViewSha256: "c".repeat(64),
+      fileIds: [41, 43],
+    });
+    expect(bindingFromSelectionReceipt(curated, 11)).not.toHaveProperty("datasetViewId");
+  });
+
   it("preserves a categorical My Dataset target for a PCA-style source role", () => {
     const primary = bindingFromSelectionReceipt(receipt, 12);
     expect(primary).not.toBeNull();

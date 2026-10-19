@@ -33,6 +33,218 @@ from spectra_sherpa.app.services.workflow_data_selections import source_paramete
 from spectra_sherpa.core.execution_runtime import ResolvedExperimentCollection
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("all_files", [False, True])
+@pytest.mark.parametrize("with_target", [False, True])
+async def test_template_preserves_saved_iris_cohort_and_rejects_drift(
+    auth_client, test_session, test_user, monkeypatch, all_files, with_target
+):
+    from datetime import datetime, timezone
+
+    from spectra_sherpa.app.api.v1.routes import workflow_templates as routes
+    from spectra_sherpa.app.lib.target_authority import issue_target_authority
+    from spectra_sherpa.app.models.workflow_data_selection_revision import WorkflowDataSelectionRevision
+    from spectra_sherpa.app.models.workflow_template import WorkflowTemplate
+    from spectra_sherpa.app.services.dag.nodes.data.loaders import CollectionLoadNode
+    from spectra_sherpa.app.services.workflow_data_selections import execution_selection_revisions
+    from spectra_sherpa.app.types import ensure_type_registry_loaded
+    from spectra_sherpa.core.execution_runtime import ExecutionRuntime
+
+    project = Project(user_id=test_user.id, name="Iris portfolio")
+    test_session.add(project)
+    await test_session.flush()
+    experiment = Experiment(user_id=test_user.id, project_id=project.id, name="Iris", metadata_path="metadata.json")
+    test_session.add(experiment)
+    await test_session.flush()
+    ds = assemble_collection(
+        [
+            CollectionMember(
+                SherpaDataset(
+                    X=np.arange(600, dtype=float).reshape(150, 4),
+                    feature_axis=FeatureAxis(labels=["a", "b", "c", "d"]),
+                    sample_axis=SampleAxis(
+                        labels=[f"iris-{i}" for i in range(150)] if with_target else None,
+                        sample_table={
+                            "sample_id": [f"iris-{i}" for i in range(150)],
+                            "Target": ["setosa"] * 50 + ["versicolor"] * 50 + ["virginica"] * 50,
+                            "batch": [str(i % 5) for i in range(150)],
+                        },
+                    ),
+                    data_role="X_features",
+                ),
+                "raw/sklearn_iris.csv",
+                100,
+                "a" * 64,
+            )
+        ],
+        title="Iris",
+    )
+    manifest = ds.meta["source_collection"]
+    manifest.update(scientific_collection_identity(manifest, None, ds))
+    if with_target:
+        manifest["collection_definition_sha256"] = "c" * 64
+    loaded = LoadedProjectDataset(
+        ds,
+        experiment.id,
+        "Iris",
+        project.id,
+        [17],
+        "raw",
+        None,
+        manifest["manifest_digest"],
+        manifest.get("collection_definition_sha256"),
+        manifest["scientific_collection_sha256"],
+    )
+    authority = issue_target_authority(ds, column="Target", target_type="categorical")
+    receipt = curation_receipt(
+        loaded,
+        selection_receipt(
+            loaded,
+            selected_file_ids=None if all_files else [17],
+            target_authority=authority if with_target else None,
+        ),
+        parent_view_id=None,
+        action="exclude",
+        sample_ids=[verified_source_observations(ds)[0]["sample_id"]],
+        reason="Bad observation",
+    )
+    view = DatasetView(
+        project_id=project.id,
+        experiment_id=experiment.id,
+        created_by_user_id=test_user.id,
+        name="Iris 149",
+        name_key="iris 149",
+        selection=receipt,
+        selection_sha256=receipt_sha256(receipt),
+    )
+    assert materialize_selection_receipt(deepcopy(loaded), receipt).dataset.n_samples == 149
+    template = WorkflowTemplate(
+        slug=f"iris_saved_cohort_{all_files}",
+        name="Iris analysis",
+        description="Saved cohort regression",
+        category="exploratory",
+        is_active=True,
+        template_data={
+            "nodes": [
+                {"node_id": "source", "node_type": "data.file_load", "parameters": {}, "position_x": 0, "position_y": 0}
+            ],
+            "edges": [],
+            "status": "ready",
+            "data_roles": {
+                "X": {"role_type": "X_features", "node_binding": "source", "required": True, "binding_mode": "embedded"}
+            },
+        },
+    )
+    test_session.add_all([view, template])
+    await test_session.commit()
+
+    async def load(*args, **kwargs):
+        return deepcopy(loaded)
+
+    monkeypatch.setattr(routes, "load_project_dataset", load)
+    monkeypatch.setattr("spectra_sherpa.app.services.workflow_data_selections.load_project_dataset", load)
+    observed_counts = []
+    original_profile = routes.analysis_profile_from_dataset
+
+    def profile(dataset):
+        observed_counts.append(dataset.n_samples)
+        return original_profile(dataset)
+
+    monkeypatch.setattr(routes, "analysis_profile_from_dataset", profile)
+    binding = {
+        "experiment_id": experiment.id,
+        "dataset_view_id": view.id,
+        "dataset_view_sha256": view.selection_sha256,
+        "target_authority": authority.canonical_dict() if with_target else None,
+        **({"all_files": True} if all_files else {"file_ids": [17]}),
+    }
+    request = {"workflow_name": "Iris 149 analysis", "project_id": project.id, "data_bindings": {"source": binding}}
+    url = f"/api/v1/workflow-templates/{template.id}/instantiate"
+    ensure_type_registry_loaded()
+    response = await auth_client.post(url, json=request)
+    assert response.status_code == 201, response.text
+    assert observed_counts == [149]
+    source = response.json()["nodes"][0]
+    assert source["node_type"] == "data.collection_load"
+    assert source["parameters"]["dataset_view_id"] == view.id
+    assert source["parameters"]["dataset_view_sha256"] == view.selection_sha256
+    revision = await test_session.scalar(
+        select(WorkflowDataSelectionRevision).where(WorkflowDataSelectionRevision.workflow_id == response.json()["id"])
+    )
+    assert revision.revision_number == 1
+    assert revision.selection["dataset_view_id"] == view.id
+    assert revision.selection["dataset_view_sha256"] == view.selection_sha256
+    node = await test_session.scalar(select(WorkflowNode).where(WorkflowNode.workflow_id == response.json()["id"]))
+    frozen = await execution_selection_revisions(
+        test_session,
+        workflow_id=response.json()["id"],
+        graph_digest=revision.graph_digest,
+        source_nodes=[node],
+        user_id=test_user.id,
+        workflow_project_id=project.id,
+    )
+    assert frozen[0]["selection"] == revision.selection
+
+    class Resolver:
+        async def resolve_experiment_collection(self, **kwargs):
+            return ResolvedExperimentCollection(
+                experiment.id, "Iris", (SimpleNamespace(file_id=17),), preloaded_dataset=deepcopy(ds)
+            )
+
+        async def resolve_dataset_view(self, **kwargs):
+            assert kwargs["view_id"] == view.id
+            assert kwargs["selection_sha256"] == view.selection_sha256
+            return {"selection": receipt, "project_id": project.id}
+
+    runtime_source = CollectionLoadNode("source", source["parameters"])
+    runtime_source.bind_execution_runtime(ExecutionRuntime(dataset_source_resolver=Resolver()))
+    result = await runtime_source.execute()
+    np.testing.assert_array_equal(result["default"].X, ds.X[1:])
+    assert ds.n_samples == 150
+    preview = await auth_client.post(
+        "/api/v1/workflow-templates/binding-compatibility-preview",
+        json={"project_id": project.id, "binding": binding, "use_saved_analysis_selection": True},
+    )
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["binding"]["dataset_view_sha256"] == view.selection_sha256
+    assert observed_counts == [149, 149]
+
+    async def refused(overrides, status):
+        response = await auth_client.post(url, json={**request, "data_bindings": {"source": {**binding, **overrides}}})
+        assert response.status_code == status, response.text
+        # Failed admission rolls back the request's shared test session.
+        for record in (test_user, project, experiment, view):
+            await test_session.refresh(record)
+
+    await refused({"dataset_view_sha256": "0" * 64}, 409)
+    await refused({"source_manifest_sha256": "0" * 64}, 409)
+    await refused({"asset_id": "different-projection"}, 409)
+    await refused({"all_files": False, "file_ids": [18]}, 409)
+    await refused({"dataset_view_id": view.id + 100}, 404)
+    await refused({"target_authority": None if with_target else authority.canonical_dict()}, 409)
+    if with_target:
+        await refused({"group_column": "batch"}, 409)
+    await refused({"dataset_view_sha256": None}, 422)
+    await refused({"included_sample_mask_hex": "ff"}, 422)
+    view.deleted_at = datetime.now(timezone.utc)
+    await test_session.commit()
+    await refused({}, 404)
+    view.deleted_at = None
+    view.project_id = project.id + 100
+    await test_session.commit()
+    await refused({}, 404)
+    view.project_id = project.id
+    experiment.user_id = test_user.id + 100
+    await test_session.commit()
+    await refused({}, 404)
+    experiment.user_id = test_user.id
+    await test_session.commit()
+    loaded.source_manifest_sha256 = "0" * 64
+    await refused({}, 409)
+    workflows = (await test_session.scalars(select(Workflow).where(Workflow.name == "Iris 149 analysis"))).all()
+    assert len(workflows) == 1
+
+
 def test_unlabeled_singleton_feature_table_uses_exact_source_observation_identity() -> None:
     source = SherpaDataset(
         X=np.arange(600, dtype=float).reshape(150, 4),
