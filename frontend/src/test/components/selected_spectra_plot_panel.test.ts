@@ -299,7 +299,7 @@ describe("SelectedSpectraPlotPanel", () => {
     });
 
     expect(wrapper.text()).toContain("Comparison preview");
-    expect(wrapper.text()).toContain("does not change the active workflow source");
+    expect(wrapper.find('a[href$="#preview-and-workflow-selection"]').exists()).toBe(true);
     expect(wrapper.text()).toContain("First 2 of 2 rows · 2 features");
     expect(wrapper.text()).toContain("sepal length (cm)");
     expect(wrapper.text()).toContain("Iris 001");

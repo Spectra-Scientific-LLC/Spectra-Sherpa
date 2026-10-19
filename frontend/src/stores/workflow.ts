@@ -780,9 +780,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
           }
 
           const staleSinceLastExecution = Boolean(
-            !data.integrity_hash ||
+            runResp.data.matches_current_definition === false ||
+            (runResp.data.matches_current_definition !== true && (!data.integrity_hash ||
             !runResp.data.integrity_hash ||
-            data.integrity_hash !== runResp.data.integrity_hash,
+            data.integrity_hash !== runResp.data.integrity_hash)),
           );
           isWorkflowStale.value = staleSinceLastExecution;
 

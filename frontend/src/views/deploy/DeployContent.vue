@@ -511,7 +511,7 @@
     >
       <div class="create-form">
         <div class="form-field">
-          <label for="watch-workflow">Saved model or imported campaign solution</label>
+          <label for="watch-workflow">Saved model or imported campaign solution <MethodHelp path="chemometrics/validation-application/#local-folder-watches" label="Folder watch input requirements" /></label>
           <Dropdown
             inputId="watch-workflow"
             v-model="newWatch.artifact_uid"
@@ -522,11 +522,6 @@
             placeholder="Select model"
             class="w-full"
           />
-          <small
-            >Incoming files must carry the fitted feature order and axis units. Sherpa portable CSV
-            preserves this metadata; plain CSV may not. Incompatible files produce a visible
-            error.</small
-          >
         </div>
         <PredictionUncertaintyEditor
           v-if="selectedWatchModel?.canonical_artifact_id"
@@ -636,6 +631,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import RelativeTime from "@/components/RelativeTime.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- deployment run payloads are backend-shaped and vary by execution status. */
 import { ref, computed, onMounted, onBeforeUnmount, watch, reactive } from "vue";

@@ -238,7 +238,6 @@
             <span class="essential-card-number">3</span>
             <div>
               <h4>Sample details</h4>
-              <p>Check identities, targets and groups before saving a portfolio.</p>
             </div>
           </div>
           <DatasetAnalysisReadinessCard
@@ -352,7 +351,6 @@
             <div class="collection-sample-table-header">
               <div>
                 <h5 class="panel-title">Sample metadata</h5>
-                <p>Exact identities and annotations retained with each spectrum.</p>
               </div>
               <Tag
                 :value="`${sampleTableState.complete ? 'Complete' : 'Preview'} · ${sampleTableState.rowCount} rows · ${sampleTableState.columnCount} columns`"
@@ -513,7 +511,6 @@
             <span class="essential-card-number">5</span>
             <div>
               <h4>Save data portfolio</h4>
-              <p>Name the reviewed files, samples, target and group for future analyses.</p>
             </div>
           </div>
           <slot name="portfolio-definitions" />
@@ -532,7 +529,6 @@
             <div class="axis-inventory-header">
               <div>
                 <h4 class="panel-title">Dimensions and axis sets</h4>
-                <p>Complete typed coordinates, labels, class schemes, and include masks.</p>
               </div>
               <Tag
                 v-if="axisInventoryShape.length"

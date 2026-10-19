@@ -102,7 +102,7 @@ describe("Runs workspace", () => {
     for (let reopen = 0; reopen < 2; reopen++) {
       const view = mountView(); await flushPromises();
       await view.get(".object-row").trigger("click"); await flushPromises();
-      expect(view.get('[aria-label="Saved model component evidence"]').text()).toContain("Choose latent variables");
+      expect(view.get('[aria-label="Saved model component evidence"]').text()).toContain("Latent variables");
       expect(view.get('[aria-label="Saved model component evidence"]').text()).toContain("Too few independent groups");
       expect(m.get).toHaveBeenCalledWith("/runs/42/outputs/fit/component_curve", { params: { project_id: 1 } });
       view.unmount();

@@ -143,10 +143,16 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     if (!validationContext.test(row.label) && !/^(?:Regression statistics|Target list|Spectral axis|Spectral intensity)/.test(row.label)) continue;
     // Population counts belong in a short report; individual row positions do not.
     let value = row.value.replace(/; split-input row positions.*$/, "");
+    const conciseContext: Record<string, string> = {
+      "Reported per retained workflow output below. Cross-validation is not external validation.": "Per output",
+      "Not established by this summary. Inspect the producer's retained fold execution before claiming fold-local fitting.": "Not established by this summary",
+      "No whole-group holdout recorded; row separation alone does not establish group separation.": "No whole-group holdout recorded",
+    };
+    value = conciseContext[value] ?? value;
     if (/^Target \(/.test(row.label) && validation?.regression_results?.length) value = value.replace(/; units: [^)]*(?=\))/, "");
     context.push([row.label, /^(?:Verified CV metric|Cross-validation (?:r2|rmse|mae|bias|q2))/i.test(row.label) ? shortValue(value) : value]);
   }
-  if (!validation) notices.push("Validation population was not retained in a readable summary; do not infer independent validation from metric names.");
+  if (!validation) notices.push("Validation population unavailable.");
   if (run.selection_provenance?.state === "unavailable") notices.push(run.selection_provenance.reason || "Saved data selection unavailable.");
   const groups: SummaryGroup[] = [{ title: run.name, rows: context, notices }];
   const regression = validation?.regression_results ?? [];
@@ -216,8 +222,8 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     }
     if (typeof diagnostics.effective_n_components === "number") {
       context.push([`PLS latent components (${node.label || node.node_id})`,
-        `${diagnostics.effective_n_components} fitted; requested ${diagnostics.requested_n_components ?? settings.n_components ?? "not recorded"}. Components model X–Y covariance; they are not CV folds. The fit uses the requested count subject to numerical rank/covariance limits; this count alone is not evidence of CV-based selection.`]);
-      context.push(["Explained-variance interpretation", "Entry [k] is the incremental fraction explained by latent component k, not fold k. X refers to predictors; Y refers to responses, with the fitted centering/scaling."]);
+        `${diagnostics.effective_n_components} fitted; requested ${diagnostics.requested_n_components ?? settings.n_components ?? "not recorded"} (not CV folds).`]);
+      context.push(["Explained variance", "Incremental fraction by component k, not fold k; X = predictors, Y = responses."]);
       for (const axis of ["x", "y"]) {
         const fractions = diagnostics[`${axis}_explained_variance`];
         if (Array.isArray(fractions) && fractions.length === diagnostics.effective_n_components
@@ -231,10 +237,10 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     if (folds !== undefined) {
       recordedCv = true;
       context.push([`CV configuration (${node.label || node.node_id})`,
-        `${folds} folds requested in saved settings; method ${settings.cv_method ?? settings.method ?? "not recorded"}; seed ${settings.random_seed ?? "not recorded"}. Each fold holds out a subset while fitting on the remaining subsets; see retained validation evidence for actual partitions. These are not latent components.`]);
+        `${folds} folds requested; method ${settings.cv_method ?? settings.method ?? "not recorded"}; seed ${settings.random_seed ?? "not recorded"}.`]);
     }
   }
-  if (!recordedCv) context.push(["CV configuration", "No executed CV fold design is retained; component variance entries do not establish cross-validation."]);
+  if (!recordedCv) context.push(["CV configuration", "No executed CV design retained"]);
   const preprocessing = nodes.filter(node => /^(?:preprocess|baseline|normalize|smooth|transfer)\./.test(node.node_type));
   if (preprocessing.length) context.push(["Preprocessing (saved operations)", preprocessing.map(node => {
     const settings = reportRows(run.params_snapshot?.[node.node_id]).filter(([key]) =>
@@ -284,20 +290,21 @@ export function scientificSummaryGroups(data: ReportData): SummaryGroup[] {
   });
 }
 
-const introduction = "Key results from retained evidence, without AI. Calibration fit and cross-validation are not external validation. No cross-run ranking is inferred. Numeric metrics use four significant figures (counts remain exact); see Detailed report / JSON for full precision and evidence.";
+const introduction = "Metrics: 4 significant figures; counts exact.";
+const methodologyUrl = "https://docs.spectrascientific.ai/workflows/reports-exports/#short-summary-default";
 const empty = "No key results available. Select a saved execution run and generate the report; a workflow definition alone is not a result.";
 const escapeHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 export function scientificSummaryHtml(data: ReportData): string {
   const groups = scientificSummaryGroups(data);
-  return `<h2>Short summary</h2><p>${introduction}</p>` + (groups.length ? groups.map(group =>
+  return `<h2>Short summary <a class="method-help" href="${methodologyUrl}" target="_blank" rel="noopener noreferrer" title="Summary methodology" aria-label="Summary methodology (opens documentation)">?</a></h2><p>${introduction}</p>` + (groups.length ? groups.map(group =>
     `<h3>${escapeHtml(group.title)}</h3><div style="overflow-x:auto"><table class="params-table"><tr>${(group.table?.headers ?? ["Result / context", "Value"]).map(label => `<th>${escapeHtml(label)}</th>`).join("")}</tr>${(group.table?.rows ?? group.rows).map(row => `<tr>${row.map(value => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("")}</table></div>${group.notices.map(notice => `<p>${escapeHtml(notice)}</p>`).join("")}`,
   ).join("") : `<p>${empty}</p>`);
 }
 
 export function scientificSummaryMarkdown(data: ReportData): string {
   const groups = scientificSummaryGroups(data);
-  return `## Short summary\n\n${introduction}\n\n` + (groups.length ? groups.map(group =>
+  return `## Short summary\n\n${introduction} [Summary methodology](${methodologyUrl})\n\n` + (groups.length ? groups.map(group =>
     `### ${reportMarkdownText(group.title)}\n\n| ${(group.table?.headers ?? ["Result / context", "Value"]).map(reportMarkdownText).join(" | ")} |\n| ${(group.table?.headers ?? ["Result / context", "Value"]).map(() => "---").join(" | ")} |\n${(group.table?.rows ?? group.rows).map(row => `| ${row.map(reportMarkdownText).join(" | ")} |`).join("\n")}\n\n${group.notices.map(reportMarkdownText).join("\n\n")}\n`,
   ).join("\n") : empty);
 }

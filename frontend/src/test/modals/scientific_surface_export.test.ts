@@ -106,7 +106,7 @@ describe("Scientific surface export authority", () => {
     await nextTick();
     expect(w.vm.tableData).toHaveLength(1);
     expect(w.vm.tableData[0]._label_full).toBe("S319");
-    expect(w.text()).toContain("regardless of preview limits or search filters");
+    expect(w.text()).toContain("CSV: 320 active rows");
   });
   it("GSC-02 caps display but keeps full export beyond the former 100000 bound", async () => {
     const w = table(Array.from({ length: 100001 }, (_, i) => i));
@@ -118,7 +118,7 @@ describe("Scientific surface export authority", () => {
     const w = table([[1, 2]], { wavenumbers: [500.001, 500.004], sample_labels: ["A,B"] });
     const output = await csv(w);
     expect(output).toBe('Index,Label,500.001,500.004\n1,"A,B",1,2\n');
-    expect(w.text()).toContain("not a dataset or model replay package");
+    expect(w.find('a[href$="#display-and-table-exports"]').exists()).toBe(true);
   });
   it("GSC-03 preserves non-spectral feature names and null values without borrowing target names", async () => {
     const w = table([[1, null]], {

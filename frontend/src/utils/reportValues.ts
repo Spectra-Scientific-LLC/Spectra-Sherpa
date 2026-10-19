@@ -62,7 +62,7 @@ export function reportRows(value: unknown, path = ""): [string, string][] {
   if (typeof value !== "object") return [];
   const record = value as Record<string, unknown>;
   const previewNotice: [string, string][] = record.target_truncated ? [[path ? `${path} / Target preview` : "Target preview",
-    `Only ${Array.isArray(record.target) ? record.target.length : "preview"} of ${record.target_original_rows ?? "unknown"} target rows retained in this preview; not the population size. Enable complete target lists for exact retained comparison values.`]] : [];
+    `${Array.isArray(record.target) ? record.target.length : "preview"} of ${record.target_original_rows ?? "unknown"} target rows in preview. Enable complete target lists for all values.`]] : [];
   return [...previewNotice, ...Object.entries(value).flatMap(([key, item]) =>
     internalField.test(key) ? [] : reportRows(item, path ? `${path} / ${key}` : key),
   )];

@@ -123,7 +123,7 @@ describe("deterministic short scientific report", () => {
   it("never treats sample comparison targets as aggregate result rows", () => {
     const previewRows = keyResultRows({ target: Array.from({ length: 20 }, (_, i) => i),
       target_truncated: true, target_original_rows: 174 });
-    expect(previewRows).toEqual([["Target preview", expect.stringContaining("Only 20 of 174 target rows")]]);
+    expect(previewRows).toEqual([["Target preview", expect.stringContaining("20 of 174 target rows in preview")]]);
     expect(keyResultRows({ comparison: { data: Array.from({ length: 4 }, () => ({ target: "Glucose (wt %)", reference: 1, predicted: 2 })) } })).toEqual([]);
     expect(keyResultRows({ calibration_comparison: { metadata: { n_samples: 20 }, data: [{ target: "Glucose" }] } })).toEqual([]);
   });
@@ -160,7 +160,7 @@ describe("deterministic short scientific report", () => {
     data.runs![0].saved_definition = null;
     const output = generateProvenanceReport(data);
     expect(output).not.toContain("Target (source)");
-    expect(output).toContain("Validation population was not retained");
+    expect(output).toContain("Validation population unavailable");
     expect(output).toContain("current editor settings were not substituted");
   });
   it("keeps zero, nonconvergence, PCA variance and explicitly scoped classifier metrics", () => {
@@ -176,7 +176,8 @@ describe("deterministic short scientific report", () => {
     data.runs!.push({ ...data.runs![0], id: 8, name: "Failed run", status: "failed" });
     const groups = scientificSummaryGroups(data);
     expect(groups.some(g => g.title === "Failed run" && g.notices.some(n => n.includes("incomplete")))).toBe(true);
-    expect(generateProvenanceReport(data)).toContain("No cross-run ranking");
+    expect(generateProvenanceReport(data)).toContain('aria-label="Summary methodology (opens documentation)"');
+    expect(generateProvenanceReport(data)).not.toContain("No cross-run ranking");
   });
   it("AI is absent unless explicitly opted in, and detailed results remain available", () => {
     const data = fixture();

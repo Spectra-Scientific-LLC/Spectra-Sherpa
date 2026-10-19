@@ -80,18 +80,21 @@ function sampled(trace: Trace, maxRows: number, priorityIds: ReadonlySet<string>
   return result;
 }
 
-/** Limits only identified sample rows. A spectrum's x/y points are features, not rows. */
+/** Visual limits count traces or plotted observations, not unique samples.
+ * The same sample can contribute multiple feature observations or panels. */
 export function displayPlot(
   data: Trace[], layout: Layout, prefs: DisplayPreferences,
   priorityIds: ReadonlySet<string> = new Set(),
 ) {
   let omitted = 0;
+  let omittedTraces = 0;
   let shown = data;
   const allSpectralLines = data.length > prefs.maxRows && data.every((trace) =>
     trace.type === "scatter" && String(trace.mode || "").includes("lines") &&
     !String(trace.mode || "").includes("markers"));
   if (allSpectralLines) {
     omitted = data.length - prefs.maxRows;
+    omittedTraces = omitted;
     shown = Array.from({ length: prefs.maxRows }, (_, index) =>
       data[Math.floor(index * (data.length - 1) / (prefs.maxRows - 1))]);
   }
@@ -111,7 +114,7 @@ export function displayPlot(
   shown = shown.map((trace, traceIndex) => {
     const copy: Trace = { ...trace };
     const mode = String(trace.mode || "");
-    // Point-only scatter traces represent sample rows. Do not crop spectral curves,
+    // Point-only scatter traces are plotted observations, not necessarily unique samples. Do not crop spectral curves,
     // lines, heatmap axes, grouped histograms, or scientific reference geometry.
     if (trace.type === "scatter" && mode.includes("markers") && !mode.includes("lines")) {
       const length = Array.isArray(trace.x) ? trace.x.length : Array.isArray(trace.y) ? trace.y.length : 0;
@@ -146,5 +149,9 @@ export function displayPlot(
     data: shown,
     layout: baseLayout,
     omitted,
+    omissionDescription: [
+      omittedTraces ? `${omittedTraces} traces` : "",
+      omitted > omittedTraces ? `${omitted - omittedTraces} plotted observations` : "",
+    ].filter(Boolean).join(" and "),
   };
 }

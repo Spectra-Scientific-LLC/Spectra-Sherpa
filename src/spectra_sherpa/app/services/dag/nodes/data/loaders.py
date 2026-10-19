@@ -501,7 +501,11 @@ class ExperimentDatasetReader:
                 "This execution environment cannot verify saved dataset definitions; "
                 "run through the application with the original dataset binding."
             )
-        from spectra_sherpa.app.lib.dataset_view_receipts import LoadedProjectDataset, materialize_selection_receipt
+        from spectra_sherpa.app.lib.dataset_view_receipts import (
+            LoadedProjectDataset,
+            materialize_selection_receipt,
+            selection_file_ids_match,
+        )
 
         resolved = await resolver(
             experiment_id=collection.experiment_id,
@@ -516,7 +520,9 @@ class ExperimentDatasetReader:
             "target_authority": self.parameters.get("target_authority") or None,
             "group_column": self.parameters.get("group_column") or None,
         }
-        if any(receipt.get(k) != value for k, value in expected.items()):
+        if not selection_file_ids_match(receipt, expected["selected_file_ids"]) or any(
+            receipt.get(k) != value for k, value in expected.items() if k != "selected_file_ids"
+        ):
             raise ValueError("Source parameters differ from the pinned dataset definition")
         source = dataset.meta.get("source_collection", {})
         loaded = LoadedProjectDataset(

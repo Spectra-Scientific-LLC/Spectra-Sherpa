@@ -143,6 +143,13 @@ def _compare_mcr_to_target(
     target = getattr(input_ds, "target", None)
     if target is None:
         return None
+    # Class annotations are not concentration references, even when classes
+    # happen to be encoded as numbers. Unsupervised decomposition remains valid.
+    context = getattr(input_ds, "target_context", None)
+    if getattr(context, "target_type", None) == "categorical":
+        return None
+    if np.asarray(target).dtype.kind not in "iuf":
+        return None
     target_data = np.asarray(target, dtype=np.float64)
     if target_data.ndim == 1:
         target_data = target_data.reshape(-1, 1)
@@ -1139,6 +1146,7 @@ class MCRNode(Node):
         C_dataset.meta.update(
             {
                 "type": "MCR_ALS",
+                "scientific_matrix_role": "component_concentrations",
                 "n_components": n_components,
                 "normSpec": effective_norm_spec,
                 "spectra_normalization": effective_norm_spec,
@@ -1158,6 +1166,7 @@ class MCRNode(Node):
         St_dataset.meta.update(
             {
                 "type": "MCR_ALS_St",
+                "scientific_matrix_role": "component_spectra",
                 "n_components": n_components,
                 "normSpec": effective_norm_spec,
                 "spectra_normalization": effective_norm_spec,

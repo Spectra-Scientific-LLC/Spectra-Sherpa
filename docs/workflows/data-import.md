@@ -140,3 +140,10 @@ A dataset is more than a grid of numbers. A few properties decide whether a mode
 ## Calibration Caution
 
 When spectra and reference values arrive from **separate files**, align by stable sample identity whenever possible. A row-order join can train a model that looks numerically successful while quietly learning mismatched targets — one of the most common and most costly calibration mistakes. The inspection panels and matching sample counts are your first checks; sample IDs are the reliable one.
+## Preview and workflow selection
+
+Comparison preview displays the checked datasets and files without changing the
+workflow source. Workflow binding uses the active dataset and its selected view.
+Feature-table previews show pairwise relationships, with distributions on the
+diagonal. Hover points for sample and target identity. Row/feature limits shown
+beside a plot apply to that preview, not the stored dataset.

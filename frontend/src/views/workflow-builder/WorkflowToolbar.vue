@@ -660,7 +660,7 @@ defineExpose({ summarizePurpose });
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #64748b;
+  color: #cbd5e1;
   padding: 12px 12px;
   cursor: pointer;
   transition: all 0.2s ease;

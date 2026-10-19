@@ -1,7 +1,7 @@
 <template>
   <details class="saved-qualification">
     <summary>Saved-model analytical qualification</summary>
-    <p>Operational readiness is separate. Assessment uses this exact saved PLS state and a named, independently collected My Dataset view. Human acceptance is a separate decision under a declared policy.</p>
+    <MethodHelp path="chemometrics/validation-application/#qualification-and-prediction-intervals" label="Saved-model qualification" />
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="history">Current status: <strong>{{ history.status.state }}</strong> · {{ history.status.reason || history.status.intended_population || 'Review the retained evidence.' }}</p>
     <p v-if="history?.status.state === 'stale_for_selected_dataset'" role="note">This assessment concerns its named validation view. A decision here will not qualify the dataset currently selected in My Dataset.</p>
@@ -48,7 +48,7 @@
     </fieldset>
     <details>
       <summary>Assess an external validation cohort</summary>
-      <p>Select a named dataset view with explicit specimen IDs and a matching reference response. Freeze the policy before looking at validation results. Legacy saved models without fitted specimen identity will report unavailable.</p>
+      <p>Select an independent validation view and a frozen acceptance policy.</p>
       <label>External dataset
         <select v-model="experimentId" @change="loadViews"><option :value="null">Choose a dataset</option><option v-for="item in experiments" :key="item.id" :value="item.id">{{ item.name }}</option></select>
       </label>
@@ -69,6 +69,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import QualificationPolicyForm from './QualificationPolicyForm.vue';
 import api from '@/api/client';

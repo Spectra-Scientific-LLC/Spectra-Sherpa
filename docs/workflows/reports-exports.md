@@ -24,6 +24,12 @@ If AI narrative is unavailable, the scientific outputs should still remain visib
 
 ### Short summary (default)
 
+Summary metrics use four significant figures, with exact counts. The report
+does not infer cross-run rankings or external validation from calibration or CV
+metrics. Full precision and retained evidence remain in the detailed report and
+JSON export. Component variance entries index components, not cross-validation
+folds; consult the executed fold design for the actual validation partitions.
+
 Shared units appear once in Result / context: the input spectral axis (such as
 wavelength in nm), spectral intensity when recorded, and each response Y unit
 (also used by predictions). Matching response units are omitted from population
@@ -147,3 +153,18 @@ The same scope applies to Python, notebook, HTML, Markdown and JSON exports.
 If a value, unit, split, figure or population was unavailable in the retained
 run, the export records that limitation rather than resolving it from today's
 defaults or the open workflow editor.
+## Display and table exports
+
+Display settings affect previews, not fitted calculations or retained results.
+An omission count refers to plotted observations or traces, not necessarily
+unique samples. Increase display limits in Settings when needed.
+
+A plot-coordinate table contains the drawing coordinates of its curves and
+reference guides. Series identify traces; null values preserve line breaks.
+It is not necessarily one row per sample. Use the source dataset for its sample
+matrix. Mixed-unit metric tables may have no meaningful shared quantitative axis.
+
+CSV table exports contain all active rows and features of the result, regardless
+of preview paging or search filters. Row numbers refer to retained source positions.
+CSV carries values and labels, not the full unit, role, run, or model contract.
+Use Prepare Export for supported dataset roundtrips.

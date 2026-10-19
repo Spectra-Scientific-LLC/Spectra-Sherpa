@@ -11,6 +11,7 @@ from sqlalchemy.orm import selectinload
 
 from spectra_sherpa.app.contracts.project_access import uses_managed_project_access
 from spectra_sherpa.app.contracts.scientific_access import require_scientific_access
+from spectra_sherpa.app.lib.dataset_view_receipts import selection_file_ids_match
 from spectra_sherpa.app.lib.target_authority import verify_target_authority
 from spectra_sherpa.app.models.dataset_view import DatasetView
 from spectra_sherpa.app.models.experiment import Experiment
@@ -19,8 +20,8 @@ from spectra_sherpa.app.models.workflow_data_selection_revision import WorkflowD
 from spectra_sherpa.app.models.workflow_node import WorkflowNode
 from spectra_sherpa.app.schemas.workflow_data_selection import WorkflowSourceSelection
 from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
-from spectra_sherpa.app.services.dataset_views import receipt_sha256, verify_selection_receipt
-from spectra_sherpa.app.services.model_application import load_project_dataset
+from spectra_sherpa.app.services.dataset_views import materialize_selection_receipt, receipt_sha256
+from spectra_sherpa.app.services.model_application import LoadedProjectDataset, load_project_dataset
 
 
 def source_parameters(selection: WorkflowSourceSelection) -> dict[str, Any]:
@@ -138,7 +139,7 @@ async def validate_selection(
     user_id: int,
     workflow_project_id: int | None,
     allow_deleted_view: bool = False,
-) -> None:
+) -> LoadedProjectDataset:
     query = select(Experiment).where(Experiment.id == selection.experiment_id)
     if uses_managed_project_access():
         # Never expose whether an experiment exists in a different tenant/project.
@@ -189,7 +190,7 @@ async def validate_selection(
         ):
             raise HTTPException(status_code=409, detail="Saved dataset definition digest changed")
         try:
-            verify_selection_receipt(loaded, view.selection)
+            materialized = materialize_selection_receipt(loaded, view.selection)
         except ValueError as exc:
             raise HTTPException(
                 status_code=409, detail="Saved dataset definition no longer matches its source or cohort"
@@ -197,7 +198,7 @@ async def validate_selection(
         receipt = view.selection
         if (
             selection.stage != receipt["stage"]
-            or selection.selected_file_ids != receipt["selected_file_ids"]
+            or not selection_file_ids_match(receipt, selection.selected_file_ids)
             or selection.asset_id != receipt["asset_id"]
             or selection.source_manifest_sha256 != receipt["source_manifest_sha256"]
             or selection.collection_definition_sha256 != receipt["collection_definition_sha256"]
@@ -207,6 +208,8 @@ async def validate_selection(
             or selection.group_column != receipt["group_column"]
         ):
             raise HTTPException(status_code=409, detail="Workflow selection differs from the saved dataset definition")
+        return materialized
+    return loaded
 
 
 def workflow_graph_digest(workflow: Workflow) -> str:

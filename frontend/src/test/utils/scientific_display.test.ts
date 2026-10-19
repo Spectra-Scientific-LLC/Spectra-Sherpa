@@ -113,7 +113,7 @@ describe("sample prediction ledger", () => {
   });
 
   it("warns that calibration-only rows are fitted values, not validation", () => {
-    expect(mount(ValidationLedger, { props: { rows } }).find('[role="note"]').text()).toContain("not how it predicts new samples");
+    expect(mount(ValidationLedger, { props: { rows } }).find('[role="note"]').text()).toContain("Calibration fitted values");
     const mixed = [...rows, { ...rows[0], sample: "3", role: "held_out_test" }];
     expect(mount(ValidationLedger, { props: { rows: mixed } }).find('[role="note"]').exists()).toBe(false);
   });

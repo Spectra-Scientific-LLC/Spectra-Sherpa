@@ -129,6 +129,21 @@ describe("buildNodeOutput", () => {
     expect(output.ports?.y_train.descriptor?.shape).toEqual([1, 1]);
   });
 
+  it("keeps equal-sized training and test response identities separate", () => {
+    const dataset = (label: string) => ({ type: "SherpaDataset", data: [[1]],
+      y_axis: { labels: [label] }, target_context: { target_names: ["Moisture"] } });
+    const output = buildNodeOutput({ X_train: dataset("train-A"), X_test: dataset("test-B"), y_train: [2], y_test: [3] },
+      undefined, null, {
+        y_train: descriptor("y_train", "target_matrix", [1, 1], ["table"]),
+        y_test: descriptor("y_test", "target_matrix", [1, 1], ["table"]),
+      });
+    expect(output.ports?.y_train.metadata.sample_labels).toEqual(["train-A"]);
+    expect(output.ports?.y_test.metadata.sample_labels).toEqual(["test-B"]);
+    const missing = buildNodeOutput({ X_train: dataset("train-A"), y_test: [3] }, undefined, null,
+      { y_test: descriptor("y_test", "target_matrix", [1, 1], ["table"]) });
+    expect(missing.ports?.y_test.metadata.sample_labels).toBeUndefined();
+  });
+
   it("carries dataset target names and sample labels onto TargetMatrix ports", () => {
     const output = buildNodeOutput(
       {

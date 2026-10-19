@@ -3,7 +3,6 @@
     <div>
       <span class="eyebrow">Multi-well experiments</span>
       <h3 id="plate-preferences-title">Default plate format</h3>
-      <p>New acquisition plans start with this backend-validated laboratory format.</p>
     </div>
     <div class="field">
       <label for="default-plate-format">Plate format</label>

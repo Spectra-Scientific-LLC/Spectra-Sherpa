@@ -1,18 +1,12 @@
 <template>
   <section aria-label="Saved PLS-DA diagnostics" class="plsda-diagnostics">
-    <h3>PLS-DA sample diagnostics</h3>
-    <p>
-      Calibration scores, T²/Q influence and selected-sample variable terms from this fitted
-      classifier. A screening flag asks for inspection; it does not establish a bad measurement or
-      validate class predictions.
-    </p>
+    <h3>PLS-DA sample diagnostics <MethodHelp path="chemometrics/validation-application/#diagnostic-review" label="Reviewing classifier diagnostics" /></h3>
     <p v-if="loading" role="status">Loading saved classifier evidence…</p>
     <p v-else-if="error" role="status">{{ error }}</p>
     <template v-else-if="receipt">
       <p>
         {{ receipt.reference_count }} calibration observations · {{ receipt.components }} latent
-        variables · {{ receipt.space }}. Component loadings describe model patterns; the bars below
-        are the selected sample's additive Q and signed T² terms.
+        variables · {{ receipt.space }}.
       </p>
       <p>
         Fitted global screen: {{ receipt.screening_method }}; Q limit method
@@ -167,6 +161,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, ref, watch } from "vue";
 import api from "@/api/client";
 import PlotlyChart from "@/components/PlotlyChart.vue";

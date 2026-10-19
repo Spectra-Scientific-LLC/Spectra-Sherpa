@@ -44,3 +44,10 @@ defineEmits<{
   (event: "update:styleValue", value: string): void;
 }>();
 </script>
+
+<style scoped>
+.control-group > label {
+  color: inherit;
+  opacity: 1;
+}
+</style>

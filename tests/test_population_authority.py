@@ -191,6 +191,33 @@ def test_training_reference_scaling_does_not_qualify_external_model():
     assert receipts["eval"]["qualification"] == "unverified_lineage"
 
 
+@pytest.mark.parametrize("vip_fit_branch", ["train", "test", "source"])
+def test_vip_feature_evidence_preserves_fit_ancestry_without_granting_leakage(vip_fit_branch):
+    nodes, edges = graph()
+    nodes.extend([
+        {"id": "vip_fit", "type": "model.fitted_pls", "parameters": {"n_components": 2}},
+        {"id": "select_train", "type": "selection.variable_select", "parameters": {"method": "vip"}},
+        {"id": "select_test", "type": "selection.variable_select", "parameters": {"method": "apply_mask"}},
+    ])
+    edges[1] = edge("select_train", "fit", "X_selected")
+    edges[3] = edge("select_test", "apply", "X_selected")
+    edges.extend([
+        edge("source", "vip_fit") if vip_fit_branch == "source" else edge("split", "vip_fit", "X_" + vip_fit_branch),
+        edge("split", "select_train", "X_train", "X"),
+        edge("vip_fit", "select_train", "vip_scores", "importance_scores"),
+        edge("split", "select_test", "X_test", "X"),
+        edge("select_train", "select_test", "mask", "mask"),
+    ])
+    issues, receipts = authority(nodes, edges)
+    if vip_fit_branch == "train":
+        assert not issues
+        assert receipts["eval"]["role"] == "held_out_test"
+        assert receipts["eval"]["fitted_populations"] == [["split", "train"]]
+    else:
+        assert issues
+        assert receipts["eval"]["role"] == "unqualified_evaluation"
+
+
 def test_peak_guided_pls_retains_training_mask_lineage_for_held_out_evaluation():
     nodes, edges = graph()
     nodes.extend(

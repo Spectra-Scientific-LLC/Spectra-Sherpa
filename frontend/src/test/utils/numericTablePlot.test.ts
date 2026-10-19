@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { numericTableColumns, numericTableColumnPlot } from "@/utils/numericTablePlot";
 
 describe("numeric table presentation", () => {
+  it("keeps heterogeneous metric records table-only", () => {
+    expect(numericTableColumns({ data: [{ key: "RMSE", value: .1 }, { key: "n", value: 20 }] })).toEqual([]);
+    expect(numericTableColumns({ data: [["RMSE", .1], ["role", "test"]], metadata: { column_names: ["Key", "Value"] } })).toEqual([]);
+  });
   it("plots consensus record measurements without treating membership as measurements", () => {
     const value = { data: [
       { consensus_peak_id: "peak_1", median_pos: 1200, median_height: null, members: [{ sample: 1 }] },

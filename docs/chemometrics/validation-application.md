@@ -153,3 +153,47 @@ produce actionable execution errors. Qualification evidence is optional.
 
 A yellow star indicates recorded validation evidence in an imported campaign
 package. It does not certify performance on new samples or restrict other models.
+## Qualification and prediction intervals
+
+Deploy-ready describes operational readiness, not intended-use acceptance or
+regulatory compliance. Qualification needs independent validation and human review
+against a previously frozen laboratory policy. Post-hoc thresholds are exploratory.
+
+Prediction intervals require a calibration record for the exact frozen pipeline.
+Use distinct specimens with explicit sample IDs and reference values and units;
+average repeated measurements first. Calibration specimens must not have been used
+to fit or select the model. Declare the intended population, reference method,
+independence and exchangeability. The reported level is per-response marginal
+coverage, not laboratory qualification. Without a selected record, predictions
+are point estimates.
+
+## Instrument QC
+
+QC records inform review while predictions continue. Declared absolute tolerances
+are not statistical process control or laboratory certification. Records are
+immutable; a policy change does not clear failures. Recovery requires a new passing
+control and acknowledgement. Revalidation requires post-maintenance validation
+and the current accepted qualification decision.
+
+## Diagnostic review
+
+Diagnostic plots belong to their fitted source run. Selecting an observation
+links it across plots and the sample table. A screening flag asks for inspection;
+it does not by itself establish a bad measurement or validate predictions.
+
+Loadings describe variables in a component, not selected-sample T²/Q contributions.
+Influence limits use all fitted components, with limits appropriate to calibration
+or projected application roles. Classifier contribution bars show additive Q and
+signed T² terms. Later dataset or workflow decisions do not change a saved fit.
+
+Selection frequency counts the fraction of outer-fold selections containing each
+variable; it is not a loading or a probability of chemical importance. PCA
+reconstruction describes predictor-space compression, not response accuracy.
+
+## Reference values
+
+Record the reference method, units and precision used for each response.
+Unknown method or precision remains a qualification gap. Replicate counts and
+digests document a declaration; review the source measurements and their
+specimen mapping before treating precision as verified. Reference precision
+does not by itself create prediction intervals.

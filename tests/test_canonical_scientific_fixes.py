@@ -70,6 +70,8 @@ def test_classifier_application_binds_physical_input(kind, mutation):
     application = {"knn": ApplyKNNNode, "simca": ApplySIMCANode}[kind]("apply", {})
     valid = asyncio.run(application.execute(default=data, fitted_state=state))
     assert len(valid.outputs["y_pred"]) == 60
+    assert valid.diagnostics["sample_labels"] == [f"s{i}" for i in range(60)]
+    assert valid.diagnostics["classes"] == ["a", "b"]
     altered = data.copy()
     if mutation == "reverse":
         altered = dataset(data.X[:, ::-1])

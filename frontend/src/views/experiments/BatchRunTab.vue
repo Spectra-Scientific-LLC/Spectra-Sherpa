@@ -1,13 +1,10 @@
 <template>
   <div class="batch-run-tab">
-    <h3>Verify workflows against dataset definitions</h3>
-    <p>Choose an execution mode, workflows, and datasets. Review each combination before starting.</p>
+<h3>Batch <MethodHelp path="workflows/projects-datasets-runs/#batch-execution" label="Batch execution modes" /></h3>
     <fieldset :disabled="submitting || loading">
       <legend>Execution mode</legend>
       <label><input v-model="mode" type="radio" value="apply_model" /> Apply trained model — no refit</label>
       <label><input v-model="mode" type="radio" value="run_workflow" /> Run workflow — train/evaluate</label>
-      <p v-if="mode === 'apply_model'">Use existing fitted models and preprocessing on the whole included dataset. Without reference targets, no accuracy statistics are reported.</p>
-      <p v-else>Start the saved workflow with this dataset. Its own split, training, and evaluation nodes determine the statistics. The original canvas and fitted models stay unchanged.</p>
     </fieldset>
     <p v-if="error" role="alert" class="batch-error">{{ error }}</p>
     <p v-if="loading" role="status">Loading project workflows and dataset definitions…</p>
@@ -62,7 +59,6 @@
         <Button label="Check compatibility" :loading="checking" :disabled="!canCheck" @click="checkCompatibility" />
         <Button label="Run selected combinations" icon="pi pi-play" :loading="submitting" :disabled="!canSubmit" @click="handleSubmit" />
       </div>
-      <p class="batch-hint">Each combination is saved separately in Run History with a shared batch identifier. Compare dataset-level statistics there; execution mode and cohort are descriptive labels, not restrictions on comparison.</p>
       <p v-if="progress" role="status">{{ progress }}</p>
     </section>
     <PrivateBatchUpload v-if="mode === 'apply_model' && activeArtifactUids.length === 1"
@@ -71,6 +67,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import Button from "primevue/button";
 import { useToast } from "primevue/usetoast";

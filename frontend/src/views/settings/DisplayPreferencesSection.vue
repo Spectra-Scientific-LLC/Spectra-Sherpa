@@ -1,7 +1,6 @@
 <template>
   <section class="display-preferences" aria-label="Display defaults">
-    <h3>Display defaults</h3>
-    <p>Visual previews only. Dataset choices, calculations, retained results and full exports do not change.</p>
+<h3>Display defaults <MethodHelp path="workflows/reports-exports/#display-and-table-exports" label="Display and export scope" /></h3>
     <div class="preference-grid">
       <label>Maximum rows in plots and tables
         <select v-model.number="prefs.maxRows" aria-label="Maximum display rows">
@@ -48,6 +47,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
 const prefs = useDisplayPreferences();
 </script>

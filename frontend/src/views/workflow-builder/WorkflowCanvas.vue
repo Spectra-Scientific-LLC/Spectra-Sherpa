@@ -1308,7 +1308,7 @@ defineExpose({ centerNode, selectedNodeIds, selectAll, clearSelection, exportPng
   border-radius: 4px;
   font-size: 0.7rem;
   font-weight: 500;
-  color: #3b82f6;
+  color: #93c5fd;
   font-family: "SF Mono", Monaco, monospace;
 }
 

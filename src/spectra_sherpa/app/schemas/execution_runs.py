@@ -65,6 +65,7 @@ class ExecutionRunOut(BaseModel):
     node_statuses: dict[str, str] | None
     error: str | None
     integrity_hash: str | None
+    matches_current_definition: bool | None = None
     executed_at: UtcTimestamp
     created_at: UtcTimestamp
     notes: str | None

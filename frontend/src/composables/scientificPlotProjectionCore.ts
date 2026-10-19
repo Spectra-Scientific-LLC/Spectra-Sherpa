@@ -1,4 +1,5 @@
 import { matrixColorEncoding, scoreGeometry, scientificNumber } from "@/utils/scientificEncoding";
+import { hasVariableSelectionHistory } from "@/utils/selectedSpectralCoordinates";
 /**
  * Internal renderer core for the canonical scientific projection facade.
  *
@@ -1181,7 +1182,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
 
     return loadings.map((loading: number[], i: number) => ({
       type: "scatter",
-      mode: "lines",
+      mode: hasVariableSelectionHistory(metadata, loadingsPayload) ? "markers" : "lines",
       x: x_values,
       y: loading,
       name: axisLabels[i] || `PC${i + 1}`,
@@ -1314,7 +1315,9 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         },
       };
     }
-    const labelled = selected.length <= 30 ? selected.length : 24;
+    // Dense spectral variables cluster strongly; arbitrary text subsets still
+    // overlap. Keep their identities in hover and the numeric Data view.
+    const labelled = selected.length <= 12 ? selected.length : 0;
     const theta = Array.from({ length: 181 }, (_, index) => (2 * Math.PI * index) / 180);
     const data = [
       {
@@ -1332,7 +1335,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         x: selected.map((variable) => variable.x),
         y: selected.map((variable) => variable.y),
         text: selected.map((variable, index) => index < labelled ? variable.name : ""),
-        textposition: "top center",
+        textposition: selected.map((_, index) => index % 2 ? "bottom center" : "top center"),
         textfont: { color: "#334155", size: 10 },
         customdata: selected.map((variable) => [variable.name, variable.x, variable.y]),
         marker: { color: "#ef4444", size: 5 },
@@ -1350,7 +1353,8 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         height: 510,
         showlegend: selected.length < vectors.length,
         hovermode: "closest",
-        margin: { ...basePlotLayout.margin, t: 30 },
+        margin: { ...basePlotLayout.margin, t: 75, b: 80, l: 85 },
+        legend: { orientation: "h", x: 0, y: 1.08, yanchor: "bottom" },
         xaxis: {
           ...basePlotLayout.xaxis,
           title: `r(variable, PC${xIndex + 1})`,
@@ -1484,12 +1488,12 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     return {
       data: [
         ...scree.map((trace: any) => ({ ...trace, xaxis: "x", yaxis: "y", showlegend: false })),
-        ...scores.map((trace: any) => ({ ...trace, xaxis: "x2", yaxis: "y2", showlegend: false })),
+        ...scores.map((trace: any) => ({ ...trace, xaxis: "x2", yaxis: "y2" })),
         ...correlations.data.map((trace: any, index: number) => ({
           ...trace,
           xaxis: "x3",
           yaxis: "y3",
-          showlegend: false,
+          showlegend: index === 1,
           ...(index === 1 && Array.isArray(trace.text)
             ? { text: trace.text.map((label: string, labelIndex: number) => labelIndex < 12 ? label : "") }
             : {}),
@@ -1498,16 +1502,17 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       layout: {
         ...basePlotLayout,
         title: "PCA Summary",
-        height: 470,
-        showlegend: false,
-        margin: { t: 55, r: 25, b: 65, l: 55 },
-        xaxis: { ...basePlotLayout.xaxis, domain: [0, 0.18], title: "Component" },
-        yaxis: { ...basePlotLayout.yaxis, domain: [0.1, 0.95], visible: false, range: [0, 105] },
-        xaxis2: { ...basePlotLayout.xaxis, domain: [0.25, 0.59], title: xLabel, zeroline: true },
-        yaxis2: { ...basePlotLayout.yaxis, domain: [0.1, 0.95], title: yLabel, zeroline: true,
+        height: 1100,
+        showlegend: true,
+        legend: { orientation: "h", x: 0, y: 1.06, yanchor: "bottom", traceorder: "normal" },
+        margin: { t: 130, r: 45, b: 75, l: 95 },
+        xaxis: { ...basePlotLayout.xaxis, domain: [0, 1], anchor: "y", title: "Component", automargin: true },
+        yaxis: { ...basePlotLayout.yaxis, domain: [0.76, 1], anchor: "x", title: "Explained variance (%)", range: [0, 105], automargin: true },
+        xaxis2: { ...basePlotLayout.xaxis, domain: [0, 1], anchor: "y2", title: xLabel, zeroline: true, automargin: true },
+        yaxis2: { ...basePlotLayout.yaxis, domain: [0.38, 0.64], anchor: "x2", title: yLabel, zeroline: true, automargin: true,
           ...scoreGeometry, scaleanchor: "x2" },
-        xaxis3: { ...basePlotLayout.xaxis, domain: [0.66, 1], title: `r(variable, PC${pcaXAxis.value + 1})`, range: [-1.12, 1.12], zeroline: true },
-        yaxis3: { ...basePlotLayout.yaxis, domain: [0.1, 0.95], title: `r(variable, PC${pcaYAxis.value + 1})`, range: [-1.12, 1.12],
+        xaxis3: { ...basePlotLayout.xaxis, domain: [0, 1], anchor: "y3", title: `r(variable, PC${pcaXAxis.value + 1})`, range: [-1.12, 1.12], zeroline: true, automargin: true },
+        yaxis3: { ...basePlotLayout.yaxis, domain: [0, 0.26], anchor: "x3", title: `r(variable, PC${pcaYAxis.value + 1})`, range: [-1.12, 1.12], automargin: true,
           zeroline: true, scaleanchor: "x3", scaleratio: 1 },
         annotations: (correlations.layout as any).annotations.map((arrow: any) => ({
           ...arrow, xref: "x3", yref: "y3", axref: "x3", ayref: "y3",
@@ -2725,6 +2730,7 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     if (!Array.isArray(data[0])) return [];
 
     const grouping = typedMetadataGrouping.value;
+    const selectedBands = hasVariableSelectionHistory(metadata, nodeOutput.value?.presentation_value);
     if (grouping.kind === "valid" && grouping.colorOptions.length > 0) {
       return buildMetadataLineTraces(
         wavenumbers,
@@ -2733,13 +2739,13 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
         sampleColorField.value,
         sampleSymbolField.value,
         50,
-      );
+      ).map(trace => selectedBands ? { ...trace, mode: "markers" as const } : trace);
     }
 
     const maxTraces = Math.min(data.length, 50);
     return data.slice(0, maxTraces).map((spectrum: number[], i: number) => ({
       type: "scatter",
-      mode: "lines",
+      mode: selectedBands ? "markers" : "lines",
       x: wavenumbers,
       y: spectrum,
       name: labels[i] || `Spectrum ${i + 1}`,

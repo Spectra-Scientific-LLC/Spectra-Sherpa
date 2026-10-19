@@ -123,7 +123,8 @@ describe("PlotlyChart", () => {
     const [, data, layout] = reactMock.mock.calls.at(-1)!;
     expect(data[0].x).toHaveLength(300);
     expect(layout.annotations).toBeUndefined();
-    expect(wrapper.text()).toContain("Display limit: 100 sample rows omitted from this plot");
+    expect(wrapper.text()).toContain("Display limit: 100 plotted observations omitted.");
+    expect(wrapper.find('a[href$="#display-and-table-exports"]').exists()).toBe(true);
     expect(downloadMock).toHaveBeenCalledOnce();
     wrapper.unmount();
   });

@@ -290,10 +290,17 @@ const enrichSampleIdentityMetadata = (
 };
 
 const enrichTargetPortMetadata = (ports: Record<string, PortOutput>): void => {
-  const dataset = Object.values(ports)
+  const datasets = Object.values(ports)
     .map((port) => port.value)
-    .find(isDatasetPayload);
-  if (!dataset) return;
+    .filter(isDatasetPayload);
+  for (const [portName, port] of Object.entries(ports)) {
+    if (port.descriptor?.scientific_kind !== "target_matrix") continue;
+    // Split cohorts may have equal sizes. Shape agreement is not identity:
+    // bind each response to its named X cohort, never the first dataset.
+    const paired = portName.startsWith("y_") ? ports[`X_${portName.slice(2)}`]?.value : undefined;
+    const dataset = isDatasetPayload(paired) ? paired
+      : !portName.startsWith("y_") && datasets.length === 1 ? datasets[0] : undefined;
+    if (!dataset) continue;
 
   const targetContext = isRecord(dataset.target_context) ? dataset.target_context : {};
   const declaredNames = nonEmptyStringArray(targetContext.target_names);
@@ -307,8 +314,6 @@ const enrichTargetPortMetadata = (ports: Record<string, PortOutput>): void => {
   const sampleLabels =
     metadataSampleLabels.length > 0 ? metadataSampleLabels : nonEmptyStringArray(sampleAxis.labels);
 
-  for (const port of Object.values(ports)) {
-    if (port.descriptor?.scientific_kind !== "target_matrix") continue;
     const sampleCount = port.descriptor.shape?.[0] ?? 0;
     const targetCount = port.descriptor.shape?.[1] ?? 0;
     const exactSampleLabels = sampleLabels.length === sampleCount ? sampleLabels : [];

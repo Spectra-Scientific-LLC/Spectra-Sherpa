@@ -552,7 +552,11 @@ class DBSCANNode(Node):
                 max_value=100000,
                 max_value_reason="Bounds neighborhood support bookkeeping to a finite cohort-scale request.",
                 step=1,
-                description="Minimum samples per cluster",
+                description=(
+                    "Minimum samples within the neighborhood radius, including the point itself, "
+                    "for a core point. This is not a minimum cluster-size filter. "
+                    "Points not density-connected to a core point are labeled noise."
+                ),
                 required=True,
                 category="basic",
             ),

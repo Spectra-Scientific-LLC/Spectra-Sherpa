@@ -1,11 +1,6 @@
 <template>
   <section class="saved-diagnostics" aria-label="Saved model diagnostics">
-    <h3>Diagnostic workbench</h3>
-    <p>
-      These plots and decisions belong to the fitted source run. Selecting a sample links its
-      position across plots, the table, explanations and Ask Sherpa. Screening alone does not
-      establish a bad measurement.
-    </p>
+    <h3>Diagnostic workbench <MethodHelp path="chemometrics/validation-application/#diagnostic-review" label="Reviewing model diagnostics" /></h3>
     <p v-if="loading" role="status">Loading exact saved-run evidence…</p>
     <p v-else-if="error" role="status">{{ error }}</p>
     <template v-else-if="review">
@@ -96,11 +91,7 @@
           empty-message="No exact fitted loadings were retained."
         />
       </div>
-      <p v-if="loadingRows">
-        Loadings describe variables in the selected component. They are not the selected sample's
-        T²/Q contributions. Score and influence limits use all fitted components.
-      </p>
-      <p v-else role="status">Fitted loadings are unavailable for this saved model.</p>
+      <p v-if="!loadingRows" role="status">Fitted loadings are unavailable for this saved model.</p>
       <p>
         Influence limits: fitted calibration T² {{ number(t2Limit ?? null) }}; projected application
         T² {{ number(applicationT2Limit ?? null) }}; Q {{ number(qLimit ?? null) }}. Each
@@ -220,12 +211,12 @@
       <button v-if="workflowId" type="button" @click="emit('open-workflow')">
         Open source workflow to mark, exclude or restore and refit
       </button>
-      <p>Saved fits do not change when a later workflow or dataset decision is made.</p>
     </template>
   </section>
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, ref, watch } from "vue";
 import api from "@/api/client";
 import PlotlyChart from "@/components/PlotlyChart.vue";

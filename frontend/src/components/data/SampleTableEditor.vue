@@ -18,7 +18,6 @@
     <div class="editor-intro">
       <div>
         <strong>{{ sampleCount.toLocaleString() }} source samples</strong>
-        <p>Review responses, groups, exclusions, and physical well positions.</p>
       </div>
       <div class="intro-tags">
         <Tag :value="`${includedSampleCount.toLocaleString()} included`" severity="success" />
@@ -132,8 +131,7 @@
     </section>
 
     <section class="control-section" aria-labelledby="reference-values-title">
-      <div class="section-heading"><h3 id="reference-values-title">Reference-value quality</h3></div>
-      <p>Record how the selected response was measured. Unknown method or precision stays an explicit qualification gap.</p>
+      <div class="section-heading"><h3 id="reference-values-title">Reference-value quality <MethodHelp path="chemometrics/validation-application/#reference-values" label="Reference-value quality" /></h3></div>
       <div class="editor-controls">
         <div v-if="selectedTargetType === 'continuous'" class="field">
           <label for="reference-units">Response units</label>
@@ -172,8 +170,6 @@
           <InputText id="reference-precision-study" v-model.trim="referencePrecisionStudy" placeholder="Separate replicate study or laboratory record" />
         </div>
       </div>
-      <small v-if="referenceBasis === 'replicate_mean'">A count or digest is a declaration, not proof of the specimen-to-replicate mapping.</small>
-      <small v-if="referencePrecisionJson">Reported precision remains unverified until its source replicates and mapping are reviewed. It does not create a prediction interval.</small>
     </section>
 
     <section class="control-section" aria-labelledby="group-annotations-title">
@@ -549,6 +545,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, ref, useId, watch } from "vue";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";

@@ -74,6 +74,11 @@ function factory(overrides: Record<string, any> = {}) {
 }
 
 describe("DataTableModal", () => {
+  it("labels component-spectrum rows as components rather than specimens", () => {
+    const wrapper = factory({ nodeOutput: { data: [[1, 2], [3, 4]],
+      metadata: { scientific_matrix_role: "component_spectra", sample_labels: ["IC 1", "IC 2"], wavenumbers: [1200, 1190] } } });
+    expect((wrapper.vm as any).tableColumns.map((column: any) => column.header)).toEqual(["#", "Component", "1200", "1190"]);
+  });
   it("uses source identities instead of HCA cluster assignments as sample names", () => {
     const wrapper = factory({ nodeType: "model.hca", nodeOutput: {
       data: [0, 0, 1], metadata: { type: "HCA", sample_labels: ["0", "0", "1"],
@@ -89,11 +94,11 @@ describe("DataTableModal", () => {
     const names = values.map((_, i) => i === 553 ? "added::peak_magnitude" : `feature_${i + 1}`);
     const wrapper = factory({ nodeOutput: { data: [values], metadata: { column_names: names } } });
     const vm = wrapper.vm as any;
-    expect(vm.columnPageOptions).toHaveLength(12);
-    vm.columnPage = 11;
+    expect(vm.columnPageOptions).toHaveLength(139);
+    vm.columnPage = 138;
     await wrapper.vm.$nextTick();
     expect(vm.tableColumns.map((c: any) => c.header)).toContain("added::peak_magnitude");
-    expect(vm.tableData[0].col_550).toBe(550);
+    expect(vm.tableData[0].col_552).toBe(552);
     expect(vm.tableData[0].col_553).toBeNull();
     expect(vm.tableData[0]._index).toBe(1);
     wrapper.unmount();
@@ -116,6 +121,22 @@ describe("DataTableModal", () => {
       "Lavender 01",
       "Lavender 28",
     ]);
+  });
+
+  it.each(["class_probabilities", "class_response_scores_not_probabilities", "normalized_inverse_distance_affinity_not_probability"])("labels the canonical %s matrix without guessing from shape", (semantics) => {
+    const wrapper = factory({ nodeOutput: { data: [[0.4, 0.6]],
+      metadata: { diagnostics: { classes: ["setosa", "versicolor"], sample_labels: ["test-B"], numeric_output_semantics: semantics } },
+    } });
+    expect((wrapper.vm as any).tableColumns.map((column: any) => column.header)).toContain("versicolor");
+    expect((wrapper.vm as any).previewTableData[0]._label_full).toBe("test-B");
+  });
+
+  it.each(["class", "actual_class"])("uses ordered %s confusion axes, never coincidentally equal-sized sample labels", (role) => {
+    const wrapper = factory({ nodeOutput: { data: [[4, 1], [0, 5]],
+      metadata: { source_labels: ["specimen A", "specimen B"], diagnostics: { classes: ["setosa", "versicolor"] } },
+      descriptor: { dimensions: [{ role, size: 2 }, { role: "predicted_class", size: 2 }] } } });
+    expect((wrapper.vm as any).previewTableData.map((row: any) => row._label_full)).toEqual(["setosa", "versicolor"]);
+    expect((wrapper.vm as any).tableColumns.map((column: any) => column.header)).toContain("versicolor");
   });
 
   it("uses scientific dimension labels for an evaluator actual/predicted table", () => {
@@ -324,23 +345,19 @@ describe("DataTableModal", () => {
       },
     });
 
-    expect((wrapper.vm as any).dataShape).toEqual({ rows: 2, cols: 7 });
+    expect((wrapper.vm as any).dataShape).toEqual({ rows: 14, cols: 5 });
     expect((wrapper.vm as any).tableColumns.map((column: any) => column.header)).toEqual([
       "#",
-      "label",
-      "support",
-      "predicted_count",
-      "precision",
-      "recall",
-      "specificity",
-      "f1",
+      "Split", "Scope", "Class", "Metric", "Value",
     ]);
     expect((wrapper.vm as any).previewTableData[0]).toMatchObject({
-      label: "Lavandula angustifolia",
-      support: 5,
-      recall: 1,
-      specificity: 0.6667,
+      Class: "Overall", Metric: "n_samples", Value: 8,
     });
+    expect((wrapper.vm as any).previewTableData).toEqual(expect.arrayContaining([
+      expect.objectContaining({ Class: "Lavandula angustifolia", Metric: "recall", Value: 1 }),
+      expect.objectContaining({ Class: "Lavandula latifolia", Metric: "predicted_count", Value: 0 }),
+      expect.objectContaining({ Class: "Overall", Metric: "accuracy", Value: 0.625 }),
+    ]));
   });
 
   it("shows one held-out reference and prediction decision per classification sample", () => {

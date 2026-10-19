@@ -151,8 +151,7 @@
           </p>
         </details>
         <p v-if="historicalExecutableExport" class="execution-export-scope" role="status">
-          Code export is available from the Workflow editor for the current graph.
-          This saved-run report exports as HTML, Markdown or JSON; its original executable code is unavailable.
+          This run’s original executable code is unavailable. Export current code from Workflow.
         </p>
         <!-- Section toggles -->
         <div v-if="reportStore.isReady" class="section-toggles">

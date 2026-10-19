@@ -40,6 +40,13 @@ def receipt_sha256(receipt: dict) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def selection_file_ids_match(receipt: dict, selected_file_ids: list[int] | None) -> bool:
+    """An all-files receipt may execute its captured files as an explicit scope."""
+    return selected_file_ids == receipt["selected_file_ids"] or (
+        receipt["selected_file_ids"] is None and selected_file_ids == receipt["file_ids"]
+    )
+
+
 def selection_receipt(
     loaded: LoadedProjectDataset,
     *,
@@ -141,17 +148,16 @@ def materialize_selection_receipt(loaded: LoadedProjectDataset, receipt: dict) -
             target_authority=authority,
         )
     if receipt.get("schema_version") == CURATED_VIEW_SCHEMA:
-        from copy import deepcopy
-
         from spectra_sherpa.app.services.dag.nodes.data.sample_preparation import filter_samples_dataset
 
-        dataset = deepcopy(dataset)
         mask = _unpack_mask(receipt)
-        dataset.sample_axis = dataset.sample_axis.model_copy(update={"include_mask": mask})
+        # Filter verified row positions without rewriting the source inclusion
+        # mask, which is part of any attached supervision's scientific identity.
+        source_role = str(dataset.data_role)
         dataset = filter_samples_dataset(
             dataset,
-            field="source_inclusion",
-            pattern="",
+            field="sample_index",
+            pattern=",".join(str(index + 1) for index in np.flatnonzero(mask)),
             match_mode="exact",
             case_sensitive=True,
             invert=False,
@@ -164,6 +170,8 @@ def materialize_selection_receipt(loaded: LoadedProjectDataset, receipt: dict) -
             filter_values=None,
             node_id="dataset-view-curation",
         )
+        if source_role == "X_hsi":
+            dataset.data_role = "X_spectra"
         dataset.meta["dataset_curation"] = {
             "selection_sha256": receipt_sha256(receipt),
             "excluded_ids": receipt["excluded_ids"],

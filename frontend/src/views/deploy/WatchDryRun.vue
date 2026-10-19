@@ -1,7 +1,6 @@
 <template>
   <section aria-label="Saved-model dry run">
-    <p>Choose a settled file already inside this watch's folder. Sherpa applies the exact saved model without refitting.
-      This check does not mark the file processed or enable monitoring.</p>
+    <p>Select a settled file in this watch’s folder. Monitoring stays off.</p>
     <label>Representative file name <input v-model="fileName" placeholder="sample.csv" /></label>
     <Button label="Run check" :loading="busy" :disabled="!fileName || busy || loading" @click="run" />
     <p v-if="error" role="alert">{{ error }}</p>
@@ -11,7 +10,6 @@
       <p>Saved run #{{ receipt.run_id }} · {{ receipt.checked_at }}</p>
       <p>Folder: {{ receipt.folder }} · Pattern: {{ receipt.pattern }}</p>
       <p v-if="receipt.matches_current_settings === false" role="alert">This result describes earlier watch settings. You can run another check if useful.</p>
-      <p>This optional check does not determine whether the watch can run.</p>
       <pre>{{ JSON.stringify(receipt.result_preview, null, 2) }}</pre>
       <Button label="Save deployment check" @click="save" />
       <details><summary>Model, input and runtime details</summary><pre>{{ JSON.stringify(receipt, null, 2) }}</pre></details>

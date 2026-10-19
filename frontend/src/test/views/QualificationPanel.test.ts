@@ -13,7 +13,7 @@ beforeEach(() => { vi.resetAllMocks(); vi.mocked(api.get).mockResolvedValue({dat
 describe("qualification evidence and decisions", () => {
   it("requires exact-context acknowledgement and reason before submitting the dossier identity", async () => {
     const wrapper = mount(Panel, {props: {workflowId: 3}}); await flushPromises();
-    expect(wrapper.text()).toContain("No ASTM or regulatory compliance is implied");
+    expect(wrapper.find('a[href$="#qualification-and-prediction-intervals"]').exists()).toBe(true);
     await button(wrapper, "Review this assessment").trigger("click");
     const accept = button(wrapper, "Accept under declared policy");
     expect(accept.attributes("disabled")).toBeDefined();

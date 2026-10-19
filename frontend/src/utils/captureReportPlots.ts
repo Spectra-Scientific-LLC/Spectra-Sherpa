@@ -118,7 +118,7 @@ export async function captureReportPlots(run: RunReportData, projectId: number, 
             const displayed = displayPlot(plots.plotData.value, plots.plotLayout.value, useDisplayPreferences());
             const groupKey = reportGroupKey(displayed.data, displayed.layout);
             const notice = ["Saved-run projection; default displayed axes. No fitting or validation is rerun.",
-              displayed.omitted ? `${displayed.omitted} sample rows omitted from this report plot by the visual display limit; the retained run is complete.` : "",
+              displayed.omitted ? `${displayed.omissionDescription} omitted from this report plot by the visual display limit (not a count of unique samples); retained data are unchanged.` : "",
               groupKey,
               meta.display_population ? `Display population: ${JSON.stringify(meta.display_population)}` : "",
               meta.comparison_scale_notice ?? "", ...(meta.comparison_notices ?? [])].filter(Boolean).join(" ");

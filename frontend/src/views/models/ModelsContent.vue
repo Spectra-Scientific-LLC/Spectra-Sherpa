@@ -388,7 +388,7 @@
               :run-id="selectedModel.source_run_id"
               @changed="modelOverviewRevision++"
             />
-            <p v-else class="detail-note" role="note">Deploy-ready records operational readiness. A saved model requires its own external validation assessment and human review; workflow qualification belongs to a separate canonical application.</p>
+            <MethodHelp v-else path="chemometrics/validation-application/#qualification-and-prediction-intervals" label="Model qualification" />
           </section>
         </TabPanel>
 
@@ -481,6 +481,7 @@
 </template>
 
 <script setup lang="ts">
+import MethodHelp from "@/components/MethodHelp.vue";
 import RelativeTime from "@/components/RelativeTime.vue";
 import { formatMetricValue } from "@/utils/format";
 import { readRememberedTab, writeRememberedTab } from "@/utils/rememberedTab";

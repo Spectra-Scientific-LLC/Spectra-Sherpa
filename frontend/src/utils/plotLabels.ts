@@ -79,9 +79,10 @@ export function getYAxisLabel(metadata?: PlotMetadata | null): string {
   const fallbackUnits = metadata.value_units_label || metadata.value_units;
   const units = metadata.y_units || fallbackUnits;
   // A sample dimension names the rows, not the measured spectral ordinate.
-  if (/^(samples?|acquisitions?)$/i.test(metadata.y_title || "") && units) {
-    if (/^(absorbance|transmittance)$/i.test(units)) return units[0].toUpperCase() + units.slice(1);
-    return buildAxisLabel("Intensity", units, "Intensity");
+  if (/^(samples?|specimens?|acquisitions?|components?)(\s+(index|id))?$/i.test(metadata.y_title || "")) {
+    // Row-coordinate units (for example acquisition seconds) are not signal units.
+    if (/^(absorbance|transmittance)$/i.test(fallbackUnits || "")) return fallbackUnits![0].toUpperCase() + fallbackUnits!.slice(1);
+    return buildAxisLabel("Intensity", fallbackUnits, "Intensity");
   }
   return buildAxisLabel(metadata.y_title, units, "Response");
 }
