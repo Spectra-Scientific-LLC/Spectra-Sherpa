@@ -285,9 +285,26 @@ const enrichDeclaredContext = (
       }
     }
     const binding = presentation.output_binding;
-    if (!binding || binding[1] !== "target_context") continue;
+    if (!binding) continue;
     const dataset = ports[binding[0]]?.value;
     if (!isDatasetPayload(dataset)) continue;
+    if (binding[1] === "feature_axis") {
+      const axis = isRecord(dataset.feature_axis) ? dataset.feature_axis
+        : isRecord(dataset.x_axis) ? dataset.x_axis : {};
+      const labels = nonEmptyStringArray(axis.labels);
+      const coordinates = Array.isArray(axis.data) ? axis.data : [];
+      for (const name of presentation.source_ports) {
+        const port = ports[name];
+        if (!port) continue;
+        const rows = port.descriptor?.shape?.[0] ?? port.data.length;
+        port.metadata = { ...port.metadata,
+          ...(labels.length === rows && rows > 0 ? { feature_names: labels } : {}),
+          ...(coordinates.length === rows && rows > 0 ? { wavenumbers: coordinates } : {}),
+          x_title: axis.title, x_units: axis.units,
+        };
+      }
+      continue;
+    }
     const context = isRecord(dataset.target_context) ? dataset.target_context : {};
     const axis = isRecord(dataset.sample_axis) ? dataset.sample_axis
       : isRecord(dataset.y_axis) ? dataset.y_axis : {};

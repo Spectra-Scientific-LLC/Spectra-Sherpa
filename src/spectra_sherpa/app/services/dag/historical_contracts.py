@@ -73,7 +73,7 @@ _INSPECTION_CONSUMERS = {
     ),
     "classification.plsda": (
         "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-        "7e2148763934669f62e9de52982a9e75746e9e118ccfad820afcfd7a9230e4d0",
+        "526a54177bad1ec421ec319c031f6ba322fa431e7235cf35604e14d7ecf23f6c",
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",
@@ -81,31 +81,31 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.apply_fitted_linear_regression": (
         "9c43658d5b6ac5f8848979832e2eed47f573bb5598ccbe2f882727f7720ed379",
-        "7867e5992747564b3fe46215d0f7d2d199b3a5c2af40531b38d480d82465530b",
+        "38c9a89ee76f37647c38bf9d66b7b0c302c3c7a2265c089a2a2e10511092b3a5",
     ),
     "model.apply_fitted_pcr": (
         "1aecb57326c2c3a8f71823a035cbcb2f21be34d72a3049daedcc5e67a399f2e9",
-        "14d71c0447ba121bdd0b53911bb4f804d8b39ec1c0cdeb0a28228b8022aec5a8",
+        "696da832dd71dc37022631c9330a074bfe945084a464aed0f33dc55d374b2862",
     ),
     "model.apply_fitted_svr": (
         "244fe3defede23aefb869e74d97034600b1a73c9abb63694fb6101ed2fea9c34",
-        "ad5a2b2901255e5ac252da8081fa9b727ce6aceefd5513d25285beec7824545c",
+        "78f4c25930341028dbb809e81dfff34d111051193e333b8728f96e8bdceb18ff",
     ),
     "model.fitted_linear_regression": (
         "04d5ea448432137158df7b412286a17a5fe3498f5589ce53b33414fad2388b2b",
-        "63501135129058b92cd8b6d0db33d5d61d3407c0be4f25a53f984d4a0101e27a",
+        "10b125ffb88229b92cfe1eac67e5717117cfdf57d485b3e370abb2ef8910f6a7",
     ),
     "model.fitted_pcr": (
         "a207b7fc520763105b633ca6d99eb267872c38ed54dc6854082b7be1bd1756b8",
-        "7f6040c174cae2889250e6a4bc22620af172207109a1d6ff0fe66ad35937f9de",
+        "577777179c36fedf0338c84a003e9080aa8879043e2ad0e19e7dccc5f618c201",
     ),
     "model.fitted_pls": (
         "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
-        "3939dc715653c735c11d3993942bd8e8baf5343fd42e21341d5cde130dafdde3",
+        "473b586d631d966d9a76a32ec3788f95b7aea3771fb8981256475061d1b52871",
     ),
     "model.fitted_svr": (
         "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
-        "6015b47482335d0931239f6a52fea6825979c43c055e319c69deb3129b344c67",
+        "cde922310dc4713ab5349720f865595fee13c8c2a53b60f68708ceed9882bae0",
     ),
 }
 

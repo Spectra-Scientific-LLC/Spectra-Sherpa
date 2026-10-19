@@ -135,7 +135,7 @@ class ScientificPresentation:
             if (
                 len(self.output_binding) != 2
                 or not self.output_binding[0]
-                or self.output_binding[1] != "target_context"
+                or self.output_binding[1] not in {"target_context", "feature_axis"}
             ):
                 raise ValueError("unknown presentation output binding")
         if self.sample_labels_field is not None and not self.sample_labels_field.isidentifier():

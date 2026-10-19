@@ -651,6 +651,18 @@ are `feature_axis`, `cluster_feature_axes`, and `sample_axis`. The renderer uses
 the corresponding retained input; it must not invent wavelengths or sample
 identity when that input is unavailable. Invalid ports fail contract validation.
 
+For same-node retained results, `output_binding` names the exact output carrying
+`target_context` or `feature_axis`. Inspector hydration fetches that declared
+port, including when ports are renamed; it does not pair response ports by
+spelling or select a loadings port from an allowlist. Missing declared evidence
+is unavailable, not a reason to borrow another population or axis.
+
+An explicit typed sample-table `sample_id` column contains unique, nonempty
+strings with no leading or trailing whitespace. Numeric IDs must be explicitly
+converted at the ingestion boundary with collision checks; the identity reader
+does not silently equate integer `1` with string `"1"`. Display labels and
+categorical class values are separate contracts and are not restricted by this.
+
 Node help continues to use the execution contract's `help_reference`.
 Methodology help uses a named topic from `frontend/src/utils/documentation.ts`;
 free-form component URLs and frontend rewrites of backend sentences are not

@@ -19,6 +19,23 @@ const contextContract = (bindings: Record<string, string>, labelPorts: string[] 
 });
 
 describe("buildNodeOutput", () => {
+  it("uses the declared feature axis rather than a loadings alias", () => {
+    const contract = contextContract({ coefficients: "feature_coordinates" });
+    contract.payload.presentations[0].output_binding = ["feature_coordinates", "feature_axis"];
+    const output = buildNodeOutput({
+      coefficients: [[2], [3]],
+      feature_coordinates: { type: "SherpaDataset", data: [[0.1, 0.2]],
+        x_axis: { data: [1000, 1100], title: "Wavelength", units: "nm", labels: ["A", "B"] } },
+      loadings: { type: "SherpaDataset", data: [[9, 9]], x_axis: { data: [999, 998] } },
+    }, undefined, undefined, undefined, contract);
+    expect(output.ports?.coefficients.metadata).toMatchObject({
+      feature_names: ["A", "B"], wavenumbers: [1000, 1100], x_title: "Wavelength", x_units: "nm",
+    });
+    const missing = buildNodeOutput({ coefficients: [[2], [3]],
+      loadings: { type: "SherpaDataset", data: [[9, 9]], x_axis: { data: [999, 998] } },
+    }, undefined, undefined, undefined, contract);
+    expect(missing.ports?.coefficients.metadata.wavenumbers).toBeUndefined();
+  });
   it("preserves shared scientific metadata while allowing primary-port metadata to take precedence", () => {
     const output = buildNodeOutput({
       default: { data: [[1]], metadata: { n_samples: 1 } },

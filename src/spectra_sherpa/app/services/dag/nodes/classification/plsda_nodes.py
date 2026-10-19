@@ -526,6 +526,7 @@ class PLSDANode(Node):
                     ("vip_scores",),
                     ("plot", "table"),
                     "Combined variable importance in projection for class discrimination.",
+                    output_binding=("X_loadings", "feature_axis"),
                 ),
                 ScientificPresentation(
                     "explained_variance",
@@ -542,6 +543,7 @@ class PLSDANode(Node):
                     ("class_coefficients",),
                     ("plot", "table"),
                     "Variable coefficients for each encoded class response; these are not probabilities.",
+                    output_binding=("X_loadings", "feature_axis"),
                 ),
                 ScientificPresentation(
                     "calibration_confusion",

@@ -508,7 +508,7 @@ export type ScientificPresentationMode = "model_summary" | "plot" | "record" | "
 
 export interface ScientificPresentation {
   input_binding?: [string, "feature_axis" | "cluster_feature_axes" | "sample_axis"];
-  output_binding?: [string, "target_context"];
+  output_binding?: [string, "target_context" | "feature_axis"];
   sample_labels_field?: string;
   presentation_id: string;
   label: string;

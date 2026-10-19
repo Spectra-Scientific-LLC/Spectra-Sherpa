@@ -38,6 +38,51 @@ class FittedStateCustodyCapability:
 _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingProxyType(
     {
         (
+            "spectrasherpa.model.fitted_linear_regression/1",
+            "10b125ffb88229b92cfe1eac67e5717117cfdf57d485b3e370abb2ef8910f6a7",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_linear_regression/1",
+            contract_digest="10b125ffb88229b92cfe1eac67e5717117cfdf57d485b3e370abb2ef8910f6a7",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Shared PLS presentation module changed; fitted schema and training-row custody unchanged.",
+        ),
+        (
+            "spectrasherpa.model.fitted_pcr/1",
+            "577777179c36fedf0338c84a003e9080aa8879043e2ad0e19e7dccc5f618c201",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_pcr/1",
+            contract_digest="577777179c36fedf0338c84a003e9080aa8879043e2ad0e19e7dccc5f618c201",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Shared PLS presentation module changed; fitted schema and training-row custody unchanged.",
+        ),
+        (
+            "spectrasherpa.model.fitted_svr/1",
+            "cde922310dc4713ab5349720f865595fee13c8c2a53b60f68708ceed9882bae0",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.fitted_svr/1",
+            contract_digest="cde922310dc4713ab5349720f865595fee13c8c2a53b60f68708ceed9882bae0",
+            custody_class=RETAINS_TRAINING_ROWS,
+            rationale="Shared PLS presentation module changed; fitted schema and training-row custody unchanged.",
+        ),
+        (
+            "spectra.sherpa-simpls-regression-json/9",
+            "473b586d631d966d9a76a32ec3788f95b7aea3771fb8981256475061d1b52871",
+        ): FittedStateCustodyCapability(
+            serializer="spectra.sherpa-simpls-regression-json/9",
+            contract_digest="473b586d631d966d9a76a32ec3788f95b7aea3771fb8981256475061d1b52871",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Feature-axis presentation binding only; fitted state and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.sherpa-plsda-state/5",
+            "526a54177bad1ec421ec319c031f6ba322fa431e7235cf35604e14d7ecf23f6c",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.sherpa-plsda-state/5",
+            contract_digest="526a54177bad1ec421ec319c031f6ba322fa431e7235cf35604e14d7ecf23f6c",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Feature-axis presentation binding only; fitted state and training-row custody are unchanged.",
+        ),
+        (
             "spectrasherpa.model-artifact.pca/3",
             "5e809716a8266c4ddd5fb3902b8a68c264019fd05237bdb1397f664ae31dea10",
         ): FittedStateCustodyCapability(

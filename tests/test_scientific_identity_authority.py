@@ -69,7 +69,18 @@ def test_canonical_response_binding_uses_ids_after_display_relabel():
         bind_y(source(["s2", "s1", "s3"]), X=left, dataset_as_data=True)
 
 
-@pytest.mark.parametrize("ids", [["s1", "s1", "s3"], ["s1", "s2"], ["s1", None, "s3"]])
+@pytest.mark.parametrize(
+    "ids",
+    [
+        ["s1", "s1", "s3"],
+        ["s1", "s2"],
+        ["s1", None, "s3"],
+        [1, 2, 3],
+        [1, "1", "s3"],
+        [True, "s2", "s3"],
+        [" s1", "s2", "s3"],
+    ],
+)
 def test_malformed_declared_ids_are_not_replaced_with_display_labels(ids):
     # Short columns are refused by SampleAxis itself; other defects by identity admission.
     with pytest.raises(ValueError):

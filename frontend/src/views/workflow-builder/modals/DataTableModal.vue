@@ -500,6 +500,7 @@ function relatedFeatureLabels(output: any, expectedLength: number): string[] {
   const axis = payload.x_axis ?? payload.feature_axis ?? {};
   const candidates = [
     output?.metadata?.feature_names,
+    output?.metadata?.wavenumbers,
     output?.presentation_value?.x_axis?.labels,
     axis.labels,
     axis.data,
@@ -1009,6 +1010,7 @@ function exportRowLabels(output: any, count: number): unknown[] {
     ? [
         row?.labels,
         meta.feature_names,
+        meta.wavenumbers,
         output?.presentation_value?.x_axis?.labels,
         payload?.x_axis?.labels,
         payload?.feature_axis?.labels,

@@ -2407,34 +2407,19 @@ async function openRetainedEvidence(view: "plot" | "table"): Promise<void> {
     // The numeric response array has no row labels of its own. Fetch its
     // explicitly paired split cohort as identity authority, never whichever
     // dataset happens to be the node's primary output.
-    const pairedPorts = sourcePorts.flatMap(port => {
-      if (!port.startsWith("y_")) return [];
-      const paired = `X_${port.slice(2)}`;
-      return props.nodeOutput?.ports?.[paired] ? [paired] : [];
-    });
-    const variableRows = sourcePorts.some(port => ["feature", "spectral_variable", "variable"].includes(
-      props.nodeOutput?.ports?.[port]?.descriptor?.dimensions?.[0]?.role ?? "",
-    ));
-    // Coefficients/VIP share their fitted model's feature coordinate, not its
-    // sample coordinate. Hydrate that same-run authority rather than borrowing
-    // labels from a compact primary score matrix.
-    const featureAuthority = variableRows
-      ? ["loadings", "X_loadings", "x_loadings"].find(port => props.nodeOutput?.ports?.[port])
-      : undefined;
+    const binding = selectedPresentation.value?.presentation.output_binding;
+    const pairedPorts = binding ? [binding[0]] : [];
+    const labelsField = selectedPresentation.value?.presentation.sample_labels_field;
+    const inputBinding = selectedPresentation.value?.presentation.input_binding;
     // PCA's combined view needs its same-run companion results, not compact
     // history arrays. Preserve this view when restoring a saved run.
     const summaryPorts = view === "plot" && selectedPresentation.value?.presentation.kind === "pca_scores"
       ? ["variable_correlations", "explained_variance", "loadings"].filter(port => props.nodeOutput?.ports?.[port]) : [];
-    const retainedPorts = [...new Set([...sourcePorts, ...pairedPorts, ...summaryPorts, ...(featureAuthority ? [featureAuthority] : [])])];
+    const retainedPorts = [...new Set([...sourcePorts, ...pairedPorts, ...summaryPorts, ...(labelsField ? [labelsField] : [])])];
     const [outputs, inputs] = await Promise.all([
       Promise.all(retainedPorts.map(async (port) => [port, await read(nodeId, port)] as const)),
       Promise.all((view === "plot" ? props.inputConnections
-        : selectedNodeType.value === "selection.variable_select" && sourcePorts.some(port => ["mask", "scores"].includes(port))
-          ? props.inputConnections.filter(connection => connection.toPort === "X")
-          : selectedNodeType.value === "selection.nested_cv" && sourcePorts.includes("oof_evidence")
-            ? props.inputConnections.filter(connection => connection.toPort === "X")
-          : selectedNodeType.value === "model.kmeans" && sourcePorts.includes("centroids")
-            ? props.inputConnections.filter(connection => !connection.toPort || connection.toPort === "default") : []).map(async (connection) => [
+        : inputBinding ? props.inputConnections.filter(connection => (connection.toPort || "default") === inputBinding[0]) : []).map(async (connection) => [
         connection.toPort || "default",
         await read(connection.nodeId, connection.port),
       ] as const)),

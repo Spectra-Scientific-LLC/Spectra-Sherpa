@@ -192,6 +192,17 @@ def test_input_coordinate_bindings_are_declared_by_nodes_and_fail_closed() -> No
         )
 
 
+def test_model_feature_coordinates_are_bound_to_exact_output_authority() -> None:
+    for operation, port in [("model.fitted_pls", "x_loadings"), ("classification.plsda", "X_loadings")]:
+        contract = node_registry.get_metadata(operation).resolved_presentation_contract()
+        for presentation in contract.presentations:
+            if presentation.presentation_id in {"vip", "coefficients"}:
+                if operation == "model.fitted_pls":
+                    assert presentation.input_binding == ("default", "feature_axis")
+                else:
+                    assert presentation.output_binding == (port, "feature_axis")
+
+
 def test_every_builtin_has_one_closed_presentation_authority() -> None:
     metadata_rows = node_registry.list_nodes()
     assert len(metadata_rows) == 103

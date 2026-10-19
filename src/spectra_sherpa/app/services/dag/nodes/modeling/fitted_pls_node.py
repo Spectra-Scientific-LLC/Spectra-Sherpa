@@ -414,7 +414,14 @@ class FittedPLSV2Node(Node):
                 ScientificPresentation(
                     "loadings", "PLS X Loadings", "pls_loadings", ("x_loadings",), ("plot", "table")
                 ),
-                ScientificPresentation("vip", "VIP Scores", "variable_profile", ("vip_scores",), ("plot", "table")),
+                ScientificPresentation(
+                    "vip",
+                    "VIP Scores",
+                    "variable_profile",
+                    ("vip_scores",),
+                    ("plot", "table"),
+                    input_binding=("default", "feature_axis"),
+                ),
                 ScientificPresentation(
                     "explained_variance",
                     "Explained Variance",
@@ -428,6 +435,7 @@ class FittedPLSV2Node(Node):
                     "regression_coefficients",
                     ("regression_coefficients",),
                     ("plot", "table"),
+                    input_binding=("default", "feature_axis"),
                 ),
                 ScientificPresentation(
                     "model",
