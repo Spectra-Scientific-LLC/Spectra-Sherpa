@@ -11,13 +11,20 @@ from spectra_sherpa.app.models.data_egress import DataEgressPermission, UserEgre
 logger = logging.getLogger(__name__)
 
 
-async def private_starter_context_allowed(session: AsyncSession, user_id: int) -> bool:
+async def private_starter_context_allowed(
+    session: AsyncSession,
+    user_id: int,
+    *,
+    data_types: tuple[str, ...] = ("metadata", "experiments"),
+) -> bool:
     """Read current consent; a per-type allow cannot override disabled context.
 
     Missing per-type overrides inherit explicit enabled defaults, matching the
     Advisor disclosure policy. Missing defaults and policy-store failures deny
     private context. Read columns rather than cached ORM relationships so a
-    revoked permission takes effect on the next request.
+    revoked permission takes effect on the next request. Other private context
+    callers must name every data type they disclose (for example workflows in
+    ambient Guidance); this argument is server-owned, never request-controlled.
     """
     try:
         if not is_egress_enabled():
@@ -37,7 +44,7 @@ async def private_starter_context_allowed(session: AsyncSession, user_id: int) -
                     select(DataEgressPermission.allowed).where(
                         DataEgressPermission.user_id == user_id,
                         DataEgressPermission.destination == "llm_context",
-                        DataEgressPermission.data_type.in_(("metadata", "experiments")),
+                        DataEgressPermission.data_type.in_(data_types),
                     )
                 )
             )

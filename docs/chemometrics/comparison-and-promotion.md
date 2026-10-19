@@ -65,6 +65,13 @@ supports a single grouped assessment; repeated grouped partitions are refused
 rather than silently substituting ungrouped folds. Repeated identical partitions
 are not additional robustness evidence.
 
+Repeated `specimen_id`, `subject_id` or `patient_id` values require an explicit
+independent **Groups** binding in My Dataset, followed by a new saved workflow
+run. The grouping must keep each specimen together. Paired evaluation also
+refuses a historical train/test split that divides these declared groups; it
+does not repair or relabel old evidence. These checks apply to retained recipes
+with and without a holdout, including older sources without typed target metadata.
+
 **Run evaluation** creates a separate saved evaluation. Source runs are not
 rewritten. Use **Open saved evaluation** to inspect completed repetitions and
 download the exact record later. Cancellation is explicit. An interrupted job

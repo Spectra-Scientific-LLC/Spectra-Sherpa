@@ -11,9 +11,10 @@ from typing import Any, Awaitable, Callable
 import numpy as np
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext, _slice_sample_axis
 from spectra_sherpa.app.schemas.run_evidence import RunEvidence
 from spectra_sherpa.app.services.dag.executor_types import WorkflowEdge, WorkflowNode
+from spectra_sherpa.app.services.dag.nodes.data.split_planner import require_independent_classification_groups
 from spectra_sherpa.app.services.dag.sheet_fold_validation import _ensure_type_registry, _supervised_inputs
 from spectra_sherpa.app.services.dag.spectral_capability import SpectralDatasetCapability
 from spectra_sherpa.app.services.dag.validation_graph import admit_validation_graph
@@ -22,6 +23,14 @@ from spectra_sherpa.core.node_identity import canonical_node_type
 from spectra_sherpa.sdk.validate import make_split_plan
 
 SCHEMA = "spectrasherpa-paired-evaluation/1"
+
+
+def _require_independent_groups(dataset: SherpaDataset, groups: np.ndarray | None) -> None:
+    # This endpoint evaluates quantitative PLS recipes, including older sources
+    # without typed target metadata. Known specimen identities still constrain
+    # independence; absence of a Groups binding is not permission to divide them.
+    context = (dataset.target_context or TargetContext()).model_copy(update={"target_type": "continuous"})
+    require_independent_classification_groups(dataset, groups, context)
 
 
 class RecipeSelection(BaseModel):
@@ -181,6 +190,7 @@ def load_recipe(run, selection: RecipeSelection) -> RetainedRecipe:
         if axis is not None and axis.include_mask is not None and not np.all(axis.include_mask):
             raise ValueError("Materialize declared sample/feature exclusions before the paired evaluation.")
     target, groups, supervision_digest = _supervised_inputs(dataset)
+    _require_independent_groups(dataset, groups)
     train, test = tuple(range(dataset.shape[0])), ()
     held_out_dataset = None
     if split_id:
@@ -193,10 +203,17 @@ def load_recipe(run, selection: RecipeSelection) -> RetainedRecipe:
             test_indices=exact(split_id, "test_indices"),
         )
         train, test = tuple(partition["train_indices"]), tuple(partition["test_indices"])
+        if groups is not None and set(groups[np.asarray(train)]) & set(groups[np.asarray(test)]):
+            raise ValueError(
+                "The retained holdout divides declared independent groups. "
+                "Create and save a new grouped split before paired evaluation; "
+                "the historical run remains unchanged."
+            )
         held_out_dataset = SherpaDataset(
             X=np.asarray(dataset.X)[np.asarray(test)],
             target=target[np.asarray(test)],
             feature_axis=dataset.get_feature_axis(),
+            sample_axis=_slice_sample_axis(dataset.sample_axis, np.asarray(test)),
             target_context=dataset.target_context,
         )
         indices = np.asarray(train)
@@ -207,6 +224,7 @@ def load_recipe(run, selection: RecipeSelection) -> RetainedRecipe:
             X=np.asarray(dataset.X)[indices],
             target=target[indices],
             feature_axis=dataset.get_feature_axis(),
+            sample_axis=_slice_sample_axis(dataset.sample_axis, indices),
             target_context=dataset.target_context,
         )
         groups = None if groups is None else groups[indices]
@@ -236,6 +254,7 @@ def prepare_protocol(recipes: list[RetainedRecipe], request: PairedEvaluationReq
     target, groups, binding = _supervised_inputs(dataset)
     if population.groups is not None:
         groups = population.groups
+    _require_independent_groups(dataset, groups)
     binding = population.supervision_digest or binding
     if target.ndim != 1 or not np.isfinite(target).all():
         raise ValueError("Paired PLS evaluation requires one finite quantitative response.")
