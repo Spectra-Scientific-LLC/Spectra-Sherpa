@@ -238,7 +238,10 @@ describe("canonical scientific presentation projection", () => {
       explained_variance: { data: [0.7, 0.3], metadata: {} },
     };
     const plot = useQuickPlotProjection(ref(output), ref("model.pca"));
-    expect(plot.plotLayout.value.title).toBe("PCA Summary");
+    expect(plot.plotLayout.value.title).toMatchObject({
+      text: "PCA Summary", y: 0.99, yref: "container", yanchor: "top",
+    });
+    expect(plot.plotLayout.value.legend).toMatchObject({ y: 1.02, yanchor: "bottom" });
     expect(plot.plotLayout.value.yaxis.title).toBe("Explained variance (%)");
     expect(plot.plotLayout.value.xaxis2.anchor).toBe("y2");
     expect(plot.plotLayout.value.xaxis3.anchor).toBe("y3");

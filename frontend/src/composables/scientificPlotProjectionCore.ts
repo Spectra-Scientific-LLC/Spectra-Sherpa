@@ -1501,10 +1501,10 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
       ],
       layout: {
         ...basePlotLayout,
-        title: "PCA Summary",
+        title: { text: "PCA Summary", x: 0.5, xanchor: "center", y: 0.99, yref: "container", yanchor: "top" },
         height: 1100,
         showlegend: true,
-        legend: { orientation: "h", x: 0, y: 1.06, yanchor: "bottom", traceorder: "normal" },
+        legend: { orientation: "h", x: 0, y: 1.02, yanchor: "bottom", traceorder: "normal" },
         margin: { t: 130, r: 45, b: 75, l: 95 },
         xaxis: { ...basePlotLayout.xaxis, domain: [0, 1], anchor: "y", title: "Component", automargin: true },
         yaxis: { ...basePlotLayout.yaxis, domain: [0.76, 1], anchor: "x", title: "Explained variance (%)", range: [0, 105], automargin: true },
