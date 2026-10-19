@@ -1,6 +1,6 @@
 <template>
   <div class="batch-run-tab">
-<h3>Batch <MethodHelp path="workflows/projects-datasets-runs/#batch-execution" label="Batch execution modes" /></h3>
+<h3>Batch <MethodHelp topic="batch" label="Batch execution modes" /></h3>
     <fieldset :disabled="submitting || loading">
       <legend>Execution mode</legend>
       <label><input v-model="mode" type="radio" value="apply_model" /> Apply trained model — no refit</label>

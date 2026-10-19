@@ -1,6 +1,6 @@
 <template>
   <section class="display-preferences" aria-label="Display defaults">
-<h3>Display defaults <MethodHelp path="workflows/reports-exports/#display-and-table-exports" label="Display and export scope" /></h3>
+<h3>Display defaults <MethodHelp topic="displayExports" label="Display and export scope" /></h3>
     <div class="preference-grid">
       <label>Maximum rows in plots and tables
         <select v-model.number="prefs.maxRows" aria-label="Maximum display rows">

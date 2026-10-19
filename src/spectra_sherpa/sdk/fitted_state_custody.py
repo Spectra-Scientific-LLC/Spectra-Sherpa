@@ -38,6 +38,60 @@ class FittedStateCustodyCapability:
 _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingProxyType(
     {
         (
+            "spectrasherpa.model-artifact.pca/3",
+            "eeca5bea6642ec33c4a51c825acd58217d1a8c17784cfa318e4840e4c4ba73a9",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.pca/3",
+            contract_digest="eeca5bea6642ec33c4a51c825acd58217d1a8c17784cfa318e4840e4c4ba73a9",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Shared SDK sample helpers changed; portable PCA state and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.sherpa-plsda-state/5",
+            "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.sherpa-plsda-state/5",
+            contract_digest="d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Shared SDK sample helpers changed; PLS-DA state still contains no calibration rows.",
+        ),
+        (
+            "spectrasherpa.model-artifact.simca/2",
+            "fb0f84fec93cc374fbdd00797ea361f8c9a83d22b6021f242815b4e83cecc0f0",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.simca/2",
+            contract_digest="fb0f84fec93cc374fbdd00797ea361f8c9a83d22b6021f242815b4e83cecc0f0",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Shared SDK sample helpers changed; SIMCA fitted-state custody is unchanged.",
+        ),
+        (
+            "spectrasherpa.model.kmeans-state/1",
+            "c65f7f11e6d2089abdec190e2c7aee80088eed4f2545ce55c0b92db1b2ebef30",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model.kmeans-state/1",
+            contract_digest="c65f7f11e6d2089abdec190e2c7aee80088eed4f2545ce55c0b92db1b2ebef30",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Axis presentation metadata does not add calibration rows to K-means state.",
+        ),
+        (
+            "spectrasherpa.model-artifact.parafac/2",
+            "3c1525353cb993b328366260f5b751a2275048e2c39322ca424a91692ad24f68",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.parafac/2",
+            contract_digest="3c1525353cb993b328366260f5b751a2275048e2c39322ca424a91692ad24f68",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Shared SDK sample helpers changed; PARAFAC fitted-state custody is unchanged.",
+        ),
+        (
+            "spectrasherpa.model-artifact.knn/2",
+            "7f188a7485c4774ccaa67d7efcf0cd95e35c07682633e9b5265d48f5e568be92",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.knn/2",
+            contract_digest="7f188a7485c4774ccaa67d7efcf0cd95e35c07682633e9b5265d48f5e568be92",
+            custody_class=RETAINS_TRAINING_ROWS,
+            rationale="Correcting the displayed distance space does not remove KNN's retained calibration rows.",
+        ),
+        (
             "spectrasherpa.model.fitted_pcr/1",
             "7f6040c174cae2889250e6a4bc22620af172207109a1d6ff0fe66ad35937f9de",
         ): FittedStateCustodyCapability(

@@ -1,12 +1,8 @@
 """
-Meta dict conventions for SherpaDataset provenance and sample management.
+Canonical SherpaDataset provenance and sample-management helpers.
 
-This module standardizes how we store provenance and sample metadata in
-dataset.meta, enabling sample management without a wrapper class.
-
-Meta Dict Schema:
-    processing_history: List[Dict]  # Provenance chain
-    samples: Dict                    # Sample management (classes, include/exclude)
+SampleAxis owns labels, classes and inclusion. The helpers never create a
+parallel sample-management authority in dataset.meta.
 
 Usage in nodes:
     from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
@@ -23,7 +19,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 
-from spectra_sherpa.app.lib.sherpa_dataset import Provenance, SherpaDataset
+from spectra_sherpa.app.lib.sherpa_dataset import Provenance, SampleAxis, SherpaDataset
 
 from .transport import reject_spectrochempy_transport
 
@@ -206,26 +202,37 @@ def clear_processing_history(dataset: Any) -> None:
 
 
 def ensure_samples_meta(dataset: Any) -> Dict[str, Any]:
-    """
-    Ensure dataset.meta["samples"] exists with proper structure.
-
-    Structure:
-        samples:
-            include_mask: np.ndarray[bool]  # True = included, False = excluded
-            classes: np.ndarray[str|int]    # Class labels per sample
-            labels: List[str]               # Sample names/identifiers
-    """
+    """Return a detached compatibility view of the canonical sample axis."""
     dataset = _require_dataset(dataset)
+    axis = dataset.sample_axis
+    return {
+        "include_mask": get_include_mask(dataset),
+        "classes": get_classes(dataset),
+        "labels": get_sample_labels(dataset),
+        "exclusion_reasons": (
+            {i: reason for i, reason in enumerate(axis.exclusion_reasons or []) if reason is not None}
+            if axis is not None
+            else {}
+        ),
+    }
 
-    if "samples" not in dataset.meta:
-        n_samples = dataset.shape[0]
-        dataset.meta["samples"] = {
-            "include_mask": np.ones(n_samples, dtype=bool),
-            "classes": np.array([""] * n_samples, dtype=object),
-            "labels": [f"Sample_{i + 1}" for i in range(n_samples)],
-        }
 
-    return dict(dataset.meta["samples"])  # type: ignore[return-value]
+def _sample_indices(dataset: SherpaDataset, indices: Any) -> list[int]:
+    values = np.atleast_1d(indices)
+    if values.ndim != 1 or (values.size and values.dtype.kind not in "iu"):
+        raise ValueError("Sample indices must be integers")
+    result = [int(value) for value in values]
+    if any(value < 0 or value >= dataset.shape[0] for value in result):
+        raise IndexError("Sample index out of range")
+    return result
+
+
+def _sample_axis_copy(dataset: SherpaDataset) -> SampleAxis:
+    # Dataset assignment revalidates and binds length. Mutate only a copy so
+    # invalid requests cannot partially change scientific identity or masks.
+    if dataset.sample_axis is not None:
+        return dataset.sample_axis.model_copy(deep=True)
+    return SampleAxis(include_mask=np.ones(dataset.shape[0], dtype=bool))
 
 
 def exclude_samples(
@@ -248,20 +255,12 @@ def exclude_samples(
         >>> exclude_samples(dataset, [0, 5, 10], reason="Outliers from PCA")
         >>> included = get_included_data(dataset)  # Returns data without excluded
     """
-    samples = ensure_samples_meta(dataset)
-
-    if isinstance(indices, int):
-        indices = [indices]
-    indices = np.asarray(indices)
-
-    samples["include_mask"][indices] = False
-
-    # Track exclusion reasons
-    if reason:
-        if "exclusion_reasons" not in samples:
-            samples["exclusion_reasons"] = {}
-        for idx in indices:
-            samples["exclusion_reasons"][int(idx)] = reason
+    dataset = _require_dataset(dataset)
+    selected = _sample_indices(dataset, indices)
+    axis = _sample_axis_copy(dataset)
+    if selected:
+        axis.exclude(selected, reason=reason or "")
+    dataset.sample_axis = axis
 
 
 def include_samples(
@@ -275,16 +274,11 @@ def include_samples(
         dataset: Dataset with 2D data
         indices: Sample index(es) to include, or None for all
     """
-    samples = ensure_samples_meta(dataset)
-
-    if indices is None:
-        samples["include_mask"][:] = True
-        samples.pop("exclusion_reasons", None)
-    else:
-        if isinstance(indices, int):
-            indices = [indices]
-        indices = np.asarray(indices)
-        samples["include_mask"][indices] = True
+    dataset = _require_dataset(dataset)
+    selected = list(range(dataset.shape[0])) if indices is None else _sample_indices(dataset, indices)
+    axis = _sample_axis_copy(dataset)
+    axis.include(selected)
+    dataset.sample_axis = axis
 
 
 def get_included_data(dataset: Any) -> Any:
@@ -300,8 +294,7 @@ def get_included_data(dataset: Any) -> Any:
     if dataset.ndim != 2:
         return dataset  # 1D data has no samples to exclude
 
-    samples = ensure_samples_meta(dataset)
-    mask = samples["include_mask"]
+    mask = get_include_mask(dataset)
 
     if np.all(mask):
         return dataset  # All included, no copy needed
@@ -311,8 +304,13 @@ def get_included_data(dataset: Any) -> Any:
 
 def get_include_mask(dataset: Any) -> np.ndarray:
     """Get the include/exclude mask as a boolean array."""
-    samples = ensure_samples_meta(dataset)
-    return samples["include_mask"].copy()
+    dataset = _require_dataset(dataset)
+    axis = dataset.sample_axis
+    return (
+        axis.include_mask.copy()
+        if axis is not None and axis.include_mask is not None
+        else np.ones(dataset.shape[0], dtype=bool)
+    )
 
 
 def set_class(
@@ -332,19 +330,29 @@ def set_class(
         >>> set_class(dataset, [0, 1, 2], "Control")
         >>> set_class(dataset, [3, 4, 5], "Treatment")
     """
-    samples = ensure_samples_meta(dataset)
-
-    if isinstance(indices, int):
-        indices = [indices]
-    indices = np.asarray(indices)
-
-    samples["classes"][indices] = class_label
+    dataset = _require_dataset(dataset)
+    selected = _sample_indices(dataset, indices)
+    axis = _sample_axis_copy(dataset)
+    classes = get_classes(dataset)
+    classes[selected] = class_label
+    payload = axis.model_dump()
+    payload["classes"] = classes
+    if axis.primary_class_set_name is not None:
+        for item in payload["class_sets"]:
+            if item["name"] == axis.primary_class_set_name:
+                item["values"] = tuple(classes.tolist())
+    dataset.sample_axis = SampleAxis.model_validate(payload)
 
 
 def get_classes(dataset: Any) -> np.ndarray:
     """Get array of class labels for all samples."""
-    samples = ensure_samples_meta(dataset)
-    return samples["classes"].copy()
+    dataset = _require_dataset(dataset)
+    axis = dataset.sample_axis
+    return (
+        np.asarray(axis.classes, dtype=object).copy()
+        if axis is not None and axis.classes is not None
+        else np.full(dataset.shape[0], "", dtype=object)
+    )
 
 
 def filter_by_class(
@@ -364,8 +372,7 @@ def filter_by_class(
     if dataset.ndim != 2:
         return dataset
 
-    samples = ensure_samples_meta(dataset)
-    classes = samples["classes"]
+    classes = get_classes(dataset)
 
     if isinstance(class_label, (str, int)):
         class_label = [class_label]
@@ -376,16 +383,23 @@ def filter_by_class(
 
 def set_sample_labels(dataset: Any, labels: List[str]) -> None:
     """Set sample labels/names."""
-    samples = ensure_samples_meta(dataset)
+    dataset = _require_dataset(dataset)
     if len(labels) != dataset.shape[0]:
         raise ValueError(f"Labels length ({len(labels)}) must match n_samples ({dataset.shape[0]})")
-    samples["labels"] = list(labels)
+    axis = _sample_axis_copy(dataset)
+    axis.labels = list(labels)
+    dataset.sample_axis = axis
 
 
 def get_sample_labels(dataset: Any) -> List[str]:
     """Get sample labels/names."""
-    samples = ensure_samples_meta(dataset)
-    return list(samples["labels"])
+    dataset = _require_dataset(dataset)
+    axis = dataset.sample_axis
+    return (
+        list(axis.labels)
+        if axis is not None and axis.labels is not None
+        else [f"Sample_{i + 1}" for i in range(dataset.shape[0])]
+    )
 
 
 # =============================================================================

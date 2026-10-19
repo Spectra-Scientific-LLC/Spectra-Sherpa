@@ -882,6 +882,7 @@ class NestedCVNode(Node):
                     "out_of_fold_evidence",
                     ("oof_evidence",),
                     ("plot", "table", "record"),
+                    input_binding=("X", "sample_axis"),
                 ),
                 ScientificPresentation(
                     "repeats", "Separate Repeat Evidence", "metric_record", ("repeated_evidence",), ("record",)

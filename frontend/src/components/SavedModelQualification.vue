@@ -1,7 +1,7 @@
 <template>
   <details class="saved-qualification">
     <summary>Saved-model analytical qualification</summary>
-    <MethodHelp path="chemometrics/validation-application/#qualification-and-prediction-intervals" label="Saved-model qualification" />
+    <MethodHelp topic="qualification" label="Saved-model qualification" />
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-if="history">Current status: <strong>{{ history.status.state }}</strong> · {{ history.status.reason || history.status.intended_population || 'Review the retained evidence.' }}</p>
     <p v-if="history?.status.state === 'stale_for_selected_dataset'" role="note">This assessment concerns its named validation view. A decision here will not qualify the dataset currently selected in My Dataset.</p>

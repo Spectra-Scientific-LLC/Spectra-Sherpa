@@ -81,6 +81,7 @@
       <DisabledReason v-if="selectedNode" :id="runNodeReasonId" :reason="runNodeDisabledReason" class="inspector-disabled-reason" />
       <p v-if="componentDesignPreview?.splitRole === 'other'" role="alert" class="diagnostics-card">
         Component CV unavailable: connect the split’s training ports to this model.
+        <MethodHelp topic="componentSelection" label="Component validation" />
       </p>
       <WorkflowDataPortfolioPicker
         v-if="selectedNodeType === 'data.collection_load' && selectedNode"
@@ -1557,10 +1558,12 @@ import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import WorkflowDataPortfolioPicker from "./WorkflowDataPortfolioPicker.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
 import { buildNodeOutput, type NodeOutput, type PortOutput } from "@/utils/nodeOutput";
-import { featureRulePresentation, centroidPresentation, outOfFoldIdentityPresentation } from "@/utils/featureRulePresentation";
+import { bindPresentationInput } from "@/utils/featureRulePresentation";
 import type { ScientificValueDescriptor } from "@/stores/workflow-types";
 import type { NodeParameterMetadata } from "@/types";
 import { resolveNodeHelpUrl } from "@/utils/nodeHelp";
+import { componentInputHint } from "@/utils/componentInputHint";
+import MethodHelp from "@/components/MethodHelp.vue";
 import { buildDiagnosticEntries } from "@/utils/diagnostics";
 import { scientificMetricNotes } from "@/utils/scientificDisplay";
 import { primaryClassificationMetricSummary } from "@/utils/classificationMetrics";
@@ -1686,37 +1689,7 @@ const toast = useToast();
 const workflowStore = useWorkflowStore();
 const projectStore = useProjectStore();
 const selectedNodeType = computed(() => props.selectedNode?.type || "");
-const componentDesignPreview = computed(() => {
-  const type = selectedNodeType.value;
-  if (!["model.fitted_pls", "model.pca", "classification.plsda"].includes(type)) return null;
-  const selected = Number(localParams.value.n_components ?? 2);
-  const maximum = type === "model.fitted_pls"
-    ? Math.max(Number(localParams.value.component_curve_max ?? 10), Math.min(20, Number.isFinite(selected) ? selected : 10))
-    : Math.min(20, Math.max(10, Number.isFinite(selected) ? selected : 10));
-  const folds = type === "model.fitted_pls" ? Number(localParams.value.component_cv_folds ?? 5) : 5;
-  const group = groupColumnFromInputs(props.inputConnections);
-  const input = props.inputConnections.find((item) => item.toPort === "X" || item.toPort === "default")?.data;
-  const summary = input?.metadata.summary as { n_samples?: unknown; n_observations?: unknown } | undefined;
-  const count = summary?.n_samples ?? summary?.n_observations;
-  return {
-    selected: Number.isFinite(selected) ? selected : 2,
-    maximum: Number.isFinite(maximum) ? maximum : 10,
-    folds: Number.isFinite(folds) ? folds : 5,
-    unit: type === "model.pca" ? "PC" : "LV",
-    method: type === "classification.plsda"
-      ? group ? "stratified group CV" : "stratified group or row CV"
-      : group ? "group CV" : "group or row CV",
-    group,
-    calibrationCount: typeof count === "number" && Number.isFinite(count) ? count : null,
-    splitRole: props.inputConnections.some((item) => item.nodeType === "data.train_test_split")
-      ? props.inputConnections.every((item) => item.nodeType !== "data.train_test_split" ||
-          ((item.toPort === "X" || item.toPort === "default") && item.port === "X_train") ||
-          (item.toPort === "y" && item.port === "y_train")) &&
-        props.inputConnections.some((item) => item.nodeType === "data.train_test_split" && item.port === "X_train")
-        ? "train" : "other"
-      : "none",
-  };
-});
+const componentDesignPreview = computed(() => componentInputHint(nodeMetadata.value?.presentation_contract, props.inputConnections));
 const nodeMetadata = computed(() => {
   if (!props.selectedNode) return null;
   return workflowStore.getNodeMetadata(props.selectedNode.type);
@@ -1724,9 +1697,7 @@ const nodeMetadata = computed(() => {
 const selectedNodeHelpUrl = computed(() => {
   const nodeHelp = resolveNodeHelpUrl(nodeMetadata.value?.execution_contract?.payload.help_reference);
   if (!nodeHelp) return null;
-  return componentDesignPreview.value
-    ? "https://docs.spectrascientific.ai/chemometrics/validation-design/#component-selection"
-    : nodeHelp;
+  return nodeHelp;
 });
 const selectedPresentationId = ref<string | null>(null);
 
@@ -2378,14 +2349,8 @@ const quickPlotNodeOutput = computed(() => {
         resolveScientificPresentation(nodeMetadata.value, exactQuickPlotOutput.value, selectedPresentationId.value),
       )
     : selectedNodeOutput.value;
-  if (selectedNodeType.value === "model.kmeans" && output?.primary_port === "centroids") {
-    return centroidPresentation(output, (exactQuickPlotInputs.value ?? quickPlotInputs.value).default);
-  }
-  if (selectedNodeType.value === "selection.nested_cv" && output?.primary_port === "oof_evidence") {
-    return outOfFoldIdentityPresentation(output, (exactQuickPlotInputs.value ?? quickPlotInputs.value).X);
-  }
-  return selectedNodeType.value === "selection.variable_select" && ["mask", "scores"].includes(output?.primary_port ?? "")
-    ? featureRulePresentation(output, (exactQuickPlotInputs.value ?? quickPlotInputs.value).X) : output;
+  const resolved = resolveScientificPresentation(nodeMetadata.value, exactQuickPlotOutput.value ?? props.nodeOutput, selectedPresentationId.value);
+  return bindPresentationInput(output, resolved?.presentation.input_binding, exactQuickPlotInputs.value ?? quickPlotInputs.value);
 });
 const quickPlotResolvedInputs = computed(() => exactQuickPlotInputs.value ?? quickPlotInputs.value);
 const quickPlotPrimaryInput = computed(() =>

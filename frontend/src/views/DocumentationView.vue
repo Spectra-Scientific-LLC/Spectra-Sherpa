@@ -28,7 +28,7 @@
 <script setup lang="ts">
 import WorkspaceHeader from "@/components/workspace/WorkspaceHeader.vue";
 import ProductMap from "@/components/ProductMap.vue";
-const DOCS_BASE = "https://docs.spectrascientific.ai";
+import { DOCS_BASE_URL as DOCS_BASE } from "@/utils/documentation";
 
 interface DocLink {
   title: string;

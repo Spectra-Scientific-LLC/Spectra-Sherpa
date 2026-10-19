@@ -68,6 +68,26 @@ capsule content.
 
 ## Execute the same graph locally
 
+### Curate samples before execution
+
+The public `set_sample_labels`, `set_class`, `exclude_samples` and
+`include_samples` helpers update `dataset.sample_axis`, the same authority
+used by workflows. Exclusion preserves source values; `get_included_data`
+returns the included rows. Indices are zero-based. Do not write a competing
+mask or labels into `dataset.meta["samples"]`.
+
+```python
+ss.set_sample_labels(dataset, sample_labels)
+ss.exclude_samples(dataset, [2], reason="Reviewed acquisition fault")
+retained = ss.get_included_data(dataset)
+assert not ss.get_include_mask(dataset)[2]
+```
+
+Labels are display identifiers, not proof of specimen independence. Use the
+dataset's explicit specimen/group binding when the study needs grouped validation.
+
+### Run the graph
+
 Current `WorkflowSpec` objects execute through the same `DAGExecutor` used by
 the Workbench. External data must enter through explicit `deploy.input` nodes;
 application-owned `data.*` sources require the Workbench capabilities that own

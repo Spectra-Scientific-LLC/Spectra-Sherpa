@@ -273,6 +273,7 @@ class KMeansNode(Node):
     metadata = NodeMetadata(
         policy=NodePolicy(),
         node_type="model.kmeans",
+        presentation_inputs={"centroids": ("default", "cluster_feature_axes")},
         category="clustering",
         label="Fit K-Means Clustering",
         description="Fit K-Means clustering for unsupervised grouping",

@@ -388,7 +388,7 @@
               :run-id="selectedModel.source_run_id"
               @changed="modelOverviewRevision++"
             />
-            <MethodHelp v-else path="chemometrics/validation-application/#qualification-and-prediction-intervals" label="Model qualification" />
+            <MethodHelp v-else topic="qualification" label="Model qualification" />
           </section>
         </TabPanel>
 

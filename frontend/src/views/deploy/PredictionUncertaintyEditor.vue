@@ -1,6 +1,6 @@
 <template>
   <fieldset class="uncertainty-editor">
-<legend>Prediction intervals (optional) <MethodHelp path="chemometrics/validation-application/#qualification-and-prediction-intervals" label="Prediction interval calibration" /></legend>
+<legend>Prediction intervals (optional) <MethodHelp topic="qualification" label="Prediction interval calibration" /></legend>
     <label>Import interval record <input type="file" accept=".json,application/json" :disabled="busy" @change="importRecord" /></label>
     <p v-if="error" role="alert">{{ error }}</p>
     <button v-if="error" type="button" @click="clearRecord">Clear failed selection; use point predictions only</button>

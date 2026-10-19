@@ -13,7 +13,7 @@
     <p v-else-if="store.loading && !summary" class="empty-note">Checking project evidence…</p>
 
     <template v-if="summary">
-      <p class="scope-note">Checked {{ new Date(summary.verified_at).toLocaleString() }} · Basic availability <MethodHelp path="workflows/projects-datasets-runs/#availability-lights" label="Availability lights" /></p>
+      <p class="scope-note">Checked {{ new Date(summary.verified_at).toLocaleString() }} · Basic availability <MethodHelp topic="availability" label="Availability lights" /></p>
       <ol class="record-list" aria-label="Current project evidence records">
         <li v-for="record in summary.records" :key="record.kind" class="record-row">
           <span class="record-light" :class="`status-${availabilityState(record)}`" :aria-label="availabilityDetail(record)"></span>

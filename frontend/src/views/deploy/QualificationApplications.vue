@@ -1,7 +1,7 @@
 <template>
   <details :open="!!reviewWorkflowId">
     <summary>Review imported fitted applications</summary>
-    <MethodHelp path="chemometrics/validation-application/#qualification-and-prediction-intervals" label="Analytical qualification" />
+    <MethodHelp topic="qualification" label="Analytical qualification" />
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-else-if="loading">Loading qualification candidates…</p>
     <p v-else-if="!applications.length">No imported canonical application is available in this project.</p>

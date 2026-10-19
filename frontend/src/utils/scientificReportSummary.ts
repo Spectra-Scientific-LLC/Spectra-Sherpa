@@ -1,6 +1,7 @@
 import type { ReportData, RunReportEntry } from "./reportGenerator";
 import { reportGroups, reportRows, reportMarkdownText } from "./reportValues";
 import { scientificErrorMetricLabel, scientificMetricKey } from "./scientificDisplay";
+import { resolveMethodHelpUrl } from "./documentation";
 
 type Row = [string, string];
 interface SummaryGroup { title: string; rows: Row[]; notices: string[]; table?: { headers: string[]; rows: string[][] } }
@@ -143,12 +144,6 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     if (!validationContext.test(row.label) && !/^(?:Regression statistics|Target list|Spectral axis|Spectral intensity)/.test(row.label)) continue;
     // Population counts belong in a short report; individual row positions do not.
     let value = row.value.replace(/; split-input row positions.*$/, "");
-    const conciseContext: Record<string, string> = {
-      "Reported per retained workflow output below. Cross-validation is not external validation.": "Per output",
-      "Not established by this summary. Inspect the producer's retained fold execution before claiming fold-local fitting.": "Not established by this summary",
-      "No whole-group holdout recorded; row separation alone does not establish group separation.": "No whole-group holdout recorded",
-    };
-    value = conciseContext[value] ?? value;
     if (/^Target \(/.test(row.label) && validation?.regression_results?.length) value = value.replace(/; units: [^)]*(?=\))/, "");
     context.push([row.label, /^(?:Verified CV metric|Cross-validation (?:r2|rmse|mae|bias|q2))/i.test(row.label) ? shortValue(value) : value]);
   }
@@ -290,8 +285,8 @@ export function scientificSummaryGroups(data: ReportData): SummaryGroup[] {
   });
 }
 
-const introduction = "Metrics: 4 significant figures; counts exact.";
-const methodologyUrl = "https://docs.spectrascientific.ai/workflows/reports-exports/#short-summary-default";
+const introduction = "Metrics: 4 significant figures; counts exact. Calibration and cross-validation do not establish independent test performance.";
+const methodologyUrl = resolveMethodHelpUrl("shortSummary")!;
 const empty = "No key results available. Select a saved execution run and generate the report; a workflow definition alone is not a result.";
 const escapeHtml = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 

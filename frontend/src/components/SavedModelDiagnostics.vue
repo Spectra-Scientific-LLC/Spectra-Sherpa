@@ -1,6 +1,6 @@
 <template>
   <section class="saved-diagnostics" aria-label="Saved model diagnostics">
-    <h3>Diagnostic workbench <MethodHelp path="chemometrics/validation-application/#diagnostic-review" label="Reviewing model diagnostics" /></h3>
+    <h3>Diagnostic workbench <MethodHelp topic="diagnostics" label="Reviewing model diagnostics" /></h3>
     <p v-if="loading" role="status">Loading exact saved-run evidence…</p>
     <p v-else-if="error" role="status">{{ error }}</p>
     <template v-else-if="review">

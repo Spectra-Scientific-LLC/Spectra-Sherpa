@@ -26,11 +26,11 @@ _CONTRACTS = {
     "spectrasherpa.model.fitted_linear_regression/1": (
         "63501135129058b92cd8b6d0db33d5d61d3407c0be4f25a53f984d4a0101e27a"
     ),
-    PLSDA_FITTED_STATE_SERIALIZER: "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
-    SIMCA_FITTED_STATE_SERIALIZER: "58ae844cdcd14833a6da09a7f658e979ed08d812fc5bed7ef9d230be6e79d72e",
+    PLSDA_FITTED_STATE_SERIALIZER: "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+    SIMCA_FITTED_STATE_SERIALIZER: "fb0f84fec93cc374fbdd00797ea361f8c9a83d22b6021f242815b4e83cecc0f0",
     FITTED_PLS_STATE_SERIALIZER: "3939dc715653c735c11d3993942bd8e8baf5343fd42e21341d5cde130dafdde3",
     "spectra.scale-reference-json.v2": "15bce0eb5aa942173878a911a7eba23cd3638f59fe37aa3c0e54f90506ff7e91",
-    KNN_FITTED_STATE_SERIALIZER: "b75296b1e07af53623dfaf5e859b759d089eb1b4145a415bc555ff59cf4fec8a",
+    KNN_FITTED_STATE_SERIALIZER: "7f188a7485c4774ccaa67d7efcf0cd95e35c07682633e9b5265d48f5e568be92",
 }
 
 _OPERATIONS = {
@@ -58,6 +58,8 @@ def test_custody_capabilities_bind_the_current_registered_execution_contracts() 
             in {
                 FITTED_PLS_STATE_SERIALIZER,
                 PLSDA_FITTED_STATE_SERIALIZER,
+                KNN_FITTED_STATE_SERIALIZER,
+                SIMCA_FITTED_STATE_SERIALIZER,
                 "spectrasherpa.model.fitted_pcr/1",
                 "spectrasherpa.model.fitted_svr/1",
                 "spectrasherpa.model.fitted_linear_regression/1",

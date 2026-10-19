@@ -345,6 +345,7 @@ class VariableSelectNode(Node):
 
     metadata = NodeMetadata(
         node_type="selection.variable_select",
+        presentation_inputs={"mask": ("X", "feature_axis"), "scores": ("X", "feature_axis")},
         category="selection",
         label="Variable Selection Rule",
         description="Apply an explicit interval, peak, mask, or fitted-PLS importance rule",

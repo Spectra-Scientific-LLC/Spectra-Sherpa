@@ -2,7 +2,7 @@
   <section class="selected-spectra-panel" aria-label="Comparison preview">
     <header>
       <div>
-        <h3>Comparison preview <MethodHelp path="workflows/data-import/#preview-and-workflow-selection" label="Preview and workflow selection" /></h3>
+        <h3>Comparison preview <MethodHelp topic="previewSelection" label="Preview and workflow selection" /></h3>
         <span v-if="plotFileCount">
           {{ plotFileCount }} file{{ plotFileCount === 1 ? "" : "s" }} ·
           {{ plotDatasetCount }} dataset{{ plotDatasetCount === 1 ? "" : "s" }}

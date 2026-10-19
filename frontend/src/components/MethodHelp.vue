@@ -1,12 +1,15 @@
 <template>
   <a
-    class="method-help" :href="`https://docs.spectrascientific.ai/${path}`"
+    v-if="url" class="method-help" :href="url"
     target="_blank" rel="noopener noreferrer" :title="label"
     :aria-label="`${label} (opens documentation in a new tab)`">?</a>
 </template>
 
 <script setup lang="ts">
-defineProps<{ path: string; label: string }>();
+import { computed } from "vue";
+import { resolveMethodHelpUrl, type MethodTopic } from "@/utils/documentation";
+const props = defineProps<{ topic: MethodTopic; label: string }>();
+const url = computed(() => resolveMethodHelpUrl(props.topic));
 </script>
 
 <style scoped>

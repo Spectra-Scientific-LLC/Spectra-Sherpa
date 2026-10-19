@@ -32,8 +32,12 @@ from tests.performance_contract import PerformanceCeiling
 @pytest.mark.parametrize("labels", [["PC1", "PC2"], ["Feature 1", "Feature 2"]])
 def test_knn_map_distance_space_uses_fitted_scaling_not_display_projection(scale, labels):
     result = _knn_calibration_map(
-        np.array([[1., 2.], [3., 4.]]), labels,
-        np.array(["A", "B"]), np.array(["A", "B"]), ["one", "two"], scale=scale,
+        np.array([[1.0, 2.0], [3.0, 4.0]]),
+        labels,
+        np.array(["A", "B"]),
+        np.array(["A", "B"]),
+        ["one", "two"],
+        scale=scale,
     )
     assert result["metadata"]["distance_space"] == ("autoscaled" if scale else "unscaled")
 

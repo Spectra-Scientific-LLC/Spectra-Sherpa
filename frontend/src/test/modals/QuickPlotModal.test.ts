@@ -109,7 +109,7 @@ describe("QuickPlotModal", () => {
 
   it("offers column paging outside embedded views", async () => {
     const wrapper = mount(QuickPlotModal, {
-      props: { modelValue: true, tableOnly: true, nodeType: "data.source", nodeLabel: "Matrix",
+      props: { modelValue: true, tableOnly: true, nodeType: "data.file_load", nodeLabel: "Matrix",
         nodeOutput: { data: [Array.from({length: 12}, (_, i) => i)], metadata: {} } },
       global: { stubs: globalStubs },
     });

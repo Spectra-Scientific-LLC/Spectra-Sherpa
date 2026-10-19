@@ -16,7 +16,7 @@ describe("retained scientific records", () => {
     const rows = classificationMetricRows({ task_type: "classification", n_neighbors: 5,
       splits: { train: { accuracy: .98, f1_macro: .97 }, test: { accuracy: .91 } } });
     expect(rows).toHaveLength(3);
-    expect(rows?.[0]).toEqual({ Split: "train", Scope: "Calibration fit (not validation)", Metric: "accuracy", Value: .98 });
+    expect(rows?.[0]).toEqual({ Split: "train", Scope: "Calibration fit", Metric: "accuracy", Value: .98 });
     expect(rows?.[2].Split).toBe("test");
     expect(classificationMetricRows({ accuracy: .9 })).toBeNull();
   });

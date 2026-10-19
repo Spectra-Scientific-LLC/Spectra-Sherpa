@@ -29,7 +29,7 @@
     </p>
 
     <section v-if="summary.componentSelection" class="model-summary__components" aria-label="PLS component selection">
-      <h4>Latent variables <MethodHelp path="chemometrics/validation-design/#component-selection" label="Component selection" /></h4>
+      <h4>Latent variables <MethodHelp topic="componentSelection" label="Component selection" /></h4>
       <p>Selected: <strong>{{ summary.componentSelection.selectedComponents }} LV</strong> ·
         {{ summary.componentSelection.nCalibration }} calibration samples · {{ summary.componentSelection.scaling.replace(/_/g, ' ') }}.</p>
       <p class="model-summary__design">Saved choice basis: {{ summary.componentSelection.selectionRule.replace(/_/g, ' ') }}
@@ -73,7 +73,7 @@
     </section>
 
     <section v-if="summary.pcaComponentSelection" class="model-summary__components" aria-label="PCA component selection">
-      <h4>Principal components <MethodHelp path="chemometrics/validation-design/#component-selection" label="Component selection" /></h4>
+      <h4>Principal components <MethodHelp topic="componentSelection" label="Component selection" /></h4>
       <p>Selected: <strong>{{ summary.pcaComponentSelection.selectedComponents }} PC</strong> ·
         {{ summary.pcaComponentSelection.nCalibration }} calibration samples.</p>
       <p v-if="!summary.pcaComponentSelection.selectedInCurve" class="model-summary__caution" role="note">
@@ -97,7 +97,7 @@
     </section>
 
     <section v-if="summary.plsdaComponentSelection" class="model-summary__components" aria-label="PLS-DA component selection">
-      <h4>Classification latent variables <MethodHelp path="chemometrics/validation-design/#component-selection" label="Component selection" /></h4>
+      <h4>Classification latent variables <MethodHelp topic="componentSelection" label="Component selection" /></h4>
       <p>Selected: <strong>{{ summary.plsdaComponentSelection.selectedComponents }} LV</strong> ·
         {{ summary.plsdaComponentSelection.nCalibration }} calibration samples ·
         {{ summary.plsdaComponentSelection.classes.length }} classes.</p>

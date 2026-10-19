@@ -131,7 +131,7 @@
     </section>
 
     <section class="control-section" aria-labelledby="reference-values-title">
-      <div class="section-heading"><h3 id="reference-values-title">Reference-value quality <MethodHelp path="chemometrics/validation-application/#reference-values" label="Reference-value quality" /></h3></div>
+      <div class="section-heading"><h3 id="reference-values-title">Reference-value quality <MethodHelp topic="referenceValues" label="Reference-value quality" /></h3></div>
       <div class="editor-controls">
         <div v-if="selectedTargetType === 'continuous'" class="field">
           <label for="reference-units">Response units</label>

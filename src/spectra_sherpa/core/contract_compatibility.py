@@ -306,6 +306,71 @@ _PLSDA_LEGACY_ADMISSION_PREDECESSORS = tuple(
 )
 
 
+# GUI presentation and SDK sample-axis repairs change shared source hashes,
+# not these closed fitted-state schemas or application math. Each predecessor
+# is enumerated explicitly; no wildcard, transitive or execution permission.
+_GUI_SAMPLE_AUTHORITY_PREDECESSORS = tuple(
+    SavedStateCompatibility(operation, predecessor, consumer, serializer)
+    for operation, serializer, consumer, predecessors in (
+        (
+            "model.pca",
+            "spectrasherpa.model-artifact.pca/3",
+            "eeca5bea6642ec33c4a51c825acd58217d1a8c17784cfa318e4840e4c4ba73a9",
+            (
+                "ad9ee0dc72e2a6e9984134d8cfd7da6176ae725641c240f488f31713b57fcf94",
+                "def76c765075b59a536e8c6bd72be0418c20d0ea4611f11ce5ec7f1a17ca891b",
+                "c8f6c57e2e5ffe3f7ff3a6f5528cfef28ceea6eabfdac4d2c4572481d391ca75",
+                "2d4457cd7ca9ce699326aad70e1b4a77deb74d6cea88afd08066f106f45df161",
+            ),
+        ),
+        (
+            "classification.plsda",
+            "spectrasherpa.sherpa-plsda-state/5",
+            "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+            (
+                "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
+                "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
+                "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
+                "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+                "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+                "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+            ),
+        ),
+        (
+            "classification.simca",
+            "spectrasherpa.model-artifact.simca/2",
+            "fb0f84fec93cc374fbdd00797ea361f8c9a83d22b6021f242815b4e83cecc0f0",
+            ("58ae844cdcd14833a6da09a7f658e979ed08d812fc5bed7ef9d230be6e79d72e",),
+        ),
+        (
+            "classification.knn",
+            "spectrasherpa.model-artifact.knn/2",
+            "7f188a7485c4774ccaa67d7efcf0cd95e35c07682633e9b5265d48f5e568be92",
+            ("b75296b1e07af53623dfaf5e859b759d089eb1b4145a415bc555ff59cf4fec8a",),
+        ),
+        (
+            "model.kmeans",
+            "spectrasherpa.model.kmeans-state/1",
+            "c65f7f11e6d2089abdec190e2c7aee80088eed4f2545ce55c0b92db1b2ebef30",
+            (
+                "c20e5cfbe10bd8957480c931f3c103684e63eb349415f5e0cd3097c9a4a962de",
+                "466e832a2bdf8e856d875cfee2abfdbeff46bea55c77d6d5c005fcc2aeb01879",
+            ),
+        ),
+        (
+            "model.parafac",
+            "spectrasherpa.model-artifact.parafac/2",
+            "3c1525353cb993b328366260f5b751a2275048e2c39322ca424a91692ad24f68",
+            (
+                "dfcbb2f3a62ca3ea25bb59a62d57689f5ef338a0ca6221e8e8d92bbc38d46b43",
+                "869e7edb4ca328e560bc543bfa4e6ed676314f6a8be49e2364985c3fe47a640d",
+            ),
+        ),
+    )
+    for predecessor in predecessors
+)
+
+
 @lru_cache(maxsize=1)
 def saved_state_compatibilities() -> tuple[SavedStateCompatibility, ...]:
     """Reviewed inference producers only; no application or cohort-only nodes."""
@@ -360,6 +425,7 @@ def saved_state_predecessor_is_compatible(
             *_PCA_SIGNAL_CUSTODY_PREDECESSORS,
             *_PLSDA_LEGACY_ADMISSION_PREDECESSORS,
             *_CROSS_BLOCK_PLSDA_PREDECESSORS,
+            *_GUI_SAMPLE_AUTHORITY_PREDECESSORS,
         )
         if entry.predecessor_digest == predecessor
         and entry.consumer_digest == consumer

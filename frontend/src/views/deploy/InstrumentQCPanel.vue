@@ -1,6 +1,6 @@
 <template>
   <section>
-    <h3>Instrument QC and maintenance <MethodHelp path="chemometrics/validation-application/#instrument-qc" label="Instrument QC policy" /></h3>
+    <h3>Instrument QC and maintenance <MethodHelp topic="instrumentQC" label="Instrument QC policy" /></h3>
     <p v-if="error" role="alert">{{ error }}</p>
     <button v-if="error" type="button" :disabled="busy" @click="refresh">Retry</button>
     <button type="button" :disabled="!history || busy" @click="download">Export complete QC history</button>

@@ -192,12 +192,12 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
         else:
             add(
                 f"Groups ({node})",
-                "No whole-group holdout recorded; row separation alone does not establish group separation.",
+                "No whole-group holdout recorded.",
             )
 
     add(
         "Evaluation population",
-        "Reported per retained workflow output below. Cross-validation is not external validation.",
+        "Per retained output; cross-validation is not external validation.",
     )
     if not splits:
         add(
@@ -207,8 +207,7 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
         )
     add(
         "Preprocessing within folds",
-        "Not established by this summary. "
-        "Inspect the producer's retained fold execution before claiming fold-local fitting.",
+        "Not established by this summary; inspect retained fold execution.",
     )
     add(
         "Missing and excluded observations",

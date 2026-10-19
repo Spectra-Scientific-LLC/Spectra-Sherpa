@@ -6,6 +6,10 @@ import DisabledReason from "@/components/DisabledReason.vue";
 import WorkflowInspector from "@/views/workflow-builder/WorkflowInspector.vue";
 
 const nodeMetadata = reactive({
+  presentation_contract: { digest: "b".repeat(64), payload: {
+    schema_version: "spectrasherpa-node-presentation/1", default_presentation: "component_selection",
+    presentations: [{ kind: "validation_result", presentation_id: "component_selection", source_ports: ["component_curve"], modes: ["record"], label: "Component selection", description: "" }],
+  } },
   label: "Principal Component Analysis",
   parameters: [],
   execution_contract: {
@@ -68,7 +72,7 @@ describe("WorkflowInspector node help", () => {
 
     const link = wrapper.get('[data-testid="inspector-node-help"]');
     expect(link.element.tagName).toBe("A");
-    expect(link.attributes("href")).toBe("https://docs.spectrascientific.ai/chemometrics/validation-design/#component-selection");
+    expect(link.attributes("href")).toBe("https://docs.spectrascientific.ai/nodes/exploratory/");
     expect(link.attributes("target")).toBe("_blank");
     expect(link.attributes("rel")).toBe("noopener noreferrer");
     expect(link.text()).toBe("?");
@@ -87,10 +91,11 @@ describe("WorkflowInspector node help", () => {
     });
     expect(wrapper.find('[aria-label="Planned component validation"]').exists()).toBe(false);
     expect(wrapper.text()).not.toContain("Exact fold membership");
-    expect(wrapper.find('a[href$="#component-selection"]').exists()).toBe(true);
+    expect(wrapper.find('a[href$="#component-selection"]').exists()).toBe(false);
     await wrapper.setProps({ inputConnections: [{ nodeId: "split_1", nodeType: "data.train_test_split", nodeLabel: "Split",
       port: "X_test", toPort: "X", data: { data: [], metadata: { summary: { n_samples: 20 } } } }] });
     expect(wrapper.get('[role="alert"]').text()).toContain("connect the split’s training ports");
+    expect(wrapper.find('a[href$="#component-selection"]').exists()).toBe(true);
   });
 
   it("fails closed when the selected node contract has no safe help authority", async () => {

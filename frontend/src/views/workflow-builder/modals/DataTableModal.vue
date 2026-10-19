@@ -93,7 +93,7 @@
         />
       </div>
 
-      <span class="export-scope">CSV: {{ dataShape.rows }} active rows <MethodHelp path="workflows/reports-exports/#display-and-table-exports" label="CSV export scope" /></span>
+      <span class="export-scope">CSV: {{ dataShape.rows }} active rows <MethodHelp topic="displayExports" label="CSV export scope" /></span>
       <p v-if="cohort.population" role="status">Active cohort: {{ cohort.population.total }} of {{ cohort.population.available }} retained rows; {{ cohort.population.excluded }} excluded. {{ cohort.population.shown_features }} of {{ cohort.population.available_features }} features; {{ cohort.population.excluded_features }} excluded.</p>
       <p v-if="exportError" role="alert">{{ exportError }}</p>
       <p v-if="tableProjectionError" role="alert">{{ tableProjectionError }}</p>

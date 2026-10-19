@@ -1,4 +1,16 @@
 import type { NodeOutput, PortOutput } from "@/utils/nodeOutput";
+import type { ScientificPresentation } from "@/types";
+
+/** Dispatch only declared coordinate relationships, never operation names. */
+export function bindPresentationInput(output: NodeOutput | null, binding: ScientificPresentation["input_binding"], inputs: Record<string, PortOutput | NodeOutput | null | undefined>): NodeOutput | null {
+  if (!binding) return output;
+  const [port, kind] = binding;
+  const input = inputs[port];
+  if (kind === "feature_axis") return featureRulePresentation(output, input);
+  if (kind === "cluster_feature_axes") return centroidPresentation(output, input);
+  if (kind === "sample_axis") return outOfFoldIdentityPresentation(output, input);
+  return output;
+}
 
 /** Variable-rule masks/scores are ordered on the rule's full X feature axis. */
 export function featureRulePresentation(output: NodeOutput | null, input: PortOutput | NodeOutput | null | undefined): NodeOutput | null {

@@ -511,7 +511,7 @@
     >
       <div class="create-form">
         <div class="form-field">
-          <label for="watch-workflow">Saved model or imported campaign solution <MethodHelp path="chemometrics/validation-application/#local-folder-watches" label="Folder watch input requirements" /></label>
+          <label for="watch-workflow">Saved model or imported campaign solution <MethodHelp topic="folderWatches" label="Folder watch input requirements" /></label>
           <Dropdown
             inputId="watch-workflow"
             v-model="newWatch.artifact_uid"

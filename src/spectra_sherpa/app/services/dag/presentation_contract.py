@@ -108,6 +108,7 @@ class ScientificPresentation:
     source_ports: tuple[str, ...]
     modes: tuple[str, ...]
     description: str = ""
+    input_binding: tuple[str, str] | None = None
 
     def __post_init__(self) -> None:
         if not self.presentation_id or not self.label:
@@ -121,6 +122,13 @@ class ScientificPresentation:
         unknown_modes = set(self.modes) - PRESENTATION_MODES
         if unknown_modes:
             raise ValueError(f"unknown scientific presentation modes {sorted(unknown_modes)!r}")
+        if self.input_binding is not None:
+            if (
+                len(self.input_binding) != 2
+                or not self.input_binding[0]
+                or self.input_binding[1] not in {"feature_axis", "cluster_feature_axes", "sample_axis"}
+            ):
+                raise ValueError("unknown presentation input binding")
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -130,6 +138,7 @@ class ScientificPresentation:
             "source_ports": list(self.source_ports),
             "modes": list(self.modes),
             "description": self.description,
+            **({"input_binding": list(self.input_binding)} if self.input_binding is not None else {}),
         }
 
 
@@ -201,6 +210,7 @@ def derive_node_presentation_contract(metadata: Any) -> NodePresentationContract
         if not isinstance(declared, NodePresentationContract):
             raise ValueError("node presentation contract must be a NodePresentationContract")
         declared.validate_ports({port.name for port in metadata.output_ports or ()})
+        _validate_input_bindings(declared, metadata)
         return declared
 
     ensure_type_registry_loaded()
@@ -218,6 +228,7 @@ def derive_node_presentation_contract(metadata: Any) -> NodePresentationContract
                 source_ports=(port.name,),
                 modes=modes,
                 description=port.description or type_def.description,
+                input_binding=metadata.presentation_inputs.get(port.name),
             )
         )
     if not presentations:
@@ -226,7 +237,19 @@ def derive_node_presentation_contract(metadata: Any) -> NodePresentationContract
         (item.presentation_id for item in presentations if item.presentation_id == "default"),
         presentations[0].presentation_id,
     )
-    return NodePresentationContract(default_presentation=default, presentations=tuple(presentations))
+    contract = NodePresentationContract(default_presentation=default, presentations=tuple(presentations))
+    _validate_input_bindings(contract, metadata)
+    return contract
+
+
+def _validate_input_bindings(contract: NodePresentationContract, metadata: Any) -> None:
+    inputs = {port.name for port in metadata.input_ports or ()}
+    outputs = {port.name for port in metadata.output_ports or ()}
+    if set(metadata.presentation_inputs) - outputs:
+        raise ValueError("presentation input binding references an unknown output")
+    for presentation in contract.presentations:
+        if presentation.input_binding is not None and presentation.input_binding[0] not in inputs:
+            raise ValueError("presentation input binding references an unknown input")
 
 
 def describe_executed_presentations(

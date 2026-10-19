@@ -194,7 +194,7 @@
         {{ plotSampling.sourceNoun }} ({{ plotSampling.percent }}%).
         <span v-if="plotSampling.excluded">Excluded: {{ plotSampling.excluded }} source rows.</span>
         <span v-if="plotSampling.plottedTableOnly">Data view: plotted traces only.</span>
-        <MethodHelp path="workflows/reports-exports/#display-and-table-exports" label="Preview sampling" />
+        <MethodHelp topic="displayExports" label="Preview sampling" />
       </div>
 
       <div v-if="metadataGroupingError || explicitGroupingError" class="plot-grouping-notice" role="status">
@@ -230,7 +230,7 @@
 
       <!-- Data Table -->
       <div v-else class="data-table-container">
-        <span v-if="usePlottedTable && isProjectedScientificKind(nodeOutput, 'visualization')" class="data-summary">Plot coordinates <MethodHelp path="workflows/reports-exports/#display-and-table-exports" label="Plot coordinates and sample rows" /></span>
+        <span v-if="usePlottedTable && isProjectedScientificKind(nodeOutput, 'visualization')" class="data-summary">Plot coordinates <MethodHelp topic="displayExports" label="Plot coordinates and sample rows" /></span>
         <span v-if="!tableOnly && availablePlots.length === 0" class="data-summary" title="No shared quantitative axis">Table-only result</span>
         <span v-if="dataPreviewSummary" class="data-summary">{{ dataPreviewSummary }}</span>
         <div v-if="totalFeatureColumns > 10" class="feature-paging">

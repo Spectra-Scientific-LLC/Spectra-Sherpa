@@ -1,7 +1,7 @@
 <template>
   <section class="qualification-panel" :class="{ 'qualification-panel--embedded': headingless }">
     <h3 v-if="!headingless">Analytical qualification</h3>
-    <MethodHelp path="chemometrics/validation-application/#qualification-and-prediction-intervals" label="Analytical qualification" />
+    <MethodHelp topic="qualification" label="Analytical qualification" />
     <p v-if="error" role="alert">{{ error }}</p>
     <button v-if="error" type="button" class="p-button p-button-sm p-button-outlined" :disabled="busy" @click="loadHistory">Retry</button>
     <button type="button" class="p-button p-button-sm p-button-outlined" :disabled="!records.length || busy" @click="download">Export complete evidence history</button>

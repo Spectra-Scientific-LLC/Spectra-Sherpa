@@ -7,7 +7,7 @@
     <div v-show="!isEmpty" ref="chartEl" class="plotly-canvas"></div>
     <div v-if="displayed.omitted" class="plotly-preview-notice" role="status">
       Display limit: {{ displayed.omissionDescription }} omitted.
-      <MethodHelp path="workflows/reports-exports/#display-and-table-exports" label="Plot display limits" />
+      <MethodHelp topic="displayExports" label="Plot display limits" />
     </div>
   </div>
 </template>

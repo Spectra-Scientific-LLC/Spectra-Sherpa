@@ -1,6 +1,6 @@
 <template>
   <section aria-label="Saved PLS-DA diagnostics" class="plsda-diagnostics">
-    <h3>PLS-DA sample diagnostics <MethodHelp path="chemometrics/validation-application/#diagnostic-review" label="Reviewing classifier diagnostics" /></h3>
+    <h3>PLS-DA sample diagnostics <MethodHelp topic="diagnostics" label="Reviewing classifier diagnostics" /></h3>
     <p v-if="loading" role="status">Loading saved classifier evidence…</p>
     <p v-else-if="error" role="status">{{ error }}</p>
     <template v-else-if="receipt">

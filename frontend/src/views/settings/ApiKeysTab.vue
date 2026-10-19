@@ -50,7 +50,7 @@
     <!-- BYO Chat Config — local/OSS mode only. -->
     <div v-if="appMode === 'local'" class="key-section">
       <div class="section-header">
-        <h3>BYO Chat Configuration <MethodHelp path="onboarding/scientific-assistance/#local-basic-chat" label="Configure local chat" /></h3>
+        <h3>BYO Chat Configuration <MethodHelp topic="localChat" label="Configure local chat" /></h3>
         <Tag v-if="byoChatConfigured" severity="success" value="Configured" />
         <span v-else class="badge optional">Optional</span>
       </div>
@@ -186,7 +186,7 @@
     <!-- HITRAN key for FTIR synthesis live downloads. -->
     <div class="key-section">
       <div class="section-header">
-        <h3>HITRAN API Key <MethodHelp path="workflows/references-synthesis/#hitranhapi-synthesis" label="HITRAN synthesis setup" /></h3>
+        <h3>HITRAN API Key <MethodHelp topic="hitran" label="HITRAN synthesis setup" /></h3>
         <Tag v-if="isHitranKeySaved" severity="success" value="Saved" />
         <span v-else class="badge optional">Optional</span>
       </div>

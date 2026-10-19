@@ -52,7 +52,7 @@ describe("Quick Plot and detailed plot parity", () => {
   it("keeps selected spectral overlays unconnected", () => {
     const output = { data: [[1, 2, 3]], metadata: { is_spectra: true,
       wavenumbers: [600, 1000, 1400], processing_history: [{ op_id: "selection.variable_select" }] } } as NodeOutput;
-    const { quick } = views(output, "data.source");
+    const { quick } = views(output, "data.file_load");
     quick.selectedPlotKey.value = "spectra_overlay";
     expect(quick.plotData.value.length).toBe(1);
     expect(quick.plotData.value[0].mode).toBe("markers");

@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { featureRulePresentation, centroidPresentation, outOfFoldIdentityPresentation } from "@/utils/featureRulePresentation";
+import { bindPresentationInput, featureRulePresentation, centroidPresentation, outOfFoldIdentityPresentation } from "@/utils/featureRulePresentation";
 
 describe("feature rule coordinate authority", () => {
+  it("dispatches by the declared input port without inferring a node identity", () => {
+    const output = { data: [true, false], metadata: {}, descriptor: { dimensions: [] } } as any;
+    const inputs = { scientific_input: { value: { data: [[1, 2]], x_axis: { labels: ["A", "B"] } } } } as any;
+    expect(bindPresentationInput(output, ["scientific_input", "feature_axis"], inputs)?.metadata.feature_names).toEqual(["A", "B"]);
+    expect(bindPresentationInput(output, ["missing", "feature_axis"], inputs)).toBe(output);
+    expect(bindPresentationInput(output, undefined, inputs)).toBe(output);
+  });
   it("carries exact X row identities onto OOF rows without altering the bound evidence record", () => {
     const evidence = { observations: [1], predictions: [1.1], fold_assignments: [0] };
     const output = { data: [{ observation: 1, prediction: 1.1, fold_index: 0 }], metadata: {}, presentation_value: evidence };

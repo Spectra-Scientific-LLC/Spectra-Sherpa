@@ -895,6 +895,12 @@ class SampleAxis(AxisInfo):
     @model_validator(mode="before")
     @classmethod
     def _project_primary_class_set(cls, value: Any) -> Any:
+        if isinstance(value, dict) and isinstance(value.get("classes"), (list, tuple)):
+            # JSON round trips must not turn integer class identities into
+            # strings merely because other classes are text.
+            classes = value["classes"]
+            if any(isinstance(item, str) for item in classes) and any(not isinstance(item, str) for item in classes):
+                value = {**value, "classes": np.asarray(classes, dtype=object)}
         if not isinstance(value, dict) or value.get("classes") is not None:
             return value
         primary_name = value.get("primary_class_set_name")
