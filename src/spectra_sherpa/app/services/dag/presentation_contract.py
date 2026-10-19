@@ -109,6 +109,8 @@ class ScientificPresentation:
     modes: tuple[str, ...]
     description: str = ""
     input_binding: tuple[str, str] | None = None
+    output_binding: tuple[str, str] | None = None
+    sample_labels_field: str | None = None
 
     def __post_init__(self) -> None:
         if not self.presentation_id or not self.label:
@@ -129,6 +131,15 @@ class ScientificPresentation:
                 or self.input_binding[1] not in {"feature_axis", "cluster_feature_axes", "sample_axis"}
             ):
                 raise ValueError("unknown presentation input binding")
+        if self.output_binding is not None:
+            if (
+                len(self.output_binding) != 2
+                or not self.output_binding[0]
+                or self.output_binding[1] not in {"target_context", "feature_axis"}
+            ):
+                raise ValueError("unknown presentation output binding")
+        if self.sample_labels_field is not None and not self.sample_labels_field.isidentifier():
+            raise ValueError("presentation sample labels must name one result field")
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -139,6 +150,8 @@ class ScientificPresentation:
             "modes": list(self.modes),
             "description": self.description,
             **({"input_binding": list(self.input_binding)} if self.input_binding is not None else {}),
+            **({"output_binding": list(self.output_binding)} if self.output_binding is not None else {}),
+            **({"sample_labels_field": self.sample_labels_field} if self.sample_labels_field is not None else {}),
         }
 
 
@@ -229,6 +242,7 @@ def derive_node_presentation_contract(metadata: Any) -> NodePresentationContract
                 modes=modes,
                 description=port.description or type_def.description,
                 input_binding=metadata.presentation_inputs.get(port.name),
+                output_binding=metadata.presentation_outputs.get(port.name),
             )
         )
     if not presentations:
@@ -247,9 +261,13 @@ def _validate_input_bindings(contract: NodePresentationContract, metadata: Any) 
     outputs = {port.name for port in metadata.output_ports or ()}
     if set(metadata.presentation_inputs) - outputs:
         raise ValueError("presentation input binding references an unknown output")
+    if set(metadata.presentation_outputs) - outputs:
+        raise ValueError("presentation output binding references an unknown output")
     for presentation in contract.presentations:
         if presentation.input_binding is not None and presentation.input_binding[0] not in inputs:
             raise ValueError("presentation input binding references an unknown input")
+        if presentation.output_binding is not None and presentation.output_binding[0] not in outputs:
+            raise ValueError("presentation output binding references an unknown output")
 
 
 def describe_executed_presentations(

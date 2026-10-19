@@ -18,6 +18,7 @@ import { hasVariableSelectionHistory } from "@/utils/selectedSpectralCoordinates
 
 import { computed, watch, type ComputedRef, type Ref } from "vue";
 import type { NodeOutput } from "@/utils/nodeOutput";
+import type { ScientificPresentation } from "@/types";
 import type { PlotDataBag } from "@/types/scientificPlotProjection";
 import { createCategoryColorMap } from "@/utils/colors";
 import { getYAxisLabel, shouldReverseFeatureAxis } from "@/utils/plotLabels";
@@ -157,6 +158,13 @@ export function useScientificPlotProjectionCore(deps: ScientificPlotProjectionDe
     return Array.isArray(data) ? data : [];
   });
   const featureAxisPayload = computed(() => {
+    const identity = projectedPresentationIdentity(nodeOutput.value);
+    const declaration = nodeOutput.value?.presentation_contract?.payload.presentations.find(
+      (item: ScientificPresentation) => item.presentation_id === identity?.presentation_id,
+    );
+    if (declaration?.output_binding?.[1] === "feature_axis") {
+      return resolvePortPayload(nodeOutput.value?.ports?.[declaration.output_binding[0]]);
+    }
     const loadings = resolvePortPayload(nodeOutput.value?.ports?.loadings);
     if (loadings?.x_axis) return loadings;
     return primaryOutputPayload.value;

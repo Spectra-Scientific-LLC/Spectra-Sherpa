@@ -76,10 +76,17 @@ def test_exact_directional_application_compatibility(entry):
         )
 
 
-def test_gui_sample_authority_compatibility_is_exact_and_classifies_current_custody():
-    from spectra_sherpa.core.contract_compatibility import _GUI_SAMPLE_AUTHORITY_PREDECESSORS
+def test_scientific_authority_compatibility_is_exact_and_classifies_current_custody():
+    from spectra_sherpa.core.contract_compatibility import (
+        _FEATURE_PRESENTATION_PREDECESSORS,
+        _SCIENTIFIC_AUTHORITY_PREDECESSORS,
+    )
 
-    for entry in _GUI_SAMPLE_AUTHORITY_PREDECESSORS:
+    current_entries = (
+        tuple(e for e in _SCIENTIFIC_AUTHORITY_PREDECESSORS if e.operation_id != "classification.plsda")
+        + _FEATURE_PRESENTATION_PREDECESSORS
+    )
+    for entry in current_entries:
         current = node_registry.get_metadata(entry.operation_id).resolved_execution_contract()
         assert current.digest == entry.consumer_digest
         assert current.payload["fitted_state_serializer"] == entry.serializer
@@ -105,7 +112,9 @@ def test_gui_sample_authority_compatibility_is_exact_and_classifies_current_cust
         # Application compatibility does not grant historical packages a new
         # export capability. Classify the reviewed current producer only.
         expected = (
-            "retains_training_rows" if entry.operation_id == "classification.knn" else "data_free_application_state"
+            "retains_training_rows"
+            if entry.operation_id in {"classification.knn", "model.fitted_svr"}
+            else "data_free_application_state"
         )
         assert new.custody_class == expected
 
@@ -117,17 +126,17 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         "model.dbscan": "5fae2be3e60e35b85b13cb9b80eb09b171743f319bed7dd48b13a8265f31690a",
         "model.hca": "0adc84cec3ce752df725518210701d744af62e2cbfd6cd3396eab0d3bce8495b",
         "model.kmeans": "c65f7f11e6d2089abdec190e2c7aee80088eed4f2545ce55c0b92db1b2ebef30",
-        "model.parafac": "3c1525353cb993b328366260f5b751a2275048e2c39322ca424a91692ad24f68",
-        "classification.plsda": "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+        "model.parafac": "caa04a3f25923cfc7d83fe38defd47db25fcb10be1375d51d516ebc82b544ac0",
+        "classification.plsda": "526a54177bad1ec421ec319c031f6ba322fa431e7235cf35604e14d7ecf23f6c",
         "model.load_apply": "2c0aac4b7572370e631c839a79b3980b5edb37d879bb43fc789edab337e76a64",
-        "model.apply_fitted_linear_regression": "7867e5992747564b3fe46215d0f7d2d199b3a5c2af40531b38d480d82465530b",
-        "model.apply_fitted_pcr": "14d71c0447ba121bdd0b53911bb4f804d8b39ec1c0cdeb0a28228b8022aec5a8",
-        "model.apply_fitted_pls": "6e4dad65e323401e8fa1e0dee0714892e3f2a9316489113db478e75cee42d9de",
-        "model.apply_fitted_svr": "ad5a2b2901255e5ac252da8081fa9b727ce6aceefd5513d25285beec7824545c",
-        "model.fitted_linear_regression": "63501135129058b92cd8b6d0db33d5d61d3407c0be4f25a53f984d4a0101e27a",
-        "model.fitted_pcr": "7f6040c174cae2889250e6a4bc22620af172207109a1d6ff0fe66ad35937f9de",
-        "model.fitted_pls": "3939dc715653c735c11d3993942bd8e8baf5343fd42e21341d5cde130dafdde3",
-        "model.fitted_svr": "6015b47482335d0931239f6a52fea6825979c43c055e319c69deb3129b344c67",
+        "model.apply_fitted_linear_regression": "38c9a89ee76f37647c38bf9d66b7b0c302c3c7a2265c089a2a2e10511092b3a5",
+        "model.apply_fitted_pcr": "696da832dd71dc37022631c9330a074bfe945084a464aed0f33dc55d374b2862",
+        "model.apply_fitted_pls": "a646aae06c4817385e9cadf0c5be1580dbcf72e881b17ef734c3b20d1478f72e",
+        "model.apply_fitted_svr": "78f4c25930341028dbb809e81dfff34d111051193e333b8728f96e8bdceb18ff",
+        "model.fitted_linear_regression": "10b125ffb88229b92cfe1eac67e5717117cfdf57d485b3e370abb2ef8910f6a7",
+        "model.fitted_pcr": "577777179c36fedf0338c84a003e9080aa8879043e2ad0e19e7dccc5f618c201",
+        "model.fitted_pls": "473b586d631d966d9a76a32ec3788f95b7aea3771fb8981256475061d1b52871",
+        "model.fitted_svr": "cde922310dc4713ab5349720f865595fee13c8c2a53b60f68708ceed9882bae0",
     }
     reviewed_changes = {
         "model.apply_fitted_linear_regression": [
@@ -205,8 +214,10 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
             "spectra_sherpa.app.services.dag.nodes.selection.variable_select_node",
         ],
         "model.parafac": [
+            "spectra_sherpa.app.lib.sample_identity",
             "spectra_sherpa.app.services.dag.io_contracts",
             "spectra_sherpa.app.services.dag.meta_helpers",
+            "spectra_sherpa.app.services.dag.nodes.modeling.parafac_node",
             "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
         ],
     }

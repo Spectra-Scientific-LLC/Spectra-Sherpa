@@ -36,6 +36,7 @@ export interface ReportRegressionResult {
   source_port: string;
   target: string;
   units: string;
+  unit_context?: { state: "recorded" | "missing" | "ambiguous"; value: string | null };
   role: string;
   reference_min: number;
   reference_max: number;
@@ -48,7 +49,7 @@ export interface ReportRegressionResult {
 
 export interface RunReportEntry {
   node_plots?: ReportNodePlotSection[];
-  validation_summary?: { schema_version: string; run_id: number; rows: { label: string; value: string }[]; figures?: ValidationFigure[]; regression_results?: ReportRegressionResult[] };
+  validation_summary?: { schema_version: string; run_id: number; rows: { label: string; value: string; row_level?: boolean }[]; summary_rows?: { label: string; value: string }[]; figures?: ValidationFigure[]; regression_results?: ReportRegressionResult[] };
   id: number;
   name: string;
   status: string;

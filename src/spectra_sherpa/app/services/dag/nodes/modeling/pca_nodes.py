@@ -16,6 +16,7 @@ import numpy as np
 
 from spectra_sherpa.app.lib import numerical_scaling, pca_numerics
 from spectra_sherpa.app.lib import pca as pca_authority
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib.axes import FeatureAxis, SampleAxis
 from spectra_sherpa.app.lib.pca import PCAExtract, fit_pca
 from spectra_sherpa.app.lib.pca_numerics import require_resolved_pca_eigenvalues
@@ -1446,6 +1447,7 @@ bind_stable_execution_contract(
         dag_io_contracts,
         meta_helpers,
         _artifact_builder,
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy", "scipy", "scikit-learn"),
     runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("scikit-learn", "1.9.0")),
@@ -1486,6 +1488,7 @@ bind_stable_execution_contract(
         pca_authority,
         dag_io_contracts,
         meta_helpers,
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy", "scipy", "scikit-learn"),
     runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("scikit-learn", "1.9.0")),

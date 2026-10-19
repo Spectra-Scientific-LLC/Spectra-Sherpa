@@ -22,6 +22,7 @@ import numpy as np
 from spectra_sherpa.app.lib import collection_assembly as collection_assembly_contract
 from spectra_sherpa.app.lib import collection_definition as collection_definition_contract
 from spectra_sherpa.app.lib import dataset_view_receipts as dataset_views_contract
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib import sample_labels as sample_labels_contract
 from spectra_sherpa.app.lib.collection_assembly import (
     CollectionMember,
@@ -1346,6 +1347,7 @@ class CollectionLoadNode(Node):
 
     metadata = NodeMetadata(
         node_type="data.collection_load",
+        presentation_outputs={"target": ("default", "target_context")},
         category="data",
         label="Collection Load",
         description="Load exact selected members of a project dataset",
@@ -1448,6 +1450,7 @@ bind_stable_execution_contract(
         sample_labels_contract,
         ingestion_registry_contract,
         *ingestion_registry_contract.native_implementation_modules(),
+        sample_identity_authority,
     ),
     implementation_distributions=("h5py", "numpy", "pandas", "scipy"),
     runtime_requirements=(
@@ -1483,6 +1486,7 @@ bind_stable_execution_contract(
         sample_labels_contract,
         ingestion_registry_contract,
         *ingestion_registry_contract.native_implementation_modules(),
+        sample_identity_authority,
     ),
     implementation_distributions=("h5py", "numpy", "pandas", "scipy"),
     runtime_requirements=(

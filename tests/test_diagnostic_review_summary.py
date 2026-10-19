@@ -290,7 +290,12 @@ def test_pls_response_specific_values_units_profiles_and_full_test_masks():
         state={"heldout_excluded": ["private-4"], "post_review": True},
     )
     assert result["contains_held_out"] is True
-    assert result["response"] == {"index": 1, "name": "moisture", "units": "%"}
+    assert result["response"] == {
+        "index": 1,
+        "name": "moisture",
+        "units": "%",
+        "unit_context": {"state": "recorded", "value": "%"},
+    }
     assert value(result, "model.response_baseline") == 4.0
     assert value(result, "S5.predicted") == 10.0
     assert value(result, "S5.residual") == -1.0

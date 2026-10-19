@@ -265,72 +265,70 @@ const attachDiagnostics = (output: NodeOutput, diagnostics?: UnknownRecord | nul
 };
 
 const nonEmptyStringArray = (value: unknown): string[] =>
-  Array.isArray(value)
-    ? value
-        .filter((item): item is string => typeof item === "string")
-        .map((item) => item.trim())
-        .filter(Boolean)
-    : [];
+  Array.isArray(value) && value.every(item => typeof item === "string" && item.trim().length > 0)
+    ? [...value] : [];
 
-const enrichSampleIdentityMetadata = (
+const enrichDeclaredContext = (
   result: UnknownRecord,
   ports: Record<string, PortOutput>,
+  contract?: NodePresentationContract | null,
 ): void => {
-  const sampleLabels = nonEmptyStringArray(result.sample_labels);
-  if (sampleLabels.length === 0) return;
-
-  for (const port of Object.values(ports)) {
-    const rowCount = port.descriptor?.shape?.[0] ??
-      (Array.isArray(port.data) ? port.data.length : null);
-    if (rowCount !== sampleLabels.length) continue;
-    const existingLabels = nonEmptyStringArray(port.metadata.sample_labels);
-    if (existingLabels.length === sampleLabels.length) continue;
-    port.metadata = { ...port.metadata, sample_labels: sampleLabels };
-  }
-};
-
-const enrichTargetPortMetadata = (ports: Record<string, PortOutput>): void => {
-  const datasets = Object.values(ports)
-    .map((port) => port.value)
-    .filter(isDatasetPayload);
-  for (const [portName, port] of Object.entries(ports)) {
-    if (port.descriptor?.scientific_kind !== "target_matrix") continue;
-    // Split cohorts may have equal sizes. Shape agreement is not identity:
-    // bind each response to its named X cohort, never the first dataset.
-    const paired = portName.startsWith("y_") ? ports[`X_${portName.slice(2)}`]?.value : undefined;
-    const dataset = isDatasetPayload(paired) ? paired
-      : !portName.startsWith("y_") && datasets.length === 1 ? datasets[0] : undefined;
-    if (!dataset) continue;
-
-  const targetContext = isRecord(dataset.target_context) ? dataset.target_context : {};
-  const declaredNames = nonEmptyStringArray(targetContext.target_names);
-  const fallbackName = [targetContext.selected_target, targetContext.target_name].find(
-    (value): value is string => typeof value === "string" && value.trim().length > 0,
-  );
-  const targetNames = declaredNames.length > 0 ? declaredNames : fallbackName ? [fallbackName] : [];
-  const datasetMetadata = isRecord(dataset.metadata) ? dataset.metadata : {};
-  const sampleAxis = isRecord(dataset.y_axis) ? dataset.y_axis : {};
-  const metadataSampleLabels = nonEmptyStringArray(datasetMetadata.sample_labels);
-  const sampleLabels =
-    metadataSampleLabels.length > 0 ? metadataSampleLabels : nonEmptyStringArray(sampleAxis.labels);
-
-    const sampleCount = port.descriptor.shape?.[0] ?? 0;
-    const targetCount = port.descriptor.shape?.[1] ?? 0;
-    const exactSampleLabels = sampleLabels.length === sampleCount ? sampleLabels : [];
-    const exactTargetNames =
-      targetNames.length === targetCount
-        ? targetNames
-        : targetCount === 1 && fallbackName
-          ? [fallbackName]
-          : [];
-    port.metadata = {
-      ...port.metadata,
-      ...(exactSampleLabels.length > 0 ? { sample_labels: exactSampleLabels } : {}),
-      ...(exactTargetNames.length > 0
-        ? { target_names: exactTargetNames, column_names: exactTargetNames }
-        : {}),
-      ...(targetContext.target_units != null ? { target_units: targetContext.target_units } : {}),
-    };
+  for (const presentation of contract?.payload.presentations ?? []) {
+    if (presentation.sample_labels_field) {
+      const labels = nonEmptyStringArray(result[presentation.sample_labels_field]);
+      for (const name of presentation.source_ports) {
+        const port = ports[name];
+        if (!port || labels.length === 0) continue;
+        const count = port.descriptor?.shape?.[0] ?? port.data.length;
+        // A declaration establishes the relationship; the count only validates it.
+        if (count === labels.length) port.metadata = { ...port.metadata, sample_labels: labels };
+      }
+    }
+    const binding = presentation.output_binding;
+    if (!binding) continue;
+    const dataset = ports[binding[0]]?.value;
+    if (!isDatasetPayload(dataset)) continue;
+    if (binding[1] === "feature_axis") {
+      const axis = isRecord(dataset.feature_axis) ? dataset.feature_axis
+        : isRecord(dataset.x_axis) ? dataset.x_axis : {};
+      const labels = nonEmptyStringArray(axis.labels);
+      const coordinates = Array.isArray(axis.data) ? axis.data : [];
+      for (const name of presentation.source_ports) {
+        const port = ports[name];
+        if (!port) continue;
+        const rows = port.descriptor?.shape?.[0] ?? port.data.length;
+        port.metadata = { ...port.metadata,
+          ...(labels.length === rows && rows > 0 ? { feature_names: labels } : {}),
+          ...(coordinates.length === rows && rows > 0 ? { wavenumbers: coordinates } : {}),
+          x_title: axis.title, x_units: axis.units,
+        };
+      }
+      continue;
+    }
+    const context = isRecord(dataset.target_context) ? dataset.target_context : {};
+    const axis = isRecord(dataset.sample_axis) ? dataset.sample_axis
+      : isRecord(dataset.y_axis) ? dataset.y_axis : {};
+    const table = isRecord(axis.sample_table) ? axis.sample_table : {};
+    const labels = nonEmptyStringArray(axis.labels);
+    const ids = nonEmptyStringArray(table.sample_id);
+    const names = nonEmptyStringArray(context.target_names);
+    const selected = [context.selected_target, context.target_name].find(
+      (value): value is string => typeof value === "string" && value.trim().length > 0,
+    );
+    for (const name of presentation.source_ports) {
+      const port = ports[name];
+      if (port?.descriptor?.scientific_kind !== "target_matrix") continue;
+      const [rows, columns] = port.descriptor.shape ?? [];
+      const targetNames = names.length === columns ? names
+        : columns === 1 && selected ? [selected] : [];
+      port.metadata = {
+        ...port.metadata,
+        ...(labels.length === rows ? { sample_labels: labels } : {}),
+        ...(ids.length === rows ? { sample_ids: ids } : {}),
+        ...(targetNames.length ? { target_names: targetNames, column_names: targetNames } : {}),
+        ...(context.target_units != null ? { target_units: context.target_units } : {}),
+      };
+    }
   }
 };
 
@@ -461,8 +459,7 @@ export const buildNodeOutput = (
     }
   }
 
-  enrichTargetPortMetadata(ports);
-  enrichSampleIdentityMetadata(resultRecord, ports);
+  enrichDeclaredContext(resultRecord, ports, presentationContract);
   enrichStatisticsSummaryMetadata(ports);
 
   const primaryPort = selectPrimaryPort(ports, outputPorts);

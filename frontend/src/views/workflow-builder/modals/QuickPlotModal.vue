@@ -692,6 +692,7 @@ const previewFirst = ref(0);
 const featureOffset = ref(0);
 const usePlottedTable = computed(() => !props.tableOnly && availablePlots.value.length > 0 && (selectedPlotKey.value === "scientific_selection_stability" || isProjectedScientificKind(props.nodeOutput, "visualization") || correlationCircleSelected.value || selectedPlotKey.value !== availablePlots.value[0]?.key
   || isProjectedScientificKind(props.nodeOutput, "variable_profile")
+  || isProjectedScientificKind(props.nodeOutput, "regression_coefficients")
   || !Array.isArray(props.nodeOutput?.data) || props.nodeOutput.data.length === 0));
 const totalFeatureColumns = computed(() => !usePlottedTable.value && Array.isArray(props.nodeOutput?.data?.[0]) ? props.nodeOutput.data[0].length : 0);
 const previewTotalRows = computed(() => {

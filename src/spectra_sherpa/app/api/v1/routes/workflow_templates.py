@@ -81,6 +81,12 @@ from spectra_sherpa.app.services.template_availability import template_admitted_
 from spectra_sherpa.app.services.template_workflow_persistence import persist_template_workflow
 from spectra_sherpa.app.services.workflow_access import require_experiment_access, require_file_access
 from spectra_sherpa.app.services.workflow_data_selections import selection_from_parameters, validate_selection
+from spectra_sherpa.core.specimen_independence import (
+    INDEPENDENT_IDENTITY_FIELDS,
+    cross_block_violations,
+    independence_preview,
+    independence_violations,
+)
 from spectra_sherpa.core.target_authority import TargetAuthority
 
 router = APIRouter(prefix="/workflow-templates")
@@ -99,6 +105,9 @@ class CompatibilityPreviewRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     analysis_profile: dict[str, Any]
+    sample_table: dict[str, list[str | int | float | None]] | None = None
+    n_samples: int | None = Field(default=None, ge=0, le=100000)
+    group_column: str | None = None
 
 
 def _template_status(template: WorkflowTemplate) -> TemplateStatus:
@@ -1496,13 +1505,24 @@ def _require_independent_classification_group(
     if validation_goal == "known_specimen_cross_block" and not binding.group_column:
         raise HTTPException(status_code=409, detail="Select a block column under Groups in My Dataset first")
     if validation_goal == "known_specimen_cross_block" and (
-        binding.group_column in {"specimen_id", "subject_id", "patient_id"} or not held_out_groups
+        binding.group_column in INDEPENDENT_IDENTITY_FIELDS or not held_out_groups
     ):
         raise HTTPException(status_code=409, detail="Choose an acquisition group and name a held-out block")
     table = dataset.sample_axis.sample_table if dataset.sample_axis is not None else None
     if not isinstance(table, dict):
         return
     group_values = table.get(binding.group_column) if binding.group_column else None
+    violations = independence_violations(
+        table,
+        n_samples=dataset.n_samples,
+        target_type=binding.target_type,
+        target_names=(binding.selected_target,),
+        groups=group_values,
+        split_method="group_holdout" if validation_goal == "known_specimen_cross_block" else "stratified",
+        validation_goal=validation_goal,
+    )
+    if violations:
+        raise HTTPException(status_code=409, detail=violations[0].message)
     if validation_goal == "known_specimen_cross_block":
         if not isinstance(group_values, (list, tuple, np.ndarray)) or len(group_values) != dataset.n_samples:
             raise HTTPException(
@@ -1518,96 +1538,16 @@ def _require_independent_classification_group(
         test_rows = [index for index, value in enumerate(values) if value in requested]
         if not train_rows or not test_rows:
             raise HTTPException(status_code=409, detail="The selected block holdout has an empty partition")
-        for field in analysis_profile.get("identity_fields", []):
-            if field not in {"specimen_id", "subject_id", "patient_id"}:
-                continue
-            identities = table.get(field)
-            if not isinstance(identities, (list, tuple, np.ndarray)) or len(identities) != len(values):
-                continue
-            if any(
-                identity is None or (isinstance(identity, (float, np.floating)) and not np.isfinite(identity))
-                for identity in identities
-            ):
-                raise HTTPException(
-                    status_code=409, detail=f"Cross-block repeatability requires complete {field} identities"
-                )
-            train_ids = {str(identities[index]).strip() for index in train_rows}
-            test_ids = {str(identities[index]).strip() for index in test_rows}
-            if "" in train_ids | test_ids or not test_ids <= train_ids:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"The held-out block contains new {field} identities. "
-                        "Choose a block of known specimens or unseen-specimen validation."
-                    ),
-                )
-        if binding.target_type == "categorical" and getattr(dataset, "target", None) is not None:
-            labels = np.asarray(dataset.target).reshape(-1)
-            if len(labels) == len(values):
-                all_classes = set(labels.tolist())
-                if {labels[index] for index in train_rows} != all_classes or {
-                    labels[index] for index in test_rows
-                } != all_classes:
-                    raise HTTPException(
-                        status_code=409, detail="Every class must occur in both training and held-out blocks"
-                    )
-    for field in analysis_profile.get("identity_fields", []):
-        if field not in {"specimen_id", "subject_id", "patient_id"}:
-            continue
-        values = table.get(field)
-        if not isinstance(values, (list, tuple, np.ndarray)) or len(values) != dataset.n_samples:
-            continue
-        identities = [str(value).strip() if value is not None else "" for value in values]
-        if any(not value for value in identities):
-            continue
-        independent_count = len(set(identities))
-        if independent_count < 2 and len(identities) > 1:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"Only one independent {field} is available. A supervised holdout requires at least "
-                    "two independent specimens; collect additional specimens or use an exploratory workflow "
-                    "without a held-out performance claim."
-                ),
-            )
-        if 1 < independent_count < len(identities) and binding.selected_target == field:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"{field} identifies repeated specimens. It cannot be both the response target and "
-                    "an independent held-out specimen group. Choose a different scientific target instead."
-                ),
-            )
-        if not 1 < independent_count < len(identities):
-            continue
-        if not isinstance(group_values, (list, tuple, np.ndarray)) or len(group_values) != len(identities):
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"This starter tests prediction on unseen {field} identities. Repeated identities "
-                    f"need {field} or a coarser identity under Groups in My Dataset. A block-held-out "
-                    "test of measurements from known specimens answers a different repeatability question "
-                    "and is not available through this starter. Save the selection, then start a new analysis."
-                ),
-            )
-        if validation_goal == "known_specimen_cross_block":
-            # The split node validates the exact held-out block and confirms
-            # that every test specimen was also measured in calibration.
-            continue
-        identity_to_group: dict[str, str] = {}
-        for identity, group in zip(identities, group_values, strict=True):
-            group_label = str(group).strip() if group is not None else ""
-            if not group_label or (identity in identity_to_group and identity_to_group[identity] != group_label):
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"The selected Groups column divides repeated {field} identities. "
-                        f"This starter tests unseen {field} identities, not cross-block repeatability "
-                        f"of known specimens. Choose {field} or a coarser identity in My Dataset, "
-                        "save the selection, then start a new analysis."
-                    ),
-                )
-            identity_to_group[identity] = group_label
+        violations = cross_block_violations(
+            table,
+            n_samples=dataset.n_samples,
+            train_indices=train_rows,
+            test_indices=test_rows,
+            targets=getattr(dataset, "target", None),
+            target_type=binding.target_type,
+        )
+        if violations:
+            raise HTTPException(status_code=409, detail=violations[0].message)
 
 
 def _adapt_pls_starter_to_source_assignment(
@@ -2184,7 +2124,15 @@ async def preview_analysis_profile_compatibility(
         }
         for template in templates
     ]
-    return build_analysis_profile_readiness(payload.analysis_profile, template_payloads)
+    readiness = build_analysis_profile_readiness(payload.analysis_profile, template_payloads)
+    readiness["independence"] = independence_preview(
+        payload.sample_table,
+        n_samples=payload.n_samples,
+        target_type=payload.analysis_profile.get("target_type"),
+        target_names=payload.analysis_profile.get("target_fields", []),
+        group_column=payload.group_column,
+    )
+    return readiness
 
 
 @router.get("/{template_id}", response_model=WorkflowTemplateOut)

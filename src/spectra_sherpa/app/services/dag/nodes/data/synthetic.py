@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib import sherpa_dataset as sherpa_dataset_contract
 from spectra_sherpa.app.lib.sherpa_dataset import (
     SherpaDataset,
@@ -200,7 +201,13 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 5, "cpu_seconds": 5, "memory_bytes": 268_435_456},
     license_id="Apache-2.0",
     help_reference="docs/nodes/data.md",
-    implementation_modules=(source_contracts, sherpa_dataset_contract, spectra_meta_contract, dag_meta_helpers),
+    implementation_modules=(
+        source_contracts,
+        sherpa_dataset_contract,
+        spectra_meta_contract,
+        dag_meta_helpers,
+        sample_identity_authority,
+    ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
 )

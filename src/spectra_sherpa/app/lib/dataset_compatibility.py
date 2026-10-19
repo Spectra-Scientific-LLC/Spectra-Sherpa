@@ -15,6 +15,7 @@ from typing import Any, Literal, TypedDict, get_args
 
 from spectra_sherpa.app.lib.data_roles import DATA_ROLES, ROLE_TO_MODALITY, get_dataset_data_role
 from spectra_sherpa.app.schemas.template_schema import TemplateStatus
+from spectra_sherpa.core.specimen_independence import INDEPENDENT_IDENTITY_FIELDS
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ def analysis_profile_from_dataset(dataset: Any) -> dict[str, Any]:
 
     sample_table = getattr(sample_axis, "sample_table", None) if sample_axis is not None else None
     columns = list(sample_table) if isinstance(sample_table, Mapping) else []
-    identity_fields = [name for name in columns if name in {"sample_id", "specimen_id", "subject_id", "patient_id"}]
+    identity_fields = [name for name in columns if name == "sample_id" or name in INDEPENDENT_IDENTITY_FIELDS]
     target_field_set = set(target_fields)
     group_fields = [
         name
@@ -76,9 +77,7 @@ def analysis_profile_from_dataset(dataset: Any) -> dict[str, Any]:
             "group",
             "instrument",
             "replicate_group",
-            "specimen_id",
-            "subject_id",
-            "patient_id",
+            *INDEPENDENT_IDENTITY_FIELDS,
         }
         and name not in target_field_set
         and _distinct_nonmissing_count(sample_table[name]) > 1

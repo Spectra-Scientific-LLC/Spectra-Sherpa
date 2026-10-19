@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 
 from spectra_sherpa.app.lib import fitted_state
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib.fitted_state import SIMCAExtract
 from spectra_sherpa.app.services.dag import fitted_input_identity as input_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
@@ -1282,6 +1283,7 @@ bind_stable_execution_contract(
         core_utils,
         _chemometric_diagnostics,
         _artifact_builder,
+        sample_identity_authority,
     ),
     fitted_state_serializer=SIMCA_FITTED_STATE_SERIALIZER,
     deterministic=True,

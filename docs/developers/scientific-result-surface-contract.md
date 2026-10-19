@@ -44,6 +44,38 @@ The UI must preserve:
 
 A renderer should consume a typed result or presentation contract. It should not infer meaning from node names or array shape.
 
+#### Declared context relationships
+
+- `ScientificPresentation.input_binding` names the input axis to preserve.
+  `output_binding=(port, "target_context")` names the exact sibling dataset
+  supplying a response's sample identity and target context. Equal row counts
+  and names such as `y_test` do not establish that relationship.
+- `sample_labels_field` explicitly identifies a result's sample-label vector
+  for the presentation's declared source ports. It must not label an unrelated
+  feature vector merely because its length matches the sample count.
+- Typed `sample_axis.sample_table["sample_id"]` identifies observations.
+  `sample_axis.labels` is editable display text. A checked source receipt may
+  preserve legacy IDs before relabeling; anonymous arrays do not acquire
+  verified identities. Legacy label/coordinate alignment remains a compatibility
+  fallback, not evidence of specimen independence.
+- Slice the complete typed axis, including alternate labels, sample tables,
+  inclusion masks and exclusion reasons. Do not rebuild a partial axis in a
+  split, filter or renderer.
+
+#### Retained summary facts
+
+The saved-run producer declares `summary_rows` and each detailed row's
+`row_level` classification. Short reports and provider-context consent filters
+consume those fields rather than parsing English headings. Historical summaries
+without these fields retain their facts locally; unclassified rows are not sent
+as aggregate-only context.
+
+Resolve units for the exact response and saved upstream branch through
+`core/target_units.py`. The structured `unit_context` distinguishes recorded,
+missing and ambiguous units. Missing selected authority must not be replaced by
+another response, branch, or a convenient first nonempty model record. Views do
+not compute model metrics or reconstruct validation populations.
+
 ### 4. Claim scope
 
 The surface must state which population and claim it represents:
@@ -618,6 +650,18 @@ declares `input_binding: [input_port, binding_kind]`. The closed binding kinds
 are `feature_axis`, `cluster_feature_axes`, and `sample_axis`. The renderer uses
 the corresponding retained input; it must not invent wavelengths or sample
 identity when that input is unavailable. Invalid ports fail contract validation.
+
+For same-node retained results, `output_binding` names the exact output carrying
+`target_context` or `feature_axis`. Inspector hydration fetches that declared
+port, including when ports are renamed; it does not pair response ports by
+spelling or select a loadings port from an allowlist. Missing declared evidence
+is unavailable, not a reason to borrow another population or axis.
+
+An explicit typed sample-table `sample_id` column contains unique, nonempty
+strings with no leading or trailing whitespace. Numeric IDs must be explicitly
+converted at the ingestion boundary with collision checks; the identity reader
+does not silently equate integer `1` with string `"1"`. Display labels and
+categorical class values are separate contracts and are not restricted by this.
 
 Node help continues to use the execution contract's `help_reference`.
 Methodology help uses a named topic from `frontend/src/utils/documentation.ts`;

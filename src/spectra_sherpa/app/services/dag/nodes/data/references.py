@@ -11,6 +11,7 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
@@ -180,6 +181,7 @@ bind_stable_execution_contract(
         dag_meta_helpers,
         ingestion_registry_contract,
         *ingestion_registry_contract.jcamp_implementation_modules(),
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy", "pandas", "scipy"),
     runtime_requirements=(("numpy", "1.26.4"), ("pandas", "2.3.3"), ("scipy", "1.17.1")),

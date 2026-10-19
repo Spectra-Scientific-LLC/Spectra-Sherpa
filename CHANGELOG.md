@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Upgrade notes
 
+- Scientific presentation now uses explicit sample/response bindings. Renaming
+  display labels preserves retained observation IDs and exclusions; malformed
+  declared IDs and shuffled response datasets are refused. Legacy anonymous
+  arrays remain positional, not identity-verified.
+- My Dataset, starter admission and split execution share specimen-independence
+  checks. Incomplete declared specimen IDs are now refused for supervised
+  validation; correct the source metadata instead of silently dropping that
+  identity column. Existing fitted-state schemas are unchanged.
 - The database migration `n3o5p7q9r661` adds the nullable `project.goal` and
   `project.goal_plan` columns. Existing projects are unchanged.
 

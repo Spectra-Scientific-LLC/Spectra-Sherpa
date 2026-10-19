@@ -9,6 +9,7 @@ from typing import Any
 
 from spectra_sherpa.app.lib import data_formats as data_formats_contract
 from spectra_sherpa.app.lib import io as sherpa_io
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib.data_formats import CANONICAL_FILE_LOAD_EXTENSIONS
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.lib.target_authority import verify_target_authority
@@ -67,6 +68,7 @@ class FileLoadNode(Node):
 
     metadata = NodeMetadata(
         node_type="data.file_load",
+        presentation_outputs={"target": ("default", "target_context")},
         category="data",
         label="File Load",
         description="Load a portable experiment file through the Sherpa-native reader",
@@ -344,6 +346,7 @@ bind_stable_execution_contract(
         sample_table_contract,
         ingestion_registry_contract,
         *ingestion_registry_contract.native_implementation_modules(),
+        sample_identity_authority,
     ),
     implementation_distributions=("h5py", "numpy", "pandas", "scipy"),
     runtime_requirements=(

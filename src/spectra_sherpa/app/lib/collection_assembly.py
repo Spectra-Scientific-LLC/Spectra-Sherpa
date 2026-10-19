@@ -12,6 +12,7 @@ from typing import Any
 import numpy as np
 
 from spectra_sherpa.app.lib.axes import AxisClassSet, AxisLabelSet, AxisScaleSet, FeatureAxis, SampleAxis
+from spectra_sherpa.app.lib.sample_identity import sample_ids
 from spectra_sherpa.app.lib.sample_labels import clean_sample_labels
 from spectra_sherpa.app.lib.scientific_values import lossless_json_scalar, lossless_scalar_identity
 from spectra_sherpa.app.lib.sherpa_dataset import (
@@ -723,7 +724,7 @@ def assemble_collection(
                 fallback_prefix=Path(members[0].file_name).stem,
                 source_name=members[0].file_name,
             )
-            if len(set(labels)) != len(labels):
+            if sample_ids(first) is None and len(set(labels)) != len(labels):
                 raise ValueError("scientific collection contains duplicate sample identities")
         first.title = title
         if dataset_id is not None:
@@ -920,7 +921,7 @@ def assemble_collection(
             "source_member_metadata": member_science,
         },
     )
-    if len(set(labels)) != len(labels):
+    if sample_ids(result) is None and len(set(labels)) != len(labels):
         raise ValueError("scientific collection contains duplicate sample identities")
     result.meta["source_collection"] = collection_manifest(members)
     result.meta["source_observations"] = source_observations(members)
@@ -953,7 +954,7 @@ def source_observations(members: Sequence[CollectionMember]) -> list[dict[str, A
         return None
     rows = []
     for member in members:
-        labels = clean_sample_labels(
+        labels = sample_ids(member.dataset) or clean_sample_labels(
             member.dataset.sample_axis.labels,
             member.dataset.n_samples,
             fallback_prefix=Path(member.file_name).stem,
@@ -977,7 +978,11 @@ def verified_source_observations(dataset: SherpaDataset) -> list[dict[str, Any]]
     """Require captured row custody; never infer member boundaries from labels."""
     rows = dataset.meta.get("source_observations")
     axis = dataset.sample_axis
-    labels = list(axis.labels) if axis is not None and axis.labels is not None else []
+    labels = sample_ids(dataset)
+    if labels is None:
+        # Compatibility for receipts captured before an explicit sample_id
+        # column existed. New display labels must not reinterpret these IDs.
+        labels = list(axis.labels) if axis is not None and axis.labels is not None else []
     if not labels and isinstance(rows, list):
         # A singleton feature table (for example sklearn Iris) can have no
         # native sample labels. Its ordered source receipt was minted from the

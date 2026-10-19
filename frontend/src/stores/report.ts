@@ -64,7 +64,8 @@ export interface RunReportData {
   validation_summary?: {
     schema_version: string;
     run_id: number;
-    rows: { label: string; value: string }[];
+    rows: { label: string; value: string; row_level?: boolean }[];
+    summary_rows?: { label: string; value: string }[];
     figures?: ValidationFigure[];
     regression_results?: ReportRegressionResult[];
   };
@@ -244,7 +245,8 @@ export function buildReportExperimentPayload(
         ? {
             ...r.validation_summary,
             figures: [],
-            rows: r.validation_summary.rows.filter((row) => !row.label.startsWith("Observation ")),
+            // Unclassified historical rows are not approved for provider disclosure.
+            rows: r.validation_summary.rows.filter((row) => row.row_level === false),
             regression_results: r.validation_summary.regression_results?.map(
               ({ observations: _observations, ...result }) => result,
             ),

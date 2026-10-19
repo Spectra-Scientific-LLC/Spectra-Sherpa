@@ -109,6 +109,31 @@ def test_outlier_screen_publishes_one_joint_diagnostic_view() -> None:
     assert diagnostics.kind == "t2_q_diagnostics"
     assert diagnostics.source_ports == ("T2", "Q", "flags")
     assert diagnostics.modes == ("plot", "table")
+    assert diagnostics.sample_labels_field == "sample_labels"
+
+
+def test_response_context_uses_declared_output_pairs_not_port_spelling():
+    from dataclasses import replace
+
+    split = node_registry.get_metadata("data.train_test_split")
+    contract = split.resolved_presentation_contract()
+    assert {p.source_ports[0]: p.output_binding for p in contract.presentations if p.output_binding} == {
+        "y_train": ("X_train", "target_context"),
+        "y_test": ("X_test", "target_context"),
+    }
+    metadata = replace(split)
+    metadata.presentation_outputs = {"y_train": ("missing", "target_context")}
+    with pytest.raises(ValueError, match="unknown output"):
+        metadata.resolved_presentation_contract()
+    with pytest.raises(ValueError, match="output binding"):
+        ScientificPresentation(
+            "bad",
+            "Bad",
+            "target_matrix",
+            ("y_train",),
+            ("table",),
+            output_binding=("X_train", "guessed"),
+        )
 
 
 def test_presentation_contract_rejects_unknown_or_missing_source_ports() -> None:
@@ -165,6 +190,17 @@ def test_input_coordinate_bindings_are_declared_by_nodes_and_fail_closed() -> No
         ScientificPresentation(
             "bad", "Bad", "metric_record", ("default",), ("record",), input_binding=("X", "invented_axis")
         )
+
+
+def test_model_feature_coordinates_are_bound_to_exact_output_authority() -> None:
+    for operation, port in [("model.fitted_pls", "x_loadings"), ("classification.plsda", "X_loadings")]:
+        contract = node_registry.get_metadata(operation).resolved_presentation_contract()
+        for presentation in contract.presentations:
+            if presentation.presentation_id in {"vip", "coefficients"}:
+                if operation == "model.fitted_pls":
+                    assert presentation.input_binding == ("default", "feature_axis")
+                else:
+                    assert presentation.output_binding == (port, "feature_axis")
 
 
 def test_every_builtin_has_one_closed_presentation_authority() -> None:

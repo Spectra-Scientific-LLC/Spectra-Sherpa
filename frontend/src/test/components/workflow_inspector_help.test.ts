@@ -176,21 +176,27 @@ describe("WorkflowInspector node help", () => {
     workflowStore.executionEvidenceScope = "unavailable";
   });
 
-  it("hydrates only the explicitly paired cohort for retained test targets", async () => {
+  it.each([["y_test", "X_test"], ["references", "held_population"]])("hydrates the declared cohort %s → %s", async (responsePort, cohortPort) => {
     apiGet.mockClear();
-    apiGet.mockImplementation(async (url: string) => ({ data: { value: url.endsWith("/X_test")
+    apiGet.mockImplementation(async (url: string) => ({ data: { value: url.endsWith("/" + cohortPort)
       ? { type: "SherpaDataset", data: [[1]], y_axis: { labels: ["held-B"] } } : [2] } }));
     workflowStore.restoredRunId = 3;
     workflowStore.executionEvidenceScope = "restored_summary";
     const wrapper = mountInspector();
     await wrapper.setProps({ selectedNode: { ...selectedNode, id: "split_1" }, nodeOutput: {
-      data: [2], metadata: {}, primary_port: "y_test",
-      ports: { y_test: { data: [2], metadata: {}, value: [2] },
-        X_train: { data: [[9]], metadata: {} }, X_test: { data: [[1]], metadata: {} } },
+      data: [2], metadata: {}, primary_port: responsePort,
+      ports: { [responsePort]: { data: [2], metadata: {}, value: [2] },
+        X_train: { data: [[9]], metadata: {} }, [cohortPort]: { data: [[1]], metadata: {} } },
+      presentation_contract: { digest: "c".repeat(64), payload: {
+        schema_version: "spectrasherpa-node-presentation/1", default_presentation: "references",
+        presentations: [{ presentation_id: "references", label: "References", kind: "target_matrix",
+          source_ports: [responsePort], modes: ["plot", "table"], description: "",
+          output_binding: [cohortPort, "target_context"] }],
+      } },
     } });
     await (wrapper.vm as any).openDataTable();
     expect(apiGet.mock.calls.map(call => call[0])).toEqual([
-      "/runs/3/outputs/split_1/y_test", "/runs/3/outputs/split_1/X_test",
+      "/runs/3/outputs/split_1/" + responsePort, "/runs/3/outputs/split_1/" + cohortPort,
     ]);
     wrapper.unmount();
     workflowStore.restoredRunId = null;
@@ -207,12 +213,49 @@ describe("WorkflowInspector node help", () => {
       data: [[1]], metadata: {}, primary_port: "class_coefficients",
       ports: { class_coefficients: { data: [[1]], metadata: {},
         descriptor: { dimensions: [{ role: "spectral_variable", size: 1 }] } },
-        loadings: { data: [[1]], metadata: {} }, scores: { data: [[2]], metadata: {} } },
+        feature_coordinates: { data: [[1]], metadata: {} },
+        loadings: { data: [[999]], metadata: {} }, scores: { data: [[2]], metadata: {} } },
+      presentation_contract: { digest: "c".repeat(64), payload: {
+        schema_version: "spectrasherpa-node-presentation/1", default_presentation: "coefficients",
+        presentations: [{ presentation_id: "coefficients", label: "Coefficients", kind: "regression_coefficients",
+          source_ports: ["class_coefficients"], modes: ["plot", "table"], description: "",
+          output_binding: ["feature_coordinates", "feature_axis"] }],
+      } },
     } as any });
     await (wrapper.vm as any).openDataTable();
     expect(apiGet.mock.calls.map(call => call[0])).toEqual([
-      "/runs/3/outputs/model_1/class_coefficients", "/runs/3/outputs/model_1/loadings",
+      "/runs/3/outputs/model_1/class_coefficients", "/runs/3/outputs/model_1/feature_coordinates",
     ]);
+    wrapper.unmount();
+    workflowStore.restoredRunId = null;
+    workflowStore.executionEvidenceScope = "unavailable";
+  });
+
+  it("hydrates a declared feature input for retained tables", async () => {
+    apiGet.mockClear();
+    apiGet.mockImplementation(async (url: string) => ({ data: { value: url.endsWith("/spectra")
+      ? { type: "SherpaDataset", data: [[1, 2]], x_axis: { data: [1100, 1102], units: "nm" } }
+      : [0.8, 1.2] } }));
+    workflowStore.restoredRunId = 3;
+    workflowStore.executionEvidenceScope = "restored_summary";
+    const wrapper = mountInspector();
+    await wrapper.setProps({ selectedNode: { ...selectedNode, id: "model_1" },
+      inputConnections: [{ nodeId: "selection_1", port: "spectra", toPort: "features", data: null }],
+      nodeOutput: { data: [0.8, 1.2], metadata: {}, primary_port: "importance",
+        ports: { importance: { data: [0.8, 1.2], metadata: {} } },
+        presentation_contract: { digest: "c".repeat(64), payload: {
+          schema_version: "spectrasherpa-node-presentation/1", default_presentation: "importance",
+          presentations: [{ presentation_id: "importance", label: "Importance", kind: "variable_profile",
+            source_ports: ["importance"], modes: ["plot", "table"], description: "",
+            input_binding: ["features", "feature_axis"] }],
+        } },
+      },
+    } as any);
+    await (wrapper.vm as any).openDataTable();
+    expect(apiGet.mock.calls.map(call => call[0])).toEqual([
+      "/runs/3/outputs/model_1/importance", "/runs/3/outputs/selection_1/spectra",
+    ]);
+    expect((wrapper.vm as any).quickPlotNodeOutput.metadata.feature_names).toEqual(["1100", "1102"]);
     wrapper.unmount();
     workflowStore.restoredRunId = null;
     workflowStore.executionEvidenceScope = "unavailable";

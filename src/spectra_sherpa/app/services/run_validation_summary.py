@@ -5,12 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from functools import partial
 from typing import Any
 
 from spectra_sherpa.app.schemas.run_evidence import RunEvidence
 from spectra_sherpa.app.services.dag.nodes.classification.plsda_permutation import validated_permutation_scores
 from spectra_sherpa.app.services.dag.out_of_fold_evidence import validate_out_of_fold_evidence
 from spectra_sherpa.app.services.run_output_retention import read_output
+from spectra_sherpa.core.target_units import TargetUnits, resolve_response_units, resolve_target_units
 from spectra_sherpa.sdk.validation_reporting import regression_reporting_notes
 
 
@@ -80,12 +82,15 @@ def _split_summaries(run: Any, definition: dict) -> list[dict]:
 
 def validation_summary(run: Any, definition: dict | None, *, include_row_level_plots: bool = False) -> dict:
     """Build an exportable summary, preserving explicit gaps in retained evidence."""
-    rows: list[dict[str, str]] = []
+    rows: list[dict[str, Any]] = []
     figures: list[dict] = []
     regression_results: list[dict] = []
+    summary_rows: list[dict[str, str]] = []
 
-    def add(label: str, value: object) -> None:
-        rows.append({"label": label, "value": str(value)})
+    def add(label: str, value: object, *, summary: bool = False, short: object = None, row_level: bool = False) -> None:
+        rows.append({"label": label, "value": str(value), "row_level": row_level})
+        if summary:
+            summary_rows.append({"label": label, "value": str(value if short is None else short)})
 
     add("Saved run", run.id)
     for label, detail in regression_reporting_notes().items():
@@ -111,7 +116,7 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
         selected = revision["selection"]
         target = selected.get("target_authority")
         name = selected.get("dataset_name", node)
-        add(f"Dataset ({node})", name)
+        add(f"Dataset ({node})", name, summary=True)
         add(
             f"Target ({node})",
             (
@@ -120,11 +125,14 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
                 if isinstance(target, dict)
                 else "No target recorded for this selection."
             ),
+            summary=True,
         )
-        add(f"Group field ({node})", selected.get("group_column") or "None recorded")
+        add(f"Group field ({node})", selected.get("group_column") or "None recorded", summary=True)
     if not latest:
         add(
-            "Dataset, target and group selection", "Not retained for this run; current selections were not substituted."
+            "Dataset, target and group selection",
+            "Not retained for this run; current selections were not substituted.",
+            summary=True,
         )
 
     if definition is None:
@@ -153,7 +161,11 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
         splits = _split_summaries(run, definition) if definition else []
     except (ValueError, TypeError, KeyError, AttributeError, OSError):
         splits = []
-        add("Partition details", "Retained split evidence could not be verified; no partition claim is made.")
+        add(
+            "Partition details",
+            "Retained split evidence could not be verified; no partition claim is made.",
+            summary=True,
+        )
     for split in splits:
         node, plan = split["node"], split["plan"]
         split_node = next((item for item in definition.get("nodes", []) if item.get("node_id") == node), {})
@@ -162,13 +174,15 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
             add(
                 f"Validation question ({node})",
                 "Cross-block repeatability of known specimens; this is not performance on unseen specimens.",
+                summary=True,
             )
         else:
             add(
                 f"Validation question ({node})",
                 "Unseen-specimen intent; confirm the bound identity and executed partition.",
+                summary=True,
             )
-        add(f"Split method ({node})", plan["method"])
+        add(f"Split method ({node})", plan["method"], summary=True)
         add(f"Split seed ({node})", plan["random_seed"])
         for role, key in (("Development", "train_indices"), ("Test", "test_indices")):
             indices = plan[key]
@@ -181,6 +195,8 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
                     if len(indices) > 20
                     else ""
                 ),
+                summary=True,
+                short=f"{len(indices)} rows",
             )
         held = plan.get("held_out_groups")
         if isinstance(held, list) and held and type(plan.get("n_groups")) is int:
@@ -188,16 +204,19 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
                 f"Groups ({node})",
                 f"Recorded whole-group split: {plan['n_groups'] - len(held)} development groups; "
                 f"{len(held)} test groups. Test groups: " + ", ".join(map(str, held)),
+                summary=True,
             )
         else:
             add(
                 f"Groups ({node})",
                 "No whole-group holdout recorded.",
+                summary=True,
             )
 
     add(
         "Evaluation population",
         "Per retained output; cross-validation is not external validation.",
+        summary=True,
     )
     if not splits:
         add(
@@ -208,6 +227,7 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
     add(
         "Preprocessing within folds",
         "Not established by this summary; inspect retained fold execution.",
+        summary=True,
     )
     add(
         "Missing and excluded observations",
@@ -217,7 +237,7 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
         add("Row-level figures", "Excluded by default; opt in to include reference, prediction and residual values.")
     try:
         details, figures, regression_results = _retained_validation_details(
-            run, definition, include_row_level_plots=include_row_level_plots
+            run, definition, include_row_level_plots=include_row_level_plots, summary_rows=summary_rows
         )
         for label, detail in details:
             add(label, detail)
@@ -232,6 +252,7 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
                 add(
                     f"Observation {observation['sample']} — {label}",
                     f"Reference: {observation['reference']}; predicted: {observation['predicted']}",
+                    row_level=True,
                 )
             for key, value in result["metrics"].items():
                 if key != "registry_version" and value is not None:
@@ -247,11 +268,13 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
         add(
             "Detailed validation evidence",
             "Unavailable or unverified; no missing count, plot or independence claim is inferred.",
+            summary=True,
         )
     return {
         "schema_version": "spectrasherpa-readable-validation/1",
         "run_id": run.id,
         "rows": rows,
+        "summary_rows": summary_rows,
         "figures": figures,
         "regression_results": regression_results,
     }
@@ -276,10 +299,20 @@ def _stored_statistics(statistics, *, role, node_id, source_port, units):
         for value in [record["reference_min"], record["reference_max"], record["reference_sd"], *metrics.values()]:
             if isinstance(value, (int, float)) and not math.isfinite(value):
                 raise ValueError("Nonfinite retained regression statistics")
-    return [
-        {**record, "node_id": node_id, "source_port": source_port, "role": role, "units": units}
-        for record in statistics["targets"]
-    ]
+    results = []
+    for record in statistics["targets"]:
+        context = units(record["target"])
+        results.append(
+            {
+                **record,
+                "node_id": node_id,
+                "source_port": source_port,
+                "role": role,
+                "units": context.value if context.state == "recorded" else "Target units unavailable or ambiguous",
+                "unit_context": context.as_dict(),
+            }
+        )
+    return results
 
 
 def _source_unit_signature(value):
@@ -344,7 +377,7 @@ def _validation_output_values(run, evidence):
             yield node, port, value
 
 
-def _component_curve_report_rows(node, value):
+def _component_curve_report_rows(node, value, context=lambda label, value: (label, value)):
     rows = [
         (f"Selected components ({node})", value.get("selected_components", "Not recorded")),
         (f"Requested components ({node})", value.get("requested_components", "Not recorded")),
@@ -353,10 +386,10 @@ def _component_curve_report_rows(node, value):
     cv = value.get("cross_validation")
     if not isinstance(cv, dict) or cv.get("status") != "available":
         reason = cv.get("reason", "Not recorded") if isinstance(cv, dict) else "Not recorded"
-        rows.append((f"Component CV unavailable ({node})", reason))
+        rows.append(context(f"Component CV unavailable ({node})", reason))
         return rows
     rows.append(
-        (
+        context(
             f"Component CV design ({node})",
             json.dumps(
                 {
@@ -426,12 +459,21 @@ def _permutation_report_rows(node, value):
     ]
 
 
-def _retained_validation_details(run, definition, *, include_row_level_plots=False):
+def _summary_context(summary_rows, label, value):
+    if summary_rows is not None:
+        summary_rows.append({"label": label, "value": str(value)})
+    return label, value
+
+
+def _retained_validation_details(run, definition, *, include_row_level_plots=False, summary_rows=None):
     """Read exact retained outputs under one bounded budget; never current UI state."""
     evidence = RunEvidence.model_validate(run.evidence_completeness)
     if evidence.qualification != "qualified":
         raise ValueError("retained evidence is incomplete")
     rows, figures, regression_results = [], [], []
+
+    context = partial(_summary_context, summary_rows)
+
     cv_populations = []
     source_types = {"data.file_load", "data.collection_load", "data.load_group", "data.synthetic_curve"}
     source_nodes = {
@@ -450,7 +492,7 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
             "spectrasherpa-pca-component-curve/1",
             "spectrasherpa-plsda-component-curve/1",
         }:
-            rows.extend(_component_curve_report_rows(node, value))
+            rows.extend(_component_curve_report_rows(node, value, context))
             continue
         if port == "default" and value.get("schema_version") == "spectrasherpa-plsda-response-permutation/1":
             rows.extend(_permutation_report_rows(node, value))
@@ -458,7 +500,7 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
         if value.get("schema_version") == "spectrasherpa-regression-comparison/1":
             if not value.get("statistics"):
                 rows.append(
-                    (
+                    context(
                         f"Regression statistics ({node}; {port})",
                         "Canonical statistics not retained. Rerun the workflow; "
                         "the report does not recompute metrics.",
@@ -470,7 +512,7 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
                     role=value.get("metadata", {}).get("role"),
                     node_id=node,
                     source_port=port,
-                    units=_retained_target_units(run, definition, node),
+                    units=lambda response: _retained_target_unit_context(run, definition, node, response),
                 )
                 for record in records:
                     observations = [row for row in value.get("data", []) if row.get("target") == record["target"]]
@@ -489,7 +531,7 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
                             ]
                         elif include_row_level_plots:
                             rows.append(
-                                (
+                                context(
                                     f"Target list ({node}; {record['target']})",
                                     "Exceeds 5000-row report limit; no partial list is presented.",
                                 )
@@ -497,7 +539,7 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
                 regression_results.extend(records)
             except (ValueError, TypeError, KeyError):
                 rows.append(
-                    (
+                    context(
                         f"Regression statistics ({node}; {port})",
                         "Canonical statistics not retained. Rerun the workflow; "
                         "the report does not recompute metrics.",
@@ -505,9 +547,9 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
                 )
             continue
         if value.get("schema_version") == "spectrasherpa.repeated-nested-validation/1" and "repeats" in value:
-            rows.append((f"Repeated validation ({node})", value["interpretation"]))
+            rows.append(context(f"Repeated validation ({node})", value["interpretation"]))
             rows.append(
-                (
+                context(
                     f"Repeated population ({node})",
                     f"{value['n_rows']} original rows; "
                     f"{value['n_groups']} groups; {value['n_repeats']} repeats; not pooled",
@@ -520,7 +562,7 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
                 cv_populations.append((node, f"{port} / repeat {repeat['repeat_id']}", observed, predicted))
                 if not repeat["outputs"]["cv_metrics"].get("statistics"):
                     rows.append(
-                        (
+                        context(
                             f"Regression statistics ({node}; repeat {repeat['repeat_id']})",
                             "Canonical statistics not retained; rerun workflow.",
                         )
@@ -531,7 +573,7 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
                         role="cross_validation",
                         node_id=node,
                         source_port=f"{port} / repeat {repeat['repeat_id']}",
-                        units=_retained_target_units(run, definition, node),
+                        units=lambda response: _retained_target_unit_context(run, definition, node, response),
                     )
                 )
                 rows.append(
@@ -563,7 +605,7 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
         elif value.get("metadata", {}).get("type") == "RegressionCV" and "split_plan_digest" in value:
             if not value.get("statistics"):
                 rows.append(
-                    (
+                    context(
                         f"Regression statistics ({node}; {port})",
                         "Canonical statistics not retained; rerun workflow.",
                     )
@@ -574,7 +616,7 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
                     role="cross_validation",
                     node_id=node,
                     source_port=port,
-                    units=_retained_target_units(run, definition, node),
+                    units=lambda response: _retained_target_unit_context(run, definition, node, response),
                 )
             )
             for key in (
@@ -588,7 +630,7 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
                 rows.append((f"Retained tuning ({node}; {key})", json.dumps(value.get(key, "Not recorded"))))
             plan = value.get("split_plan", {})
             rows.append(
-                (
+                context(
                     f"Cross-validation method ({node})",
                     f"{value.get('n_folds', 'Not recorded')} folds; method {plan.get('method', 'Not recorded')}; "
                     f"population {value.get('population_scope', 'Not recorded')}; "
@@ -601,11 +643,11 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
             bound, observed, predicted, _ = validate_out_of_fold_evidence(value)
             cv_populations.append((node, "cv_metrics", observed, predicted))
             rows.append((f"Validation identity ({node})", bound["evidence_sha256"]))
-            rows.append((f"Verified metric denominator ({node})", len(observed)))
+            rows.append(context(f"Verified metric denominator ({node})", len(observed)))
             plan = bound["split_plan"]
             rows.append((f"Evaluation scope ({node})", "Cross-validation; not an external held-out test"))
             rows.append(
-                (
+                context(
                     f"Cross-validation design ({node})",
                     f"{len(plan['folds'])} executed folds; "
                     + ("grouped validation" if plan.get("grouped") else "row-wise validation"),
@@ -613,7 +655,7 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
             )
             rows.extend(_fold_count_rows(node, plan))
             rows.append(
-                (
+                context(
                     f"Validation groups ({node})",
                     len(set(plan["groups"])) if plan.get("grouped") else "No groups recorded; row-wise evaluation",
                 )
@@ -625,7 +667,7 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
                     )
                 )
     if not source_spectral_flags or not all(flag is False for flag in source_spectral_flags):
-        rows.extend(_source_unit_rows(spectral_units))
+        rows.extend(context(label, value) for label, value in _source_unit_rows(spectral_units))
     for node, port, observed, predicted in cv_populations:
         for record in regression_results:
             if record["node_id"] != node or record["source_port"] != port or record["role"] != "cross_validation":
@@ -638,7 +680,9 @@ def _retained_validation_details(run, definition, *, include_row_level_plots=Fal
                 ]
             elif include_row_level_plots:
                 rows.append(
-                    (f"Target list ({node}; {port})", "Exceeds 5000-row report limit; no partial list is presented.")
+                    context(
+                        f"Target list ({node}; {port})", "Exceeds 5000-row report limit; no partial list is presented."
+                    )
                 )
     return rows, figures, regression_results
 
@@ -674,14 +718,20 @@ def _validation_figures(observed, predicted, node, port, repeat, units="Target u
     ]
 
 
-def _retained_target_units(run, definition, node):
-    """Use only saved upstream target authority; ambiguous/missing units remain explicit."""
-    return _retained_target_value(run, definition, node, "units")
+def _retained_target_units(run, definition, node, response=None):
+    """Compatibility display string, derived from the typed unit resolution."""
+    context = _retained_target_unit_context(run, definition, node, response)
+    return (
+        context.value
+        if context.state == "recorded"
+        else "Target units unavailable or ambiguous in retained upstream selections"
+    )
 
 
-def _retained_target_value(run, definition, node, field):
+def _retained_target_unit_context(run, definition, node, response=None):
+    """Resolve only retained ancestors and the exact requested response."""
     if not isinstance(definition, dict):
-        return f"Target {field} not recorded"
+        return TargetUnits("missing")
     ancestors, pending = set(), [node]
     edges = definition.get("edges", [])
     while pending:
@@ -705,32 +755,33 @@ def _retained_target_value(run, definition, node, field):
     units = []
     for revision in latest.values():
         authority = revision.get("selection", {}).get("target_authority")
-        if isinstance(authority, dict):
-            units.append(authority.get(field))
-    if units and all(isinstance(unit, str) and unit.strip() for unit in units) and len(set(units)) == 1:
-        return units[0]
-    if field == "units":
-        # Bundled examples have no My Dataset selection revision. A fitted PLS
-        # curve is an exact, retained response identity for the same ancestor
-        # model; never borrow units from a different branch or current editor.
-        try:
-            evidence = RunEvidence.model_validate(run.evidence_completeness)
-            curve_units = []
-            for source_node in definition.get("nodes", []):
-                source_id = source_node.get("node_id")
-                if source_id not in ancestors or source_node.get("node_type") != "model.fitted_pls":
-                    continue
-                item = evidence.outputs.get(source_id, {}).get("component_curve")
-                if item is None or item.state != "exact" or item.storage != "file" or not item.byte_count:
-                    continue
-                if item.byte_count > 1024 * 1024:
-                    continue
-                curve = read_output(run.user_id, item)
-                if curve.get("schema_version") == "spectrasherpa-pls-component-curve/1":
-                    curve_units.extend(curve.get("response_units", []))
-            if curve_units and all(isinstance(unit, str) and unit.strip() for unit in curve_units):
-                if len(set(curve_units)) == 1:
-                    return curve_units[0]
-        except (ValueError, TypeError, KeyError, AttributeError, OSError):
-            pass
-    return f"Target {field} unavailable or ambiguous in retained upstream selections"
+        if isinstance(authority, dict) and (response is None or authority.get("column") == response):
+            units.append(authority.get("units"))
+    if units:
+        # A missing/conflicting selected authority must not be overwritten.
+        return resolve_target_units(units)
+    try:
+        evidence = RunEvidence.model_validate(run.evidence_completeness)
+        curve_units = []
+        for source_node in definition.get("nodes", []):
+            source_id = source_node.get("node_id")
+            if source_id not in ancestors:
+                continue
+            item = evidence.outputs.get(source_id, {}).get("component_curve")
+            if item is None or item.state != "exact" or item.storage != "file" or not item.byte_count:
+                continue
+            if item.byte_count > 1024 * 1024:
+                continue
+            curve = read_output(run.user_id, item)
+            if curve.get("schema_version") != "spectrasherpa-pls-component-curve/1":
+                continue
+            names = curve.get("response_names")
+            if response is not None and (not isinstance(names, list) or response not in names):
+                continue
+            resolved = resolve_response_units(names, curve.get("response_units"), response)
+            if resolved.state == "ambiguous":
+                return resolved
+            curve_units.append(resolved.value)
+        return resolve_target_units(curve_units)
+    except (ValueError, TypeError, KeyError, AttributeError, OSError):
+        return TargetUnits("missing")

@@ -198,6 +198,30 @@ describe("DataTableModal", () => {
     ]);
   });
 
+  it("uses the declared response heading for a one-dimensional target vector", () => {
+    const wrapper = factory({
+      nodeOutput: {
+        data: [10.146, 9.872],
+        metadata: {
+          target_names: ["Moisture"],
+          sample_labels: ["corn-m5-055", "corn-m5-075"],
+          scientific_presentation: {
+            schema_version: "spectrasherpa-node-presentation/1",
+            contract_digest: "a".repeat(64),
+            presentation_id: "targets",
+            kind: "target_matrix",
+            source_port: "y_train",
+            source_ports: ["y_train"],
+            modes: ["table"],
+          },
+        },
+      },
+    });
+    const headers = (wrapper.vm as any).tableColumns.map((column: any) => column.header);
+    expect(headers).toContain("Moisture");
+    expect(headers).not.toContain("Value");
+  });
+
   it("labels PLS explained-variance rows and domains without borrowing sample labels", () => {
     const wrapper = factory({
       nodeType: "classification.plsda",

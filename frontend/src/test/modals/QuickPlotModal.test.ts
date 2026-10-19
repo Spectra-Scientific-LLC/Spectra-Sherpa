@@ -403,6 +403,23 @@ describe("QuickPlotModal", () => {
     wrapper.unmount();
   });
 
+  it("keeps feature coordinates as rows, not target headings, in coefficient plot data", () => {
+    const wrapper = mount(QuickPlotModal, {
+      props: { modelValue: true, nodeType: "model.fitted_pls", nodeLabel: "PLS",
+        nodeOutput: { data: [[-0.75], [0.25]], presentation_value: [[-0.75], [0.25]], metadata: {
+          scientific_presentation: scientificPresentation("regression_coefficients"),
+          wavenumbers: [1100, 1102], feature_names: ["1100", "1102"], x_units: "nm",
+          target_names: ["Moisture"],
+        } } },
+      global: { stubs: globalStubs },
+    });
+    const vm = wrapper.vm as any;
+    expect(vm.dataPreview[0]).toMatchObject({ x: 1100, y: -0.75 });
+    expect(vm.dataPreview[1]).toMatchObject({ x: 1102, y: 0.25 });
+    expect(vm.dataPreviewColumns.map((column: any) => column.header)).not.toContain("1100");
+    wrapper.unmount();
+  });
+
   it("shows loading coordinates rather than scores after selecting the loadings plot", async () => {
     const wrapper = mount(QuickPlotModal, {
       props: { embedded: true, modelValue: true, nodeType: "model.pca", nodeLabel: "PCA",

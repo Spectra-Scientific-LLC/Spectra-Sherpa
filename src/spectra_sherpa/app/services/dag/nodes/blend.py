@@ -16,6 +16,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib import sherpa_dataset as sherpa_dataset_contract
 from spectra_sherpa.app.lib.axes import SampleAxis
 from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
@@ -810,7 +811,12 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 10, "cpu_seconds": 10, "memory_bytes": 268_435_456},
     license_id="Apache-2.0",
     help_reference="docs/nodes/data.md",
-    implementation_modules=(dag_io_contracts, dag_meta_helpers, sherpa_dataset_contract),
+    implementation_modules=(
+        dag_io_contracts,
+        dag_meta_helpers,
+        sherpa_dataset_contract,
+        sample_identity_authority,
+    ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
     citations=(_PPM_REFERENCE,),
@@ -832,7 +838,12 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 10, "cpu_seconds": 10, "memory_bytes": 268_435_456},
     license_id="Apache-2.0",
     help_reference="docs/nodes/data.md",
-    implementation_modules=(dag_io_contracts, dag_meta_helpers, sherpa_dataset_contract),
+    implementation_modules=(
+        dag_io_contracts,
+        dag_meta_helpers,
+        sherpa_dataset_contract,
+        sample_identity_authority,
+    ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
     citations=(_BEER_LAMBERT_REFERENCE, _NIST_QUANT_IR_REFERENCE, _PPM_REFERENCE),
@@ -854,7 +865,12 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 10, "cpu_seconds": 10, "memory_bytes": 268_435_456},
     license_id="Apache-2.0",
     help_reference="docs/nodes/data.md",
-    implementation_modules=(dag_io_contracts, dag_meta_helpers, sherpa_dataset_contract),
+    implementation_modules=(
+        dag_io_contracts,
+        dag_meta_helpers,
+        sherpa_dataset_contract,
+        sample_identity_authority,
+    ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
     citations=(_BEER_LAMBERT_REFERENCE, _HITRAN_REFERENCE, _PPM_REFERENCE),
@@ -876,7 +892,13 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 10, "cpu_seconds": 10, "memory_bytes": 268_435_456},
     license_id="Apache-2.0",
     help_reference="docs/nodes/data.md",
-    implementation_modules=(spectra_meta_contract, dag_io_contracts, dag_meta_helpers, sherpa_dataset_contract),
+    implementation_modules=(
+        spectra_meta_contract,
+        dag_io_contracts,
+        dag_meta_helpers,
+        sherpa_dataset_contract,
+        sample_identity_authority,
+    ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
 )
@@ -897,7 +919,13 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
     license_id="Apache-2.0",
     help_reference="docs/nodes/data.md",
-    implementation_modules=(spectra_meta_contract, dag_io_contracts, dag_meta_helpers, sherpa_dataset_contract),
+    implementation_modules=(
+        spectra_meta_contract,
+        dag_io_contracts,
+        dag_meta_helpers,
+        sherpa_dataset_contract,
+        sample_identity_authority,
+    ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
 )
@@ -918,7 +946,13 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
     license_id="Apache-2.0",
     help_reference="docs/nodes/data.md",
-    implementation_modules=(spectra_meta_contract, dag_io_contracts, dag_meta_helpers, sherpa_dataset_contract),
+    implementation_modules=(
+        spectra_meta_contract,
+        dag_io_contracts,
+        dag_meta_helpers,
+        sherpa_dataset_contract,
+        sample_identity_authority,
+    ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
     citations=(_BILINEAR_REFERENCE,),

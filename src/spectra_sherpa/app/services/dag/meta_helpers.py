@@ -382,11 +382,20 @@ def filter_by_class(
 
 
 def set_sample_labels(dataset: Any, labels: List[str]) -> None:
-    """Set sample labels/names."""
+    """Set display labels without changing the retained observation identity."""
     dataset = _require_dataset(dataset)
     if len(labels) != dataset.shape[0]:
         raise ValueError(f"Labels length ({len(labels)}) must match n_samples ({dataset.shape[0]})")
     axis = _sample_axis_copy(dataset)
+    from spectra_sherpa.app.lib.sample_identity import sample_ids
+
+    if sample_ids(dataset) is None and dataset.meta.get("source_observations") is not None:
+        from spectra_sherpa.app.lib.collection_assembly import verified_source_observations
+
+        # Promote already-verified legacy receipt IDs before changing their
+        # display labels. Never fabricate IDs for an anonymous numeric array.
+        rows = verified_source_observations(dataset)
+        axis.sample_table = {**(axis.sample_table or {}), "sample_id": [row["sample_id"] for row in rows]}
     axis.labels = list(labels)
     dataset.sample_axis = axis
 

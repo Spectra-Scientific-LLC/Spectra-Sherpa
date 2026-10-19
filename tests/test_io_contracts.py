@@ -185,13 +185,13 @@ def test_numeric_sample_coordinates_cannot_be_silently_reordered():
         bind_y(y, X=X, dataset_as_data=True)
 
 
-def test_sample_table_cannot_contradict_axis_identity():
+def test_declared_ids_cannot_be_hidden_by_matching_display_labels():
     X = _make_dataset()
     y = SherpaDataset(
         X=np.ones((3, 1)),
         sample_axis=SampleAxis(labels=["A", "B", "C"], sample_table={"sample_id": ["C", "B", "A"]}),
     )
-    with pytest.raises(ValueError, match="contradict"):
+    with pytest.raises(ValueError, match="sample identities/order differ"):
         bind_y(y, X=X, dataset_as_data=True)
 
 
@@ -202,5 +202,5 @@ def test_table_identity_cannot_hide_behind_equal_numeric_positions():
     y = SherpaDataset(
         X=np.ones((3, 1)), sample_axis=SampleAxis(values=np.arange(3.0), sample_table={"sample_id": ["C", "B", "A"]})
     )
-    with pytest.raises(ValueError, match="sample table identities"):
+    with pytest.raises(ValueError, match="sample identities/order differ"):
         bind_y(y, X=X, dataset_as_data=True)

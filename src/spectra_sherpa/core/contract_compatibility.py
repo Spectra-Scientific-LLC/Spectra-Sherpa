@@ -371,6 +371,154 @@ _GUI_SAMPLE_AUTHORITY_PREDECESSORS = tuple(
 )
 
 
+# Scientific identity authority: exact application-only pairs. Stable row IDs
+# replace display-label comparisons; serializers and application math are unchanged.
+# Every previously admitted producer is listed directly, never accepted by chaining.
+_SCIENTIFIC_AUTHORITY_PREDECESSORS = tuple(
+    SavedStateCompatibility(operation, predecessor, consumer, serializer)
+    for operation, serializer, consumer, predecessors in (
+        (
+            "model.pca",
+            "spectrasherpa.model-artifact.pca/3",
+            "5e809716a8266c4ddd5fb3902b8a68c264019fd05237bdb1397f664ae31dea10",
+            (
+                "ad9ee0dc72e2a6e9984134d8cfd7da6176ae725641c240f488f31713b57fcf94",
+                "def76c765075b59a536e8c6bd72be0418c20d0ea4611f11ce5ec7f1a17ca891b",
+                "c8f6c57e2e5ffe3f7ff3a6f5528cfef28ceea6eabfdac4d2c4572481d391ca75",
+                "2d4457cd7ca9ce699326aad70e1b4a77deb74d6cea88afd08066f106f45df161",
+                "eeca5bea6642ec33c4a51c825acd58217d1a8c17784cfa318e4840e4c4ba73a9",
+            ),
+        ),
+        (
+            "classification.plsda",
+            "spectrasherpa.sherpa-plsda-state/5",
+            "7e2148763934669f62e9de52982a9e75746e9e118ccfad820afcfd7a9230e4d0",
+            (
+                "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
+                "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
+                "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
+                "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+                "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+                "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+                "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+            ),
+        ),
+        (
+            "classification.simca",
+            "spectrasherpa.model-artifact.simca/2",
+            "16dfeba33f742c80aad2e8ae2dcccb42d430215b20b2fdfb77179f821db52034",
+            (
+                "58ae844cdcd14833a6da09a7f658e979ed08d812fc5bed7ef9d230be6e79d72e",
+                "fb0f84fec93cc374fbdd00797ea361f8c9a83d22b6021f242815b4e83cecc0f0",
+            ),
+        ),
+        (
+            "classification.knn",
+            "spectrasherpa.model-artifact.knn/2",
+            "8acc66bc0b248e2ebfbd89f041dd0513b3505740fa5a2b5e3b4dbccba81f1206",
+            (
+                "b75296b1e07af53623dfaf5e859b759d089eb1b4145a415bc555ff59cf4fec8a",
+                "7f188a7485c4774ccaa67d7efcf0cd95e35c07682633e9b5265d48f5e568be92",
+            ),
+        ),
+        (
+            "model.parafac",
+            "spectrasherpa.model-artifact.parafac/2",
+            "caa04a3f25923cfc7d83fe38defd47db25fcb10be1375d51d516ebc82b544ac0",
+            (
+                "dfcbb2f3a62ca3ea25bb59a62d57689f5ef338a0ca6221e8e8d92bbc38d46b43",
+                "869e7edb4ca328e560bc543bfa4e6ed676314f6a8be49e2364985c3fe47a640d",
+                "3c1525353cb993b328366260f5b751a2275048e2c39322ca424a91692ad24f68",
+            ),
+        ),
+    )
+    for predecessor in predecessors
+)
+
+
+# Explicit feature-coordinate declarations only; fitted schemas and numerics
+# are unchanged. These are direct application registrations, never graph replay.
+_FEATURE_PRESENTATION_PREDECESSORS = tuple(
+    SavedStateCompatibility(operation, predecessor, consumer, serializer)
+    for operation, serializer, consumer, predecessors in (
+        (
+            "model.fitted_pls",
+            "spectra.sherpa-simpls-regression-json/9",
+            "473b586d631d966d9a76a32ec3788f95b7aea3771fb8981256475061d1b52871",
+            (
+                "3543ba77a37677b1b5446a1fa3ff8e012cbfed71a7f6bbb75edf0ca89cbceef4",
+                "3939dc715653c735c11d3993942bd8e8baf5343fd42e21341d5cde130dafdde3",
+                "5ae3215d3c522a75b16baecdf35e736537052f411fbf9833509a535320ee27d5",
+                "9db6a10ca3c53faf7b0a69cee4aba35ebef148019ca21bf09ed226d578456997",
+            ),
+        ),
+        (
+            "classification.plsda",
+            "spectrasherpa.sherpa-plsda-state/5",
+            "526a54177bad1ec421ec319c031f6ba322fa431e7235cf35604e14d7ecf23f6c",
+            (
+                "00d9f4d468b96d949d1941e902bb8af727a16e22dc83cea93f22912a38fa3603",
+                "381926c2a35efa9c40ba364e2ef43f6055ac8133dd5754d32d5478fb916aa580",
+                "5cdcd5f0efd26e824c9c27f854d3feccca3be0018678602ef7882c30a5f645db",
+                "7e2148763934669f62e9de52982a9e75746e9e118ccfad820afcfd7a9230e4d0",
+                "a42f6b7a15955e08e7ec4c63fd335b17634454e21ff34b02f07a2077bea67cdb",
+                "bae0976d0412483f985d6ad1e828cf39f8e5df5c82bb6d1284183781c4ce64ea",
+                "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+                "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
+            ),
+        ),
+    )
+    for predecessor in predecessors
+)
+
+
+_FEATURE_PRESENTATION_PREDECESSORS += tuple(
+    SavedStateCompatibility(operation, predecessor, consumer, serializer)
+    for operation, serializer, consumer, predecessors in (
+        (
+            "model.fitted_linear_regression",
+            "spectrasherpa.model.fitted_linear_regression/1",
+            "10b125ffb88229b92cfe1eac67e5717117cfdf57d485b3e370abb2ef8910f6a7",
+            (
+                "29ba32c09e04d094afdc28724b86615a0d77e3946c3990f5f181a539ca8eff6c",
+                "04d5ea448432137158df7b412286a17a5fe3498f5589ce53b33414fad2388b2b",
+                "a9c2343c3eb8cec79c5e25f14bf57a7793b7bbc7449eba0bc8249ad839c4463b",
+                "19380f7cbefd4bd7196649760982a8d473d4062d86bfe6f8fdbef24dea042f53",
+                "d4be993d68d26c1c38e6c09115713fe8111bf5f4ba559f75e9e8dc7d03c86e0e",
+                "63501135129058b92cd8b6d0db33d5d61d3407c0be4f25a53f984d4a0101e27a",
+            ),
+        ),
+        (
+            "model.fitted_pcr",
+            "spectrasherpa.model.fitted_pcr/1",
+            "577777179c36fedf0338c84a003e9080aa8879043e2ad0e19e7dccc5f618c201",
+            (
+                "905cef6cd41f355e0f9a8e6847a03377f4de3c62c262aa8ce718055124b44cb6",
+                "a207b7fc520763105b633ca6d99eb267872c38ed54dc6854082b7be1bd1756b8",
+                "7a58390a7bfb79ed0e7920dae41c2de5a3d8c6d8ca323754c3000fb9cd6cf4a4",
+                "b0b7e0e32445d63b864b27cc16a6831b9561a35a3614efd19220343902c45b3f",
+                "18c724b705c6c1331a82a45e7c4f7c2c8a6c4b91fb375385e3e146f3f39b9b11",
+                "7f6040c174cae2889250e6a4bc22620af172207109a1d6ff0fe66ad35937f9de",
+            ),
+        ),
+        (
+            "model.fitted_svr",
+            "spectrasherpa.model.fitted_svr/1",
+            "cde922310dc4713ab5349720f865595fee13c8c2a53b60f68708ceed9882bae0",
+            (
+                "0daa0a05e555974ab7810bc97ddecc09abb00c24f7b5f6014be8a99aaee1b97b",
+                "29942ded909354f2ef273444108c7feb54525539ca8a24f091d7be9e3136decb",
+                "d3c36c524644edab0a1076190155baad4340ab549e34fc7a0e67b38f2d4f0a83",
+                "321d4a0411f164d20a3904dc438d886b1fb807c19200a2bb640ceaeb6169fc24",
+                "f69be607b175147534980ea0afe932a6af4a846b2734d121dc76c9dceed65843",
+                "6015b47482335d0931239f6a52fea6825979c43c055e319c69deb3129b344c67",
+            ),
+        ),
+    )
+    for predecessor in predecessors
+)
+
+
 @lru_cache(maxsize=1)
 def saved_state_compatibilities() -> tuple[SavedStateCompatibility, ...]:
     """Reviewed inference producers only; no application or cohort-only nodes."""
@@ -426,6 +574,8 @@ def saved_state_predecessor_is_compatible(
             *_PLSDA_LEGACY_ADMISSION_PREDECESSORS,
             *_CROSS_BLOCK_PLSDA_PREDECESSORS,
             *_GUI_SAMPLE_AUTHORITY_PREDECESSORS,
+            *_SCIENTIFIC_AUTHORITY_PREDECESSORS,
+            *_FEATURE_PRESENTATION_PREDECESSORS,
         )
         if entry.predecessor_digest == predecessor
         and entry.consumer_digest == consumer

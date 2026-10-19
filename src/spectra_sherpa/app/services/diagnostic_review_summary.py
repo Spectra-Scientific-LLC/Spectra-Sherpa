@@ -700,7 +700,10 @@ def build_summary(
         if not set(members).issubset(ids):
             raise ValueError("Review state contains observations outside this receipt.")
         state_sets[key] = set(members)
-    units = _text(_at(receipt.get("target_units"), response_index)) if kind == "pls" else None
+    from spectra_sherpa.core.target_units import resolve_response_units
+
+    unit_context = resolve_response_units(names, receipt.get("target_units"), response_index)
+    units = unit_context.value if kind == "pls" else None
     facts: dict[str, dict[str, Any]] = {}
 
     def fact(key, value, meaning, population="model", units=None):
@@ -719,7 +722,12 @@ def build_summary(
         "selection_count": len(selected),
         "contains_held_out": any(row["role"] == "held_out_test" for row in rows),
         "response": (
-            {"index": response_index, "name": _text(_at(names, response_index)), "units": units}
+            {
+                "index": response_index,
+                "name": _text(_at(names, response_index)),
+                "units": units,
+                "unit_context": unit_context.as_dict(),
+            }
             if kind == "pls"
             else None
         ),

@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 
 from spectra_sherpa.app.lib import fitted_state
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers
 from spectra_sherpa.app.services.dag.meta_helpers import (
@@ -451,6 +452,7 @@ bind_stable_execution_contract(
         spectrochempy_adapter,
         dag_io_contracts,
         meta_helpers,
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy", "scipy", "spectrochempy"),
     runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("spectrochempy", "0.8.1")),

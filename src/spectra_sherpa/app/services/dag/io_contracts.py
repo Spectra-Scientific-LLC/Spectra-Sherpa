@@ -17,6 +17,7 @@ from typing import Any
 
 import numpy as np
 
+from spectra_sherpa.app.lib.sample_identity import sample_ids
 from spectra_sherpa.app.lib.sherpa_dataset import EvaluationResult, Provenance, SherpaDataset
 
 from .transport import reject_spectrochempy_transport, require_raw_matrix_container
@@ -234,6 +235,9 @@ def require_aligned_response_samples(X: SherpaDataset, y: SherpaDataset) -> None
         raise ValueError("X and response datasets have different sample counts")
 
     def identity(dataset: SherpaDataset) -> list[str | float] | None:
+        explicit_ids = sample_ids(dataset)
+        if explicit_ids is not None:
+            return explicit_ids
         axis = dataset.sample_axis
         if axis is None:
             return None
@@ -241,12 +245,7 @@ def require_aligned_response_samples(X: SherpaDataset, y: SherpaDataset) -> None
         if labels is not None:
             if any(not isinstance(label, str) or not label.strip() for label in labels):
                 raise ValueError("dataset has invalid sample identities")
-            table_ids = (axis.sample_table or {}).get("sample_id")
-            if table_ids is not None and list(table_ids) != list(labels):
-                raise ValueError("sample table identities contradict sample-axis labels")
             return list(labels)
-        if (axis.sample_table or {}).get("sample_id") is not None:
-            raise ValueError("sample table identities require aligned sample-axis labels")
         if axis.values is not None:
             if not np.isfinite(axis.values).all():
                 raise ValueError("dataset has non-finite sample identities")
