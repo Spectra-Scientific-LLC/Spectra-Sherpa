@@ -374,3 +374,77 @@ async def test_common_evaluation_does_not_invent_holdout_when_no_split(monkeypat
     record = await subject.evaluate_pair(recipes, request)
     assert all(r["local_application"]["held_out"] is None for r in record["results"])
     assert all(len(r["local_application"]["calibration"]["predictions"]) == 24 for r in record["results"])
+
+
+def _specimen_recipes(monkeypatch, *, split=True, grouping=None, legacy_target=False, leaked_holdout=False):
+    from spectra_sherpa.app.lib.axes import SampleAxis
+    from spectra_sherpa.app.services.dag.supervision_binding import attach_sample_table_supervision
+
+    request, _, saved = fixtures(monkeypatch)
+    dataset = subject.restore_dataset(saved["raw", "default"])
+    dataset.sample_axis = SampleAxis(
+        labels=[f"row-{i}" for i in range(32)],
+        sample_table={
+            "sample_id": [f"row-{i}" for i in range(32)],
+            "specimen_id": [f"specimen-{i // 4}" for i in range(32)],
+            "measurement_id": [f"measurement-{i}" for i in range(32)],
+            "response": dataset.target.tolist(),
+        },
+    )
+    dataset.meta["source_collection"] = {
+        "scientific_collection_sha256": dataset.scientific_digest,
+        "manifest_digest": subject.digest({"source": "synthetic replicated spectra"}),
+        "collection_definition_sha256": subject.digest({"rows": 32, "features": 6}),
+    }
+    if not legacy_target:
+        dataset = attach_sample_table_supervision(
+            dataset,
+            target_column="response",
+            target_type="continuous",
+            group_column=grouping,
+            node_id="attach",
+        )
+    saved["raw", "default"] = serialize_result(dataset, retain_full=True)
+    if leaked_holdout:
+        saved["split", "train_indices"] = list(range(23)) + [24]
+        saved["split", "test_indices"] = [23] + list(range(25, 32))
+    if not split:
+        definition = saved["__workflow__", "definition"]
+        definition["nodes"] = [n for n in definition["nodes"] if n["node_id"] != "split"]
+        definition["edges"] = [e for e in definition["edges"] if e["to_node_id"] != "split"]
+        for edge in definition["edges"]:
+            if edge["from_node_id"] == "split":
+                edge["from_node_id"], edge["from_output"] = "raw", "default"
+    return request, [subject.load_recipe(SimpleNamespace(id=s.run_id), s) for s in request.recipes]
+
+
+@pytest.mark.parametrize("split", [False, True])
+@pytest.mark.parametrize("legacy_target", [False, True])
+def test_known_replicates_require_explicit_groups_before_slicing(monkeypatch, split, legacy_target):
+    with pytest.raises(ValueError, match="grouped supervised split"):
+        _specimen_recipes(monkeypatch, split=split, legacy_target=legacy_target)
+
+
+def test_groups_must_not_divide_known_specimens(monkeypatch):
+    with pytest.raises(ValueError, match="divides repeated specimen_id"):
+        _specimen_recipes(monkeypatch, grouping="measurement_id")
+
+
+@pytest.mark.parametrize("split", [False, True])
+async def test_real_group_binding_survives_retention_and_keeps_specimens_intact(monkeypatch, split):
+    request, recipes = _specimen_recipes(monkeypatch, split=split, grouping="specimen_id")
+    request.repetitions = 1
+    population, _, groups, _, plans = subject.prepare_protocol(recipes, request)
+    specimens = np.asarray(population.dataset.sample_axis.sample_table["specimen_id"])
+    assert np.array_equal(specimens, groups)
+    assert len(specimens) == (24 if split else 32)
+    for fold in plans[0].folds:
+        assert not set(specimens[fold.train]) & set(specimens[fold.test])
+    result = await subject.evaluate_pair(recipes, request)
+    assert len(result["results"]) == 2
+    assert result["splits"][0]["grouped"] is True
+
+
+def test_historical_holdout_that_divides_groups_is_refused(monkeypatch):
+    with pytest.raises(ValueError, match="retained holdout divides"):
+        _specimen_recipes(monkeypatch, grouping="specimen_id", leaked_holdout=True)
