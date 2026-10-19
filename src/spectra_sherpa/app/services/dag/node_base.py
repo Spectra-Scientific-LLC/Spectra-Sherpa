@@ -220,6 +220,8 @@ class NodeMetadata:
     presentation_contract: Any = None
     # Exact input-axis relationships for default per-output presentations.
     presentation_inputs: dict[str, tuple[str, str]] = field(default_factory=dict)
+    # Exact relationships to a sibling output's retained scientific context.
+    presentation_outputs: dict[str, tuple[str, str]] = field(default_factory=dict)
     # A node-owned refinement of the generic parameter grammar. The callable
     # is part of the registered implementation closure, not a second
     # operation-name dispatch table.

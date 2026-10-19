@@ -39,7 +39,7 @@ class HistoricalValidationGraph(ValidationGraph):
 _INSPECTION_CONSUMERS = {
     "preprocess.osc": (
         "02a4281542fe5fe2a349dbc5e61a42e82fa4a9f346ddb21fd5bf2d64b96c7b1b",
-        "981a731145f8f7a01c0067ee3dcdc317b579698ae440687d4777d14bb5dbeeed",
+        "4a65ee10a4cdd63629b8c7960da20d1f595ecc756e10041247b33416923a0938",
     ),
     "selection.variable_select": (
         "3209ca10ae4dfa04fe81b944d866182bb88bf5f3f9677c2618c5c100542b4f52",
@@ -47,11 +47,11 @@ _INSPECTION_CONSUMERS = {
     ),
     "classification.knn": (
         "b75296b1e07af53623dfaf5e859b759d089eb1b4145a415bc555ff59cf4fec8a",
-        "7f188a7485c4774ccaa67d7efcf0cd95e35c07682633e9b5265d48f5e568be92",
+        "8acc66bc0b248e2ebfbd89f041dd0513b3505740fa5a2b5e3b4dbccba81f1206",
     ),
     "classification.simca": (
         "58ae844cdcd14833a6da09a7f658e979ed08d812fc5bed7ef9d230be6e79d72e",
-        "fb0f84fec93cc374fbdd00797ea361f8c9a83d22b6021f242815b4e83cecc0f0",
+        "16dfeba33f742c80aad2e8ae2dcccb42d430215b20b2fdfb77179f821db52034",
     ),
     # PR119: display descriptions/input-coordinate bindings and canonical
     # sample helpers changed source identities, not archived declarations.
@@ -69,11 +69,11 @@ _INSPECTION_CONSUMERS = {
     ),
     "model.parafac": (
         "869e7edb4ca328e560bc543bfa4e6ed676314f6a8be49e2364985c3fe47a640d",
-        "3c1525353cb993b328366260f5b751a2275048e2c39322ca424a91692ad24f68",
+        "caa04a3f25923cfc7d83fe38defd47db25fcb10be1375d51d516ebc82b544ac0",
     ),
     "classification.plsda": (
         "f691b98c691e207f7e3e1d2eed74e0236212465646e244c8c5dff9593254e6eb",
-        "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+        "7e2148763934669f62e9de52982a9e75746e9e118ccfad820afcfd7a9230e4d0",
     ),
     "model.load_apply": (
         "31e7394e58fa5f78fb8f1bdb1d9b848a6af69d0fb9345cfff033378c22d510dd",

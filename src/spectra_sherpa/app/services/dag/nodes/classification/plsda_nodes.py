@@ -8,6 +8,7 @@ import numpy as np
 from sklearn.metrics import confusion_matrix
 
 from spectra_sherpa.app.lib import numerical_scaling, pca_numerics, pls_diagnostic_terms
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
 from spectra_sherpa.app.services.dag import fitted_input_identity as input_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
@@ -797,6 +798,7 @@ bind_stable_execution_contract(
         plsda_state,
         _vip,
         _artifact_builder,
+        sample_identity_authority,
     ),
     fitted_state_serializer=PLSDA_FITTED_STATE_SERIALIZER,
     deterministic=True,

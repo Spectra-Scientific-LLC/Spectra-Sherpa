@@ -14,6 +14,7 @@ from typing import Any, TypeAlias
 import numpy as np
 from numpy.typing import NDArray
 
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib.sherpa_dataset import EFFECT_SCATTER_CORRECTED, SherpaDataset
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
@@ -644,7 +645,13 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
     license_id="Apache-2.0",
     help_reference="docs/nodes/preprocessing.md",
-    implementation_modules=(_shared, dag_io_contracts, dag_meta_helpers, supervision_binding),
+    implementation_modules=(
+        _shared,
+        dag_io_contracts,
+        dag_meta_helpers,
+        supervision_binding,
+        sample_identity_authority,
+    ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
     managed_optimization_profiles=("first_party_pls",),

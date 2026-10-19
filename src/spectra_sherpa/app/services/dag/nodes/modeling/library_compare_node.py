@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 from scipy.interpolate import PchipInterpolator
 
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.services.dag import fitted_input_identity as input_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag.fitted_input_identity import fitted_input_identity
@@ -1359,7 +1360,11 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 60, "cpu_seconds": 60, "memory_bytes": 1_073_741_824},
     license_id="Apache-2.0",
     help_reference="docs/nodes/exploratory.md",
-    implementation_modules=(dag_io_contracts, input_identity_authority),
+    implementation_modules=(
+        dag_io_contracts,
+        input_identity_authority,
+        sample_identity_authority,
+    ),
     implementation_distributions=("numpy", "scipy"),
     runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1")),
     citations=(

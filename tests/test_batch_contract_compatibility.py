@@ -76,10 +76,10 @@ def test_exact_directional_application_compatibility(entry):
         )
 
 
-def test_gui_sample_authority_compatibility_is_exact_and_classifies_current_custody():
-    from spectra_sherpa.core.contract_compatibility import _GUI_SAMPLE_AUTHORITY_PREDECESSORS
+def test_scientific_authority_compatibility_is_exact_and_classifies_current_custody():
+    from spectra_sherpa.core.contract_compatibility import _SCIENTIFIC_AUTHORITY_PREDECESSORS
 
-    for entry in _GUI_SAMPLE_AUTHORITY_PREDECESSORS:
+    for entry in _SCIENTIFIC_AUTHORITY_PREDECESSORS:
         current = node_registry.get_metadata(entry.operation_id).resolved_execution_contract()
         assert current.digest == entry.consumer_digest
         assert current.payload["fitted_state_serializer"] == entry.serializer
@@ -117,8 +117,8 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
         "model.dbscan": "5fae2be3e60e35b85b13cb9b80eb09b171743f319bed7dd48b13a8265f31690a",
         "model.hca": "0adc84cec3ce752df725518210701d744af62e2cbfd6cd3396eab0d3bce8495b",
         "model.kmeans": "c65f7f11e6d2089abdec190e2c7aee80088eed4f2545ce55c0b92db1b2ebef30",
-        "model.parafac": "3c1525353cb993b328366260f5b751a2275048e2c39322ca424a91692ad24f68",
-        "classification.plsda": "d7044e4303ac8a2a1b32e1fff471b06ddfa33fcee0258c3d1576ebcf2b352db9",
+        "model.parafac": "caa04a3f25923cfc7d83fe38defd47db25fcb10be1375d51d516ebc82b544ac0",
+        "classification.plsda": "7e2148763934669f62e9de52982a9e75746e9e118ccfad820afcfd7a9230e4d0",
         "model.load_apply": "2c0aac4b7572370e631c839a79b3980b5edb37d879bb43fc789edab337e76a64",
         "model.apply_fitted_linear_regression": "7867e5992747564b3fe46215d0f7d2d199b3a5c2af40531b38d480d82465530b",
         "model.apply_fitted_pcr": "14d71c0447ba121bdd0b53911bb4f804d8b39ec1c0cdeb0a28228b8022aec5a8",
@@ -205,8 +205,10 @@ def test_only_reviewed_source_component_changed_and_all_current_identities_remai
             "spectra_sherpa.app.services.dag.nodes.selection.variable_select_node",
         ],
         "model.parafac": [
+            "spectra_sherpa.app.lib.sample_identity",
             "spectra_sherpa.app.services.dag.io_contracts",
             "spectra_sherpa.app.services.dag.meta_helpers",
+            "spectra_sherpa.app.services.dag.nodes.modeling.parafac_node",
             "spectra_sherpa.app.services.dag.nodes.modeling.saved_native_model",
         ],
     }

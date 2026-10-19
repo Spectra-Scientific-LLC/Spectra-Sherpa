@@ -321,6 +321,14 @@ describe("DataContentsPanel", () => {
   });
 
   it("suggests repeated specimen identity, not acquisition block, for a new class target", async () => {
+    mocks.apiPost.mockImplementation(async (_url, request) => ({ data: {
+      profile: request.analysis_profile, decisions: [], counts: {}, diagnostics: [],
+      independence: {
+        checked: true, suggested_groups: ["specimen_id"],
+        violations: request.group_column === "block"
+          ? [{ code: "divided_specimen", field: "specimen_id", message: "Server-owned specimen warning" }] : [],
+      },
+    } }));
     const ids = Array.from({ length: 9 }, (_, i) => `sample-${i}`);
     mocks.dataStore.fileInfo = {
       n_samples: 9,
@@ -347,6 +355,7 @@ describe("DataContentsPanel", () => {
       },
     };
     const wrapper = mount(DataContentsPanel);
+    await flushPromises();
     const dropdowns = wrapper.get("[aria-label='Analysis readiness']").findAllComponents({ name: "Dropdown" });
     expect(dropdowns[1].props("options")).toEqual(expect.arrayContaining([
       expect.objectContaining({ value: "specimen_id" }),
@@ -359,7 +368,7 @@ describe("DataContentsPanel", () => {
     dropdowns[1].vm.$emit("update:modelValue", "block");
     await flushPromises();
     expect(wrapper.get("[role='alert'].analysis-replication-warning").text()).toContain(
-      "same specimen on both sides",
+      "Server-owned specimen warning",
     );
     wrapper.unmount();
   });
@@ -1277,6 +1286,12 @@ describe("DataContentsPanel", () => {
   });
 
   it("offers a declared repeated identity target but warns it cannot support independent holdout", async () => {
+    mocks.apiPost.mockImplementation(async (_url, request) => ({ data: {
+      profile: request.analysis_profile, decisions: [], counts: {}, diagnostics: [],
+      independence: { checked: true, suggested_groups: [], violations: [
+        { code: "identity_as_response", field: "specimen_id", message: "Server-owned identity target refusal" },
+      ] },
+    } }));
     // Shaped after builtin:lavender-essential-oil-v1, where specimen_id is both
     // an identity and a declared target: 2 specimens across 2 acquisition
     // blocks, so the class has replicates and the question is answerable.
@@ -1350,7 +1365,7 @@ describe("DataContentsPanel", () => {
       .findAllComponents({ name: "Dropdown" })[0]
       .vm.$emit("update:modelValue", "specimen_id");
     await flushPromises();
-    expect(wrapper.text()).toContain("cannot serve as both the class target");
+    expect(wrapper.text()).toContain("Server-owned identity target refusal");
     wrapper.unmount();
   });
 
@@ -1558,7 +1573,9 @@ describe("DataContentsPanel", () => {
         },
       ],
     };
-    mocks.apiPost.mockResolvedValue({ data: selectedReadiness });
+    mocks.apiPost.mockImplementation(async (_url, request) => ({
+      data: request.analysis_profile.target_type ? selectedReadiness : baseReadiness,
+    }));
     mocks.dataStore.activeExperimentId = 12;
     mocks.dataStore.fileInfo = {
       title: "Categorical collection",
@@ -1611,11 +1628,13 @@ describe("DataContentsPanel", () => {
         readiness: selectedReadiness,
       }),
     );
-    expect(mocks.apiPost).toHaveBeenCalledTimes(1);
+    const initialCalls = mocks.apiPost.mock.calls.length;
+    expect(initialCalls).toBeGreaterThan(0);
+    expect(new Set(mocks.apiPost.mock.calls.map(([, request]) => JSON.stringify(request))).size).toBe(initialCalls);
     wrapper.unmount();
     const returned = mount(DataContentsPanel, { props: { initialAnalysisTarget: "species" } });
     await flushPromises();
-    expect(mocks.apiPost).toHaveBeenCalledTimes(1);
+    expect(mocks.apiPost).toHaveBeenCalledTimes(initialCalls);
     expect(returned.emitted("analysisChoice")?.at(-1)?.[0]).toEqual(
       expect.objectContaining({ target: "species", readiness: selectedReadiness }),
     );
@@ -1624,7 +1643,8 @@ describe("DataContentsPanel", () => {
       .findAllComponents({ name: "Dropdown" })[0];
     target.vm.$emit("update:modelValue", "");
     await flushPromises();
-    expect(mocks.apiPost).toHaveBeenCalledTimes(1);
+    expect(new Set(mocks.apiPost.mock.calls.map(([, request]) => JSON.stringify(request))).size)
+      .toBe(mocks.apiPost.mock.calls.length);
     expect(returned.emitted("analysisChoice")?.at(-1)?.[0]).toEqual(
       expect.objectContaining({ target: "", readiness: baseReadiness }),
     );
@@ -1701,12 +1721,12 @@ describe("DataContentsPanel", () => {
     const wrapper = mount(DataContentsPanel);
     await flushPromises();
 
-    expect(mocks.apiPost).toHaveBeenCalledWith("/workflow-templates/compatibility-preview", {
+    expect(mocks.apiPost).toHaveBeenCalledWith("/workflow-templates/compatibility-preview", expect.objectContaining({
       analysis_profile: expect.objectContaining({
         target_type: null,
         target_fields: [],
       }),
-    });
+    }));
     expect(wrapper.emitted("analysisChoice")?.at(-1)?.[0]).toEqual(
       expect.objectContaining({ target: "", targetType: null, readiness: untargetedReadiness }),
     );

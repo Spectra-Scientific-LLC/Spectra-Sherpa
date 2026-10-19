@@ -8,6 +8,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from spectra_sherpa.app.lib import parafac_core
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib.axes import FeatureAxis
 from spectra_sherpa.app.lib.sherpa_dataset import DatasetLayoutContext, SherpaDataset
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
@@ -375,7 +376,13 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 120, "cpu_seconds": 120, "memory_bytes": 1_073_741_824},
     license_id="BSD-3-Clause",
     help_reference="docs/nodes/exploratory.md",
-    implementation_modules=(parafac_core, dag_io_contracts, meta_helpers, saved_native_model),
+    implementation_modules=(
+        parafac_core,
+        dag_io_contracts,
+        meta_helpers,
+        saved_native_model,
+        sample_identity_authority,
+    ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
     citations=(

@@ -1,6 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { buildNodeOutput } from "@/utils/nodeOutput";
-import type { NodePortMetadata } from "@/types";
+import type { NodePortMetadata, NodePresentationContract, ScientificPresentation } from "@/types";
+
+const contextContract = (bindings: Record<string, string>, labelPorts: string[] = []): NodePresentationContract => ({
+  digest: "test-declarations",
+  payload: {
+    schema_version: "spectrasherpa-node-presentation/1",
+    default_presentation: Object.keys(bindings)[0] ?? "diagnostics",
+    presentations: [
+      ...Object.entries(bindings).map(([port, source]): ScientificPresentation => ({
+        presentation_id: port, label: port, kind: "target_matrix", modes: ["table"],
+        source_ports: [port], description: "", output_binding: [source, "target_context"],
+      })),
+      ...(labelPorts.length ? [{ presentation_id: "diagnostics", label: "Diagnostics", kind: "t2_q_diagnostics",
+        modes: ["table" as const], source_ports: labelPorts, description: "", sample_labels_field: "sample_labels" }] : []),
+    ],
+  },
+});
 
 describe("buildNodeOutput", () => {
   it("preserves shared scientific metadata while allowing primary-port metadata to take precedence", () => {
@@ -136,11 +152,11 @@ describe("buildNodeOutput", () => {
       undefined, null, {
         y_train: descriptor("y_train", "target_matrix", [1, 1], ["table"]),
         y_test: descriptor("y_test", "target_matrix", [1, 1], ["table"]),
-      });
+      }, contextContract({ y_train: "X_train", y_test: "X_test" }));
     expect(output.ports?.y_train.metadata.sample_labels).toEqual(["train-A"]);
     expect(output.ports?.y_test.metadata.sample_labels).toEqual(["test-B"]);
     const missing = buildNodeOutput({ X_train: dataset("train-A"), y_test: [3] }, undefined, null,
-      { y_test: descriptor("y_test", "target_matrix", [1, 1], ["table"]) });
+      { y_test: descriptor("y_test", "target_matrix", [1, 1], ["table"]) }, contextContract({ y_test: "X_test" }));
     expect(missing.ports?.y_test.metadata.sample_labels).toBeUndefined();
   });
 
@@ -174,6 +190,7 @@ describe("buildNodeOutput", () => {
         default: descriptor("default", "spectral_dataset", [2, 2], ["table", "plot"]),
         target: descriptor("target", "target_matrix", [2, 2], ["table"]),
       },
+      contextContract({ target: "default" }),
     );
 
     expect(output.ports?.target.metadata).toMatchObject({
@@ -195,7 +212,7 @@ describe("buildNodeOutput", () => {
             target_names: ["Carbon dioxide", "Methane"],
             selected_target: "Methane",
           },
-          metadata: { sample_labels: ["sample_001"] },
+          y_axis: { labels: ["sample_001"] },
         },
         target: [3],
       },
@@ -205,12 +222,13 @@ describe("buildNodeOutput", () => {
         default: descriptor("default", "spectral_dataset", [1, 2], ["table", "plot"]),
         target: descriptor("target", "target_matrix", [1, 1], ["table"]),
       },
+      contextContract({ target: "default" }),
     );
 
     expect(output.ports?.target.metadata.target_names).toEqual(["Methane"]);
   });
 
-  it("carries root sample identity onto matching row-wise result ports", () => {
+  it("carries result labels only onto explicitly declared row-wise ports", () => {
     const labels = ["sample_001", "sample_002", "sample_003"];
     const output = buildNodeOutput(
       {
@@ -218,19 +236,35 @@ describe("buildNodeOutput", () => {
         Q: [0.1, 0.2, 0.3],
         flags: [false, true, false],
         sample_labels: labels,
+        feature_importance: [4, 5, 6],
       },
-      [{ name: "T2" }, { name: "Q" }, { name: "flags" }] as unknown as NodePortMetadata[],
+      [{ name: "T2" }, { name: "Q" }, { name: "flags" }, { name: "feature_importance" }] as unknown as NodePortMetadata[],
       null,
       {
         T2: descriptor("T2", "array_1d", [3], ["table", "plot"]),
         Q: descriptor("Q", "array_1d", [3], ["table", "plot"]),
         flags: descriptor("flags", "array_1d", [3], ["table"]),
+        feature_importance: descriptor("feature_importance", "array_1d", [3], ["table"]),
       },
+      contextContract({}, ["T2", "Q", "flags"]),
     );
 
     expect(output.ports?.T2.metadata.sample_labels).toEqual(labels);
     expect(output.ports?.Q.metadata.sample_labels).toEqual(labels);
     expect(output.ports?.flags.metadata.sample_labels).toEqual(labels);
+    expect(output.ports?.feature_importance.data).toEqual([4, 5, 6]);
+    expect(output.ports?.feature_importance.metadata.sample_labels).toBeUndefined();
+  });
+
+  it("does not guess a response cohort from port spelling or equal sizes", () => {
+    const result = { X_train: { type: "SherpaDataset", data: [[1]], y_axis: { labels: ["A"] } }, y_train: [2] };
+    const descriptors = { y_train: descriptor("y_train", "target_matrix", [1, 1], ["table"]) };
+    expect(buildNodeOutput(result, undefined, null, descriptors).ports?.y_train.metadata.sample_labels).toBeUndefined();
+    const renamed = { acquired: result.X_train, measured: result.y_train };
+    const output = buildNodeOutput(renamed, undefined, null,
+      { measured: descriptor("measured", "target_matrix", [1, 1], ["table"]) },
+      contextContract({ measured: "acquired" }));
+    expect(output.ports?.measured.metadata.sample_labels).toEqual(["A"]);
   });
 
   it("retains the summary carried by a typed StatisticsSummary port", () => {

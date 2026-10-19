@@ -175,8 +175,8 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
         ("apply_fitted_state", 423, 17),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/osc_node.py": (
-        ("fit_fitted_state", 588, 16),
-        ("apply_fitted_state", 589, 17),
+        ("fit_fitted_state", 589, 16),
+        ("apply_fitted_state", 590, 17),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/preprocessing/scale_node.py": (
         ("fit_fitted_state", 288, 16),
@@ -259,11 +259,11 @@ _BRIDGE_CONVERSION_CALLSITE_ALLOWLIST = {
         ("native.to_fitted_state", 509, 38),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_nodes.py": (
-        ("SherpaPLSDAArtifact.from_fitted_state", 261, 15),
-        ("core['artifact'].to_fitted_state", 237, 24),
-        ("core['artifact'].to_fitted_state", 724, 15),
-        ("SherpaPLSDAArtifact.from_fitted_state", 743, 19),
-        ("core['artifact'].to_fitted_state", 690, 32),
+        ("SherpaPLSDAArtifact.from_fitted_state", 262, 15),
+        ("core['artifact'].to_fitted_state", 238, 24),
+        ("core['artifact'].to_fitted_state", 725, 15),
+        ("SherpaPLSDAArtifact.from_fitted_state", 744, 19),
+        ("core['artifact'].to_fitted_state", 691, 32),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/classification/plsda_state.py": (
         ("SherpaPLSDAArtifact.from_fitted_state", 480, 15),

@@ -409,6 +409,7 @@ class OutlierDetectionNode(Node):
                     ("T2", "Q", "flags"),
                     ("plot", "table"),
                     "Per-sample model distance, residual distance, screening limits, and outlier decisions.",
+                    sample_labels_field="sample_labels",
                 ),
             ),
         ),

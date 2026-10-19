@@ -11,6 +11,7 @@ from typing import Any
 import numpy as np
 
 from spectra_sherpa.app.lib import fitted_state
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.services.dag import fitted_input_identity as input_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers
@@ -1298,6 +1299,7 @@ bind_stable_execution_contract(
         meta_helpers,
         modeling_core_utils,
         _artifact_builder,
+        sample_identity_authority,
     ),
     fitted_state_serializer=MCR_FITTED_STATE_SERIALIZER,
     deterministic=True,

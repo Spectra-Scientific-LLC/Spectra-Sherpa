@@ -762,7 +762,7 @@ const tableColumns = computed(() => {
         });
       }
     }
-    columns.push({ field: "value", header: "Value", width: "150px", isNumeric: true });
+    columns.push({ field: "value", header: matrixColumnLabels.value[0], width: "150px", isNumeric: true });
     return columns;
   }
 });

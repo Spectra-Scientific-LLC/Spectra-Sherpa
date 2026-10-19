@@ -19,6 +19,8 @@ function fixture(): ReportData {
       evidence_notice: "Saved evidence only", evidence_gaps: [{ node_id: "pls", output: "scores", state: "missing",
         category: "unavailable", reason: "Scores not retained", recovery: "Rerun to recover" }],
       validation_summary: { schema_version: "spectrasherpa-readable-validation/1", run_id: 7,
+        summary_rows: [{ label: "Target (source)", value: "protein (continuous; units: mg/L)" },
+          { label: "Evaluation population", value: "Cross-validation; not an external held-out test." }],
         rows: [{ label: "Target (source)", value: "protein (continuous; units: mg/L)" },
           { label: "Evaluation population", value: "Cross-validation; not an external held-out test." },
           { label: "Saved settings (pls)", value: "verbose settings" },
@@ -89,7 +91,7 @@ describe("deterministic short scientific report", () => {
   });
   it("shows an executed component CV design retained in the run without claiming it is absent", () => {
     const data = fixture();
-    data.runs![0].validation_summary!.rows.push({
+    data.runs![0].validation_summary!.summary_rows!.push({
       label: "Component CV design (pls)",
       value: "5 folds; grouped by specimen identity; 3 candidate component counts",
     });
@@ -99,7 +101,7 @@ describe("deterministic short scientific report", () => {
   });
   it("reports held-out classification CV from the retained design rather than claiming no fold count", () => {
     const data = fixture();
-    data.runs![0].validation_summary!.rows.push({
+    data.runs![0].validation_summary!.summary_rows!.push({
       label: "Cross-validation design (plsda)", value: "5 executed folds; grouped validation",
     });
     const context = scientificSummaryGroups(data)[0].rows.map(row => row.join(": ")).join("\n");
@@ -132,6 +134,7 @@ describe("deterministic short scientific report", () => {
     data.runs![0].validation_summary!.regression_results = ["calibration", "held_out_test"].map((role, i) => ({
       node_id: "pls", source_port: i ? "comparison" : "calibration_comparison", target: "Glucose (wt %)",
       units: "wt %", role, reference_min: 0, reference_max: 30, reference_sd: 8,
+      unit_context: { state: "recorded" as const, value: "wt %" },
       metrics: { n_samples: i ? 20 : 80, r2: 0.95, rmse: 0.4321, bias: 0, sep: 0.2, slope: 1, intercept: 0 },
       bias_definition: "predicted_minus_reference",
     }));
@@ -162,6 +165,18 @@ describe("deterministic short scientific report", () => {
     expect(output).not.toContain("Target (source)");
     expect(output).toContain("Validation population unavailable");
     expect(output).toContain("current editor settings were not substituted");
+  });
+  it("uses producer summary facts regardless of their English heading", () => {
+    const data = fixture();
+    data.runs![0].validation_summary!.summary_rows = [{ label: "Renamed context", value: "Retained scientific fact" }];
+    const output = generateProvenanceReport(data);
+    expect(output).toContain("Retained scientific fact");
+    expect(output).not.toContain("verbose settings");
+  });
+  it("preserves legacy facts when no structured summary was retained", () => {
+    const data = fixture();
+    delete data.runs![0].validation_summary!.summary_rows;
+    expect(generateProvenanceReport(data)).toContain("verbose settings");
   });
   it("keeps zero, nonconvergence, PCA variance and explicitly scoped classifier metrics", () => {
     expect(keyResultRows({ converged: false, lof_percent: 0, explained_variance_ratio: [0.6, 0.3],

@@ -1931,34 +1931,17 @@ const analysisGroupOptions = computed<AnalysisGroupOption[]>(() => {
 });
 
 const preferredIndependentGroup = computed(() => {
-  const profile = dataStore.fileInfo?.analysis_readiness?.profile;
-  // An acquisition block is not an independent specimen. Only a declared,
-  // repeated specimen identity can be suggested for held-out validation.
-  return (profile?.identity_fields ?? []).find(
+  return (effectiveAnalysisReadiness.value?.independence?.suggested_groups ?? []).find(
     (field) =>
       field !== analysisTarget.value &&
-      /^(specimen_id|subject_id|patient_id)$/i.test(field) &&
       analysisGroupOptions.value.some((option) => option.value === field && !option.disabled),
   ) ?? null;
 });
 
-const independentGroupingWarning = computed(() => {
-  const target = analysisTargetOptions.value.find((option) => option.value === analysisTarget.value);
-  const profile = dataStore.fileInfo?.analysis_readiness?.profile;
-  if (
-    target?.type === "categorical" &&
-    /^(specimen_id|subject_id|patient_id)$/i.test(analysisTarget.value) &&
-    (profile?.identity_fields ?? []).includes(analysisTarget.value)
-  ) {
-    return `${analysisFieldLabel(analysisTarget.value)} identifies specimens and cannot serve as both the class target and an independent held-out group. Choose a scientific class label instead.`;
-  }
-  const independent = preferredIndependentGroup.value;
-  if (target?.type !== "categorical" || !independent || analysisGroup.value === independent)
-    return null;
-  return `Repeated ${analysisFieldLabel(independent)} values are present. A row-wise or block-wise split can put the same specimen on both sides and inflate classification accuracy. Select ${analysisFieldLabel(independent)} under Groups before running a held-out classification.`;
-});
-
 const effectiveAnalysisReadiness = ref<DatasetAnalysisReadiness | null>(null);
+const independentGroupingWarning = computed(
+  () => effectiveAnalysisReadiness.value?.independence?.violations[0]?.message ?? null,
+);
 const classReplicationWarning = computed(() => {
   const table = sampleTableState.value;
   const target = analysisTargetOptions.value.find(
@@ -2050,7 +2033,9 @@ watch(
 watch(
   [
     analysisTarget,
+    analysisGroup,
     analysisTargetOptions,
+    sampleTableState,
     () => dataStore.fileInfo?.analysis_readiness ?? null,
     () => props.analysisSelectionHydrated,
   ],
@@ -2083,26 +2068,33 @@ watch(
             target_type: null,
             target_fields: [],
           }
-        : null);
-    if (!previewProfile) {
-      effectiveAnalysisReadiness.value = base;
-      analysisReadinessLoading.value = false;
-      analysisReadinessError.value = null;
-      return;
-    }
+        : base.profile);
+    const table = sampleTableState.value;
+    const previewTable = table.kind === "valid" && table.complete
+      ? Object.fromEntries(
+          [...new Set([...base.profile.identity_fields, analysisGroup.value])]
+            .filter(field => field in table.values)
+            .map(field => [field, table.values[field]]),
+        )
+      : null;
+    const previewRequest = {
+      analysis_profile: previewProfile,
+      sample_table: previewTable,
+      n_samples: table.kind === "valid" && table.complete ? table.rowCount : null,
+      group_column: analysisGroup.value || null,
+    };
+    effectiveAnalysisReadiness.value = null;
     analysisReadinessLoading.value = true;
     analysisReadinessError.value = null;
     try {
       const read = async () =>
         (
-          await api.post<DatasetAnalysisReadiness>("/workflow-templates/compatibility-preview", {
-            analysis_profile: previewProfile,
-          })
+          await api.post<DatasetAnalysisReadiness>("/workflow-templates/compatibility-preview", previewRequest)
         ).data;
       const result = dataStore.fileInfo
         ? await retainedInspection(
             dataStore.fileInfo,
-            `readiness:${JSON.stringify(previewProfile)}`,
+            `readiness:${JSON.stringify(previewRequest)}`,
             read,
           )
         : await read();

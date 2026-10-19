@@ -19,6 +19,7 @@ from typing import Any
 
 from spectra_sherpa.app.lib import curves as curves_contract
 from spectra_sherpa.app.lib import golden_grid as golden_grid_contract
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib import saturation_response as saturation_response_contract
 from spectra_sherpa.app.lib import sherpa_dataset as sherpa_dataset_contract
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
@@ -917,6 +918,7 @@ bind_stable_execution_contract(
         dag_io_contracts,
         dag_meta_helpers,
         sherpa_dataset_contract,
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
@@ -949,6 +951,7 @@ bind_stable_execution_contract(
         golden_grid_contract,
         sherpa_dataset_contract,
         wavenumber_align_contract,
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy", "scipy"),
     runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1")),
@@ -980,6 +983,7 @@ bind_stable_execution_contract(
         dag_meta_helpers,
         saturation_response_contract,
         sherpa_dataset_contract,
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
@@ -1007,6 +1011,7 @@ bind_stable_execution_contract(
         dag_io_contracts,
         dag_meta_helpers,
         sherpa_dataset_contract,
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
@@ -1037,6 +1042,7 @@ bind_stable_execution_contract(
         dag_io_contracts,
         dag_meta_helpers,
         sherpa_dataset_contract,
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
@@ -1067,6 +1073,7 @@ bind_stable_execution_contract(
         dag_meta_helpers,
         saturation_response_contract,
         sherpa_dataset_contract,
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),

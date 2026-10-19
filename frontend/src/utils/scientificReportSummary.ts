@@ -126,10 +126,6 @@ function withoutRenderedClassRows(value: unknown, depth = 0): unknown {
     .map(([key, child]) => [key, withoutRenderedClassRows(child, depth + 1)]));
 }
 
-// These are already evidence-qualified, human-readable backend facts. Never
-// infer a held-out population from a metric name alone.
-const validationContext = /^(?:Dataset|Target|Group field|Split method|Validation question|Development population|Test population|Groups \(|Evaluation population|Evaluation source|Metric denominator|Component CV design|Cross-validation design|Cross-validation method|Cross-validation (?:r2|rmse|mae|bias|q2)|Verified metric denominator|Verified CV metric|Validation groups|Repeated validation|Repeated population|Preprocessing within folds|Partition details|Detailed validation evidence)/i;
-
 function runGroups(run: RunReportEntry): SummaryGroup[] {
   const notices = [run.evidence_notice, ...(run.evidence_gaps ?? []).map((gap) =>
     `${gap.node_id} / ${gap.output}: ${gap.reason} ${gap.recovery}`)].filter((v): v is string => !!v);
@@ -140,12 +136,10 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     && run.validation_summary.run_id === run.id ? run.validation_summary : undefined;
   if (run.workflow_identity?.source_name) context.push(["Saved data source", run.workflow_identity.source_name]);
   if (run.workflow_identity?.source_origin) context.push(["Data origin", run.workflow_identity.source_origin === "example" ? "Bundled example" : "Current project data"]);
-  for (const row of validation?.rows ?? []) {
-    if (!validationContext.test(row.label) && !/^(?:Regression statistics|Target list|Spectral axis|Spectral intensity)/.test(row.label)) continue;
-    // Population counts belong in a short report; individual row positions do not.
-    let value = row.value.replace(/; split-input row positions.*$/, "");
-    if (/^Target \(/.test(row.label) && validation?.regression_results?.length) value = value.replace(/; units: [^)]*(?=\))/, "");
-    context.push([row.label, /^(?:Verified CV metric|Cross-validation (?:r2|rmse|mae|bias|q2))/i.test(row.label) ? shortValue(value) : value]);
+  // The producer selects and shortens context at the point where its scientific
+  // meaning is known. Changing a display label must not change report content.
+  for (const row of validation?.summary_rows ?? validation?.rows ?? []) {
+    context.push([row.label, row.value]);
   }
   if (!validation) notices.push("Validation population unavailable.");
   if (run.selection_provenance?.state === "unavailable") notices.push(run.selection_provenance.reason || "Saved data selection unavailable.");
@@ -162,8 +156,8 @@ function runGroups(run: RunReportEntry): SummaryGroup[] {
     const errorLabels = [...new Set(results.map(result => errorNames[result.role] || "RMSE"))];
     const errorHeading = errorLabels.length === 1 ? errorLabels[0] : "Error by population";
     const units = [...new Set(results.map(result => result.units))];
-    const sharedUnits = units.length === 1 && !!units[0]?.trim()
-      && !/unavailable|not recorded|unknown/i.test(units[0]);
+    const sharedUnits = units.length === 1 && results.every(result =>
+      result.unit_context?.state === "recorded" && result.unit_context.value === units[0]);
     const suffix = ` (${units[0]})`;
     const displayTarget = sharedUnits && target.endsWith(suffix) ? target.slice(0, -suffix.length) : target;
     context.push([`Response (Y): ${displayTarget}`, sharedUnits

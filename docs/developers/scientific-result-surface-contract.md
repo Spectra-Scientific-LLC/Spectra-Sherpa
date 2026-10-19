@@ -44,6 +44,38 @@ The UI must preserve:
 
 A renderer should consume a typed result or presentation contract. It should not infer meaning from node names or array shape.
 
+#### Declared context relationships
+
+- `ScientificPresentation.input_binding` names the input axis to preserve.
+  `output_binding=(port, "target_context")` names the exact sibling dataset
+  supplying a response's sample identity and target context. Equal row counts
+  and names such as `y_test` do not establish that relationship.
+- `sample_labels_field` explicitly identifies a result's sample-label vector
+  for the presentation's declared source ports. It must not label an unrelated
+  feature vector merely because its length matches the sample count.
+- Typed `sample_axis.sample_table["sample_id"]` identifies observations.
+  `sample_axis.labels` is editable display text. A checked source receipt may
+  preserve legacy IDs before relabeling; anonymous arrays do not acquire
+  verified identities. Legacy label/coordinate alignment remains a compatibility
+  fallback, not evidence of specimen independence.
+- Slice the complete typed axis, including alternate labels, sample tables,
+  inclusion masks and exclusion reasons. Do not rebuild a partial axis in a
+  split, filter or renderer.
+
+#### Retained summary facts
+
+The saved-run producer declares `summary_rows` and each detailed row's
+`row_level` classification. Short reports and provider-context consent filters
+consume those fields rather than parsing English headings. Historical summaries
+without these fields retain their facts locally; unclassified rows are not sent
+as aggregate-only context.
+
+Resolve units for the exact response and saved upstream branch through
+`core/target_units.py`. The structured `unit_context` distinguishes recorded,
+missing and ambiguous units. Missing selected authority must not be replaced by
+another response, branch, or a convenient first nonempty model record. Views do
+not compute model metrics or reconstruct validation populations.
+
 ### 4. Claim scope
 
 The surface must state which population and claim it represents:

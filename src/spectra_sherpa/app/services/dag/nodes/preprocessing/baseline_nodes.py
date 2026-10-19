@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from spectra_sherpa.app.lib import rubberband as rubberband_authority
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib import sherpa_dataset as sherpa_dataset_contract
 from spectra_sherpa.app.lib.axes import SpectralAxis
 from spectra_sherpa.app.lib.rubberband import RubberbandResult, rubberband_correct
@@ -160,6 +161,7 @@ bind_stable_execution_contract(
         rubberband_authority,
         dag_meta_helpers,
         sherpa_dataset_contract,
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),

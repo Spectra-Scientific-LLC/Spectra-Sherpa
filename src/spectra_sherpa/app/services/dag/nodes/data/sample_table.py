@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 from spectra_sherpa.app.lib.axes import SampleAxis
+from spectra_sherpa.app.lib.sample_identity import sample_ids
 from spectra_sherpa.core.plate_formats import (
     DEFAULT_PLATE_FORMAT_ID,
     get_plate_format,
@@ -495,7 +496,9 @@ def apply_sample_table_to_dataset(dataset: Any, value: object) -> SampleTablePay
     if int(file_id) != int(table["source_file_id"]):
         raise ValueError("sample_table source_file_id does not match the spectral dataset source")
     existing_labels = getattr(getattr(dataset, "sample_axis", None), "labels", None)
-    if existing_labels is not None and [str(value) for value in existing_labels] != table["sample_ids"]:
+    existing_ids = sample_ids(dataset)
+    comparison_ids = existing_ids if existing_ids is not None else existing_labels
+    if comparison_ids is not None and list(comparison_ids) != table["sample_ids"]:
         raise ValueError("sample_table sample_id values do not match the spectral dataset sample order")
 
     prior_axis = getattr(dataset, "sample_axis", None)
@@ -505,7 +508,7 @@ def apply_sample_table_to_dataset(dataset: Any, value: object) -> SampleTablePay
             if prior_axis is not None and prior_axis.values is not None
             else np.arange(n_samples, dtype=np.float64)
         ),
-        labels=list(table["sample_ids"]),
+        labels=list(existing_labels) if existing_labels is not None else list(table["sample_ids"]),
         classes=(
             ["" if value is None else str(value) for value in table["target_values"]]
             if table["target_type"] == "categorical"
@@ -513,7 +516,10 @@ def apply_sample_table_to_dataset(dataset: Any, value: object) -> SampleTablePay
         ),
         include_mask=np.asarray(table["include"], dtype=bool),
         exclusion_reasons=[None if included else "excluded_by_sample_table" for included in table["include"]],
-        sample_table={name: list(values) for name, values in table["annotations"].items()},
+        sample_table={
+            **{name: list(values) for name, values in table["annotations"].items()},
+            "sample_id": list(table["sample_ids"]),
+        },
         title=getattr(prior_axis, "title", None) if prior_axis is not None else "Sample",
     )
     dataset.sample_axis = axis

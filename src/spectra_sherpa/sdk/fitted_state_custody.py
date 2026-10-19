@@ -39,6 +39,51 @@ _CAPABILITIES: Mapping[tuple[str, str], FittedStateCustodyCapability] = MappingP
     {
         (
             "spectrasherpa.model-artifact.pca/3",
+            "5e809716a8266c4ddd5fb3902b8a68c264019fd05237bdb1397f664ae31dea10",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.pca/3",
+            contract_digest="5e809716a8266c4ddd5fb3902b8a68c264019fd05237bdb1397f664ae31dea10",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Identity binding changed; fitted serialization and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.sherpa-plsda-state/5",
+            "7e2148763934669f62e9de52982a9e75746e9e118ccfad820afcfd7a9230e4d0",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.sherpa-plsda-state/5",
+            contract_digest="7e2148763934669f62e9de52982a9e75746e9e118ccfad820afcfd7a9230e4d0",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Identity binding changed; fitted serialization and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.model-artifact.simca/2",
+            "16dfeba33f742c80aad2e8ae2dcccb42d430215b20b2fdfb77179f821db52034",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.simca/2",
+            contract_digest="16dfeba33f742c80aad2e8ae2dcccb42d430215b20b2fdfb77179f821db52034",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Identity binding changed; fitted serialization and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.model-artifact.knn/2",
+            "8acc66bc0b248e2ebfbd89f041dd0513b3505740fa5a2b5e3b4dbccba81f1206",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.knn/2",
+            contract_digest="8acc66bc0b248e2ebfbd89f041dd0513b3505740fa5a2b5e3b4dbccba81f1206",
+            custody_class=RETAINS_TRAINING_ROWS,
+            rationale="Identity binding changed; fitted serialization and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.model-artifact.parafac/2",
+            "caa04a3f25923cfc7d83fe38defd47db25fcb10be1375d51d516ebc82b544ac0",
+        ): FittedStateCustodyCapability(
+            serializer="spectrasherpa.model-artifact.parafac/2",
+            contract_digest="caa04a3f25923cfc7d83fe38defd47db25fcb10be1375d51d516ebc82b544ac0",
+            custody_class=DATA_FREE_APPLICATION_STATE,
+            rationale="Identity binding changed; fitted serialization and training-row custody are unchanged.",
+        ),
+        (
+            "spectrasherpa.model-artifact.pca/3",
             "eeca5bea6642ec33c4a51c825acd58217d1a8c17784cfa318e4840e4c4ba73a9",
         ): FittedStateCustodyCapability(
             serializer="spectrasherpa.model-artifact.pca/3",

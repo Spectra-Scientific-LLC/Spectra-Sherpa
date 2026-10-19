@@ -10,10 +10,12 @@ from typing import Any, cast
 
 import numpy as np
 
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
 from spectra_sherpa.app.services.dag import supervision_binding
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
+from spectra_sherpa.core import specimen_independence as specimen_independence_authority
 from spectra_sherpa.core.target_authority import admit_target_authority
 from spectra_sherpa.execution_contract_vocabulary import (
     DatasetRankPolicy,
@@ -413,6 +415,7 @@ class TrainTestSplitNode(Node):
     metadata = NodeMetadata(
         policy=NodePolicy(),
         node_type="data.train_test_split",
+        presentation_outputs={"y_train": ("X_train", "target_context"), "y_test": ("X_test", "target_context")},
         category="data",
         label="Train/Test Split",
         description="Create one digest-bound train/test partition using statistical or chemometric designs",
@@ -880,7 +883,13 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
     license_id="Apache-2.0",
     help_reference="docs/nodes/data.md",
-    implementation_modules=(dag_io_contracts, dag_meta_helpers, data_utils, sample_preparation),
+    implementation_modules=(
+        dag_io_contracts,
+        dag_meta_helpers,
+        data_utils,
+        sample_preparation,
+        sample_identity_authority,
+    ),
     implementation_distributions=("numpy", "pandas"),
     runtime_requirements=(("numpy", "1.26.4"), ("pandas", "2.3.3")),
     input_rank_policy=DatasetRankPolicy.PRESERVES_ND,
@@ -901,7 +910,14 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
     license_id="Apache-2.0",
     help_reference="docs/nodes/data.md",
-    implementation_modules=(dag_io_contracts, dag_meta_helpers, data_utils, split_planner),
+    implementation_modules=(
+        dag_io_contracts,
+        dag_meta_helpers,
+        data_utils,
+        split_planner,
+        sample_identity_authority,
+        specimen_independence_authority,
+    ),
     implementation_distributions=("numpy", "scikit-learn", "scipy"),
     runtime_requirements=(
         ("numpy", "1.26.4"),
@@ -941,6 +957,7 @@ bind_stable_execution_contract(
         sample_preparation,
         sample_table,
         supervision_binding,
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy", "pandas"),
     runtime_requirements=(("numpy", "1.26.4"), ("pandas", "2.3.3")),

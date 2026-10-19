@@ -7,6 +7,7 @@ from typing import Any, cast
 
 import numpy as np
 
+from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.lib import sherpa_dataset as sherpa_dataset_contract
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
@@ -268,6 +269,7 @@ bind_stable_execution_contract(
         dag_meta_helpers,
         sherpa_dataset_contract,
         supervision_binding,
+        sample_identity_authority,
     ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),

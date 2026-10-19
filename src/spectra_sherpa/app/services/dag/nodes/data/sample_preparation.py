@@ -15,6 +15,7 @@ import numpy as np
 import pandas as pd
 
 from spectra_sherpa.app.lib.axes import SampleAxis
+from spectra_sherpa.app.lib.sample_identity import require_matching_sample_identity, sample_ids
 from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
 from spectra_sherpa.app.services.dag.io_contracts import (
     bind_X,
@@ -498,6 +499,7 @@ def attach_target_dataset(
         target_names = [target_column]
         X_labels = _sample_labels(dataset)
         y_labels = X_labels
+        identity_checked = sample_ids(dataset) is not None
         table = None
     elif target_source == "connected_target":
         target_names = resolve_target_names(y, dataset)
@@ -520,8 +522,7 @@ def attach_target_dataset(
 
         X_labels = _sample_labels(dataset)
         y_labels = _sample_labels(y)
-        if X_labels is not None and y_labels is not None and X_labels != y_labels:
-            raise ValueError("Target sample labels do not exactly match dataset sample labels and order")
+        identity_checked = require_matching_sample_identity(dataset, y)
     else:
         raise ValueError(f"Unsupported target source: {target_source!r}")
 
@@ -588,7 +589,8 @@ def attach_target_dataset(
             "group_column": (group_column or None) if target_source == "sample_table_column" else None,
             "target_shape": list(target.shape),
             "target_names": list(target_names) if target_names is not None else None,
-            "sample_identity_checked": X_labels is not None and y_labels is not None,
+            "sample_identity_checked": identity_checked,
+            "sample_label_alignment_checked": X_labels is not None and y_labels is not None,
             "sample_table_schema": table["schema_version"] if table is not None else None,
             "sample_table_source_file_id": table["source_file_id"] if table is not None else None,
             "sample_table_identity_checked": table is not None,
