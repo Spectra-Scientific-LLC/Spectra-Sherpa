@@ -50,6 +50,34 @@ beforeEach(() => {
 });
 
 describe("Mounted synthesis workspace scope", () => {
+  it.each([400, 422])("reports definitive HTTP %s refusal with its remedy", async status => {
+    const { wrapper, panel } = mountPanel();
+    await flushPromises();
+    panel.synthesisBundle = [{ id: "a", name: "first", payload: { components: [] } }];
+    vi.mocked(api.post).mockRejectedValueOnce({ isAxiosError: true,
+      response: { status, data: { detail: "Select an admitted source." } } });
+    await panel.saveSynthesis();
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      severity: "error", summary: "Save refused",
+      detail: "0 of 1 files saved. Select an admitted source.",
+    }));
+    expect(JSON.stringify(mocks.toast.mock.calls)).not.toContain("may also have saved");
+    wrapper.unmount();
+  });
+
+  it("keeps lost acknowledgements explicitly uncertain", async () => {
+    const { wrapper, panel } = mountPanel();
+    await flushPromises();
+    panel.synthesisBundle = [{ id: "a", name: "first", payload: { components: [] } }];
+    vi.mocked(api.post).mockRejectedValueOnce(new Error("Network disconnected"));
+    await panel.saveSynthesis();
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      severity: "warn", summary: "Save acknowledgement incomplete",
+      detail: expect.stringContaining("may also have saved"),
+    }));
+    wrapper.unmount();
+  });
+
   it("keeps pure-spectrum acquisition through concentration and unrelated component edits", async () => {
     const { wrapper, panel, store } = mountPanel();
     await flushPromises();

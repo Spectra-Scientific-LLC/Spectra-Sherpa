@@ -1846,6 +1846,14 @@ async function saveSynthesis() {
     const result = await synthesisStore.save(projectId, items);
     if (!result) return;
     if (presentation.isCurrent() && result.result) previewResult.value = result.result;
+    if (result.status === "refused") {
+      toast.add({
+        severity: "error", summary: result.count ? "Bundle partly saved" : "Save refused",
+        detail: `${result.count} of ${result.requested} files saved. ${getErrorMessage(result.error, "The server refused this file.")}`,
+        life: 10000,
+      });
+      return;
+    }
     if (result.status !== "complete") {
       toast.add({
         severity: "warn", summary: result.status === "partial" ? "Bundle partly saved" : "Save acknowledgement incomplete",
