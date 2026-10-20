@@ -1,0 +1,72 @@
+/* Public theme contract, v1. Preserve the existing light appearance.
+ * Consumers choose a semantic role, not a palette shade. Plot colors are owned
+ * by theme/plotTheme.ts; categorical and scientific scales are not UI status.
+ */
+:root {
+  --ss-text: #1b1f23;
+  --ss-text-body: #4b5563;
+  --ss-text-strong: #0f172a;
+  --ss-text-secondary: #475569;
+  --ss-text-muted: #64748b;
+  --ss-text-disabled: #94a3b8;
+  --ss-surface-page: #f5f7fa;
+  --ss-surface: #ffffff;
+  --ss-surface-subtle: #f8fafc;
+  --ss-surface-inset: #e2e8f0;
+  --ss-surface-workspace: #e4e0fa;
+  --ss-border: #e2e8f0;
+  --ss-border-strong: #cbd5e1;
+  --ss-border-input: #cbd5f5;
+  --ss-action-text: #334155;
+  --ss-action: #2563eb;
+  --ss-action-hover: #1d4ed8;
+  --ss-action-tint: #eff6ff;
+  --ss-focus: #2563eb;
+  --ss-success: #15803d;
+  --ss-success-strong: #166534;
+  --ss-success-surface: #f0fdf4;
+  --ss-info: #0369a1;
+  --ss-info-strong: #075985;
+  --ss-info-surface: #f0f9ff;
+  --ss-warning: #b45309;
+  --ss-warning-strong: #92400e;
+  --ss-warning-surface: #fffbeb;
+  --ss-danger: #b91c1c;
+  --ss-danger-strong: #991b1b;
+  --ss-danger-surface: #fef2f2;
+  --ss-nav-surface: #0f2a3f;
+  --ss-nav-text: #f1f5f9;
+  --ss-nav-link: #e2e8f0;
+  --ss-nav-selection: rgba(255, 255, 255, 0.15);
+  --ss-shadow-panel: 0 12px 30px rgba(15, 23, 42, 0.08);
+
+  /* Existing accent family, shared with hosted Optimize. This does not turn
+   * blue OSS controls purple or introduce an Optimize dependency into OSS. */
+  --ss-accent: #6504bd;
+  --ss-accent-strong: #4c0390;
+  --ss-accent-mid: #7c3aed;
+  --ss-accent-soft: #a78bfa;
+  --ss-accent-tint: var(--ss-surface-workspace);
+  --ss-accent-faint: #f5f3ff;
+  --ss-accent-muted: #5b5670;
+  --ss-accent-border: #ddd6f3;
+  --ss-accent-warning: #a64b00;
+  --ss-accent-grid: #e4dcf5;
+
+  /* PrimeVue 3 is a compiled CSS theme, not a v4 preset. Bridge its public
+   * variables without pretending that all vendor literals use variables. */
+  --ss-control-primary: #3b82f6;
+  --ss-control-primary-text: #ffffff;
+  --ss-control-muted: #6b7280;
+  --ss-control-border: #dfe7ef;
+  --ss-control-ground: #f9fafb;
+  --text-color: var(--ss-text-body);
+  --text-color-secondary: var(--ss-control-muted);
+  --primary-color: var(--ss-control-primary);
+  --primary-color-text: var(--ss-control-primary-text);
+  --surface-ground: var(--ss-control-ground);
+  --surface-card: var(--ss-surface);
+  --surface-overlay: var(--ss-surface);
+  --surface-border: var(--ss-control-border);
+  --workspace-background: var(--ss-surface-workspace);
+}
