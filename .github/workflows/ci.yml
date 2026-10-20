@@ -239,18 +239,9 @@ jobs:
         run: npm ci
         working-directory: frontend
 
-      - name: Verify api-generated.ts matches OSS-canonical OpenAPI spec
+      - name: Verify generated public API types
         working-directory: frontend
-        run: |
-          cp src/types/api-generated.ts /tmp/api-generated.committed.ts
-          npm run generate:types
-          if ! diff -q src/types/api-generated.ts /tmp/api-generated.committed.ts > /dev/null; then
-            echo "::error::frontend/src/types/api-generated.ts is stale."
-            echo "::error::Run 'cd frontend && npm run generate:types' locally and commit the result."
-            diff -u /tmp/api-generated.committed.ts src/types/api-generated.ts | head -120
-            exit 1
-          fi
-          echo "api-generated.ts matches frontend/contracts/openapi-llm-v1.json."
+        run: npm run check:types
 
       - name: ESLint
         # Phase B: existing warnings (no-explicit-any, no-unused-vars).
@@ -430,6 +421,9 @@ jobs:
 
       - name: Build docs
         run: mkdocs build --strict
+
+      - name: Check help destinations in built documentation
+        run: python scripts/check_built_help.py --site-dir site
 
       - name: Demo-string hygiene check
         run: |

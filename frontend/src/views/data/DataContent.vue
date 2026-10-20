@@ -1658,6 +1658,7 @@ import {
   storeDataSelectionReceipt,
   type DataSelectionReceipt,
 } from "@/utils/workflowDataSelection";
+import { workflowSelectionStage } from "@/api/adapters/datasets";
 import {
   clearRetainedInspection,
   retainedInspection,
@@ -5078,7 +5079,7 @@ async function applyWorkflowDataSelection(): Promise<void> {
     const payloadSelection: WorkflowSourceSelection = {
       experiment_id: experimentId,
       dataset_name: currentPortfolioView.value?.name || experiment.name,
-      stage,
+      stage: workflowSelectionStage(stage),
       selected_file_ids: selection === null ? null : selection.map((file) => file.id),
       asset_id: inspectionAssetId.value,
       source_manifest_sha256: sourceManifest,
@@ -5350,29 +5351,40 @@ async function goToWorkflow(addNode?: string) {
     });
     return;
   }
-  const datasets: DataSelectionReceipt["datasets"] = workflowIds.map((experimentId) => {
-    const experiment = dataStore.experiments.find((item) => item.id === experimentId);
-    const selection = workflowSelectionForExperiment(experimentId);
-    return {
-      experiment_id: experimentId,
-      dataset_name:
-        experimentId === dataStore.activeExperimentId && currentPortfolioView.value
-          ? currentPortfolioView.value.name
-          : (experiment?.name ?? `Dataset ${experimentId}`),
-      selection: selection === null ? "all" : "subset",
-      selected_file_count: selection === null ? (experiment?.file_count ?? 0) : selection.length,
-      file_ids: selection === null ? null : selection.map((file) => file.id),
-      file_paths: selection === null ? null : selection.map((file) => file.file_path),
-      asset_id: experimentId === dataStore.activeExperimentId ? inspectionAssetId.value : null,
-      ...(experimentId === dataStore.activeExperimentId && currentPortfolioView.value
-        ? {
-            dataset_view_id: currentPortfolioView.value.id,
-            dataset_view_sha256: currentPortfolioView.value.selection_sha256,
-          }
-        : {}),
-      stage: selection === null ? "raw" : selection[0].stage,
-    };
-  });
+  let datasets: DataSelectionReceipt["datasets"];
+  try {
+    datasets = workflowIds.map((experimentId) => {
+      const experiment = dataStore.experiments.find((item) => item.id === experimentId);
+      const selection = workflowSelectionForExperiment(experimentId);
+      return {
+        experiment_id: experimentId,
+        dataset_name:
+          experimentId === dataStore.activeExperimentId && currentPortfolioView.value
+            ? currentPortfolioView.value.name
+            : (experiment?.name ?? `Dataset ${experimentId}`),
+        selection: selection === null ? "all" : "subset",
+        selected_file_count: selection === null ? (experiment?.file_count ?? 0) : selection.length,
+        file_ids: selection === null ? null : selection.map((file) => file.id),
+        file_paths: selection === null ? null : selection.map((file) => file.file_path),
+        asset_id: experimentId === dataStore.activeExperimentId ? inspectionAssetId.value : null,
+        ...(experimentId === dataStore.activeExperimentId && currentPortfolioView.value
+          ? {
+              dataset_view_id: currentPortfolioView.value.id,
+              dataset_view_sha256: currentPortfolioView.value.selection_sha256,
+            }
+          : {}),
+        stage: workflowSelectionStage(selection === null ? "raw" : selection[0].stage),
+      };
+    });
+  } catch (error) {
+    toast.add({
+      severity: "warn",
+      summary: "Choose one processing stage",
+      detail: getErrorMessage(error, "The selected processing stage cannot be used in this workflow."),
+      life: 6000,
+    });
+    return;
+  }
   const receiptId = createDataSelectionReceiptId();
   try {
     persistDataDraftNow();

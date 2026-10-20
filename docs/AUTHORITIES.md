@@ -19,8 +19,11 @@ This map points to authorities; it does not replace them.
 | Interface colors and categorical plot palettes | `frontend/src/assets/tokens.css`, `frontend/src/theme/plotTheme.ts`; [theme migration boundary](developers/theme-authority.md) | `theme_authority.test.ts`, `npm run check:theme`; zero-literal baseline outside these authorities |
 | Saved model compatibility and custody | `core/contract_compatibility.py`, `sdk/fitted_state_custody.py`; exact directional registrations, not wildcard compatibility | `tests/test_batch_contract_compatibility.py`, `tests/test_fitted_state_custody.py` |
 | Standalone/upstream boundary | `OSS_SCOPE.md`, `scripts/run_public_tests.py`; private qualification evidence stays upstream | Public reference preflight and boundary checks in CI |
+| REST transport and node reference projections | Backend response schemas and live node registry; [generation boundaries](developers/generated-contracts.md) | `make generate-check`, `tests/test_public_openapi_generation.py`, generated-reference tests |
+| Saved diagnostic review facts | `app/services/diagnostic_review_summary.py`; private family projectors preserve retained scientific scope | `tests/test_diagnostic_review_summary.py`, `tests/test_plsda_diagnostic_summary.py` |
+| Frontend extension host contract | `frontend/src/extension-contract/`; host and extension consume the same versioned declarations | Type checking and extension loading tests |
 
 Python paths abbreviated to `app/`, `core/` or `sdk/` above are under
-`src/spectra_sherpa/`. The main REST types and generated node documentation
-still need the planned follow-on cohesion work; do not treat
-handwritten mirrors as newly authoritative because they appear in this map.
+`src/spectra_sherpa/`. Unmigrated handwritten transport boundaries are not
+authorities; generation does not authorize inventing scientific semantics for
+untyped records.

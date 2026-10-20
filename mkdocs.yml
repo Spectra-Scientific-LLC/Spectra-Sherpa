@@ -76,6 +76,7 @@ nav:
       - Export Design: architecture/export.md
   - OSS Developers:
       - Developer Setup: developers/setup.md
+      - Generated Contracts and References: developers/generated-contracts.md
       - Contributing: developers/contributing.md
       - Scientific Result Surface Contract: developers/scientific-result-surface-contract.md
       - Analytical Qualification: developers/analytical-qualification.md

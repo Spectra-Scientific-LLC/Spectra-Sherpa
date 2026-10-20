@@ -4,14 +4,14 @@ Regression nodes predict quantitative targets from spectra or features.
 
 ## Training and Prediction Nodes
 
-| Node | Use When | Inputs | Outputs | Key Configuration |
-| --- | --- | --- | --- | --- |
-| Fit PLS1 / PLS2 Regression (SIMPLS) (`model.fitted_pls`) | Fit a quantitative calibration while making the reusable numerical state and VIP evidence explicit. | `default: SpectralDataset`; `y: TargetMatrix?` | training predictions; typed `fitted_state`; `vip_scores` | `n_components`; `scale`. Choose components under an explicit validation design rather than calibration fit alone. |
-| Apply PLS1 / PLS2 Model (SIMPLS) (`model.apply_fitted_pls`) | Apply either a verified upstream fitted state or a verified imported artifact through the same numerical core. | `default: SpectralDataset`; optional upstream `fitted_state` | predicted targets | Local state is connected by a typed edge; imported mode requires the complete artifact binding and cannot be mixed with local custody. |
-| Train PCR Regression (`model.pcr`) | Regress targets on PCA scores when you want explicit PCA compression before regression. | `X: Array2D`; `y: TargetMatrix?` | `model`; `scores`; `loadings` | `n_components`; `scale`. |
-| Train SVR Regression (`model.svr`) | Nonlinear calibration with support vector regression. | `X: Array2D`; `y: TargetMatrix?` | `model`; `predictions`; `residuals` | `kernel`; `C`; `epsilon`; `gamma`; `degree`; `coef0`; `scale`. Scaling is usually important for SVR. |
-| Train Linear Regression (`model.linear_regression`) | Simple baseline calibration or already-selected low-dimensional features. | `X: Array2D`; `y: TargetMatrix?` | `model`; `predictions`; `residuals` | `fit_intercept`. |
-| Apply Saved Model Artifact (`model.load_apply`) | Load a saved model artifact and apply it to inference data. | `X_new: SpectralDataset`; `model_ref: ModelReference?` | `result`; `labels`; `model_id` | `model_id`. |
+| Node | Scientific use and guidance |
+| --- | --- |
+| Fit PLS1 / PLS2 Regression (SIMPLS) (`model.fitted_pls`) | Fit a quantitative calibration while making the reusable numerical state and VIP evidence explicit. Choose components under an explicit validation design rather than calibration fit alone. |
+| Apply PLS1 / PLS2 Model (SIMPLS) (`model.apply_fitted_pls`) | Apply either a verified upstream fitted state or a verified imported artifact through the same numerical core. Local state is connected by a typed edge; imported mode requires the complete artifact binding and cannot be mixed with local custody. |
+| Train PCR Regression (`model.pcr`) | Regress targets on PCA scores when you want explicit PCA compression before regression. |
+| Train SVR Regression (`model.svr`) | Nonlinear calibration with support vector regression. Scaling is usually important for SVR. |
+| Train Linear Regression (`model.linear_regression`) | Simple baseline calibration or already-selected low-dimensional features. |
+| Apply Saved Model Artifact (`model.load_apply`) | Load a saved model artifact and apply it to inference data. |
 
 ## Key Outputs
 
@@ -169,3 +169,296 @@ retained multi-response scalar errors are legacy unqualified summaries; use a
 new calculation from retained observations and predictions for corrected
 per-response evidence. A historical registry version alone is not proof that
 a result used the corrected implementation; retain run/source identity.
+
+<!-- BEGIN GENERATED NODE REFERENCE -->
+
+<!-- NODE HELP REFERENCES {"help_reference": "docs/nodes/regression.md", "node_types": ["model.apply_fitted_linear_regression", "model.apply_fitted_pcr", "model.apply_fitted_pls", "model.apply_fitted_svr", "model.fitted_linear_regression", "model.fitted_pcr", "model.fitted_pls", "model.fitted_svr", "model.linear_regression", "model.load_apply", "model.pcr", "model.predict_regression", "model.svr"]} -->
+
+## Registry reference
+
+Generated from registered node metadata. Edit methodology and examples outside the marked section.
+Defaults and options below are JSON values; `null` means no concrete default is declared.
+Internal parameters are retained for contract inspection and are not scientist-editable controls.
+Conditional visibility describes the editor; execution admission remains node-owned.
+
+### Apply Linear Regression (`model.apply_fitted_linear_regression`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>fitted_state</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>artifact_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>serializer</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>source_contract_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_content_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_node_id</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+
+### Apply PCR (`model.apply_fitted_pcr`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>fitted_state</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>artifact_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>serializer</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>source_contract_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_content_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_node_id</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+
+### Apply PLS1 / PLS2 Model (SIMPLS) (`model.apply_fitted_pls`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>fitted_state</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>prediction_intervals</code> | <code>spectrasherpa://types/PredictionIntervals/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>applicability</code> | <code>spectrasherpa://types/ApplicabilityScreening/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>prediction_identity</code> | <code>spectrasherpa://types/PredictionIdentity/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>artifact_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | Canonical artifact-custody binding populated by import; not a scientist-set parameter. |
+| <code>serializer</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | Canonical artifact-custody binding populated by import; not a scientist-set parameter. |
+| <code>source_contract_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | Canonical artifact-custody binding populated by import; not a scientist-set parameter. |
+| <code>state_content_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | Canonical artifact-custody binding populated by import; not a scientist-set parameter. |
+| <code>state_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | Canonical artifact-custody binding populated by import; not a scientist-set parameter. |
+| <code>state_node_id</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | Canonical artifact-custody binding populated by import; not a scientist-set parameter. |
+
+### Apply SVR (`model.apply_fitted_svr`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>fitted_state</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>artifact_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>serializer</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>source_contract_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_content_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_digest</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_node_id</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+
+### Fit Linear Regression (`model.fitted_linear_regression`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>y</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>fitted_state</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>fit_intercept</code> | <code>boolean</code> | <code>false</code> | <code>true</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Calculate intercept (if False, force through origin) |
+
+### Fit PCR (`model.fitted_pcr`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>y</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>fitted_state</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>n_components</code> | <code>number</code> | <code>true</code> | <code>3</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Number of PCA components for regression |
+| <code>scale</code> | <code>boolean</code> | <code>false</code> | <code>true</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Scale each predictor to unit variance before the PCA centering step. |
+
+### Fit PLS1 / PLS2 Regression (SIMPLS) (`model.fitted_pls`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>y</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>fitted_state</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>vip_scores</code> | <code>spectrasherpa://types/VariableImportance/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>calibration_comparison</code> | <code>spectrasherpa://types/RegressionComparison/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>x_scores</code> | <code>spectrasherpa://types/ScoreMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>x_loadings</code> | <code>spectrasherpa://types/LoadingMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>explained_variance</code> | <code>spectrasherpa://types/ExplainedVarianceMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>regression_coefficients</code> | <code>spectrasherpa://types/RegressionCoefficientMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>component_curve</code> | <code>spectrasherpa://types/ValidationResult/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>n_components</code> | <code>number</code> | <code>true</code> | <code>2</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Requested maximum; the fit reports the effective predictive rank and stops before an unidentifiable direction. Must not exceed min(training samples - 1, input features). This choice is saved; the component CV curve is tuning evidence and must not use the locked test cohort. |
+| <code>scale</code> | <code>boolean</code> | <code>false</code> | <code>false</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | — |
+| <code>component_selection_rule</code> | <code>select</code> | <code>false</code> | <code>&quot;manual_parameter&quot;</code> | <code>[&quot;manual_parameter&quot;, &quot;minimum_mean_fold_rmse&quot;, &quot;one_standard_error&quot;]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Choose and save the basis after inspecting the curve, then set Latent Variables to the desired count and refit. For a multiresponse model, use manual because each response has its own suggestion. |
+| <code>component_curve_max</code> | <code>number</code> | <code>false</code> | <code>10</code> | — | <code>{&quot;max_value&quot;: 20, &quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Automatically includes the selected LV up to 20; a larger selected model is marked outside the bounded curve. Bounds the additional calibration/CV fits and retained per-component evidence. |
+| <code>component_cv_folds</code> | <code>number</code> | <code>false</code> | <code>5</code> | — | <code>{&quot;max_value&quot;: 10, &quot;min_value&quot;: 2, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Uses group K-fold when sample groups are bound, otherwise row K-fold. Scaling is fitted within each training fold. Population-fitted upstream preprocessing makes this curve unavailable. Bounds repeated fold fitting and retained fold evidence. |
+| <code>target_names</code> | <code>string_list</code> | <code>false</code> | <code>[]</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+
+### Fit SVR (`model.fitted_svr`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>y</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>fitted_state</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>kernel</code> | <code>select</code> | <code>true</code> | <code>&quot;rbf&quot;</code> | <code>[&quot;rbf&quot;, &quot;linear&quot;, &quot;poly&quot;, &quot;sigmoid&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Kernel type for SVR |
+| <code>C</code> | <code>number</code> | <code>true</code> | <code>1.0</code> | — | <code>{&quot;min_value&quot;: 0.01, &quot;step&quot;: 0.1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Regularization parameter |
+| <code>epsilon</code> | <code>number</code> | <code>false</code> | <code>0.1</code> | — | <code>{&quot;min_value&quot;: 0.0, &quot;step&quot;: 0.01}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Epsilon-tube width |
+| <code>gamma</code> | <code>select</code> | <code>false</code> | <code>&quot;scale&quot;</code> | <code>[&quot;scale&quot;, &quot;auto&quot;]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Kernel coefficient for RBF/poly/sigmoid |
+| <code>degree</code> | <code>number</code> | <code>false</code> | <code>3</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Degree for polynomial kernel |
+| <code>coef0</code> | <code>number</code> | <code>false</code> | <code>0.0</code> | — | <code>{&quot;min_value&quot;: -1.0, &quot;step&quot;: 0.1}</code> | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Independent term for poly/sigmoid kernels |
+| <code>target_index</code> | <code>number</code> | <code>true</code> | <code>1</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | 1-based target/property column to model when the dataset contains multiple reference properties |
+| <code>scale</code> | <code>boolean</code> | <code>false</code> | <code>true</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Apply mean centering and scaling |
+
+### Train Linear Regression (`model.linear_regression`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>X</code> | <code>spectrasherpa://types/Array2D/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;, &quot;X_features&quot;]</code> |
+| input | <code>y</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>population</code> | <code>spectrasherpa://types/RegressionPopulation/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>model</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>predictions</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>residuals</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>effect_summary</code> | <code>spectrasherpa://types/Visualization/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>fitted_state</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>fit_intercept</code> | <code>boolean</code> | <code>false</code> | <code>true</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Calculate intercept (if False, force through origin) |
+
+### Apply Saved Model Artifact (`model.load_apply`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>X_new</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>model_ref</code> | <code>spectrasherpa://types/ModelReference/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>result</code> | <code>spectrasherpa://types/Array2D/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>labels</code> | <code>spectrasherpa://types/Categorical/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>model_id</code> | <code>spectrasherpa://types/ModelReference/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>model_id</code> | <code>model_select</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Saved model artifact to load and apply |
+| <code>acknowledge_legacy_input_uncertainty</code> | <code>boolean</code> | <code>false</code> | <code>false</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | I acknowledge that a pre-0.6.2 model lacks fitted signal identity. Use only when the retained feature axis matches; refit for verified application. |
+
+### Train PCR Regression (`model.pcr`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>X</code> | <code>spectrasherpa://types/Array2D/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;, &quot;X_features&quot;]</code> |
+| input | <code>y</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>population</code> | <code>spectrasherpa://types/RegressionPopulation/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>model</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>scores</code> | <code>spectrasherpa://types/ScoreMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>loadings</code> | <code>spectrasherpa://types/LoadingMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>y_pred</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>y_true</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>fitted_state</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>n_components</code> | <code>number</code> | <code>true</code> | <code>3</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Number of PCA components for regression |
+| <code>scale</code> | <code>boolean</code> | <code>false</code> | <code>true</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Scale each predictor to unit variance before the PCA centering step. |
+
+### Predict Regression (`model.predict_regression`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>fitted_state</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>prediction_identity</code> | <code>spectrasherpa://types/PredictionIdentity/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+No parameters.
+
+### Train SVR Regression (`model.svr`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>X</code> | <code>spectrasherpa://types/Array2D/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;, &quot;X_features&quot;]</code> |
+| input | <code>y</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>population</code> | <code>spectrasherpa://types/RegressionPopulation/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>model</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>predictions</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>residuals</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>fitted_state</code> | <code>spectrasherpa://types/RegressionModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>kernel</code> | <code>select</code> | <code>true</code> | <code>&quot;rbf&quot;</code> | <code>[&quot;rbf&quot;, &quot;linear&quot;, &quot;poly&quot;, &quot;sigmoid&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Kernel type for SVR |
+| <code>C</code> | <code>number</code> | <code>true</code> | <code>1.0</code> | — | <code>{&quot;min_value&quot;: 0.01, &quot;step&quot;: 0.1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Regularization parameter |
+| <code>epsilon</code> | <code>number</code> | <code>false</code> | <code>0.1</code> | — | <code>{&quot;min_value&quot;: 0.0, &quot;step&quot;: 0.01}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Epsilon-tube width |
+| <code>gamma</code> | <code>select</code> | <code>false</code> | <code>&quot;scale&quot;</code> | <code>[&quot;scale&quot;, &quot;auto&quot;]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Kernel coefficient for RBF/poly/sigmoid |
+| <code>degree</code> | <code>number</code> | <code>false</code> | <code>3</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Degree for polynomial kernel |
+| <code>coef0</code> | <code>number</code> | <code>false</code> | <code>0.0</code> | — | <code>{&quot;min_value&quot;: -1.0, &quot;step&quot;: 0.1}</code> | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Independent term for poly/sigmoid kernels |
+| <code>target_index</code> | <code>number</code> | <code>true</code> | <code>1</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | 1-based target/property column to model when the dataset contains multiple reference properties |
+| <code>scale</code> | <code>boolean</code> | <code>false</code> | <code>true</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Apply mean centering and scaling |
+
+<!-- END GENERATED NODE REFERENCE -->

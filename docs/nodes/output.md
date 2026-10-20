@@ -4,13 +4,13 @@ Output nodes make workflow results visible or exportable.
 
 ## Nodes
 
-| Node | Use When | Inputs | Outputs | Key Configuration |
-| --- | --- | --- | --- | --- |
-| Plot (`output.plot`) | Show spectra, scores, loadings, diagnostics, dendrograms, or metrics-derived plots. | `default: Any` | `visualization` | `plot_type`; `colorscale`; `x_axis`; `y_axis`. Many model outputs carry plot-ready payloads. |
-| Contour Plot (`output.contour`) | Show a 2D heatmap or contour view of matrix-like spectral data. | `default: Any` | `visualization` | `colorscale`; `plot_type`; `reverse_x`; `transpose`. |
-| Data Table (`output.data_table`) | Inspect numeric arrays, metrics, sample tables, or selected variables as rows and columns. | `default: Any` | `visualization` | `max_rows`; `transpose`; `show_index`. |
-| Statistics (`stats.summary`) | Generate deterministic descriptive summaries for datasets and typed scientific results. Inferential decisions remain in dedicated diagnostic nodes. | `default: Any` | `statistics: StatisticsSummary` | `max_samples`. |
-| Prepare Export (`output.export`) | Prepare exact, verified bytes for a scientist-controlled download or generated-script materialization. | `data: Array2D/1.0` | `artifact: ExportArtifact/1.0` | Safe basename `filename`; closed `format` (`csv`, `json`, or `jdx`). |
+| Node | Scientific use and guidance |
+| --- | --- |
+| Plot (`output.plot`) | Show spectra, scores, loadings, diagnostics, dendrograms, or metrics-derived plots. Many model outputs carry plot-ready payloads. |
+| Contour Plot (`output.contour`) | Show a 2D heatmap or contour view of matrix-like spectral data. |
+| Data Table (`output.data_table`) | Inspect numeric arrays, metrics, sample tables, or selected variables as rows and columns. |
+| Statistics (`stats.summary`) | Generate deterministic descriptive summaries for datasets and typed scientific results. Inferential decisions remain in dedicated diagnostic nodes. |
+| Prepare Export (`output.export`) | Prepare exact, verified bytes for a scientist-controlled download or generated-script materialization. Choose a safe basename for the prepared export; the node never chooses a filesystem path. |
 
 ## Good Output Hygiene
 
@@ -45,3 +45,101 @@ A reusable fitted model must appear in Runs → Artifacts with its source run an
 be available to local Deploy after execution. Cohort-only clustering remains
 inspectable but does not predict new observations. See the [canonical artifact
 acceptance contract](../developers/scientific-result-surface-contract.md#canonical-node-artifact-acceptance).
+
+<!-- BEGIN GENERATED NODE REFERENCE -->
+
+<!-- NODE HELP REFERENCES {"help_reference": "docs/nodes/output.md", "node_types": ["output.contour", "output.data_table", "output.export", "output.plot", "stats.summary"]} -->
+
+## Registry reference
+
+Generated from registered node metadata. Edit methodology and examples outside the marked section.
+Defaults and options below are JSON values; `null` means no concrete default is declared.
+Internal parameters are retained for contract inspection and are not scientist-editable controls.
+Conditional visibility describes the editor; execution admission remains node-owned.
+
+### Contour Plot (`output.contour`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/Any/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>visualization</code> | <code>spectrasherpa://types/Visualization/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>colorscale</code> | <code>select</code> | <code>false</code> | <code>&quot;Viridis&quot;</code> | <code>[&quot;Viridis&quot;, &quot;Hot&quot;, &quot;RdBu&quot;, &quot;Blues&quot;, &quot;Greys&quot;, &quot;Jet&quot;, &quot;Spectral&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Color scale for contour plot |
+| <code>plot_type</code> | <code>select</code> | <code>false</code> | <code>&quot;heatmap&quot;</code> | <code>[&quot;heatmap&quot;, &quot;contour&quot;, &quot;surface&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Type of 2D visualization |
+| <code>reverse_x</code> | <code>boolean</code> | <code>false</code> | <code>false</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Reverse X-axis direction (auto-enabled for wavenumber axes) |
+| <code>transpose</code> | <code>boolean</code> | <code>false</code> | <code>false</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Swap sample and feature axes |
+
+### Data Table (`output.data_table`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/Any/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>visualization</code> | <code>spectrasherpa://types/Visualization/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>max_rows</code> | <code>number</code> | <code>false</code> | <code>100000</code> | — | <code>{&quot;max_value&quot;: 100000, &quot;min_value&quot;: 10, &quot;step&quot;: 10}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Maximum number of rows to display before truncating the table preview Bounds browser memory and serialized preview size. |
+| <code>transpose</code> | <code>boolean</code> | <code>false</code> | <code>false</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Swap rows and columns |
+| <code>show_index</code> | <code>boolean</code> | <code>false</code> | <code>true</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Display row indices |
+
+### Prepare Export (`output.export`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/Any/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>artifact</code> | <code>spectrasherpa://types/ExportArtifact/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>filename</code> | <code>text</code> | <code>true</code> | <code>&quot;output.csv&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Safe basename including the extension required by the selected format |
+| <code>format</code> | <code>select</code> | <code>true</code> | <code>&quot;csv&quot;</code> | <code>[&quot;csv&quot;, &quot;json&quot;, &quot;jdx&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Closed serialization format |
+
+### Plot (`output.plot`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/Any/1.0</code> | <code>true</code> | <code>true</code> | <code>[]</code> |
+| output | <code>visualization</code> | <code>spectrasherpa://types/Visualization/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>plot_type</code> | <code>select</code> | <code>false</code> | <code>&quot;spectra&quot;</code> | <code>[&quot;spectra&quot;, &quot;contour&quot;, &quot;heatmap&quot;, &quot;scores&quot;, &quot;biplot&quot;, &quot;loadings&quot;, &quot;scatter&quot;, &quot;dendrogram&quot;, &quot;explained_variance&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Type of plot to generate. Hosted execution admits spectra, scores, loadings, explained variance, or scatter. Plot input is bounded to 500,000 values and 2 MiB of text before expansion. |
+| <code>colorscale</code> | <code>select</code> | <code>false</code> | <code>&quot;Viridis&quot;</code> | <code>[&quot;Viridis&quot;, &quot;Hot&quot;, &quot;RdBu&quot;, &quot;Blues&quot;, &quot;Greys&quot;, &quot;Jet&quot;, &quot;Spectral&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Color scale for contour/heatmap plots |
+| <code>x_axis</code> | <code>number</code> | <code>false</code> | <code>0</code> | — | <code>{&quot;max_value&quot;: 63, &quot;min_value&quot;: 0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Index or label for X axis Bounds component selection to a practical visualization range. |
+| <code>y_axis</code> | <code>number</code> | <code>false</code> | <code>1</code> | — | <code>{&quot;max_value&quot;: 63, &quot;min_value&quot;: 0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Index or label for Y axis Bounds component selection to a practical visualization range. |
+| <code>plot_key</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Optional exact key selecting a plot payload from a structured input. Hosted execution requires this field to remain blank. |
+
+### Statistics (`stats.summary`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/Any/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>statistics</code> | <code>spectrasherpa://types/StatisticsSummary/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>max_samples</code> | <code>number</code> | <code>false</code> | <code>100</code> | — | <code>{&quot;max_value&quot;: 10000, &quot;min_value&quot;: 10}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Maximum rows in per-sample statistics table Bounds the serialized per-sample table and workbench response size; the result reports explicit truncation. |
+
+<!-- END GENERATED NODE REFERENCE -->

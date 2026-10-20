@@ -98,3 +98,34 @@ def test_requested_nonretained_variable_is_explicitly_unavailable():
     packet = build_plsda_summary(_receipt(), selected_ids=["private:sample-1"], variable_ids=["a" * 64 + ":2"])
     assert packet["facts"]["S1.v2.unavailable"]["value"] is True
     assert "S1.v2.q" not in packet["facts"]
+
+
+def test_shared_authority_preserves_classifier_facts_and_population():
+    from spectra_sherpa.app.services.diagnostic_review_summary import SCHEMA, build_summary
+
+    receipt = {**_receipt(), "model_kind": "plsda"}
+    packet = build_summary(receipt, selected_ids=["private:sample-1"])
+    legacy = build_plsda_summary(receipt, selected_ids=["private:sample-1"], variable_ids=[])
+    assert packet["schema_version"] == SCHEMA
+    assert packet["availability"] == "available"
+    assert packet["facts"] == legacy["facts"]
+    assert packet["samples"] == legacy["samples"]
+    assert packet["populations"] == {"calibration": {"total": 2, "selected": 1}}
+    assert packet["contains_held_out"] is False
+    assert "SECRET" not in json.dumps(packet)
+    assert "private:sample" not in json.dumps(packet)
+    with pytest.raises(ValueError, match="regression response"):
+        build_summary(receipt, selected_ids=["private:sample-1"], response_index=1)
+    with pytest.raises(ValueError, match="review state"):
+        build_summary(receipt, selected_ids=["private:sample-1"], state={"marked": ["private:sample-1"]})
+
+
+@pytest.mark.parametrize("kind", ["pcr", "simca", "knn", "svm", "random_forest", "lda", "svr", "linear"])
+def test_unsupported_family_is_explicitly_unavailable_without_disclosure(kind):
+    from spectra_sherpa.app.services.diagnostic_review_summary import build_summary
+
+    packet = build_summary({"model_kind": kind, "rows": [{"id": "secret"}]}, selected_ids=["secret"])
+    assert packet["availability"] == "unavailable"
+    assert packet["facts"] == {}
+    assert packet["populations"] == {}
+    assert "secret" not in json.dumps(packet)

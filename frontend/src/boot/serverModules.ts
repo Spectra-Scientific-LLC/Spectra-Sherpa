@@ -5,12 +5,18 @@ import WorkspaceTabs from "@/components/workspace/WorkspaceTabs.vue";
 import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import api from "@/api/client";
 import { useProjectStore } from "@/stores/project";
-import { installProjectCollections, type ProjectCollectionsLoader } from "@/lib/projectCollections";
-import { installAdvisorTransport, type AdvisorTransport } from "@/lib/advisorTransport";
+import { installProjectCollections } from "@/lib/projectCollections";
+import { installAdvisorTransport } from "@/lib/advisorTransport";
 import { useAdvisorStore } from "@/stores/advisor";
-import type { ScopeArgs } from "@/lib/advisorMemoryAdapter";
 import { focusOptimization, focusSection } from "@/lib/sherpaAttention";
-import { confirmAction, type ConfirmActionOptions } from "@/composables/useConfirmAction";
+import { confirmAction } from "@/composables/useConfirmAction";
+import {
+  CONTEXTUAL_ACTIONS_VERSION,
+  type AppConfig,
+  type CurrentHostContext,
+  type ImportModuleFn,
+  type ServerModule,
+} from "@/extension-contract/v1";
 /**
  * Boot-time loader for server-provided frontend modules.
  *
@@ -42,21 +48,17 @@ import { confirmAction, type ConfirmActionOptions } from "@/composables/useConfi
  * populated in main.ts BEFORE this bootstrap runs.
  */
 import { markRaw, ref, watch } from "vue";
-import type { Component, Ref } from "vue";
+import type { Component } from "vue";
 import type { Router, RouteRecordRaw } from "vue-router";
 import { storeToRefs } from "pinia";
 
 import { useAppConfig } from "@/composables/useAppConfig";
-import { useTopbarMenu, type TopbarMenuItem } from "@/composables/useTopbarMenu";
-import {
-  usePrimaryNavigation,
-  type PrimaryNavigationItem,
-} from "@/composables/usePrimaryNavigation";
+import { useTopbarMenu } from "@/composables/useTopbarMenu";
+import { usePrimaryNavigation } from "@/composables/usePrimaryNavigation";
 import { useAuthStore } from "@/stores/auth";
 import { activeProjectScope } from "@/stores/projectScopeRegistry";
 import {
-  CONTEXTUAL_ACTIONS_VERSION, registerContextualActions, removeContextualActions, invalidateActionContext,
-  type ContextualAction,
+  registerContextualActions, removeContextualActions, invalidateActionContext,
 } from "@/composables/useContextualActions";
 
 export interface ServerModuleShell {
@@ -97,74 +99,8 @@ export const serverModuleLoadFailed = ref<null | {
  */
 export const nonCriticalModuleLoadFailures = ref<Array<{ module: string; error: unknown }>>([]);
 
-/**
- * Re-export the shape that server modules expect — kept in sync with
- * the server-side host-context type definitions that the auth/admin
- * modules consume.
- *
- * The authStore bridge exposes `user` and `token` as real Vue refs:
- * setup-store proxies unwrap refs on property access, so the server
- * module sees `User | null` rather than `Ref<User | null>` unless we
- * pass the refs explicitly (via Pinia's `storeToRefs`). A proxied
- * read works, but writes (`store.user = ...` from the other bundle)
- * do NOT flow back because the proxy's setter lives in the OSS
- * bundle's Pinia instance — we must expose the underlying ref so
- * `user.value = ...` mutates the OSS reactive state.
- */
-interface HostAuthStoreBridge {
-  user: Ref<ReturnType<typeof useAuthStore>["user"]>;
-  token: Ref<ReturnType<typeof useAuthStore>["token"]>;
-  clearCredentials(): void;
-}
-
-interface HostContext {
-  workspaceComponents: Record<"Header" | "Context" | "ContextItem" | "Tabs", Component> & { State?: Component };
-  api: typeof api;
-  reloadConfig(): Promise<unknown>;
-  installAdvisorTransport(transport: AdvisorTransport): void;
-  /**
-   * Confirm an action in the shell's dialog; resolves true only on accept.
-   * Aborting `signal` (the caller's view went away) or ending this
-   * registration closes the dialog as declined.
-   */
-  confirmAction(options: ConfirmActionOptions, signal?: AbortSignal): Promise<boolean>;
-  /** Tell the side-chat Advisor which campaign/candidate the scientist is looking at. */
-  focusOptimization(campaignId: string | null, candidateId?: string | null): void;
-  focusSection(section: string): void;
-  setAdvisorScope(args: ScopeArgs): Promise<void>;
-  router: Router;
-  authStore: HostAuthStoreBridge;
-  topbarMenu: {
-    addItems(items: TopbarMenuItem[], contributorId?: string): void;
-    removeItems(contributorId: string): void;
-  };
-  primaryNavigation: {
-    addItems(items: PrimaryNavigationItem[], contributorId?: string): void;
-    removeItems(contributorId: string): void;
-  };
-  appConfig: Record<string, unknown>;
-  contributorId: string;
-  addRoute(route: RouteRecordRaw): void;
-  mountShell(component: Component, contributorId?: string): void;
-  unmountShells(contributorId: string): void;
-  extensions: {
-    version: number;
-    projectId: number | null;
-    signal: AbortSignal;
-    isCurrent(): boolean;
-    addActions(actions: ContextualAction[]): void;
-    setProjectCollections(loader: ProjectCollectionsLoader): void;
-    onDispose(cleanup: () => void): void;
-  };
-}
-
-interface ServerModule {
-  contextualActionsVersion?: number;
-  register?: (ctx: HostContext) => void | Promise<void>;
-  default?: (ctx: HostContext) => void | Promise<void>;
-}
-
-export type ImportModuleFn = (url: string) => Promise<ServerModule>;
+// Auth identity is passed as real refs below so extension writes reach Pinia.
+export type { ImportModuleFn } from "@/extension-contract/v1";
 
 const defaultImportModule: ImportModuleFn = (url) =>
   // Vite's dev server resolves dynamic imports through its module
@@ -176,9 +112,9 @@ const defaultImportModule: ImportModuleFn = (url) =>
 function buildContext(
   contributorId: string,
   router: Router,
-  appConfig: Record<string, unknown>,
+  appConfig: AppConfig,
   scope?: RegistrationScope,
-): HostContext {
+): CurrentHostContext {
   const authStore = useAuthStore();
   const { user, token } = storeToRefs(authStore);
   return {
@@ -216,8 +152,8 @@ function buildContext(
     },
     router,
     authStore: {
-      user: user as Ref<ReturnType<typeof useAuthStore>["user"]>,
-      token: token as Ref<ReturnType<typeof useAuthStore>["token"]>,
+      user,
+      token,
       clearCredentials: authStore.clearCredentials,
     },
     topbarMenu: scope ? {
@@ -347,7 +283,7 @@ async function loadAndRegister(
   url: string,
   contributorId: string,
   router: Router,
-  appConfig: Record<string, unknown>,
+  appConfig: AppConfig,
   importModule: ImportModuleFn,
   failClosed: boolean,
   reresolveCurrentRoute: boolean,
@@ -468,8 +404,8 @@ export async function bootServerModules(
     return;
   }
 
-  const cfg = config.value as Record<string, unknown>;
-  const features = (cfg.features ?? {}) as Record<string, unknown>;
+  const cfg = config.value as AppConfig;
+  const features = cfg.features ?? {};
 
   // Deployment-level: auth UI module. Eagerly loaded when the
   // feature flag is set (server-backed modes only). Fail-closed:
@@ -547,7 +483,7 @@ export async function bootServerModules(
         entry.url,
         id,
         router,
-        config.value as unknown as Record<string, unknown>,
+        config.value as AppConfig,
         importModule,
         entry.required === true,
         reresolveCurrentRoute,

@@ -22,7 +22,8 @@ export interface WorkbookSheet {
   purpose: WorkflowPurpose;
   tabColor: string | null;
   tabColorOverride?: string | null;
-  colorSource?: "blank" | "ai" | "data" | "manual";
+  /** Preserve legacy server metadata; rendering below retains its existing fallbacks. */
+  colorSource?: WorkflowListItem["color_source"];
   primaryDataSourceId?: number | null;
   primaryDataSourceName?: string | null;
   dataOrigin?: "current" | "example" | null;

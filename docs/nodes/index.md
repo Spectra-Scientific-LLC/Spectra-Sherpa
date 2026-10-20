@@ -2,7 +2,7 @@
 
 Workflow nodes are the building blocks of SpectraSherpa analyses. They are grouped by what they do rather than by implementation package.
 
-This section documents the built-in nodes from the current workflow registry. Each category page lists the node's expected inputs, outputs, and configuration knobs so you can decide whether it belongs in a workflow before wiring it.
+This section documents the built-in nodes from the current workflow registry. Each category page combines scientific guidance with a generated registry reference for exact ports, type URIs, parameters, defaults, and selectable options.
 
 ## Reading Node Tables
 
@@ -24,7 +24,19 @@ For typical FTIR, NIR, Raman, or UV-Vis work, a `SpectralDataset` port expects a
 | `Visualization` | Plot-ready payload consumed by output nodes and the report view. |
 | `ValidationResult` | Metrics, limits, diagnostics, or validation tables. |
 
-Optional inputs are marked with `?` in the tables. The `default` port is the normal single input or output when a node does not need a named port.
+In the generated reference, `Required` is false for optional ports or parameters.
+Type URIs identify the exact declared port type and version. The `default` port
+is the normal single input or output when a node does not need a named port.
+Parameter defaults and selectable options are shown as JSON values; internal
+parameters describe retained bindings rather than scientist-editable controls.
+
+Maintainers regenerate the marked sections with
+`python scripts/generate_node_reference.py` from the package root.
+`python scripts/generate_node_reference.py --check` compares exact content
+without updating files. Keep scientific guidance and examples outside the markers.
+The same generated sections carry help destinations for
+`python scripts/check_built_help.py --site-dir site`, which validates links against
+an existing MkDocs build without importing scientific dependencies.
 
 ## Metadata-driven plot styling
 
