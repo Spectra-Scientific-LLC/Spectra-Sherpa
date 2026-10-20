@@ -1,4 +1,5 @@
 import { ref } from "vue";
+import { isAxiosError } from "axios";
 import api from "@/api/client";
 import { useScopedRequest, type ScopeIdentity } from "@/composables/useScopedRequest";
 import type { SynthesisResult } from "@/stores/synthesis";
@@ -8,7 +9,7 @@ export interface SynthesisSaveItem {
   payload: Record<string, unknown>;
 }
 export interface SynthesisSaveOutcome {
-  status: "complete" | "partial" | "unknown";
+  status: "complete" | "partial" | "refused" | "unknown";
   result?: SynthesisResult;
   file_path?: string;
   count: number;
@@ -71,6 +72,11 @@ export function useSynthesisSave(identity: () => readonly ScopeIdentity[]) {
       outcome.status = "complete";
       return outcome;
     } catch (error) {
+      // Admission refusals are definitive; unlike a dropped acknowledgement,
+      // they must retain the server's remedy and never imply a possible write.
+      if (isAxiosError(error) && [400, 401, 403, 404, 409, 422].includes(error.response?.status ?? 0)) {
+        return { ...outcome, status: "refused", error };
+      }
       // A dropped acknowledgement cannot prove the last file was not saved.
       return { ...outcome, status: "unknown", error };
     } finally {

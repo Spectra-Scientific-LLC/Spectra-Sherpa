@@ -44,6 +44,31 @@ beforeEach(() => {
 afterEach(() => { disposePinia(pinia); _clearProjectScopeRegistryForTests(); });
 
 describe("store-owned scope, independent of mounted pages", () => {
+  it("shares admission for concurrent callers of the same project", async () => {
+    const project = useProjectStore();
+    const held = deferred<{ data: unknown }>();
+    vi.mocked(api.get).mockReturnValueOnce(held.promise);
+    const first = project.fetchProject(2);
+    const second = project.fetchProject(2);
+    expect(api.get).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(api.get).mock.calls[0][1]?.signal?.aborted).toBe(false);
+    held.resolve({ data: { id: 2, name: "Shared" } });
+    expect((await Promise.all([first, second])).map(item => item?.id)).toEqual([2, 2]);
+    expect(project.currentProjectId).toBe(2);
+  });
+
+  it("does not discard an update refusal during a same-project refresh", async () => {
+    const project = useProjectStore();
+    const write = deferred<never>();
+    vi.mocked(api.put).mockReturnValueOnce(write.promise);
+    vi.mocked(api.get).mockResolvedValueOnce({ data: { id: 1, name: "Original" } });
+    const updating = project.updateProject(1, { name: "Rejected" });
+    await project.fetchProject(1);
+    write.reject(new Error("Name refused"));
+    await updating;
+    expect(project.error).toBe("Name refused");
+  });
+
   it("retains a valid workspace when the requested project cannot be opened", async () => {
     const project = useProjectStore();
     const workflow = useWorkflowStore();

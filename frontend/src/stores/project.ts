@@ -277,14 +277,23 @@ export const useProjectStore = defineStore("project", () => {
     }
   }
 
-  async function fetchProject(id: number): Promise<ProjectDetail | null> {
+  let pendingProject: { id: number; ticket: ScopedRequestTicket; promise: Promise<ProjectDetail | null> } | null = null;
+  function fetchProject(id: number): Promise<ProjectDetail | null> {
+    if (pendingProject?.id === id && pendingProject.ticket.isCurrent()) return pendingProject.promise;
     // An earlier accepted write may still refresh inventories, but cannot
     // select its result after the user has requested another project.
-    workspaceMutation.invalidate();
+    // A same-project refresh is not navigation and must not retire write errors.
+    if (id !== currentProjectId.value) workspaceMutation.invalidate();
     const request = projectRead.begin();
     requestedProjectId = id;
     beginLoading(request);
     error.value = null;
+    const promise = loadProject(id, request);
+    pendingProject = { id, ticket: request, promise };
+    return promise;
+  }
+
+  async function loadProject(id: number, request: ScopedRequestTicket): Promise<ProjectDetail | null> {
     try {
       const { data: wire } = await api.get<components["schemas"]["ProjectDetail"]>(`/projects/${id}`, { signal: request.signal });
       if (!request.isCurrent()) return null;
@@ -298,6 +307,7 @@ export const useProjectStore = defineStore("project", () => {
       if (request.isCurrent()) error.value = getErrorMessage(e);
       return null;
     } finally {
+      if (pendingProject?.ticket === request) pendingProject = null;
       if (request.isCurrent()) {
         requestedProjectId = null;
         finishLoading(request);
