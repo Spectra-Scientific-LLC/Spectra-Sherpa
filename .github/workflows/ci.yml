@@ -45,6 +45,9 @@ jobs:
       - name: Install linters
         run: pip install "black>=26.3.1,<27" "ruff>=0.5,<1" "mypy<2"
 
+      - name: Bounded user-copy terminology
+        run: python scripts/check_user_copy.py
+
       - name: black --check
         run: black --check src/ tests/
 
