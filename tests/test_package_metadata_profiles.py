@@ -14,7 +14,7 @@ import pytest
 from spectra_sherpa.app.services import synthesis
 
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-QUALIFICATION_REPORT = PACKAGE_ROOT.parents[1] / "docs/evidence/public-install-profiles-v060-1214-final.json"
+QUALIFICATION_REPORT = PACKAGE_ROOT.parents[1] / "docs/evidence/public-install-profiles-cohesion-20261020.json"
 
 
 def _metadata() -> dict[str, Any]:
@@ -81,7 +81,7 @@ def test_retained_public_profile_qualification_is_commit_and_lock_bound() -> Non
     report = json.loads(QUALIFICATION_REPORT.read_text(encoding="utf-8"))
 
     assert report["schema_version"] == "spectra-public-install-qualification/1"
-    assert report["source_revision"] == "a8c69c3a27f3e5565b6360919c7cf0c516c2f3c6"
+    assert report["source_revision"] == "9594a6c81bcdd8c7daf0bf8a5bd7c1c0236a4898"
     lock_bytes = (PACKAGE_ROOT / "poetry.lock").read_bytes()
     lock_hash = hashlib.sha256(lock_bytes).hexdigest()
     assert report["poetry_lock_sha256"] == lock_hash
