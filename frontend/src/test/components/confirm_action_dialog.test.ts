@@ -1,7 +1,7 @@
-import { flushPromises, mount } from "@vue/test-utils";
+import { flushPromises, mount, type VueWrapper } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import PrimeVue from "primevue/config";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defineComponent, effectScope, h } from "vue";
 
 import ConfirmActionDialog from "@/components/ConfirmActionDialog.vue";
@@ -20,9 +20,12 @@ const options = {
   destructive: true,
 };
 
+const dialogs: VueWrapper[] = [];
 function mountDialog() {
   // Real transitions: PrimeVue binds Escape and moves focus in its enter hooks.
-  return mount(ConfirmActionDialog, { attachTo: document.body, global: { plugins: [PrimeVue], stubs: { transition: false } } });
+  const wrapper = mount(ConfirmActionDialog, { attachTo: document.body, global: { plugins: [PrimeVue], stubs: { transition: false } } });
+  dialogs.push(wrapper);
+  return wrapper;
 }
 
 function button(label: string): HTMLButtonElement {
@@ -34,8 +37,13 @@ function button(label: string): HTMLButtonElement {
 describe("confirmation dialog", () => {
   beforeEach(() => setActivePinia(createPinia()));
 
-  afterEach(() => {
+  afterEach(async () => {
     settleConfirmation(false);
+    await flushPromises();
+    for (const wrapper of dialogs.splice(0)) {
+      if (wrapper.exists()) wrapper.unmount();
+    }
+    await flushPromises();
     document.body.innerHTML = "";
   });
 
@@ -56,7 +64,7 @@ describe("confirmation dialog", () => {
   it("resolves false from Cancel, which holds the initial focus", async () => {
     const wrapper = mountDialog();
     const answer = confirmAction({ ...options, destructive: false });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await vi.waitFor(() => expect(document.activeElement).toBe(button("Cancel")));
     const cancel = button("Cancel");
     expect(document.activeElement).toBe(cancel);
     expect(button("Delete key").classList.contains("p-button-danger")).toBe(false);
@@ -69,7 +77,7 @@ describe("confirmation dialog", () => {
     const wrapper = mountDialog();
     const answer = confirmAction(options);
     await flushPromises();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await vi.waitFor(() => expect(document.activeElement).toBe(button("Cancel")));
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", code: "Escape", bubbles: true }));
     await expect(answer).resolves.toBe(false);
     wrapper.unmount();

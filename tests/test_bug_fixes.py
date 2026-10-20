@@ -190,7 +190,7 @@ class TestGeneratePythonCompleteness:
             parameters={"split_method": "random", "test_size": 0.2},
         )
         code = "\n".join(node.generate_python({"X": "data", "y": "target"}))
-        assert "bind_split_target" in code
+        assert "prepare_split_source" in code
         assert "materialize_split_outputs" in code
         assert "_y_input = target" in code
 

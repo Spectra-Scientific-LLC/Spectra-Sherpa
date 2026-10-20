@@ -162,7 +162,7 @@ def test_split_positions_are_not_original_file_row_identity():
     run, definition = split_run(columns=2, row_order=[9, 4, 2, 1, 8, 3])
     run.params_snapshot = []  # malformed legacy JSON must not substitute current defaults
     report = text(validation_summary(run, definition))
-    assert "split-input row positions (1-based):" in report
+    assert "active split-population positions (1-based):" in report
     assert "source row numbers" not in report
     assert "defaults were not reconstructed" in report
 

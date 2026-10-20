@@ -60,6 +60,7 @@ const workbookStore = reactive({
 });
 
 const workflowStore = reactive({
+  isLoading: false,
   nodes: [{ id: "pca_1", type: "model.pca", x: 0, y: 0, params: { n_components: 3 } }],
   edges: [],
   workflowId: 101,
@@ -326,6 +327,25 @@ async function mountBuilder() {
 }
 
 describe("WorkflowBuilderContent trial/detail layout", () => {
+  it("keeps canvas input and Run unavailable until retained workbook hydration completes", async () => {
+    workbookStore.activeIndex = 0;
+    const wrapper = await mountBuilder();
+    try {
+      await flushPromises();
+      workbookStore.isLoading = true;
+      await nextTick();
+      expect(wrapper.get(".canvas-container").attributes("aria-busy")).toBe("true");
+      expect(wrapper.getComponent({ name: "WorkflowCanvas" }).attributes()).toHaveProperty("inert");
+      expect(wrapper.get('[data-action="run_workflow"]').attributes("disabled")).toBeDefined();
+      workbookStore.isLoading = false;
+      await nextTick();
+      expect(wrapper.get(".canvas-container").attributes("aria-busy")).toBe("false");
+      expect(wrapper.getComponent({ name: "WorkflowCanvas" }).attributes("inert")).toBeUndefined();
+    } finally {
+      workbookStore.isLoading = false;
+      wrapper.unmount();
+    }
+  });
   // Compile the builder once up front: its cold transform takes seconds and
   // otherwise counts against the first test's timeout under a loaded run.
   beforeAll(async () => {

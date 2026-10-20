@@ -1,6 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ref } from "vue";
+import { reactive, ref } from "vue";
 import PrimeVue from "primevue/config";
 const m = vi.hoisted(() => ({ get: vi.fn(), push: vi.fn(), replace: vi.fn(), params: {} as Record<string, string>, query: {} as Record<string, string>, runs: null as any, project: null as any }));
 vi.mock("@/api/client", () => ({ default: { get: m.get } }));
@@ -41,6 +41,21 @@ describe("Runs workspace", () => {
     await (view.vm as unknown as {handleCompareRuns: () => Promise<void>}).handleCompareRuns(); await flushPromises();
     expect(m.runs.compareProjectRuns).toHaveBeenCalledWith(1, [41, 42]);
     expect(m.replace).toHaveBeenCalledWith({query: {tab: "compare", project: "1"}});
+    view.unmount();
+  });
+  it("replaces old project deep links when the active project changes", async () => {
+    m.query = { project: "1", artifact: "old-model", evidence: "old-evidence", tab: "models" };
+    m.project = reactive(m.project);
+    m.runs.resetProjectScope = vi.fn();
+    const view = mountView(); await flushPromises();
+    m.replace.mockClear();
+    m.project.currentProjectId = 2;
+    m.project.currentProject = { id: 2, name: "Iris" };
+    await flushPromises();
+    expect(m.replace).toHaveBeenCalledWith({
+      path: "/runs", query: { project: "2", tab: "run_history" },
+    });
+    expect(m.runs.fetchProjectRuns).toHaveBeenLastCalledWith(2, 0, "all", undefined, "executed_at", "desc");
     view.unmount();
   });
   it.each(["artifacts", "models"])("preserves the %s deep link with Inspect between History and Compare", async (tab) => {

@@ -8,12 +8,10 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
-import numpy as np
-
 from spectra_sherpa.app.lib import sample_identity as sample_identity_authority
 from spectra_sherpa.app.services.dag import io_contracts as dag_io_contracts
 from spectra_sherpa.app.services.dag import meta_helpers as dag_meta_helpers
-from spectra_sherpa.app.services.dag import supervision_binding
+from spectra_sherpa.app.services.dag import sample_subset_supervision, supervision_binding
 from spectra_sherpa.app.services.dag.stable_execution_contract import bind_stable_execution_contract
 from spectra_sherpa.core import specimen_independence as specimen_independence_authority
 from spectra_sherpa.core.target_authority import admit_target_authority
@@ -25,16 +23,15 @@ from spectra_sherpa.execution_contract_vocabulary import (
     WorkerCapability,
 )
 
-from ...io_contracts import bind_X, to_numpy_2d
 from ...node_base import Node, NodeMetadata, NodeParameter, NodePolicy, PortMetadata, register_node
 from . import _utils as data_utils
 from . import sample_preparation, sample_table, split_planner
 from .sample_preparation import attach_target_dataset, explicit_filter_values, filter_samples_dataset
 from .split_planner import (
     bind_split_groups,
-    bind_split_target,
     materialize_split_outputs,
     plan_train_test_split,
+    prepare_split_source,
     require_independent_classification_groups,
     require_known_specimen_cross_block_plan,
 )
@@ -603,22 +600,18 @@ class TrainTestSplitNode(Node):
         lines: list[str] = []
         lines.append(f"{indent}# --- Train/Test Split ({self.node_id}) ---")
 
-        # Extract X
-        lines.append(f"{indent}_X_input = {X_expr}")
-        lines.append(f"{indent}_X_data = np.array(")
-        lines.append(f"{indent}    _X_input.data if hasattr(_X_input, 'data') else _X_input,")
-        lines.append(f"{indent}    dtype=np.float64,")
-        lines.append(f"{indent})")
-
         lines.append(f"{indent}_y_input = {y_expr}" if y_expr else f"{indent}_y_input = None")
 
         # One imported authority is used by generated and live execution.
         lines.append(f"{indent}from spectra_sherpa.app.services.dag.nodes.data.split_planner import (")
-        lines.append(f"{indent}    bind_split_groups, bind_split_target, materialize_split_outputs,")
+        lines.append(f"{indent}    bind_split_groups, prepare_split_source, materialize_split_outputs,")
         lines.append(f"{indent}    plan_train_test_split, require_independent_classification_groups,")
         lines.append(f"{indent}    require_known_specimen_cross_block_plan,")
         lines.append(f"{indent})")
-        lines.append(f"{indent}_y_data, _target_context = bind_split_target(_X_input, _y_input)")
+        lines.append(
+            f"{indent}_X_input, _X_data, _y_data, _target_context, _source_indices = "
+            f"prepare_split_source({X_expr}, _y_input)"
+        )
         lines.append(
             f"{indent}_split_groups = bind_split_groups("
             f"_X_input, use_source_assignment={split_method == 'group_holdout'!r})"
@@ -641,7 +634,8 @@ class TrainTestSplitNode(Node):
         lines.append(f"{indent}results['{self.node_id}'] = materialize_split_outputs(")
         lines.append(
             f"{indent}    _X_input, _X_data, _y_data, _split_plan, "
-            f"node_id={self.node_id!r}, target_context=_target_context, groups=_split_groups,"
+            f"node_id={self.node_id!r}, target_context=_target_context, groups=_split_groups, "
+            f"source_indices=_source_indices,"
         )
         lines.append(f"{indent})")
         lines.append(
@@ -671,14 +665,7 @@ class TrainTestSplitNode(Node):
         held_out_groups = self.parameters.get("held_out_groups", [])
         validation_goal = self.parameters.get("validation_goal", "unseen_specimens")
 
-        X_ds = bind_X(
-            X,
-            missing_message="Missing required input: X (dataset)",
-            dataset_error_message="X must be a SherpaDataset object",
-            allow_array=True,
-        )
-        X_array = to_numpy_2d(X_ds, name="X", dtype=np.float64)
-        y_array, target_context = bind_split_target(X_ds, y)
+        X_ds, X_array, y_array, target_context, source_indices = prepare_split_source(X, y)
         groups = bind_split_groups(X_ds, use_source_assignment=str(split_method) == "group_holdout")
         require_independent_classification_groups(
             X_ds, groups, target_context, split_method=str(split_method), validation_goal=str(validation_goal)
@@ -705,6 +692,7 @@ class TrainTestSplitNode(Node):
             node_id=self.node_id,
             target_context=target_context,
             groups=groups,
+            source_indices=source_indices,
         )
         logger.debug(
             "Train/Test Split: %s train, %s test samples (%.0f%% test)",
@@ -900,7 +888,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.STATELESS_TRANSFORM,
     implementation_id="spectrasherpa.data.train_test_split",
-    implementation_version="4.2.0",
+    implementation_version="4.3.0",
     required_worker_capabilities=(WorkerCapability.READ_DATASET,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="filters_samples",
@@ -915,12 +903,16 @@ bind_stable_execution_contract(
         dag_meta_helpers,
         data_utils,
         split_planner,
+        sample_preparation,
+        sample_subset_supervision,
+        supervision_binding,
         sample_identity_authority,
         specimen_independence_authority,
     ),
-    implementation_distributions=("numpy", "scikit-learn", "scipy"),
+    implementation_distributions=("numpy", "pandas", "scikit-learn", "scipy"),
     runtime_requirements=(
         ("numpy", "1.26.4"),
+        ("pandas", "2.3.3"),
         ("scikit-learn", "1.9.0"),
         ("scipy", "1.17.1"),
     ),
