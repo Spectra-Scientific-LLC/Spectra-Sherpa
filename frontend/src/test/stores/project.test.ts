@@ -213,7 +213,7 @@ describe("Project Store", () => {
       await store.fetchProjects();
 
       expect(api.get).toHaveBeenCalledWith("/projects", { signal: expect.any(AbortSignal) });
-      expect(store.projects).toEqual([mockProject]);
+      expect(store.projects).toEqual([{ ...mockProject, parent_id: null, version_count: 0 }]);
       expect(store.isLoading).toBe(false);
     });
 
@@ -237,9 +237,13 @@ describe("Project Store", () => {
       const result = await store.fetchProject(1);
 
       expect(api.get).toHaveBeenCalledWith("/projects/1", { signal: expect.any(AbortSignal) });
-      expect(store.currentProject).toEqual(detail);
+      const expected = {
+        ...detail, parent_id: null, version_count: 0, metadata: {},
+        data_sources: [], advisor_channels: [], scripts: [], models: [], children: [],
+      };
+      expect(store.currentProject).toEqual(expected);
       expect(store.currentProjectId).toBe(1);
-      expect(result).toEqual(detail);
+      expect(result).toEqual(expected);
     });
 
     it("returns null on failure", async () => {
@@ -263,7 +267,11 @@ describe("Project Store", () => {
       const result = await store.createProject({ name: "New" });
 
       expect(api.post).toHaveBeenCalledWith("/projects", { name: "New" });
-      expect(result).toEqual(created);
+      expect(result).toEqual({
+        ...created, parent_id: null, version_count: 0, metadata: {},
+        experiments: [], workflows: [], data_sources: [], advisor_channels: [],
+        scripts: [], models: [], children: [],
+      });
       expect(store.currentProjectId).toBe(2);
       expect(localStorage.getItem("spectra_sherpa_last_project_7")).toBe("2");
     });

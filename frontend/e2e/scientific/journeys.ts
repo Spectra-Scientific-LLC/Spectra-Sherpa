@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import { expect, type APIRequestContext, type Page } from "@playwright/test";
 
+// Execution includes fitting and durable persistence. Reuse its existing
+// budget for intercepted requests, distinct from the 15 s UI-action budget.
+export const EXECUTION_TIMEOUT_MS = 60_000;
+
 export async function createDataset(
   request: APIRequestContext,
   name: string,
@@ -76,9 +80,7 @@ export async function runWorkflow(page: Page, workflow: { id: number }, project:
   await page.goto(`/workflow?workflow_id=${workflow.id}&project_id=${project.id}`);
   const executed = page.waitForResponse(
     (r) => r.url().endsWith(`/workflows/${workflow.id}/execute`) && r.request().method() === "POST",
-    // Execution includes fitting and durable persistence, not just a UI action.
-    // Native macOS qualification measured 19–26 s for these small workflows.
-    { timeout: 60_000 },
+    { timeout: EXECUTION_TIMEOUT_MS },
   );
   await page
     .getByRole("button", { name: /^Run(?:\s|$)/ })

@@ -74,7 +74,7 @@ def test_chunked_diagnostics_keep_observation_order_across_64_row_boundary() -> 
 
 
 def test_small_reference_fit_keeps_unavailable_screens_unknown_to_advisor() -> None:
-    from spectra_sherpa.app.services.plsda_diagnostic_summary import build_plsda_summary
+    from spectra_sherpa.app.services.diagnostic_review_summary import build_summary
 
     matrix = np.array([[1.0, 2.0, 3.0, 4.0], [2.0, 0.0, 4.0, 5.0], [4.0, 3.0, 1.0, 0.0], [3.0, 5.0, 2.0, 1.0]])
     labels = np.array(["a", "b", "a", "b"])
@@ -92,7 +92,7 @@ def test_small_reference_fit_keeps_unavailable_screens_unknown_to_advisor() -> N
     assert receipt["t2_unavailable_reason"] == "insufficient_reference_degrees_of_freedom"
     assert receipt["q_unavailable_reason"] == "insufficient_reference_degrees_of_freedom"
     assert all(row["t2"] is None and row["outside_t2"] is None and row["outside_q"] is None for row in receipt["rows"])
-    packet = build_plsda_summary(receipt, selected_ids=["a1"], variable_ids=[])
+    packet = build_summary(receipt, selected_ids=["a1"], variable_ids=[])
     facts = packet["facts"]
     assert facts["selection.t2.unknown"]["value"] == 1
     assert facts["selection.q.unknown"]["value"] == 1

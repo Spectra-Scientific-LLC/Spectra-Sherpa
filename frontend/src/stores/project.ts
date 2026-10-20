@@ -2,6 +2,8 @@ import { formatRelativeTime } from "@/utils/format";
 import { defineStore } from "pinia";
 import { ref, computed, watch } from "vue";
 import api from "@/api/client";
+import type { components } from "@/types/api/v1";
+import { projectDetail, projectSummary } from "@/api/adapters/projects";
 import { useAuthStore } from "@/stores/auth";
 import { activeProjectScope, runProjectScopeResets } from "@/stores/projectScopeRegistry";
 import { downloadBlob, filenameFromContentDisposition } from "@/utils/download";
@@ -170,29 +172,45 @@ export const useProjectStore = defineStore("project", () => {
     versions.value = [];
     error.value = null;
     isLoading.value = false;
+    isImporting.value = false;
     loadingOwner = null;
     lastImportedApplication.value = null;
     referenceRebindRequirements.value = [];
     runProjectScopeResets();
   }, { flush: "sync" });
+  let requestedProjectId: number | null = null;
   const projectRead = useScopedRequest(
-    () => [useAuthStore().user?.id, useAuthStore().token, currentProjectId.value],
+    () => [useAuthStore().user?.id, useAuthStore().token],
     () => {
+      requestedProjectId = null;
       if (loadingOwner && !loadingOwner.isCurrent()) finishLoading(loadingOwner);
     },
   );
+  // Navigation owns its pending destination, not the last admitted project.
+  // Removing that old project must not cancel a newer destination's admission.
+  let committingSelection = false;
+  watch(currentProjectId, () => {
+    if (!committingSelection) projectRead.invalidate();
+  }, { flush: "sync" });
+  function commitSelection(project: ProjectDetail | null): void {
+    committingSelection = true;
+    try {
+      if (currentProjectId.value !== (project?.id ?? null)) runProjectScopeResets();
+      currentProjectId.value = project?.id ?? null;
+      currentProject.value = project;
+      writeLastActiveProjectId(useAuthStore().user?.id ?? null, project?.id ?? null);
+    } finally {
+      committingSelection = false;
+    }
+  }
   const workspaceMutation = useScopedRequest(
     () => [useAuthStore().user?.id, useAuthStore().token, currentProjectId.value],
     () => {
-      isImporting.value = false;
       if (loadingOwner && !loadingOwner.isCurrent()) finishLoading(loadingOwner);
     },
   );
-  let mutationTicket: ScopedRequestTicket | undefined;
-  function captureMutationScope(): ScopedRequestTicket {
-    if (!mutationTicket?.isCurrent()) mutationTicket = workspaceMutation.begin();
-    return mutationTicket;
-  }
+  const captureMutationScope = workspaceMutation.capture;
+  const accountMutation = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token]);
   const versionsRead = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token, currentProjectId.value]);
   // These are account-wide inventories, not children of the active project.
   // Selecting a deep-linked project must not cancel the selector's own list.
@@ -237,9 +255,9 @@ export const useProjectStore = defineStore("project", () => {
     beginLoading(request);
     error.value = null;
     try {
-      const { data } = await api.get<ProjectSummary[]>("/projects", { signal: request.signal });
+      const { data } = await api.get<components["schemas"]["ProjectSummary"][]>("/projects", { signal: request.signal });
       if (!request.isCurrent()) return;
-      projects.value = data;
+      projects.value = data.map(projectSummary);
     } catch (e) {
       if (request.isCurrent()) error.value = getErrorMessage(e);
     } finally {
@@ -251,35 +269,49 @@ export const useProjectStore = defineStore("project", () => {
     const request = archiveListRead.begin();
     error.value = null;
     try {
-      const { data } = await api.get<ProjectSummary[]>("/projects", { params: { archived: true }, signal: request.signal });
+      const { data } = await api.get<components["schemas"]["ProjectSummary"][]>("/projects", { params: { archived: true }, signal: request.signal });
       if (!request.isCurrent()) return;
-      archivedProjects.value = data;
+      archivedProjects.value = data.map(projectSummary);
     } catch (e) {
       if (request.isCurrent()) error.value = getErrorMessage(e);
     }
   }
 
-  async function fetchProject(id: number): Promise<ProjectDetail | null> {
-    if (currentProjectId.value !== id) {
-      runProjectScopeResets();
-      currentProjectId.value = id;
-      currentProject.value = null;
-    }
+  let pendingProject: { id: number; ticket: ScopedRequestTicket; promise: Promise<ProjectDetail | null> } | null = null;
+  function fetchProject(id: number): Promise<ProjectDetail | null> {
+    if (pendingProject?.id === id && pendingProject.ticket.isCurrent()) return pendingProject.promise;
+    // An earlier accepted write may still refresh inventories, but cannot
+    // select its result after the user has requested another project.
+    // A same-project refresh is not navigation and must not retire write errors.
+    if (id !== currentProjectId.value) workspaceMutation.invalidate();
     const request = projectRead.begin();
+    requestedProjectId = id;
     beginLoading(request);
     error.value = null;
+    const promise = loadProject(id, request);
+    pendingProject = { id, ticket: request, promise };
+    return promise;
+  }
+
+  async function loadProject(id: number, request: ScopedRequestTicket): Promise<ProjectDetail | null> {
     try {
-      const { data } = await api.get<ProjectDetail>(`/projects/${id}`, { signal: request.signal });
+      const { data: wire } = await api.get<components["schemas"]["ProjectDetail"]>(`/projects/${id}`, { signal: request.signal });
       if (!request.isCurrent()) return null;
-      currentProject.value = data;
-      currentProjectId.value = id;
-      writeLastActiveProjectId(useAuthStore().user?.id ?? null, id);
+      const data = projectDetail(wire);
+      // Commit selection only after admission succeeds. A 404 must not destroy
+      // the still-valid workspace or persist an unloadable selection.
+      finishLoading(request);
+      commitSelection(data);
       return data;
     } catch (e) {
       if (request.isCurrent()) error.value = getErrorMessage(e);
       return null;
     } finally {
-      if (request.isCurrent()) finishLoading(request);
+      if (pendingProject?.ticket === request) pendingProject = null;
+      if (request.isCurrent()) {
+        requestedProjectId = null;
+        finishLoading(request);
+      }
     }
   }
 
@@ -288,17 +320,19 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   async function createProject(payload: ProjectCreate): Promise<ProjectDetail | null> {
-    const request = captureMutationScope();
+    projectRead.invalidate();
+    const request = workspaceMutation.begin();
+    const account = accountMutation.capture();
     beginLoading(request);
     error.value = null;
     try {
-      const { data } = await api.post<ProjectDetail>("/projects", payload);
-      if (!request.isCurrent()) return data;
-      finishLoading(request);
-      currentProject.value = data;
-      currentProjectId.value = data.id;
-      writeLastActiveProjectId(useAuthStore().user?.id ?? null, data.id);
-      await fetchProjects();
+      const { data: wire } = await api.post<components["schemas"]["ProjectDetail"]>("/projects", payload);
+      const data = projectDetail(wire);
+      if (request.isCurrent()) {
+        finishLoading(request);
+        commitSelection(data);
+      }
+      if (account.isCurrent()) await fetchProjects();
       return data;
     } catch (e) {
       if (request.isCurrent()) error.value = getErrorMessage(e);
@@ -310,12 +344,13 @@ export const useProjectStore = defineStore("project", () => {
 
   async function updateProject(id: number, payload: ProjectUpdate): Promise<ProjectDetail | null> {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     error.value = null;
     try {
-      const { data } = await api.put<ProjectDetail>(`/projects/${id}`, payload);
-      if (!request.isCurrent()) return data;
-      if (currentProjectId.value === id) currentProject.value = data;
-      await fetchProjects();
+      const { data: wire } = await api.put<components["schemas"]["ProjectDetail"]>(`/projects/${id}`, payload);
+      const data = projectDetail(wire);
+      if (request.isCurrent() && currentProjectId.value === id) currentProject.value = data;
+      if (account.isCurrent()) await fetchProjects();
       return data;
     } catch (e) {
       if (request.isCurrent()) error.value = getErrorMessage(e);
@@ -325,15 +360,14 @@ export const useProjectStore = defineStore("project", () => {
 
   async function archiveProject(id: number): Promise<boolean> {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     error.value = null;
     try {
       await api.post(`/projects/${id}/archive`);
-      if (!request.isCurrent()) return true;
+      if (!account.isCurrent()) return true;
+      if (requestedProjectId === id) projectRead.invalidate();
       if (currentProjectId.value === id) {
-        currentProjectId.value = null;
-        currentProject.value = null;
-        writeLastActiveProjectId(useAuthStore().user?.id ?? null, null);
-        runProjectScopeResets();
+        commitSelection(null);
       }
       await Promise.all([fetchProjects(), fetchArchivedProjects()]);
       return true;
@@ -345,10 +379,11 @@ export const useProjectStore = defineStore("project", () => {
 
   async function restoreProject(id: number): Promise<boolean> {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     error.value = null;
     try {
       await api.post(`/projects/${id}/restore`);
-      if (!request.isCurrent()) return true;
+      if (!account.isCurrent()) return true;
       await Promise.all([fetchProjects(), fetchArchivedProjects()]);
       return true;
     } catch (e) {
@@ -359,19 +394,19 @@ export const useProjectStore = defineStore("project", () => {
 
   async function deleteProject(id: number, confirmName: string): Promise<boolean> {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     error.value = null;
     try {
       await api.delete(`/projects/${id}`, { params: { confirm_name: confirmName } });
-      if (!request.isCurrent()) return true;
+      if (!account.isCurrent()) return true;
+      if (requestedProjectId === id) projectRead.invalidate();
       const wasActive = currentProjectId.value === id;
       if (wasActive) {
-        currentProjectId.value = null;
-        currentProject.value = null;
-        writeLastActiveProjectId(useAuthStore().user?.id ?? null, null);
         // Drop every project-scoped store's in-memory state so a deleted
         // active project doesn't leave a stale runs list / advisor channel /
-        // experiment selection in the UI.
-        runProjectScopeResets();
+        // experiment selection in the UI. Pending navigation remains owned
+        // by its destination even while the deleted workspace is cleared.
+        commitSelection(null);
       }
       clearProjectScopedBrowserState(useAuthStore().user?.id ?? null, id);
       await Promise.all([fetchProjects(), fetchArchivedProjects()]);
@@ -383,17 +418,6 @@ export const useProjectStore = defineStore("project", () => {
   }
 
   async function selectProject(id: number): Promise<void> {
-    // Avoid a no-op reset on the current project — the user hasn't switched
-    // away, and resetting would wipe legitimately-loaded state.
-    const switching = currentProjectId.value !== id;
-    if (switching) {
-      // Atomic project-scope swap: clear every store's project-scoped state
-      // BEFORE the new project loads, so the UI never briefly renders a
-      // mixture of the previous and the next project's data.
-      runProjectScopeResets();
-      currentProject.value = null;
-    }
-    currentProjectId.value = id;
     await fetchProject(id);
   }
 
@@ -425,14 +449,15 @@ export const useProjectStore = defineStore("project", () => {
 
   async function linkExperiment(projectId: number, experimentId: number): Promise<void> {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     error.value = null;
     try {
-      const { data } = await api.post<ProjectDetail>(
+      const { data: wire } = await api.post<components["schemas"]["ProjectDetail"]>(
         `/projects/${projectId}/experiments/${experimentId}`,
       );
-      if (!request.isCurrent()) return;
-      if (currentProjectId.value === projectId) currentProject.value = data;
-      await fetchProjects();
+      const data = projectDetail(wire);
+      if (request.isCurrent() && currentProjectId.value === projectId) currentProject.value = data;
+      if (account.isCurrent()) await fetchProjects();
     } catch (e) {
       if (request.isCurrent()) error.value = getErrorMessage(e);
     }
@@ -440,15 +465,16 @@ export const useProjectStore = defineStore("project", () => {
 
   async function unlinkExperiment(projectId: number, experimentId: number, destinationProjectId?: number): Promise<void> {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     error.value = null;
     try {
-      const { data } = await api.delete<ProjectDetail>(
+      const { data: wire } = await api.delete<components["schemas"]["ProjectDetail"]>(
         `/projects/${projectId}/experiments/${experimentId}`,
         { params: { destination_project_id: destinationProjectId } },
       );
-      if (!request.isCurrent()) return;
-      if (currentProjectId.value === projectId) currentProject.value = data;
-      await fetchProjects();
+      const data = projectDetail(wire);
+      if (request.isCurrent() && currentProjectId.value === projectId) currentProject.value = data;
+      if (account.isCurrent()) await fetchProjects();
     } catch (e) {
       if (request.isCurrent()) error.value = getErrorMessage(e);
     }
@@ -456,14 +482,15 @@ export const useProjectStore = defineStore("project", () => {
 
   async function linkWorkflow(projectId: number, workflowId: number): Promise<void> {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     error.value = null;
     try {
-      const { data } = await api.post<ProjectDetail>(
+      const { data: wire } = await api.post<components["schemas"]["ProjectDetail"]>(
         `/projects/${projectId}/workflows/${workflowId}`,
       );
-      if (!request.isCurrent()) return;
-      if (currentProjectId.value === projectId) currentProject.value = data;
-      await fetchProjects();
+      const data = projectDetail(wire);
+      if (request.isCurrent() && currentProjectId.value === projectId) currentProject.value = data;
+      if (account.isCurrent()) await fetchProjects();
     } catch (e) {
       if (request.isCurrent()) error.value = getErrorMessage(e);
     }
@@ -471,15 +498,16 @@ export const useProjectStore = defineStore("project", () => {
 
   async function unlinkWorkflow(projectId: number, workflowId: number, destinationProjectId?: number): Promise<void> {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     error.value = null;
     try {
-      const { data } = await api.delete<ProjectDetail>(
+      const { data: wire } = await api.delete<components["schemas"]["ProjectDetail"]>(
         `/projects/${projectId}/workflows/${workflowId}`,
         { params: { destination_project_id: destinationProjectId } },
       );
-      if (!request.isCurrent()) return;
-      if (currentProjectId.value === projectId) currentProject.value = data;
-      await fetchProjects();
+      const data = projectDetail(wire);
+      if (request.isCurrent() && currentProjectId.value === projectId) currentProject.value = data;
+      if (account.isCurrent()) await fetchProjects();
     } catch (e) {
       if (request.isCurrent()) error.value = getErrorMessage(e);
     }
@@ -683,7 +711,9 @@ export const useProjectStore = defineStore("project", () => {
     publisherTrust?: { file: File; confirmed: boolean },
   ): Promise<ProjectDetail | null> {
     if (isImporting.value) return null;
-    let request = captureMutationScope();
+    projectRead.invalidate();
+    let request = workspaceMutation.begin();
+    const account = accountMutation.capture();
     error.value = null;
     campaignTrustRequired.value = false;
     referenceRebindRequirements.value = [];
@@ -703,9 +733,13 @@ export const useProjectStore = defineStore("project", () => {
       for (const referenceFile of referenceFiles) {
         formData.append("reference_files", referenceFile);
       }
-      const { data } = await api.post<ProjectDetail>("/projects/import", formData, {
+      const { data: wire } = await api.post<components["schemas"]["ProjectDetail"]>("/projects/import", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
+      const data = projectDetail(wire);
+      // The import may already be durable even if the user left this project.
+      // Refresh the account catalogue without selecting its new project.
+      if (account.isCurrent()) await fetchProjects();
       if (!request.isCurrent()) return data;
       lastImportedApplication.value = data.application ?? (data.application_handle
         ? {
@@ -715,16 +749,11 @@ export const useProjectStore = defineStore("project", () => {
             workflow_id: Number((data.metadata?.canonical_project as Record<string, unknown> | undefined)?.application_workflow_id || 0),
           }
         : null);
-      runProjectScopeResets();
-      currentProject.value = data;
-      currentProjectId.value = data.id;
-      request = captureMutationScope();
+      commitSelection(data);
       isImporting.value = true;
-      writeLastActiveProjectId(useAuthStore().user?.id ?? null, data.id);
-      await fetchProjects();
-      if (!request.isCurrent()) return data;
-      await fetchProject(data.id);
-      if (!request.isCurrent()) return data;
+      const hydrated = await fetchProject(data.id);
+      if (!hydrated || currentProjectId.value !== data.id) return data;
+      request = captureMutationScope();
       await refreshImportedProjectSlices(data.id);
       return data;
     } catch (e) {
@@ -739,7 +768,7 @@ export const useProjectStore = defineStore("project", () => {
       }
       return null;
     } finally {
-      if (request.isCurrent()) isImporting.value = false;
+      if (account.isCurrent()) isImporting.value = false;
     }
   }
 

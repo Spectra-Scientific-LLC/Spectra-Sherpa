@@ -1,6 +1,6 @@
 <template>
-  <div class="workflow-portfolio-picker" aria-label="Workflow data portfolio">
-    <label for="workflow-data-portfolio">Data Portfolio</label>
+  <div class="workflow-portfolio-picker" aria-label="Workflow dataset">
+    <label for="workflow-data-portfolio">Dataset</label>
     <div class="picker-controls">
       <select
         id="workflow-data-portfolio"
@@ -17,7 +17,7 @@
       </button>
     </div>
     <small v-if="busy" role="status">Checking portfolio…</small>
-    <small v-else-if="!options.length">Save or choose a Data Portfolio in My Dataset first.</small>
+    <small v-else-if="!options.length">Save or choose a dataset in My Dataset first.</small>
     <small v-else-if="!bound">Choose this portfolio to bind it to the sheet.</small>
     <small v-else>Exact source, target, and groups are bound to this sheet.</small>
     <small v-if="error" class="picker-error" role="alert">{{ error }}</small>
@@ -122,7 +122,7 @@ async function load(): Promise<void> {
     selectedKey.value = matching?.key ?? (saved ? "sheet" : choices[0]?.key ?? "");
     bound.value = Boolean(saved);
   } catch (failure) {
-    if (ticket === generation) error.value = getErrorMessage(failure, "Data portfolios could not be loaded.");
+    if (ticket === generation) error.value = getErrorMessage(failure, "Datasets could not be loaded.");
   } finally {
     if (ticket === generation) busy.value = false;
   }

@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useScopedRequest } from "@/composables/useScopedRequest";
 import {
   getAdvisorMemoryAdapter,
   type CompactScopeResult,
@@ -11,8 +12,9 @@ import {
   type Topic,
 } from "@/lib/advisorMemoryAdapter";
 import { useProjectStore } from "@/stores/project";
+import { useAuthStore } from "@/stores/auth";
 import { useSherpaStore } from "@/stores/sherpa";
-import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
+import { activeProjectScope, registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import type { AdvisorChannel } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 
@@ -34,7 +36,17 @@ export const useAdvisorStore = defineStore("advisor", () => {
   const activeChannelId = ref<number | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
-  let scopeRequest = 0;
+  const auth = useAuthStore();
+  const workspaceIdentity = () => [auth.user?.id, auth.token, activeProjectScope.value];
+  const scopeRequests = useScopedRequest(workspaceIdentity, () => { isLoading.value = false; });
+  const channelRequests = useScopedRequest(workspaceIdentity, () => { isLoading.value = false; });
+  const navigationRequests = useScopedRequest(workspaceIdentity);
+  const topicWrites = useScopedRequest(
+    () => [...workspaceIdentity(), activeNode.value?.id], undefined, { abortOnInvalidate: false },
+  );
+  const channelWrites = useScopedRequest(
+    () => [...workspaceIdentity(), projectId.value], undefined, { abortOnInvalidate: false },
+  );
 
   const activeNodeId = computed(() => activeNode.value?.id ?? null);
   const activeChannel = computed(
@@ -45,7 +57,11 @@ export const useAdvisorStore = defineStore("advisor", () => {
   );
 
   function resetProjectScope(): void {
-    ++scopeRequest;
+    scopeRequests.invalidate();
+    channelRequests.invalidate();
+    navigationRequests.invalidate();
+    topicWrites.invalidate();
+    channelWrites.invalidate();
     activeNode.value = null;
     topics.value = [];
     activeTopicId.value = null;
@@ -96,7 +112,7 @@ export const useAdvisorStore = defineStore("advisor", () => {
 
     if (activeNode.value?.project_id === args.projectId && activeNode.value.tab_key === args.tabKey
       && activeNode.value.subscope_key === args.subscopeKey) return activeNode.value;
-    const request = ++scopeRequest;
+    const request = scopeRequests.begin();
     activeNode.value = null;
     topics.value = [];
     activeTopicId.value = null;
@@ -106,7 +122,7 @@ export const useAdvisorStore = defineStore("advisor", () => {
     try {
       const adapter = getAdvisorMemoryAdapter(isServerBacked.value);
       const envelope = await adapter.switchScope(args);
-      if (request !== scopeRequest) return null;
+      if (!request.isCurrent()) return null;
       _applyScopeEnvelope(envelope);
       projectId.value = args.projectId;
 
@@ -116,20 +132,20 @@ export const useAdvisorStore = defineStore("advisor", () => {
         try {
           await sherpaStore.loadConversation(activeTopic.conversation_id);
         } catch (err) {
-          if (request !== scopeRequest) return null;
+          if (!request.isCurrent()) return null;
           console.warn("[advisor] Could not load topic conversation; starting fresh", err);
           sherpaStore.startNewConversation();
         }
       } else {
         sherpaStore.startNewConversation();
       }
-      return envelope.active_node;
+      return request.isCurrent() ? envelope.active_node : null;
     } catch (err) {
-      if (request !== scopeRequest) return null;
+      if (!request.isCurrent()) return null;
       error.value = getErrorMessage(err);
       return null;
     } finally {
-      if (request === scopeRequest) isLoading.value = false;
+      if (request.isCurrent()) isLoading.value = false;
     }
   }
 
@@ -137,25 +153,29 @@ export const useAdvisorStore = defineStore("advisor", () => {
     init: { title?: string | null; conversationId?: string | null } = {},
   ): Promise<Topic | null> {
     if (activeNode.value === null) return null;
+    const request = topicWrites.capture();
     try {
       const adapter = getAdvisorMemoryAdapter(isServerBacked.value);
       const topic = await adapter.createTopic(activeNode.value.id, init);
+      if (!request.isCurrent()) return null;
       topics.value = [topic, ...topics.value];
       return topic;
     } catch (err) {
-      error.value = getErrorMessage(err);
+      if (request.isCurrent()) error.value = getErrorMessage(err);
       return null;
     }
   }
 
   async function setActiveTopic(topicId: number | null): Promise<void> {
     if (activeNode.value === null) return;
+    const request = topicWrites.begin();
     try {
       const adapter = getAdvisorMemoryAdapter(isServerBacked.value);
       const envelope = await adapter.setActiveTopic(activeNode.value.id, topicId);
+      if (!request.isCurrent()) return;
       _applyScopeEnvelope(envelope);
     } catch (err) {
-      error.value = getErrorMessage(err);
+      if (request.isCurrent()) error.value = getErrorMessage(err);
     }
   }
 
@@ -168,11 +188,13 @@ export const useAdvisorStore = defineStore("advisor", () => {
    */
   async function compactScope(): Promise<CompactScopeResult | null> {
     if (activeNode.value === null) return null;
+    const request = topicWrites.capture();
     try {
       const adapter = getAdvisorMemoryAdapter(isServerBacked.value);
-      return await adapter.compactScope(activeNode.value.id);
+      const result = await adapter.compactScope(activeNode.value.id);
+      return request.isCurrent() ? result : null;
     } catch (err) {
-      error.value = getErrorMessage(err);
+      if (request.isCurrent()) error.value = getErrorMessage(err);
       return null;
     }
   }
@@ -187,20 +209,22 @@ export const useAdvisorStore = defineStore("advisor", () => {
   }
 
   async function loadAdvisorChannels(targetProjectId: number): Promise<AdvisorChannel[]> {
+    const request = channelRequests.begin();
     isLoading.value = true;
     error.value = null;
     try {
       const { data } = await api.get<AdvisorChannel[]>(
-        `/projects/${targetProjectId}/advisor-channels`
+        `/projects/${targetProjectId}/advisor-channels`, { signal: request.signal },
       );
+      if (!request.isCurrent()) return [];
       projectId.value = targetProjectId;
       channels.value = data;
       return data;
     } catch (err) {
-      error.value = getErrorMessage(err);
+      if (request.isCurrent()) error.value = getErrorMessage(err);
       return [];
     } finally {
-      isLoading.value = false;
+      if (request.isCurrent()) isLoading.value = false;
     }
   }
 
@@ -215,14 +239,16 @@ export const useAdvisorStore = defineStore("advisor", () => {
       return channel;
     }
 
+    const request = channelWrites.capture();
     error.value = null;
     try {
       const { data } = await api.post<AdvisorChannel>(`/workflows/${workflowId}/advisor-channel`);
+      if (!request.isCurrent()) return null;
       upsertChannel(data);
       projectId.value = targetProjectId ?? data.project_id;
       return data;
     } catch (err) {
-      error.value = getErrorMessage(err);
+      if (request.isCurrent()) error.value = getErrorMessage(err);
       return null;
     }
   }
@@ -233,21 +259,24 @@ export const useAdvisorStore = defineStore("advisor", () => {
   ): Promise<AdvisorChannel | null> {
     const targetProjectId = projectId.value;
     if (targetProjectId === null) return null;
+    const request = channelWrites.capture();
 
     try {
       const { data } = await api.put<AdvisorChannel>(
         `/projects/${targetProjectId}/advisor-channels/${channelId}`,
         payload,
       );
+      if (!request.isCurrent()) return null;
       upsertChannel(data);
       return data;
     } catch (err) {
-      error.value = getErrorMessage(err);
+      if (request.isCurrent()) error.value = getErrorMessage(err);
       return null;
     }
   }
 
   async function switchToChannel(channel: AdvisorChannel | null): Promise<void> {
+    const request = navigationRequests.begin();
     const sherpaStore = useSherpaStore();
     activeChannelId.value = channel?.id ?? null;
 
@@ -261,11 +290,12 @@ export const useAdvisorStore = defineStore("advisor", () => {
         await sherpaStore.loadConversation(channel.conversation_id);
         return;
       } catch (err) {
+        if (!request.isCurrent()) return;
         console.warn("[advisor] Unable to load channel conversation; starting a fresh thread", err);
       }
     }
 
-    sherpaStore.startNewConversation();
+    if (request.isCurrent()) sherpaStore.startNewConversation();
   }
 
   async function switchToWorkflowChannel(
@@ -273,22 +303,27 @@ export const useAdvisorStore = defineStore("advisor", () => {
     advisorChannelId?: number | null,
     targetProjectId = projectId.value,
   ): Promise<void> {
+    const request = navigationRequests.begin();
     if (targetProjectId !== null && projectId.value !== targetProjectId) {
       await loadAdvisorChannels(targetProjectId);
     }
+    if (!request.isCurrent()) return;
 
     const channel =
       (advisorChannelId
         ? channels.value.find((item) => item.id === advisorChannelId)
         : null)
       ?? await ensureWorkflowChannel(workflowId, targetProjectId);
+    if (!request.isCurrent()) return;
     await switchToChannel(channel);
   }
 
   async function switchToProjectChannel(targetProjectId = projectId.value): Promise<void> {
+    const request = navigationRequests.begin();
     if (targetProjectId !== null && projectId.value !== targetProjectId) {
       await loadAdvisorChannels(targetProjectId);
     }
+    if (!request.isCurrent()) return;
     await switchToChannel(projectChannel.value);
   }
 

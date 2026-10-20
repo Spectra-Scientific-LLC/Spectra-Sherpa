@@ -49,11 +49,13 @@
   </Dialog>
 </template>
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import Dialog from 'primevue/dialog';
 import Button from 'primevue/button';
 import api from '@/api/client';
+import { useAuthStore } from '@/stores/auth';
+import { useScopedRequest } from '@/composables/useScopedRequest';
 import { getErrorMessage } from '@/utils/errors';
 import SavedModelQualification from './SavedModelQualification.vue';
 import QualificationPanel from '@/views/deploy/QualificationPanel.vue';
@@ -78,22 +80,25 @@ type Review = {
 const review = ref<Review | null>(null), loading = ref(false), saving = ref(false), error = ref('');
 const intendedUse = ref(''), rationale = ref(''), protocol = ref('exploratory');
 const endpoint = computed(() => props.canonicalArtifactId ? `/deploy/canonical-artifacts/${props.canonicalArtifactId}/promotion-review` : `/models/${props.artifactUid}/promotion-review`);
-let generation = 0;
-onBeforeUnmount(() => { generation++; });
+const auth = useAuthStore();
+const identity = () => [auth.user?.id, auth.token, props.projectId, props.artifactUid, props.canonicalArtifactId, props.workflowId, props.runId];
+const reads = useScopedRequest(identity, () => { loading.value = false; });
+const writes = useScopedRequest(identity, () => { saving.value = false; }, { abortOnInvalidate: false });
 async function load() {
-  const current = ++generation;
+  writes.invalidate();
+  const request = reads.begin();
   loading.value = true; review.value = null; error.value = '';
   try {
-    const { data } = await api.get<Review>(endpoint.value);
-    if (current !== generation) return;
+    const { data } = await api.get<Review>(endpoint.value, { signal: request.signal });
+    if (!request.isCurrent()) return;
     review.value = data;
     intendedUse.value = data.qualification.intended_use || '';
-  } catch (e) { if (current === generation) error.value = getErrorMessage(e, 'Review unavailable.'); }
-  finally { if (current === generation) loading.value = false; }
+  } catch (e) { if (request.isCurrent()) error.value = getErrorMessage(e, 'Review unavailable.'); }
+  finally { if (request.isCurrent()) loading.value = false; }
 }
 async function confirm() {
   if (!review.value || saving.value) return;
-  const current = generation;
+  const request = writes.begin();
   saving.value = true; error.value = '';
   try {
     const promotion_review = {
@@ -101,12 +106,12 @@ async function confirm() {
     };
     if (props.canonicalArtifactId) await api.post(endpoint.value, promotion_review);
     else await api.patch(`/models/${props.artifactUid}`, { is_deploy_ready: true, promotion_review });
-    if (current !== generation) return;
+    if (!request.isCurrent()) return;
     emit('confirmed');
-  } catch (e) { if (current === generation) error.value = getErrorMessage(e, 'Readiness was not recorded. Reopen review if evidence changed.'); }
-  finally { if (current === generation) saving.value = false; }
+  } catch (e) { if (request.isCurrent()) error.value = getErrorMessage(e, 'Readiness was not recorded. Reopen review if evidence changed.'); }
+  finally { if (request.isCurrent()) saving.value = false; }
 }
-watch(() => [props.artifactUid, props.canonicalArtifactId], () => { intendedUse.value = ''; rationale.value = ''; protocol.value = 'exploratory'; void load(); }, { immediate: true });
+watch(identity, () => { intendedUse.value = ''; rationale.value = ''; protocol.value = 'exploratory'; void load(); }, { immediate: true });
 </script>
 <style scoped>
 label { display: grid; gap: .4rem; margin: 1rem 0; }

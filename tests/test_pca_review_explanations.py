@@ -51,7 +51,10 @@ async def test_independent_model_space_formula_sparse_remainders_and_cancellatio
     x = rng.normal(size=(32, 8)) * np.arange(1, 9) + 13
     ds = SherpaDataset(
         X=x,
-        sample_axis=SampleAxis(labels=[f"r{i}" for i in range(32)]),
+        sample_axis=SampleAxis(
+            labels=[f"r{i}" for i in range(32)],
+            sample_table={"sample_id": [f"r{i}" for i in range(32)]},
+        ),
         feature_axis=SpectralAxis(values=np.arange(8.0), units="nm"),
     )
     parameters = {
@@ -100,10 +103,16 @@ async def test_independent_model_space_formula_sparse_remainders_and_cancellatio
     assert cancellation
     assert len(json.dumps(result)) < module.MAX_BYTES
     # Axis and observation identities fail closed, even if numerical arrays agree.
-    ds.sample_axis = SampleAxis(labels=list(reversed(ds.sample_axis.labels)))
+    ds.sample_axis = SampleAxis(
+        labels=ds.sample_axis.labels,
+        sample_table={"sample_id": list(reversed(ds.sample_axis.sample_table["sample_id"]))},
+    )
     with pytest.raises(ValueError, match="observation order"):
         build_explanations(state, [(ds, output["scores"].X)], rows, [])
-    ds.sample_axis = SampleAxis(labels=[f"r{i}" for i in range(32)])
+    ds.sample_axis = SampleAxis(
+        labels=[f"r{i}" for i in range(32)],
+        sample_table={"sample_id": [f"r{i}" for i in range(32)]},
+    )
     ds.feature_axis = SpectralAxis(values=np.arange(8.0) + 1, units="nm")
     with pytest.raises(ValueError, match="feature axis"):
         build_explanations(state, [(ds, output["scores"].X)], rows, [])

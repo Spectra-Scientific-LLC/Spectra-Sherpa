@@ -1,6 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import ProjectImportDestinationDialog from "@/components/ProjectImportDestinationDialog.vue";
+import { createPinia, setActivePinia } from "pinia";
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("@/api", () => ({ api: { get } }));
 const option = { subscription_id: 42, workspace_id: 21, label: "Lab / Team" };
@@ -12,14 +13,14 @@ function mountDialog() {
   } } });
 }
 describe("Pro archive destination admission", () => {
-  beforeEach(() => { get.mockReset(); });
+  beforeEach(() => { setActivePinia(createPinia()); get.mockReset(); });
   it("offers a single authorized destination and forwards its exact IDs", async () => {
     get.mockResolvedValue({ data: { options: [option] } });
     const wrapper = mountDialog();
     expect(wrapper.findAll("button")[1].attributes("disabled")).toBeDefined();
     await flushPromises();
     await wrapper.findAll("button")[1].trigger("click");
-    expect(get).toHaveBeenCalledWith("/commercial/projects/options");
+    expect(get).toHaveBeenCalledWith("/commercial/projects/options", { signal: expect.any(AbortSignal) });
     expect(wrapper.emitted("choose")?.[0]).toEqual([option]);
   });
   it("requires an explicit selection for multiple destinations", async () => {

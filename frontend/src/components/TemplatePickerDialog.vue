@@ -625,7 +625,7 @@ const inheritedDataBindingsForTemplate = (
 const { appConfig } = useAppConfig();
 const { items: navigationItems } = usePrimaryNavigation();
 const canOptimize = computed(() =>
-  (appConfig.value?.features as Record<string, unknown> | undefined)?.managedCampaigns === true
+  appConfig.value?.features.managedCampaigns === true
   && navigationItems.value.some(item => item.label === "Optimize"),
 );
 const managedCandidateSelectionWarning = (tpl: TemplateOut): string | null => {

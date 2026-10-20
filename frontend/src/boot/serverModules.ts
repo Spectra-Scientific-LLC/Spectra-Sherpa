@@ -404,7 +404,7 @@ export async function bootServerModules(
     return;
   }
 
-  const cfg = config.value as AppConfig;
+  const cfg: AppConfig = config.value;
   const features = cfg.features ?? {};
 
   // Deployment-level: auth UI module. Eagerly loaded when the
@@ -456,7 +456,9 @@ export async function bootServerModules(
     for (const id of extensionScopes.keys()) disposeExtension(id);
     invalidateActionContext();
 
-    const entries = config.value?.uiExtensions ?? [];
+    const extensionConfig = config.value;
+    if (!extensionConfig) return;
+    const entries = extensionConfig.uiExtensions ?? [];
     if (!Array.isArray(entries) || entries.length > 8) return;
     const registrationKey = extensionRegistrationKey();
     const registrations: Array<Promise<boolean>> = [];
@@ -483,7 +485,7 @@ export async function bootServerModules(
         entry.url,
         id,
         router,
-        config.value as AppConfig,
+        extensionConfig,
         importModule,
         entry.required === true,
         reresolveCurrentRoute,

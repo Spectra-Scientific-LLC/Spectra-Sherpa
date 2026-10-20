@@ -506,11 +506,11 @@
           </div>
         </section>
 
-        <section class="dataset-step" aria-label="Save data portfolio">
+        <section class="dataset-step" aria-label="Save dataset">
           <div class="essential-card-heading">
             <span class="essential-card-number">5</span>
             <div>
-              <h4>Save data portfolio</h4>
+              <h4>Save dataset</h4>
             </div>
           </div>
           <slot name="portfolio-definitions" />
@@ -2114,7 +2114,7 @@ watch(
 
 // Let the dataset details and their retained metadata finish loading and paint
 // before the optional LLM story starts another backend request.
-let contentsReadyGeneration = 0;
+const contentsReady = useScopedRequest(contentsIdentity);
 watch(
   () => [
     dataStore.fileInfo,
@@ -2125,18 +2125,17 @@ watch(
     props.sampleInclusionEnabled && props.sampleInclusion.loading,
   ] as const,
   async ([info, inspecting, axes, samples, readiness, inclusion]) => {
-    const generation = ++contentsReadyGeneration;
+    const request = contentsReady.begin();
     if (!info || inspecting || axes || samples || readiness || inclusion) return;
     await nextTick();
     window.requestAnimationFrame(() => {
-      if (generation === contentsReadyGeneration && dataStore.fileInfo === info) {
+      if (request.isCurrent() && dataStore.fileInfo === info) {
         emit("contentsReady", info);
       }
     });
   },
   { immediate: true, flush: "post" },
 );
-onBeforeUnmount(() => { contentsReadyGeneration += 1; });
 
 function currentAnalysisChoice(): AnalysisChoice {
   const target = analysisTargetOptions.value.find(

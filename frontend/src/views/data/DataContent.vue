@@ -23,7 +23,7 @@
       </WorkspaceContextItem>
       <WorkspaceContextItem
         v-if="activeTab === TAB_MY_DATASET"
-        label="Data Portfolio"
+        label="Dataset"
         :value="dataPortfolioName"
         wrap
         >{{ dataPortfolioDetail }}</WorkspaceContextItem
@@ -1349,7 +1349,7 @@
               <div
                 v-if="dataStore.activeExperimentId"
                 class="dataset-view-registry"
-                aria-label="Saved data portfolios"
+                aria-label="Saved datasets"
               >
                 <div v-if="datasetViewError" role="alert">{{ datasetViewError }}</div>
                 <div class="dataset-view-actions">
@@ -1361,7 +1361,7 @@
                   />
                   <InputText
                     v-model="newDatasetViewName"
-                    aria-label="New data portfolio name"
+                    aria-label="New dataset name"
                     placeholder="Portfolio name"
                     maxlength="120"
                   />
@@ -2239,9 +2239,11 @@ const plotDatasetsLoading = ref(false);
 const plotDatasetsError = ref<string | null>(null);
 const fileSampleLabelsByExperiment = ref<Record<number, Record<string, string[]>>>({});
 const fileSampleLabelRequests = new Map<number, Promise<void>>();
-let plotDatasetRequest = 0;
-
-let experimentFocusRequest = 0;
+const plottedRequests = useScopedRequest(dataScopeIdentity, () => {
+  plotDatasetSources.value = [];
+  plotDatasetsLoading.value = false;
+  plotDatasetsError.value = null;
+});
 const inspection = useDatasetInspection(dataScopeIdentity,
   (experimentId, fileId) => dataStore.fetchFileAssets(experimentId, fileId));
 const {
@@ -2487,7 +2489,7 @@ watch(
     restoreDataDraft(currentDataDraftStorageKey);
     plotDatasetSources.value = [];
     plotDatasetsError.value = null;
-    plotDatasetRequest += 1;
+    plottedRequests.invalidate();
     inspection.contents.invalidate();
     fileAssetInventoryCache.clear();
     residentDatasets.clear();
@@ -5545,10 +5547,10 @@ watch(activeTab, (tabIndex) => {
   }
 });
 
-let dataTabSelectionGeneration = 0;
+const dataTabSelection = useScopedRequest(() => [...dataScopeIdentity(), activeTab.value]);
 function onDataTabSelected(tabIndex: number) {
   navigation.choose();
-  dataTabSelectionGeneration += 1;
+  dataTabSelection.invalidate();
   if (tabIndex === TAB_MY_DATASET) void ensureInitialContentsSelection();
 }
 
@@ -5704,16 +5706,10 @@ function setExperimentPlotSelection(
   plotFileSelections.value = next;
 }
 
-const plottedRequests = useScopedRequest(dataScopeIdentity, () => {
-  plotDatasetSources.value = [];
-  plotDatasetsLoading.value = false;
-  plotDatasetsError.value = null;
-});
 async function loadPlottedDatasets(
   prefetched = new Map<number, SherpaDatasetDict>(),
 ): Promise<void> {
   const ticket = plottedRequests.begin();
-  const request = ++plotDatasetRequest;
   plotDatasetsError.value = null;
   if (plottedExperimentIds.value.length === 0) {
     plotDatasetSources.value = [];
@@ -5811,7 +5807,7 @@ async function loadPlottedDatasets(
       };
     }),
   );
-  if (!ticket.isCurrent() || request !== plotDatasetRequest) return;
+  if (!ticket.isCurrent()) return;
   const admitted: DatasetPlotSource[] = [];
   const refusals: string[] = [];
   const supersededExperimentIds: number[] = [];
@@ -6218,7 +6214,7 @@ async function ensureInitialContentsSelection() {
 
   const experimentId = dataStore.activeExperimentId;
   const initialTab = activeTab.value;
-  const tabGeneration = dataTabSelectionGeneration;
+  const tabSelection = dataTabSelection.capture();
   initialContentsSelectionPending = experimentId;
   try {
     await showExperimentContents(experimentId);
@@ -6227,7 +6223,7 @@ async function ensureInitialContentsSelection() {
       hasSingleDataset &&
       hasSingleFile &&
       activeTab.value === initialTab &&
-      dataTabSelectionGeneration === tabGeneration
+      tabSelection.isCurrent()
     ) {
       const file = dataStore.experimentFiles[0];
       dataStore.activateFile(file.id, file.file_path);
@@ -6249,7 +6245,6 @@ async function onExperimentSelect(
   navigation.choose();
   const ticket = navigation.focus.begin();
   if (dataStore.activeExperimentId !== exp.id) selectedDatasetView.value = null;
-  const request = ++experimentFocusRequest;
   // Dataset focus is one scientific context.  Comparison checkboxes may add
   // other datasets while that context is stable, but choosing another dataset
   // starts a new context and must not retain a receipt from the prior one.
@@ -6258,7 +6253,7 @@ async function onExperimentSelect(
     plotFileSelections.value = {};
     plotDatasetSources.value = [];
     plotDatasetsError.value = null;
-    plotDatasetRequest += 1;
+    plottedRequests.invalidate();
     inspection.contents.invalidate();
     inspectionWarnings.value = [];
     inspectionAssets.value = [];
@@ -6269,7 +6264,7 @@ async function onExperimentSelect(
     }
   }
   await dataStore.selectExperiment(exp.id);
-  if (!ticket.isCurrent() || request !== experimentFocusRequest || dataStore.activeExperimentId !== exp.id) return;
+  if (!ticket.isCurrent() || dataStore.activeExperimentId !== exp.id) return;
   if (dataStore.experimentFilesRefusal) return;
   if (!hasExperimentPlotSelection(exp.id) && dataStore.experimentFiles.length > 0) {
     const registeredViews = dataStore.experimentFiles.filter((file) =>
@@ -6287,7 +6282,7 @@ async function onExperimentSelect(
   activeTab.value = TAB_MY_DATASET;
   persistActiveDataTab();
   await showExperimentContents(exp.id);
-  if (!ticket.isCurrent() || request !== experimentFocusRequest || dataStore.activeExperimentId !== exp.id) return;
+  if (!ticket.isCurrent() || dataStore.activeExperimentId !== exp.id) return;
   const queryWithoutFile = { ...route.query };
   delete queryWithoutFile.fileId;
   // Normalize legacy aliases: experimentId would otherwise beat the new experiment.

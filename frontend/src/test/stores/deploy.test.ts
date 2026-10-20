@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import api from "@/api/client";
 import { useDeployStore } from "@/stores/deploy";
+import { useAuthStore } from "@/stores/auth";
 
-vi.mock("@/api/client", () => ({ default: { get: vi.fn() } }));
+vi.mock("@/api/client", () => ({ default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
 
 const get = vi.mocked(api.get);
 
@@ -31,7 +32,7 @@ describe("deploy application projection", () => {
     const store = useDeployStore();
     await store.fetchApplications(3);
 
-    expect(get).toHaveBeenCalledWith("/deploy/applications", { params: { project_id: 3 } });
+    expect(get).toHaveBeenCalledWith("/deploy/applications", expect.objectContaining({ params: { project_id: 3 } }));
     expect(store.applications).toEqual([expect.objectContaining({
       application_id: "app_saved_run_1",
       application_handle: "app_saved_run_1",
@@ -58,7 +59,7 @@ describe("deploy application projection", () => {
     await store.fetchApplications(3);
     expect(store.applications).toEqual([]);
     expect(get).toHaveBeenCalledTimes(1);
-    expect(get).toHaveBeenCalledWith("/deploy/applications", { params: { project_id: 3 } });
+    expect(get).toHaveBeenCalledWith("/deploy/applications", expect.objectContaining({ params: { project_id: 3 } }));
   });
 
   it("falls back to legacy model and portable target reads during rollout", async () => {
@@ -88,8 +89,8 @@ it('scopes both operational collections to the active project', async () => {
   get.mockImplementation(async path=>({data:path === '/deploy/watches' ? [] : {runs:[],total:0}}));
   const store=useDeployStore();
   await store.fetchWatches(7); await store.fetchDeployRuns(undefined,undefined,7);
-  expect(get).toHaveBeenCalledWith('/deploy/watches',{params:{project_id:7}});
-  expect(get).toHaveBeenCalledWith('/deploy/runs',{params:{project_id:7}});
+  expect(get).toHaveBeenCalledWith('/deploy/watches',expect.objectContaining({params:{project_id:7}}));
+  expect(get).toHaveBeenCalledWith('/deploy/runs',expect.objectContaining({params:{project_id:7}}));
 });
 
 it.each(['watches','runs','applications'])('ignores old-project %s responses after a reset',async kind=>{
@@ -110,4 +111,44 @@ it('shows failed collection reads separately from a confirmed empty result and r
   get.mockImplementation(async path=>({data:path === '/deploy/watches' ? [] : {runs:[],total:0}}));
   await store.fetchWatches(1); await store.fetchDeployRuns(undefined,undefined,1);
   expect(store.watchesError).toBe(''); expect(store.runsError).toBe('');
+});
+
+it.each(["create", "update", "delete", "toggle"])(
+  "refreshes the currently viewed watch list after %s completes in a different project",
+  async (action) => {
+    setActivePinia(createPinia());
+    vi.resetAllMocks();
+    get.mockResolvedValue({ data: [] });
+    const store = useDeployStore();
+    await store.fetchWatches(1);
+    let finish!: (value: unknown) => void;
+    const result = new Promise(resolve => { finish = resolve; });
+    vi.mocked(api.post).mockReturnValue(result as never);
+    vi.mocked(api.patch).mockReturnValue(result as never);
+    vi.mocked(api.delete).mockReturnValue(result as never);
+    const pending = action === "create" ? store.createWatch({} as never)
+      : action === "update" ? store.updateWatch(1, {})
+      : action === "delete" ? store.deleteWatch(1) : store.toggleWatch(1, true);
+    store.resetProjectScope();
+    await store.fetchWatches(2);
+    get.mockClear();
+    finish({ data: { id: 1, project_id: 1 } });
+    await pending;
+    expect(get).toHaveBeenCalledWith("/deploy/watches", expect.objectContaining({ params: { project_id: 2 } }));
+    expect(store.watches).toEqual([]);
+  },
+);
+
+it("refuses an old-session completion even when the client ignores cancellation", async () => {
+  setActivePinia(createPinia());
+  get.mockReset();
+  let finish!: (value: unknown) => void;
+  get.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const store = useDeployStore();
+  const pending = store.fetchApplications(1);
+  useAuthStore().token = "different-session";
+  finish({ data: [{ handle: "old", workflow_id: 1 }] });
+  await pending;
+  expect(store.applications).toEqual([]);
+  expect(store.applicationsLoading).toBe(false);
 });

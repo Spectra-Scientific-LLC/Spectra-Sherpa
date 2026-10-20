@@ -7,6 +7,7 @@ import json
 
 import numpy as np
 
+from spectra_sherpa.app.lib.sample_identity import sample_ids
 from spectra_sherpa.app.services.dag.fitted_input_identity import require_fitted_input_identity
 
 MAX_FEATURES = 20000
@@ -39,7 +40,7 @@ def build_explanations(state, model_digest, source_contract_digest, populations,
     ):
         raise ValueError("PLS explanations exceed the bounded variable, response or calculation budget.")
     reference_ids = [r["id"] for r in rows if r["role"] == "calibration"]
-    if len(reference_ids) != state["reference_samples"] or list(populations[0].sample_axis.labels) != reference_ids:
+    if len(reference_ids) != state["reference_samples"] or sample_ids(populations[0]) != reference_ids:
         raise ValueError("PLS explanation calibration identity/order differs from the fitted reference.")
     expected = {r["id"]: r for r in rows}
     if len(expected) != len(rows):
@@ -59,7 +60,9 @@ def build_explanations(state, model_digest, source_contract_digest, populations,
     input_digests = []
     for dataset in populations:
         require_fitted_input_identity(dataset, state["input_identity"], features=p)
-        ids = list(dataset.sample_axis.labels)
+        ids = sample_ids(dataset)
+        if ids is None:
+            raise ValueError("PLS explanations require typed sample_id values.")
         if len(set(ids)) != len(ids) or any(i in evidence or i not in expected for i in ids):
             raise ValueError("PLS explanation population identity is inconsistent.")
         input_digests.append(dataset.scientific_digest)

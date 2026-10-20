@@ -555,8 +555,6 @@ export const useDataStore = defineStore("data", () => {
   const dataStoryMemoryScopes = ref<string[]>([]);
   const dataStoryLoading = ref(false);
   const dataStoryContext = ref("");
-  let dataStoryRequestVersion = 0;
-  let dataStoryAbort: AbortController | null = null;
   const dataStoryCache = new Map<string, string>();
   const rememberDataStory = (key: string | null | undefined, story: string) => {
     if (!key || !story.trim()) return;
@@ -573,6 +571,7 @@ export const useDataStore = defineStore("data", () => {
 
   const currentProjectId = () => useProjectStore().currentProjectId;
   const identity = () => [useAuthStore().user?.id, useAuthStore().token, currentProjectId()];
+  const dataStoryScope = useScopedRequest(() => [...identity(), activeExperimentId.value], () => { dataStoryLoading.value = false; });
   const catalogScope = useScopedRequest(identity, () => { catalogLoading.value = false; });
   const experimentsScope = useScopedRequest(identity, () => { experimentsLoading.value = false; });
   const selectionScope = useScopedRequest(
@@ -588,10 +587,13 @@ export const useDataStore = defineStore("data", () => {
   const explorationScope = useScopedRequest(identity, () => { catalogDatasetLoading.value = false; });
   const referenceScope = useScopedRequest(identity, () => { referenceCatalogLoading.value = false; });
   const mutationScope = useScopedRequest(() => [...identity(), activeExperimentId.value]);
-  let mutationTicket: ScopedRequestTicket | undefined;
-  function captureMutationScope(): ScopedRequestTicket {
-    if (!mutationTicket?.isCurrent()) mutationTicket = mutationScope.begin();
-    return mutationTicket;
+  const captureMutationScope = mutationScope.capture;
+  const accountMutation = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token]);
+  async function refreshWrittenInventories(account: ScopedRequestTicket): Promise<void> {
+    if (!account.isCurrent()) return;
+    // Refresh the current inventory even if the user left the written dataset.
+    // Each read guards its own destination; none changes selection.
+    await Promise.allSettled([fetchExperiments(), fetchCatalog(), useProjectStore().fetchProjects()]);
   }
 
   function resetProjectScope(): void {
@@ -731,7 +733,7 @@ export const useDataStore = defineStore("data", () => {
     projectId?: number | null,
     metadata?: Record<string, unknown>,
   ) => {
-    const request = captureMutationScope();
+    const account = accountMutation.capture();
     const payload = {
       name,
       description: description || null,
@@ -740,7 +742,7 @@ export const useDataStore = defineStore("data", () => {
     } satisfies components["schemas"]["ExperimentCreate"];
     const response = await api.post<components["schemas"]["ExperimentDetail"]>("/experiments", payload);
     // Refresh both lists
-    if (request.isCurrent()) await Promise.all([fetchExperiments(), fetchCatalog()]);
+    await refreshWrittenInventories(account);
     return experimentDetail(response.data);
   };
 
@@ -748,14 +750,15 @@ export const useDataStore = defineStore("data", () => {
     experimentId: number,
     payload: components["schemas"]["ExperimentUpdate"],
   ) => {
-    const request = captureMutationScope();
+    const account = accountMutation.capture();
     const response = await api.put<components["schemas"]["ExperimentDetail"]>(`/experiments/${experimentId}`, payload);
-    if (request.isCurrent()) await Promise.all([fetchExperiments(), fetchCatalog()]);
+    await refreshWrittenInventories(account);
     return experimentDetail(response.data);
   };
 
   const deleteExperiment = async (experimentId: number) => {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     const deletingActiveExperiment = activeExperimentId.value === experimentId;
     let fallbackExperimentId: number | null = null;
 
@@ -772,8 +775,7 @@ export const useDataStore = defineStore("data", () => {
     }
 
     await api.delete(`/experiments/${experimentId}`);
-    if (!request.isCurrent()) return;
-    await Promise.all([fetchExperiments(), fetchCatalog()]);
+    await refreshWrittenInventories(account);
     if (!request.isCurrent()) return;
 
     if (deletingActiveExperiment) {
@@ -845,10 +847,12 @@ export const useDataStore = defineStore("data", () => {
       dataRole?: string | null;
       targetColumn?: string | null;
       targetType?: string | null;
+      /** Refresh the selected detail; durable catalogue writes always refresh inventories. */
       refresh?: boolean;
     },
   ) => {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     const form = new FormData();
     form.append("file", file);
     form.append("stage", stage);
@@ -864,8 +868,9 @@ export const useDataStore = defineStore("data", () => {
     const response = await api.post<components["schemas"]["ExperimentFileOut"]>(`/experiments/${experimentId}/files`, form, {
       headers: { "Content-Type": "multipart/form-data" },
     });
-    if (request.isCurrent() && options?.refresh !== false) {
-      await Promise.all([selectExperiment(experimentId), fetchCatalog()]);
+    await refreshWrittenInventories(account);
+    if (options?.refresh !== false) {
+      if (request.isCurrent()) await selectExperiment(experimentId);
     }
     return experimentFile(response.data);
   };
@@ -905,21 +910,25 @@ export const useDataStore = defineStore("data", () => {
     files: Array<{ staging_id: string; overrides?: PreparedDataOverrides | null }>,
   ) => {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     const response = await api.post("/builder/upload/commit", {
       experiment_id: experimentId,
       stage,
       files,
     });
-    if (request.isCurrent()) await Promise.all([selectExperiment(experimentId), fetchExperiments(), fetchCatalog()]);
+    await refreshWrittenInventories(account);
+    if (request.isCurrent()) await selectExperiment(experimentId);
     return response.data;
   };
 
   const deleteFile = async (experimentId: number, fileId: number) => {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     await api.delete(`/experiments/${experimentId}/files/${fileId}`);
+    await refreshWrittenInventories(account);
     if (!request.isCurrent()) return;
     // Refresh file list and catalog
-    await Promise.all([selectExperiment(experimentId), fetchCatalog()]);
+    await selectExperiment(experimentId);
     // Clear inspection if deleted file was being inspected
     if (activeFileId.value === fileId) {
       clearInspection();
@@ -992,7 +1001,7 @@ export const useDataStore = defineStore("data", () => {
     expectedRevision: string | null;
     selectedTarget: string;
     targetType: "continuous" | "categorical";
-    referenceDeclaration?: import("@/types").ReferenceValueDeclaration | null;
+    referenceDeclaration?: import("@/types").ReferenceDeclarationDraft | null;
   }) => {
     const response = await api.post("/builder/analysis-binding", {
       source_file_id: payload.sourceFileId,
@@ -1107,12 +1116,14 @@ export const useDataStore = defineStore("data", () => {
     datasets: Array<{ source: string; name: string; overrides?: PreparedDataOverrides | null }>,
   ) => {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     const response = await api.post(`/experiments/${experimentId}/import-reference`, { datasets });
     const admittedExperimentId = response.data.experiment_id ?? experimentId;
     // Refresh file list and experiment list to reflect new files
     // The server has committed. A display refresh must not turn this into an
     // import refusal and cause the caller to delete the admitted dataset.
-    if (request.isCurrent()) await Promise.allSettled([selectExperiment(admittedExperimentId), fetchExperiments(), fetchCatalog()]);
+    await refreshWrittenInventories(account);
+    if (request.isCurrent()) await Promise.allSettled([selectExperiment(admittedExperimentId)]);
     return response.data as {
       imported: number;
       files: ExperimentFile[];
@@ -1128,6 +1139,7 @@ export const useDataStore = defineStore("data", () => {
     files: File | File[],
   ) => {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     const form = new FormData();
     if (authority.packageId) form.append("package_id", authority.packageId);
     else if (authority.projectionId) form.append("projection_id", authority.projectionId);
@@ -1141,7 +1153,8 @@ export const useDataStore = defineStore("data", () => {
       { headers: { "Content-Type": "multipart/form-data" } },
     );
     const admittedExperimentId = response.data.experiment_id ?? experimentId;
-    if (request.isCurrent()) await Promise.allSettled([selectExperiment(admittedExperimentId), fetchExperiments(), fetchCatalog()]);
+    await refreshWrittenInventories(account);
+    if (request.isCurrent()) await Promise.allSettled([selectExperiment(admittedExperimentId)]);
     return response.data as {
       imported: number;
       files: ExperimentFile[];
@@ -1187,13 +1200,15 @@ export const useDataStore = defineStore("data", () => {
       | number[],
   ) => {
     const request = captureMutationScope();
+    const account = accountMutation.capture();
     const requestPayload = Array.isArray(payload)
       ? { experiment_id: experimentId, library_ids: payload }
       : { experiment_id: experimentId, ...payload };
     const response = await api.post("/datasets/library/import", {
       ...requestPayload,
     });
-    if (request.isCurrent()) await Promise.all([selectExperiment(experimentId), fetchExperiments(), fetchCatalog()]);
+    await refreshWrittenInventories(account);
+    if (request.isCurrent()) await selectExperiment(experimentId);
     return response.data;
   };
 
@@ -1222,9 +1237,7 @@ export const useDataStore = defineStore("data", () => {
   };
 
   const invalidateDataStory = () => {
-    dataStoryAbort?.abort();
-    dataStoryAbort = null;
-    dataStoryRequestVersion++;
+    dataStoryScope.invalidate();
     dataStoryText.value = null;
     dataStoryMemoryScopes.value = [];
     dataStoryLoading.value = false;
@@ -1236,45 +1249,39 @@ export const useDataStore = defineStore("data", () => {
   ) => {
     const cacheKey = options?.cacheKey;
     if (cacheKey && !options?.force && dataStoryCache.has(cacheKey)) {
-      dataStoryAbort?.abort();
-      dataStoryAbort = null;
-      dataStoryRequestVersion++;
+      dataStoryScope.invalidate();
       dataStoryText.value = dataStoryCache.get(cacheKey)!;
       dataStoryMemoryScopes.value = [];
       dataStoryLoading.value = false;
       return;
     }
     if (cacheKey && options?.force) dataStoryCache.delete(cacheKey);
-    dataStoryAbort?.abort();
-    dataStoryAbort = null;
-    const requestVersion = ++dataStoryRequestVersion;
+    const request = dataStoryScope.begin();
     dataStoryLoading.value = true;
     try {
       // The caller supplies the already-parsed, unfiltered source inspection.
       // Never start a separate file-info request for Data Story.
       const datasetInfo = inspectedSource ?? catalogDatasetInfo.value ?? fileInfo.value;
-      if (requestVersion !== dataStoryRequestVersion || !datasetInfo) return;
+      if (!request.isCurrent() || !datasetInfo) return;
 
       const { appMode, isFeatureEnabled } = useAppConfig();
       if (appMode.value === "local") {
         if (!isFeatureEnabled("chatAssistant")) {
           throw new Error("Configure a local chat endpoint in Settings to generate a Data Story.");
         }
-        const controller = new AbortController();
-        dataStoryAbort = controller;
         dataStoryText.value = "";
         dataStoryMemoryScopes.value = [];
         const result = await streamLocalDataStory(
           datasetInfo as StoryObject,
           dataStoryContext.value,
           (chunk) => {
-            if (requestVersion === dataStoryRequestVersion) {
+            if (request.isCurrent()) {
               dataStoryText.value = `${dataStoryText.value ?? ""}${chunk}`;
             }
           },
-          controller.signal,
+          request.signal,
         );
-        if (requestVersion === dataStoryRequestVersion) {
+        if (request.isCurrent()) {
           dataStoryText.value = result;
           rememberDataStory(cacheKey, result);
         }
@@ -1291,7 +1298,7 @@ export const useDataStore = defineStore("data", () => {
       const advisorStore = useAdvisorStore();
       const projectStore = useProjectStore();
       await llm.connect();
-      if (requestVersion !== dataStoryRequestVersion) return;
+      if (!request.isCurrent()) return;
       const ws = llm.wsRef;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
         throw new Error("WebSocket not connected. Try again in a moment.");
@@ -1324,7 +1331,7 @@ export const useDataStore = defineStore("data", () => {
 
         const unsubscribe = subscribeSherpaEvents(
           (payload) => {
-            if (requestVersion !== dataStoryRequestVersion) {
+            if (!request.isCurrent()) {
               cleanup();
               resolve("");
               return;
@@ -1368,10 +1375,17 @@ export const useDataStore = defineStore("data", () => {
           },
         );
 
+        const onAbort = () => {
+          cleanup();
+          resolve("");
+        };
         const cleanup = () => {
           clearTimeout(timeout);
           unsubscribe();
+          request.signal.removeEventListener("abort", onAbort);
         };
+        request.signal.addEventListener("abort", onAbort, { once: true });
+        if (!request.isCurrent()) { onAbort(); return; }
 
         ws.send(
           JSON.stringify({
@@ -1387,13 +1401,13 @@ export const useDataStore = defineStore("data", () => {
         );
       });
 
-      if (requestVersion === dataStoryRequestVersion) {
+      if (request.isCurrent()) {
         dataStoryText.value = result;
         rememberDataStory(cacheKey, result);
       }
     } catch (error: unknown) {
       if (error instanceof DOMException && error.name === "AbortError") return;
-      if (requestVersion === dataStoryRequestVersion) {
+      if (request.isCurrent()) {
         console.error("Failed to generate data story:", error);
         dataStoryMemoryScopes.value = [];
         dataStoryText.value = getErrorMessage(
@@ -1402,8 +1416,7 @@ export const useDataStore = defineStore("data", () => {
         );
       }
     } finally {
-      if (requestVersion === dataStoryRequestVersion) {
-        dataStoryAbort = null;
+      if (request.isCurrent()) {
         dataStoryLoading.value = false;
       }
     }
@@ -1411,7 +1424,7 @@ export const useDataStore = defineStore("data", () => {
 
   const clearCatalogExploration = () => {
     explorationScope.invalidate();
-    dataStoryRequestVersion++;
+    dataStoryScope.invalidate();
     catalogDatasetInfo.value = null;
     catalogDatasetError.value = null;
     dataStoryText.value = null;

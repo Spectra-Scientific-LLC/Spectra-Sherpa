@@ -644,6 +644,13 @@ async def _persist_managed_candidate(
         return
     managed_binding = source_binding
     if source_binding.file_ids is not None and len(source_binding.file_ids) == 1:
+        # User bindings are refused at admission. Keep example/other internal
+        # callers fail-closed too; never infer a response while narrowing scope.
+        if source_binding.target_authority is None:
+            raise HTTPException(
+                status_code=400,
+                detail="The managed candidate requires a selected target authority. Select a response and retry.",
+            )
         managed_binding = source_binding.model_copy(
             update={
                 "file_id": source_binding.file_ids[0],
@@ -651,13 +658,11 @@ async def _persist_managed_candidate(
                 "target_authority": None,
             }
         )
-        assert source_binding.selected_target is not None
-        assert source_binding.target_type is not None
         target_authority, asset_id = await _issue_file_target_authority(
             session,
             managed_binding,
-            selected_target=source_binding.selected_target,
-            target_type=source_binding.target_type,
+            selected_target=source_binding.target_authority.column,
+            target_type=source_binding.target_authority.target_type,
         )
         managed_binding = managed_binding.model_copy(
             update={"target_authority": target_authority, "asset_id": asset_id}
@@ -1396,6 +1401,22 @@ def _enforce_bound_dataset_requirements(
         provided_roles=provided_roles,
     )
     if decision["status"] == "compatible":
+        # Advertising a response in the dataset profile does not select it.
+        # Refuse before either the analysis or managed candidate is persisted.
+        if (
+            _binding_consumes_target(template, node_id)
+            and _required_separate_target_type(template, node_id) is None
+            and binding.target_authority is None
+            and binding.target_binding is None
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Template '{template.name}' requires a selected target authority for source '{node_id}'. "
+                    "Select a response in My Dataset or request binding-compatibility-preview "
+                    "and submit its source-bound target authority."
+                ),
+            )
         return
     reason = decision["reasons"][0] if decision["reasons"] else None
     detail = reason["message"] if isinstance(reason, dict) else "The selected dataset is not structurally ready."

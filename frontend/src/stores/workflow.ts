@@ -5,7 +5,7 @@ import api from "@/api/client";
 import type { components } from "@/types/api/v1";
 import { workflowCreate, workflowEdge, workflowListItem, workflowNode, workflowPreflight as adaptWorkflowPreflight } from "@/api/adapters/workflows";
 import type { NodeTypeMetadata, NodeLibraryResponse, NodeExecutionStatus } from "@/types";
-import { getErrorMessage } from "@/utils/errors";
+import { getErrorMessage, isRequestCanceled } from "@/utils/errors";
 import { useProjectStore } from "@/stores/project";
 import { useProjectProvenanceStore } from "@/stores/projectProvenance";
 import { useAuthStore } from "@/stores/auth";
@@ -82,7 +82,6 @@ const RETAINED_RUN_STALE_WARNING =
   "Current graph and retained run identity are different or unverified — results may be stale.";
 
 export const useWorkflowStore = defineStore("workflow", () => {
-  let workflowLoadGeneration = 0;
   // State
   const nodes = ref<WorkflowNode[]>([]);
   const edges = ref<WorkflowEdge[]>([]);
@@ -96,7 +95,6 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const lastExecutionResults = ref<UnknownRecord | null>(null);
   const restoredRunId = ref<number | null>(null);
   const lastExecutionParams = ref<Record<string, ParamsMap>>({});
-  let executionRequestGeneration = 0;
   const restoredEvidenceNotice = ref<string | null>(null);
   const restoredEvidenceGaps = ref<EvidenceGap[]>([]);
   const executionEvidenceScope = ref<"live_full" | "partial" | "restored_summary" | "unavailable">("unavailable");
@@ -105,10 +103,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const lastExecutionPresentations = ref<Record<string, ExecutedPresentationRecord>>({});
   const workflowWarnings = ref<string[]>([]);
   const workspaceIdentity = () => [useAuthStore().user?.id, useAuthStore().token, useProjectStore().currentProjectId];
+  const workflowOwnership = useScopedRequest(workspaceIdentity);
   const loadScope = useScopedRequest(workspaceIdentity, () => { isLoading.value = false; });
   const saveScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
   const preflightScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
-  const executionScope = useScopedRequest(workspaceIdentity, () => { isExecuting.value = false; });
+  const executionScope = useScopedRequest(workspaceIdentity, () => { preparingExecution.value = false; }, { abortOnInvalidate: false });
   const choiceScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
   const datasetCatalogScope = useScopedRequest(workspaceIdentity, () => { availableDatasets.value = null; });
   const templateScope = useScopedRequest(workspaceIdentity, () => { templatesLoading.value = false; templatesError.value = null; templates.value = []; });
@@ -516,7 +515,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   function clearWorkflow() {
-    workflowLoadGeneration += 1;
+    workflowOwnership.invalidate();
     loadScope.invalidate();
     saveScope.invalidate();
     preflightScope.invalidate();
@@ -599,10 +598,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
     options: { createVersion?: boolean; projectId?: number | null } = {},
   ): Promise<number> {
     const previous = pendingSave;
-    const generation = workflowLoadGeneration;
+    const ownership = workflowOwnership.capture();
     const next = (async () => {
       if (previous) await previous;
-      if (generation !== workflowLoadGeneration) {
+      if (!ownership.isCurrent()) {
         throw new Error("Active workflow changed before saving. Retry on the current sheet.");
       }
       return performSaveWorkflow(options);
@@ -709,7 +708,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
   async function loadWorkflow(id: number, retainedRunId?: number, shouldApply?: () => boolean): Promise<void> {
     if (shouldApply && !shouldApply()) return;
-    const loadGeneration = ++workflowLoadGeneration;
+    workflowOwnership.invalidate();
     saveScope.invalidate();
     executionScope.invalidate();
     preflightScope.invalidate();
@@ -771,7 +770,6 @@ export const useWorkflowStore = defineStore("workflow", () => {
         if (retainedRunId != null && runResp.data?.id !== retainedRunId) {
           throw new Error("Requested run identity is unavailable");
         }
-        if (loadGeneration !== workflowLoadGeneration) return;
         if (runResp.data) {
           restoredRunId.value = Number.isInteger(runResp.data.id) ? runResp.data.id : null;
           lastExecutionParams.value = runResp.data.params_snapshot ?? {};
@@ -1053,15 +1051,23 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
   }
 
-  const isExecuting = ref(false);
+  const preparingExecution = ref(false);
+  const pendingExecutions = ref(new Map<string, symbol>());
+  const executionKey = () => JSON.stringify([...workspaceIdentity(), workflowId.value]);
+  const isExecuting = computed(() => preparingExecution.value || pendingExecutions.value.has(executionKey()));
   async function withExecutionOwnership(action: (begin: () => void, signal: AbortSignal) => Promise<WorkflowExecuteResponse>) {
     if (isExecuting.value) throw new Error("An execution is already in progress. Wait for it to finish.");
     const request = executionScope.begin();
-    isExecuting.value = true;
-    const ownershipGeneration = workflowLoadGeneration;
+    preparingExecution.value = true;
+    const ownership = workflowOwnership.capture();
+    const operation = Symbol("execution");
+    let admittedKey: string | undefined;
     let evidenceClaimed = false;
     const begin = () => {
       if (!request.isCurrent()) throw new DOMException("Execution belongs to a previously active workflow.", "AbortError");
+      admittedKey = executionKey();
+      if (pendingExecutions.value.has(admittedKey)) throw new Error("An execution is already in progress. Wait for it to finish.");
+      pendingExecutions.value.set(admittedKey, operation);
       evidenceClaimed = true;
       // Only an admitted attempt replaces the current scientific evidence.
       lastExecutionResults.value = null;
@@ -1077,10 +1083,13 @@ export const useWorkflowStore = defineStore("workflow", () => {
     };
     try { return await action(begin, request.signal); }
     catch (error) {
-      if (!request.isCurrent() || ownershipGeneration !== workflowLoadGeneration) throw new DOMException("Execution belongs to a previously active workflow.", "AbortError");
-      if (evidenceClaimed && ownershipGeneration === workflowLoadGeneration) restoredEvidenceNotice.value = "Execution did not finish. No current execution evidence is available; inspect History or rerun.";
+      if (!request.isCurrent() || !ownership.isCurrent()) throw new DOMException("Execution belongs to a previously active workflow.", "AbortError");
+      if (evidenceClaimed && ownership.isCurrent()) restoredEvidenceNotice.value = "Execution did not finish. No current execution evidence is available; inspect History or rerun.";
       throw error;
-    } finally { if (request.isCurrent()) isExecuting.value = false; }
+    } finally {
+      if (admittedKey && pendingExecutions.value.get(admittedKey) === operation) pendingExecutions.value.delete(admittedKey);
+      if (request.isCurrent()) preparingExecution.value = false;
+    }
   }
   async function executeWorkflow(initialData?: ParamsMap): Promise<WorkflowExecuteResponse> {
     return withExecutionOwnership((begin, signal) => executeWorkflowSnapshot(initialData, begin, signal));
@@ -1097,13 +1106,13 @@ export const useWorkflowStore = defineStore("workflow", () => {
       );
     }
     assertNumericExecutionInputs();
-    const preparingGeneration = workflowLoadGeneration;
+    const preparation = workflowOwnership.capture();
     // Always save if not saved OR if there are unsaved changes (WYSIWYG principle)
     if (!workflowId.value || hasUnsavedChanges.value) {
       await saveWorkflow();
     }
 
-    if (hasUnsavedChanges.value || preparingGeneration !== workflowLoadGeneration) {
+    if (hasUnsavedChanges.value || !preparation.isCurrent()) {
       throw new Error("The workflow changed while saving. Review the current draft and run again.");
     }
     const reviewedSignature = workflowDraftSignature({ workflowName: workflowName.value,
@@ -1113,14 +1122,14 @@ export const useWorkflowStore = defineStore("workflow", () => {
       throw new Error(preflight.issues.filter(issue => issue.level === "error").map(issue => issue.message).join("; ")
         || "Connect required inputs before running this workflow.");
     }
-    if (preparingGeneration !== workflowLoadGeneration || reviewedSignature !== workflowDraftSignature({
+    if (!preparation.isCurrent() || reviewedSignature !== workflowDraftSignature({
       workflowName: workflowName.value, workflowDescription: workflowDescription.value,
       nodes: nodes.value, edges: edges.value,
     })) throw new Error("The workflow changed during validation. Review it and run again.");
     begin();
     const executingWorkflowId = workflowId.value;
-    const executingLoadGeneration = workflowLoadGeneration;
-    const executionGeneration = ++executionRequestGeneration;
+    const executingOwnership = workflowOwnership.capture();
+    const execution = executionScope.capture();
     const executedGraph = canonicalWorkflowForStaleCheck(nodes.value);
 
     // Mark all nodes as queued before execution
@@ -1170,10 +1179,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
           }),
       );
 
-      const isStillActiveWorkflow = workflowId.value === executingWorkflowId && executingLoadGeneration === workflowLoadGeneration && executionGeneration === executionRequestGeneration;
+      const isStillActiveWorkflow = workflowId.value === executingWorkflowId && executingOwnership.isCurrent() && execution.isCurrent();
       if (!isStillActiveWorkflow) {
-        setMirroredStatus("success");
-        scheduleStatusClear("success");
+        const status = response.data.status === "completed" && !response.data.error ? "success" : "error";
+        setMirroredStatus(status);
+        scheduleStatusClear(status);
         throw new DOMException("Execution belongs to a previously active workflow.", "AbortError");
       }
 
@@ -1249,16 +1259,23 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
       return response.data;
     } catch (error: unknown) {
-      if (error instanceof DOMException && error.name === "AbortError") throw error;
+      if (isRequestCanceled(error)) {
+        // A retired view has already recorded the server's terminal status.
+        // A transport cancellation with no acknowledgement is not a failed run.
+        for (const s of allMirroredSheets) {
+          if (s.executionStatus === "running") s.executionStatus = "idle";
+        }
+        throw error;
+      }
       const errorMsg = getErrorMessage(error, "Execution failed");
-      if (workflowId.value === executingWorkflowId && executingLoadGeneration === workflowLoadGeneration && executionGeneration === executionRequestGeneration) {
+      if (workflowId.value === executingWorkflowId && executingOwnership.isCurrent() && execution.isCurrent()) {
         markScopedExecutionFailure(errorMsg);
       }
       setMirroredStatus("error");
       scheduleStatusClear("error");
       throw error;
     } finally {
-      if (executingLoadGeneration === workflowLoadGeneration) isLoading.value = false;
+      if (executingOwnership.isCurrent()) isLoading.value = false;
     }
   }
 
@@ -1324,18 +1341,18 @@ export const useWorkflowStore = defineStore("workflow", () => {
       );
     }
     assertNumericExecutionInputs(nodeId);
-    const preparingGeneration = workflowLoadGeneration;
+    const preparation = workflowOwnership.capture();
     // Always save if not saved OR if there are unsaved changes (WYSIWYG principle)
     if (!workflowId.value || hasUnsavedChanges.value) {
       await saveWorkflow();
     }
-    if (hasUnsavedChanges.value || preparingGeneration !== workflowLoadGeneration) {
+    if (hasUnsavedChanges.value || !preparation.isCurrent()) {
       throw new Error("The workflow changed while saving. Review the current draft and run again.");
     }
     begin();
     const executingWorkflowId = workflowId.value;
-    const executingLoadGeneration = workflowLoadGeneration;
-    const executionGeneration = ++executionRequestGeneration;
+    const executingOwnership = workflowOwnership.capture();
+    const execution = executionScope.capture();
     const executedGraph = canonicalWorkflowForStaleCheck(nodes.value);
 
     // Mark target node and its dependencies as running
@@ -1360,7 +1377,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
           }),
       );
 
-      if (workflowId.value !== executingWorkflowId || executingLoadGeneration !== workflowLoadGeneration || executionGeneration !== executionRequestGeneration) {
+      if (workflowId.value !== executingWorkflowId || !executingOwnership.isCurrent() || !execution.isCurrent()) {
         throw new DOMException("Execution belongs to a previously active workflow.", "AbortError");
       }
 
@@ -1429,7 +1446,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       // Mark node as error
       const errorMsg = getErrorMessage(error, "Execution failed");
       if (
-        workflowId.value === executingWorkflowId && executingLoadGeneration === workflowLoadGeneration && executionGeneration === executionRequestGeneration &&
+        workflowId.value === executingWorkflowId && executingOwnership.isCurrent() && execution.isCurrent() &&
         nodes.value.some((node) => node.id === nodeId)
       ) {
         setNodeExecutionState(nodeId, {
@@ -1440,7 +1457,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       }
       throw error;
     } finally {
-      if (executingLoadGeneration === workflowLoadGeneration) isLoading.value = false;
+      if (executingOwnership.isCurrent()) isLoading.value = false;
     }
   }
 
@@ -1501,13 +1518,13 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   async function prepareExport(): Promise<number> {
-    const generation = workflowLoadGeneration;
+    const ownership = workflowOwnership.capture();
     while (pendingSave) await pendingSave;
-    if (generation !== workflowLoadGeneration) {
+    if (!ownership.isCurrent()) {
       throw new Error("Active workflow changed. Retry export on the current sheet.");
     }
     if (!workflowId.value || hasUnsavedChanges.value) await saveWorkflow();
-    if (generation !== workflowLoadGeneration || !workflowId.value || hasUnsavedChanges.value) {
+    if (!ownership.isCurrent() || !workflowId.value || hasUnsavedChanges.value) {
       throw new Error("Workflow changed while saving. Retry export after edits are saved.");
     }
     return workflowId.value;

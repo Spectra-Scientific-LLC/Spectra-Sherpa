@@ -143,14 +143,10 @@ import Dropdown from "primevue/dropdown";
 import api from "@/api/client";
 import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore } from "@/stores/workflow";
+import type { ValidationError } from "../composables/useNodeValidation";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Param = any;
-
-interface ValidationError {
-  param_name: string;
-  message: string;
-}
 
 interface ModelSelectItem {
   artifact_uid: string;

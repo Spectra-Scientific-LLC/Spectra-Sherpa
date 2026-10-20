@@ -1,6 +1,69 @@
 import { readFileSync } from "node:fs";
 import { test, expect, type APIRequestContext } from "@playwright/test";
-import { createDataset, instantiate, runWorkflow } from "./journeys";
+import { createDataset, EXECUTION_TIMEOUT_MS, instantiate, runWorkflow } from "./journeys";
+
+// This is a transport-controlled UI race, not qualification of NIST data or
+// synthesis science. No provider is contacted and no synthetic file is claimed.
+test("editing a synthesis draft keeps its accepted save single-flight and acknowledges the captured name", async ({
+  page, request,
+}) => {
+  const dataset = await createDataset(request, "Iris synthesis destination", { source: "sklearn", name: "iris" });
+  const source = "nist_quant_ir";
+  const component = {
+    id: "original-ui-fixture", name: "Original UI fixture", source,
+    formula: "fixture", variants: [{ resolution_cm1: 1, apodization: "Blackman-Harris" }],
+  };
+  const submitted: Array<{ name: string; project_id: number }> = [];
+  let release!: () => void, received!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const intercepted = new Promise<void>(resolve => { received = resolve; });
+  let refreshes = 0;
+  page.on("request", req => {
+    if (submitted.length && req.url().includes("/datasets/available")) refreshes++;
+  });
+  await page.route("**/api/v1/synthesis/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    if (path.endsWith("/sources")) return route.fulfill({ json: { sources: [{ id: source, label: "Fixture source", available: true }] } });
+    if (path.endsWith("/search")) return route.fulfill({ json: { components: [component] } });
+    if (path.endsWith("/spectrum")) return route.fulfill({ json: {
+      component_id: component.id, name: component.name, source,
+      wavenumber: [1000, 1001, 1002, 1003, 1004], intensity: [0, 0.1, 0.3, 0.1, 0],
+      y_quantity: "absorption_coefficient", y_units: "fixture", resolution_cm1: 1,
+    } });
+    if (path.endsWith("/save")) {
+      submitted.push(route.request().postDataJSON());
+      received();
+      await held;
+      return route.fulfill({ json: { experiment_id: dataset.experiment.id } });
+    }
+    throw new Error(`Unexpected provider operation in UI-only test: ${path}`);
+  });
+  try {
+    await page.goto(`/data?project=${dataset.project.id}&tab=synthesis`);
+    const panel = page.locator(".synthesis-panel");
+    await panel.getByRole("button", { name: "Add", exact: true }).click();
+    await panel.locator('[data-action="synthesis_load_spectrum"]').click();
+    const save = panel.locator('[data-action="synthesis_save_dataset"]');
+    await expect(save).toBeEnabled();
+    await panel.getByLabel("Dataset name", { exact: true }).fill("Captured synthesis");
+    await save.click();
+    await intercepted;
+    await panel.getByLabel("Dataset name", { exact: true }).fill("Next draft");
+    await expect(save).toBeDisabled();
+    expect(submitted).toHaveLength(1);
+    expect(submitted[0]).toMatchObject({ name: "Captured synthesis", project_id: dataset.project.id });
+    release();
+    await expect(page.getByText("Synthetic dataset saved", { exact: true })).toBeVisible();
+    await expect(page.getByText(`Saved "Captured synthesis" in project ${dataset.project.id}`, { exact: true })).toBeVisible();
+    await expect(panel.getByLabel("Dataset name", { exact: true })).toHaveValue("Next draft");
+    await expect(save).toBeEnabled();
+    await expect.poll(() => refreshes).toBeGreaterThan(0);
+    expect(submitted).toHaveLength(1);
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
+});
 
 async function addMixture(request: APIRequestContext, project: { id: number; name: string }) {
   const created = await request.post("/api/v1/experiments", {
@@ -232,4 +295,76 @@ test("switching sheets during retained Data View loading cannot open the previou
   await expect(dialog.locator("tbody tr")).toHaveCount(22);
   await expect(dialog).toContainText("mixture-ir-01");
   await expect(dialog).not.toContainText("No data to display");
+});
+
+test("leaving an accepted run preserves its successful sheet status without painting the new sheet", async ({
+  page, request,
+}, testInfo) => {
+  const iris = await createDataset(request, "Iris accepted run scope", {
+    source: "sklearn", name: "iris",
+  });
+  const mixture = await addMixture(request, iris.project);
+  const first = await instantiate(request, iris, "pca");
+  const second = await instantiate(request, mixture, "pca");
+  let release!: () => void, received!: () => void, completed!: () => void;
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const intercepted = new Promise<void>(resolve => { received = resolve; });
+  const computed = new Promise<void>(resolve => { completed = resolve; });
+  let result: {
+    status: string;
+    run_id: number;
+    diagnostics?: Record<string, { worker_execution?: unknown }>;
+  } | undefined;
+  let executionMs = 0;
+  let executionRequests = 0;
+  const pattern = `**/api/v1/workflows/${first.id}/execute`;
+  await page.route(pattern, async route => {
+    executionRequests += 1;
+    const started = performance.now();
+    received();
+    const response = await route.fetch({ timeout: EXECUTION_TIMEOUT_MS });
+    expect(response.ok(), await response.text()).toBeTruthy();
+    result = await response.json();
+    executionMs = performance.now() - started;
+    completed();
+    await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await page.goto(`/workflow?workflow_id=${first.id}&project_id=${iris.project.id}`);
+    await page.getByRole("button", { name: /^Run(?:\s|$)/ }).first().click();
+    await intercepted;
+    const origin = page.locator(".sheet-tab").filter({ hasText: first.name });
+    const destination = page.locator(".sheet-tab").filter({ hasText: second.name });
+    await expect(origin.locator(".pi-spinner")).toBeVisible();
+    const switchStarted = performance.now();
+    await destination.click();
+    await expect(destination).toHaveClass(/active/);
+    await expect(page.locator(".canvas-container")).toHaveAttribute("aria-busy", "false");
+    const sheetSwitchMs = performance.now() - switchStarted;
+    await computed;
+    expect(result?.status).toBe("completed");
+    expect(result?.run_id).toBeGreaterThan(0);
+    release();
+    await expect(origin.locator(".status-icon.success")).toBeVisible();
+    await expect(origin.locator(".status-icon.error")).toHaveCount(0);
+    await expect(destination.locator(".status-icon")).toHaveCount(0);
+    await expect(destination).toHaveClass(/active/);
+    expect(executionRequests).toBe(1);
+    await testInfo.attach("execution-and-sheet-switch-timing", {
+      body: JSON.stringify({
+        executionMs,
+        sheetSwitchMs,
+        workers: Object.fromEntries(
+          Object.entries(result?.diagnostics ?? {})
+            .filter(([, value]) => value.worker_execution)
+            .map(([nodeId, value]) => [nodeId, value.worker_execution]),
+        ),
+      }, null, 2),
+      contentType: "application/json",
+    });
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: "wait" });
+  }
 });

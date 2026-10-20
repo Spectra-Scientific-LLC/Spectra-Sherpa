@@ -230,7 +230,7 @@
     <WorkspaceContext label="Workflow workspace context" layout="workflow">
       <WorkspaceContextItem label="Active Sheet" :value="activeSheetName" wrap />
       <WorkspaceContextItem label="Canvas" :value="canvasSummaryLabel" />
-      <WorkspaceContextItem label="Data Portfolio" :value="portfolioName" wrap>
+      <WorkspaceContextItem label="Dataset" :value="portfolioName" wrap>
         {{ portfolioSummary }}
       </WorkspaceContextItem>
       <WorkspaceContextItem label="Creation Time" :value="sheetCreationTime" wrap />
@@ -384,6 +384,7 @@ import { useExperimentStore } from "@/stores/experiment";
 import { useProjectStore } from "@/stores/project";
 import { useWorkbookStore } from "@/stores/workbook";
 import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest } from "@/composables/useScopedRequest";
 import { useWorkflowBuilderConfigStore } from "@/stores/workflowBuilderConfig";
 import { useClipboardStore, type ClipboardPayload } from "@/stores/clipboard";
 import WorkbookSheetTabs from "@/components/WorkbookSheetTabs.vue";
@@ -432,7 +433,7 @@ const toast = useToast();
 const { appConfig } = useAppConfig();
 const { items: navigationItems } = usePrimaryNavigation();
 const canOptimize = computed(() =>
-  (appConfig.value?.features as Record<string, unknown> | undefined)?.managedCampaigns === true
+  appConfig.value?.features.managedCampaigns === true
   && navigationItems.value.some(item => item.label === "Optimize"),
 );
 const route = useRoute();
@@ -1783,7 +1784,9 @@ const initializeWorkbook = async () => {
 };
 
 let workbookReadyForProjectSwitches = false;
-let projectWorkbookLoadGeneration = 0;
+const projectWorkbookLoads = useScopedRequest(
+  () => [authStore.user?.id, authStore.token, projectStore.currentProjectId],
+);
 
 watch(
   () => projectStore.currentProjectId,
@@ -1796,7 +1799,7 @@ watch(
       return;
     }
 
-    const loadGeneration = ++projectWorkbookLoadGeneration;
+    const request = projectWorkbookLoads.begin();
     clearPendingAutosave();
     clearPendingAutoExecute();
     resetDialogOpenedSheetUi();
@@ -1805,7 +1808,7 @@ watch(
     try {
       await workbookStore.loadSheets(projectId);
       if (
-        loadGeneration !== projectWorkbookLoadGeneration ||
+        !request.isCurrent() ||
         projectStore.currentProjectId !== projectId
       ) {
         return;
@@ -1813,8 +1816,10 @@ watch(
       try {
         await experimentStore.fetchExperiments(projectId);
       } catch {
+        if (!request.isCurrent()) return;
         console.warn("Failed to load experiments for selected workflow project");
       }
+      if (!request.isCurrent()) return;
       restoreWorkflowDraftSnapshot();
       restoreNodeOutputsForActiveSheet();
       toast.add({
@@ -1824,7 +1829,7 @@ watch(
         life: 3000,
       });
     } catch (err: unknown) {
-      if (loadGeneration !== projectWorkbookLoadGeneration) return;
+      if (!request.isCurrent()) return;
       const message = getErrorMessage(err, "Unable to load workflow sheets");
       console.error("[WorkflowBuilder] Project workbook load failed:", err);
       toast.add({

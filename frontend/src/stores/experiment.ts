@@ -5,6 +5,8 @@ import api from "@/api/client";
 import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import { activeProjectScope } from "@/stores/projectScopeRegistry";
 import { useAuthStore } from "@/stores/auth";
+import { useDataStore } from "@/stores/data";
+import { useProjectStore } from "@/stores/project";
 import { useScopedRequest, type ScopedRequestTicket } from "@/composables/useScopedRequest";
 import type {
   ExperimentDetail,
@@ -27,17 +29,30 @@ export const useExperimentStore = defineStore("experiment", () => {
   const loading = ref(false);
   const error = ref<string | null>(null);
   const selectedExperimentId = ref<number | null>(null);
-  const identity = () => [useAuthStore().user?.id, useAuthStore().token, activeProjectScope.value, selectedExperimentId.value];
-  const listScope = useScopedRequest(identity, () => { loading.value = false; });
+  const accountIdentity = () => [useAuthStore().user?.id, useAuthStore().token];
+  const identity = () => [...accountIdentity(), activeProjectScope.value, selectedExperimentId.value];
+  const listScope = useScopedRequest(
+    () => [...accountIdentity(), activeProjectScope.value],
+    () => { loading.value = false; },
+  );
   const selectionScope = useScopedRequest(identity, () => { loading.value = false; });
   const detailScope = useScopedRequest(identity);
   const filesScope = useScopedRequest(identity);
   const versionsScope = useScopedRequest(identity);
   const mutationScope = useScopedRequest(identity);
-  let mutationTicket: ScopedRequestTicket | undefined;
+  const accountMutationScope = useScopedRequest(accountIdentity);
   function captureMutationScope(): ScopedRequestTicket {
-    if (!mutationTicket?.isCurrent()) mutationTicket = mutationScope.begin();
-    return mutationTicket;
+    return mutationScope.capture();
+  }
+
+  async function refreshWrittenInventories(account: ScopedRequestTicket): Promise<void> {
+    if (!account.isCurrent()) return;
+    await Promise.allSettled([
+      fetchExperiments(activeProjectScope.value),
+      useDataStore().fetchExperiments(),
+      useDataStore().fetchCatalog(),
+      useProjectStore().fetchProjects(),
+    ]);
   }
 
   const currentExperimentId = computed(() => currentExperiment.value?.id ?? null);
@@ -119,10 +134,11 @@ export const useExperimentStore = defineStore("experiment", () => {
 
   const createExperiment = async (payload: ExperimentCreatePayload) => {
     const request = captureMutationScope();
+    const account = accountMutationScope.capture();
     loading.value = true;
     try {
       const response = await api.post<ExperimentDetail>("/experiments", payload);
-      if (request.isCurrent()) experiments.value = [response.data, ...experiments.value];
+      await refreshWrittenInventories(account);
       return response.data;
     } catch (err: any) {
       if (request.isCurrent()) error.value = err?.message || "Failed to create experiment";
@@ -137,17 +153,15 @@ export const useExperimentStore = defineStore("experiment", () => {
     payload: Partial<ExperimentCreatePayload>
   ) => {
     const request = captureMutationScope();
+    const account = accountMutationScope.capture();
     loading.value = true;
     try {
       const response = await api.put<ExperimentDetail>(
         `/experiments/${experimentId}`,
         payload
       );
-      if (!request.isCurrent()) return response.data;
-      currentExperiment.value = response.data;
-      experiments.value = experiments.value.map((item) =>
-        item.id === experimentId ? response.data : item
-      );
+      if (request.isCurrent() && currentExperimentId.value === experimentId) currentExperiment.value = response.data;
+      await refreshWrittenInventories(account);
       return response.data;
     } finally {
       if (request.isCurrent()) loading.value = false;
@@ -156,11 +170,12 @@ export const useExperimentStore = defineStore("experiment", () => {
 
   const deleteExperiment = async (experimentId: number) => {
     const request = captureMutationScope();
+    const account = accountMutationScope.capture();
     loading.value = true;
     try {
       await api.delete(`/experiments/${experimentId}`);
+      await refreshWrittenInventories(account);
       if (!request.isCurrent()) return;
-      experiments.value = experiments.value.filter((exp) => exp.id !== experimentId);
       if (currentExperiment.value?.id === experimentId) {
         currentExperiment.value = null;
         files.value = [];
@@ -177,12 +192,14 @@ export const useExperimentStore = defineStore("experiment", () => {
     stage: string
   ) => {
     const request = captureMutationScope();
+    const account = accountMutationScope.capture();
     const form = new FormData();
     form.append("file", file);
     form.append("stage", stage);
     await api.post(`/experiments/${experimentId}/files`, form, {
       headers: { "Content-Type": "multipart/form-data" },
     });
+    await refreshWrittenInventories(account);
     if (request.isCurrent()) await fetchFiles(experimentId);
   };
 
@@ -203,9 +220,11 @@ export const useExperimentStore = defineStore("experiment", () => {
 
   const restoreVersion = async (experimentId: number, versionName: string) => {
     const request = captureMutationScope();
+    const account = accountMutationScope.capture();
     await api.post(`/experiments/${experimentId}/versions/${versionName}/restore`, null, {
       params: { overwrite: true },
     });
+    await refreshWrittenInventories(account);
     if (request.isCurrent()) await fetchFiles(experimentId);
   };
 

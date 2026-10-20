@@ -3,7 +3,10 @@
 Asynchronous work belongs to the user session, project and object that started
 it. Changing selection must not let an older response restore another dataset,
 sheet or run. The frontend uses the existing Pinia stores and one request
-lifecycle helper, `frontend/src/composables/useScopedRequest.ts`.
+lifecycle primitive, `frontend/src/extension-contract/requests-v1.ts`.
+`composables/useScopedRequest.ts` preserves the host import path by re-exporting
+that implementation. Independently built Pro views import the versioned module;
+it depends only on Vue, with no host stores, permissions or private routes.
 
 ## Request ownership
 
@@ -47,6 +50,18 @@ does not undo a server write already accepted. It does prevent stale UI effects
 and any subsequent writes that have not started. Never reread the current
 project inside a multi-step write and silently move its remaining steps there.
 
+Use `abortOnInvalidate: false` for accepted mutations. A store-owned pending
+write stays single-flight until acknowledgment and required inventory refresh
+finish; editing a form cannot re-enable a duplicate save. Use `capture()` for
+concurrent mutations sharing the same owner, and `begin()` for latest-wins
+reads. A protocol request ID correlates websocket messages; it is not a
+replacement for session/project ownership.
+
+Refresh inventories after acknowledged writes using the current permitted
+inventory scope. Do not condition that refresh on the old dataset still being
+selected, and do not reselect the old dataset. Unknown write acknowledgment
+requires an explicit warning before retry, not an automatic duplicate write.
+
 ## Component boundaries
 
 Data orchestration lives in `views/data/composables/`: dataset navigation,
@@ -86,3 +101,17 @@ table, plot, persistence and export journeys.
 For an affected operation, verify both the old response and the new selection:
 the old response must do nothing, and the new selection must remain usable.
 Keep existing scientific assertions unchanged when reorganizing orchestration.
+
+## Remaining extraction checkpoints
+
+The request helper does not make every component small. Synthesis generation
+controls now form a display-only section; the parent retains acquisition and
+save orchestration. DataContentsPanel and DataContent still have substantial
+layout/wiring, and migration of older request lanes is tracked separately.
+Do not claim that moving a helper completes their decomposition.
+
+Before the next change to an unmigrated pipe, extract its coherent state/action
+interface and add its delayed-response test in that same PR. Before 0.6.4
+release-prep review, inventory outstanding lanes and component responsibilities
+in the release checklist; classify remaining debt explicitly rather than
+silently advancing a size baseline.

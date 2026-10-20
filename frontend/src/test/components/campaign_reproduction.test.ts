@@ -1,6 +1,7 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import CampaignReproduction from '@/views/project/CampaignReproduction.vue';
+import { createPinia, setActivePinia } from "pinia";
 
 const post = vi.hoisted(() => vi.fn());
 vi.mock('@/api/client', () => ({ default: { post } }));
@@ -14,7 +15,7 @@ async function selectInputs(wrapper: ReturnType<typeof mount>) {
 }
 
 describe('CampaignReproduction', () => {
-  beforeEach(() => { post.mockReset(); });
+  beforeEach(() => { setActivePinia(createPinia()); post.mockReset(); });
   it('submits the selected local inputs and separates identity from scientific reproduction', async () => {
     post.mockResolvedValue({ data: {
       package_sha256: 'package-digest',

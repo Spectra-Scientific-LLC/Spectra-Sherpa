@@ -165,7 +165,7 @@
               icon="pi pi-times"
               class="p-button-text p-button-danger"
               aria-label="Remove component"
-              @click="mixture.components.splice(index, 1)"
+              @click="mixture.components?.splice(index, 1)"
             />
           </div>
           <Button
@@ -360,7 +360,7 @@
           </div>
         </div>
         <div class="match-summary">
-          <Tag :value="`${draft.matching.matches.length} retained matches`" severity="info" />
+          <Tag :value="`${draft.matching.matches?.length ?? 0} retained matches`" severity="info" />
           <span
             >Saved matches take precedence; unmatched measured rows use planned plate order.</span
           >
@@ -628,7 +628,7 @@ function addSample(): void {
 function removeSample(sample: PlannedSample): void {
   draft.value.samples = draft.value.samples.filter((item) => item !== sample);
   for (const mixture of draft.value.mixtures)
-    mixture.components = mixture.components.filter((item) => item.sample_id !== sample.sample_id);
+    mixture.components = (mixture.components ?? []).filter((item) => item.sample_id !== sample.sample_id);
 }
 function addMixture(): void {
   const mixture_id = nextId(
@@ -648,7 +648,7 @@ function removeMixture(mixture: PlannedMixture): void {
 }
 function addComponent(mixture: PlannedMixture): void {
   if (draft.value.samples[0])
-    mixture.components.push({
+    (mixture.components ??= []).push({
       sample_id: draft.value.samples[0].sample_id,
       amount: 1,
       unit: mixture.basis === "mass" ? "g" : "mL",
@@ -675,7 +675,7 @@ function removeFactor(factor: PlannedFactor): void {
   );
 }
 function levelsText(factor: PlannedFactor): string {
-  return factor.levels.map(String).join(", ");
+  return (factor.levels ?? []).map(String).join(", ");
 }
 function setLevels(factor: PlannedFactor, value: string | undefined): void {
   factor.levels = String(value ?? "")
@@ -689,7 +689,7 @@ function addOrderStep(): void {
   draft.value.acquisition_order.push({
     sequence_order: draft.value.acquisition_order.length,
     factor_id: factor.factor_id,
-    level_value: String(factor.levels[0] ?? ""),
+    level_value: String(factor.levels?.[0] ?? ""),
     path: null,
     batch: null,
     file_count: null,

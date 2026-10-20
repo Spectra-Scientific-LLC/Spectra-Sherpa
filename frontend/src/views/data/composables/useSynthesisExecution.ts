@@ -1,4 +1,5 @@
 import { ref } from "vue";
+import { isAxiosError } from "axios";
 import api from "@/api/client";
 import { useScopedRequest, type ScopeIdentity } from "@/composables/useScopedRequest";
 import type { SynthesisResult } from "@/stores/synthesis";
@@ -8,20 +9,23 @@ export interface SynthesisSaveItem {
   payload: Record<string, unknown>;
 }
 export interface SynthesisSaveOutcome {
-  result: SynthesisResult;
+  status: "complete" | "partial" | "refused" | "unknown";
+  result?: SynthesisResult;
   file_path?: string;
   count: number;
+  requested: number;
+  error?: unknown;
 }
-type SynthesisSaveResponse = Pick<SynthesisSaveOutcome, "result" | "file_path"> & {
+type SynthesisSaveResponse = {
+  result: SynthesisResult;
+  file_path?: string;
   experiment_id: number;
 };
 
 /** Transport orchestration only. Payload construction and spectra remain with their authorities. */
-export function useSynthesisExecution(identity: () => readonly ScopeIdentity[]) {
+export function useSynthesisPreview(identity: () => readonly ScopeIdentity[]) {
   const previewing = ref(false);
-  const saving = ref(false);
   const previews = useScopedRequest(identity, () => { previewing.value = false; });
-  const saves = useScopedRequest(identity, () => { saving.value = false; });
 
   async function preview(payload: Record<string, unknown>): Promise<SynthesisResult | undefined> {
     const snapshot = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
@@ -37,31 +41,47 @@ export function useSynthesisExecution(identity: () => readonly ScopeIdentity[]) 
       if (ticket.isCurrent()) previewing.value = false;
     }
   }
+  return { preview, previewing, invalidatePreview: previews.invalidate };
+}
 
-  async function save(projectId: number | null, items: readonly SynthesisSaveItem[]): Promise<SynthesisSaveOutcome | undefined> {
+/** Store-owned writes survive form edits and component unmounts. */
+export function useSynthesisSave(identity: () => readonly ScopeIdentity[]) {
+  const saving = ref(false);
+  const saves = useScopedRequest(identity, undefined, { abortOnInvalidate: false });
+  async function save(projectId: number | null, items: readonly SynthesisSaveItem[]): Promise<SynthesisSaveOutcome> {
+    if (saving.value) throw new Error("A synthesis save is already in progress.");
+    if (!items.length) throw new Error("There are no synthetic datasets to save.");
     // Freeze the entire bundle, including its destination, before any request.
     // Accepted writes remain in that project; invalidation prevents later writes.
     const snapshot = JSON.parse(JSON.stringify(items)) as SynthesisSaveItem[];
     const ticket = saves.begin();
     saving.value = true;
     let experimentId: number | null = null;
-    let outcome: SynthesisSaveOutcome | undefined;
+    const outcome: SynthesisSaveOutcome = { status: "partial", count: 0, requested: snapshot.length };
     try {
       for (const item of snapshot) {
-        if (!ticket.isCurrent()) return;
+        if (!ticket.isCurrent()) return outcome;
         const response: { data: SynthesisSaveResponse } = await api.post<SynthesisSaveResponse>("/synthesis/save", {
           ...item.payload, name: item.name, experiment_id: experimentId, project_id: projectId,
         }, { signal: ticket.signal });
-        if (!ticket.isCurrent()) return;
         experimentId = response.data.experiment_id;
-        outcome = { result: response.data.result, file_path: response.data.file_path, count: snapshot.length };
+        outcome.result = response.data.result;
+        outcome.file_path = response.data.file_path;
+        outcome.count += 1;
       }
+      outcome.status = "complete";
       return outcome;
     } catch (error) {
-      if (ticket.isCurrent()) throw error;
+      // Admission refusals are definitive; unlike a dropped acknowledgement,
+      // they must retain the server's remedy and never imply a possible write.
+      if (isAxiosError(error) && [400, 401, 403, 404, 409, 422].includes(error.response?.status ?? 0)) {
+        return { ...outcome, status: "refused", error };
+      }
+      // A dropped acknowledgement cannot prove the last file was not saved.
+      return { ...outcome, status: "unknown", error };
     } finally {
-      if (ticket.isCurrent()) saving.value = false;
+      saving.value = false;
     }
   }
-  return { preview, save, previewing, saving, invalidatePreview: previews.invalidate };
+  return { save, saving };
 }

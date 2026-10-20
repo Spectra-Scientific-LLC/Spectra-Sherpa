@@ -145,7 +145,10 @@ async def test_affine_reference_cancellation_and_effective_rank(mode):
     ds = SherpaDataset(
         X=x,
         target=y,
-        sample_axis=SampleAxis(labels=[f"c{i}" for i in range(32)]),
+        sample_axis=SampleAxis(
+            labels=[f"c{i}" for i in range(32)],
+            sample_table={"sample_id": [f"c{i}" for i in range(32)]},
+        ),
         feature_axis=SpectralAxis(values=np.arange(6.0), units="nm"),
     )
     output = (await FittedPLSV2Node("pls", {"n_components": 3, "scale": False}).execute(input_data=ds)).outputs

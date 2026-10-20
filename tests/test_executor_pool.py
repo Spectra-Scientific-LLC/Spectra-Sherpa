@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
+from contextvars import Context
 from dataclasses import FrozenInstanceError
 from unittest.mock import MagicMock
 
@@ -474,3 +475,360 @@ async def test_consecutive_tasks_do_not_reuse_user_state():
         assert first[2] != second[2]
     finally:
         pool.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_workflow_worker_reuses_bootstrap_only_inside_one_execution():
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(1)
+    try:
+        async with pool.workflow():
+            first = await pool.run(_worker_local_state, timeout=30)
+            second = await pool.run(_worker_local_state, timeout=30)
+            assert first[0] == second[0]
+            assert first[1] is None
+            assert second[1] == "private result from this task"
+        assert not pool._active
+        async with pool.workflow():
+            other = await pool.run(_worker_local_state, timeout=30)
+        assert other[0] != first[0]
+        assert other[1] is None
+        assert not pool._active
+    finally:
+        pool.shutdown()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("single_node", [False, True])
+async def test_executor_owns_one_worker_for_dependency_chain_and_disposes_on_return(single_node):
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(1)
+    try:
+        executor = DAGExecutor(process_pool=pool)
+        _make_snv_workflow(executor)
+        executor.add_node(WorkflowNode("snv2", "preprocess.normalize", {"method": "snv"}))
+        executor.add_edge(WorkflowEdge("snv", "snv2", from_output="default", to_input="default"))
+        result = await (executor.execute_node("snv2") if single_node else executor.execute())
+        np.testing.assert_allclose(result["snv"]["default"].X, result["snv2"]["default"].X, atol=1e-14)
+        first = executor.diagnostics["snv"]["worker_execution"]
+        second = executor.diagnostics["snv2"]["worker_execution"]
+        assert first["worker_pid"] == second["worker_pid"]
+        assert first["execution_id"] != second["execution_id"]
+        assert first["lifetime"] == second["lifetime"] == "workflow"
+        assert first["dispatch_seconds"] >= first["execution_seconds"]
+        assert not pool._active
+        executor.invalidate_node("snv")
+        await executor.execute_node("snv2")
+        assert executor.diagnostics["snv"]["worker_execution"]["worker_pid"] != first["worker_pid"]
+        assert not pool._active
+    finally:
+        pool.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_workflow_worker_rechecks_each_nodes_capabilities_and_disposes_on_refusal():
+    import os
+
+    from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(1)
+    ds = SherpaDataset(X=np.random.default_rng(42).normal(size=(10, 5)))
+    context = WorkerExecutionContext(
+        execution_id="authorized-node", runtime=ExecutionRuntime(), capabilities=("read_dataset",)
+    )
+    try:
+        async with pool.workflow():
+            await pool.run(
+                _run_node_in_worker,
+                "preprocess.normalize",
+                "first",
+                {"method": "snv"},
+                (),
+                {"default": ds},
+                context,
+                timeout=30,
+            )
+            with pytest.raises(PermissionError, match="worker execution context"):
+                await pool.run(
+                    _run_node_in_worker,
+                    "preprocess.normalize",
+                    "second",
+                    {"method": "snv"},
+                    (),
+                    {"default": ds},
+                    timeout=30,
+                )
+            assert not pool._active
+            with pytest.raises(RuntimeError, match="shut down"):
+                await pool.run(os.getpid, timeout=30)
+        assert await pool.run(os.getpid, timeout=30) != os.getpid()
+    finally:
+        pool.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_cancelling_workflow_worker_does_not_cancel_other_workflow(tmp_path):
+    import asyncio
+    import os
+
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(2)
+    started, finished = tmp_path / "started", tmp_path / "finished"
+
+    async def slow():
+        async with pool.workflow():
+            await pool.run(_slow_worker, str(started), str(finished), timeout=60)
+
+    async def other():
+        async with pool.workflow():
+            return await pool.run(os.getpid, timeout=30)
+
+    task = asyncio.create_task(slow())
+    try:
+        async with asyncio.timeout(30):
+            while not started.exists():
+                await asyncio.sleep(0.02)
+        surviving = asyncio.create_task(other())
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert await surviving != os.getpid()
+        assert not finished.exists()
+        assert not pool._active
+    finally:
+        pool.shutdown()
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_workflow_timeout_includes_capacity_wait_without_releasing_another_lease():
+    import asyncio
+    import os
+
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(1)
+    try:
+        async with pool.workflow():
+            original_pid = await pool.run(os.getpid, timeout=30)
+
+            async def queued():
+                async with pool.workflow():
+                    await pool.run(os.getpid, timeout=0.05)
+
+            with pytest.raises(TimeoutError):
+                await asyncio.create_task(queued(), context=Context())
+            assert pool._slots.locked()
+            assert await pool.run(os.getpid, timeout=30) == original_pid
+        assert not pool._active
+        assert not pool._slots.locked()
+    finally:
+        pool.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_closed_workflow_cannot_start_a_previously_queued_worker():
+    import asyncio
+    import os
+
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(1)
+    ready, release = asyncio.Event(), asyncio.Event()
+
+    async def holder():
+        async with pool.workflow():
+            await pool.run(os.getpid, timeout=30)
+            ready.set()
+            await release.wait()
+
+    holding = asyncio.create_task(holder())
+    queued = None
+    try:
+        await asyncio.wait_for(ready.wait(), 30)
+        async with pool.workflow():
+            queued = asyncio.create_task(pool.run(os.getpid, timeout=30))
+            await asyncio.sleep(0)
+            assert not queued.done()
+        release.set()
+        await holding
+        with pytest.raises(RuntimeError, match="shut down"):
+            await queued
+        assert not pool._active
+        assert not pool._slots.locked()
+        assert await pool.run(os.getpid, timeout=30) != os.getpid()
+    finally:
+        release.set()
+        for task in (holding, queued):
+            if task is not None and not task.done():
+                task.cancel()
+        await asyncio.gather(*(t for t in (holding, queued) if t is not None), return_exceptions=True)
+        pool.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_nested_execution_releases_outer_lease_and_resumes_with_fresh_state():
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(1)
+    try:
+        async with pool.workflow():
+            outer = await pool.run(_worker_local_state, timeout=30)
+            executor = DAGExecutor(process_pool=pool)
+            _make_snv_workflow(executor)
+            await executor.execute_node("snv")
+            inner_pid = executor.diagnostics["snv"]["worker_execution"]["worker_pid"]
+            assert not pool._active
+            resumed = await pool.run(_worker_local_state, timeout=30)
+            assert len({outer[0], inner_pid, resumed[0]}) == 3
+            assert resumed[1] is None
+        assert not pool._active
+        assert not pool._slots.locked()
+    finally:
+        pool.shutdown()
+
+
+@pytest.mark.asyncio
+async def test_scope_exit_reaps_inflight_child_and_refuses_nested_dispatch(tmp_path):
+    import asyncio
+
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(1)
+    started, finished = tmp_path / "started", tmp_path / "finished"
+    task = None
+    try:
+        async with pool.workflow():
+            task = asyncio.create_task(pool.run(_slow_worker, str(started), str(finished), timeout=60))
+            async with asyncio.timeout(30):
+                while not started.exists():
+                    await asyncio.sleep(0.02)
+            with pytest.raises(RuntimeError, match="active node dispatch"):
+                async with pool.workflow():
+                    pytest.fail("Nested scope must not discard an active node")
+        with pytest.raises(RuntimeError, match="shut down"):
+            await task
+        assert not finished.exists()
+        assert not pool._active
+        assert not pool._slots.locked()
+    finally:
+        if task is not None and not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        pool.shutdown()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["crash", "serialization", "timeout"])
+async def test_workflow_worker_failure_reaps_and_releases_capacity(tmp_path, failure):
+    import os
+
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(1)
+    try:
+        async with pool.workflow():
+            # Ensure a running child, not a cold-start timeout.
+            await pool.run(os.getpid, timeout=30)
+            if failure == "crash":
+                with pytest.raises(RuntimeError, match="exited without"):
+                    await pool.run(_crash_worker, timeout=30)
+            elif failure == "serialization":
+                with pytest.raises((AttributeError, TypeError), match="pickle|local object"):
+                    await pool.run(lambda: None, timeout=30)
+            else:
+                with pytest.raises(TimeoutError):
+                    await pool.run(_slow_worker, str(tmp_path / "started"), str(tmp_path / "finished"), timeout=1)
+                assert (tmp_path / "started").exists()
+                assert not (tmp_path / "finished").exists()
+            assert not pool._active
+            assert not pool._slots.locked()
+        assert await pool.run(os.getpid, timeout=30) != os.getpid()
+    finally:
+        pool.shutdown()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["send", "poll", "recv"])
+async def test_workflow_pipe_failure_is_normalized_and_releases_capacity(monkeypatch, operation):
+    import os
+
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(1)
+    try:
+        async with pool.workflow():
+            await pool.run(os.getpid, timeout=30)
+            worker = pool._workflow.get()
+            directory = worker._directory.name
+
+            def broken_pipe(*args, **kwargs):
+                raise BrokenPipeError("The pipe has been ended")
+
+            # Windows can report a dead peer from PeekNamedPipe (poll), not
+            # only recv. Force each transport boundary on every test platform.
+            monkeypatch.setattr(worker._control, operation, broken_pipe)
+            with pytest.raises(RuntimeError, match="exited without") as caught:
+                await pool.run(os.getpid, timeout=30)
+            assert isinstance(caught.value.__cause__, BrokenPipeError)
+            assert not os.path.exists(directory)
+            assert not pool._active
+            assert not pool._slots.locked()
+            with pytest.raises(RuntimeError, match="shut down"):
+                await pool.run(os.getpid, timeout=30)
+        assert await pool.run(os.getpid, timeout=30) != os.getpid()
+    finally:
+        pool.shutdown()
+
+
+def test_workflow_worker_cannot_outlive_abrupt_backend_exit(tmp_path):
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    import spectra_sherpa
+
+    script = tmp_path / "owned_workflow.py"
+    script.write_text(
+        """
+import asyncio, os, time
+from pathlib import Path
+from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+def slow_analysis():
+    Path("started").write_text("ready")
+    time.sleep(45)
+    Path("finished").write_text("unexpected")
+
+async def main():
+    pool = IsolatedWorkerPool(1)
+    async with pool.workflow():
+        task = asyncio.create_task(pool.run(slow_analysis, timeout=60))
+        async with asyncio.timeout(20):
+            while not Path("started").exists():
+                await asyncio.sleep(.02)
+        print("worker-started", flush=True)
+        os._exit(7)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+""",
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    source = str(Path(spectra_sherpa.__file__).resolve().parent.parent)
+    extras = [str(Path(item).resolve()) for item in env.get("PYTHONPATH", "").split(os.pathsep) if item]
+    env["PYTHONPATH"] = os.pathsep.join([source, *extras])
+    result = subprocess.run(
+        [sys.executable, str(script)], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30
+    )
+    assert result.returncode == 7
+    assert result.stdout.strip() == "worker-started"
+    assert not (tmp_path / "finished").exists()

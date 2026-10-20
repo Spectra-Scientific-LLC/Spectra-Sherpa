@@ -795,7 +795,7 @@
       <div v-if="selectedNode" class="inspector-output">
         <span class="section-label">Output</span>
         <div v-if="!nodeOutput" class="no-output">
-          <p>Execute workflow to see results</p>
+          <p>Run workflow to see results</p>
         </div>
         <div v-else class="output-content">
           <div v-if="presentationOptions.length > 1" class="field">

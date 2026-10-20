@@ -4,7 +4,9 @@ import api from "@/api/client";
 import type { components } from "@/types/api/v1";
 import { folderWatch } from "@/api/adapters/deploy";
 import { runSummary } from "@/api/adapters/runs";
-import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
+import { activeProjectScope, registerProjectScopeReset } from "@/stores/projectScopeRegistry";
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest } from "@/composables/useScopedRequest";
 import type { FolderWatch, ExecutionRunSummary, DeployApplication } from "@/types";
 
 type CreateWatchPayload = components["schemas"]["FolderWatchCreate"];
@@ -19,16 +21,31 @@ export const useDeployStore = defineStore("deploy", () => {
   const applicationsLoading = ref(false);
   const watchesError = ref("");
   const runsError = ref("");
-  let applicationRequest = 0;
-  let watchesRequest = 0;
-  let runsRequest = 0;
-  let scopeGeneration = 0;
+  const account = () => [useAuthStore().user?.id, useAuthStore().token] as const;
+  const identity = () => [...account(), activeProjectScope.value];
+  const applicationRequests = useScopedRequest(identity, () => {
+    applications.value = [];
+    applicationsLoading.value = false;
+  });
+  const watchesRequests = useScopedRequest(identity, () => {
+    watchesProject = undefined;
+    watches.value = [];
+    watchesError.value = "";
+    loading.value = false;
+  });
+  const runsRequests = useScopedRequest(identity, () => {
+    deployRuns.value = [];
+    runsError.value = "";
+    runsLoading.value = false;
+  });
+  const mutations = useScopedRequest(account, undefined, { abortOnInvalidate: false });
+  let watchesProject: number | null | undefined;
 
   function resetProjectScope(): void {
-    scopeGeneration++;
-    applicationRequest++;
-    watchesRequest++;
-    runsRequest++;
+    applicationRequests.invalidate();
+    watchesRequests.invalidate();
+    runsRequests.invalidate();
+    watchesProject = undefined;
     watchesError.value = "";
     runsError.value = "";
     watches.value = [];
@@ -41,7 +58,7 @@ export const useDeployStore = defineStore("deploy", () => {
 
   /** Load the one releaseable-application projection used by Deploy. */
   async function fetchApplications(projectId: number): Promise<void> {
-    const request = ++applicationRequest;
+    const request = applicationRequests.begin();
     applicationsLoading.value = true;
     try {
       // Newer OSS servers expose a durable release handle.  Keep the paired
@@ -50,8 +67,9 @@ export const useDeployStore = defineStore("deploy", () => {
       try {
         const response = await api.get<Array<Record<string, unknown>>>("/deploy/applications", {
           params: { project_id: projectId },
+          signal: request.signal,
         });
-        if (request !== applicationRequest) return;
+        if (!request.isCurrent()) return;
         if (Array.isArray(response.data)) {
           applications.value = response.data
             .filter((item) => item.state === undefined || item.state === "released")
@@ -80,18 +98,21 @@ export const useDeployStore = defineStore("deploy", () => {
           return;
         }
       } catch (error: unknown) {
+        if (!request.isCurrent()) return;
         const status = (error as { response?: { status?: number } })?.response?.status;
         if (status !== 404) throw error;
       }
       const [models, portable] = await Promise.all([
         api.get<Array<Record<string, unknown>>>("/models", {
           params: { project_id: projectId, deploy_ready: true, limit: 1000 },
+          signal: request.signal,
         }),
         api.get<Array<Record<string, unknown>>>("/deploy/canonical-targets", {
           params: { project_id: projectId },
+          signal: request.signal,
         }),
       ]);
-      if (request !== applicationRequest) return;
+      if (!request.isCurrent()) return;
       const savedRuns: DeployApplication[] = models.data
         .filter((model) => typeof model.artifact_uid === "string" && model.workflow_id != null)
         .map((model) => ({
@@ -130,69 +151,63 @@ export const useDeployStore = defineStore("deploy", () => {
         (application) => application.deploy_ready,
       );
     } catch (error) {
-      if (request === applicationRequest) {
+      if (request.isCurrent()) {
         applications.value = [];
         throw error;
       }
     } finally {
-      if (request === applicationRequest) applicationsLoading.value = false;
+      if (request.isCurrent()) applicationsLoading.value = false;
     }
   }
   registerProjectScopeReset(resetProjectScope);
 
   async function fetchWatches(projectId?: number): Promise<void> {
-    const request = ++watchesRequest;
+    watchesProject = projectId ?? null;
+    const request = watchesRequests.begin();
     loading.value = true;
     try {
       const response = await api.get<components["schemas"]["FolderWatchOut"][]>("/deploy/watches", {
         params: projectId == null ? {} : { project_id: projectId },
+        signal: request.signal,
       });
-      if (request !== watchesRequest) return;
+      if (!request.isCurrent()) return;
       watches.value = response.data.map(folderWatch);
       watchesError.value = "";
     } catch (error) {
-      if (request === watchesRequest) watchesError.value = "Folder watches could not be loaded.";
+      if (request.isCurrent()) watchesError.value = "Folder watches could not be loaded.";
     } finally {
-      if (request === watchesRequest) loading.value = false;
+      if (request.isCurrent()) loading.value = false;
     }
   }
 
   async function createWatch(payload: CreateWatchPayload): Promise<FolderWatch> {
-    const scope = scopeGeneration;
+    const request = mutations.capture();
     const response = await api.post<components["schemas"]["FolderWatchOut"]>("/deploy/watches", payload);
     const watch = folderWatch(response.data);
-    if (scope !== scopeGeneration) return watch;
-    watches.value = [watch, ...watches.value];
+    if (request.isCurrent() && watchesProject !== undefined) await fetchWatches(watchesProject ?? undefined);
     return watch;
   }
 
   async function updateWatch(watchId: number, payload: UpdateWatchPayload): Promise<FolderWatch> {
-    const scope = scopeGeneration;
+    const request = mutations.capture();
     const response = await api.patch<components["schemas"]["FolderWatchOut"]>(`/deploy/watches/${watchId}`, payload);
     const watch = folderWatch(response.data);
-    if (scope !== scopeGeneration) return watch;
-    const idx = watches.value.findIndex((w) => w.id === watchId);
-    if (idx !== -1) {
-      watches.value[idx] = watch;
-    }
+    if (request.isCurrent() && watchesProject !== undefined) await fetchWatches(watchesProject ?? undefined);
     return watch;
   }
 
   async function deleteWatch(watchId: number): Promise<void> {
+    const request = mutations.capture();
     await api.delete(`/deploy/watches/${watchId}`);
-    watches.value = watches.value.filter((w) => w.id !== watchId);
+    if (request.isCurrent() && watchesProject !== undefined) await fetchWatches(watchesProject ?? undefined);
   }
 
   async function toggleWatch(watchId: number, enable: boolean): Promise<FolderWatch> {
-    const scope = scopeGeneration;
+    const request = mutations.capture();
     const endpoint = enable ? "enable" : "disable";
     const response = await api.post<components["schemas"]["FolderWatchOut"]>(`/deploy/watches/${watchId}/${endpoint}`);
     const watch = folderWatch(response.data);
-    if (scope !== scopeGeneration) return watch;
-    const idx = watches.value.findIndex((w) => w.id === watchId);
-    if (idx !== -1) {
-      watches.value[idx] = watch;
-    }
+    if (request.isCurrent() && watchesProject !== undefined) await fetchWatches(watchesProject ?? undefined);
     return watch;
   }
 
@@ -201,21 +216,23 @@ export const useDeployStore = defineStore("deploy", () => {
     label?: string,
     projectId?: number,
   ): Promise<void> {
-    const request = ++runsRequest;
+    const request = runsRequests.begin();
     runsLoading.value = true;
     try {
       const params: Record<string, string | number> = {};
       if (projectId != null) params.project_id = projectId;
       if (sourceType) params.source_type = sourceType;
       if (label) params.label = label;
-      const response = await api.get<components["schemas"]["ExecutionRunList"]>("/deploy/runs", { params });
-      if (request !== runsRequest) return;
+      const response = await api.get<components["schemas"]["ExecutionRunList"]>("/deploy/runs", {
+        params, signal: request.signal,
+      });
+      if (!request.isCurrent()) return;
       deployRuns.value = response.data.runs.map(runSummary);
       runsError.value = "";
     } catch (error) {
-      if (request === runsRequest) runsError.value = "Prediction history could not be loaded.";
+      if (request.isCurrent()) runsError.value = "Prediction history could not be loaded.";
     } finally {
-      if (request === runsRequest) runsLoading.value = false;
+      if (request.isCurrent()) runsLoading.value = false;
     }
   }
 

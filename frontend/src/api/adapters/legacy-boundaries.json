@@ -2,21 +2,17 @@
   "scope": "Conservative inventory of handwritten interfaces in the five legacy transport/view-model boundary files. Includes UI models; not a claim that every interface is a transport schema or that all frontend boundaries have migrated. New interfaces in these files require explicit review; reduce this inventory as boundaries migrate.",
   "files": {
     "src/types/index.ts": [
-      "ExperimentDetail", "ExperimentFile", "VersionInfo", "SpectrumPayload", "SherpaDatasetDict",
-      "ReferenceValueDeclaration", "ReferenceValueEvidence", "AcquisitionPlan", "PlannedSample",
-      "MixtureComponent", "PlannedMixture", "PlannedFactor", "AcquisitionPlanWell", "AcquisitionOrderStep",
-      "AcquisitionMatch", "AcquisitionMatching", "MeasuredSampleTableEditor", "DatasetAnalysisReadinessReason",
+      "SpectrumPayload", "SherpaDatasetDict",
+      "ReferenceDeclarationDraft", "ReferenceValueEvidence", "AcquisitionPlan",
+      "MeasuredSampleTableEditor", "DatasetAnalysisReadinessReason",
       "DatasetAnalysisReadinessDecision", "DatasetAnalysisReadiness", "DatasetPlotMember", "DatasetPlotSource",
       "CurvePoint", "CurveSegment", "CalibrationSummary", "CalibrationDetail", "CalibrationFileOut", "CalModelInfo",
-      "NistSearchResult", "NistLibraryEntry", "JobInfo", "LlmMessage", "ConversationSummary", "SherpaMessage",
+      "NistSearchResult", "NistLibraryEntry", "LlmMessage", "ConversationSummary", "SherpaMessage",
       "SherpaResumeRecap", "SherpaRecommendationPayload", "NodeParameterMetadata", "NodePortMetadata",
       "NodeExecutionContract", "ScientificPresentation", "NodePresentationContractPayload", "NodePresentationContract",
       "NodeDependencyReadiness", "NodeCatalogClassification", "NodeManagedOptimizationProfile", "NodeTypeMetadata",
-      "NodeLibraryResponse", "NodeExecutionState", "ValidationError", "ExecutionRunSummary", "ExecutionRunDetail",
-      "ComparisonResultPair", "ComparisonResult", "BatchPredictionResult", "DeployApplication", "ImportedApplicationIdentity",
-      "StarterStep", "StarterDatasetOption", "StarterDatasetChoice", "StarterPlan", "ProjectSummary", "ExperimentBrief",
-      "WorkflowBrief", "ProjectDataSource", "AdvisorChannel", "ScriptBrief", "ModelBrief", "ProjectScriptSummary",
-      "ProjectScriptDetail", "ProjectDetail", "ProjectCreate", "ProjectUpdate", "ProjectVersionSummary", "ProjectVersionDetail"
+      "NodeLibraryResponse", "NodeExecutionState", "ExecutionRunSummary", "ExecutionRunDetail",
+      "ComparisonResult", "BatchPredictionResult", "DeployApplication"
     ],
     "src/stores/workflow-types.ts": [
       "DatasetAnalysisProfile", "DatasetCompatibilityDecision", "DatasetCompatibilityMatrix", "TemplateDataRole",

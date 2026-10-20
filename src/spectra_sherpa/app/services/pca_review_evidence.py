@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 
 from spectra_sherpa.app.lib import pca_numerics
+from spectra_sherpa.app.lib.sample_identity import sample_ids as declared_sample_ids
 from spectra_sherpa.app.lib.sherpa_dataset import SampleAxis, SherpaDataset
 from spectra_sherpa.app.services.dag.integrity import compute_workflow_hash
 from spectra_sherpa.app.services.dag.nodes._chemometric_diagnostics import hotelling_t2_per_sample
@@ -93,18 +94,30 @@ def sample_ids(dataset: SherpaDataset) -> list[str]:
     axis = dataset.get_observation_axis()
     if not isinstance(axis, SampleAxis):
         raise ValueError("Selection requires an explicit sample observation axis.")
-    labels = list(axis.labels) if axis is not None and axis.labels is not None else []
-    if (
-        len(labels) != dataset.shape[0]
-        or not labels
-        or len(labels) > MAX_SAMPLES
-        or any(type(x) is not str or not x or x != x.strip() for x in labels)
-        or len(set(labels)) != len(labels)
-    ):
-        raise ValueError("Selection requires unique exact sample IDs (at most 5,000), not display labels.")
+    ids = declared_sample_ids(dataset)
+    if not ids or len(ids) > MAX_SAMPLES:
+        raise ValueError(
+            "New reviews require unique exact typed sample_id values (at most 5,000). "
+            "Attach a sample table with sample_id, or re-import with typed IDs, then rerun. "
+            "Display labels are not sample IDs."
+        )
     if axis.include_mask is not None and not np.asarray(axis.include_mask, dtype=bool).all():
         raise ValueError("Materialize Source Inclusion before reviewing this PCA.")
-    return labels
+    return ids
+
+
+def review_filter_parameters(excluded: list[str], *, identity_field: str = "sample_id") -> dict:
+    """New reviews use typed IDs; historical custody retains its recorded field."""
+    if identity_field not in {"sample_id", "sample_label"}:
+        raise ValueError("Unknown review observation identity field.")
+    return {
+        "field": "sample_table" if identity_field == "sample_id" else "sample_label",
+        **({"sample_table_column": "sample_id"} if identity_field == "sample_id" else {}),
+        "filter_values": excluded,
+        "invert": True,
+        "match_mode": "in_list",
+        "case_sensitive": True,
+    }
 
 
 def _dataset(results: dict, node_id: str, port: str = "default") -> SherpaDataset:
@@ -138,7 +151,8 @@ async def build_review_receipt(definition: dict, results: dict, pca_id: str) -> 
     if excluded_ids:
         p = owned.get("parameters", {}) if owned else {}
         if (
-            p.get("field") != "sample_label"
+            p.get("field") != "sample_table"
+            or p.get("sample_table_column") != "sample_id"
             or p.get("invert") is not True
             or set(p.get("filter_values", [])) != set(excluded_ids)
         ):
@@ -220,6 +234,7 @@ async def build_review_receipt(definition: dict, results: dict, pca_id: str) -> 
             _dataset(results, path[0]["node_id"]), path[0]["parameters"]
         ),
         "model_kind": "pca",
+        "identity_field": "sample_id",
         "spectra": spectral_display(baseline),
         "schema_version": SCHEMA,
         "pca_node_id": pca_id,

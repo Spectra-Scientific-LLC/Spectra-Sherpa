@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import uuid
+from functools import wraps
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from spectra_sherpa.app.lib.data_roles import is_spectrum_only_node, require_data_role
@@ -44,6 +45,19 @@ from .node_base import Node, NodeResult, NodeStatus, node_registry, resolved_run
 from .transport import reject_spectrochempy_transport
 
 logger = logging.getLogger(__name__)
+
+
+def _workflow_execution(method):
+    """Give each public execution its own worker, including early failures."""
+
+    @wraps(method)
+    async def owned(self, *args, **kwargs):
+        if isinstance(self._process_pool, IsolatedWorkerPool):
+            async with self._process_pool.workflow():
+                return await method(self, *args, **kwargs)
+        return await method(self, *args, **kwargs)
+
+    return owned
 
 
 class DAGExecutor:
@@ -1209,6 +1223,7 @@ class DAGExecutor:
 
             return positional_inputs, {}
 
+    @_workflow_execution
     async def execute(
         self,
         initial_data: Optional[Dict[str, Any]] = None,
@@ -1339,6 +1354,7 @@ class DAGExecutor:
             self.status = WorkflowStatus.ERROR
             raise ValueError(f"Workflow execution failed: {str(e)}") from e
 
+    @_workflow_execution
     async def execute_node(
         self,
         node_id: str,

@@ -1,5 +1,6 @@
 import { mount, flushPromises } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createPinia, setActivePinia } from 'pinia';
 import PrivateBatchUpload from '@/views/experiments/PrivateBatchUpload.vue';
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
@@ -11,11 +12,32 @@ function open() {
 }
 
 beforeEach(() => {
+  setActivePinia(createPinia());
   vi.clearAllMocks();
   get.mockResolvedValue({ data: { privateBatchUpload: true, maxFiles: 2, maxRequestBytes: 2 * 1024 * 1024 } });
 });
 
 describe('Private prediction-only upload', () => {
+  it('does not cancel an accepted submission or paint its run onto a different model', async () => {
+    const wrapper = open();
+    await flushPromises();
+    const input = wrapper.get('input[type=file]');
+    Object.defineProperty(input.element, 'files', { value: [new File(['1'], 'private.csv')] });
+    await input.trigger('change');
+    let release!: (value: unknown) => void;
+    post.mockReturnValue(new Promise(resolve => { release = resolve; }));
+    const pending = (wrapper.vm as unknown as { predict: () => Promise<void> }).predict();
+    const signal = post.mock.calls[0][2].signal as AbortSignal;
+    await wrapper.setProps({ artifactUid: 'another-model' });
+    await flushPromises();
+    expect(signal.aborted).toBe(false);
+    release({ data: { run_id: 9 } });
+    await pending;
+    expect(wrapper.emitted('completed')).toBeUndefined();
+    expect(get.mock.calls.some(([url]) => url === '/runs/9')).toBe(false);
+    wrapper.unmount();
+  });
+
   it('does not expose upload without the account capability', async () => {
     get.mockResolvedValue({ data: { privateBatchUpload: false } });
     const wrapper = open();

@@ -37,7 +37,7 @@ function sourceFiles(directory: string): string[] {
 
 describe("public transport migration ratchet", () => {
   it("requires review for new boundary files and object aliases, not only named interfaces", () => {
-    const files = ["src/api", "src/stores", "src/types"].flatMap(sourceFiles)
+    const files = ["src/api", "src/stores", "src/types", "src/extension-contract"].flatMap(sourceFiles)
       .filter((file) => !boundaryFiles.generated.includes(file));
     const reviewed: Record<string, number[]> = boundaryFiles.files;
     expect(files.filter((file) => !(file in reviewed)), "New boundary files require an explicit view-model/transport review.").toEqual([]);

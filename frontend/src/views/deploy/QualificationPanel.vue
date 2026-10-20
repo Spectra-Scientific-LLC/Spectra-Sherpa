@@ -55,6 +55,8 @@
 import MethodHelp from "@/components/MethodHelp.vue";
 import { ref, watch, onMounted, onBeforeUnmount } from "vue";
 import api from "@/api/client";
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest } from "@/composables/useScopedRequest";
 import QualificationPolicyForm from "@/components/QualificationPolicyForm.vue";
 import type { ExperimentSummary, ExperimentFile } from "@/types";
 type RecordEntry = { kind: string; record_digest: string; context_digest: string | null; payload: Record<string, any> };
@@ -80,64 +82,65 @@ let timer: ReturnType<typeof setInterval> | null = null;
 const syncEvidence = () => { if (!busy.value && !document.hidden) void loadHistory(); };
 onMounted(() => { window.addEventListener("focus", syncEvidence); timer = setInterval(syncEvidence, 15000); });
 onBeforeUnmount(() => { window.removeEventListener("focus", syncEvidence); if (timer) clearInterval(timer); });
-let generation = 0;
-let fileRequest = 0;
-let historyRequest = 0;
-onBeforeUnmount(() => { generation += 1; fileRequest += 1; });
+const auth = useAuthStore();
+const identity = () => [auth.user?.id, auth.token, props.projectId, props.workflowId, props.canonicalArtifactId];
+const historyRead = useScopedRequest(identity);
+const experimentsRead = useScopedRequest(identity);
+const filesRead = useScopedRequest(() => [...identity(), experimentId.value]);
+const writes = useScopedRequest(identity, () => { busy.value = false; }, { abortOnInvalidate: false });
 function fail(e: unknown) { const value = e as {response?: {data?: {detail?: unknown}}; message?: string}; error.value = String(value.response?.data?.detail || value.message || e); }
 async function loadHistory() {
-  const current = generation;
-  const request = ++historyRequest;
-  try { const response = await api.get(`/deploy/workflows/${props.workflowId}/qualification`); if (current === generation && request === historyRequest) { records.value = response.data.records; error.value = ""; } }
-  catch (e) { if (current === generation) fail(e); }
+  const request = historyRead.begin();
+  try { const response = await api.get(`/deploy/workflows/${props.workflowId}/qualification`, { signal: request.signal }); if (request.isCurrent()) { records.value = response.data.records; error.value = ""; } }
+  catch (e) { if (request.isCurrent()) fail(e); }
 }
 function selectReview(value: RecordEntry) { review.value = value; acceptContext.value = false; reason.value = ""; }
 async function decide(decision: string) {
   if (!review.value || busy.value) return;
-  const current = generation;
+  const request = writes.begin();
   busy.value = true; error.value = "";
   try {
     await api.post(`/deploy/workflows/${props.workflowId}/qualification/decisions`, { dossier_digest: review.value.record_digest,
       decision, reason: reason.value.trim(), accepted_context_digest: acceptContext.value ? review.value.context_digest : null });
-    if (current !== generation) return;
+    if (!request.isCurrent()) return;
     review.value = null; await loadHistory();
-  } catch (e) { if (current === generation) fail(e); }
-  finally { if (current === generation) busy.value = false; }
+  } catch (e) { if (request.isCurrent()) fail(e); }
+  finally { if (request.isCurrent()) busy.value = false; }
 }
 async function loadFiles() {
-  const current = ++fileRequest; files.value = []; fileId.value = null;
+  const request = filesRead.begin(); files.value = []; fileId.value = null;
   if (!experimentId.value) return;
-  try { const response = await api.get(`/experiments/${experimentId.value}/files`); if (current === fileRequest) files.value = response.data; }
-  catch (e) { if (current === fileRequest) fail(e); }
+  try { const response = await api.get(`/experiments/${experimentId.value}/files`, { signal: request.signal }); if (request.isCurrent()) files.value = response.data; }
+  catch (e) { if (request.isCurrent()) fail(e); }
 }
 async function assess() {
   if (busy.value) return;
   const file = files.value.find(item => item.id === fileId.value); if (!file) return;
-  const current = generation; busy.value = true; error.value = "";
+  const request = writes.begin(); busy.value = true; error.value = "";
   try {
     await api.post(`/deploy/workflows/${props.workflowId}/qualification`, { canonical_artifact_id: props.canonicalArtifactId,
       experiment_id: experimentId.value, file_id: file.id, stage: file.stage, asset_id: assetId.value.trim() || null,
       policy: JSON.parse(policyText.value), context: JSON.parse(contextText.value), allow_missing_reference_exclusion: allowExclusions.value,
       independence_evidence: independenceText.value.trim() ? JSON.parse(independenceText.value) : null,
       uncertainty_record: intervalText.value.trim() ? JSON.parse(intervalText.value) : null });
-    if (current === generation) await loadHistory();
-  } catch (e) { if (current === generation) fail(e); }
-  finally { if (current === generation) busy.value = false; }
+    if (request.isCurrent()) await loadHistory();
+  } catch (e) { if (request.isCurrent()) fail(e); }
+  finally { if (request.isCurrent()) busy.value = false; }
 }
 function download() {
   const url = URL.createObjectURL(new Blob([JSON.stringify({schema_version: "spectrasherpa.qualification-history/1",
     workflow_id: props.workflowId, scope: "Historical declared-use evidence. Imported calculations and approvals are assertions, not authenticated certification.", records: records.value}, null, 2)], {type: "application/json"}));
   const anchor = document.createElement("a"); anchor.href = url; anchor.download = `qualification-workflow-${props.workflowId}.json`; anchor.click(); URL.revokeObjectURL(url);
 }
-watch(() => [props.workflowId, props.canonicalArtifactId, props.projectId], async () => {
-  const current = ++generation; fileRequest += 1; records.value = []; review.value = null; acceptContext.value = false;
+watch(identity, async () => {
+  const request = experimentsRead.begin(); records.value = []; review.value = null; acceptContext.value = false;
   reason.value = error.value = ""; busy.value = false; files.value = []; experiments.value = []; experimentId.value = fileId.value = null;
   assetId.value = "";
   policyText.value = contextText.value = intervalText.value = independenceText.value = ""; allowExclusions.value = false;
   await loadHistory();
-  if (!props.projectId || current !== generation) return;
-  try { const response = await api.get("/experiments", {params: {project_id: props.projectId, limit: 200}}); if (current === generation) experiments.value = response.data; }
-  catch (e) { if (current === generation) fail(e); }
+  if (!props.projectId || !request.isCurrent()) return;
+  try { const response = await api.get("/experiments", {params: {project_id: props.projectId, limit: 200}, signal: request.signal}); if (request.isCurrent()) experiments.value = response.data; }
+  catch (e) { if (request.isCurrent()) fail(e); }
 }, { immediate: true });
 </script>
 <style scoped>

@@ -6,33 +6,34 @@
   </section>
 </template>
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import api from '@/api/client';
+import { useScopedRequest } from '@/composables/useScopedRequest';
+import { useAuthStore } from '@/stores/auth';
 import ScientificComparison from '@/components/ScientificComparison.vue';
 import type { EvidenceComparison, EvidenceReference } from '@/types/scientificComparison';
 const props = defineProps<{ projectId: number; encodedReferences: string }>();
 const evidence = ref<EvidenceComparison | null>(null);
 const error = ref('');
 const loading = ref(false);
-let controller: AbortController | null = null;
-let generation = 0;
+const auth = useAuthStore();
+const identity = () => [auth.user?.id, auth.token, props.projectId, props.encodedReferences];
+const requests = useScopedRequest(identity);
 async function load() {
-  const current = ++generation;
-  controller?.abort(); controller = new AbortController();
+  const request = requests.begin();
   evidence.value = null; error.value = ''; loading.value = true;
   try {
     if (props.encodedReferences.length > 16000) throw new Error('Select 2–10 retained evidence records.');
     const references = JSON.parse(props.encodedReferences) as EvidenceReference[];
     if (!Array.isArray(references) || references.length < 2 || references.length > 10) throw new Error('Select 2–10 retained evidence records.');
     const response = await api.post<EvidenceComparison>('/runs/compare-evidence', { references },
-      { params: { project_id: props.projectId }, signal: controller.signal });
-    if (current === generation) evidence.value = response.data;
+      { params: { project_id: props.projectId }, signal: request.signal });
+    if (request.isCurrent()) evidence.value = response.data;
   } catch (failure: unknown) {
-    if (current !== generation) return;
+    if (!request.isCurrent()) return;
     const detail = (failure as {response?: {data?: {detail?: unknown}}}).response?.data?.detail;
     error.value = typeof detail === 'string' ? detail : 'The retained evidence is unavailable. Reopen the comparison from its source.';
-  } finally { if (current === generation) loading.value = false; }
+  } finally { if (request.isCurrent()) loading.value = false; }
 }
-watch(() => [props.projectId, props.encodedReferences], load, { immediate: true });
-onBeforeUnmount(() => { ++generation; controller?.abort(); });
+watch(identity, load, { immediate: true });
 </script>

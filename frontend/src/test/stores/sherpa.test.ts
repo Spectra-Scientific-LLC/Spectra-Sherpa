@@ -341,6 +341,23 @@ describe("Sherpa Store communication state", () => {
     store.dispose();
   });
 
+  it("does not restore an old conversation after leaving and returning to its project", async () => {
+    const { useProjectStore } = await import("@/stores/project");
+    const projects = useProjectStore();
+    projects.currentProjectId = 42;
+    const store = useSherpaStore();
+    let resolveOld!: (value: unknown) => void;
+    mockApi.get.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+    const pending = store.loadConversation("old");
+    projects.currentProjectId = 43;
+    projects.currentProjectId = 42;
+    resolveOld({ data: { conversation_id: "old", messages: [{ role: "assistant", content: "Old private result" }] } });
+    await pending;
+    expect(store.currentConversationId).toBeNull();
+    expect(store.messages.some(message => message.content === "Old private result")).toBe(false);
+    store.dispose();
+  });
+
   it("uses the shared request path with a server-resolved worksheet reference on Pro", async () => {
     mockSiteProfile.value = "pro";
     const { useProjectStore } = await import("@/stores/project");
@@ -1776,6 +1793,7 @@ describe("Sherpa Store communication state", () => {
 
     expect(mockApi.get).toHaveBeenCalledWith("/llm/conversation/conv-ai", {
       params: { project_id: 42 },
+      signal: expect.any(AbortSignal),
     });
     expect(sherpa.conversations).toEqual([
       {
@@ -1801,6 +1819,7 @@ describe("Sherpa Store communication state", () => {
 
     expect(mockApi.get).toHaveBeenCalledWith("/sherpa/recap", {
       params: { project_id: 42 },
+      signal: expect.any(AbortSignal),
     });
     expect(sherpa.resumeRecap?.recap).toContain("PLS-DA");
 

@@ -12,6 +12,8 @@ import { useAppConfig } from "@/composables/useAppConfig";
 import { useLlmStore } from "@/stores/llm";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useProjectStore } from "@/stores/project";
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest } from "@/composables/useScopedRequest";
 import type { ProjectProvenanceRecord, ProjectProvenanceResponse } from "@/stores/projectProvenance";
 import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import type { ExecutionRunSummary } from "@/types";
@@ -311,19 +313,40 @@ export const useReportStore = defineStore("report", () => {
   const runsLoading = ref(false);
   const workflowsError = ref("");
   const runsError = ref("");
-  let workflowsRequest = 0;
-  let runsRequest = 0;
+  const workspaceIdentity = () => [
+    useAuthStore().user?.id, useAuthStore().token, useProjectStore().currentProjectId,
+  ];
+  const selectionIdentity = () => [
+    ...workspaceIdentity(), selectedWorkflowId.value, selectedRunIds.value.join(","),
+    includeRowLevelPlots.value, reportMode.value,
+  ];
+  const workflowsRequests = useScopedRequest(workspaceIdentity, () => {
+    workflowsLoading.value = false;
+    workflows.value = [];
+    workflowsError.value = "";
+  });
+  const runsRequests = useScopedRequest(
+    () => [...workspaceIdentity(), selectedWorkflowId.value],
+    () => {
+      runsLoading.value = false;
+      availableRuns.value = [];
+      runsError.value = "";
+    },
+  );
+  const reportRequests = useScopedRequest(selectionIdentity, () => { loading.value = false; });
 
   // Computed
   const hasRuns = computed(() => (reportData.value?.runs?.length ?? 0) > 0);
   const hasComparison = computed(() => (reportData.value?.runs?.length ?? 0) >= 2);
   const isReady = computed(() => reportData.value !== null);
-  let reportRequest = 0;
-  let narrativeRequest = 0;
   let cancelNarrative: (() => void) | undefined;
+  const narrativeRequests = useScopedRequest(selectionIdentity, clearNarrative);
 
   function invalidateNarrative(): void {
-    ++narrativeRequest;
+    narrativeRequests.invalidate();
+  }
+
+  function clearNarrative(): void {
     cancelNarrative?.();
     cancelNarrative = undefined;
     narrativeText.value = null;
@@ -333,7 +356,7 @@ export const useReportStore = defineStore("report", () => {
   }
 
   async function fetchWorkflows(): Promise<void> {
-    const request = ++workflowsRequest;
+    const request = workflowsRequests.begin();
     const projectId = useProjectStore().currentProjectId;
     workflowsLoading.value = true;
     workflowsError.value = "";
@@ -344,8 +367,9 @@ export const useReportStore = defineStore("report", () => {
       }
       const response = await api.get<Omit<WorkflowOption, "display_label">[]>("/workflows", {
         params: { project_id: projectId, in_workbook: true, limit: 200 },
+        signal: request.signal,
       });
-      if (request !== workflowsRequest || projectId !== useProjectStore().currentProjectId) return;
+      if (!request.isCurrent()) return;
       workflows.value = response.data
         .filter((workflow) => (workflow.node_count ?? 0) > 0)
         .map((workflow) => {
@@ -361,30 +385,25 @@ export const useReportStore = defineStore("report", () => {
           };
         });
     } catch {
-      if (request === workflowsRequest && projectId === useProjectStore().currentProjectId) {
+      if (request.isCurrent()) {
         workflows.value = [];
         workflowsError.value = "Workflows could not be loaded.";
       }
     } finally {
-      if (request === workflowsRequest) workflowsLoading.value = false;
+      if (request.isCurrent()) workflowsLoading.value = false;
     }
   }
 
   async function fetchRunsForWorkflow(workflowId: number): Promise<void> {
-    const request = ++runsRequest;
-    const projectId = useProjectStore().currentProjectId;
-    const selectedWorkflow = selectedWorkflowId.value;
-    const isCurrent = () =>
-      request === runsRequest &&
-      projectId === useProjectStore().currentProjectId &&
-      selectedWorkflow === selectedWorkflowId.value;
+    const request = runsRequests.begin();
+    const isCurrent = request.isCurrent;
     runsLoading.value = true;
     runsError.value = "";
     try {
       const response = await api.get<{
         runs: ExecutionRunSummary[];
         total: number;
-      }>(`/workflows/${workflowId}/runs`);
+      }>(`/workflows/${workflowId}/runs`, { signal: request.signal });
       if (!isCurrent()) return;
       availableRuns.value = response.data.runs.map((r) => ({
         id: r.id,
@@ -398,18 +417,17 @@ export const useReportStore = defineStore("report", () => {
         runsError.value = "Runs could not be loaded.";
       }
     } finally {
-      if (request === runsRequest) runsLoading.value = false;
+      if (isCurrent()) runsLoading.value = false;
     }
   }
 
   async function fetchReportData(): Promise<void> {
     if (!selectedWorkflowId.value) return;
     invalidateNarrative();
-    const request = ++reportRequest;
+    const request = reportRequests.begin();
     const workflowId = selectedWorkflowId.value;
     const projectId = useProjectStore().currentProjectId;
     const optedIntoRows = includeRowLevelPlots.value;
-    const selectedRuns = selectedRunIds.value.join(",");
     const selection = {
       workflowId,
       runIds: [...selectedRunIds.value],
@@ -417,12 +435,7 @@ export const useReportStore = defineStore("report", () => {
       reportMode: reportMode.value,
       generatedAt: new Date().toISOString(),
     };
-    const isCurrent = () =>
-      request === reportRequest &&
-      selectedWorkflowId.value === workflowId &&
-      selectedRunIds.value.join(",") === selectedRuns &&
-      includeRowLevelPlots.value === optedIntoRows &&
-      useProjectStore().currentProjectId === projectId;
+    const isCurrent = request.isCurrent;
     loading.value = true;
     error.value = null;
     reportData.value = null;
@@ -436,7 +449,7 @@ export const useReportStore = defineStore("report", () => {
       }
       const response = await api.get<ExtendedReportData>(
         `/workflows/${selectedWorkflowId.value}/export/report-data`,
-        { params },
+        { params, signal: request.signal },
       );
       if (!isCurrent()) return;
       const data = response.data;
@@ -472,7 +485,9 @@ export const useReportStore = defineStore("report", () => {
       if (projectId != null && data.workflow_identity?.project_id === projectId
         && data.workflow_identity.workflow_id === workflowId) {
         try {
-          const current = await api.get<ProjectProvenanceResponse>(`/projects/${projectId}/provenance`);
+          const current = await api.get<ProjectProvenanceResponse>(`/projects/${projectId}/provenance`, {
+            signal: request.signal,
+          });
           const reportRunIds = new Set((data.runs ?? []).map((run) => run.id));
           // The project's active choices may belong to a different analysis.
           // Attach only records with an explicit identity in this report.
@@ -536,7 +551,7 @@ export const useReportStore = defineStore("report", () => {
       projectEvidenceSnapshot.value = null;
       generatedSelection.value = null;
     } finally {
-      if (request === reportRequest) loading.value = false;
+      if (isCurrent()) loading.value = false;
     }
   }
 
@@ -547,11 +562,11 @@ export const useReportStore = defineStore("report", () => {
   async function generateNarrative(): Promise<void> {
     if (!reportData.value) return;
     invalidateNarrative();
-    const request = narrativeRequest;
+    const request = narrativeRequests.begin();
     const source = reportData.value;
     const projectId = useProjectStore().currentProjectId;
     const isCurrent = () =>
-      request === narrativeRequest &&
+      request.isCurrent() &&
       reportData.value === source &&
       useProjectStore().currentProjectId === projectId;
     narrativeLoading.value = true;
@@ -626,7 +641,7 @@ export const useReportStore = defineStore("report", () => {
         const cleanup = () => {
           clearTimeout(timeout);
           unsubscribe();
-          if (request === narrativeRequest) cancelNarrative = undefined;
+          if (request.isCurrent()) cancelNarrative = undefined;
         };
         cancelNarrative = () => {
           cleanup();
@@ -655,7 +670,7 @@ export const useReportStore = defineStore("report", () => {
         err instanceof Error && err.message ? err.message : "Could not generate AI narrative.";
       console.error("Failed to generate narrative:", err);
     } finally {
-      if (request === narrativeRequest) narrativeLoading.value = false;
+      if (request.isCurrent()) narrativeLoading.value = false;
     }
   }
 
@@ -670,7 +685,7 @@ export const useReportStore = defineStore("report", () => {
   watch(
     includeRowLevelPlots,
     () => {
-      ++reportRequest;
+      reportRequests.invalidate();
       loading.value = false;
       reportData.value = null;
       projectEvidenceSnapshot.value = null;
@@ -682,9 +697,9 @@ export const useReportStore = defineStore("report", () => {
 
   function reset(): void {
     invalidateNarrative();
-    ++reportRequest;
-    ++workflowsRequest;
-    ++runsRequest;
+    reportRequests.invalidate();
+    workflowsRequests.invalidate();
+    runsRequests.invalidate();
     workflowsError.value = "";
     runsError.value = "";
     loading.value = false;

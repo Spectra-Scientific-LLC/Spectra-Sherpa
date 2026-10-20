@@ -4,16 +4,14 @@ Exploratory nodes reveal structure before supervised modeling.
 
 ## PCA, Decomposition, and Curve Resolution
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| PCA (`model.pca`) | Explore variance, scores, loadings, outliers, and compressed features. Uses Sherpa's native exact full-SVD authority. `n_components="mle"` uses Minka's automatic dimensionality method and requires `n_samples >= n_features`. Keep scaling choices consistent with your spectroscopy convention. |
-| PCA Transform (`model.pca_transform`) | Project new spectra into an already fitted PCA model. Use the same preprocessing as the fitted PCA model. |
-| NMF (`model.nmf`) | Resolve non-negative concentration-like and spectrum-like factors. Input must be non-negative; use Clip Floor or baseline correction first if needed. |
-| FastICA (`model.ica`) | Blind source separation when independent latent sources are plausible. |
-| PARAFAC (`model.parafac`) | Resolve components in sample-first or spatial-first multiway data while keeping every physical mode distinct. Input rank is 3–6 with explicit mode roles. Uses deterministic native CP-ALS. A three-mode image cube may carry an exact binary mask over its first two spatial modes; every ALS update and the reconstruction error honor that mask. No hidden unfolding is performed. |
-| MCR-ALS (`model.mcr_als`) | Resolve mixture concentration profiles and pure spectra with constraints. Requires SpectroChemPy. |
-| EFA (`model.efa`) | Estimate evolving rank/component count in ordered mixture or process data. Requires SpectroChemPy. |
-| SIMPLISMA (`model.simplisma`) | Estimate pure variables/components by purity maximization. Requires SpectroChemPy. |
+- [`model.pca`](exploratory.md#registry-reference): Explore variance, scores, loadings, outliers, and compressed features. Uses Sherpa's native exact full-SVD authority. `n_components="mle"` uses Minka's automatic dimensionality method and requires `n_samples >= n_features`. Keep scaling choices consistent with your spectroscopy convention.
+- [`model.pca_transform`](exploratory.md#registry-reference): Project new spectra into an already fitted PCA model. Use the same preprocessing as the fitted PCA model.
+- [`model.nmf`](exploratory.md#registry-reference): Resolve non-negative concentration-like and spectrum-like factors. Input must be non-negative; use Clip Floor or baseline correction first if needed.
+- [`model.ica`](exploratory.md#registry-reference): Blind source separation when independent latent sources are plausible.
+- [`model.parafac`](exploratory.md#registry-reference): Resolve components in sample-first or spatial-first multiway data while keeping every physical mode distinct. Input rank is 3–6 with explicit mode roles. Uses deterministic native CP-ALS. A three-mode image cube may carry an exact binary mask over its first two spatial modes; every ALS update and the reconstruction error honor that mask. No hidden unfolding is performed.
+- [`model.mcr_als`](exploratory.md#registry-reference): Resolve mixture concentration profiles and pure spectra with constraints. Requires SpectroChemPy.
+- [`model.efa`](exploratory.md#registry-reference): Estimate evolving rank/component count in ordered mixture or process data. Requires SpectroChemPy.
+- [`model.simplisma`](exploratory.md#registry-reference): Estimate pure variables/components by purity maximization. Requires SpectroChemPy.
 
 MCR and FastICA application also require the recorded feature axis and signal
 identity; refit older states that lack this information.
@@ -47,18 +45,14 @@ does not establish melamine detection or challenge performance.
 
 ## Clustering
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| HCA (`model.hca`) | Build hierarchical clusters and dendrograms from spectra or scores. Ward linkage expects Euclidean distance. |
-| K-Means (`model.kmeans`) | Partition samples into a chosen number of compact clusters. |
-| DBSCAN (`model.dbscan`) | Find density-based clusters and noise/outlier samples. Tune `eps` carefully after scaling. |
+- [`model.hca`](exploratory.md#registry-reference): Build hierarchical clusters and dendrograms from spectra or scores. Ward linkage expects Euclidean distance.
+- [`model.kmeans`](exploratory.md#registry-reference): Partition samples into a chosen number of compact clusters.
+- [`model.dbscan`](exploratory.md#registry-reference): Find density-based clusters and noise/outlier samples. Tune `eps` carefully after scaling.
 
 ## Peak and Library Nodes
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Peak Finding (`analysis.peak_finding`) | Detect candidate spectral peaks for interpretation, masking, or library workflows. Detection controls mirror SciPy `find_peaks`; consensus tolerance groups detections by their axis position. |
-| Compare vs. Library (`analysis.compare_library`) | Rank a sample against selected reference spectra using HQI and cosine similarity. |
+- [`analysis.peak_finding`](exploratory.md#registry-reference): Detect candidate spectral peaks for interpretation, masking, or library workflows. Detection controls mirror SciPy `find_peaks`; consensus tolerance groups detections by their axis position.
+- [`analysis.compare_library`](exploratory.md#registry-reference): Rank a sample against selected reference spectra using HQI and cosine similarity.
 
 PeakTable includes the numbered consensus group, position statistics, detection fraction, labels, and complete detection membership. The former Salient Features port is consolidated into this table; existing editable-workflow connections migrate automatically, while historical run records remain unchanged. Re-run the workflow after upgrading to generate the merged table.
 
@@ -130,6 +124,22 @@ Generated from registered node metadata. Edit methodology and examples outside t
 Defaults and options below are JSON values; `null` means no concrete default is declared.
 Internal parameters are retained for contract inspection and are not scientist-editable controls.
 Conditional visibility describes the editor; execution admission remains node-owned.
+
+| Node | Operation |
+| --- | --- |
+| Compare vs. Library | <code>analysis.compare_library</code> |
+| Peak Finding | <code>analysis.peak_finding</code> |
+| Fit DBSCAN Clustering | <code>model.dbscan</code> |
+| Fit EFA Decomposition | <code>model.efa</code> |
+| Fit HCA Clustering | <code>model.hca</code> |
+| Fit FastICA Decomposition | <code>model.ica</code> |
+| Fit K-Means Clustering | <code>model.kmeans</code> |
+| Fit MCR-ALS Decomposition | <code>model.mcr_als</code> |
+| Fit NMF Decomposition | <code>model.nmf</code> |
+| Fit PARAFAC Decomposition | <code>model.parafac</code> |
+| Fit PCA Transform | <code>model.pca</code> |
+| Apply PCA Transform | <code>model.pca_transform</code> |
+| Fit SIMPLISMA Pure Components | <code>model.simplisma</code> |
 
 ### Compare vs. Library (`analysis.compare_library`)
 

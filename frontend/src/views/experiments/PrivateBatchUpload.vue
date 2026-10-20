@@ -9,10 +9,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { ref, watch } from "vue";
 import Button from "primevue/button";
 import api from "@/api/client";
 import { useProjectStore } from "@/stores/project";
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest } from "@/composables/useScopedRequest";
 import type { ExecutionRunSummary } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 
@@ -26,21 +28,21 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const error = ref("");
 const maxFiles = ref(16);
 const maxBytes = ref(31 * 1024 * 1024);
-let generation = 0;
-let controller: AbortController | null = null;
+const auth = useAuthStore();
+const identity = () => [auth.user?.id, auth.token, props.artifactUid, project.currentProjectId];
+const reads = useScopedRequest(identity);
+const writes = useScopedRequest(identity, () => { busy.value = false; }, { abortOnInvalidate: false });
 
 async function refresh() {
-  const current = ++generation;
-  controller?.abort();
-  controller = new AbortController();
+  const request = reads.begin();
   allowed.value = false;
   busy.value = false;
   files.value = [];
   error.value = "";
   if (fileInput.value) fileInput.value.value = "";
   try {
-    const { data } = await api.get("/deploy/capabilities", { signal: controller.signal });
-    if (current === generation) {
+    const { data } = await api.get("/deploy/capabilities", { signal: request.signal });
+    if (request.isCurrent()) {
       allowed.value = data.privateBatchUpload === true;
       maxFiles.value = data.maxFiles;
       maxBytes.value = Math.max(0, data.maxRequestBytes - 1024 * 1024);
@@ -59,7 +61,8 @@ function selectFiles(event: Event) {
 }
 
 async function predict() {
-  const current = generation;
+  if (busy.value || !allowed.value || !files.value.length) return;
+  const request = writes.begin();
   const artifact = props.artifactUid;
   busy.value = true;
   error.value = "";
@@ -67,21 +70,19 @@ async function predict() {
   for (const file of files.value) form.append("files", file);
   try {
     const { data } = await api.post(`/runs/batch/files/${encodeURIComponent(artifact)}`, form, {
-      signal: controller?.signal,
+      signal: request.signal,
     });
-    if (current !== generation) return;
-    const result = await api.get<ExecutionRunSummary>(`/runs/${data.run_id}`, { signal: controller?.signal });
-    if (current === generation) emit("completed", result.data);
+    if (!request.isCurrent()) return;
+    const result = await api.get<ExecutionRunSummary>(`/runs/${data.run_id}`, { signal: request.signal });
+    if (request.isCurrent()) emit("completed", result.data);
   } catch (exc) {
-    if (current === generation) error.value = getErrorMessage(exc, "Prediction submission failed.");
+    if (request.isCurrent()) error.value = getErrorMessage(exc, "Prediction submission failed.");
   } finally {
-    if (current === generation) busy.value = false;
+    if (request.isCurrent()) busy.value = false;
   }
 }
 
-onMounted(refresh);
-watch(() => [props.artifactUid, project.currentProjectId], refresh);
-onBeforeUnmount(() => { ++generation; controller?.abort(); });
+watch(identity, refresh, { immediate: true });
 </script>
 
 <style scoped>

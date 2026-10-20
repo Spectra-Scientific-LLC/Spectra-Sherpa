@@ -214,6 +214,15 @@ class Server:
                 self.process.wait(timeout=60)
             except subprocess.TimeoutExpired:
                 self.process.kill()
+                self.process.wait(timeout=10)
+        if exc and exc[0] is not None and self.log.is_file():
+            # These servers contain only the check's synthetic/bundled fixtures.
+            # Surface the bounded traceback when CI has no retained artifact;
+            # never turn the failure into a retry or a successful verdict.
+            with self.log.open("rb") as stream:
+                stream.seek(max(0, self.log.stat().st_size - 65536))
+                print(f"Server failure log ({self.log.name}):", file=sys.stderr)
+                print(stream.read().decode(errors="replace"), file=sys.stderr)
 
 
 def _template_ids(api: Api) -> dict[str, int]:

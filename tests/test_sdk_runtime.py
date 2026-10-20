@@ -98,6 +98,47 @@ def test_operation_workflow_binds_content_addressed_deployment_input() -> None:
     ]
 
 
+def test_local_sdk_preserves_typed_ids_and_binds_them_in_input_digest() -> None:
+    dataset = _dataset()
+    axis = dataset.sample_axis
+    axis.sample_table = {"sample_id": ["id-a", "id-b", "id-c"]}
+    dataset.sample_axis = axis
+    before = dataset.scientific_digest
+    workflow, payloads, expected = ss.runtime.operation_workflow(
+        "preprocess.normalize", parameters={"method": "snv"}, inputs={"default": dataset}
+    )
+    execution = ss.runtime.execute_workflow(workflow, deployment_inputs=payloads)
+    assert dict(execution.dataset_content_digests) == dict(expected)
+    result = execution.output()
+    assert result.sample_axis.sample_table["sample_id"] == ["id-a", "id-b", "id-c"]
+    assert list(result.sample_axis.labels) == ["a", "b", "c"]
+    assert dataset.scientific_digest == before
+
+    changed = dataset.copy()
+    axis = changed.sample_axis
+    axis.sample_table["sample_id"][0] = "another-id"
+    changed.sample_axis = axis
+    _, _, changed_digests = ss.runtime.operation_workflow(
+        "preprocess.normalize", parameters={"method": "snv"}, inputs={"default": changed}
+    )
+    assert list(changed_digests.values()) != list(expected.values())
+    axis.sample_table["sample_id"] = ["same"] * 3
+    changed.sample_axis = axis
+    with pytest.raises(ValueError, match="exact, unique"):
+        ss.runtime.operation_workflow("preprocess.normalize", inputs={"default": changed})
+
+    # This local identity bridge does not widen the managed capability or turn
+    # arbitrary annotation columns into trusted supervision.
+    from spectra_sherpa.app.services.dag.spectral_capability import SpectralDatasetCapability
+
+    with pytest.raises(ValueError, match="sample_table is not admitted"):
+        SpectralDatasetCapability.from_dataset(dataset, custody_id="test")
+    axis.sample_table = {"sample_id": ["x", "y", "z"], "unbound_response": [1, 2, 3]}
+    changed.sample_axis = axis
+    with pytest.raises(ValueError, match="sample_table is not admitted"):
+        ss.runtime.operation_workflow("preprocess.normalize", inputs={"default": changed})
+
+
 def test_sdk_and_workbench_execute_the_same_native_graph() -> None:
     workflow, payloads, _ = ss.runtime.operation_workflow(
         "preprocess.normalize",
@@ -117,6 +158,54 @@ def test_sdk_and_workbench_execute_the_same_native_graph() -> None:
         record.pop("timestamp")
     assert sdk_provenance == workbench_provenance
     assert sdk_output.units == workbench_output.units == "dimensionless"
+
+
+def test_sdk_binding_preserves_capability_flags_as_well_as_typed_identity() -> None:
+    dataset = _dataset()
+    changed = dataset.copy()
+    changed.is_time_series = not dataset.is_time_series
+    from spectra_sherpa.app.services.dag.spectral_capability import SpectralDatasetCapability
+
+    assert (
+        SpectralDatasetCapability.from_dataset(dataset, custody_id="test").content_digest
+        != SpectralDatasetCapability.from_dataset(changed, custody_id="test").content_digest
+    )
+    original = ss.runtime._bind_dataset("default", dataset, ordinal=0)
+    alternate = ss.runtime._bind_dataset("default", changed, ordinal=0)
+    assert original.content_digest != alternate.content_digest
+    assert original.stream_name != alternate.stream_name
+    assert original.dataset.is_time_series == dataset.is_time_series
+    assert alternate.dataset.is_time_series == changed.is_time_series
+
+
+def test_sdk_identity_bridge_preserves_verified_supervision_and_refuses_tampering() -> None:
+    from spectra_sherpa.app.services.dag.supervision_binding import (
+        admit_attached_sample_table_supervision,
+        attach_sample_table_supervision,
+    )
+
+    dataset = _dataset()
+    axis = dataset.sample_axis
+    axis.sample_table = {"sample_id": ["a", "b", "c"], "response": [1.0, 2.0, 3.0]}
+    dataset.sample_axis = axis
+    dataset.meta["source_collection"] = {
+        "manifest_digest": "a" * 64,
+        "collection_definition_sha256": "b" * 64,
+        "scientific_collection_sha256": "c" * 64,
+    }
+    bound = attach_sample_table_supervision(
+        dataset, target_column="response", target_type="continuous", node_id="attach"
+    )
+    original = admit_attached_sample_table_supervision(bound)
+    captured = ss.runtime._bind_dataset("default", bound, ordinal=0)
+    assert admit_attached_sample_table_supervision(captured.dataset).digest == original.digest
+    np.testing.assert_array_equal(captured.dataset.target, [1.0, 2.0, 3.0])
+    tampered = bound.copy()
+    axis = tampered.sample_axis
+    axis.sample_table["response"][0] = 999.0
+    tampered.sample_axis = axis
+    with pytest.raises(ValueError):
+        ss.runtime._bind_dataset("default", tampered, ordinal=0)
 
 
 def test_sdk_execution_rejects_implicit_or_wrong_external_inputs() -> None:

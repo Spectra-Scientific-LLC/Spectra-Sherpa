@@ -85,17 +85,17 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
     # PCA review applies only the just-executed ScaleNode state to exclusions.
     # No fit or classifier call is admitted; sample-local replay uses the SDK DAG.
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/pca_review_evidence.py": (
-        ("apply_fitted_state", 169, 33),
+        ("apply_fitted_state", 183, 33),
     ),
     # PLS review checks both executed branches against the exact ScaleNode
     # state and applies it to exclusions; no refit or classifier path is added.
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/pls_review_evidence.py": (
         ("apply_fitted_state", 407, 17),
-        ("apply_fitted_state", 699, 25),
+        ("apply_fitted_state", 708, 25),
     ),
     # Model-aware prediction dispatches only admitted regression producers and never fits.
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/predict_regression_node.py": (
-        ("apply_fitted_state", 73, 26),
+        ("apply_fitted_state", 74, 26),
     ),
     # Saved artifacts delegate application to the same canonical node, never refit.
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/saved_native_model.py": (
@@ -152,7 +152,7 @@ _LIFECYCLE_CALLSITE_ALLOWLIST = {
         ("apply_fitted_state", 501, 4),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/apply_fitted_pls_node.py": (
-        ("apply_fitted_state", 193, 22),
+        ("apply_fitted_state", 194, 22),
     ),
     "packages/spectra-sherpa/src/spectra_sherpa/app/services/dag/nodes/modeling/fitted_pls_node.py": (
         ("apply_fitted_state", 723, 22),

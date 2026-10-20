@@ -1,5 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createPinia, setActivePinia } from "pinia";
+beforeEach(() => { setActivePinia(createPinia()); });
 import SavedModelDiagnostics from "@/components/SavedModelDiagnostics.vue";
 
 const apiGet = vi.hoisted(() => vi.fn());

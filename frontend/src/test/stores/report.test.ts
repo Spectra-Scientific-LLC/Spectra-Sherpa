@@ -142,7 +142,7 @@ describe("report payload assembly", () => {
       project_id: 17, project_name: "Corn", records, choice_event_ids: {},
     } });
     await store.fetchReportData();
-    expect(mocks.apiGet).toHaveBeenCalledWith("/projects/17/provenance");
+    expect(mocks.apiGet).toHaveBeenCalledWith("/projects/17/provenance", { signal: expect.any(AbortSignal) });
     expect(store.projectEvidenceSnapshot?.state).toBe("available");
     expect(store.projectEvidenceSnapshot?.records).toEqual([
       records[0], { ...records[1], state: "healthy", detail: "Stored model integrity verified." }, records[2],
@@ -230,6 +230,7 @@ describe("report payload assembly", () => {
 
     expect(mocks.apiGet).toHaveBeenCalledWith("/workflows", {
       params: { project_id: 17, in_workbook: true, limit: 200 },
+      signal: expect.any(AbortSignal),
     });
     expect(store.workflows).toEqual([
       expect.objectContaining({
@@ -366,18 +367,41 @@ describe("report payload assembly", () => {
 
 
 describe("row-level report export consent", () => {
+  it.each(["workflow", "run", "mode"])("rejects an A → B → A %s selection during a delayed read", async (kind) => {
+    const store = useReportStore();
+    store.selectedWorkflowId = 7;
+    store.selectedRunIds = [1];
+    let finish!: (value: { data: ExtendedReportData }) => void;
+    mocks.apiGet.mockReturnValue(new Promise(resolve => { finish = resolve; }));
+    const pending = store.fetchReportData();
+    if (kind === "workflow") {
+      store.selectedWorkflowId = 8;
+      store.selectedWorkflowId = 7;
+    } else if (kind === "run") {
+      store.selectedRunIds = [2];
+      store.selectedRunIds = [1];
+    } else {
+      store.reportMode = "detailed";
+      store.reportMode = "summary";
+    }
+    finish({ data: makeReportData() });
+    await pending;
+    expect(store.reportData).toBeNull();
+    expect(store.loading).toBe(false);
+    expect(store.error).toBeNull();
+  });
   it("defaults to summaries and requires a fresh opt-in per workflow", async () => {
     const store = useReportStore();
     store.selectedWorkflowId = 7;
     mocks.apiGet.mockResolvedValue({ data: makeReportData() });
     await store.fetchReportData();
     expect(mocks.apiGet).toHaveBeenLastCalledWith(
-      "/workflows/7/export/report-data", { params: { include_row_level_plots: "false" } });
+      "/workflows/7/export/report-data", { params: { include_row_level_plots: "false" }, signal: expect.any(AbortSignal) });
     store.includeRowLevelPlots = true;
     expect(store.reportData).toBeNull();
     await store.fetchReportData();
     expect(mocks.apiGet).toHaveBeenLastCalledWith(
-      "/workflows/7/export/report-data", { params: { include_row_level_plots: "true" } });
+      "/workflows/7/export/report-data", { params: { include_row_level_plots: "true" }, signal: expect.any(AbortSignal) });
     store.selectedWorkflowId = 8;
     expect(store.includeRowLevelPlots).toBe(false);
     expect(store.reportData).toBeNull();

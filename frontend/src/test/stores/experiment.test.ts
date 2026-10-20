@@ -5,6 +5,17 @@ import api from "@/api/client";
 import { useExperimentStore } from "@/stores/experiment";
 import type { ExperimentDetail, ExperimentFile, ExperimentSummary, VersionInfo } from "@/types";
 
+const inventory = vi.hoisted(() => ({
+  datasets: vi.fn().mockResolvedValue(undefined),
+  catalogue: vi.fn().mockResolvedValue(undefined),
+  projects: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("@/stores/data", () => ({
+  useDataStore: () => ({ fetchExperiments: inventory.datasets, fetchCatalog: inventory.catalogue }),
+}));
+vi.mock("@/stores/project", () => ({
+  useProjectStore: () => ({ fetchProjects: inventory.projects }),
+}));
 vi.mock("@/api/client", () => ({
   default: {
     get: vi.fn(),
@@ -88,7 +99,7 @@ describe("Experiment Store", () => {
     expect(store.versions).toEqual(mockVersions);
   });
 
-  it("creates an experiment and prepends it to the list", async () => {
+  it("creates an experiment and refreshes the authoritative inventories", async () => {
     const payload = {
       name: "New Experiment",
       description: "Test description",
@@ -96,6 +107,7 @@ describe("Experiment Store", () => {
     };
     const created = { id: 1, ...payload };
     vi.mocked(api.post).mockResolvedValueOnce({ data: created });
+    vi.mocked(api.get).mockResolvedValueOnce({ data: [created] });
 
     const store = useExperimentStore();
     const result = await store.createExperiment(payload);
@@ -103,6 +115,9 @@ describe("Experiment Store", () => {
     expect(api.post).toHaveBeenCalledWith("/experiments", payload);
     expect(result).toEqual(created);
     expect(store.experiments[0]).toEqual(created);
+    expect(inventory.datasets).toHaveBeenCalledOnce();
+    expect(inventory.catalogue).toHaveBeenCalledOnce();
+    expect(inventory.projects).toHaveBeenCalledOnce();
     expect(store.loading).toBe(false);
   });
 
@@ -137,6 +152,7 @@ describe("Experiment Store", () => {
     }] satisfies VersionInfo[];
 
     vi.mocked(api.delete).mockResolvedValueOnce({ data: null });
+    vi.mocked(api.get).mockResolvedValueOnce({ data: [] });
     await store.deleteExperiment(7);
 
     expect(api.delete).toHaveBeenCalledWith("/experiments/7");
@@ -152,7 +168,9 @@ describe("Experiment Store", () => {
     const refreshed = [{ id: 100, file_path: "sample.csv" }];
 
     vi.mocked(api.post).mockResolvedValueOnce({ data: null });
-    vi.mocked(api.get).mockResolvedValueOnce({ data: refreshed });
+    vi.mocked(api.get)
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: refreshed });
 
     await store.uploadFile(42, file, "raw");
 

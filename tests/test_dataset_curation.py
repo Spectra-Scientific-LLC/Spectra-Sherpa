@@ -260,7 +260,7 @@ def test_unlabeled_singleton_feature_table_uses_exact_source_observation_identit
     assert rows[0]["sample_id"] == "sklearn_iris 001"
 
 
-def loaded_dataset(experiment_id=1, project_id=1):
+def loaded_dataset(experiment_id=1, project_id=1, *, typed_ids=False):
     members = []
     for number in range(2):
         ds = SherpaDataset(
@@ -268,7 +268,10 @@ def loaded_dataset(experiment_id=1, project_id=1):
             sample_axis=SampleAxis(
                 labels=[f"file{number}-row{i}" for i in range(4)],
                 include_mask=np.asarray([True, True, True, number != 0]),
-                sample_table={"batch": [number] * 4},
+                sample_table={
+                    "batch": [number] * 4,
+                    **({"sample_id": [f"file{number}-row{i}" for i in range(4)]} if typed_ids else {}),
+                },
             ),
             feature_axis=SpectralAxis(values=np.arange(6.0), units="nm"),
             data_role="X_spectra",
@@ -634,7 +637,9 @@ async def test_multifile_review_requires_captured_native_rows():
     spec.loader.exec_module(module)
     run = module.run
 
-    loaded = loaded_dataset()
+    # New reviews require declared identities; retained native-row custody is
+    # an additional requirement, not a substitute for the typed sample table.
+    loaded = loaded_dataset(typed_ids=True)
     ds = loaded.dataset
     # The canonical review operates on the admitted population after source inclusion.
     restored = curation_receipt(

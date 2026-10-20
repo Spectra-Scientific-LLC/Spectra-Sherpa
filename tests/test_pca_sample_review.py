@@ -20,7 +20,10 @@ def dataset():
     x[-2:] += 40
     ds = SherpaDataset(
         X=x,
-        sample_axis=SampleAxis(labels=[f"s{i:02}" for i in range(40)]),
+        sample_axis=SampleAxis(
+            labels=[f"s{i:02}" for i in range(40)],
+            sample_table={"sample_id": [f"s{i:02}" for i in range(40)]},
+        ),
         feature_axis=SpectralAxis(values=np.arange(8.0), units="cm^-1"),
         data_role="X_spectra",
     )
@@ -40,7 +43,12 @@ def definition(excluded=()):
             {
                 "node_id": filter_id("pca"),
                 "node_type": "data.filter_samples",
-                "parameters": {"field": "sample_label", "filter_values": list(excluded), "invert": True},
+                "parameters": {
+                    "field": "sample_table",
+                    "sample_table_column": "sample_id",
+                    "filter_values": list(excluded),
+                    "invert": True,
+                },
             },
         )
     edges = [
@@ -145,6 +153,7 @@ async def test_source_inclusion_and_samplewise_projection_preserve_identity(kind
     ds = dataset()
     ds.sample_axis = SampleAxis(
         labels=ds.sample_axis.labels,
+        sample_table=ds.sample_axis.sample_table,
         classes=np.asarray([f"class{i % 2}" for i in range(40)]),
         include_mask=np.asarray([False] + [True] * 39),
     )
@@ -178,7 +187,7 @@ async def test_source_inclusion_and_samplewise_projection_preserve_identity(kind
     assert [r["group"] for r in receipt["rows"]] == list(ds.sample_axis.classes[1:])
     projected = receipt["rows"][-1]
     assert projected["role"] == "excluded_projected"
-    assert projected["scores"] is not None
+    assert projected["scores"] is not None, projected.get("projection_error")
     assert np.isfinite(projected["q"]) and np.isfinite(projected["t2"])
     assert receipt["n_calibration"] == 38
 
@@ -205,9 +214,26 @@ def test_never_guesses_duplicate_or_missing_ids():
     ds.sample_axis = SampleAxis(labels=["duplicate"] * 40)
     with pytest.raises(ValueError, match="unique exact"):
         sample_ids(ds)
+    ds.sample_axis = SampleAxis(sample_table={"sample_id": ["duplicate"] * 40})
+    with pytest.raises(ValueError, match="exact, unique"):
+        sample_ids(ds)
     ds.sample_axis = SampleAxis(values=np.arange(40.0))
     with pytest.raises(ValueError, match="unique exact"):
         sample_ids(ds)
+
+
+@pytest.mark.asyncio
+async def test_review_uses_typed_ids_not_editable_or_duplicate_display_labels():
+    ds = dataset()
+    ds.sample_axis = SampleAxis(
+        labels=["Same display name"] * 40,
+        sample_table=ds.sample_axis.sample_table,
+    )
+    receipt = await run(ds, ["s39"])
+    assert receipt["identity_field"] == "sample_id"
+    assert [row["id"] for row in receipt["rows"]] == [f"s{i:02}" for i in range(40)]
+    assert receipt["rows"][-1]["role"] == "excluded_projected"
+    assert receipt["n_calibration"] == 39
 
 
 @pytest.mark.asyncio
@@ -268,8 +294,10 @@ async def test_http_review_loop_conflicts_restore_failure_and_rank_change(
     await test_session.commit()
     original_graph = workflow_graph_digest(workflow)
 
-    async def save_run(excluded=(), failed=False):
+    async def save_run(excluded=(), failed=False, legacy=False):
         receipt = await run(dataset(), excluded)
+        if legacy:
+            receipt.pop("identity_field")
         receipt["graph_digest"] = workflow_graph_digest(workflow)
         record = ExecutionRun(
             user_id=test_user.id,
@@ -288,7 +316,6 @@ async def test_http_review_loop_conflicts_restore_failure_and_rank_change(
         await test_session.commit()
         return record
 
-    original_run = await save_run()
     path = f"/api/v1/workflows/{workflow.id}/sample-review/pca"
 
     async def context():
@@ -308,6 +335,16 @@ async def test_http_review_loop_conflicts_restore_failure_and_rank_change(
             "reason": "Inspect high Q acquisition",
         }
 
+    await save_run(legacy=True)
+    historical = await context()
+    assert historical["rows"] and "identity_field" not in historical
+    refused = await auth_client.post(path, json=action(historical, "mark", ["s39"]))
+    assert refused.status_code == 409
+    assert "typed sample_id" in refused.json()["detail"]
+    assert not list((await test_session.scalars(select(SampleReviewRevision))).all())
+    assert workflow_graph_digest(workflow) == original_graph
+
+    original_run = await save_run()
     ctx = await context()
     from spectra_sherpa.app.models.user import User
 
@@ -398,6 +435,142 @@ async def test_http_review_loop_conflicts_restore_failure_and_rank_change(
     await test_session.commit()
     refused = await auth_client.get(path)
     assert refused.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_successful_legacy_refit_without_new_receipt_still_allows_exact_restore(
+    auth_client, test_session, test_user, monkeypatch
+):
+    import importlib
+    from datetime import datetime, timedelta, timezone
+
+    from sqlalchemy import select
+
+    from spectra_sherpa.app.models.execution_run import ExecutionRun
+    from spectra_sherpa.app.models.sample_review_revision import SampleReviewRevision
+    from spectra_sherpa.app.models.workflow import Workflow
+    from spectra_sherpa.app.models.workflow_edge import WorkflowEdge
+    from spectra_sherpa.app.models.workflow_node import WorkflowNode
+    from spectra_sherpa.app.services.run_output_retention import retain_run_outputs
+    from spectra_sherpa.app.services.workflow_data_selections import workflow_graph_digest
+
+    routes = importlib.import_module("spectra_sherpa.app.api.v1.routes.workflows.sample_review")
+
+    async def admitted(*args, **kwargs):
+        pass
+
+    monkeypatch.setattr(routes, "validate_selection", admitted)
+    graph = definition()
+    graph["nodes"][0]["parameters"] = {
+        "experiment_id": 1,
+        "source_manifest_sha256": "a" * 64,
+        "scientific_collection_sha256": "b" * 64,
+        "selected_file_ids": ["1"],
+    }
+    workflow = Workflow(
+        user_id=test_user.id,
+        name="Legacy reversible review",
+        purpose="analysis",
+        nodes=[
+            WorkflowNode(node_id=n["node_id"], node_type=n["node_type"], parameters=n["parameters"])
+            for n in graph["nodes"]
+        ],
+        edges=[WorkflowEdge(**edge) for edge in graph["edges"]],
+    )
+    test_session.add(workflow)
+    await test_session.commit()
+    original_graph = workflow_graph_digest(workflow)
+    receipt = await run(dataset())
+    receipt.pop("identity_field")
+    receipt["graph_digest"] = original_graph
+    now = datetime.now(timezone.utc)
+    origin = ExecutionRun(
+        user_id=test_user.id,
+        workflow_id=workflow.id,
+        name="Original legacy evidence",
+        status="completed",
+        params_snapshot={},
+        results_summary={},
+        executed_at=now,
+        integrity_hash=original_graph,
+        evidence_completeness=retain_run_outputs(test_user.id, {"__workflow__": {"pca_review": {"pca": receipt}}}, {}),
+    )
+    test_session.add(origin)
+    await test_session.flush()
+    state = {"marked": [], "excluded": ["s39"], "original_edge": None}
+    routes._replace_filter(workflow, "pca", state, receipt, "Historical exclusion")
+    edited_graph = workflow_graph_digest(workflow)
+    test_session.add(
+        SampleReviewRevision(
+            workflow_id=workflow.id,
+            pca_node_id="pca",
+            revision=1,
+            run_id=origin.id,
+            created_by=test_user.id,
+            action="exclude",
+            reason="Historical exclusion",
+            sample_ids=["s39"],
+            source_digest=receipt["source_digest"],
+            graph_digest=edited_graph,
+            state=state,
+        )
+    )
+    # Successful numerical execution does not imply that a new review receipt
+    # could be built for the unchanged, historical display-label filter.
+    latest = ExecutionRun(
+        user_id=test_user.id,
+        workflow_id=workflow.id,
+        name="Successful legacy refit",
+        status="completed",
+        params_snapshot={},
+        results_summary={},
+        executed_at=now + timedelta(seconds=1),
+        integrity_hash=edited_graph,
+        evidence_completeness=retain_run_outputs(test_user.id, {"__workflow__": {"pca_review": {}}}, {}),
+    )
+    test_session.add(latest)
+    await test_session.commit()
+    path = f"/api/v1/workflows/{workflow.id}/sample-review/pca"
+    response = await auth_client.get(path)
+    assert response.status_code == 200, response.text
+    context = response.json()
+    assert context["run_id"] == origin.id and context["latest_run_id"] == latest.id
+    assert context["stale"] is True and context["state"]["excluded"] == ["s39"]
+    decision = {
+        "run_id": origin.id,
+        "expected_latest_run_id": latest.id,
+        "expected_revision": 1,
+        "expected_graph_digest": edited_graph,
+        "source_digest": receipt["source_digest"],
+        "action": "exclude",
+        "sample_ids": ["s38"],
+        "reason": "Cannot create a new legacy decision",
+    }
+    assert (await auth_client.post(path, json=decision)).status_code == 409
+    restored = await auth_client.post(
+        path,
+        json={
+            **decision,
+            "action": "restore",
+            "sample_ids": ["s39"],
+            "reason": "Restore historical exclusion",
+        },
+    )
+    assert restored.status_code == 200, restored.text
+    await test_session.refresh(workflow, attribute_names=["nodes", "edges"])
+    assert workflow_graph_digest(workflow) == original_graph
+    revisions = list(
+        (
+            await test_session.scalars(
+                select(SampleReviewRevision)
+                .where(SampleReviewRevision.workflow_id == workflow.id)
+                .order_by(SampleReviewRevision.revision)
+            )
+        ).all()
+    )
+    assert [revision.action for revision in revisions] == ["exclude", "restore"]
+    assert revisions[0].state["excluded"] == ["s39"]
+    assert revisions[1].state["excluded"] == []
 
 
 @pytest.mark.asyncio

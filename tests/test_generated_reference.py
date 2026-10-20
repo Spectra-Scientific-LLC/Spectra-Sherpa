@@ -162,6 +162,34 @@ def test_reference_projects_types_defaults_enums_and_escapes(row: dict) -> None:
     assert "<code>0</code>" in reference.render_section([row])
 
 
+def test_node_index_uses_live_labels_and_help_destination(tmp_path: Path, row: dict) -> None:
+    original = page(tmp_path)
+    destination = page(tmp_path, name="moved.md")
+    second = copy.deepcopy(row)
+    second.update(node_type="test.new", label="Newly registered operation")
+    second["execution_contract"]["payload"]["help_reference"] = "docs/nodes/moved.md"
+    documents = reference.expected_documents(tmp_path, [row, second])
+    assert b"| Example | <code>test.example</code> |" in documents[original]
+    assert b"test.new" not in documents[original]
+    assert b"| Newly registered operation | <code>test.new</code> |" in documents[destination]
+    row["label"] = "Renamed operation"
+    assert b"| Renamed operation |" in reference.expected_documents(tmp_path, [row, second])[original]
+
+
+@pytest.mark.parametrize("check", [True, False])
+def test_manual_node_catalogue_cannot_silently_regrow(tmp_path: Path, row: dict, check: bool) -> None:
+    target = page(tmp_path)
+    target.write_text(
+        "| Node | Scientific use and guidance |\n| --- | --- |\n| Stale label | Advice |\n"
+        + target.read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    before = target.read_bytes()
+    with pytest.raises(ValueError, match="handwritten node catalogue"):
+        reference.generate(tmp_path, [row], check=check)
+    assert target.read_bytes() == before
+
+
 def test_method_topics_reads_authority_and_refuses_partial_parsing() -> None:
     source = 'export const METHOD_TOPICS = { first: "a/#one", second: "b/#two" } as const;'
     assert help_check.method_topics(source) == {"first": "a/#one", "second": "b/#two"}

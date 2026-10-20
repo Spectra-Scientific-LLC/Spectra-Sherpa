@@ -94,6 +94,10 @@ independent validation of the algorithms or optimal component counts.
 
 Focused table and component screenshots are compared across reopen on the same
 browser, allowing only one 8-bit channel level of SVG rasterization rounding.
+Plot capture waits for layout/fonts/animation and gives the actual canvas a
+temporary stable compositor layer and antialiasing mode. It does not resize or
+clone plots. The same capture helper's negative tests reject changed text,
+colors and one-pixel geometry; raster differences are not waived by tolerance.
 Representative component screenshots are retained for review. axe checks the
 shared table and plot dialogs against WCAG A/AA rules, including keyboard access
 and contrast. They do not establish whole-product accessibility compliance.

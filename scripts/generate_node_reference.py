@@ -98,6 +98,10 @@ def render_section(rows: list[dict]) -> str:
         "Conditional visibility describes the editor; execution admission remains node-owned.",
         "",
     ]
+    lines.extend(["| Node | Operation |", "| --- | --- |"])
+    for row in sorted(rows, key=lambda item: item["node_type"]):
+        lines.append(f"| {cell(row['label'])} | {code(row['node_type'])} |")
+    lines.append("")
     for row in sorted(rows, key=lambda item: item["node_type"]):
         lines.extend([f"### {cell(row['label'])} (`{row['node_type']}`)", "", "#### Ports", ""])
         ports = row["typed_ports"]
@@ -181,6 +185,12 @@ def expected_documents(root: Path, rows: list[dict]) -> dict[Path, bytes]:
     targets = {root / reference for reference in groups}
     for path in sorted((root / "docs/nodes").rglob("*.md")):
         source = path.read_text(encoding="utf-8")
+        authored = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), "", source, flags=re.DOTALL)
+        if re.search(r"^\|\s*Node\s*\|", authored, flags=re.MULTILINE):
+            raise ValueError(
+                f"{path}: handwritten node catalogue duplicates registry labels. "
+                "Keep scientific guidance as prose and use the generated registry index."
+            )
         if (BEGIN in source or END in source) and path not in targets:
             raise ValueError(f"{path}: orphaned generated-node markers; no registry help_reference targets this page.")
     documents = {}

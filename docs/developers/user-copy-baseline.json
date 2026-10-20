@@ -1,17 +1,1 @@
-{
-  "frontend/src/views/data/DataContent.vue": {
-    "data-portfolio": 3
-  },
-  "frontend/src/views/data/DataContentsPanel.vue": {
-    "data-portfolio": 2
-  },
-  "frontend/src/views/workflow-builder/WorkflowBuilderContent.vue": {
-    "data-portfolio": 1
-  },
-  "frontend/src/views/workflow-builder/WorkflowDataPortfolioPicker.vue": {
-    "data-portfolio": 3
-  },
-  "frontend/src/views/workflow-builder/WorkflowInspector.vue": {
-    "execute-workflow": 1
-  }
-}
+{}

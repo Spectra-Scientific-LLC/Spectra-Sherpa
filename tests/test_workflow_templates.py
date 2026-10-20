@@ -3629,10 +3629,42 @@ async def test_instantiate_synthetic_benchmark_materializes_mixture_and_library(
 
 
 @pytest.mark.asyncio
+async def test_managed_candidate_refuses_missing_authority_for_internal_callers():
+    from spectra_sherpa.app.api.v1.routes.workflow_templates import _persist_managed_candidate
+
+    record = next(item for item in TemplateLoader().load_all() if item["slug"] == "pls_calibration")
+    template = WorkflowTemplate(**record)
+    canonical_project = template.template_data["canonical_project"]
+    source_node = canonical_project["managed_candidate"]["scientist_source_node_id"]
+    session = AsyncMock()
+    with pytest.raises(HTTPException, match="selected target authority") as refused:
+        await _persist_managed_candidate(
+            session=session,
+            template=template,
+            template_version="1",
+            canonical_project=canonical_project,
+            applied_bindings={source_node: DataBindingSpec(experiment_id=1, file_ids=[1])},
+            bound_profiles={},
+            user_id=1,
+            project_id=1,
+            workflow_name="Unselected response",
+            sheet_order=1,
+        )
+    assert refused.value.status_code == 400
+    assert session.mock_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("authority_case", "expected_status"),
+    [("valid", 201), ("missing", 400), ("malformed", 422), ("stale", 400), ("wrong_type", 400)],
+)
 async def test_instantiate_pls_with_selected_native_synthetic_response(
     auth_client: AsyncClient,
     test_session: AsyncSession,
     test_user: User,
+    authority_case: str,
+    expected_status: int,
 ):
     from spectra_sherpa.app.core.template_loader import TemplateLoader
     from spectra_sherpa.app.lib.target_authority import issue_target_authority
@@ -3682,6 +3714,23 @@ async def test_instantiate_pls_with_selected_native_synthetic_response(
     if not type_registry.is_loaded:
         type_registry.load(Path(__file__).resolve().parents[1] / "src" / "spectra_sherpa" / "app" / "types")
 
+    selected_authority = authority.canonical_dict()
+    if authority_case == "missing":
+        selected_authority = None
+    elif authority_case == "malformed":
+        selected_authority = {**selected_authority, "column": ""}
+    elif authority_case == "stale":
+        selected_authority = {**selected_authority, "source_digest": "0" * 64}
+    elif authority_case == "wrong_type":
+        selected_authority = {**selected_authority, "target_type": "categorical"}
+
+    # Refusal must be atomic, including the extra managed sheet and its custody
+    # records. Compare persisted identities, not merely the HTTP status.
+    artifact_models = (Project, Experiment, ExperimentFile, Workflow, WorkflowNode, WorkflowDataSelectionRevision)
+    before = {
+        model: tuple((await test_session.scalars(select(model.id).order_by(model.id))).all())
+        for model in artifact_models
+    }
     response = await auth_client.post(
         f"/api/v1/workflow-templates/{template.id}/instantiate",
         json={
@@ -3693,13 +3742,26 @@ async def test_instantiate_pls_with_selected_native_synthetic_response(
                     "experiment_id": experiment.id,
                     "stage": "synthetic",
                     "file_ids": [files[0].id],
-                    "target_authority": authority.canonical_dict(),
+                    "target_authority": selected_authority,
                 }
             },
         },
     )
 
-    assert response.status_code == 201, response.text
+    assert response.status_code == expected_status, response.text
+    if expected_status != 201:
+        detail = response.json()["detail"]
+        assert detail
+        if authority_case == "missing":
+            assert "target authority" in detail.lower()
+        if authority_case == "malformed":
+            assert any("target_authority" in error["loc"] for error in detail)
+        after = {
+            model: tuple((await test_session.scalars(select(model.id).order_by(model.id))).all())
+            for model in artifact_models
+        }
+        assert after == before
+        return
     source = next(node for node in response.json()["nodes"] if node["node_id"] == "data_1")
     model = next(node for node in response.json()["nodes"] if node["node_id"] == "model_1")
     evaluator = next(node for node in response.json()["nodes"] if node["node_id"] == "eval_1")

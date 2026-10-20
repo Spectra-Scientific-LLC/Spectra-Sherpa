@@ -9,6 +9,8 @@ import { defineStore } from "pinia";
 import { computed, ref, watch, type WatchStopHandle } from "vue";
 import api from "@/api/client";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useScopedRequest } from "@/composables/useScopedRequest";
+import { useAuthStore } from "@/stores/auth";
 import {
   createSherpaRequestId,
   subscribeSherpaEvents,
@@ -123,6 +125,11 @@ export const useSherpaStore = defineStore("sherpa", () => {
   const boundedContext = computed(() => appConfig.value?.advisorContextPolicy === "receipt");
   const qualified = computed(() => appMode.value === "enterprise" && siteProfile?.value === "pro");
   const projectStore = useProjectStore();
+  const auth = useAuthStore();
+  const workspaceIdentity = () => [auth.user?.id, auth.token, projectStore.currentProjectId];
+  const conversationLoads = useScopedRequest(workspaceIdentity);
+  const recapRequests = useScopedRequest(workspaceIdentity);
+  const conversationWrites = useScopedRequest(workspaceIdentity, undefined, { abortOnInvalidate: false });
   const messages = ref<SherpaMessage[]>([]);
   const isServerBacked = computed(() => appMode.value !== "local");
   const conversations = ref<ConversationSummary[]>(
@@ -256,13 +263,13 @@ export const useSherpaStore = defineStore("sherpa", () => {
     }
   }
 
-  let conversationIndexRequest = 0;
+  const conversationIndex = useScopedRequest(() => [...workspaceIdentity(), currentConversationId.value]);
   async function refreshConversations(projectId = projectStore.currentProjectId): Promise<void> {
-    const indexRequest = ++conversationIndexRequest;
+    const request = conversationIndex.begin();
     if (qualified.value) {
       if (!projectId) { conversations.value = []; return; }
-      const response = await api.get(`/commercial/projects/${projectId}/conversations`);
-      if (indexRequest === conversationIndexRequest && projectId === projectStore.currentProjectId) conversations.value = response.data;
+      const response = await api.get(`/commercial/projects/${projectId}/conversations`, { signal: request.signal });
+      if (request.isCurrent() && projectId === projectStore.currentProjectId) conversations.value = response.data;
       return;
     }
 
@@ -290,7 +297,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
         ? await requireAdvisorTransport().loadConversation(activeConversationId)
         : await api.get(`/llm/conversation/${activeConversationId}`, {
             params: { project_id: projectId },
+            signal: request.signal,
           });
+      if (!request.isCurrent()) return;
       const loadedConversationId = String(
         response.data.conversation_id || response.data.id || activeConversationId,
       );
@@ -300,6 +309,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
         String(response.data.updated_at || response.data.updatedAt || new Date().toISOString()),
       );
     } catch (err) {
+      if (!request.isCurrent()) return;
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 404 && restoreConversationSnapshot(activeConversationId)) {
         console.warn(
@@ -431,9 +441,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
     persistConversations(conversations.value);
   }
 
-  let conversationLoadRequest = 0;
   async function loadConversation(conversationId: string): Promise<void> {
-    const request = ++conversationLoadRequest;
+    const request = conversationLoads.begin();
     const projectId = projectStore.currentProjectId;
     if (conversationId === currentConversationId.value && messages.value.length > 0) {
       if (isServerBacked.value) {
@@ -455,12 +464,12 @@ export const useSherpaStore = defineStore("sherpa", () => {
     let response;
     try {
       response = qualified.value
-        ? await api.get(`/commercial/projects/${projectId}/conversations/${conversationId}`)
+        ? await api.get(`/commercial/projects/${projectId}/conversations/${conversationId}`, { signal: request.signal })
         : boundedContext.value
         ? await requireAdvisorTransport().loadConversation(conversationId)
-        : await api.get(`/llm/conversation/${conversationId}`, { params });
+        : await api.get(`/llm/conversation/${conversationId}`, { params, signal: request.signal });
     } catch (err) {
-      if (request !== conversationLoadRequest || projectId !== projectStore.currentProjectId) return;
+      if (!request.isCurrent()) return;
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 404) {
         if (!qualified.value && isServerBacked.value && restoreConversationSnapshot(conversationId)) {
@@ -487,7 +496,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
       throw err;
     }
 
-    if (request !== conversationLoadRequest || projectId !== projectStore.currentProjectId) return;
+    if (!request.isCurrent()) return;
     const loadedConversationId = String(
       response.data.conversation_id || response.data.id || conversationId,
     );
@@ -516,6 +525,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   }
 
   async function deleteConversation(conversationId: string): Promise<void> {
+    const request = conversationWrites.capture();
     const params = isServerBacked.value
       ? { project_id: projectStore.currentProjectId }
       : undefined;
@@ -529,6 +539,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
     } else {
       await api.delete(`/llm/conversation/${conversationId}`, { params });
     }
+    if (!request.isCurrent()) return;
     conversations.value = conversations.value.filter((item) => item.id !== conversationId);
     if (!isServerBacked.value) {
       persistConversations(conversations.value);
@@ -730,7 +741,8 @@ export const useSherpaStore = defineStore("sherpa", () => {
     diagnosticScope.value = copyDiagnosticScope(scope);
   }
   function startNewConversation(): void {
-    ++conversationLoadRequest;
+    conversationLoads.invalidate();
+    conversationIndex.invalidate();
     snapshotCurrentConversation();
     diagnosticScope.value = null;
     finalizeChatCommunication();
@@ -750,7 +762,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   registerProjectScopeReset(() => {
     diagnosticScope.value = null;
     if (!qualified.value) return;
-    ++conversationIndexRequest;
+    conversationIndex.invalidate();
     startNewConversation();
     // An old project snapshot must never satisfy a later 404 or same-ID load.
     conversationSnapshots.clear();
@@ -1510,6 +1522,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
   // ── actions ────────────────────────────────────────────────
 
   async function maybeLoadResumeRecap(projectId = projectStore.currentProjectId): Promise<void> {
+    const request = recapRequests.begin();
     if (!isServerBacked.value || !projectId) {
       resumeRecap.value = null;
       return;
@@ -1531,7 +1544,9 @@ export const useSherpaStore = defineStore("sherpa", () => {
     try {
       const response = await api.get("/sherpa/recap", {
         params: { project_id: projectId },
+        signal: request.signal,
       });
+      if (!request.isCurrent()) return;
       _writeRecapLastSeen(projectId, now);
       _clearRecapFailure(projectId);
       const recap = typeof response.data?.recap === "string" ? response.data.recap.trim() : "";
@@ -1550,6 +1565,7 @@ export const useSherpaStore = defineStore("sherpa", () => {
         cached: Boolean(response.data?.cached),
       };
     } catch (error) {
+      if (!request.isCurrent()) return;
       _writeRecapFailure(projectId, now);
       console.warn("[sherpa] Resume recap could not be loaded:", error);
     }

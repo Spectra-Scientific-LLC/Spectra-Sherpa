@@ -76,54 +76,45 @@ target units not declared)**.
 Current Optimize evaluates this Rev0 by five-fold CV on its **60 training samples**;
 the historical score is not an expected result for this training-only run.
 
-## Step 2 — Open the campaign planner
+## Step 2 — Choose the starting point
 
-You can start from the run or from Optimize itself; both open the same planner.
+Open **Optimize**. It opens on the canvas of your most recent campaign. The title
+is a menu of the project's campaigns; choose **New campaign** to start another.
 
-- From the run: open it in **Runs** and choose **Optimize**.
-- From Optimize: click **New campaign** → **A saved run** → choose the project and
-  the saved run → **Continue with Sherpa**.
+1. Click **Select a starting point**. It lists the project's completed saved runs
+   (its History); type part of a name to narrow the list.
+2. Choose the Rev0 run. Opening **Optimize** from a run in **Runs** goes straight
+   to the next step with that run.
 
-The planner shows **Rev0** at the top, with **Inspect run**, **Open workflow** and
-the **Original validation**.
+## Step 3 — Set the ground rules (once per campaign)
 
-## Step 3 — Frame the development question (once per campaign)
-
-Under **Frame the development question**:
+In **Set the ground rules**:
 
 1. **Spectral domain**: NIR.
-2. **Common outer folds**: 5.
+2. **Outer folds**: 5.
 3. **Meaningful improvement**: 0.01 (RMSECV; target units not declared in this historical example).
 4. **Validation grouping**: **No grouping declared** (Corn M5 has one spectrum per
    sample; choose **Use retained group column** only for a true shared specimen,
    batch, or other group identity, including replicate measurements).
-5. Tick **Confirm this objective, validation, and grouping as the common development
-   examination**.
-6. Click **Start planning from Rev0**.
+5. Tick **Use this objective, validation and grouping for every trial** and click
+   **Start campaign**. Rev0 appears on the canvas, selected.
 
-These settings are fixed for the whole campaign so every round is comparable.
+These settings are fixed for the whole campaign so every round is comparable;
+**Inspect ground rules** shows them later.
 
 ## Step 4 — Round 1: explore preprocessing
 
-1. **Search phase**: **Explore directions**.
-2. **Maximum candidates including Rev0**: 3.
+1. With Rev0 selected, click **New hypotheses**.
+2. **Search phase**: **Explore directions**. **Maximum candidates**: 3.
 3. In the instruction box, say what to compare, for example:
    *"Compare SNV with a Savitzky–Golay first derivative before PLS."*
-4. Click **Generate validated preview**. Sherpa proposes one hypothesis per change and
-   shows a compact title list. Use **☑** to select a hypothesis for execution; use
-   **▸** to inspect **Rationale**, **Expected CV response**, **Trade-offs**, and
-   **Preprocessing and model changes**. Opening a row does not select it.
-   Use **Revise validated preview** to adjust.
-   You can also turn individual hypotheses off: excluded cards turn grey, and the
-   reviewed execution covers only the selected hypotheses plus the unchanged baseline. For
-   example, selecting 10 of 15 hypotheses means 11 evaluations. The baseline stays
-   selected. If you remove part of a coordinated experimental design, the warning
-   explains that the remaining trials are exploratory, not a validated full DOE.
-5. Click **Review selected trials**. In **Reviewed execution plan**, check the
-   selected trials, unchanged baseline, execution safety limits and **Approval receipt expires**.
-   This approval is not a compute-hours or cost forecast.
-6. Click **Execute reviewed iteration**. The page opens the campaign's progress in
-   **Optimize** (or click **View progress**).
+4. Click **Generate validated preview**. Sherpa proposes one hypothesis per change;
+   each appears as a hollow dot on the canvas and in the list with **▸** for its
+   **Rationale**, **Expected CV response**, **Trade-offs** and changes. Untick any
+   you do not want, or **Revise validated preview** with a new instruction. The
+   unchanged seed always runs as the reference.
+5. Click **Execute selected models**. **Review plan** in the bottom bar shows the
+   trial count, reserved evaluations and approval expiry if you want them first.
 
 **Historical round 1 result** (5-fold all-data development CV, n=80, RMSECV):
 
@@ -133,30 +124,61 @@ These settings are fixed for the whole campaign so every round is comparable.
 | SNV before PLS | 0.2292 | not supported |
 | **SG first derivative (window 15, order 2) before PLS** | **0.1369** | supported |
 
-The results table shows rank, RMSECV, improvement, paired-fold agreement, outcome,
-and retained revision. Check rows and choose **Compare selected** to compare a subset.
-Expand **▸** for CV metrics, paired folds, model changes, and **Workflow →**. The
-**Paired CV improvement plot** shows pooled and per-fold improvement against the reference. Failed or cancelled evaluations do not constitute usable solutions.
-Ranking draws attention to performance; it does not select a solution for you.
+Each trial becomes a box under its hypothesis dot. Click a box for its CV score,
+change against the parent, per-fold agreement and model changes; click its dot to
+compare the boxes it produced (**Compare its seeds**). Failed or cancelled
+evaluations do not constitute usable solutions. Ranking draws attention to
+performance; it does not select a solution for you. Sherpa Advisor can retrieve
+the campaign's CV evidence for whatever you select.
 
-Checkboxes in results select rows for comparison; they do not retain models.
-Expanded rows and comparison settings survive refresh within the same browser tab.
-Sherpa Advisor can retrieve the campaign's CV evidence even while rows are collapsed.
+## The Optimize canvas
 
-## Step 5 — Keep the best direction
+After a round runs, Optimize shows the campaign as a canvas:
 
-1. Open round 1 in the campaign directory.
-2. Expand **▸** beside the first-derivative trial in the ranked results table.
-3. Choose a reason (here **Primary metric**), write a short rationale, and click
-   **Retain as refined seed**. The trial becomes **Rev1**, recorded with its evidence.
+- **Seed boxes** are models. Rev0 is the first box; every scored trial becomes a
+  box, darker purple for a better score.
+- **Hypothesis dots** sit between a seed and the boxes it produced. A half-filled
+  dot is running, a hollow dot is a draft, and an orange ring did not meet its
+  criterion. The legend inside the canvas repeats this.
+- The **ranking** on the left lists every box best first; click a row to bring
+  that box to the middle of the canvas.
+- The panel on the right shows whatever you select. For a box: its lineage from
+  Rev0, CV performance with per-fold bars, and the hypotheses grown from it. For a
+  dot: the hypothesis, its success criterion, and the boxes it produced with their
+  scores.
+- The page subtitle carries the campaign facts (folds, held-out use, remaining
+  rounds, best score, stop advice). **Inspect ground rules** shows the fixed
+  objective, folds, meaningful improvement and grouping.
+- The bar at the bottom holds running rounds (**View progress**, **Stop & keep
+  results**), items that need attention, and messages.
+
+**Classic layout** in the bottom bar switches back to the earlier page;
+**Canvas layout** returns.
+
+## Step 5 — Grow from the best direction
+
+1. On the canvas, click the first-derivative box from round 1.
+2. Click **New hypotheses** (top right). It is available only when a growable
+   seed is selected.
+3. Because this box has not been kept yet, say why: choose a reason (here
+   **Primary metric**) and write a short rationale. Growing from it records the
+   decision, and the box becomes **Rev1**.
 
 ## Step 6 — Round 2: refine from Rev1
 
-1. Under **Seed history**, click **Plan another direction from Rev1**.
-2. **Search phase**: **Refine this direction**. **Maximum candidates including Rev0**: 4.
-3. Instruction, for example: *"Keep the derivative; try 4, 6 and 8 latent variables."*
-4. **Generate validated preview** → **Review selected trials** →
-   **Execute reviewed iteration**.
+1. In the same panel choose **Ask Sherpa**, **Search phase**: **Refine this
+   direction**, **Maximum candidates**: 4.
+2. Instruction, for example: *"Keep the derivative; try 4, 6 and 8 latent variables."*
+3. **Generate validated preview**. The proposals appear as hollow dots on the
+   canvas; untick any you do not want.
+4. **Execute selected models** runs them. **Review plan** in the bottom bar shows
+   the trial count, reserved evaluations and approval expiry if you want to check
+   first; **Discard draft** leaves without running anything.
+
+For a parameter or structure search instead, choose **Parameter search** or
+**Workflow structure search** and **Set up search**. The search opens over the
+canvas: pick the parameter values, recipes or governed lane, **Preview** the exact
+candidates, then **Start search**; the new round appears on the canvas.
 
 **Historical round 2 result** (all-data development CV, n=80), starting from Rev1:
 
@@ -167,19 +189,23 @@ Sherpa Advisor can retrieve the campaign's CV evidence even while rows are colla
 | PLS 6 latent variables | 0.0715 | supported |
 | **PLS 8 latent variables** | **0.0549** | supported |
 
-## Step 7 — Read the lineage
+## Step 7 — Read the lineage and conclude
 
-Select the round-2 campaign in Optimize. The historical all-data CV **Lineage** showed:
+Click any box: the right panel shows its path from Rev0 (for the best round-2
+box: Rev0 → derivative hypothesis → Rev1 → latent-variable search → the box).
+The historical all-data CV lineage read 0.2340 → 0.1369 → 0.0549 RMSECV (n=80;
+target units not declared). The subtitle's stop advice read **worth continuing**:
+no two-round plateau and no uniform instability yet.
 
-All lineage errors and improvements below are RMSECV, n=80; target units are
-not declared in the historical evidence.
-
-- Baseline · RMSECV 0.2340
-- Seed 0 · saved run → Round 1 · explore · best RMSECV 0.1369 · improved 0.0971 on parent
-  - Seed 1 · promoted → Round 2 · refine · best RMSECV 0.0549 · improved 0.0820 on parent
-
-Click any round to open it. Below the tree, the stop advice for this run read
-**Worth continuing**: no two-round plateau and no uniform instability yet.
+To conclude, select the box you trust and click **Conclude campaign**. Choose
+**CV only** or **Independent confirmation**, confirm the freeze, and click
+**Freeze final workflow and refit**. A CV-only conclusion cannot add independent
+confirmation later in this campaign. When the conclusion is ready, **Open in
+Workflow** opens the signed solution as a workflow sheet in your project;
+executing it creates a saved run you can review in **Runs**. **Model package**,
+**Report** and **Publisher keys** download the signed review. Concluding a
+campaign is not a deploy-ready decision; that is recorded separately in
+**Runs → Models**.
 
 ## What these numbers mean
 

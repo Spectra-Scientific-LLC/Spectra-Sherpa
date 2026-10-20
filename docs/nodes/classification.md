@@ -4,15 +4,13 @@ Classification nodes assign spectra or feature rows to classes.
 
 ## Nodes
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Train KNN Classifier (`classification.knn`) | You need a distance-based classifier after appropriate scaling or dimensionality reduction. Validation is owned by an explicit split plan outside this fit-only node. |
-| Apply Fitted KNN (`classification.apply_knn`) | Apply the exact KNN reference set, scaling, distance, and voting state to new rows. Accepts only the KNN serializer. |
-| Train PLS-DA Classifier (`classification.plsda`) | You want a latent-variable classifier for exactly-one-class spectral discrimination. Validation is owned by an explicit split plan outside this fit-only node. Uses the native Sherpa SIMPLS authority. |
-| PLS-DA Response Permutation (`diagnostics.plsda_permutation`) | Check whether a PLS-DA development result exceeds a random-label null under an exchangeable design. |
-| Apply Fitted PLS-DA (`classification.apply_plsda`) | Apply fitted PLS2 coefficients and the declared maximum-response decision rule to new rows. Scores are responses, not probabilities; accepts only the PLS-DA serializer. |
-| Train SIMCA Classifier (`classification.simca`) | You want class-specific PCA models that can reject samples outside known classes. Validation is owned by an explicit split plan outside this fit-only node. Uses the native Sherpa SIMCA authority. |
-| Apply Fitted SIMCA (`classification.apply_simca`) | Apply explicit class PCA models and their complete T²/Q limits to new rows. Can return `unassigned`; affinity is not probability; accepts only the SIMCA serializer. |
+- [`classification.knn`](classification.md#registry-reference): You need a distance-based classifier after appropriate scaling or dimensionality reduction. Validation is owned by an explicit split plan outside this fit-only node.
+- [`classification.apply_knn`](classification.md#registry-reference): Apply the exact KNN reference set, scaling, distance, and voting state to new rows. Accepts only the KNN serializer.
+- [`classification.plsda`](classification.md#registry-reference): You want a latent-variable classifier for exactly-one-class spectral discrimination. Validation is owned by an explicit split plan outside this fit-only node. Uses the native Sherpa SIMPLS authority.
+- [`diagnostics.plsda_permutation`](classification.md#registry-reference): Check whether a PLS-DA development result exceeds a random-label null under an exchangeable design.
+- [`classification.apply_plsda`](classification.md#registry-reference): Apply fitted PLS2 coefficients and the declared maximum-response decision rule to new rows. Scores are responses, not probabilities; accepts only the PLS-DA serializer.
+- [`classification.simca`](classification.md#registry-reference): You want class-specific PCA models that can reject samples outside known classes. Validation is owned by an explicit split plan outside this fit-only node. Uses the native Sherpa SIMCA authority.
+- [`classification.apply_simca`](classification.md#registry-reference): Apply explicit class PCA models and their complete T²/Q limits to new rows. Can return `unassigned`; affinity is not probability; accepts only the SIMCA serializer.
 
 ## Calibration and application safeguards
 
@@ -105,6 +103,16 @@ Generated from registered node metadata. Edit methodology and examples outside t
 Defaults and options below are JSON values; `null` means no concrete default is declared.
 Internal parameters are retained for contract inspection and are not scientist-editable controls.
 Conditional visibility describes the editor; execution admission remains node-owned.
+
+| Node | Operation |
+| --- | --- |
+| Apply Fitted KNN | <code>classification.apply_knn</code> |
+| Apply Fitted PLS-DA | <code>classification.apply_plsda</code> |
+| Apply Fitted SIMCA | <code>classification.apply_simca</code> |
+| Train KNN Classifier | <code>classification.knn</code> |
+| Train PLS-DA Classifier | <code>classification.plsda</code> |
+| Train SIMCA Classifier | <code>classification.simca</code> |
+| PLS-DA Response Permutation | <code>diagnostics.plsda_permutation</code> |
 
 ### Apply Fitted KNN (`classification.apply_knn`)
 

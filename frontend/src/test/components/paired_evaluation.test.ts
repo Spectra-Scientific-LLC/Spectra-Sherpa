@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
 import { createRouter, createMemoryHistory } from 'vue-router';
+import { createPinia, setActivePinia } from 'pinia';
 import api from '@/api/client';
 import Saved from '@/components/SavedPairedEvaluation.vue';
 import Panel from '@/components/PairedEvaluationPanel.vue';
@@ -12,7 +13,7 @@ const record = {
   paired_rmsecv_differences: [-0.2], results: [{execution: {metrics: {rmse: 1.2}}}, {execution: {metrics: {rmse: 1}}}],
   summary: {right_meaningfully_better: 1, left_meaningfully_better: 0, within_margin: 0}, interpretation: 'Development evidence, not independent validation.',
 };
-beforeEach(() => { vi.resetAllMocks(); vi.useFakeTimers(); });
+beforeEach(() => { setActivePinia(createPinia()); vi.resetAllMocks(); vi.useFakeTimers(); });
 afterEach(() => { vi.useRealTimers(); });
 async function launch() {
   const router = createRouter({history: createMemoryHistory(), routes: [{path: '/', component: {template: '<div/>'}}, {path: '/runs/:runId', component: {template: '<div/>'}}]});
@@ -31,7 +32,7 @@ describe('saved paired evaluation journey', () => {
     const wrapper = mount(Saved, {props: {runId: 81}}); await flushPromises();
     expect(wrapper.get('.shared-comparison').text()).toBe('Repetition 1');
     await wrapper.get('select').setValue('1'); await flushPromises();
-    expect(api.get).toHaveBeenLastCalledWith('/runs/paired-evaluations/81', {params: {repetition: 1}});
+    expect(api.get).toHaveBeenLastCalledWith('/runs/paired-evaluations/81', {params: {repetition: 1}, signal: expect.any(AbortSignal)});
     expect(wrapper.get('.shared-comparison').text()).toBe('Repetition 2'); expect(api.post).not.toHaveBeenCalled(); wrapper.unmount();
   });
 

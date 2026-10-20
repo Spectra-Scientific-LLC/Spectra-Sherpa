@@ -12,7 +12,7 @@ def main() -> int:
     if not entry.is_file():
         raise SystemExit("Install the locked frontend tools first: cd frontend && npm ci")
     return subprocess.run(
-        ["node", str(entry), "src/", "--max-warnings", "310"],
+        ["node", str(entry), "src/", "--max-warnings", "300"],
         cwd=ROOT / "frontend",
         check=False,
     ).returncode

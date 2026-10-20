@@ -7,6 +7,7 @@ from typing import Any, Mapping, cast
 
 import numpy as np
 
+from spectra_sherpa.app.lib import sample_identity
 from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
 from spectra_sherpa.app.services.dag.node_base import (
     Node,
@@ -199,6 +200,7 @@ class ApplyFittedPLSV2Node(Node):
             "shape": list(predictions.shape),
             "response_identity": state["response_identity"],
             "sample_labels": list(axis.labels) if axis is not None and axis.labels is not None else None,
+            "sample_ids": sample_identity.sample_ids(dataset),
             "sample_values": axis.values.tolist() if axis is not None and axis.values is not None else None,
             "fitted_state_custody": custody,
             "prediction_sha256": hashlib.sha256(np.asarray(predictions, dtype="<f8").tobytes(order="C")).hexdigest(),
@@ -305,7 +307,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.ARTIFACT_APPLICATION,
     implementation_id="spectrasherpa.model.apply_fitted_pls",
-    implementation_version="5",
+    implementation_version="6",
     required_worker_capabilities=(WorkerCapability.READ_CANONICAL_FITTED_ARTIFACT,),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="preserves_samples",
@@ -315,7 +317,13 @@ bind_stable_execution_contract(
     resource_hints={"timeout_seconds": 30, "cpu_seconds": 30, "memory_bytes": 1_073_741_824},
     license_id="BSD-3-Clause",
     help_reference="docs/nodes/regression.md",
-    implementation_modules=(execution_runtime_contract, fitted_pls_node, pls_applicability, prediction_uncertainty),
+    implementation_modules=(
+        execution_runtime_contract,
+        fitted_pls_node,
+        pls_applicability,
+        prediction_uncertainty,
+        sample_identity,
+    ),
     implementation_distributions=("numpy",),
     runtime_requirements=(("numpy", "1.26.4"),),
     fitted_state_serializer=_SOURCE_SERIALIZER,

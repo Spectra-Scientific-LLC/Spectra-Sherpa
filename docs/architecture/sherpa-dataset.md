@@ -43,6 +43,15 @@ Separate labeled predictor/response datasets require ordered sample agreement or
 an explicit recorded join. A feature axis identifies coordinates; signal quantity
 and signal units are separate authorities used by fitted-state application.
 
+Observation IDs live in `SampleAxis.sample_table["sample_id"]`; the
+`app/lib/sample_identity.py` reader owns their validation. New diagnostic reviews,
+their filters and explanation rows use those IDs, not editable display labels.
+The local SDK binds both `SherpaDataset.scientific_digest` (including typed
+sample IDs) and the numerical capability digest (including execution flags such
+as time-series admission), plus any verified supervision reference. Neither
+digest substitutes for the other. This bridge does not authorize arbitrary
+unbound sample-table supervision.
+
 Supported missing targets and optional metadata must survive the reader, scientific
 digest, result and serialization boundaries consistently. Invalid nonfinite predictors
 are not interchangeable with missing optional metadata. A node that filters rows

@@ -4,13 +4,11 @@ Output nodes make workflow results visible or exportable.
 
 ## Nodes
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Plot (`output.plot`) | Show spectra, scores, loadings, diagnostics, dendrograms, or metrics-derived plots. Many model outputs carry plot-ready payloads. |
-| Contour Plot (`output.contour`) | Show a 2D heatmap or contour view of matrix-like spectral data. |
-| Data Table (`output.data_table`) | Inspect numeric arrays, metrics, sample tables, or selected variables as rows and columns. |
-| Statistics (`stats.summary`) | Generate deterministic descriptive summaries for datasets and typed scientific results. Inferential decisions remain in dedicated diagnostic nodes. |
-| Prepare Export (`output.export`) | Prepare exact, verified bytes for a scientist-controlled download or generated-script materialization. Choose a safe basename for the prepared export; the node never chooses a filesystem path. |
+- [`output.plot`](output.md#registry-reference): Show spectra, scores, loadings, diagnostics, dendrograms, or metrics-derived plots. Many model outputs carry plot-ready payloads.
+- [`output.contour`](output.md#registry-reference): Show a 2D heatmap or contour view of matrix-like spectral data.
+- [`output.data_table`](output.md#registry-reference): Inspect numeric arrays, metrics, sample tables, or selected variables as rows and columns.
+- [`stats.summary`](output.md#registry-reference): Generate deterministic descriptive summaries for datasets and typed scientific results. Inferential decisions remain in dedicated diagnostic nodes.
+- [`output.export`](output.md#registry-reference): Prepare exact, verified bytes for a scientist-controlled download or generated-script materialization. Choose a safe basename for the prepared export; the node never chooses a filesystem path.
 
 ## Good Output Hygiene
 
@@ -56,6 +54,14 @@ Generated from registered node metadata. Edit methodology and examples outside t
 Defaults and options below are JSON values; `null` means no concrete default is declared.
 Internal parameters are retained for contract inspection and are not scientist-editable controls.
 Conditional visibility describes the editor; execution admission remains node-owned.
+
+| Node | Operation |
+| --- | --- |
+| Contour Plot | <code>output.contour</code> |
+| Data Table | <code>output.data_table</code> |
+| Prepare Export | <code>output.export</code> |
+| Plot | <code>output.plot</code> |
+| Statistics | <code>stats.summary</code> |
 
 ### Contour Plot (`output.contour`)
 

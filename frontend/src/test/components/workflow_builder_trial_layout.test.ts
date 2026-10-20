@@ -508,7 +508,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
     expect(handoff.text()).toContain("block requested for grouping");
     expect(handoff.text()).not.toContain("will be offered");
     expect(wrapper.get('[aria-label="Workflow workspace context"]').text()).toContain(
-      "Data PortfolioPending: Lavender Essential Oil FTIR Corpus v1",
+      "DatasetPending: Lavender Essential Oil FTIR Corpus v1",
     );
     expect(
       wrapper.get('[data-testid="workflow-inspector"]').attributes("data-execution-disabled"),
@@ -548,7 +548,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
       "missing, expired, or belongs to another browser tab",
     );
     expect(wrapper.get('[aria-label="Workflow workspace context"]').text()).toContain(
-      "Data PortfolioPending selection unavailable",
+      "DatasetPending selection unavailable",
     );
     expect(
       wrapper.get('[data-testid="workflow-inspector"]').attributes("data-execution-disabled"),
@@ -665,7 +665,7 @@ describe("WorkflowBuilderContent trial/detail layout", () => {
 
     const context = wrapper.get('[aria-label="Workflow workspace context"]');
     expect(context.text()).not.toContain("ProjectIris PCA");
-    expect(context.text()).toContain("Data PortfolioSynthetic Atmospheric FTIR");
+    expect(context.text()).toContain("DatasetSynthetic Atmospheric FTIR");
     expect(context.text()).not.toContain("1 dataset bound");
     expect(context.findAll(".workspace-context-item")[2]?.get("strong").attributes("title")).toBe(
       "Synthetic Atmospheric FTIR",
