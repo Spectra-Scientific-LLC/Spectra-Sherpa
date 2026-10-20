@@ -128,16 +128,18 @@ class _WorkflowWorker:
                 transport_directory = Path(self._directory.name)
                 with (transport_directory / "request").open("wb") as stream:
                     pickle.dump((function, args), stream, protocol=pickle.HIGHEST_PROTOCOL)
-                self._control.send(True)
-                while True:
-                    if self._closed or self._pool._closed:
-                        raise RuntimeError("Workflow worker is shut down")
-                    if self._control.poll():
-                        break
-                    if not self._process.is_alive():
-                        raise RuntimeError("Scientific worker exited without a result")
-                    await asyncio.sleep(0.005)
                 try:
+                    # A dead peer can surface at send, poll (Windows named
+                    # pipes), or recv. Keep one failure boundary for all three.
+                    self._control.send(True)
+                    while True:
+                        if self._closed or self._pool._closed:
+                            raise RuntimeError("Workflow worker is shut down")
+                        if self._control.poll():
+                            break
+                        if not self._process.is_alive():
+                            raise RuntimeError("Scientific worker exited without a result")
+                        await asyncio.sleep(0.005)
                     self._control.recv()
                 except (EOFError, OSError) as exc:
                     raise RuntimeError("Scientific worker exited without a result") from exc

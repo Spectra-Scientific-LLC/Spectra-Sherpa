@@ -754,6 +754,39 @@ async def test_workflow_worker_failure_reaps_and_releases_capacity(tmp_path, fai
         pool.shutdown()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["send", "poll", "recv"])
+async def test_workflow_pipe_failure_is_normalized_and_releases_capacity(monkeypatch, operation):
+    import os
+
+    from spectra_sherpa.app.services.dag.executor_pool import IsolatedWorkerPool
+
+    pool = IsolatedWorkerPool(1)
+    try:
+        async with pool.workflow():
+            await pool.run(os.getpid, timeout=30)
+            worker = pool._workflow.get()
+            directory = worker._directory.name
+
+            def broken_pipe(*args, **kwargs):
+                raise BrokenPipeError("The pipe has been ended")
+
+            # Windows can report a dead peer from PeekNamedPipe (poll), not
+            # only recv. Force each transport boundary on every test platform.
+            monkeypatch.setattr(worker._control, operation, broken_pipe)
+            with pytest.raises(RuntimeError, match="exited without") as caught:
+                await pool.run(os.getpid, timeout=30)
+            assert isinstance(caught.value.__cause__, BrokenPipeError)
+            assert not os.path.exists(directory)
+            assert not pool._active
+            assert not pool._slots.locked()
+            with pytest.raises(RuntimeError, match="shut down"):
+                await pool.run(os.getpid, timeout=30)
+        assert await pool.run(os.getpid, timeout=30) != os.getpid()
+    finally:
+        pool.shutdown()
+
+
 def test_workflow_worker_cannot_outlive_abrupt_backend_exit(tmp_path):
     import os
     import subprocess
