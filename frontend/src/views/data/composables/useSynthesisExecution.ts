@@ -12,6 +12,9 @@ export interface SynthesisSaveOutcome {
   file_path?: string;
   count: number;
 }
+type SynthesisSaveResponse = Pick<SynthesisSaveOutcome, "result" | "file_path"> & {
+  experiment_id: number;
+};
 
 /** Transport orchestration only. Payload construction and spectra remain with their authorities. */
 export function useSynthesisExecution(identity: () => readonly ScopeIdentity[]) {
@@ -46,11 +49,7 @@ export function useSynthesisExecution(identity: () => readonly ScopeIdentity[]) 
     try {
       for (const item of snapshot) {
         if (!ticket.isCurrent()) return;
-        const response: { data: {
-          experiment_id: number; result: SynthesisResult; file_path?: string;
-        } } = await api.post<{
-          experiment_id: number; result: SynthesisResult; file_path?: string;
-        }>("/synthesis/save", {
+        const response: { data: SynthesisSaveResponse } = await api.post<SynthesisSaveResponse>("/synthesis/save", {
           ...item.payload, name: item.name, experiment_id: experimentId, project_id: projectId,
         }, { signal: ticket.signal });
         if (!ticket.isCurrent()) return;
