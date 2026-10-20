@@ -60,10 +60,10 @@ def _workflow_call(directory: str, control) -> None:
     Each node still creates its own instance, runtime binding and event loop.
     """
     _watch_parent()
-    root = Path(directory)
+    transport_directory = Path(directory)
     try:
         while control.recv():
-            with (root / "request").open("rb") as stream:
+            with (transport_directory / "request").open("rb") as stream:
                 function, args = pickle.load(stream)  # nosec B301: own parent, private 0700 directory
             try:
                 # Fresh processes previously gave nodes independent unseeded
@@ -77,7 +77,7 @@ def _workflow_call(directory: str, control) -> None:
                 payload = (True, function(*args))
             except Exception as exc:
                 payload = (False, exc)
-            with (root / "result").open("wb") as stream:
+            with (transport_directory / "result").open("wb") as stream:
                 pickle.dump(payload, stream, protocol=pickle.HIGHEST_PROTOCOL)
             control.send(True)
             del function, args, payload
@@ -125,8 +125,8 @@ class _WorkflowWorker:
             async with asyncio.timeout(timeout):
                 if self._process is None:
                     await self._start()
-                root = Path(self._directory.name)
-                with (root / "request").open("wb") as stream:
+                transport_directory = Path(self._directory.name)
+                with (transport_directory / "request").open("wb") as stream:
                     pickle.dump((function, args), stream, protocol=pickle.HIGHEST_PROTOCOL)
                 self._control.send(True)
                 while True:
@@ -141,7 +141,7 @@ class _WorkflowWorker:
                     self._control.recv()
                 except (EOFError, OSError) as exc:
                     raise RuntimeError("Scientific worker exited without a result") from exc
-                with (root / "result").open("rb") as stream:
+                with (transport_directory / "result").open("rb") as stream:
                     success, result = pickle.load(stream)  # nosec B301: own child, private 0700 directory
                 if not success:
                     raise result
