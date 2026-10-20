@@ -477,7 +477,7 @@ describe("LLM Store refreshConversations project-scope cleanup", () => {
     apiGet.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
     const llm = useLlmStore();
     const old = llm.loadConversation("old");
-    mockIdentity.token = "replacement-session";
+    mockIdentity.token = "session-B";
     resolveOld({ data: { conversation_id: "old", messages: [{ role: "assistant", content: "Old" }] } });
     await old;
     expect(llm.currentConversationId).toBeNull();

@@ -232,7 +232,7 @@ describe('Retained run request scope', () => {
     const { wrapper } = await open();
     const reads = () => get.mock.calls.filter(([url]) => String(url).endsWith('/pca/scores')).length;
     expect(reads()).toBe(1);
-    auth.token = 'replacement-session';
+    auth.token = 'session-B';
     await flushPromises();
     expect(reads()).toBe(2);
     expect((wrapper.vm as any).values.scores).toEqual([[1, 2], [3, 4]]);

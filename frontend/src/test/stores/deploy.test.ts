@@ -146,7 +146,7 @@ it("refuses an old-session completion even when the client ignores cancellation"
   get.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
   const store = useDeployStore();
   const pending = store.fetchApplications(1);
-  useAuthStore().token = "different-session";
+  useAuthStore().token = "session-B";
   finish({ data: [{ handle: "old", workflow_id: 1 }] });
   await pending;
   expect(store.applications).toEqual([]);
