@@ -7,6 +7,11 @@ import {
 } from "@/utils/diagnostics";
 
 describe("diagnostics formatting", () => {
+  it("does not suppress a new field just because its name ends in definition", () => {
+    expect(buildDiagnosticEntries({ population_definition: "independent specimens" }))
+      .toEqual([{ key: "population_definition", label: "Population Definition", displayValue: "independent specimens", detail: undefined }]);
+  });
+
   it("keeps MCR fit values compact and formulas in hover without altering retained metadata", () => {
     const metadata = { n_components: 3, residual_rms: 0.005532, lof_percent: 10.99,
       lof_definition: "100 * sqrt(sum(residual^2) / sum(X^2))",

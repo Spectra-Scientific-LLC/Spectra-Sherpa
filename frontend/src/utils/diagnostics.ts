@@ -20,6 +20,13 @@ const STRUCTURED_CONTAINER_KEYS = new Set([
 
 const EMPTY_STRINGS = new Set(["", "nan", "inf", "+inf", "-inf", "infinity", "+infinity", "-infinity", "none", "null"]);
 
+// Known explanatory fields only: new scientific fields must remain visible
+// until their presentation is explicitly reviewed.
+const DEFINITION_KEYS = new Set([
+  "lof_definition", "residual_definition", "bias_definition",
+  "one_se_definition", "stability_definition",
+]);
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
@@ -134,7 +141,7 @@ export const buildDiagnosticEntries = (diagnostics: Record<string, unknown> | nu
       : `${selected.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} variables retained` }
     : diagnostics;
   return Object.entries(displayDiagnostics)
-    .filter(([key]) => !(hasSelectionCount && key === "n_total") && !key.endsWith("_definition"))
+    .filter(([key]) => !(hasSelectionCount && key === "n_total") && !DEFINITION_KEYS.has(key))
     .filter(([key, value]) => !STRUCTURED_CONTAINER_KEYS.has(key) && !isEmptyDiagnosticValue(value))
     .map(([key, value]) => ({
       key,
