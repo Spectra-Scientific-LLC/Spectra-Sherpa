@@ -9,7 +9,11 @@ export default defineConfig({
   expect: { timeout: 15_000 },
   workers: 1,
   retries: 0,
-  reporter: [["list"], ["html", { outputFolder: "scientific-browser-report", open: "never" }]],
+  reporter: [
+    ["list"],
+    ["json", { outputFile: "scientific-browser-results/results.json" }],
+    ["html", { outputFolder: "scientific-browser-report", open: "never" }],
+  ],
   outputDir: "scientific-browser-results",
   use: {
     baseURL,

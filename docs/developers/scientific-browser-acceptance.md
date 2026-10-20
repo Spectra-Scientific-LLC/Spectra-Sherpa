@@ -105,11 +105,25 @@ to hide a scientific assertion failure.
 
 ## CI and maintenance
 
-Both repositories run the smoke in their existing Ubuntu frontend job on PRs.
-Existing main/weekly/manual qualification paths run the broader ordinary suite.
-No new cron, native packaging job, provider download or paid manual run is added.
-Failure artifacts contain only ordinary-lane data and expire after seven days.
-Hosted Linux results must pass independently of local macOS/Chrome evidence.
+Public CI has a dedicated scientific-browser job: Ubuntu smoke on PRs and the
+full ordinary suite on **Ubuntu, Windows and macOS** for the existing main,
+weekly and manual triggers. Each runner builds the production frontend, starts
+the disposable backend through the real Playwright launcher, runs the scientific
+journeys and checks that the owned server stops. The required CI verdict includes
+every browser matrix row. The monorepo's own frontend job remains Ubuntu-only.
+
+To qualify a native-sensitive public PR before merge, dispatch its exact branch:
+
+```sh
+gh workflow run ci.yml -R Spectra-Scientific-LLC/Spectra-Sherpa --ref YOUR_BRANCH
+```
+
+Record the dispatched SHA and all three `Scientific browser` job results. Backend
+or shell-only platform passes do not substitute for browser-launcher acceptance.
+Per-platform artifacts contain the ordinary-lane JSON/HTML test report and
+screenshots/traces where retained, and expire after seven days. No new cron,
+native packaging job, provider download or paid manual run is added.
+Hosted results must pass independently of local macOS/Chrome evidence.
 
 Before a release, record the explicit provider-lane result using authorized local
 data, as well as ordinary CI and required public platform qualification. A smoke

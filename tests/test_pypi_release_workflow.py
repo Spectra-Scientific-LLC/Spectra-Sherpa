@@ -252,7 +252,7 @@ def test_public_ci_runs_prs_on_ubuntu_and_qualifies_every_platform_on_main_and_w
     assert {"push", "pull_request", "schedule", "workflow_dispatch"} <= set(triggers)
     assert triggers["push"]["branches"] == ["main"]
     assert triggers["schedule"]
-    for name in ("backend", "desktop-shell"):
+    for name in ("backend", "desktop-shell", "scientific-browser"):
         job = workflow["jobs"][name]
         assert _platforms(job, "pull_request") == PR_PLATFORMS
         for event in ("push", "schedule", "workflow_dispatch"):
@@ -260,6 +260,30 @@ def test_public_ci_runs_prs_on_ubuntu_and_qualifies_every_platform_on_main_and_w
     shell = workflow["jobs"]["desktop-shell"]
     assert shell["env"]["ELECTRON_SKIP_BINARY_DOWNLOAD"] == "1"
     assert any(step.get("run") == "npm test" for step in shell["steps"])
+
+
+def test_scientific_browser_matrix_runs_real_journeys_and_is_required() -> None:
+    workflow = _public_ci()
+    job = workflow["jobs"]["scientific-browser"]
+    assert job["strategy"]["fail-fast"] is False
+    assert job["timeout-minutes"] <= 30
+    assert job["defaults"]["run"]["shell"] == "bash"
+    steps = {step.get("name"): step for step in job["steps"]}
+    assert steps["Build production frontend"]["run"] == "npm run build"
+    assert "playwright install --with-deps chromium" in steps["Install scientific browser"]["run"]
+    smoke = steps["Scientific browser PR smoke"]
+    assert smoke["if"] == "github.event_name == 'pull_request'"
+    assert smoke["run"] == "npm run test:science:smoke"
+    full = steps["Scientific browser qualification"]
+    assert full["if"] == "github.event_name != 'pull_request'"
+    assert full["run"] == "npm run test:science"
+    assert steps["Verify owned server stopped"]["if"] == "always()"
+    evidence = steps["Scientific browser evidence"]
+    assert evidence["if"] == "always()"
+    assert "${{ matrix.os }}" in evidence["with"]["name"]
+    assert "provider" not in evidence["with"]["path"]
+    assert "scientific-browser" in workflow["jobs"]["verdict"]["needs"]
+    assert not any("test:science" in step.get("run", "") for step in workflow["jobs"]["frontend"]["steps"])
 
 
 def test_saved_model_compat_runs_on_sensitive_prs_main_and_weekly() -> None:
