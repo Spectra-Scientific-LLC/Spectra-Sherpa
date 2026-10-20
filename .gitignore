@@ -133,3 +133,7 @@ local
 # Local planning drafts under docs/plans/ are working documents, not
 # part of the published package (the release tooling rejects this path).
 docs/plans/
+frontend/scientific-browser-results/
+frontend/scientific-browser-report/
+frontend/provider-browser-results/
+frontend/provider-browser-report/

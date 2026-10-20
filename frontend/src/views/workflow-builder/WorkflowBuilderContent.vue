@@ -34,6 +34,7 @@
             class="p-button-outlined p-button-sm"
             :loading="isExecuting || isBatchExecuting"
             :disabled="
+              workflowContextLoading ||
               isTrialTabActive ||
               isManagedCandidateAuthority ||
               pendingDataSelection ||
@@ -301,6 +302,7 @@
         </div>
         <div
           class="canvas-container"
+          :aria-busy="workflowContextLoading"
           :class="{
             'with-sheet-tabs': workbookStore.sheets.length > 0,
             'trial-container': isTrialTabActive,
@@ -316,6 +318,7 @@
           />
           <WorkflowCanvas
             v-else
+            :inert="workflowContextLoading"
             ref="canvasRef"
             :nodes="nodes"
             :edges="edges"

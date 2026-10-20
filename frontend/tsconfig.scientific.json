@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "types": ["node"], "noEmit": true },
+  "include": [
+    "e2e/scientific/**/*.ts",
+    "e2e/provider/**/*.ts",
+    "playwright.scientific.config.ts",
+    "playwright.provider.config.ts"
+  ],
+  "exclude": ["node_modules"]
+}

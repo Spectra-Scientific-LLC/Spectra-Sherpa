@@ -305,6 +305,34 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install scientific browser runtime
+        run: python -m pip install -e .
+
+      - name: Install scientific browser
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Scientific browser PR smoke
+        if: github.event_name == 'pull_request'
+        working-directory: frontend
+        run: npm run test:science:smoke
+
+      - name: Scientific browser qualification
+        if: github.event_name != 'pull_request'
+        working-directory: frontend
+        run: npm run test:science
+
+      - name: Scientific browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scientific-browser-failure
+          path: |
+            frontend/scientific-browser-results/
+            frontend/scientific-browser-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Verify deterministic regeneration and distribution parity
         run: |
           python scripts/qualify_release_artifacts.py compare-frontends \

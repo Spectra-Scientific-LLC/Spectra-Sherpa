@@ -931,6 +931,7 @@ function applyRunDeepLink(): void {
   persistActiveRunsTab();
 }
 
+let projectContextReady = false;
 onMounted(async () => {
   const linkedProjectId = Number(route.query.project);
   if (Number.isSafeInteger(linkedProjectId) && linkedProjectId > 0
@@ -939,6 +940,7 @@ onMounted(async () => {
   } else {
     await projectStore.ensureProjectForBrowserTab();
   }
+  projectContextReady = true;
   restoreActiveRunsTab();
   if (route.query.tab === "models" || route.query.tab === "artifacts") activeTab.value = TAB_MODELS;
   if (route.query.tab === "compare") activeTab.value = TAB_COMPARE;
@@ -971,7 +973,7 @@ watch(
 
 watch(
   () => projectStore.currentProjectId,
-  async () => {
+  async (projectId, previousProjectId) => {
     ++overviewSelectionRequest;
     inspectedRunId.value = null;
     selectedModel.value = null;
@@ -984,6 +986,15 @@ watch(
     restoreActiveRunsTab();
     runsStore.clearSelection();
     selectedArtifactUids.value = new Set();
+    if (projectContextReady && projectId != null && previousProjectId != null) {
+      // A deep link belongs to the old project. Keep the new scope on reload,
+      // without carrying a run/artifact/evidence identity into another project.
+      if (activeTab.value === TAB_INSPECT) activeTab.value = TAB_RUN_HISTORY;
+      await router.replace({
+        path: "/runs",
+        query: { project: String(projectId), tab: MODEL_SUBSCOPES[activeTab.value] ?? "run_history" },
+      });
+    }
     await Promise.all([loadModels(), refreshRuns()]);
     applyArtifactDeepLink();
     applyRunDeepLink();

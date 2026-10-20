@@ -74,6 +74,21 @@ function factory(overrides: Record<string, any> = {}) {
 }
 
 describe("DataTableModal", () => {
+  it("preserves the selected component matrix's own axes even when its role is X_features", () => {
+    const wrapper = factory({ nodeOutput: {
+      data: [[.1, .2, .3], [.4, .5, .6]],
+      metadata: { data_role: "X_features", sample_labels: ["wrong-A", "wrong-B"] },
+      descriptor: { dimensions: [{ role: "component", size: 2 }, { role: "feature", size: 3 }] },
+      presentation_value: {
+        y_axis: { labels: ["PC1", "PC2"] },
+        x_axis: { data: [1800, 1725, 1650], title: "Wavenumber", units: "cm^-1" },
+      },
+    } });
+    const vm = wrapper.vm as any;
+    expect(vm.tableColumns.map((column: any) => column.header)).toEqual(["#", "Component", "1800", "1725", "1650"]);
+    expect(vm.tableData.map((row: any) => row._label_full)).toEqual(["PC1", "PC2"]);
+    wrapper.unmount();
+  });
   it("labels component-spectrum rows as components rather than specimens", () => {
     const wrapper = factory({ nodeOutput: { data: [[1, 2], [3, 4]],
       metadata: { scientific_matrix_role: "component_spectra", sample_labels: ["IC 1", "IC 2"], wavenumbers: [1200, 1190] } } });

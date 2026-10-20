@@ -151,7 +151,7 @@
       </div>
 
       <!-- Metadata Panel -->
-      <div v-if="hasMetadata" class="metadata-panel">
+      <div v-if="hasMetadata" class="metadata-panel" role="region" aria-label="Result metadata" tabindex="0">
         <h4>Metadata</h4>
         <div class="metadata-grid">
           <div v-for="(value, key) in displayMetadata" :key="key" class="metadata-item">
@@ -534,7 +534,10 @@ function semanticLabelInfo(output: any, data: any[]) {
       ) });
     }
     if (rowRole === "cluster") return getLabelInfo({ sample_labels: exactStringLabels(metadata.cluster_labels, data.length) });
-    if (rowRole === "component") return getLabelInfo({});
+    if (rowRole === "component") {
+      const axis = output?.presentation_value?.sample_axis ?? output?.presentation_value?.y_axis;
+      return getLabelInfo({ sample_labels: exactStringLabels(axis?.labels, data.length) });
+    }
     const ownLabels = exactStringLabels(metadata.sample_labels ?? metadata.labels ?? metadata.diagnostics?.sample_labels, data.length);
     return getLabelInfo({ sample_labels: ownLabels });
   }
@@ -577,7 +580,7 @@ const matrixColumnLabels = computed(() => {
   const candidates = response
     ? responseNames
     : metadata.data_role === "X_features"
-      ? featureNames
+      ? [...featureNames, axis?.data]
       : [...featureNames, ...coords];
   const declared = candidates.find((value) => Array.isArray(value) && value.length === width);
   if (declared) return declared.map(String);
@@ -696,7 +699,7 @@ const tableColumns = computed(() => {
       } else {
         const labelHeader = isPlsExplainedVariance.value
           ? "Latent Variable"
-          : metadata.scientific_matrix_role === "component_spectra"
+          : metadata.scientific_matrix_role === "component_spectra" || descriptorRowRole === "component"
             ? "Component"
           : descriptorRowRole === "cluster" ? "Cluster"
           : ["actual_class", "predicted_class", "class", "response_class"].includes(descriptorRowRole)
