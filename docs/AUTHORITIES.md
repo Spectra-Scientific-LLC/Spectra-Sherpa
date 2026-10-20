@@ -15,10 +15,11 @@ This map points to authorities; it does not replace them.
 | Run evaluation scope and units | Retained target/validation context; `core/target_units.py` resolves branch-scoped response units, `app/services/run_validation_summary.py` declares summary and row-level facts | `tests/test_run_validation_summary.py`, `tests/test_scientific_authority_rules.py`, `frontend/src/test/utils/scientificReportSummary.test.ts` |
 | Method help and node help | `frontend/src/utils/documentation.ts` for curated method topics/base URL; node execution contract `help_reference` via `nodeHelp.ts` | `method_help.test.ts` (anchors), `node_help.test.ts` (contract URLs), under `frontend/src/test` |
 | GUI layout and language | [GUI design](developers/gui-workspace-design.md), [result surfaces](developers/scientific-result-surface-contract.md), [glossary](concepts/glossary.md) | Component tests and Chrome acceptance; no claim of a complete prose/style lint gate yet |
+| Interface colors and categorical plot palettes | `frontend/src/assets/tokens.css`, `frontend/src/theme/plotTheme.ts`; [theme migration boundary](developers/theme-authority.md) | `theme_authority.test.ts`, `npm run check:theme`; zero-literal baseline outside these authorities |
 | Saved model compatibility and custody | `core/contract_compatibility.py`, `sdk/fitted_state_custody.py`; exact directional registrations, not wildcard compatibility | `tests/test_batch_contract_compatibility.py`, `tests/test_fitted_state_custody.py` |
 | Standalone/upstream boundary | `OSS_SCOPE.md`, `scripts/run_public_tests.py`; private qualification evidence stays upstream | Public reference preflight and boundary checks in CI |
 
 Python paths abbreviated to `app/`, `core/` or `sdk/` above are under
-`src/spectra_sherpa/`. The main REST types, design tokens and generated node
-documentation still need the planned follow-on cohesion work; do not treat
+`src/spectra_sherpa/`. The main REST types and generated node documentation
+still need the planned follow-on cohesion work; do not treat
 handwritten mirrors as newly authoritative because they appear in this map.

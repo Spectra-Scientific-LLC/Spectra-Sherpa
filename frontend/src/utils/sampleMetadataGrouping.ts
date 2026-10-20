@@ -1,3 +1,4 @@
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { createCategoryColorMap } from "@/utils/colors";
 
 export type MetadataGroupingState =
@@ -279,7 +280,7 @@ export function projectMetadataStyle(
     colorLabels,
     colorCategories,
     colorMap: colorKey === "__none__"
-      ? new Map([["color:none", "#3b82f6"]])
+      ? new Map([["color:none", SCIENTIFIC_COLORS.observation]])
       : createCategoryColorMap(colorValues, colorCategories),
     useStyles,
     styleKey: styleField,
@@ -336,7 +337,7 @@ export function buildMetadataScoreTraces(
         color: colorMap.get(category),
         symbol: useStyles ? indices.map((index) => symbolMap.get(styleValues[index])) : "circle",
         opacity: 0.82,
-        line: { width: 1, color: "rgba(15, 23, 42, 0.55)" },
+        line: { width: 1, color: SCIENTIFIC_COLORS.pointOutlineStrong },
       },
       hovertemplate:
         `%{customdata[0]}<br>${colorKey.replace(/_/g, " ")}: %{customdata[1]}<br>` +
@@ -352,7 +353,7 @@ export function buildMetadataScoreTraces(
       legendgroup: `symbol-${symbolField}`,
       x: [null],
       y: [null],
-      marker: { size: 10, color: "#94a3b8", symbol: BLOCK_SYMBOLS[index] },
+      marker: { size: 10, color: SCIENTIFIC_COLORS.reference, symbol: BLOCK_SYMBOLS[index] },
       hoverinfo: "skip",
     });
   });
@@ -424,7 +425,7 @@ export function buildMetadataLineTraces(
       legendgroup: `style-${styleField}`,
       x: [null],
       y: [null],
-      line: { width: 2, color: "#94a3b8", dash: dashMap.get(category) },
+      line: { width: 2, color: SCIENTIFIC_COLORS.reference, dash: dashMap.get(category) },
       hoverinfo: "skip",
     });
   });

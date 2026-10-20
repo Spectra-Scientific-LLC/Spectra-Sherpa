@@ -334,8 +334,8 @@ const qcFlags = computed<QcFlag[]>(() => {
 
 <style scoped>
 .dq-panel {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--ss-surface);
+  border: 1px solid var(--ss-border);
   border-radius: 10px;
   padding: 20px;
 }
@@ -346,19 +346,19 @@ const qcFlags = computed<QcFlag[]>(() => {
   gap: 8px;
   font-weight: 600;
   font-size: 0.95rem;
-  color: #1e293b;
+  color: var(--ss-text-strong);
   margin-bottom: 16px;
 }
 
 .dq-header i {
-  color: #3b82f6;
+  color: var(--ss-action);
 }
 
 .dq-priority-label {
   align-items: center;
-  background: #2563eb;
+  background: var(--ss-action);
   border-radius: 999px;
-  color: #ffffff;
+  color: var(--ss-on-action);
   display: inline-flex;
   font-size: 0.75rem;
   height: 1.5rem;
@@ -373,7 +373,7 @@ const qcFlags = computed<QcFlag[]>(() => {
   align-items: flex-start;
   gap: 8px;
   padding: 24px;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   text-align: left;
   font-size: 0.9rem;
 }
@@ -390,7 +390,7 @@ const qcFlags = computed<QcFlag[]>(() => {
 
 .dq-range-label {
   font-size: 0.8rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-weight: 500;
 }
 
@@ -418,7 +418,7 @@ const qcFlags = computed<QcFlag[]>(() => {
 
 .dq-label-toggle {
   font-size: 0.75rem;
-  color: #3b82f6;
+  color: var(--ss-action);
   cursor: pointer;
   font-weight: 500;
   padding: 2px 6px;
@@ -441,9 +441,9 @@ const qcFlags = computed<QcFlag[]>(() => {
 }
 
 .dq-target-card {
-  border: 1px solid #dbeafe;
+  border: 1px solid var(--ss-action-tint);
   border-radius: 8px;
-  background: #eff6ff;
+  background: var(--ss-action-tint);
   padding: 10px 12px;
   display: flex;
   flex-direction: column;
@@ -451,8 +451,8 @@ const qcFlags = computed<QcFlag[]>(() => {
 }
 
 .dq-target-card--warning {
-  border-color: #fed7aa;
-  background: #fff7ed;
+  border-color: var(--ss-warning-surface);
+  background: var(--ss-warning-surface);
 }
 
 .dq-target-main {
@@ -460,16 +460,16 @@ const qcFlags = computed<QcFlag[]>(() => {
   gap: 6px;
   align-items: baseline;
   font-size: 0.84rem;
-  color: #334155;
+  color: var(--ss-action-text);
 }
 
 .dq-target-main strong {
-  color: #0f172a;
+  color: var(--ss-text-strong);
 }
 
 .dq-target-warning {
   margin: 0;
-  color: #9a3412;
+  color: var(--ss-warning);
   font-size: 0.8rem;
   line-height: 1.35;
 }
@@ -484,9 +484,9 @@ const qcFlags = computed<QcFlag[]>(() => {
 
 .dq-target-count {
   font-size: 0.72rem;
-  color: #475569;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(148, 163, 184, 0.38);
+  color: var(--ss-text-secondary);
+  background: color-mix(in srgb, var(--ss-surface) 78%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-border-strong) 38%, transparent);
   border-radius: 999px;
   padding: 2px 7px;
 }
@@ -511,6 +511,6 @@ const qcFlags = computed<QcFlag[]>(() => {
 
 .dq-flag-message {
   font-size: 0.85rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 </style>

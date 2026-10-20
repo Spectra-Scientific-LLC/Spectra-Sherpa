@@ -95,6 +95,6 @@ small {
   color: var(--text-color-secondary);
 }
 .numeric-error {
-  color: var(--red-400, #f87171);
+  color: var(--red-400, var(--ss-danger));
 }
 </style>

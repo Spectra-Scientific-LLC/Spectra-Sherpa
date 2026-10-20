@@ -146,6 +146,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { computed, ref, watch } from "vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 import { selectedSampleIds, type PcaExplanations, type ReviewRow } from "@/utils/sampleReview";
@@ -256,7 +257,7 @@ function contributionTrace(statistic: "q" | "t2") {
       y: values.map((v) => v[statistic === "q" ? 1 : 2]),
       customdata: values.map((v) => featureId(v[0])),
       text: values.map((v) => featureLabel(v[0])),
-      marker: { color: statistic === "q" ? "#0072B2" : "#D55E00", size: 8 },
+      marker: { color: statistic === "q" ? SCIENTIFIC_COLORS.positive : SCIENTIFIC_COLORS.negative, size: 8 },
       selected: { marker: { size: 12, opacity: 1 } },
       unselected: { marker: { opacity: 0.3 } },
       hovertemplate: "%{text}<br>Contribution: %{y:.5g}<extra></extra>",
@@ -291,8 +292,8 @@ const loadingTrace = computed(() => [
     y: detail.value?.loadings?.[component.value],
     customdata: Array.from(allowed.value),
     text: Array.from({ length: detail.value?.feature_count || 0 }, (_, i) => featureLabel(i)),
-    marker: { size: 3, color: "#0072B2" },
-    line: { width: 1, color: "#0072B2" },
+    marker: { size: 3, color: SCIENTIFIC_COLORS.positive },
+    line: { width: 1, color: SCIENTIFIC_COLORS.positive },
     selected: { marker: { size: 7, opacity: 1 } },
     unselected: { marker: { opacity: 0.2 } },
     hovertemplate: "%{text}<br>Loading: %{y:.5g}<extra></extra>",
@@ -312,7 +313,7 @@ const loadingLayout = computed(() => ({
 </script>
 <style scoped>
 .pca-explanation {
-  border: 1px solid var(--surface-border, #ccc);
+  border: 1px solid var(--surface-border, var(--ss-border-strong));
   padding: 1rem;
   display: grid;
   gap: 0.6rem;
@@ -334,7 +335,7 @@ th,
 td {
   text-align: left;
   padding: 0.35rem;
-  border-bottom: 1px solid var(--surface-border, #ccc);
+  border-bottom: 1px solid var(--surface-border, var(--ss-border-strong));
 }
 .digest {
   overflow-wrap: anywhere;

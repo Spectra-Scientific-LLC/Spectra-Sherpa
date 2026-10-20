@@ -1001,8 +1001,8 @@ onMounted(async () => {
 }
 
 .badge.required {
-  border-color: color-mix(in srgb, var(--red-500) 35%, transparent);
-  color: var(--red-500);
+  border-color: color-mix(in srgb, var(--ss-danger) 35%, transparent);
+  color: var(--ss-danger);
 }
 
 .badge.optional {
@@ -1042,7 +1042,7 @@ onMounted(async () => {
   margin-left: 0.5rem;
   font-size: 0.75rem;
   font-weight: 500;
-  color: var(--green-600, var(--green-500, #059669));
+  color: var(--green-600, var(--green-500, var(--ss-success)));
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
@@ -1201,21 +1201,21 @@ onMounted(async () => {
 }
 
 .message.success {
-  background: #d1fae5;
-  color: #065f46;
-  border: 1px solid #6ee7b7;
+  background: var(--ss-success-surface);
+  color: var(--ss-success);
+  border: 1px solid var(--ss-success-border);
 }
 
 .message.error {
-  background: #fee2e2;
-  color: #991b1b;
-  border: 1px solid #fca5a5;
+  background: var(--ss-danger-surface);
+  color: var(--ss-danger);
+  border: 1px solid var(--ss-danger-border);
 }
 
 .message.info {
-  background: #eff6ff;
-  color: #1e40af;
-  border: 1px solid #bfdbfe;
+  background: var(--ss-action-tint);
+  color: var(--ss-action);
+  border: 1px solid var(--ss-action-tint);
 }
 
 .saved-keys-list {

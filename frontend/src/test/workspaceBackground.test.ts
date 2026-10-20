@@ -5,8 +5,9 @@ import { describe, expect, it } from "vitest";
 
 describe("workbench canvas background", () => {
   it("shares one token between the host workspace tabs", () => {
-    const css = readFileSync(resolve("src/assets/main.css"), "utf8");
-    expect(css).toContain("--workspace-background: #e4e0fa;");
+    const css = readFileSync(resolve("src/assets/tokens.css"), "utf8");
+    expect(css).toContain("--workspace-background: var(--ss-surface-workspace);");
+    expect(css).toContain("--ss-surface-workspace: #e4e0fa;");
     for (const view of ["data/DataContent", "models/ModelsContent", "workflow-builder/WorkflowBuilderContent"]) {
       const source = readFileSync(resolve(`src/views/${view}.vue`), "utf8");
       expect(source).toContain("background: var(--workspace-background);");

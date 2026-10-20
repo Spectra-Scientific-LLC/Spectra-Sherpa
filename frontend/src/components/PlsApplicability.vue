@@ -227,6 +227,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { computed, ref, watch } from "vue";
 import PlotlyChart from "@/components/PlotlyChart.vue";
 import {
@@ -418,7 +419,7 @@ const diagnosticLayout = computed(() => ({
             y0: 0,
             y1: 1,
             yref: "paper",
-            line: { color: "#555" },
+            line: { color: SCIENTIFIC_COLORS.referenceLine },
           },
         ]
       : []),
@@ -431,7 +432,7 @@ const diagnosticLayout = computed(() => ({
             y0: 0,
             y1: 1,
             yref: "paper",
-            line: { color: "#555", dash: "dash" },
+            line: { color: SCIENTIFIC_COLORS.referenceLine, dash: "dash" },
           },
         ]
       : []),
@@ -444,7 +445,7 @@ const diagnosticLayout = computed(() => ({
             xref: "paper",
             y0: detail.value.q_limit,
             y1: detail.value.q_limit,
-            line: { color: "#555" },
+            line: { color: SCIENTIFIC_COLORS.referenceLine },
           },
         ]
       : []),
@@ -486,7 +487,7 @@ function contributionTraces(statistic: "q" | "t2") {
       customdata: rows.map((row) => featureId(row[0])),
       text: rows.map((row) => featureLabel(row[0])),
       hovertemplate: "%{text}<br>%{y:.5g}<extra></extra>",
-      marker: { color: "#0072B2", size: 9 },
+      marker: { color: SCIENTIFIC_COLORS.positive, size: 9 },
       selected: { marker: { size: 13, opacity: 1 } },
       unselected: { marker: { opacity: 0.25 } },
     },
@@ -513,7 +514,7 @@ function contributionLayout(statistic: "q" | "t2") {
 </script>
 <style scoped>
 .pls-applicability {
-  border: 1px solid var(--surface-border, #ccc);
+  border: 1px solid var(--surface-border, var(--ss-border-strong));
   padding: 1rem;
   margin: 1rem 0;
   display: grid;
@@ -553,7 +554,7 @@ th,
 td {
   text-align: left;
   padding: 0.35rem;
-  border-bottom: 1px solid var(--surface-border, #ccc);
+  border-bottom: 1px solid var(--surface-border, var(--ss-border-strong));
 }
 .digest {
   overflow-wrap: anywhere;

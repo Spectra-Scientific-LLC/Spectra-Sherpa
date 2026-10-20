@@ -184,6 +184,6 @@ watch(() => [props.projectId, props.workflowId, props.canonicalArtifactId], asyn
 label { display: block; margin: .65rem 0; }
 input:not([type=checkbox]), textarea, select { display: block; max-width: 100%; width: 100%; }
 p { overflow-wrap: anywhere; }
-[role=alert] { color: var(--red-500); }
+[role=alert] { color: var(--ss-danger); }
 button { margin-right: .5rem; }
 </style>

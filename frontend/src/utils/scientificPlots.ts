@@ -1,3 +1,4 @@
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { scientificNumber } from "@/utils/scientificEncoding";
 /**
  * Renderer-neutral scientific plot projections shared by every workbench
@@ -90,12 +91,12 @@ export function scientificFeatureCoordinates(metadata: PlotRecord, count: number
 
 export const SCIENTIFIC_PLOT_LAYOUT: PlotRecord = {
   autosize: true,
-  paper_bgcolor: "#ffffff",
-  plot_bgcolor: "#ffffff",
-  font: { color: "#334155", size: 12 },
+  paper_bgcolor: SCIENTIFIC_COLORS.paper,
+  plot_bgcolor: SCIENTIFIC_COLORS.paper,
+  font: { color: SCIENTIFIC_COLORS.ink, size: 12 },
   margin: { t: 40, r: 20, b: 50, l: 60 },
-  xaxis: { gridcolor: "#e2e8f0", zerolinecolor: "#94a3b8" },
-  yaxis: { gridcolor: "#e2e8f0", zerolinecolor: "#94a3b8" },
+  xaxis: { gridcolor: SCIENTIFIC_COLORS.grid, zerolinecolor: SCIENTIFIC_COLORS.reference },
+  yaxis: { gridcolor: SCIENTIFIC_COLORS.grid, zerolinecolor: SCIENTIFIC_COLORS.reference },
 };
 
 function presentationReadyLayout(layout: PlotRecord, normalizeXAxisTitle = true): PlotRecord {
@@ -263,7 +264,7 @@ export function buildPredictedVsActualPlot(options: {
         mode: "markers",
         x: actualValues,
         y: predictedValues,
-        marker: { color: "#3b82f6", size: 7, opacity: 0.7 },
+        marker: { color: SCIENTIFIC_COLORS.observation, size: 7, opacity: 0.7 },
         name: "Samples",
         hovertemplate: "Actual: %{x:.15g}<br>Predicted: %{y:.15g}<extra></extra>",
       },
@@ -272,7 +273,7 @@ export function buildPredictedVsActualPlot(options: {
         mode: "lines",
         x: [min - pad, max + pad],
         y: [min - pad, max + pad],
-        line: { color: "#94a3b8", dash: "dash", width: 1.5 },
+        line: { color: SCIENTIFIC_COLORS.reference, dash: "dash", width: 1.5 },
         name: "1:1 Line",
         showlegend: false,
         hoverinfo: "skip",
@@ -282,7 +283,7 @@ export function buildPredictedVsActualPlot(options: {
       ...SCIENTIFIC_PLOT_LAYOUT,
       meta: { regression_metrics: { r2: options.r2 ?? null, rmse: options.rmse ?? null } },
       height: options.height,
-      title: { text: title, font: { size: 14, color: "#334155" } },
+      title: { text: title, font: { size: 14, color: SCIENTIFIC_COLORS.ink } },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Actual" },
       yaxis: {
         ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord),
@@ -331,10 +332,10 @@ const regressionComparisonRows = (value: unknown): RegressionComparisonRow[] => 
 
 // Calibration fits recede; validation predictions carry the eye.
 const ROLE_COLORS: Record<string, string> = {
-  calibration: "#94a3b8",
-  cross_validation: "#d97706",
-  held_out_test: "#2563eb",
-  unqualified_evaluation: "#7c3aed",
+  calibration: SCIENTIFIC_COLORS.reference,
+  cross_validation: SCIENTIFIC_COLORS.crossValidation,
+  held_out_test: SCIENTIFIC_COLORS.observationStrong,
+  unqualified_evaluation: SCIENTIFIC_COLORS.unqualified,
 };
 
 export function buildRegressionComparisonPlot(value: unknown): ScientificPlot {
@@ -358,7 +359,7 @@ export function buildRegressionComparisonPlot(value: unknown): ScientificPlot {
       y: selected.map((row) => row.predicted),
       text: selected.map((row) => row.sample),
       customdata: selected.map((row) => [row.residual, row.role]),
-      marker: { size: 8, opacity: 0.8, color: ROLE_COLORS[role] ?? "#2563eb" },
+      marker: { size: 8, opacity: 0.8, color: ROLE_COLORS[role] ?? SCIENTIFIC_COLORS.observationStrong },
       name: roles.length > 1 ? `${target} · ${evaluationRoleLabel(role).toLowerCase()}` : target,
       hovertemplate:
         "Sample %{text}<br>Reference: %{x:.15g}<br>Predicted: %{y:.15g}<br>Residual: %{customdata[0]:.15g}<br>Role: %{customdata[1]}<extra>%{fullData.name}</extra>",
@@ -374,7 +375,7 @@ export function buildRegressionComparisonPlot(value: unknown): ScientificPlot {
     mode: "lines",
     x: [min - pad, max + pad],
     y: [min - pad, max + pad],
-    line: { color: "#94a3b8", dash: "dash", width: 1.5 },
+    line: { color: SCIENTIFIC_COLORS.reference, dash: "dash", width: 1.5 },
     name: "1:1 Line",
     showlegend: false,
     hoverinfo: "skip",
@@ -392,7 +393,7 @@ export function buildRegressionComparisonPlot(value: unknown): ScientificPlot {
         : undefined,
       title: {
         text: `Predicted vs Reference — ${targetContext}`,
-        font: { size: 14, color: "#334155" },
+        font: { size: 14, color: SCIENTIFIC_COLORS.ink },
       },
       xaxis: {
         ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord),
@@ -506,7 +507,7 @@ export function buildVipPlot(options: {
             x: labels,
             y: scores,
             name: "VIP",
-            line: { color: "#3b82f6", width: 1.25 },
+            line: { color: SCIENTIFIC_COLORS.observation, width: 1.25 },
             hovertemplate: "%{x}<br>VIP: %{y:.15g}<extra></extra>",
           }
         : {
@@ -514,7 +515,7 @@ export function buildVipPlot(options: {
             x: labels,
             y: scores,
             name: "VIP",
-            marker: { color: scores.map((value) => (value >= 1 ? "#f59e0b" : "#3b82f6")) },
+            marker: { color: scores.map((value) => (value >= 1 ? SCIENTIFIC_COLORS.threshold : SCIENTIFIC_COLORS.observation)) },
             hovertemplate: "Feature %{x}<br>VIP: %{y:.15g}<extra></extra>",
           },
     ],
@@ -525,7 +526,7 @@ export function buildVipPlot(options: {
       ...(categoricalFeatureAxis
         ? { margin: { ...(SCIENTIFIC_PLOT_LAYOUT.margin as PlotRecord), b: 150 } }
         : {}),
-      title: { text: "Variable Importance in Projection", font: { size: 14, color: "#334155" } },
+      title: { text: "Variable Importance in Projection", font: { size: 14, color: SCIENTIFIC_COLORS.ink } },
       xaxis: {
         ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord),
         title: categoricalFeatureAxis
@@ -543,7 +544,7 @@ export function buildVipPlot(options: {
           x1: 1,
           y0: 1,
           y1: 1,
-          line: { color: "#94a3b8", dash: "dash", width: 1.5 },
+          line: { color: SCIENTIFIC_COLORS.reference, dash: "dash", width: 1.5 },
         },
       ],
       showlegend: false,
@@ -594,7 +595,7 @@ export function buildClassificationResponsesPlot(
       margin: { t: 72, r: 70, b: 72, l: 76 },
       title: {
         text: "Calibration Class Responses",
-        font: { size: 14, color: "#334155" },
+        font: { size: 14, color: SCIENTIFIC_COLORS.ink },
       },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Response class" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Calibration sample index" },
@@ -671,7 +672,7 @@ export function buildRankedVipPlot(options: {
           x1: 1,
           y0: 1,
           y1: 1,
-          line: { color: "#ef4444", width: 2, dash: "dash" },
+          line: { color: SCIENTIFIC_COLORS.alert, width: 2, dash: "dash" },
         },
       ],
       showlegend: false,
@@ -709,7 +710,7 @@ export function buildExplainedVariancePlot(options: {
       barmode: "group",
       title: {
         text: "Explained Variance by Latent Variable",
-        font: { size: 14, color: "#334155" },
+        font: { size: 14, color: SCIENTIFIC_COLORS.ink },
       },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Latent variable" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Explained variance (%)" },
@@ -742,7 +743,7 @@ export function buildComponentExplainedVariancePlot(value: unknown): ScientificP
         x: components,
         y: percentages,
         name: "Individual variance",
-        marker: { color: "#3b82f6" },
+        marker: { color: SCIENTIFIC_COLORS.observation },
         hovertemplate: "%{x}: %{y:.15g}%<extra></extra>",
       },
       {
@@ -751,8 +752,8 @@ export function buildComponentExplainedVariancePlot(value: unknown): ScientificP
         x: components,
         y: cumulativePercentages,
         name: "Cumulative variance",
-        line: { color: "#f97316", width: 2 },
-        marker: { color: "#f97316", size: 7 },
+        line: { color: SCIENTIFIC_COLORS.peak, width: 2 },
+        marker: { color: SCIENTIFIC_COLORS.peak, size: 7 },
         hovertemplate: "%{x}: %{y:.15g}% cumulative<extra></extra>",
       },
     ],
@@ -761,7 +762,7 @@ export function buildComponentExplainedVariancePlot(value: unknown): ScientificP
       margin: { l: 70 },
       title: {
         text: "PCA Explained Variance",
-        font: { size: 14, color: "#334155" },
+        font: { size: 14, color: SCIENTIFIC_COLORS.ink },
       },
       xaxis: {
         ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord),
@@ -876,11 +877,11 @@ export function buildT2QDiagnosticsPlot(
     text: selected.map((row) => row.sample),
     name: outlier ? "Screened outlier" : "Calibration sample",
     marker: {
-      color: outlier ? "#ef4444" : "#3b82f6",
+      color: outlier ? SCIENTIFIC_COLORS.alert : SCIENTIFIC_COLORS.observation,
       symbol: outlier ? "diamond" : "circle",
       size: outlier ? 10 : 8,
       opacity: 0.82,
-      line: { color: outlier ? "#fecaca" : "#bfdbfe", width: 1 },
+      line: { color: outlier ? SCIENTIFIC_COLORS.alertOutline : SCIENTIFIC_COLORS.observationOutline, width: 1 },
     },
     hovertemplate: "%{text}<br>T²: %{x:.4g}<br>Q: %{y:.4g}<extra></extra>",
   });
@@ -895,7 +896,7 @@ export function buildT2QDiagnosticsPlot(
       y0: 0,
       y1: 1,
       yref: "paper",
-      line: { color: "#f59e0b", dash: "dash", width: 2 },
+      line: { color: SCIENTIFIC_COLORS.threshold, dash: "dash", width: 2 },
     });
   }
   if (hasQLimit) {
@@ -906,7 +907,7 @@ export function buildT2QDiagnosticsPlot(
       xref: "paper",
       y0: qLimit,
       y1: qLimit,
-      line: { color: "#f59e0b", dash: "dash", width: 2 },
+      line: { color: SCIENTIFIC_COLORS.threshold, dash: "dash", width: 2 },
     });
   }
   return {
@@ -915,7 +916,7 @@ export function buildT2QDiagnosticsPlot(
       ...SCIENTIFIC_PLOT_LAYOUT,
       title: {
         text: "Hotelling T² vs Q Residuals",
-        font: { size: 14, color: "#334155" },
+        font: { size: 14, color: SCIENTIFIC_COLORS.ink },
       },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Hotelling T²" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Q residual (SPE)" },
@@ -951,13 +952,13 @@ export function buildCategoryCountsPlot(value: unknown): ScientificPlot {
         type: "bar",
         x: [...counts.keys()],
         y: [...counts.values()],
-        marker: { color: "#3b82f6" },
+        marker: { color: SCIENTIFIC_COLORS.observation },
         hovertemplate: "%{x}<br>Samples: %{y}<extra></extra>",
       },
     ],
     layout: presentationReadyLayout({
       ...SCIENTIFIC_PLOT_LAYOUT,
-      title: { text: "Class Assignment Counts", font: { size: 14, color: "#334155" } },
+      title: { text: "Class Assignment Counts", font: { size: 14, color: SCIENTIFIC_COLORS.ink } },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Class" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Samples" },
       showlegend: false,
@@ -1041,7 +1042,7 @@ export function buildConfusionMatrixPlot(
         b: Math.min(132, 64 + maxDisplayLines * 14),
         l: Math.min(190, Math.max(90, 38 + maxDisplayLineLength * 6)),
       },
-      title: { text: "Confusion Matrix", font: { size: 14, color: "#334155" } },
+      title: { text: "Confusion Matrix", font: { size: 14, color: SCIENTIFIC_COLORS.ink } },
       xaxis: {
         ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord),
         title: "Predicted class",
@@ -1103,13 +1104,13 @@ export function buildPeakTablePlot(value: unknown): ScientificPlot {
         mode: "markers",
         x: points.map((point) => point.x),
         y: points.map((point) => point.y),
-        marker: { color: "#f59e0b", size: 8 },
+        marker: { color: SCIENTIFIC_COLORS.threshold, size: 8 },
         hovertemplate: "Position: %{x}<br>Height: %{y:.6g}<extra></extra>",
       },
     ],
     layout: presentationReadyLayout({
       ...SCIENTIFIC_PLOT_LAYOUT,
-      title: { text: "Detected Peaks", font: { size: 14, color: "#334155" } },
+      title: { text: "Detected Peaks", font: { size: 14, color: SCIENTIFIC_COLORS.ink } },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Spectral position" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Peak height" },
       showlegend: false,
@@ -1144,13 +1145,13 @@ export function buildSalientFeaturesPlot(value: unknown): ScientificPlot {
         type: "bar",
         x: features.map((feature) => feature.label),
         y: features.map((feature) => feature.score),
-        marker: { color: "#8b5cf6" },
+        marker: { color: SCIENTIFIC_COLORS.importance },
         hovertemplate: "Feature %{x}<br>Score: %{y:.6g}<extra></extra>",
       },
     ],
     layout: presentationReadyLayout({
       ...SCIENTIFIC_PLOT_LAYOUT,
-      title: { text: "Salient Features", font: { size: 14, color: "#334155" } },
+      title: { text: "Salient Features", font: { size: 14, color: SCIENTIFIC_COLORS.ink } },
       xaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.xaxis as PlotRecord), title: "Feature" },
       yaxis: { ...(SCIENTIFIC_PLOT_LAYOUT.yaxis as PlotRecord), title: "Selection score" },
       showlegend: false,
@@ -1327,7 +1328,7 @@ export function buildPlsComponentCurvePlot(value: unknown, responseIndex = 0): S
         title: { text: classification ? "PLS-DA component evidence" : "PCA reconstruction evidence" },
         xaxis: { ...SCIENTIFIC_PLOT_LAYOUT.xaxis, title: "Components", dtick: 1 },
         yaxis: { ...SCIENTIFIC_PLOT_LAYOUT.yaxis, title: metricLabel },
-        shapes: Number.isSafeInteger(selected) && Number(selected) >= 1 ? [{ type: "line", x0: selected, x1: selected, y0: 0, y1: 1, yref: "paper", line: { dash: "dash", color: "#ef4444" } }] : [],
+        shapes: Number.isSafeInteger(selected) && Number(selected) >= 1 ? [{ type: "line", x0: selected, x1: selected, y0: 0, y1: 1, yref: "paper", line: { dash: "dash", color: SCIENTIFIC_COLORS.alert } }] : [],
         annotations: [{ text: available ? "Development diagnostic — not independent test performance" : "Calibration only — cross-validation unavailable", x: 1, y: 1, xref: "paper", yref: "paper", xanchor: "right", yanchor: "bottom", showarrow: false }],
         meta: { cv_status: available ? "available" : "unavailable", cv_reason: available ? null : cv.reason ?? "Not retained", selected_components: selected, selection_rule: record.selection_rule },
       },
@@ -1383,9 +1384,9 @@ export function buildPlsComponentCurvePlot(value: unknown, responseIndex = 0): S
       xaxis: { ...SCIENTIFIC_PLOT_LAYOUT.xaxis, title: "Latent variables", dtick: 1 },
       yaxis: { ...SCIENTIFIC_PLOT_LAYOUT.yaxis, title: `RMSE${unit}` },
       shapes: Number.isSafeInteger(selected) && (selected as number) >= 1
-        ? [{ type: "line", x0: selected, x1: selected, y0: 0, y1: 1, yref: "paper", line: { dash: "dash", color: "#ef4444" } }]
+        ? [{ type: "line", x0: selected, x1: selected, y0: 0, y1: 1, yref: "paper", line: { dash: "dash", color: SCIENTIFIC_COLORS.alert } }]
         : [],
-      annotations: cvUnavailable ? [{ text: "Cross-validation unavailable", x: 1, y: 1, xref: "paper", yref: "paper", xanchor: "right", yanchor: "bottom", showarrow: false, font: { color: "#b45309" } }] : [],
+      annotations: cvUnavailable ? [{ text: "Cross-validation unavailable", x: 1, y: 1, xref: "paper", yref: "paper", xanchor: "right", yanchor: "bottom", showarrow: false, font: { color: SCIENTIFIC_COLORS.thresholdText } }] : [],
       meta: { cv_status: cvUnavailable ? "unavailable" : "available", cv_reason: cvUnavailable ? cv.reason ?? "Not retained" : null,
         selected_components: selected, response_name: names[responseIndex] },
     },

@@ -3,7 +3,7 @@
     <!-- Header with Close Button -->
     <header class="llm-chat-header">
       <div class="llm-chat-header-left">
-        <i class="pi pi-comments" style="font-size: 1.5rem; color: #3b82f6"></i>
+        <i class="pi pi-comments" style="font-size: 1.5rem; color: var(--ss-action)"></i>
         <h1>{{ pageTitle }}</h1>
       </div>
       <div class="llm-chat-header-actions">
@@ -18,7 +18,7 @@
         <Menu ref="llmMenu" :model="llmMenuItems" :popup="true" class="llm-menu">
           <template #item="{ item }">
             <div class="llm-menu-item" :class="{ active: item.active }">
-              <i class="pi pi-sparkles" style="color: #3b82f6; font-size: 0.85rem"></i>
+              <i class="pi pi-sparkles" style="color: var(--ss-action); font-size: 0.85rem"></i>
               <span class="llm-provider-name">{{ item.label }}</span>
               <span class="llm-model-name">{{ item.model }}</span>
             </div>
@@ -176,7 +176,7 @@ const onProviderChange = async () => {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #ffffff;
+  background: var(--ss-surface);
 }
 
 .llm-chat-header {
@@ -184,8 +184,8 @@ const onProviderChange = async () => {
   align-items: center;
   justify-content: space-between;
   padding: 16px 24px;
-  background: #ffffff;
-  border-bottom: 1px solid var(--surface-border, #e2e8f0);
+  background: var(--ss-surface);
+  border-bottom: 1px solid var(--surface-border, var(--ss-border));
   flex-shrink: 0;
 }
 
@@ -200,7 +200,7 @@ const onProviderChange = async () => {
   font-size: 1.75rem;
   font-weight: 500;
   letter-spacing: 0;
-  color: #1e293b;
+  color: var(--ss-text-strong);
 }
 
 .llm-chat-header-actions {
@@ -210,7 +210,7 @@ const onProviderChange = async () => {
 }
 
 .llm-settings-btn {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 /* LLM Menu Styles */
@@ -233,25 +233,25 @@ const onProviderChange = async () => {
 }
 
 .llm-menu-item:hover {
-  background: #f1f5f9;
+  background: var(--ss-surface-subtle);
 }
 
 .llm-menu-item.active {
-  background: #e0f2fe;
-  border: 1px solid #3b82f6;
+  background: var(--ss-info-surface);
+  border: 1px solid var(--ss-action);
 }
 
 .llm-provider-name {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
   flex: 1;
 }
 
 .llm-model-name {
   font-size: 0.75rem;
-  color: #64748b;
-  background: #f1f5f9;
+  color: var(--ss-text-muted);
+  background: var(--ss-surface-subtle);
   padding: 2px 8px;
   border-radius: 4px;
   white-space: nowrap;

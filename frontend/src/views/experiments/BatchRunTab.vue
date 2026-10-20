@@ -244,7 +244,7 @@ input { accent-color: var(--primary-color); }
 small { display: block; color: var(--text-color-secondary); }
 .batch-combinations ul { list-style: none; padding: 0; }
 .batch-combinations li { padding: .6rem 0; border-bottom: 1px solid var(--surface-border); }
-.batch-error { color: var(--red-600, #b42318); }
+.batch-error { color: var(--red-600, var(--ss-danger)); }
 .batch-actions { display: flex; flex-wrap: wrap; gap: .75rem; margin: .5rem 0; }
 .batch-hint { color: var(--text-color-secondary); }
 p { margin: .4rem 0; line-height: 1.5; }

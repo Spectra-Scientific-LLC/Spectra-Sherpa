@@ -2673,12 +2673,12 @@ const onDeleteNode = (nodeId: string) => {
   align-items: center;
   gap: 4px;
   padding: 2px 8px;
-  background: rgba(34, 197, 94, 0.15);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: color-mix(in srgb, var(--ss-success) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-success) 30%, transparent);
   border-radius: 4px;
   font-family: "JetBrains Mono", "Fira Code", monospace;
   font-size: 0.75rem;
-  color: #4ade80;
+  color: var(--ss-panel-success);
   cursor: help;
   max-width: 18rem;
   overflow: hidden;
@@ -2717,9 +2717,9 @@ const onDeleteNode = (nodeId: string) => {
   font-weight: 500;
   padding: 0 10px;
   border-radius: 6px;
-  background: #334155;
-  border: 1px solid #475569;
-  color: #e2e8f0;
+  background: var(--ss-panel-raised);
+  border: 1px solid var(--ss-panel-border);
+  color: var(--ss-panel-secondary);
   white-space: nowrap;
   box-sizing: border-box;
 }
@@ -2739,9 +2739,9 @@ const onDeleteNode = (nodeId: string) => {
 }
 
 .header-actions :deep(.toolbar-action-btn.p-button:hover:not(:disabled)) {
-  background: #475569;
-  border-color: #64748b;
-  color: #f8fafc;
+  background: var(--ss-panel-border);
+  border-color: var(--ss-border-strong);
+  color: var(--ss-panel-text);
 }
 
 .header-actions :deep(.toolbar-action-btn.p-button:disabled) {
@@ -2753,18 +2753,18 @@ const onDeleteNode = (nodeId: string) => {
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: rgba(34, 197, 94, 0.15);
-  border: 1px solid rgba(34, 197, 94, 0.3);
+  background: color-mix(in srgb, var(--ss-success) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ss-success) 30%, transparent);
   border-radius: 6px;
-  color: #4ade80;
+  color: var(--ss-success-strong);
   font-size: 0.75rem;
   font-weight: 500;
 }
 
 .autosave-indicator-error {
-  background: rgba(239, 68, 68, 0.14);
-  border-color: rgba(239, 68, 68, 0.35);
-  color: #fecaca;
+  background: color-mix(in srgb, var(--ss-danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--ss-danger) 35%, transparent);
+  color: var(--ss-danger-strong);
 }
 
 .toolbar-state-control {
@@ -2773,9 +2773,9 @@ const onDeleteNode = (nodeId: string) => {
   gap: 8px;
   padding: 6px 10px;
   border-radius: 6px;
-  border: 1px solid #334155;
-  background: rgba(15, 23, 42, 0.55);
-  color: #cbd5e1;
+  border: 1px solid var(--ss-panel-border);
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-secondary);
   font-size: 0.82rem;
   font-weight: 500;
 }
@@ -2790,13 +2790,13 @@ const onDeleteNode = (nodeId: string) => {
 }
 
 .toolbar-state-control :deep(.p-checkbox-box) {
-  border-color: #64748b;
-  background: #0f172a;
+  border-color: var(--ss-border-strong);
+  background: var(--ss-panel-inset);
 }
 
 .toolbar-state-control :deep(.p-checkbox-box.p-highlight) {
-  border-color: #60a5fa;
-  background: #2563eb;
+  border-color: var(--ss-action-border);
+  background: var(--ss-action);
 }
 
 .settings-panel-content {
@@ -2808,7 +2808,7 @@ const onDeleteNode = (nodeId: string) => {
 
 .toolbar-settings-note {
   max-width: 240px;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   font-size: 0.78rem;
   line-height: 1.35;
 }
@@ -2910,9 +2910,9 @@ const onDeleteNode = (nodeId: string) => {
 }
 
 .canvas-container {
-  background: #1e293b;
+  background: var(--ss-panel);
   border-radius: 8px;
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
   overflow: hidden;
   position: relative;
   display: flex;
@@ -2928,8 +2928,8 @@ const onDeleteNode = (nodeId: string) => {
   display: flex;
   align-items: flex-end;
   gap: 0.25rem;
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: var(--ss-panel);
+  border: 1px solid var(--ss-panel-border);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
   min-height: 40px;
@@ -2937,7 +2937,7 @@ const onDeleteNode = (nodeId: string) => {
 }
 
 .skeleton-tab {
-  background: linear-gradient(90deg, #334155 0%, #475569 50%, #334155 100%);
+  background: linear-gradient(90deg, var(--ss-panel-raised) 0%, var(--ss-panel-border) 50%, var(--ss-panel-raised) 100%);
   background-size: 200% 100%;
   border-radius: 6px 6px 0 0;
   height: 30px;
@@ -2976,21 +2976,21 @@ const onDeleteNode = (nodeId: string) => {
   margin: 0 0 0.8rem;
   padding: 0.7rem 0.85rem;
   border: 1px solid var(--surface-border);
-  border-left: 4px solid var(--green-500);
+  border-left: 4px solid var(--ss-success);
   border-radius: 8px;
   background: var(--surface-card);
 }
 
 .workflow-data-selection > i {
-  color: var(--green-600);
+  color: var(--ss-success);
 }
 
 .workflow-data-selection.pending {
-  border-left-color: var(--orange-500);
+  border-left-color: var(--ss-warning);
 }
 
 .workflow-data-selection.pending > i {
-  color: var(--orange-600);
+  color: var(--ss-warning);
 }
 
 .workflow-data-selection > div {
@@ -3069,12 +3069,12 @@ const onDeleteNode = (nodeId: string) => {
 
 .drawer-header-icon {
   font-size: 1.1rem;
-  color: #3b82f6;
+  color: var(--ss-panel-action);
 }
 
 .drawer-header-title {
   font-size: 1.05rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
 }
 </style>

@@ -1433,6 +1433,8 @@
 </template>
 
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
+import { seriesPalette } from "@/utils/colors";
 import { computed, inject, ref, watch } from "vue";
 import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
@@ -1614,7 +1616,7 @@ const mcrSelectedValidationScatterData = computed(() => {
         x,
         y,
         name: "Samples",
-        marker: { color: "#3b82f6", size: 8, opacity: 0.72 },
+        marker: { color: SCIENTIFIC_COLORS.observation, size: 8, opacity: 0.72 },
         hovertemplate: "Target: %{x:.4g}<br>Recovered: %{y:.4g}<extra></extra>",
       },
       {
@@ -1623,7 +1625,7 @@ const mcrSelectedValidationScatterData = computed(() => {
         x: [lo, hi],
         y: [lo, hi],
         name: "Ideal",
-        line: { dash: "dash", color: "#94a3b8" },
+        line: { dash: "dash", color: SCIENTIFIC_COLORS.reference },
       },
     ];
   }
@@ -1653,7 +1655,7 @@ const mcrSelectedSpectrumData = computed(() => {
       x,
       y: normalized,
       name: String(candidate?.component_name || `Component ${componentIndex + 1}`),
-      line: { width: 2, color: "#14b8a6" },
+      line: { width: 2, color: SCIENTIFIC_COLORS.component },
       hovertemplate: "%{x:.4g}<br>Normalized intensity: %{y:.4g}<extra></extra>",
     },
   ];
@@ -1678,7 +1680,7 @@ const mcrSelectedSpectrumData = computed(() => {
       x: truthX,
       y: maxNormalize(truthSpectrum),
       name: String((candidate as any)?.target_name || `Ground truth ${truthIndex + 1}`),
-      line: { width: 2, color: "#f59e0b", dash: "dot" },
+      line: { width: 2, color: SCIENTIFIC_COLORS.threshold, dash: "dot" },
       hovertemplate: "%{x:.4g}<br>Ground truth: %{y:.4g}<extra></extra>",
     });
   }
@@ -1848,7 +1850,7 @@ const libraryCompareInteractiveData = computed(() => {
       x: sampleX,
       y: sampleY,
       name: firstCandidate.sample || "Sample",
-      line: { color: "#f8fafc", width: 2 },
+      line: { color: SCIENTIFIC_COLORS.inverse, width: 2 },
     },
   ];
   for (const candidate of candidates) {
@@ -1926,20 +1928,7 @@ function toggleLibraryCandidate(candidate: LibraryCompareCandidate): void {
 }
 
 function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): string {
-  const palette = [
-    "#38bdf8",
-    "#f59e0b",
-    "#22c55e",
-    "#e879f9",
-    "#fb7185",
-    "#a78bfa",
-    "#14b8a6",
-    "#f97316",
-    "#84cc16",
-    "#60a5fa",
-    "#f472b6",
-    "#c084fc",
-  ];
+  const palette = seriesPalette("library");
   const index = Number(
     candidate.library_trace_index ?? candidate.library_index ?? candidate.sample_rank ?? 0,
   );
@@ -1949,11 +1938,11 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
 
 <style scoped>
 .detail-section {
-  background: #1e293b;
+  background: var(--ss-panel);
   border-radius: 12px;
   margin-bottom: 24px;
   overflow: hidden;
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
 }
 .section-header {
   display: flex;
@@ -1964,7 +1953,7 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   transition: background 0.15s;
 }
 .section-header:hover {
-  background: rgba(51, 65, 85, 0.5);
+  background: color-mix(in srgb, var(--ss-panel-raised) 50%, transparent);
 }
 .section-title {
   display: flex;
@@ -1973,7 +1962,7 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
 }
 .section-title i {
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 .section-title h2 {
   margin: 0;
@@ -1982,14 +1971,14 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
 }
 .section-badge {
   padding: 4px 10px;
-  background: #334155;
+  background: var(--ss-panel-raised);
   border-radius: 12px;
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 .section-content {
   padding: 20px;
-  border-top: 1px solid #334155;
+  border-top: 1px solid var(--ss-panel-border);
 }
 .collapse-enter-active,
 .collapse-leave-active {
@@ -2010,7 +1999,7 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   gap: 12px;
 }
 .plot-subsection {
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   border-radius: 8px;
   overflow: hidden;
 }
@@ -2020,16 +2009,16 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   gap: 10px;
   padding: 10px 14px;
   cursor: pointer;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   font-size: 0.9rem;
   font-weight: 500;
 }
 .plot-subsection-header:hover {
-  background: rgba(51, 65, 85, 0.3);
+  background: color-mix(in srgb, var(--ss-panel-raised) 30%, transparent);
 }
 .plot-subsection-header i {
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 .plot-container {
   padding: 12px 14px;
@@ -2066,21 +2055,21 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   align-items: center;
   gap: 8px;
   min-height: 34px;
-  color: #e2e8f0;
+  color: var(--ss-panel-secondary);
   font-size: 0.84rem;
 }
 .mcr-candidate-metrics span {
   padding: 4px 8px;
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
   border-radius: 6px;
-  background: #1e293b;
+  background: var(--ss-panel);
 }
 .mcr-candidate-hint {
   flex: 1 1 260px;
   min-height: 34px;
   display: inline-flex;
   align-items: center;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   font-size: 0.8rem;
   line-height: 1.35;
 }
@@ -2090,10 +2079,10 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   gap: 8px;
   margin-bottom: 10px;
   padding: 8px 10px;
-  border: 1px solid rgba(245, 158, 11, 0.35);
+  border: 1px solid color-mix(in srgb, var(--ss-warning) 35%, transparent);
   border-radius: 6px;
-  background: rgba(245, 158, 11, 0.08);
-  color: #fbbf24;
+  background: color-mix(in srgb, var(--ss-warning) 8%, transparent);
+  color: var(--ss-panel-warning);
   font-size: 0.82rem;
 }
 .metadata-grouping-error {
@@ -2102,15 +2091,15 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   gap: 8px;
   margin-bottom: 10px;
   padding: 8px 10px;
-  border: 1px solid rgba(239, 68, 68, 0.4);
+  border: 1px solid color-mix(in srgb, var(--ss-danger) 40%, transparent);
   border-radius: 6px;
-  background: rgba(127, 29, 29, 0.22);
-  color: #fecaca;
+  background: color-mix(in srgb, var(--ss-danger) 22%, transparent);
+  color: var(--ss-panel-danger);
   font-size: 0.82rem;
 }
 .plot-note {
   margin: 0 0 8px;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   font-size: 0.78rem;
 }
 .plot-controls {
@@ -2126,7 +2115,7 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
 }
 .control-group label {
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -2156,10 +2145,10 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   grid-template-columns: 16px 10px minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
   border-radius: 6px;
-  background: #0f172a;
-  color: #cbd5e1;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-secondary);
   cursor: pointer;
   font-size: 0.76rem;
   line-height: 1.15;
@@ -2168,8 +2157,8 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
 }
 .species-rank-row:hover,
 .species-rank-row.selected {
-  border-color: #38bdf8;
-  background: rgba(14, 165, 233, 0.14);
+  border-color: var(--ss-info-border);
+  background: color-mix(in srgb, var(--ss-info) 14%, transparent);
 }
 .species-rank-row input {
   pointer-events: none;
@@ -2178,7 +2167,7 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   width: 9px;
   height: 9px;
   border-radius: 50%;
-  box-shadow: 0 0 0 1px rgba(248, 250, 252, 0.28);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ss-shadow-color) 28%, transparent);
 }
 .species-rank-row span {
   min-width: 0;
@@ -2187,7 +2176,7 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   white-space: nowrap;
 }
 .species-rank-row strong {
-  color: #e2e8f0;
+  color: var(--ss-panel-secondary);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -2197,32 +2186,32 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   min-height: 34px;
   padding: 0 10px;
   border-radius: 6px;
-  border: 1px solid #475569;
-  color: #cbd5e1;
-  background: #1e293b;
+  border: 1px solid var(--ss-panel-border);
+  color: var(--ss-panel-secondary);
+  background: var(--ss-panel);
   font-size: 0.8rem;
   font-weight: 600;
 }
 .candidate-status-auto_selected {
-  color: #bbf7d0;
-  border-color: #15803d;
-  background: rgba(22, 101, 52, 0.28);
+  color: var(--ss-panel-success);
+  border-color: var(--ss-success);
+  background: color-mix(in srgb, var(--ss-success) 28%, transparent);
 }
 .candidate-status-rejected {
-  color: #fecaca;
-  border-color: #b91c1c;
-  background: rgba(127, 29, 29, 0.26);
+  color: var(--ss-panel-danger);
+  border-color: var(--ss-danger);
+  background: color-mix(in srgb, var(--ss-danger) 26%, transparent);
 }
 .candidate-status-review {
-  color: #fde68a;
-  border-color: #a16207;
-  background: rgba(113, 63, 18, 0.28);
+  color: var(--ss-panel-warning);
+  border-color: var(--ss-warning);
+  background: color-mix(in srgb, var(--ss-warning) 28%, transparent);
 }
 .candidate-hqi {
   min-height: 34px;
   display: inline-flex;
   align-items: center;
-  color: #e2e8f0;
+  color: var(--ss-panel-secondary);
   font-size: 0.85rem;
 }
 .candidate-alignment-badge {
@@ -2230,24 +2219,24 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #fde68a;
-  border: 1px solid #a16207;
+  color: var(--ss-panel-warning);
+  border: 1px solid var(--ss-warning);
   border-radius: 6px;
-  background: rgba(113, 63, 18, 0.22);
+  background: color-mix(in srgb, var(--ss-warning) 22%, transparent);
   padding: 0 10px;
   font-size: 0.8rem;
   font-weight: 600;
 }
 .candidate-alignment-badge.aligned {
-  color: #bbf7d0;
-  border-color: #15803d;
-  background: rgba(22, 101, 52, 0.24);
+  color: var(--ss-panel-success);
+  border-color: var(--ss-success);
+  background: color-mix(in srgb, var(--ss-success) 24%, transparent);
 }
 .candidate-caveat {
   min-height: 34px;
   display: inline-flex;
   align-items: center;
-  color: #fbbf24;
+  color: var(--ss-panel-warning);
   font-size: 0.82rem;
 }
 .interactive-contour-container {
@@ -2264,26 +2253,26 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
   margin: 0 0 6px;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 .slice-hint {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 10px 14px;
-  background: rgba(59, 130, 246, 0.05);
-  border: 1px dashed rgba(59, 130, 246, 0.3);
+  background: color-mix(in srgb, var(--ss-action) 5%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--ss-action) 30%, transparent);
   border-radius: 6px;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   font-size: 0.85rem;
 }
 .slice-hint i {
-  color: #3b82f6;
+  color: var(--ss-panel-action);
 }
 .empty-plot-message,
 .no-plot-message {
   padding: 20px;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   font-size: 0.9rem;
   text-align: left;
 }
@@ -2295,7 +2284,7 @@ function libraryTraceColorForCandidate(candidate: LibraryCompareCandidate): stri
 }
 .empty-plot-message i {
   font-size: 2rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 .evaluation-viz {
   width: 100%;

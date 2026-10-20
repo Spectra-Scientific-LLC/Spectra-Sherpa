@@ -119,15 +119,15 @@ function plotLayout(role: EvaluationRole, residual: boolean) {
 <style scoped>
 .scientific-comparison { display: flex; flex-direction: column; gap: .75rem; }
 .populations { display: flex; flex-wrap: wrap; gap: 1rem; }
-article { flex: 1; min-width: 220px; padding: .75rem; background: #f8fafc; }
-.role-section { padding: .75rem; border: 1px solid #cbd5e1; border-radius: 6px; }
+article { flex: 1; min-width: 220px; padding: .75rem; background: var(--ss-surface-subtle); }
+.role-section { padding: .75rem; border: 1px solid var(--ss-border-strong); border-radius: 6px; }
 h3, h4, h5 { margin: .25rem 0; }
 p { font-size: .85rem; margin: .4rem 0; }
 .state { font-weight: 600; }
-.comparable { color: #166534; }
-.limitation, .next-action { color: #475569; }
+.comparable { color: var(--ss-success); }
+.limitation, .next-action { color: var(--ss-text-secondary); }
 table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-th, td { padding: .4rem; text-align: left; border-bottom: 1px solid #e2e8f0; }
+th, td { padding: .4rem; text-align: left; border-bottom: 1px solid var(--ss-border); }
 summary { cursor: pointer; margin: .75rem 0; }
-.selected-row { background: #dbeafe; }
+.selected-row { background: var(--ss-action-tint); }
 </style>

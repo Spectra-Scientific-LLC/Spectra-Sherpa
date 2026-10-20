@@ -1270,7 +1270,7 @@ defineExpose({ markSaved });
   gap: 0.65rem;
   margin-top: 0.75rem;
   padding-top: 0.75rem;
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--ss-border);
 }
 .plan-sync > .p-button {
   justify-self: start;
@@ -1292,7 +1292,7 @@ defineExpose({ markSaved });
 .binding-revision-notice {
   display: block;
   margin-bottom: 0.8rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 .editor-state ~ .control-section,
 .editor-load-error ~ .control-section,
@@ -1311,7 +1311,7 @@ defineExpose({ markSaved });
 .editor-intro p,
 .section-heading p {
   margin: 0.25rem 0 0;
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 .section-heading h4 {
   margin: 0;
@@ -1324,7 +1324,7 @@ defineExpose({ markSaved });
   padding: 0;
   border: 0;
   background: transparent;
-  color: #0f172a;
+  color: var(--ss-text-strong);
   cursor: pointer;
   font: inherit;
   font-weight: 650;
@@ -1332,11 +1332,11 @@ defineExpose({ markSaved });
 }
 .section-toggle:focus-visible {
   border-radius: 0.35rem;
-  outline: 2px solid #3b82f6;
+  outline: 2px solid var(--ss-action);
   outline-offset: 3px;
 }
 .section-info {
-  color: #64748b;
+  color: var(--ss-text-muted);
   cursor: help;
   font-size: 0.9rem;
 }
@@ -1346,7 +1346,7 @@ defineExpose({ markSaved });
   gap: 0.5rem;
 }
 .control-section {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
   border-radius: 0.65rem;
   padding: 0.85rem;
   margin-bottom: 0.8rem;
@@ -1363,7 +1363,7 @@ defineExpose({ markSaved });
 .field label {
   font-size: 0.8rem;
   font-weight: 600;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 .target-select,
 .direction-field {
@@ -1398,8 +1398,8 @@ defineExpose({ markSaved });
 .validation-errors {
   display: flex;
   gap: 0.5rem;
-  color: #b91c1c;
-  background: #fef2f2;
+  color: var(--ss-danger);
+  background: var(--ss-danger-surface);
   padding: 0.75rem;
   margin-bottom: 0.75rem;
 }
@@ -1408,7 +1408,7 @@ defineExpose({ markSaved });
   padding-left: 1.25rem;
 }
 .inline-error {
-  color: #b91c1c;
+  color: var(--ss-danger);
 }
 .cell-input {
   width: 100%;
@@ -1418,7 +1418,7 @@ defineExpose({ markSaved });
   font-size: 0.65rem;
 }
 .plate-preview {
-  border-top: 1px solid #e2e8f0;
+  border-top: 1px solid var(--ss-border);
   margin-top: 1rem;
   margin-bottom: 1rem;
   padding-top: 1rem;

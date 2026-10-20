@@ -42,16 +42,16 @@ const driftTooltip = computed(
   gap: 8px;
   padding: 4px 16px;
   font-size: 0.75rem;
-  color: #6b7280;
-  background: #f9fafb;
-  border-top: 1px solid #e5e7eb;
+  color: var(--ss-text-muted);
+  background: var(--ss-surface-subtle);
+  border-top: 1px solid var(--ss-border);
   flex: 0 0 auto;
   user-select: none;
 }
 
 .app-footer-brand {
   font-weight: 600;
-  color: #4b5563;
+  color: var(--ss-text-body);
 }
 
 .app-footer-version {
@@ -60,13 +60,13 @@ const driftTooltip = computed(
 }
 
 .app-footer-drift {
-  background: #fffbeb;
-  color: #92400e;
-  border-top-color: #fde68a;
+  background: var(--ss-warning-surface);
+  color: var(--ss-warning);
+  border-top-color: var(--ss-warning-surface);
 }
 
 .app-footer-drift .app-footer-brand {
-  color: #92400e;
+  color: var(--ss-warning);
 }
 
 .app-footer-drift-badge {

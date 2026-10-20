@@ -484,7 +484,7 @@ async function apply(item: Dependent) {
 </script>
 <style scoped>
 .dataset-curation {
-  border: 1px solid var(--surface-border, #ccc);
+  border: 1px solid var(--surface-border, var(--ss-border-strong));
   padding: 1rem;
   margin: 1rem 0;
 }
@@ -518,8 +518,8 @@ td {
   padding: 0.4rem;
 }
 .excluded {
-  color: var(--text-color-secondary, #666);
-  background: var(--surface-100, #eee);
+  color: var(--text-color-secondary, var(--ss-text-muted));
+  background: var(--surface-100, var(--ss-surface-subtle));
 }
 .actions {
   display: flex;

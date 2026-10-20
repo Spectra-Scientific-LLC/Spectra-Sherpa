@@ -161,6 +161,8 @@
 </template>
 
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
+import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, ref, watch } from "vue";
 import api from "@/api/client";
@@ -337,13 +339,13 @@ const allowed = computed(() => new Set(receipt.value?.rows.map((r) => r.id) || [
 const focused = computed(
   () => receipt.value?.rows.find((row) => selectedSet.value.has(row.id)) || null,
 );
-const palette = ["#0072B2", "#009E73", "#D55E00", "#CC79A7", "#E69F00", "#56B4E9"];
+
 const classColors = computed(
   () =>
     new Map(
       [...new Set(receipt.value?.rows.map((r) => r.class) || [])]
         .sort()
-        .map((label, i) => [label, palette[i % palette.length]]),
+        .map((label, i) => [label, seriesPalette("classification")[i % seriesPalette("classification").length]]),
     ),
 );
 const config = { responsive: true, displaylogo: false };
@@ -413,7 +415,7 @@ const influenceLayout = computed(() => ({
             y0: 0,
             y1: 1,
             yref: "paper",
-            line: { color: "#555" },
+            line: { color: SCIENTIFIC_COLORS.referenceLine },
           },
         ]
       : []),
@@ -426,7 +428,7 @@ const influenceLayout = computed(() => ({
             xref: "paper",
             y0: receipt.value.q_limit,
             y1: receipt.value.q_limit,
-            line: { color: "#555" },
+            line: { color: SCIENTIFIC_COLORS.referenceLine },
           },
         ]
       : []),

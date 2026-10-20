@@ -24,17 +24,17 @@ defineProps<{
 }
 
 .capability {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--ss-border-strong);
   border-radius: 8px;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.82rem;
   font-weight: 700;
   padding: 6px 10px;
 }
 
 .capability.enabled {
-  background: #dcfce7;
-  border-color: #86efac;
-  color: #166534;
+  background: var(--ss-success-surface);
+  border-color: var(--ss-success-border);
+  color: var(--ss-success);
 }
 </style>

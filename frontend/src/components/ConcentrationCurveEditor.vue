@@ -75,6 +75,7 @@
 </template>
 
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { computed, ref } from "vue";
 import InputNumber from "primevue/inputnumber";
 import type { CurvePoint } from "@/types";
@@ -104,7 +105,7 @@ const props = withDefaults(
     hideToolbar?: boolean;
     hideHint?: boolean;
   }>(),
-  { color: "#2563eb", title: "component", hideToolbar: false, hideHint: false },
+  { color: SCIENTIFIC_COLORS.observationStrong, title: "component", hideToolbar: false, hideHint: false },
 );
 
 const emit = defineEmits<{
@@ -221,29 +222,29 @@ defineExpose({ seedShape });
   aspect-ratio: 1 / 1;
   height: auto;
   min-height: 220px;
-  background: var(--surface-50, #f8fafc);
-  border: 1px solid var(--surface-200, #e2e8f0);
+  background: var(--surface-50, var(--ss-surface-subtle));
+  border: 1px solid var(--surface-200, var(--ss-border));
   border-radius: 10px;
 }
 
 .conc-curve-editor__frame {
-  fill: #fff;
-  stroke: #cbd5e1;
+  fill: var(--ss-on-action);
+  stroke: var(--ss-panel-secondary);
   stroke-width: 0.5;
 }
 
 .conc-curve-editor__grid line {
-  stroke: #e2e8f0;
+  stroke: var(--ss-panel-secondary);
   stroke-width: 0.4;
 }
 
 .conc-curve-editor__grid text {
-  fill: #64748b;
+  fill: var(--ss-text-muted);
   font-size: 5px;
 }
 
 .conc-curve-editor__axis {
-  fill: #475569;
+  fill: var(--ss-text-secondary);
   font-size: 5.5px;
   font-weight: 600;
 }
@@ -255,7 +256,7 @@ defineExpose({ seedShape });
 
 .conc-curve-editor__polyline {
   fill: none;
-  stroke: #94a3b8;
+  stroke: var(--ss-text-muted);
   stroke-width: 0.6;
   stroke-dasharray: 3 3;
 }
@@ -272,6 +273,6 @@ defineExpose({ seedShape });
 
 .conc-curve-editor__hint {
   font-size: 0.8rem;
-  color: var(--text-color-secondary, #64748b);
+  color: var(--text-color-secondary, var(--ss-text-muted));
 }
 </style>

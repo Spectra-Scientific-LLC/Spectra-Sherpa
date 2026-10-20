@@ -387,13 +387,13 @@ async function openSubProject(projectId: number) {
 
 .header-icon {
   font-size: 1.2rem;
-  color: #3b82f6;
+  color: var(--ss-action);
 }
 
 .header-title {
   font-size: 1.1rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
 }
 
 .drawer-content {
@@ -413,12 +413,12 @@ async function openSubProject(projectId: number) {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
 }
 
 .project-description {
   margin: 0;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.9rem;
   line-height: 1.5;
 }
@@ -428,7 +428,7 @@ async function openSubProject(projectId: number) {
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   padding: 12px;
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
   border-radius: 8px;
 }
 
@@ -440,14 +440,14 @@ async function openSubProject(projectId: number) {
 
 .meta-label {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
 
 .meta-value {
   font-size: 0.9rem;
-  color: #334155;
+  color: var(--ss-action-text);
   font-weight: 500;
 }
 
@@ -471,14 +471,14 @@ async function openSubProject(projectId: number) {
   margin: 0;
   font-size: 0.95rem;
   font-weight: 600;
-  color: #475569;
+  color: var(--ss-text-secondary);
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .section-subtitle i {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .empty-state {
@@ -487,7 +487,7 @@ async function openSubProject(projectId: number) {
   align-items: center;
   gap: 8px;
   padding: 24px;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   text-align: center;
 }
 
@@ -512,8 +512,8 @@ async function openSubProject(projectId: number) {
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--ss-surface-subtle);
+  border: 1px solid var(--ss-border);
   border-radius: 8px;
 }
 
@@ -527,7 +527,7 @@ async function openSubProject(projectId: number) {
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  border: 1px solid rgba(15, 23, 42, 0.16);
+  border: 1px solid color-mix(in srgb, var(--ss-panel-inset) 16%, transparent);
   flex: 0 0 auto;
 }
 
@@ -538,7 +538,7 @@ async function openSubProject(projectId: number) {
 }
 
 .data-source-name {
-  color: #1e293b;
+  color: var(--ss-text-strong);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -549,20 +549,20 @@ async function openSubProject(projectId: number) {
 .data-source-label,
 .workflow-data,
 .workflow-template {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.75rem;
 }
 
 .ai-generated i {
-  color: #a855f7;
+  color: var(--ss-accent);
   font-size: 0.7rem;
   margin-right: 4px;
 }
 
 .ai-chip {
-  background: #a855f7;
+  background: var(--ss-accent);
   border-radius: 4px;
-  color: #fff;
+  color: var(--ss-on-action);
   font-size: 0.625rem;
   font-weight: 700;
   margin-right: 4px;
@@ -577,23 +577,23 @@ async function openSubProject(projectId: number) {
 }
 
 .data-source-value {
-  color: #334155;
+  color: var(--ss-action-text);
   font-size: 0.78rem;
   line-height: 1.3;
 }
 
 .experiment-card {
   padding: 12px;
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .experiment-card:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
+  background: var(--ss-surface-subtle);
+  border-color: var(--ss-border-strong);
   transform: translateX(4px);
 }
 
@@ -606,7 +606,7 @@ async function openSubProject(projectId: number) {
 
 .exp-name {
   font-weight: 500;
-  color: #1e293b;
+  color: var(--ss-text-strong);
 }
 
 .exp-details {
@@ -617,12 +617,12 @@ async function openSubProject(projectId: number) {
 
 .exp-description {
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .exp-subtle {
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .exp-subtle.raw {
@@ -638,7 +638,7 @@ async function openSubProject(projectId: number) {
   display: flex;
   flex-wrap: wrap;
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
   margin-top: 4px;
 }
 
@@ -659,7 +659,7 @@ async function openSubProject(projectId: number) {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
   border: 1px solid transparent;
   border-radius: 6px;
   cursor: pointer;
@@ -667,17 +667,17 @@ async function openSubProject(projectId: number) {
 }
 
 .workflow-item:hover {
-  background: #f1f5f9;
+  background: var(--ss-surface-subtle);
   transform: translateX(4px);
 }
 
 .workflow-item.active {
-  background: #eff6ff;
-  border: 1px solid #bfdbfe;
+  background: var(--ss-action-tint);
+  border: 1px solid var(--ss-action-tint);
 }
 
 .workflow-item i {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .workflow-info {
@@ -687,12 +687,12 @@ async function openSubProject(projectId: number) {
 
 .workflow-name {
   font-weight: 500;
-  color: #1e293b;
+  color: var(--ss-text-strong);
 }
 
 .workflow-status {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
 }
 
 .children-list {
@@ -706,19 +706,19 @@ async function openSubProject(projectId: number) {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .child-item:hover {
-  background: #f1f5f9;
+  background: var(--ss-surface-subtle);
   transform: translateX(4px);
 }
 
 .child-item i {
-  color: #d97706;
+  color: var(--ss-warning);
 }
 
 .drawer-empty {
@@ -727,7 +727,7 @@ async function openSubProject(projectId: number) {
   align-items: center;
   justify-content: center;
   height: 200px;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
 }
 
 .drawer-empty i {

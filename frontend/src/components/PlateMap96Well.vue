@@ -227,11 +227,11 @@ const onWellClick = (position: string) => {
   max-height: calc(100vh - 24px);
   overflow: hidden;
   padding: 0.85rem;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--ss-action-tint);
   border-radius: 0.75rem;
-  background: rgba(255, 255, 255, 0.98);
-  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.22);
-  color: #0f172a;
+  background: color-mix(in srgb, var(--ss-surface) 98%, transparent);
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--ss-shadow-color) 22%, transparent);
+  color: var(--ss-text-strong);
   pointer-events: none;
 }
 
@@ -240,14 +240,14 @@ const onWellClick = (position: string) => {
   align-items: baseline;
   gap: 0.55rem;
   padding-bottom: 0.55rem;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--ss-border);
 }
 
 .hover-card-well {
   padding: 0.15rem 0.4rem;
   border-radius: 0.35rem;
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--ss-action-tint);
+  color: var(--ss-action);
   font-size: 0.78rem;
   font-weight: 700;
 }
@@ -261,7 +261,7 @@ const onWellClick = (position: string) => {
 }
 
 .hover-card-details dt {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .hover-card-details dd {
@@ -291,7 +291,7 @@ const onWellClick = (position: string) => {
   justify-content: center;
   font-weight: 600;
   font-size: 0.9rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .col-label {
@@ -301,7 +301,7 @@ const onWellClick = (position: string) => {
   justify-content: center;
   font-weight: 600;
   font-size: 0.9rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 
 .plate-row {
@@ -312,9 +312,9 @@ const onWellClick = (position: string) => {
 
 .well {
   aspect-ratio: 1;
-  border: 2px solid #cbd5e1;
+  border: 2px solid var(--ss-border-strong);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--ss-surface);
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
@@ -327,20 +327,20 @@ const onWellClick = (position: string) => {
 }
 
 .well:hover {
-  border-color: #3b82f6;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+  border-color: var(--ss-action);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--ss-action) 20%, transparent);
   transform: scale(1.05);
 }
 
 .well-position {
   font-size: 0.65rem;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   font-weight: 500;
 }
 
 .well-content {
   font-size: 0.7rem;
-  color: #1e293b;
+  color: var(--ss-text-strong);
   font-weight: 600;
   text-align: center;
   margin-top: 2px;
@@ -351,26 +351,26 @@ const onWellClick = (position: string) => {
 }
 
 .well-assigned {
-  background: #dbeafe;
-  border-color: #3b82f6;
+  background: var(--ss-action-tint);
+  border-color: var(--ss-action);
 }
 
 .well-excluded {
-  background: #f1f5f9;
-  border-color: #94a3b8;
+  background: var(--ss-surface-subtle);
+  border-color: var(--ss-border-strong);
   opacity: 0.7;
 }
 
 .well-collision {
-  background: #fef2f2;
-  border-color: #dc2626;
+  background: var(--ss-danger-surface);
+  border-color: var(--ss-danger);
   opacity: 1;
 }
 
 .well-selected {
-  background: #bfdbfe;
-  border-color: #1d4ed8;
-  box-shadow: 0 0 0 3px rgba(29, 78, 216, 0.2);
+  background: var(--ss-action-tint);
+  border-color: var(--ss-action);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ss-action) 20%, transparent);
 }
 
 .plate-legend {
@@ -378,7 +378,7 @@ const onWellClick = (position: string) => {
   gap: 16px;
   margin-top: 12px;
   padding: 12px;
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
   border-radius: 6px;
 }
 
@@ -392,26 +392,26 @@ const onWellClick = (position: string) => {
   width: 24px;
   height: 24px;
   border-radius: 4px;
-  border: 2px solid #cbd5e1;
+  border: 2px solid var(--ss-border-strong);
 }
 
 .legend-swatch.well-empty {
-  background: #ffffff;
+  background: var(--ss-surface);
 }
 
 .legend-swatch.well-assigned {
-  background: #dbeafe;
-  border-color: #3b82f6;
+  background: var(--ss-action-tint);
+  border-color: var(--ss-action);
 }
 
 .legend-swatch.well-excluded {
-  background: #f1f5f9;
-  border-color: #94a3b8;
+  background: var(--ss-surface-subtle);
+  border-color: var(--ss-border-strong);
 }
 
 .legend-swatch.well-collision {
-  background: #fef2f2;
-  border-color: #dc2626;
+  background: var(--ss-danger-surface);
+  border-color: var(--ss-danger);
 }
 
 @media (max-width: 1200px) {

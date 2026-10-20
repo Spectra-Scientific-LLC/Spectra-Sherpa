@@ -117,8 +117,8 @@ const navigationGroups = computed(() => [
 
 <style scoped>
 .sidebar {
-  background: #fefbff;
-  color: #6504bd;
+  background: var(--ss-workspace-paper);
+  color: var(--ss-accent);
   display: flex;
   flex-direction: column;
   transition: width 0.2s ease;
@@ -141,7 +141,7 @@ const navigationGroups = computed(() => [
   padding: 0 16px;
   min-height: 56px;
   max-height: 56px;
-  border-bottom: 1px solid #e7e0ef;
+  border-bottom: 1px solid var(--ss-accent-border);
 }
 
 .collapsed .sidebar-header {
@@ -160,7 +160,7 @@ const navigationGroups = computed(() => [
   font-size: 1.05rem;
   font-weight: 600;
   white-space: nowrap;
-  color: #6504bd;
+  color: var(--ss-accent);
 }
 
 .nav-list {
@@ -224,27 +224,27 @@ const navigationGroups = computed(() => [
   gap: 12px;
   padding: 12px 16px;
   border-radius: 8px;
-  color: #475569;
+  color: var(--ss-text-secondary);
   text-decoration: none;
   transition: background 0.15s ease, color 0.15s ease;
   white-space: nowrap;
 }
 
 .nav-link:hover {
-  background: #f4edfa;
-  color: #6504bd;
+  background: var(--ss-accent-faint);
+  color: var(--ss-accent);
 }
 
 .nav-link.router-link-active {
-  background: #fefbff;
-  color: #6504bd;
+  background: var(--ss-workspace-paper);
+  color: var(--ss-accent);
 }
 
 .nav-link i {
   font-size: 1.25rem;
   width: 24px;
   text-align: center;
-  color: #6504bd;
+  color: var(--ss-accent);
 }
 
 .nav-label {
@@ -254,20 +254,20 @@ const navigationGroups = computed(() => [
 
 .nav-separator {
   margin: 12px 8px;
-  border-top: 1px solid #e7e0ef;
+  border-top: 1px solid var(--ss-accent-border);
 }
 
 .nav-link.secondary {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .nav-link.secondary:hover {
-  color: #6504bd;
+  color: var(--ss-accent);
 }
 
 .nav-link.secondary.router-link-active {
-  background: #fefbff;
-  color: #6504bd;
+  background: var(--ss-workspace-paper);
+  color: var(--ss-accent);
 }
 
 .collapsed .nav-link {
@@ -280,12 +280,12 @@ const navigationGroups = computed(() => [
 }
 
 .nav-dimmed {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .nav-dimmed:hover {
-  color: #6504bd;
+  color: var(--ss-accent);
 }
-.nav-link:focus-visible { outline: 2px solid #6504bd; outline-offset: -2px; }
-.nav-child { color: #475569; }
+.nav-link:focus-visible { outline: 2px solid var(--ss-accent); outline-offset: -2px; }
+.nav-child { color: var(--ss-text-secondary); }
 </style>

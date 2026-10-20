@@ -61,11 +61,11 @@ defineEmits<{
 <style scoped>
 /* Section chrome (shared pattern; will be deduped in plan step 6) */
 .detail-section {
-  background: #1e293b;
+  background: var(--ss-panel);
   border-radius: 12px;
   margin-bottom: 24px;
   overflow: hidden;
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
 }
 .section-header {
   display: flex;
@@ -76,7 +76,7 @@ defineEmits<{
   transition: background 0.15s;
 }
 .section-header:hover {
-  background: rgba(51, 65, 85, 0.5);
+  background: color-mix(in srgb, var(--ss-panel-raised) 50%, transparent);
 }
 .section-title {
   display: flex;
@@ -85,7 +85,7 @@ defineEmits<{
 }
 .section-title i {
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 .section-title h2 {
   margin: 0;
@@ -94,14 +94,14 @@ defineEmits<{
 }
 .section-badge {
   padding: 4px 10px;
-  background: #334155;
+  background: var(--ss-panel-raised);
   border-radius: 12px;
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 .section-content {
   padding: 20px;
-  border-top: 1px solid #334155;
+  border-top: 1px solid var(--ss-panel-border);
 }
 .collapse-enter-active,
 .collapse-leave-active {
@@ -121,19 +121,19 @@ defineEmits<{
   align-items: center;
   padding: 40px 20px;
   text-align: center;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 .empty-section i {
   font-size: 2.5rem;
   margin-bottom: 16px;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 .empty-section p {
   margin: 0 0 8px;
   font-size: 1rem;
 }
 .empty-section small {
-  color: #475569;
+  color: var(--ss-text-secondary);
   font-size: 0.85rem;
 }
 
@@ -156,55 +156,55 @@ defineEmits<{
   align-items: start;
   gap: 10px;
   padding: 10px 14px;
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   border-radius: 8px;
-  border-left: 3px solid #334155;
+  border-left: 3px solid var(--ss-panel-border);
   font-size: 0.85rem;
 }
 .log-entry.success {
-  border-left-color: #22c55e;
-  background: rgba(34, 197, 94, 0.05);
+  border-left-color: var(--ss-success);
+  background: color-mix(in srgb, var(--ss-success) 5%, transparent);
 }
 .log-entry.error {
-  border-left-color: #ef4444;
-  background: rgba(239, 68, 68, 0.05);
+  border-left-color: var(--ss-danger);
+  background: color-mix(in srgb, var(--ss-danger) 5%, transparent);
 }
 .log-entry.warn {
-  border-left-color: #f59e0b;
-  background: rgba(245, 158, 11, 0.05);
+  border-left-color: var(--ss-warning);
+  background: color-mix(in srgb, var(--ss-warning) 5%, transparent);
 }
 .log-entry.info {
-  border-left-color: #3b82f6;
-  background: rgba(59, 130, 246, 0.05);
+  border-left-color: var(--ss-action);
+  background: color-mix(in srgb, var(--ss-action) 5%, transparent);
 }
 .log-time {
   font-family: "JetBrains Mono", monospace;
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 .log-icon {
   display: flex;
   align-items: center;
   justify-content: center;
 }
-.log-entry.success .log-icon i { color: #22c55e; }
-.log-entry.error .log-icon i { color: #ef4444; }
-.log-entry.warn .log-icon i { color: #f59e0b; }
-.log-entry.info .log-icon i { color: #3b82f6; }
+.log-entry.success .log-icon i { color: var(--ss-panel-success); }
+.log-entry.error .log-icon i { color: var(--ss-panel-danger); }
+.log-entry.warn .log-icon i { color: var(--ss-panel-warning); }
+.log-entry.info .log-icon i { color: var(--ss-panel-action); }
 .log-message {
   font-weight: 500;
-  color: #f8fafc;
+  color: var(--ss-panel-text);
 }
 .log-details {
   grid-column: 3;
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   margin-top: 2px;
 }
 .log-actions {
   display: flex;
   justify-content: flex-end;
   padding-top: 8px;
-  border-top: 1px solid #334155;
+  border-top: 1px solid var(--ss-panel-border);
 }
 </style>

@@ -384,6 +384,8 @@
 </template>
 
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
+import { seriesPalette } from "@/utils/colors";
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import InputText from "primevue/inputtext";
 import Dropdown from "primevue/dropdown";
@@ -429,18 +431,7 @@ const viewOptions: { label: string; value: "matrix" | "stats" }[] = [
   { label: "Matrix", value: "matrix" },
   { label: "Stats", value: "stats" },
 ];
-const PLOT_COLORS = [
-  "#2563eb",
-  "#dc2626",
-  "#16a34a",
-  "#d97706",
-  "#7c3aed",
-  "#db2777",
-  "#0891b2",
-  "#ea580c",
-  "#0d9488",
-  "#4f46e5",
-];
+
 const plotConfig = { responsive: true, displaylogo: false, displayModeBar: true };
 const dataRoleOptions = [
   { label: "Spectra", value: "X_spectra" },
@@ -723,7 +714,7 @@ const previewPlotData = computed(() => {
       type: "scatter",
       mode: "lines",
       name: current.row_labels[idx] || `Sample ${current.row_start + idx + 1}`,
-      line: { color: PLOT_COLORS[idx % PLOT_COLORS.length], width: 1.2 },
+      line: { color: seriesPalette("source")[idx % seriesPalette("source").length], width: 1.2 },
       connectgaps: false,
     }));
   }
@@ -735,7 +726,7 @@ const previewPlotData = computed(() => {
       .map((row) => numericCell(row[colIdx] ?? null))
       .filter((value): value is number => value !== null),
     name: `${label || `Feature ${current.col_start + colIdx + 1}`} (n=${current.matrix.filter((row) => numericCell(row[colIdx] ?? null) !== null).length})`,
-    marker: { color: PLOT_COLORS[colIdx % PLOT_COLORS.length] },
+    marker: { color: seriesPalette("source")[colIdx % seriesPalette("source").length] },
     boxpoints: false,
     meta: {
       finite_count: current.matrix.filter((row) => numericCell(row[colIdx] ?? null) !== null)
@@ -784,8 +775,8 @@ const previewPlotLayout = computed(() => {
     margin: { t: 42, r: 20, b: 58, l: 62 },
     showlegend: isSpectra && previewPlotData.value.length <= 20,
     legend: { font: { size: 10 }, orientation: "h", y: -0.28 },
-    plot_bgcolor: "#fafafa",
-    paper_bgcolor: "#ffffff",
+    plot_bgcolor: SCIENTIFIC_COLORS.plotPaper,
+    paper_bgcolor: SCIENTIFIC_COLORS.paper,
   };
 });
 </script>
@@ -812,7 +803,7 @@ const previewPlotLayout = computed(() => {
 }
 
 .preview-error {
-  color: var(--red-600);
+  color: var(--ss-danger);
 }
 
 .preview-acquisition {
@@ -1059,15 +1050,15 @@ const previewPlotLayout = computed(() => {
 }
 
 .confidence-high {
-  color: var(--green-600);
+  color: var(--ss-success);
 }
 
 .confidence-medium {
-  color: var(--orange-600);
+  color: var(--ss-warning);
 }
 
 .confidence-low {
-  color: var(--red-600);
+  color: var(--ss-danger);
 }
 
 .csv-warnings {
@@ -1079,7 +1070,7 @@ const previewPlotLayout = computed(() => {
   display: flex;
   align-items: flex-start;
   gap: 0.45rem;
-  color: var(--orange-700);
+  color: var(--ss-warning-strong);
   font-size: 0.8rem;
 }
 
@@ -1108,38 +1099,38 @@ const previewPlotLayout = computed(() => {
   width: 1.3rem;
   height: 1.3rem;
   border-radius: 4px;
-  color: #ffffff;
+  color: var(--ss-on-action);
   font-weight: 800;
   font-size: 0.68rem;
 }
 
 .role-I {
-  background: #475569;
+  background: var(--ss-panel-border);
 }
 
 .role-W {
-  background: #4f46e5;
+  background: var(--ss-accent);
 }
 
 .role-F {
-  background: #0891b2;
+  background: var(--ss-info);
 }
 
 .role-P {
-  background: #7c3aed;
+  background: var(--ss-accent);
 }
 
 .role-M {
-  background: #0f766e;
+  background: var(--ss-success);
 }
 
 .role-T {
-  background: #b45309;
+  background: var(--ss-warning);
 }
 
 .role-E,
 .role-\? {
-  background: #94a3b8;
+  background: var(--ss-border-strong);
 }
 
 .csv-column-name {

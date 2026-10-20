@@ -326,13 +326,13 @@ function severityIcon(severity: AppNotification["severity"]): string {
 
 .header-icon {
   font-size: 1.2rem;
-  color: #3b82f6;
+  color: var(--ss-action);
 }
 
 .header-title {
   font-size: 1.1rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
 }
 
 .unread-badge {
@@ -343,8 +343,8 @@ function severityIcon(severity: AppNotification["severity"]): string {
   height: 20px;
   padding: 0 6px;
   border-radius: 10px;
-  background: #ef4444;
-  color: #ffffff;
+  background: var(--ss-danger);
+  color: var(--ss-on-action);
   font-size: 0.75rem;
   font-weight: 600;
 }
@@ -354,7 +354,7 @@ function severityIcon(severity: AppNotification["severity"]): string {
   display: flex;
   gap: 4px;
   padding: 0 0 12px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--ss-border);
   margin-bottom: 12px;
 }
 
@@ -363,7 +363,7 @@ function severityIcon(severity: AppNotification["severity"]): string {
   border: none;
   border-radius: 6px;
   background: transparent;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.85rem;
   font-weight: 500;
   cursor: pointer;
@@ -371,13 +371,13 @@ function severityIcon(severity: AppNotification["severity"]): string {
 }
 
 .notif-tab:hover {
-  background: #f1f5f9;
-  color: #334155;
+  background: var(--ss-surface-subtle);
+  color: var(--ss-action-text);
 }
 
 .notif-tab.active {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: var(--ss-action-tint);
+  color: var(--ss-action);
 }
 
 /* Action bar */
@@ -400,7 +400,7 @@ function severityIcon(severity: AppNotification["severity"]): string {
   gap: 12px;
   padding: 12px;
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--ss-surface);
   border: 1px solid transparent;
   cursor: pointer;
   transition: all 0.15s;
@@ -409,13 +409,13 @@ function severityIcon(severity: AppNotification["severity"]): string {
 }
 
 .notif-item:hover {
-  background: #f8fafc;
-  border-color: #e2e8f0;
+  background: var(--ss-surface-subtle);
+  border-color: var(--ss-border);
 }
 
 .notif-item.unread {
-  background: #f0f9ff;
-  border-color: #bae6fd;
+  background: var(--ss-info-surface);
+  border-color: var(--ss-info-surface);
 }
 
 /* Severity icons */
@@ -434,28 +434,28 @@ function severityIcon(severity: AppNotification["severity"]): string {
 }
 
 .severity-success {
-  background: #dcfce7;
-  color: #16a34a;
+  background: var(--ss-success-surface);
+  color: var(--ss-success);
 }
 
 .severity-error {
-  background: #fee2e2;
-  color: #dc2626;
+  background: var(--ss-danger-surface);
+  color: var(--ss-danger);
 }
 
 .severity-warning {
-  background: #fef3c7;
-  color: #d97706;
+  background: var(--ss-warning-surface);
+  color: var(--ss-warning);
 }
 
 .severity-info {
-  background: #dbeafe;
-  color: #2563eb;
+  background: var(--ss-action-tint);
+  color: var(--ss-action);
 }
 
 .severity-guidance {
-  background: #ede9fe;
-  color: #7c3aed;
+  background: var(--ss-accent-faint);
+  color: var(--ss-accent);
 }
 
 /* Body */
@@ -473,7 +473,7 @@ function severityIcon(severity: AppNotification["severity"]): string {
 .notif-title {
   font-size: 0.9rem;
   font-weight: 600;
-  color: #1e293b;
+  color: var(--ss-text-strong);
   flex: 1;
   min-width: 0;
 }
@@ -482,13 +482,13 @@ function severityIcon(severity: AppNotification["severity"]): string {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--ss-action);
   flex-shrink: 0;
 }
 
 .notif-message {
   font-size: 0.85rem;
-  color: #475569;
+  color: var(--ss-text-secondary);
   margin-top: 2px;
   line-height: 1.4;
   overflow: hidden;
@@ -507,25 +507,25 @@ function severityIcon(severity: AppNotification["severity"]): string {
 
 .notif-time {
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
 }
 
 .notif-source {
   font-size: 0.7rem;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 .guidance-item {
-  border-color: #ede9fe;
+  border-color: var(--ss-accent-faint);
 }
 
 .guidance-rule {
   padding: 2px 6px;
   border-radius: 999px;
-  background: #f5f3ff;
-  color: #6d28d9;
+  background: var(--ss-accent-faint);
+  color: var(--ss-accent);
   font-size: 0.68rem;
   font-weight: 700;
 }
@@ -541,19 +541,19 @@ function severityIcon(severity: AppNotification["severity"]): string {
   padding: 0;
   border: 0;
   background: transparent;
-  color: #6d28d9;
+  color: var(--ss-accent);
   cursor: pointer;
   font-size: 0.8rem;
   font-weight: 700;
 }
 
 .guidance-link:hover {
-  color: #4c1d95;
+  color: var(--ss-accent);
   text-decoration: underline;
 }
 
 .guidance-link.muted {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 /* Empty state */
@@ -563,7 +563,7 @@ function severityIcon(severity: AppNotification["severity"]): string {
   align-items: center;
   justify-content: center;
   padding: 60px 24px;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   text-align: center;
 }
 
@@ -575,14 +575,14 @@ function severityIcon(severity: AppNotification["severity"]): string {
 .notif-empty p {
   margin: 0;
   font-size: 1rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-weight: 500;
 }
 
 .notif-empty small {
   margin-top: 8px;
   font-size: 0.85rem;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   max-width: 280px;
   line-height: 1.4;
 }
@@ -599,7 +599,7 @@ function severityIcon(severity: AppNotification["severity"]): string {
 .notif-icon-btn {
   background: none;
   border: none;
-  color: #94a3b8;
+  color: var(--ss-text-muted);
   cursor: pointer;
   padding: 2px 4px;
   border-radius: 4px;
@@ -607,22 +607,22 @@ function severityIcon(severity: AppNotification["severity"]): string {
 }
 
 .notif-icon-btn:hover {
-  color: #475569;
-  background: #f1f5f9;
+  color: var(--ss-text-secondary);
+  background: var(--ss-surface-subtle);
 }
 
 .notif-detail {
   margin-top: 8px;
   padding: 8px 12px;
-  background: #f1f5f9;
+  background: var(--ss-surface-subtle);
   border-radius: 6px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
 }
 
 .notif-detail-text {
   font-family: "SF Mono", "Fira Code", "Cascadia Code", monospace;
   font-size: 0.75rem;
-  color: #334155;
+  color: var(--ss-action-text);
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;

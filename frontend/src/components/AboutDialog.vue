@@ -102,7 +102,7 @@ const copyDiagnostics = async () => {
 
 .about-tagline {
   margin: 0;
-  color: #4b5563;
+  color: var(--ss-text-body);
   font-size: 0.9rem;
 }
 
@@ -110,8 +110,8 @@ const copyDiagnostics = async () => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: #f9fafb;
-  border: 1px solid #e5e7eb;
+  background: var(--ss-surface-subtle);
+  border: 1px solid var(--ss-border);
   border-radius: 6px;
   padding: 10px 12px;
 }
@@ -124,28 +124,28 @@ const copyDiagnostics = async () => {
 }
 
 .about-label {
-  color: #6b7280;
+  color: var(--ss-text-muted);
 }
 
 .about-value {
   font-family: "SF Mono", "Monaco", "Menlo", "Courier New", monospace;
-  background: #ffffff;
+  background: var(--ss-surface);
   padding: 2px 8px;
   border-radius: 4px;
-  border: 1px solid #e5e7eb;
+  border: 1px solid var(--ss-border);
   font-size: 0.8rem;
-  color: #111827;
+  color: var(--ss-text-strong);
 }
 
 .about-drift {
   display: flex;
   gap: 10px;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
+  background: var(--ss-warning-surface);
+  border: 1px solid var(--ss-warning-surface);
   border-radius: 6px;
   padding: 10px 12px;
   font-size: 0.85rem;
-  color: #92400e;
+  color: var(--ss-warning);
 }
 
 .about-drift i {
@@ -154,8 +154,8 @@ const copyDiagnostics = async () => {
 }
 
 .about-drift kbd {
-  background: #fef3c7;
-  border: 1px solid #fde68a;
+  background: var(--ss-warning-surface);
+  border: 1px solid var(--ss-warning-surface);
   border-radius: 3px;
   padding: 1px 4px;
   font-family: inherit;
@@ -179,7 +179,7 @@ const copyDiagnostics = async () => {
 }
 
 .about-links a {
-  color: #2563eb;
+  color: var(--ss-action);
   text-decoration: none;
 }
 
@@ -189,9 +189,9 @@ const copyDiagnostics = async () => {
 
 .about-license {
   margin: 0;
-  color: #9ca3af;
+  color: var(--ss-text-muted);
   font-size: 0.75rem;
-  border-top: 1px solid #f3f4f6;
+  border-top: 1px solid var(--ss-surface-subtle);
   padding-top: 12px;
 }
 </style>

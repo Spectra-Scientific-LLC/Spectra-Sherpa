@@ -42,10 +42,10 @@ const visibleScopes = computed(() =>
 }
 
 .memory-attribution__chip {
-  border: 1px solid rgba(124, 58, 237, 0.24);
+  border: 1px solid color-mix(in srgb, var(--ss-accent) 24%, transparent);
   border-radius: 999px;
-  background: rgba(124, 58, 237, 0.08);
-  color: #5b21b6;
+  background: color-mix(in srgb, var(--ss-accent) 8%, transparent);
+  color: var(--ss-accent);
   padding: 0.12rem 0.45rem;
   line-height: 1.3;
 }

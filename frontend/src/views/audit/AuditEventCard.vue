@@ -49,7 +49,7 @@ defineProps<{
 }
 
 .event-marker {
-  background: #2563eb;
+  background: var(--ss-action);
   border-radius: 999px;
   height: 10px;
   margin-top: 5px;
@@ -68,12 +68,12 @@ defineProps<{
 }
 
 .event-target {
-  color: #475569;
+  color: var(--ss-text-secondary);
   margin: 3px 0 0;
 }
 
 .event-main time {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.84rem;
   text-align: right;
 }
@@ -86,7 +86,7 @@ defineProps<{
 }
 
 .event-meta dt {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.74rem;
   font-weight: 700;
   margin-bottom: 4px;
@@ -103,15 +103,15 @@ defineProps<{
 }
 
 .state-details summary {
-  color: #1d4ed8;
+  color: var(--ss-action);
   cursor: pointer;
   font-weight: 700;
 }
 
 .state-details pre {
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   border-radius: 8px;
-  color: #e2e8f0;
+  color: var(--ss-panel-secondary);
   font-size: 0.78rem;
   max-height: 260px;
   overflow: auto;

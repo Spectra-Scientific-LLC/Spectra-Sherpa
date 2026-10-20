@@ -1,3 +1,4 @@
+import { PRINT_PLOT_THEME } from "@/theme/plotTheme";
 /** Draw only retained, explicitly scoped points. No inference, filtering or pooling. */
 export interface ValidationFigure {
   state: string;
@@ -50,18 +51,18 @@ export function validationFigureSvg(figure: ValidationFigure): string {
     const circles = x
       .map(
         (v, i) =>
-          `<circle cx="${offset + 45 + scale(v, xmin, xmax) * 285}" cy="${220 - scale(y[i], ymin, ymax) * 175}" r="2" fill="#2563eb" opacity="0.65"/>`,
+          `<circle cx="${offset + 45 + scale(v, xmin, xmax) * 285}" cy="${220 - scale(y[i], ymin, ymax) * 175}" r="2" fill="${PRINT_PLOT_THEME.observation}" opacity="0.65"/>`,
       )
       .join("");
     return (
-      `<path d="M${offset + 45},40 V220 H${offset + 330}" fill="none" stroke="#444"/>${circles}` +
+      `<path d="M${offset + 45},40 V220 H${offset + 330}" fill="none" stroke="${PRINT_PLOT_THEME.axis}"/>${circles}` +
       `<text x="${offset + 45}" y="25">${label}</text><text x="${offset + 45}" y="245">Reference (${escape(xmin)} to ${escape(xmax)})</text>` +
       `<text x="${offset + 45}" y="265">Y range: ${escape(ymin)} to ${escape(ymax)}</text>`
     );
   };
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 305" role="img" aria-label="Retained CV predictions and residuals">` +
-    `<rect width="760" height="305" fill="white"/><g font-size="11" fill="#222">` +
+    `<rect width="760" height="305" fill="${PRINT_PLOT_THEME.paper}"/><g font-size="11" fill="${PRINT_PLOT_THEME.text}">` +
     panel(predicted, 0, "Predicted versus reference") +
     panel(residual, 380, "Residual (prediction minus reference)") +
     `<text x="45" y="290">${escape(figure.units ?? "Units not recorded")}</text></g></svg>`

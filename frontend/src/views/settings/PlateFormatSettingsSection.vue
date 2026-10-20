@@ -101,7 +101,7 @@ onMounted(load);
   text-transform: uppercase;
 }
 .error {
-  color: #b91c1c !important;
+  color: var(--ss-danger) !important;
 }
 @media (max-width: 700px) {
   .plate-preferences {

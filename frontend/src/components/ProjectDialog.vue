@@ -272,17 +272,17 @@ const onHide = () => {
 .field label {
   font-weight: 500;
   font-size: 0.9rem;
-  color: #334155;
+  color: var(--ss-action-text);
 }
 
 .required {
-  color: #ef4444;
+  color: var(--ss-danger);
 }
 
 .project-metadata {
   margin-top: 8px;
   padding: 16px;
-  background: #f8fafc;
+  background: var(--ss-surface-subtle);
   border-radius: 8px;
   display: flex;
   flex-direction: column;
@@ -296,11 +296,11 @@ const onHide = () => {
 }
 
 .metadata-label {
-  color: #64748b;
+  color: var(--ss-text-muted);
 }
 
 .metadata-value {
-  color: #334155;
+  color: var(--ss-action-text);
   font-weight: 500;
 }
 

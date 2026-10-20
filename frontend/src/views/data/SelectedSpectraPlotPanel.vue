@@ -137,6 +137,8 @@
 </template>
 
 <script setup lang="ts">
+import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
+import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
 import { computed, ref, watch } from "vue";
 import { useDisplayPreferences, displayNumber } from "@/composables/useDisplayPreferences";
@@ -285,9 +287,7 @@ const featureTablePreview = computed(() => {
 });
 const FEATURE_PLOT_LIMIT = 4;
 const FEATURE_SCATTER_ROW_LIMIT = computed(() => displayPreferences.maxRows);
-const FEATURE_COLORS = [
-  "#2563eb", "#dc2626", "#059669", "#9333ea", "#d97706", "#0891b2",
-];
+
 
 const featureDistributionPlot = computed(() => {
   const dataset = singleDataset.value;
@@ -352,7 +352,7 @@ const featureDistributionPlot = computed(() => {
       };
       let groupIndex = 0;
       for (const [group, indexes] of groups) {
-        const color = FEATURE_COLORS[groupIndex % FEATURE_COLORS.length];
+        const color = seriesPalette("features")[groupIndex % seriesPalette("features").length];
         const name = categorical ? group : "Samples";
         const valid = (index: number) =>
           typeof dataset.data[index]?.[column] === "number" &&
@@ -413,8 +413,8 @@ const featureDistributionPlot = computed(() => {
       margin: { t: 30, r: 30, b: 70, l: 90 },
       showlegend: categorical && groups.size > 1,
       legend: { orientation: "h", y: 1.08 },
-      plot_bgcolor: "#fafafa",
-      paper_bgcolor: "#ffffff",
+      plot_bgcolor: SCIENTIFIC_COLORS.plotPaper,
+      paper_bgcolor: SCIENTIFIC_COLORS.paper,
       uirevision: `${singleSource.value?.experimentId ?? ""}:${preview.columns.join("|")}`,
     },
   };
@@ -602,8 +602,8 @@ const plotLayout = computed(() => ({
   height: 480,
   margin: { t: 20, r: 20, b: 58, l: 66 },
   showlegend: false,
-  plot_bgcolor: "#fafafa",
-  paper_bgcolor: "#ffffff",
+  plot_bgcolor: SCIENTIFIC_COLORS.plotPaper,
+  paper_bgcolor: SCIENTIFIC_COLORS.paper,
 }));
 
 function displayAxisTitle(title?: string | null, units?: string | null): string {
@@ -643,7 +643,7 @@ function formatCell(value: number | null): string {
   margin: 0;
 }
 
-.selected-spectra-panel header span {
+.selected-spectra-panel header > div > span {
   color: var(--text-color-secondary);
   font-size: 0.78rem;
 }
@@ -691,7 +691,7 @@ function formatCell(value: number | null): string {
 }
 
 .plot-state.error {
-  color: var(--red-700, #b91c1c);
+  color: var(--red-700, var(--ss-danger));
 }
 
 .plot-state.empty i {

@@ -1,13 +1,8 @@
 import type { DisplayPreferences } from "@/composables/useDisplayPreferences";
+import { themedPlotLayout } from "@/theme/plotTheme";
 
 type Trace = Record<string, unknown>;
 type Layout = Record<string, unknown>;
-
-const palettes: Record<DisplayPreferences["palette"], string[] | undefined> = {
-  default: undefined,
-  colorblind: ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"],
-  "high-contrast": ["#002B7F", "#B62020", "#006B45", "#671094", "#A05500", "#006D83"],
-};
 
 /** Old saved runs can retain plot-layout prose from earlier releases. Keep the
  * scientific payload intact, but give every rendered/exported graph one title. */
@@ -143,8 +138,7 @@ export function displayPlot(
     omitted += markerCounts[index];
     return false;
   });
-  const colorway = palettes[prefs.palette];
-  const baseLayout: Layout = cleanPlotLayout(colorway ? { ...layout, colorway } : layout);
+  const baseLayout: Layout = cleanPlotLayout(themedPlotLayout(layout, prefs.palette));
   return {
     data: shown,
     layout: baseLayout,

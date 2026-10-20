@@ -521,7 +521,7 @@ watch(
 }
 
 .collection-definition-embedded-heading {
-  color: var(--text-color-secondary, #64748b);
+  color: var(--text-color-secondary, var(--ss-text-muted));
   font-size: 0.875rem;
   font-weight: 600;
   margin: 0.75rem 0 0;
@@ -611,15 +611,15 @@ watch(
 }
 
 .definition-status.attached {
-  border-left: 4px solid var(--green-500);
+  border-left: 4px solid var(--ss-success);
 }
 .definition-status.preview {
-  border-left: 4px solid var(--blue-500);
+  border-left: 4px solid var(--ss-action);
 }
 .definition-status.stale,
 .definition-status.invalid,
 .definition-message.error {
-  border-left: 4px solid var(--red-500);
+  border-left: 4px solid var(--ss-danger);
 }
 
 .definition-receipt {
@@ -683,7 +683,7 @@ watch(
 }
 
 .verification-chip i {
-  color: var(--green-500);
+  color: var(--ss-success);
 }
 
 .verification-detail,

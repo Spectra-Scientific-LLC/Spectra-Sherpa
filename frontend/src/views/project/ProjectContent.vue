@@ -1299,14 +1299,14 @@ function absoluteTimestamp(dateStr: string): string {
 }
 
 .dot.failed {
-  background: var(--red-500);
-  border-color: var(--red-500);
+  background: var(--ss-danger);
+  border-color: var(--ss-danger);
   opacity: 1;
 }
 
 .dot.running {
-  background: var(--yellow-500);
-  border-color: var(--yellow-500);
+  background: var(--ss-warning);
+  border-color: var(--ss-warning);
   opacity: 1;
 }
 
@@ -1338,13 +1338,13 @@ function absoluteTimestamp(dateStr: string): string {
 }
 
 .lifecycle-pill.failed {
-  border-color: color-mix(in srgb, var(--red-500) 35%, transparent);
-  color: var(--red-500);
+  border-color: color-mix(in srgb, var(--ss-danger) 35%, transparent);
+  color: var(--ss-danger);
 }
 
 .lifecycle-pill.running {
-  border-color: color-mix(in srgb, var(--yellow-500) 50%, transparent);
-  color: var(--yellow-600, var(--yellow-500));
+  border-color: color-mix(in srgb, var(--ss-warning) 50%, transparent);
+  color: var(--yellow-600, var(--ss-warning));
 }
 
 .lifecycle-pill.empty {

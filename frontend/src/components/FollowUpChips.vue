@@ -40,10 +40,10 @@ const items = computed(() =>
 }
 
 .follow-up-chip {
-  border: 1px solid rgba(99, 102, 241, 0.28);
+  border: 1px solid color-mix(in srgb, var(--ss-accent) 28%, transparent);
   border-radius: 999px;
-  background: rgba(99, 102, 241, 0.08);
-  color: #3730a3;
+  background: color-mix(in srgb, var(--ss-accent) 8%, transparent);
+  color: var(--ss-accent);
   cursor: pointer;
   font-size: 0.78rem;
   line-height: 1.25;
@@ -53,12 +53,12 @@ const items = computed(() =>
 }
 
 .follow-up-chip:hover {
-  background: rgba(99, 102, 241, 0.14);
-  border-color: rgba(99, 102, 241, 0.42);
+  background: color-mix(in srgb, var(--ss-accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--ss-accent) 42%, transparent);
 }
 
 .follow-up-chip:focus-visible {
-  outline: 2px solid rgba(99, 102, 241, 0.55);
+  outline: 2px solid color-mix(in srgb, var(--ss-accent) 55%, transparent);
   outline-offset: 2px;
 }
 </style>

@@ -92,11 +92,11 @@ defineEmits<{ (e: "toggle"): void }>();
 
 <style scoped>
 .detail-section {
-  background: #1e293b;
+  background: var(--ss-panel);
   border-radius: 12px;
   margin-bottom: 24px;
   overflow: hidden;
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
 }
 .section-header {
   display: flex;
@@ -107,7 +107,7 @@ defineEmits<{ (e: "toggle"): void }>();
   transition: background 0.15s;
 }
 .section-header:hover {
-  background: rgba(51, 65, 85, 0.5);
+  background: color-mix(in srgb, var(--ss-panel-raised) 50%, transparent);
 }
 .section-title {
   display: flex;
@@ -116,7 +116,7 @@ defineEmits<{ (e: "toggle"): void }>();
 }
 .section-title i {
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 .section-title h2 {
   margin: 0;
@@ -125,14 +125,14 @@ defineEmits<{ (e: "toggle"): void }>();
 }
 .section-badge {
   padding: 4px 10px;
-  background: #334155;
+  background: var(--ss-panel-raised);
   border-radius: 12px;
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 .section-content {
   padding: 20px;
-  border-top: 1px solid #334155;
+  border-top: 1px solid var(--ss-panel-border);
 }
 .collapse-enter-active,
 .collapse-leave-active {
@@ -152,19 +152,19 @@ defineEmits<{ (e: "toggle"): void }>();
   align-items: center;
   padding: 40px 20px;
   text-align: center;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 .empty-section i {
   font-size: 2.5rem;
   margin-bottom: 16px;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 .empty-section p {
   margin: 0 0 8px;
   font-size: 1rem;
 }
 .empty-section small {
-  color: #475569;
+  color: var(--ss-text-secondary);
   font-size: 0.85rem;
 }
 
@@ -183,42 +183,42 @@ defineEmits<{ (e: "toggle"): void }>();
   flex-direction: column;
   gap: 4px;
   padding: 10px 14px;
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   border-radius: 8px;
 }
 .info-item label {
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .info-item span {
   font-size: 0.95rem;
-  color: #f8fafc;
+  color: var(--ss-panel-text);
   font-weight: 500;
 }
 .preview-datatable :deep(.p-datatable-wrapper) {
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   border-radius: 6px;
   overflow: hidden;
 }
 .preview-datatable :deep(.p-datatable-thead > tr > th) {
-  background: #1e293b;
-  color: #94a3b8;
+  background: var(--ss-panel);
+  color: var(--ss-panel-muted);
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid var(--ss-panel-border);
 }
 .preview-datatable :deep(.p-datatable-tbody > tr) {
-  background: #0f172a;
-  color: #cbd5e1;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-secondary);
 }
 .preview-datatable :deep(.p-datatable-tbody > tr:nth-child(even)) {
-  background: #111e33;
+  background: var(--ss-panel-inset);
 }
 .preview-datatable :deep(.p-datatable-tbody > tr > td) {
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid var(--ss-panel);
   font-size: 0.85rem;
 }
 .connections-list h4,
@@ -226,7 +226,7 @@ defineEmits<{ (e: "toggle"): void }>();
   margin: 0 0 10px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -235,7 +235,7 @@ defineEmits<{ (e: "toggle"): void }>();
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   border-radius: 6px;
   margin-bottom: 6px;
 }
@@ -244,12 +244,12 @@ defineEmits<{ (e: "toggle"): void }>();
 }
 .conn-name {
   flex: 1;
-  color: #f8fafc;
+  color: var(--ss-panel-text);
   font-size: 0.9rem;
 }
 .conn-port {
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   font-family: "JetBrains Mono", monospace;
 }
 </style>

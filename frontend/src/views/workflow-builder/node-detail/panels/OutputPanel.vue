@@ -963,11 +963,11 @@ const regressionTargetIdx = writable.regressionTargetIdx;
 <style scoped>
 /* Section chrome — duplicated pending style consolidation in plan step 6 */
 .detail-section {
-  background: #1e293b;
+  background: var(--ss-panel);
   border-radius: 12px;
   margin-bottom: 24px;
   overflow: hidden;
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
 }
 .section-header {
   display: flex;
@@ -978,7 +978,7 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   transition: background 0.15s;
 }
 .section-header:hover {
-  background: rgba(51, 65, 85, 0.5);
+  background: color-mix(in srgb, var(--ss-panel-raised) 50%, transparent);
 }
 .section-title {
   display: flex;
@@ -987,7 +987,7 @@ const regressionTargetIdx = writable.regressionTargetIdx;
 }
 .section-title i {
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 .section-title h2 {
   margin: 0;
@@ -996,14 +996,14 @@ const regressionTargetIdx = writable.regressionTargetIdx;
 }
 .section-badge {
   padding: 4px 10px;
-  background: #334155;
+  background: var(--ss-panel-raised);
   border-radius: 12px;
   font-size: 0.75rem;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 .section-content {
   padding: 20px;
-  border-top: 1px solid #334155;
+  border-top: 1px solid var(--ss-panel-border);
 }
 .collapse-enter-active,
 .collapse-leave-active {
@@ -1023,19 +1023,19 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   align-items: flex-start;
   padding: 40px 20px;
   text-align: left;
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 .empty-section i {
   font-size: 2.5rem;
   margin-bottom: 16px;
-  color: #475569;
+  color: var(--ss-text-secondary);
 }
 .empty-section p {
   margin: 0 0 8px;
   font-size: 1rem;
 }
 .empty-section small {
-  color: #475569;
+  color: var(--ss-text-secondary);
   font-size: 0.85rem;
 }
 
@@ -1054,30 +1054,30 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   flex-direction: column;
   gap: 4px;
   padding: 10px 14px;
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   border-radius: 8px;
 }
 .info-item label {
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .info-item span {
   font-size: 0.95rem;
-  color: #f8fafc;
+  color: var(--ss-panel-text);
   font-weight: 500;
 }
 .evaluation-authority-item {
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
 }
 
 /* Inspector sections (coordinates / metadata / processing / provenance / quality / ports) */
 .inspector-section {
   padding: 12px 14px;
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   border-radius: 8px;
-  border: 1px solid #1e293b;
+  border: 1px solid var(--ss-panel);
   overflow: hidden;
   min-width: 0;
 }
@@ -1089,12 +1089,12 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   padding: 4px 0;
   background: none;
   border: none;
-  color: #e2e8f0;
+  color: var(--ss-panel-secondary);
   cursor: pointer;
   font-size: 0.9rem;
 }
 .inspector-toggle:hover {
-  color: #f8fafc;
+  color: var(--ss-panel-text);
 }
 .inspector-toggle-title {
   display: flex;
@@ -1103,7 +1103,7 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   font-weight: 500;
 }
 .inspector-toggle-title i {
-  color: #64748b;
+  color: var(--ss-panel-muted);
 }
 .inspector-grid {
   display: grid;
@@ -1121,20 +1121,20 @@ const regressionTargetIdx = writable.regressionTargetIdx;
 }
 .insp-label {
   font-size: 0.7rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .insp-value {
   font-size: 0.9rem;
-  color: #f8fafc;
+  color: var(--ss-panel-text);
 }
 .insp-value.mono {
   font-family: "JetBrains Mono", monospace;
   font-size: 0.85rem;
 }
 .insp-units {
-  color: #64748b;
+  color: var(--ss-panel-muted);
   font-size: 0.85rem;
   margin-left: 4px;
 }
@@ -1143,20 +1143,20 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   padding: 0;
   border: 0;
   background: transparent;
-  color: #93c5fd;
+  color: var(--ss-panel-action);
   cursor: pointer;
   font: inherit;
   text-align: left;
 }
 .artifact-link:hover {
-  color: #bfdbfe;
+  color: var(--ss-panel-action);
   text-decoration: underline;
 }
 .insp-badge {
   display: inline-block;
   padding: 2px 8px;
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
+  background: color-mix(in srgb, var(--ss-success) 15%, transparent);
+  color: var(--ss-panel-success);
   border-radius: 10px;
   font-size: 0.75rem;
   text-transform: uppercase;
@@ -1175,16 +1175,16 @@ const regressionTargetIdx = writable.regressionTargetIdx;
 .insp-label-table th {
   text-align: left;
   padding: 4px 8px;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   font-weight: 500;
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid var(--ss-panel);
 }
 .insp-label-table td {
   padding: 4px 8px;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
 }
 .insp-label-table .label-row-index {
-  color: #64748b;
+  color: var(--ss-panel-muted);
   font-variant-numeric: tabular-nums;
 }
 .insp-label-table .label-cell {
@@ -1194,7 +1194,7 @@ const regressionTargetIdx = writable.regressionTargetIdx;
 .insp-more {
   display: block;
   margin-top: 6px;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   font-size: 0.8rem;
 }
 
@@ -1204,7 +1204,7 @@ const regressionTargetIdx = writable.regressionTargetIdx;
    this node," distinct from the transient quality summary above it. */
 .model-artifact {
   margin-top: 10px;
-  border-left: 2px solid #3b82f6;
+  border-left: 2px solid var(--ss-action);
   padding-left: 10px;
 }
 .model-artifact__grid {
@@ -1214,17 +1214,17 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   display: flex;
   align-items: center;
   gap: 8px;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   font-size: 0.85rem;
   padding: 4px 0;
 }
 .model-artifact__status--error {
-  color: #f87171;
+  color: var(--ss-panel-danger);
 }
 .model-artifact__uid {
   font-family: "JetBrains Mono", monospace;
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   margin-left: auto;
 }
 .model-artifact__actions {
@@ -1247,7 +1247,7 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   align-items: start;
   gap: 8px;
   padding: 6px 10px;
-  background: #020617;
+  background: var(--ss-panel-inset);
   border-radius: 6px;
   min-width: 0;
   overflow: hidden;
@@ -1257,21 +1257,21 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   align-items: center;
   gap: 6px;
   font-size: 0.75rem;
-  color: #64748b;
+  color: var(--ss-panel-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   min-width: 0;
   word-break: break-word;
 }
 .meta-info-icon {
-  color: #475569;
+  color: var(--ss-text-secondary);
   font-size: 0.75rem;
   cursor: help;
   flex-shrink: 0;
 }
 .meta-value {
   font-size: 0.85rem;
-  color: #f8fafc;
+  color: var(--ss-panel-text);
   word-break: break-word;
   overflow-wrap: break-word;
   min-width: 0;
@@ -1289,7 +1289,7 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   grid-template-columns: 32px 1fr;
   gap: 10px;
   padding: 8px 10px;
-  background: #020617;
+  background: var(--ss-panel-inset);
   border-radius: 6px;
 }
 .step-number {
@@ -1298,8 +1298,8 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #1e293b;
-  color: #94a3b8;
+  background: var(--ss-panel);
+  color: var(--ss-panel-muted);
   border-radius: 50%;
   font-size: 0.75rem;
   font-weight: 600;
@@ -1310,7 +1310,7 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   gap: 6px;
 }
 .step-operation {
-  color: #f8fafc;
+  color: var(--ss-panel-text);
   font-size: 0.9rem;
   font-weight: 500;
 }
@@ -1321,8 +1321,8 @@ const regressionTargetIdx = writable.regressionTargetIdx;
 }
 .param-chip {
   padding: 2px 6px;
-  background: #1e293b;
-  color: #cbd5e1;
+  background: var(--ss-panel);
+  color: var(--ss-panel-secondary);
   border-radius: 4px;
   font-size: 0.75rem;
   font-family: "JetBrains Mono", monospace;
@@ -1333,8 +1333,8 @@ const regressionTargetIdx = writable.regressionTargetIdx;
 }
 .shape-badge {
   padding: 2px 6px;
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
+  background: color-mix(in srgb, var(--ss-action) 15%, transparent);
+  color: var(--ss-panel-action);
   border-radius: 4px;
   font-size: 0.75rem;
   font-family: "JetBrains Mono", monospace;
@@ -1349,9 +1349,9 @@ const regressionTargetIdx = writable.regressionTargetIdx;
 }
 .port-summary-card {
   padding: 10px 12px;
-  background: #020617;
+  background: var(--ss-panel-inset);
   border-radius: 6px;
-  border: 1px solid #1e293b;
+  border: 1px solid var(--ss-panel);
 }
 .port-header {
   display: flex;
@@ -1360,14 +1360,14 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   margin-bottom: 6px;
 }
 .port-name {
-  color: #f8fafc;
+  color: var(--ss-panel-text);
   font-weight: 500;
   font-size: 0.9rem;
 }
 .port-type-badge {
   padding: 2px 6px;
-  background: rgba(168, 85, 247, 0.15);
-  color: #a855f7;
+  background: color-mix(in srgb, var(--ss-accent) 15%, transparent);
+  color: var(--ss-panel-accent);
   border-radius: 4px;
   font-size: 0.7rem;
   text-transform: uppercase;
@@ -1377,7 +1377,7 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   font-size: 0.8rem;
 }
 
@@ -1391,54 +1391,54 @@ const regressionTargetIdx = writable.regressionTargetIdx;
   gap: 8px;
 }
 .preview-datatable :deep(.p-datatable-wrapper) {
-  background: #0f172a;
+  background: var(--ss-panel-inset);
   border-radius: 6px;
   overflow: hidden;
 }
 .preview-datatable :deep(.p-datatable-thead > tr > th) {
-  background: #1e293b;
-  color: #94a3b8;
+  background: var(--ss-panel);
+  color: var(--ss-panel-muted);
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-bottom: 1px solid #334155;
+  border-bottom: 1px solid var(--ss-panel-border);
 }
 .preview-datatable :deep(.p-datatable-tbody > tr) {
-  background: #0f172a;
-  color: #cbd5e1;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-secondary);
 }
 .preview-datatable :deep(.p-datatable-tbody > tr:nth-child(even)) {
-  background: #111e33;
+  background: var(--ss-panel-inset);
 }
 .preview-datatable :deep(.p-datatable-tbody > tr > td) {
-  border-bottom: 1px solid #1e293b;
+  border-bottom: 1px solid var(--ss-panel);
   font-size: 0.85rem;
 }
 .preview-table h4 {
   margin: 0 0 10px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .analysis-summary {
   padding: 12px 14px;
-  background: #0f172a;
-  border: 1px solid #1e293b;
+  background: var(--ss-panel-inset);
+  border: 1px solid var(--ss-panel);
   border-radius: 8px;
 }
 .analysis-summary h4 {
   margin: 0 0 8px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 .analysis-summary p {
   margin: 0;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   font-size: 0.9rem;
   line-height: 1.5;
 }

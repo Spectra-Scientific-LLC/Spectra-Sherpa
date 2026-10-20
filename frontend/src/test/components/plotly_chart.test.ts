@@ -29,6 +29,7 @@ vi.mock("plotly.js-cartesian-dist-min", () => ({
 }));
 
 import PlotlyChart from "@/components/PlotlyChart.vue";
+import { themedPlotLayout, PRINT_PLOT_THEME } from "@/theme/plotTheme";
 
 async function settle(): Promise<void> {
   await flushPromises();
@@ -163,7 +164,7 @@ describe("PlotlyChart", () => {
       expect(downloadMock).toHaveBeenCalledTimes(1);
       const args = reactMock.mock.calls.at(-1)!;
       expect(kind === "data" ? args[1] : args[2]).toEqual(
-        kind === "data" ? [{ x: [3], y: [4] }] : { title: "B" },
+        kind === "data" ? [{ x: [3], y: [4] }] : themedPlotLayout({ title: "B" }, "default"),
       );
       wrapper.unmount();
     },
@@ -242,6 +243,10 @@ describe("PlotlyChart", () => {
     await settle();
 
     expect(relayoutMock).toHaveBeenCalled();
+    expect(relayoutMock.mock.calls.at(-1)?.[1]).toMatchObject({
+      title: "Updated", "font.color": PRINT_PLOT_THEME.text,
+      paper_bgcolor: PRINT_PLOT_THEME.paper,
+    });
     expect(onMock).toHaveBeenCalledTimes(4);
   });
 

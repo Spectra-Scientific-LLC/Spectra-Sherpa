@@ -67,9 +67,9 @@ function onChange(event: Event): void {
 .plot-selection-checkbox span {
   align-items: center;
   background: var(--surface-card);
-  border: 1px solid var(--surface-border);
+  border: 1px solid var(--ss-border-input);
   border-radius: 4px;
-  color: white;
+  color: var(--ss-on-action);
   display: flex;
   height: 1.1rem;
   justify-content: center;
@@ -80,7 +80,8 @@ function onChange(event: Event): void {
 }
 
 .plot-selection-checkbox:has(input:focus-visible) span {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color) 25%, transparent);
+  outline: 2px solid var(--ss-focus);
+  outline-offset: 2px;
 }
 
 .plot-selection-checkbox:has(input:checked) span,

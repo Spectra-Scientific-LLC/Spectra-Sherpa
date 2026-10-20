@@ -283,7 +283,7 @@ const sections: DocSection[] = [
 
 .doc-group h3 i {
   font-size: 0.95rem;
-  color: #6366f1;
+  color: var(--ss-accent);
 }
 
 .doc-cards {
@@ -297,8 +297,8 @@ const sections: DocSection[] = [
   flex-direction: column;
   gap: 4px;
   padding: 14px 16px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
+  background: var(--ss-surface);
+  border: 1px solid var(--ss-border);
   border-radius: 8px;
   text-decoration: none;
   color: inherit;
@@ -309,19 +309,19 @@ const sections: DocSection[] = [
 }
 
 .doc-card:hover {
-  border-color: #6366f1;
-  box-shadow: 0 1px 4px rgba(99, 102, 241, 0.15);
+  border-color: var(--ss-accent);
+  box-shadow: 0 1px 4px color-mix(in srgb, var(--ss-accent) 15%, transparent);
 }
 
 .card-title {
   font-weight: 600;
   font-size: 0.9rem;
-  color: #1f2937;
+  color: var(--ss-text-strong);
 }
 
 .card-desc {
   font-size: 0.8rem;
-  color: #6b7280;
+  color: var(--ss-text-muted);
   line-height: 1.4;
 }
 
@@ -330,10 +330,10 @@ const sections: DocSection[] = [
   top: 14px;
   right: 14px;
   font-size: 0.75rem;
-  color: #9ca3af;
+  color: var(--ss-text-muted);
 }
 
 .doc-card:hover .card-icon {
-  color: #6366f1;
+  color: var(--ss-accent);
 }
 </style>

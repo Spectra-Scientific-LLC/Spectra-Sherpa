@@ -53,10 +53,10 @@ const prefs = useDisplayPreferences();
 </script>
 
 <style scoped>
-.display-preferences { padding: 1rem; border: 1px solid var(--surface-border, #dbe3eb); border-radius: .75rem; }
+.display-preferences { padding: 1rem; border: 1px solid var(--surface-border, var(--ss-border)); border-radius: .75rem; }
 .display-preferences h3 { margin: 0 0 .25rem; }
-.display-preferences p { margin: 0 0 1rem; color: var(--text-color-secondary, #64748b); }
+.display-preferences p { margin: 0 0 1rem; color: var(--text-color-secondary, var(--ss-text-muted)); }
 .preference-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .75rem; }
 .preference-grid label { display: grid; gap: .3rem; font-weight: 600; }
-.preference-grid select { min-height: 2.25rem; padding: .35rem; border: 1px solid var(--surface-border, #cbd5e1); border-radius: .35rem; background: var(--surface-card, white); color: var(--text-color, #334155); }
+.preference-grid select { min-height: 2.25rem; padding: .35rem; border: 1px solid var(--surface-border, var(--ss-border-strong)); border-radius: .35rem; background: var(--surface-card, var(--ss-surface)); color: var(--text-color, var(--ss-action-text)); }
 </style>

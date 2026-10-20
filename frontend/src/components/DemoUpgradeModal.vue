@@ -82,7 +82,7 @@ function formatCapability(cap: string): string {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--surface-100);
+  background: var(--ss-surface-subtle);
   border-radius: 50%;
 }
 .upgrade-icon i { font-size: 2rem; color: var(--text-color); }
@@ -94,7 +94,7 @@ function formatCapability(cap: string): string {
 
 .upgrade-message {
   margin: 0;
-  color: #334155;
+  color: var(--ss-action-text);
   font-size: 0.95rem;
   line-height: 1.5;
 }
@@ -106,7 +106,7 @@ function formatCapability(cap: string): string {
 .upgrade-plans h4 {
   margin: 0 0 8px;
   font-size: 0.85rem;
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-weight: 600;
 }
 

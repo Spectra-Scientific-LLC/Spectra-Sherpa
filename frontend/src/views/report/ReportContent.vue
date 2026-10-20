@@ -930,10 +930,10 @@ onMounted(async () => {
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--ss-danger-surface);
+  border: 1px solid var(--ss-danger-surface);
   border-radius: 8px;
-  color: #dc2626;
+  color: var(--ss-danger);
   font-size: 0.85rem;
 }
 

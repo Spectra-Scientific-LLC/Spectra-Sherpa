@@ -63,11 +63,11 @@ const actionLabel = computed(() => {
   z-index: 9600;
   width: min(360px, calc(100vw - var(--chat-width, 0px) - 48px));
   padding: 16px;
-  border: 1px solid rgba(124, 58, 237, 0.35);
+  border: 1px solid color-mix(in srgb, var(--ss-accent) 35%, transparent);
   border-radius: 8px;
-  background: #ffffff;
-  color: #1f2937;
-  box-shadow: 0 16px 40px rgba(31, 41, 55, 0.18);
+  background: var(--ss-surface);
+  color: var(--ss-text-strong);
+  box-shadow: 0 16px 40px color-mix(in srgb, var(--ss-shadow-color) 18%, transparent);
 }
 
 .guidance-toast__chips {
@@ -82,15 +82,15 @@ const actionLabel = computed(() => {
   min-height: 22px;
   padding: 3px 8px;
   border-radius: 999px;
-  background: #ede9fe;
-  color: #6d28d9;
+  background: var(--ss-accent-faint);
+  color: var(--ss-accent);
   font-size: 12px;
   font-weight: 700;
 }
 
 .guidance-toast__chip--ai {
-  background: #f5f3ff;
-  color: #4c1d95;
+  background: var(--ss-accent-faint);
+  color: var(--ss-accent);
 }
 
 .guidance-toast__close {
@@ -102,13 +102,13 @@ const actionLabel = computed(() => {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #6b7280;
+  color: var(--ss-text-muted);
   cursor: pointer;
   font-size: 20px;
 }
 
 .guidance-toast__close:hover {
-  background: #f3f4f6;
+  background: var(--ss-surface-subtle);
 }
 
 .guidance-toast h2 {
@@ -119,7 +119,7 @@ const actionLabel = computed(() => {
 
 .guidance-toast p {
   margin: 0;
-  color: #4b5563;
+  color: var(--ss-text-body);
   font-size: 14px;
   line-height: 1.45;
 }
@@ -143,21 +143,21 @@ const actionLabel = computed(() => {
 
 .guidance-toast__primary {
   padding: 0 12px;
-  border: 1px solid #7c3aed;
-  background: #7c3aed;
-  color: white;
+  border: 1px solid var(--ss-accent);
+  background: var(--ss-accent);
+  color: var(--ss-on-action);
 }
 
 .guidance-toast__quiet {
   padding: 0 8px;
   border: 1px solid transparent;
   background: transparent;
-  color: #6b7280;
+  color: var(--ss-text-muted);
 }
 
 .guidance-toast__quiet:hover {
-  background: #f5f3ff;
-  color: #5b21b6;
+  background: var(--ss-accent-faint);
+  color: var(--ss-accent);
 }
 
 .guidance-toast-enter-active,

@@ -495,11 +495,11 @@ const resetFilters = (): void => {
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
-  color: #f8fafc;
+  color: var(--ss-panel-text);
 }
 
 .catalog-intro span {
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   font-size: 0.72rem;
 }
 
@@ -513,7 +513,7 @@ const resetFilters = (): void => {
   display: flex;
   flex-direction: column;
   gap: 3px;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   font-size: 0.68rem;
 }
 
@@ -526,19 +526,19 @@ const resetFilters = (): void => {
   min-width: 0;
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #475569;
+  border: 1px solid var(--ss-panel-border);
   border-radius: 5px;
   padding: 7px;
-  background: #0f172a;
-  color: #e2e8f0;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-secondary);
   font: inherit;
 }
 
 .reset-filters {
-  border: 1px solid #475569;
+  border: 1px solid var(--ss-panel-border);
   border-radius: 5px;
   background: transparent;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   cursor: pointer;
 }
 
@@ -555,7 +555,7 @@ const resetFilters = (): void => {
   justify-content: space-between;
   gap: 8px;
   margin: 6px 2px 0;
-  color: #cbd5e1;
+  color: var(--ss-panel-secondary);
   font-size: 0.8rem;
 }
 
@@ -564,16 +564,16 @@ const resetFilters = (): void => {
 }
 
 .catalog-family-heading small {
-  color: #64748b;
+  color: var(--ss-panel-muted);
   font-size: 0.68rem;
   font-weight: 500;
 }
 
 .catalog-card {
-  border: 1px solid #334155;
+  border: 1px solid var(--ss-panel-border);
   border-radius: 7px;
-  background: rgba(15, 23, 42, 0.72);
-  color: #e2e8f0;
+  background: color-mix(in srgb, var(--ss-panel-inset) 72%, transparent);
+  color: var(--ss-panel-secondary);
 }
 
 .catalog-card summary {
@@ -598,7 +598,7 @@ const resetFilters = (): void => {
 }
 
 .catalog-title code {
-  color: #93c5fd;
+  color: var(--ss-panel-action);
   font-size: 0.68rem;
 }
 
@@ -613,31 +613,31 @@ const resetFilters = (): void => {
 .source-bound {
   border-radius: 999px;
   padding: 2px 6px;
-  background: #334155;
-  color: #cbd5e1;
+  background: var(--ss-panel-raised);
+  color: var(--ss-panel-secondary);
   font-size: 0.62rem;
 }
 
 .badge.managed {
-  background: #14532d;
-  color: #bbf7d0;
+  background: var(--ss-success-strong);
+  color: var(--ss-panel-success);
 }
 .badge.artifact {
-  background: #4c1d95;
-  color: #ddd6fe;
+  background: var(--ss-accent);
+  color: var(--ss-panel-accent);
 }
 .badge.optional {
-  background: #78350f;
-  color: #fde68a;
+  background: var(--ss-warning-strong);
+  color: var(--ss-panel-warning);
 }
 
 .catalog-add {
   align-self: start;
-  border: 1px solid #60a5fa;
+  border: 1px solid var(--ss-action-border);
   border-radius: 5px;
   padding: 4px 8px;
-  background: #1d4ed8;
-  color: white;
+  background: var(--ss-action);
+  color: var(--ss-on-action);
   cursor: pointer;
 }
 
@@ -647,7 +647,7 @@ const resetFilters = (): void => {
 }
 
 .catalog-detail {
-  border-top: 1px solid #334155;
+  border-top: 1px solid var(--ss-panel-border);
   padding: 0 12px 12px;
   font-size: 0.72rem;
   line-height: 1.45;
@@ -659,7 +659,7 @@ const resetFilters = (): void => {
 
 .catalog-detail h4 {
   margin: 0 0 5px;
-  color: #f8fafc;
+  color: var(--ss-panel-text);
   font-size: 0.76rem;
 }
 
@@ -680,7 +680,7 @@ const resetFilters = (): void => {
 }
 
 .detail-grid dt {
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 .detail-grid dd {
   margin: 0;
@@ -691,7 +691,7 @@ const resetFilters = (): void => {
 }
 .parameter-rule {
   display: block;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 
 .port-columns {
@@ -704,32 +704,32 @@ const resetFilters = (): void => {
   overflow-wrap: anywhere;
 }
 .port-columns li span {
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 .muted {
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 .install-command {
   display: block;
   padding: 6px;
-  background: #020617;
-  color: #fde68a;
+  background: var(--ss-panel-inset);
+  color: var(--ss-panel-warning);
   overflow-wrap: anywhere;
 }
 .runtime-refusal {
-  color: #fca5a5;
+  color: var(--ss-panel-danger);
 }
 .catalog-empty {
   padding: 20px 8px;
   text-align: center;
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
 }
 .node-help-link {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   margin-top: 8px;
-  color: #93c5fd;
+  color: var(--ss-panel-action);
   font-weight: 600;
   text-decoration: none;
 }
@@ -738,7 +738,7 @@ const resetFilters = (): void => {
   text-decoration: underline;
 }
 .new-tab-note {
-  color: #94a3b8;
+  color: var(--ss-panel-muted);
   font-size: 0.64rem;
   font-weight: 400;
 }

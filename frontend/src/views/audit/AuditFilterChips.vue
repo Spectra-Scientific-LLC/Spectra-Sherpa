@@ -154,8 +154,8 @@ const includePdf = defineModel<boolean>("includePdf", { required: true });
 
 <style scoped>
 .filter-panel {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
+  background: var(--ss-surface);
+  border: 1px solid var(--ss-border);
   border-radius: 8px;
   padding: 16px;
 }
@@ -173,7 +173,7 @@ const includePdf = defineModel<boolean>("includePdf", { required: true });
 }
 
 .eyebrow {
-  color: #64748b;
+  color: var(--ss-text-muted);
   font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0;
@@ -189,7 +189,7 @@ const includePdf = defineModel<boolean>("includePdf", { required: true });
 }
 
 label {
-  color: #334155;
+  color: var(--ss-action-text);
   display: flex;
   flex-direction: column;
   font-size: 0.84rem;
@@ -199,7 +199,7 @@ label {
 
 .checkbox-field {
   align-items: center;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--ss-border);
   border-radius: 8px;
   flex-direction: row;
   min-height: 38px;
@@ -215,9 +215,9 @@ label {
 
 input,
 select {
-  border: 1px solid #cbd5e1;
+  border: 1px solid var(--ss-border-strong);
   border-radius: 8px;
-  color: #0f172a;
+  color: var(--ss-text-strong);
   font: inherit;
   min-height: 38px;
   padding: 8px 10px;
@@ -244,32 +244,32 @@ select {
 }
 
 .primary-action {
-  background: #1d4ed8;
+  background: var(--ss-action);
   border: 0;
-  color: #ffffff;
+  color: var(--ss-on-action);
 }
 
 .secondary-action,
 .ghost-action {
-  background: #ffffff;
-  border: 1px solid #cbd5e1;
-  color: #0f172a;
+  background: var(--ss-surface);
+  border: 1px solid var(--ss-border-strong);
+  color: var(--ss-text-strong);
 }
 
 .primary-action:disabled,
 .secondary-action:disabled,
 .ghost-action:disabled {
-  background: #e2e8f0;
-  color: #64748b;
+  background: var(--ss-border);
+  color: var(--ss-text-muted);
   cursor: not-allowed;
 }
 
 .inline-note {
   align-items: center;
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
+  background: var(--ss-warning-surface);
+  border: 1px solid var(--ss-warning-surface);
   border-radius: 8px;
-  color: #9a3412;
+  color: var(--ss-warning);
   display: flex;
   font-size: 0.86rem;
   gap: 8px;

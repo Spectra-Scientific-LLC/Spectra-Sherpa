@@ -772,7 +772,7 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 32rem; overflo
 details { border-top: 1px solid var(--surface-border); padding: .75rem 0; }
 .audit-details > summary { cursor: pointer; color: var(--text-color-secondary); font-size: .875rem; }
 .audit-details dl, .audit-details > details { margin-top: .75rem; font-size: .875rem; }
-.evidence-gaps { margin-top: 1.25rem; padding: 1rem; border: 1px solid var(--orange-300); border-radius: .5rem; }
+.evidence-gaps { margin-top: 1.25rem; padding: 1rem; border: 1px solid var(--ss-warning); border-radius: .5rem; }
 .evidence-gaps ul { display: grid; gap: .75rem; padding-left: 1.25rem; }
 .evidence-gaps li { display: grid; grid-template-columns: max-content max-content minmax(0, 1fr); align-items: baseline; gap: .35rem .75rem; }
 .evidence-gaps li button { border: 0; padding: 0; background: none; color: var(--primary-color); font: inherit; font-weight: 600; cursor: pointer; text-align: left; }

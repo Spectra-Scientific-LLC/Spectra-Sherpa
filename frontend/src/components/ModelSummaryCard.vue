@@ -268,7 +268,7 @@ function classificationCvMessage(reason: string | null): string {
 .model-summary__populations strong { color: var(--text-color); }
 .model-summary__pretreatment { margin: .6rem 0 0; font-size: .9rem; }
 .model-summary__label { margin-right: .5rem; color: var(--text-color-secondary); }
-.model-summary__caution { margin: .75rem 0 0; padding: .5rem .75rem; border-left: 3px solid var(--orange-400); background: var(--surface-ground); font-size: .875rem; }
+.model-summary__caution { margin: .75rem 0 0; padding: .5rem .75rem; border-left: 3px solid var(--ss-warning); background: var(--surface-ground); font-size: .875rem; }
 .model-summary__table { margin-top: .9rem; overflow-x: auto; }
 .model-summary table { border-collapse: collapse; font-size: .9rem; min-width: 22rem; }
 .model-summary caption { text-align: left; font-weight: 600; padding-bottom: .25rem; }
@@ -280,7 +280,7 @@ function classificationCvMessage(reason: string | null): string {
 .model-summary__confusion figcaption { font-size: .85rem; color: var(--text-color-secondary); margin-bottom: .25rem; }
 .model-summary__confusion table { min-width: 0; }
 .model-summary__confusion td.diagonal { font-weight: 600; }
-.model-summary__confusion td.off { color: var(--red-600); font-weight: 600; }
+.model-summary__confusion td.off { color: var(--ss-danger); font-weight: 600; }
 .model-summary__components { margin-top: 1rem; border-top: 1px solid var(--surface-border); padding-top: .75rem; }
 .model-summary__components h4, .model-summary__components h5 { margin: .5rem 0; }
 .model-summary__component-response { margin-top: .75rem; }
@@ -290,9 +290,9 @@ function classificationCvMessage(reason: string | null): string {
 .model-summary__curve figcaption { font-size: .85rem; }
 .model-summary__curve svg { width: 100%; height: auto; }
 .model-summary__curve .axis { stroke: var(--text-color-secondary); fill: none; }
-.model-summary__curve .calibration { stroke: var(--blue-500); fill: none; stroke-width: 2; }
-.model-summary__curve .validation { stroke: var(--orange-500); fill: none; stroke-width: 2; }
-.model-summary__curve .selected { stroke: var(--red-500); stroke-dasharray: 4 4; fill: none; }
+.model-summary__curve .calibration { stroke: var(--ss-action); fill: none; stroke-width: 2; }
+.model-summary__curve .validation { stroke: var(--ss-warning); fill: none; stroke-width: 2; }
+.model-summary__curve .selected { stroke: var(--ss-danger); stroke-dasharray: 4 4; fill: none; }
 .model-summary__curve text { fill: var(--text-color-secondary); font-size: 10px; }
 .model-summary__selected-row { background: var(--surface-ground); font-weight: 600; }
 </style>

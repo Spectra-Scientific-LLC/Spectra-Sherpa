@@ -191,10 +191,10 @@ const format = (value: number) => scientificNumber(value, { decimalPlaces: 4 });
   stroke-width: 1;
 }
 .null-bar {
-  fill: #7189aa;
+  fill: var(--ss-text-muted);
 }
 .observed-line {
-  stroke: #b44343;
+  stroke: var(--ss-danger);
   stroke-width: 2;
 }
 .null-histogram text {
@@ -214,9 +214,9 @@ const format = (value: number) => scientificNumber(value, { decimalPlaces: 4 });
   display: inline-block;
 }
 .null-key {
-  background: #7189aa;
+  background: var(--ss-border-strong);
 }
 .observed-key {
-  background: #b44343;
+  background: var(--ss-danger);
 }
 </style>

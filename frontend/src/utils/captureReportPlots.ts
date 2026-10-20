@@ -5,6 +5,7 @@ import { buildNodeOutput } from "./nodeOutput";
 import { availableScientificPresentations, projectScientificPresentation } from "./scientificPresentation";
 import { scientificPlotRefusal } from "./scientificPlotState";
 import { displayPlot } from "./displayPlot";
+import { themedPlotLayout } from "@/theme/plotTheme";
 import { useDisplayPreferences } from "@/composables/useDisplayPreferences";
 import { useQuickPlotProjection } from "@/composables/useScientificPlotProjection";
 import type { RunReportData } from "@/stores/report";
@@ -36,7 +37,7 @@ async function renderPlot(data: any[], layout: Record<string, any>): Promise<str
   document.body.appendChild(element);
   try {
     // Plotly mutates its inputs; never mutate the retained scientific projection.
-    const clone = JSON.parse(JSON.stringify({ data, layout }));
+    const clone = JSON.parse(JSON.stringify({ data, layout: themedPlotLayout(layout, useDisplayPreferences().palette, "print") }));
     await Plotly.newPlot(element, clone.data, { ...clone.layout, width: 1000, height: 650, autosize: false }, { staticPlot: true });
     return await Plotly.toImage(element, { format: "png", width: 1000, height: 650, scale: 1.5 });
   } finally { Plotly.purge(element); element.remove(); }
