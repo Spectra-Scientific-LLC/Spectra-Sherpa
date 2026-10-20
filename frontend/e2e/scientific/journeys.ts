@@ -76,6 +76,9 @@ export async function runWorkflow(page: Page, workflow: { id: number }, project:
   await page.goto(`/workflow?workflow_id=${workflow.id}&project_id=${project.id}`);
   const executed = page.waitForResponse(
     (r) => r.url().endsWith(`/workflows/${workflow.id}/execute`) && r.request().method() === "POST",
+    // Execution includes fitting and durable persistence, not just a UI action.
+    // Native macOS qualification measured 19–26 s for these small workflows.
+    { timeout: 60_000 },
   );
   await page
     .getByRole("button", { name: /^Run(?:\s|$)/ })
