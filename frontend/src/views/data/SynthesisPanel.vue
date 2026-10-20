@@ -15,131 +15,14 @@
     </div>
 
     <Panel header="Source & Settings" toggleable>
-      <div class="synthesis-grid synthesis-grid--source">
-        <div class="field">
-          <label for="synth-source">Database</label>
-          <Dropdown
-            inputId="synth-source"
-            v-model="settings.source"
-            :options="sourceOptions"
-            optionLabel="label"
-            optionValue="id"
-            @change="onSourceChange"
-          />
-        </div>
-        <div class="field">
-          <label for="synth-resolution">Resolution</label>
-          <Dropdown
-            inputId="synth-resolution"
-            v-model="settings.resolution_cm1"
-            :options="resolutionOptions"
-            optionLabel="label"
-            optionValue="value"
-            @change="onSourceOrGridChange"
-          />
-        </div>
-        <div class="field" v-if="settings.source === 'nist_quant_ir'">
-          <label for="synth-apodization">Apodization</label>
-          <Dropdown
-            inputId="synth-apodization"
-            v-model="settings.apodization"
-            :options="apodizationOptions"
-            optionLabel="label"
-            optionValue="value"
-            @change="onSourceOrGridChange"
-          />
-        </div>
-        <div class="field" v-if="settings.source === 'hitran'">
-          <label for="synth-wmin">Min cm^-1</label>
-          <InputNumber
-            inputId="synth-wmin"
-            v-model="settings.wavenumber_min"
-            :min="1"
-            :useGrouping="false"
-            @input="onSourceOrGridChange"
-          />
-        </div>
-        <div class="field" v-if="settings.source === 'hitran'">
-          <label for="synth-wmax">Max cm^-1</label>
-          <InputNumber
-            inputId="synth-wmax"
-            v-model="settings.wavenumber_max"
-            :min="2"
-            :useGrouping="false"
-            @input="onSourceOrGridChange"
-          />
-        </div>
-        <div class="field" v-if="settings.source === 'hitran'">
-          <label for="synth-temperature">Temperature (K)</label>
-          <InputNumber
-            inputId="synth-temperature"
-            v-model="settings.temperature_k"
-            :min="50"
-            :max="5000"
-            :maxFractionDigits="2"
-            :useGrouping="false"
-            @input="onSourceOrGridChange"
-          />
-        </div>
-        <div class="field" v-if="settings.source === 'hitran'">
-          <label for="synth-pressure">Pressure (atm)</label>
-          <InputNumber
-            inputId="synth-pressure"
-            v-model="settings.pressure_atm"
-            :min="0.000001"
-            :maxFractionDigits="6"
-            :useGrouping="false"
-            @input="onSourceOrGridChange"
-          />
-        </div>
-      </div>
-      <div class="synthesis-grid synthesis-grid--generation">
-        <div class="field">
-          <label for="synth-samples">Samples</label>
-          <InputNumber
-            inputId="synth-samples"
-            v-model="settings.n_samples"
-            :min="2"
-            :max="1000"
-            :useGrouping="false"
-            @input="invalidatePreview"
-          />
-        </div>
-        <div class="field">
-          <label for="synth-pathlength">Path length (cm)</label>
-          <InputNumber
-            inputId="synth-pathlength"
-            v-model="settings.pathlength_cm"
-            :min="0.001"
-            :maxFractionDigits="4"
-            :useGrouping="false"
-            @input="invalidatePreview"
-          />
-        </div>
-        <div class="field">
-          <label for="synth-noise">Noise sigma (AU)</label>
-          <InputNumber
-            inputId="synth-noise"
-            v-model="settings.noise_sigma_au"
-            :min="0"
-            :maxFractionDigits="6"
-            :useGrouping="false"
-            @input="invalidatePreview"
-          />
-        </div>
-        <div v-if="!isHitranLineByLine" class="field field--wide">
-          <label for="synth-snaptol">Wavenumber snap tolerance (cm⁻¹)</label>
-          <InputNumber
-            inputId="synth-snaptol"
-            v-model="settings.snap_tolerance_cm1"
-            :min="0"
-            :max="5"
-            :maxFractionDigits="4"
-            :useGrouping="false"
-            @input="invalidatePreview"
-          />
-        </div>
-      </div>
+      <SynthesisSettingsSection
+        :settings="settings"
+        :source-options="sourceOptions"
+        @update:settings="Object.assign(settings, $event)"
+        @source-change="onSourceChange"
+        @grid-change="onSourceOrGridChange"
+        @preview-change="invalidatePreview"
+      />
       <div class="synthesis-note" :class="{ warn: isHitranSource(settings.source) && !hitranAvailable }">
         <i class="pi pi-info-circle" />
         <span>{{ sourceStatusText }}</span>
@@ -669,7 +552,7 @@
           class="p-button-sm"
           data-action="synthesis_save_dataset"
           :loading="saving"
-          :disabled="!canPreview"
+          :disabled="saving || !canPreview"
           @click="saveSynthesis"
         />
       </div>
@@ -733,9 +616,10 @@ import { getErrorMessage } from "@/utils/errors";
 import { useToast } from "primevue/usetoast";
 import { useAuthStore } from "@/stores/auth";
 import { useScopedRequest, type ScopedRequestTicket } from "@/composables/useScopedRequest";
-import { useSynthesisExecution } from "./composables/useSynthesisExecution";
+import { useSynthesisPreview } from "./composables/useSynthesisExecution";
 import { useSynthesisSearch, type ComponentSearchRow } from "./composables/useSynthesisSearch";
 import { useProjectStore } from "@/stores/project";
+import SynthesisSettingsSection from "./sections/SynthesisSettingsSection.vue";
 
 const emit = defineEmits<{ saved: [] }>();
 
@@ -759,16 +643,9 @@ const {
   logConcentration,
   normalizeComposition,
   persistenceWarning,
+  saving,
 } = storeToRefs(synthesisStore);
 const { settings } = synthesisStore;
-
-const resolutionOptions = [
-  { label: "1 cm^-1", value: 1 },
-  { label: "2 cm^-1", value: 2 },
-  { label: "0.5 cm^-1", value: 0.5 },
-  { label: "0.25 cm^-1", value: 0.25 },
-  { label: "0.125 cm^-1", value: 0.125 },
-];
 
 type SpectrumLoadQueueItem = {
   component: SelectedComponent;
@@ -780,11 +657,6 @@ const spectrumLoadQueue = ref<SpectrumLoadQueueItem[]>([]);
 const synthesisReviewComponentIds = ref<string[]>([]);
 let searchDebounceTimer: ReturnType<typeof window.setTimeout> | null = null;
 
-
-const apodizationOptions = [
-  { label: "Blackman-Harris", value: "Blackman-Harris" },
-  { label: "Triangular", value: "Triangular" },
-];
 
 const rangeModeOptions = [
   { label: "Common overlap", value: "common" },
@@ -896,10 +768,13 @@ const recipeIdentity = () => [...workspaceIdentity(), JSON.stringify({
     concentration: component.concentration_max_ppm, points: component.control_points,
   })),
 })];
-const synthesisExecution = useSynthesisExecution(() => [
+const savePresentation = useScopedRequest(() => [
   ...recipeIdentity(), datasetName.value, JSON.stringify(synthesisBundle.value),
 ]);
-const { previewing, saving } = synthesisExecution;
+const synthesisExecution = useSynthesisPreview(() => [
+  ...recipeIdentity(), datasetName.value, JSON.stringify(synthesisBundle.value),
+]);
+const { previewing } = synthesisExecution;
 const componentSearch = useSynthesisSearch(workspaceIdentity,
   () => ({ source: settings.source, query: searchQuery.value }));
 const { results: searchResults, searching } = componentSearch;
@@ -1960,25 +1835,39 @@ async function saveSynthesis() {
   if (saving.value) return;
   const bundle = synthesisBundle.value;
   const bundleName = datasetName.value || `Synthetic bundle (${bundle.length})`;
+  const projectId = projectStore.currentProjectId;
+  const presentation = savePresentation.begin();
   try {
     const items = bundle.length
       ? bundle.map((item, index) => ({
           payload: item.payload, name: index === 0 ? bundleName : item.name,
         }))
       : [{ payload: buildRequestPayload(), name: datasetName.value || defaultDatasetName() }];
-    const result = await synthesisExecution.save(projectStore.currentProjectId, items);
+    const result = await synthesisStore.save(projectId, items);
     if (!result) return;
-    previewResult.value = result.result;
+    if (presentation.isCurrent() && result.result) previewResult.value = result.result;
+    if (result.status !== "complete") {
+      toast.add({
+        severity: "warn", summary: result.status === "partial" ? "Bundle partly saved" : "Save acknowledgement incomplete",
+        detail: `${result.count} of ${result.requested} files confirmed saved in project ${projectId ?? "unassigned"}. ${
+          result.status === "partial" ? "Remaining files were not submitted after switching workspace." :
+          "The last file may also have saved. Check My Dataset before retrying."}`,
+        life: 10000,
+      });
+      return;
+    }
     toast.add({
       severity: "success",
       summary: bundle.length ? "Synthetic bundle saved" : "Synthetic dataset saved",
       detail: bundle.length
         ? `Saved ${result.count} synthetic file(s) into "${bundleName}"`
-        : `Saved ${result.file_path}`,
+        : `Saved "${items[0].name}" in project ${projectId ?? "unassigned"}`,
       life: 5000,
     });
-    if (bundle.length) synthesisBundle.value = [];
-    emit("saved");
+    if (presentation.isCurrent()) {
+      if (bundle.length) synthesisBundle.value = [];
+      emit("saved");
+    }
   } catch (err) {
     toast.add({
       severity: "error", summary: "Save failed",
@@ -2509,27 +2398,6 @@ function openGuide() {
   font-size: 0.875rem;
 }
 
-.synthesis-grid {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.synthesis-grid--source {
-  grid-template-columns:
-    minmax(180px, 1.4fr)
-    minmax(115px, 0.8fr)
-    repeat(4, minmax(120px, 0.85fr));
-}
-
-.synthesis-grid--generation {
-  grid-template-columns:
-    minmax(110px, 0.75fr)
-    minmax(150px, 1fr)
-    minmax(150px, 1fr)
-    minmax(245px, 1.35fr);
-  margin-top: 0.75rem;
-}
-
 .field {
   display: flex;
   flex-direction: column;
@@ -2911,20 +2779,9 @@ function openGuide() {
     width: 100%;
   }
 
-  .synthesis-grid--source,
-  .synthesis-grid--generation {
-    grid-template-columns: 1fr;
-  }
-
   .field label {
     white-space: normal;
   }
 }
 
-@media (min-width: 721px) and (max-width: 980px) {
-  .synthesis-grid--source,
-  .synthesis-grid--generation {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  }
-}
 </style>

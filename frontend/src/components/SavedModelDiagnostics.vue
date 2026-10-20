@@ -216,6 +216,8 @@
 </template>
 
 <script setup lang="ts">
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest } from "@/composables/useScopedRequest";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import MethodHelp from "@/components/MethodHelp.vue";
@@ -266,13 +268,13 @@ const advisorVariables = ref<string[]>([]);
 const advisorResponse = ref<number | null>(null);
 const advisorSample = ref("");
 const advisorContext = ref<"prediction" | "applicability" | undefined>();
-let request = 0;
+const auth = useAuthStore();
+const identity = () => [auth.user?.id, auth.token, props.artifactUid, props.projectId, props.nodeId];
+const reads = useScopedRequest(identity, () => { loading.value = false; });
 watch(
-  () => [props.artifactUid, props.projectId, props.nodeId] as const,
-  async (_, __, onCleanup) => {
-    const current = ++request;
-    const controller = new AbortController();
-    onCleanup(() => controller.abort());
+  identity,
+  async () => {
+    const request = reads.begin();
     loading.value = true;
     error.value = "";
     review.value = null;
@@ -290,10 +292,10 @@ watch(
         `/models/${encodeURIComponent(props.artifactUid)}/diagnostics`,
         {
           params: { project_id: props.projectId },
-          signal: controller.signal,
+          signal: request.signal,
         },
       );
-      if (current !== request || controller.signal.aborted) return;
+      if (!request.isCurrent()) return;
       if (data.node_id !== props.nodeId)
         throw new Error("Saved diagnostic identity does not match this model.");
       const marked = data.decision.marked ?? [];
@@ -319,12 +321,12 @@ watch(
       loadingComponent.value = 0;
       responseIndex.value = 0;
     } catch (cause) {
-      if (current === request && !controller.signal.aborted)
+      if (request.isCurrent())
         error.value =
           (cause as { response?: { data?: { detail?: string } } }).response?.data?.detail ||
           "Exact saved diagnostics are unavailable for this model.";
     } finally {
-      if (current === request) loading.value = false;
+      if (request.isCurrent()) loading.value = false;
     }
   },
   { immediate: true },

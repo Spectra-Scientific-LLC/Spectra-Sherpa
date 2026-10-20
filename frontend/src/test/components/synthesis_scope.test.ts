@@ -7,11 +7,13 @@ import SynthesisPanel from "@/views/data/SynthesisPanel.vue";
 import { useSynthesisStore, type SelectedComponent } from "@/stores/synthesis";
 
 const mocks = vi.hoisted(() => ({
-  project: { currentProjectId: 1 },
+  project: { currentProjectId: 1, fetchProjects: vi.fn() },
+  data: { fetchCatalog: vi.fn(), fetchExperiments: vi.fn() },
   auth: { user: { id: 1 } },
   toast: vi.fn(),
 }));
 vi.mock("@/stores/project", () => ({ useProjectStore: () => mocks.project }));
+vi.mock("@/stores/data", () => ({ useDataStore: () => mocks.data }));
 vi.mock("@/stores/auth", () => ({ useAuthStore: () => mocks.auth }));
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: mocks.toast }) }));
 vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -121,8 +123,37 @@ describe("Mounted synthesis workspace scope", () => {
     expect(store.datasetName).toBe("New draft");
     expect(store.previewResult).toBeNull();
     expect(wrapper.emitted("saved")).toBeUndefined();
-    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({
+      severity: "warn", summary: "Bundle partly saved",
+      detail: expect.stringContaining("1 of 2 files confirmed saved in project 1"),
+    }));
+    expect(mocks.project.fetchProjects).toHaveBeenCalledOnce();
+    expect(mocks.data.fetchCatalog).toHaveBeenCalledOnce();
     wrapper.unmount();
+  });
+
+  it("keeps a save pending through draft edits and component replacement", async () => {
+    const { wrapper, panel, store } = mountPanel();
+    await flushPromises();
+    const held = deferred<{ data: unknown }>();
+    vi.mocked(api.post).mockReturnValueOnce(held.promise);
+    store.datasetName = "Saved snapshot";
+    panel.synthesisBundle = [{ id: "a", name: "first", payload: { components: [] } }];
+    const pending = panel.saveSynthesis();
+    store.datasetName = "New draft";
+    store.settings.n_samples = 7;
+    expect(store.saving).toBe(true);
+    await panel.saveSynthesis();
+    expect(api.post).toHaveBeenCalledTimes(1);
+    wrapper.unmount();
+    expect(store.saving).toBe(true);
+    held.resolve({ data: { experiment_id: 10, result: { seed: 2 } } });
+    await pending;
+    expect(store.saving).toBe(false);
+    expect(store.datasetName).toBe("New draft");
+    expect(store.previewResult).toBeNull();
+    expect(mocks.toast).toHaveBeenCalledWith(expect.objectContaining({ severity: "success" }));
+    expect(mocks.data.fetchCatalog).toHaveBeenCalledOnce();
   });
 
   it("recipe reopening invalidates an outstanding preview, including a late error", async () => {

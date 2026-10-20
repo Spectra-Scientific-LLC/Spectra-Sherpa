@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bounded copy ratchet: static Vue text/attributes and workflow-guide prose only."""
+"""Bounded product-copy gate: Vue copy, JavaScript literals and workflow guides."""
 
 from __future__ import annotations
 
@@ -21,6 +21,30 @@ RULES = {
 ATTRIBUTES = {"label", "title", "header", "placeholder", "aria-label", "alt"}
 
 
+def script_literals(source: str) -> list[str]:
+    """Extract quoted text, not comments or identifiers; never evaluate source.
+
+    This deliberately checks all literal fragments, including toast/computed
+    copy and template-literal fragments. The rules are multiword product
+    phrases, not code names; this is not a JavaScript semantic analysis.
+    """
+    tokens = re.finditer(
+        r"//[^\n]*|/\*[\s\S]*?\*/|" r"""(?P<string>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)""",
+        source,
+    )
+    result = []
+    for token in tokens:
+        literal = token.group("string")
+        if literal is None:
+            continue
+        text = literal[1:-1]
+        text = re.sub(r"\\u([0-9a-fA-F]{4})", lambda match: chr(int(match[1], 16)), text)
+        text = re.sub(r"\\x([0-9a-fA-F]{2})", lambda match: chr(int(match[1], 16)), text)
+        text = re.sub(r"\\([\\'\"`])", r"\1", text)
+        result.append(text)
+    return result
+
+
 class CopyParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -32,6 +56,9 @@ class CopyParser(HTMLParser):
             self.ignored += 1
         if not self.ignored:
             self.fragments.extend(value for key, value in attrs if key in ATTRIBUTES and value)
+            for key, value in attrs:
+                if value and (key.startswith(":") or key.startswith("v-bind:")):
+                    self.fragments.extend(script_literals(value))
 
     def handle_endtag(self, tag):
         if tag in {"script", "style", "code", "pre"} and self.ignored:
@@ -39,6 +66,8 @@ class CopyParser(HTMLParser):
 
     def handle_data(self, data):
         if not self.ignored:
+            for expression in re.findall(r"{{(.*?)}}", data, flags=re.S):
+                self.fragments.extend(script_literals(expression))
             self.fragments.append(re.sub(r"{{.*?}}", "", data, flags=re.S))
 
 
@@ -46,7 +75,11 @@ def copy_fragments(source: str, suffix: str) -> list[str]:
     if suffix == ".vue":
         parser = CopyParser()
         parser.feed(source)
+        for script in re.findall(r"<script\b[^>]*>(.*?)</script\s*>", source, flags=re.S):
+            parser.fragments.extend(script_literals(script))
         return parser.fragments
+    if suffix in {".ts", ".js"}:
+        return script_literals(source)
     source = re.sub(r"(?ms)^(```|~~~).*?^\1[^\n]*$", "", source)
     source = re.sub(r"`[^`]*`|<!--.*?-->|\]\([^)]*\)", "", source, flags=re.S)
     return [source]
@@ -54,7 +87,15 @@ def copy_fragments(source: str, suffix: str) -> list[str]:
 
 def inventory(root: Path) -> dict[str, dict[str, int]]:
     result = {}
-    paths = sorted((root / "frontend/src").rglob("*.vue")) + sorted((root / "docs/workflows").rglob("*.md"))
+    frontend = root / "frontend/src"
+    paths = sorted(
+        path
+        for path in frontend.rglob("*")
+        if path.suffix in {".vue", ".ts", ".js"}
+        and not {"test", "__tests__"} & set(path.relative_to(frontend).parts)
+        and not path.name.endswith((".test.ts", ".spec.ts", ".d.ts"))
+        and "generated" not in path.name
+    ) + sorted((root / "docs/workflows").rglob("*.md"))
     for path in paths:
         counts: Counter[str] = Counter()
         for text in copy_fragments(path.read_text(encoding="utf-8"), path.suffix):
@@ -67,6 +108,8 @@ def inventory(root: Path) -> dict[str, dict[str, int]]:
 
 def failures(current: dict, baseline: dict) -> list[str]:
     messages = []
+    if baseline:
+        messages.append("The product-copy inventory is zero; raising the baseline is forbidden.")
     for path, counts in current.items():
         for rule, count in counts.items():
             if count > baseline.get(path, {}).get(rule, 0):
@@ -89,6 +132,9 @@ def main() -> int:
     args = parser.parse_args()
     current = inventory(ROOT)
     if args.write_baseline:
+        if current:
+            print("Correct product copy first; the zero baseline cannot be raised.")
+            return 1
         BASELINE.write_text(json.dumps(current, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return 0
     baseline = json.loads(BASELINE.read_text(encoding="utf-8"))

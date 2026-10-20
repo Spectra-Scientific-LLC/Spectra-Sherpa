@@ -1,5 +1,14 @@
 import axios from "axios";
 
+/** Transport cancellation says nothing about whether the server committed a write. */
+export function isRequestCanceled(error: unknown): boolean {
+  return axios.isCancel(error) || (
+    typeof error === "object" && error !== null &&
+    (("name" in error && error.name === "AbortError") ||
+      ("code" in error && error.code === "ERR_CANCELED"))
+  );
+}
+
 interface ErrorBody {
   detail?: string | Record<string, unknown> | Array<Record<string, unknown>>;
   message?: string;

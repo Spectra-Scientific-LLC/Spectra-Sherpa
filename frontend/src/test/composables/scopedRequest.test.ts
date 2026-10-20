@@ -3,6 +3,21 @@ import { effectScope, ref } from "vue";
 import { useScopedRequest } from "@/composables/useScopedRequest";
 
 describe("scoped request ownership", () => {
+  it("invalidates write presentation without aborting an admitted operation", () => {
+    const identity = ref(1);
+    const scope = useScopedRequest(() => [identity.value], undefined, { abortOnInvalidate: false });
+    const first = scope.begin();
+    identity.value = 2;
+    expect(first.isCurrent()).toBe(false);
+    expect(first.signal.aborted).toBe(false);
+    const second = scope.begin();
+    const third = scope.begin();
+    expect(second.isCurrent()).toBe(false);
+    expect(second.signal.aborted).toBe(false);
+    scope.dispose();
+    expect(third.isCurrent()).toBe(false);
+    expect(third.signal.aborted).toBe(false);
+  });
   it("does not reset evidence when an unrelated route field changes", () => {
     const route = ref({ runId: "42", view: "Results" });
     const reset = vi.fn();

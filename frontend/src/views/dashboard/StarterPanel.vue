@@ -286,7 +286,7 @@ const datasetChoices = computed(() => {
   return choices;
 });
 const selectedOption = computed(
-  () => plan.value?.dataset_options.find((option) => option.key === selectedDatasetKey.value) ?? null,
+  () => plan.value?.dataset_options?.find((option) => option.key === selectedDatasetKey.value) ?? null,
 );
 const selectedIsSuggested = computed(() => !!plan.value?.dataset && plan.value.dataset.key === selectedDatasetKey.value);
 const canStart = computed(

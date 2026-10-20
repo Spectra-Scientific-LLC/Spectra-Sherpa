@@ -206,7 +206,7 @@ describe("DataContentsPanel", () => {
       "Acquisition settings",
       "Sample details",
       "Dataset metadata and quality",
-      "Save data portfolio",
+      "Save dataset",
     ]);
     expect(steps[0].find("[data-testid='source-slot']").exists()).toBe(true);
     expect(steps[2].find("[data-testid='sample-slot']").exists()).toBe(true);

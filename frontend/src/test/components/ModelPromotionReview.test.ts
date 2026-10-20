@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
+import { createPinia, setActivePinia } from 'pinia';
 import api from '@/api/client';
 import Review from '@/components/ModelPromotionReview.vue';
 const navigate = vi.hoisted(() => vi.fn());
@@ -11,7 +12,7 @@ const stubs = {
   Button: { props: ['label', 'disabled'], template: '<button :disabled="disabled">{{label}}</button>' },
   SavedModelQualification: true, ModelOutlierChallenge: true, QualificationPanel: true, ScientificBasisHelp: true,
 };
-beforeEach(() => { vi.clearAllMocks(); vi.mocked(api.get).mockResolvedValue({ data: snapshot }); });
+beforeEach(() => { setActivePinia(createPinia()); vi.clearAllMocks(); vi.mocked(api.get).mockResolvedValue({ data: snapshot }); });
 describe('shared promotion review', () => {
   it('requires intended use and rationale without requiring a provider and pins the reviewed digest', async () => {
     const wrapper = mount(Review, { props: { artifactUid: 'model', projectId: 1 }, global: { stubs } });
@@ -41,7 +42,7 @@ describe('shared promotion review', () => {
     await flushPromises();
     await wrapper.findAll('textarea')[0].setValue('Exploration'); await wrapper.findAll('textarea')[1].setValue('Reviewed');
     await wrapper.findAll('button').find(b => b.text() === 'Confirm deploy-ready')!.trigger('click'); await flushPromises();
-    expect(api.get).toHaveBeenCalledWith('/deploy/canonical-artifacts/17/promotion-review');
+    expect(api.get).toHaveBeenCalledWith('/deploy/canonical-artifacts/17/promotion-review', { signal: expect.any(AbortSignal) });
     expect(api.post).toHaveBeenCalledWith('/deploy/canonical-artifacts/17/promotion-review', expect.objectContaining({ review_digest: snapshot.review_digest }));
     expect(api.patch).not.toHaveBeenCalled();
   });

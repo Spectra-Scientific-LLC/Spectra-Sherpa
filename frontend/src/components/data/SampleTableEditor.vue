@@ -580,14 +580,14 @@ import {
   type SampleTargetType,
 } from "@/utils/sampleTable";
 import { getErrorMessage } from "@/utils/errors";
-import type { AcquisitionPlan, MeasuredSampleTableEditor, ReferenceValueDeclaration } from "@/types";
+import type { AcquisitionPlan, MeasuredSampleTableEditor, ReferenceValueDeclaration, ReferenceDeclarationDraft } from "@/types";
 
 export interface SampleTableSavePayload {
   file: File;
   expectedRevision: string | null;
   targetColumn: string;
   targetType: SampleTargetType;
-  referenceDeclaration: ReferenceValueDeclaration;
+  referenceDeclaration: ReferenceDeclarationDraft;
   summary: SampleTableSaveSummary;
 }
 
@@ -1150,7 +1150,7 @@ function buildSavePayload(): SampleTableSavePayload | null {
   if (referenceProvenance.value.length > 500 || referencePrecisionStudy.value.length > 500 || (units?.length ?? 0) > 100)
     validationErrors.value.push("Reference provenance or units exceed the allowed length.");
   if (validationErrors.value.length) return null;
-  const referenceDeclaration: ReferenceValueDeclaration = {
+  const referenceDeclaration: ReferenceDeclarationDraft = {
     schema_version: "spectrasherpa.reference-value-declaration/1",
     target_name: selected.name,
     target_type: selected.type,

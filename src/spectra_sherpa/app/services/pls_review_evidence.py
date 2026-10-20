@@ -455,7 +455,13 @@ async def build_review_receipt(definition, results, model_id):
     if retained != [x for x in train_ids if x in set(retained)]:
         raise ValueError("PLS input changed calibration identity/order.")
     owned = next((n for n in path if n["node_id"] == filter_id(model_id)), None)
-    if excluded and (not owned or set(owned.get("parameters", {}).get("filter_values", [])) != set(excluded)):
+    review_parameters = owned.get("parameters", {}) if owned else {}
+    if excluded and (
+        review_parameters.get("field") != "sample_table"
+        or review_parameters.get("sample_table_column") != "sample_id"
+        or review_parameters.get("invert") is not True
+        or set(review_parameters.get("filter_values", [])) != set(excluded)
+    ):
         raise ValueError("Calibration cohort does not match its review filter.")
     preprocessing, scale_state = _executed_preprocessing(path, results, model_id, retained)
     if split and scale_state is not None:
@@ -531,7 +537,9 @@ async def build_review_receipt(definition, results, model_id):
         predicted = np.asarray(output["default"], dtype=float)
         identity = output["prediction_identity"]
         if (
-            identity.get("sample_labels") != test_ids
+            identity.get("sample_ids") != test_ids
+            or identity.get("sample_labels")
+            != (list(test_model_input.sample_axis.labels) if test_model_input.sample_axis.labels is not None else None)
             or identity.get("prediction_sha256")
             != hashlib.sha256(np.asarray(predicted, dtype="<f8").tobytes(order="C")).hexdigest()
             or identity.get("fitted_state_custody", {}).get("state_content_digest") != envelope["state_content_digest"]
@@ -564,6 +572,7 @@ async def build_review_receipt(definition, results, model_id):
     receipt = {
         "dataset_curation_source": review_curation_binding(source, path[0]["parameters"]),
         "schema_version": SCHEMA,
+        "identity_field": "sample_id",
         "model_kind": "pls",
         "pca_node_id": model_id,
         "graph_digest": compute_workflow_hash(definition["nodes"], definition["edges"]),

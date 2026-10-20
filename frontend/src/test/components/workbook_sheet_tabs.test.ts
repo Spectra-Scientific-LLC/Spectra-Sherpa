@@ -39,7 +39,7 @@ describe("WorkbookSheetTabs", () => {
     const wrapper = mountTabs({ activeIndex: 1 });
     const actions = wrapper.findComponent({ name: "Menu" }).props("model");
     expect(actions[2].label).toBe("From Analysis Starter...");
-    expect(actions[3].label).toBe("Reset Color by Data Portfolio");
+    expect(actions[3].label).toBe("Reset Color by Dataset");
     actions[3].command();
     expect(wrapper.emitted("color")).toEqual([[2, null]]);
   });

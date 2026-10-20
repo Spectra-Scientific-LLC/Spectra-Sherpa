@@ -476,7 +476,7 @@ async function startFromGoal(request: StarterStartRequest): Promise<void> {
   }
   await createAnalysisStarter(template, {
     dataset: reference,
-    experimentId: dataset?.kind === "experiment" ? dataset.experiment_id : null,
+    experimentId: dataset?.kind === "experiment" ? dataset.experiment_id ?? null : null,
     experimentLabel: dataset?.kind === "experiment" ? dataset.label : null,
     goalPlan: plan,
     name: request.name,
@@ -608,7 +608,7 @@ async function createAnalysisStarter(template?: WorkflowTemplate, goalStart?: An
 
     // A goal's plan names its starter even when no template record was
     // resolved here, so prefer the plan's slug for goal starts.
-    const templateSlug = goalStart ? goalStart.goalPlan.template_slug : (template?.slug ?? null);
+    const templateSlug = (goalStart ? goalStart.goalPlan.template_slug : template?.slug) ?? null;
     if (dataset) {
       persistAnalysisStarterIntent(project.id, referenceIntentSource(dataset), templateSlug);
     } else if (experimentId != null) {

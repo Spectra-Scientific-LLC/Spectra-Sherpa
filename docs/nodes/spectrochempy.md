@@ -21,11 +21,9 @@ from the native registry described in [Supported File Types](../introduction/fil
 
 ## Nodes That Currently Require SpectroChemPy
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| MCR-ALS (`model.mcr_als`) | Uses constrained curve-resolution support. |
-| EFA (`model.efa`) | Uses Evolving Factor Analysis support. |
-| SIMPLISMA (`model.simplisma`) | Uses purity-maximization component estimation. |
+- [`model.mcr_als`](exploratory.md#registry-reference): Uses constrained curve-resolution support.
+- [`model.efa`](exploratory.md#registry-reference): Uses Evolving Factor Analysis support.
+- [`model.simplisma`](exploratory.md#registry-reference): Uses purity-maximization component estimation.
 
 If the extra is missing, these nodes should fail early with the install message rather than fail deep in workflow execution.
 

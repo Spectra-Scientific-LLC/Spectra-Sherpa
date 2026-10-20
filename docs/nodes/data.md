@@ -13,13 +13,11 @@ Data nodes introduce datasets into a workflow.
 
 ## Core Data Nodes
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| File Load (`data.file_load`) | You want one exact authorized experiment file, including an explicit target when supervised analysis needs one. |
-| NIST Library (`data.nist_library`) | You need one exact local NIST reference spectrum. The node requires a supported spectral technique, monotonic axis, units, and binds the JCAMP bytes by SHA-256. |
-| Load Group (`data.load_group`) | You need to stack many compatible files from a folder into one dataset. Uses the native ingestion registry. Axes and signal units must match; exact source bytes are bound by a manifest digest. |
-| Attach Target (`data.attach_target`) | You want downstream supervised nodes to use either a connected target or one exact aligned sample-table column. A separate metadata column may define validation groups without entering `X`. For sample-table supervision, choose an exact target column; a separate group column can define validation groups without entering the predictor matrix. |
-| Train/Test Split (`data.train_test_split`) | You need one digest-bound statistical or chemometric calibration/test design. Bound validation groups are held out whole. Grouped input is supported by random, stratified, sequential, and group holdout methods; observation-level space-filling methods refuse it. |
+- [`data.file_load`](data.md#registry-reference): You want one exact authorized experiment file, including an explicit target when supervised analysis needs one.
+- [`data.nist_library`](data.md#registry-reference): You need one exact local NIST reference spectrum. The node requires a supported spectral technique, monotonic axis, units, and binds the JCAMP bytes by SHA-256.
+- [`data.load_group`](data.md#registry-reference): You need to stack many compatible files from a folder into one dataset. Uses the native ingestion registry. Axes and signal units must match; exact source bytes are bound by a manifest digest.
+- [`data.attach_target`](data.md#registry-reference): You want downstream supervised nodes to use either a connected target or one exact aligned sample-table column. A separate metadata column may define validation groups without entering `X`. For sample-table supervision, choose an exact target column; a separate group column can define validation groups without entering the predictor matrix.
+- [`data.train_test_split`](data.md#registry-reference): You need one digest-bound statistical or chemometric calibration/test design. Bound validation groups are held out whole. Grouped input is supported by random, stratified, sequential, and group holdout methods; observation-level space-filling methods refuse it.
 
 Grouped stratification first selects a class-complete `StratifiedGroupKFold`
 candidate closest to the requested sample count, then class proportions. If
@@ -52,9 +50,7 @@ seed, or distance setting, and it refuses a selection that is empty, names an
 unknown group (the error lists the valid groups), names one twice, or leaves
 no group in training.
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Filter Samples (`data.filter_samples`) | You need to subset rows by sample label, class, target, metadata, row number, or intensity rule. Guided mode selection supports row ranges, populated value lists, intensity rules, and advanced pattern controls. |
+- [`data.filter_samples`](data.md#registry-reference): You need to subset rows by sample label, class, target, metadata, row number, or intensity rule. Guided mode selection supports row ranges, populated value lists, intensity rules, and advanced pattern controls.
 
 ### Filter Samples
 
@@ -73,23 +69,21 @@ The panel previews how many samples will be kept before the workflow is run. Adv
 
 These nodes are useful for examples, simulation, and method development. They should not be mistaken for measured calibration data.
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| PPM to Fraction (`synthesis.ppm_fraction`) | Convert declared non-negative ppm concentrations into the dimensionless mole fractions required by the bilinear mixture. The exact scale factor is `10^-6`. |
-| NIST Quant IR Response (`synthesis.nist_quant_ir_response`) | Convert one NIST quantitative-IR coefficient in `ppm^-1 m^-1` into a unit-mole-fraction decadic response. The optical path length must be strictly positive. |
-| HITRAN Cross-section Response (`synthesis.hitran_response`) | Convert one HITRAN cross section in `cm^2 molecule^-1` into a unit-mole-fraction decadic response. Optical path length, absolute temperature, and pressure must be strictly positive. |
-| Species (`synthesis.species`) | Mark a spectrum as a component/species before mixture generation. |
-| Merge Spectra (`synthesis.merge`) | Stack exactly aligned, species-labelled pure responses into the response matrix `S`. Alignment must be an explicit upstream operation. |
-| Blend (`synthesis.blend`) | Evaluate the standard bilinear mixture `D = C @ S`. Retains the exact concentration and pure-response factors; noise and nonlinear response are separate explicit nodes. |
-| Synthetic Curve (`data.synthetic_curve`) | Generate deterministic concentration/time curves for synthetic examples. Specify a physical duration in seconds. |
-| Concentration Curve (`custom.concentration_curve`) | Generate simple concentration curves for custom blending workflows. |
-| Catmull-Rom Curve (`custom.catmull_rom_curve`) | Generate smoother custom curves from control points. |
-| Noise Injection (`custom.noise_injection`) | Stress-test workflows with reproducible independent Gaussian noise. Retain the seed to reproduce the perturbation. |
-| System Saturation (`custom.system_saturation`) | Simulate detector or system saturation in synthetic spectra. |
-| Linear Calibration (`custom.linear_calibration`) | Apply an explicit affine Beer-Lambert calibration without inferred coefficients. Input metadata must carry the matching slope, intercept, and applied-reference status for the declared concentration unit. |
-| Saturation Model (`custom.saturation_model`) | Simulate nonlinear high-concentration response. |
-| Hybrid Model Selector (`custom.hybrid_selector`) | Choose linear or saturation output per variable. |
-| Golden Grid Align (`custom.golden_grid_align`) | Align and stack spectra on measured coordinates within every input's common wavenumber coverage. Extrapolation is rejected, and denser interpolation is admitted explicitly without claiming added measured resolution. Use only common measured coverage, reject extrapolation, and explicitly admit any denser interpolation. |
+- [`synthesis.ppm_fraction`](data.md#registry-reference): Convert declared non-negative ppm concentrations into the dimensionless mole fractions required by the bilinear mixture. The exact scale factor is `10^-6`.
+- [`synthesis.nist_quant_ir_response`](data.md#registry-reference): Convert one NIST quantitative-IR coefficient in `ppm^-1 m^-1` into a unit-mole-fraction decadic response. The optical path length must be strictly positive.
+- [`synthesis.hitran_response`](data.md#registry-reference): Convert one HITRAN cross section in `cm^2 molecule^-1` into a unit-mole-fraction decadic response. Optical path length, absolute temperature, and pressure must be strictly positive.
+- [`synthesis.species`](data.md#registry-reference): Mark a spectrum as a component/species before mixture generation.
+- [`synthesis.merge`](data.md#registry-reference): Stack exactly aligned, species-labelled pure responses into the response matrix `S`. Alignment must be an explicit upstream operation.
+- [`synthesis.blend`](data.md#registry-reference): Evaluate the standard bilinear mixture `D = C @ S`. Retains the exact concentration and pure-response factors; noise and nonlinear response are separate explicit nodes.
+- [`data.synthetic_curve`](data.md#registry-reference): Generate deterministic concentration/time curves for synthetic examples. Specify a physical duration in seconds.
+- [`custom.concentration_curve`](data.md#registry-reference): Generate simple concentration curves for custom blending workflows.
+- [`custom.catmull_rom_curve`](data.md#registry-reference): Generate smoother custom curves from control points.
+- [`custom.noise_injection`](data.md#registry-reference): Stress-test workflows with reproducible independent Gaussian noise. Retain the seed to reproduce the perturbation.
+- [`custom.system_saturation`](data.md#registry-reference): Simulate detector or system saturation in synthetic spectra.
+- [`custom.linear_calibration`](data.md#registry-reference): Apply an explicit affine Beer-Lambert calibration without inferred coefficients. Input metadata must carry the matching slope, intercept, and applied-reference status for the declared concentration unit.
+- [`custom.saturation_model`](data.md#registry-reference): Simulate nonlinear high-concentration response.
+- [`custom.hybrid_selector`](data.md#registry-reference): Choose linear or saturation output per variable.
+- [`custom.golden_grid_align`](data.md#registry-reference): Align and stack spectra on measured coordinates within every input's common wavenumber coverage. Extrapolation is rejected, and denser interpolation is admitted explicitly without claiming added measured resolution. Use only common measured coverage, reject extrapolation, and explicitly admit any denser interpolation.
 
 ### Scientific references for reference-response synthesis
 
@@ -103,10 +97,8 @@ These operations expose only the referenced equations and exact unit conversions
 
 ## Deployment I/O Helpers
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Deploy Input (`deploy.input`) | Building a headless prediction workflow that receives external data. |
-| Deploy Output (`deploy.output`) | Formatting headless prediction results for a service response. |
+- [`deploy.input`](data.md#registry-reference): Building a headless prediction workflow that receives external data.
+- [`deploy.output`](data.md#registry-reference): Formatting headless prediction results for a service response.
 
 ## Data Checks Before Modeling
 
@@ -128,6 +120,33 @@ Generated from registered node metadata. Edit methodology and examples outside t
 Defaults and options below are JSON values; `null` means no concrete default is declared.
 Internal parameters are retained for contract inspection and are not scientist-editable controls.
 Conditional visibility describes the editor; execution admission remains node-owned.
+
+| Node | Operation |
+| --- | --- |
+| Catmull-Rom Curve | <code>custom.catmull_rom_curve</code> |
+| Concentration Curve | <code>custom.concentration_curve</code> |
+| Golden Grid Align | <code>custom.golden_grid_align</code> |
+| Explicit Hybrid Composition | <code>custom.hybrid_selector</code> |
+| Linear Calibration | <code>custom.linear_calibration</code> |
+| Noise Injection | <code>custom.noise_injection</code> |
+| Saturation Model | <code>custom.saturation_model</code> |
+| System Saturation | <code>custom.system_saturation</code> |
+| Attach Target | <code>data.attach_target</code> |
+| Collection Load | <code>data.collection_load</code> |
+| File Load | <code>data.file_load</code> |
+| Filter Samples | <code>data.filter_samples</code> |
+| Load Group | <code>data.load_group</code> |
+| NIST Library | <code>data.nist_library</code> |
+| Synthetic Curve | <code>data.synthetic_curve</code> |
+| Train/Test Split | <code>data.train_test_split</code> |
+| Deploy Input | <code>deploy.input</code> |
+| Deploy Output | <code>deploy.output</code> |
+| Bilinear Mixture | <code>synthesis.blend</code> |
+| HITRAN Cross-section Response | <code>synthesis.hitran_response</code> |
+| Merge Pure Responses | <code>synthesis.merge</code> |
+| NIST Quant IR Response | <code>synthesis.nist_quant_ir_response</code> |
+| PPM to Fraction | <code>synthesis.ppm_fraction</code> |
+| Species | <code>synthesis.species</code> |
 
 ### Catmull-Rom Curve (`custom.catmull_rom_curve`)
 

@@ -17,8 +17,10 @@
 </template>
 <script setup lang="ts">
 import MethodHelp from "@/components/MethodHelp.vue";
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import api from "@/api/client";
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest } from "@/composables/useScopedRequest";
 import ModelPromotionReview from "@/components/ModelPromotionReview.vue";
 const props = defineProps<{ projectId: number; reviewWorkflowId?: number }>();
 type Application = { canonical_artifact_id: number; workflow_id: number; name: string; artifact_digest: string };
@@ -28,20 +30,21 @@ const selected = computed(() => applications.value.find(item => item.canonical_a
 const loading = ref(false);
 const reviewOpen = ref(false);
 const error = ref("");
-let generation = 0;
-onBeforeUnmount(() => { generation += 1; });
-watch(() => props.projectId, async projectId => {
-  const current = ++generation;
-  applications.value = []; selectedId.value = null; error.value = ""; loading.value = true;
+const auth = useAuthStore();
+const identity = () => [auth.user?.id, auth.token, props.projectId, props.reviewWorkflowId];
+const requests = useScopedRequest(identity);
+watch(identity, async () => {
+  const request = requests.begin();
+  applications.value = []; selectedId.value = null; reviewOpen.value = false; error.value = ""; loading.value = true;
   try {
-    const response = await api.get<Application[]>(`/deploy/projects/${projectId}/qualification-applications`);
-    if (current === generation) {
+    const response = await api.get<Application[]>(`/deploy/projects/${props.projectId}/qualification-applications`, { signal: request.signal });
+    if (request.isCurrent()) {
       applications.value = response.data;
       const requested = response.data.find(item => item.workflow_id === props.reviewWorkflowId);
       if (requested) { selectedId.value = requested.canonical_artifact_id; reviewOpen.value = true; }
     }
   } catch (e) {
-    if (current === generation) error.value = "Qualification applications are unavailable. " + String(e);
-  } finally { if (current === generation) loading.value = false; }
+    if (request.isCurrent()) error.value = "Qualification applications are unavailable. " + String(e);
+  } finally { if (request.isCurrent()) loading.value = false; }
 }, { immediate: true });
 </script>

@@ -226,7 +226,7 @@ export function proposeMeasuredSamples(
     targets: { ...row.targets },
     annotations: { ...row.annotations },
   }));
-  const orderedMatches = [...plan.matching.matches].sort(
+  const orderedMatches = [...(plan.matching.matches ?? [])].sort(
     (left, right) => left.sequence_order - right.sequence_order,
   );
   const wellByPosition = new Map(plan.wells.map((well) => [well.well_position, well]));

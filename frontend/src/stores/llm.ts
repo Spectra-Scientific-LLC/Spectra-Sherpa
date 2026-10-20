@@ -6,6 +6,7 @@ import api from "@/api/client";
 import { dispatchSherpaEvent } from "@/lib/sherpaEvents";
 import type { ConversationSummary, LlmMessage } from "@/types";
 import { useAppConfig } from "@/composables/useAppConfig";
+import { useScopedRequest, type ScopedRequestTicket } from "@/composables/useScopedRequest";
 import { useAuthStore } from "@/stores/auth";
 import { useNotificationStore } from "@/stores/notification";
 import { useProjectStore } from "@/stores/project";
@@ -200,6 +201,10 @@ export const useLlmStore = defineStore("llm", () => {
     isServerBacked.value ? [] : loadConversations()
   );
   const currentConversationId = ref<string | null>(null);
+  const workspaceIdentity = () => [authStore.user?.id, authStore.token, projectStore.currentProjectId];
+  const conversationLoads = useScopedRequest(workspaceIdentity);
+  const conversationIndex = useScopedRequest(() => [...workspaceIdentity(), currentConversationId.value]);
+  const conversationWrites = useScopedRequest(workspaceIdentity, undefined, { abortOnInvalidate: false });
   const loading = ref(false);
   const streaming = ref(false);
   const wsRef = ref<WebSocket | null>(null);
@@ -213,7 +218,9 @@ export const useLlmStore = defineStore("llm", () => {
   const configStatus = ref<"unknown" | "configured" | "unavailable">("unknown");
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let allowReconnect = true;
-  let connectionGeneration = 0;
+  const connections = useScopedRequest(
+    () => [authStore.user?.id, authStore.token], () => stopConnection(),
+  );
   let policyCloseController: AbortController | null = null;
 
   const cancelPolicyProbe = () => {
@@ -221,13 +228,13 @@ export const useLlmStore = defineStore("llm", () => {
     policyCloseController = null;
   };
 
-  const resolveCurrentPolicyClose = async (generation: number) => {
+  const resolveCurrentPolicyClose = async (request: ScopedRequestTicket) => {
     cancelPolicyProbe();
     const controller = new AbortController();
     policyCloseController = controller;
     const resolution = await resolveWsPolicyClose(controller.signal);
     if (policyCloseController === controller) policyCloseController = null;
-    if (generation !== connectionGeneration || controller.signal.aborted || !allowReconnect) return null;
+    if (!request.isCurrent() || controller.signal.aborted || !allowReconnect) return null;
     return resolution;
   };
 
@@ -374,9 +381,9 @@ export const useLlmStore = defineStore("llm", () => {
       "connect_retry",
       `${detail} Retrying live connection (attempt ${connectAttempt + 1} of ${CONNECT_RETRY_ATTEMPTS}).`
     );
-    const generation = connectionGeneration;
+    const request = connections.capture();
     window.setTimeout(() => {
-      if (!pendingConnect || generation !== connectionGeneration || !allowReconnect) {
+      if (!pendingConnect || !request.isCurrent() || !allowReconnect) {
         return;
       }
       startConnectAttempt();
@@ -386,7 +393,7 @@ export const useLlmStore = defineStore("llm", () => {
 
   const startConnectAttempt = () => {
     cancelPolicyProbe();
-    const generation = ++connectionGeneration;
+    const request = connections.begin();
     clearSocketOpenTimer();
     clearAuthAckTimer();
     connectAttempt += 1;
@@ -396,7 +403,7 @@ export const useLlmStore = defineStore("llm", () => {
     wsRef.value = socket;
 
     socket.addEventListener("message", (event) => {
-      if (generation !== connectionGeneration) return;
+      if (!request.isCurrent()) return;
       try {
         const payload = JSON.parse(event.data);
         if (payload.request_id && !String(payload.type).startsWith("sherpa_")
@@ -466,7 +473,7 @@ export const useLlmStore = defineStore("llm", () => {
     });
 
     socket.addEventListener("open", () => {
-      if (generation !== connectionGeneration) return;
+      if (!request.isCurrent()) return;
       clearSocketOpenTimer();
       emitWsTransport(
         "socket_open",
@@ -478,6 +485,7 @@ export const useLlmStore = defineStore("llm", () => {
       emitWsTransport("auth_sent", "WebSocket authentication sent.");
       clearAuthAckTimer();
       authAckTimer = window.setTimeout(() => {
+        if (!request.isCurrent()) return;
         lastError.value = "WebSocket authentication timed out.";
         emitWsTransport("auth_timeout", "Server did not acknowledge WebSocket authentication.");
         wsRef.value?.close(4001, "Authentication timeout");
@@ -485,13 +493,13 @@ export const useLlmStore = defineStore("llm", () => {
     });
 
     socket.addEventListener("error", () => {
-      if (generation !== connectionGeneration) return;
+      if (!request.isCurrent()) return;
       lastError.value = "WebSocket error.";
       emitWsTransport("socket_error", "Connection error while talking to the server.");
     });
 
     socket.addEventListener("close", (event) => {
-      if (generation !== connectionGeneration) return;
+      if (!request.isCurrent()) return;
       clearSocketOpenTimer();
       clearAuthAckTimer();
       const awaitingAuth = !!pendingConnect;
@@ -504,7 +512,7 @@ export const useLlmStore = defineStore("llm", () => {
           // trial pause, live-session revalidation). Confirm the session over
           // HTTP before discarding any credential — the api client's 401
           // shared logout path handles confirmed rejection.
-          void resolveCurrentPolicyClose(generation).then((resolution) => {
+          void resolveCurrentPolicyClose(request).then((resolution) => {
             if (!resolution || resolution === "cancelled") return;
             if (resolution === "retry-with-api-key" && !authFallbackRetried) {
               authFallbackRetried = true;
@@ -557,7 +565,7 @@ export const useLlmStore = defineStore("llm", () => {
         messages.value.push(createLlmMessage("assistant", "Connection lost. Please try again."));
       }
       if (event.code === 1008) {
-        void resolveCurrentPolicyClose(generation).then((resolution) => {
+        void resolveCurrentPolicyClose(request).then((resolution) => {
           if (!resolution || resolution === "cancelled") return;
           if (resolution === "retry-with-api-key") {
             reconnectAttempts.value = 0;
@@ -583,6 +591,7 @@ export const useLlmStore = defineStore("llm", () => {
     });
 
     socketOpenTimer = window.setTimeout(() => {
+      if (!request.isCurrent()) return;
       lastError.value = "WebSocket connection timed out.";
       emitWsTransport("socket_timeout", "Live connection timed out before the socket opened.");
       wsRef.value?.close(4000, "Connection timeout");
@@ -648,6 +657,7 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const refreshConversations = async (projectId = projectStore.currentProjectId) => {
+    const request = conversationIndex.begin();
     if (!isServerBacked.value) {
       conversations.value = loadConversations();
       return;
@@ -673,14 +683,17 @@ export const useLlmStore = defineStore("llm", () => {
     try {
       listResponse = await api.get("/llm/conversations", {
         params: { project_id: projectId },
+        signal: request.signal,
       });
     } catch (err) {
+      if (!request.isCurrent()) return;
       console.warn(
         "[llm] refreshConversations list fetch failed — will probe active id before deciding:",
         err,
       );
       listFailed = true;
     }
+    if (!request.isCurrent()) return;
 
     if (listResponse) {
       conversations.value = (listResponse.data as Array<Record<string, unknown>>).map(
@@ -716,12 +729,15 @@ export const useLlmStore = defineStore("llm", () => {
       // ``/`` or ``..`` would otherwise rewrite the request path.
       await api.get(`/llm/conversation/${encodeURIComponent(activeId)}`, {
         params: { project_id: projectId },
+        signal: request.signal,
       });
+      if (!request.isCurrent()) return;
       if (!listFailed) {
         ensureOptimisticSidebarEntry(activeId);
       }
       lastConversationProjectId = projectId;
     } catch (err) {
+      if (!request.isCurrent()) return;
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 404 && switchingProjects) {
         // Project switch: stale id belongs to a different project.
@@ -897,6 +913,7 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const loadConversation = async (conversationId: string) => {
+    const request = conversationLoads.begin();
     if (conversationId === currentConversationId.value && messages.value.length > 0) {
       return;
     }
@@ -923,10 +940,12 @@ export const useLlmStore = defineStore("llm", () => {
       ? { project_id: projectStore.currentProjectId }
       : undefined;
     try {
-      const response = await api.get(`/llm/conversation/${encodeURIComponent(conversationId)}`, { params });
+      const response = await api.get(`/llm/conversation/${encodeURIComponent(conversationId)}`, { params, signal: request.signal });
+      if (!request.isCurrent()) return;
       currentConversationId.value = response.data.conversation_id;
       messages.value = normalizeLlmMessages(response.data.messages);
     } catch (err) {
+      if (!request.isCurrent()) return;
       const status = (err as { response?: { status?: number } }).response?.status;
       if (status === 404) {
         conversations.value = conversations.value.filter(
@@ -943,6 +962,7 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const deleteConversation = async (conversationId: string) => {
+    const request = conversationWrites.capture();
     if (!isServerBacked.value) {
       const nextRecords = loadLocalConversationRecords().filter(
         (item) => item.id !== conversationId
@@ -966,6 +986,7 @@ export const useLlmStore = defineStore("llm", () => {
     await api.delete(`/llm/conversation/${encodeURIComponent(conversationId)}`, {
       params: { project_id: projectStore.currentProjectId },
     });
+    if (!request.isCurrent()) return;
     conversations.value = conversations.value.filter(
       (item) => item.id !== conversationId
     );
@@ -976,6 +997,8 @@ export const useLlmStore = defineStore("llm", () => {
   };
 
   const startNewConversation = () => {
+    conversationLoads.invalidate();
+    conversationIndex.invalidate();
     currentConversationId.value = null;
     messages.value = [];
   };
@@ -998,8 +1021,7 @@ export const useLlmStore = defineStore("llm", () => {
     messages.value.push(createLlmMessage("assistant", detail));
   };
 
-  const disconnect = () => {
-    connectionGeneration += 1;
+  const stopConnection = () => {
     cancelPolicyProbe();
     stopAnalysis();
     localStreamAbortController?.abort();
@@ -1015,6 +1037,7 @@ export const useLlmStore = defineStore("llm", () => {
     }
     connectionStatus.value = "disconnected";
   };
+  const disconnect = () => connections.invalidate();
 
   const reconnect = async () => {
     disconnect();

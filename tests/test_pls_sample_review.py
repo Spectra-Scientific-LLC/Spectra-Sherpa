@@ -15,7 +15,10 @@ def dataset():
     x[-2:] += 40
     ds = SherpaDataset(
         X=x,
-        sample_axis=SampleAxis(labels=[f"s{i:02}" for i in range(40)]),
+        sample_axis=SampleAxis(
+            labels=[f"s{i:02}" for i in range(40)],
+            sample_table={"sample_id": [f"s{i:02}" for i in range(40)]},
+        ),
         feature_axis=SpectralAxis(values=np.arange(8.0), units="cm^-1"),
         data_role="X_spectra",
     )
@@ -59,7 +62,12 @@ def definition(excluded=()):
             {
                 "node_id": filter_id("pls"),
                 "node_type": "data.filter_samples",
-                "parameters": {"field": "sample_label", "filter_values": list(excluded), "invert": True},
+                "parameters": {
+                    "field": "sample_table",
+                    "sample_table_column": "sample_id",
+                    "filter_values": list(excluded),
+                    "invert": True,
+                },
             }
         )
         edges.remove(e("split", "pls", "X_train"))
@@ -91,6 +99,61 @@ async def run(excluded=(), corrupt=None, responses=1, scale=False):
     if corrupt:
         corrupt(result)
     return await build_review_receipt(graph, result, "pls"), ds, result
+
+
+@pytest.mark.asyncio
+async def test_pls_review_and_explanations_follow_ids_after_display_relabel(monkeypatch):
+    original_factory = dataset
+
+    def relabeled():
+        value = original_factory()
+        axis = value.sample_axis
+        axis.labels = [f"Display specimen {index}" for index in range(40)]
+        value.sample_axis = axis
+        return value
+
+    monkeypatch.setitem(globals(), "dataset", relabeled)
+    original, _, _ = await run()
+    selected = original["calibration_ids"][-1]
+    reviewed, _, _ = await run([selected])
+    assert reviewed["identity_field"] == "sample_id"
+    assert reviewed["heldout_ids"] == original["heldout_ids"]
+    assert selected in reviewed["pls_explanations"]["rows"]
+    assert {row["id"] for row in reviewed["rows"]} == {f"s{i:02}" for i in range(40)}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("labels", ["duplicate", "absent"])
+async def test_pls_review_refuses_genuine_predictions_for_reversed_ids_even_without_unique_labels(monkeypatch, labels):
+    original_factory = dataset
+
+    def relabeled():
+        value = original_factory()
+        axis = value.sample_axis
+        axis.labels = ["Same display label"] * value.n_samples if labels == "duplicate" else None
+        value.sample_axis = axis
+        return value
+
+    monkeypatch.setitem(globals(), "dataset", relabeled)
+    receipt, _, results = await run()
+    original = results["predict"]["default"].copy()
+    heldout = results["split"]["X_test"]
+    reversed_result = (
+        PredictRegressionNode("predict", {})._execute_sync(heldout[::-1], results["pls"]["fitted_state"]).outputs
+    )
+    assert reversed_result["prediction_identity"]["sample_ids"] == list(reversed(receipt["heldout_ids"]))
+    assert not np.array_equal(reversed_result["default"], original)
+    results["predict"] = reversed_result
+    with pytest.raises(ValueError, match="prediction identity/state custody"):
+        await build_review_receipt(definition(), results, "pls")
+
+
+@pytest.mark.asyncio
+async def test_new_pls_review_refuses_legacy_prediction_receipt_without_typed_ids():
+    _, _, results = await run()
+    results["predict"]["prediction_identity"].pop("sample_ids")
+    with pytest.raises(ValueError, match="prediction identity/state custody"):
+        await build_review_receipt(definition(), results, "pls")
 
 
 def preprocessed_definition(excluded=(), *, group_holdout=False, extra_samplewise=False):
@@ -146,7 +209,12 @@ def preprocessed_definition(excluded=(), *, group_holdout=False, extra_samplewis
             {
                 "node_id": filter_id("pls"),
                 "node_type": "data.filter_samples",
-                "parameters": {"field": "sample_label", "filter_values": list(excluded), "invert": True},
+                "parameters": {
+                    "field": "sample_table",
+                    "sample_table_column": "sample_id",
+                    "filter_values": list(excluded),
+                    "invert": True,
+                },
             }
         )
         train_source = filter_id("pls")
@@ -726,7 +794,12 @@ async def test_calibration_only_preprocessing_applies_exact_state(kind, params):
             {
                 "node_id": filter_id("pls"),
                 "node_type": "data.filter_samples",
-                "parameters": {"field": "sample_label", "filter_values": excluded, "invert": True},
+                "parameters": {
+                    "field": "sample_table",
+                    "sample_table_column": "sample_id",
+                    "filter_values": excluded,
+                    "invert": True,
+                },
             },
             {"node_id": "pre", "node_type": kind, "parameters": params},
             {"node_id": "pls", "node_type": "model.fitted_pls", "parameters": {"n_components": 2}},

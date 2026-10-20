@@ -1,5 +1,20 @@
 import { test, expect } from "@playwright/test";
-import { assertIdentity, assertMatrix, assertReportedNumber, parseCsv } from "./assertions";
+import { assertIdentity, assertMatrix, assertReportedNumber, assertSameScreenshot, parseCsv } from "./assertions";
+
+test("visual parity still rejects changed text, color and geometry @smoke", async ({ page }) => {
+  await page.setContent('<svg width="240" height="80" style="background:white"><text x="10" y="35" fill="black">PC 1 · Wavelength (nm)</text><path d="M10 65L80 45L150 60" stroke="blue" fill="none"/></svg>');
+  const canvas = page.locator("svg");
+  const before = await canvas.screenshot();
+  await assertSameScreenshot(page, before, await canvas.screenshot());
+  for (const change of ["text", "color", "position"]) {
+    await page.locator("text").evaluate((el, change) => {
+      el.textContent = change === "text" ? "PC 2 · Wavelength (nm)" : "PC 1 · Wavelength (nm)";
+      el.setAttribute("fill", change === "color" ? "red" : "black");
+      el.setAttribute("x", change === "position" ? "11" : "10");
+    }, change);
+    await expect(assertSameScreenshot(page, before, await canvas.screenshot())).rejects.toThrow();
+  }
+});
 
 // Deliberate corruptions exercise the same assertions used on browser outputs.
 // An executor's "completed" status cannot make these scientific checks pass.

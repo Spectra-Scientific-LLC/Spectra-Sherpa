@@ -6,7 +6,7 @@ import { useDatasetReadinessSelection } from "@/views/data/composables/useDatase
 import { useDatasetReadinessPreview } from "@/views/data/composables/useDatasetReadinessPreview";
 import { useDatasetInspection } from "@/views/data/composables/useDatasetInspection";
 import { useDatasetNavigation } from "@/views/data/composables/useDatasetNavigation";
-import { useSynthesisExecution } from "@/views/data/composables/useSynthesisExecution";
+import { useSynthesisPreview, useSynthesisSave } from "@/views/data/composables/useSynthesisExecution";
 import { useSynthesisSearch } from "@/views/data/composables/useSynthesisSearch";
 import type { ExperimentFileAssets } from "@/types";
 
@@ -152,7 +152,7 @@ describe("Data request boundaries", () => {
 describe("Synthesis request boundaries", () => {
   it.each(["project", "recipe"])("discards preview after %s A → B → A", async (field) => {
     const scope = reactive<Record<string, number>>({ project: 1, recipe: 1 });
-    const state = setup(() => useSynthesisExecution(() => [scope.project, scope.recipe]));
+    const state = setup(() => useSynthesisPreview(() => [scope.project, scope.recipe]));
     const old = deferred<{ data: unknown }>();
     vi.mocked(api.post).mockReturnValueOnce(old.promise);
     const preview = state.preview({ components: [] });
@@ -163,7 +163,7 @@ describe("Synthesis request boundaries", () => {
   });
 
   it("an old preview finally cannot hide the next preview spinner", async () => {
-    const state = setup(() => useSynthesisExecution(() => [1]));
+    const state = setup(() => useSynthesisPreview(() => [1]));
     const old = deferred<{ data: unknown }>();
     const fresh = deferred<{ data: unknown }>();
     vi.mocked(api.post).mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
@@ -179,15 +179,18 @@ describe("Synthesis request boundaries", () => {
 
   it("stops a bundle after invalidation without redirecting remaining writes", async () => {
     const scope = reactive({ project: 1 });
-    const state = setup(() => useSynthesisExecution(() => [scope.project]));
+    const state = setup(() => useSynthesisSave(() => [scope.project]));
     const old = deferred<{ data: unknown }>();
     vi.mocked(api.post).mockReturnValueOnce(old.promise);
     const save = state.save(scope.project, [
       { name: "first", payload: { seed: 1 } }, { name: "second", payload: { seed: 2 } },
     ]);
     scope.project = 2;
+    expect(state.saving.value).toBe(true);
+    expect(vi.mocked(api.post).mock.calls[0][2]?.signal?.aborted).toBe(false);
+    await expect(state.save(2, [{ name: "duplicate", payload: {} }])).rejects.toThrow("already in progress");
     old.resolve({ data: { experiment_id: 99, result: { seed: 1 } } });
-    expect(await save).toBeUndefined();
+    expect(await save).toMatchObject({ status: "partial", count: 1, requested: 2 });
     expect(api.post).toHaveBeenCalledTimes(1);
     expect(api.post).toHaveBeenCalledWith("/synthesis/save",
       { name: "first", seed: 1, experiment_id: null, project_id: 1 },
@@ -196,7 +199,7 @@ describe("Synthesis request boundaries", () => {
   });
 
   it("snapshots every bundle payload before the first write", async () => {
-    const state = setup(() => useSynthesisExecution(() => [1]));
+    const state = setup(() => useSynthesisSave(() => [1]));
     const old = deferred<{ data: unknown }>();
     vi.mocked(api.post).mockReturnValueOnce(old.promise).mockResolvedValueOnce({
       data: { experiment_id: 8, result: { seed: 2 } },
@@ -212,15 +215,15 @@ describe("Synthesis request boundaries", () => {
       { signal: expect.any(AbortSignal) });
   });
 
-  it("does not surface a save error in a reopened recipe", async () => {
+  it("reports an unknown acknowledgement instead of silently dropping an old save", async () => {
     const scope = reactive({ recipe: 1 });
-    const state = setup(() => useSynthesisExecution(() => [scope.recipe]));
+    const state = setup(() => useSynthesisSave(() => [scope.recipe]));
     const old = deferred<{ data: unknown }>();
     vi.mocked(api.post).mockReturnValueOnce(old.promise);
     const save = state.save(1, [{ name: "old", payload: {} }]);
     scope.recipe = 2;
     old.reject(new Error("old save failed"));
-    await expect(save).resolves.toBeUndefined();
+    await expect(save).resolves.toMatchObject({ status: "unknown", count: 0, requested: 1 });
     expect(state.saving.value).toBe(false);
   });
 

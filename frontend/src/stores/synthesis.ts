@@ -3,6 +3,9 @@ import { computed, reactive, ref, watch } from "vue";
 
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
+import { useDataStore } from "@/stores/data";
+import { useScopedRequest } from "@/composables/useScopedRequest";
+import { useSynthesisSave, type SynthesisSaveItem } from "@/views/data/composables/useSynthesisExecution";
 
 const STORAGE_PREFIX = "spectra_sherpa_synthesis_state_v1";
 const STORAGE_SOFT_LIMIT_CHARS = 3_800_000;
@@ -193,7 +196,29 @@ export const useSynthesisStore = defineStore("synthesis", () => {
   const previewResult = ref<SynthesisResult | null>(null);
   const searching = ref(false);
   const previewing = ref(false);
+  const writes = useSynthesisSave(() => [
+    useAuthStore().user?.id, useAuthStore().token, useProjectStore().currentProjectId,
+  ]);
   const saving = ref(false);
+  const saveOwner = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token]);
+  async function save(projectId: number | null, items: readonly SynthesisSaveItem[]) {
+    if (saving.value) throw new Error("A synthesis save is already in progress.");
+    const owner = saveOwner.begin();
+    saving.value = true;
+    try {
+      const outcome = await writes.save(projectId, items);
+      if (!owner.isCurrent()) return;
+      // Inventory updates are account/project reads, independent of the old form.
+      // Read the currently selected project; never restore the write's selection.
+      await Promise.allSettled([
+        useDataStore().fetchCatalog(), useDataStore().fetchExperiments(),
+        useProjectStore().fetchProjects(),
+      ]);
+      return owner.isCurrent() ? outcome : undefined;
+    } finally {
+      saving.value = false;
+    }
+  }
   const showTransmittance = ref(false);
   const previewStartSample = ref(0);
   const previewSkip = ref(1);
@@ -444,6 +469,7 @@ export const useSynthesisStore = defineStore("synthesis", () => {
     searching,
     previewing,
     saving,
+    save,
     showTransmittance,
     previewStartSample,
     previewSkip,

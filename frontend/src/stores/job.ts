@@ -5,6 +5,7 @@ import type { JobInfo } from "@/types";
 import { buildAuthMessage, buildWsUrl, resolveWsPolicyClose, withCredentials } from "@/utils/ws";
 import { useAuthStore } from "@/stores/auth";
 import { useNotifier } from "@/composables/useNotifier";
+import { useScopedRequest, type ScopedRequestTicket } from "@/composables/useScopedRequest";
 
 export const useJobStore = defineStore("job", () => {
   const authStore = useAuthStore();
@@ -22,21 +23,24 @@ export const useJobStore = defineStore("job", () => {
   const reconnectAttempts = ref(0);
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let allowReconnect = true;
-  let connectionGeneration = 0;
   let policyCloseController: AbortController | null = null;
+  const identity = () => [authStore.user?.id, authStore.token];
+  const listRequests = useScopedRequest(identity, () => { jobs.value = []; });
+  const detailRequests = useScopedRequest(identity);
+  const connections = useScopedRequest(identity, stopConnection);
 
   const cancelPolicyProbe = () => {
     policyCloseController?.abort();
     policyCloseController = null;
   };
 
-  const resolveCurrentPolicyClose = async (generation: number) => {
+  const resolveCurrentPolicyClose = async (request: ScopedRequestTicket) => {
     cancelPolicyProbe();
     const controller = new AbortController();
     policyCloseController = controller;
     const resolution = await resolveWsPolicyClose(controller.signal);
     if (policyCloseController === controller) policyCloseController = null;
-    if (generation !== connectionGeneration || controller.signal.aborted || !allowReconnect) return null;
+    if (!request.isCurrent() || controller.signal.aborted || !allowReconnect) return null;
     return resolution;
   };
 
@@ -49,12 +53,15 @@ export const useJobStore = defineStore("job", () => {
   });
 
   const fetchJobs = async () => {
-    const response = await api.get<JobInfo[]>("/jobs");
-    jobs.value = response.data;
+    const request = listRequests.begin();
+    const response = await api.get<JobInfo[]>("/jobs", { signal: request.signal });
+    if (request.isCurrent()) jobs.value = response.data;
   };
 
   const fetchJob = async (jobId: number) => {
-    const response = await api.get<JobInfo>(`/jobs/${jobId}`);
+    const request = detailRequests.capture();
+    const response = await api.get<JobInfo>(`/jobs/${jobId}`, { signal: request.signal });
+    if (!request.isCurrent()) return response.data;
     const existingIndex = jobs.value.findIndex((job) => job.id === jobId);
     if (existingIndex >= 0) {
       jobs.value[existingIndex] = response.data;
@@ -116,7 +123,7 @@ export const useJobStore = defineStore("job", () => {
     }
     clearReconnect();
     cancelPolicyProbe();
-    const generation = ++connectionGeneration;
+    const request = connections.begin();
     allowReconnect = true;
     connectionStatus.value = "connecting";
     lastError.value = null;
@@ -125,12 +132,12 @@ export const useJobStore = defineStore("job", () => {
     wsRef.value = socket;
 
     socket.addEventListener("open", () => {
-      if (generation !== connectionGeneration) return;
+      if (!request.isCurrent()) return;
       socket.send(buildAuthMessage());
     });
 
     socket.addEventListener("message", async (event) => {
-      if (generation !== connectionGeneration) return;
+      if (!request.isCurrent()) return;
       try {
         const payload = JSON.parse(event.data);
         if (payload?.type === "authenticated") {
@@ -161,6 +168,7 @@ export const useJobStore = defineStore("job", () => {
               progress_message: payload.message,
             });
           }
+          if (!request.isCurrent()) return;
           // Dispatch DOM event so BatchRunTab and other listeners can react
           window.dispatchEvent(
             new CustomEvent("job-update", { detail: payload })
@@ -186,7 +194,7 @@ export const useJobStore = defineStore("job", () => {
     });
 
     socket.addEventListener("close", (event) => {
-      if (generation !== connectionGeneration) return;
+      if (!request.isCurrent()) return;
       connected.value = false;
       wsRef.value = null;
       connectionStatus.value = "disconnected";
@@ -195,7 +203,7 @@ export const useJobStore = defineStore("job", () => {
         // trial pause, live-session revalidation). Never discard the stored
         // session speculatively: confirm it over HTTP first — the api
         // client's shared logout path handles confirmed rejection.
-        void resolveCurrentPolicyClose(generation).then((resolution) => {
+        void resolveCurrentPolicyClose(request).then((resolution) => {
           if (!resolution || resolution === "cancelled") return;
           if (resolution === "retry-with-api-key") {
             reconnectAttempts.value = 0;
@@ -216,17 +224,17 @@ export const useJobStore = defineStore("job", () => {
     });
 
     socket.addEventListener("error", () => {
-      if (generation !== connectionGeneration) return;
+      if (!request.isCurrent()) return;
       lastError.value = "WebSocket error.";
     });
 
     pendingConnect = new Promise((resolve, reject) => {
       const handleOpen = () => {
-        if (generation === connectionGeneration) pendingConnect = null;
+        if (request.isCurrent()) pendingConnect = null;
         resolve();
       };
       const handleClose = (event: CloseEvent) => {
-        if (generation === connectionGeneration) pendingConnect = null;
+        if (request.isCurrent()) pendingConnect = null;
         reject(
           new Error(
             event.code === 1008 ? "Unauthorized WebSocket connection." : "WebSocket closed."
@@ -240,8 +248,7 @@ export const useJobStore = defineStore("job", () => {
     return pendingConnect;
   };
 
-  const disconnect = () => {
-    connectionGeneration += 1;
+  function stopConnection(): void {
     cancelPolicyProbe();
     allowReconnect = false;
     clearReconnect();
@@ -249,7 +256,10 @@ export const useJobStore = defineStore("job", () => {
     wsRef.value = null;
     connected.value = false;
     connectionStatus.value = "disconnected";
-  };
+    pendingConnect = null;
+  }
+
+  const disconnect = () => { connections.invalidate(); };
 
   const reconnect = async () => {
     disconnect();

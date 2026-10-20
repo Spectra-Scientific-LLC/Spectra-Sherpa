@@ -7,6 +7,7 @@ from collections.abc import Mapping
 
 import numpy as np
 
+from spectra_sherpa.app.lib import sample_identity
 from spectra_sherpa.app.services.dag.io_contracts import coerce_to_sherpa
 from spectra_sherpa.app.services.dag.node_base import (
     Node,
@@ -81,6 +82,7 @@ class PredictRegressionNode(Node):
             "shape": list(predictions.shape),
             "response_identity": identity,
             "sample_labels": list(axis.labels) if axis is not None and axis.labels is not None else None,
+            "sample_ids": sample_identity.sample_ids(dataset),
             "sample_values": axis.values.tolist() if axis is not None and axis.values is not None else None,
             "fitted_state_custody": {"mode": "local_fitted_state"},
             "prediction_sha256": hashlib.sha256(np.asarray(predictions, dtype="<f8").tobytes(order="C")).hexdigest(),
@@ -105,7 +107,7 @@ bind_stable_execution_contract(
     runtime_family=RuntimeFamily.SHERPA_NATIVE,
     lifecycle_kind=LifecycleKind.ARTIFACT_APPLICATION,
     implementation_id="spectrasherpa.model.predict_regression",
-    implementation_version="1",
+    implementation_version="2",
     required_worker_capabilities=(),
     managed_optimization_eligibility=(ManagedOptimizationEligibility.LOCAL,),
     sample_effect="preserves_samples",
@@ -121,6 +123,7 @@ bind_stable_execution_contract(
         fitted_pls_node,
         apply_fitted_pls_node,
         fitted_regression_nodes,
+        sample_identity,
     ),
     implementation_distributions=("numpy", "scikit-learn", "scipy"),
     runtime_requirements=(("numpy", "1.26.4"), ("scipy", "1.17.1"), ("scikit-learn", "1.9.0")),

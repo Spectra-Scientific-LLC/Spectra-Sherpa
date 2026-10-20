@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Cohesion and scientific evidence
+
+- Identity and units: typed sample IDs remain separate from editable labels.
+  Curation, split populations, target units and retained scientific presentation
+  use shared authorities rather than consumer-specific inference.
+- Visual consistency: semantic design tokens and a shared plot theme cover
+  screen, downloads and reports. Categorical plots honor accessibility
+  preferences; legacy server figures retain explicit scientific colors where
+  their color roles were not recorded.
+- Browser qualification: deterministic Iris and synthetic spectral/regression
+  journeys independently check tables, plots, inclusion, persistence and
+  exports. Provider datasets remain in a separate authorized qualification lane.
+- Generated contracts: public API transport types, node reference tables and
+  help destinations derive from the OSS authorities. The extension host contract
+  is shared without publishing proprietary routes or implementations.
+- Reproducible governance: the authority map links owners to enforcing checks;
+  deterministic evidence generation retains implementation digests alongside
+  semantic tests. Paired publication requires explicit reconciliation of
+  independently changed public files.
+- Scoped workspace state: request ownership separates current selections from
+  retained run evidence. Read cancellation does not imply cancellation of an
+  accepted server write; writes refresh inventories without restoring old
+  selections.
+
+### Fixes pending release qualification
+
+- Direct PLS starter requests without selected target authority are refused
+  before managed-candidate persistence, rather than failing with a server error
+  or leaving partial records (OSS #123 / monorepo #1336).
+- Switching sheets during an accepted run no longer labels transport detachment
+  as a failed computation. Synthesis saves retain their captured recipe through
+  form edits and report partial or unknown acknowledgements explicitly.
+- New PCA/PLS sample reviews and explanations require typed `sample_id` values;
+  display labels are not identities. Existing review evidence remains readable,
+  and historical exclusions remain restorable.
+- Schema-only additions to diagnostic packets preserve existing Advisor
+  conversation context without treating changed scientific facts as equivalent.
+
 ### Added
 
 - A **Starter** tab, first on the Dashboard and opened automatically on first

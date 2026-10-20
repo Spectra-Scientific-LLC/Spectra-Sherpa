@@ -5,7 +5,7 @@ from sqlalchemy import select
 
 from spectra_sherpa.app.models.sample_review_revision import SampleReviewRevision
 from spectra_sherpa.app.services.dag.node_base import node_registry
-from spectra_sherpa.app.services.pca_review_evidence import filter_id, review_path
+from spectra_sherpa.app.services.pca_review_evidence import filter_id, review_filter_parameters, review_path
 
 
 def _value(item, key):
@@ -169,13 +169,9 @@ async def require_review_filters_preserved(session, workflow_id, nodes, edges):
         actual_edges = {
             tuple(_value(e, key) for key in ("from_node_id", "to_node_id", "from_output", "to_input")) for e in attached
         }
-        expected = {
-            "field": "sample_label",
-            "filter_values": record.state["excluded"],
-            "invert": True,
-            "match_mode": "in_list",
-            "case_sensitive": True,
-        }
+        expected = review_filter_parameters(
+            record.state["excluded"], identity_field=record.state.get("identity_field", "sample_label")
+        )
         valid = node is not None and _value(node, "node_type") == "data.filter_samples"
         if valid:
             try:

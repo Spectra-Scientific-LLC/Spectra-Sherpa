@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
-import { ref } from "vue";
+import { reactive, ref } from "vue";
 
 const { apiGet } = vi.hoisted(() => ({
   apiGet: vi.fn(),
@@ -23,16 +23,12 @@ vi.mock("@/composables/useAppConfig", () => ({
   }),
 }));
 
-vi.mock("@/stores/auth", () => ({
-  useAuthStore: () => ({
-    user: { id: 1 },
-  }),
-}));
+const mockIdentity = reactive({ user: { id: 1 }, token: "first-session" });
+const mockProject = reactive({ currentProjectId: 1 });
+vi.mock("@/stores/auth", () => ({ useAuthStore: () => mockIdentity }));
 
 vi.mock("@/stores/project", () => ({
-  useProjectStore: () => ({
-    currentProjectId: 1,
-  }),
+  useProjectStore: () => mockProject,
 }));
 
 import { subscribeSherpaEvents } from "@/lib/sherpaEvents";
@@ -441,12 +437,51 @@ describe("LLM Store WebSocket handshake", () => {
 
 describe("LLM Store refreshConversations project-scope cleanup", () => {
   beforeEach(() => {
+    mockIdentity.token = "first-session";
+    mockProject.currentProjectId = 1;
     setActivePinia(createPinia());
     apiGet.mockReset();
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("rejects an old list after the project returns to the same ID", async () => {
+    let resolveList!: (value: unknown) => void;
+    apiGet.mockImplementationOnce(() => new Promise(resolve => { resolveList = resolve; }));
+    const llm = useLlmStore();
+    const pending = llm.refreshConversations(1);
+    mockProject.currentProjectId = 2;
+    mockProject.currentProjectId = 1;
+    resolveList({ data: [{ id: "old", title: "Old project", updated_at: "t0" }] });
+    await pending;
+    expect(llm.conversations).toEqual([]);
+  });
+
+  it("keeps the chosen conversation when an earlier load finishes late", async () => {
+    let resolveOld!: (value: unknown) => void;
+    apiGet.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+    const llm = useLlmStore();
+    const old = llm.loadConversation("old");
+    apiGet.mockResolvedValueOnce({ data: { conversation_id: "new", messages: [{ role: "assistant", content: "New" }] } });
+    await llm.loadConversation("new");
+    resolveOld({ data: { conversation_id: "old", messages: [{ role: "assistant", content: "Old" }] } });
+    await old;
+    expect(llm.currentConversationId).toBe("new");
+    expect(llm.messages.map(message => message.content)).toEqual(["New"]);
+  });
+
+  it("ignores a previous session's conversation detail even when abort is ignored", async () => {
+    let resolveOld!: (value: unknown) => void;
+    apiGet.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+    const llm = useLlmStore();
+    const old = llm.loadConversation("old");
+    mockIdentity.token = "replacement-session";
+    resolveOld({ data: { conversation_id: "old", messages: [{ role: "assistant", content: "Old" }] } });
+    await old;
+    expect(llm.currentConversationId).toBeNull();
+    expect(llm.messages).toEqual([]);
   });
 
   it("clears stale rows when a project switch fails list fetch and probe 404s", async () => {

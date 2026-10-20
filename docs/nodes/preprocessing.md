@@ -6,13 +6,11 @@ Most preprocessing nodes accept a `SpectralDataset` port and return a transforme
 
 ## Baseline, Smoothing, and Derivatives
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Baseline Penalized LS (`baseline.penalized_ls`) | Correct smooth fluorescence, scattering, or instrument baseline while preserving peaks. Larger `lam` makes a smoother baseline. |
-| Baseline Rubberband (`baseline.rubberband`) | You want the cited lower-convex-envelope baseline removed from every spectrum. Use Clip Range upstream to select an interval. |
-| Smooth (`preprocess.smooth`) | Reduce noise before derivatives, peak finding, or visualization. For Savitzky-Golay, `size` should be odd and larger than `order`. |
-| Derivative (`preprocess.derivative`) | Remove broad baseline trends or emphasize bands; common for NIR and Raman preprocessing. Derivatives amplify noise, so smooth carefully. |
-| Cosmic Ray Removal (`preprocess.cosmic_ray`) | Remove Raman spike artifacts before modeling or peak finding. Uses centered local median and MAD-style spike detection. The first and last `(window - 1) / 2` features are preserved unassessed because a complete centered neighborhood is unavailable there. |
+- [`baseline.penalized_ls`](preprocessing.md#registry-reference): Correct smooth fluorescence, scattering, or instrument baseline while preserving peaks. Larger `lam` makes a smoother baseline.
+- [`baseline.rubberband`](preprocessing.md#registry-reference): You want the cited lower-convex-envelope baseline removed from every spectrum. Use Clip Range upstream to select an interval.
+- [`preprocess.smooth`](preprocessing.md#registry-reference): Reduce noise before derivatives, peak finding, or visualization. For Savitzky-Golay, `size` should be odd and larger than `order`.
+- [`preprocess.derivative`](preprocessing.md#registry-reference): Remove broad baseline trends or emphasize bands; common for NIR and Raman preprocessing. Derivatives amplify noise, so smooth carefully.
+- [`preprocess.cosmic_ray`](preprocessing.md#registry-reference): Remove Raman spike artifacts before modeling or peak finding. Uses centered local median and MAD-style spike detection. The first and last `(window - 1) / 2` features are preserved unassessed because a complete centered neighborhood is unavailable there.
 
 SciPy's `savgol_filter` is the underlying reference point for Savitzky-Golay concepts such as window length, polynomial order, and derivative order: <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>.
 
@@ -20,17 +18,15 @@ Rubberband baseline correction follows the spectroscopy treatment discussed by B
 
 ## Range, Alignment, Normalization, and Scaling
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Clip Range (`preprocess.clip_range`) | Keep a chemically relevant wavenumber range and drop unneeded variables. Check axis direction after cropping. |
-| Clip Floor (`preprocess.clip_floor`) | Remove negative values before non-negative methods such as NMF. |
-| Wavenumber Align (`preprocess.wavenumber_align`) | Align absolute-wavenumber spectra onto a common spectral grid before stacking, transfer, or comparison. Both inputs must declare absolute wavenumber in canonical `cm-1`; Raman shift is a different quantity and is refused. The connected reference supplies the exact output grid. A finer output grid is interpolation and does not add measured spectral resolution. |
-| Normalize (`preprocess.normalize`) | Apply sample-local SNV or row scaling; no cohort statistics are learned. |
-| MSC (`preprocess.msc`) | Fit a reference spectrum from a declared cohort, then correct additive and multiplicative scatter with that frozen reference. Connect training/reference rows to `reference` when correcting held-out or future samples. `first` is row-order sensitive. |
-| Scale / Center (`preprocess.scale`) | Fit mean-centering, autoscaling, or Pareto statistics before PCA, PLS, SVR, or KNN. Sample-wise maximum scaling is `preprocess.normalize` with `method=scale` and `scale_method=max`. |
-| Shared Reference Scale (`preprocess.shared_reference_scale`) | Fit one scale state on retained calibration rows and apply it to both branches of a fixed held-out PLS split. Connect `reference_scaled` to PLS training and `default` to its prediction node. This separate operation preserves the historical Scale / Center contract. |
-| EMSC (`preprocess.emsc`) | Fit a reference spectrum and polynomial nuisance basis, then correct spectra with that frozen state. `first` means the first ordered reference row and is therefore row-order sensitive; prefer an explicit one-row reference input when that spectrum is intentional. Connect training rows to `reference` when correcting held-out or future samples; connect known interferent spectra to `constituents`. |
-| OSC Filter (`preprocess.osc`) | Remove spectral variation orthogonal to the target before calibration. Use only inside validation folds to avoid leakage. |
+- [`preprocess.clip_range`](preprocessing.md#registry-reference): Keep a chemically relevant wavenumber range and drop unneeded variables. Check axis direction after cropping.
+- [`preprocess.clip_floor`](preprocessing.md#registry-reference): Remove negative values before non-negative methods such as NMF.
+- [`preprocess.wavenumber_align`](preprocessing.md#registry-reference): Align absolute-wavenumber spectra onto a common spectral grid before stacking, transfer, or comparison. Both inputs must declare absolute wavenumber in canonical `cm-1`; Raman shift is a different quantity and is refused. The connected reference supplies the exact output grid. A finer output grid is interpolation and does not add measured spectral resolution.
+- [`preprocess.normalize`](preprocessing.md#registry-reference): Apply sample-local SNV or row scaling; no cohort statistics are learned.
+- [`preprocess.msc`](preprocessing.md#registry-reference): Fit a reference spectrum from a declared cohort, then correct additive and multiplicative scatter with that frozen reference. Connect training/reference rows to `reference` when correcting held-out or future samples. `first` is row-order sensitive.
+- [`preprocess.scale`](preprocessing.md#registry-reference): Fit mean-centering, autoscaling, or Pareto statistics before PCA, PLS, SVR, or KNN. Sample-wise maximum scaling is `preprocess.normalize` with `method=scale` and `scale_method=max`.
+- [`preprocess.shared_reference_scale`](preprocessing.md#registry-reference): Fit one scale state on retained calibration rows and apply it to both branches of a fixed held-out PLS split. Connect `reference_scaled` to PLS training and `default` to its prediction node. This separate operation preserves the historical Scale / Center contract.
+- [`preprocess.emsc`](preprocessing.md#registry-reference): Fit a reference spectrum and polynomial nuisance basis, then correct spectra with that frozen state. `first` means the first ordered reference row and is therefore row-order sensitive; prefer an explicit one-row reference input when that spectrum is intentional. Connect training rows to `reference` when correcting held-out or future samples; connect known interferent spectra to `constituents`.
+- [`preprocess.osc`](preprocessing.md#registry-reference): Remove spectral variation orthogonal to the target before calibration. Use only inside validation folds to avoid leakage.
 
 ## Apply Frozen Preprocessing State
 
@@ -38,28 +34,22 @@ These application nodes replay a state fitted by the corresponding producer.
 They do not refit a reference, scaling vector, constituent basis, or target-
 orthogonal projection on application data.
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Apply Fitted MSC (`preprocess.apply_fitted_msc`) | MSC fitted state Feature coordinates and units must match the fitted state. |
-| Apply Fitted EMSC (`preprocess.apply_fitted_emsc`) | EMSC fitted state The saved reference, polynomial basis, and optional constituents are replayed exactly. |
-| Apply Fitted OSC (`preprocess.apply_fitted_osc`) | OSC fitted state The saved target-orthogonal projection is applied without seeing application targets. |
-| Apply Fitted Scale (`preprocess.apply_fitted_scale`) | scaling fitted state Saved centering and scale vectors are applied without recomputing cohort statistics. |
+- [`preprocess.apply_fitted_msc`](preprocessing.md#registry-reference): MSC fitted state Feature coordinates and units must match the fitted state.
+- [`preprocess.apply_fitted_emsc`](preprocessing.md#registry-reference): EMSC fitted state The saved reference, polynomial basis, and optional constituents are replayed exactly.
+- [`preprocess.apply_fitted_osc`](preprocessing.md#registry-reference): OSC fitted state The saved target-orthogonal projection is applied without seeing application targets.
+- [`preprocess.apply_fitted_scale`](preprocessing.md#registry-reference): scaling fitted state Saved centering and scale vectors are applied without recomputing cohort statistics.
 
 ## Time-Series Helpers
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Moving Window (`time_series.moving_window`) | Analyze time-resolved spectra in rolling windows. |
-| Trend Removal (`time_series.trend_removal`) | Remove drift from sequential spectra before PCA, monitoring, or calibration. |
+- [`time_series.moving_window`](preprocessing.md#registry-reference): Analyze time-resolved spectra in rolling windows.
+- [`time_series.trend_removal`](preprocessing.md#registry-reference): Remove drift from sequential spectra before PCA, monitoring, or calibration.
 
 ## Calibration Transfer
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| PDS Transfer (`transfer.pds`) | Fit local PLS maps from paired primary/secondary standards. Unsupported local rank is rejected rather than silently reduced. |
-| Single-Wavelength Standardization (`transfer.sws`) | Fit one affine secondary-to-primary relation at each wavelength from exactly paired standards. Requires identical measured spectral axes and non-constant secondary channels. |
-| Direct Standardization (`transfer.ds`) | Fit the published global Moore-Penrose secondary-to-primary spectral map. Primary and secondary feature counts may differ because the fitted matrix binds both axes. |
-| Apply Fitted Spectral Transfer (`transfer.apply_fitted`) | Apply an upstream digest-bound PDS, DS, or SWS state without refitting standards. The application axis and units must match the fitted secondary space exactly. |
+- [`transfer.pds`](preprocessing.md#registry-reference): Fit local PLS maps from paired primary/secondary standards. Unsupported local rank is rejected rather than silently reduced.
+- [`transfer.sws`](preprocessing.md#registry-reference): Fit one affine secondary-to-primary relation at each wavelength from exactly paired standards. Requires identical measured spectral axes and non-constant secondary channels.
+- [`transfer.ds`](preprocessing.md#registry-reference): Fit the published global Moore-Penrose secondary-to-primary spectral map. Primary and secondary feature counts may differ because the fitted matrix binds both axes.
+- [`transfer.apply_fitted`](preprocessing.md#registry-reference): Apply an upstream digest-bound PDS, DS, or SWS state without refitting standards. The application axis and units must match the fitted secondary space exactly.
 
 The Calibration Transfer Method Comparison starter splits the same paired M5/MP5 measurements by ordered
 sample identity, fits all three methods on the training standards, and applies each frozen state only to the
@@ -144,6 +134,33 @@ Generated from registered node metadata. Edit methodology and examples outside t
 Defaults and options below are JSON values; `null` means no concrete default is declared.
 Internal parameters are retained for contract inspection and are not scientist-editable controls.
 Conditional visibility describes the editor; execution admission remains node-owned.
+
+| Node | Operation |
+| --- | --- |
+| Baseline (Penalized LS) | <code>baseline.penalized_ls</code> |
+| Baseline (Rubberband) | <code>baseline.rubberband</code> |
+| Apply Reference EMSC (Imported) | <code>preprocess.apply_fitted_emsc</code> |
+| Apply Reference MSC (Imported) | <code>preprocess.apply_fitted_msc</code> |
+| Apply Reference OSC (Imported) | <code>preprocess.apply_fitted_osc</code> |
+| Apply Reference Scale (Imported) | <code>preprocess.apply_fitted_scale</code> |
+| Clip Floor | <code>preprocess.clip_floor</code> |
+| Clip Feature Range | <code>preprocess.clip_range</code> |
+| Cosmic Ray Removal | <code>preprocess.cosmic_ray</code> |
+| Derivative | <code>preprocess.derivative</code> |
+| EMSC | <code>preprocess.emsc</code> |
+| Multiplicative Scatter Correction (MSC) | <code>preprocess.msc</code> |
+| Normalize | <code>preprocess.normalize</code> |
+| Orthogonal Signal Correction | <code>preprocess.osc</code> |
+| Scale / Center | <code>preprocess.scale</code> |
+| Shared Reference Scale | <code>preprocess.shared_reference_scale</code> |
+| Smooth | <code>preprocess.smooth</code> |
+| Wavenumber Align | <code>preprocess.wavenumber_align</code> |
+| Moving Window | <code>time_series.moving_window</code> |
+| Trend Removal | <code>time_series.trend_removal</code> |
+| Apply Fitted Spectral Transfer | <code>transfer.apply_fitted</code> |
+| Direct Standardization | <code>transfer.ds</code> |
+| Piecewise Direct Standardization | <code>transfer.pds</code> |
+| Single-Wavelength Standardization | <code>transfer.sws</code> |
 
 ### Baseline (Penalized LS) (`baseline.penalized_ls`)
 

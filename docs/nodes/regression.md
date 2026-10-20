@@ -4,14 +4,12 @@ Regression nodes predict quantitative targets from spectra or features.
 
 ## Training and Prediction Nodes
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Fit PLS1 / PLS2 Regression (SIMPLS) (`model.fitted_pls`) | Fit a quantitative calibration while making the reusable numerical state and VIP evidence explicit. Choose components under an explicit validation design rather than calibration fit alone. |
-| Apply PLS1 / PLS2 Model (SIMPLS) (`model.apply_fitted_pls`) | Apply either a verified upstream fitted state or a verified imported artifact through the same numerical core. Local state is connected by a typed edge; imported mode requires the complete artifact binding and cannot be mixed with local custody. |
-| Train PCR Regression (`model.pcr`) | Regress targets on PCA scores when you want explicit PCA compression before regression. |
-| Train SVR Regression (`model.svr`) | Nonlinear calibration with support vector regression. Scaling is usually important for SVR. |
-| Train Linear Regression (`model.linear_regression`) | Simple baseline calibration or already-selected low-dimensional features. |
-| Apply Saved Model Artifact (`model.load_apply`) | Load a saved model artifact and apply it to inference data. |
+- [`model.fitted_pls`](regression.md#registry-reference): Fit a quantitative calibration while making the reusable numerical state and VIP evidence explicit. Choose components under an explicit validation design rather than calibration fit alone.
+- [`model.apply_fitted_pls`](regression.md#registry-reference): Apply either a verified upstream fitted state or a verified imported artifact through the same numerical core. Local state is connected by a typed edge; imported mode requires the complete artifact binding and cannot be mixed with local custody.
+- [`model.pcr`](regression.md#registry-reference): Regress targets on PCA scores when you want explicit PCA compression before regression.
+- [`model.svr`](regression.md#registry-reference): Nonlinear calibration with support vector regression. Scaling is usually important for SVR.
+- [`model.linear_regression`](regression.md#registry-reference): Simple baseline calibration or already-selected low-dimensional features.
+- [`model.load_apply`](regression.md#registry-reference): Load a saved model artifact and apply it to inference data.
 
 ## Key Outputs
 
@@ -180,6 +178,22 @@ Generated from registered node metadata. Edit methodology and examples outside t
 Defaults and options below are JSON values; `null` means no concrete default is declared.
 Internal parameters are retained for contract inspection and are not scientist-editable controls.
 Conditional visibility describes the editor; execution admission remains node-owned.
+
+| Node | Operation |
+| --- | --- |
+| Apply Linear Regression | <code>model.apply_fitted_linear_regression</code> |
+| Apply PCR | <code>model.apply_fitted_pcr</code> |
+| Apply PLS1 / PLS2 Model (SIMPLS) | <code>model.apply_fitted_pls</code> |
+| Apply SVR | <code>model.apply_fitted_svr</code> |
+| Fit Linear Regression | <code>model.fitted_linear_regression</code> |
+| Fit PCR | <code>model.fitted_pcr</code> |
+| Fit PLS1 / PLS2 Regression (SIMPLS) | <code>model.fitted_pls</code> |
+| Fit SVR | <code>model.fitted_svr</code> |
+| Train Linear Regression | <code>model.linear_regression</code> |
+| Apply Saved Model Artifact | <code>model.load_apply</code> |
+| Train PCR Regression | <code>model.pcr</code> |
+| Predict Regression | <code>model.predict_regression</code> |
+| Train SVR Regression | <code>model.svr</code> |
 
 ### Apply Linear Regression (`model.apply_fitted_linear_regression`)
 

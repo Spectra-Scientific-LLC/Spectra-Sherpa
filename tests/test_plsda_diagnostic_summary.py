@@ -4,11 +4,12 @@ import json
 
 import pytest
 
-from spectra_sherpa.app.services.plsda_diagnostic_summary import build_plsda_summary
+from spectra_sherpa.app.services.diagnostic_review_summary import build_summary
 
 
 def _receipt():
     return {
+        "model_kind": "plsda",
         "fitted_state_sha256": "a" * 64,
         "feature_count": 3,
         "components": 2,
@@ -54,7 +55,7 @@ def _receipt():
 
 
 def test_saved_plsda_packet_preserves_signed_terms_and_omits_private_labels():
-    packet = build_plsda_summary(_receipt(), selected_ids=["private:sample-1"], variable_ids=[])
+    packet = build_summary(_receipt(), selected_ids=["private:sample-1"], variable_ids=[])
     assert packet["facts"]["S1.v0.t2"]["value"] == 8.0
     assert packet["facts"]["S1.v0.ordinal"]["value"] == 1
     assert packet["facts"]["S1.v1.t2"]["value"] == -3.0
@@ -69,16 +70,16 @@ def test_saved_plsda_packet_preserves_signed_terms_and_omits_private_labels():
 
 def test_saved_plsda_packet_rejects_foreign_sample_and_variable_id():
     with pytest.raises(ValueError, match="unique saved calibration"):
-        build_plsda_summary(_receipt(), selected_ids=["foreign"], variable_ids=[])
+        build_summary(_receipt(), selected_ids=["foreign"], variable_ids=[])
     with pytest.raises(ValueError, match="outside the fitted classifier"):
-        build_plsda_summary(_receipt(), selected_ids=["private:sample-1"], variable_ids=["b" * 64 + ":0"])
+        build_summary(_receipt(), selected_ids=["private:sample-1"], variable_ids=["b" * 64 + ":0"])
 
 
 def test_saved_plsda_packet_marks_missing_statistic_unknown():
     receipt = _receipt()
     receipt["t2_limit"] = None
     receipt["t2_unavailable_reason"] = "rank_deficient_score_covariance"
-    packet = build_plsda_summary(receipt, selected_ids=["private:sample-2"], variable_ids=[])
+    packet = build_summary(receipt, selected_ids=["private:sample-2"], variable_ids=[])
     assert packet["facts"]["selection.t2.unknown"]["value"] == 1
     assert packet["facts"]["screening.t2_limit"]["value"] is None
     assert packet["facts"]["S2.t2"]["value"] is None
@@ -88,14 +89,14 @@ def test_default_terms_show_dominant_q_and_t2_drivers_not_lowest_indexes():
     receipt = _receipt()
     receipt["feature_count"] = 12
     receipt["rows"][0]["terms"]["variables"] = [[index, float(index + 1), float(index - 5)] for index in range(12)]
-    packet = build_plsda_summary(receipt, selected_ids=["private:sample-1"], variable_ids=[])
+    packet = build_summary(receipt, selected_ids=["private:sample-1"], variable_ids=[])
     assert "S1.v11.q" in packet["facts"]
     assert "S1.v0.t2" in packet["facts"]
     assert len([key for key in packet["facts"] if key.startswith("S1.v") and key.endswith(".q")]) <= 10
 
 
 def test_requested_nonretained_variable_is_explicitly_unavailable():
-    packet = build_plsda_summary(_receipt(), selected_ids=["private:sample-1"], variable_ids=["a" * 64 + ":2"])
+    packet = build_summary(_receipt(), selected_ids=["private:sample-1"], variable_ids=["a" * 64 + ":2"])
     assert packet["facts"]["S1.v2.unavailable"]["value"] is True
     assert "S1.v2.q" not in packet["facts"]
 
@@ -105,11 +106,15 @@ def test_shared_authority_preserves_classifier_facts_and_population():
 
     receipt = {**_receipt(), "model_kind": "plsda"}
     packet = build_summary(receipt, selected_ids=["private:sample-1"])
-    legacy = build_plsda_summary(receipt, selected_ids=["private:sample-1"], variable_ids=[])
     assert packet["schema_version"] == SCHEMA
     assert packet["availability"] == "available"
-    assert packet["facts"] == legacy["facts"]
-    assert packet["samples"] == legacy["samples"]
+    # Literal fixture expectations, not equality with a wrapper calling this
+    # same implementation. Wrong scalar/sign/population must fail directly.
+    assert packet["selection_count"] == 1
+    assert packet["facts"]["S1.q"]["value"] == 0.4
+    assert packet["facts"]["S1.v1.t2"]["value"] == -3.0
+    assert len(packet["samples"]) == 1
+    assert packet["samples"][0]["alias"] == "S1"
     assert packet["populations"] == {"calibration": {"total": 2, "selected": 1}}
     assert packet["contains_held_out"] is False
     assert "SECRET" not in json.dumps(packet)

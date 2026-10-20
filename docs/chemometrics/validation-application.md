@@ -181,6 +181,12 @@ Diagnostic plots belong to their fitted source run. Selecting an observation
 links it across plots and the sample table. A screening flag asks for inspection;
 it does not by itself establish a bad measurement or validate predictions.
 
+New PCA/PLS sample reviews require a typed, unique `sample_id` column. Display
+labels can change without changing those IDs. If IDs are missing, attach a sample
+table with IDs or re-import with typed IDs, then rerun; labels are not promoted
+to verified identity. Historical review evidence remains readable, and previously
+recorded exclusions can be restored without authorizing new label-based decisions.
+
 Loadings describe variables in a component, not selected-sample T²/Q contributions.
 Influence limits use all fitted components, with limits appropriate to calibration
 or projected application roles. Classifier contribution bars show additive Q and

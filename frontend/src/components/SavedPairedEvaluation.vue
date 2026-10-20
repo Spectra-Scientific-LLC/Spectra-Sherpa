@@ -17,6 +17,9 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue';
 import api from '@/api/client';
+import { useAuthStore } from '@/stores/auth';
+import { useProjectStore } from '@/stores/project';
+import { useScopedRequest } from '@/composables/useScopedRequest';
 import { getErrorMessage } from '@/utils/errors';
 import ScientificComparison from './ScientificComparison.vue';
 import type { EvidenceComparison } from '@/types/scientificComparison';
@@ -25,14 +28,19 @@ import type { PairedEvaluationRecord } from '@/types/pairedEvaluation';
 const props = defineProps<{ runId: number }>();
 const comparison = ref<EvidenceComparison | null>(null), repetition = ref(0);
 const status = ref(''), error = ref(''), record = ref<PairedEvaluationRecord | null>(null);
-let generation = 0, timer: ReturnType<typeof setTimeout> | undefined;
+let timer: ReturnType<typeof setTimeout> | undefined;
+const auth = useAuthStore(), project = useProjectStore();
+const identity = () => [auth.user?.id, auth.token, project.currentProjectId, props.runId];
+const reads = useScopedRequest(() => [...identity(), repetition.value], () => {
+  if (timer) clearTimeout(timer);
+});
 async function load() {
-  const request = ++generation;
+  const request = reads.begin();
   if (timer) clearTimeout(timer);
   error.value = ''; comparison.value = null;
   try {
-    const { data } = await api.get(`/runs/paired-evaluations/${props.runId}`, { params: { repetition: repetition.value } });
-    if (request !== generation) return;
+    const { data } = await api.get(`/runs/paired-evaluations/${props.runId}`, { params: { repetition: repetition.value }, signal: request.signal });
+    if (!request.isCurrent()) return;
     status.value = data.status;
     record.value = data.status === 'completed' ? data.record : null;
     comparison.value = data.status === 'completed' ? data.scientific_comparison ?? null : null;
@@ -41,8 +49,8 @@ async function load() {
     }
     if (data.error) error.value = data.error;
     if (['pending', 'running'].includes(data.status)) timer = setTimeout(load, 1500);
-  } catch (e) { if (request === generation) error.value = getErrorMessage(e, 'Evaluation status unavailable. Retry to read the saved result.'); }
+  } catch (e) { if (request.isCurrent()) error.value = getErrorMessage(e, 'Evaluation status unavailable. Retry to read the saved result.'); }
 }
-watch(() => props.runId, () => { status.value = ''; record.value = null; comparison.value = null; repetition.value = 0; void load(); }, { immediate: true });
-onBeforeUnmount(() => { ++generation; if (timer) clearTimeout(timer); });
+watch(identity, () => { status.value = ''; record.value = null; comparison.value = null; repetition.value = 0; void load(); }, { immediate: true });
+onBeforeUnmount(() => { if (timer) clearTimeout(timer); });
 </script>

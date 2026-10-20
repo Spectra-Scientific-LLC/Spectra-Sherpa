@@ -11,12 +11,14 @@ import asyncio
 import concurrent.futures
 import hashlib
 import io
+import json
 from dataclasses import dataclass
 from types import MappingProxyType
 from typing import Any, Mapping
 
 import numpy as np
 
+from spectra_sherpa.app.lib.sample_identity import sample_ids
 from spectra_sherpa.app.services.dag.executor import DAGExecutor
 from spectra_sherpa.app.services.dag.executor_types import WorkflowEdge, WorkflowNode
 from spectra_sherpa.app.services.dag.spectral_capability import SpectralDatasetCapability
@@ -98,22 +100,49 @@ def _bind_dataset(port: str, value: Any, *, ordinal: int) -> _DatasetBinding:
         schema_version=DEPLOYMENT_INPUT_SCHEMA,
     )
     supervision = admit_attached_sample_table_supervision(dataset)
+    capability_dataset = dataset
+    dataset_ref_digest = None if supervision is None else supervision.digest
+    table = getattr(dataset.sample_axis, "sample_table", None)
+    if supervision is None and isinstance(table, dict) and set(table) == {"sample_id"}:
+        # The managed capability has no annotation-table transport. A local SDK
+        # call retains its typed dataset, while the capability binds the entire
+        # scientific input (including these validated IDs) by reference digest.
+        # This is not admission of arbitrary/unverified supervision metadata.
+        sample_ids(dataset)
+        dataset_ref_digest = dataset.scientific_digest
+        capability_dataset = dataset.copy()
+        capability_axis = capability_dataset.sample_axis
+        capability_axis.sample_table = None
+        capability_dataset.sample_axis = capability_axis
     capability = SpectralDatasetCapability.from_dataset(
-        dataset,
+        capability_dataset,
         custody_id="sdk-local",
-        dataset_ref_digest=None if supervision is None else supervision.digest,
+        dataset_ref_digest=dataset_ref_digest,
         groups=None if supervision is None else supervision.groups,
     )
-    digest = capability.content_digest
+    # These identities cover different facts: scientific_digest includes typed
+    # annotation IDs, while the capability also binds flags such as time-series
+    # admission. Preserve both, plus any verified supervision binding.
+    digest = hashlib.sha256(
+        json.dumps(
+            {
+                "schema_version": "spectrasherpa.sdk-input/1",
+                "capability_content_digest": capability.content_digest,
+                "scientific_digest": dataset.scientific_digest,
+                "dataset_ref_digest": dataset_ref_digest,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
     return _DatasetBinding(
         port=port,
         node_id=f"{_SOURCE_PREFIX}.{ordinal}",
         stream_name=f"sdk-{port}-{digest[:16]}",
         content_digest=digest,
         # Copy the typed dataset so caller mutation cannot race execution. The
-        # capability owns the content digest; retaining this copy also keeps
-        # presentation metadata (for example data units) that is outside the
-        # bounded managed capability projection.
+        # full scientific digest includes the typed observation IDs. Retaining
+        # this copy also preserves metadata outside the managed projection.
         dataset=dataset.copy(),
     )
 

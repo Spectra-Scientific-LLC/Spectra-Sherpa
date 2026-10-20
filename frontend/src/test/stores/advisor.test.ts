@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import api from "@/api/client";
 import { useAdvisorStore } from "@/stores/advisor";
+import { activeProjectScope, _clearProjectScopeRegistryForTests } from "@/stores/projectScopeRegistry";
+import { useAuthStore } from "@/stores/auth";
 
 const profile = vi.hoisted(() => ({ value: "local" }));
 vi.mock("@/composables/useAppConfig", () => ({ useAppConfig: () => ({
@@ -22,6 +24,8 @@ vi.mock("@/stores/sherpa", () => ({
 
 describe("useAdvisorStore", () => {
   beforeEach(() => {
+    _clearProjectScopeRegistryForTests();
+    activeProjectScope.value = null;
     profile.value = "local";
     setActivePinia(createPinia());
     vi.mocked(api.get).mockReset();
@@ -29,6 +33,51 @@ describe("useAdvisorStore", () => {
     vi.mocked(api.put).mockReset();
     sherpaStoreMock.loadConversation.mockReset();
     sherpaStoreMock.startNewConversation.mockReset();
+  });
+
+  it("ignores a delayed channel list after project A → B → A", async () => {
+    activeProjectScope.value = 5;
+    let complete!: (value: unknown) => void;
+    vi.mocked(api.get).mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const store = useAdvisorStore();
+    const pending = store.loadAdvisorChannels(5);
+    activeProjectScope.value = 6;
+    activeProjectScope.value = 5;
+    complete({ data: [{ id: 20, project_id: 5 }] });
+    expect(await pending).toEqual([]);
+    expect(store.channels).toEqual([]);
+    expect(store.isLoading).toBe(false);
+  });
+
+  it("does not insert an accepted channel write into a different project", async () => {
+    activeProjectScope.value = 5;
+    const store = useAdvisorStore();
+    store.setFromProjectDetail(5);
+    let complete!: (value: unknown) => void;
+    vi.mocked(api.post).mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));
+    const pending = store.ensureWorkflowChannel(10, 5);
+    activeProjectScope.value = 6;
+    store.setFromProjectDetail(6);
+    complete({ data: { id: 30, project_id: 5, workflow_id: 10 } });
+    expect(await pending).toBeNull();
+    expect(store.projectId).toBe(6);
+    expect(store.channels).toEqual([]);
+  });
+
+  it("does not clear the new conversation after an old channel load rejects", async () => {
+    const store = useAdvisorStore();
+    let reject!: (error: Error) => void;
+    sherpaStoreMock.loadConversation.mockImplementationOnce(() => new Promise((_, fail) => { reject = fail; }));
+    store.setFromProjectDetail(5, [{
+      id: 20, project_id: 5, workflow_id: 10, channel_type: "sheet", title: "PCA",
+      color: null, conversation_id: "old", created_at: "", updated_at: "",
+    }]);
+    const pending = store.switchToChannel(store.channels[0]);
+    useAuthStore().token = "new-session";
+    reject(new Error("old request"));
+    await pending;
+    expect(sherpaStoreMock.startNewConversation).not.toHaveBeenCalled();
+    expect(store.error).toBeNull();
   });
 
   it("does not start an unqualified Pro memory scope or replace project chat", async () => {

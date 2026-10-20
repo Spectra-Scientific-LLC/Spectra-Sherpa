@@ -22,8 +22,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { ref } from 'vue';
 import api from '@/api/client';
+import { useAuthStore } from '@/stores/auth';
+import { useScopedRequest } from '@/composables/useScopedRequest';
 
 const props = defineProps<{ projectId: number }>();
 const checks = [
@@ -40,14 +42,18 @@ const projection = ref('');
 const running = ref(false);
 const error = ref('');
 const report = ref<Report | null>(null);
-let requestGeneration = 0;
-watch(() => props.projectId, () => { requestGeneration++; report.value = null; error.value = ''; running.value = false; });
+const auth = useAuthStore();
+const requests = useScopedRequest(
+  () => [auth.user?.id, auth.token, props.projectId],
+  () => { report.value = null; error.value = ''; running.value = false; },
+  { abortOnInvalidate: false },
+);
 function selectFile(event: Event, name: InputName) {
   files[name] = (event.target as HTMLInputElement).files?.[0];
   report.value = null;
 }
 async function reproduce() {
-  const generation = ++requestGeneration;
+  const request = requests.begin();
   report.value = null;
   error.value = '';
   const body = new FormData();
@@ -59,11 +65,11 @@ async function reproduce() {
   running.value = true;
   try {
     const result = await api.post<Report>(`/projects/${props.projectId}/reproduce-campaign`, body);
-    if (generation === requestGeneration) report.value = result.data;
+    if (request.isCurrent()) report.value = result.data;
   } catch (failure: unknown) {
     const detail = (failure as { response?: { data?: { detail?: unknown } } }).response?.data?.detail;
-    if (generation === requestGeneration) error.value = typeof detail === 'string' ? detail : 'Reproduction failed. Review the selected package, keys and reference projection.';
-  } finally { if (generation === requestGeneration) running.value = false; }
+    if (request.isCurrent()) error.value = typeof detail === 'string' ? detail : 'Reproduction failed. Review the selected package, keys and reference projection.';
+  } finally { if (request.isCurrent()) running.value = false; }
 }
 function downloadReport() {
   const url = URL.createObjectURL(new Blob([JSON.stringify(report.value, null, 2)], { type: 'application/json' }));

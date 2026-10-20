@@ -22,7 +22,7 @@ from spectra_sherpa.app.models.workflow_node import WorkflowNode
 from spectra_sherpa.app.models.workflow_version import WorkflowVersion
 from spectra_sherpa.app.schemas.sample_review import SampleReviewAction
 from spectra_sherpa.app.services.dag.node_base import node_registry
-from spectra_sherpa.app.services.pca_review_evidence import filter_id, review_path
+from spectra_sherpa.app.services.pca_review_evidence import filter_id, review_filter_parameters, review_path
 from spectra_sherpa.app.services.run_params import build_saved_definition_snapshot, build_workflow_version_snapshot
 from spectra_sherpa.app.services.workflow_data_selections import (
     selection_from_parameters,
@@ -85,13 +85,9 @@ async def _context(session, user, workflow_id, pca_id, *, write=False):
     if owned is not None:
         if not revision or not revision.state.get("original_edge") or not revision.state.get("excluded"):
             raise HTTPException(409, "This copied or edited filter has no review authority. Use the original analysis.")
-        expected = {
-            "field": "sample_label",
-            "filter_values": revision.state["excluded"],
-            "invert": True,
-            "match_mode": "in_list",
-            "case_sensitive": True,
-        }
+        expected = review_filter_parameters(
+            revision.state["excluded"], identity_field=revision.state.get("identity_field", "sample_label")
+        )
         try:
             actual_params = node_registry.create_node(
                 "data.filter_samples", owned.node_id, owned.parameters
@@ -141,12 +137,20 @@ async def _reviewed_run(session, workflow, revision, latest, pca_id):
     try:
         return latest, await _receipt(latest, pca_id)
     except HTTPException:
-        # A failed refit must not strand the scientist's reversible edit. Use the
-        # exact originating receipt only for restoring our still-owned graph.
+        # Neither a failed refit nor a successful legacy-label refit without
+        # new typed-ID review evidence may strand a reversible edit. The exact
+        # originating receipt authorizes restoration of our still-owned graph,
+        # never new exclusions or a transfer to another cohort.
         if not (
             latest
-            and latest.status in {"error", "failed", "partial", "cancelled"}
             and revision
+            and (
+                latest.status in {"error", "failed", "partial", "cancelled"}
+                or (
+                    latest.status == "completed"
+                    and revision.state.get("identity_field", "sample_label") == "sample_label"
+                )
+            )
             and revision.graph_digest == workflow_graph_digest(workflow)
         ):
             raise
@@ -211,7 +215,7 @@ async def get_sample_review(
         "run_id": run.id,
         "latest_run_id": latest.id,
         "graph_digest": graph,
-        "stale": graph != receipt["graph_digest"] or latest.status != "completed",
+        "stale": run.id != latest.id or graph != receipt["graph_digest"] or latest.status != "completed",
         "revision": revision.revision if revision else 0,
         "state": state,
         "history": [
@@ -284,13 +288,9 @@ def _replace_filter(workflow, pca_id, state, receipt, reason):
         )
     if node is not None:
         if state["excluded"]:
-            node.parameters = {
-                "field": "sample_label",
-                "filter_values": state["excluded"],
-                "invert": True,
-                "match_mode": "in_list",
-                "case_sensitive": True,
-            }
+            node.parameters = review_filter_parameters(
+                state["excluded"], identity_field=state.get("identity_field", "sample_label")
+            )
             node.annotation = f"Scientist-reviewed exclusions. Reason: {reason}. Full history: sample review."
         else:
             original = state.get("original_edge")
@@ -326,9 +326,22 @@ async def apply_sample_review(
     ):
         raise HTTPException(409, "Source identity changed; review cannot be transferred to another population.")
     state = _state(revision)
+    if receipt.get("identity_field") != "sample_id":
+        # Historical evidence stays readable and existing exclusions can be
+        # restored, but display-label receipts cannot authorize a new review.
+        if payload.action not in {"restore", "restore_test"} or revision is None:
+            raise HTTPException(
+                409,
+                "New reviews require typed sample_id values. Attach a sample table with sample_id "
+                "or re-import with typed IDs, then rerun. Historical review evidence remains available.",
+            )
+    else:
+        if revision and state.get("identity_field", "sample_label") != "sample_id":
+            raise HTTPException(409, "Start a separate analysis to review typed IDs; this review used display labels.")
+        state["identity_field"] = "sample_id"
     # Restoring after a failed rerun is safe only when the graph is precisely our last edit.
-    stale = receipt["graph_digest"] != graph or latest.status != "completed"
-    if stale and not (payload.action == "restore" and revision and revision.graph_digest == graph):
+    stale = run.id != latest.id or receipt["graph_digest"] != graph or latest.status != "completed"
+    if stale and not (payload.action in {"restore", "restore_test"} and revision and revision.graph_digest == graph):
         raise HTTPException(409, "Rerun the current workflow before selecting new exclusions.")
     rows = {row["id"]: row for row in receipt["rows"]}
     if any(identity not in rows for identity in payload.sample_ids):

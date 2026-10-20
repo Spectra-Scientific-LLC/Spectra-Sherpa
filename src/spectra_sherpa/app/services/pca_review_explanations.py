@@ -7,6 +7,7 @@ import json
 
 import numpy as np
 
+from spectra_sherpa.app.lib.sample_identity import sample_ids
 from spectra_sherpa.app.services.dag.nodes.data.sample_preparation import _slice_dataset_rows
 from spectra_sherpa.app.services.dag.nodes.modeling.pca_nodes import (
     apply_pca_fitted_state,
@@ -90,7 +91,7 @@ def build_explanations(state, populations, rows, preprocessing):
             )
         ]
     )
-    if list(populations[0][0].sample_axis.labels) != reference_ids:
+    if sample_ids(populations[0][0]) != reference_ids:
         raise ValueError("PCA input does not preserve the fitted calibration observation order.")
     axis = populations[0][0].feature_axis
     if axis is not None and axis.labels is not None and sum(len(x) for x in axis.labels) > MAX_BYTES // 4:
@@ -101,7 +102,9 @@ def build_explanations(state, populations, rows, preprocessing):
     expected = {r["id"]: r for r in rows}
     evidence = {}
     for dataset, saved_scores in populations:
-        ids = list(dataset.sample_axis.labels)
+        ids = sample_ids(dataset)
+        if ids is None:
+            raise ValueError("PCA explanations require typed sample_id values.")
         if len(set(ids)) != len(ids) or any(identity in evidence or identity not in expected for identity in ids):
             raise ValueError("PCA explanation observation identity is inconsistent.")
         saved_scores = np.asarray(saved_scores, dtype=float)

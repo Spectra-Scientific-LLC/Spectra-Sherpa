@@ -12,26 +12,29 @@
   </aside>
 </template>
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import api from '@/api/client';
 import { getErrorMessage } from '@/utils/errors';
+import { useAuthStore } from '@/stores/auth';
+import { useScopedRequest } from '@/composables/useScopedRequest';
 const props = defineProps<{ artifactUid: string; workflowId: number; sourceRunId: number | null }>();
 type Review = { workflow_id: number; source_run_id: number | null; population: { fitted_count: number | null; held_out_count: number | null }; fitting_plan?: { state: string; declared_development_count: number | null } };
 const review = ref<Review | null>(null), loading = ref(false), error = ref('');
-let generation = 0;
-onBeforeUnmount(() => { generation++; });
-watch(() => [props.artifactUid, props.workflowId, props.sourceRunId], async () => {
-  const current = ++generation;
+const auth = useAuthStore();
+const identity = () => [auth.user?.id, auth.token, props.artifactUid, props.workflowId, props.sourceRunId];
+const requests = useScopedRequest(identity);
+watch(identity, async () => {
+  const request = requests.begin();
   review.value = null; loading.value = true; error.value = '';
   try {
-    const { data } = await api.get<Review>(`/models/${encodeURIComponent(props.artifactUid)}/promotion-review`);
-    if (current !== generation) return;
+    const { data } = await api.get<Review>(`/models/${encodeURIComponent(props.artifactUid)}/promotion-review`, { signal: request.signal });
+    if (!request.isCurrent()) return;
     if (data.workflow_id !== props.workflowId || data.source_run_id !== props.sourceRunId) {
       throw new Error('The source artifact/run does not belong to this workflow. Return to Review for promotion.');
     }
     review.value = data;
-  } catch (e) { if (current === generation) error.value = getErrorMessage(e, 'Source fitting context is unavailable.'); }
-  finally { if (current === generation) loading.value = false; }
+  } catch (e) { if (request.isCurrent()) error.value = getErrorMessage(e, 'Source fitting context is unavailable.'); }
+  finally { if (request.isCurrent()) loading.value = false; }
 }, { immediate: true });
 </script>
 <style scoped>

@@ -139,13 +139,28 @@ export async function settledPlotScreenshot(page: Page, path: string): Promise<B
     .poll(() =>
       canvas.evaluate((el) => {
         const svg = el.querySelector<SVGSVGElement>(".main-svg");
-        return svg ? Math.abs(svg.height.baseVal.value - el.clientHeight) : Infinity;
+        return svg ? Math.max(
+          Math.abs(svg.height.baseVal.value - el.clientHeight),
+          Math.abs(svg.width.baseVal.value - el.clientWidth),
+        ) : Infinity;
       }),
     )
     .toBeLessThanOrEqual(1);
   await page.evaluate(() => document.fonts.ready.then(() => undefined));
+  await page.getByRole("dialog").evaluate(async el => {
+    await Promise.all(el.getAnimations({ subtree: true }).filter(animation =>
+      animation.effect?.getComputedTiming().iterations !== Infinity,
+    ).map(animation => animation.finished.catch(() => undefined)));
+  });
   await page.mouse.move(0, 0);
-  return canvas.screenshot({ animations: "disabled", path });
+  return canvas.screenshot({
+    animations: "disabled",
+    // macOS may rasterize SVG text differently as dialog compositing layers
+    // change. Fix only the antialiasing mode, not fonts, geometry or content.
+    // Text, curves and colors remain subject to the same pixel comparison.
+    style: ".plotly-canvas, .plotly-canvas * { -webkit-font-smoothing: antialiased !important; }",
+    path,
+  });
 }
 
 /** Compare decoded pixels, not browser PNG compression/metadata bytes. */

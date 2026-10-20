@@ -5,27 +5,11 @@ export type ExperimentStage = "raw" | "preprocessed" | "synthetic";
 /** UI projection: the adapter supplies the schema's default file count. */
 export type ExperimentSummary = components["schemas"]["ExperimentSummary"] & { file_count: number };
 
-export interface ExperimentDetail extends ExperimentSummary {
-  metadata: Record<string, unknown>;
-}
+export type ExperimentDetail = components["schemas"]["ExperimentDetail"] & { file_count: number };
 
-export interface ExperimentFile {
-  id: number;
-  file_path: string;
-  file_type?: string | null;
-  stage: components["schemas"]["ExperimentFileOut"]["stage"];
-  file_size_bytes?: number | null;
-  created_at: string;
-  shape?: number[] | null;
-  n_samples?: number | null;
-  n_features?: number | null;
-  data_role?: string | null;
-  x_title?: string | null;
-  x_units?: string | null;
-  is_spectra?: boolean | null;
-  target_names?: string[] | null;
-  target_types?: components["schemas"]["ExperimentFileOut"]["target_types"];
-}
+/** Historical rows may lack file metadata; their remaining fields derive from transport. */
+export type ExperimentFile = Omit<components["schemas"]["ExperimentFileOut"], "file_type" | "file_size_bytes">
+  & Partial<Pick<components["schemas"]["ExperimentFileOut"], "file_type" | "file_size_bytes">>;
 
 export type ScientificAsset = components["schemas"]["ScientificAssetOut"] & { warnings: string[] };
 
@@ -33,14 +17,7 @@ export type ExperimentFileAssets = Omit<components["schemas"]["ExperimentFileAss
   assets: ScientificAsset[];
 };
 
-export interface VersionInfo {
-  id: number;
-  version_name: string;
-  description?: string | null;
-  created_at: string;
-  parent_version_id?: number | null;
-  file_count: number;
-}
+export type VersionInfo = components["schemas"]["VersionInfo"];
 
 export interface SpectrumPayload {
   label: string;
@@ -118,22 +95,13 @@ export interface SherpaDatasetDict {
   };
 }
 
-export interface ReferenceValueDeclaration {
-  schema_version: "spectrasherpa.reference-value-declaration/1";
-  target_name: string;
-  target_type: "continuous" | "categorical";
-  units: string | null;
-  method: {
-    method_id: string;
-    version: string;
-    response_identity: { names: string[]; units: Array<string | null> };
-    measurement_basis: "single_measurement" | "replicate_mean";
-    measurements_per_label: number;
+export type ReferenceValueDeclaration = components["schemas"]["ReferenceValueDeclaration"];
+
+/** Unvalidated laboratory JSON from the editor; server admission remains authoritative. */
+export interface ReferenceDeclarationDraft extends Omit<ReferenceValueDeclaration, "method"> {
+  method: (Omit<NonNullable<ReferenceValueDeclaration["method"]>, "precision"> & {
     precision: Record<string, unknown> | null;
-  } | null;
-  provenance: string | null;
-  precision_study_provenance: string | null;
-  replicate_evidence_digest: string | null;
+  }) | null;
 }
 
 export interface ReferenceValueEvidence {
@@ -170,71 +138,21 @@ export interface AcquisitionPlan {
   matching: AcquisitionMatching;
 }
 
-export interface PlannedSample {
-  sample_id: string;
-  source_specimen_uid: string | null;
-  name: string;
-  sample_type: string | null;
-  notes: string | null;
-}
+export type PlannedSample = components["schemas"]["PlannedSample"];
 
-export interface MixtureComponent {
-  sample_id: string;
-  amount: number;
-  unit: string;
-}
+export type MixtureComponent = components["schemas"]["MixtureComponent"];
 
-export interface PlannedMixture {
-  mixture_id: string;
-  name: string | null;
-  basis: string;
-  notes: string | null;
-  components: MixtureComponent[];
-}
+export type PlannedMixture = components["schemas"]["PlannedMixture"];
 
-export interface PlannedFactor {
-  factor_id: string;
-  name: string;
-  scope: string;
-  factor_type: string;
-  unit: string | null;
-  levels: Array<string | number | boolean | null>;
-}
+export type PlannedFactor = components["schemas"]["PlannedFactor"];
 
-export interface AcquisitionPlanWell {
-  well_position: string;
-  planned_sample_label: string | null;
-  sample_id: string | null;
-  mixture_id: string | null;
-  factor_values: Record<string, string | number | boolean | null>;
-}
+export type AcquisitionPlanWell = components["schemas"]["AcquisitionPlanWell"];
 
-export interface AcquisitionOrderStep {
-  sequence_order: number;
-  factor_id: string;
-  level_value: string;
-  path: string | null;
-  batch: number | null;
-  file_count: number | null;
-}
+export type AcquisitionOrderStep = components["schemas"]["AcquisitionOrderStep"];
 
-export interface AcquisitionMatch {
-  sequence_order: number;
-  filename: string | null;
-  folder: string | null;
-  timestamp: number | null;
-  date: string | null;
-  batch: number | null;
-  sample_id: string | null;
-  well_position: string | null;
-  special: string | null;
-  factor_values: Record<string, string | number | boolean | null>;
-}
+export type AcquisitionMatch = components["schemas"]["AcquisitionMatch"];
 
-export interface AcquisitionMatching {
-  rules: Record<string, unknown>;
-  matches: AcquisitionMatch[];
-}
+export type AcquisitionMatching = components["schemas"]["AcquisitionMatching"];
 
 export interface MeasuredSampleTableEditor {
   schema_version: "spectrasherpa.sample-table-editor/1";
@@ -386,21 +304,7 @@ export interface NistLibraryEntry {
   downloaded_at: string;
 }
 
-export interface JobInfo {
-  id: number;
-  job_type: string;
-  status: string;
-  progress: number;
-  progress_message?: string | null;
-  result_path?: string | null;
-  error_message?: string | null;
-  compute_location: string;
-  compute_node?: string | null;
-  last_heartbeat?: string | null;
-  created_at: string;
-  started_at?: string | null;
-  completed_at?: string | null;
-}
+export type JobInfo = components["schemas"]["JobInfo"];
 
 export interface LlmMessage {
   id: string;
@@ -573,12 +477,6 @@ export interface NodeExecutionState {
   output_type?: string | null; // e.g., "SherpaDataset", "PCA"
 }
 
-// Validation error
-export interface ValidationError {
-  param_name: string;
-  message: string;
-}
-
 // ── Execution Runs (workflow run history) ───────────────────────
 
 export interface ExecutionRunSummary {
@@ -630,16 +528,7 @@ export type RunListItem = Pick<
 
 export type EvaluationSelections = Record<number, { node_id: string; presentation_id: string }>;
 
-export interface ComparisonResultPair {
-  left_run_id: number;
-  right_run_id: number;
-  kind: string;
-  left: Array<{ node_id: string; presentation_id: string; kind: string; source_ports: string[] }>;
-  right: Array<{ node_id: string; presentation_id: string; kind: string; source_ports: string[] }>;
-  requires_pairing: boolean;
-  state: "comparable" | "incompatible" | "insufficient_evidence";
-  reason: string;
-}
+export type ComparisonResultPair = components["schemas"]["ComparisonResultPair"];
 
 export interface ComparisonResult {
   scientific_comparison?: import("./scientificComparison").EvidenceComparison | null;
@@ -692,15 +581,7 @@ export interface DeployApplication {
 }
 
 /** Identity returned by a canonical import for the Deploy hand-off. */
-export interface ImportedApplicationIdentity {
-  handle: string;
-  origin: "campaign_solution" | "saved_run" | "portable" | string;
-  project_id: number;
-  workflow_id: number;
-  artifact_digest?: string | null;
-  application_plan_digest?: string | null;
-  status?: string | null;
-}
+export type ImportedApplicationIdentity = components["schemas"]["ImportedApplicationIdentity"];
 
 // ── Projects ────────────────────────────────────────────────────────
 
@@ -712,211 +593,51 @@ export type StarterProgressSignal =
   | "has_executed"
   | "has_model";
 
-export interface StarterStep {
-  key: string;
-  title: string;
-  detail: string;
-  action_id: string | null;
-  completion: StarterProgressSignal | null;
-}
+export type StarterStep = components["schemas"]["StarterStep"];
 
 /** A dataset a Starter plan can begin with: a reference or the user's own. */
-export interface StarterDatasetOption {
-  key: string;
-  label: string;
-  kind: "reference" | "experiment";
-  source: string | null;
-  technique: string | null;
-  availability: string | null;
-  experiment_id: number | null;
-}
+export type StarterDatasetOption = components["schemas"]["StarterDatasetOption"];
 
-export interface StarterDatasetChoice extends StarterDatasetOption {
-  reason: string;
-  chosen_by: "rules" | "model" | "default";
-}
+export type StarterDatasetChoice = components["schemas"]["StarterDatasetChoice"];
 
 /** A goal turned into ordered steps; stored on the project as ``goal_plan``. */
-export interface StarterPlan {
-  schema_version: "spectra-starter-plan/1";
-  goal: string;
-  intent: string;
-  intent_label: string;
-  summary: string;
-  confidence: number;
-  source: "rules" | "model";
-  template_slug: string | null;
-  template_name: string | null;
-  steps: StarterStep[];
-  dataset: StarterDatasetChoice | null;
-  dataset_options: StarterDatasetOption[];
-  /** Steps without a progress signal that the user marked done. */
-  completed_steps?: string[];
-}
+export type StarterPlan = components["schemas"]["StarterPlan"];
 
-export interface ProjectSummary {
-  id: number;
-  name: string;
-  description: string | null;
-  parent_id: number | null;
-  technique: string | null;
-  sample_type: string | null;
-  goal?: string | null;
-  goal_plan?: StarterPlan | null;
-  experiment_count: number;
-  workflow_count: number;
-  script_count: number;
-  model_count: number;
-  children_count: number;
-  version_count: number;
-  created_at: string;
-  updated_at: string;
-  archived_at?: string | null;
-}
+/** The project adapter fills the backend defaults required by the view. */
+export type ProjectSummary = components["schemas"]["ProjectSummary"] & Required<Pick<
+  components["schemas"]["ProjectSummary"],
+  "description" | "parent_id" | "technique" | "sample_type" | "experiment_count" |
+  "workflow_count" | "script_count" | "model_count" | "children_count" | "version_count"
+>>;
 
-export interface ExperimentBrief {
-  id: number;
-  name: string;
-  description: string | null;
-  file_count: number;
-  facts?: string[];
-}
+export type ExperimentBrief = components["schemas"]["ExperimentBrief"];
 
-export interface WorkflowBrief {
-  id: number;
-  name: string;
-  description: string | null;
-  status: string;
-  purpose: "analysis" | "managed_candidate_authority";
-  integrity_hash: string | null;
-  tab_color?: string | null;
-  sheet_order?: number;
-  primary_data_source_id?: number | null;
-  data_source_ids?: number[];
-  color_source?: "blank" | "ai" | "data" | "manual";
-  tab_color_override?: string | null;
-  advisor_channel_id?: number | null;
-  created_from_template_name?: string | null;
-  created_from_template_version?: string | null;
-  created_from_workflow_id?: number | null;
-  created_from_workflow_name?: string | null;
-}
+export type WorkflowBrief = components["schemas"]["WorkflowBrief"];
 
-export interface ProjectDataSource {
-  id: number;
-  project_id: number;
-  display_name: string;
-  source_type: string;
-  source_ref: string | null;
-  fingerprint: string | null;
-  color: string;
-  metadata: Record<string, unknown>;
-  sort_order: number;
-  created_at: string;
-  updated_at: string;
-}
+export type ProjectDataSource = Required<components["schemas"]["ProjectDataSourceOut"]>;
 
-export interface AdvisorChannel {
-  id: number;
-  project_id: number;
-  workflow_id: number | null;
-  channel_type: "project" | "sheet" | string;
-  title: string;
-  color: string | null;
-  conversation_id: string | null;
-  created_at: string;
-  updated_at: string;
-}
+export type AdvisorChannel = Required<components["schemas"]["AdvisorChannelOut"]>;
 
-export interface ScriptBrief {
-  id: number;
-  name: string;
-  description: string | null;
-  language: string;
-  priority: number;
-  source_workflow_id: number | null;
-  code_length: number;
-}
+export type ScriptBrief = components["schemas"]["ScriptBrief"];
 
-export interface ModelBrief {
-  artifact_uid: string;
-  name: string;
-  display_name?: string | null;
-  model_type: string;
-  n_features: number;
-  n_components: number | null;
-  metrics: Record<string, unknown> | null;
-  source_run_id?: number | null;
-  training_dataset_id?: number | null;
-  is_deploy_ready?: boolean;
-  tags?: string[];
-  created_at: string;
-}
+export type ModelBrief = components["schemas"]["ModelBrief"];
 
-export interface ProjectScriptSummary {
-  id: number;
-  project_id: number;
-  name: string;
-  description: string | null;
-  language: string;
-  priority: number;
-  source_workflow_id: number | null;
-  code_length: number;
-  created_at: string;
-  updated_at: string;
-}
+export type ProjectScriptSummary = components["schemas"]["ProjectScriptSummary"];
 
-export interface ProjectScriptDetail extends ProjectScriptSummary {
-  code: string;
-}
+export type ProjectScriptDetail = components["schemas"]["ProjectScriptDetail"];
 
-export interface ProjectDetail extends ProjectSummary {
-  metadata: Record<string, unknown>;
-  /** Present when this response created a deployable application. */
-  application?: ImportedApplicationIdentity | null;
-  application_handle?: string | null;
-  experiments: ExperimentBrief[];
+export type ProjectDetail = ProjectSummary & Required<Pick<components["schemas"]["ProjectDetail"],
+  "metadata" | "experiments" | "workflows" | "scripts" | "models">> &
+  Pick<components["schemas"]["ProjectDetail"], "application" | "application_handle"> & {
   data_sources: ProjectDataSource[];
-  workflows: WorkflowBrief[];
   advisor_channels: AdvisorChannel[];
-  scripts: ScriptBrief[];
-  models: ModelBrief[];
   children: ProjectSummary[];
-}
+};
 
-export interface ProjectCreate {
-  commercial_subscription_id?: number;
-  commercial_workspace_id?: number | null;
-  name: string;
-  description?: string | null;
-  parent_id?: number | null;
-  metadata?: Record<string, unknown>;
-  technique?: string | null;
-  sample_type?: string | null;
-  goal?: string | null;
-  goal_plan?: StarterPlan | null;
-}
+export type ProjectCreate = components["schemas"]["ProjectCreate"];
 
-export interface ProjectUpdate {
-  name?: string | null;
-  description?: string | null;
-  parent_id?: number | null;
-  metadata?: Record<string, unknown>;
-  technique?: string | null;
-  sample_type?: string | null;
-  goal?: string | null;
-  goal_plan?: StarterPlan | null;
-}
+export type ProjectUpdate = components["schemas"]["ProjectUpdate"];
 
-export interface ProjectVersionSummary {
-  id: number;
-  version_number: number;
-  change_description: string | null;
-  include_raw_data: boolean;
-  created_at: string;
-  created_by: number;
-}
+export type ProjectVersionSummary = components["schemas"]["ProjectVersionSummary"];
 
-export interface ProjectVersionDetail extends ProjectVersionSummary {
-  snapshot: Record<string, unknown>;
-}
+export type ProjectVersionDetail = components["schemas"]["ProjectVersionDetail"];

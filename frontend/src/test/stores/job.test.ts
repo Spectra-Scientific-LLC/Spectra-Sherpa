@@ -15,11 +15,11 @@ vi.mock("@/api/client", () => ({
   },
 }));
 
-vi.mock("@/stores/auth", () => ({
-  useAuthStore: () => ({
-    user: { id: 1 },
-  }),
-}));
+vi.mock("@/stores/auth", async () => {
+  const { reactive } = await import("vue");
+  const auth = reactive({ user: { id: 1 }, token: "test-session" });
+  return { useAuthStore: () => auth };
+});
 
 vi.mock("@/composables/useNotifier", () => ({
   useNotifier: () => ({
@@ -28,6 +28,7 @@ vi.mock("@/composables/useNotifier", () => ({
 }));
 
 import { useJobStore } from "@/stores/job";
+import { useAuthStore } from "@/stores/auth";
 
 class MockWebSocket {
   static OPEN = 1;
@@ -183,7 +184,7 @@ describe("Job Store WebSocket policy close", () => {
     sockets[1].dispatch("open");
     sockets[1].dispatch("message", { data: JSON.stringify({ type: "authenticated" }) });
     expect(jobs.connected).toBe(true);
-    expect(apiGet).toHaveBeenCalledWith("/jobs");
+    expect(apiGet).toHaveBeenCalledWith("/jobs", { signal: expect.any(AbortSignal) });
     expect(JSON.parse(sockets[1].sent[1])).toEqual({ action: "subscribe", channel: "jobs:1" });
     sockets[1].close(1008);
     await vi.advanceTimersByTimeAsync(1000);
@@ -214,6 +215,18 @@ describe("Job Store WebSocket policy close", () => {
     expect(jobs.connectionStatus).toBe(replace ? "connected" : "disconnected");
     expect(localStorage.getItem("token")).toBe("valid");
     jobs.disconnect();
+  });
+
+  it.each(["list", "detail"])("does not restore another session's delayed %s", async (kind) => {
+    const jobs = useJobStore();
+    let finish!: (response: unknown) => void;
+    apiGet.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const pending = kind === "list" ? jobs.fetchJobs() : jobs.fetchJob(1);
+    useAuthStore().token = `replaced-${kind}`;
+    finish({ data: kind === "list" ? [{ id: 1 }] : { id: 1 } });
+    await pending;
+    expect(jobs.jobs).toEqual([]);
+    expect(jobs.connectionStatus).toBe("disconnected");
   });
 
   it("recovers with a renewed token while the session probe is pending", async () => {

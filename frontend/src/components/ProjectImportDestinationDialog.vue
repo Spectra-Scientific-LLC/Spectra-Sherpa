@@ -16,6 +16,8 @@ import Dialog from "primevue/dialog";
 import Dropdown from "primevue/dropdown";
 import Button from "primevue/button";
 import { api } from "@/api";
+import { useScopedRequest } from "@/composables/useScopedRequest";
+import { useAuthStore } from "@/stores/auth";
 interface Destination { subscription_id: number; workspace_id: number | null; label: string }
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{ "update:visible": [boolean]; choose: [Destination] }>();
@@ -23,25 +25,27 @@ const selected = ref<Destination | null>(null);
 const options = ref<Destination[]>([]);
 const loading = ref(false);
 const error = ref("");
-let generation = 0;
-watch(() => props.visible, async (visible) => {
-  const request = ++generation;
+const auth = useAuthStore();
+const identity = () => [auth.user?.id, auth.token, props.visible];
+const requests = useScopedRequest(identity);
+watch(identity, async () => {
+  const request = requests.begin();
   selected.value = null;
   options.value = [];
   error.value = "";
   loading.value = false;
-  if (!visible) return;
+  if (!props.visible) return;
   loading.value = true;
   try {
-    const { data } = await api.get<{ options: Destination[] }>("/commercial/projects/options");
-    if (request !== generation) return;
+    const { data } = await api.get<{ options: Destination[] }>("/commercial/projects/options", { signal: request.signal });
+    if (!request.isCurrent()) return;
     options.value = data.options;
     if (data.options.length === 1) selected.value = data.options[0];
     if (!data.options.length) error.value = "No authorized import workspace is available.";
   } catch {
-    if (request === generation) error.value = "Unable to load import workspaces. Close and retry.";
+    if (request.isCurrent()) error.value = "Unable to load import workspaces. Close and retry.";
   } finally {
-    if (request === generation) loading.value = false;
+    if (request.isCurrent()) loading.value = false;
   }
 }, { immediate: true });
 function choose() {

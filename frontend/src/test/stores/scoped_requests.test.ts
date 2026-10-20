@@ -44,6 +44,197 @@ beforeEach(() => {
 afterEach(() => { disposePinia(pinia); _clearProjectScopeRegistryForTests(); });
 
 describe("store-owned scope, independent of mounted pages", () => {
+  it("retains a valid workspace when the requested project cannot be opened", async () => {
+    const project = useProjectStore();
+    const workflow = useWorkflowStore();
+    project.currentProject = { id: 1, name: "Still here" } as never;
+    workflow.workflowId = 9;
+    const held = deferred<never>();
+    vi.mocked(api.get).mockReturnValueOnce(held.promise);
+    const pending = project.selectProject(404);
+    expect(project.currentProjectId).toBe(1);
+    expect(workflow.workflowId).toBe(9);
+    held.reject(new Error("Not found"));
+    await pending;
+    expect(project.currentProjectId).toBe(1);
+    expect(project.currentProject?.name).toBe("Still here");
+    expect(workflow.workflowId).toBe(9);
+    expect(project.error).toBe("Not found");
+    expect(project.isLoading).toBe(false);
+  });
+
+  it("commits only the latest successful project selection", async () => {
+    const project = useProjectStore();
+    const workflow = useWorkflowStore();
+    workflow.workflowId = 9;
+    const first = deferred<{ data: unknown }>();
+    const second = deferred<{ data: unknown }>();
+    vi.mocked(api.get).mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const selecting = [project.selectProject(2), project.selectProject(3)];
+    second.resolve({ data: { id: 3, name: "Third" } });
+    await selecting[1];
+    first.resolve({ data: { id: 2, name: "Second" } });
+    await selecting[0];
+    expect(project.currentProjectId).toBe(3);
+    expect(project.currentProject?.name).toBe("Third");
+    expect(workflow.workflowId).toBeNull();
+  });
+
+  it.each(["create", "import", "delete", "archive"] as const)(
+    "keeps newer navigation after an earlier %s acknowledgement",
+    async (operation) => {
+      const project = useProjectStore();
+      project.currentProject = { id: 1, name: "First" } as never;
+      const write = deferred<{ data: unknown }>();
+      const destination = deferred<{ data: unknown }>();
+      vi.mocked(api.post).mockReturnValueOnce(write.promise);
+      vi.mocked(api.delete).mockReturnValueOnce(write.promise);
+      vi.mocked(api.get).mockImplementation(async url => {
+        if (url === "/projects/2") return destination.promise;
+        if (url === "/projects") return { data: [{ id: 2, name: "Second" }, { id: 3, name: "Created" }] };
+        throw new Error(`Unexpected selection: ${url}`);
+      });
+      const mutation = operation === "create" ? project.createProject({ name: "Created" })
+        : operation === "import" ? project.importProject(new File(["archive"], "project.sherpa"))
+          : operation === "delete" ? project.deleteProject(1, "First")
+            : project.archiveProject(1);
+      const selecting = project.selectProject(2);
+      const signal = vi.mocked(api.get).mock.calls[0][1]?.signal;
+      write.resolve({ data: { id: 3, name: "Created" } });
+      await mutation;
+      expect(signal?.aborted).toBe(false);
+      expect(project.currentProjectId).toBe(operation === "delete" || operation === "archive" ? null : 1);
+      destination.resolve({ data: { id: 2, name: "Second" } });
+      await selecting;
+      expect(project.currentProjectId).toBe(2);
+      expect(project.currentProject?.name).toBe("Second");
+      expect(project.error).toBeNull();
+      expect(project.isImporting).toBe(false);
+    },
+  );
+
+  it("does not restore a deleted workspace when newer navigation fails", async () => {
+    const project = useProjectStore();
+    project.currentProject = { id: 1, name: "First" } as never;
+    const deletion = deferred<{ data: unknown }>();
+    const destination = deferred<{ data: unknown }>();
+    vi.mocked(api.delete).mockReturnValueOnce(deletion.promise);
+    vi.mocked(api.get).mockImplementation(async url =>
+      url === "/projects/2" ? destination.promise : { data: [] });
+    const deleting = project.deleteProject(1, "First");
+    const selecting = project.selectProject(2);
+    deletion.resolve({ data: {} });
+    await deleting;
+    destination.reject(new Error("Destination unavailable"));
+    await selecting;
+    expect(project.currentProjectId).toBeNull();
+    expect(project.currentProject).toBeNull();
+    expect(project.error).toBe("Destination unavailable");
+  });
+
+  it.each([
+    ["delete", 1], ["archive", 1], ["delete", 2], ["archive", 2],
+  ] as const)("does not reopen project %s/%s from a read preceding its removal", async (operation, removedId) => {
+    const project = useProjectStore();
+    project.currentProject = { id: 1, name: "First" } as never;
+    const held = deferred<{ data: unknown }>();
+    vi.mocked(api.get).mockImplementation(async url =>
+      url === `/projects/${removedId}` ? held.promise : { data: [] });
+    vi.mocked(api.delete).mockResolvedValue({ data: {} });
+    vi.mocked(api.post).mockResolvedValue({ data: {} });
+    const selecting = project.selectProject(removedId);
+    const signal = vi.mocked(api.get).mock.calls[0][1]?.signal;
+    if (operation === "delete") await project.deleteProject(removedId, "Removed");
+    else await project.archiveProject(removedId);
+    expect(signal?.aborted).toBe(true);
+    held.resolve({ data: { id: removedId, name: "Removed" } });
+    await selecting;
+    expect(project.currentProjectId).toBe(removedId === 1 ? null : 1);
+    expect(project.currentProject?.name).not.toBe("Removed");
+    expect(project.isLoading).toBe(false);
+  });
+
+  it("refreshes the project selector after rename then switch without restoring the old detail", async () => {
+    const project = useProjectStore();
+    const held = deferred<{ data: unknown }>();
+    vi.mocked(api.put).mockReturnValueOnce(held.promise);
+    vi.mocked(api.get).mockResolvedValue({ data: [{ id: 1, name: "Renamed" }, { id: 2, name: "Second" }] });
+    const pending = project.updateProject(1, { name: "Renamed" });
+    project.currentProjectId = 2;
+    project.currentProject = { id: 2, name: "Second" } as never;
+    held.resolve({ data: { id: 1, name: "Renamed" } });
+    await pending;
+    expect(project.projects[0].name).toBe("Renamed");
+    expect(project.currentProject?.id).toBe(2);
+  });
+
+  it("refreshes inventories after upload then switch without selecting the uploaded dataset", async () => {
+    const data = useDataStore();
+    data.activeExperimentId = 44;
+    const upload = deferred<{ data: unknown }>();
+    vi.mocked(api.post).mockReturnValueOnce(upload.promise);
+    vi.mocked(api.get).mockImplementation(async url => {
+      if (url === "/experiments") return { data: [{ id: 45, name: "Current" }] };
+      if (url === "/datasets/available") return { data: { experiments: [{ id: 44, name: "Uploaded" }], library: [], builder: [] } };
+      if (url === "/projects") return { data: [{ id: 1, name: "Updated inventory" }] };
+      throw new Error(`Unexpected selection: ${url}`);
+    });
+    const pending = data.uploadFile(44, new File(["1,2"], "sample.csv"), "raw");
+    data.activeExperimentId = 45;
+    upload.resolve({ data: { id: 11, file_path: "sample.csv", experiment_id: 44 } });
+    await pending;
+    expect(data.activeExperimentId).toBe(45);
+    expect(data.availableDatasets?.experiments[0].name).toBe("Uploaded");
+    expect(useProjectStore().projects[0].name).toBe("Updated inventory");
+    expect(api.get).not.toHaveBeenCalledWith("/experiments/44/files", expect.anything());
+  });
+
+  it("does not refresh another actor's inventories for an old accepted write", async () => {
+    const data = useDataStore();
+    const upload = deferred<{ data: unknown }>();
+    vi.mocked(api.post).mockReturnValueOnce(upload.promise);
+    const pending = data.uploadFile(44, new File(["1,2"], "sample.csv"), "raw");
+    useAuthStore().token = "new-session";
+    upload.resolve({ data: { id: 11, file_path: "sample.csv", experiment_id: 44 } });
+    await pending;
+    expect(api.get).not.toHaveBeenCalled();
+  });
+
+  it.each(["create", "rename", "upload", "delete"] as const)(
+    "refreshes experiment inventories after %s then project/selection switch",
+    async (operation) => {
+      const experiments = useExperimentStore();
+      const held = deferred<{ data: unknown }>();
+      vi.mocked(api.post).mockReturnValue(held.promise);
+      vi.mocked(api.put).mockReturnValue(held.promise);
+      vi.mocked(api.delete).mockReturnValue(held.promise);
+      vi.mocked(api.get).mockImplementation(async url => {
+        if (url === "/experiments") return { data: [{ id: 45, name: "Current inventory" }] };
+        if (url === "/datasets/available") return { data: { experiments: [], library: [], builder: [] } };
+        if (url === "/projects") return { data: [{ id: 2, name: "Current project" }] };
+        if (url === "/experiments/45") return { data: { id: 45, name: "Selected" } };
+        if (url === "/experiments/45/files" || url === "/experiments/45/versions") return { data: [] };
+        throw new Error(`Unexpected old selection restored: ${url}`);
+      });
+      const pending = operation === "create"
+        ? experiments.createExperiment({ name: "Created", metadata: {} })
+        : operation === "rename"
+          ? experiments.updateExperiment(44, { name: "Renamed" })
+          : operation === "upload"
+            ? experiments.uploadFile(44, new File(["1,2"], "file.csv"), "raw")
+            : experiments.deleteExperiment(44);
+      useProjectStore().currentProjectId = 2;
+      await experiments.selectExperiment(45);
+      held.resolve({ data: { id: 44, name: "Acknowledged write" } });
+      await pending;
+      expect(experiments.currentExperimentId).toBe(45);
+      expect(experiments.currentExperiment?.name).toBe("Selected");
+      expect(experiments.experiments[0].name).toBe("Current inventory");
+      expect(useProjectStore().projects[0].id).toBe(2);
+      expect(api.get).not.toHaveBeenCalledWith("/experiments/44/files", expect.anything());
+    },
+  );
+
   it("keeps account-wide project inventories while a project is selected", async () => {
     const project = useProjectStore();
     const active = deferred<{ data: unknown[] }>();
@@ -282,17 +473,23 @@ describe("store-owned scope, independent of mounted pages", () => {
     expect(data.fileInfoLoading).toBe(false);
   });
 
-  it("does not reselect an old dataset after a server-accepted upload", async () => {
+  it.each([true, false])("refreshes inventories without reselecting after accepted upload (detail refresh=%s)", async (refresh) => {
     const data = useDataStore();
     data.activeExperimentId = 44;
     const late = deferred<{ data: unknown }>();
     vi.mocked(api.post).mockReturnValueOnce(late.promise);
-    const pending = data.uploadFile(44, new File(["x"], "x.csv"), "raw");
+    vi.mocked(api.get).mockImplementation(async url => ({
+      data: url === "/datasets/available" ? { experiments: [], library: [], builder: [] } : [],
+    }));
+    const pending = data.uploadFile(44, new File(["x"], "x.csv"), "raw", { refresh });
     useProjectStore().currentProjectId = 2;
     late.resolve({ data: { id: 9, file_path: "raw/x.csv", stage: "raw", created_at: "" } });
     expect((await pending).id).toBe(9); // Accepted write is not reported as rolled back.
     expect(data.activeExperimentId).toBeNull();
-    expect(api.get).not.toHaveBeenCalled();
+    expect(vi.mocked(api.get).mock.calls.map(([url]) => url)).toEqual([
+      "/experiments", "/datasets/available", "/projects",
+    ]);
+    expect(vi.mocked(api.get).mock.calls[0][1]?.params).toEqual({ project_id: 2 });
   });
 
   it("guards legacy comparisons and their finally against a newer selection", async () => {
@@ -476,6 +673,38 @@ describe("store-owned scope, independent of mounted pages", () => {
     expect(workflow.isExecuting).toBe(false);
     expect(workflow.restoredRunId).toBe(22);
     expect(workflow.lastExecutionResults).toEqual({ model: "current" });
+  });
+
+  it("keeps an admitted execution alive when its sheet is left, without painting another sheet", async () => {
+    const workflow = useWorkflowStore();
+    const workbook = useWorkbookStore();
+    workbook.sheets = [{ workflowId: 1, kind: "analysis", executionStatus: "idle" }] as never;
+    workflow.workflowId = 1;
+    const run = deferred<{ data: unknown }>();
+    let executionSignal: AbortSignal | undefined;
+    vi.mocked(api.post).mockImplementation(async (url, _payload, config) => {
+      if (url.endsWith("/preflight")) return { data: { is_valid: true, issues: [], semantic_edges: [] } };
+      executionSignal = config?.signal as AbortSignal | undefined;
+      executionSignal?.addEventListener("abort", () => run.reject({ name: "CanceledError", code: "ERR_CANCELED" }));
+      return run.promise;
+    });
+    const pending = workflow.executeWorkflow().catch(error => error);
+    await vi.waitFor(() => expect(workbook.sheets[0].executionStatus).toBe("running"));
+    workflow.clearWorkflow();
+    workflow.workflowId = 2;
+    await flushPromises();
+    expect(executionSignal?.aborted).toBe(false);
+    expect(workbook.sheets[0].executionStatus).toBe("running");
+    workflow.workflowId = 1;
+    expect(workflow.isExecuting).toBe(true);
+    await expect(workflow.executeWorkflow()).rejects.toThrow("already in progress");
+    workflow.workflowId = 2;
+    run.resolve({ data: { status: "completed", run_id: 44, results: { old: "retained" } } });
+    expect((await pending).name).toBe("AbortError");
+    expect(workbook.sheets[0].executionStatus).toBe("success");
+    expect(workflow.lastExecutionResults).toBeNull();
+    expect(workflow.restoredRunId).toBeNull();
+    expect(workflow.isExecuting).toBe(false);
   });
 
   it("unregisters reset callbacks with their effect lifetime", () => {

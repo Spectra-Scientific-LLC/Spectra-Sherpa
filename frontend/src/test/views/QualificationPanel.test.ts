@@ -3,13 +3,14 @@ import { flushPromises, mount } from "@vue/test-utils";
 import api from "@/api/client";
 import Panel from "@/views/deploy/QualificationPanel.vue";
 import Applications from "@/views/deploy/QualificationApplications.vue";
+import { createPinia, setActivePinia } from "pinia";
 vi.mock("@/api/client", () => ({ default: { get: vi.fn(), post: vi.fn() } }));
 const record = {kind: "assessment", record_digest: "dossier-1", context_digest: "context-1", payload: {
   assessment: "criteria_met", context: {intended_use: "Screen fuels", intended_population: "Summer fuels", instrument_id: "NIR-1"},
   policy: {policy_name: "Lab", policy_version: "1"}, criteria: [{name: "rmsep", state: "met", detail: "0.5 <= 1"}],
 }};
 function button(wrapper: ReturnType<typeof mount>, text: string) { return wrapper.findAll("button").find(item => item.text() === text)!; }
-beforeEach(() => { vi.resetAllMocks(); vi.mocked(api.get).mockResolvedValue({data: {records: [record]}}); vi.mocked(api.post).mockResolvedValue({data: {}}); });
+beforeEach(() => { setActivePinia(createPinia()); vi.resetAllMocks(); vi.mocked(api.get).mockResolvedValue({data: {records: [record]}}); vi.mocked(api.post).mockResolvedValue({data: {}}); });
 describe("qualification evidence and decisions", () => {
   it("requires exact-context acknowledgement and reason before submitting the dossier identity", async () => {
     const wrapper = mount(Panel, {props: {workflowId: 3}}); await flushPromises();
@@ -67,7 +68,7 @@ describe("qualification evidence and decisions", () => {
   it("discovers hosted candidates without watch calls and clears selection on project change", async () => {
     vi.mocked(api.get).mockResolvedValue({data: [{canonical_artifact_id: 9, workflow_id: 3, name: "Imported PLS", artifact_digest: "exact-model"}]});
     const wrapper = mount(Applications, {props: {projectId: 7}, global: {stubs: {ModelPromotionReview: true}}}); await flushPromises();
-    expect(api.get).toHaveBeenCalledExactlyOnceWith("/deploy/projects/7/qualification-applications");
+    expect(api.get).toHaveBeenCalledExactlyOnceWith("/deploy/projects/7/qualification-applications", { signal: expect.any(AbortSignal) });
     await wrapper.findAll("option")[1].setSelected();
     await wrapper.findAll("button").find(item => item.text() === "Review for promotion")!.trigger("click");
     expect(wrapper.find("model-promotion-review-stub").attributes("canonicalartifactid")).toBe("9");

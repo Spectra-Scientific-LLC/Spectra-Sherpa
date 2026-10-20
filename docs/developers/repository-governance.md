@@ -44,17 +44,42 @@ Use the [glossary](../concepts/glossary.md). The initial gate deliberately check
 only three product phrases: “Execute workflow” → “Run workflow”, “Data Portfolio”
 → “Dataset”, and “Short scientific summary” → “Short summary”.
 
-`python scripts/check_user_copy.py` scans static Vue text and selected static
-attributes plus workflow-guide prose. It excludes scripts, styles, code blocks,
-dynamic bindings and interpolations. Scientific terms (including holdout in
+`python scripts/check_user_copy.py` scans Vue text, selected static attributes,
+quoted literals in bound attributes/interpolations and frontend JavaScript or
+TypeScript (including component scripts), plus workflow-guide prose. It excludes
+comments, styles, code blocks, test fixtures and generated files. Scientific terms (including holdout in
 methodology, T², Q, RMSEC/RMSECV/RMSEP) and identifiers are not rewritten.
-Dynamic JavaScript strings, backend copy, other docs and translations are
-outside this initial gate; this is not a claim of complete prose lint coverage.
+Runtime-composed strings, backend copy, other docs and translations remain
+outside this gate; it does not evaluate code or claim complete prose coverage.
 
-Existing occurrences are inventoried in `user-copy-baseline.json`, per file and
-rule. New occurrences fail; removal requires shrinking the baseline so it
-cannot leave growth credit. The explicit baseline-writing option exists for
-reviewed inventory maintenance, never automatic CI recovery.
+The three-phrase inventory has been burned down to **zero**. The baseline must
+remain empty; editing it to match new occurrences fails the check. The explicit
+baseline-writing option refuses to record violations. This gate runs through
+`make evidence-check` in public CI as well as the lightweight copy check.
+
+## Ratchet checkpoints
+
+The copy inventory is zero now and may not grow. For transport boundaries,
+`legacy-boundaries.json` records migration debt, not permission to add another
+type authority. Any PR changing a listed API consumer must either retire that
+consumer's handwritten transport boundary through an explicit generated-type
+adapter or document why its view-model type is not a transport declaration.
+The count must not grow to accommodate new copies.
+
+At 0.6.4 release-prep review, publish the before/after inventory and remaining
+named boundaries with the [release checklist](release-preparation.md).
+At the next cohesion review, each remaining boundary needs an owning migration
+slice (workflow, dataset, run, deploy, or extension). Do not set an arbitrary
+line quota or remove scientific typing just to reduce the count.
+
+## Publication and pre-commit checks
+
+Upstream CI compares the **entire tracked public subtree**, not only paths
+changed by the current pair. A reviewed `pair-target.json` pins the public
+revision and both baselines. The candidate must include current public main;
+an intervening public fix requires updating/reconciling the pin. Differences
+need both classification and exact-blob reconciliation; neither an old
+unchanged divergence nor a manifest entry is an exemption.
 
 Pre-commit runs source checks from the correct frontend directory using installed
 tools. It must not download unpinned tools, build or stage static bundles.

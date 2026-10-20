@@ -6,37 +6,17 @@
  * cross this boundary. Breaking changes require a new versioned module.
  */
 import type { AxiosInstance } from "axios";
-import type { Component, Ref } from "vue";
+import type { Component, DeepReadonly, Ref } from "vue";
 import type { Router, RouteLocationRaw, RouteRecordRaw } from "vue-router";
+import type { AppConfig as HostAppConfig, AppLimits } from "./config";
 
 /** Existing descriptor/module handshake; extraction does not bump the wire version. */
 export const EXTENSION_CONTRACT_VERSION = 1;
 export const CONTEXTUAL_ACTIONS_VERSION = EXTENSION_CONTRACT_VERSION;
 
-/** Config fields consumed by extensions, with room for server-owned additions. */
-export interface AppConfigLimits {
-  maxSherpaRequestsHour?: number;
-  adminBypass?: boolean;
-  sessionExpiryHours?: number;
-  [key: string]: unknown;
-}
-
-export interface AppConfig {
-  // The host accepts product-defined mode names as well as the built-in modes.
-  mode: "local" | "hybrid" | "enterprise" | (string & {});
-  siteProfile?: "demo" | "pro" | "hybrid_server" | "org" | string | null;
-  registrationEnabled?: boolean;
-  demo?: {
-    campaignAdmissionEnabled?: boolean;
-    maxSiteCampaignsPerWeek?: number | null;
-    maxSiteConcurrentCampaigns?: number;
-    maxSiteCampaignComputeSecondsPerWeek?: number | null;
-    [key: string]: unknown;
-  } | null;
-  features?: Record<string, unknown>;
-  limits?: AppConfigLimits;
-  [key: string]: unknown;
-}
+/** Extensions observe configuration; only the host can replace it. */
+export type AppConfig = DeepReadonly<HostAppConfig>;
+export type AppConfigLimits = DeepReadonly<AppLimits>;
 
 export interface UserCapabilities {
   admin?: boolean;

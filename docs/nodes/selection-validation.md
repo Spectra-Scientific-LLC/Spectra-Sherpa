@@ -4,9 +4,7 @@ Selection and validation nodes help choose variables, split samples, and estimat
 
 ## Sample Partitioning
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Train/Test Split (`data.train_test_split`) | You need one explicit statistical or chemometric calibration/test design. |
+- [`data.train_test_split`](data.md#registry-reference): You need one explicit statistical or chemometric calibration/test design.
 
 ## Variable Selection
 
@@ -24,28 +22,24 @@ Peak locations specified independently from chemical knowledge do not learn from
 
 ### Model-based selection
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Variable Selection (`selection.variable_select`) | Select wavelengths by VIP, coefficients, spectral region, peaks, or an incoming mask. |
-| Dimension Projection (`selection.dimension_project`) | Select one exact index from every inner dimension of an n-dimensional dataset before a two-dimensional algorithm. The closed projection record contains one zero-based index for every inner dimension. |
-| Interval PLS (`selection.ipls`) | Search spectral intervals and keep the interval set with best cross-validated PLS performance. |
-| CARS (`selection.cars`) | Perform competitive adaptive reweighted sampling for wavelength selection. |
-| SPA (`selection.spa`) | Select variables with low collinearity using successive projections. |
-| MC-UVE (`selection.mcuve`) | Rank measured variables by PLS-coefficient stability across Monte Carlo calibration subsets and retain the declared top count. |
-| Stability Selection (`selection.stability`) | Keep variables that repeatedly pass a declared PLS scoring rule in seeded half-samples; reports empirical selection frequency, not predictive performance or a formal false-discovery guarantee. |
-| Compare Feature Selections (`selection.compare`) | Record Jaccard overlap among two to four exact boolean masks and build an inclusive-vote consensus without ranking the selectors. Retain a variable when votes are at least `ceil(threshold × method_count)`; `0.5` means at least half, not a strict majority. |
-| Audit Feature Selection (`selection.audit`) | Produce a deterministic, digest-bound projection of the selection provenance already recorded on a dataset. `include_scores` controls whether exact finite feature scores accompany their always-recorded digest. |
+- [`selection.variable_select`](selection-validation.md#registry-reference): Select wavelengths by VIP, coefficients, spectral region, peaks, or an incoming mask.
+- [`selection.dimension_project`](selection-validation.md#registry-reference): Select one exact index from every inner dimension of an n-dimensional dataset before a two-dimensional algorithm. The closed projection record contains one zero-based index for every inner dimension.
+- [`selection.ipls`](selection-validation.md#registry-reference): Search spectral intervals and keep the interval set with best cross-validated PLS performance.
+- [`selection.cars`](selection-validation.md#registry-reference): Perform competitive adaptive reweighted sampling for wavelength selection.
+- [`selection.spa`](selection-validation.md#registry-reference): Select variables with low collinearity using successive projections.
+- [`selection.mcuve`](selection-validation.md#registry-reference): Rank measured variables by PLS-coefficient stability across Monte Carlo calibration subsets and retain the declared top count.
+- [`selection.stability`](selection-validation.md#registry-reference): Keep variables that repeatedly pass a declared PLS scoring rule in seeded half-samples; reports empirical selection frequency, not predictive performance or a formal false-discovery guarantee.
+- [`selection.compare`](selection-validation.md#registry-reference): Record Jaccard overlap among two to four exact boolean masks and build an inclusive-vote consensus without ranking the selectors. Retain a variable when votes are at least `ceil(threshold × method_count)`; `0.5` means at least half, not a strict majority.
+- [`selection.audit`](selection-validation.md#registry-reference): Produce a deterministic, digest-bound projection of the selection provenance already recorded on a dataset. `include_scores` controls whether exact finite feature scores accompany their always-recorded digest.
 
 ## Validation and Diagnostics
 
-| Node | Scientific use and guidance |
-| --- | --- |
-| Evaluate Nested CV Selection (`selection.nested_cv`) | Estimate performance when variable selection happens inside each outer CV fold, with selection and PLS component tuning fitted together inside each inner-training fold. Requires one quantitative target. Single-repeat and repeated-validation evidence have different replay semantics, described below. |
-| Evaluate by Cross-Validation (`diagnostics.cross_validation`) | Summarize one producer-bound regression out-of-fold evidence record; it does not split or refit. Rejects missing or unbound evidence. |
-| Evaluate Regression (`diagnostics.regression_evaluator`) | Compute the closed regression metric registry from explicit predictions and references. Local workbench evaluation requires the explicit reference edge; managed evaluation receives fold authority separately. |
-| Evaluate Classification (`diagnostics.classification_evaluator`) | Compute confusion-matrix and label metrics from explicit predictions and references. The local evaluator does not verify held-out status; establish it from retained split/run lineage. Rejected or prediction-only labels remain visible. |
-| Detect Outliers (`diagnostics.outliers`) | Screen fitted PCA calibration samples by Hotelling T² and Q/SPE residuals. Connect the typed diagnostic-state output from Fit PCA Transform. |
-| Statistics (`stats.summary`) | Compute deterministic descriptive summaries without inventing diagnostics or missing data. |
+- [`selection.nested_cv`](selection-validation.md#registry-reference): Estimate performance when variable selection happens inside each outer CV fold, with selection and PLS component tuning fitted together inside each inner-training fold. Requires one quantitative target. Single-repeat and repeated-validation evidence have different replay semantics, described below.
+- [`diagnostics.cross_validation`](selection-validation.md#registry-reference): Summarize one producer-bound regression out-of-fold evidence record; it does not split or refit. Rejects missing or unbound evidence.
+- [`diagnostics.regression_evaluator`](selection-validation.md#registry-reference): Compute the closed regression metric registry from explicit predictions and references. Local workbench evaluation requires the explicit reference edge; managed evaluation receives fold authority separately.
+- [`diagnostics.classification_evaluator`](selection-validation.md#registry-reference): Compute confusion-matrix and label metrics from explicit predictions and references. The local evaluator does not verify held-out status; establish it from retained split/run lineage. Rejected or prediction-only labels remain visible.
+- [`diagnostics.outliers`](selection-validation.md#registry-reference): Screen fitted PCA calibration samples by Hotelling T² and Q/SPE residuals. Connect the typed diagnostic-state output from Fit PCA Transform.
+- [`stats.summary`](output.md#registry-reference): Compute deterministic descriptive summaries without inventing diagnostics or missing data.
 
 ## Interpretation
 
@@ -110,6 +104,26 @@ Generated from registered node metadata. Edit methodology and examples outside t
 Defaults and options below are JSON values; `null` means no concrete default is declared.
 Internal parameters are retained for contract inspection and are not scientist-editable controls.
 Conditional visibility describes the editor; execution admission remains node-owned.
+
+| Node | Operation |
+| --- | --- |
+| Merge Features | <code>data.merge_features</code> |
+| Reference Classification Evaluator (v2) | <code>diagnostics.classification_evaluator</code> |
+| Evaluate Out-of-Fold Predictions | <code>diagnostics.cross_validation</code> |
+| Held-out Regression with Source Labels | <code>diagnostics.labeled_regression_evaluator</code> |
+| Detect Outliers | <code>diagnostics.outliers</code> |
+| Reference Regression Evaluator (v2) | <code>diagnostics.regression_evaluator</code> |
+| Audit Feature Selection | <code>selection.audit</code> |
+| CARS | <code>selection.cars</code> |
+| Compare Feature Selections | <code>selection.compare</code> |
+| Dimension Projection | <code>selection.dimension_project</code> |
+| Interval PLS (iPLS) | <code>selection.ipls</code> |
+| MC-UVE | <code>selection.mcuve</code> |
+| Evaluate Nested CV Selection | <code>selection.nested_cv</code> |
+| Select Columns | <code>selection.select_columns</code> |
+| SPA-MLR Variable Selection (Araújo 2001) | <code>selection.spa</code> |
+| Stability Selection | <code>selection.stability</code> |
+| Variable Selection Rule | <code>selection.variable_select</code> |
 
 ### Merge Features (`data.merge_features`)
 

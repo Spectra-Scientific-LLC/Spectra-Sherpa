@@ -309,7 +309,7 @@ const addMenuItems = computed(() => {
       },
     },
     {
-      label: "Reset Color by Data Portfolio",
+      label: "Reset Color by Dataset",
       icon: "pi pi-refresh",
       disabled: !props.sheets[props.activeIndex] || props.sheets[props.activeIndex]?.kind === "trial",
       command: () => {
