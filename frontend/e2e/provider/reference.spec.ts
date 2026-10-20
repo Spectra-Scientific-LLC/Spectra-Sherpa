@@ -4,6 +4,7 @@ import { createDataset, instantiate, runWorkflow } from "../scientific/journeys"
 import {
   assertIdentity,
   assertMatrix,
+  assertRegressionReport,
   closeDialog,
   downloadTable,
   plotData,
@@ -85,6 +86,7 @@ test("Corn: registered M5 Moisture import, PLS and held-out identities", async (
   expect(selection.ok(), await selection.text()).toBeTruthy();
   const workflow = await instantiate(request, { project, experiment, files }, "pls_calibration");
   const result = await runWorkflow(page, workflow, project);
+  expect(result.results.eval_1.default.population_authority.role).toBe("held_out_test");
   const split = result.results.partition_1;
   expect(split.X_train.data.length + split.X_test.data.length).toBe(80);
   expect(split.X_test.data).toHaveLength(20);
@@ -137,4 +139,11 @@ test("Corn: registered M5 Moisture import, PLS and held-out identities", async (
   await page.getByRole("option", { name: "Test Data", exact: true }).click();
   await page.getByRole("button", { name: "View Data", exact: true }).click();
   expect(await downloadTable(page, page.getByRole("dialog"))).toEqual(csv);
+  await closeDialog(page);
+  await page.goto(`/report?workflow=${workflow.id}&run=${result.run_id}&project=${project.id}`);
+  await assertRegressionReport(page, {
+    training: split.X_train.data.length,
+    heldOut: csv.length - 1,
+    rmse: result.results.eval_1.default.rmse,
+  });
 });

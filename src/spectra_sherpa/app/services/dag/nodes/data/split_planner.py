@@ -51,13 +51,15 @@ from sklearn.decomposition import PCA  # type: ignore[import-untyped]
 from sklearn.model_selection import StratifiedGroupKFold, train_test_split  # type: ignore[import-untyped]
 from sklearn.utils.multiclass import type_of_target  # type: ignore[import-untyped]
 
-from spectra_sherpa.app.lib.sherpa_dataset import TargetContext
+from spectra_sherpa.app.lib.sherpa_dataset import SherpaDataset, TargetContext
 from spectra_sherpa.app.services.dag.class_labels import prepare_class_labels, prepare_declared_class_labels
 from spectra_sherpa.app.services.dag.io_contracts import (
+    bind_X,
     bind_y,
     build_dataset_like,
     coerce_to_sherpa,
     extract_target_like,
+    to_numpy_2d,
     to_numpy_y,
 )
 from spectra_sherpa.app.services.dag.meta_helpers import add_processing_step
@@ -69,6 +71,7 @@ from spectra_sherpa.core.specimen_independence import cross_block_violations, in
 from spectra_sherpa.core.target_authority import admit_target_authority
 
 from ._utils import slice_axis_for_indices
+from .sample_preparation import _slice_dataset_rows, _source_include_mask
 
 SPLIT_PLAN_SCHEMA: Final = "spectrasherpa-split-plan/2"
 SPLIT_METHODS: Final = (
@@ -347,6 +350,34 @@ def bind_split_target(
             raise ValueError("multi-column categorical split target requires a selected_target")
         y_array = prepare_class_labels(y_array, X_dataset.shape[0])
     return y_array, context
+
+
+def prepare_split_source(
+    X: object, y: object | None
+) -> tuple[SherpaDataset, np.ndarray, np.ndarray | None, TargetContext | None, np.ndarray]:
+    """Materialize declared source inclusion before planning, without mutating X.
+
+    Align explicit responses against the full source first, then slice values,
+    identities, annotations and supervision together using the canonical subset
+    authority. Returned indices refer to the original input, not compacted rows.
+    Feature exclusions remain a refusal: a row split must not select variables.
+    """
+    source = bind_X(X, allow_array=True, allow_excluded=True)
+    mask = _source_include_mask(source, n_samples=source.n_samples)
+    indices = np.flatnonzero(mask)
+    if indices.size < 2:
+        raise ValueError("Train/Test Split requires at least two included samples")
+    if isinstance(y, SherpaDataset):
+        response_mask = _source_include_mask(y, n_samples=y.n_samples)
+        if not np.all(response_mask) and not np.array_equal(response_mask, mask):
+            raise ValueError("X and response source inclusion disagree")
+    target, context = bind_split_target(source, y)
+    if not np.all(mask):
+        source = _slice_dataset_rows(source, source.X, indices)
+        if target is not None:
+            target = target[indices]
+    matrix = to_numpy_2d(source, name="X", dtype=np.float64)
+    return source, matrix, target, context, indices
 
 
 def _validate_requested_holdout(held_out_groups: Sequence[object] | None) -> None:
@@ -921,12 +952,21 @@ def materialize_split_outputs(
     node_id: str,
     target_context: TargetContext | None = None,
     groups: object | None = None,
+    source_indices: np.ndarray | None = None,
 ) -> dict[str, object]:
     """Materialize one planned partition without reimplementing its science."""
 
     X_arr = np.asarray(X, dtype=np.float64)
     y_arr = None if y is None else np.asarray(y)
     _validate_plan_binding(X_arr, y_arr, plan, groups)
+    input_indices = np.arange(plan.n_samples) if source_indices is None else np.asarray(source_indices)
+    if (
+        input_indices.shape != (plan.n_samples,)
+        or input_indices.dtype.kind not in "iu"
+        or np.any(input_indices < 0)
+        or np.any(np.diff(input_indices) <= 0)
+    ):
+        raise ValueError("split source indices must be an exact ordered input-row mapping")
 
     train_indices = plan.train_indices
     test_indices = plan.test_indices
@@ -1001,8 +1041,8 @@ def materialize_split_outputs(
     outputs: dict[str, object] = {
         "X_train": X_train,
         "X_test": X_test,
-        "train_indices": train_indices,
-        "test_indices": test_indices,
+        "train_indices": input_indices[train_indices],
+        "test_indices": input_indices[test_indices],
     }
     if y_arr is not None:
         outputs["y_train"] = y_arr[train_indices]

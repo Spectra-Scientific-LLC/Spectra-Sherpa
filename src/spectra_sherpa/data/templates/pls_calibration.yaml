@@ -25,13 +25,6 @@ template_data:
       target_type: continuous
     position_x: 175
     position_y: 50
-  - node_id: inclusion_1
-    node_type: data.filter_samples
-    label: Filter
-    parameters:
-      field: source_inclusion
-    position_x: 175
-    position_y: 250
   - node_id: partition_1
     node_type: data.train_test_split
     label: Train/Test Split
@@ -76,9 +69,6 @@ template_data:
     position_y: 1050
   edges:
   - from_node_id: data_1
-    to_node_id: inclusion_1
-    to_input: X
-  - from_node_id: inclusion_1
     to_node_id: partition_1
     to_input: X
   - from_node_id: partition_1

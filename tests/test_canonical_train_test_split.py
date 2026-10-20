@@ -666,7 +666,7 @@ def test_node_contract_exposes_the_closed_method_and_exact_membership_vocabulary
     assert "shuffle" not in parameters
     contract = metadata.resolved_execution_contract()
     assert contract is not None
-    assert contract.payload["implementation_version"] == "4.2.0"
+    assert contract.payload["implementation_version"] == "4.3.0"
     assert contract.payload["help_reference"] == "docs/nodes/data.md"
     assert len(contract.payload["citations"]) == 4
     assert [port["name"] for port in contract.payload["semantic_outputs"]] == [

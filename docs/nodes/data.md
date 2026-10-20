@@ -33,6 +33,14 @@ actual sample fraction. Exact membership and realized counts are retained.
 Neither route uses spectra or model performance to choose membership. Failure
 to find a class-complete split is reported without reverting to row splitting.
 
+Before planning, Train/Test Split materializes the input's declared sample
+inclusion. Excluded rows never enter either partition. Targets, sample IDs,
+labels and group annotations follow the same row selection; the original
+dataset is unchanged. Connected response identities are checked before
+selection. `train_indices` and `test_indices` identify original input rows;
+the retained split plan indexes the compact active population used for planning.
+Feature exclusions must be materialized separately before this row operation.
+
 Named group holdout (`group_holdout`) is the external-validation design: the
 scientist names the exact values of the bound grouping column that form the
 test partition (`held_out_groups`, e.g. `MP5`), and every other group pools

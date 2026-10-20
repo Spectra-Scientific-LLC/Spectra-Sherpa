@@ -71,6 +71,15 @@ directories. Do not attach them to public CI/PRs without dataset permission.
 - PLS checks disjoint training/held-out membership against the active source
   population and retains declared response units. Unknown provider units must
   not be borrowed from synthetic fixtures.
+- The PLS starter retains its source → split graph. The canonical split applies
+  declared sample inclusion in both live and exported execution; index outputs
+  refer to original input rows, while the digest-bound plan indexes its active
+  planning population. Connected response identities are checked before slicing.
+  Feature exclusions and contradictory response masks remain explicit refusals.
+- PLS must retain the graph-verified `held_out_test` role. The browser checks
+  report development/test counts against split membership and CSV rows, and
+  reported RMSEP against the retained evaluator value with only display-rounding
+  tolerance. A reproduced but numerically wrong report fails acceptance.
 - Reopen reads retained results, and CSV exports must remain identical. HTML
   report downloads must equal their displayed preview.
 - A deliberately delayed old-project run list must not restore old results after
@@ -101,6 +110,13 @@ Existing main/weekly/manual qualification paths run the broader ordinary suite.
 No new cron, native packaging job, provider download or paid manual run is added.
 Failure artifacts contain only ordinary-lane data and expire after seven days.
 Hosted Linux results must pass independently of local macOS/Chrome evidence.
+
+Before a release, record the explicit provider-lane result using authorized local
+data, as well as ordinary CI and required public platform qualification. A smoke
+pass does not waive provider qualification; do not upload provider artifacts to
+public CI. Changes to the public workflow must also be mirrored to
+`packages/spectra-sherpa/.github/workflows/ci.yml` upstream, separately from the
+monorepo's root workflow. Paired parity checks include `.github`.
 
 When changing a scientific surface, extend the appropriate journey and its
 independent expected values. Keep each dataset in its own project. Record the

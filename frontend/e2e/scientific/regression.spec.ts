@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { test, expect } from "@playwright/test";
 import { createDataset, instantiate, runWorkflow } from "./journeys";
-import { assertIdentity, assertMatrix, closeDialog, downloadTable, plotData } from "./assertions";
+import { assertIdentity, assertMatrix, assertRegressionReport, closeDialog, downloadTable, plotData } from "./assertions";
 
 test("Synthetic moisture: PLS preserves held-out identity and response units @smoke", async ({
   request,
@@ -21,6 +21,8 @@ test("Synthetic moisture: PLS preserves held-out identity and response units @sm
   expect(selection.ok(), await selection.text()).toBeTruthy();
   const workflow = await instantiate(request, dataset, "pls_calibration");
   const result = await runWorkflow(page, workflow, dataset.project);
+  expect(result.results.eval_1.default.population_authority.role).toBe("held_out_test");
+  expect(result.results.eval_1.default.population_authority.qualification).toBe("graph_verified");
   const split = result.results.partition_1;
   const train = split.X_train.y_axis.labels;
   const heldOut = split.X_test.y_axis.labels;
@@ -82,6 +84,11 @@ test("Synthetic moisture: PLS preserves held-out identity and response units @sm
     `/report?workflow=${workflow.id}&run=${result.run_id}&project=${dataset.project.id}`,
   );
   const body = page.frameLocator('iframe[title="Report preview"]').locator("body");
+  await assertRegressionReport(page, {
+    training: train.length,
+    heldOut: csv.length - 1,
+    rmse: result.results.eval_1.default.rmse,
+  });
   await expect(body).toContainText("Moisture");
   await expect(body).toContainText("wt %");
   await expect(body).not.toContainText("[object Object]");

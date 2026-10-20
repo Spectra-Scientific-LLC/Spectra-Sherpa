@@ -189,9 +189,9 @@ def validation_summary(run: Any, definition: dict | None, *, include_row_level_p
             preview = ", ".join(str(index + 1) for index in indices[:20])
             add(
                 f"{role} population ({node})",
-                f"{len(indices)} rows; split-input row positions (1-based): {preview}"
+                f"{len(indices)} rows; active split-population positions (1-based): {preview}"
                 + (
-                    f"; showing first 20 of {len(indices)}. Complete indices remain in the retained split output."
+                    f"; showing first 20 of {len(indices)}. Original input indices remain in the retained split output."
                     if len(indices) > 20
                     else ""
                 ),

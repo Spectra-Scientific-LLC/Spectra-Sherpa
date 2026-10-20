@@ -25,6 +25,42 @@ export function assertIdentity(actual: string[], expected: string[]): void {
   );
 }
 
+/** Four-significant-digit report rounding, never an absolute zero-sized error allowance. */
+export function assertReportedNumber(text: string, expected: number): void {
+  const actual = Number(text.trim());
+  assert.ok(Number.isFinite(actual), `Report number missing or invalid: ${text}`);
+  assert.ok(
+    Math.abs(actual - expected) <= Math.max(Math.abs(expected) * 5e-4, Number.MIN_VALUE),
+    `Report value ${actual} does not match retained value ${expected}`,
+  );
+}
+
+export async function assertRegressionReport(
+  page: Page,
+  expected: { training: number; heldOut: number; rmse: number },
+): Promise<void> {
+  const body = page.frameLocator('iframe[title="Report preview"]').locator("body");
+  for (const [label, count] of [
+    ["Development population (partition_1)", expected.training],
+    ["Test population (partition_1)", expected.heldOut],
+  ] as const) {
+    const row = body.getByRole("row").filter({ hasText: label });
+    await expect(row).toHaveCount(1);
+    await expect(row.getByRole("cell").last()).toHaveText(`${count} rows`);
+  }
+  const row = body.getByRole("row").filter({ hasText: "Held-out test (recorded role) · eval_1 / comparison" });
+  await expect(row).toHaveCount(1);
+  const headers = await row.locator("xpath=ancestor::table").getByRole("columnheader").allTextContents();
+  const cells = await row.getByRole("cell").allTextContents();
+  expect(headers).toContain("n");
+  expect(Number(cells[headers.indexOf("n")])).toBe(expected.heldOut);
+  const errorIndex = headers.findIndex((header) => header === "RMSEP" || header === "Error by population");
+  expect(errorIndex).toBeGreaterThanOrEqual(0);
+  expect(cells[errorIndex]).toMatch(/^RMSEP/);
+  assertReportedNumber(cells[errorIndex].split(":").at(-1)!, expected.rmse);
+  await expect(body).not.toContainText("Evaluation (independence unverified)");
+}
+
 export async function plotData(dialog: Locator) {
   const canvas = dialog.locator(".plotly-canvas").first();
   await expect(canvas.locator(".main-svg").first()).toBeVisible();
