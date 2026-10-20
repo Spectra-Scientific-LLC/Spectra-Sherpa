@@ -4,6 +4,8 @@ import { useAppConfig } from "@/composables/useAppConfig";
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";
+import type { components } from "@/types/api/v1";
+import { experimentFile, experimentSummary, experimentFileAssets, experimentDetail } from "@/api/adapters/datasets";
 import { createSherpaRequestId, subscribeSherpaEvents } from "@/lib/sherpaEvents";
 import { SHERPA_WS_ACTION, SHERPA_WS_EVENT } from "@/lib/sherpaWs";
 import { useAdvisorStore } from "@/stores/advisor";
@@ -620,7 +622,7 @@ export const useDataStore = defineStore("data", () => {
         }
         return;
       }
-      const response = await api.get<ExperimentSummary[]>("/experiments", {
+      const response = await api.get<components["schemas"]["ExperimentSummary"][]>("/experiments", {
         params: { project_id: projectId },
       });
       const activeProjectId = currentProjectId();
@@ -629,7 +631,7 @@ export const useDataStore = defineStore("data", () => {
         (activeProjectId != null && projectId !== activeProjectId)
       )
         return;
-      experiments.value = response.data;
+      experiments.value = response.data.map(experimentSummary);
       experimentsProjectId = projectId;
     } catch (error) {
       if (requestSeq === experimentsRequestSeq && projectId === currentProjectId()) {
@@ -653,10 +655,10 @@ export const useDataStore = defineStore("data", () => {
     writeLastActiveExperimentId(experimentId);
     experimentFilesLoading.value = true;
     try {
-      const response = await api.get<ExperimentFile[]>(`/experiments/${experimentId}/files`);
+      const response = await api.get<components["schemas"]["ExperimentFileOut"][]>(`/experiments/${experimentId}/files`);
       if (requestSeq !== experimentSelectionRequestSeq || activeExperimentId.value !== experimentId)
         return;
-      experimentFiles.value = response.data;
+      experimentFiles.value = response.data.map(experimentFile);
     } catch (error) {
       if (
         requestSeq === experimentSelectionRequestSeq &&
@@ -682,24 +684,25 @@ export const useDataStore = defineStore("data", () => {
     projectId?: number | null,
     metadata?: Record<string, unknown>,
   ) => {
-    const response = await api.post("/experiments", {
+    const payload = {
       name,
       description: description || null,
       metadata: metadata ?? {},
       project_id: projectId ?? null,
-    });
+    } satisfies components["schemas"]["ExperimentCreate"];
+    const response = await api.post<components["schemas"]["ExperimentDetail"]>("/experiments", payload);
     // Refresh both lists
     await Promise.all([fetchExperiments(), fetchCatalog()]);
-    return response.data;
+    return experimentDetail(response.data);
   };
 
   const updateExperiment = async (
     experimentId: number,
-    payload: { name?: string; description?: string | null; metadata?: Record<string, unknown> },
+    payload: components["schemas"]["ExperimentUpdate"],
   ) => {
-    const response = await api.put(`/experiments/${experimentId}`, payload);
+    const response = await api.put<components["schemas"]["ExperimentDetail"]>(`/experiments/${experimentId}`, payload);
     await Promise.all([fetchExperiments(), fetchCatalog()]);
-    return response.data;
+    return experimentDetail(response.data);
   };
 
   const deleteExperiment = async (experimentId: number) => {
@@ -803,13 +806,13 @@ export const useDataStore = defineStore("data", () => {
     if (options?.targetType && options.targetType !== "auto") {
       form.append("target_type", options.targetType);
     }
-    const response = await api.post<ExperimentFile>(`/experiments/${experimentId}/files`, form, {
+    const response = await api.post<components["schemas"]["ExperimentFileOut"]>(`/experiments/${experimentId}/files`, form, {
       headers: { "Content-Type": "multipart/form-data" },
     });
     if (options?.refresh !== false) {
       await Promise.all([selectExperiment(experimentId), fetchCatalog()]);
     }
-    return response.data;
+    return experimentFile(response.data);
   };
 
   const fetchDataMatrix = async (ref: DataMatrixRef): Promise<DataMatrixResponse> => {
@@ -871,10 +874,10 @@ export const useDataStore = defineStore("data", () => {
   ): Promise<ExperimentFileAssets> => {
     fileInfoError.value = null;
     try {
-      const response = await api.get<ExperimentFileAssets>(
+      const response = await api.get<components["schemas"]["ExperimentFileAssetsOut"]>(
         `/experiments/${experimentId}/files/${fileId}/scientific-assets`,
       );
-      return response.data;
+      return experimentFileAssets(response.data);
     } catch (error: unknown) {
       fileInfoError.value = getErrorMessage(error, "Failed to inspect scientific results");
       throw error;

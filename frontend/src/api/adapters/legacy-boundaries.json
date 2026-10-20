@@ -1,0 +1,46 @@
+{
+  "scope": "Conservative inventory of handwritten interfaces in the five legacy transport/view-model boundary files. Includes UI models; not a claim that every interface is a transport schema or that all frontend boundaries have migrated. New interfaces in these files require explicit review; reduce this inventory as boundaries migrate.",
+  "files": {
+    "src/types/index.ts": [
+      "ExperimentDetail", "ExperimentFile", "VersionInfo", "SpectrumPayload", "SherpaDatasetDict",
+      "ReferenceValueDeclaration", "ReferenceValueEvidence", "AcquisitionPlan", "PlannedSample",
+      "MixtureComponent", "PlannedMixture", "PlannedFactor", "AcquisitionPlanWell", "AcquisitionOrderStep",
+      "AcquisitionMatch", "AcquisitionMatching", "MeasuredSampleTableEditor", "DatasetAnalysisReadinessReason",
+      "DatasetAnalysisReadinessDecision", "DatasetAnalysisReadiness", "DatasetPlotMember", "DatasetPlotSource",
+      "CurvePoint", "CurveSegment", "CalibrationSummary", "CalibrationDetail", "CalibrationFileOut", "CalModelInfo",
+      "NistSearchResult", "NistLibraryEntry", "JobInfo", "LlmMessage", "ConversationSummary", "SherpaMessage",
+      "SherpaResumeRecap", "SherpaRecommendationPayload", "NodeParameterMetadata", "NodePortMetadata",
+      "NodeExecutionContract", "ScientificPresentation", "NodePresentationContractPayload", "NodePresentationContract",
+      "NodeDependencyReadiness", "NodeCatalogClassification", "NodeManagedOptimizationProfile", "NodeTypeMetadata",
+      "NodeLibraryResponse", "NodeExecutionState", "ValidationError", "ExecutionRunSummary", "ExecutionRunDetail",
+      "ComparisonResultPair", "ComparisonResult", "BatchPredictionResult", "DeployApplication", "ImportedApplicationIdentity",
+      "StarterStep", "StarterDatasetOption", "StarterDatasetChoice", "StarterPlan", "ProjectSummary", "ExperimentBrief",
+      "WorkflowBrief", "ProjectDataSource", "AdvisorChannel", "ScriptBrief", "ModelBrief", "ProjectScriptSummary",
+      "ProjectScriptDetail", "ProjectDetail", "ProjectCreate", "ProjectUpdate", "ProjectVersionSummary", "ProjectVersionDetail"
+    ],
+    "src/stores/workflow-types.ts": [
+      "DatasetAnalysisProfile", "DatasetCompatibilityDecision", "DatasetCompatibilityMatrix", "TemplateDataRole",
+      "TemplateDataBinding", "TargetAuthority", "TemplateExampleBinding", "WorkflowNode", "WorkflowEdge",
+      "WorkflowTemplate", "WorkflowTemplateCatalog", "ReferenceDatasetOption", "TypeRegistryEntry", "TypeRegistryPayload",
+      "BackendWorkflowNode", "BackendWorkflowEdge", "WorkflowCreatePayload", "WorkflowExecuteResponse",
+      "WorkflowPreflightIssue", "WorkflowPreflightEdge", "WorkflowPreflightResponse", "TrialExecuteResponse",
+      "ExecutedPresentationRecord", "ScientificDimensionDescriptor", "ScientificValueDescriptor", "DatasetFile",
+      "ExperimentDataset", "LibraryDataset", "AvailableDatasets", "WorkflowListItem"
+    ],
+    "src/stores/data.ts": [
+      "DataStoryPropertyStat", "DataStoryFileMetadata", "CatalogDatasetInfo", "ReferenceCatalog", "PreparedDataOverrides",
+      "CsvLayoutOption", "CsvImportColumnRole", "CsvImportPlan", "DataMatrixColumnStat", "DataMatrixTargetClass",
+      "DataMatrixTargetSummary", "DataMatrixResponse", "StagedUpload", "StagedUploadBatch", "StagedUploadRefusal",
+      "SherpaDatasetContext"
+    ],
+    "src/stores/runs.ts": [],
+    "src/stores/deploy.ts": []
+  },
+  "remaining_boundaries": [
+    "Workflow execution, trial, templates and scientific registry payloads still use handwritten refined contracts.",
+    "The dataset catalog contains generic stage records; builder data matrices, reference catalog and uploads remain handwritten.",
+    "Run comparisons and report/scientific evidence contracts remain handwritten.",
+    "Deploy applications, legacy models and canonical targets have generic object OpenAPI responses; they remain explicit compatibility paths.",
+    "Components and other stores that call APIs directly are not claimed as migrated by this inventory."
+  ]
+}

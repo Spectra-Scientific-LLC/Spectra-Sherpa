@@ -1,6 +1,8 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";
+import type { components } from "@/types/api/v1";
+import { runListItem, runSummary, batchPrediction } from "@/api/adapters/runs";
 import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import type {
   ExecutionRunSummary,
@@ -9,23 +11,7 @@ import type {
   BatchPredictionResult,
 } from "@/types";
 
-interface SaveRunPayload {
-  run_id?: number | null;
-  name: string;
-  notes?: string;
-  status: string;
-  results_summary: Record<string, Record<string, unknown>>;
-  diagnostics?: Record<string, Record<string, unknown>>;
-  node_statuses?: Record<string, string>;
-  error?: string;
-  integrity_hash?: string;
-  executed_at: string;
-  labels?: string[];
-  produced_artifact_uids?: string[];
-  run_kind?: string;
-  attempted_artifact_uids?: string[];
-  succeeded_artifact_uids?: string[];
-}
+type SaveRunPayload = components["schemas"]["SaveRunRequest"];
 
 export type RunSortField = "name" | "status" | "run_kind" | "executed_at";
 export type RunSortOrder = "asc" | "desc";
@@ -67,11 +53,11 @@ export const useRunsStore = defineStore("runs", () => {
     const request = ++listRequest;
     runsLoading.value = true;
     try {
-      const response = await api.get<{ runs: ExecutionRunSummary[]; total: number }>(
+      const response = await api.get<components["schemas"]["ExecutionRunList"]>(
         `/workflows/${workflowId}/runs`
       );
       if (request !== listRequest) return;
-      runs.value = response.data.runs;
+      runs.value = response.data.runs.map(runSummary);
       total.value = response.data.total;
     } catch (error) {
       console.error("Failed to fetch runs:", error);
@@ -94,7 +80,7 @@ export const useRunsStore = defineStore("runs", () => {
     runsLoading.value = true;
     loadError.value = null;
     try {
-      const response = await api.get<{ runs: RunListItem[]; total: number }>(
+      const response = await api.get<components["schemas"]["RunPage"]>(
         "/runs",
         {
           params: {
@@ -109,7 +95,7 @@ export const useRunsStore = defineStore("runs", () => {
         }
       );
       if (request !== listRequest) return;
-      runs.value = response.data.runs;
+      runs.value = response.data.runs.map(runListItem);
       total.value = response.data.total;
     } catch (error) {
       if (request !== listRequest) return;
@@ -128,13 +114,14 @@ export const useRunsStore = defineStore("runs", () => {
   ): Promise<ExecutionRunSummary> {
     if (!Number.isInteger(payload.run_id) || Number(payload.run_id) <= 0)
       throw new Error("The displayed run identity is required to save a run.");
-    const response = await api.post<ExecutionRunSummary>(
+    const response = await api.post<components["schemas"]["ExecutionRunOut"]>(
       `/workflows/${workflowId}/runs`,
       payload
     );
     // Prepend to list (newest first)
-    runs.value = [response.data, ...runs.value];
-    return response.data;
+    const run = runSummary(response.data);
+    runs.value = [run, ...runs.value];
+    return run;
   }
 
   async function deleteRun(workflowId: number, runId: number): Promise<void> {
@@ -221,18 +208,17 @@ export const useRunsStore = defineStore("runs", () => {
   async function fetchPredictions(
     runId: number
   ): Promise<BatchPredictionResult[]> {
-    const response = await api.get<{
-      predictions: BatchPredictionResult[];
-      total: number;
-    }>(`/deploy/runs/${runId}/predictions`);
-    return response.data.predictions;
+    const response = await api.get<components["schemas"]["BatchPredictionList"]>(
+      `/deploy/runs/${runId}/predictions`,
+    );
+    return response.data.predictions.map(batchPrediction);
   }
 
   async function updateLabels(
     runId: number,
     labels: string[]
   ): Promise<ExecutionRunSummary> {
-    const response = await api.patch<ExecutionRunSummary>(
+    const response = await api.patch<components["schemas"]["ExecutionRunOut"]>(
       `/deploy/runs/${runId}/labels`,
       { labels }
     );
@@ -241,7 +227,7 @@ export const useRunsStore = defineStore("runs", () => {
     if (idx !== -1) {
       runs.value[idx] = { ...runs.value[idx], labels };
     }
-    return response.data;
+    return runSummary(response.data);
   }
 
   return {

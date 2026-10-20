@@ -11,6 +11,7 @@ import type {
   NodePresentationContract,
   ScientificPresentation,
 } from "@/types";
+import type { components } from "@/types/api/v1";
 
 export type ParamsMap = Record<string, unknown>;
 export type UnknownRecord = Record<string, unknown>;
@@ -408,7 +409,7 @@ export interface WorkflowListItem {
   project_id?: number | null;
   tab_color?: string | null;
   tab_color_override?: string | null;
-  color_source?: "blank" | "ai" | "data" | "manual";
+  color_source?: components["schemas"]["WorkflowSummary"]["color_source"];
   primary_data_source_id?: number | null;
   primary_data_source_name?: string | null;
   data_origin?: "current" | "example" | null;

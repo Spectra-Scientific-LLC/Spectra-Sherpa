@@ -1,13 +1,9 @@
+import type { components } from "./api/v1";
+
 export type ExperimentStage = "raw" | "preprocessed" | "synthetic";
 
-export interface ExperimentSummary {
-  id: number;
-  name: string;
-  description?: string | null;
-  created_at: string;
-  file_count: number;
-  project_id?: number | null;
-}
+/** UI projection: the adapter supplies the schema's default file count. */
+export type ExperimentSummary = components["schemas"]["ExperimentSummary"] & { file_count: number };
 
 export interface ExperimentDetail extends ExperimentSummary {
   metadata: Record<string, unknown>;
@@ -17,7 +13,7 @@ export interface ExperimentFile {
   id: number;
   file_path: string;
   file_type?: string | null;
-  stage: ExperimentStage;
+  stage: components["schemas"]["ExperimentFileOut"]["stage"];
   file_size_bytes?: number | null;
   created_at: string;
   shape?: number[] | null;
@@ -28,30 +24,14 @@ export interface ExperimentFile {
   x_units?: string | null;
   is_spectra?: boolean | null;
   target_names?: string[] | null;
-  target_types?: Record<string, "continuous" | "categorical"> | null;
+  target_types?: components["schemas"]["ExperimentFileOut"]["target_types"];
 }
 
-export interface ScientificAsset {
-  asset_id: string;
-  title?: string | null;
-  shape: number[];
-  dimension_roles: string[];
-  data_role: string;
-  x_title?: string | null;
-  x_units?: string | null;
-  data_quantity?: string | null;
-  value_units?: string | null;
-  warnings: string[];
-}
+export type ScientificAsset = components["schemas"]["ScientificAssetOut"] & { warnings: string[] };
 
-export interface ExperimentFileAssets {
-  format_id: string;
-  variant: string;
-  parser_id: string;
-  parser_version: string;
-  source_sha256: string;
+export type ExperimentFileAssets = Omit<components["schemas"]["ExperimentFileAssetsOut"], "assets"> & {
   assets: ScientificAsset[];
-}
+};
 
 export interface VersionInfo {
   id: number;
@@ -608,8 +588,8 @@ export interface ExecutionRunSummary {
   workflow_version_id: number | null;
   name: string;
   status: string;
-  params_snapshot: Record<string, Record<string, unknown>>;
-  results_summary: Record<string, Record<string, unknown>>;
+  params_snapshot: components["schemas"]["ExecutionRunOut"]["params_snapshot"];
+  results_summary: components["schemas"]["ExecutionRunOut"]["results_summary"];
   integrity_hash: string | null;
   executed_at: string;
   created_at: string;
@@ -619,7 +599,7 @@ export interface ExecutionRunSummary {
   source_type: string | null;
   source_metadata: Record<string, unknown> | null;
   produced_artifact_uids: string[] | null;
-  run_kind: "training" | "batch_inference" | "data" | "other" | string;
+  run_kind: NonNullable<components["schemas"]["ExecutionRunOut"]["run_kind"]>;
   attempted_artifact_uids: string[] | null;
   succeeded_artifact_uids: string[] | null;
 }
@@ -686,29 +666,7 @@ export interface BatchPredictionResult {
   created_at: string;
 }
 
-export interface FolderWatch {
-  id: number;
-  user_id: number;
-  workflow_id: number;
-  artifact_uid?: string | null;
-  canonical_artifact_id?: number | null;
-  canonical_plan_digest?: string | null;
-  uncertainty_record?: Record<string, unknown> | null;
-  uncertainty_population?: string | null;
-  workflow_version_id?: number | null;
-  name: string;
-  folder_path: string;
-  file_pattern: string;
-  poll_interval_sec: number;
-  settle_time_seconds: number;
-  asset_id: string | null;
-  is_enabled: boolean;
-  processed_files: Record<string, string> | null;
-  last_poll_at: string | null;
-  last_error: string | null;
-  created_at: string;
-  updated_at: string | null;
-}
+export type FolderWatch = components["schemas"]["FolderWatchOut"];
 
 /**
  * One releaseable application target on the Deploy surface.

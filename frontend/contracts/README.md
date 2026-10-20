@@ -9,19 +9,27 @@ what lives here.
 | File | Owner | Consumer | Stability |
 |------|-------|----------|-----------|
 | `openapi-llm-v1.json` | `spectra-sherpa` (this repo) | `frontend/src/types/api-generated.ts` (generated); third-party API clients; commercial server conformance tests | Versioned by the `/api/v1` prefix |
+| `openapi-v1.json` | Generated from OSS route and response schemas by `scripts/dump_openapi.py` | `frontend/src/types/api/v1.ts`; explicit API adapters | `/api/v1` transport projection; review schema changes at their source |
 
 ## Regenerating `api-generated.ts` from this spec
 
 ```bash
 cd frontend
 npm run generate:types
-# → writes to src/types/api-generated.ts
+# → writes both src/types/api-generated.ts and src/types/api/v1.ts
+npm run check:types
+# → compares both projections without rewriting them
 ```
+
+From the package root, `make generate` also refreshes the full public OpenAPI
+snapshot and node reference tables. `make generate-check` checks all three
+projections. The full snapshot is generated from the OSS app alone; private
+registrations and private endpoints never belong in it.
 
 ## Server conformance
 
-The commercial server's test suite includes a snapshot check that
-exports the server's live OpenAPI and diffs against this file. If the
+The commercial server's test suite includes a conformance check for the
+LLM contract, `openapi-llm-v1.json`. If the
 server diverges, either:
 
 1. The server implementation is wrong — fix the server route, OR

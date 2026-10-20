@@ -17,7 +17,9 @@
     "test:science": "tsc -p tsconfig.scientific.json && playwright test --config playwright.scientific.config.ts",
     "test:science:smoke": "npm run test:science -- --grep @smoke",
     "test:science:provider": "playwright test --config playwright.provider.config.ts",
-    "generate:types": "openapi-typescript contracts/openapi-llm-v1.json -o src/types/api-generated.ts"
+    "generate:types": "node scripts/generate-api-types.mjs",
+    "generate:types:check": "node scripts/generate-api-types.mjs --check",
+    "check:types": "node scripts/generate-api-types.mjs --check"
   },
   "dependencies": {
     "@monaco-editor/loader": "^1.7.0",

@@ -1,7 +1,9 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help setup install dev test test-fast test-science test-node qualify-node \
-	test-frontend test-all lint fmt build docs clean node-scaffold generate-types
+	test-frontend test-all lint fmt build docs clean node-scaffold generate-types generate generate-check
+
+PYTHON ?= poetry run python
 
 help:            ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
@@ -63,6 +65,16 @@ node-scaffold:   ## Generate boilerplate for a new processing node (interactive)
 
 generate-types:  ## Generate TypeScript types from OpenAPI schema
 	cd frontend && npm run generate:types
+
+generate:        ## Regenerate public API types and node reference projections
+	$(PYTHON) scripts/dump_openapi.py
+	$(PYTHON) scripts/generate_node_reference.py
+	cd frontend && npm run generate:types
+
+generate-check:  ## Check projection freshness without rewriting files
+	$(PYTHON) scripts/dump_openapi.py --check
+	$(PYTHON) scripts/generate_node_reference.py --check
+	cd frontend && npm run check:types
 
 build:           ## Build frontend into src/spectra_sherpa/static/
 	cd frontend && npm run build

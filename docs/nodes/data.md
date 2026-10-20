@@ -13,13 +13,13 @@ Data nodes introduce datasets into a workflow.
 
 ## Core Data Nodes
 
-| Node | Use When | Inputs | Outputs | Key Configuration |
-| --- | --- | --- | --- | --- |
-| File Load (`data.file_load`) | You want one exact authorized experiment file, including an explicit target when supervised analysis needs one. | none | `default: SpectralDataset`; `target: TargetMatrix` when selected | `experiment_id`; `file_id`; `stage`; optional exact `selected_target` and `target_type`. |
-| NIST Library (`data.nist_library`) | You need one exact local NIST reference spectrum. | none | `SpectralDataset` | Exact `library_id`. The node requires a supported spectral technique, monotonic axis, units, and binds the JCAMP bytes by SHA-256. |
-| Load Group (`data.load_group`) | You need to stack many compatible files from a folder into one dataset. | none | grouped spectral dataset | `folder_path`; `pattern`; `recursive`; deterministic `sort_by`; `group_title`. Uses the native ingestion registry. Axes and signal units must match; exact source bytes are bound by a manifest digest. |
-| Attach Target (`data.attach_target`) | You want downstream supervised nodes to use either a connected target or one exact aligned sample-table column. A separate metadata column may define validation groups without entering `X`. | `X: SpectralDataset`; optional `y: TargetMatrix` | `default: SpectralDataset` with attached targets | Choose `target_source`, `target_type`, and, for sample-table supervision, exact `target_column` plus optional `group_column`. |
-| Train/Test Split (`data.train_test_split`) | You need one digest-bound statistical or chemometric calibration/test design. Bound validation groups are held out whole. | `X: SpectralDataset`; `y: TargetMatrix?` | `X_train`; `X_test`; `y_train`; `y_test`; exact membership indices | `test_size`; `split_method` (`random`, `stratified`, `sequential`, `group_holdout`, `kennard_stone`, `duplex`, or `spxy`); method-specific bounded settings. Grouped input is supported by random, stratified, sequential, and group holdout methods; observation-level space-filling methods refuse it. |
+| Node | Scientific use and guidance |
+| --- | --- |
+| File Load (`data.file_load`) | You want one exact authorized experiment file, including an explicit target when supervised analysis needs one. |
+| NIST Library (`data.nist_library`) | You need one exact local NIST reference spectrum. The node requires a supported spectral technique, monotonic axis, units, and binds the JCAMP bytes by SHA-256. |
+| Load Group (`data.load_group`) | You need to stack many compatible files from a folder into one dataset. Uses the native ingestion registry. Axes and signal units must match; exact source bytes are bound by a manifest digest. |
+| Attach Target (`data.attach_target`) | You want downstream supervised nodes to use either a connected target or one exact aligned sample-table column. A separate metadata column may define validation groups without entering `X`. For sample-table supervision, choose an exact target column; a separate group column can define validation groups without entering the predictor matrix. |
+| Train/Test Split (`data.train_test_split`) | You need one digest-bound statistical or chemometric calibration/test design. Bound validation groups are held out whole. Grouped input is supported by random, stratified, sequential, and group holdout methods; observation-level space-filling methods refuse it. |
 
 Grouped stratification first selects a class-complete `StratifiedGroupKFold`
 candidate closest to the requested sample count, then class proportions. If
@@ -51,7 +51,10 @@ and never enters `X`. The method is deterministic: it admits no test fraction,
 seed, or distance setting, and it refuses a selection that is empty, names an
 unknown group (the error lists the valid groups), names one twice, or leaves
 no group in training.
-| Filter Samples (`data.filter_samples`) | You need to subset rows by sample label, class, target, metadata, row number, or intensity rule. | `X: SpectralDataset` | filtered `SpectralDataset` | Guided mode selection; row ranges; populated value lists; intensity metric, operator, and threshold; optional advanced pattern controls. |
+
+| Node | Scientific use and guidance |
+| --- | --- |
+| Filter Samples (`data.filter_samples`) | You need to subset rows by sample label, class, target, metadata, row number, or intensity rule. Guided mode selection supports row ranges, populated value lists, intensity rules, and advanced pattern controls. |
 
 ### Filter Samples
 
@@ -70,23 +73,23 @@ The panel previews how many samples will be kept before the workflow is run. Adv
 
 These nodes are useful for examples, simulation, and method development. They should not be mistaken for measured calibration data.
 
-| Node | Use When | Inputs | Outputs | Key Configuration |
-| --- | --- | --- | --- | --- |
-| PPM to Fraction (`synthesis.ppm_fraction`) | Convert declared non-negative ppm concentrations into the dimensionless mole fractions required by the bilinear mixture. | `default: TargetMatrix` | dimensionless `TargetMatrix` | No parameters; the exact scale factor is `10^-6`. |
-| NIST Quant IR Response (`synthesis.nist_quant_ir_response`) | Convert one NIST quantitative-IR coefficient in `ppm^-1 m^-1` into a unit-mole-fraction decadic response. | `default: SpectralDataset` | unit-fraction response | Strictly positive `pathlength_cm`. |
-| HITRAN Cross-section Response (`synthesis.hitran_response`) | Convert one HITRAN cross section in `cm^2 molecule^-1` into a unit-mole-fraction decadic response. | `default: SpectralDataset` | unit-fraction response | Strictly positive `pathlength_cm`, `temperature_k`, and `pressure_atm`. |
-| Species (`synthesis.species`) | Mark a spectrum as a component/species before mixture generation. | `default: SpectralDataset` | spectral dataset with species metadata | `species_name`; `molar_absorptivity`. |
-| Merge Spectra (`synthesis.merge`) | Stack exactly aligned, species-labelled pure responses into the response matrix `S`. | variadic `default: SpectralDataset` | pure-response `SpectralDataset` | No parameters; alignment must be an explicit upstream operation. |
-| Blend (`synthesis.blend`) | Evaluate the standard bilinear mixture `D = C @ S`. | `pure_spectra: SpectralDataset`; `concentrations: TargetMatrix` | synthetic spectral dataset retaining exact `C` and `S` factors | No parameters; noise and nonlinear response are separate explicit nodes. |
-| Synthetic Curve (`data.synthetic_curve`) | Generate deterministic concentration/time curves for synthetic examples. | none | `TimeSeries` | `curve_type`; `n_points`; `max_concentration`; `center`; `width`; physical `duration_seconds`. |
-| Concentration Curve (`custom.concentration_curve`) | Generate simple concentration curves for custom blending workflows. | none | array | `curve_type`; `n_points`; `max_concentration`; `center`; `width`. |
-| Catmull-Rom Curve (`custom.catmull_rom_curve`) | Generate smoother custom curves from control points. | none | array | `n_points`; `max_concentration`; `control_points`. |
-| Noise Injection (`custom.noise_injection`) | Stress-test workflows with reproducible independent Gaussian noise. | `default: SpectralDataset` | spectral dataset | `noise_level`; `noise_type` (`absolute` or `relative_rms`); required `seed`. |
-| System Saturation (`custom.system_saturation`) | Simulate detector or system saturation in synthetic spectra. | `default: SpectralDataset` | spectral dataset | `s_system`; `p_system`. |
-| Linear Calibration (`custom.linear_calibration`) | Apply an explicit affine Beer-Lambert calibration without inferred coefficients. | `spectrum: SpectralDataset`; `concentrations: TargetMatrix` | spectral dataset | `concentration_unit`; input metadata must carry the matching slope, intercept, and applied-reference status. |
-| Saturation Model (`custom.saturation_model`) | Simulate nonlinear high-concentration response. | `spectrum: SpectralDataset`; `concentrations: Any` | spectral dataset | `validate_params`; `concentration_unit`; `warn_extrapolation`. |
-| Hybrid Model Selector (`custom.hybrid_selector`) | Choose linear or saturation output per variable. | `linear_result`; `saturation_result`; `concentrations` | spectral dataset | `auto_select`; `saturation_threshold`. |
-| Golden Grid Align (`custom.golden_grid_align`) | Align and stack spectra on measured coordinates within every input's common wavenumber coverage. Extrapolation is rejected, and denser interpolation is admitted explicitly without claiming added measured resolution. | variadic `default: SpectralDataset` | one aligned and stacked `SpectralDataset` | `method`; `merge_tolerance`; `coverage_policy=common_overlap`; `extrapolation=reject`; `max_upsampling_factor`. |
+| Node | Scientific use and guidance |
+| --- | --- |
+| PPM to Fraction (`synthesis.ppm_fraction`) | Convert declared non-negative ppm concentrations into the dimensionless mole fractions required by the bilinear mixture. The exact scale factor is `10^-6`. |
+| NIST Quant IR Response (`synthesis.nist_quant_ir_response`) | Convert one NIST quantitative-IR coefficient in `ppm^-1 m^-1` into a unit-mole-fraction decadic response. The optical path length must be strictly positive. |
+| HITRAN Cross-section Response (`synthesis.hitran_response`) | Convert one HITRAN cross section in `cm^2 molecule^-1` into a unit-mole-fraction decadic response. Optical path length, absolute temperature, and pressure must be strictly positive. |
+| Species (`synthesis.species`) | Mark a spectrum as a component/species before mixture generation. |
+| Merge Spectra (`synthesis.merge`) | Stack exactly aligned, species-labelled pure responses into the response matrix `S`. Alignment must be an explicit upstream operation. |
+| Blend (`synthesis.blend`) | Evaluate the standard bilinear mixture `D = C @ S`. Retains the exact concentration and pure-response factors; noise and nonlinear response are separate explicit nodes. |
+| Synthetic Curve (`data.synthetic_curve`) | Generate deterministic concentration/time curves for synthetic examples. Specify a physical duration in seconds. |
+| Concentration Curve (`custom.concentration_curve`) | Generate simple concentration curves for custom blending workflows. |
+| Catmull-Rom Curve (`custom.catmull_rom_curve`) | Generate smoother custom curves from control points. |
+| Noise Injection (`custom.noise_injection`) | Stress-test workflows with reproducible independent Gaussian noise. Retain the seed to reproduce the perturbation. |
+| System Saturation (`custom.system_saturation`) | Simulate detector or system saturation in synthetic spectra. |
+| Linear Calibration (`custom.linear_calibration`) | Apply an explicit affine Beer-Lambert calibration without inferred coefficients. Input metadata must carry the matching slope, intercept, and applied-reference status for the declared concentration unit. |
+| Saturation Model (`custom.saturation_model`) | Simulate nonlinear high-concentration response. |
+| Hybrid Model Selector (`custom.hybrid_selector`) | Choose linear or saturation output per variable. |
+| Golden Grid Align (`custom.golden_grid_align`) | Align and stack spectra on measured coordinates within every input's common wavenumber coverage. Extrapolation is rejected, and denser interpolation is admitted explicitly without claiming added measured resolution. Use only common measured coverage, reject extrapolation, and explicitly admit any denser interpolation. |
 
 ### Scientific references for reference-response synthesis
 
@@ -100,10 +103,10 @@ These operations expose only the referenced equations and exact unit conversions
 
 ## Deployment I/O Helpers
 
-| Node | Use When | Inputs | Outputs | Key Configuration |
-| --- | --- | --- | --- | --- |
-| Deploy Input (`deploy.input`) | Building a headless prediction workflow that receives external data. | none | `default: SpectralDataset` | `stream_name`. |
-| Deploy Output (`deploy.output`) | Formatting headless prediction results for a service response. | `default: Any` | scalar or structured response payload | `output_format`; `key_value_separator`; `end_of_message_tag`. |
+| Node | Scientific use and guidance |
+| --- | --- |
+| Deploy Input (`deploy.input`) | Building a headless prediction workflow that receives external data. |
+| Deploy Output (`deploy.output`) | Formatting headless prediction results for a service response. |
 
 ## Data Checks Before Modeling
 
@@ -114,3 +117,468 @@ Confirm sample count, variable count, spectral axis units, sample IDs, and targe
 Current native file support and pending vendor readers are documented in [Supported File Types](../introduction/file-types.md). Installing `spectra-sherpa[scp]` enables three specialized algorithms, not additional file readers.
 
 Reference examples are imported through Analysis Starter into an exact project file before a canonical workflow is created. Eigenvector Research raw files are not redistributed in the OSS wheel; the reference-dataset manifest records their acquisition and attribution.
+
+<!-- BEGIN GENERATED NODE REFERENCE -->
+
+<!-- NODE HELP REFERENCES {"help_reference": "docs/nodes/data.md", "node_types": ["custom.catmull_rom_curve", "custom.concentration_curve", "custom.golden_grid_align", "custom.hybrid_selector", "custom.linear_calibration", "custom.noise_injection", "custom.saturation_model", "custom.system_saturation", "data.attach_target", "data.collection_load", "data.file_load", "data.filter_samples", "data.load_group", "data.nist_library", "data.synthetic_curve", "data.train_test_split", "deploy.input", "deploy.output", "synthesis.blend", "synthesis.hitran_response", "synthesis.merge", "synthesis.nist_quant_ir_response", "synthesis.ppm_fraction", "synthesis.species"]} -->
+
+## Registry reference
+
+Generated from registered node metadata. Edit methodology and examples outside the marked section.
+Defaults and options below are JSON values; `null` means no concrete default is declared.
+Internal parameters are retained for contract inspection and are not scientist-editable controls.
+Conditional visibility describes the editor; execution admission remains node-owned.
+
+### Catmull-Rom Curve (`custom.catmull_rom_curve`)
+
+#### Ports
+
+No input ports (source node).
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| output | <code>default</code> | <code>spectrasherpa://types/Array1D/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>n_points</code> | <code>number</code> | <code>true</code> | <code>100</code> | — | <code>{&quot;max_value&quot;: 100000, &quot;min_value&quot;: 10}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Number of points in the output curve Bounds interactive curve evaluation and serialized output size. |
+| <code>max_concentration</code> | <code>number</code> | <code>true</code> | <code>1.0</code> | — | <code>{&quot;min_value&quot;: 0.0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Scale factor for output concentrations |
+| <code>control_points</code> | <code>json</code> | <code>true</code> | <code>[]</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | List of {x, y} control points (x: 0-100, y: 0-1) |
+
+### Concentration Curve (`custom.concentration_curve`)
+
+#### Ports
+
+No input ports (source node).
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| output | <code>default</code> | <code>spectrasherpa://types/Array1D/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>curve_type</code> | <code>select</code> | <code>true</code> | <code>&quot;sigmoid&quot;</code> | <code>[&quot;sigmoid&quot;, &quot;gaussian&quot;, &quot;linear&quot;, &quot;exponential&quot;, &quot;step&quot;, &quot;constant&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Type of concentration profile |
+| <code>n_points</code> | <code>number</code> | <code>true</code> | <code>100</code> | — | <code>{&quot;max_value&quot;: 100000, &quot;min_value&quot;: 10}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Number of time points Bounds interactive curve evaluation and serialized output size. |
+| <code>max_concentration</code> | <code>number</code> | <code>true</code> | <code>1.0</code> | — | <code>{&quot;min_value&quot;: 0.0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Maximum concentration value |
+| <code>center</code> | <code>number</code> | <code>true</code> | <code>0.5</code> | — | <code>{&quot;max_value&quot;: 1.0, &quot;min_value&quot;: 0.0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Center position for sigmoid/gaussian (0-1) The center is expressed on the normalized zero-to-one time axis. |
+| <code>width</code> | <code>number</code> | <code>true</code> | <code>0.1</code> | — | <code>{&quot;max_value&quot;: 1.0, &quot;min_value&quot;: 0.01}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Width parameter for sigmoid/gaussian The width is expressed as a fraction of the normalized time span. |
+
+### Golden Grid Align (`custom.golden_grid_align`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>true</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>method</code> | <code>select</code> | <code>true</code> | <code>&quot;pchip&quot;</code> | <code>[&quot;pchip&quot;, &quot;linear&quot;, &quot;sinc&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Interpolation method for resampling |
+| <code>merge_tolerance</code> | <code>number</code> | <code>true</code> | <code>0.05</code> | — | <code>{&quot;min_value&quot;: 0.001}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Tolerance for merging near-duplicate wavenumbers |
+| <code>coverage_policy</code> | <code>select</code> | <code>true</code> | <code>&quot;common_overlap&quot;</code> | <code>[&quot;common_overlap&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Use only the spectral interval measured by every connected input. |
+| <code>extrapolation</code> | <code>select</code> | <code>true</code> | <code>&quot;reject&quot;</code> | <code>[&quot;reject&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Reject any operation that would fabricate signal outside measured coverage. |
+| <code>max_upsampling_factor</code> | <code>number</code> | <code>true</code> | <code>1.0</code> | — | <code>{&quot;min_value&quot;: 1.0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Largest explicitly admitted interpolation-density increase relative to any input. Increasing it does not add measured spectral resolution. |
+
+### Explicit Hybrid Composition (`custom.hybrid_selector`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>linear_result</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>saturation_result</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>model_mask</code> | <code>spectrasherpa://types/Array1D/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+No parameters.
+
+### Linear Calibration (`custom.linear_calibration`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>spectrum</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>concentrations</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>concentration_unit</code> | <code>select</code> | <code>true</code> | <code>&quot;ppm&quot;</code> | <code>[{&quot;label&quot;: &quot;ppm (parts per million)&quot;, &quot;value&quot;: &quot;ppm&quot;}, {&quot;label&quot;: &quot;ppmv (by volume, gas)&quot;, &quot;value&quot;: &quot;ppmv&quot;}, {&quot;label&quot;: &quot;mol/L (molar)&quot;, &quot;value&quot;: &quot;mol/L&quot;}, {&quot;label&quot;: &quot;mg/L&quot;, &quot;value&quot;: &quot;mg/L&quot;}, {&quot;label&quot;: &quot;wt% (weight percent)&quot;, &quot;value&quot;: &quot;wt%&quot;}, {&quot;label&quot;: &quot;vol% (volume percent)&quot;, &quot;value&quot;: &quot;vol%&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Unit of the input concentrations; must exactly match calibration metadata |
+
+### Noise Injection (`custom.noise_injection`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>noise_level</code> | <code>number</code> | <code>true</code> | <code>0.01</code> | — | <code>{&quot;min_value&quot;: 0.0, &quot;step&quot;: 0.001}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Absolute standard deviation or a fraction of the input RMS |
+| <code>noise_type</code> | <code>select</code> | <code>true</code> | <code>&quot;relative_rms&quot;</code> | <code>[&quot;absolute&quot;, &quot;relative_rms&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Interpret noise_level as an absolute standard deviation or as a fraction of RMS |
+| <code>seed</code> | <code>number</code> | <code>true</code> | <code>42</code> | — | <code>{&quot;max_value&quot;: 4294967295, &quot;min_value&quot;: 0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Required invocation-local random seed NumPy Generator seeds are bounded to the portable unsigned 32-bit domain. |
+
+### Saturation Model (`custom.saturation_model`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>sensitivity</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>saturation_levels</code> | <code>spectrasherpa://types/Array1D/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>shape_exponents</code> | <code>spectrasherpa://types/Array1D/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>concentrations</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>calibration_minimum</code> | <code>spectrasherpa://types/Scalar/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>calibration_maximum</code> | <code>spectrasherpa://types/Scalar/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>concentration_unit</code> | <code>select</code> | <code>true</code> | <code>&quot;ppm&quot;</code> | <code>[{&quot;label&quot;: &quot;ppm (parts per million)&quot;, &quot;value&quot;: &quot;ppm&quot;}, {&quot;label&quot;: &quot;ppmv (by volume, gas)&quot;, &quot;value&quot;: &quot;ppmv&quot;}, {&quot;label&quot;: &quot;mol/L (molar)&quot;, &quot;value&quot;: &quot;mol/L&quot;}, {&quot;label&quot;: &quot;mg/L&quot;, &quot;value&quot;: &quot;mg/L&quot;}, {&quot;label&quot;: &quot;wt% (weight percent)&quot;, &quot;value&quot;: &quot;wt%&quot;}, {&quot;label&quot;: &quot;vol% (volume percent)&quot;, &quot;value&quot;: &quot;vol%&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Unit shared by sensitivity coefficients, concentrations, and calibration bounds |
+
+### System Saturation (`custom.system_saturation`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>s_system</code> | <code>number</code> | <code>true</code> | <code>2.0</code> | — | <code>{&quot;min_value&quot;: 0.1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Maximum absorbance the detector can measure |
+| <code>p_system</code> | <code>number</code> | <code>true</code> | <code>1.0</code> | — | <code>{&quot;min_value&quot;: 0.1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Shape exponent controlling transition sharpness |
+
+### Attach Target (`data.attach_target`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>X</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>y</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| input | <code>sample_table</code> | <code>spectrasherpa://types/SampleTable/2.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>target_source</code> | <code>select</code> | <code>true</code> | <code>&quot;connected_target&quot;</code> | <code>[{&quot;label&quot;: &quot;Connected Target&quot;, &quot;value&quot;: &quot;connected_target&quot;}, {&quot;label&quot;: &quot;Sample Table Column&quot;, &quot;value&quot;: &quot;sample_table_column&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Use a connected target or explicitly select an aligned sample-table column |
+| <code>target_type</code> | <code>select</code> | <code>true</code> | <code>&quot;continuous&quot;</code> | <code>[&quot;continuous&quot;, &quot;categorical&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Type of target variable |
+| <code>target_column</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Exact sample-table column used when Target Source is Sample Table Column |
+| <code>group_column</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Optional aligned grouping context; never appended to X or used as a predictor |
+| <code>target_authority</code> | <code>json</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+
+### Collection Load (`data.collection_load`)
+
+#### Ports
+
+No input ports (source node).
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>target</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>experiment_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | <code>{&quot;min_value&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>stage</code> | <code>select</code> | <code>true</code> | <code>&quot;raw&quot;</code> | <code>[&quot;raw&quot;, &quot;preprocessed&quot;, &quot;synthetic&quot;]</code> | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>group_title</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>asset_id</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>selected_file_ids</code> | <code>string_list</code> | <code>true</code> | <code>[]</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>source_manifest_sha256</code> | <code>text</code> | <code>true</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>collection_definition_sha256</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>scientific_collection_sha256</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>target_authority</code> | <code>json</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>group_column</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>dataset_view_id</code> | <code>number</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>dataset_view_sha256</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+
+### File Load (`data.file_load`)
+
+#### Ports
+
+No input ports (source node).
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>target</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>sample_table</code> | <code>spectrasherpa://types/SampleTable/2.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>experiment_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | <code>{&quot;min_value&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Experiment containing the file |
+| <code>file_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | <code>{&quot;min_value&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Specific file to load |
+| <code>stage</code> | <code>select</code> | <code>false</code> | <code>&quot;raw&quot;</code> | <code>[&quot;raw&quot;, &quot;preprocessed&quot;, &quot;synthetic&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Data processing stage |
+| <code>asset_id</code> | <code>text</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Exact named result inside a multi-asset source, such as OPUS absorbance &#x27;a&#x27;; single-asset files do not require it |
+| <code>target_authority</code> | <code>json</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | Exact response column, type, units, and source identity |
+
+### Filter Samples (`data.filter_samples`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>X</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>field</code> | <code>select</code> | <code>true</code> | <code>&quot;sample_label&quot;</code> | <code>[{&quot;label&quot;: &quot;Sample Label&quot;, &quot;value&quot;: &quot;sample_label&quot;}, {&quot;label&quot;: &quot;Sample Class&quot;, &quot;value&quot;: &quot;sample_class&quot;}, {&quot;label&quot;: &quot;Sample Table&quot;, &quot;value&quot;: &quot;sample_table&quot;}, {&quot;label&quot;: &quot;Sample Index&quot;, &quot;value&quot;: &quot;sample_index&quot;}, {&quot;label&quot;: &quot;Source Inclusion&quot;, &quot;value&quot;: &quot;source_inclusion&quot;}, {&quot;label&quot;: &quot;Intensity&quot;, &quot;value&quot;: &quot;intensity&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Sample metadata field used to select rows. Hosted execution excludes sample-index ranges. |
+| <code>pattern</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Text, comma-separated values, or regular expression to match. Hosted managed execution admits at most 4096 UTF-8 bytes; exact-value lists admit at most 1024 items and 4096 bytes. |
+| <code>match_mode</code> | <code>select</code> | <code>true</code> | <code>&quot;contains&quot;</code> | <code>[{&quot;label&quot;: &quot;Contains&quot;, &quot;value&quot;: &quot;contains&quot;}, {&quot;label&quot;: &quot;Equals&quot;, &quot;value&quot;: &quot;equals&quot;}, {&quot;label&quot;: &quot;In List&quot;, &quot;value&quot;: &quot;in_list&quot;}, {&quot;label&quot;: &quot;Regex&quot;, &quot;value&quot;: &quot;regex&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | How the pattern is matched against each sample. Hosted managed execution excludes regex. |
+| <code>case_sensitive</code> | <code>boolean</code> | <code>false</code> | <code>false</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Require exact letter case when matching text |
+| <code>invert</code> | <code>boolean</code> | <code>false</code> | <code>false</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Keep samples that do not match the filter |
+| <code>sample_table_column</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;field&quot;: [&quot;sample_table&quot;]}}</code> | Metadata column to use when Filter Field is sample_table |
+| <code>intensity_metric</code> | <code>select</code> | <code>false</code> | <code>&quot;max&quot;</code> | <code>[{&quot;label&quot;: &quot;Mean Intensity&quot;, &quot;value&quot;: &quot;mean&quot;}, {&quot;label&quot;: &quot;Max Intensity&quot;, &quot;value&quot;: &quot;max&quot;}, {&quot;label&quot;: &quot;Min Intensity&quot;, &quot;value&quot;: &quot;min&quot;}, {&quot;label&quot;: &quot;Any Point&quot;, &quot;value&quot;: &quot;any&quot;}, {&quot;label&quot;: &quot;All Points&quot;, &quot;value&quot;: &quot;all&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;field&quot;: [&quot;intensity&quot;]}}</code> | How each sample spectrum is summarized for intensity filtering |
+| <code>intensity_operator</code> | <code>select</code> | <code>false</code> | <code>&quot;gte&quot;</code> | <code>[{&quot;label&quot;: &quot;Greater Than&quot;, &quot;value&quot;: &quot;gt&quot;}, {&quot;label&quot;: &quot;Greater Than or Equal&quot;, &quot;value&quot;: &quot;gte&quot;}, {&quot;label&quot;: &quot;Less Than&quot;, &quot;value&quot;: &quot;lt&quot;}, {&quot;label&quot;: &quot;Less Than or Equal&quot;, &quot;value&quot;: &quot;lte&quot;}, {&quot;label&quot;: &quot;Equal&quot;, &quot;value&quot;: &quot;eq&quot;}, {&quot;label&quot;: &quot;Not Equal&quot;, &quot;value&quot;: &quot;neq&quot;}, {&quot;label&quot;: &quot;Between&quot;, &quot;value&quot;: &quot;between&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;field&quot;: [&quot;intensity&quot;]}}</code> | Numeric comparison used for intensity filtering |
+| <code>intensity_threshold</code> | <code>number</code> | <code>false</code> | <code>0.0</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;field&quot;: [&quot;intensity&quot;]}}</code> | Numeric threshold for intensity filtering |
+| <code>intensity_upper_threshold</code> | <code>number</code> | <code>false</code> | <code>1.0</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;field&quot;: [&quot;intensity&quot;]}}</code> | Upper threshold used by the Between operator |
+| <code>allow_empty</code> | <code>boolean</code> | <code>false</code> | <code>false</code> | — | — | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Allow a zero-sample result. Hosted managed execution requires this option to remain off. |
+| <code>filter_values</code> | <code>string_list</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Exact UI-selected labels, classes, or metadata values; null uses the text rule |
+
+### Load Group (`data.load_group`)
+
+#### Ports
+
+No input ports (source node).
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>source_mode</code> | <code>select</code> | <code>false</code> | <code>&quot;local_folder&quot;</code> | <code>[&quot;local_folder&quot;, &quot;experiment_collection&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Use a local folder or an exact project-owned experiment collection |
+| <code>collection_definition_sha256</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | Exact scientist-definition digest, empty only when no definition is attached |
+| <code>scientific_collection_sha256</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | Combined exact source and scientist-definition identity |
+| <code>folder_path</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Absolute local path; used only in local-folder mode |
+| <code>pattern</code> | <code>text</code> | <code>false</code> | <code>&quot;*.csv&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Glob pattern for native files (e.g., &#x27;*.csv&#x27;, &#x27;*.jdx&#x27;, &#x27;*.npz&#x27;, or &#x27;*.mat&#x27;) |
+| <code>recursive</code> | <code>boolean</code> | <code>false</code> | <code>false</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Scan subdirectories recursively |
+| <code>sort_by</code> | <code>select</code> | <code>false</code> | <code>&quot;filename&quot;</code> | <code>[&quot;filename&quot;, &quot;numeric_suffix&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | How to order files before concatenation (filename=alphabetical, numeric_suffix=extract numbers from filename) |
+| <code>group_title</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Title for the grouped dataset (auto-generated from folder name if empty) |
+| <code>asset_id</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Exact asset identity to select from every file. Required for multi-asset formats; the same identity is applied to all group members. |
+| <code>experiment_id</code> | <code>number</code> | <code>false</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Project experiment identity; used only in experiment-collection mode |
+| <code>stage</code> | <code>select</code> | <code>false</code> | <code>&quot;raw&quot;</code> | <code>[&quot;raw&quot;, &quot;preprocessed&quot;, &quot;synthetic&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Exact persisted experiment stage |
+| <code>source_manifest_sha256</code> | <code>text</code> | <code>false</code> | <code>&quot;&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | Exact ordered collection digest recorded when the workflow is authored |
+
+### NIST Library (`data.nist_library`)
+
+#### Ports
+
+No input ports (source node).
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>library_id</code> | <code>number</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | ID of the NIST library entry |
+
+### Synthetic Curve (`data.synthetic_curve`)
+
+#### Ports
+
+No input ports (source node).
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| output | <code>default</code> | <code>spectrasherpa://types/TimeSeries/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>curve_type</code> | <code>select</code> | <code>true</code> | <code>&quot;sigmoid&quot;</code> | <code>[&quot;sigmoid&quot;, &quot;gaussian&quot;, &quot;linear&quot;, &quot;exponential&quot;, &quot;step&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Type of concentration curve |
+| <code>n_points</code> | <code>number</code> | <code>true</code> | <code>100</code> | — | <code>{&quot;min_value&quot;: 10}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Number of time points |
+| <code>max_concentration</code> | <code>number</code> | <code>true</code> | <code>1.0</code> | — | <code>{&quot;min_value&quot;: 0.0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Maximum concentration value |
+| <code>center</code> | <code>number</code> | <code>false</code> | <code>0.5</code> | — | <code>{&quot;min_value&quot;: 0.0, &quot;step&quot;: 0.1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Center of sigmoid/gaussian (0-1) |
+| <code>width</code> | <code>number</code> | <code>false</code> | <code>0.1</code> | — | <code>{&quot;min_value&quot;: 0.01, &quot;step&quot;: 0.01}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Width of sigmoid/gaussian |
+| <code>duration_seconds</code> | <code>number</code> | <code>true</code> | <code>1.0</code> | — | <code>{&quot;min_value&quot;: 1e-12}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Physical duration represented by the normalized curve domain |
+
+### Train/Test Split (`data.train_test_split`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>X</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| input | <code>y</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>X_train</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>X_test</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>y_train</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>y_test</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+| output | <code>train_indices</code> | <code>spectrasherpa://types/Array1D/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>test_indices</code> | <code>spectrasherpa://types/Array1D/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>test_size</code> | <code>number</code> | <code>true</code> | <code>0.2</code> | — | <code>{&quot;max_value&quot;: 0.99, &quot;min_value&quot;: 0.01, &quot;step&quot;: 0.05}</code> | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;split_method&quot;: [&quot;random&quot;, &quot;stratified&quot;, &quot;sequential&quot;, &quot;kennard_stone&quot;, &quot;duplex&quot;, &quot;spxy&quot;]}}</code> | Fraction of data to use for testing (0.2 = 20%) A split fraction must remain below 1 so the training partition is non-empty. |
+| <code>split_method</code> | <code>select</code> | <code>true</code> | <code>&quot;random&quot;</code> | <code>[{&quot;label&quot;: &quot;Random&quot;, &quot;value&quot;: &quot;random&quot;}, {&quot;label&quot;: &quot;Stratified&quot;, &quot;value&quot;: &quot;stratified&quot;}, {&quot;label&quot;: &quot;Sequential&quot;, &quot;value&quot;: &quot;sequential&quot;}, {&quot;label&quot;: &quot;Group Holdout (selected groups)&quot;, &quot;value&quot;: &quot;group_holdout&quot;}, {&quot;label&quot;: &quot;Kennard–Stone&quot;, &quot;value&quot;: &quot;kennard_stone&quot;}, {&quot;label&quot;: &quot;DUPLEX&quot;, &quot;value&quot;: &quot;duplex&quot;}, {&quot;label&quot;: &quot;SPXY (joint X–Y)&quot;, &quot;value&quot;: &quot;spxy&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Published or statistical rule used to construct the partition |
+| <code>held_out_groups</code> | <code>string_list</code> | <code>false</code> | <code>[]</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;split_method&quot;: [&quot;group_holdout&quot;]}}</code> | Exact values of the bound grouping column to place in the test partition, comma-separated (e.g. MP5). Every other group trains. |
+| <code>validation_goal</code> | <code>select</code> | <code>true</code> | <code>&quot;unseen_specimens&quot;</code> | <code>[{&quot;label&quot;: &quot;Unseen specimens&quot;, &quot;value&quot;: &quot;unseen_specimens&quot;}, {&quot;label&quot;: &quot;Known specimens across blocks&quot;, &quot;value&quot;: &quot;known_specimen_cross_block&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;split_method&quot;: [&quot;group_holdout&quot;]}}</code> | Name whether the holdout tests new specimens or repeat measurements of known specimens. |
+| <code>random_seed</code> | <code>number</code> | <code>false</code> | <code>42</code> | — | <code>{&quot;max_value&quot;: 4294967295, &quot;min_value&quot;: 0, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;split_method&quot;: [&quot;random&quot;, &quot;stratified&quot;]}}</code> | Seed for reproducible random splits NumPy RandomState seeds are unsigned 32-bit integers. |
+| <code>distance_metric</code> | <code>select</code> | <code>false</code> | <code>&quot;euclidean&quot;</code> | <code>[&quot;euclidean&quot;, &quot;mahalanobis&quot;]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;, &quot;visible_when&quot;: {&quot;split_method&quot;: [&quot;kennard_stone&quot;, &quot;duplex&quot;]}}</code> | Sample dissimilarity for Kennard–Stone and DUPLEX |
+| <code>n_components</code> | <code>number</code> | <code>false</code> | <code>0</code> | — | <code>{&quot;max_value&quot;: 10000, &quot;min_value&quot;: 0, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;advanced&quot;, &quot;visible_when&quot;: {&quot;split_method&quot;: [&quot;kennard_stone&quot;, &quot;duplex&quot;]}}</code> | Optional centered PCA projection before Kennard–Stone or DUPLEX distances (0 = raw X) The runtime additionally limits components to the smaller data dimension. |
+
+### Deploy Input (`deploy.input`)
+
+#### Ports
+
+No input ports (source node).
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>target</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>stream_name</code> | <code>text</code> | <code>true</code> | <code>&quot;sample&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Unique portable identifier for this external data stream |
+| <code>schema_version</code> | <code>select</code> | <code>true</code> | <code>&quot;spectrasherpa.deploy-input/1&quot;</code> | <code>[&quot;spectrasherpa.deploy-input/1&quot;]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Closed external scientific-dataset request schema |
+
+### Deploy Output (`deploy.output`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/Any/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/DeploymentResponse/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>output_format</code> | <code>select</code> | <code>true</code> | <code>&quot;json&quot;</code> | <code>[&quot;json&quot;, &quot;csv&quot;, &quot;plain_text&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Exact response representation |
+| <code>key_value_separator</code> | <code>select</code> | <code>true</code> | <code>&quot;=&quot;</code> | <code>[&quot;=&quot;, &quot;:&quot;, &quot;\t&quot;]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Closed separator for plain-text mappings |
+| <code>end_of_message_tag</code> | <code>select</code> | <code>true</code> | <code>&quot;\\n&quot;</code> | <code>[&quot;&quot;, &quot;\\n&quot;, &quot;\\r\\n&quot;]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Closed line ending for plain-text responses |
+
+### Bilinear Mixture (`synthesis.blend`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>pure_spectra</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| input | <code>concentrations</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+No parameters.
+
+### HITRAN Cross-section Response (`synthesis.hitran_response`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>pathlength_cm</code> | <code>number</code> | <code>true</code> | <code>1.0</code> | — | <code>{&quot;min_value&quot;: 0.0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Strictly positive optical pathlength in centimetres |
+| <code>temperature_k</code> | <code>number</code> | <code>true</code> | <code>293.0</code> | — | <code>{&quot;min_value&quot;: 0.0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Strictly positive absolute temperature |
+| <code>pressure_atm</code> | <code>number</code> | <code>true</code> | <code>1.0</code> | — | <code>{&quot;min_value&quot;: 0.0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Strictly positive absolute pressure |
+
+### Merge Pure Responses (`synthesis.merge`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>true</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+No parameters.
+
+### NIST Quant IR Response (`synthesis.nist_quant_ir_response`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>pathlength_cm</code> | <code>number</code> | <code>true</code> | <code>1.0</code> | — | <code>{&quot;min_value&quot;: 0.0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Strictly positive optical pathlength in centimetres |
+
+### PPM to Fraction (`synthesis.ppm_fraction`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+No parameters.
+
+### Species (`synthesis.species`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>species_name</code> | <code>text</code> | <code>true</code> | <code>&quot;Species&quot;</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Non-empty chemical or component identity |
+| <code>molar_absorptivity</code> | <code>number</code> | <code>false</code> | <code>null</code> | — | <code>{&quot;min_value&quot;: 0.0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Optional finite positive reference molar absorptivity |
+
+<!-- END GENERATED NODE REFERENCE -->

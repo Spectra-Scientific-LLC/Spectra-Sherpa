@@ -2,6 +2,8 @@ import { validateScientificMetadata } from "@/utils/scientificMetadataValidation
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import api from "@/api/client";
+import type { components } from "@/types/api/v1";
+import { workflowCreate, workflowEdge, workflowListItem, workflowNode, workflowPreflight as adaptWorkflowPreflight } from "@/api/adapters/workflows";
 import type { NodeTypeMetadata, NodeLibraryResponse, NodeExecutionStatus } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 import { useProjectStore } from "@/stores/project";
@@ -564,10 +566,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
   async function refreshPersistedPreflight(): Promise<WorkflowPreflightResponse | null> {
     const id = workflowId.value;
     if (id === null) return null;
-    const response = await api.post<WorkflowPreflightResponse>(`/workflows/${id}/preflight`);
+    const response = await api.post<components["schemas"]["WorkflowValidationResponse"]>(`/workflows/${id}/preflight`);
+    const preflight = adaptWorkflowPreflight(response.data);
     // Do not let a slow response overwrite a newly loaded workflow.
-    if (workflowId.value === id) applyPersistedPreflight(response.data);
-    return response.data;
+    if (workflowId.value === id) applyPersistedPreflight(preflight);
+    return preflight;
   }
 
   // API Methods
@@ -626,15 +629,16 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
       if (workflowId.value) {
         // Update existing workflow
-        const response = await api.put(`/workflows/${workflowId.value}`, {
+        const payload = {
           name: workflowName.value,
           description: workflowDescription.value,
           status: "draft",
           create_version: createVersion,
           nodes: backendNodes,
           edges: backendEdges,
-        });
-        useWorkbookStore().syncSavedSheetMetadata(response.data);
+        } satisfies components["schemas"]["WorkflowUpdate"];
+        const response = await api.put<components["schemas"]["WorkflowDetail"]>(`/workflows/${workflowId.value}`, payload);
+        useWorkbookStore().syncSavedSheetMetadata(workflowListItem(response.data));
         workflowHash.value = response.data.integrity_hash || null;
         clearSavedDraft(response.data.id);
         hasUnsavedChanges.value = hasNewerEdits();
@@ -663,7 +667,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
           nodes: backendNodes,
           edges: backendEdges,
         };
-        const response = await api.post("/workflows", payload);
+        const response = await api.post<components["schemas"]["WorkflowDetail"]>("/workflows", workflowCreate(payload));
         workflowId.value = response.data.id;
         workflowHash.value = response.data.integrity_hash || null;
         clearSavedDraft(response.data.id);
@@ -694,7 +698,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
       }
       if (loadGeneration !== workflowLoadGeneration) return;
 
-      const response = await api.get(`/workflows/${id}`);
+      const response = await api.get<components["schemas"]["WorkflowDetail"]>(`/workflows/${id}`);
       if (loadGeneration !== workflowLoadGeneration || (shouldApply && !shouldApply())) return;
       const data = response.data;
 
@@ -707,7 +711,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
         : [];
       hasFoldValidationPlan.value = data.fold_validation_plan != null;
 
-      const converted = fromBackendFormat(data.nodes || [], data.edges || []);
+      const converted = fromBackendFormat((data.nodes || []).map(workflowNode), (data.edges || []).map(workflowEdge));
       nodes.value = converted.nodes;
       edges.value = converted.edges;
       await refreshPersistedPreflight();
@@ -822,13 +826,13 @@ export const useWorkflowStore = defineStore("workflow", () => {
     projectId: number | null = useProjectStore().currentProjectId,
   ): Promise<WorkflowListItem[]> {
     const params = projectId != null ? { project_id: projectId } : undefined;
-    const response = await api.get<WorkflowListItem[]>("/workflows", { params });
-    return response.data;
+    const response = await api.get<components["schemas"]["WorkflowSummary"][]>("/workflows", { params });
+    return response.data.map(workflowListItem);
   }
 
   async function duplicateWorkflow(id: number): Promise<WorkflowListItem> {
-    const response = await api.post<WorkflowListItem>(`/workflows/${id}/duplicate`);
-    return response.data;
+    const response = await api.post<components["schemas"]["WorkflowDetail"]>(`/workflows/${id}/duplicate`);
+    return workflowListItem(response.data);
   }
 
   async function fetchTemplates(

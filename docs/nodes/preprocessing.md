@@ -6,13 +6,13 @@ Most preprocessing nodes accept a `SpectralDataset` port and return a transforme
 
 ## Baseline, Smoothing, and Derivatives
 
-| Node | Use When | Inputs | Outputs | Key Configuration |
-| --- | --- | --- | --- | --- |
-| Baseline Penalized LS (`baseline.penalized_ls`) | Correct smooth fluorescence, scattering, or instrument baseline while preserving peaks. | `default: SpectralDataset` | corrected spectral dataset | `method` (`als`, `arpls`, `airpls`); `lam`; `p`; `max_iter`; `tol`. Larger `lam` makes a smoother baseline. |
-| Baseline Rubberband (`baseline.rubberband`) | You want the cited lower-convex-envelope baseline removed from every spectrum. Use Clip Range upstream to select an interval. | `default: SpectralDataset` | corrected spectral dataset | Sherpa-native; no parameters. |
-| Smooth (`preprocess.smooth`) | Reduce noise before derivatives, peak finding, or visualization. | `default: SpectralDataset` | smoothed spectral dataset | `method` (`savitzky_golay`, `whittaker`, `gaussian`); `size`; `order`; `lam`; `d`; `sigma`. For Savitzky-Golay, `size` should be odd and larger than `order`. |
-| Derivative (`preprocess.derivative`) | Remove broad baseline trends or emphasize bands; common for NIR and Raman preprocessing. | `default: SpectralDataset` | derivative spectral dataset | `method` (`savitzky_golay`, `norris_williams`); `deriv`; `size`; `order`; `gap`; `segment`. Derivatives amplify noise, so smooth carefully. |
-| Cosmic Ray Removal (`preprocess.cosmic_ray`) | Remove Raman spike artifacts before modeling or peak finding. | `default: SpectralDataset` | cleaned spectral dataset | `window`; `zscore`. Uses centered local median and MAD-style spike detection. The first and last `(window - 1) / 2` features are preserved unassessed because a complete centered neighborhood is unavailable there. |
+| Node | Scientific use and guidance |
+| --- | --- |
+| Baseline Penalized LS (`baseline.penalized_ls`) | Correct smooth fluorescence, scattering, or instrument baseline while preserving peaks. Larger `lam` makes a smoother baseline. |
+| Baseline Rubberband (`baseline.rubberband`) | You want the cited lower-convex-envelope baseline removed from every spectrum. Use Clip Range upstream to select an interval. |
+| Smooth (`preprocess.smooth`) | Reduce noise before derivatives, peak finding, or visualization. For Savitzky-Golay, `size` should be odd and larger than `order`. |
+| Derivative (`preprocess.derivative`) | Remove broad baseline trends or emphasize bands; common for NIR and Raman preprocessing. Derivatives amplify noise, so smooth carefully. |
+| Cosmic Ray Removal (`preprocess.cosmic_ray`) | Remove Raman spike artifacts before modeling or peak finding. Uses centered local median and MAD-style spike detection. The first and last `(window - 1) / 2` features are preserved unassessed because a complete centered neighborhood is unavailable there. |
 
 SciPy's `savgol_filter` is the underlying reference point for Savitzky-Golay concepts such as window length, polynomial order, and derivative order: <https://docs.scipy.org/doc/scipy/reference/generated/scipy.signal.savgol_filter.html>.
 
@@ -20,17 +20,17 @@ Rubberband baseline correction follows the spectroscopy treatment discussed by B
 
 ## Range, Alignment, Normalization, and Scaling
 
-| Node | Use When | Inputs | Outputs | Key Configuration |
-| --- | --- | --- | --- | --- |
-| Clip Range (`preprocess.clip_range`) | Keep a chemically relevant wavenumber range and drop unneeded variables. | `default: SpectralDataset` | cropped spectral dataset | `min_wavenumber`; `max_wavenumber`. Check axis direction after cropping. |
-| Clip Floor (`preprocess.clip_floor`) | Remove negative values before non-negative methods such as NMF. | `default: SpectralDataset` | clipped spectral dataset | `floor`. |
-| Wavenumber Align (`preprocess.wavenumber_align`) | Align absolute-wavenumber spectra onto a common spectral grid before stacking, transfer, or comparison. | `spectra: SpectralDataset`; `reference: SpectralDataset` | aligned spectral dataset | `method` (`pchip`, `linear`, or `sinc`); fixed `extrapolation=reject`. Both inputs must declare absolute wavenumber in canonical `cm-1`; Raman shift is a different quantity and is refused. The connected reference supplies the exact output grid. A finer output grid is interpolation and does not add measured spectral resolution. |
-| Normalize (`preprocess.normalize`) | Apply sample-local SNV or row scaling; no cohort statistics are learned. | `default: SpectralDataset` | normalized spectral dataset | `method` (`snv`, `scale`); `std_ddof`; `scale_method`. |
-| MSC (`preprocess.msc`) | Fit a reference spectrum from a declared cohort, then correct additive and multiplicative scatter with that frozen reference. | `default: SpectralDataset`; `reference: SpectralDataset?` | corrected spectral dataset | `reference_method` (`mean`, `median`, `first`). Connect training/reference rows to `reference` when correcting held-out or future samples. `first` is row-order sensitive. |
-| Scale / Center (`preprocess.scale`) | Fit mean-centering, autoscaling, or Pareto statistics before PCA, PLS, SVR, or KNN. | `default: SpectralDataset`; `reference: SpectralDataset?` | `default`: scaled application rows | `method` (`mean_center`, `autoscale`, `pareto`); `center`. Sample-wise maximum scaling is `preprocess.normalize` with `method=scale` and `scale_method=max`. |
-| Shared Reference Scale (`preprocess.shared_reference_scale`) | Fit one scale state on retained calibration rows and apply it to both branches of a fixed held-out PLS split. | `default: SpectralDataset` (all original held-out rows); `reference: SpectralDataset` (retained calibration rows) | `default`: scaled application rows; `reference_scaled`: scaled calibration rows | `method` (`mean_center`, `autoscale`, `pareto`); `center`. Connect `reference_scaled` to PLS training and `default` to its prediction node. This separate operation preserves the historical Scale / Center contract. |
-| EMSC (`preprocess.emsc`) | Fit a reference spectrum and polynomial nuisance basis, then correct spectra with that frozen state. | `default: SpectralDataset`; `reference: SpectralDataset?`; `constituents: SpectralDataset?` | corrected spectral dataset | `reference_method` (`mean`, `median`, `first`); `poly_order` (0–5). `first` means the first ordered reference row and is therefore row-order sensitive; prefer an explicit one-row reference input when that spectrum is intentional. Connect training rows to `reference` when correcting held-out or future samples; connect known interferent spectra to `constituents`. |
-| OSC Filter (`preprocess.osc`) | Remove spectral variation orthogonal to the target before calibration. | `X: SpectralDataset`; `y: TargetMatrix?` | filtered spectral dataset | `n_components`; `tol`; `max_iter`. Use only inside validation folds to avoid leakage. |
+| Node | Scientific use and guidance |
+| --- | --- |
+| Clip Range (`preprocess.clip_range`) | Keep a chemically relevant wavenumber range and drop unneeded variables. Check axis direction after cropping. |
+| Clip Floor (`preprocess.clip_floor`) | Remove negative values before non-negative methods such as NMF. |
+| Wavenumber Align (`preprocess.wavenumber_align`) | Align absolute-wavenumber spectra onto a common spectral grid before stacking, transfer, or comparison. Both inputs must declare absolute wavenumber in canonical `cm-1`; Raman shift is a different quantity and is refused. The connected reference supplies the exact output grid. A finer output grid is interpolation and does not add measured spectral resolution. |
+| Normalize (`preprocess.normalize`) | Apply sample-local SNV or row scaling; no cohort statistics are learned. |
+| MSC (`preprocess.msc`) | Fit a reference spectrum from a declared cohort, then correct additive and multiplicative scatter with that frozen reference. Connect training/reference rows to `reference` when correcting held-out or future samples. `first` is row-order sensitive. |
+| Scale / Center (`preprocess.scale`) | Fit mean-centering, autoscaling, or Pareto statistics before PCA, PLS, SVR, or KNN. Sample-wise maximum scaling is `preprocess.normalize` with `method=scale` and `scale_method=max`. |
+| Shared Reference Scale (`preprocess.shared_reference_scale`) | Fit one scale state on retained calibration rows and apply it to both branches of a fixed held-out PLS split. Connect `reference_scaled` to PLS training and `default` to its prediction node. This separate operation preserves the historical Scale / Center contract. |
+| EMSC (`preprocess.emsc`) | Fit a reference spectrum and polynomial nuisance basis, then correct spectra with that frozen state. `first` means the first ordered reference row and is therefore row-order sensitive; prefer an explicit one-row reference input when that spectrum is intentional. Connect training rows to `reference` when correcting held-out or future samples; connect known interferent spectra to `constituents`. |
+| OSC Filter (`preprocess.osc`) | Remove spectral variation orthogonal to the target before calibration. Use only inside validation folds to avoid leakage. |
 
 ## Apply Frozen Preprocessing State
 
@@ -38,28 +38,28 @@ These application nodes replay a state fitted by the corresponding producer.
 They do not refit a reference, scaling vector, constituent basis, or target-
 orthogonal projection on application data.
 
-| Node | Accepted State | Output | Key Rule |
-| --- | --- | --- | --- |
-| Apply Fitted MSC (`preprocess.apply_fitted_msc`) | MSC fitted state | corrected spectral dataset | Feature coordinates and units must match the fitted state. |
-| Apply Fitted EMSC (`preprocess.apply_fitted_emsc`) | EMSC fitted state | corrected spectral dataset | The saved reference, polynomial basis, and optional constituents are replayed exactly. |
-| Apply Fitted OSC (`preprocess.apply_fitted_osc`) | OSC fitted state | filtered spectral dataset | The saved target-orthogonal projection is applied without seeing application targets. |
-| Apply Fitted Scale (`preprocess.apply_fitted_scale`) | scaling fitted state | scaled spectral dataset | Saved centering and scale vectors are applied without recomputing cohort statistics. |
+| Node | Scientific use and guidance |
+| --- | --- |
+| Apply Fitted MSC (`preprocess.apply_fitted_msc`) | MSC fitted state Feature coordinates and units must match the fitted state. |
+| Apply Fitted EMSC (`preprocess.apply_fitted_emsc`) | EMSC fitted state The saved reference, polynomial basis, and optional constituents are replayed exactly. |
+| Apply Fitted OSC (`preprocess.apply_fitted_osc`) | OSC fitted state The saved target-orthogonal projection is applied without seeing application targets. |
+| Apply Fitted Scale (`preprocess.apply_fitted_scale`) | scaling fitted state Saved centering and scale vectors are applied without recomputing cohort statistics. |
 
 ## Time-Series Helpers
 
-| Node | Use When | Inputs | Outputs | Key Configuration |
-| --- | --- | --- | --- | --- |
-| Moving Window (`time_series.moving_window`) | Analyze time-resolved spectra in rolling windows. | `default: SpectralDataset` | windowed spectral dataset | `window_size`; `step_size`; `aggregation`. |
-| Trend Removal (`time_series.trend_removal`) | Remove drift from sequential spectra before PCA, monitoring, or calibration. | `default: SpectralDataset` | detrended spectral dataset | `method`; `poly_order`; `window_size`. |
+| Node | Scientific use and guidance |
+| --- | --- |
+| Moving Window (`time_series.moving_window`) | Analyze time-resolved spectra in rolling windows. |
+| Trend Removal (`time_series.trend_removal`) | Remove drift from sequential spectra before PCA, monitoring, or calibration. |
 
 ## Calibration Transfer
 
-| Node | Use When | Inputs | Outputs | Key Configuration |
-| --- | --- | --- | --- | --- |
-| PDS Transfer (`transfer.pds`) | Fit local PLS maps from paired primary/secondary standards. | `X_primary`; `X_secondary` | standardized secondary standards; `fitted_state`; `transfer_error` | `half_window`; `n_components`. Unsupported local rank is rejected rather than silently reduced. |
-| Single-Wavelength Standardization (`transfer.sws`) | Fit one affine secondary-to-primary relation at each wavelength from exactly paired standards. | `X_primary`; `X_secondary` | standardized secondary standards; `fitted_state`; `transfer_error` | No parameters. Requires identical measured spectral axes and non-constant secondary channels. |
-| Direct Standardization (`transfer.ds`) | Fit the published global Moore-Penrose secondary-to-primary spectral map. | `X_primary`; `X_secondary` | standardized secondary standards; `fitted_state`; `transfer_error` | No parameters. Primary and secondary feature counts may differ because the fitted matrix binds both axes. |
-| Apply Fitted Spectral Transfer (`transfer.apply_fitted`) | Apply an upstream digest-bound PDS, DS, or SWS state without refitting standards. | `default`; `fitted_state` | `default` | No parameters. The application axis and units must match the fitted secondary space exactly. |
+| Node | Scientific use and guidance |
+| --- | --- |
+| PDS Transfer (`transfer.pds`) | Fit local PLS maps from paired primary/secondary standards. Unsupported local rank is rejected rather than silently reduced. |
+| Single-Wavelength Standardization (`transfer.sws`) | Fit one affine secondary-to-primary relation at each wavelength from exactly paired standards. Requires identical measured spectral axes and non-constant secondary channels. |
+| Direct Standardization (`transfer.ds`) | Fit the published global Moore-Penrose secondary-to-primary spectral map. Primary and secondary feature counts may differ because the fitted matrix binds both axes. |
+| Apply Fitted Spectral Transfer (`transfer.apply_fitted`) | Apply an upstream digest-bound PDS, DS, or SWS state without refitting standards. The application axis and units must match the fitted secondary space exactly. |
 
 The Calibration Transfer Method Comparison starter splits the same paired M5/MP5 measurements by ordered
 sample identity, fits all three methods on the training standards, and applies each frozen state only to the
@@ -133,3 +133,435 @@ The second derivative has twice the first derivative's unsupported margin:
 `2 * (gap + segment - 1)` points on each side. Its averaging stencils never use
 artificial zeros from the first pass. Settings leaving no valid interior are
 rejected.
+
+<!-- BEGIN GENERATED NODE REFERENCE -->
+
+<!-- NODE HELP REFERENCES {"help_reference": "docs/nodes/preprocessing.md", "node_types": ["baseline.penalized_ls", "baseline.rubberband", "preprocess.apply_fitted_emsc", "preprocess.apply_fitted_msc", "preprocess.apply_fitted_osc", "preprocess.apply_fitted_scale", "preprocess.clip_floor", "preprocess.clip_range", "preprocess.cosmic_ray", "preprocess.derivative", "preprocess.emsc", "preprocess.msc", "preprocess.normalize", "preprocess.osc", "preprocess.scale", "preprocess.shared_reference_scale", "preprocess.smooth", "preprocess.wavenumber_align", "time_series.moving_window", "time_series.trend_removal", "transfer.apply_fitted", "transfer.ds", "transfer.pds", "transfer.sws"]} -->
+
+## Registry reference
+
+Generated from registered node metadata. Edit methodology and examples outside the marked section.
+Defaults and options below are JSON values; `null` means no concrete default is declared.
+Internal parameters are retained for contract inspection and are not scientist-editable controls.
+Conditional visibility describes the editor; execution admission remains node-owned.
+
+### Baseline (Penalized LS) (`baseline.penalized_ls`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>method</code> | <code>select</code> | <code>true</code> | <code>&quot;als&quot;</code> | <code>[&quot;als&quot;, &quot;arpls&quot;, &quot;airpls&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Closed penalized least-squares algorithm choice. |
+| <code>lam</code> | <code>number</code> | <code>false</code> | <code>100000.0</code> | — | <code>{&quot;min_value&quot;: 100.0}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Exact smoothness penalty; larger values produce a smoother baseline. Hosted execution requires lambda at most 1e9. Increase by about 10× for residual baseline curvature; decrease if peaks flatten. |
+| <code>p</code> | <code>number</code> | <code>false</code> | <code>0.001</code> | — | <code>{&quot;max_value&quot;: 0.9999, &quot;min_value&quot;: 0.0001, &quot;step&quot;: 0.0001}</code> | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;als&quot;]}}</code> | Exact ALS asymmetry; non-default values are rejected for ArPLS and AirPLS. Hosted execution requires ALS asymmetry at most 0.1. Keeps both ALS weight classes at or above 1e-4 so neither side of the asymmetric fit becomes numerically zero-weighted. |
+| <code>max_iter</code> | <code>number</code> | <code>false</code> | <code>50</code> | — | <code>{&quot;max_value&quot;: 1000, &quot;min_value&quot;: 5, &quot;step&quot;: 5}</code> | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Hard convergence limit; non-convergence fails the node. Hosted execution admits at most 100 iterations per spectrum. Caps the number of sparse linear solves per spectrum so the node remains inside its declared local worker resource envelope. |
+| <code>tol</code> | <code>number</code> | <code>false</code> | <code>1e-06</code> | — | <code>{&quot;max_value&quot;: 0.999999, &quot;min_value&quot;: 1e-10}</code> | <code>{&quot;category&quot;: &quot;advanced&quot;}</code> | Finite convergence tolerance strictly between zero and one. Hosted execution requires tolerance at most 1e-2. Preserves the algorithm&#x27;s strict tolerance-below-one invariant at the six-decimal UI precision. |
+
+### Baseline (Rubberband) (`baseline.rubberband`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+No parameters.
+
+### Apply Reference EMSC (Imported) (`preprocess.apply_fitted_emsc`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>artifact_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>serializer</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>source_contract_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_content_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_node_id</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+
+### Apply Reference MSC (Imported) (`preprocess.apply_fitted_msc`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>artifact_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>serializer</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>source_contract_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_content_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_node_id</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+
+### Apply Reference OSC (Imported) (`preprocess.apply_fitted_osc`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>artifact_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>serializer</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>source_contract_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_content_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_node_id</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+
+### Apply Reference Scale (Imported) (`preprocess.apply_fitted_scale`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>artifact_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>serializer</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>source_contract_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_content_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_digest</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+| <code>state_node_id</code> | <code>text</code> | <code>true</code> | <code>null</code> | — | — | <code>{&quot;category&quot;: &quot;internal&quot;}</code> | — |
+
+### Clip Floor (`preprocess.clip_floor`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>floor</code> | <code>number</code> | <code>true</code> | <code>0.0</code> | — | <code>{&quot;step&quot;: 0.001}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Exact minimum value; every smaller finite value is set to this threshold. |
+
+### Clip Feature Range (`preprocess.clip_range`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>minimum</code> | <code>number</code> | <code>true</code> | <code>400.0</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Inclusive lower bound expressed in the input feature-axis units. |
+| <code>maximum</code> | <code>number</code> | <code>true</code> | <code>4000.0</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Inclusive upper bound expressed in the input feature-axis units. |
+| <code>exclude_range</code> | <code>boolean</code> | <code>true</code> | <code>false</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | When checked, remove the inclusive range and keep features outside it. |
+
+### Cosmic Ray Removal (`preprocess.cosmic_ray`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>window</code> | <code>number</code> | <code>true</code> | <code>7</code> | — | <code>{&quot;max_value&quot;: 101, &quot;min_value&quot;: 3, &quot;step&quot;: 2}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Odd number of spectral features in each local Hampel neighborhood. The half-window at each spectrum edge is preserved unassessed. Bounds the per-spectrum neighborhood work while covering a much wider region than an isolated detector spike. |
+| <code>zscore</code> | <code>number</code> | <code>true</code> | <code>3.0</code> | — | <code>{&quot;min_value&quot;: 1.5, &quot;step&quot;: 0.5}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Threshold in normal-consistent local MAD scale units. |
+
+### Derivative (`preprocess.derivative`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>method</code> | <code>select</code> | <code>true</code> | <code>&quot;savitzky_golay&quot;</code> | <code>[{&quot;label&quot;: &quot;Savitzky-Golay&quot;, &quot;value&quot;: &quot;savitzky_golay&quot;}, {&quot;label&quot;: &quot;Norris-Williams&quot;, &quot;value&quot;: &quot;norris_williams&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Derivative algorithm |
+| <code>deriv</code> | <code>select</code> | <code>true</code> | <code>&quot;1&quot;</code> | <code>[&quot;1&quot;, &quot;2&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | First or second derivative order |
+| <code>size</code> | <code>number</code> | <code>false</code> | <code>11</code> | — | <code>{&quot;min_value&quot;: 3, &quot;step&quot;: 2}</code> | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;savitzky_golay&quot;]}}</code> | Odd Savitzky-Golay window size. Hosted execution admits Savitzky-Golay windows from 5 through 31 points. |
+| <code>order</code> | <code>number</code> | <code>false</code> | <code>2</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;savitzky_golay&quot;]}}</code> | Savitzky-Golay polynomial order. Hosted execution admits polynomial orders from 2 through 4. |
+| <code>gap</code> | <code>number</code> | <code>false</code> | <code>5</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;norris_williams&quot;]}}</code> | Norris-Williams gap size. Hosted execution admits Norris-Williams gaps from 1 through 15. |
+| <code>segment</code> | <code>number</code> | <code>false</code> | <code>5</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;norris_williams&quot;]}}</code> | Norris-Williams segment size. Hosted execution admits Norris-Williams segments from 1 through 15. |
+
+### EMSC (`preprocess.emsc`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| input | <code>reference</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>false</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| input | <code>constituents</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>false</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>reference_method</code> | <code>select</code> | <code>true</code> | <code>&quot;mean&quot;</code> | <code>[{&quot;label&quot;: &quot;Mean of reference rows&quot;, &quot;value&quot;: &quot;mean&quot;}, {&quot;label&quot;: &quot;Median of reference rows&quot;, &quot;value&quot;: &quot;median&quot;}, {&quot;label&quot;: &quot;First reference row (order-sensitive)&quot;, &quot;value&quot;: &quot;first&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Rule used to fit the reference spectrum. &#x27;First&#x27; means the first row of the ordered reference input and therefore changes if those rows are reordered; prefer an explicit one-row reference input when that spectrum is intentional. |
+| <code>poly_order</code> | <code>number</code> | <code>true</code> | <code>2</code> | — | <code>{&quot;max_value&quot;: 5, &quot;min_value&quot;: 0, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Polynomial nuisance order, including the constant term. Higher orders are unstable and confound spectral structure with baseline shape. |
+
+### Multiplicative Scatter Correction (MSC) (`preprocess.msc`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| input | <code>reference</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>false</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>reference_method</code> | <code>select</code> | <code>true</code> | <code>&quot;mean&quot;</code> | <code>[{&quot;label&quot;: &quot;Mean of reference rows&quot;, &quot;value&quot;: &quot;mean&quot;}, {&quot;label&quot;: &quot;Median of reference rows&quot;, &quot;value&quot;: &quot;median&quot;}, {&quot;label&quot;: &quot;First reference row (order-sensitive)&quot;, &quot;value&quot;: &quot;first&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Rule used to fit the reference spectrum. &#x27;First&#x27; is row-order sensitive; connect an explicit one-row reference when that spectrum is intentional. Hosted managed execution admits mean or median only; use mean with an explicit one-row reference to apply that exact spectrum. |
+
+### Normalize (`preprocess.normalize`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>method</code> | <code>select</code> | <code>true</code> | <code>&quot;snv&quot;</code> | <code>[{&quot;label&quot;: &quot;SNV&quot;, &quot;value&quot;: &quot;snv&quot;}, {&quot;label&quot;: &quot;Scale&quot;, &quot;value&quot;: &quot;scale&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Normalization method |
+| <code>std_ddof</code> | <code>select</code> | <code>false</code> | <code>0</code> | <code>[{&quot;label&quot;: &quot;Population (ddof=0)&quot;, &quot;value&quot;: 0}, {&quot;label&quot;: &quot;Sample (ddof=1)&quot;, &quot;value&quot;: 1}]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;snv&quot;]}}</code> | Standard-deviation convention used by SNV |
+| <code>scale_method</code> | <code>select</code> | <code>false</code> | <code>&quot;max&quot;</code> | <code>[&quot;max&quot;, &quot;area&quot;, &quot;minmax&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;scale&quot;]}}</code> | Sample-wise scaling method |
+
+### Orthogonal Signal Correction (`preprocess.osc`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| input | <code>reference</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>false</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| input | <code>y</code> | <code>spectrasherpa://types/TargetMatrix/1.0</code> | <code>false</code> | <code>false</code> | <code>[&quot;y_continuous&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>n_components</code> | <code>number</code> | <code>true</code> | <code>1</code> | — | <code>{&quot;max_value&quot;: 10, &quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Dominant target-orthogonal spectral components to remove. Bounds SVD work and prevents an interactive correction from removing an unreviewably broad orthogonal subspace; resolved data rank imposes the tighter runtime limit. |
+
+### Scale / Center (`preprocess.scale`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;, &quot;X_features&quot;]</code> |
+| input | <code>reference</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>false</code> | <code>false</code> | <code>[&quot;X_spectra&quot;, &quot;X_features&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;, &quot;X_features&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>method</code> | <code>select</code> | <code>true</code> | <code>&quot;mean_center&quot;</code> | <code>[{&quot;label&quot;: &quot;Mean Center&quot;, &quot;value&quot;: &quot;mean_center&quot;}, {&quot;label&quot;: &quot;Autoscale&quot;, &quot;value&quot;: &quot;autoscale&quot;}, {&quot;label&quot;: &quot;Pareto&quot;, &quot;value&quot;: &quot;pareto&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Reference-fitted scaling method. |
+| <code>center</code> | <code>boolean</code> | <code>false</code> | <code>true</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;autoscale&quot;, &quot;pareto&quot;]}}</code> | Subtract the fitted reference mean before autoscaling or Pareto scaling. |
+
+### Shared Reference Scale (`preprocess.shared_reference_scale`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;, &quot;X_features&quot;]</code> |
+| input | <code>reference</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;, &quot;X_features&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;, &quot;X_features&quot;]</code> |
+| output | <code>reference_scaled</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;, &quot;X_features&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>method</code> | <code>select</code> | <code>true</code> | <code>&quot;mean_center&quot;</code> | <code>[{&quot;label&quot;: &quot;Mean Center&quot;, &quot;value&quot;: &quot;mean_center&quot;}, {&quot;label&quot;: &quot;Autoscale&quot;, &quot;value&quot;: &quot;autoscale&quot;}, {&quot;label&quot;: &quot;Pareto&quot;, &quot;value&quot;: &quot;pareto&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Reference-fitted scaling method. |
+| <code>center</code> | <code>boolean</code> | <code>false</code> | <code>true</code> | — | — | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;autoscale&quot;, &quot;pareto&quot;]}}</code> | Subtract the fitted reference mean before autoscaling or Pareto scaling. |
+
+### Smooth (`preprocess.smooth`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>method</code> | <code>select</code> | <code>true</code> | <code>&quot;savitzky_golay&quot;</code> | <code>[{&quot;label&quot;: &quot;Savitzky-Golay&quot;, &quot;value&quot;: &quot;savitzky_golay&quot;}, {&quot;label&quot;: &quot;Whittaker&quot;, &quot;value&quot;: &quot;whittaker&quot;}, {&quot;label&quot;: &quot;Gaussian&quot;, &quot;value&quot;: &quot;gaussian&quot;}]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Smoothing algorithm |
+| <code>size</code> | <code>number</code> | <code>true</code> | <code>11</code> | — | <code>{&quot;min_value&quot;: 3, &quot;step&quot;: 2}</code> | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;savitzky_golay&quot;]}}</code> | Odd Savitzky-Golay window size |
+| <code>order</code> | <code>number</code> | <code>true</code> | <code>2</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;savitzky_golay&quot;]}}</code> | Savitzky-Golay polynomial order |
+| <code>lam</code> | <code>number</code> | <code>true</code> | <code>100.0</code> | — | <code>{&quot;min_value&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;whittaker&quot;]}}</code> | Whittaker smoothness penalty |
+| <code>d</code> | <code>select</code> | <code>true</code> | <code>&quot;2&quot;</code> | <code>[&quot;1&quot;, &quot;2&quot;, &quot;3&quot;]</code> | — | <code>{&quot;category&quot;: &quot;advanced&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;whittaker&quot;]}}</code> | Whittaker difference order |
+| <code>sigma</code> | <code>number</code> | <code>true</code> | <code>2.0</code> | — | <code>{&quot;min_value&quot;: 0.1, &quot;step&quot;: 0.1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;, &quot;visible_when&quot;: {&quot;method&quot;: [&quot;gaussian&quot;]}}</code> | Gaussian kernel width |
+
+### Wavenumber Align (`preprocess.wavenumber_align`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>spectra</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| input | <code>reference</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>method</code> | <code>select</code> | <code>true</code> | <code>&quot;pchip&quot;</code> | <code>[&quot;pchip&quot;, &quot;linear&quot;, &quot;sinc&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Exact interpolation rule; sinc requires a uniform source grid. Upsampling never implies additional measured resolution. |
+| <code>extrapolation</code> | <code>select</code> | <code>true</code> | <code>&quot;reject&quot;</code> | <code>[&quot;reject&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Fail when the reference grid extends beyond measured source coverage. |
+
+### Moving Window (`time_series.moving_window`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>window_size</code> | <code>number</code> | <code>true</code> | <code>10</code> | — | <code>{&quot;max_value&quot;: 100000, &quot;min_value&quot;: 2, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Number of consecutive spectra in each window Bounds window metadata and worker memory on local batch analyses. |
+| <code>step_size</code> | <code>number</code> | <code>true</code> | <code>1</code> | — | <code>{&quot;max_value&quot;: 100000, &quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Number of spectra to move between windows (1=maximum overlap) Bounds window traversal and worker memory on local batch analyses. |
+| <code>aggregation</code> | <code>select</code> | <code>false</code> | <code>&quot;none&quot;</code> | <code>[&quot;none&quot;, &quot;mean&quot;, &quot;median&quot;, &quot;std&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | How to aggregate spectra within each window |
+
+### Trend Removal (`time_series.trend_removal`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>method</code> | <code>select</code> | <code>true</code> | <code>&quot;linear&quot;</code> | <code>[&quot;linear&quot;, &quot;polynomial&quot;, &quot;difference&quot;, &quot;moving_average&quot;]</code> | — | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Method for trend removal |
+| <code>poly_order</code> | <code>number</code> | <code>false</code> | <code>2</code> | — | <code>{&quot;max_value&quot;: 10, &quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Polynomial order (for polynomial method) Bounds polynomial conditioning and local worker cost. |
+| <code>window_size</code> | <code>number</code> | <code>false</code> | <code>5</code> | — | <code>{&quot;max_value&quot;: 100000, &quot;min_value&quot;: 2, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Window size for moving average baseline Bounds moving-average worker memory and makes the admitted domain explicit. |
+
+### Apply Fitted Spectral Transfer (`transfer.apply_fitted`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| input | <code>fitted_state</code> | <code>spectrasherpa://types/SpectralTransferModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>default</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+
+#### Parameters
+
+No parameters.
+
+### Direct Standardization (`transfer.ds`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>X_primary</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| input | <code>X_secondary</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>X_standardized</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>fitted_state</code> | <code>spectrasherpa://types/SpectralTransferModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>transfer_error</code> | <code>spectrasherpa://types/ValidationResult/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+No parameters.
+
+### Piecewise Direct Standardization (`transfer.pds`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>X_primary</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| input | <code>X_secondary</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>X_standardized</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>fitted_state</code> | <code>spectrasherpa://types/SpectralTransferModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>transfer_error</code> | <code>spectrasherpa://types/ValidationResult/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+| Parameter | Editor type | Required | Default | Options / enum | Bounds / step | Visibility / category | Description |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| <code>half_window</code> | <code>number</code> | <code>true</code> | <code>3</code> | — | <code>{&quot;min_value&quot;: 0, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Secondary channels on either side of each primary wavelength. |
+| <code>n_components</code> | <code>number</code> | <code>true</code> | <code>2</code> | — | <code>{&quot;min_value&quot;: 1, &quot;step&quot;: 1}</code> | <code>{&quot;category&quot;: &quot;basic&quot;}</code> | Exact local PLS rank; unsupported ranks are rejected rather than truncated. |
+
+### Single-Wavelength Standardization (`transfer.sws`)
+
+#### Ports
+
+| Direction | Port | Type URI | Required | Variadic | Accepted data roles |
+| --- | --- | --- | --- | --- | --- |
+| input | <code>X_primary</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| input | <code>X_secondary</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>X_standardized</code> | <code>spectrasherpa://types/SpectralDataset/1.0</code> | <code>true</code> | <code>false</code> | <code>[&quot;X_spectra&quot;]</code> |
+| output | <code>fitted_state</code> | <code>spectrasherpa://types/SpectralTransferModel/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+| output | <code>transfer_error</code> | <code>spectrasherpa://types/ValidationResult/1.0</code> | <code>true</code> | <code>false</code> | <code>[]</code> |
+
+#### Parameters
+
+No parameters.
+
+<!-- END GENERATED NODE REFERENCE -->

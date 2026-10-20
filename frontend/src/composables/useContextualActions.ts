@@ -1,13 +1,9 @@
 import { computed, readonly, shallowRef } from "vue";
+import type { HostActionContext, HostContextualAction } from "@/extension-contract/v1";
 
-export const CONTEXTUAL_ACTIONS_VERSION = 1;
+export { CONTEXTUAL_ACTIONS_VERSION } from "@/extension-contract/v1";
 
-export interface RunActionContext {
-  surface: "run";
-  projectId: number;
-  runId: number;
-  nodeId?: string;
-}
+export type RunActionContext = Extract<HostActionContext, { surface: "run" }>;
 
 /**
  * Context for actions contributed to Deploy.  The handle is deliberately
@@ -15,21 +11,11 @@ export interface RunActionContext {
  * package an application, while the open-source Deploy page only carries it
  * between the release list and the extension slot.
  */
-export interface DeployActionContext {
-  surface: "deploy";
-  projectId: number;
-  applicationHandle: string;
-}
+export type DeployActionContext = Extract<HostActionContext, { surface: "deploy" }>;
 
-export type ActionContext = RunActionContext | DeployActionContext;
+export type ActionContext = HostActionContext;
 
-export interface ContextualAction {
-  id: string;
-  label: string;
-  icon?: string;
-  available(context: Readonly<ActionContext>): boolean;
-  execute(context: Readonly<ActionContext>, signal: AbortSignal): void | Promise<void>;
-}
+export type ContextualAction = HostContextualAction;
 
 interface Contribution {
   key: string;

@@ -685,6 +685,51 @@ def build_summary(
     ``state`` is a caller-verified *current* durable review state, separate from
     the execution populations in the receipt. Free-form reasons are never copied.
     """
+    kind = receipt.get("model_kind", "pca")
+    if kind not in {"pca", "pls", "plsda"}:
+        # Unsupported families must not be interpreted as PCA or imply that a
+        # missing diagnostic establishes an in-domain sample.
+        return {
+            "schema_version": SCHEMA,
+            "model_kind": _text(kind),
+            "availability": "unavailable",
+            "reason": "Diagnostics not available for this model family.",
+            "facts": {},
+            "samples": [],
+            "populations": {},
+            "response": None,
+        }
+    if kind == "plsda":
+        from ._diagnostic_review_plsda import build_plsda_summary
+
+        if isinstance(response_index, bool) or not isinstance(response_index, int) or response_index != 0:
+            raise ValueError("PLS-DA predictor diagnostics do not have regression response targets.")
+        if state:
+            raise ValueError("PLS-DA review state is not represented in the retained diagnostic projection.")
+        result = build_plsda_summary(receipt, selected_ids=selected_ids, variable_ids=variable_ids or [])
+        result.update(
+            schema_version=SCHEMA,
+            availability="available",
+            selection_count=len(selected_ids),
+            populations={"calibration": {"total": receipt["reference_count"], "selected": len(selected_ids)}},
+            response=None,
+        )
+        if len(json.dumps(result, allow_nan=False).encode()) > MAX_BYTES:
+            raise ValueError("Diagnostic packet exceeds its disclosure limit; narrow the selection.")
+        return result
+    return _build_pca_pls_summary(
+        receipt, selected_ids=selected_ids, response_index=response_index, variable_ids=variable_ids, state=state
+    )
+
+
+def _build_pca_pls_summary(
+    receipt: dict,
+    *,
+    selected_ids: list[str],
+    response_index: int,
+    variable_ids: list[str] | None,
+    state: dict | None,
+) -> dict:
     rows, ids, kind, names, explanation, available, requested_variables = _validate_scope(
         receipt, selected_ids, response_index, variable_ids
     )
@@ -718,6 +763,7 @@ def build_summary(
 
     result = {
         "schema_version": SCHEMA,
+        "availability": "available",
         "model_kind": kind,
         "selection_count": len(selected),
         "contains_held_out": any(row["role"] == "held_out_test" for row in rows),

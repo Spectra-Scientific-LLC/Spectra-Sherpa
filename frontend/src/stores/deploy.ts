@@ -1,36 +1,14 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 import api from "@/api/client";
+import type { components } from "@/types/api/v1";
+import { folderWatch } from "@/api/adapters/deploy";
+import { runSummary } from "@/api/adapters/runs";
 import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
 import type { FolderWatch, ExecutionRunSummary, DeployApplication } from "@/types";
 
-interface CreateWatchPayload {
-  application_handle?: string | null;
-  artifact_uid?: string | null;
-  canonical_artifact_id?: number | null;
-  uncertainty_record?: Record<string, unknown> | null;
-  uncertainty_population?: string | null;
-  workflow_id: number;
-  name: string;
-  folder_path: string;
-  file_pattern?: string;
-  poll_interval_sec?: number;
-  asset_id?: string | null;
-}
-
-interface UpdateWatchPayload {
-  application_handle?: string | null;
-  artifact_uid?: string | null;
-  canonical_artifact_id?: number | null;
-  uncertainty_record?: Record<string, unknown> | null;
-  uncertainty_population?: string | null;
-  name?: string;
-  folder_path?: string;
-  file_pattern?: string;
-  poll_interval_sec?: number;
-  is_enabled?: boolean;
-  asset_id?: string | null;
-}
+type CreateWatchPayload = components["schemas"]["FolderWatchCreate"];
+type UpdateWatchPayload = components["schemas"]["FolderWatchUpdate"];
 
 export const useDeployStore = defineStore("deploy", () => {
   const watches = ref<FolderWatch[]>([]);
@@ -166,11 +144,11 @@ export const useDeployStore = defineStore("deploy", () => {
     const request = ++watchesRequest;
     loading.value = true;
     try {
-      const response = await api.get<FolderWatch[]>("/deploy/watches", {
+      const response = await api.get<components["schemas"]["FolderWatchOut"][]>("/deploy/watches", {
         params: projectId == null ? {} : { project_id: projectId },
       });
       if (request !== watchesRequest) return;
-      watches.value = response.data;
+      watches.value = response.data.map(folderWatch);
       watchesError.value = "";
     } catch (error) {
       if (request === watchesRequest) watchesError.value = "Folder watches could not be loaded.";
@@ -181,21 +159,23 @@ export const useDeployStore = defineStore("deploy", () => {
 
   async function createWatch(payload: CreateWatchPayload): Promise<FolderWatch> {
     const scope = scopeGeneration;
-    const response = await api.post<FolderWatch>("/deploy/watches", payload);
-    if (scope !== scopeGeneration) return response.data;
-    watches.value = [response.data, ...watches.value];
-    return response.data;
+    const response = await api.post<components["schemas"]["FolderWatchOut"]>("/deploy/watches", payload);
+    const watch = folderWatch(response.data);
+    if (scope !== scopeGeneration) return watch;
+    watches.value = [watch, ...watches.value];
+    return watch;
   }
 
   async function updateWatch(watchId: number, payload: UpdateWatchPayload): Promise<FolderWatch> {
     const scope = scopeGeneration;
-    const response = await api.patch<FolderWatch>(`/deploy/watches/${watchId}`, payload);
-    if (scope !== scopeGeneration) return response.data;
+    const response = await api.patch<components["schemas"]["FolderWatchOut"]>(`/deploy/watches/${watchId}`, payload);
+    const watch = folderWatch(response.data);
+    if (scope !== scopeGeneration) return watch;
     const idx = watches.value.findIndex((w) => w.id === watchId);
     if (idx !== -1) {
-      watches.value[idx] = response.data;
+      watches.value[idx] = watch;
     }
-    return response.data;
+    return watch;
   }
 
   async function deleteWatch(watchId: number): Promise<void> {
@@ -206,13 +186,14 @@ export const useDeployStore = defineStore("deploy", () => {
   async function toggleWatch(watchId: number, enable: boolean): Promise<FolderWatch> {
     const scope = scopeGeneration;
     const endpoint = enable ? "enable" : "disable";
-    const response = await api.post<FolderWatch>(`/deploy/watches/${watchId}/${endpoint}`);
-    if (scope !== scopeGeneration) return response.data;
+    const response = await api.post<components["schemas"]["FolderWatchOut"]>(`/deploy/watches/${watchId}/${endpoint}`);
+    const watch = folderWatch(response.data);
+    if (scope !== scopeGeneration) return watch;
     const idx = watches.value.findIndex((w) => w.id === watchId);
     if (idx !== -1) {
-      watches.value[idx] = response.data;
+      watches.value[idx] = watch;
     }
-    return response.data;
+    return watch;
   }
 
   async function fetchDeployRuns(
@@ -227,12 +208,9 @@ export const useDeployStore = defineStore("deploy", () => {
       if (projectId != null) params.project_id = projectId;
       if (sourceType) params.source_type = sourceType;
       if (label) params.label = label;
-      const response = await api.get<{
-        runs: ExecutionRunSummary[];
-        total: number;
-      }>("/deploy/runs", { params });
+      const response = await api.get<components["schemas"]["ExecutionRunList"]>("/deploy/runs", { params });
       if (request !== runsRequest) return;
-      deployRuns.value = response.data.runs;
+      deployRuns.value = response.data.runs.map(runSummary);
       runsError.value = "";
     } catch (error) {
       if (request === runsRequest) runsError.value = "Prediction history could not be loaded.";

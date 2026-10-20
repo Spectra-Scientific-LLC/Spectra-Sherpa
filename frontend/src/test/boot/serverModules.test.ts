@@ -172,6 +172,38 @@ describe("bootServerModules", () => {
     expect(serverModuleLoadFailed.value).toBeNull();
   });
 
+  it.each([undefined, 2])("fails closed for required module version %s before registration", async (version) => {
+    extensionConfig();
+    mockConfig.value!.uiExtensions = [
+      { id: "mock", url: "/ui/mock.js", contractVersion: 1, required: true },
+    ];
+    const register = vi.fn();
+    await bootServerModules(makeRouter(), {
+      importModule: async () => ({ contextualActionsVersion: version, register }),
+    });
+    expect(register).not.toHaveBeenCalled();
+    expect(serverModuleLoadFailed.value?.module).toBe("/ui/mock.js");
+    expect(nonCriticalModuleLoadFailures.value).toEqual([]);
+  });
+
+  it("preserves the default-export registration form with the public context", async () => {
+    extensionConfig();
+    const register = vi.fn();
+    await bootServerModules(makeRouter(), {
+      importModule: async () => ({ contextualActionsVersion: 1, default: register }),
+    });
+    expect(register).toHaveBeenCalledOnce();
+    const ctx = register.mock.calls[0][0];
+    expect(ctx.appConfig).toBe(mockConfig.value);
+    expect(isRef(ctx.authStore.user)).toBe(true);
+    for (const capability of ["reloadConfig", "installAdvisorTransport", "confirmAction",
+      "focusOptimization", "focusSection", "setAdvisorScope"]) {
+      expect(ctx[capability]).toBeTypeOf("function");
+    }
+    expect(ctx.api.get).toBeTypeOf("function");
+    expect(ctx.extensions.setProjectCollections).toBeTypeOf("function");
+  });
+
   it.each(["https://outside.invalid/plugin.js", "/ui/../mock.js", "/ui/mock.js?version=1"])("rejects nonlocal descriptor %s", async (url) => {
     extensionConfig();
     mockConfig.value!.uiExtensions = [{ id: "mock", url, contractVersion: 1 }];
