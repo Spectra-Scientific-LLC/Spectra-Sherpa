@@ -138,6 +138,16 @@ export const useProjectStore = defineStore("project", () => {
   const currentProject = ref<ProjectDetail | null>(null);
   const versions = ref<ProjectVersionSummary[]>([]);
   const isLoading = ref(false);
+  let loadingOwner: ScopedRequestTicket | null = null;
+  function beginLoading(request: ScopedRequestTicket): void {
+    loadingOwner = request;
+    isLoading.value = true;
+  }
+  function finishLoading(request: ScopedRequestTicket): void {
+    if (loadingOwner !== request) return;
+    loadingOwner = null;
+    isLoading.value = false;
+  }
   const error = ref<string | null>(null);
   const exportingProjectIds = ref<number[]>([]);
   const lastExportOmittedModels = ref(0);
@@ -160,17 +170,23 @@ export const useProjectStore = defineStore("project", () => {
     versions.value = [];
     error.value = null;
     isLoading.value = false;
+    loadingOwner = null;
     lastImportedApplication.value = null;
     referenceRebindRequirements.value = [];
     runProjectScopeResets();
   }, { flush: "sync" });
   const projectRead = useScopedRequest(
     () => [useAuthStore().user?.id, useAuthStore().token, currentProjectId.value],
-    () => { isLoading.value = false; },
+    () => {
+      if (loadingOwner && !loadingOwner.isCurrent()) finishLoading(loadingOwner);
+    },
   );
   const workspaceMutation = useScopedRequest(
     () => [useAuthStore().user?.id, useAuthStore().token, currentProjectId.value],
-    () => { isImporting.value = false; },
+    () => {
+      isImporting.value = false;
+      if (loadingOwner && !loadingOwner.isCurrent()) finishLoading(loadingOwner);
+    },
   );
   let mutationTicket: ScopedRequestTicket | undefined;
   function captureMutationScope(): ScopedRequestTicket {
@@ -178,8 +194,10 @@ export const useProjectStore = defineStore("project", () => {
     return mutationTicket;
   }
   const versionsRead = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token, currentProjectId.value]);
-  const projectListRead = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token, currentProjectId.value]);
-  const archiveListRead = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token, currentProjectId.value]);
+  // These are account-wide inventories, not children of the active project.
+  // Selecting a deep-linked project must not cancel the selector's own list.
+  const projectListRead = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token]);
+  const archiveListRead = useScopedRequest(() => [useAuthStore().user?.id, useAuthStore().token]);
   watch(currentProjectId, (id) => {
     if (currentProject.value?.id !== id) currentProject.value = null;
     versions.value = [];
@@ -216,7 +234,7 @@ export const useProjectStore = defineStore("project", () => {
 
   async function fetchProjects(): Promise<void> {
     const request = projectListRead.begin();
-    isLoading.value = true;
+    beginLoading(request);
     error.value = null;
     try {
       const { data } = await api.get<ProjectSummary[]>("/projects", { signal: request.signal });
@@ -225,7 +243,7 @@ export const useProjectStore = defineStore("project", () => {
     } catch (e) {
       if (request.isCurrent()) error.value = getErrorMessage(e);
     } finally {
-      if (request.isCurrent()) isLoading.value = false;
+      if (request.isCurrent()) finishLoading(request);
     }
   }
 
@@ -248,7 +266,7 @@ export const useProjectStore = defineStore("project", () => {
       currentProject.value = null;
     }
     const request = projectRead.begin();
-    isLoading.value = true;
+    beginLoading(request);
     error.value = null;
     try {
       const { data } = await api.get<ProjectDetail>(`/projects/${id}`, { signal: request.signal });
@@ -261,7 +279,7 @@ export const useProjectStore = defineStore("project", () => {
       if (request.isCurrent()) error.value = getErrorMessage(e);
       return null;
     } finally {
-      if (request.isCurrent()) isLoading.value = false;
+      if (request.isCurrent()) finishLoading(request);
     }
   }
 
@@ -271,12 +289,12 @@ export const useProjectStore = defineStore("project", () => {
 
   async function createProject(payload: ProjectCreate): Promise<ProjectDetail | null> {
     const request = captureMutationScope();
-    isLoading.value = true;
+    beginLoading(request);
     error.value = null;
     try {
       const { data } = await api.post<ProjectDetail>("/projects", payload);
       if (!request.isCurrent()) return data;
-      isLoading.value = false;
+      finishLoading(request);
       currentProject.value = data;
       currentProjectId.value = data.id;
       writeLastActiveProjectId(useAuthStore().user?.id ?? null, data.id);
@@ -286,7 +304,7 @@ export const useProjectStore = defineStore("project", () => {
       if (request.isCurrent()) error.value = getErrorMessage(e);
       return null;
     } finally {
-      if (request.isCurrent()) isLoading.value = false;
+      if (request.isCurrent()) finishLoading(request);
     }
   }
 

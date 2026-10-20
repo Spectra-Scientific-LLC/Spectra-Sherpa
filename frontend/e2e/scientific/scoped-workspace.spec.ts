@@ -95,10 +95,20 @@ test("cold multi-file inspection retains both sibling source inventories", async
   request,
 }) => {
   const first = await createDataset(request, "mixture-ir");
-  const content = readFileSync(
+  const [header, ...rows] = readFileSync(
     new URL("./fixtures/mixture-ir.csv", import.meta.url),
     "utf8",
-  ).replace(/mixture-ir-/g, "second-mixture-");
+  ).split("\n");
+  const [schema, encoded] = header.split(",");
+  expect(schema).toBe("#spectrasherpa-portable-csv/2");
+  // Both the typed envelope and visible CSV carry identity. Rename both;
+  // otherwise the canonical loader correctly refuses this second fixture.
+  const envelope = Buffer.from(encoded, "base64url").toString("utf8")
+    .replace(/mixture-ir-/g, "second-mixture-");
+  const content = [
+    `${schema},${Buffer.from(envelope).toString("base64url")}`,
+    ...rows.map(row => row.replace(/mixture-ir-/g, "second-mixture-")),
+  ].join("\n");
   const uploaded = await request.post(`/api/v1/experiments/${first.experiment.id}/files`, {
     multipart: {
       stage: "raw",

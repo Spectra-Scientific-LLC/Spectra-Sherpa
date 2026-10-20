@@ -44,6 +44,36 @@ beforeEach(() => {
 afterEach(() => { disposePinia(pinia); _clearProjectScopeRegistryForTests(); });
 
 describe("store-owned scope, independent of mounted pages", () => {
+  it("keeps account-wide project inventories while a project is selected", async () => {
+    const project = useProjectStore();
+    const active = deferred<{ data: unknown[] }>();
+    const archived = deferred<{ data: unknown[] }>();
+    vi.mocked(api.get).mockReturnValueOnce(active.promise).mockReturnValueOnce(archived.promise);
+    const pending = Promise.all([project.fetchProjects(), project.fetchArchivedProjects()]);
+    project.currentProjectId = 2;
+    expect(vi.mocked(api.get).mock.calls.every(([, config]) => !config?.signal?.aborted)).toBe(true);
+    active.resolve({ data: [{ id: 1, name: "First" }, { id: 2, name: "Second" }] });
+    archived.resolve({ data: [{ id: 3, name: "Archived" }] });
+    await pending;
+    expect(project.projects.map(item => item.id)).toEqual([1, 2]);
+    expect(project.archivedProjects.map(item => item.id)).toEqual([3]);
+  });
+
+  it("does not let a completed account inventory clear the newer project detail loading state", async () => {
+    const project = useProjectStore();
+    const list = deferred<{ data: unknown[] }>();
+    const detail = deferred<{ data: { id: number; name: string } }>();
+    vi.mocked(api.get).mockReturnValueOnce(list.promise).mockReturnValueOnce(detail.promise);
+    const listing = project.fetchProjects();
+    const loading = project.fetchProject(2);
+    list.resolve({ data: [{ id: 2, name: "Second" }] });
+    await listing;
+    expect(project.isLoading).toBe(true);
+    detail.resolve({ data: { id: 2, name: "Second" } });
+    await loading;
+    expect(project.isLoading).toBe(false);
+  });
+
   it("keeps concurrent file inventories alive until their shared selection changes", async () => {
     const data = useDataStore();
     data.activeExperimentId = 44;
