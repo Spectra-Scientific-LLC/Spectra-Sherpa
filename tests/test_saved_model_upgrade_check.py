@@ -199,3 +199,16 @@ def test_server_that_never_becomes_ready_is_stopped(tmp_path, monkeypatch) -> No
     with pytest.raises(RuntimeError, match="did not become ready"):
         server.__enter__()
     assert server.process is not None and server.process.poll() is not None
+
+
+def test_server_failure_surfaces_bounded_log_without_suppressing_error(tmp_path, capsys) -> None:
+    log = tmp_path / "fit.log"
+    log.write_text("old-prefix\n" + "x" * 70000 + "\nretained traceback\n")
+    server = TOOL.Server("unused", tmp_path, 1, log)
+    assert server.__exit__(RuntimeError, RuntimeError("import failed"), None) is None
+    stderr = capsys.readouterr().err
+    assert "retained traceback" in stderr
+    assert "old-prefix" not in stderr
+    assert len(stderr) < 66000
+    server.__exit__(None, None, None)
+    assert capsys.readouterr().err == ""
