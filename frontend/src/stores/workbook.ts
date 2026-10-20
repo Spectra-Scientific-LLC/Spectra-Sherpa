@@ -1,11 +1,12 @@
 import { defineStore } from "pinia";
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import api from "@/api/client";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
 import { useWorkflowStore } from "@/stores/workflow";
 import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
+import { useScopedRequest, type ScopedRequestTicket } from "@/composables/useScopedRequest";
 import type {
   TemplateDataBinding,
   TemplateExampleBinding,
@@ -102,7 +103,6 @@ const toSheet = (item: WorkflowListItem): WorkbookSheet => ({
 });
 
 export const useWorkbookStore = defineStore("workbook", () => {
-  let sheetLoadGeneration = 0;
   const sheets = ref<WorkbookSheet[]>([]);
   const activeIndex = ref(0);
   const projectId = ref<number | null>(null);
@@ -113,9 +113,27 @@ export const useWorkbookStore = defineStore("workbook", () => {
   const activeTrialSheet = computed(() =>
     activeSheet.value?.kind === "trial" ? activeSheet.value : null,
   );
+  const workspaceIdentity = () => [useAuthStore().user?.id, useAuthStore().token, useProjectStore().currentProjectId];
+  const identity = () => [...workspaceIdentity(), projectId.value];
+  const loadScope = useScopedRequest(identity, () => { isLoading.value = false; });
+  const refreshScope = useScopedRequest(() => [...identity(), activeSheet.value?.workflowId]);
+  const switchScope = useScopedRequest(identity);
+  const selectionScope = useScopedRequest(workspaceIdentity);
+  let activeSwitchTarget: number | null = null;
+  let activeSwitchTicket: ScopedRequestTicket | undefined;
+  const mutationScope = useScopedRequest(identity);
+  let mutationTicket: ScopedRequestTicket | undefined;
+  function captureMutationScope(): ScopedRequestTicket {
+    if (!mutationTicket?.isCurrent()) mutationTicket = mutationScope.begin();
+    return mutationTicket;
+  }
 
   function resetProjectScope(): void {
-    sheetLoadGeneration += 1;
+    loadScope.invalidate();
+    refreshScope.invalidate();
+    switchScope.invalidate();
+    selectionScope.invalidate();
+    mutationScope.invalidate();
     sheets.value = [];
     activeIndex.value = 0;
     projectId.value = null;
@@ -124,6 +142,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
   }
 
   registerProjectScopeReset(resetProjectScope);
+  watch([() => useAuthStore().user?.id, () => useAuthStore().token, () => useProjectStore().currentProjectId], resetProjectScope, { flush: "sync" });
 
   function persistActiveSheet(): void {
     if (projectId.value === null || !activeSheet.value || activeSheet.value.kind === "trial")
@@ -183,9 +202,10 @@ export const useWorkbookStore = defineStore("workbook", () => {
     return `Sheet ${index}`;
   }
 
-  async function fetchSheets(targetProjectId: number): Promise<WorkbookSheet[]> {
+  async function fetchSheets(targetProjectId: number, signal?: AbortSignal): Promise<WorkbookSheet[]> {
     const response = await api.get<WorkflowListItem[]>("/workflows", {
       params: { project_id: targetProjectId, in_workbook: true, limit: 200 },
+      signal,
     });
     return response.data.map(toSheet).sort((a, b) => a.sheetOrder - b.sheetOrder);
   }
@@ -212,16 +232,17 @@ export const useWorkbookStore = defineStore("workbook", () => {
     targetProjectId: number,
     options: { createIfEmpty?: boolean } = {},
   ): Promise<void> {
-    const loadGeneration = ++sheetLoadGeneration;
+    projectId.value = targetProjectId;
+    switchScope.invalidate();
+    const request = loadScope.begin();
     const workflowStore = useWorkflowStore();
     isLoading.value = true;
     try {
-      projectId.value = targetProjectId;
-      let loadedSheets = await fetchSheets(targetProjectId);
-      if (loadGeneration !== sheetLoadGeneration) return;
+      let loadedSheets = await fetchSheets(targetProjectId, request.signal);
+      if (!request.isCurrent()) return;
       if (loadedSheets.length === 0 && options.createIfEmpty !== false) {
         loadedSheets = [await createSheetRecord("Sheet 1")];
-        if (loadGeneration !== sheetLoadGeneration) return;
+        if (!request.isCurrent()) return;
       }
 
       sheets.value = loadedSheets;
@@ -235,14 +256,14 @@ export const useWorkbookStore = defineStore("workbook", () => {
 
       const sheet = activeSheet.value;
       if (sheet) {
-        await workflowStore.loadWorkflow(sheet.workflowId);
-        if (loadGeneration !== sheetLoadGeneration) return;
+        await workflowStore.loadWorkflow(sheet.workflowId, undefined, request.isCurrent);
+        if (!request.isCurrent()) return;
         await syncAdvisorForSheet(sheet);
       } else {
         workflowStore.clearWorkflow();
       }
     } finally {
-      if (loadGeneration === sheetLoadGeneration) {
+      if (request.isCurrent()) {
         isLoading.value = false;
       }
     }
@@ -250,9 +271,12 @@ export const useWorkbookStore = defineStore("workbook", () => {
 
   async function refreshSheets(): Promise<void> {
     if (projectId.value === null) return;
+    const request = refreshScope.begin();
     const activeWorkflowId = activeSheet.value?.workflowId ?? null;
     const trialSheets = sheets.value.filter((sheet) => sheet.kind === "trial");
-    sheets.value = [...(await fetchSheets(projectId.value)), ...trialSheets];
+    const loadedSheets = await fetchSheets(projectId.value, request.signal);
+    if (!request.isCurrent()) return;
+    sheets.value = [...loadedSheets, ...trialSheets];
     const nextIndex = activeWorkflowId
       ? sheets.value.findIndex((sheet) => sheet.workflowId === activeWorkflowId)
       : -1;
@@ -261,28 +285,44 @@ export const useWorkbookStore = defineStore("workbook", () => {
   }
 
   async function switchSheet(index: number): Promise<void> {
-    if (index < 0 || index >= sheets.value.length || index === activeIndex.value) {
+    if (index < 0 || index >= sheets.value.length) {
       return;
     }
+    if (index === activeIndex.value && activeSwitchTarget === sheets.value[index].workflowId &&
+        activeSwitchTicket?.isCurrent()) return;
+    // Even a click back to the active sheet supersedes a pending switch
+    // waiting for autosave (A → B → A).
+    const request = switchScope.begin();
+    activeSwitchTicket = request;
+    activeSwitchTarget = sheets.value[index].workflowId;
+    selectionScope.invalidate();
+    if (index === activeIndex.value) return;
+    loadScope.invalidate();
+    const target = sheets.value[index];
 
     const workflowStore = useWorkflowStore();
     if (workflowStore.hasUnsavedChanges && workflowStore.workflowId !== null) {
       await workflowStore.saveWorkflow({ createVersion: false });
     }
+    if (!request.isCurrent()) return;
+    // A refresh/reorder may have moved the target while autosave was pending.
+    const targetIndex = sheets.value.findIndex((sheet) => sheet.workflowId === target.workflowId);
+    if (targetIndex < 0) return;
 
-    const target = sheets.value[index];
     if (target.kind === "trial") {
       if (target.sourceWorkflowId && workflowStore.workflowId !== target.sourceWorkflowId) {
-        await workflowStore.loadWorkflow(target.sourceWorkflowId);
+        await workflowStore.loadWorkflow(target.sourceWorkflowId, undefined, request.isCurrent);
       }
-      activeIndex.value = index;
+      if (!request.isCurrent()) return;
+      activeIndex.value = targetIndex;
       await syncAdvisorForSheet(target);
       return;
     }
 
-    activeIndex.value = index;
+    activeIndex.value = targetIndex;
     persistActiveSheet();
-    await workflowStore.loadWorkflow(target.workflowId);
+    await workflowStore.loadWorkflow(target.workflowId, undefined, request.isCurrent);
+    if (!request.isCurrent()) return;
     await syncAdvisorForSheet(target);
   }
 
@@ -293,18 +333,22 @@ export const useWorkbookStore = defineStore("workbook", () => {
     if (targetProjectId === null) {
       throw new Error("Project is required before selecting a workflow sheet");
     }
+    const request = selectionScope.begin();
 
     const workflowStore = useWorkflowStore();
     if (projectId.value !== targetProjectId || sheets.value.length === 0) {
       if (workflowStore.hasUnsavedChanges && workflowStore.workflowId !== null) {
         await workflowStore.saveWorkflow({ createVersion: false });
       }
+      if (!request.isCurrent()) return;
       await loadSheets(targetProjectId);
     }
+    if (!request.isCurrent()) return;
 
     let index = sheets.value.findIndex((sheet) => sheet.workflowId === workflowId);
     if (index < 0) {
       await refreshSheets();
+      if (!request.isCurrent()) return;
       index = sheets.value.findIndex((sheet) => sheet.workflowId === workflowId);
     }
     if (index < 0) {
@@ -315,15 +359,19 @@ export const useWorkbookStore = defineStore("workbook", () => {
   }
 
   async function addSheet(): Promise<WorkbookSheet> {
+    const request = captureMutationScope();
     const sheet = await createSheetRecord();
+    if (!request.isCurrent()) return sheet;
     sheets.value.push(sheet);
     await switchSheet(sheets.value.length - 1);
     return sheet;
   }
 
   async function duplicateSheet(workflowId: number): Promise<WorkbookSheet> {
+    const request = captureMutationScope();
     const response = await api.post<WorkflowListItem>(`/workflows/${workflowId}/duplicate`);
     const sheet = toSheet(response.data);
+    if (!request.isCurrent()) return sheet;
     sheets.value.push(sheet);
     await switchSheet(sheets.value.length - 1);
     return sheet;
@@ -334,10 +382,12 @@ export const useWorkbookStore = defineStore("workbook", () => {
   // workflow + its version history are untouched, so users can compare-side
   // by-side or copy nodes between sheets.
   async function openVersionAsSheet(workflowId: number, versionId: number): Promise<WorkbookSheet> {
+    const request = captureMutationScope();
     const response = await api.post<WorkflowListItem>(
       `/workflows/${workflowId}/versions/${versionId}/open-as-new-sheet`,
     );
     const sheet = toSheet(response.data);
+    if (!request.isCurrent()) return sheet;
     sheets.value.push(sheet);
     await switchSheet(sheets.value.length - 1);
     return sheet;
@@ -360,6 +410,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
     if (projectId.value === null) {
       throw new Error("Open or create a project before starting analysis.");
     }
+    const request = captureMutationScope();
     const launchMode = options.launchMode ?? "example";
     const response = await api.post<WorkflowListItem>(
       `/workflow-templates/${templateId}/instantiate`,
@@ -409,11 +460,13 @@ export const useWorkbookStore = defineStore("workbook", () => {
       },
     );
     const primaryWorkflowId = response.data.id;
+    if (!request.isCurrent()) return toSheet(response.data);
 
     // A canonical starter template may atomically create more than one
     // persisted sheet. Refresh from the project authority instead of assuming
     // the single response row is the complete template result.
     await refreshSheets();
+    if (!request.isCurrent()) return toSheet(response.data);
     const primaryIndex = sheets.value.findIndex((item) => item.workflowId === primaryWorkflowId);
     if (primaryIndex < 0) {
       throw new Error("Instantiated workflow is not available in the project workbook");
@@ -423,6 +476,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
       const primarySheet = sheets.value[primaryIndex];
       persistActiveSheet();
       await workflowStore.loadWorkflow(primarySheet.workflowId);
+      if (!request.isCurrent()) return toSheet(response.data);
       await syncAdvisorForSheet(primarySheet);
     } else {
       await switchSheet(primaryIndex);
@@ -431,6 +485,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
   }
 
   async function renameSheet(workflowId: number, newName: string): Promise<void> {
+    const request = captureMutationScope();
     const trimmed = newName.trim().slice(0, 40);
     if (!trimmed) return;
 
@@ -438,6 +493,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
       name: trimmed,
       create_version: false,
     });
+    if (!request.isCurrent()) return;
     const sheet = sheets.value.find((item) => item.workflowId === workflowId);
     if (sheet) {
       sheet.name = response.data.name;
@@ -463,10 +519,12 @@ export const useWorkbookStore = defineStore("workbook", () => {
   }
 
   async function setSheetColor(workflowId: number, color: string | null): Promise<void> {
+    const request = captureMutationScope();
     const response = await api.put<WorkflowListItem>(`/workflows/${workflowId}`, {
       tab_color: color,
       create_version: false,
     });
+    if (!request.isCurrent()) return;
     const sheet = sheets.value.find((item) => item.workflowId === workflowId);
     if (sheet) {
       sheet.tabColor = response.data.tab_color ?? null;
@@ -477,11 +535,13 @@ export const useWorkbookStore = defineStore("workbook", () => {
 
   async function reorderSheets(orderedIds: number[]): Promise<void> {
     if (projectId.value === null) return;
+    const request = captureMutationScope();
     const currentId = activeSheet.value?.workflowId;
     const response = await api.put<WorkflowListItem[]>(
       `/workflows/reorder-sheets?project_id=${projectId.value}`,
       { ordered_ids: orderedIds },
     );
+    if (!request.isCurrent()) return;
     sheets.value = response.data.map(toSheet).sort((a, b) => a.sheetOrder - b.sheetOrder);
     const nextIndex = currentId
       ? sheets.value.findIndex((sheet) => sheet.workflowId === currentId)
@@ -491,6 +551,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
   }
 
   async function deleteSheet(workflowId: number): Promise<void> {
+    const request = captureMutationScope();
     const target = sheets.value.find((sheet) => sheet.workflowId === workflowId);
     if (target?.kind === "trial") {
       if (target.trialId) {
@@ -524,6 +585,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
     // pointer.  When the AdvisorChannel table is finally retired, the
     // server's workflow-delete handler will also drop any orphan rows.
     await api.delete(`/workflows/${workflowId}`);
+    if (!request.isCurrent()) return;
     useProjectStore().removeWorkflowFromCurrentProject(workflowId);
     sheets.value.splice(deleteIndex, 1);
 
@@ -624,6 +686,7 @@ export const useWorkbookStore = defineStore("workbook", () => {
   }
 
   async function closeTrialTab(trialId: string): Promise<void> {
+    const request = switchScope.begin();
     // Match strictly on trialId AND kind === "trial". The previous fallback
     // to `String(sheet.workflowId) === trialId` could collide when the caller
     // passed a stringified negative workflowId (e.g. "-1"), closing the wrong
@@ -657,8 +720,10 @@ export const useWorkbookStore = defineStore("workbook", () => {
         if (workflowStore.hasUnsavedChanges && workflowStore.workflowId !== null) {
           await workflowStore.saveWorkflow({ createVersion: false });
         }
-        await workflowStore.loadWorkflow(nextSheet.workflowId);
+        if (!request.isCurrent()) return;
+        await workflowStore.loadWorkflow(nextSheet.workflowId, undefined, request.isCurrent);
       }
+      if (!request.isCurrent()) return;
       await syncAdvisorForSheet(nextSheet);
     } else {
       activeIndex.value = 0;

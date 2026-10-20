@@ -11,6 +11,9 @@ import { SHERPA_WS_ACTION, SHERPA_WS_EVENT } from "@/lib/sherpaWs";
 import { useAdvisorStore } from "@/stores/advisor";
 import { useAuthStore } from "@/stores/auth";
 import { useProjectStore } from "@/stores/project";
+import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
+import { useScopedRequest, type ScopedRequestTicket } from "@/composables/useScopedRequest";
+import { watch } from "vue";
 import { getErrorCode, getErrorMessage } from "@/utils/errors";
 import { blobFromResponseData, downloadBlob } from "@/utils/download";
 import type {
@@ -29,9 +32,6 @@ import type {
 
 type StoryObject = Record<string, unknown>;
 const LAST_ACTIVE_EXPERIMENT_PREFIX = "spectra_sherpa_last_experiment";
-let catalogRequestSeq = 0;
-let experimentsRequestSeq = 0;
-let experimentSelectionRequestSeq = 0;
 
 const lastActiveExperimentKey = (): string => {
   const userId = useAuthStore().user?.id ?? "local";
@@ -543,8 +543,6 @@ export const useDataStore = defineStore("data", () => {
   }
   const fileInfoLoading = ref(false);
   const fileInfoError = ref<string | null>(null);
-  let fileInfoRequest = 0;
-  let fileInfoAbort: AbortController | null = null;
 
   // Reference dataset catalog + exploration
   const referenceCatalog = ref<ReferenceCatalog | null>(null);
@@ -574,94 +572,143 @@ export const useDataStore = defineStore("data", () => {
   const libraryDatasets = computed<LibraryDataset[]>(() => availableDatasets.value?.library ?? []);
 
   const currentProjectId = () => useProjectStore().currentProjectId;
+  const identity = () => [useAuthStore().user?.id, useAuthStore().token, currentProjectId()];
+  const catalogScope = useScopedRequest(identity, () => { catalogLoading.value = false; });
+  const experimentsScope = useScopedRequest(identity, () => { experimentsLoading.value = false; });
+  const selectionScope = useScopedRequest(
+    () => [...identity(), activeExperimentId.value],
+    () => { experimentFilesLoading.value = false; },
+  );
+  const inspectionScope = useScopedRequest(
+    () => [...identity(), activeExperimentId.value, activeFileId.value, activeFilePath.value],
+    () => { fileInfoLoading.value = false; },
+  );
+  const assetsScope = useScopedRequest(() => [...identity(), activeExperimentId.value, activeFileId.value]);
+  let assetsTicket: ScopedRequestTicket | undefined;
+  const explorationScope = useScopedRequest(identity, () => { catalogDatasetLoading.value = false; });
+  const referenceScope = useScopedRequest(identity, () => { referenceCatalogLoading.value = false; });
+  const mutationScope = useScopedRequest(() => [...identity(), activeExperimentId.value]);
+  let mutationTicket: ScopedRequestTicket | undefined;
+  function captureMutationScope(): ScopedRequestTicket {
+    if (!mutationTicket?.isCurrent()) mutationTicket = mutationScope.begin();
+    return mutationTicket;
+  }
+
+  function resetProjectScope(): void {
+    catalogScope.invalidate();
+    experimentsScope.invalidate();
+    selectionScope.invalidate();
+    assetsScope.invalidate();
+    referenceScope.invalidate();
+    mutationScope.invalidate();
+    clearActiveExperimentSelection();
+    availableDatasets.value = null;
+    experiments.value = [];
+    experimentsProjectId = null;
+    catalogError.value = null;
+    experimentsError.value = null;
+    experimentFilesRefusal.value = null;
+    referenceCatalog.value = null;
+    referenceCatalogError.value = null;
+    advisorDatasetProvider = null;
+    advisorDatasetScope = "";
+    invalidateDataStory();
+    dataStoryCache.clear();
+    dataStoryContext.value = "";
+  }
+  registerProjectScopeReset(resetProjectScope);
+  // Reset even without a mounted Data page (or a selectProject() caller).
+  watch([() => useAuthStore().user?.id, () => useAuthStore().token, currentProjectId], resetProjectScope, { flush: "sync" });
 
   // --- Actions ---
 
   const fetchCatalog = async (projectId: number | null = currentProjectId()) => {
-    const requestSeq = ++catalogRequestSeq;
+    const request = catalogScope.begin();
     catalogLoading.value = true;
     catalogError.value = null;
     try {
       if (projectId == null) {
-        if (requestSeq === catalogRequestSeq) {
+        if (request.isCurrent()) {
           availableDatasets.value = { experiments: [], library: [], builder: [] };
         }
         return;
       }
       const response = await api.get<AvailableDatasets>("/datasets/available", {
         params: { project_id: projectId },
+        signal: request.signal,
       });
       const activeProjectId = currentProjectId();
       if (
-        requestSeq !== catalogRequestSeq ||
+        !request.isCurrent() ||
         (activeProjectId != null && projectId !== activeProjectId)
       )
         return;
       availableDatasets.value = response.data;
     } catch (error) {
-      if (requestSeq === catalogRequestSeq && projectId === currentProjectId()) {
+      if (request.isCurrent() && projectId === currentProjectId()) {
         catalogError.value = "Dataset catalog could not be loaded.";
         console.error("Failed to fetch dataset catalog:", error);
       }
     } finally {
-      if (requestSeq === catalogRequestSeq) {
+      if (request.isCurrent()) {
         catalogLoading.value = false;
       }
     }
   };
 
   const fetchExperiments = async (projectId: number | null = currentProjectId()) => {
-    const requestSeq = ++experimentsRequestSeq;
+    const request = experimentsScope.begin();
     experimentsProjectId = null;
     experimentsLoading.value = true;
     experimentsError.value = null;
     try {
       if (projectId == null) {
-        if (requestSeq === experimentsRequestSeq) {
+        if (request.isCurrent()) {
           experiments.value = [];
         }
         return;
       }
       const response = await api.get<components["schemas"]["ExperimentSummary"][]>("/experiments", {
         params: { project_id: projectId },
+        signal: request.signal,
       });
       const activeProjectId = currentProjectId();
       if (
-        requestSeq !== experimentsRequestSeq ||
+        !request.isCurrent() ||
         (activeProjectId != null && projectId !== activeProjectId)
       )
         return;
       experiments.value = response.data.map(experimentSummary);
       experimentsProjectId = projectId;
     } catch (error) {
-      if (requestSeq === experimentsRequestSeq && projectId === currentProjectId()) {
+      if (request.isCurrent() && projectId === currentProjectId()) {
         experimentsError.value = "Project datasets could not be loaded.";
         console.error("Failed to fetch experiments:", error);
       }
     } finally {
-      if (requestSeq === experimentsRequestSeq) {
+      if (request.isCurrent()) {
         experimentsLoading.value = false;
       }
     }
   };
 
   const selectExperiment = async (experimentId: number) => {
-    const requestSeq = ++experimentSelectionRequestSeq;
     clearInspection();
     clearCatalogExploration();
     activeExperimentId.value = experimentId;
+    const request = selectionScope.begin();
     experimentFiles.value = [];
     experimentFilesRefusal.value = null;
     writeLastActiveExperimentId(experimentId);
     experimentFilesLoading.value = true;
     try {
-      const response = await api.get<components["schemas"]["ExperimentFileOut"][]>(`/experiments/${experimentId}/files`);
-      if (requestSeq !== experimentSelectionRequestSeq || activeExperimentId.value !== experimentId)
+      const response = await api.get<components["schemas"]["ExperimentFileOut"][]>(`/experiments/${experimentId}/files`, { signal: request.signal });
+      if (!request.isCurrent())
         return;
       experimentFiles.value = response.data.map(experimentFile);
     } catch (error) {
       if (
-        requestSeq === experimentSelectionRequestSeq &&
+        request.isCurrent() &&
         activeExperimentId.value === experimentId
       ) {
         console.error("Failed to fetch experiment files:", error);
@@ -672,7 +719,7 @@ export const useDataStore = defineStore("data", () => {
         };
       }
     } finally {
-      if (requestSeq === experimentSelectionRequestSeq) {
+      if (request.isCurrent()) {
         experimentFilesLoading.value = false;
       }
     }
@@ -684,6 +731,7 @@ export const useDataStore = defineStore("data", () => {
     projectId?: number | null,
     metadata?: Record<string, unknown>,
   ) => {
+    const request = captureMutationScope();
     const payload = {
       name,
       description: description || null,
@@ -692,7 +740,7 @@ export const useDataStore = defineStore("data", () => {
     } satisfies components["schemas"]["ExperimentCreate"];
     const response = await api.post<components["schemas"]["ExperimentDetail"]>("/experiments", payload);
     // Refresh both lists
-    await Promise.all([fetchExperiments(), fetchCatalog()]);
+    if (request.isCurrent()) await Promise.all([fetchExperiments(), fetchCatalog()]);
     return experimentDetail(response.data);
   };
 
@@ -700,12 +748,14 @@ export const useDataStore = defineStore("data", () => {
     experimentId: number,
     payload: components["schemas"]["ExperimentUpdate"],
   ) => {
+    const request = captureMutationScope();
     const response = await api.put<components["schemas"]["ExperimentDetail"]>(`/experiments/${experimentId}`, payload);
-    await Promise.all([fetchExperiments(), fetchCatalog()]);
+    if (request.isCurrent()) await Promise.all([fetchExperiments(), fetchCatalog()]);
     return experimentDetail(response.data);
   };
 
   const deleteExperiment = async (experimentId: number) => {
+    const request = captureMutationScope();
     const deletingActiveExperiment = activeExperimentId.value === experimentId;
     let fallbackExperimentId: number | null = null;
 
@@ -722,7 +772,9 @@ export const useDataStore = defineStore("data", () => {
     }
 
     await api.delete(`/experiments/${experimentId}`);
+    if (!request.isCurrent()) return;
     await Promise.all([fetchExperiments(), fetchCatalog()]);
+    if (!request.isCurrent()) return;
 
     if (deletingActiveExperiment) {
       clearInspection();
@@ -742,15 +794,17 @@ export const useDataStore = defineStore("data", () => {
   };
 
   const restoreActiveExperimentForCurrentProject = async () => {
+    const request = captureMutationScope();
     if (
       activeExperimentId.value !== null &&
       experiments.value.some((experiment) => experiment.id === activeExperimentId.value)
     ) {
       return;
     }
-    if (experiments.value.length === 0) {
+    if (experiments.value.length === 0 && !experimentsError.value) {
       await fetchExperiments();
     }
+    if (!request.isCurrent()) return;
     if (
       activeExperimentId.value !== null &&
       !experiments.value.some((experiment) => experiment.id === activeExperimentId.value)
@@ -775,7 +829,7 @@ export const useDataStore = defineStore("data", () => {
   };
 
   const clearActiveExperimentSelection = () => {
-    experimentSelectionRequestSeq += 1;
+    selectionScope.invalidate();
     clearInspection();
     clearCatalogExploration();
     activeExperimentId.value = null;
@@ -794,6 +848,7 @@ export const useDataStore = defineStore("data", () => {
       refresh?: boolean;
     },
   ) => {
+    const request = captureMutationScope();
     const form = new FormData();
     form.append("file", file);
     form.append("stage", stage);
@@ -809,7 +864,7 @@ export const useDataStore = defineStore("data", () => {
     const response = await api.post<components["schemas"]["ExperimentFileOut"]>(`/experiments/${experimentId}/files`, form, {
       headers: { "Content-Type": "multipart/form-data" },
     });
-    if (options?.refresh !== false) {
+    if (request.isCurrent() && options?.refresh !== false) {
       await Promise.all([selectExperiment(experimentId), fetchCatalog()]);
     }
     return experimentFile(response.data);
@@ -849,17 +904,20 @@ export const useDataStore = defineStore("data", () => {
     stage: string,
     files: Array<{ staging_id: string; overrides?: PreparedDataOverrides | null }>,
   ) => {
+    const request = captureMutationScope();
     const response = await api.post("/builder/upload/commit", {
       experiment_id: experimentId,
       stage,
       files,
     });
-    await Promise.all([selectExperiment(experimentId), fetchExperiments(), fetchCatalog()]);
+    if (request.isCurrent()) await Promise.all([selectExperiment(experimentId), fetchExperiments(), fetchCatalog()]);
     return response.data;
   };
 
   const deleteFile = async (experimentId: number, fileId: number) => {
+    const request = captureMutationScope();
     await api.delete(`/experiments/${experimentId}/files/${fileId}`);
+    if (!request.isCurrent()) return;
     // Refresh file list and catalog
     await Promise.all([selectExperiment(experimentId), fetchCatalog()]);
     // Clear inspection if deleted file was being inspected
@@ -872,14 +930,19 @@ export const useDataStore = defineStore("data", () => {
     experimentId: number,
     fileId: number,
   ): Promise<ExperimentFileAssets> => {
+    // A collection reads sibling file inventories concurrently. They share the
+    // selection lease; starting one read must not cancel another file's read.
+    if (!assetsTicket?.isCurrent()) assetsTicket = assetsScope.begin();
+    const request = assetsTicket;
     fileInfoError.value = null;
     try {
       const response = await api.get<components["schemas"]["ExperimentFileAssetsOut"]>(
         `/experiments/${experimentId}/files/${fileId}/scientific-assets`,
+        { signal: request.signal },
       );
       return experimentFileAssets(response.data);
     } catch (error: unknown) {
-      fileInfoError.value = getErrorMessage(error, "Failed to inspect scientific results");
+      if (request.isCurrent()) fileInfoError.value = getErrorMessage(error, "Failed to inspect scientific results");
       throw error;
     }
   };
@@ -890,13 +953,10 @@ export const useDataStore = defineStore("data", () => {
     experimentId?: number,
     assetId?: string | null,
   ) => {
-    const request = ++fileInfoRequest;
-    fileInfoAbort?.abort();
-    const controller = new AbortController();
-    fileInfoAbort = controller;
     clearCatalogExploration();
     activeFileId.value = fileId;
     activeFilePath.value = filePath;
+    const request = inspectionScope.begin();
     fileInfoLoading.value = true;
     fileInfoError.value = null;
     try {
@@ -904,19 +964,18 @@ export const useDataStore = defineStore("data", () => {
       if (experimentId != null) body.experiment_id = experimentId;
       if (assetId) body.asset_id = assetId;
       const response = await api.post<SherpaDatasetDict>("/builder/file-info", body, {
-        signal: controller.signal,
+        signal: request.signal,
       });
-      if (request === fileInfoRequest) fileInfo.value = response.data;
+      if (request.isCurrent()) fileInfo.value = response.data;
       return response.data;
     } catch (error: unknown) {
-      if (request === fileInfoRequest) {
+      if (request.isCurrent()) {
         fileInfoError.value = getErrorMessage(error, "Failed to inspect file");
       }
       throw error;
     } finally {
-      if (request === fileInfoRequest) {
+      if (request.isCurrent()) {
         fileInfoLoading.value = false;
-        fileInfoAbort = null;
       }
     }
   };
@@ -961,12 +1020,9 @@ export const useDataStore = defineStore("data", () => {
     assetId?: string | null,
     fileIds?: number[] | null,
   ) => {
-    const request = ++fileInfoRequest;
-    fileInfoAbort?.abort();
-    const controller = new AbortController();
-    fileInfoAbort = controller;
     activeFileId.value = null;
     activeFilePath.value = null;
+    const request = inspectionScope.begin();
     fileInfoLoading.value = true;
     fileInfoError.value = null;
     clearCatalogExploration();
@@ -978,9 +1034,10 @@ export const useDataStore = defineStore("data", () => {
           ...(assetId ? { asset_id: assetId } : {}),
           ...(fileIds?.length ? { file_ids: fileIds } : {}),
         },
-        { signal: controller.signal },
+        { signal: request.signal },
       );
-      if (request === fileInfoRequest) {
+      if (request.isCurrent()) {
+        fileInfoLoading.value = false;
         fileInfo.value = response.data;
         // A one-file selection is still an inspectable source file. Preserve
         // that identity so dependent panels can retrieve the full matrix and
@@ -1000,14 +1057,13 @@ export const useDataStore = defineStore("data", () => {
       }
       return response.data;
     } catch (error: unknown) {
-      if (request === fileInfoRequest) {
+      if (request.isCurrent()) {
         fileInfoError.value = getErrorMessage(error, "Failed to inspect dataset contents");
       }
       throw error;
     } finally {
-      if (request === fileInfoRequest) {
+      if (request.isCurrent()) {
         fileInfoLoading.value = false;
-        fileInfoAbort = null;
       }
     }
   };
@@ -1020,9 +1076,7 @@ export const useDataStore = defineStore("data", () => {
   };
 
   const clearInspection = () => {
-    fileInfoRequest += 1;
-    fileInfoAbort?.abort();
-    fileInfoAbort = null;
+    inspectionScope.invalidate();
     fileInfoLoading.value = false;
     activeFileId.value = null;
     activeFilePath.value = null;
@@ -1033,16 +1087,18 @@ export const useDataStore = defineStore("data", () => {
   // --- Reference dataset catalog actions ---
 
   const fetchReferenceCatalog = async () => {
+    const request = referenceScope.begin();
     referenceCatalogLoading.value = true;
     referenceCatalogError.value = null;
     try {
-      const response = await api.get<ReferenceCatalog>("/builder/reference-datasets");
-      referenceCatalog.value = response.data;
+      const response = await api.get<ReferenceCatalog>("/builder/reference-datasets", { signal: request.signal });
+      if (request.isCurrent()) referenceCatalog.value = response.data;
     } catch (error: unknown) {
+      if (!request.isCurrent()) return;
       console.error("Failed to fetch reference catalog:", error);
       referenceCatalogError.value = getErrorMessage(error, "Failed to load reference catalog");
     } finally {
-      referenceCatalogLoading.value = false;
+      if (request.isCurrent()) referenceCatalogLoading.value = false;
     }
   };
 
@@ -1050,12 +1106,13 @@ export const useDataStore = defineStore("data", () => {
     experimentId: number,
     datasets: Array<{ source: string; name: string; overrides?: PreparedDataOverrides | null }>,
   ) => {
+    const request = captureMutationScope();
     const response = await api.post(`/experiments/${experimentId}/import-reference`, { datasets });
     const admittedExperimentId = response.data.experiment_id ?? experimentId;
     // Refresh file list and experiment list to reflect new files
     // The server has committed. A display refresh must not turn this into an
     // import refusal and cause the caller to delete the admitted dataset.
-    await Promise.allSettled([selectExperiment(admittedExperimentId), fetchExperiments(), fetchCatalog()]);
+    if (request.isCurrent()) await Promise.allSettled([selectExperiment(admittedExperimentId), fetchExperiments(), fetchCatalog()]);
     return response.data as {
       imported: number;
       files: ExperimentFile[];
@@ -1070,6 +1127,7 @@ export const useDataStore = defineStore("data", () => {
     authority: { projectionId?: string; packageId?: string },
     files: File | File[],
   ) => {
+    const request = captureMutationScope();
     const form = new FormData();
     if (authority.packageId) form.append("package_id", authority.packageId);
     else if (authority.projectionId) form.append("projection_id", authority.projectionId);
@@ -1083,7 +1141,7 @@ export const useDataStore = defineStore("data", () => {
       { headers: { "Content-Type": "multipart/form-data" } },
     );
     const admittedExperimentId = response.data.experiment_id ?? experimentId;
-    await Promise.allSettled([selectExperiment(admittedExperimentId), fetchExperiments(), fetchCatalog()]);
+    if (request.isCurrent()) await Promise.allSettled([selectExperiment(admittedExperimentId), fetchExperiments(), fetchCatalog()]);
     return response.data as {
       imported: number;
       files: ExperimentFile[];
@@ -1128,17 +1186,19 @@ export const useDataStore = defineStore("data", () => {
         }
       | number[],
   ) => {
+    const request = captureMutationScope();
     const requestPayload = Array.isArray(payload)
       ? { experiment_id: experimentId, library_ids: payload }
       : { experiment_id: experimentId, ...payload };
     const response = await api.post("/datasets/library/import", {
       ...requestPayload,
     });
-    await Promise.all([selectExperiment(experimentId), fetchExperiments(), fetchCatalog()]);
+    if (request.isCurrent()) await Promise.all([selectExperiment(experimentId), fetchExperiments(), fetchCatalog()]);
     return response.data;
   };
 
   const exploreCatalogDataset = async (source: string, name: string) => {
+    const request = explorationScope.begin();
     catalogDatasetLoading.value = true;
     catalogDatasetInfo.value = null;
     catalogDatasetError.value = null;
@@ -1150,14 +1210,14 @@ export const useDataStore = defineStore("data", () => {
     try {
       const response = await api.get<CatalogDatasetInfo>(
         `/builder/reference-datasets/${source}/${name}`,
-        { params: { project_id: projectId } },
+        { params: { project_id: projectId }, signal: request.signal },
       );
-      if (currentProjectId() !== projectId) return;
+      if (!request.isCurrent()) return;
       catalogDatasetInfo.value = response.data;
     } catch (error: unknown) {
-      if (currentProjectId() === projectId) catalogDatasetError.value = getErrorMessage(error, "Failed to load dataset info");
+      if (request.isCurrent()) catalogDatasetError.value = getErrorMessage(error, "Failed to load dataset info");
     } finally {
-      if (currentProjectId() === projectId) catalogDatasetLoading.value = false;
+      if (request.isCurrent()) catalogDatasetLoading.value = false;
     }
   };
 
@@ -1350,6 +1410,7 @@ export const useDataStore = defineStore("data", () => {
   };
 
   const clearCatalogExploration = () => {
+    explorationScope.invalidate();
     dataStoryRequestVersion++;
     catalogDatasetInfo.value = null;
     catalogDatasetError.value = null;

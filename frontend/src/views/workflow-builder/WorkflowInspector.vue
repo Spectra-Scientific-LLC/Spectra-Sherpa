@@ -811,10 +811,9 @@
               appendTo="body"
             />
           </div>
-          <div v-if="presentationError" class="diagnostics-card diagnostics-card--error">
-            <span class="diagnostics-title">Scientific result unavailable</span>
-            <p>{{ presentationError }}</p>
-          </div>
+          <WorkspaceState v-if="presentationError" kind="unavailable" :message="presentationError" />
+          <WorkspaceState v-if="quickPlotLoading" kind="loading" message="Loading retained output…" />
+          <WorkspaceState v-else-if="quickPlotEvidenceError && !showQuickPlotModal" kind="unavailable" :message="quickPlotEvidenceError" />
           <div
             v-if="executedGroupedSplit"
             class="diagnostics-card grouped-split-evidence"
@@ -1539,7 +1538,7 @@ import PLSDAPermutationSummary from "@/components/results/PLSDAPermutationSummar
 import DisabledReason from "@/components/DisabledReason.vue";
 import ParameterHelpLabel from "@/components/ParameterHelpLabel.vue";
 /* eslint-disable @typescript-eslint/no-explicit-any -- inspector renders heterogeneous node params and outputs across the full DAG surface. */
-import { toRaw, ref, computed, watch, onMounted, onUnmounted, useId } from "vue";
+import { toRaw, toRef, ref, computed, watch, onMounted, onUnmounted, useId } from "vue";
 import Accordion from "primevue/accordion";
 import AccordionTab from "primevue/accordiontab";
 import Button from "primevue/button";
@@ -1553,14 +1552,19 @@ import MultiSelect from "primevue/multiselect";
 import { featureColumnOptions } from "@/utils/featureColumnOptions";
 import Slider from "primevue/slider";
 import { useToast } from "primevue/usetoast";
-import api from "@/api/client";
 import { useWorkflowStore, type WorkflowNode } from "@/stores/workflow";
 import { useProjectStore } from "@/stores/project";
+import { useAuthStore } from "@/stores/auth";
+import { useWorkbookStore } from "@/stores/workbook";
+import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
+import { useInspectorParameters, cloneInspectorParams } from "./composables/useInspectorParameters";
+import { useInspectorExecutionContext } from "./composables/useInspectorExecutionContext";
+import { useInspectorRetainedEvidence } from "./composables/useInspectorRetainedEvidence";
+import { STORAGE_KEY, BROADCAST_CHANNEL_NAME } from "./node-detail/composables/useNodeTrial";
 import QuickPlotModal from "./modals/QuickPlotModal.vue";
 import WorkflowDataPortfolioPicker from "./WorkflowDataPortfolioPicker.vue";
 import DataTableModal from "./modals/DataTableModal.vue";
-import { buildNodeOutput, type NodeOutput, type PortOutput } from "@/utils/nodeOutput";
-import { bindPresentationInput } from "@/utils/featureRulePresentation";
+import { type NodeOutput, type PortOutput } from "@/utils/nodeOutput";
 import type { ScientificValueDescriptor } from "@/stores/workflow-types";
 import type { NodeParameterMetadata } from "@/types";
 import { resolveNodeHelpUrl } from "@/utils/nodeHelp";
@@ -1690,6 +1694,15 @@ const emit = defineEmits<{
 const toast = useToast();
 const workflowStore = useWorkflowStore();
 const projectStore = useProjectStore();
+const authStore = useAuthStore();
+const workbookStore = useWorkbookStore();
+const workspaceIdentity = () => [
+  authStore.user?.id, authStore.token, projectStore.currentProjectId,
+  workbookStore.projectId, workbookStore.activeSheet?.workflowId,
+  workbookStore.activeSheet?.trialId, workflowStore.workflowId,
+];
+const showMetadataModal = ref(false);
+const showErrorDetails = ref(false);
 const selectedNodeType = computed(() => props.selectedNode?.type || "");
 const componentDesignPreview = computed(() => componentInputHint(nodeMetadata.value?.presentation_contract, props.inputConnections));
 const nodeMetadata = computed(() => {
@@ -2202,78 +2215,15 @@ const NODE_ICONS: Record<string, string> = {
   "deploy.output": "📤",
 };
 
-// Local params copy for editing
-const localParams = ref<ParamsMap>({});
-const currentNodeId = ref<string | null>(null);
-const lastSyncedParamsSignature = ref("");
-
-// Validation state
-const validationErrors = ref<Array<{ param_name: string; message: string }>>([]);
-
-// Get validation error for a specific parameter
-const getParamError = (paramName: string): string | null => {
-  const error = validationErrors.value.find((e) => e.param_name === paramName);
-  return error ? error.message : null;
-};
-
-// Check if parameters are valid
-const hasValidationErrors = computed(() => validationErrors.value.length > 0);
+const parameterEditor = useInspectorParameters({
+  selectedNode: () => props.selectedNode,
+  identity: workspaceIdentity,
+  defaults: (type) => getDefaultsForNodeType(type),
+  parameters: () => nodeMetadata.value?.parameters ?? [],
+  fetchReferenceDatasets: () => workflowStore.fetchReferenceDatasets(),
+});
+const { localParams, lastSyncedParamsSignature, syncLocalParamsFromExternal, resetParamsOutOfScope } = parameterEditor;
 const runNodeReasonId = useId();
-const runNodeDisabledReason = computed(() => {
-  if (props.executionDisabled) return props.executionDisabledReason || "This node cannot run here.";
-  return hasValidationErrors.value ? "Resolve the parameter validation error before running." : "";
-});
-
-const stableParamSignature = (value: unknown): string => {
-  const normalize = (item: unknown): unknown => {
-    if (Array.isArray(item)) return item.map(normalize);
-    if (item && typeof item === "object") {
-      return Object.fromEntries(
-        Object.entries(item as Record<string, unknown>)
-          .sort(([left], [right]) => left.localeCompare(right))
-          .map(([key, child]) => [key, normalize(child)]),
-      );
-    }
-    return item;
-  };
-  return JSON.stringify(normalize(value ?? {}));
-};
-
-const mergedNodeParams = (node: WorkflowNode): ParamsMap => ({
-  ...getDefaultsForNodeType(node.type),
-  ...node.params,
-});
-
-const syncLocalParamsFromNode = (node: WorkflowNode, options: { force?: boolean } = {}) => {
-  const nextParams = mergedNodeParams(node);
-  const nextSignature = stableParamSignature(nextParams);
-  const localSignature = stableParamSignature(localParams.value);
-  const isDirty = localSignature !== lastSyncedParamsSignature.value;
-  if (!options.force && isDirty) return false;
-  currentNodeId.value = node.id;
-  localParams.value = nextParams;
-  lastSyncedParamsSignature.value = nextSignature;
-  return true;
-};
-
-const syncLocalParamsFromExternal = (
-  nodeType: string,
-  params: ParamsMap | undefined,
-  options: { fetchReferenceDatasets?: boolean } = {},
-) => {
-  const nextParams = { ...getDefaultsForNodeType(nodeType), ...(params || {}) };
-  const localSignature = stableParamSignature(localParams.value);
-  if (localSignature !== lastSyncedParamsSignature.value) return false;
-  localParams.value = nextParams;
-  lastSyncedParamsSignature.value = stableParamSignature(nextParams);
-  if (
-    options.fetchReferenceDatasets &&
-    (localParams.value.source === "eigenvector" || localParams.value.source === "sklearn")
-  ) {
-    void workflowStore.fetchReferenceDatasets();
-  }
-  return true;
-};
 
 type SampleFilterField =
   | "source_inclusion"
@@ -2331,129 +2281,33 @@ const filterInputOutput = computed<PortOutput | NodeOutput | null>(() => {
   );
 });
 
-const quickPlotInputs = computed<Record<string, PortOutput | NodeOutput | null>>(() =>
-  Object.fromEntries(
-    props.inputConnections.map((connection) => [
-      connection.toPort || "default",
-      connection.data ?? null,
-    ]),
-  ),
-);
-const exactQuickPlotOutput = ref<NodeOutput | null>(null);
-const exactQuickPlotInputs = ref<Record<string, PortOutput | NodeOutput | null> | null>(null);
-const quickPlotLoading = ref(false);
-const quickPlotEvidenceError = ref("");
-let quickPlotRequest = 0;
-const quickPlotNodeOutput = computed(() => {
-  const output = quickPlotEvidenceError.value ? null : exactQuickPlotOutput.value
-    ? projectScientificPresentation(
-        exactQuickPlotOutput.value,
-        resolveScientificPresentation(nodeMetadata.value, exactQuickPlotOutput.value, selectedPresentationId.value),
-      )
-    : selectedNodeOutput.value;
-  const resolved = resolveScientificPresentation(nodeMetadata.value, exactQuickPlotOutput.value ?? props.nodeOutput, selectedPresentationId.value);
-  return bindPresentationInput(output, resolved?.presentation.input_binding, exactQuickPlotInputs.value ?? quickPlotInputs.value);
-});
-const quickPlotResolvedInputs = computed(() => exactQuickPlotInputs.value ?? quickPlotInputs.value);
-const quickPlotPrimaryInput = computed(() =>
-  exactQuickPlotInputs.value
-    ? Object.values(exactQuickPlotInputs.value)[0]
-    : props.inputConnections[0]?.data,
-);
-
-watch(
-  () => [props.selectedNode?.id, selectedPresentationId.value, workflowStore.restoredRunId, workflowStore.executionEvidenceScope, projectStore.currentProjectId],
-  () => {
-    ++quickPlotRequest;
-    exactQuickPlotOutput.value = null;
-    exactQuickPlotInputs.value = null;
-    quickPlotEvidenceError.value = "";
-    quickPlotLoading.value = false;
+const {
+  quickPlotLoading, quickPlotEvidenceError, quickPlotNodeOutput,
+  quickPlotResolvedInputs, quickPlotPrimaryInput, showQuickPlotModal, showDataTableModal,
+  openQuickPlot, openDataTable,
+} = useInspectorRetainedEvidence({
+  identity: () => [
+    ...workspaceIdentity(), props.selectedNode?.id, props.selectedNode?.type,
+    workflowStore.restoredRunId, workflowStore.executionEvidenceScope,
+    selectedPresentationId.value, nodeMetadata.value?.presentation_contract?.digest,
+    props.nodeOutput?.presentation_contract?.digest, props.isOpen,
+    ...props.inputConnections.flatMap(connection => [connection.nodeId, connection.port, connection.toPort]),
+  ],
+  nodeId: () => props.selectedNode?.id,
+  projectId: () => projectStore.currentProjectId,
+  runId: () => workflowStore.restoredRunId,
+  evidenceScope: () => workflowStore.executionEvidenceScope,
+  metadata: nodeMetadata,
+  output: toRef(props, "nodeOutput"),
+  presentationId: selectedPresentationId,
+  inputs: () => props.inputConnections,
+  descriptors: (id) => workflowStore.lastExecutionResultDescriptors[id] ?? null,
+  unavailable: (detail) => toast.add({ severity: "error", summary: "Data unavailable", detail, life: 8000 }),
+  closeContextDialogs: () => {
+    showMetadataModal.value = false;
+    showErrorDetails.value = false;
   },
-);
-
-async function openQuickPlot(): Promise<void> {
-  await openRetainedEvidence("plot");
-}
-
-async function openDataTable(): Promise<void> {
-  await openRetainedEvidence("table");
-}
-
-async function openRetainedEvidence(view: "plot" | "table"): Promise<void> {
-  const show = () => {
-    if (view === "plot") showQuickPlotModal.value = true;
-    else showDataTableModal.value = true;
-  };
-  const runId = workflowStore.restoredRunId;
-  const projectId = projectStore.currentProjectId;
-  const nodeId = props.selectedNode?.id;
-  if (workflowStore.executionEvidenceScope !== "restored_summary" || runId == null || projectId == null || !nodeId) {
-    show();
-    return;
-  }
-  const ticket = ++quickPlotRequest;
-  quickPlotLoading.value = true;
-  quickPlotEvidenceError.value = "";
-  exactQuickPlotOutput.value = null;
-  exactQuickPlotInputs.value = null;
-  const read = async (sourceNodeId: string, port: string): Promise<any> => {
-    const response = await api.get(
-      `/runs/${runId}/outputs/${encodeURIComponent(sourceNodeId)}/${encodeURIComponent(port)}`,
-      { params: { project_id: projectId } },
-    );
-    return response.data.value;
-  };
-  try {
-    const sourcePorts = selectedPresentation.value?.sourcePorts ?? [props.nodeOutput?.primary_port ?? "default"];
-    // The numeric response array has no row labels of its own. Fetch its
-    // explicitly paired split cohort as identity authority, never whichever
-    // dataset happens to be the node's primary output.
-    const binding = selectedPresentation.value?.presentation.output_binding;
-    const pairedPorts = binding ? [binding[0]] : [];
-    const labelsField = selectedPresentation.value?.presentation.sample_labels_field;
-    const inputBinding = selectedPresentation.value?.presentation.input_binding;
-    // PCA's combined view needs its same-run companion results, not compact
-    // history arrays. Preserve this view when restoring a saved run.
-    const summaryPorts = view === "plot" && selectedPresentation.value?.presentation.kind === "pca_scores"
-      ? ["variable_correlations", "explained_variance", "loadings"].filter(port => props.nodeOutput?.ports?.[port]) : [];
-    const retainedPorts = [...new Set([...sourcePorts, ...pairedPorts, ...summaryPorts, ...(labelsField ? [labelsField] : [])])];
-    const [outputs, inputs] = await Promise.all([
-      Promise.all(retainedPorts.map(async (port) => [port, await read(nodeId, port)] as const)),
-      Promise.all((view === "plot" ? props.inputConnections
-        : inputBinding ? props.inputConnections.filter(connection => (connection.toPort || "default") === inputBinding[0]) : []).map(async (connection) => [
-        connection.toPort || "default",
-        await read(connection.nodeId, connection.port),
-      ] as const)),
-    ]);
-    if (ticket !== quickPlotRequest || workflowStore.restoredRunId !== runId ||
-      projectStore.currentProjectId !== projectId || props.selectedNode?.id !== nodeId) return;
-    exactQuickPlotOutput.value = buildNodeOutput(
-      Object.fromEntries(outputs),
-      nodeMetadata.value?.output_ports,
-      asObject(props.nodeOutput?.metadata?.diagnostics),
-      workflowStore.lastExecutionResultDescriptors[nodeId] ?? null,
-      props.nodeOutput?.presentation_contract,
-    );
-    exactQuickPlotInputs.value = Object.fromEntries(inputs.map(([port, value]) => [
-      port,
-      value && typeof value === "object" ? {
-        data: Array.isArray(value.data) ? value.data : [],
-        metadata: value.metadata ?? {},
-        value,
-      } : { data: Array.isArray(value) ? value : [], metadata: {}, value },
-    ]));
-  } catch {
-    if (ticket !== quickPlotRequest) return;
-    quickPlotEvidenceError.value = "The exact retained output is unavailable. The compact history summary cannot be used as full evidence.";
-    if (view === "table") toast.add({ severity: "error", summary: "Data unavailable", detail: quickPlotEvidenceError.value, life: 8000 });
-  } finally {
-    if (ticket === quickPlotRequest) {
-      quickPlotLoading.value = false;
-      if (view === "plot" || !quickPlotEvidenceError.value) show();
-    }
-  }
-}
+});
 
 const filterOutputValue = (output: PortOutput | NodeOutput | null): unknown => {
   return output && "value" in output ? output.value : null;
@@ -3295,35 +3149,6 @@ const formatAcquisitionValue = (key: string, value: unknown): string => {
   return String(value);
 };
 
-// Modal state
-const showQuickPlotModal = ref(false);
-const showDataTableModal = ref(false);
-const showMetadataModal = ref(false);
-const showErrorDetails = ref(false);
-// Debug: watch nodeOutput changes
-watch(
-  () => props.nodeOutput,
-  (output) => {
-    if (output) {
-      console.log("[WorkflowInspector] nodeOutput updated:", {
-        hasData: !!output.data,
-        dataLength: Array.isArray(output.data) ? output.data.length : "N/A",
-        dataType: output.data
-          ? Array.isArray(output.data)
-            ? "array"
-            : typeof output.data
-          : "none",
-        firstRow:
-          Array.isArray(output.data) && output.data[0]
-            ? Array.isArray(output.data[0])
-              ? `array[${output.data[0].length}]`
-              : typeof output.data[0]
-            : "N/A",
-      });
-    }
-  },
-  { immediate: true },
-);
 
 // ============================================================================
 // METADATA EDITOR STATE
@@ -3377,7 +3202,8 @@ type SpectraMetadata = ReturnType<typeof createEmptyMetadata>;
 
 const withMetadataDefaults = (metadataValue: unknown): SpectraMetadata => {
   const defaults = createEmptyMetadata();
-  const metadata = asObject(metadataValue);
+  const rawMetadata = asObject(metadataValue);
+  const metadata = rawMetadata ? cloneInspectorParams(rawMetadata) : null;
   if (!metadata) {
     return defaults;
   }
@@ -3657,40 +3483,36 @@ const _plotPointsFull = computed(() => {
   });
 });
 
-// Validate current parameters
-const validateParams = () => {
-  if (!props.selectedNode) {
-    validationErrors.value = [];
-    return;
-  }
-
-  const errors = workflowStore.validateNodeParams(props.selectedNode.type, localParams.value);
-  const targetConflict = splitMethodTargetConflict(
-    selectedNodeType.value === "data.train_test_split"
-      ? String(localParams.value.split_method ?? "")
-      : null,
-    activeTargetType.value,
-  );
-  if (targetConflict) {
-    errors.push({ param_name: "split_method", message: targetConflict });
-  }
-  // Named group holdout needs a grouping column on the input dataset. The
-  // absence of a selected group is treated as a soft hint, not a validation
-  // error, so the user can switch methods and fill the holdout list without
-  // being blocked by the "local draft" save behavior.
-  if (
-    selectedNodeType.value === "data.train_test_split" &&
-    String(localParams.value.split_method ?? "") === "group_holdout" &&
-    !activeValidationGroupColumn.value
-  ) {
-    errors.push({
-      param_name: "split_method",
-      message:
-        "Group holdout requires a grouping column bound to the input dataset; select one in the dataset's target and grouping fields.",
-    });
-  }
-  validationErrors.value = errors;
-};
+const {
+  validationErrors, hasValidationErrors, getParamError, runNodeDisabledReason,
+  validateParams, emitParams, executeNode,
+} = useInspectorExecutionContext({
+  selectedNode: () => props.selectedNode,
+  identity: workspaceIdentity,
+  disabled: () => props.executionDisabled,
+  disabledReason: () => props.executionDisabledReason,
+  localParams,
+  lastSyncedParamsSignature,
+  validate: (node, params) => workflowStore.validateNodeParams(node.type, params),
+  contextualErrors: () => {
+    const errors: Array<{ param_name: string; message: string }> = [];
+    const targetConflict = splitMethodTargetConflict(
+      selectedNodeType.value === "data.train_test_split" ? String(localParams.value.split_method ?? "") : null,
+      activeTargetType.value,
+    );
+    if (targetConflict) errors.push({ param_name: "split_method", message: targetConflict });
+    if (selectedNodeType.value === "data.train_test_split" &&
+      String(localParams.value.split_method ?? "") === "group_holdout" &&
+      !activeValidationGroupColumn.value) {
+      errors.push({ param_name: "split_method", message:
+        "Group holdout requires a grouping column bound to the input dataset; select one in the dataset's target and grouping fields." });
+    }
+    return errors;
+  },
+  scopeParams: resetParamsOutOfScope,
+  update: (id, params) => emit("update-params", id, params),
+  execute: (id) => emit("execute-node", id),
+});
 
 // string_list parameters store an exact list; the editor presents it as one
 // comma-separated line and parses it back the same way.
@@ -3728,55 +3550,6 @@ watch(
   { immediate: true },
 );
 
-// Emit params update
-// Return the declared default for every parameter the current control values put
-// out of scope, so a setting left behind by an earlier choice does not travel on
-// in the saved graph behind a control that is no longer shown. The node
-// canonicalizer applies the same rule as the single authority; doing it here keeps
-// what is stored equal to what will run.
-const resetParamsOutOfScope = (params: ParamsMap): ParamsMap => {
-  const next = { ...params };
-  for (const parameter of mappedMetadataParams.value) {
-    if (!parameter.visible_when) continue;
-    const inScope = Object.entries(parameter.visible_when).every(([control, admitted]) =>
-      admitted.includes(String(next[control] ?? "")),
-    );
-    if (!inScope && parameter.default !== undefined) next[parameter.name] = parameter.default;
-  }
-  return next;
-};
-
-const emitParams = () => {
-  if (props.selectedNode) {
-    const scoped = resetParamsOutOfScope(localParams.value);
-    if (stableParamSignature(scoped) !== stableParamSignature(localParams.value)) {
-      localParams.value = scoped;
-    }
-    // Validate before emitting
-    validateParams();
-    const params = { ...localParams.value };
-    lastSyncedParamsSignature.value = stableParamSignature(params);
-    emit("update-params", props.selectedNode.id, params);
-  }
-};
-
-// Execute node
-const executeNode = () => {
-  if (props.selectedNode && !props.executionDisabled) {
-    // Validate before execution
-    validateParams();
-
-    // If there are validation errors, don't execute
-    if (validationErrors.value.length > 0) {
-      return;
-    }
-
-    // Emit params first to ensure latest values are saved before execution
-    emit("update-params", props.selectedNode.id, resetParamsOutOfScope(localParams.value));
-    // Then execute
-    emit("execute-node", props.selectedNode.id);
-  }
-};
 
 // Delete node
 const deleteNode = () => {
@@ -3786,7 +3559,6 @@ const deleteNode = () => {
 };
 
 // Open node detail in a temporary builder sheet for trial execution.
-const STORAGE_KEY = "node_detail_data";
 
 const openToRunTrials = () => {
   if (!props.selectedNode) return;
@@ -3892,7 +3664,7 @@ const openToRunTrials = () => {
       type: props.selectedNode.type,
       label: props.selectedNode.label || getNodeLabel(props.selectedNode.type),
       workflowId: workflowStore.workflowId,
-      params: { ...localParams.value },
+      params: cloneInspectorParams(localParams.value),
       output: props.nodeOutput
         ? {
             // For output.* nodes in reduced tiers, top-level data duplicates
@@ -4137,46 +3909,7 @@ const getParamDefinitions = (nodeType: string): NodeParameterDefinition[] => {
   return definitions[nodeType] || [];
 };
 
-// Watch for selected node changes - only reset params when node ID changes
-watch(
-  () => props.selectedNode?.id,
-  (newId, oldId) => {
-    const node = props.selectedNode;
-    if (node && newId !== oldId) {
-      // Node selection changed - reset local params with defaults first, then stored values
-      syncLocalParamsFromNode(node, { force: true });
-    } else if (!node) {
-      // Node deselected
-      currentNodeId.value = null;
-      localParams.value = {};
-      lastSyncedParamsSignature.value = "";
-    }
-  },
-  { immediate: true },
-);
-
-watch(
-  () => props.selectedNode?.params,
-  () => {
-    const node = props.selectedNode;
-    if (!node || node.id !== currentNodeId.value) return;
-    syncLocalParamsFromNode(node);
-  },
-  { deep: true },
-);
-
-// The catalog can arrive after a restored node is selected. Fill missing
-// defaults without overwriting edits already made in this inspector.
-watch(
-  () => nodeMetadata.value?.parameters,
-  () => {
-    const node = props.selectedNode;
-    if (!node) return;
-    if (syncLocalParamsFromNode(node)) return;
-    localParams.value = { ...getDefaultsForNodeType(node.type), ...localParams.value };
-  },
-  { deep: true },
-);
+parameterEditor.startWatching();
 
 // Listen for storage changes from the detail view (when user saves)
 const handleStorageChange = (event: StorageEvent) => {
@@ -4232,7 +3965,7 @@ onMounted(() => {
 
   // Set up BroadcastChannel for more reliable cross-tab communication
   try {
-    broadcastChannel.value = new BroadcastChannel("workflow_node_updates");
+    broadcastChannel.value = new BroadcastChannel(BROADCAST_CHANNEL_NAME);
     broadcastChannel.value.onmessage = handleBroadcastMessage;
   } catch {
     // BroadcastChannel not supported in this browser

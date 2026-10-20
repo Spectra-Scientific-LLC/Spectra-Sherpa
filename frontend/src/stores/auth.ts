@@ -15,6 +15,7 @@ import { defineStore } from 'pinia'
 
 import api from '@/api/client'
 import { clearStoredApiKey } from '@/utils/authStorage'
+import { useScopedRequest } from '@/composables/useScopedRequest'
 
 /** Per-user capability flags populated by the server's /auth/me response. */
 interface UserCapabilities {
@@ -41,6 +42,7 @@ interface User {
 export const useAuthStore = defineStore('auth', () => {
     const token = ref<string | null>(localStorage.getItem('token'))
     const user = ref<User | null>(null)
+    const actorRequest = useScopedRequest(() => [token.value, user.value?.id])
     // "Authenticated" requires a server-validated identity, not just the
     // presence of a token. A token alone may be stale or revoked; only
     // the user ref — populated by /auth/me — proves the credential was
@@ -55,6 +57,9 @@ export const useAuthStore = defineStore('auth', () => {
      * loopback product) and by the server auth module's logout flow.
      */
     function clearCredentials() {
+        // Explicit invalidation matters even when already logged out: an
+        // in-flight implicit local actor lookup must not log the user back in.
+        actorRequest.invalidate()
         resetScientificQueryGuidance();
         token.value = null
         user.value = null
@@ -68,11 +73,12 @@ export const useAuthStore = defineStore('auth', () => {
      * remote callers must not lose the API key needed to authenticate.
      */
     async function initializeActor() {
+        const request = actorRequest.begin()
         try {
-            const response = await api.get('/auth/me')
-            user.value = response.data
+            const response = await api.get('/auth/me', { signal: request.signal })
+            if (request.isCurrent()) user.value = response.data
         } catch {
-            console.warn('Could not fetch product user profile')
+            if (request.isCurrent()) console.warn('Could not fetch product user profile')
         }
     }
 

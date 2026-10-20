@@ -137,7 +137,7 @@ describe("useWorkbookStore", () => {
       expect(store.projectId).toBe(2);
       expect(store.sheets.map((sheet) => sheet.workflowId)).toEqual([22]);
       expect(workflowStoreMock.loadWorkflow).toHaveBeenCalledOnce();
-      expect(workflowStoreMock.loadWorkflow).toHaveBeenCalledWith(22);
+      expect(workflowStoreMock.loadWorkflow).toHaveBeenCalledWith(22, undefined, expect.any(Function));
     });
 
     it("does not create a blank sheet while a selected starter is pending", async () => {
@@ -211,7 +211,7 @@ describe("useWorkbookStore", () => {
       ]);
       expect(primary.workflowId).toBe(20);
       expect(store.activeSheet?.workflowId).toBe(20);
-      expect(workflowStoreMock.loadWorkflow).toHaveBeenCalledWith(20);
+      expect(workflowStoreMock.loadWorkflow).toHaveBeenCalledWith(20, undefined, expect.any(Function));
     });
   });
 
@@ -476,7 +476,7 @@ describe("useWorkbookStore", () => {
 
       expect(calls).toEqual(["save", "load"]);
       expect(workflowStoreMock.saveWorkflow).toHaveBeenCalledWith({ createVersion: false });
-      expect(workflowStoreMock.loadWorkflow).toHaveBeenCalledWith(10);
+      expect(workflowStoreMock.loadWorkflow).toHaveBeenCalledWith(10, undefined, expect.any(Function));
     });
   });
 });

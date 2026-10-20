@@ -37,7 +37,7 @@ describe("useDataSourceStore", () => {
     const store = useDataSourceStore();
     const result = await store.loadProjectDataSources(7);
 
-    expect(api.get).toHaveBeenCalledWith("/projects/7/data-sources");
+    expect(api.get).toHaveBeenCalledWith("/projects/7/data-sources", { signal: expect.any(AbortSignal) });
     expect(result).toHaveLength(1);
     expect(store.byId.get(1)?.display_name).toBe("Iris");
   });

@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import Button from "primevue/button";
 import Dropdown from "primevue/dropdown";
 import ReferenceQualityCard from "@/components/ReferenceQualityCard.vue";
+import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import type { DatasetAnalysisReadiness, ReferenceValueEvidence, SherpaDatasetDict } from "@/types";
 
 const props = defineProps<{
@@ -164,17 +165,16 @@ const expandedDetails = computed(() => {
       @click="emit('unbind')"
     />
 
-    <p v-if="loading" class="analysis-readiness__diagnostic" role="status">
-      Recomputing analyses for this target…
-    </p>
+    <WorkspaceState
+      v-if="loading" kind="loading"
+      class="analysis-readiness__diagnostic" message="Recomputing analyses for this target…" />
 
-    <p
+    <WorkspaceState
       v-else-if="previewError"
+      kind="error"
       class="analysis-readiness__diagnostic analysis-readiness__diagnostic--error"
-      role="alert"
-    >
-      {{ previewError }} No compatibility decision will be carried to Workflow.
-    </p>
+      :message="`${previewError} No compatibility decision will be carried to Workflow.`"
+    />
 
     <p
       v-else-if="readiness.status && readiness.status !== 'ready'"

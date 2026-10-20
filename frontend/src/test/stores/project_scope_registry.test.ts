@@ -152,8 +152,8 @@ describe("project store coordinates project-scoped resets", () => {
     expect(runs.runs).toEqual([]);
 
     // Now seed again and delete a non-active project
-    runs.runs = [{ id: 2, name: "still-here" } as never];
     project.currentProjectId = 10;
+    runs.runs = [{ id: 2, name: "still-here" } as never];
     vi.mocked(api.delete).mockResolvedValueOnce({ data: null });
     vi.mocked(api.get).mockResolvedValueOnce({ data: [] });
 

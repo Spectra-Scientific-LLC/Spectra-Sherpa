@@ -37,6 +37,8 @@ const { apiGet } = vi.hoisted(() => ({ apiGet: vi.fn() }));
 
 vi.mock("@/api/client", () => ({ default: { get: apiGet } }));
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: vi.fn() }) }));
+vi.mock("@/stores/auth", () => ({ useAuthStore: () => ({ user: { id: 1 }, token: "local" }) }));
+vi.mock("@/stores/workbook", () => ({ useWorkbookStore: () => ({ projectId: 1, activeSheet: { id: "sheet-1" } }) }));
 vi.mock("vue-router", () => ({ useRouter: () => ({ push: routerPush }) }));
 vi.mock("@/stores/workflow", () => ({ useWorkflowStore: () => workflowStore }));
 vi.mock("@/stores/project", () => ({
@@ -154,9 +156,9 @@ describe("WorkflowInspector node help", () => {
     await flushPromises();
     await (wrapper.vm as any)[view === "plot" ? "openQuickPlot" : "openDataTable"]();
     await flushPromises();
-    expect(apiGet).toHaveBeenCalledWith("/runs/3/outputs/clip_1/default", { params: { project_id: 1 } });
+    expect(apiGet).toHaveBeenCalledWith("/runs/3/outputs/clip_1/default", { params: { project_id: 1 }, signal: expect.any(AbortSignal) });
     if (view === "plot") {
-      expect(apiGet).toHaveBeenCalledWith("/runs/3/outputs/source_1/default", { params: { project_id: 1 } });
+      expect(apiGet).toHaveBeenCalledWith("/runs/3/outputs/source_1/default", { params: { project_id: 1 }, signal: expect.any(AbortSignal) });
     } else {
       expect(apiGet).toHaveBeenCalledTimes(1);
       expect((wrapper.vm as any).showDataTableModal).toBe(true);

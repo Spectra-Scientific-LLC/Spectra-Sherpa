@@ -17,6 +17,7 @@ describe("run navigation request ownership", () => {
     vi.mocked(api.get).mockResolvedValue({ data: { runs: [{ id: 2 }], total: 90 } });
     await store.fetchProjectRuns(3, 50, "data");
     expect(api.get).toHaveBeenCalledWith("/runs", {
+      signal: expect.any(AbortSignal),
       params: {
         project_id: 3,
         limit: 50,
@@ -36,6 +37,7 @@ describe("run navigation request ownership", () => {
     vi.mocked(api.get).mockResolvedValue({ data: { runs: [], total: 0 } });
     await store.fetchProjectRuns(3, 0, "all", undefined, "name", "asc");
     expect(api.get).toHaveBeenCalledWith("/runs", {
+      signal: expect.any(AbortSignal),
       params: {
         project_id: 3,
         limit: 50,
@@ -87,7 +89,7 @@ describe("run navigation request ownership", () => {
     expect(store.comparisonLoading).toBe(true);
     expect(api.post).toHaveBeenLastCalledWith("/runs/compare", {
       run_ids: [2, 3], evaluation_selections: selections,
-    }, { params: { project_id: 1 } });
+    }, { params: { project_id: 1 }, signal: expect.any(AbortSignal) });
     reject(new Error("Pairing is unavailable"));
     await expect(pending).rejects.toThrow("Pairing is unavailable");
     expect(store.comparison).toBeNull();

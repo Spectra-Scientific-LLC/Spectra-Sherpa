@@ -41,7 +41,7 @@ describe("Experiment Store", () => {
     const store = useExperimentStore();
     await store.fetchExperiments();
 
-    expect(api.get).toHaveBeenCalledWith("/experiments", { params: undefined });
+    expect(api.get).toHaveBeenCalledWith("/experiments", { params: undefined, signal: expect.any(AbortSignal) });
     expect(store.experiments).toEqual(mockExperiments);
     expect(store.loading).toBe(false);
     expect(store.error).toBeNull();
@@ -51,7 +51,7 @@ describe("Experiment Store", () => {
     vi.mocked(api.get).mockResolvedValueOnce({ data: [] });
     const store = useExperimentStore();
     await store.fetchExperiments(42);
-    expect(api.get).toHaveBeenCalledWith("/experiments", { params: { project_id: 42 } });
+    expect(api.get).toHaveBeenCalledWith("/experiments", { params: { project_id: 42 }, signal: expect.any(AbortSignal) });
   });
 
   it("captures and rethrows fetchExperiments errors", async () => {
@@ -79,9 +79,9 @@ describe("Experiment Store", () => {
     const store = useExperimentStore();
     await store.selectExperiment(1);
 
-    expect(api.get).toHaveBeenNthCalledWith(1, "/experiments/1");
-    expect(api.get).toHaveBeenNthCalledWith(2, "/experiments/1/files");
-    expect(api.get).toHaveBeenNthCalledWith(3, "/experiments/1/versions");
+    expect(api.get).toHaveBeenNthCalledWith(1, "/experiments/1", { signal: expect.any(AbortSignal) });
+    expect(api.get).toHaveBeenNthCalledWith(2, "/experiments/1/files", { signal: expect.any(AbortSignal) });
+    expect(api.get).toHaveBeenNthCalledWith(3, "/experiments/1/versions", { signal: expect.any(AbortSignal) });
     expect(store.currentExperiment).toEqual(mockExperiment);
     expect(store.currentExperimentId).toBe(1);
     expect(store.files).toEqual(mockFiles);
@@ -162,7 +162,7 @@ describe("Experiment Store", () => {
       expect.any(FormData),
       { headers: { "Content-Type": "multipart/form-data" } },
     );
-    expect(api.get).toHaveBeenCalledWith("/experiments/42/files");
+    expect(api.get).toHaveBeenCalledWith("/experiments/42/files", { signal: expect.any(AbortSignal) });
     expect(store.files).toEqual(refreshed);
   });
 });

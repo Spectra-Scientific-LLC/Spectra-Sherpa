@@ -430,6 +430,7 @@
           </div>
           <KeepAlive>
             <DatasetSourcePreview
+              :scope-key="JSON.stringify(dataScopeIdentity())"
               v-if="activeTab === TAB_IMPORT"
               class="source-preview-pane"
               :sourceRef="previewRefSource"
@@ -708,6 +709,7 @@
           </div>
           <KeepAlive>
             <DatasetSourcePreview
+              :scope-key="JSON.stringify(dataScopeIdentity())"
               v-if="activeTab === TAB_UPLOAD"
               class="source-preview-pane"
               :sourceRef="previewUploadSource"
@@ -1297,6 +1299,7 @@
             <div v-once id="active-dataset-display-settings" class="dataset-display-settings-target" />
           </div>
           <DataContentsPanel
+            :scope-key="JSON.stringify(dataScopeIdentity())"
             :show-data-story="false"
             display-settings-target="#active-dataset-display-settings"
             :active-dataset-name="selectedExperimentName"
@@ -1576,6 +1579,11 @@
 </template>
 
 <script setup lang="ts">
+import { useDatasetInspection } from "./composables/useDatasetInspection";
+import { useDatasetNavigation } from "./composables/useDatasetNavigation";
+import { useScopedRequest } from "@/composables/useScopedRequest";
+import { useDatasetDefinitions, type DatasetView } from "./composables/useDatasetDefinitions";
+import { useDatasetReadinessSelection, type AnalysisChoice } from "./composables/useDatasetReadinessSelection";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { ref, reactive, computed, toRaw, nextTick, onMounted, onBeforeUnmount, watch } from "vue";
 import { portfolioDetail } from "@/utils/dataPortfolio";
@@ -1622,7 +1630,6 @@ import type {
   DatasetAnalysisReadiness,
   DatasetPlotSource,
   ExperimentFile,
-  ExperimentFileAssets,
   ExperimentSummary,
   JobInfo,
   ScientificAsset,
@@ -1771,43 +1778,29 @@ const uploadFilesInputRef = ref<HTMLInputElement | null>(null);
 const uploadFolderInputRef = ref<HTMLInputElement | null>(null);
 const registeredReferenceInputRef = ref<HTMLInputElement | null>(null);
 
-const activeExperimentMetadata = ref<Record<string, unknown> | null>(null);
+const dataScopeIdentity = () => [
+  authStore.user?.id, projectStore.currentProjectId, dataStore.activeExperimentId,
+  workflowContextId.value, workflowSourceNodeId.value,
+  typeof route.query.workflow_id === "string" ? route.query.workflow_id : null,
+];
+const readinessSelection = useDatasetReadinessSelection(dataScopeIdentity);
+const {
+  metadata: activeExperimentMetadata, choice: analysisChoice,
+  hydrated: analysisSelectionHydrated, requested: requestedAnalysisSelection,
+  status: analysisSelectionStatus,
+} = readinessSelection;
+const navigation = useDatasetNavigation(() => [
+  authStore.user?.id, projectStore.currentProjectId, workflowContextId.value,
+  workflowSourceNodeId.value, JSON.stringify(route.query),
+]);
+const definitions = useDatasetDefinitions(dataScopeIdentity);
+const {
+  views: datasetViews, selected: selectedDatasetView, error: datasetViewError,
+  busy: datasetViewBusy, name: newDatasetViewName, refresh: refreshDatasetViews,
+} = definitions;
 type PlotFileRef = Pick<ExperimentFile, "id" | "file_path" | "stage">;
 type PlotFileSelection = PlotFileRef[] | null;
 const plotFileSelections = ref<Record<number, PlotFileSelection>>({});
-type AnalysisChoice = {
-  target: string;
-  targetType: "categorical" | "continuous" | null;
-  targetUnits: string | null;
-  sourceDigest: string | null;
-  group: string;
-  readiness: DatasetAnalysisReadiness | null;
-};
-
-type DatasetView = {
-  id: number;
-  name: string;
-  selection_sha256: string;
-  selection: {
-    schema_version?: string;
-    included_count?: number;
-    selected_file_ids: number[] | null;
-    stage: "raw" | "preprocessed" | "synthetic";
-    asset_id: string | null;
-    target_authority: {
-      column: string;
-      target_type: "categorical" | "continuous";
-      units: string | null;
-      source_digest: string;
-    } | null;
-    group_column: string | null;
-    source_manifest_sha256: string;
-    collection_definition_sha256: string | null;
-    scientific_collection_sha256: string | null;
-  };
-};
-const datasetViews = ref<DatasetView[]>([]);
-const selectedDatasetView = ref<DatasetView | null>(null);
 // The source cohort and the scientific target/group are separate decisions.
 const sourcePortfolioView = computed(() => {
   const id = dataStore.activeExperimentId;
@@ -1850,9 +1843,7 @@ const dataPortfolioDetail = computed(() =>
     analysisChoice.value.group,
   ),
 );
-const datasetViewError = ref<string | null>(null);
-const datasetViewBusy = ref(false);
-const newDatasetViewName = ref("");
+
 const curationReason = ref("");
 const curationAction = ref<"exclude" | "restore" | "mixed" | null>(null);
 const curationPanel = ref<InstanceType<typeof DatasetCurationPanel> | null>(null);
@@ -1882,7 +1873,7 @@ const displaySampleInclusion = computed<SampleInclusionState>(() => {
   };
 });
 const exactInspectionSelection = ref(false);
-let datasetViewLoadRequest = 0;
+
 const datasetCurationSource = computed<CurationSource | null>(() => {
   const experimentId = dataStore.activeExperimentId;
   if (!experimentId || !analysisSelectionHydrated.value) return null;
@@ -1992,24 +1983,6 @@ function onCuratedPortfolioSaved(): void {
   void refreshDatasetViews(dataStore.activeExperimentId);
 }
 
-async function refreshDatasetViews(
-  experimentId: number | null,
-  contextIsCurrent: () => boolean = () => true,
-): Promise<void> {
-  const request = ++datasetViewLoadRequest;
-  datasetViews.value = [];
-  datasetViewError.value = null;
-  if (experimentId == null) return;
-  try {
-    const response = await api.get<DatasetView[]>(`/experiments/${experimentId}/dataset-views`);
-    if (request === datasetViewLoadRequest && contextIsCurrent())
-      datasetViews.value = Array.isArray(response.data) ? response.data : [];
-  } catch (error) {
-    if (request === datasetViewLoadRequest && contextIsCurrent())
-      datasetViewError.value = getErrorMessage(error, "Saved definitions are unavailable.");
-  }
-}
-
 watch(
   () => dataStore.activeExperimentId,
   (id) => {
@@ -2023,9 +1996,8 @@ async function saveDatasetView(): Promise<void> {
   const experimentId = dataStore.activeExperimentId;
   const requestedProject = projectStore.currentProjectId;
   if (experimentId == null || datasetViewBusy.value) return;
-  const contextIsCurrent = () =>
-    dataStore.activeExperimentId === experimentId &&
-    projectStore.currentProjectId === requestedProject;
+  const ticket = definitions.begin();
+  const contextIsCurrent = ticket.isCurrent;
   datasetViewBusy.value = true;
   datasetViewError.value = null;
   try {
@@ -2055,6 +2027,7 @@ async function saveDatasetView(): Promise<void> {
       fileIds,
     );
     await nextTick();
+    if (!contextIsCurrent()) return;
     const choice = { ...analysisChoice.value };
     if (
       dataStore.activeExperimentId !== experimentId ||
@@ -2118,13 +2091,15 @@ async function saveDatasetView(): Promise<void> {
       );
     }
   } finally {
-    datasetViewBusy.value = false;
+    if (contextIsCurrent()) datasetViewBusy.value = false;
   }
 }
 
 async function showDatasetView(view: DatasetView): Promise<void> {
   const experimentId = dataStore.activeExperimentId;
+  const projectId = projectStore.currentProjectId;
   if (experimentId == null) return;
+  const ticket = definitions.begin();
   datasetViewBusy.value = true;
   datasetViewError.value = null;
   sampleInclusion.value = { rows: [], loading: true };
@@ -2132,6 +2107,7 @@ async function showDatasetView(view: DatasetView): Promise<void> {
     const response = await api.get<DatasetView>(
       `/experiments/${experimentId}/dataset-views/${view.id}`,
     );
+    if (!ticket.isCurrent()) return;
     const saved = response.data.selection;
     const fileIds = saved.selected_file_ids;
     const selected =
@@ -2143,7 +2119,7 @@ async function showDatasetView(view: DatasetView): Promise<void> {
             return { id: file.id, file_path: file.file_path, stage: file.stage };
           });
     setExperimentPlotSelection(experimentId, selected);
-    ++analysisSelectionRequest;
+    readinessSelection.invalidate();
     const authority = saved.target_authority;
     analysisChoice.value = {
       target: authority?.column ?? "",
@@ -2160,26 +2136,32 @@ async function showDatasetView(view: DatasetView): Promise<void> {
     analysisSelectionHydrated.value = true;
     analysisSelectionStatus.value = "idle";
     await showExperimentContents(experimentId, null, saved.asset_id, true);
+    if (!ticket.isCurrent()) return;
     await loadPlottedDatasets();
-    if (projectStore.currentProjectId != null) {
-      await api.post(`/projects/${projectStore.currentProjectId}/choices`, {
+    if (!ticket.isCurrent()) return;
+    if (projectId != null) {
+      await api.post(`/projects/${projectId}/choices`, {
         kind: "dataset",
         experiment_id: experimentId,
         dataset_view_id: view.id,
       });
-      await provenanceStore.refresh(projectStore.currentProjectId);
+      if (!ticket.isCurrent()) return;
+      await provenanceStore.refresh(projectId);
     }
-    selectedDatasetView.value = response.data;
+    if (ticket.isCurrent()) selectedDatasetView.value = response.data;
   } catch (error) {
-    datasetViewError.value = getErrorMessage(error, "This saved definition cannot be shown.");
+    if (ticket.isCurrent())
+      datasetViewError.value = getErrorMessage(error, "This saved definition cannot be shown.");
   } finally {
-    datasetViewBusy.value = false;
+    if (ticket.isCurrent()) datasetViewBusy.value = false;
   }
 }
 
 async function showDefaultDatasetView(): Promise<void> {
   const experimentId = dataStore.activeExperimentId;
+  const projectId = projectStore.currentProjectId;
   if (experimentId == null) return;
+  const ticket = definitions.begin();
   datasetViewError.value = null;
   selectedDatasetView.value = null;
   sampleInclusion.value = { rows: [], loading: true };
@@ -2191,22 +2173,27 @@ async function showDefaultDatasetView(): Promise<void> {
     experimentId,
     first ? [{ id: first.id, file_path: first.file_path, stage: first.stage }] : null,
   );
+  const stage = first?.stage ??
+    (dataStore.experimentFiles.some((file) => file.stage === "raw") ? "raw" : "synthetic");
   await refreshActiveExperimentMetadata(experimentId);
+  if (!ticket.isCurrent()) return;
   await showExperimentContents(experimentId);
+  if (!ticket.isCurrent()) return;
   await loadPlottedDatasets();
-  if (projectStore.currentProjectId != null) {
+  if (!ticket.isCurrent()) return;
+  if (projectId != null) {
     try {
-      await api.post(`/projects/${projectStore.currentProjectId}/choices`, {
+      await api.post(`/projects/${projectId}/choices`, {
         kind: "dataset",
         experiment_id: experimentId,
-        stage:
-          first?.stage ??
-          (dataStore.experimentFiles.some((file) => file.stage === "raw") ? "raw" : "synthetic"),
+        stage,
         selected_file_ids: first ? [first.id] : null,
         asset_id: inspectionAssetId.value,
       });
-      await provenanceStore.refresh(projectStore.currentProjectId);
+      if (!ticket.isCurrent()) return;
+      await provenanceStore.refresh(projectId);
     } catch (error) {
+      if (!ticket.isCurrent()) return;
       datasetViewError.value = getErrorMessage(
         error,
         "Default is displayed, but its active choice could not be recorded.",
@@ -2220,40 +2207,14 @@ const confirmAction = useConfirmAction();
 async function deleteDatasetView(view: DatasetView): Promise<void> {
   const experimentId = dataStore.activeExperimentId;
   if (experimentId == null || datasetViewBusy.value) return;
-  const accepted = await confirmAction({
+  await definitions.remove(experimentId, view.id, () => confirmAction({
     title: "Delete saved definition",
     message: `Delete saved definition "${view.name}"? Its source data will remain.`,
     acceptLabel: "Delete definition",
     destructive: true,
-  });
-  // The user may have opened another dataset while the dialog was open.
-  if (!accepted || dataStore.activeExperimentId !== experimentId || datasetViewBusy.value) return;
-  datasetViewBusy.value = true;
-  datasetViewError.value = null;
-  try {
-    await api.delete(`/experiments/${experimentId}/dataset-views/${view.id}`);
-    if (selectedDatasetView.value?.id === view.id) selectedDatasetView.value = null;
-    await refreshDatasetViews(experimentId);
-  } catch (error) {
-    datasetViewError.value = getErrorMessage(error, "Could not delete this definition.");
-  } finally {
-    datasetViewBusy.value = false;
-  }
+  }));
 }
 
-const analysisChoice = ref<AnalysisChoice>({
-  target: "",
-  targetType: null,
-  targetUnits: null,
-  sourceDigest: null,
-  group: "",
-  readiness: null,
-});
-const analysisSelectionHydrated = ref(false);
-// Saved/user intent must survive temporary empty projections during hydration.
-const requestedAnalysisSelection = ref({ target: "", group: "" });
-const analysisSelectionStatus = ref<"loading" | "idle" | "saving" | "saved" | "error">("loading");
-let analysisSelectionRequest = 0;
 const workflowHandoffBusy = computed(
   () =>
     activeTab.value === TAB_MY_DATASET &&
@@ -2279,9 +2240,14 @@ const plotDatasetsError = ref<string | null>(null);
 const fileSampleLabelsByExperiment = ref<Record<number, Record<string, string[]>>>({});
 const fileSampleLabelRequests = new Map<number, Promise<void>>();
 let plotDatasetRequest = 0;
-let contentsInspectionRequest = 0;
+
 let experimentFocusRequest = 0;
-const fileAssetInventoryCache = new Map<string, Promise<ExperimentFileAssets>>();
+const inspection = useDatasetInspection(dataScopeIdentity,
+  (experimentId, fileId) => dataStore.fetchFileAssets(experimentId, fileId));
+const {
+  assets: inspectionAssets, assetId: inspectionAssetId, warnings: inspectionWarnings,
+  pending: pendingInspection, inventories: fileAssetInventoryCache,
+} = inspection;
 let residentDatasets = retainedDatasetWorkspace(
   dataStore,
   `${authStore.user?.id}:${projectStore.currentProjectId}`,
@@ -2505,6 +2471,7 @@ watch(
     if (prev == null) {
       return;
     }
+    const ticket = navigation.bootstrap.begin();
     persistDataDraftNow(currentDataDraftStorageKey);
     currentDataDraftStorageKey = dataDraftStorageKey();
     restoreActiveDataTab();
@@ -2521,14 +2488,18 @@ watch(
     plotDatasetSources.value = [];
     plotDatasetsError.value = null;
     plotDatasetRequest += 1;
-    contentsInspectionRequest += 1;
+    inspection.contents.invalidate();
     fileAssetInventoryCache.clear();
     residentDatasets.clear();
     dataStore.clearActiveExperimentSelection();
     await Promise.all([dataStore.fetchCatalog(), dataStore.fetchExperiments()]);
+    if (!ticket.isCurrent()) return;
     await dataStore.restoreActiveExperimentForCurrentProject();
+    if (!ticket.isCurrent()) return;
     if (activeTab.value === TAB_MY_DATASET) await ensureInitialContentsSelection();
+    if (!ticket.isCurrent()) return;
     await loadPlottedDatasets();
+    if (!ticket.isCurrent()) return;
     if (next != null) void syncAdvisorForDataSubtab();
   },
 );
@@ -2718,19 +2689,13 @@ const previewUploadId = ref<string | null>(null);
 const uploadOverrides = reactive<Record<string, PreparedDataOverrides>>({});
 const uploadAssetIds = reactive<Record<string, string | null>>({});
 const deleteTarget = ref<ExperimentFile | null>(null);
-const inspectionAssets = ref<ScientificAsset[]>([]);
-const inspectionAssetId = ref<string | null>(null);
+
 watch(datasetCurationSource, (source) => {
   if (source) return;
   curationAction.value = null;
   curationReason.value = "";
 });
-const inspectionWarnings = ref<string[]>([]);
-const pendingInspection = ref<
-  | { kind: "file"; experimentId: number; file: ExperimentFile }
-  | { kind: "experiment"; experimentId: number }
-  | null
->(null);
+
 watch(
   () => JSON.stringify(datasetCurationSource.value),
   () => {
@@ -3271,18 +3236,22 @@ const originalSourceSampleCount = computed(() => {
   return receipt?.filesKey === originalSourceFilesKey.value ? receipt.count : null;
 });
 
+const sourceCountRequests = useScopedRequest(() => [
+  ...dataScopeIdentity(), originalSourceFilesKey.value,
+]);
 async function countOriginalSourceSamples(
   experimentId: number,
   files: ExperimentFile[],
   filesKey: string,
 ): Promise<void> {
   if (!files.length || sourceSampleCounts.value[experimentId]?.filesKey === filesKey) return;
+  const ticket = sourceCountRequests.begin();
   let next = 0;
   let failed = false;
   let total = 0;
   let counted = 0;
   const workers = Array.from({ length: Math.min(4, files.length) }, async () => {
-    while (next < files.length && !failed) {
+    while (next < files.length && !failed && ticket.isCurrent()) {
       const file = files[next++];
       if (file.data_role === "sample_metadata") continue;
       if (
@@ -3294,15 +3263,7 @@ async function countOriginalSourceSamples(
         counted += 1;
         continue;
       }
-      const cacheKey = `${experimentId}:${file.id}`;
-      let inventory = fileAssetInventoryCache.get(cacheKey);
-      if (!inventory) {
-        inventory = dataStore.fetchFileAssets(experimentId, file.id).catch((error) => {
-          fileAssetInventoryCache.delete(cacheKey);
-          throw error;
-        });
-        fileAssetInventoryCache.set(cacheKey, inventory);
-      }
+      const inventory = inspection.inventory(experimentId, file.id);
       try {
         const assets = (await inventory).assets.filter(
           (asset) => asset.data_role === "X_spectra" || asset.data_role === "X_features",
@@ -3324,6 +3285,7 @@ async function countOriginalSourceSamples(
   });
   await Promise.all(workers);
   if (
+    ticket.isCurrent() &&
     !failed &&
     counted > 0 &&
     dataStore.activeExperimentId === experimentId &&
@@ -4014,45 +3976,55 @@ function onLibrarySourceChange() {
   }
 }
 
+const librarySearchRequests = useScopedRequest(() => [
+  authStore.user?.id, projectStore.currentProjectId, librarySource.value,
+  librarySearch.value, libraryResolutionCm1.value,
+], () => { librarySearching.value = false; });
 async function searchHitranLibrary() {
   if (!isHitranLibrarySource(librarySource.value)) return;
+  const ticket = librarySearchRequests.begin();
+  const source = librarySource.value;
+  const query = librarySearch.value;
+  const resolution = libraryResolutionCm1.value;
   librarySearching.value = true;
   try {
     const response = await api.get("/synthesis/search", {
       params: {
-        source: librarySource.value,
-        query: librarySearch.value,
+        source,
+        query,
         limit: 1000,
       },
     });
+    if (!ticket.isCurrent()) return;
     const components = (response.data.components || []) as LibrarySearchComponent[];
     const mappedRows = components.map((component) => {
       const options = Array.isArray(component.xsec_options) ? component.xsec_options : [];
       const firstOption = options[0] || {};
       return {
         key: String(component.id),
-        source: librarySource.value,
+        source,
         component_id: String(component.id),
         compound_name: String(component.name || component.id),
         formula: component.formula || null,
         cas_number: component.cas || "",
         resolution:
-          librarySource.value === "hitran_xsec"
+          source === "hitran_xsec"
             ? firstOption.resolution_cm1
               ? `${formatNumber(firstOption.resolution_cm1)} cm^-1`
               : "measured"
-            : `${libraryResolutionCm1.value} cm^-1`,
-        source_label: librarySource.value === "hitran_xsec" ? "HITRAN X-section" : "HITRAN LBL",
+            : `${resolution} cm^-1`,
+        source_label: source === "hitran_xsec" ? "HITRAN X-section" : "HITRAN LBL",
         xsec_options: options,
         selected_xsec_option: 0,
       } as LibraryRow;
     });
-    if (librarySource.value === "hitran_xsec") {
+    if (source === "hitran_xsec") {
       hitranXsecLibraryRows.value = mappedRows;
     } else {
       hitranLibraryRows.value = mappedRows;
     }
   } catch (err) {
+    if (!ticket.isCurrent()) return;
     toast.add({
       severity: "error",
       summary: "HITRAN Search Failed",
@@ -4060,7 +4032,7 @@ async function searchHitranLibrary() {
       life: 5000,
     });
   } finally {
-    librarySearching.value = false;
+    if (ticket.isCurrent()) librarySearching.value = false;
   }
 }
 
@@ -4757,6 +4729,7 @@ function sortFilesNewestFirst(items: ExperimentFile[]): ExperimentFile[] {
 async function inspectExperimentFile(
   experimentId: number,
   fileId: number | null,
+  isCurrent: () => boolean = () => true,
 ): Promise<boolean> {
   if (
     fileId != null &&
@@ -4770,8 +4743,10 @@ async function inspectExperimentFile(
   }
 
   await dataStore.selectExperiment(experimentId);
+  if (!isCurrent()) return false;
   if (fileId == null) {
     await showExperimentContents(experimentId);
+    if (!isCurrent()) return false;
     activeTab.value = TAB_MY_DATASET;
     persistActiveDataTab();
     return true;
@@ -4783,13 +4758,14 @@ async function inspectExperimentFile(
   }
 
   await showExperimentContents(experimentId);
+    if (!isCurrent()) return false;
   dataStore.activateFile(file.id, file.file_path);
   activeTab.value = TAB_MY_DATASET;
   persistActiveDataTab();
   return true;
 }
 
-async function inspectLatestProjectFile(): Promise<boolean> {
+async function inspectLatestProjectFile(isCurrent: () => boolean = () => true): Promise<boolean> {
   if (
     projectStore.currentProjectId != null &&
     (!projectStore.currentProject ||
@@ -4802,14 +4778,18 @@ async function inspectLatestProjectFile(): Promise<boolean> {
     (left, right) => right.id - left.id,
   );
   for (const experiment of experiments) {
+    if (!isCurrent()) return false;
     await dataStore.selectExperiment(experiment.id);
+    if (!isCurrent()) return false;
     const latestFile = sortFilesNewestFirst(dataStore.experimentFiles)[0];
     if (!latestFile) {
       continue;
     }
 
     await showExperimentContents(experiment.id);
+    if (!isCurrent()) return false;
     await onInspectFile(latestFile, { updateRoute: false });
+    if (!isCurrent()) return false;
     activeTab.value = TAB_MY_DATASET;
     persistActiveDataTab();
     return true;
@@ -4818,25 +4798,26 @@ async function inspectLatestProjectFile(): Promise<boolean> {
   return false;
 }
 
-async function applyRouteExploreState() {
+async function applyRouteExploreState(ticket = navigation.route.begin()) {
+  const query = { ...route.query };
   syncGuidedExampleSession();
   const wantsExplore =
-    route.query.tab === "inspect" ||
-    route.query.tab === "explore" ||
-    route.query.tab === "my-dataset" ||
-    route.query.tab === "my_dataset" ||
-    route.query.tab === "dataset" ||
-    route.query.experimentId != null ||
-    route.query.experiment != null ||
-    route.query.fileId != null ||
-    route.query.fromTemplate === "1" ||
+    query.tab === "inspect" ||
+    query.tab === "explore" ||
+    query.tab === "my-dataset" ||
+    query.tab === "my_dataset" ||
+    query.tab === "dataset" ||
+    query.experimentId != null ||
+    query.experiment != null ||
+    query.fileId != null ||
+    query.fromTemplate === "1" ||
     isGuidedExampleSession.value;
   if (!wantsExplore) {
     return;
   }
 
-  const experimentId = queryNumber(route.query.experimentId ?? route.query.experiment);
-  const fileId = queryNumber(route.query.fileId);
+  const experimentId = queryNumber(query.experimentId ?? query.experiment);
+  const fileId = queryNumber(query.fileId);
   const requestedExperimentBelongsToProject =
     experimentId == null ||
     dataStore.experiments.some((experiment) => experiment.id === experimentId);
@@ -4852,7 +4833,8 @@ async function applyRouteExploreState() {
 
   try {
     if (experimentId != null && fileId != null) {
-      const inspected = await inspectExperimentFile(experimentId, fileId);
+      const inspected = await inspectExperimentFile(experimentId, fileId, ticket.isCurrent);
+      if (!ticket.isCurrent()) return;
       if (inspected) {
         return;
       }
@@ -4861,25 +4843,30 @@ async function applyRouteExploreState() {
     if (experimentId != null) {
       if (dataStore.activeExperimentId !== experimentId || !dataStore.fileInfo) {
         await dataStore.selectExperiment(experimentId);
+        if (!ticket.isCurrent()) return;
         await showExperimentContents(experimentId);
+        if (!ticket.isCurrent()) return;
       }
-      const requestedViewId = queryNumber(route.query.viewId);
+      const requestedViewId = queryNumber(query.viewId);
       if (requestedViewId != null) {
-        await refreshDatasetViews(experimentId);
+        await refreshDatasetViews(experimentId, ticket.isCurrent);
+        if (!ticket.isCurrent()) return;
         const requestedView = datasetViews.value.find((view) => view.id === requestedViewId);
         if (requestedView) await showDatasetView(requestedView);
         else
           datasetViewError.value = "The requested named definition is unavailable in this dataset.";
-      } else if (route.query.viewId === "default") {
+      } else if (query.viewId === "default") {
         await showDefaultDatasetView();
       }
+      if (!ticket.isCurrent()) return;
       activeTab.value = TAB_MY_DATASET;
       persistActiveDataTab();
       return;
     }
 
-    if (route.query.focus === "latest-project" || isGuidedExampleSession.value) {
-      const inspected = await inspectLatestProjectFile();
+    if (query.focus === "latest-project" || isGuidedExampleSession.value) {
+      const inspected = await inspectLatestProjectFile(ticket.isCurrent);
+      if (!ticket.isCurrent()) return;
       if (inspected) {
         return;
       }
@@ -4888,10 +4875,11 @@ async function applyRouteExploreState() {
     // Errors are surfaced by the Contents panel.
   }
 
-  activeTab.value = TAB_MY_DATASET;
+  if (ticket.isCurrent()) activeTab.value = TAB_MY_DATASET;
 }
 
 async function applyRouteDataState() {
+  const ticket = navigation.route.begin();
   const requestedTab = routeTabIndex(route.query.tab);
   const starterIntent = pendingAnalysisStarterIntent();
   if (starterIntent?.imported_experiment_id != null) {
@@ -4903,6 +4891,7 @@ async function applyRouteDataState() {
       persistActiveDataTab();
       if (dataStore.activeExperimentId !== importedExperiment.id || !dataStore.fileInfo) {
         await dataStore.selectExperiment(importedExperiment.id);
+        if (!ticket.isCurrent()) return;
         await showExperimentContents(importedExperiment.id);
       }
       return;
@@ -4919,7 +4908,7 @@ async function applyRouteDataState() {
     activeTab.value = requestedTab;
     persistActiveDataTab();
     if (requestedTab === TAB_MY_DATASET) {
-      await applyRouteExploreState();
+      await applyRouteExploreState(ticket);
     } else if (requestedTab === TAB_MULTI_WELL) {
       const experimentId = queryNumber(route.query.experimentId ?? route.query.experiment);
       if (
@@ -4932,23 +4921,39 @@ async function applyRouteDataState() {
     return;
   }
 
-  await applyRouteExploreState();
+  await applyRouteExploreState(ticket);
 }
 
 function onAnalysisChoice(choice: AnalysisChoice): void {
   analysisChoice.value = choice;
 }
 
+const workflowSelectionRequests = useScopedRequest(
+  () => [authStore.user?.id, projectStore.currentProjectId, workflowContextId.value, workflowSourceNodeId.value],
+  () => {
+    workflowSelectionContext.value = null;
+    workflowSelectionContextError.value = null;
+    workflowSelectionContextLoading.value = false;
+  },
+);
+let workflowHydrationDataset: number | null = null;
+watch(() => dataStore.activeExperimentId, (id) => {
+  if (id !== workflowHydrationDataset) workflowSelectionRequests.invalidate();
+}, { flush: "sync" });
+
 async function loadWorkflowDataSelectionContext(): Promise<void> {
   const workflowId = workflowContextId.value;
   const sourceNodeId = workflowSourceNodeId.value;
   if (workflowId === null || !sourceNodeId) return;
+  const ticket = workflowSelectionRequests.begin();
+  workflowHydrationDataset = dataStore.activeExperimentId;
   workflowSelectionContextLoading.value = true;
   workflowSelectionContextError.value = null;
   try {
     const response = await api.get<WorkflowDataSelectionContext>(
       `/workflows/${workflowId}/data-selections/${encodeURIComponent(sourceNodeId)}`,
     );
+    if (!ticket.isCurrent()) return;
     const context = response.data;
     workflowSelectionContext.value = context;
     const saved = context.saved_selection;
@@ -4962,7 +4967,9 @@ async function loadWorkflowDataSelectionContext(): Promise<void> {
       throw new Error("The dataset saved on this sheet is no longer available in this project.");
     }
     if (dataStore.activeExperimentId !== saved.experiment_id) {
+      workflowHydrationDataset = saved.experiment_id;
       await dataStore.selectExperiment(saved.experiment_id);
+      if (!ticket.isCurrent()) return;
     }
     const selectedIds = saved.selected_file_ids;
     if (selectedIds === null) {
@@ -4981,12 +4988,13 @@ async function loadWorkflowDataSelectionContext(): Promise<void> {
     selectedDatasetView.value = null;
     if (saved.dataset_view_id != null) {
       try {
-        selectedDatasetView.value = (
-          await api.get<DatasetView>(
-            `/experiments/${saved.experiment_id}/dataset-views/${saved.dataset_view_id}`,
-          )
-        ).data;
+        const definition = await api.get<DatasetView>(
+          `/experiments/${saved.experiment_id}/dataset-views/${saved.dataset_view_id}`,
+        );
+        if (!ticket.isCurrent()) return;
+        selectedDatasetView.value = definition.data;
       } catch (error) {
+        if (!ticket.isCurrent()) return;
         if ((error as { response?: { status?: number } })?.response?.status !== 404) throw error;
         datasetViewError.value =
           "This sheet's saved definition was deleted. Its recorded source remains available; save a new definition to rebind it.";
@@ -5007,14 +5015,16 @@ async function loadWorkflowDataSelectionContext(): Promise<void> {
     analysisSelectionHydrated.value = true;
     analysisSelectionStatus.value = "idle";
     await showExperimentContents(saved.experiment_id, null, saved.asset_id, true);
+    if (!ticket.isCurrent()) return;
     await loadPlottedDatasets();
   } catch (error: unknown) {
+    if (!ticket.isCurrent()) return;
     workflowSelectionContextError.value = getErrorMessage(
       error,
       "The workflow sheet data selection could not be loaded.",
     );
   } finally {
-    workflowSelectionContextLoading.value = false;
+    if (ticket.isCurrent()) workflowSelectionContextLoading.value = false;
   }
 }
 
@@ -5031,6 +5041,10 @@ function returnToWorkflow(): void {
   });
 }
 
+const workflowApplyRequests = useScopedRequest(dataScopeIdentity, () => {
+  workflowSelectionApplying.value = false;
+});
+const workflowHandoffRequests = useScopedRequest(dataScopeIdentity);
 async function applyWorkflowDataSelection(): Promise<void> {
   const context = workflowSelectionContext.value;
   const experimentId = dataStore.activeExperimentId;
@@ -5045,6 +5059,7 @@ async function applyWorkflowDataSelection(): Promise<void> {
     workflowSelectionContextError.value = "Choose files from one processing stage.";
     return;
   }
+  const ticket = workflowApplyRequests.begin();
   try {
     workflowSelectionApplying.value = true;
     workflowSelectionContextError.value = null;
@@ -5054,6 +5069,7 @@ async function applyWorkflowDataSelection(): Promise<void> {
       inspectionAssetId.value,
       selectedDatasetView.value !== null,
     );
+    if (!ticket.isCurrent()) return;
     const source = objectOrNull(dataStore.fileInfo?.metadata?.source_collection);
     const sourceManifest = stringOrEmpty(source?.source_manifest_sha256);
     const scientificCollection = stringOrEmpty(source?.scientific_collection_sha256);
@@ -5132,6 +5148,7 @@ async function applyWorkflowDataSelection(): Promise<void> {
         selection: payloadSelection,
       },
     );
+    if (!ticket.isCurrent()) return;
     workflowSelectionContext.value = {
       ...context,
       current_revision: response.data,
@@ -5145,6 +5162,7 @@ async function applyWorkflowDataSelection(): Promise<void> {
     });
     returnToWorkflow();
   } catch (error: unknown) {
+    if (!ticket.isCurrent()) return;
     workflowSelectionContextError.value = getErrorMessage(
       error,
       "The data selection could not be applied to this sheet.",
@@ -5153,7 +5171,7 @@ async function applyWorkflowDataSelection(): Promise<void> {
       await loadWorkflowDataSelectionContext();
     }
   } finally {
-    workflowSelectionApplying.value = false;
+    if (ticket.isCurrent()) workflowSelectionApplying.value = false;
   }
 }
 
@@ -5166,26 +5184,9 @@ async function onAnalysisSelectionCommit(choice: AnalysisChoice): Promise<void> 
   }
   const experimentId = dataStore.activeExperimentId;
   if (experimentId == null || !analysisSelectionHydrated.value) return;
-  const request = ++analysisSelectionRequest;
-  analysisSelectionStatus.value = "saving";
   try {
-    const response = await api.put(`/experiments/${experimentId}/analysis-selection`, {
-      selected_target: choice.target || null,
-      target_type: choice.target ? choice.targetType : null,
-      group_column: choice.target && choice.group ? choice.group : null,
-      source_digest: choice.sourceDigest,
-    });
-    if (request !== analysisSelectionRequest || dataStore.activeExperimentId !== experimentId)
-      return;
-    activeExperimentMetadata.value = {
-      ...(activeExperimentMetadata.value ?? {}),
-      analysis_selection: response.data,
-    };
-    analysisSelectionStatus.value = "saved";
+    await readinessSelection.save(experimentId, choice);
   } catch (error: unknown) {
-    if (request !== analysisSelectionRequest || dataStore.activeExperimentId !== experimentId)
-      return;
-    analysisSelectionStatus.value = "error";
     toast.add({
       severity: "error",
       summary: "Selection not saved",
@@ -5224,6 +5225,7 @@ function workflowSelectionForExperiment(experimentId: number): PlotFileSelection
 }
 
 async function goToWorkflow(addNode?: string) {
+  const ticket = workflowHandoffRequests.begin();
   const experimentId = dataStore.activeExperimentId;
   const selection = experimentId == null ? null : plotFileSelections.value[experimentId];
   let handoffReadiness = analysisChoice.value.readiness;
@@ -5244,6 +5246,7 @@ async function goToWorkflow(addNode?: string) {
         workflowSelection?.map((file) => file.id),
       );
       await nextTick();
+      if (!ticket.isCurrent()) return;
       if (
         dataStore.activeExperimentId !== experimentId ||
         plotFileSelections.value[experimentId] !== selection ||
@@ -5286,6 +5289,7 @@ async function goToWorkflow(addNode?: string) {
             ).data,
         );
         await nextTick();
+        if (!ticket.isCurrent()) return;
         if (
           dataStore.activeExperimentId !== experimentId ||
           dataStore.fileInfo !== inspected ||
@@ -5301,6 +5305,7 @@ async function goToWorkflow(addNode?: string) {
         }
       }
     } catch (error) {
+      if (!ticket.isCurrent()) return;
       toast.add({
         severity: "error",
         summary: "Selection could not be prepared",
@@ -5444,7 +5449,10 @@ async function goToWorkflow(addNode?: string) {
 // --- Lifecycle ---
 
 onMounted(async () => {
+  const intent = navigation.intent.value;
   await projectStore.ensureProjectForBrowserTab();
+  if (intent !== navigation.intent.value) return;
+  const ticket = navigation.bootstrap.begin();
   currentDataDraftStorageKey = dataDraftStorageKey();
   restoreActiveDataTab();
   restoreDataDraft(currentDataDraftStorageKey);
@@ -5455,18 +5463,24 @@ onMounted(async () => {
     workflowStore.fetchCompatibilityMatrix(),
   ]);
   await dataStore.fetchExperiments();
+  if (!ticket.isCurrent()) return;
   if (pendingAnalysisStarterIntent()) await catalogsReady;
+  if (!ticket.isCurrent()) return;
   await dataStore.restoreActiveExperimentForCurrentProject();
+  if (!ticket.isCurrent()) return;
   syncGuidedExampleSession();
   await applyRouteDataState();
+  if (!ticket.isCurrent()) return;
   // New Analysis carries a reference choice, rather than merely suggesting
   // one. Admit bundled/catalog sources automatically. Provider packages stay
   // manual because they require the exact user-acquired archive.
   if (pendingAnalysisStarterIntent() && selectedRefDatasets.size > 0) {
     await onImportSelectedDatasets();
+    if (!ticket.isCurrent()) return;
   }
   if (workflowSelectionContextRequested.value) {
     await loadWorkflowDataSelectionContext();
+    if (!ticket.isCurrent()) return;
   }
 
   const requestedTab = routeTabIndex(route.query.tab);
@@ -5494,9 +5508,11 @@ onMounted(async () => {
       restoreResidentInspection(resident);
     }
     await ensureInitialContentsSelection();
+    if (!ticket.isCurrent()) return;
   }
   if (plottedExperimentIds.value.length) {
     await loadPlottedDatasets();
+    if (!ticket.isCurrent()) return;
   }
   if (!qualified.value && isHitranLibrarySource(librarySource.value)) {
     void searchHitranLibrary();
@@ -5531,6 +5547,7 @@ watch(activeTab, (tabIndex) => {
 
 let dataTabSelectionGeneration = 0;
 function onDataTabSelected(tabIndex: number) {
+  navigation.choose();
   dataTabSelectionGeneration += 1;
   if (tabIndex === TAB_MY_DATASET) void ensureInitialContentsSelection();
 }
@@ -5565,12 +5582,19 @@ watch(
   },
 );
 
+const dataRefreshRequests = useScopedRequest(dataScopeIdentity);
+const projectRefreshRequests = useScopedRequest(dataScopeIdentity);
+const synthesisReopenRequests = useScopedRequest(dataScopeIdentity);
 async function retryExperiments() {
+  const ticket = dataRefreshRequests.begin();
   await dataStore.fetchExperiments();
+  if (!ticket.isCurrent()) return;
   if (!dataStore.experimentsError) await ensureInitialContentsSelection();
 }
 
 async function refresh() {
+  const ticket = dataRefreshRequests.begin();
+  const experimentId = dataStore.activeExperimentId;
   residentDatasets.clear();
   fileAssetInventoryCache.clear();
   clearRetainedInspection(dataStore.fileInfo);
@@ -5579,104 +5603,53 @@ async function refresh() {
     dataStore.fetchExperiments(),
     dataStore.fetchReferenceCatalog(),
   ]);
-  if (dataStore.activeExperimentId) {
-    await dataStore.selectExperiment(dataStore.activeExperimentId);
+  if (!ticket.isCurrent()) return;
+  if (experimentId) {
+    await dataStore.selectExperiment(experimentId);
   }
+  if (!ticket.isCurrent()) return;
   await loadPlottedDatasets();
 }
 
 async function refreshProjectContext() {
+  const ticket = projectRefreshRequests.begin();
+  const projectId = projectStore.currentProjectId;
   await projectStore.fetchProjects();
-  if (projectStore.currentProjectId != null) {
-    await projectStore.fetchProject(projectStore.currentProjectId);
+  if (!ticket.isCurrent()) return;
+  if (projectId != null) {
+    await projectStore.fetchProject(projectId);
   }
 }
 
 async function onSynthesisSaved() {
+  const ticket = projectRefreshRequests.begin();
   await refresh();
+  if (!ticket.isCurrent()) return;
   await refreshProjectContext();
 }
 
 async function refreshActiveExperimentMetadata(experimentId: number | null): Promise<void> {
-  const request = ++analysisSelectionRequest;
-  activeExperimentMetadata.value = null;
-  analysisSelectionHydrated.value = false;
-  requestedAnalysisSelection.value = { target: "", group: "" };
-  analysisSelectionStatus.value = "loading";
-  analysisChoice.value = {
-    target: "",
-    targetType: null,
-    targetUnits: null,
-    sourceDigest: null,
-    group: "",
+  const saved = workflowSelectionContext.value?.saved_selection;
+  await readinessSelection.refresh(experimentId, saved?.experiment_id === experimentId ? {
+    target: saved.target_authority?.column ?? "",
+    targetType: saved.target_authority?.target_type ?? null,
+    targetUnits: saved.target_authority?.units ?? null,
+    sourceDigest: saved.target_authority?.source_digest ?? null,
+    group: saved.group_column ?? "",
     readiness: null,
-  };
-  if (experimentId == null) {
-    analysisSelectionHydrated.value = true;
-    analysisSelectionStatus.value = "idle";
-    return;
-  }
-  const sheetSelection = workflowSelectionContext.value?.saved_selection;
-  if (sheetSelection?.experiment_id === experimentId) {
-    analysisChoice.value = {
-      target: sheetSelection.target_authority?.column ?? "",
-      targetType: sheetSelection.target_authority?.target_type ?? null,
-      targetUnits: sheetSelection.target_authority?.units ?? null,
-      sourceDigest: sheetSelection.target_authority?.source_digest ?? null,
-      group: sheetSelection.group_column ?? "",
-      readiness: null,
-    };
-    requestedAnalysisSelection.value = {
-      target: analysisChoice.value.target,
-      group: analysisChoice.value.group,
-    };
-    analysisSelectionHydrated.value = true;
-    analysisSelectionStatus.value = "idle";
-    return;
-  }
-  try {
-    const response = await api.get(`/experiments/${experimentId}`);
-    if (request !== analysisSelectionRequest || dataStore.activeExperimentId !== experimentId)
-      return;
-    activeExperimentMetadata.value = objectOrNull(response.data?.metadata) ?? {};
-    const saved = objectOrNull(activeExperimentMetadata.value.analysis_selection);
-    const target = stringOrEmpty(saved?.selected_target);
-    const targetType =
-      saved?.target_type === "categorical" || saved?.target_type === "continuous"
-        ? saved.target_type
-        : null;
-    analysisChoice.value = {
-      target: target && targetType ? target : "",
-      targetType: target && targetType ? targetType : null,
-      targetUnits: null,
-      sourceDigest: stringOrEmpty(saved?.source_digest) || null,
-      group: target && targetType ? stringOrEmpty(saved?.group_column) : "",
-      readiness: null,
-    };
-    requestedAnalysisSelection.value = {
-      target: analysisChoice.value.target,
-      group: analysisChoice.value.group,
-    };
-    analysisSelectionStatus.value = saved ? "saved" : "idle";
-  } catch {
-    if (request !== analysisSelectionRequest || dataStore.activeExperimentId !== experimentId)
-      return;
-    activeExperimentMetadata.value = null;
-    analysisSelectionStatus.value = "error";
-  } finally {
-    if (request === analysisSelectionRequest && dataStore.activeExperimentId === experimentId) {
-      analysisSelectionHydrated.value = true;
-    }
-  }
+  } : undefined);
 }
 
 async function reopenInspectedSynthesisRecipe(): Promise<void> {
   const recipe = inspectedSynthesisRecipe.value;
+  const title = inspectedSynthesisTitle.value;
   if (!recipe) return;
+  const ticket = synthesisReopenRequests.begin();
   activeTab.value = TAB_SYNTHESIS;
   persistActiveDataTab();
   await nextTick();
-  await synthesisPanelRef.value?.reopenRecipe(recipe, inspectedSynthesisTitle.value);
+  if (!ticket.isCurrent()) return;
+  await synthesisPanelRef.value?.reopenRecipe(recipe, title);
 }
 
 async function reopenSelectedLibraryBasket(): Promise<void> {
@@ -5731,9 +5704,15 @@ function setExperimentPlotSelection(
   plotFileSelections.value = next;
 }
 
+const plottedRequests = useScopedRequest(dataScopeIdentity, () => {
+  plotDatasetSources.value = [];
+  plotDatasetsLoading.value = false;
+  plotDatasetsError.value = null;
+});
 async function loadPlottedDatasets(
   prefetched = new Map<number, SherpaDatasetDict>(),
 ): Promise<void> {
+  const ticket = plottedRequests.begin();
   const request = ++plotDatasetRequest;
   plotDatasetsError.value = null;
   if (plottedExperimentIds.value.length === 0) {
@@ -5791,7 +5770,7 @@ async function loadPlottedDatasets(
       const selection = plotFileSelections.value[experiment.id];
       if (selection === null) {
         const dataset = await readProjection(experiment);
-        cacheFileSampleLabels(experiment.id, dataset);
+        if (ticket.isCurrent()) cacheFileSampleLabels(experiment.id, dataset);
         return {
           experimentId: experiment.id,
           name: experiment.name,
@@ -5810,7 +5789,7 @@ async function loadPlottedDatasets(
         experiment,
         selection.map((file) => file.id),
       );
-      cacheFileSampleLabels(experiment.id, dataset);
+      if (ticket.isCurrent()) cacheFileSampleLabels(experiment.id, dataset);
       return {
         experimentId: experiment.id,
         name: experiment.name,
@@ -5832,7 +5811,7 @@ async function loadPlottedDatasets(
       };
     }),
   );
-  if (request !== plotDatasetRequest) return;
+  if (!ticket.isCurrent() || request !== plotDatasetRequest) return;
   const admitted: DatasetPlotSource[] = [];
   const refusals: string[] = [];
   const supersededExperimentIds: number[] = [];
@@ -5951,7 +5930,7 @@ async function onPlotFileToggle(file: ExperimentFile, checked: boolean): Promise
         : undefined,
   );
   if (selected.length === 0) {
-    contentsInspectionRequest += 1;
+    inspection.contents.invalidate();
     inspectionWarnings.value = [];
     inspectionAssets.value = [];
     inspectionAssetId.value = null;
@@ -6045,7 +6024,7 @@ async function showExperimentContents(
   exactSelection = false,
 ) {
   exactInspectionSelection.value = exactSelection;
-  const request = ++contentsInspectionRequest;
+  const ticket = inspection.contents.begin();
   dataStore.clearCatalogExploration();
   inspectionWarnings.value = [];
   try {
@@ -6080,19 +6059,11 @@ async function showExperimentContents(
       !registeredPackageSelection &&
       sourceFiles.length > 1;
     const inventories = await Promise.all(
-      (loadWholeCollection ? sourceFiles : inspectionFiles).map((file) => {
-        const cacheKey = `${experimentId}:${file.id}`;
-        const cached = fileAssetInventoryCache.get(cacheKey);
-        if (cached) return cached;
-        const pending = dataStore.fetchFileAssets(experimentId, file.id).catch((error) => {
-          fileAssetInventoryCache.delete(cacheKey);
-          throw error;
-        });
-        fileAssetInventoryCache.set(cacheKey, pending);
-        return pending;
-      }),
+      (loadWholeCollection ? sourceFiles : inspectionFiles).map((file) =>
+        inspection.inventory(experimentId, file.id),
+      ),
     );
-    if (request !== contentsInspectionRequest) return;
+    if (!ticket.isCurrent()) return;
     inspectionWarnings.value = uniqueAssetWarnings(
       inventories.flatMap((inventory) => inventory.assets),
     );
@@ -6114,6 +6085,7 @@ async function showExperimentContents(
       }
       if (preferredAssetId) {
         await onInspectionAssetChange();
+        if (!ticket.isCurrent()) return;
         if (dataStore.fileInfo)
           await loadPlottedDatasets(new Map([[experimentId, dataStore.fileInfo]]));
       }
@@ -6146,7 +6118,7 @@ async function showExperimentContents(
           : null,
       );
     }
-    if (request !== contentsInspectionRequest) return;
+    if (!ticket.isCurrent()) return;
     if (
       (loadWholeCollection || sourceFiles.length === 1) &&
       inspectedDataset &&
@@ -6176,7 +6148,7 @@ async function showExperimentContents(
         preferredAssetId,
         selectedViewIds,
       );
-      if (request !== contentsInspectionRequest) return;
+      if (!ticket.isCurrent()) return;
     }
     if (
       (loadWholeCollection || !explicitViewSelection) &&
@@ -6197,7 +6169,7 @@ async function showExperimentContents(
     cacheFileSampleLabels(experimentId, inspectedDataset);
     await loadPlottedDatasets(new Map([[experimentId, inspectedDataset]]));
   } catch {
-    if (request !== contentsInspectionRequest) return;
+    if (!ticket.isCurrent()) return;
     inspectionWarnings.value = [];
     toast.add({
       severity: "error",
@@ -6274,6 +6246,8 @@ async function onExperimentSelect(
   options: { preserveComparisons?: boolean } = {},
 ) {
   if (!exp) return;
+  navigation.choose();
+  const ticket = navigation.focus.begin();
   if (dataStore.activeExperimentId !== exp.id) selectedDatasetView.value = null;
   const request = ++experimentFocusRequest;
   // Dataset focus is one scientific context.  Comparison checkboxes may add
@@ -6285,7 +6259,7 @@ async function onExperimentSelect(
     plotDatasetSources.value = [];
     plotDatasetsError.value = null;
     plotDatasetRequest += 1;
-    contentsInspectionRequest += 1;
+    inspection.contents.invalidate();
     inspectionWarnings.value = [];
     inspectionAssets.value = [];
     inspectionAssetId.value = null;
@@ -6295,7 +6269,7 @@ async function onExperimentSelect(
     }
   }
   await dataStore.selectExperiment(exp.id);
-  if (request !== experimentFocusRequest || dataStore.activeExperimentId !== exp.id) return;
+  if (!ticket.isCurrent() || request !== experimentFocusRequest || dataStore.activeExperimentId !== exp.id) return;
   if (dataStore.experimentFilesRefusal) return;
   if (!hasExperimentPlotSelection(exp.id) && dataStore.experimentFiles.length > 0) {
     const registeredViews = dataStore.experimentFiles.filter((file) =>
@@ -6313,9 +6287,12 @@ async function onExperimentSelect(
   activeTab.value = TAB_MY_DATASET;
   persistActiveDataTab();
   await showExperimentContents(exp.id);
-  if (request !== experimentFocusRequest || dataStore.activeExperimentId !== exp.id) return;
+  if (!ticket.isCurrent() || request !== experimentFocusRequest || dataStore.activeExperimentId !== exp.id) return;
   const queryWithoutFile = { ...route.query };
   delete queryWithoutFile.fileId;
+  // Normalize legacy aliases: experimentId would otherwise beat the new experiment.
+  delete queryWithoutFile.experimentId;
+  delete queryWithoutFile.viewId;
   await router.replace({
     path: "/data",
     query: {
@@ -6329,7 +6306,10 @@ async function onExperimentSelect(
 async function onAcquisitionExperimentSelect(experimentId: number) {
   const experiment = dataStore.experiments.find((candidate) => candidate.id === experimentId);
   if (!experiment) return;
+  navigation.choose();
+  const ticket = navigation.focus.begin();
   await dataStore.selectExperiment(experiment.id);
+  if (!ticket.isCurrent()) return;
   activeTab.value = TAB_MULTI_WELL;
   persistActiveDataTab();
   await router.replace({
@@ -6624,18 +6604,21 @@ async function onDeleteExperiment() {
 }
 
 async function onInspectFile(file: ExperimentFile, options: { updateRoute?: boolean } = {}) {
+  const ticket = inspection.focus.begin();
   const updateRoute = options.updateRoute ?? true;
   const experimentId = dataStore.activeExperimentId;
   if (!experimentId) return;
   activeTab.value = TAB_MY_DATASET;
   persistActiveDataTab();
   await nextTick();
+  if (!ticket.isCurrent()) return;
   dataStore.clearCatalogExploration();
   inspectionWarnings.value = [];
   try {
     // Active-row focus only controls curve emphasis. It must not replace the
     // admitted dataset collection with a single-file preview.
     const inventory = await dataStore.fetchFileAssets(experimentId, file.id);
+    if (!ticket.isCurrent()) return;
     inspectionAssets.value = inventory.assets;
     inspectionWarnings.value = uniqueAssetWarnings(inventory.assets);
     inspectionAssetId.value = null;
@@ -6660,6 +6643,7 @@ async function onInspectFile(file: ExperimentFile, options: { updateRoute?: bool
       });
     }
   } catch {
+    if (!ticket.isCurrent()) return;
     inspectionWarnings.value = [];
     toast.add({
       severity: "error",
@@ -6674,6 +6658,7 @@ async function onInspectionAssetChange() {
   const selection = pendingInspection.value;
   const assetId = inspectionAssetId.value;
   if (!selection || !assetId) return;
+  const ticket = inspection.selection.begin();
   try {
     if (selection.kind === "file") {
       await dataStore.inspectFile(
@@ -6682,6 +6667,7 @@ async function onInspectionAssetChange() {
         selection.experimentId,
         assetId,
       );
+      if (!ticket.isCurrent()) return;
       cacheFileSampleLabels(
         selection.experimentId,
         dataStore.fileInfo,

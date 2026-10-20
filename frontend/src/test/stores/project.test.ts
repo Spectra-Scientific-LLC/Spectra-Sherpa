@@ -212,7 +212,7 @@ describe("Project Store", () => {
 
       await store.fetchProjects();
 
-      expect(api.get).toHaveBeenCalledWith("/projects");
+      expect(api.get).toHaveBeenCalledWith("/projects", { signal: expect.any(AbortSignal) });
       expect(store.projects).toEqual([mockProject]);
       expect(store.isLoading).toBe(false);
     });
@@ -236,7 +236,7 @@ describe("Project Store", () => {
 
       const result = await store.fetchProject(1);
 
-      expect(api.get).toHaveBeenCalledWith("/projects/1");
+      expect(api.get).toHaveBeenCalledWith("/projects/1", { signal: expect.any(AbortSignal) });
       expect(store.currentProject).toEqual(detail);
       expect(store.currentProjectId).toBe(1);
       expect(result).toEqual(detail);
