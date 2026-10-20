@@ -29,7 +29,8 @@ interferogram, phase, or other typed results; the Workbench inventories them
 and saves the scientist's exact result choice in the canonical DAG. Series and
 3-D OPUS blocks are recognized and refused rather than flattened.
 
-The always-running bundled corpus contains one licensed real acquisition.
+The bundled corpus contains six licensed real acquisitions (one OpenSpecy
+file and five opusreader2 fixtures); see the reader attributions.
 Additional qualified multi-asset layouts are exact-hash external references
 because their source corpus does not grant redistribution permission; those
 bytes must be acquired and executed during release qualification. Support is

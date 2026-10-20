@@ -22,8 +22,8 @@ Every file's decoded assets are cross-checked against an independently
 installed copy of `brukeropus` 1.4.3 -- the project this reader's own binary
 layout is adapted from (see `brukeropus.md`) -- and agree exactly on shape,
 values, and, for the duplicate-absorbance files, on which occurrence is
-canonical. Exact digests, per-asset shapes, and value checksums are recorded
-in `docs/evidence/native-opus-reader-conformance.json`.
+canonical. The public fixtures live in `tests/fixtures/opus/`; regression
+checks are in `tests/test_native_opus_reader.py`.
 
 `BF_lo_01_soil_cal.1` is authored by an opusreader2 copyright holder and tied
 to a published, peer-reviewed dataset. Three other upstream files were
