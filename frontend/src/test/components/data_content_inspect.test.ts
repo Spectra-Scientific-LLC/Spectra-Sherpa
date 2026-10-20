@@ -472,6 +472,7 @@ function savedDatasetView(id: number) {
 
 type DataContentVm = {
   saveDatasetView(): Promise<void>;
+  showDefaultDatasetView(): Promise<void>;
   savePortfolio(): Promise<void>;
   showDatasetView(view: Record<string, unknown>): Promise<void>;
   sampleInclusion: { rows: Array<{ sampleId: string; included: boolean; editable: boolean }>; loading: boolean };
@@ -480,6 +481,7 @@ type DataContentVm = {
   analysisChoice: Record<string, unknown>;
   newDatasetViewName: string;
   datasetViewError: string | null;
+  datasetViewBusy: boolean;
   selectedDatasetView: { id: number } | null;
   datasetViews: Array<{ id: number }>;
   confirmDeleteExperiment(experiment: unknown): void;
@@ -1127,7 +1129,7 @@ describe("DataContent file inspection", () => {
       target_type: "continuous",
       group_column: "specimen_id",
       source_digest: "b".repeat(64),
-    });
+    }, { signal: expect.any(AbortSignal) });
     expect(mocks.dataStore.fetchExperiments).not.toHaveBeenCalled();
     expect(mocks.dataStore.fetchCatalog).not.toHaveBeenCalled();
     expect(
@@ -1410,7 +1412,8 @@ describe("DataContent file inspection", () => {
     expect(confirmAction).toHaveBeenLastCalledWith(
       expect.objectContaining({ acceptLabel: "Delete definition", destructive: true }),
     );
-    expect(api.delete).toHaveBeenCalledWith("/experiments/11/dataset-views/5");
+    expect(api.delete).toHaveBeenCalledWith("/experiments/11/dataset-views/5",
+      { signal: expect.any(AbortSignal) });
     wrapper.unmount();
   });
 
@@ -2112,7 +2115,8 @@ describe("DataContent file inspection", () => {
       vi.mocked(api.get).mockReturnValueOnce(refreshed);
       const saving = vm.saveDatasetView();
       await flushPromises();
-      expect(api.get).toHaveBeenLastCalledWith("/experiments/11/dataset-views");
+      expect(api.get).toHaveBeenLastCalledWith("/experiments/11/dataset-views",
+        { signal: expect.any(AbortSignal) });
       if (scope === "project") mocks.projectStore.currentProjectId = 4;
       else mocks.dataStore.activeExperimentId = 12;
       await flushPromises();
@@ -4019,6 +4023,116 @@ describe("DataContent file inspection", () => {
 
     wrapper.unmount();
   });
+  it.each(["success", "failure"])("ignores a saved definition's late %s after project A → B → A", async (outcome) => {
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    let finish!: (response: { data: ReturnType<typeof savedDatasetView> }) => void;
+    let fail!: (error: Error) => void;
+    const held = new Promise<{ data: ReturnType<typeof savedDatasetView> }>((resolve, reject) => {
+      finish = resolve; fail = reject;
+    });
+    vi.mocked(api.get).mockReturnValueOnce(held);
+    mocks.dataStore.inspectExperimentRawFiles.mockClear();
+    vi.mocked(api.post).mockClear();
+    const showing = vm.showDatasetView(savedDatasetView(5));
+    mocks.projectStore.currentProjectId = 4;
+    mocks.projectStore.currentProjectId = 3;
+    vm.selectedDatasetView = savedDatasetView(99);
+    vm.datasetViewBusy = true; // A newer operation owns this spinner.
+    if (outcome === "success") finish({ data: savedDatasetView(5) });
+    else fail(new Error("old definition failed"));
+    await showing;
+    expect(vm.selectedDatasetView?.id).toBe(99);
+    expect(vm.datasetViewBusy).toBe(true);
+    expect(vm.datasetViewError).toBeNull();
+    expect(api.post).not.toHaveBeenCalled();
+    expect(mocks.dataStore.inspectExperimentRawFiles).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("does not persist a default selection after its dataset scope is retired", async () => {
+    const wrapper = mountDataContent();
+    await flushPromises();
+    const vm = wrapper.vm as unknown as DataContentVm;
+    let finish!: (response: { data: object }) => void;
+    const held = new Promise<{ data: object }>((resolve) => { finish = resolve; });
+    vi.mocked(api.get).mockReturnValueOnce(held);
+    vi.mocked(api.post).mockClear();
+    const showing = vm.showDefaultDatasetView();
+    mocks.projectStore.currentProjectId = 4;
+    mocks.projectStore.currentProjectId = 3;
+    finish({ data: { metadata: {} } });
+    await showing;
+    expect(api.post).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it("does not restore an old workflow source after sheet A → B → A", async () => {
+    const originalRoute = mocks.route;
+    mocks.route = reactive({
+      query: { tab: "my-dataset", workflow: "41", source_node: "source-a" },
+    });
+    let finish!: (response: { data: object }) => void;
+    const held = new Promise<{ data: object }>((resolve) => { finish = resolve; });
+    const originalGet = vi.mocked(api.get).getMockImplementation()!;
+    vi.mocked(api.get).mockImplementation((url, ...args) =>
+      String(url).includes("/data-selections/") ? held : originalGet(url, ...args),
+    );
+    const wrapper = mountDataContent();
+    try {
+      await flushPromises();
+      expect(api.get).toHaveBeenCalledWith("/workflows/41/data-selections/source-a");
+      mocks.route.query.workflow = "42";
+      mocks.route.query.workflow = "41";
+      mocks.dataStore.selectExperiment.mockClear();
+      finish({ data: {
+        workflow_id: 41, workflow_name: "Retired sheet", source_node_id: "source-a",
+        saved_selection: { experiment_id: 999, selected_file_ids: null },
+      } });
+      await flushPromises();
+      expect(wrapper.text()).not.toContain("Retired sheet");
+      expect(wrapper.text()).not.toContain("no longer available in this project");
+      expect(mocks.dataStore.selectExperiment).not.toHaveBeenCalled();
+    } finally {
+      wrapper.unmount();
+      mocks.route = originalRoute;
+    }
+  });
+
+  it("a user dataset choice supersedes bootstrap inspection and removes the old route alias", async () => {
+    const originalStore = mocks.dataStore;
+    mocks.dataStore = reactive(originalStore);
+    mocks.route.query = { tab: "my-dataset", experimentId: "11" };
+    mocks.dataStore.experiments.push({
+      id: 12, name: "Mixture", description: "Mixture", file_count: 1, created_at: "2026-05-01",
+    });
+    let finish!: (value: object) => void;
+    const held = new Promise<object>((resolve) => { finish = resolve; });
+    mocks.dataStore.inspectFile.mockImplementationOnce(() => held);
+    mocks.dataStore.selectExperiment.mockImplementation(async (id: number) => {
+      mocks.dataStore.activeExperimentId = id;
+    });
+    const wrapper = mountDataContent();
+    try {
+      await flushPromises();
+      const vm = wrapper.vm as unknown as DataContentVm;
+      await vm.onExperimentSelect(mocks.dataStore.experiments[1]);
+      await flushPromises();
+      expect(mocks.routerReplace).toHaveBeenLastCalledWith({
+        path: "/data", query: { tab: "my-dataset", experiment: "12" },
+      });
+      mocks.dataStore.selectExperiment.mockClear();
+      finish({ n_samples: 178, n_features: 13, data: [] });
+      await flushPromises();
+      expect(mocks.dataStore.activeExperimentId).toBe(12);
+      expect(mocks.dataStore.selectExperiment).not.toHaveBeenCalledWith(11);
+    } finally {
+      wrapper.unmount();
+      mocks.dataStore = originalStore;
+    }
+  });
+
   it("shows scoped read failures and offers read-only retry without Refresh", async () => {
     mocks.dataStore.catalogError = "Dataset catalog could not be loaded.";
     mocks.dataStore.experimentsError = "Project datasets could not be loaded.";

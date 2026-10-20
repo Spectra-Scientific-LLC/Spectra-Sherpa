@@ -731,6 +731,10 @@ import {
 } from "@/utils/curve";
 import { getErrorMessage } from "@/utils/errors";
 import { useToast } from "primevue/usetoast";
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest, type ScopedRequestTicket } from "@/composables/useScopedRequest";
+import { useSynthesisExecution } from "./composables/useSynthesisExecution";
+import { useSynthesisSearch, type ComponentSearchRow } from "./composables/useSynthesisSearch";
 import { useProjectStore } from "@/stores/project";
 
 const emit = defineEmits<{ saved: [] }>();
@@ -739,14 +743,12 @@ const router = useRouter();
 const toast = useToast();
 const synthesisStore = useSynthesisStore();
 const projectStore = useProjectStore();
+const authStore = useAuthStore();
 const {
   sources,
   searchQuery,
   selectedComponents,
   previewResult,
-  searching,
-  previewing,
-  saving,
   showTransmittance,
   previewStartSample,
   previewSkip,
@@ -777,7 +779,7 @@ const activeSpectrumLoadId = ref<string | null>(null);
 const spectrumLoadQueue = ref<SpectrumLoadQueueItem[]>([]);
 const synthesisReviewComponentIds = ref<string[]>([]);
 let searchDebounceTimer: ReturnType<typeof window.setTimeout> | null = null;
-let searchRequestSeq = 0;
+
 
 const apodizationOptions = [
   { label: "Blackman-Harris", value: "Blackman-Harris" },
@@ -856,7 +858,7 @@ const CURVE_EXPORT_VERSION = 1;
 const MAX_SYNTHESIS_OUTPUT_VALUES = 2_000_000;
 const OUTPUT_SIZE_WARNING_FRACTION = 0.8;
 type ComponentSearchSortKey = "name" | "formula" | "cas";
-type ComponentSearchRow = ComponentSummary & { selected_xsec_option?: number };
+
 type SynthesisPayload = ReturnType<typeof buildRequestPayload>;
 interface SynthesisBundleItem {
   id: string;
@@ -885,7 +887,44 @@ interface CommonOverlapProblem {
 }
 type SavedRecipeRecord = Record<string, unknown>;
 const synthesisBundle = ref<SynthesisBundleItem[]>([]);
-const searchResults = ref<ComponentSearchRow[]>([]);
+const recipeRevision = ref(0);
+const workspaceIdentity = () => [authStore.user?.id, authStore.token, projectStore.currentProjectId, recipeRevision.value];
+const recipeIdentity = () => [...workspaceIdentity(), JSON.stringify({
+  settings, seed: recipeSeed.value,
+  components: selectedComponents.value.map((component) => ({
+    id: component.id, option: component.selected_xsec_option,
+    concentration: component.concentration_max_ppm, points: component.control_points,
+  })),
+})];
+const synthesisExecution = useSynthesisExecution(() => [
+  ...recipeIdentity(), datasetName.value, JSON.stringify(synthesisBundle.value),
+]);
+const { previewing, saving } = synthesisExecution;
+const componentSearch = useSynthesisSearch(workspaceIdentity,
+  () => ({ source: settings.source, query: searchQuery.value }));
+const { results: searchResults, searching } = componentSearch;
+const sourceRequests = useScopedRequest(() => [...workspaceIdentity(), settings.source]);
+const reopenRequests = useScopedRequest(recipeIdentity);
+const mountRequests = useScopedRequest(workspaceIdentity);
+const spectrumContextIdentity = () => [
+  ...workspaceIdentity(), JSON.stringify(spectrumParams({ id: "" })),
+];
+const refetchRequests = useScopedRequest(spectrumContextIdentity);
+const spectrumRequests = new Set<ReturnType<typeof useScopedRequest>>();
+watch(spectrumContextIdentity, () => {
+  clearSpectrumLoadQueue();
+  activeSpectrumLoadId.value = null;
+  for (const component of selectedComponents.value) {
+    component.loading = false;
+    component.load_progress = null;
+    component.load_message = null;
+  }
+}, { flush: "sync" });
+watch(() => [authStore.user?.id, projectStore.currentProjectId], () => {
+  clearSpectrumLoadQueue();
+  activeSpectrumLoadId.value = null;
+  synthesisBundle.value = [];
+}, { flush: "sync" });
 const compoundSortKey = ref<ComponentSearchSortKey>("name");
 const compoundSortDirection = ref<1 | -1>(1);
 
@@ -1609,14 +1648,19 @@ const verticalSliceLayout = computed(() => ({
 }));
 
 onMounted(async () => {
+  const ticket = mountRequests.begin();
   await loadSources();
+  if (!ticket.isCurrent()) return;
   await refetchTrimmedSpectra();
+  if (!ticket.isCurrent()) return;
   if (!searchResults.value.length) {
     await searchComponents();
   }
 });
 
 onBeforeUnmount(() => {
+  for (const requests of spectrumRequests) requests.dispose();
+  clearSpectrumLoadQueue();
   if (searchDebounceTimer !== null) {
     window.clearTimeout(searchDebounceTimer);
     searchDebounceTimer = null;
@@ -1635,13 +1679,16 @@ watch(searchQuery, () => {
 // is intentionally not added back here.
 
 async function loadSources() {
+  const ticket = sourceRequests.begin();
   try {
     const response = await api.get("/synthesis/sources");
+    if (!ticket.isCurrent()) return;
     sources.value = response.data.sources || [];
     if (sources.value.length && !sources.value.some(source => source.id === settings.source)) {
       settings.source = sources.value[0].id;
     }
   } catch (err) {
+    if (!ticket.isCurrent()) return;
     toast.add({
       severity: "warn",
       summary: "Synthesis sources unavailable",
@@ -1662,37 +1709,13 @@ function scheduleComponentSearch(delayMs = 250): void {
 }
 
 async function searchComponents() {
-  const requestSeq = ++searchRequestSeq;
-  const query = searchQuery.value;
-  const source = settings.source;
-  searching.value = true;
   try {
-    const response = await api.get("/synthesis/search", {
-      params: {
-        source,
-        query,
-        limit: 1000,
-      },
-    });
-    if (requestSeq !== searchRequestSeq || source !== settings.source || query !== searchQuery.value) {
-      return;
-    }
-    searchResults.value = ((response.data.components || []) as ComponentSummary[]).map((component) => ({
-      ...component,
-      selected_xsec_option: 0,
-    }));
+    await componentSearch.search();
   } catch (err) {
-    if (requestSeq !== searchRequestSeq) return;
     toast.add({
-      severity: "error",
-      summary: "Search failed",
-      detail: getErrorMessage(err, "Could not search synthesis components."),
-      life: 5000,
+      severity: "error", summary: "Search failed",
+      detail: getErrorMessage(err, "Could not search synthesis components."), life: 5000,
     });
-  } finally {
-    if (requestSeq === searchRequestSeq) {
-      searching.value = false;
-    }
   }
 }
 
@@ -1784,7 +1807,7 @@ function enqueueSpectrumLoad(component: SelectedComponent): Promise<void> {
   });
 }
 
-function spectrumParams(component: SelectedComponent): Record<string, string | number> {
+function spectrumParams(component: Pick<SelectedComponent, "id" | "selected_xsec_option">): Record<string, string | number> {
   const componentId =
     settings.source === "hitran_xsec"
       ? `${component.id}#${component.selected_xsec_option ?? 0}`
@@ -1810,10 +1833,12 @@ function spectrumParams(component: SelectedComponent): Record<string, string | n
   return params;
 }
 
-async function pollSpectrumLoadJob(jobId: number, component: SelectedComponent): Promise<JobInfo> {
+async function pollSpectrumLoadJob(jobId: number, component: SelectedComponent, ticket: ScopedRequestTicket): Promise<JobInfo> {
   while (true) {
     await new Promise((resolve) => window.setTimeout(resolve, 2000));
-    const response = await api.get<JobInfo>(`/jobs/${jobId}`);
+    if (!ticket.isCurrent()) throw new DOMException("Recipe changed", "AbortError");
+    const response = await api.get<JobInfo>(`/jobs/${jobId}`, { signal: ticket.signal });
+    if (!ticket.isCurrent()) throw new DOMException("Recipe changed", "AbortError");
     const status = response.data.status;
     component.load_progress = response.data.progress;
     component.load_message = response.data.progress_message || null;
@@ -1824,7 +1849,7 @@ async function pollSpectrumLoadJob(jobId: number, component: SelectedComponent):
   }
 }
 
-async function fetchSpectrumForComponent(component: SelectedComponent): Promise<SpectrumPayload> {
+async function fetchSpectrumForComponent(component: SelectedComponent, ticket: ScopedRequestTicket): Promise<SpectrumPayload> {
   const params = spectrumParams(component);
   if (!isHitranSource(settings.source)) {
     const response = await api.get<SpectrumPayload>("/synthesis/spectrum", { params });
@@ -1837,26 +1862,50 @@ async function fetchSpectrumForComponent(component: SelectedComponent): Promise<
     message?: string | null;
     spectrum?: SpectrumPayload | null;
   }>("/synthesis/spectrum/load", params);
+  if (!ticket.isCurrent()) throw new DOMException("Recipe changed", "AbortError");
   if (loadResponse.data.spectrum) return loadResponse.data.spectrum;
   if (!loadResponse.data.queued || !loadResponse.data.job_id) {
     throw new Error(loadResponse.data.message || "HITRAN spectrum load did not return a spectrum or job id.");
   }
   component.load_progress = 0;
   component.load_message = loadResponse.data.message || "HITRAN spectrum queued";
-  await pollSpectrumLoadJob(loadResponse.data.job_id, component);
+  await pollSpectrumLoadJob(loadResponse.data.job_id, component, ticket);
+  if (!ticket.isCurrent()) throw new DOMException("Recipe changed", "AbortError");
   const cached = await api.get<SpectrumPayload>("/synthesis/spectrum", { params });
   return cached.data;
 }
 
 async function runSpectrumLoad(component: SelectedComponent): Promise<void> {
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    component.loading = false;
+    component.load_progress = null;
+    component.load_message = null;
+    if (activeSpectrumLoadId.value === component.id) activeSpectrumLoadId.value = null;
+    // Removing/changing the active component must not strand valid siblings.
+    queueMicrotask(() => {
+      if (isHitranSource(settings.source)) drainSpectrumLoadQueue();
+    });
+  };
+  const requests = useScopedRequest(() => [
+    ...workspaceIdentity(), selectedComponents.value.includes(component),
+    JSON.stringify(spectrumParams(component)),
+  ], release);
+  spectrumRequests.add(requests);
+  const ticket = requests.begin();
   activeSpectrumLoadId.value = component.id;
   component.loading = true;
   try {
-    component.spectrum = await fetchSpectrumForComponent(component);
+    const spectrum = await fetchSpectrumForComponent(component, ticket);
+    if (!ticket.isCurrent()) return;
+    component.spectrum = spectrum;
     component.spectrum_storage_trimmed = false;
     component.native_grid = computeNativeGrid(component.spectrum?.wavenumber);
     previewResult.value = null;
   } catch (err) {
+    if (!ticket.isCurrent()) return;
     toast.add({
       severity: "error",
       summary: "Spectrum load failed",
@@ -1864,13 +1913,10 @@ async function runSpectrumLoad(component: SelectedComponent): Promise<void> {
       life: 7000,
     });
   } finally {
-    component.loading = false;
-    component.load_progress = null;
-    component.load_message = null;
-    if (activeSpectrumLoadId.value === component.id) {
-      activeSpectrumLoadId.value = null;
-    }
-    if (isHitranSource(settings.source)) {
+    const current = ticket.isCurrent();
+    requests.dispose();
+    spectrumRequests.delete(requests);
+    if (current && isHitranSource(settings.source)) {
       drainSpectrumLoadQueue();
     }
   }
@@ -1884,87 +1930,60 @@ function drainSpectrumLoadQueue(): void {
 }
 
 async function refetchTrimmedSpectra() {
+  const ticket = refetchRequests.begin();
   const trimmed = selectedComponents.value.filter(
     (component) => component.spectrum_storage_trimmed && component.spectrum === null,
   );
   if (!trimmed.length) return;
   for (const component of trimmed) {
+    if (!ticket.isCurrent()) return;
     await loadSpectrum(component);
   }
 }
 
 async function previewSynthesis() {
-  previewing.value = true;
   try {
-    const response = await api.post("/synthesis/preview", buildRequestPayload());
-    previewResult.value = response.data;
+    const result = await synthesisExecution.preview(buildRequestPayload());
+    if (!result) return;
+    previewResult.value = result;
     resetPreviewView();
-    syncSeedFromResult(response.data);
+    syncSeedFromResult(result);
   } catch (err) {
     toast.add({
-      severity: "error",
-      summary: "Preview failed",
-      detail: getErrorMessage(err, "Could not generate synthesis preview."),
-      life: 7000,
+      severity: "error", summary: "Preview failed",
+      detail: getErrorMessage(err, "Could not generate synthesis preview."), life: 7000,
     });
-  } finally {
-    previewing.value = false;
   }
 }
 
 async function saveSynthesis() {
-  saving.value = true;
+  if (saving.value) return;
+  const bundle = synthesisBundle.value;
+  const bundleName = datasetName.value || `Synthetic bundle (${bundle.length})`;
   try {
-    if (synthesisBundle.value.length) {
-      const bundleName = datasetName.value || `Synthetic bundle (${synthesisBundle.value.length})`;
-      let experimentId: number | null = null;
-      for (const [index, item] of synthesisBundle.value.entries()) {
-        const response: { data: { experiment_id: number; result: SynthesisResult } } = await api.post("/synthesis/save", {
-          ...item.payload,
-          name: index === 0 ? bundleName : item.name,
-          experiment_id: experimentId,
-          project_id: projectStore.currentProjectId,
-        });
-        experimentId = response.data.experiment_id;
-        previewResult.value = response.data.result;
-      }
-      toast.add({
-        severity: "success",
-        summary: "Synthetic bundle saved",
-        detail: `Saved ${synthesisBundle.value.length} synthetic file(s) into "${bundleName}"`,
-        life: 5000,
-      });
-      synthesisBundle.value = [];
-      emit("saved");
-      return;
-    }
-
-    // Pass project_id so the backend creates the new Experiment scoped to
-    // the active project. Without this, the Experiment row is created with
-    // project_id=NULL and dataStore.fetchExperiments filters it out of the
-    // My Dataset list (which queries by project_id).
-    const response = await api.post("/synthesis/save", {
-      ...buildRequestPayload(),
-      name: datasetName.value || defaultDatasetName(),
-      project_id: projectStore.currentProjectId,
-    });
-    previewResult.value = response.data.result;
+    const items = bundle.length
+      ? bundle.map((item, index) => ({
+          payload: item.payload, name: index === 0 ? bundleName : item.name,
+        }))
+      : [{ payload: buildRequestPayload(), name: datasetName.value || defaultDatasetName() }];
+    const result = await synthesisExecution.save(projectStore.currentProjectId, items);
+    if (!result) return;
+    previewResult.value = result.result;
     toast.add({
       severity: "success",
-      summary: "Synthetic dataset saved",
-      detail: `Saved ${response.data.file_path}`,
+      summary: bundle.length ? "Synthetic bundle saved" : "Synthetic dataset saved",
+      detail: bundle.length
+        ? `Saved ${result.count} synthetic file(s) into "${bundleName}"`
+        : `Saved ${result.file_path}`,
       life: 5000,
     });
+    if (bundle.length) synthesisBundle.value = [];
     emit("saved");
   } catch (err) {
     toast.add({
-      severity: "error",
-      summary: "Save failed",
-      detail: getErrorMessage(err, "Could not save synthetic dataset."),
-      life: 7000,
+      severity: "error", summary: "Save failed",
+      detail: getErrorMessage(err, "Could not save synthetic dataset."), life: 7000,
     });
-  } finally {
-    saving.value = false;
   }
 }
 
@@ -2035,6 +2054,7 @@ function buildRequestPayload() {
 }
 
 function invalidatePreview() {
+  synthesisExecution.invalidatePreview();
   synthesisStore.invalidatePreview();
 }
 
@@ -2226,6 +2246,7 @@ function syncSeedFromResult(result: SynthesisResult | null) {
 }
 
 async function reopenRecipe(recipe: SavedRecipeRecord, title?: string | null): Promise<void> {
+  recipeRevision.value += 1;
   const recipeSettings = asRecord(recipe.settings);
   const recipeComponents = Array.isArray(recipe.components) ? recipe.components : [];
   if (!recipeComponents.length) {
@@ -2300,8 +2321,11 @@ async function reopenRecipe(recipe: SavedRecipeRecord, title?: string | null): P
       : defaultDatasetName();
   synthesisBundle.value = [];
 
+  const ticket = reopenRequests.begin();
   await loadSources();
+  if (!ticket.isCurrent()) return;
   await searchComponents();
+  if (!ticket.isCurrent()) return;
   toast.add({
     severity: "success",
     summary: "Synthesis recipe reopened",

@@ -36,7 +36,7 @@
         ? { surface: 'run', projectId: project.currentProjectId, runId: detail.run.id } : null" />
     </div>
     <ModelPromotionReview v-if="promotionOpen && promotionArtifactUid && detail" :artifact-uid="promotionArtifactUid" :project-id="detail.run.project_id" :workflow-id="detail.run.workflow_id" :run-id="detail.run.id" @close="promotionOpen = false" @confirmed="promotionOpen = false" />
-    <div v-if="error"><p role="alert">{{ error }}</p><Button icon="pi pi-refresh" label="Retry" @click="loadRun" /></div>
+    <div v-if="error"><p role="alert">{{ error }}</p><Button icon="pi pi-refresh" label="Retry" @click="loadRun()" /></div>
     <ProgressSpinner v-else-if="loading" />
     <template v-else-if="detail">
       <p v-if="detail.error" role="status" class="evidence-gaps">
@@ -249,6 +249,7 @@ import type { ReferenceValueEvidence } from '@/types';
 import { applicationReferenceEvidence } from '@/utils/referenceQuality';
 import { focusSavedRun, releaseSavedRun } from '@/lib/sherpaAttention';
 import { useProjectStore } from '@/stores/project';
+import { useAuthStore } from '@/stores/auth';
 import { useAdvisorStore } from '@/stores/advisor';
 import { useAppConfig } from '@/composables/useAppConfig';
 import { requestAdvisorPrompt } from '@/lib/advisorPromptActions';
@@ -265,6 +266,8 @@ import { buildModelSummary, primaryModelNode, summarySources, type ModelSummary,
 import { extractValidationLedgerRows, validationLedgerUnavailableReason, type ValidationLedgerRow } from '@/utils/validationLedger';
 import { evidenceScopeLabel, visibleEvidenceGapLabel, type EvidenceGap } from '@/utils/runEvidence';
 import { formatTimestamp } from '@/utils/format';
+import { useScopedRequest, type ScopedRequestTicket } from '@/composables/useScopedRequest';
+import { registerProjectScopeReset } from '@/stores/projectScopeRegistry';
 
 interface Evidence {
   state: string;
@@ -314,6 +317,7 @@ interface Detail {
 const route = useRoute();
 const router = useRouter();
 const project = useProjectStore();
+const auth = useAuthStore();
 const advisor = useAdvisorStore();
 const { appConfig, appMode, isFeatureEnabled } = useAppConfig();
 const applicationAdvisorAvailable = computed(() => appMode.value !== 'local' &&
@@ -456,9 +460,42 @@ const ledgerUnavailableReason = computed(() =>
   validationLedgerUnavailableReason(nodeOutput.value?.presentation_value, validationRows.value),
 );
 const nodeInput = computed(() => Object.values(nodeInputs.value)[0]);
-let generation = 0;
-let nodeGeneration = 0;
 let cache = new Map<string, Promise<any>>();
+let activeRunTicket: ScopedRequestTicket | null = null;
+let pendingRunNameSave: Promise<void> | null = null;
+const runIdentity = () => [
+  auth.user?.id, auth.token,
+  String(route.params.runId ?? ""), String(route.query.project ?? ""), project.currentProjectId,
+];
+function clearNodeEvidence() {
+  values.value = {}; diagnostics.value = null; descriptors.value = null;
+  presentations.value = null; nodeInputs.value = {}; outputMessages.value = [];
+  rawOpen.value = {}; nodeLoading.value = false;
+}
+const nodeRequests = useScopedRequest(
+  // This lane loads all retained ports for the node. Presentation selection is
+  // a projection of those records, not a new owner (and can resolve on arrival).
+  () => [...runIdentity(), selectedNode.value, tab.value],
+  clearNodeEvidence,
+);
+const nameRequests = useScopedRequest(runIdentity, () => {
+  runNameSaving.value = false;
+  runNameError.value = '';
+  pendingRunNameSave = null;
+});
+function clearRunEvidence() {
+  activeRunTicket = null;
+  nodeRequests.invalidate();
+  nameRequests.invalidate();
+  releaseSavedRun();
+  cache = new Map();
+  detail.value = null; definition.value = null; error.value = ''; definitionError.value = '';
+  application.value = null; applicationOutputs.value = []; applicationError.value = '';
+  modelSummary.value = null; summaryError.value = ''; loading.value = false;
+  runNameDraft.value = '';
+}
+const runRequests = useScopedRequest(runIdentity, clearRunEvidence);
+registerProjectScopeReset(runRequests.invalidate);
 const failure = (err: any) => String(err?.response?.data?.detail || err?.message || 'Saved evidence could not be loaded.');
 function setTab(value: string) { if (value) void router.replace({ query: { ...route.query, view: value } }); }
 function selectNode(id: string) { void router.replace({ query: { ...route.query, node: id, presentation: undefined } }); }
@@ -477,15 +514,22 @@ function openWorkflow() {
   } });
 }
 function read(node: string, port: string): Promise<any> {
-  const key = `${node}/${port}`;
+  const owner = activeRunTicket;
+  if (!owner?.isCurrent()) return Promise.reject(new DOMException('Run scope changed.', 'AbortError'));
+  const runId = String(route.params.runId);
+  const projectId = project.currentProjectId;
+  const key = `${projectId}/${runId}/${node}/${port}`;
   const evidence = detail.value?.evidence.outputs[node]?.[port];
   if (!evidence?.storage) return Promise.reject(new Error(evidence?.reason || `No retained output: ${node}/${port}`));
   if (!cache.has(key)) {
-    cache.set(key, api.get(`/runs/${route.params.runId}/outputs/${encodeURIComponent(node)}/${encodeURIComponent(port)}`, { params: { project_id: project.currentProjectId } }).then(response => response.data.value));
+    // The cache belongs to the run, not an individual node/view. Node changes
+    // reject stale presentation effects without aborting another same-run reader.
+    cache.set(key, api.get(`/runs/${runId}/outputs/${encodeURIComponent(node)}/${encodeURIComponent(port)}`, {
+      params: { project_id: projectId }, signal: owner.signal,
+    }).then(response => response.data.value));
   }
   return cache.get(key)!;
 }
-let pendingRunNameSave: Promise<void> | null = null;
 async function saveRunName() {
   const run = detail.value?.run;
   const projectId = project.currentProjectId;
@@ -503,21 +547,24 @@ async function saveRunName() {
   }
   runNameSaving.value = true;
   runNameError.value = '';
+  const request = nameRequests.begin();
   const task = (async () => {
     try {
-      const response = await api.patch(`/runs/${run.id}/name`, { name }, { params: { project_id: projectId } });
-      if (detail.value?.run.id !== run.id || project.currentProjectId !== projectId) return;
+      const response = await api.patch(`/runs/${run.id}/name`, { name }, {
+        params: { project_id: projectId }, signal: request.signal,
+      });
+      if (!request.isCurrent() || detail.value?.run.id !== run.id) return;
       detail.value.run.name = response.data.name;
       detail.value.run.display_name = response.data.name;
       runNameDraft.value = response.data.name;
       emit('renamed');
     } catch (err) {
-      if (detail.value?.run.id === run.id) {
+      if (request.isCurrent() && detail.value?.run.id === run.id) {
         runNameDraft.value = run.name;
         runNameError.value = failure(err);
       }
     } finally {
-      runNameSaving.value = false;
+      if (request.isCurrent()) runNameSaving.value = false;
     }
   })();
   pendingRunNameSave = task;
@@ -529,39 +576,35 @@ async function saveRunName() {
 }
 async function openReport(): Promise<void> {
   const run = detail.value?.run;
+  const owner = activeRunTicket;
   if (!run?.workflow_id || !run.project_id) return;
   if (runNameSaving.value || runNameDraft.value.trim() !== run.name) await saveRunName();
-  if (runNameError.value || detail.value?.run.id !== run.id ||
+  if (!owner?.isCurrent() || runNameError.value || detail.value?.run.id !== run.id ||
       runNameDraft.value.trim() !== detail.value.run.name) return;
   await router.push({ path: '/report', query: {
     workflow: run.workflow_id, run: run.id, project: run.project_id,
   } });
 }
-async function loadRun() {
-  const request = ++generation;
-  ++nodeGeneration;
-  releaseSavedRun();
-  detail.value = null; definition.value = null; cache = new Map(); error.value = ''; definitionError.value = '';
-  values.value = {}; diagnostics.value = null; nodeInputs.value = {};
-  application.value = null;
-  applicationOutputs.value = [];
-  applicationError.value = '';
-  modelSummary.value = null;
-  summaryError.value = '';
+async function loadRun(allowProjectSelection = true) {
+  clearRunEvidence();
+  const request = runRequests.begin();
+  activeRunTicket = request;
   if (!route.params.runId) { loading.value = false; return; }
   loading.value = true;
   try {
     const linkedProjectId = Number(route.query.project);
     if (Number.isSafeInteger(linkedProjectId) && linkedProjectId > 0
-      && linkedProjectId !== project.currentProjectId) {
+      && linkedProjectId !== project.currentProjectId && allowProjectSelection) {
       await project.selectProject(linkedProjectId);
-    } else {
+    } else if (allowProjectSelection) {
       await project.ensureProjectForBrowserTab();
     }
-    if (request !== generation) return;
+    if (!request.isCurrent()) return;
     if (!project.currentProjectId || (route.query.project && Number(route.query.project) !== project.currentProjectId)) throw new Error('Select the project that owns this run.');
-    const response = await api.get<Detail>(`/runs/${route.params.runId}/evidence`, { params: { project_id: project.currentProjectId } });
-    if (request !== generation) return;
+    const response = await api.get<Detail>(`/runs/${route.params.runId}/evidence`, {
+      params: { project_id: project.currentProjectId }, signal: request.signal,
+    });
+    if (!request.isCurrent()) return;
     detail.value = response.data;
     runNameDraft.value = response.data.run.name;
     runNameError.value = '';
@@ -572,15 +615,15 @@ async function loadRun() {
     if (response.data.run.source_type === 'paired_evaluation') return;
     try {
       const saved = await read('__workflow__', 'definition');
-      if (request !== generation) return;
+      if (!request.isCurrent()) return;
       if (saved?.schema_version !== 1 || !Array.isArray(saved.nodes) || !Array.isArray(saved.edges)) throw new Error('Saved workflow definition is unsupported.');
       definition.value = saved;
-    } catch (err) { if (request === generation) definitionError.value = failure(err); }
-    if (request !== generation) return;
+    } catch (err) { if (request.isCurrent()) definitionError.value = failure(err); }
+    if (!request.isCurrent()) return;
     if (detail.value.evidence.outputs.__application__?.selection?.state === 'exact') {
       try {
         const saved = await read('__application__', 'selection');
-        if (request !== generation) return;
+        if (!request.isCurrent()) return;
         application.value = saved;
         const successful = Array.isArray(saved?.successful_artifact_uids) ? saved.successful_artifact_uids : [];
         const outputs: unknown[] = [];
@@ -591,29 +634,29 @@ async function loadRun() {
             continue;
           }
           try { outputs.push(await read(uid, 'default')); }
-          catch (err) { applicationError.value = `Prediction evidence for ${uid} could not be loaded: ${failure(err)}`; }
-          if (request !== generation) return;
+          catch (err) { if (request.isCurrent()) applicationError.value = `Prediction evidence for ${uid} could not be loaded: ${failure(err)}`; }
+          if (!request.isCurrent()) return;
         }
         applicationOutputs.value = outputs;
-      } catch (err) { if (request === generation) applicationError.value = failure(err); }
+      } catch (err) { if (request.isCurrent()) applicationError.value = failure(err); }
     } else if (detail.value.evidence.outputs.__application__?.selection) {
       applicationError.value = 'Application context unavailable: exact selection evidence was not retained.';
     }
-    if (request !== generation) return;
+    if (!request.isCurrent()) return;
     if (route.query.trust === '1' && detail.value.run.run_kind === 'batch_inference') {
       const filePrefix = /^file_\d+::/.exec(selectedNode.value)?.[0];
       const modelNode = definition.value?.nodes.find(node => node.node_type === 'model.load_apply' &&
         (!filePrefix || node.node_id.startsWith(filePrefix)));
       if (modelNode && modelNode.node_id !== selectedNode.value) {
         await router.replace({ query: { ...route.query, node: modelNode.node_id } });
-        if (request !== generation) return;
+        if (!request.isCurrent()) return;
       }
     }
     void loadModelSummary(request);
     if (!selectedNode.value && preferredNode.value) selectNode(preferredNode.value);
     else await loadNode();
-  } catch (err) { if (request === generation) error.value = failure(err); }
-  finally { if (request === generation) loading.value = false; }
+  } catch (err) { if (request.isCurrent()) error.value = failure(err); }
+  finally { if (request.isCurrent()) loading.value = false; }
 }
 function formatPrediction(value: unknown): string {
   return Array.isArray(value) ? value.join(', ') : String(value ?? 'Unavailable');
@@ -676,13 +719,13 @@ function exportApplicationTrust(view: ApplicationTrustView): void {
 }
 // The model card reads only retained, backend-computed statistics; a record
 // that cannot be read is named rather than replaced with a recomputation.
-async function loadModelSummary(request: number) {
+async function loadModelSummary(request: ScopedRequestTicket) {
   if (!detail.value || !definition.value) return;
   try {
     const outputs = detail.value.evidence.outputs.__diagnostics__ ?? {};
     const contracts: PresentationContracts | null = outputs._scientific_presentations
       ? await read('__diagnostics__', '_scientific_presentations') : null;
-    if (request !== generation) return;
+    if (!request.isCurrent()) return;
     const model = primaryModelNode(definition.value);
     const records: Array<{ source: any; value: unknown }> = [];
     const missing: string[] = [];
@@ -693,18 +736,17 @@ async function loadModelSummary(request: number) {
       }
       try { records.push({ source, value: await read(source.nodeId, source.port) }); }
       catch { missing.push(`${source.nodeId}/${source.port}`); }
-      if (request !== generation) return;
+      if (!request.isCurrent()) return;
     }
     modelSummary.value = buildModelSummary(definition.value, detail.value?.params_snapshot ?? null, records);
     if (missing.length) summaryError.value = `Some summary statistics could not be loaded: ${missing.join(', ')}.`;
   } catch (err) {
-    if (request === generation) summaryError.value = `Model summary unavailable: ${failure(err)}`;
+    if (request.isCurrent()) summaryError.value = `Model summary unavailable: ${failure(err)}`;
   }
 }
 async function loadNode() {
-  const request = ++nodeGeneration;
-  values.value = {}; diagnostics.value = null; descriptors.value = null; presentations.value = null; nodeInputs.value = {}; outputMessages.value = [];
-  rawOpen.value = {}; nodeLoading.value = false;
+  const request = nodeRequests.begin();
+  clearNodeEvidence();
   if (!detail.value || !selectedNode.value || tab.value === 'Summary') return;
   const id = selectedNode.value;
   nodeLoading.value = true;
@@ -717,32 +759,43 @@ async function loadNode() {
       if (evidence.state !== 'exact') messages.push(`${port}: ${evidence.state === 'missing' ? 'Not retained. ' : ''}${evidence.reason || evidence.state}`);
       if (!evidence.storage) continue;
       try { loaded[port] = await read(id, port); } catch (err) { messages.push(`${port}: ${failure(err)}`); }
-      if (request !== nodeGeneration) return;
+      if (!request.isCurrent()) return;
     }
     const optional = async (port: string) => {
+      if (!request.isCurrent()) return null;
       if (!detail.value?.evidence.outputs.__diagnostics__?.[port]) return null;
       try { return await read('__diagnostics__', port); } catch (err) { messages.push(failure(err)); return null; }
     };
     const diag = await optional(id);
     const scientific = await optional('_scientific_values');
     const presentation = await optional('_scientific_presentations');
+    if (!request.isCurrent()) return;
     for (const edge of definition.value?.edges.filter(edge => edge.to_node_id === id) || []) {
       try { inputs[edge.to_input] = await read(edge.from_node_id, edge.from_output); }
       catch (err) { messages.push(`Input ${edge.to_input}: ${failure(err)}`); }
-      if (request !== nodeGeneration) return;
+      if (!request.isCurrent()) return;
     }
-    if (request !== nodeGeneration) return;
+    if (!request.isCurrent()) return;
     values.value = loaded; nodeInputs.value = inputs; diagnostics.value = diag;
     descriptors.value = scientific?.[id];
     const record = presentation?.[id];
     presentations.value = record ? { digest: record.contract_digest, payload: record.contract } : null;
     outputMessages.value = [...new Set(messages)];
-  } finally { if (request === nodeGeneration) nodeLoading.value = false; }
+  } finally { if (request.isCurrent()) nodeLoading.value = false; }
 }
 onBeforeUnmount(releaseSavedRun);
-watch([() => route.params.runId, () => project.currentProjectId], () => void loadRun(), { immediate: true });
+// A project dropdown change must not re-select the old run's project.
+// Install this before the immediate deep-link load: project selection can
+// synchronously invalidate that first request and needs a replacement owner.
+watch(() => project.currentProjectId, () => void loadRun(false));
+watch([() => auth.user?.id, () => auth.token], () => {
+  // A validated replacement session may reopen the same route, but must refetch
+  // its retained evidence. Logout only clears it; it does not start anonymous IO.
+  if (auth.user && project.currentProjectId != null) void loadRun(false);
+});
+watch([() => route.params.runId, () => route.query.project], () => void loadRun(), { immediate: true });
 watch([selectedNode, tab], () => void loadNode());
-onBeforeUnmount(() => { ++generation; ++nodeGeneration; cache.clear(); });
+onBeforeUnmount(() => { runRequests.dispose(); nodeRequests.dispose(); nameRequests.dispose(); cache.clear(); });
 </script>
 
 <style scoped>

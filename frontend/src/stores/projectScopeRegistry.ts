@@ -14,7 +14,7 @@
 // once) participate — that's the desired behaviour: a store with no live
 // instance has no state to reset.
 
-import { shallowRef } from "vue";
+import { getCurrentScope, onScopeDispose, shallowRef } from "vue";
 
 export const activeProjectScope = shallowRef<number | null>(null);
 const callbacks = new Set<() => void>();
@@ -22,13 +22,14 @@ const callbacks = new Set<() => void>();
 /**
  * Register a reset callback for a project-scoped store.
  *
- * Returns an unregister function — useful for component-level scopes and
- * test teardown. Pinia stores can ignore the return value; the registry
- * survives the lifetime of the app.
+ * Registration follows the owning Pinia/component effect scope, so disposed
+ * stores cannot retain callbacks or mutate a later application's workspace.
  */
 export function registerProjectScopeReset(fn: () => void): () => void {
   callbacks.add(fn);
-  return () => callbacks.delete(fn);
+  const unregister = () => { callbacks.delete(fn); };
+  if (getCurrentScope()) onScopeDispose(unregister);
+  return unregister;
 }
 
 /**

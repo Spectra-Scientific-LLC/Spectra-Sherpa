@@ -69,6 +69,8 @@ const workflowStore = reactive({
 });
 
 vi.mock("primevue/usetoast", () => ({ useToast: () => ({ add: vi.fn() }) }));
+vi.mock("@/stores/auth", () => ({ useAuthStore: () => ({ user: { id: 1 }, token: "local" }) }));
+vi.mock("@/stores/workbook", () => ({ useWorkbookStore: () => ({ projectId: 1, activeSheet: { id: "sheet-1" } }) }));
 vi.mock("@/stores/workflow", () => ({ useWorkflowStore: () => workflowStore }));
 vi.mock("@/stores/project", () => ({ useProjectStore: () => ({ currentProjectId: 1 }) }));
 

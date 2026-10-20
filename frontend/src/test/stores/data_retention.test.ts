@@ -68,7 +68,7 @@ describe("data store state retention", () => {
     await store.selectExperiment(44);
 
     expect(localStorage.getItem("spectra_sherpa_last_experiment_7_12")).toBe("44");
-    expect(api.get).toHaveBeenCalledWith("/experiments/44/files");
+    expect(api.get).toHaveBeenCalledWith("/experiments/44/files", { signal: expect.any(AbortSignal) });
   });
 
   it("restores the selected dataset after a browser refresh", async () => {
@@ -98,7 +98,7 @@ describe("data store state retention", () => {
 
     expect(store.activeExperimentId).toBe(44);
     expect(store.experimentFiles).toHaveLength(1);
-    expect(api.get).toHaveBeenCalledWith("/experiments/44/files");
+    expect(api.get).toHaveBeenCalledWith("/experiments/44/files", { signal: expect.any(AbortSignal) });
   });
 
   it.each([null, "999"])("selects the sole server dataset with no valid browser memory (%s)", async (remembered) => {
@@ -115,7 +115,7 @@ describe("data store state retention", () => {
 
     expect(store.activeExperimentId).toBe(44);
     expect(store.experimentFiles[0].id).toBe(92);
-    expect(api.get).toHaveBeenCalledWith("/experiments/44/files");
+    expect(api.get).toHaveBeenCalledWith("/experiments/44/files", { signal: expect.any(AbortSignal) });
     expect(localStorage.getItem("spectra_sherpa_last_experiment_7_12")).toBe("44");
   });
 
@@ -168,7 +168,7 @@ describe("data store state retention", () => {
     await store.restoreActiveExperimentForCurrentProject();
 
     expect(store.activeExperimentId).toBe(45);
-    expect(api.get).toHaveBeenCalledWith("/experiments/45/files");
+    expect(api.get).toHaveBeenCalledWith("/experiments/45/files", { signal: expect.any(AbortSignal) });
   });
 
   it("clears an active dataset that belongs to the previous project", async () => {
@@ -304,8 +304,8 @@ describe("data store state retention", () => {
 
     expect(result.experiment_id).toBe(19);
     expect(store.activeExperimentId).toBe(19);
-    expect(api.get).toHaveBeenCalledWith("/experiments/19/files");
-    expect(api.get).not.toHaveBeenCalledWith("/experiments/44/files");
+    expect(api.get).toHaveBeenCalledWith("/experiments/19/files", { signal: expect.any(AbortSignal) });
+    expect(api.get).not.toHaveBeenCalledWith("/experiments/44/files", expect.anything());
   });
 
   it("stops the contents spinner immediately when a pending inspection is cleared", async () => {

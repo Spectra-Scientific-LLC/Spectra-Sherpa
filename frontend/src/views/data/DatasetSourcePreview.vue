@@ -322,14 +322,8 @@
               {{ matrix.total_cols.toLocaleString() }}.
             </span>
           </div>
-          <div v-if="loading" class="preview-loading">
-            <ProgressSpinner style="width: 24px; height: 24px" />
-            <span>Loading preview...</span>
-          </div>
-          <div v-else-if="error" class="preview-error">
-            <i class="pi pi-exclamation-triangle"></i>
-            <span>{{ error }}</span>
-          </div>
+          <WorkspaceState v-if="loading" kind="loading" class="preview-loading" message="Loading preview..." />
+          <WorkspaceState v-else-if="error" kind="error" class="preview-error" :message="error" />
           <div v-else-if="matrix && isNdPreview" class="nd-preview-notice" role="status">
             <i class="pi pi-box"></i>
             <div>
@@ -354,14 +348,8 @@
             <span>Graph</span>
           </span>
         </div>
-        <div v-if="loading" class="preview-loading">
-          <ProgressSpinner style="width: 24px; height: 24px" />
-          <span>Loading preview...</span>
-        </div>
-        <div v-else-if="error" class="preview-error">
-          <i class="pi pi-exclamation-triangle"></i>
-          <span>{{ error }}</span>
-        </div>
+        <WorkspaceState v-if="loading" kind="loading" class="preview-loading" message="Loading preview..." />
+        <WorkspaceState v-else-if="error" kind="error" class="preview-error" :message="error" />
         <PlotlyChart
           v-else-if="matrix && previewPlotData.length"
           :data="previewPlotData"
@@ -384,12 +372,13 @@
 </template>
 
 <script setup lang="ts">
+import { useScopedRequest } from "@/composables/useScopedRequest";
+import WorkspaceState from "@/components/workspace/WorkspaceState.vue";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import InputText from "primevue/inputtext";
 import Dropdown from "primevue/dropdown";
-import ProgressSpinner from "primevue/progressspinner";
 import { getErrorMessage } from "@/utils/errors";
 import { shouldReverseFeatureAxis } from "@/utils/plotLabels";
 import {
@@ -405,6 +394,7 @@ import DataStatsTable from "./DataStatsTable.vue";
 
 const props = defineProps<{
   sourceRef: DataMatrixRef | null;
+  scopeKey?: string;
   title?: string;
   overrides?: PreparedDataOverrides;
   files?: SourcePreviewFile[];
@@ -536,7 +526,10 @@ const matrixRequestSignature = computed(() => {
 
 let suppressLocalOverrideEmit = false;
 let localOverrideSyncRun = 0;
-let matrixFetchRun = 0;
+const matrixRequests = useScopedRequest(
+  () => [props.scopeKey, matrixRequestSignature.value],
+  () => { matrix.value = null; loading.value = false; error.value = null; },
+);
 let lastFetchedSourceIdentity = "";
 type TextOverrideKey = "title" | "x_title" | "x_units" | "y_title" | "data_role" | "target_column";
 
@@ -636,9 +629,9 @@ watch(
 );
 
 watch(
-  matrixRequestSignature,
+  () => [props.scopeKey, matrixRequestSignature.value],
   async () => {
-    const fetchRun = ++matrixFetchRun;
+    const ticket = matrixRequests.begin();
     const identityChanged = sourceIdentity.value !== lastFetchedSourceIdentity;
     if (identityChanged) matrix.value = null;
     error.value = null;
@@ -647,7 +640,7 @@ watch(
     loading.value = true;
     try {
       const fetched = await dataStore.fetchDataMatrix(next);
-      if (fetchRun !== matrixFetchRun) return;
+      if (!ticket.isCurrent()) return;
       matrix.value = fetched;
       lastFetchedSourceIdentity = sourceIdentity.value;
       setLocalOverrides({
@@ -658,10 +651,10 @@ watch(
         data_role: resolvedTextOverride("data_role", matrix.value.data_role || ""),
       });
     } catch (err: unknown) {
-      if (fetchRun !== matrixFetchRun) return;
+      if (!ticket.isCurrent()) return;
       error.value = getErrorMessage(err, "Could not load data preview");
     } finally {
-      if (fetchRun === matrixFetchRun) {
+      if (ticket.isCurrent()) {
         loading.value = false;
       }
     }

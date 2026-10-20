@@ -637,6 +637,8 @@
 </template>
 
 <script setup lang="ts">
+import { useScopedRequest } from "@/composables/useScopedRequest";
+import { useDatasetReadinessPreview } from "./composables/useDatasetReadinessPreview";
 import { SCIENTIFIC_COLORS } from "@/theme/plotTheme";
 import { seriesPalette } from "@/utils/colors";
 import axios from "axios";
@@ -680,7 +682,6 @@ import {
   type DatasetAxisWire,
 } from "@/utils/datasetAxisSets";
 import { selectedDatasetRows } from "@/utils/multiDatasetOverlay";
-import { getErrorMessage } from "@/utils/errors";
 import { retainedInspection } from "@/utils/retainedInspection";
 import { shouldReverseFeatureAxis } from "@/utils/plotLabels";
 import type { DatasetAnalysisReadiness, SherpaDatasetDict } from "@/types";
@@ -710,6 +711,7 @@ function clearSampleTableSaveError(): void {
 
 const props = withDefaults(
   defineProps<{
+    scopeKey?: string;
     activeDatasetName?: string | null;
     selectedFileCount?: number | null;
     selectedFileNames?: string[];
@@ -724,6 +726,7 @@ const props = withDefaults(
     displaySettingsTarget?: string | null;
   }>(),
   {
+    scopeKey: "",
     activeDatasetName: null,
     selectedFileCount: null,
     selectedFileNames: () => [],
@@ -738,6 +741,14 @@ const props = withDefaults(
     displaySettingsTarget: null,
   },
 );
+
+// File identity changes synchronously, even if Vue batches an A → B → A render.
+const inspectionRevision = ref(0);
+watch(() => dataStore.fileInfo, () => { inspectionRevision.value += 1; }, { flush: "sync" });
+const contentsIdentity = () => [
+  props.scopeKey, dataStore.activeExperimentId, dataStore.activeFileId,
+  props.matrixAssetId, inspectionRevision.value,
+];
 
 type AnalysisChoice = {
   target: string;
@@ -820,10 +831,12 @@ type AxisInventoryPayload = {
 const axisInventory = ref<AxisInventoryPayload | null>(null);
 const axisInventoryLoading = ref(false);
 const axisInventoryError = ref<string | null>(null);
-let axisInventoryRequest = 0;
+const axesRequests = useScopedRequest(contentsIdentity, () => {
+  axisInventory.value = null; axisInventoryError.value = null; axisInventoryLoading.value = false;
+});
 
 const completeMatrix = ref<DataMatrixResponse | null>(null);
-let completeMatrixRequest = 0;
+const matrixRequests = useScopedRequest(contentsIdentity, () => { completeMatrix.value = null; });
 watch(
   () =>
     [
@@ -833,7 +846,7 @@ watch(
       props.matrixAssetId,
     ] as const,
   async ([experimentId, fileId, info, assetId]) => {
-    const request = ++completeMatrixRequest;
+    const ticket = matrixRequests.begin();
     completeMatrix.value = null;
     if (experimentId == null || fileId == null || !info || info.data?.length) return;
     try {
@@ -843,7 +856,7 @@ watch(
         file_id: fileId,
         ...(assetId ? { asset_id: assetId } : {}),
       });
-      if (request === completeMatrixRequest) completeMatrix.value = matrix;
+      if (ticket.isCurrent()) completeMatrix.value = matrix;
     } catch {
       /* The metadata table remains available if the numeric preview cannot load. */
     }
@@ -1164,7 +1177,11 @@ const collectionState = computed<CollectionState>(() => {
 const completeSampleTablePayload = ref<CompleteSampleTablePayload | null>(null);
 const completeSampleTableLoading = ref(false);
 const completeSampleTableError = ref<string | null>(null);
-let completeSampleTableRequest = 0;
+const samplesRequests = useScopedRequest(contentsIdentity, () => {
+  completeSampleTablePayload.value = null;
+  completeSampleTableError.value = null;
+  completeSampleTableLoading.value = false;
+});
 
 function apiSerializationMetadata(): Record<string, unknown> | null {
   const metadata = dataStore.fileInfo?.metadata;
@@ -1251,7 +1268,7 @@ function validateAxisInventory(value: unknown, expectedHandle: string): AxisInve
 watch(
   () => dataStore.fileInfo,
   async (fileInfo) => {
-    const request = ++axisInventoryRequest;
+    const ticket = axesRequests.begin();
     axisInventory.value = null;
     axisInventoryError.value = null;
     axisInventoryLoading.value = false;
@@ -1268,14 +1285,14 @@ watch(
         async () => (await api.get(`/datasets/${encodeURIComponent(handle)}/axes`)).data,
       );
       const admitted = validateAxisInventory(data, handle);
-      if (request === axisInventoryRequest) axisInventory.value = admitted;
+      if (ticket.isCurrent()) axisInventory.value = admitted;
     } catch (error: unknown) {
-      if (request === axisInventoryRequest) {
+      if (ticket.isCurrent()) {
         axisInventoryError.value =
           error instanceof Error ? error.message : "Failed to retrieve complete dataset axes.";
       }
     } finally {
-      if (request === axisInventoryRequest) axisInventoryLoading.value = false;
+      if (ticket.isCurrent()) axisInventoryLoading.value = false;
     }
   },
   { immediate: true },
@@ -1365,7 +1382,7 @@ const scientificDescription = computed(() => {
 watch(
   () => dataStore.fileInfo,
   async (fileInfo) => {
-    const request = ++completeSampleTableRequest;
+    const ticket = samplesRequests.begin();
     completeSampleTablePayload.value = null;
     completeSampleTableError.value = null;
     completeSampleTableLoading.value = false;
@@ -1384,16 +1401,16 @@ watch(
         `sample-table:${handle}`,
         async () => (await api.get(`/datasets/${encodeURIComponent(handle)}/sample-table`)).data,
       );
-      if (request === completeSampleTableRequest) {
+      if (ticket.isCurrent()) {
         completeSampleTablePayload.value = data as CompleteSampleTablePayload;
       }
     } catch {
-      if (request === completeSampleTableRequest) {
+      if (ticket.isCurrent()) {
         completeSampleTableError.value =
           "Only an aligned API preview is shown. The complete owner-scoped table could not be retrieved within its 10,000-row and 4 MiB limits.";
       }
     } finally {
-      if (request === completeSampleTableRequest) completeSampleTableLoading.value = false;
+      if (ticket.isCurrent()) completeSampleTableLoading.value = false;
     }
   },
   { immediate: true },
@@ -1919,7 +1936,13 @@ const preferredIndependentGroup = computed(() => {
   ) ?? null;
 });
 
-const effectiveAnalysisReadiness = ref<DatasetAnalysisReadiness | null>(null);
+const readinessPreview = useDatasetReadinessPreview(() => [
+  ...contentsIdentity(), analysisTarget.value, analysisGroup.value, props.analysisSelectionHydrated,
+]);
+const {
+  readiness: effectiveAnalysisReadiness, loading: analysisReadinessLoading,
+  error: analysisReadinessError,
+} = readinessPreview;
 const independentGroupingWarning = computed(
   () => effectiveAnalysisReadiness.value?.independence?.violations[0]?.message ?? null,
 );
@@ -1953,12 +1976,10 @@ const classReplicationWarning = computed(() => {
     ". Fewer than 3 independent groups per class may not support a held-out test plus grouped cross-validation. Repeated acquisitions do not add independent specimens."
   );
 });
-const analysisReadinessLoading = ref(false);
-const analysisReadinessError = ref<string | null>(null);
 const displayedAnalysisReadiness = computed(
   () => effectiveAnalysisReadiness.value ?? dataStore.fileInfo?.analysis_readiness ?? null,
 );
-let analysisReadinessRequest = 0;
+
 
 watch(
   () => ({
@@ -2021,16 +2042,16 @@ watch(
     () => props.analysisSelectionHydrated,
   ],
   async () => {
-    const request = ++analysisReadinessRequest;
-    if (!props.analysisSelectionHydrated) return;
+    if (!props.analysisSelectionHydrated) {
+      readinessPreview.setBase(null);
+      return;
+    }
     const base = dataStore.fileInfo?.analysis_readiness ?? null;
     const target = analysisTargetOptions.value.find(
       (option) => option.value === analysisTarget.value,
     );
     if (!base?.profile) {
-      effectiveAnalysisReadiness.value = base;
-      analysisReadinessLoading.value = false;
-      analysisReadinessError.value = null;
+      readinessPreview.setBase(base);
       return;
     }
     const selectedTargetProfile =
@@ -2064,35 +2085,7 @@ watch(
       n_samples: table.kind === "valid" && table.complete ? table.rowCount : null,
       group_column: analysisGroup.value || null,
     };
-    effectiveAnalysisReadiness.value = null;
-    analysisReadinessLoading.value = true;
-    analysisReadinessError.value = null;
-    try {
-      const read = async () =>
-        (
-          await api.post<DatasetAnalysisReadiness>("/workflow-templates/compatibility-preview", previewRequest)
-        ).data;
-      const result = dataStore.fileInfo
-        ? await retainedInspection(
-            dataStore.fileInfo,
-            `readiness:${JSON.stringify(previewRequest)}`,
-            read,
-          )
-        : await read();
-      if (request === analysisReadinessRequest) {
-        effectiveAnalysisReadiness.value = result;
-        analysisReadinessLoading.value = false;
-      }
-    } catch (error: unknown) {
-      if (request === analysisReadinessRequest) {
-        effectiveAnalysisReadiness.value = null;
-        analysisReadinessLoading.value = false;
-        analysisReadinessError.value = getErrorMessage(
-          error,
-          "Compatibility could not be recomputed for this target.",
-        );
-      }
-    }
+    await readinessPreview.load(dataStore.fileInfo, previewRequest);
   },
   { immediate: true },
 );
@@ -2173,9 +2166,13 @@ function currentAnalysisChoice(): AnalysisChoice {
 }
 
 function commitAnalysisTarget(value: string): void {
+  // Capture the backend's current-dataset suggestion before changing the
+  // target invalidates its compatibility preview synchronously.
+  const suggestedGroup = preferredIndependentGroup.value;
   analysisTarget.value = value;
   const target = analysisTargetOptions.value.find((option) => option.value === value);
-  analysisGroup.value = target?.type === "categorical" ? (preferredIndependentGroup.value ?? "") : "";
+  analysisGroup.value = target?.type === "categorical" && suggestedGroup !== value
+    ? (suggestedGroup ?? "") : "";
   emit("analysisSelectionCommit", currentAnalysisChoice());
 }
 
@@ -2209,6 +2206,12 @@ const canPrepareSamples = computed(
     (dataStore.fileInfo?.n_samples ?? 0) > 0,
 );
 
+const sampleWrites = useScopedRequest(() => [
+  props.scopeKey, dataStore.activeExperimentId, dataStore.activeFileId,
+], () => {
+  sampleTableSaving.value = false; sampleTableMessage.value = null;
+  clearSampleTableSaveError();
+});
 async function saveSampleTable(payload: SampleTableSavePayload): Promise<void> {
   if (
     dataStore.activeExperimentId == null ||
@@ -2221,6 +2224,7 @@ async function saveSampleTable(payload: SampleTableSavePayload): Promise<void> {
     };
     return;
   }
+  const ticket = sampleWrites.begin();
   const sourceFileId = dataStore.activeFileId;
   const sourceFilePath = dataStore.activeFilePath;
   const experimentId = dataStore.activeExperimentId;
@@ -2234,6 +2238,7 @@ async function saveSampleTable(payload: SampleTableSavePayload): Promise<void> {
       targetType: payload.targetType,
       refresh: false,
     });
+    if (!ticket.isCurrent()) return;
     sampleTableMessage.value = {
       kind: "success",
       fileId: savedFile.id,
@@ -2251,6 +2256,7 @@ async function saveSampleTable(payload: SampleTableSavePayload): Promise<void> {
         referenceDeclaration: payload.referenceDeclaration,
       });
     } catch (error: unknown) {
+      if (!ticket.isCurrent()) return;
       const detail = error instanceof Error ? error.message : "binding failed";
       sampleTableMessage.value = {
         kind: "error",
@@ -2260,18 +2266,21 @@ async function saveSampleTable(payload: SampleTableSavePayload): Promise<void> {
       sampleTableSaveConflict.value = axios.isAxiosError(error) && error.response?.status === 409;
       return;
     }
+    if (!ticket.isCurrent()) return;
     sampleTableEditorRef.value?.markSaved();
     emit("measuredSamplesPublished");
     await Promise.all([dataStore.selectExperiment(experimentId), dataStore.fetchCatalog()]);
+    if (!ticket.isCurrent()) return;
     // A refresh failure must not misreport the already-durable save and bind.
     await dataStore.inspectFile(sourceFileId, sourceFilePath, experimentId).catch(() => null);
   } catch (error: unknown) {
+    if (!ticket.isCurrent()) return;
     const detail = error instanceof Error ? error.message : "Failed to save sample table";
     sampleTableMessage.value = { kind: "error", text: detail };
     sampleTableSaveError.value = detail;
     sampleTableSaveConflict.value = false;
   } finally {
-    sampleTableSaving.value = false;
+    if (ticket.isCurrent()) sampleTableSaving.value = false;
   }
 }
 
@@ -2282,22 +2291,28 @@ async function unbindSampleTable(): Promise<void> {
     dataStore.activeFilePath == null
   )
     return;
+  const ticket = sampleWrites.begin();
+  const fileId = dataStore.activeFileId;
+  const filePath = dataStore.activeFilePath;
+  const experimentId = dataStore.activeExperimentId;
   sampleTableSaving.value = true;
   sampleTableMessage.value = null;
   try {
     const expectedRevision = dataStore.fileInfo?.analysis_binding?.revision;
     if (expectedRevision == null) return;
-    await dataStore.unbindDatasetAnalysisCsv(dataStore.activeFileId, expectedRevision);
+    await dataStore.unbindDatasetAnalysisCsv(fileId, expectedRevision);
+    if (!ticket.isCurrent()) return;
     await dataStore.inspectFile(
-      dataStore.activeFileId,
-      dataStore.activeFilePath,
-      dataStore.activeExperimentId,
+      fileId,
+      filePath,
+      experimentId,
     );
   } catch (error: unknown) {
+    if (!ticket.isCurrent()) return;
     const detail = error instanceof Error ? error.message : "Failed to remove target binding";
     sampleTableMessage.value = { kind: "error", text: detail };
   } finally {
-    sampleTableSaving.value = false;
+    if (ticket.isCurrent()) sampleTableSaving.value = false;
   }
 }
 
@@ -2375,6 +2390,7 @@ watch(
   { immediate: true },
 );
 
+const metadataWrites = useScopedRequest(contentsIdentity);
 function prepareMetadataOverride(): (() => Promise<void>) | null {
   const xTitle = editXTitle.value;
   const xUnits = editXUnits.value;
@@ -2405,9 +2421,12 @@ function prepareMetadataOverride(): (() => Promise<void>) | null {
   }
 
   const fi = dataStore.fileInfo;
+  const ticket = metadataWrites.begin();
   return async () => {
+    if (!ticket.isCurrent()) return;
     try {
       await api.patch("/builder/file-metadata", body);
+      if (!ticket.isCurrent()) return;
       if (fi && typeof fi === "object") {
         const fiAny = fi as Record<string, unknown> & { metadata?: Record<string, unknown> };
         if (fiAny.metadata && typeof fiAny.metadata === "object") {
@@ -2435,7 +2454,7 @@ function prepareMetadataOverride(): (() => Promise<void>) | null {
         ciAny.metadata = ciMeta;
       }
     } catch (err) {
-      console.warn("Failed to persist metadata override", err);
+      if (ticket.isCurrent()) console.warn("Failed to persist metadata override", err);
     }
   };
 }

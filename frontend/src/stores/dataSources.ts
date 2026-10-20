@@ -2,6 +2,9 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";
 import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
+import { activeProjectScope } from "@/stores/projectScopeRegistry";
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest, type ScopedRequestTicket } from "@/composables/useScopedRequest";
 import type { ProjectDataSource } from "@/types";
 import { getErrorMessage } from "@/utils/errors";
 
@@ -28,10 +31,20 @@ export const useDataSourceStore = defineStore("dataSources", () => {
   const dataSources = ref<ProjectDataSource[]>([]);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
+  const identity = () => [useAuthStore().user?.id, useAuthStore().token, activeProjectScope.value, projectId.value];
+  const readScope = useScopedRequest(identity, () => { isLoading.value = false; });
+  const mutationScope = useScopedRequest(identity);
+  let mutationTicket: ScopedRequestTicket | undefined;
+  function captureMutationScope(): ScopedRequestTicket {
+    if (!mutationTicket?.isCurrent()) mutationTicket = mutationScope.begin();
+    return mutationTicket;
+  }
 
   const byId = computed(() => new Map(dataSources.value.map((item) => [item.id, item])));
 
   function resetProjectScope(): void {
+    readScope.invalidate();
+    mutationScope.invalidate();
     projectId.value = null;
     dataSources.value = [];
     isLoading.value = false;
@@ -40,20 +53,24 @@ export const useDataSourceStore = defineStore("dataSources", () => {
   registerProjectScopeReset(resetProjectScope);
 
   async function loadProjectDataSources(targetProjectId: number): Promise<ProjectDataSource[]> {
+    if (projectId.value !== targetProjectId) dataSources.value = [];
+    projectId.value = targetProjectId;
+    const request = readScope.begin();
     isLoading.value = true;
     error.value = null;
     try {
       const { data } = await api.get<ProjectDataSource[]>(
-        `/projects/${targetProjectId}/data-sources`
+        `/projects/${targetProjectId}/data-sources`, { signal: request.signal }
       );
+      if (!request.isCurrent()) return [];
       projectId.value = targetProjectId;
       dataSources.value = data;
       return data;
     } catch (err) {
-      error.value = getErrorMessage(err);
+      if (request.isCurrent()) error.value = getErrorMessage(err);
       return [];
     } finally {
-      isLoading.value = false;
+      if (request.isCurrent()) isLoading.value = false;
     }
   }
 
@@ -61,18 +78,20 @@ export const useDataSourceStore = defineStore("dataSources", () => {
     targetProjectId: number,
     payload: ProjectDataSourceCreatePayload,
   ): Promise<ProjectDataSource | null> {
+    const request = captureMutationScope();
     error.value = null;
     try {
       const { data } = await api.post<ProjectDataSource>(
         `/projects/${targetProjectId}/data-sources`,
         payload,
       );
+      if (!request.isCurrent()) return data;
       projectId.value = targetProjectId;
       dataSources.value = [...dataSources.value.filter((item) => item.id !== data.id), data]
         .sort((a, b) => a.sort_order - b.sort_order || a.display_name.localeCompare(b.display_name));
       return data;
     } catch (err) {
-      error.value = getErrorMessage(err);
+      if (request.isCurrent()) error.value = getErrorMessage(err);
       return null;
     }
   }
@@ -82,23 +101,26 @@ export const useDataSourceStore = defineStore("dataSources", () => {
     dataSourceId: number,
     payload: ProjectDataSourceUpdatePayload,
   ): Promise<ProjectDataSource | null> {
+    const request = captureMutationScope();
     error.value = null;
     try {
       const { data } = await api.put<ProjectDataSource>(
         `/projects/${targetProjectId}/data-sources/${dataSourceId}`,
         payload,
       );
+      if (!request.isCurrent()) return data;
       dataSources.value = dataSources.value.map((item) =>
         item.id === dataSourceId ? data : item
       );
       return data;
     } catch (err) {
-      error.value = getErrorMessage(err);
+      if (request.isCurrent()) error.value = getErrorMessage(err);
       return null;
     }
   }
 
   function setFromProjectDetail(targetProjectId: number, items: ProjectDataSource[] = []): void {
+    readScope.invalidate();
     projectId.value = targetProjectId;
     dataSources.value = [...items];
   }

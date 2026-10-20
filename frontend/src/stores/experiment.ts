@@ -3,6 +3,9 @@ import { defineStore } from "pinia";
 import { computed, ref } from "vue";
 import api from "@/api/client";
 import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
+import { activeProjectScope } from "@/stores/projectScopeRegistry";
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest, type ScopedRequestTicket } from "@/composables/useScopedRequest";
 import type {
   ExperimentDetail,
   ExperimentFile,
@@ -23,10 +26,25 @@ export const useExperimentStore = defineStore("experiment", () => {
   const versions = ref<VersionInfo[]>([]);
   const loading = ref(false);
   const error = ref<string | null>(null);
+  const selectedExperimentId = ref<number | null>(null);
+  const identity = () => [useAuthStore().user?.id, useAuthStore().token, activeProjectScope.value, selectedExperimentId.value];
+  const listScope = useScopedRequest(identity, () => { loading.value = false; });
+  const selectionScope = useScopedRequest(identity, () => { loading.value = false; });
+  const detailScope = useScopedRequest(identity);
+  const filesScope = useScopedRequest(identity);
+  const versionsScope = useScopedRequest(identity);
+  const mutationScope = useScopedRequest(identity);
+  let mutationTicket: ScopedRequestTicket | undefined;
+  function captureMutationScope(): ScopedRequestTicket {
+    if (!mutationTicket?.isCurrent()) mutationTicket = mutationScope.begin();
+    return mutationTicket;
+  }
 
   const currentExperimentId = computed(() => currentExperiment.value?.id ?? null);
 
   function resetProjectScope(): void {
+    for (const scope of [listScope, selectionScope, detailScope, filesScope, versionsScope, mutationScope]) scope.invalidate();
+    selectedExperimentId.value = null;
     experiments.value = [];
     currentExperiment.value = null;
     files.value = [];
@@ -37,43 +55,53 @@ export const useExperimentStore = defineStore("experiment", () => {
   registerProjectScopeReset(resetProjectScope);
 
   const fetchExperiments = async (projectId?: number | null) => {
+    const request = listScope.begin();
     loading.value = true;
     try {
       const response = await api.get<ExperimentSummary[]>("/experiments", {
         params: projectId == null ? undefined : { project_id: projectId },
+        signal: request.signal,
       });
-      experiments.value = response.data;
+      if (request.isCurrent()) experiments.value = response.data;
     } catch (err: any) {
-      error.value = err?.message || "Failed to load experiments";
+      if (request.isCurrent()) error.value = err?.message || "Failed to load experiments";
       throw err;
     } finally {
-      loading.value = false;
+      if (request.isCurrent()) loading.value = false;
     }
   };
 
   const fetchExperiment = async (experimentId: number) => {
-    const response = await api.get<ExperimentDetail>(`/experiments/${experimentId}`);
-    currentExperiment.value = response.data;
+    const request = detailScope.begin();
+    const response = await api.get<ExperimentDetail>(`/experiments/${experimentId}`, { signal: request.signal });
+    if (request.isCurrent()) currentExperiment.value = response.data;
     return response.data;
   };
 
   const fetchFiles = async (experimentId: number) => {
+    const request = filesScope.begin();
     const response = await api.get<ExperimentFile[]>(
-      `/experiments/${experimentId}/files`
+      `/experiments/${experimentId}/files`, { signal: request.signal }
     );
-    files.value = response.data;
+    if (request.isCurrent()) files.value = response.data;
     return response.data;
   };
 
   const fetchVersions = async (experimentId: number) => {
+    const request = versionsScope.begin();
     const response = await api.get<VersionInfo[]>(
-      `/experiments/${experimentId}/versions`
+      `/experiments/${experimentId}/versions`, { signal: request.signal }
     );
-    versions.value = response.data;
+    if (request.isCurrent()) versions.value = response.data;
     return response.data;
   };
 
   const selectExperiment = async (experimentId: number) => {
+    selectedExperimentId.value = experimentId;
+    const request = selectionScope.begin();
+    currentExperiment.value = null;
+    files.value = [];
+    versions.value = [];
     loading.value = true;
     try {
       await Promise.all([
@@ -82,24 +110,25 @@ export const useExperimentStore = defineStore("experiment", () => {
         fetchVersions(experimentId),
       ]);
     } catch (err: any) {
-      error.value = err?.message || "Failed to load experiment details";
+      if (request.isCurrent()) error.value = err?.message || "Failed to load experiment details";
       throw err;
     } finally {
-      loading.value = false;
+      if (request.isCurrent()) loading.value = false;
     }
   };
 
   const createExperiment = async (payload: ExperimentCreatePayload) => {
+    const request = captureMutationScope();
     loading.value = true;
     try {
       const response = await api.post<ExperimentDetail>("/experiments", payload);
-      experiments.value = [response.data, ...experiments.value];
+      if (request.isCurrent()) experiments.value = [response.data, ...experiments.value];
       return response.data;
     } catch (err: any) {
-      error.value = err?.message || "Failed to create experiment";
+      if (request.isCurrent()) error.value = err?.message || "Failed to create experiment";
       throw err;
     } finally {
-      loading.value = false;
+      if (request.isCurrent()) loading.value = false;
     }
   };
 
@@ -107,26 +136,30 @@ export const useExperimentStore = defineStore("experiment", () => {
     experimentId: number,
     payload: Partial<ExperimentCreatePayload>
   ) => {
+    const request = captureMutationScope();
     loading.value = true;
     try {
       const response = await api.put<ExperimentDetail>(
         `/experiments/${experimentId}`,
         payload
       );
+      if (!request.isCurrent()) return response.data;
       currentExperiment.value = response.data;
       experiments.value = experiments.value.map((item) =>
         item.id === experimentId ? response.data : item
       );
       return response.data;
     } finally {
-      loading.value = false;
+      if (request.isCurrent()) loading.value = false;
     }
   };
 
   const deleteExperiment = async (experimentId: number) => {
+    const request = captureMutationScope();
     loading.value = true;
     try {
       await api.delete(`/experiments/${experimentId}`);
+      if (!request.isCurrent()) return;
       experiments.value = experiments.value.filter((exp) => exp.id !== experimentId);
       if (currentExperiment.value?.id === experimentId) {
         currentExperiment.value = null;
@@ -134,7 +167,7 @@ export const useExperimentStore = defineStore("experiment", () => {
         versions.value = [];
       }
     } finally {
-      loading.value = false;
+      if (request.isCurrent()) loading.value = false;
     }
   };
 
@@ -143,13 +176,14 @@ export const useExperimentStore = defineStore("experiment", () => {
     file: File,
     stage: string
   ) => {
+    const request = captureMutationScope();
     const form = new FormData();
     form.append("file", file);
     form.append("stage", stage);
     await api.post(`/experiments/${experimentId}/files`, form, {
       headers: { "Content-Type": "multipart/form-data" },
     });
-    await fetchFiles(experimentId);
+    if (request.isCurrent()) await fetchFiles(experimentId);
   };
 
   const createVersion = async (
@@ -158,19 +192,21 @@ export const useExperimentStore = defineStore("experiment", () => {
     description?: string,
     stages?: string[]
   ) => {
+    const request = captureMutationScope();
     await api.post(`/experiments/${experimentId}/versions`, {
       version_name: versionName,
       description: description || null,
       stages: stages?.length ? stages : null,
     });
-    await fetchVersions(experimentId);
+    if (request.isCurrent()) await fetchVersions(experimentId);
   };
 
   const restoreVersion = async (experimentId: number, versionName: string) => {
+    const request = captureMutationScope();
     await api.post(`/experiments/${experimentId}/versions/${versionName}/restore`, null, {
       params: { overwrite: true },
     });
-    await fetchFiles(experimentId);
+    if (request.isCurrent()) await fetchFiles(experimentId);
   };
 
   return {

@@ -1,13 +1,23 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { mount, flushPromises } from '@vue/test-utils';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mount, flushPromises, type VueWrapper } from '@vue/test-utils';
+import { reactive } from 'vue';
 import { createRouter, createMemoryHistory } from 'vue-router';
 import RunDetailContent from '@/views/models/RunDetailContent.vue';
+import { runProjectScopeResets } from '@/stores/projectScopeRegistry';
 
 const { get, patch, switchScope, downloadJson, downloadCsv } = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn(), switchScope: vi.fn().mockResolvedValue(null), downloadJson: vi.fn(), downloadCsv: vi.fn() }));
 vi.mock("@/utils/download", () => ({ downloadJson, downloadCsv }));
 vi.mock('@/api/client', () => ({ default: { get, patch } }));
 vi.mock('@/stores/advisor', () => ({ useAdvisorStore: () => ({ switchScope }) }));
-vi.mock('@/stores/project', () => ({ useProjectStore: () => ({ currentProjectId: 1, ensureProjectForBrowserTab: async () => {} }) }));
+const project = reactive({
+  currentProjectId: 1 as number | null,
+  ensureProjectForBrowserTab: vi.fn(async () => {}),
+  selectProject: vi.fn(async (id: number) => { project.currentProjectId = id; }),
+});
+const auth = reactive({ user: { id: 1 } as { id: number } | null, token: 'session-A' as string | null });
+vi.mock('@/stores/project', () => ({ useProjectStore: () => project }));
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }));
+let mounted: VueWrapper[] = [];
 const fixture = {
   run: { name: 'Saved PCA', status: 'completed', executed_at: '2026-09-11', run_kind: 'data' },
   evidence: { qualification: 'qualified', outputs: {
@@ -17,6 +27,10 @@ const fixture = {
   } }, node_statuses: { pca: 'completed', other: 'error' },
 };
 beforeEach(() => {
+  project.currentProjectId = 1;
+  project.ensureProjectForBrowserTab.mockReset().mockResolvedValue(undefined);
+  project.selectProject.mockReset().mockImplementation(async (id: number) => { project.currentProjectId = id; });
+  auth.user = { id: 1 }; auth.token = 'session-A';
   get.mockReset();
   patch.mockReset().mockImplementation(async (_url: string, payload: { name: string }) => ({ data: { name: payload.name } }));
   switchScope.mockClear();
@@ -28,6 +42,7 @@ beforeEach(() => {
     throw new Error(`Unexpected request ${url}`);
   });
 });
+afterEach(() => { for (const wrapper of mounted) wrapper.unmount(); mounted = []; });
 async function open(query = '?project=1&view=Results&node=pca&offset=50') {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/runs/:runId', component: RunDetailContent }, { path: '/runs', component: { template: '<div />' } }, { path: '/report', component: { template: '<div />' } }] });
   await router.push(`/runs/42${query}`);
@@ -38,9 +53,192 @@ async function open(query = '?project=1&view=Results&node=pca&offset=50') {
     SelectButton: true, ProgressSpinner: true, Dropdown: true, ContextualActions: true,
     QuickPlotModal: { name: 'QuickPlotModal', props: ['nodeOutput', 'nodeType', 'nodeLabel'], template: '<div class="saved-plot">{{ nodeLabel }}</div>' },
   } } });
+  mounted.push(wrapper);
   await flushPromises();
   return { wrapper, router };
 }
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+function runEvidence(id: number, name = `Run ${id}`) {
+  return { data: {
+    ...structuredClone(fixture),
+    run: { ...fixture.run, id, name, project_id: 1, workflow_id: 7 },
+  } };
+}
+function installIdentifiedRuns() {
+  const original = get.getMockImplementation()!;
+  get.mockImplementation(async (url: string, config?: unknown) => {
+    if (url.endsWith('/evidence')) return runEvidence(Number(url.split('/')[2]));
+    return original(url, config);
+  });
+}
+
+describe('Retained run request scope', () => {
+  it('rejects an old A response after A→B→A and keeps the newly loaded A', async () => {
+    installIdentifiedRuns();
+    const normal = get.getMockImplementation()!;
+    const old = deferred<ReturnType<typeof runEvidence>>();
+    let first = true;
+    get.mockImplementation((url: string, config?: unknown) => {
+      if (url === '/runs/42/evidence' && first) { first = false; return old.promise; }
+      return normal(url, config);
+    });
+    const { wrapper, router } = await open('?project=1&view=Summary');
+    const firstSignal = get.mock.calls.find(([url]) => url === '/runs/42/evidence')![1].signal;
+    await router.replace('/runs/43?project=1&view=Summary'); await flushPromises();
+    expect(wrapper.get('[aria-label="Run name"]').element).toHaveProperty('value', 'Run 43');
+    await router.replace('/runs/42?project=1&view=Summary'); await flushPromises();
+    old.resolve(runEvidence(42, 'Stale first A'));
+    await flushPromises();
+    expect(firstSignal.aborted).toBe(true);
+    expect(wrapper.get('[aria-label="Run name"]').element).toHaveProperty('value', 'Run 42');
+    expect(wrapper.text()).not.toContain('Stale first A');
+  });
+
+  it('ignores an old run error/finally while the replacement run is still loading', async () => {
+    installIdentifiedRuns();
+    const normal = get.getMockImplementation()!;
+    const old = deferred<ReturnType<typeof runEvidence>>();
+    const current = deferred<ReturnType<typeof runEvidence>>();
+    get.mockImplementation((url: string, config?: unknown) => {
+      if (url === '/runs/42/evidence') return old.promise;
+      if (url === '/runs/43/evidence') return current.promise;
+      return normal(url, config);
+    });
+    const { wrapper, router } = await open('?project=1&view=Summary');
+    await router.replace('/runs/43?project=1&view=Summary'); await flushPromises();
+    old.reject(new Error('Obsolete run failed'));
+    await flushPromises();
+    expect((wrapper.vm as any).loading).toBe(true);
+    expect(wrapper.text()).not.toContain('Obsolete run failed');
+    expect(wrapper.find('[aria-label="Run name"]').exists()).toBe(false);
+    current.resolve(runEvidence(43)); await flushPromises();
+    expect((wrapper.vm as any).loading).toBe(false);
+    expect(wrapper.get('[aria-label="Run name"]').element).toHaveProperty('value', 'Run 43');
+  });
+
+  it.each(['success', 'error'])('ignores late rename %s and its report continuation after A→B→A', async outcome => {
+    installIdentifiedRuns();
+    const old = deferred<{ data: { name: string } }>();
+    const current = deferred<{ data: { name: string } }>();
+    patch.mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    const { wrapper, router } = await open('?project=1&view=Summary');
+    await wrapper.get('[aria-label="Run name"]').setValue('Old rename');
+    await wrapper.get('[aria-label="Run name"]').trigger('blur');
+    await wrapper.findAll('button').find(button => button.text() === 'Report')!.trigger('click');
+    await router.replace('/runs/43?project=1&view=Summary'); await flushPromises();
+    await router.replace('/runs/42?project=1&view=Summary'); await flushPromises();
+    await wrapper.get('[aria-label="Run name"]').setValue('Current rename');
+    await wrapper.get('[aria-label="Run name"]').trigger('blur');
+    expect(patch.mock.calls[0][2].signal.aborted).toBe(true);
+    if (outcome === 'success') old.resolve({ data: { name: 'Old rename' } });
+    else old.reject(new Error('Obsolete rename failed'));
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/runs/42');
+    expect(wrapper.get('[aria-label="Run name"]').element).toHaveProperty('value', 'Current rename');
+    expect((wrapper.vm as any).runNameSaving).toBe(true);
+    expect((wrapper.vm as any).runNameError).toBe('');
+    expect(wrapper.emitted('renamed')).toBeUndefined();
+    current.resolve({ data: { name: 'Current rename' } }); await flushPromises();
+    expect((wrapper.vm as any).runNameSaving).toBe(false);
+    expect(wrapper.emitted('renamed')).toHaveLength(1);
+    expect(router.currentRoute.value.path).toBe('/runs/42');
+  });
+
+  it('does not restore a linked old project or display its delayed retained output after a project switch', async () => {
+    installIdentifiedRuns();
+    const normal = get.getMockImplementation()!;
+    const old = deferred<{ data: { value: number[][] } }>();
+    get.mockImplementation((url: string, config?: unknown) =>
+      url.endsWith('/pca/scores') ? old.promise : normal(url, config));
+    const { wrapper } = await open();
+    const signal = get.mock.calls.find(([url]) => String(url).endsWith('/pca/scores'))![1].signal;
+    project.ensureProjectForBrowserTab.mockClear().mockImplementation(async () => {
+      // A browser-tab restoration is not allowed to undo the dropdown choice.
+      project.currentProjectId = 1;
+    });
+    project.selectProject.mockClear();
+    project.currentProjectId = 2;
+    await flushPromises();
+    old.resolve({ data: { value: [[999, 999]] } }); await flushPromises();
+    expect(project.currentProjectId).toBe(2);
+    expect(project.selectProject).not.toHaveBeenCalled();
+    expect(project.ensureProjectForBrowserTab).not.toHaveBeenCalled();
+    expect(signal.aborted).toBe(true);
+    expect(wrapper.text()).toContain('Select the project that owns this run.');
+    expect(wrapper.find('.saved-plot').exists()).toBe(false);
+    expect((wrapper.vm as any).values).toEqual({});
+  });
+
+  it('still admits an explicitly followed project deep link and loads under that project', async () => {
+    installIdentifiedRuns();
+    project.currentProjectId = 2;
+    const { wrapper } = await open('?project=1&view=Summary');
+    expect(project.selectProject).toHaveBeenCalledExactlyOnceWith(1);
+    expect(project.currentProjectId).toBe(1);
+    expect(wrapper.get('[aria-label="Run name"]').element).toHaveProperty('value', 'Run 42');
+    expect(get.mock.calls.filter(([url]) => url === '/runs/42/evidence')).toHaveLength(1);
+  });
+
+  it.each(['user', 'session', 'reset'])('invalidates the retained cache on a %s A→B→A/reset even with unchanged run and project IDs', async kind => {
+    installIdentifiedRuns();
+    const normal = get.getMockImplementation()!;
+    const old = deferred<{ data: { value: number[][] } }>();
+    let scoresReads = 0;
+    get.mockImplementation((url: string, config?: unknown) => {
+      if (url.endsWith('/pca/scores')) {
+        scoresReads++;
+        return scoresReads === 1 ? old.promise : Promise.resolve({ data: { value: [[7, 8]] } });
+      }
+      return normal(url, config);
+    });
+    const { wrapper } = await open();
+    const vm = wrapper.vm as any;
+    const signal = get.mock.calls.find(([url]) => String(url).endsWith('/pca/scores'))![1].signal;
+    if (kind === 'user') { auth.user = { id: 2 }; auth.user = { id: 1 }; }
+    else if (kind === 'session') { auth.token = 'session-B'; auth.token = 'session-A'; }
+    else runProjectScopeResets();
+    expect(vm.detail).toBeNull();
+    expect(vm.values).toEqual({});
+    expect(signal.aborted).toBe(true);
+    old.resolve({ data: { value: [[999, 999]] } }); await flushPromises();
+    expect(vm.values).toEqual({});
+    await vm.loadRun(false); await flushPromises();
+    expect(scoresReads).toBe(2);
+    expect(vm.values.scores).toEqual([[7, 8]]);
+    expect(wrapper.find('.saved-plot').exists()).toBe(true);
+  });
+
+  it('clears visible cached records on logout without making anonymous retained-output requests', async () => {
+    installIdentifiedRuns();
+    const { wrapper } = await open();
+    expect((wrapper.vm as any).values.scores).toEqual([[1, 2], [3, 4]]);
+    const requests = get.mock.calls.length;
+    auth.user = null; auth.token = null;
+    expect((wrapper.vm as any).detail).toBeNull();
+    expect((wrapper.vm as any).values).toEqual({});
+    await flushPromises();
+    expect(get.mock.calls).toHaveLength(requests);
+    expect(wrapper.find('.saved-plot').exists()).toBe(false);
+  });
+
+  it('refetches cached output for a validated replacement session on the same route', async () => {
+    installIdentifiedRuns();
+    const { wrapper } = await open();
+    const reads = () => get.mock.calls.filter(([url]) => String(url).endsWith('/pca/scores')).length;
+    expect(reads()).toBe(1);
+    auth.token = 'replacement-session';
+    await flushPromises();
+    expect(reads()).toBe(2);
+    expect((wrapper.vm as any).values.scores).toEqual([[1, 2], [3, 4]]);
+  });
+});
+
 describe("Persistent run inspection", () => {
   it('shows retained paired evaluation after reopening Inspect without requiring a workflow snapshot', async () => {
     get.mockImplementation(async (url: string) => {
@@ -171,7 +369,7 @@ describe("Persistent run inspection", () => {
     await input.setValue('  Reviewed PCA  ');
     await input.trigger('blur');
     await flushPromises();
-    expect(patch).toHaveBeenCalledWith('/runs/42/name', { name: 'Reviewed PCA' }, { params: { project_id: 1 } });
+    expect(patch).toHaveBeenCalledWith('/runs/42/name', { name: 'Reviewed PCA' }, { params: { project_id: 1 }, signal: expect.any(AbortSignal) });
     expect((input.element as HTMLInputElement).value).toBe('Reviewed PCA');
     expect(wrapper.get('.summary').text()).toContain('Reviewed PCA');
     expect(wrapper.emitted('renamed')).toHaveLength(1);

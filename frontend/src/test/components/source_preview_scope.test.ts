@@ -5,6 +5,36 @@ import DatasetSourcePreview from "@/views/data/DatasetSourcePreview.vue";
 const { fetchDataMatrix } = vi.hoisted(() => ({ fetchDataMatrix: vi.fn() }));
 vi.mock("@/stores/data", () => ({ useDataStore: () => ({ fetchDataMatrix }) }));
 describe("Local source preview transformations", () => {
+  it("does not expose a retired source error or finish the new source's loading state", async () => {
+    fetchDataMatrix.mockReset();
+    let rejectOld!: (error: Error) => void;
+    let finishNew!: (value: unknown) => void;
+    const old = new Promise((_resolve, reject) => { rejectOld = reject; });
+    const fresh = new Promise((resolve) => { finishNew = resolve; });
+    fetchDataMatrix.mockReturnValueOnce(old).mockReturnValueOnce(fresh);
+    const wrapper = mount(DatasetSourcePreview, {
+      props: {
+        scopeKey: "user1:project1:sheet1",
+        sourceRef: { kind: "staged", staging_id: "old", asset_id: "spectra" },
+      },
+      global: { stubs: {
+        InputText: true, Dropdown: true, PlotlyChart: true, DataMatrixGrid: true, DataStatsTable: true,
+      } },
+    });
+    await wrapper.setProps({
+      scopeKey: "user1:project2:sheet2",
+      sourceRef: { kind: "staged", staging_id: "new", asset_id: "spectra" },
+    });
+    rejectOld(new Error("old source failed"));
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("old source failed");
+    expect(wrapper.text()).toContain("Loading preview");
+    // Disposing while the replacement is pending must also suppress errors.
+    wrapper.unmount();
+    finishNew(null);
+    await flushPromises();
+  });
+
   it.each([
     { rows: 80, cols: 2, spectral: true, expected: 50 },
     { rows: 4, cols: 45, spectral: false, expected: 40 },

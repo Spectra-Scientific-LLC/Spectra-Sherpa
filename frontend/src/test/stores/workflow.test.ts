@@ -558,7 +558,7 @@ describe("Workflow Store execution state restoration on loadWorkflow", () => {
     const store = useWorkflowStore();
     const firstLoad = store.loadWorkflow(1);
     await vi.waitFor(() => {
-      expect(api.get).toHaveBeenCalledWith("/workflows/1");
+      expect(api.get).toHaveBeenCalledWith("/workflows/1", { signal: expect.any(AbortSignal) });
     });
     const secondLoad = store.loadWorkflow(2);
     await secondLoad;
@@ -769,7 +769,7 @@ describe("Workflow Store execution state restoration on loadWorkflow", () => {
     const store = useWorkflowStore();
     await store.loadWorkflow(91);
 
-    expect(vi.mocked(api.post)).toHaveBeenCalledWith("/workflows/91/preflight");
+    expect(vi.mocked(api.post)).toHaveBeenCalledWith("/workflows/91/preflight", undefined, { signal: expect.any(AbortSignal) });
     expect(store.edges[0].isValid).toBe(false);
     expect(store.edges[0].validationError).toBe("semantic mismatch");
     expect(store.edges[0].dataType).toBe("SpectralDataset@1.0");
@@ -1008,7 +1008,7 @@ describe("Sherpa explicit run identity", () => {
     });
     await store.loadWorkflow(42, 99);
     expect(store.restoredRunId).toBe(99);
-    expect(api.get).not.toHaveBeenCalledWith("/workflows/42/runs/latest");
+    expect(api.get).not.toHaveBeenCalledWith("/workflows/42/runs/latest", expect.anything());
   });
 });
 

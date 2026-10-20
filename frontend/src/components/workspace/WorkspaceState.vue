@@ -2,7 +2,7 @@
   <div
     class="workspace-state"
     :class="{ 'workspace-state--page': variant === 'page' }"
-    :role="kind === 'error' ? 'alert' : 'status'"
+    :role="kind === 'error' || kind === 'refusal' ? 'alert' : 'status'"
     :aria-busy="kind === 'loading'"
   >
     <i v-if="kind === 'loading'" class="pi pi-spin pi-spinner" aria-hidden="true" />
@@ -17,7 +17,7 @@
 // of the page, with an optional icon, and any hint or action stacked beneath
 // the message. Long sentences use the full width rather than a narrow column.
 withDefaults(
-  defineProps<{ kind: "loading" | "empty" | "error"; message: string; icon?: string; variant?: "inline" | "page" }>(),
+  defineProps<{ kind: "loading" | "empty" | "unavailable" | "refusal" | "error"; message: string; icon?: string; variant?: "inline" | "page" }>(),
   { icon: undefined, variant: "inline" },
 );
 </script>

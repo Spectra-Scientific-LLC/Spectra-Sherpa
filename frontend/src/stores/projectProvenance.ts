@@ -2,6 +2,9 @@ import { defineStore } from "pinia";
 import { ref } from "vue";
 import api from "@/api/client";
 import { getErrorMessage } from "@/utils/errors";
+import { activeProjectScope, registerProjectScopeReset } from "@/stores/projectScopeRegistry";
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest, type ScopedRequestTicket } from "@/composables/useScopedRequest";
 
 export type ProvenanceState = "healthy" | "missing" | "faulty";
 export type ProvenanceKind =
@@ -47,20 +50,34 @@ export const useProjectProvenanceStore = defineStore("projectProvenance", () => 
   const summary = ref<ProjectProvenanceResponse | null>(null);
   const error = ref<string | null>(null);
   const loading = ref(false);
-  let requestGeneration = 0;
   let lastFetchedAt = 0;
-  let inFlight: { id: number; force: boolean; promise: Promise<void> } | null = null;
+  let inFlight: { id: number; force: boolean; promise: Promise<void>; ticket: ScopedRequestTicket } | null = null;
+  const requestScope = useScopedRequest(
+    () => [useAuthStore().user?.id, useAuthStore().token, activeProjectScope.value, projectId.value],
+    () => {
+      summary.value = null;
+      error.value = null;
+      loading.value = false;
+      lastFetchedAt = 0;
+      inFlight = null;
+    },
+  );
+  registerProjectScopeReset(() => {
+    requestScope.invalidate();
+    projectId.value = null;
+  });
 
   async function refresh(id: number | null, force = true): Promise<void> {
     if (id != null && inFlight?.id === id) {
       if (!force || inFlight.force) return inFlight.promise;
-      await inFlight.promise;
+      const previous = inFlight;
+      await previous.promise;
       // A project switch may have happened while the cached request finished.
-      if (projectId.value !== id) return;
+      if (!previous.ticket.isCurrent()) return;
     }
     if (!force && id != null && id === projectId.value && summary.value && Date.now() - lastFetchedAt < 15_000) return;
-    const generation = ++requestGeneration;
     projectId.value = id;
+    const ticket = requestScope.begin();
     summary.value = null;
     error.value = null;
     if (id === null) {
@@ -73,18 +90,19 @@ export const useProjectProvenanceStore = defineStore("projectProvenance", () => 
       try {
         const response = await api.get<ProjectProvenanceResponse>(`/projects/${id}/provenance`, {
           params: force ? undefined : { summary: true },
+          signal: ticket.signal,
         });
-        if (generation === requestGeneration && projectId.value === id) {
+        if (ticket.isCurrent()) {
           summary.value = response.data;
           lastFetchedAt = Date.now();
         }
       } catch (cause) {
-        if (generation === requestGeneration) error.value = getErrorMessage(cause, "Project provenance is unavailable.");
+        if (ticket.isCurrent()) error.value = getErrorMessage(cause, "Project provenance is unavailable.");
       } finally {
-        if (generation === requestGeneration) loading.value = false;
+        if (ticket.isCurrent()) loading.value = false;
       }
     })();
-    inFlight = { id, force, promise: request };
+    inFlight = { id, force, promise: request, ticket };
     try {
       await request;
     } finally {

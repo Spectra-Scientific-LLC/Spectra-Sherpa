@@ -60,7 +60,7 @@ describe("OSS auth store (identity-only, post-v0.4.1)", () => {
 
       await store.initializeActor();
 
-      expect(api.get).toHaveBeenCalledWith("/auth/me");
+      expect(api.get).toHaveBeenCalledWith("/auth/me", { signal: expect.any(AbortSignal) });
       expect(store.user).toEqual({ id: 7, username: "implicit-user", is_active: true });
       expect(store.isAuthenticated).toBe(true);
     });

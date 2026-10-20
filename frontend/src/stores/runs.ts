@@ -1,9 +1,11 @@
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import api from "@/api/client";
 import type { components } from "@/types/api/v1";
 import { runListItem, runSummary, batchPrediction } from "@/api/adapters/runs";
-import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
+import { activeProjectScope, registerProjectScopeReset } from "@/stores/projectScopeRegistry";
+import { useAuthStore } from "@/stores/auth";
+import { useScopedRequest, type ScopedRequestTicket } from "@/composables/useScopedRequest";
 import type {
   ExecutionRunSummary,
   RunListItem,
@@ -22,15 +24,30 @@ export const useRunsStore = defineStore("runs", () => {
   const runsLoading = ref(false);
   const total = ref(0);
   const loadError = ref<string | null>(null);
-  let listRequest = 0;
-  let comparisonRequest = 0;
+  const listOwner = ref("");
   const selectedRunIds = ref<Set<number>>(new Set());
   const comparison = ref<ComparisonResult | null>(null);
   const comparisonLoading = ref(false);
+  const identity = () => [useAuthStore().user?.id, useAuthStore().token, activeProjectScope.value, listOwner.value];
+  const listScope = useScopedRequest(identity, () => { runsLoading.value = false; });
+  const comparisonScope = useScopedRequest(
+    () => [...identity(), ...selectedRunIds.value],
+    () => { comparisonLoading.value = false; comparison.value = null; },
+  );
+  const mutationScope = useScopedRequest(identity);
+  // Independent writes may complete concurrently. They share a scope lease,
+  // not a latest-read lane; a navigation invalidates all their UI effects.
+  let mutationTicket: ScopedRequestTicket | undefined;
+  function captureMutationScope(): ScopedRequestTicket {
+    if (!mutationTicket?.isCurrent()) mutationTicket = mutationScope.begin();
+    return mutationTicket;
+  }
 
   function resetProjectScope(): void {
-    ++listRequest;
-    ++comparisonRequest;
+    listScope.invalidate();
+    comparisonScope.invalidate();
+    mutationScope.invalidate();
+    listOwner.value = "";
     total.value = 0;
     loadError.value = null;
     runs.value = [];
@@ -40,6 +57,7 @@ export const useRunsStore = defineStore("runs", () => {
     comparisonLoading.value = false;
   }
   registerProjectScopeReset(resetProjectScope);
+  watch([() => useAuthStore().user?.id, () => useAuthStore().token, () => activeProjectScope.value], resetProjectScope, { flush: "sync" });
 
   // Computed
   const selectedRuns = computed(() =>
@@ -50,20 +68,23 @@ export const useRunsStore = defineStore("runs", () => {
 
   // Actions
   async function fetchRuns(workflowId: number): Promise<void> {
-    const request = ++listRequest;
+    listOwner.value = `workflow:${workflowId}`;
+    const request = listScope.begin();
     runsLoading.value = true;
     try {
       const response = await api.get<components["schemas"]["ExecutionRunList"]>(
-        `/workflows/${workflowId}/runs`
+        `/workflows/${workflowId}/runs`, { signal: request.signal }
       );
-      if (request !== listRequest) return;
+      if (!request.isCurrent()) return;
       runs.value = response.data.runs.map(runSummary);
       total.value = response.data.total;
     } catch (error) {
-      console.error("Failed to fetch runs:", error);
-      if (request === listRequest) runs.value = [];
+      if (request.isCurrent()) {
+        console.error("Failed to fetch runs:", error);
+        runs.value = [];
+      }
     } finally {
-      if (request === listRequest) runsLoading.value = false;
+      if (request.isCurrent()) runsLoading.value = false;
     }
   }
 
@@ -75,7 +96,8 @@ export const useRunsStore = defineStore("runs", () => {
     sortBy: RunSortField = "executed_at",
     sortOrder: RunSortOrder = "desc",
   ): Promise<void> {
-    const request = ++listRequest;
+    listOwner.value = `project:${projectId}`;
+    const request = listScope.begin();
     clearSelection();
     runsLoading.value = true;
     loadError.value = null;
@@ -83,6 +105,7 @@ export const useRunsStore = defineStore("runs", () => {
       const response = await api.get<components["schemas"]["RunPage"]>(
         "/runs",
         {
+          signal: request.signal,
           params: {
             project_id: projectId,
             limit: 50,
@@ -94,17 +117,17 @@ export const useRunsStore = defineStore("runs", () => {
           },
         }
       );
-      if (request !== listRequest) return;
+      if (!request.isCurrent()) return;
       runs.value = response.data.runs.map(runListItem);
       total.value = response.data.total;
     } catch (error) {
-      if (request !== listRequest) return;
+      if (!request.isCurrent()) return;
       console.error("Failed to fetch project runs:", error);
       runs.value = [];
       total.value = 0;
       loadError.value = "Could not load run history. Retry to refresh.";
     } finally {
-      if (request === listRequest) runsLoading.value = false;
+      if (request.isCurrent()) runsLoading.value = false;
     }
   }
 
@@ -114,18 +137,21 @@ export const useRunsStore = defineStore("runs", () => {
   ): Promise<ExecutionRunSummary> {
     if (!Number.isInteger(payload.run_id) || Number(payload.run_id) <= 0)
       throw new Error("The displayed run identity is required to save a run.");
+    const request = captureMutationScope();
     const response = await api.post<components["schemas"]["ExecutionRunOut"]>(
       `/workflows/${workflowId}/runs`,
       payload
     );
     // Prepend to list (newest first)
     const run = runSummary(response.data);
-    runs.value = [run, ...runs.value];
+    if (request.isCurrent()) runs.value = [run, ...runs.value];
     return run;
   }
 
   async function deleteRun(workflowId: number, runId: number): Promise<void> {
+    const request = captureMutationScope();
     await api.delete(`/workflows/${workflowId}/runs/${runId}`);
+    if (!request.isCurrent()) return;
     runs.value = runs.value.filter((r) => r.id !== runId);
     const next = new Set(selectedRunIds.value);
     next.delete(runId);
@@ -133,7 +159,9 @@ export const useRunsStore = defineStore("runs", () => {
   }
 
   async function deleteProjectRun(projectId: number, runId: number): Promise<void> {
+    const request = captureMutationScope();
     await api.delete(`/runs/${runId}`, { params: { project_id: projectId } });
+    if (!request.isCurrent()) return;
     runs.value = runs.value.filter((r) => r.id !== runId);
     const next = new Set(selectedRunIds.value);
     next.delete(runId);
@@ -144,16 +172,17 @@ export const useRunsStore = defineStore("runs", () => {
     workflowId: number,
     runIds: number[]
   ): Promise<ComparisonResult> {
+    const request = comparisonScope.begin();
     comparisonLoading.value = true;
     try {
       const response = await api.post<ComparisonResult>(
         `/workflows/${workflowId}/runs/compare`,
-        { run_ids: runIds }
+        { run_ids: runIds }, { signal: request.signal }
       );
-      comparison.value = response.data;
+      if (request.isCurrent()) comparison.value = response.data;
       return response.data;
     } finally {
-      comparisonLoading.value = false;
+      if (request.isCurrent()) comparisonLoading.value = false;
     }
   }
 
@@ -162,19 +191,19 @@ export const useRunsStore = defineStore("runs", () => {
     runIds: number[],
     evaluationSelections: import('@/types').EvaluationSelections = {},
   ): Promise<ComparisonResult> {
-    const request = ++comparisonRequest;
+    const request = comparisonScope.begin();
     comparisonLoading.value = true;
     comparison.value = null;
     try {
       const response = await api.post<ComparisonResult>(
         "/runs/compare",
         { run_ids: runIds, evaluation_selections: evaluationSelections },
-        { params: { project_id: projectId } }
+        { params: { project_id: projectId }, signal: request.signal }
       );
-      if (request === comparisonRequest) comparison.value = response.data;
+      if (request.isCurrent()) comparison.value = response.data;
       return response.data;
     } finally {
-      if (request === comparisonRequest) comparisonLoading.value = false;
+      if (request.isCurrent()) comparisonLoading.value = false;
     }
   }
 
@@ -189,7 +218,7 @@ export const useRunsStore = defineStore("runs", () => {
   }
 
   function clearSelection(): void {
-    ++comparisonRequest;
+    comparisonScope.invalidate();
     comparisonLoading.value = false;
     selectedRunIds.value = new Set();
     comparison.value = null;
@@ -218,13 +247,14 @@ export const useRunsStore = defineStore("runs", () => {
     runId: number,
     labels: string[]
   ): Promise<ExecutionRunSummary> {
+    const request = captureMutationScope();
     const response = await api.patch<components["schemas"]["ExecutionRunOut"]>(
       `/deploy/runs/${runId}/labels`,
       { labels }
     );
     // Update in local list
     const idx = runs.value.findIndex((r) => r.id === runId);
-    if (idx !== -1) {
+    if (request.isCurrent() && idx !== -1) {
       runs.value[idx] = { ...runs.value[idx], labels };
     }
     return runSummary(response.data);

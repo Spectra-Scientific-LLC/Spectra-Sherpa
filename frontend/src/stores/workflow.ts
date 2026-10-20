@@ -1,6 +1,6 @@
 import { validateScientificMetadata } from "@/utils/scientificMetadataValidation";
 import { defineStore } from "pinia";
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import api from "@/api/client";
 import type { components } from "@/types/api/v1";
 import { workflowCreate, workflowEdge, workflowListItem, workflowNode, workflowPreflight as adaptWorkflowPreflight } from "@/api/adapters/workflows";
@@ -16,6 +16,7 @@ import {
 } from "@/utils/workflowDraft";
 import { useWorkbookStore } from "@/stores/workbook";
 import { registerProjectScopeReset } from "@/stores/projectScopeRegistry";
+import { useScopedRequest } from "@/composables/useScopedRequest";
 import { newIdempotencyKey, requestScopedSingleFlightKey, singleFlight } from "@/utils/idempotency";
 import {
   blobFromResponseData,
@@ -103,12 +104,24 @@ export const useWorkflowStore = defineStore("workflow", () => {
   const lastExecutionResultDescriptors = ref<Record<string, NodeScientificValueDescriptors>>({});
   const lastExecutionPresentations = ref<Record<string, ExecutedPresentationRecord>>({});
   const workflowWarnings = ref<string[]>([]);
+  const workspaceIdentity = () => [useAuthStore().user?.id, useAuthStore().token, useProjectStore().currentProjectId];
+  const loadScope = useScopedRequest(workspaceIdentity, () => { isLoading.value = false; });
+  const saveScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
+  const preflightScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
+  const executionScope = useScopedRequest(workspaceIdentity, () => { isExecuting.value = false; });
+  const choiceScope = useScopedRequest(() => [...workspaceIdentity(), workflowId.value]);
+  const datasetCatalogScope = useScopedRequest(workspaceIdentity, () => { availableDatasets.value = null; });
+  const templateScope = useScopedRequest(workspaceIdentity, () => { templatesLoading.value = false; templatesError.value = null; templates.value = []; });
+  const compatibilityScope = useScopedRequest(workspaceIdentity, () => { compatibilityLoading.value = false; compatibilityError.value = null; compatibilityMatrix.value = null; });
   async function recordActiveWorkflowChoice(projectId: number | null | undefined, id: number): Promise<void> {
     if (projectId == null || projectId !== useProjectStore().currentProjectId) return;
+    const request = choiceScope.begin();
     try {
       await api.post(`/projects/${projectId}/choices`, { kind: "workflow", workflow_id: id });
+      if (!request.isCurrent()) return;
       await useProjectProvenanceStore().refresh(projectId);
     } catch (error) {
+      if (!request.isCurrent()) return;
       workflowWarnings.value = [
         ...workflowWarnings.value,
         `The sheet is available, but its active project choice was not recorded: ${getErrorMessage(error, "Try opening the sheet again.")}`,
@@ -504,6 +517,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
 
   function clearWorkflow() {
     workflowLoadGeneration += 1;
+    loadScope.invalidate();
+    saveScope.invalidate();
+    preflightScope.invalidate();
+    executionScope.invalidate();
+    choiceScope.invalidate();
     nodes.value = [];
     edges.value = [];
     currentTemplateId.value = null;
@@ -566,10 +584,11 @@ export const useWorkflowStore = defineStore("workflow", () => {
   async function refreshPersistedPreflight(): Promise<WorkflowPreflightResponse | null> {
     const id = workflowId.value;
     if (id === null) return null;
-    const response = await api.post<components["schemas"]["WorkflowValidationResponse"]>(`/workflows/${id}/preflight`);
+    const request = preflightScope.begin();
+    const response = await api.post<components["schemas"]["WorkflowValidationResponse"]>(`/workflows/${id}/preflight`, undefined, { signal: request.signal });
     const preflight = adaptWorkflowPreflight(response.data);
     // Do not let a slow response overwrite a newly loaded workflow.
-    if (workflowId.value === id) applyPersistedPreflight(preflight);
+    if (request.isCurrent()) applyPersistedPreflight(preflight);
     return preflight;
   }
 
@@ -599,6 +618,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   async function performSaveWorkflow(
     options: { createVersion?: boolean; projectId?: number | null } = {},
   ): Promise<number> {
+    let request = saveScope.begin();
     isLoading.value = true;
     try {
       const { nodes: backendNodes, edges: backendEdges } = toBackendFormat();
@@ -638,11 +658,13 @@ export const useWorkflowStore = defineStore("workflow", () => {
           edges: backendEdges,
         } satisfies components["schemas"]["WorkflowUpdate"];
         const response = await api.put<components["schemas"]["WorkflowDetail"]>(`/workflows/${workflowId.value}`, payload);
+        clearSavedDraft(response.data.id);
+        if (!request.isCurrent()) return response.data.id;
         useWorkbookStore().syncSavedSheetMetadata(workflowListItem(response.data));
         workflowHash.value = response.data.integrity_hash || null;
-        clearSavedDraft(response.data.id);
         hasUnsavedChanges.value = hasNewerEdits();
         await refreshPersistedPreflight();
+        if (!request.isCurrent()) return response.data.id;
         await recordActiveWorkflowChoice(draftProjectId, response.data.id);
         return response.data.id;
       } else {
@@ -668,21 +690,32 @@ export const useWorkflowStore = defineStore("workflow", () => {
           edges: backendEdges,
         };
         const response = await api.post<components["schemas"]["WorkflowDetail"]>("/workflows", workflowCreate(payload));
-        workflowId.value = response.data.id;
-        workflowHash.value = response.data.integrity_hash || null;
         clearSavedDraft(response.data.id);
+        if (!request.isCurrent()) return response.data.id;
+        isLoading.value = false;
+        workflowId.value = response.data.id;
+        request = saveScope.begin();
+        workflowHash.value = response.data.integrity_hash || null;
         hasUnsavedChanges.value = hasNewerEdits();
         await refreshPersistedPreflight();
+        if (!request.isCurrent()) return response.data.id;
         await recordActiveWorkflowChoice(projectId, response.data.id);
         return response.data.id;
       }
     } finally {
-      isLoading.value = false;
+      if (request.isCurrent()) isLoading.value = false;
     }
   }
 
   async function loadWorkflow(id: number, retainedRunId?: number, shouldApply?: () => boolean): Promise<void> {
+    if (shouldApply && !shouldApply()) return;
     const loadGeneration = ++workflowLoadGeneration;
+    saveScope.invalidate();
+    executionScope.invalidate();
+    preflightScope.invalidate();
+    choiceScope.invalidate();
+    const request = loadScope.begin();
+    const canApply = () => request.isCurrent() && (!shouldApply || shouldApply());
     isLoading.value = true;
     try {
       // Ensure the node library and type registry are loaded BEFORE we
@@ -696,10 +729,10 @@ export const useWorkflowStore = defineStore("workflow", () => {
       } else if (!typeRegistry.value) {
         await fetchTypeRegistry();
       }
-      if (loadGeneration !== workflowLoadGeneration) return;
+      if (!canApply()) return;
 
-      const response = await api.get<components["schemas"]["WorkflowDetail"]>(`/workflows/${id}`);
-      if (loadGeneration !== workflowLoadGeneration || (shouldApply && !shouldApply())) return;
+      const response = await api.get<components["schemas"]["WorkflowDetail"]>(`/workflows/${id}`, { signal: request.signal });
+      if (!canApply()) return;
       const data = response.data;
 
       workflowId.value = data.id;
@@ -714,8 +747,8 @@ export const useWorkflowStore = defineStore("workflow", () => {
       const converted = fromBackendFormat((data.nodes || []).map(workflowNode), (data.edges || []).map(workflowEdge));
       nodes.value = converted.nodes;
       edges.value = converted.edges;
-      await refreshPersistedPreflight();
-
+      // A newly admitted graph must not render the preceding sheet's evidence
+      // while its preflight request is still in flight.
       currentTemplateId.value = null;
       hasUnsavedChanges.value = false;
       lastExecutionResults.value = null;
@@ -728,10 +761,13 @@ export const useWorkflowStore = defineStore("workflow", () => {
       lastExecutionResultDescriptors.value = {};
       lastExecutionPresentations.value = {};
       isWorkflowStale.value = false;
+      await refreshPersistedPreflight();
+      if (!canApply()) return;
 
       // Load latest auto-saved execution results (survives page refresh)
       try {
-        const runResp = await api.get(`/workflows/${id}/runs/${retainedRunId ?? "latest"}`);
+        const runResp = await api.get(`/workflows/${id}/runs/${retainedRunId ?? "latest"}`, { signal: request.signal });
+        if (!canApply()) return;
         if (retainedRunId != null && runResp.data?.id !== retainedRunId) {
           throw new Error("Requested run identity is unavailable");
         }
@@ -803,24 +839,26 @@ export const useWorkflowStore = defineStore("workflow", () => {
           }
         }
       } catch {
+        if (!canApply()) return;
         // Missing requested evidence must not silently become another run.
         if (retainedRunId != null) {
           restoredEvidenceNotice.value = `Requested run ${retainedRunId} is unavailable; no substitute result was loaded.`;
         }
         // No latest run — OK, nothing to restore
       }
-      if (loadGeneration === workflowLoadGeneration && data.purpose === "analysis" &&
+      if (canApply() && data.purpose === "analysis" &&
           data.project_id != null && data.project_id === useProjectStore().currentProjectId) {
         await recordActiveWorkflowChoice(data.project_id, data.id);
       }
     } finally {
-      if (loadGeneration === workflowLoadGeneration) {
+      if (request.isCurrent()) {
         isLoading.value = false;
       }
     }
   }
 
   registerProjectScopeReset(clearWorkflow);
+  watch([() => useAuthStore().user?.id, () => useAuthStore().token, () => useProjectStore().currentProjectId], clearWorkflow, { flush: "sync" });
 
   async function listWorkflows(
     projectId: number | null = useProjectStore().currentProjectId,
@@ -839,23 +877,25 @@ export const useWorkflowStore = defineStore("workflow", () => {
     category?: string,
     includeWip: boolean = false,
   ): Promise<WorkflowTemplate[]> {
+    const request = templateScope.begin();
     templatesLoading.value = true;
     templatesError.value = null;
     try {
       const response = await api.get<WorkflowTemplateCatalog>("/workflow-templates", {
+        signal: request.signal,
         params: {
           ...(category ? { category } : {}),
           ...(includeWip ? { include_wip: true } : {}),
         },
       });
       const fetched = response.data.templates;
-      templates.value = fetched;
-      return templates.value;
+      if (request.isCurrent()) templates.value = fetched;
+      return fetched;
     } catch (error: unknown) {
-      templatesError.value = getErrorMessage(error, "Failed to load analysis starters");
+      if (request.isCurrent()) templatesError.value = getErrorMessage(error, "Failed to load analysis starters");
       throw error;
     } finally {
-      templatesLoading.value = false;
+      if (request.isCurrent()) templatesLoading.value = false;
     }
   }
 
@@ -863,19 +903,21 @@ export const useWorkflowStore = defineStore("workflow", () => {
     force: boolean = false,
   ): Promise<DatasetCompatibilityMatrix> {
     if (compatibilityMatrix.value && !force) return compatibilityMatrix.value;
+    const request = compatibilityScope.begin();
     compatibilityLoading.value = true;
     compatibilityError.value = null;
     try {
       const response = await api.get<DatasetCompatibilityMatrix>(
         "/workflow-templates/compatibility-matrix",
+        { signal: request.signal },
       );
-      compatibilityMatrix.value = response.data;
+      if (request.isCurrent()) compatibilityMatrix.value = response.data;
       return response.data;
     } catch (error: unknown) {
-      compatibilityError.value = getErrorMessage(error, "Could not load analysis compatibility");
+      if (request.isCurrent()) compatibilityError.value = getErrorMessage(error, "Could not load analysis compatibility");
       throw error;
     } finally {
-      compatibilityLoading.value = false;
+      if (request.isCurrent()) compatibilityLoading.value = false;
     }
   }
 
@@ -1012,12 +1054,14 @@ export const useWorkflowStore = defineStore("workflow", () => {
   }
 
   const isExecuting = ref(false);
-  async function withExecutionOwnership(action: (begin: () => void) => Promise<WorkflowExecuteResponse>) {
+  async function withExecutionOwnership(action: (begin: () => void, signal: AbortSignal) => Promise<WorkflowExecuteResponse>) {
     if (isExecuting.value) throw new Error("An execution is already in progress. Wait for it to finish.");
+    const request = executionScope.begin();
     isExecuting.value = true;
     const ownershipGeneration = workflowLoadGeneration;
     let evidenceClaimed = false;
     const begin = () => {
+      if (!request.isCurrent()) throw new DOMException("Execution belongs to a previously active workflow.", "AbortError");
       evidenceClaimed = true;
       // Only an admitted attempt replaces the current scientific evidence.
       lastExecutionResults.value = null;
@@ -1031,21 +1075,21 @@ export const useWorkflowStore = defineStore("workflow", () => {
       restoredEvidenceGaps.value = [];
       markWorkflowStale();
     };
-    try { return await action(begin); }
+    try { return await action(begin, request.signal); }
     catch (error) {
-      if (ownershipGeneration !== workflowLoadGeneration) throw new DOMException("Execution belongs to a previously active workflow.", "AbortError");
+      if (!request.isCurrent() || ownershipGeneration !== workflowLoadGeneration) throw new DOMException("Execution belongs to a previously active workflow.", "AbortError");
       if (evidenceClaimed && ownershipGeneration === workflowLoadGeneration) restoredEvidenceNotice.value = "Execution did not finish. No current execution evidence is available; inspect History or rerun.";
       throw error;
-    } finally { isExecuting.value = false; }
+    } finally { if (request.isCurrent()) isExecuting.value = false; }
   }
   async function executeWorkflow(initialData?: ParamsMap): Promise<WorkflowExecuteResponse> {
-    return withExecutionOwnership((begin) => executeWorkflowSnapshot(initialData, begin));
+    return withExecutionOwnership((begin, signal) => executeWorkflowSnapshot(initialData, begin, signal));
   }
   async function executeNode(nodeId: string, initialData?: ParamsMap): Promise<WorkflowExecuteResponse> {
-    return withExecutionOwnership((begin) => executeNodeSnapshot(nodeId, initialData, begin));
+    return withExecutionOwnership((begin, signal) => executeNodeSnapshot(nodeId, initialData, begin, signal));
   }
 
-  async function executeWorkflowSnapshot(initialData: ParamsMap | undefined, begin: () => void): Promise<WorkflowExecuteResponse> {
+  async function executeWorkflowSnapshot(initialData: ParamsMap | undefined, begin: () => void, signal: AbortSignal): Promise<WorkflowExecuteResponse> {
     const activeSheet = useWorkbookStore().activeSheet;
     if (activeSheet?.purpose === "managed_candidate_authority") {
       throw new Error(
@@ -1121,6 +1165,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
         requestScopedSingleFlightKey(`execute:${executingWorkflowId}`, requestPayload),
         () =>
           api.post(`/workflows/${executingWorkflowId}/execute`, requestPayload, {
+            signal,
             headers: { "Idempotency-Key": newIdempotencyKey() },
           }),
       );
@@ -1271,6 +1316,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
     nodeId: string,
     initialData: ParamsMap | undefined,
     begin: () => void,
+    signal: AbortSignal,
   ): Promise<WorkflowExecuteResponse> {
     if (useWorkbookStore().activeSheet?.purpose === "managed_candidate_authority") {
       throw new Error(
@@ -1309,6 +1355,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
         requestScopedSingleFlightKey(`execute:${executingWorkflowId}:${nodeId}`, requestPayload),
         () =>
           api.post(`/workflows/${executingWorkflowId}/execute`, requestPayload, {
+            signal,
             headers: { "Idempotency-Key": newIdempotencyKey() },
           }),
       );
@@ -1496,6 +1543,7 @@ export const useWorkflowStore = defineStore("workflow", () => {
   async function fetchAvailableDatasets(
     projectId: number | null = useProjectStore().currentProjectId,
   ): Promise<AvailableDatasets> {
+    const request = datasetCatalogScope.begin();
     if (projectId == null) {
       const empty = { experiments: [], library: [], builder: [] };
       availableDatasets.value = empty;
@@ -1503,8 +1551,9 @@ export const useWorkflowStore = defineStore("workflow", () => {
     }
     const response = await api.get("/datasets/available", {
       params: { project_id: projectId },
+      signal: request.signal,
     });
-    availableDatasets.value = response.data;
+    if (request.isCurrent()) availableDatasets.value = response.data;
     return response.data;
   }
 
