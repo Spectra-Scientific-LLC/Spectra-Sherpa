@@ -62,6 +62,9 @@ directories. Do not attach them to public CI/PRs without dataset permission.
   identities and exclusions before any plot is accepted.
 - My Dataset's inclusion controls and retained active rows are checked
   separately. A plot cannot substitute for a nonempty table.
+- Both Data project-link aliases must override a remembered different project,
+  show the linked dataset's inclusion marks and survive a reload. The fixture
+  first selects the other project explicitly so recency cannot hide this defect.
 - Data View checks visible rows and downloaded **all-row** CSV. PCA components
   must remain component rows against spectral coordinate columns, with their own
   labels rather than sample labels.

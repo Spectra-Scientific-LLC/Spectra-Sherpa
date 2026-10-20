@@ -1580,7 +1580,7 @@
 
 <script setup lang="ts">
 import { useDatasetInspection } from "./composables/useDatasetInspection";
-import { useDatasetNavigation } from "./composables/useDatasetNavigation";
+import { resolveDatasetProject, useDatasetNavigation } from "./composables/useDatasetNavigation";
 import { useScopedRequest } from "@/composables/useScopedRequest";
 import { useDatasetDefinitions, type DatasetView } from "./composables/useDatasetDefinitions";
 import { useDatasetReadinessSelection, type AnalysisChoice } from "./composables/useDatasetReadinessSelection";
@@ -1792,6 +1792,9 @@ const {
 const navigation = useDatasetNavigation(() => [
   authStore.user?.id, projectStore.currentProjectId, workflowContextId.value,
   workflowSourceNodeId.value, JSON.stringify(route.query),
+]);
+const projectAdmission = useScopedRequest(() => [
+  authStore.user?.id, authStore.token, JSON.stringify(route.query), navigation.intent.value,
 ]);
 const definitions = useDatasetDefinitions(dataScopeIdentity);
 const {
@@ -5452,8 +5455,17 @@ async function goToWorkflow(addNode?: string) {
 
 onMounted(async () => {
   const intent = navigation.intent.value;
-  await projectStore.ensureProjectForBrowserTab();
-  if (intent !== navigation.intent.value) return;
+  const admission = projectAdmission.begin();
+  try {
+    if (!await resolveDatasetProject(route.query, projectStore)) return;
+  } catch (error) {
+    if (admission.isCurrent()) toast.add({
+      severity: "error", summary: "Project unavailable",
+      detail: getErrorMessage(error), life: 5000,
+    });
+    return;
+  }
+  if (!admission.isCurrent() || intent !== navigation.intent.value) return;
   const ticket = navigation.bootstrap.begin();
   currentDataDraftStorageKey = dataDraftStorageKey();
   restoreActiveDataTab();

@@ -4000,6 +4000,48 @@ describe("DataContent file inspection", () => {
     );
   });
 
+  it.each(["project", "project_id"])("waits for explicit %s admission before loading Data", async (key) => {
+    mocks.route.query = { [key]: "4", tab: "import" };
+    let finish!: (value: { id: number }) => void;
+    mocks.projectStore.fetchProject.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const wrapper = mountDataContent();
+    try {
+      await flushPromises();
+      expect(mocks.projectStore.fetchProject).toHaveBeenCalledExactlyOnceWith(4);
+      expect(mocks.projectStore.ensureProjectForBrowserTab).not.toHaveBeenCalled();
+      expect(mocks.dataStore.fetchExperiments).not.toHaveBeenCalled();
+      finish({ id: 4 });
+      await flushPromises();
+      expect(mocks.dataStore.fetchExperiments).toHaveBeenCalledOnce();
+    } finally { wrapper.unmount(); }
+  });
+
+  it("does not resume Data bootstrap after unmount during project admission", async () => {
+    mocks.route.query = { project: "4" };
+    let finish!: (value: { id: number }) => void;
+    mocks.projectStore.fetchProject.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const wrapper = mountDataContent();
+    await flushPromises();
+    wrapper.unmount();
+    finish({ id: 4 });
+    await flushPromises();
+    expect(mocks.dataStore.fetchExperiments).not.toHaveBeenCalled();
+  });
+
+  it("reports invalid project links without loading another project's datasets", async () => {
+    mocks.route.query = { project: "4oops" };
+    const wrapper = mountDataContent();
+    try {
+      await flushPromises();
+      expect(mocks.projectStore.fetchProject).not.toHaveBeenCalled();
+      expect(mocks.projectStore.ensureProjectForBrowserTab).not.toHaveBeenCalled();
+      expect(mocks.dataStore.fetchExperiments).not.toHaveBeenCalled();
+      expect(mocks.toastAdd).toHaveBeenCalledWith(expect.objectContaining({
+        severity: "error", summary: "Project unavailable", detail: expect.stringContaining("invalid project"),
+      }));
+    } finally { wrapper.unmount(); }
+  });
+
   it("ignores the boot project resolution but resets Data state on a real project switch", async () => {
     // Regression: on slow managed-auth deployments the project resolves a few
     // seconds after mount (null -> id). If the user has already loaded
