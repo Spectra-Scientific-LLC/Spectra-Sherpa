@@ -89,8 +89,10 @@ def test_generated_reference_is_current_via_cli() -> None:
     assert before == {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in before}
 
 
-def test_generation_is_deterministic_and_preserves_prose(tmp_path: Path, row: dict) -> None:
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_generation_is_deterministic_and_preserves_prose(tmp_path: Path, row: dict, newline: str) -> None:
     target = page(tmp_path)
+    target.write_bytes(target.read_text(encoding="utf-8").replace("\n", newline).encode("utf-8"))
     second = copy.deepcopy(row)
     second["node_type"] = "test.another"
     assert reference.render_section([row, second]) == reference.render_section([second, row])
@@ -102,9 +104,9 @@ def test_generation_is_deterministic_and_preserves_prose(tmp_path: Path, row: di
     assert reference.generate(tmp_path, [row], check=False) == [target]
     assert reference.generate(tmp_path, [row], check=False) == []
     assert reference.generate(tmp_path, [row], check=True) == []
-    generated = target.read_text()
-    assert generated.split(reference.BEGIN)[0] == before.decode().split(reference.BEGIN)[0]
-    assert generated.split(reference.END)[1] == before.decode().split(reference.END)[1]
+    generated = target.read_bytes().decode("utf-8")
+    assert generated.split(reference.BEGIN)[0] == before.decode("utf-8").split(reference.BEGIN)[0]
+    assert generated.split(reference.END)[1] == before.decode("utf-8").split(reference.END)[1]
     assert help_check.generated_help_rows(tmp_path) == [
         {"node_type": row["node_type"], "execution_contract": row["execution_contract"]}
     ]
