@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 
 from _provenance import ensure_local_checkout_on_path, require_local_checkout
@@ -23,16 +24,25 @@ from spectra_sherpa.app.services.dag.node_catalog_contract import (
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args()
     package_root = _PACKAGE_ROOT
     repository_root = package_root.parents[1]
     evidence_dir = repository_root / "docs" / "evidence"
     census = build_node_contract_census(node_registry.list_nodes())
     validate_census_help_references(census, package_root=package_root)
     output = {"registry_digest": census_digest(census), **census}
-    (evidence_dir / "m4-node-contract-census.json").write_text(
-        json.dumps(output, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    (evidence_dir / "m4-node-contract-census.md").write_text(render_census_markdown(census), encoding="utf-8")
+    outputs = {
+        evidence_dir / "m4-node-contract-census.json": json.dumps(output, indent=2, sort_keys=True) + "\n",
+        evidence_dir / "m4-node-contract-census.md": render_census_markdown(census),
+    }
+    for path, content in outputs.items():
+        if args.check:
+            if not path.exists() or path.read_text(encoding="utf-8") != content:
+                raise SystemExit("Stale node census: make evidence (monorepo root); review the diff")
+        else:
+            path.write_text(content, encoding="utf-8")
 
 
 if __name__ == "__main__":

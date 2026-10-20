@@ -3,25 +3,12 @@
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_PLAN_PATH = _REPO_ROOT / "docs/plan/canonical-dag-managed-optimization-plan.md"
+_INDEX_PATH = _REPO_ROOT / "docs/evidence/current-scientific-bindings.json"
 _CENSUS_PATH = _REPO_ROOT / "docs/evidence/m4-node-contract-census.json"
 _ATTESTATION_PATH = _REPO_ROOT / "docs/evidence/managed-optimization-runtime-attestation.json"
-_CURRENT_EVIDENCE_PATTERN = re.compile(
-    r"<!-- managed-optimization-current-evidence\s+"
-    r"registry_census_digest=(?P<census>[0-9a-f]{64})\s+"
-    r"managed_optimization_profile_digest=(?P<profile>[0-9a-f]{64})\s+"
-    r"managed_optimization_runtime_attestation_digest=(?P<attestation>[0-9a-f]{64})\s+"
-    r"-->",
-    re.MULTILINE,
-)
-_IMPLEMENTATION_RECORD_PATTERN = re.compile(
-    r"^#### C2[^\n]* implementation record[^\n]*\n" r"(?P<body>.*?)(?=^#### |\Z)",
-    re.MULTILINE | re.DOTALL,
-)
 _RELEASE_PLAN_PATH = _REPO_ROOT / "docs/plan/0.6-release-execution-plan.md"
 _AVATAR_DISTRIBUTION_CONTRACT_PATH = _REPO_ROOT / "docs/plan/avatar-essential-oils-distribution-contract.md"
 _DESKTOP_DELIVERY_PATH = _REPO_ROOT / "docs/plan/desktop-installer-delivery.md"
@@ -43,27 +30,17 @@ _AUTHOR_REHEARSAL_SOURCE = "369dd659a7a290d82903291980989575ad3aaa9c"
 
 
 def test_plan_current_registry_evidence_matches_checked_artifacts() -> None:
-    """The plan may not claim registry identities different from the tree."""
-
-    plan = _PLAN_PATH.read_text(encoding="utf-8")
-    matches = list(_CURRENT_EVIDENCE_PATTERN.finditer(plan))
-    assert len(matches) == 1, "plan must contain exactly one current registry evidence authority block"
+    """Current bindings are data; historical plan prose is not an executable pin."""
 
     census = json.loads(_CENSUS_PATH.read_text(encoding="utf-8"))
     attestation = json.loads(_ATTESTATION_PATH.read_text(encoding="utf-8"))
-    claimed = matches[0].groupdict()
+    claimed = json.loads(_INDEX_PATH.read_text(encoding="utf-8"))["managed_optimization"]
 
     assert claimed == {
         "census": census["registry_digest"],
         "profile": attestation["profile_digest"],
         "attestation": attestation["digest"],
     }
-
-    records = list(_IMPLEMENTATION_RECORD_PATTERN.finditer(plan))
-    assert records, "plan must retain ordered C2 implementation records"
-    latest_record = records[-1].group(0)
-    for name, digest in claimed.items():
-        assert digest in latest_record, f"latest C2 implementation record does not contain current {name} digest"
 
 
 def test_current_0_6_plan_keeps_owner_amended_release_scope_closed() -> None:

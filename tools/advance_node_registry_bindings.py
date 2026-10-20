@@ -37,7 +37,7 @@ def _node_types(rows: object, *, path: Path) -> set[str]:
 
 def advance_bindings(repository_root: Path, *, check: bool) -> None:
     census_path = repository_root / "docs/evidence/m4-node-contract-census.json"
-    retention_path = repository_root / "docs/plan/canonical-node-retention-decisions.json"
+    retention_path = repository_root / "docs/evidence/canonical-node-retention-decisions.json"
     assessment_path = repository_root / "docs/evidence/canonical-node-readiness-assessments.json"
 
     census = _load_object(census_path)

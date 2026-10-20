@@ -1,37 +1,37 @@
+# Fast source checks only. Builds are disposable; never stage static bundles.
 repos:
   - repo: https://github.com/psf/black
-    rev: "24.10.0"
+    rev: "26.3.1"
     hooks:
       - id: black
+        files: ^(src|tests)/
         args: [--line-length=120]
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: "v0.8.6"
+    rev: "v0.15.17"
     hooks:
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix]
+        files: ^(src|tests)/
 
   - repo: local
     hooks:
       - id: eslint
-        name: eslint
-        entry: npx eslint --max-warnings 300
+        name: ESLint (frontend package configuration)
+        entry: python scripts/frontend_lint.py
         language: system
         files: ^frontend/src/.*\.(ts|vue)$
         pass_filenames: false
 
       - id: prettier
-        name: prettier
-        entry: npx prettier --check
+        name: Prettier (installed frontend tool)
+        entry: node frontend/node_modules/prettier/bin/prettier.cjs --check
         language: system
         files: ^frontend/src/.*\.(ts|vue|css)$
         pass_filenames: true
 
-      - id: rebuild-frontend-static
-        name: Rebuild frontend static bundle
-        # Keeps src/spectra_sherpa/static/ in sync when frontend source changes.
-        # The rebuilt assets are staged automatically so the commit includes them.
-        entry: bash -c 'cd frontend && npm run build && git add ../src/spectra_sherpa/static/'
+      - id: user-copy
+        name: Bounded user-copy terminology
+        entry: python scripts/check_user_copy.py
         language: system
-        files: ^frontend/(src|public)/.*\.(ts|vue|css|js|html)$|^frontend/(vite\.config\.ts|index\.html|package\.json)$
+        files: ^(frontend/src/.*\.vue|docs/workflows/.*\.md|docs/developers/user-copy-baseline\.json)$
         pass_filenames: false

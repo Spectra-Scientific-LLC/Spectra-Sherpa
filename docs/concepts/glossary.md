@@ -3,6 +3,11 @@
 These terms describe contracts a scientist can observe in SpectraSherpa. Each
 definition links to the next practical place to use it.
 
+For new product copy, use **Run workflow**, **Dataset**, and **Short summary**;
+avoid **Execute workflow**, **Data Portfolio**, and **Short scientific summary**.
+The [bounded copy gate](../developers/repository-governance.md#copy-policy)
+ratchets existing wording without rewriting identifiers or scientific terms.
+
 | Term | Meaning and example |
 | --- | --- |
 | **New Analysis** | Dashboard action that creates a Project workspace with a selected dataset and starter, or a blank project. It is distinct from Analysis Starter inside Workflow. |

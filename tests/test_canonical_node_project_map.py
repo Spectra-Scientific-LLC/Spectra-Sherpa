@@ -15,8 +15,8 @@ _REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 _MAP_PATH = _REPOSITORY_ROOT / "docs/evidence/canonical-node-project-repair-map.json"
 _CENSUS_PATH = _REPOSITORY_ROOT / "docs/evidence/m4-node-contract-census.json"
 _ATTESTATION_PATH = _REPOSITORY_ROOT / "docs/evidence/managed-optimization-runtime-attestation.json"
-_PLAN_PATH = _REPOSITORY_ROOT / "docs/plan/canonical-dag-managed-optimization-plan.md"
-_RETENTION_PATH = _REPOSITORY_ROOT / "docs/plan/canonical-node-retention-decisions.json"
+_INDEX_PATH = _REPOSITORY_ROOT / "docs/evidence/current-scientific-bindings.json"
+_RETENTION_PATH = _REPOSITORY_ROOT / "docs/evidence/canonical-node-retention-decisions.json"
 _GENERATOR_PATH = _REPOSITORY_ROOT / "packages/spectra-sherpa/tools/generate_canonical_node_project_map.py"
 _TEMPLATE_DIR = _REPOSITORY_ROOT / "packages/spectra-sherpa/src/spectra_sherpa/data/templates"
 _SCHEMA_VERSION = "spectrasherpa-canonical-node-project-map/4"
@@ -385,7 +385,7 @@ def test_exact_system_bindings_match_current_authorities() -> None:
 
 def test_plan_records_the_current_map_identity() -> None:
     document = _load(_MAP_PATH)
-    plan = _PLAN_PATH.read_text(encoding="utf-8")
-    assert plan.count("<!-- canonical-node-project-map-current-evidence") == 1
-    assert f"map_digest={document['map_digest']}" in plan
-    assert f"registry_digest={document['registry_digest']}" in plan
+    assert _load(_INDEX_PATH)["project_map"] == {
+        "map_digest": document["map_digest"],
+        "registry_digest": document["registry_digest"],
+    }

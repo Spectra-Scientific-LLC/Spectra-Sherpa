@@ -4,6 +4,10 @@ Read [docs/AUTHORITIES.md](docs/AUTHORITIES.md) before changing scientific or
 user-facing behavior. Derive from the named authority; do not redeclare node,
 term, axis, help-link, or admission knowledge in a consumer.
 
+For evidence, publication parity and bounded copy checks, follow
+[repository governance](docs/developers/repository-governance.md).
+Run `make evidence-check`; generation is never proof of qualification.
+
 - Computation belongs in canonical workflow nodes. Inspectors, Runs and Reports
   present retained results; basic descriptive arithmetic is allowed.
 - Keep sample identity, inclusion and units on the typed dataset axes/context.

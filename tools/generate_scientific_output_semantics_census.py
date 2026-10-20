@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 
 from _provenance import ensure_local_checkout_on_path, require_local_checkout
@@ -18,10 +19,18 @@ from spectra_sherpa.app.services.dag.scientific_values import build_scientific_o
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--check", action="store_true")
+    args = parser.parse_args()
     repository_root = _PACKAGE_ROOT.parents[1]
     output_path = repository_root / "docs" / "evidence" / "scientific-output-semantics-census.json"
     census = build_scientific_output_semantics_census(node_registry.list_nodes())
-    output_path.write_text(json.dumps(census, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    expected = json.dumps(census, indent=2, sort_keys=True) + "\n"
+    if args.check:
+        if not output_path.exists() or output_path.read_text(encoding="utf-8") != expected:
+            raise SystemExit("Stale output semantics: make evidence (monorepo root); review the diff")
+    else:
+        output_path.write_text(expected, encoding="utf-8")
 
 
 if __name__ == "__main__":

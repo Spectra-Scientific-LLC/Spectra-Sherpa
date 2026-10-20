@@ -831,7 +831,7 @@ def _retention_decisions(
 ) -> dict[str, dict[str, Any]]:
     """Load the exact owner-approved catalog disposition; unknown nodes stay undecided."""
 
-    path = repository_root / "docs/plan/canonical-node-retention-decisions.json"
+    path = repository_root / "docs/evidence/canonical-node-retention-decisions.json"
     document = json.loads(path.read_text(encoding="utf-8"))
     if set(document) != {
         "registry_digest",
